@@ -106,13 +106,18 @@ library.
 | File | For |
 | --- | --- |
 | `neutrino-agent_<version>_all.deb` | Debian, Ubuntu, Raspberry Pi OS. Needs `python3`, which apt pulls in |
-| `neutrino-agent-<version>.noarch.rpm` | Fedora, RHEL, CentOS |
+| `neutrino-agent-<version>-1.noarch.rpm` | Fedora, RHEL, CentOS |
 | `neutrino-agent-<version>.pkg` | macOS 12 or newer, Intel and Apple Silicon. Carries its own Python |
 | `neutrino-agent-<version>-setup.exe` | Windows 10 or newer. Carries its own Python |
 
-Only the `.deb` is built today. The `.rpm`, the `.pkg` and the `.exe` have no
-build script yet, and the last two also need a launchd job and a Windows
-service, which the agent does not ship.
+The `.pkg` and the `.exe` are not built yet. They need more than packaging: a
+launchd job and a Windows service, and an agent whose metrics and actions are
+not written against `/proc`, `systemctl` and `apt-get`.
+
+The `.rpm` installs under `/usr/share/neutrino_agent` rather than into
+site-packages, whose path carries the Python version and so cannot be named by
+a package meant to be `noarch`. `/usr/bin/nagent` and the unit put it on the
+path.
 
 ```bash
 sudo dpkg -i neutrino-agent_<version>_all.deb
@@ -143,8 +148,10 @@ python3 packaging/build_release.py --output-dir dist/
 ```
 
 One command, and it writes `SHA256SUMS` beside what it built. The agent's
-package builds anywhere. The hub's is built inside `debian:12` — that needs
-podman or docker, and `--only agent` skips it.
+`.deb` builds anywhere; its `.rpm` needs `rpmbuild`, from `rpm` on Debian
+family and `rpm-build` on RHEL family, and is skipped with a note when that is
+missing. The hub's is built inside `debian:12` — that needs podman or docker,
+and `--only agent` skips it.
 
 `--architecture arm64` builds the hub for the other architecture by running
 that container under emulation; the host needs QEMU registered with
@@ -180,7 +187,7 @@ git push origin v0.4.0
 ```
 
 `.github/workflows/release.yml` builds the hub for both architectures and the
-agent's `.deb`, generates `SHA256SUMS`, and opens a draft release. Fill in the
+agent's `.deb` and `.rpm`, generates `SHA256SUMS`, and opens a draft release. Fill in the
 changelog, check the section headings still match what shipped, and publish.
 
 Running the same workflow from the Actions tab builds the packages and attaches

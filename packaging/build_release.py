@@ -8,8 +8,8 @@ environment carries no standard library and its compiled wheels fix the
 architecture. This runs that build in a container so the result does not
 depend on whatever this machine happens to be.
 
-The agent's `.rpm`, `.pkg` and `.exe` are not built here and are not built
-anywhere yet; the last two also need the platforms they are for.
+The agent's `.rpm` is built too, when `rpmbuild` is installed. Its `.pkg` and
+`.exe` are not built anywhere yet; they need the platforms they are for.
 
 ``--only`` builds one part of the release. The tag workflow uses it to put the
 hub's architectures on separate runners and to write the checksums once, after
@@ -73,7 +73,7 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if arguments.only in ("all", "agent"):
-        print("building the agent package")
+        print("building the agent's deb")
         _run(
             [
                 sys.executable,
@@ -82,6 +82,18 @@ def main() -> int:
                 str(output_dir),
             ]
         )
+        if _has_tool("rpmbuild"):
+            print("building the agent's rpm")
+            _run(
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "agent/packaging/build_rpm.py"),
+                    "--output-dir",
+                    str(output_dir),
+                ]
+            )
+        else:
+            print("  no rpmbuild here, so no rpm")
 
     if arguments.only in ("all", "hub"):
         print(
@@ -163,9 +175,21 @@ def _write_checksums(output_dir: Path) -> None:
 def _container_engine() -> "str | None":
     """Whichever container tool is installed, or None."""
     for name in ("podman", "docker"):
-        if subprocess.run(["which", name], capture_output=True).returncode == 0:
+        if _has_tool(name):
             return name
     return None
+
+
+def _has_tool(name: str) -> bool:
+    """Whether a build tool is on the path.
+
+    Args:
+        name: The executable to look for.
+
+    Returns:
+        True when it can be run.
+    """
+    return subprocess.run(["which", name], capture_output=True).returncode == 0
 
 
 def _host_architecture() -> str:

@@ -20,9 +20,9 @@ jobs:
       matrix:
         architecture: [amd64, arm64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: npm
@@ -38,7 +38,7 @@ jobs:
 
       # The hub is built inside debian:12, which for arm64 means running that
       # container under emulation on an x86-64 runner.
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
         if: matrix.architecture != 'amd64'
 
       - run: >
@@ -47,26 +47,33 @@ jobs:
           --architecture ${{ matrix.architecture }}
           --output-dir dist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: hub_${{ matrix.architecture }}
           path: dist/*.deb
           if-no-files-found: error
 
   agent:
-    name: agent .deb
+    name: agent .deb and .rpm
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      # Architecture: all, pure standard library, no interpreter to match:
-      # the runner's own python3 and dpkg-deb are the whole toolchain.
+      # rpmbuild is not on the runner image. Debian family calls the package
+      # `rpm`; without it the build writes the .deb and says it skipped the
+      # .rpm, which would pass silently.
+      - run: sudo apt-get install -y --no-install-recommends rpm
+
+      # Both packages are architecture-independent and need no interpreter to
+      # match, so the runner's own python3 is the whole toolchain.
       - run: python3 packaging/build_release.py --only agent --output-dir dist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
-          name: agent_deb
-          path: dist/*.deb
+          name: agent_packages
+          path: |
+            dist/*.deb
+            dist/*.rpm
           if-no-files-found: error
 
   draft:
@@ -74,9 +81,9 @@ jobs:
     needs: [hub, agent]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -85,7 +92,7 @@ jobs:
       # than by the jobs that each produced one file.
       - run: python3 packaging/build_release.py --only checksums --output-dir dist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release_dist
           path: dist/*
