@@ -92,3 +92,42 @@ has looked at yet.
 `scan: allow` has to sit on the line the finding names. `black` will move a
 trailing comment when it rewraps a statement, so a value that keeps being
 reported belongs in a named constant with the marker on that line.
+
+## Where a change lands
+
+One question decides it: are the checks above the whole gate, or does CI have
+to answer?
+
+Straight to `main` when everything that judges the change runs on this
+machine. Documentation, a single-file fix, anything `black`, `pytest` and
+`nhub scan-secrets` settle on their own.
+
+A branch when only CI can say whether it works: a workflow change, a package
+built for a platform this machine is not, anything whose first real test is a
+runner. What this protects is not the broken commit itself but the signal —
+a `main` that is already red when the next change lands tells nobody which of
+the two broke it.
+
+Branching puts no merge commits in the history. A branch is merged
+fast-forward, which moves its commits onto the tip of `main` and leaves the
+line straight:
+
+```bash
+git checkout -b <name>
+# push, let CI run, fix until it is green
+git checkout main
+git merge --ff-only <name>
+git push
+git branch -d <name> && git push origin --delete <name>
+```
+
+When `main` has moved meanwhile, `--ff-only` refuses. Rebase the branch onto
+`main` and merge again.
+
+Set the guard on every clone, so a merge that would write a merge commit fails
+instead of writing one:
+
+```bash
+git config merge.ff only
+git config pull.rebase true
+```
