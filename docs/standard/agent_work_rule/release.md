@@ -108,11 +108,20 @@ library.
 | `neutrino-agent_<version>_all.deb` | Debian, Ubuntu, Raspberry Pi OS. Needs `python3`, which apt pulls in |
 | `neutrino-agent-<version>-1.noarch.rpm` | Fedora, RHEL, CentOS |
 | `neutrino-agent-<version>.pkg` | macOS 12 or newer, Intel and Apple Silicon. Carries its own Python |
-| `neutrino-agent-<version>-setup.exe` | Windows 10 or newer. Carries its own Python |
+| `neutrino-agent-<version>-setup.exe` | Windows 10 or newer, x86-64. Carries its own Python |
 
-The `.pkg` and the `.exe` are not built yet. They need more than packaging: a
-launchd job and a Windows service, and an agent whose metrics and actions are
-not written against `/proc`, `systemctl` and `apt-get`.
+The `.pkg` is not built yet.
+
+The Windows installer carries python.org's embeddable interpreter, pinned by
+hash, because Windows ships no Python. It starts the agent from a scheduled
+task rather than a service: a service has to answer the service control
+manager within seconds of starting, which a plain Python process cannot do
+without a wrapper binary, and the agent carries no dependencies anywhere.
+
+What neither the `.exe` nor a future `.pkg` fixes is that the agent's metrics
+read `/proc` and its actions run `systemctl` and `apt-get`. Installed on
+Windows or macOS it joins a hub and heartbeats; it reports no metrics and
+performs no actions until that layer knows where it is.
 
 The `.rpm` installs under `/usr/share/neutrino_agent` rather than into
 site-packages, whose path carries the Python version and so cannot be named by
@@ -186,8 +195,11 @@ git tag -a v0.4.0 -m "v0.4.0"
 git push origin v0.4.0
 ```
 
-`.github/workflows/release.yml` builds the hub for both architectures and the
-agent's `.deb` and `.rpm`, generates `SHA256SUMS`, and opens a draft release. Fill in the
+`.github/workflows/release.yml` builds the hub for both architectures, the
+agent's `.deb` and `.rpm`, and the Windows installer, generates `SHA256SUMS`,
+and opens a draft release. The Windows job installs what it built, runs the
+agent from it and uninstalls again, so a broken installer fails the build
+rather than the person who downloads it. Fill in the
 changelog, check the section headings still match what shipped, and publish.
 
 Running the same workflow from the Actions tab builds the packages and attaches

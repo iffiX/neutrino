@@ -76,9 +76,51 @@ jobs:
             dist/*.rpm
           if-no-files-found: error
 
+  agent_windows:
+    name: agent installer (Windows)
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v7
+
+      # Inno Setup and a Python to run the build with are both on the image.
+      - run: python agent/packaging/build_exe.py --output-dir dist
+
+      # The installer is what ships, so it is run here rather than only
+      # compiled: whether the task registers, whether the bundled interpreter
+      # finds the agent beside it, and whether uninstalling cleans up.
+      - name: Install it, use it, remove it
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem dist\*-setup.exe)[0].FullName
+          Start-Process -FilePath $setup -Wait `
+            -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'
+
+          schtasks /query /tn "Neutrino Agent" /fo list
+
+          # Unenrolled, the agent reports that and exits 1. Reaching that
+          # message means the interpreter imported it.
+          & "$env:ProgramFiles\Neutrino Agent\nagent.cmd" --once
+          if ($LASTEXITCODE -ne 1) {
+            throw "nagent --once exited $LASTEXITCODE, expected 1"
+          }
+
+          Start-Process -Wait `
+            -FilePath "$env:ProgramFiles\Neutrino Agent\unins000.exe" `
+            -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'
+          schtasks /query /tn "Neutrino Agent" 2>$null
+          if ($LASTEXITCODE -eq 0) { throw "the task outlived the uninstaller" }
+
+          exit 0
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: agent_windows
+          path: dist/*.exe
+          if-no-files-found: error
+
   draft:
     name: checksums and draft release
-    needs: [hub, agent]
+    needs: [hub, agent, agent_windows]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
