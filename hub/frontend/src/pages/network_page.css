@@ -1,0 +1,336 @@
+/* --- Topology --- */
+
+.network_topology {
+  padding: var(--space-5) var(--space-4);
+  overflow-x: auto;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgb(167 139 250 / 7%), transparent 60%),
+    radial-gradient(ellipse at 50% 100%, rgb(34 211 238 / 7%), transparent 60%),
+    var(--color-surface);
+}
+
+/* --- The row of interface tabs --- */
+
+.network_tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.network_tab {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: 7px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.network_tab:hover {
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.network_tab_name {
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.network_tab_role {
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--color-elevated);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.network_tab--wan .network_tab_role {
+  color: var(--color-accent-secondary);
+}
+
+.network_tab--lan .network_tab_role {
+  color: var(--color-accent);
+}
+
+.network_tab--on {
+  border-color: var(--color-accent);
+  background: var(--color-accent-wash);
+  color: var(--color-text);
+}
+
+/* --- The selected interface's live state --- */
+
+.network_link_summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.network_link_head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.network_link_head h2 {
+  font-size: 17px;
+}
+
+.network_link_rows {
+  display: grid;
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.network_link_row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.network_link_row dt {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.network_link_row dd {
+  overflow: hidden;
+  margin: 0;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* --- The form --- */
+
+.network_form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.network_section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.network_roles {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.network_role {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.network_role:hover {
+  border-color: var(--color-border-strong);
+}
+
+.network_role--on {
+  border-color: var(--color-accent);
+  background: var(--color-accent-wash);
+}
+
+.network_role_label {
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.network_role--on .network_role_label {
+  color: var(--color-accent);
+}
+
+.network_role_hint {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+/* A role the hardware cannot do. Struck through in red rather than merely
+   dimmed, so it reads as "impossible" and not as "loading". */
+.network_role--blocked {
+  border-style: dashed;
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.network_role--blocked:hover {
+  border-color: var(--color-border);
+}
+
+.network_role--blocked .network_role_label {
+  color: var(--color-error);
+}
+
+.network_role--blocked .network_role_hint {
+  color: var(--color-error);
+}
+
+.network_role_ban {
+  margin-right: 6px;
+  color: var(--color-error);
+  vertical-align: -2px;
+}
+
+.network_role_label {
+  display: inline-flex;
+  gap: 0;
+  align-items: center;
+}
+
+/* A pair (or trio) of mutually exclusive choices with an explanation each:
+   uplink mode, addressing method. Same shape as the role picker, one level in. */
+.network_choice_row {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.network_choice {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.network_choice:hover {
+  border-color: var(--color-border-strong);
+}
+
+.network_choice--on {
+  border-color: var(--color-accent-secondary);
+  background: var(--color-accent-secondary-wash);
+}
+
+.network_choice strong {
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.network_choice--on strong {
+  color: var(--color-accent-secondary);
+}
+
+.network_choice span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.network_toggles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.network_footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+/* Settings that belong to the box rather than to any one interface. Given a
+   heading of their own instead of a card, so they read as a second section of
+   the page rather than as one more panel among the interfaces. */
+.network_globals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-top: var(--space-2);
+}
+
+/* --- VLANs on a split trunk --- */
+
+.network_vlan_rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.network_vlan_row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.network_vlan_name {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.network_vlan_name:hover {
+  color: var(--color-accent);
+}
+
+.network_vlan_summary {
+  flex: 1;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.network_vlan_add {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.network_vlan_id {
+  width: 130px;
+}

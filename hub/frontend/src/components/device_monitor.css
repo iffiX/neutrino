@@ -1,0 +1,214 @@
+/* Claims the space left of the drawer and centres the panel in it. The wrap
+   itself is untouchable so the dimmed page behind stays clickable through the
+   empty parts. */
+.device_monitor_wrap {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--sidebar-width) + var(--space-5));
+  right: calc(540px + var(--space-5) + var(--space-4));
+  z-index: 45;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+/* Grows only as tall as its content, scrolling inside once the window is
+   shorter than that. */
+.device_monitor {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  width: 100%;
+  max-height: calc(100vh - (2 * var(--space-5)));
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  animation: fade_in_up 200ms ease both;
+  pointer-events: auto;
+}
+
+.device_monitor_head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.device_monitor_meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: flex-end;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.device_monitor_empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-7) var(--space-5);
+  color: var(--color-text-faint);
+  font-size: 12px;
+}
+
+.device_monitor_body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  overflow-y: auto;
+}
+
+.device_monitor_grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* Charts sit on the darkest ground so several of them read as one family,
+   the same way the dashboard's traffic chart does. */
+.device_monitor_panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.device_monitor_panel--wide {
+  grid-column: 1 / -1;
+}
+
+.device_monitor_panel_head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.device_monitor_panel_title {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.device_monitor_panel_value {
+  flex: none;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.device_monitor_chart {
+  height: 84px;
+}
+
+.device_monitor_processes {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.device_monitor_processes th {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-faint);
+  font-weight: 500;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.device_monitor_processes td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.device_monitor_processes tr:last-child td {
+  border-bottom: none;
+}
+
+.device_monitor_processes .num {
+  text-align: right;
+}
+
+.device_monitor_processes .accent {
+  color: var(--color-accent);
+}
+
+.device_monitor_process_name {
+  overflow: hidden;
+  max-width: 220px;
+  color: var(--color-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device_monitor_processes .kill {
+  width: 26px;
+  text-align: right;
+}
+
+.device_monitor_kill {
+  display: inline-flex;
+  padding: 2px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-faint);
+  cursor: pointer;
+  visibility: hidden;
+}
+
+.device_monitor_processes tr:hover .device_monitor_kill,
+.device_monitor_kill--armed {
+  visibility: visible;
+}
+
+.device_monitor_kill:hover {
+  color: var(--color-error);
+}
+
+.device_monitor_kill--armed {
+  background: rgb(255 66 82 / 15%);
+  color: var(--color-error);
+}
+
+.device_monitor_kill_error {
+  padding-top: var(--space-2);
+  color: var(--color-error);
+  font-size: 11px;
+}
+
+.device_monitor_footer {
+  padding-top: var(--space-2);
+  color: var(--color-text-faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.device_monitor_footer--stale {
+  color: var(--color-warn);
+}
+
+/* When the window cannot hold both panels, the drawer wins. */
+@media (max-width: 1200px) {
+  .device_monitor_wrap {
+    display: none;
+  }
+}

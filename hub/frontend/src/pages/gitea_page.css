@@ -1,0 +1,64 @@
+.gitea_fields {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) 1fr;
+  gap: var(--space-3);
+}
+
+.gitea_admin_form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  max-width: 760px;
+}
+
+.gitea_admin_form > .input,
+.gitea_admin_form > .password_input {
+  flex: 1;
+  min-width: 160px;
+}
+
+/* An anchor styled as a button loses its affordance when the server is down;
+   a real disabled state needs it inert, not just grey. */
+.button--disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+@media (max-width: 720px) {
+  .gitea_fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* One administrator: name on the left, the reset flow inline in the same
+   row — the same one-line rule the Samba users follow. */
+.gitea_admin_row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.gitea_admin_name {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.gitea_admin_password {
+  display: flex;
+  flex: 1;
+  gap: var(--space-2);
+  align-items: center;
+  max-width: 420px;
+}
+
+.gitea_admin_reset {
+  margin-left: auto;
+}

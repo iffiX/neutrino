@@ -1,0 +1,692 @@
+/*
+ * Neon-terminal theme for the neutrino panel.
+ *
+ * Every colour in the app is defined here as a custom property, so retheming
+ * is a single-file edit. Below the tokens live the element resets and the
+ * shared primitives (cards, buttons, inputs, badges, animations) that every
+ * page composes; anything specific to one component lives next to it in its
+ * own stylesheet.
+ */
+
+:root {
+  /* --- Surfaces ---
+   *
+   * Three steps, and nesting goes *down* them rather than up. On a near-black
+   * theme there is no headroom upward: two steps lighter and everything is
+   * grey, and the neon accents lose the contrast they exist for. Going darker
+   * inward also puts the emphasis where it belongs — the frame is the unit of
+   * change, and contents that were lighter than their container would
+   * outshout it.
+   *
+   *   page                          --color-bg
+   *   a unit of change (framed)     --color-surface   + border, glows if dirty
+   *   its contents                  --color-bg        + quiet border
+   *   emphasis inside those         --color-elevated
+   *
+   * The alternation is what keeps a third level legible without a fourth
+   * colour. Only the unit of change carries a strong border or a glow; a
+   * nested box that glows reads as something waiting to be applied.
+   */
+  --color-bg: #0a0e14;
+  --color-surface: #111721;
+  --color-elevated: #161d2a;
+  --color-border: #1f2937;
+  --color-border-strong: #2b3648;
+
+  /* --- Text --- */
+  --color-text: #e6edf3;
+  --color-text-muted: #8b96a5;
+  --color-text-faint: #5b6675;
+
+  /* --- Accents --- */
+  --color-accent: #22d3ee;
+  --color-accent-secondary: #a78bfa;
+  --color-ok: #34d399;
+  --color-warn: #fbbf24;
+  --color-error: #fb7185;
+
+  /* --- Translucent accent washes, for fills and glows --- */
+  --color-accent-wash: rgb(34 211 238 / 12%);
+  --color-accent-secondary-wash: rgb(167 139 250 / 12%);
+  --color-ok-wash: rgb(52 211 153 / 12%);
+  --color-warn-wash: rgb(251 191 36 / 12%);
+  --color-error-wash: rgb(251 113 133 / 12%);
+  --color-overlay: rgb(5 8 12 / 72%);
+
+  /* --- Chart series --- */
+  --color-chart-down: var(--color-accent);
+  --color-chart-up: var(--color-accent-secondary);
+  --color-chart-grid: #1a2230;
+
+  /* --- Typography --- */
+  --font-sans:
+    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    sans-serif;
+  --font-mono:
+    "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  /* --- Spacing scale --- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* --- Shape --- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* --- Motion --- */
+  --transition-fast: 120ms ease;
+  --transition-base: 200ms ease;
+
+  /* --- Layout --- */
+  --sidebar-width: 232px;
+  --sidebar-width-compact: 68px;
+  --top-bar-height: 56px;
+}
+
+/* --- Reset --- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+h1 {
+  font-size: 22px;
+}
+
+h2 {
+  font-size: 16px;
+}
+
+h3 {
+  font-size: 14px;
+}
+
+p {
+  margin: 0;
+}
+
+ul,
+ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* --- Scrollbars --- */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border: 3px solid transparent;
+  border-radius: var(--radius-pill);
+  background-clip: content-box;
+}
+
+/* --- Typographic primitives --- */
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.muted {
+  color: var(--color-text-muted);
+}
+
+.faint {
+  color: var(--color-text-faint);
+}
+
+.section_label {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+/* --- Page scaffolding --- */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.page_header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.page_header_text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.page_actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+/* --- Cards --- */
+
+.card {
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  transition:
+    border-color var(--transition-base),
+    box-shadow var(--transition-base);
+}
+
+/* Unsaved changes light the frame, exactly as a settings_group's do. */
+.card--dirty {
+  border-color: var(--color-warn);
+  box-shadow: 0 0 26px -16px var(--color-warn);
+}
+
+.card_header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.card_title {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.card_grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+
+/* --- Buttons --- */
+
+.button {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: center;
+  padding: 7px 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-elevated);
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    box-shadow var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.button--primary {
+  border-color: var(--color-accent);
+  background: var(--color-accent-wash);
+  color: var(--color-accent);
+}
+
+.button--primary:hover:not(:disabled) {
+  background: rgb(34 211 238 / 20%);
+}
+
+/* The glow is reserved for the one action a page or a section exists to
+   perform — the Apply that commits a form, the Save that ends an edit. It is
+   what makes that button findable without reading; spending it on every
+   accent-coloured control would leave nothing to find. See
+   docs/standard/design/visual.md. */
+.page_actions .button--primary,
+.apply_bar .button--primary,
+.settings_group_actions .button--primary,
+.button--commit {
+  box-shadow: 0 0 20px -8px var(--color-accent);
+}
+
+.page_actions .button--primary:hover:not(:disabled),
+.apply_bar .button--primary:hover:not(:disabled),
+.settings_group_actions .button--primary:hover:not(:disabled),
+.button--commit:hover:not(:disabled) {
+  box-shadow: 0 0 24px -6px var(--color-accent);
+}
+
+/* The affirmative twin of button--danger: installing something is the safe
+   direction, removing it is the one worth a red border. */
+.button--ok {
+  border-color: var(--color-ok);
+  color: var(--color-ok);
+}
+
+.button--ok:hover:not(:disabled) {
+  background: rgb(52 211 153 / 12%);
+  border-color: var(--color-ok);
+  color: var(--color-ok);
+}
+
+.button--danger {
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+
+.button--danger:hover:not(:disabled) {
+  background: var(--color-error-wash);
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+
+.button--warn {
+  border-color: var(--color-warn);
+  color: var(--color-warn);
+}
+
+.button--warn:hover:not(:disabled) {
+  background: rgb(251 191 36 / 10%);
+  border-color: var(--color-warn);
+  color: var(--color-warn);
+}
+
+.button--ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
+.button--small {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.button_row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* --- Forms --- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.field_label {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.field_hint {
+  color: var(--color-text-faint);
+  font-size: 12px;
+}
+
+/* Marks a write-only field whose value the gateway already holds. */
+.field_badge {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border: 1px solid var(--color-ok);
+  border-radius: 999px;
+  color: var(--color-ok);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.field_error {
+  color: var(--color-error);
+  font-size: 12px;
+}
+
+.field_grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.input,
+.select {
+  width: 100%;
+  padding: 8px 11px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.input::placeholder {
+  color: var(--color-text-faint);
+}
+
+.input:focus,
+.select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.input--invalid,
+.input--invalid:focus {
+  border-color: var(--color-error);
+  box-shadow: 0 0 20px -8px var(--color-error);
+}
+
+/* Pasted key material: wraps rather than scrolls sideways, and resizes only
+   vertically so it cannot break the drawer's width. */
+.input--key {
+  min-height: 150px;
+  padding: 10px 11px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  resize: vertical;
+}
+
+.select {
+  appearance: none;
+  padding-right: 30px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--color-text-muted) 50%),
+    linear-gradient(135deg, var(--color-text-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 16px) calc(50% + 1px),
+    calc(100% - 11px) calc(50% + 1px);
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+/* --- Badges --- */
+
+.badge {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.badge--accent {
+  border-color: var(--color-accent);
+  background: var(--color-accent-wash);
+  color: var(--color-accent);
+}
+
+.badge--secondary {
+  border-color: var(--color-accent-secondary);
+  background: var(--color-accent-secondary-wash);
+  color: var(--color-accent-secondary);
+}
+
+.badge--ok {
+  border-color: var(--color-ok);
+  background: var(--color-ok-wash);
+  color: var(--color-ok);
+}
+
+.badge--warn {
+  border-color: var(--color-warn);
+  background: var(--color-warn-wash);
+  color: var(--color-warn);
+}
+
+.badge--error {
+  border-color: var(--color-error);
+  background: var(--color-error-wash);
+  color: var(--color-error);
+}
+
+/* --- Inline notices --- */
+
+.notice {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-elevated);
+  font-size: 13px;
+}
+
+.notice--warn {
+  border-color: rgb(251 191 36 / 40%);
+  background: var(--color-warn-wash);
+  color: var(--color-warn);
+}
+
+.notice--error {
+  border-color: rgb(251 113 133 / 40%);
+  background: var(--color-error-wash);
+  color: var(--color-error);
+}
+
+.notice--ok {
+  border-color: rgb(52 211 153 / 40%);
+  background: var(--color-ok-wash);
+  color: var(--color-ok);
+}
+
+.notice_body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* --- Empty and loading states --- */
+
+.placeholder {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-7) var(--space-4);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.skeleton {
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    90deg,
+    var(--color-surface) 25%,
+    var(--color-elevated) 50%,
+    var(--color-surface) 75%
+  );
+  background-size: 400% 100%;
+  animation: skeleton_sweep 1.4s ease-in-out infinite;
+}
+
+/* --- Animations --- */
+
+@keyframes skeleton_sweep {
+  0% {
+    background-position: 100% 0;
+  }
+
+  100% {
+    background-position: 0 0;
+  }
+}
+
+@keyframes pulse_ring {
+  0% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+
+  70% {
+    opacity: 0;
+    transform: scale(2.4);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(2.4);
+  }
+}
+
+@keyframes fade_in_up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide_in_right {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes drift {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  50% {
+    transform: translate(3%, -4%) scale(1.08);
+  }
+
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* A page title with a live figure beside it. Used where the number changes and
+   so is worth showing; a fixed description of the page is not, because the top
+   bar already carries one. */
+.page_title_row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}

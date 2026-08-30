@@ -1,0 +1,80 @@
+.dns_log_list {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.dns_log_row {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: 74px 1fr auto;
+  align-items: center;
+  padding: 6px var(--space-3);
+  border-bottom: 1px solid rgb(31 41 55 / 55%);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.dns_log_row:last-child {
+  border-bottom: none;
+}
+
+.dns_log_row--newest {
+  animation: fade_in_up 260ms ease both;
+}
+
+.dns_log_time {
+  color: var(--color-text-faint);
+  font-size: 11px;
+}
+
+.dns_log_domain {
+  overflow: hidden;
+  color: var(--color-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dns_log_client {
+  color: var(--color-text-faint);
+  font-size: 11px;
+}
+
+.dns_log_outbound {
+  padding: 1px 8px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-muted);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.dns_log_outbound--proxy {
+  border-color: rgb(34 211 238 / 45%);
+  background: var(--color-accent-wash);
+  color: var(--color-accent);
+}
+
+.dns_log_outbound--direct {
+  border-color: rgb(52 211 153 / 40%);
+  background: var(--color-ok-wash);
+  color: var(--color-ok);
+}
+
+.dns_log_scroll {
+  overflow-y: auto;
+  max-height: 420px;
+}
+
+@media (max-width: 720px) {
+  .dns_log_row {
+    grid-template-columns: 62px 1fr auto;
+  }
+
+  .dns_log_client {
+    display: none;
+  }
+}

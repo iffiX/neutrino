@@ -1,0 +1,31 @@
+/* Overflow hidden so the terminal can never paint past its own box: xterm sizes
+   its screen in whole rows, and the leftover part-row would otherwise push the
+   page taller and start the measure-redraw-measure loop over again.
+   Every host must be a flex column giving this a definite height; with auto
+   height, the fit addon measures the terminal's own content and grows it by a
+   row on every pass. */
+.shell_terminal {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  /* Drawn rather than laid out: a real border shifts the height the fit addon
+     measures, and one extra pixel can round the row count up and clip the
+     bottom row. */
+  box-shadow: inset 0 0 0 1px var(--color-border);
+}
+
+/* The gutter sits on the terminal element itself because the fit addon
+   subtracts this element's padding when computing rows and columns. Padding on
+   the box above is invisible to that measurement: the rows overshoot it, and
+   painted cells bleed across the gutter to the border. */
+.shell_terminal .xterm {
+  padding: var(--space-3);
+}
+
+/* Hidden, not unmounted: unmounting closes the socket and kills the shell, so
+   switching tabs would end whatever was running in the one being left. */
+.shell_terminal--hidden {
+  display: none;
+}

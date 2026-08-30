@@ -1,0 +1,224 @@
+/* One share being edited: a step down from the group frame, per the nesting
+   ramp — the frame is the unit of change, this is its contents. */
+.samba_share {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.samba_share_head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.samba_share_remove {
+  margin-left: auto;
+}
+
+/* The address a client pastes to connect. A button so one click copies it,
+   styled as the piece of text it is. */
+.samba_share_url {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: 3px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: all;
+  transition:
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.samba_share_url:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.samba_share_title {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.samba_share_fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+}
+
+.samba_user_chips {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Chips scroll past four rows or so; a lab's worth of accounts must not
+   stretch the panel, and the none-picked hint stays in sight below. */
+.samba_user_chip_list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.samba_user_chip {
+  padding: 4px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.samba_user_chip:hover {
+  border-color: var(--color-border-strong);
+}
+
+.samba_user_chip--on {
+  border-color: var(--color-accent);
+  background: var(--color-accent-wash);
+  color: var(--color-accent);
+}
+
+.samba_user {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.samba_user_row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.samba_user_name {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.samba_user_actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+/* Sits inside the user's own row, between the badge and the buttons, so
+   setting a password never opens a second line. */
+.samba_user_password {
+  display: flex;
+  flex: 1;
+  gap: var(--space-2);
+  align-items: center;
+  max-width: 420px;
+}
+
+/* Name and password split the row evenly, so neither field looks like an
+   afterthought of the other. */
+.samba_add_user {
+  display: flex;
+  gap: var(--space-2);
+  max-width: 640px;
+}
+
+.samba_add_user > .input,
+.samba_add_user > .password_input {
+  flex: 1;
+  min-width: 0;
+}
+
+.samba_sessions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.samba_session {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.samba_session_user {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.samba_session_from {
+  color: var(--color-text-muted);
+}
+
+.samba_session_shares {
+  margin-left: auto;
+  color: var(--color-text-faint);
+}
+
+.samba_disks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.samba_disk_row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.samba_disk_numbers {
+  color: var(--color-text-muted);
+}
+
+.samba_disk_bar {
+  overflow: hidden;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-elevated);
+}
+
+.samba_disk_fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  transition: width var(--transition-base);
+}

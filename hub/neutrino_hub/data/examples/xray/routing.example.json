@@ -1,0 +1,19 @@
+{
+  "_comment_enabled": "is_proxy_enabled is the master switch. false takes the proxy out of the path entirely: LAN traffic is forwarded straight out the WAN, dnsmasq resolves through direct_dns instead of through xray, and no exit node is needed or used. It is the honest thing to reach for when working out whether the proxy is what is broken.",
+  "is_proxy_enabled": true,
+
+  "_comment_socks": "is_socks_direct_enabled publishes the SOCKS5 listener on the LAN address, port 1080, whose traffic always leaves directly rather than through an exit node. It is what ToDesk and AnyDesk on a work machine point at, so the two ends of a session look like they are on the same continent. A second way out of the box deserves a switch as visible as the proxy's own.",
+  "is_socks_direct_enabled": true,
+
+  "_comment_geoip": "is_geoip_split_enabled true means domains/IPs in direct_domains and direct_ips leave through the WAN directly and everything else goes through the JustMySocks balancer. Keep it true when the gateway sits in mainland China; set false to send absolutely everything through the proxy.",
+  "is_geoip_split_enabled": true,
+  "direct_domains": ["geosite:cn", "geosite:private"],
+  "direct_ips": ["geoip:cn", "geoip:private"],
+
+  "_comment_local": "is_local_proxy_enabled controls the gateway's OWN traffic (the box itself, including tailscaled). false = straight out the WAN. true = through the proxy, which is the fallback when Tailscale's control plane is unreachable locally. The web panel toggles this.",
+  "is_local_proxy_enabled": false,
+
+  "_comment_dns": "remote_dns resolves proxied names at the exit node; direct_dns resolves the geoip-split direct names locally. LAN clients always ask dnsmasq, which forwards to xray, so plaintext DNS never leaves the WAN.",
+  "remote_dns": { "address": "1.1.1.1", "port": 53 },
+  "direct_dns": { "address": "223.5.5.5", "port": 53 }
+}

@@ -1,0 +1,21 @@
+.spinner_wrap {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: 13px;
+}
+
+.spinner {
+  display: inline-block;
+  flex: none;
+  border: 2px solid var(--color-border-strong);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: spinner_turn 0.7s linear infinite;
+}
+
+@keyframes spinner_turn {
+  to {
+    transform: rotate(360deg);
+  }
+}

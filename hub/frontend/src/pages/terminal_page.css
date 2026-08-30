@@ -1,0 +1,67 @@
+/* The page takes what is left of the window so the shell can, rather than the
+   shell being a short box with the page scrolling around it. */
+.terminal_page {
+  flex: 1;
+  min-height: 0;
+}
+
+.terminal_tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.terminal_tab {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.terminal_tab:hover {
+  border-color: var(--color-border-strong);
+}
+
+.terminal_tab--on {
+  border-color: var(--color-accent);
+  background: var(--color-accent-wash);
+}
+
+.terminal_tab_label {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: 6px 4px 6px 11px;
+  border: none;
+  background: none;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.terminal_tab--on .terminal_tab_label {
+  color: var(--color-accent);
+}
+
+.terminal_tab_close {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 9px 6px 5px;
+  border: none;
+  background: none;
+  color: var(--color-text-faint);
+  cursor: pointer;
+}
+
+.terminal_tab_close:hover {
+  color: var(--color-error);
+}
+
+.placeholder .button {
+  margin-top: var(--space-2);
+}

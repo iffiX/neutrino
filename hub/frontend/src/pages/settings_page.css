@@ -1,0 +1,62 @@
+.settings_layout {
+  display: grid;
+  gap: var(--space-5);
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  align-items: start;
+}
+
+.settings_form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.settings_actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.settings_about {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.settings_about_row {
+  display: flex;
+  gap: var(--space-4);
+  align-items: baseline;
+  justify-content: space-between;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid rgb(31 41 55 / 60%);
+}
+
+.settings_about_row:last-child {
+  border-bottom: none;
+}
+
+.settings_about_key {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.settings_about_value {
+  overflow: hidden;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings_file_input {
+  display: none;
+}
+
+.settings_restore_name {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}

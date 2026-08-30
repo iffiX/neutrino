@@ -1,0 +1,44 @@
+{
+  "_comment": "JustMySocks (or any xray-compatible) nodes. Copy to nodes.json and fill in. Every node needs id/name/address/is_enabled/protocol plus the block matching its protocol. Disabled nodes are omitted from the rendered xray config entirely.",
+  "_comment_import": "The installer can decode ss:// and vless:// share links for you: python scripts/install/main.py --import-nodes 'ss://... vless://...'",
+  "nodes": [
+    {
+      "_comment": "Shadowsocks node. JustMySocks SS endpoints look like ss://<base64 of method:password>@host:port#name",
+      "id": "node1",
+      "name": "Example SS node",
+      "address": "hostname.example.com",
+      "is_enabled": true,
+      "protocol": "shadowsocks",
+      "shadowsocks": {
+        "port": 5800,
+        "method": "aes-256-gcm",
+        "password": "PLACEHOLDER_PASSWORD"
+      }
+    },
+    {
+      "_comment": "VLESS + Reality node. reality.public_key is the pbk= parameter, short_id the sid=, server_name the sni=, fingerprint the fp= from the vless:// link.",
+      "id": "node2",
+      "name": "Example VLESS node",
+      "address": "hostname.example.com",
+      "is_enabled": true,
+      "protocol": "vless",
+      "vless": {
+        "port": 443,
+        "uuid": "PLACEHOLDER-UUID-0000-0000-000000000000",
+        "flow": "xtls-rprx-vision",
+        "reality": {
+          "public_key": "PLACEHOLDER_PUBLIC_KEY",
+          "short_id": "PLACEHOLDER_SHORT_ID",
+          "server_name": "sni.example.com",
+          "fingerprint": "chrome"
+        }
+      }
+    }
+  ],
+  "balancer": {
+    "_comment": "strategy: leastPing picks the lowest-latency node (needs the observatory probe), roundRobin cycles, random picks per connection.",
+    "strategy": "leastPing",
+    "probe_url": "https://www.gstatic.com/generate_204",
+    "probe_interval_s": 60
+  }
+}

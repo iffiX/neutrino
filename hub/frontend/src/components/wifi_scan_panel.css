@@ -1,0 +1,102 @@
+.wifi_scan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.wifi_scan_header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.wifi_scan_current {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.wifi_scan_current strong {
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.wifi_scan_list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.wifi_scan_row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.wifi_scan_row:hover:not(:disabled) {
+  border-color: var(--color-border-strong);
+  background: var(--color-elevated);
+}
+
+.wifi_scan_row:disabled {
+  cursor: default;
+}
+
+.wifi_scan_row--active {
+  border-color: rgb(52 211 153 / 35%);
+  background: var(--color-ok-wash);
+  cursor: default;
+}
+
+.wifi_scan_ssid {
+  flex: 1;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.wifi_scan_tags {
+  display: flex;
+  flex: none;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.wifi_scan_join {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: var(--space-2) 0 var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  animation: fade_in_up 160ms ease;
+}
+
+.wifi_scan_join .button_row {
+  justify-content: flex-end;
+}

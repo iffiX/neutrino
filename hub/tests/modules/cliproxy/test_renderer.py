@@ -1,0 +1,90 @@
+"""The YAML renderer: provider buckets, aliases, and what gets left out."""
+
+import yaml
+
+from neutrino_hub.modules.cliproxy.config import CliproxyClientKey, CliproxyConfig
+from neutrino_hub.modules.cliproxy.renderer import CliproxyConfigRenderer
+from neutrino_hub.modules.credentials.registry import AiProviderRecord
+
+
+def _provider(**overrides) -> AiProviderRecord:
+    base = dict(
+        id="p1",
+        name="Anthropic direct",
+        kind="anthropic",
+        base_url="",
+        api_key="sk-x",
+        is_enabled=True,
+        models=[],
+        created_at="2026-01-01T00:00:00+00:00",
+    )
+    base.update(overrides)
+    return AiProviderRecord(**base)
+
+
+def _render(providers) -> dict:
+    config = CliproxyConfig(
+        listen_port=8317,
+        client_keys=[CliproxyClientKey(id="k1", name="laptop", key="client-key-1")],
+    )
+    text = CliproxyConfigRenderer(config=config, providers=providers).render()
+    return yaml.safe_load(text)
+
+
+def test_kinds_land_in_their_blocks():
+    document = _render(
+        [
+            _provider(),
+            _provider(id="p2", kind="openai", api_key="sk-o"),
+            _provider(id="p3", kind="gemini", api_key="AI-g"),
+            _provider(
+                id="p4",
+                kind="custom",
+                name="My Relay",
+                base_url="https://relay.example/v1",
+                api_key="rk",
+            ),
+        ]
+    )
+    assert document["claude-api-key"][0]["api-key"] == "sk-x"
+    assert document["codex-api-key"][0]["api-key"] == "sk-o"
+    assert document["gemini-api-key"][0]["api-key"] == "AI-g"
+    compat = document["openai-compatibility"][0]
+    assert compat["name"] == "my-relay"
+    assert compat["api-key-entries"] == [{"api-key": "rk"}]
+    assert document["api-keys"] == ["client-key-1"]
+    assert document["port"] == 8317
+
+
+def test_disabled_and_keyless_providers_are_left_out():
+    document = _render(
+        [
+            _provider(is_enabled=False),
+            _provider(id="p2", api_key=""),
+        ]
+    )
+    assert "claude-api-key" not in document
+
+
+def test_model_aliases_render_with_alias_defaulting_to_name():
+    document = _render(
+        [
+            _provider(
+                models=[
+                    {"name": "claude-fable-5", "alias": "fast"},
+                    {"name": "claude-opus-5"},
+                    {"name": "   "},
+                ]
+            )
+        ]
+    )
+    models = document["claude-api-key"][0]["models"]
+    assert models == [
+        {"name": "claude-fable-5", "alias": "fast"},
+        {"name": "claude-opus-5", "alias": "claude-opus-5"},
+    ]
+
+
+def test_base_url_is_omitted_when_empty():
+    document = _render([_provider()])
+    assert "base-url" not in document["claude-api-key"][0]

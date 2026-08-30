@@ -1,0 +1,29 @@
+[project]
+name = "neutrino-agent"
+version = "0.1.0"
+description = "The Neutrino device agent: keeps a managed machine's modules in the state its hub asks for"
+requires-python = ">=3.9"
+# Deliberately empty, and it stays that way. The agent installs on whatever
+# Python a device already has — a stock Raspberry Pi OS, a minimal Ubuntu —
+# so a dependency here would mean asking an operator to pip-install onto every
+# machine they manage. See neutrino_agent/metrics.py.
+dependencies = []
+
+[project.scripts]
+nagent = "neutrino_agent.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["neutrino_agent*"]
+
+[tool.black]
+line-length = 88
+target-version = ["py39"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra --strict-markers"

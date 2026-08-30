@@ -1,0 +1,77 @@
+.terminal_modal_backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  background: var(--color-overlay);
+  backdrop-filter: blur(4px);
+  animation: fade_in_up 160ms ease both;
+}
+
+.terminal_modal {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  width: min(980px, 100%);
+  height: min(640px, 100%);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow:
+    0 0 0 1px rgb(34 211 238 / 18%),
+    0 30px 80px -30px rgb(0 0 0 / 90%);
+}
+
+.terminal_modal_head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-elevated);
+}
+
+.terminal_modal_title {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.terminal_modal_target {
+  overflow: hidden;
+  color: var(--color-accent);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal_modal_actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+/* A flex column, so the terminal's height comes down from the window rather
+   than up from its own content — content-driven height makes the fit addon
+   read the terminal's own size back and grow it by a row forever. */
+.terminal_modal_surface {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: var(--space-3);
+  background: var(--color-bg);
+}
+
+.terminal_modal_status {
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}

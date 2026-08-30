@@ -1,0 +1,28 @@
+{
+  "_comment": "Devices the panel manages, keyed by MAC address. Only devices you have annotated live here; anything else found by a LAN scan is runtime state shown in the panel and never written to disk. SSH credentials unlock Wake-on-LAN, the terminal, remote-desktop deployment, and neutrino_client installation.",
+  "devices": {
+    "aa:bb:cc:dd:ee:ff": {
+      "name": "work-laptop",
+      "icon": "laptop",
+      "is_wol_enabled": true,
+      "_comment_ssh": "Written by the panel, not by hand. auth is 'key' or 'password'. For key auth, key_id references a key in the Credentials tab (config/credentials/ssh_keys/); the material is never stored here.",
+      "ssh": {
+        "host": "192.168.100.150",
+        "port": 22,
+        "username": "me",
+        "auth": "key",
+        "key_id": "d9d20c004ab4b212",
+        "password": null,
+        "_comment_sudo": "sudo_password is needed for one-click installs (ToDesk, AnyDesk, neutrino_client). Leave null if the account has passwordless sudo.",
+        "sudo_password": null
+      },
+      "_comment_client": "Filled in automatically once neutrino_client is installed on the device.",
+      "client": {
+        "is_installed": false,
+        "token": null,
+        "version": null,
+        "last_seen": null
+      }
+    }
+  }
+}

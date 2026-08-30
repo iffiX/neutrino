@@ -1,0 +1,45 @@
+[Unit]
+Description=Neutrino Hub web control panel
+Documentation=file://@REPO_ROOT@/docs/standard/misc/config.md
+After=network.target neutrino_router.service
+Wants=neutrino_router.service
+
+[Service]
+Type=simple
+# Runs as root: the panel edits nftables, restarts services, and scans the LAN.
+# It is reachable only from the LAN and Tailscale, enforced by the nftables
+# input chain as well as by the listen address.
+User=root
+WorkingDirectory=@REPO_ROOT@/hub
+Environment=PYTHONPATH=@REPO_ROOT@/hub
+ExecStart=@PYTHON@ -m neutrino_hub.cli.web
+Restart=on-failure
+RestartSec=5
+
+# Root is not negotiable here — the panel writes nftables rules, drives
+# systemd, and installs packages — so what is narrowed is what root may reach
+# for, not who it runs as.
+#
+# sudo cannot run under NoNewPrivileges, which is why stepping down to a
+# service account uses runuser (see modules/gitea/ops.py).
+NoNewPrivileges=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+ProtectClock=yes
+SystemCallArchitectures=native
+# AF_NETLINK for nft and ip, AF_PACKET for the arp-scan sweep, AF_UNIX to
+# reach systemd and podman.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK AF_PACKET
+
+# Deliberately absent, each because it breaks something this panel does:
+#   ProtectSystem       — installs binaries into /usr/local/bin and writes a
+#                         dozen files under /etc
+#   ProtectHome         — config/ still lives in the checkout
+#   ProtectKernelTunables — sets net.ipv4.ip_forward
+#   ProtectKernelModules  — the ZFS module loads on demand
+#   RestrictNamespaces, ProtectControlGroups, PrivateDevices — podman and ZFS
+# Tightening these needs package installs moved out of this process first.
+
+[Install]
+WantedBy=multi-user.target

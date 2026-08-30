@@ -1,0 +1,17 @@
+[Unit]
+Description=Neutrino AI gateway (CLIProxyAPI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Root, because the rendered configuration under /etc/neutrino/generated is
+# root-only — it carries every provider key.
+User=root
+WorkingDirectory=/var/lib/neutrino_cliproxy
+ExecStart=/usr/local/bin/cli-proxy-api --config /etc/neutrino/generated/cliproxy.yaml
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

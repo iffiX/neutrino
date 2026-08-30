@@ -1,0 +1,65 @@
+.string_list_editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.string_list_editor_chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-height: 30px;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.string_list_editor_chip {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: 3px 4px 3px 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--color-elevated);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  transition: border-color var(--transition-fast);
+}
+
+.string_list_editor_chip:hover {
+  border-color: var(--color-accent);
+}
+
+.string_list_editor_remove {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--color-text-faint);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.string_list_editor_remove:hover {
+  color: var(--color-error);
+}
+
+.string_list_editor_empty {
+  align-self: center;
+  color: var(--color-text-faint);
+  font-size: 12px;
+}
+
+.string_list_editor_add {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.string_list_editor_add .input {
+  flex: 1;
+}

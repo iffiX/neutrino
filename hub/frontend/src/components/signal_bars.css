@@ -1,0 +1,37 @@
+.signal_bars {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.signal_bars_stack {
+  display: flex;
+  gap: 2px;
+  align-items: flex-end;
+  height: 14px;
+}
+
+.signal_bar {
+  width: 3px;
+  border-radius: 1px;
+  background: var(--color-border-strong);
+}
+
+.signal_bars_stack--ok .signal_bar--on {
+  background: var(--color-ok);
+}
+
+.signal_bars_stack--warn .signal_bar--on {
+  background: var(--color-warn);
+}
+
+.signal_bars_stack--weak .signal_bar--on {
+  background: var(--color-error);
+}
+
+.signal_bars_text {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}

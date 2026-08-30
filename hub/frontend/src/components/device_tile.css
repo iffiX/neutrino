@@ -1,0 +1,149 @@
+.device_tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-base),
+    box-shadow var(--transition-base),
+    transform var(--transition-fast);
+}
+
+.device_tile:hover {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 24px -14px var(--color-accent);
+  transform: translateY(-1px);
+}
+
+.device_tile:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 1px var(--color-accent),
+    0 0 20px -6px var(--color-accent);
+}
+
+.device_tile--none {
+  border-style: dashed;
+  opacity: 0.72;
+}
+
+.device_tile--none:hover {
+  opacity: 1;
+}
+
+.device_tile--agent {
+  border-color: rgb(52 211 153 / 28%);
+}
+
+/* Out of reach, not out of mind: a device the gateway still has credentials
+   for is dimmed rather than dropped, because those credentials work again the
+   moment it comes back. */
+.device_tile--offline {
+  opacity: 0.6;
+}
+
+.device_tile--offline:hover {
+  opacity: 1;
+}
+
+.device_tile_head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.device_tile_icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-elevated);
+  color: var(--color-text-muted);
+}
+
+.device_tile--ssh .device_tile_icon,
+.device_tile--agent .device_tile_icon {
+  border-color: rgb(34 211 238 / 40%);
+  color: var(--color-accent);
+}
+
+.device_tile_identity {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.device_tile_name {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Only the text truncates. Clipping on the whole row would shear the status
+   dot's glow and pulse ring at the row's left edge. */
+.device_tile_name_text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device_tile_address {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.device_tile_vendor {
+  overflow: hidden;
+  color: var(--color-text-faint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device_tile_levels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.device_tile_gauges {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.device_tile_footer {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: space-between;
+  color: var(--color-text-faint);
+  font-size: 11px;
+}
+
+.device_tile_add_ssh {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+  color: var(--color-accent);
+  font-size: 11px;
+  font-weight: 500;
+}

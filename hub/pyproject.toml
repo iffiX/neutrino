@@ -1,0 +1,59 @@
+[project]
+name = "neutrino-hub"
+version = "0.1.0"
+description = "Neutrino: a personal developer infrastructure hub — transparent proxy routing, LAN device management, an AI gateway, and a control panel"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "python-multipart>=0.0.20",
+    # The bcrypt extra is not optional in practice: without it asyncssh cannot
+    # decrypt OpenSSH-format encrypted private keys, and reports a correct
+    # passphrase as wrong.
+    "asyncssh[bcrypt]>=2.18",
+    "psutil>=6.1",
+    # The AI page probes the local CLIProxyAPI gateway with it.
+    "httpx>=0.27",
+    # CLIProxyAPI's configuration is YAML, rendered by the panel.
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=24.10",
+    "pytest>=8.3",
+    "httpx>=0.27",
+    # A second opinion for scripts/scan_secrets: it knows many vendor key  # scan: allow
+    # formats that this repo's own rules do not. gitleaks is used the same way
+    # when it happens to be installed, but it is a Go binary and not required.
+    "detect-secrets>=1.5",
+]
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[project.scripts]
+nhub = "neutrino_hub.cli.entry:main"
+
+[tool.setuptools.packages.find]
+include = ["neutrino_hub*"]
+
+[tool.setuptools.package-data]
+neutrino_hub = [
+    "data/services/*",
+    "data/manifests/*.json",
+    "data/examples/*/*.json",
+    "data/frontend/**/*",
+    "data/resources/*",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Tests import the package from this directory, the same way an installed
+# hub does, so `pytest` works from a clean shell.
+pythonpath = ["."]
+addopts = "-ra --strict-markers"
+markers = [
+    "needs_root: shells out to a tool that will not run unprivileged, chiefly `nft -c`. Skipped automatically when the test run is not root.",
+]

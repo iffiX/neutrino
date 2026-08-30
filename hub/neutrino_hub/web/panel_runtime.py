@@ -1,0 +1,449 @@
+"""Shared runtime objects the panel's routes work through.
+
+One instance is built at startup and reached from every route. It owns the live
+things (session store, running jobs, pending client commands) and knows how to
+re-render and apply the configuration, so no route shells out to systemd or nft
+by itself.
+"""
+
+import asyncio
+import ipaddress
+from collections import deque
+
+from neutrino_hub.modules.router.dnsmasq_renderer import RouterDnsmasqRenderer
+from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
+from neutrino_hub.modules.router.link_status import RouterLinkStatus
+from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
+from neutrino_hub.modules.router.routes import (
+    RouterDefaultRouteApplier,
+    RouterInterfaceApplier,
+    RouterRulesetApplier,
+    lookup_xray_uid,
+)
+from neutrino_hub.modules.devices.registry import DeviceRegistry
+from neutrino_hub.modules.gitea.config import GiteaConfig
+from neutrino_hub.modules.gitea.ops import GiteaConfigApplier, GiteaSecretStore
+from neutrino_hub.modules.gitea.renderer import GiteaConfigRenderer
+from neutrino_hub.modules.podman.config import PodmanConfig
+from neutrino_hub.modules.podman.ops import (
+    PodmanQuadletApplier,
+    PodmanRegistriesApplier,
+)
+from neutrino_hub.modules.podman.renderer import PodmanQuadletRenderer
+from neutrino_hub.modules.samba.config import SambaConfig
+from neutrino_hub.modules.samba.ops import SambaConfigApplier, SambaUserManager
+from neutrino_hub.modules.samba.renderer import SambaConfigRenderer
+from neutrino_hub.system.systemd_ctl import SystemdServiceController
+from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
+from neutrino_hub.utils.json_file import read_config, write_config, write_generated
+from neutrino_hub.utils.subprocess_run import CommandError, run
+from neutrino_hub.web.auth import SessionStore
+from neutrino_hub.web.task_stream import TaskStreamRegistry
+from neutrino_hub.modules.xray.apply import XrayConfigApplier
+from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
+from neutrino_hub.modules.xray.node_config import XrayNodeList
+from neutrino_hub.modules.xray.node_probe import XrayNodeProbe
+from neutrino_hub.modules.xray.stats_client import XrayStatsClient
+
+from neutrino_hub.modules.router.constants import (
+    ROUTER_DNSMASQ_LINK_PATH,
+    ROUTER_DNSMASQ_PATH,
+    ROUTER_NFT_PATH,
+)
+
+DNSMASQ_SERVICE_NAME = "dnsmasq"
+PENDING_COMMAND_LIMIT = 32
+
+
+class PanelRuntime:
+    """Everything the routes share, plus the render-and-apply pipeline."""
+
+    def __init__(self):
+        settings = read_config("web/settings.json")
+        self.settings = settings
+        self.sessions = SessionStore(
+            password_hash=settings.get("admin_password_hash", ""),
+            session_ttl_hours=settings.get("session_ttl_hours", 168),
+        )
+        self.tasks = TaskStreamRegistry()
+        self.services = SystemdServiceController()
+        self.stats = XrayStatsClient()
+        self.node_probe = XrayNodeProbe()
+        self.devices = DeviceRegistry()
+        self.is_config_dirty = False
+        # Latest agent metrics, keyed by MAC. Runtime only: these are stale the
+        # moment the panel restarts, so they are never written to config/.
+        self.client_metrics: dict[str, dict] = {}
+        # Latest per-feature reconcile state an agent reported, keyed by MAC.
+        # Runtime only, for the same reason as the metrics.
+        self.client_features: dict[str, dict] = {}
+        # The platform tuple an agent last reported, keyed by MAC, so the panel
+        # can show only the features that platform can install.
+        self.client_platform: dict[str, dict] = {}
+        # Enrollment tickets a machine can join with, by token. Held in memory
+        # and short-lived on purpose: a join secret that survives a restart is
+        # a join secret lying around, and minting another takes one click.
+        self.enrollments: dict[str, dict] = {}
+        self._apply_lock = asyncio.Lock()
+        self._pending_commands: dict[str, deque] = {}
+
+    def network(self) -> RouterNetworkConfig:
+        """Read the current router configuration.
+
+        Returns:
+            Parsed ``config/router/network.json``, with the pre-roles shape
+            migrated on the way through.
+        """
+        return RouterNetworkConfig.from_dict(read_config("router/network.json"))
+
+    def write_network(self, network: RouterNetworkConfig) -> None:
+        """Store the router configuration.
+
+        Args:
+            network: The configuration to write. Always the whole file: it is
+                small, and a partial write would leave the roles inconsistent
+                with each other.
+        """
+        write_config("router/network.json", network.to_dict())
+
+    def routing(self) -> dict:
+        """Read the current routing configuration.
+
+        Returns:
+            Parsed ``config/xray/routing.json``.
+        """
+        return read_config("xray/routing.json")
+
+    def node_list(self) -> XrayNodeList:
+        """Read the current node list.
+
+        Returns:
+            Parsed ``config/xray/nodes.json``.
+        """
+        return XrayNodeList.from_dict(read_config("xray/nodes.json"))
+
+    def samba(self) -> SambaConfig:
+        """Read the current share configuration.
+
+        Returns:
+            Parsed ``config/samba/samba.json``.
+        """
+        return SambaConfig.from_dict(read_config("samba/samba.json"))
+
+    def write_samba(self, config: SambaConfig) -> None:
+        """Store a changed share configuration.
+
+        Args:
+            config: The configuration to write. Validated before it lands, so
+                ``config/`` never holds a file the renderer would refuse.
+        """
+        config.validate()
+        write_config("samba/samba.json", config.to_dict())
+
+    async def apply_samba(self) -> str:
+        """Render the share configuration, converge accounts, and load it.
+
+        Returns:
+            A short description of what was applied.
+
+        Raises:
+            CommandError: If rendering or applying fails. The running server
+                keeps its previous configuration when validation fails.
+        """
+        async with self._apply_lock:
+            return await asyncio.to_thread(self._apply_samba_blocking)
+
+    def podman(self) -> PodmanConfig:
+        """Read the declared containers.
+
+        Returns:
+            Parsed ``config/podman/podman.json``.
+        """
+        return PodmanConfig.from_dict(read_config("podman/podman.json"))
+
+    def write_podman(self, config: PodmanConfig) -> None:
+        """Store changed container declarations.
+
+        Args:
+            config: The configuration to write. Validated before it lands, so
+                ``config/`` never holds a file the renderer would refuse.
+        """
+        config.validate()
+        write_config("podman/podman.json", config.to_dict())
+
+    async def apply_podman(self) -> str:
+        """Render the Quadlet files and reconcile systemd with them.
+
+        Returns:
+            A short description of what was applied.
+
+        Raises:
+            CommandError: If systemd refuses a unit.
+        """
+        async with self._apply_lock:
+            return await asyncio.to_thread(self._apply_podman_blocking)
+
+    def gitea(self) -> GiteaConfig:
+        """Read the current git server configuration.
+
+        Returns:
+            Parsed ``config/gitea/gitea.json``.
+        """
+        return GiteaConfig.from_dict(read_config("gitea/gitea.json"))
+
+    def write_gitea(self, config: GiteaConfig) -> None:
+        """Store a changed git server configuration.
+
+        Args:
+            config: The configuration to write. Validated before it lands, so
+                ``config/`` never holds a file the renderer would refuse.
+        """
+        config.validate()
+        write_config("gitea/gitea.json", config.to_dict())
+
+    async def apply_gitea(self) -> str:
+        """Render ``app.ini`` and restart a running server on it.
+
+        Returns:
+            A short description of what was applied.
+
+        Raises:
+            CommandError: If rendering or applying fails.
+        """
+        async with self._apply_lock:
+            return await asyncio.to_thread(self._apply_gitea_blocking)
+
+    def link_status(self) -> RouterLinkStatus:
+        """Build a reader for the live state of the interfaces.
+
+        Returns:
+            A reader; it takes no configuration because it reports what the
+            system is doing, not what the config asked for.
+        """
+        return RouterLinkStatus()
+
+    def is_proxy_in_path(self) -> bool:
+        """Whether the proxy is actually carrying LAN traffic right now.
+
+        Read from the ruleset that was last applied rather than from
+        ``config/``, because the two disagree for as long as a change is saved
+        and not yet applied. The status strip has to answer "where is my
+        traffic going", and during that window the config would answer with
+        where it is *about* to go.
+
+        Returns:
+            True when the loaded firewall diverts LAN traffic into xray, and
+            when nothing has been applied yet, in which case the configured
+            intention is the best available answer.
+        """
+        try:
+            ruleset = ROUTER_NFT_PATH.read_text(encoding="utf-8")
+        except OSError:
+            return self.routing().get("is_proxy_enabled", True)
+        return "tproxy ip to" in ruleset
+
+    def uplink_address(self) -> str | None:
+        """The address of the uplink currently carrying traffic.
+
+        Returns:
+            The first configured WAN that has an address, or None when no
+            uplink is up. The dashboard shows this as "the WAN address"; with
+            several uplinks it is the one nearest the front of the list.
+        """
+        status = RouterLinkStatus()
+        for interface in self.network().wan_interfaces:
+            link = status.link(interface.device_name)
+            if link.ipv4_address:
+                return link.ipv4_address
+        return None
+
+    async def apply_all(self) -> str:
+        """Re-render every generated config and apply it.
+
+        Serialized behind a lock: two browser tabs hitting Apply at once must
+        not interleave an xray restart with an nftables reload.
+
+        Returns:
+            A short description of what was applied.
+
+        Raises:
+            CommandError: If rendering or applying fails. The running services
+                keep their previous configuration when validation fails.
+            ValueError: If the configuration itself is invalid.
+        """
+        async with self._apply_lock:
+            return await asyncio.to_thread(self._apply_all_blocking)
+
+    async def apply_network(self, *, only: str | None = None) -> str:
+        """Re-render the router and DHCP, and make the interface roles real.
+
+        The interface work is the part the render pipeline cannot do:
+        NetworkManager owns the addresses, so role, address and clone-MAC
+        changes are pushed to it here.
+
+        Args:
+            only: Apply just this interface's role, leaving the others as they
+                are. The firewall and DHCP are still re-rendered from the whole
+                configuration, because a single role change alters both. None
+                applies every interface.
+
+        Returns:
+            A short description of what was applied.
+
+        Raises:
+            CommandError: If rendering or applying fails.
+        """
+        async with self._apply_lock:
+            return await asyncio.to_thread(self._apply_network_blocking, only)
+
+    def queue_client_command(self, mac_address: str, command: dict) -> None:
+        """Queue a command for a device's agent to pick up.
+
+        Args:
+            mac_address: The device's MAC.
+            command: The command object handed back on the next heartbeat.
+        """
+        queue = self._pending_commands.setdefault(
+            mac_address.lower(), deque(maxlen=PENDING_COMMAND_LIMIT)
+        )
+        queue.append(command)
+
+    def take_client_commands(self, mac_address: str) -> list[dict]:
+        """Drain the queued commands for one device.
+
+        Args:
+            mac_address: The device's MAC.
+
+        Returns:
+            Every queued command, oldest first; the queue is left empty.
+        """
+        queue = self._pending_commands.get(mac_address.lower())
+        if not queue:
+            return []
+        commands = list(queue)
+        queue.clear()
+        return commands
+
+    def _apply_all_blocking(self) -> str:
+        network = self.network()
+        routing = self.routing()
+        node_list = self.node_list()
+
+        xray_config = XrayConfigRenderer(
+            node_list=node_list,
+            routing=routing,
+            lan_address=network.primary_lan_address,
+        ).render()
+        nft_ruleset = RouterNftRenderer(
+            network=network, routing=routing, xray_uid=lookup_xray_uid()
+        ).render()
+        dnsmasq_config = RouterDnsmasqRenderer(
+            network=network, routing=routing
+        ).render()
+
+        XrayConfigApplier().apply(xray_config)
+        write_generated(ROUTER_NFT_PATH, nft_ruleset)
+        RouterRulesetApplier().apply(nft_ruleset)
+        write_generated(ROUTER_DNSMASQ_PATH, dnsmasq_config)
+        self._link_dnsmasq_config()
+        run(["systemctl", "restart", DNSMASQ_SERVICE_NAME])
+
+        self.is_config_dirty = False
+        return (
+            f"applied {len(node_list.enabled_nodes)} nodes, "
+            f"strategy {node_list.strategy}"
+        )
+
+    def _apply_network_blocking(self, only: str | None) -> str:
+        network = self.network()
+        routing = self.routing()
+
+        nft_ruleset = RouterNftRenderer(
+            network=network, routing=routing, xray_uid=lookup_xray_uid()
+        ).render()
+        dnsmasq_config = RouterDnsmasqRenderer(
+            network=network, routing=routing
+        ).render()
+
+        write_generated(ROUTER_NFT_PATH, nft_ruleset)
+        RouterRulesetApplier().apply(nft_ruleset)
+        write_generated(ROUTER_DNSMASQ_PATH, dnsmasq_config)
+        self._link_dnsmasq_config()
+
+        # The interface must carry its new address before dnsmasq is told to
+        # bind it, or the restart fails with nothing to listen on. This is also
+        # the step that drops the connection the request arrived on, when a LAN
+        # address is what changed.
+        applier = RouterInterfaceApplier(network=network)
+        if only is None:
+            changes = applier.apply_all()
+        else:
+            interface = network.interface(only)
+            if interface is None:
+                raise CommandError(f"{only!r} is not a configured interface")
+            changes = applier.apply(interface)
+            changes += RouterDefaultRouteApplier(network=network).apply()
+        run(["systemctl", "restart", DNSMASQ_SERVICE_NAME])
+
+        self.is_config_dirty = False
+        summary = "; ".join(changes) if changes else "no interface change"
+        return f"applied network ({summary})"
+
+    def _apply_samba_blocking(self) -> str:
+        config = self.samba()
+        config.validate()
+        # The LAN subnets go into hosts allow, the second fence behind the
+        # firewall's own; both change together when the LAN does. Normalised to
+        # the network address — cidr is the gateway's own host form.
+        subnets = [
+            str(ipaddress.ip_network(interface.lan.cidr, strict=False))
+            for interface in self.network().lan_interfaces
+        ]
+        rendered = SambaConfigRenderer(config=config, lan_subnets=subnets).render()
+        notes = SambaUserManager().converge(config.users)
+        summary = SambaConfigApplier().apply(rendered, config=config)
+        if notes:
+            summary += "; " + "; ".join(notes)
+        return summary
+
+    def _apply_podman_blocking(self) -> str:
+        config = self.podman()
+        config.validate()
+        renderer = PodmanQuadletRenderer(config=config)
+        mirror_note = PodmanRegistriesApplier().apply(renderer.render_registries())
+        autostart = [
+            container.name for container in config.containers if container.is_autostart
+        ]
+        note = PodmanQuadletApplier().apply(
+            renderer.render(), autostart_names=autostart
+        )
+        return f"{note}; {mirror_note}"
+
+    def _apply_gitea_blocking(self) -> str:
+        config = self.gitea()
+        config.validate()
+        rendered = GiteaConfigRenderer(
+            config=config,
+            lan_address=self.network().primary_lan_address,
+            secrets=GiteaSecretStore().load(),
+        ).render()
+        return GiteaConfigApplier().apply(rendered)
+
+    def _link_dnsmasq_config(self) -> None:
+        if ROUTER_DNSMASQ_LINK_PATH.is_symlink():
+            return
+        ROUTER_DNSMASQ_LINK_PATH.parent.mkdir(parents=True, exist_ok=True)
+        ROUTER_DNSMASQ_LINK_PATH.unlink(missing_ok=True)
+        ROUTER_DNSMASQ_LINK_PATH.symlink_to(ROUTER_DNSMASQ_PATH)
+
+
+def generated_dir_exists() -> bool:
+    """Whether the generated-config directory has been created.
+
+    Returns:
+        True once the installer has run at least once.
+    """
+    return UTILS_GENERATED_DIR.is_dir()
+
+
+__all__ = ["PanelRuntime", "generated_dir_exists", "CommandError"]

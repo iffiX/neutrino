@@ -1,0 +1,88 @@
+.app_shell {
+  min-height: 100vh;
+  padding-left: var(--sidebar-width);
+}
+
+/* The window's height, exactly — not at least. A page can then ask to fill what
+   is left of it (the Terminal does), which needs a height to divide up rather
+   than one that grows to fit whatever it is given. */
+.app_shell_main {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* So scrolling happens here rather than on the window, which also keeps the
+   status bar in place without it having to stick. */
+.app_shell_body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-6);
+  /* No fill mode: a kept transform would make this the containing block
+     for every position: fixed descendant — modals would anchor to the
+     scrolled content instead of the window. */
+  animation: fade_in_up 260ms ease;
+}
+
+.app_shell_glow {
+  position: fixed;
+  z-index: 0;
+  width: 520px;
+  height: 520px;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.16;
+  pointer-events: none;
+}
+
+.app_shell_glow--cyan {
+  top: -180px;
+  right: 8%;
+  background: var(--color-accent);
+  animation: drift 26s ease-in-out infinite;
+}
+
+.app_shell_glow--violet {
+  bottom: -240px;
+  left: 22%;
+  background: var(--color-accent-secondary);
+  animation: drift 34s ease-in-out infinite reverse;
+}
+
+.app_shell_content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.app_shell_terminal {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.app_shell_terminal--hidden {
+  display: none;
+}
+
+@media (max-width: 1024px) {
+  .app_shell {
+    padding-left: var(--sidebar-width-compact);
+  }
+
+  .app_shell_body {
+    padding: var(--space-5);
+  }
+}
+
+@media (max-width: 720px) {
+  .app_shell_body {
+    padding: var(--space-4);
+  }
+}

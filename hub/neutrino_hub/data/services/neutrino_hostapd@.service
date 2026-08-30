@@ -1,0 +1,28 @@
+[Unit]
+Description=Neutrino Hub Wi-Fi access point on %i
+Documentation=file://@REPO_ROOT@/docs/config.md
+# The address has to be on the interface before dnsmasq tries to serve it, and
+# the firewall has to know about the interface before it carries anything.
+After=network-pre.target neutrino_router.service
+Wants=network-pre.target
+Before=dnsmasq.service
+
+[Service]
+Type=simple
+# hostapd does no addressing, and NetworkManager has been told to leave this
+# interface alone, so the unit puts the address on itself. Doing it here rather
+# than from the panel is what brings the access point back after a reboot.
+EnvironmentFile=/etc/neutrino/generated/hostapd_%i.env
+# Flush first: a radio that was an uplink a moment ago still carries the
+# address it had upstream, and `replace` only touches the one address it is
+# given.
+ExecStartPre=-/usr/sbin/ip address flush dev %i
+ExecStartPre=/usr/sbin/ip address replace ${AP_ADDRESS} dev %i
+ExecStartPre=/usr/sbin/ip link set %i up
+ExecStart=/usr/sbin/hostapd /etc/neutrino/generated/hostapd_%i.conf
+ExecStopPost=-/usr/sbin/ip address flush dev %i
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

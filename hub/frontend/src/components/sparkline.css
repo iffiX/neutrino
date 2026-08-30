@@ -1,0 +1,47 @@
+.sparkline {
+  display: block;
+  overflow: visible;
+}
+
+.sparkline_area {
+  fill: var(--sparkline-color);
+  opacity: 0.14;
+}
+
+.sparkline_line {
+  fill: none;
+  stroke: var(--sparkline-color);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sparkline_head {
+  fill: var(--sparkline-color);
+}
+
+.sparkline--accent {
+  --sparkline-color: var(--color-accent);
+}
+
+.sparkline--secondary {
+  --sparkline-color: var(--color-accent-secondary);
+}
+
+.sparkline--ok {
+  --sparkline-color: var(--color-ok);
+}
+
+.sparkline--warn {
+  --sparkline-color: var(--color-warn);
+}
+
+.sparkline--error {
+  --sparkline-color: var(--color-error);
+}
+
+.sparkline_empty {
+  color: var(--color-text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}

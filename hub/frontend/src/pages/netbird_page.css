@@ -1,0 +1,116 @@
+.netbird_identity {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+}
+
+.netbird_fact {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.netbird_fact_value {
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.netbird_join {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  max-width: 760px;
+}
+
+.netbird_join > .password_input,
+.netbird_join > .input {
+  flex: 1;
+  min-width: 220px;
+}
+
+.netbird_subnets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.netbird_subnet_chip {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: 4px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.netbird_subnet_chip:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.netbird_peers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.netbird_peer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.netbird_peer_name {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-width: 160px;
+}
+
+.netbird_peer_ip {
+  color: var(--color-text-muted);
+}
+
+.netbird_peer_latency {
+  margin-left: auto;
+  color: var(--color-text-faint);
+  font-size: 12px;
+}
+
+.netbird_reconfigure {
+  margin-left: auto;
+}
+
+.netbird_steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-5);
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+/* Names of things to press in the NetBird console. */
+.netbird_steps strong,
+.settings_group .field_hint strong {
+  color: var(--color-accent);
+  font-weight: 600;
+}

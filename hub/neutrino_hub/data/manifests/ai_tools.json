@@ -1,0 +1,44 @@
+{
+  "_comment": "Points this machine's AI tools at the hub through cc-switch, which is what people already use to keep several providers on one machine. Two steps, offered separately: installing cc-switch, and activating — registering the hub in it as a provider and switching to it. Activating keeps a copy of each tool's configuration as it stood, and deactivating puts that copy back exactly, leaving cc-switch and its other providers in place. An existing cc-switch, desktop app or CLI, is detected rather than reinstalled; the two share one store, so a provider registered by the CLI shows up in the desktop app.",
+  "name": "ai_tools",
+  "title": "AI tools",
+  "kind": "ai_tools",
+  "description": "cc-switch, with this hub as a provider for Claude Code, Codex and Gemini",
+  "_comment_switcher": "cc-switch-cli shares its store with the cc-switch desktop app, so installing either shows the same providers. Assets are published for x86_64 and aarch64 only; the platforms absent here fall back to direct config writes.",
+  "platforms": {
+    "linux-amd64": {
+      "switcher": {
+        "github_repo": "SaladDay/cc-switch-cli",
+        "asset_pattern": "linux-x64.tar.gz",
+        "package_kind": "tar_binary",
+        "binary": "cc-switch"
+      }
+    },
+    "linux-arm64": {
+      "switcher": {
+        "github_repo": "SaladDay/cc-switch-cli",
+        "asset_pattern": "linux-arm64.tar.gz",
+        "package_kind": "tar_binary",
+        "binary": "cc-switch"
+      }
+    },
+    "darwin": {
+      "switcher": {
+        "github_repo": "SaladDay/cc-switch-cli",
+        "asset_pattern": "darwin-universal.tar.gz",
+        "package_kind": "tar_binary",
+        "binary": "cc-switch"
+      }
+    },
+    "windows-amd64": {
+      "switcher": {
+        "github_repo": "SaladDay/cc-switch-cli",
+        "asset_pattern": "windows-x64.zip",
+        "package_kind": "zip_binary",
+        "binary": "cc-switch.exe"
+      }
+    }
+  },
+  "verify": {},
+  "has_activation": true
+}

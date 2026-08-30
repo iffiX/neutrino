@@ -1,0 +1,94 @@
+/* Stays put because the page scrolls beneath it rather than around it: the
+   scrolling element is .app_shell_body, and this sits above it. */
+.top_bar {
+  z-index: 15;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--top-bar-height);
+  padding: var(--space-2) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  background: rgb(10 14 20 / 88%);
+  backdrop-filter: blur(12px);
+}
+
+.top_bar_page {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.top_bar_page_title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.top_bar_page_sub {
+  color: var(--color-text-faint);
+  font-size: 11px;
+}
+
+.top_bar_meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.top_bar_chip {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.top_bar_chip_key {
+  color: var(--color-text-faint);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.top_bar_chip_value {
+  color: var(--color-text);
+}
+
+.top_bar_chip--proxy {
+  border-color: rgb(34 211 238 / 45%);
+  background: var(--color-accent-wash);
+}
+
+.top_bar_chip--proxy .top_bar_chip_value {
+  color: var(--color-accent);
+}
+
+.top_bar_chip--offline .top_bar_chip_value {
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 720px) {
+  .top_bar {
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .top_bar_page_sub {
+    display: none;
+  }
+}
+
+/* The proxy is switched off. Not an error and not an exit — the traffic is
+   going out unproxied, on purpose, and the strip says which. */
+.top_bar_chip--direct {
+  border-color: rgb(251 191 36 / 45%);
+  background: var(--color-warn-wash);
+  color: var(--color-warn);
+}

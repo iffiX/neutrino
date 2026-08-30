@@ -1,0 +1,20 @@
+[Unit]
+Description=Neutrino Hub agent
+Documentation=file:///opt/neutrino_agent/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Runs as root: the supported actions are reboot, poweroff, and installing
+# packages, all of which need it.
+User=root
+WorkingDirectory=/opt/neutrino_agent
+Environment=PYTHONPATH=/opt/neutrino_agent
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -m neutrino_agent.cli
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

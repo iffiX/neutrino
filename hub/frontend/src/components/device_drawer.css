@@ -1,0 +1,198 @@
+.device_drawer_backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--color-overlay);
+  backdrop-filter: blur(3px);
+  animation: fade_in_up 160ms ease both;
+}
+
+.device_drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  width: min(540px, 100%);
+  border-left: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  box-shadow: -30px 0 80px -40px rgb(0 0 0 / 90%);
+  animation: slide_in_right 220ms ease both;
+}
+
+.device_drawer_head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-elevated);
+}
+
+.device_drawer_identity {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  min-width: 0;
+}
+
+.device_drawer_icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgb(34 211 238 / 40%);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-wash);
+  color: var(--color-accent);
+}
+
+.device_drawer_titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.device_drawer_title {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device_drawer_subtitle {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.device_drawer_body {
+  display: flex;
+  overflow-y: auto;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-5);
+}
+
+.device_drawer_section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.device_drawer_icons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.device_drawer_icon_option {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.device_drawer_icon_option:hover {
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.device_drawer_icon_option--selected {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+.device_drawer_actions {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.device_drawer_actions .button {
+  min-width: 0;
+  justify-content: flex-start;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device_drawer_log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.device_drawer_log_output {
+  overflow: auto;
+  max-height: 240px;
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.device_drawer_log_head {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.device_drawer_footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-elevated);
+}
+
+@media (max-width: 720px) {
+  .device_drawer {
+    width: 100%;
+  }
+
+  .device_drawer_body {
+    padding: var(--space-4);
+  }
+}
+
+.device_drawer_newkey {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}

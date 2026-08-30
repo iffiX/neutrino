@@ -1,0 +1,24 @@
+{
+  "_comment": "The SSH server, which is what lets the gateway manage a machine directly rather than only through the agent. Every platform has one built in, so nothing is downloaded: each is enabled the way its own system does it.",
+  "name": "openssh_server",
+  "title": "OpenSSH server",
+  "kind": "openssh",
+  "description": "Lets the gateway manage this machine directly over SSH",
+  "platforms": {
+    "linux-debian": {
+      "packages": [
+        "openssh-server"
+      ],
+      "service": "ssh"
+    },
+    "linux-rhel": {
+      "packages": [
+        "openssh-server"
+      ],
+      "service": "sshd"
+    },
+    "windows": {},
+    "darwin": {}
+  },
+  "is_removable": false
+}

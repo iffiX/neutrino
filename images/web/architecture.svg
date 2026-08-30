@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1020 470" width="1020" height="470" role="img" aria-label="Outside connects through NetBird to one Neutrino Hub, which fronts AI, storage, devices and services">
+  <title>Neutrino: one hub between you and everything you run</title>
+
+  <defs>
+    <!-- Pink out there, cyan in here: the gradient runs the way the reader
+         travels, from the world that blocks them to the one they control. -->
+    <linearGradient id="wordmark" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#f0158a"/>
+      <stop offset="50%" stop-color="#c040d0"/>
+      <stop offset="100%" stop-color="#22d3ee"/>
+    </linearGradient>
+    <linearGradient id="inbound" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#f0158a"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="outbound" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#22d3ee"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1020" height="470" fill="#000000"/>
+
+  <text x="130" y="38" fill="#f0158a" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="600" letter-spacing="3" text-anchor="middle">OUTSIDE</text>
+  <text x="510" y="38" fill="#c040d0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="600" letter-spacing="3" text-anchor="middle">ONE BOX AT HOME</text>
+  <text x="875" y="38" fill="#22d3ee" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="600" letter-spacing="3" text-anchor="middle">INSIDE</text>
+
+  <!-- Out there, where reaching your own things is the first problem. -->
+  <g>
+    <rect x="40" y="120" width="180" height="62" rx="10" fill="#0c060a" stroke="#f0158a" stroke-width="5" opacity="0.18"/>
+    <rect x="40" y="120" width="180" height="62" rx="10" fill="none" stroke="#f0158a" stroke-width="1.4"/>
+    <text x="130" y="149" fill="#ffe6f4" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="600" text-anchor="middle">Laptop</text>
+    <text x="130" y="168" fill="#b58aa4" font-family="Inter, system-ui, sans-serif" font-size="12" text-anchor="middle">anywhere with a network</text>
+
+    <rect x="40" y="204" width="180" height="62" rx="10" fill="#0c060a" stroke="#f0158a" stroke-width="5" opacity="0.18"/>
+    <rect x="40" y="204" width="180" height="62" rx="10" fill="none" stroke="#f0158a" stroke-width="1.4"/>
+    <text x="130" y="233" fill="#ffe6f4" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="600" text-anchor="middle">Phone · Tablet</text>
+    <text x="130" y="252" fill="#b58aa4" font-family="Inter, system-ui, sans-serif" font-size="12" text-anchor="middle">the panel is a web page</text>
+
+    <rect x="40" y="288" width="180" height="62" rx="10" fill="#0c060a" stroke="#f0158a" stroke-width="5" opacity="0.18"/>
+    <rect x="40" y="288" width="180" height="62" rx="10" fill="none" stroke="#f0158a" stroke-width="1.4"/>
+    <text x="130" y="317" fill="#ffe6f4" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="600" text-anchor="middle">A machine at work</text>
+    <text x="130" y="336" fill="#b58aa4" font-family="Inter, system-ui, sans-serif" font-size="12" text-anchor="middle">still yours, still reachable</text>
+  </g>
+
+  <g>
+    <path d="M 232 235 L 372 235" fill="none" stroke="url(#inbound)" stroke-width="8" opacity="0.22"/>
+    <path d="M 232 235 L 372 235" fill="none" stroke="url(#inbound)" stroke-width="3" stroke-dasharray="10 7" stroke-linecap="round"/>
+    <path d="M 374 235 l -13 -6 l 0 12 z" fill="#8b5cf6"/>
+    <text x="302" y="222" fill="#a9b6c6" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12.5" text-anchor="middle">NetBird</text>
+  </g>
+
+  <!-- The hub, where the two sides meet. The wordmark leans the way it does
+       on the banner; skewX guarantees it rather than trusting a font to
+       carry an italic the reader's machine may not have. -->
+  <g>
+    <rect x="380" y="150" width="260" height="170" rx="16" fill="#07080c" stroke="url(#wordmark)" stroke-width="9" opacity="0.2"/>
+    <rect x="380" y="150" width="260" height="170" rx="16" fill="none" stroke="url(#wordmark)" stroke-width="2"/>
+    <g transform="translate(510 214) skewX(-12)">
+      <text x="0" y="0" fill="url(#wordmark)" font-family="Inter, Montserrat, system-ui, 'Helvetica Neue', sans-serif" font-size="36" font-weight="800" font-style="italic" letter-spacing="1" text-anchor="middle">NEUTRINO</text>
+    </g>
+    <g transform="translate(510 240) skewX(-12)">
+      <text x="0" y="0" fill="#c040d0" font-family="Inter, Montserrat, system-ui, sans-serif" font-size="14" font-weight="700" font-style="italic" letter-spacing="6" text-anchor="middle">HUB</text>
+    </g>
+    <line x1="416" y1="260" x2="604" y2="260" stroke="#2b3648" stroke-width="1"/>
+    <text x="510" y="282" fill="#8fa3b8" font-family="Inter, system-ui, sans-serif" font-size="12.5" text-anchor="middle">one always-on Debian box</text>
+    <text x="510" y="301" fill="#8fa3b8" font-family="Inter, system-ui, sans-serif" font-size="12.5" text-anchor="middle">a Raspberry Pi is enough</text>
+  </g>
+
+  <g fill="none" stroke="url(#outbound)" stroke-width="1.6">
+    <path d="M 648 235 L 690 235" opacity="0.9"/>
+    <path d="M 690 235 L 690 88 L 736 88"/>
+    <path d="M 690 235 L 690 186 L 736 186"/>
+    <path d="M 690 235 L 690 284 L 736 284"/>
+    <path d="M 690 235 L 690 382 L 736 382"/>
+  </g>
+  <g fill="#22d3ee">
+    <path d="M 736 88 l -10 -4.5 l 0 9 z"/>
+    <path d="M 736 186 l -10 -4.5 l 0 9 z"/>
+    <path d="M 736 284 l -10 -4.5 l 0 9 z"/>
+    <path d="M 736 382 l -10 -4.5 l 0 9 z"/>
+  </g>
+
+  <!-- Inside, where everything is yours again. -->
+  <g>
+    <rect x="744" y="58" width="236" height="62" rx="10" fill="#06090d" stroke="#22d3ee" stroke-width="5" opacity="0.16"/>
+    <rect x="744" y="58" width="236" height="62" rx="10" fill="none" stroke="#22d3ee" stroke-width="1.4"/>
+    <text x="764" y="86" fill="#e6f6ff" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="600">AI</text>
+    <text x="764" y="106" fill="#7c9bb5" font-family="Inter, system-ui, sans-serif" font-size="11.5">providers · tokens · Claude Code</text>
+
+    <rect x="744" y="156" width="236" height="62" rx="10" fill="#06090d" stroke="#22d3ee" stroke-width="5" opacity="0.16"/>
+    <rect x="744" y="156" width="236" height="62" rx="10" fill="none" stroke="#22d3ee" stroke-width="1.4"/>
+    <text x="764" y="184" fill="#e6f6ff" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="600">Storage</text>
+    <text x="764" y="204" fill="#7c9bb5" font-family="Inter, system-ui, sans-serif" font-size="11.5">ZFS pools · datasets · Samba shares</text>
+
+    <rect x="744" y="254" width="236" height="62" rx="10" fill="#06090d" stroke="#22d3ee" stroke-width="5" opacity="0.16"/>
+    <rect x="744" y="254" width="236" height="62" rx="10" fill="none" stroke="#22d3ee" stroke-width="1.4"/>
+    <text x="764" y="282" fill="#e6f6ff" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="600">Devices</text>
+    <text x="764" y="302" fill="#7c9bb5" font-family="Inter, system-ui, sans-serif" font-size="11.5">workstation · GPU box · Raspberry Pi</text>
+
+    <rect x="744" y="352" width="236" height="62" rx="10" fill="#06090d" stroke="#22d3ee" stroke-width="5" opacity="0.16"/>
+    <rect x="744" y="352" width="236" height="62" rx="10" fill="none" stroke="#22d3ee" stroke-width="1.4"/>
+    <text x="764" y="380" fill="#e6f6ff" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="600">Services</text>
+    <text x="764" y="400" fill="#7c9bb5" font-family="Inter, system-ui, sans-serif" font-size="11.5">Gitea · containers · SSH · shares</text>
+  </g>
+
+  <text x="510" y="447" fill="#6b7d92" font-family="Inter, system-ui, sans-serif" font-size="13" text-anchor="middle">One hub. Everything else stays where it already belongs.</text>
+</svg>

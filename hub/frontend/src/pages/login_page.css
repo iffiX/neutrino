@@ -1,0 +1,197 @@
+.login_page {
+  position: relative;
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  min-height: 100vh;
+  padding: var(--space-5);
+}
+
+.login_backdrop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.login_backdrop::before {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  background-image:
+    linear-gradient(var(--color-border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-border) 1px, transparent 1px);
+  background-size: 46px 46px;
+  opacity: 0.24;
+  mask-image: radial-gradient(circle at 50% 45%, black, transparent 68%);
+}
+
+.login_orb {
+  position: absolute;
+  width: 460px;
+  height: 460px;
+  border-radius: 50%;
+  filter: blur(100px);
+  opacity: 0.22;
+}
+
+.login_orb--cyan {
+  top: -14%;
+  left: 12%;
+  background: var(--color-accent);
+  animation: drift 22s ease-in-out infinite;
+}
+
+.login_orb--violet {
+  right: 8%;
+  bottom: -18%;
+  background: var(--color-accent-secondary);
+  animation: drift 30s ease-in-out infinite reverse;
+}
+
+.login_card {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  width: min(400px, 100%);
+  padding: var(--space-6);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: rgb(17 23 33 / 92%);
+  backdrop-filter: blur(14px);
+  box-shadow:
+    0 0 0 1px rgb(34 211 238 / 12%),
+    0 40px 90px -40px rgb(0 0 0 / 95%);
+  animation: fade_in_up 320ms ease both;
+}
+
+.login_brand {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.login_brand_mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-wash);
+  color: var(--color-accent);
+  box-shadow: 0 0 26px -8px var(--color-accent);
+}
+
+.login_brand_text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.login_brand_name {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.login_brand_sub {
+  color: var(--color-text-faint);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.login_form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.login_submit {
+  justify-content: center;
+  width: 100%;
+  padding: 10px 14px;
+}
+
+/* --- Lockdown: the orbs go out and the grid itself becomes red laser
+       lines, the whole lattice breathing as one --- */
+
+.login_page--lockdown .login_orb {
+  display: none;
+}
+
+/* The sharp cores of the lines. */
+.login_page--lockdown .login_backdrop::before {
+  background-image:
+    linear-gradient(rgb(255 66 82 / 95%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 66 82 / 95%) 1px, transparent 1px);
+  opacity: 1;
+  animation: login_lockdown_pulse 4s ease-in-out infinite;
+}
+
+/* The same lattice again, blurred, which is what makes the cores read as
+   light rather than ink. */
+.login_page--lockdown .login_backdrop::after {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  background-image:
+    linear-gradient(rgb(255 66 82 / 85%) 2px, transparent 2px),
+    linear-gradient(90deg, rgb(255 66 82 / 85%) 2px, transparent 2px);
+  background-size: 46px 46px;
+  filter: blur(5px);
+  mask-image: radial-gradient(circle at 50% 45%, black, transparent 68%);
+  animation: login_lockdown_pulse 4s ease-in-out infinite;
+}
+
+.login_page--lockdown .login_card {
+  border-color: rgb(255 66 82 / 45%);
+  background: #000;
+}
+
+.login_page--lockdown .login_brand_mark {
+  border-color: var(--color-error);
+  background: rgb(255 66 82 / 10%);
+  color: var(--color-error);
+  box-shadow: 0 0 26px -8px var(--color-error);
+}
+
+@keyframes login_lockdown_pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.login_lockdown {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-4) 0;
+  text-align: center;
+}
+
+.login_lockdown_icon {
+  color: var(--color-error);
+}
+
+.login_lockdown_clock {
+  color: var(--color-error);
+  font-family: var(--font-mono);
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.login_lockdown_text {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}

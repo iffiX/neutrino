@@ -1,0 +1,114 @@
+.stat_tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  overflow: hidden;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  transition: border-color var(--transition-base);
+}
+
+.stat_tile::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--stat-tile-color),
+    transparent
+  );
+  opacity: 0.6;
+}
+
+.stat_tile:hover {
+  border-color: var(--color-border-strong);
+}
+
+.stat_tile--accent {
+  --stat-tile-color: var(--color-accent);
+}
+
+.stat_tile--secondary {
+  --stat-tile-color: var(--color-accent-secondary);
+}
+
+.stat_tile--ok {
+  --stat-tile-color: var(--color-ok);
+}
+
+.stat_tile--warn {
+  --stat-tile-color: var(--color-warn);
+}
+
+.stat_tile--error {
+  --stat-tile-color: var(--color-error);
+}
+
+.stat_tile_head {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--color-text-muted);
+}
+
+.stat_tile_icon {
+  color: var(--stat-tile-color);
+}
+
+.stat_tile_label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.stat_tile_value {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  font-family: var(--font-mono);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.stat_tile_unit {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.stat_tile_detail {
+  color: var(--color-text-faint);
+  font-size: 12px;
+}
+
+.stat_tile_meter {
+  overflow: hidden;
+  width: 100%;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--color-border);
+}
+
+.stat_tile_meter_fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--stat-tile-color);
+  box-shadow: 0 0 12px -2px var(--stat-tile-color);
+  transition: width var(--transition-base);
+}
+
+.stat_tile_grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}

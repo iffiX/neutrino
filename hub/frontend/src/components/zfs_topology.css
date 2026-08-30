@@ -1,0 +1,200 @@
+.zfs_topology {
+  display: block;
+  width: 100%;
+  min-width: 720px;
+  height: auto;
+}
+
+.zfs_lane_title {
+  text-anchor: start;
+}
+
+.zfs_empty {
+  fill: var(--color-text-faint);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  text-anchor: middle;
+}
+
+/* Shared node text, sized exactly as the network diagram sizes its nodes. */
+.zfs_node_name {
+  fill: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.zfs_disk_name {
+  fill: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.zfs_node_detail {
+  fill: var(--color-text-faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.zfs_note--warn {
+  fill: var(--color-warn);
+}
+
+.zfs_note--bad {
+  fill: var(--color-error);
+}
+
+/* --- Edges: bright dashes flow from the disks toward the pool; dead paths
+       hang dim and dotted; a resilver runs amber --- */
+
+.zfs_edge {
+  fill: none;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.zfs_edge--live {
+  stroke: var(--color-ok);
+  stroke-dasharray: 5 7;
+  filter: drop-shadow(0 0 4px rgb(52 211 153 / 35%));
+  animation: zfs_flow_upstream 1.6s linear infinite;
+}
+
+.zfs_edge--idle {
+  stroke: var(--color-text-faint);
+  stroke-dasharray: 3 6;
+  opacity: 0.7;
+}
+
+.zfs_edge--bad {
+  stroke: var(--color-error);
+  stroke-dasharray: 3 6;
+}
+
+.zfs_edge--resilver {
+  stroke: var(--color-warn);
+  stroke-width: 1.6;
+  stroke-dasharray: 5 7;
+  filter: drop-shadow(0 0 4px rgb(251 191 36 / 35%));
+  animation: zfs_flow_upstream 1.2s linear infinite;
+}
+
+/* Paths are drawn pool-to-disk, so a positive offset moves the dashes
+   backwards along them: from the disks up toward the pool. */
+@keyframes zfs_flow_upstream {
+  to {
+    stroke-dashoffset: 24;
+  }
+}
+
+/* --- Pool --- */
+
+.zfs_pool rect {
+  fill: var(--color-surface);
+  stroke: var(--color-border-strong);
+  stroke-width: 1.4;
+}
+
+.zfs_pool--ok rect {
+  stroke: rgb(52 211 153 / 55%);
+}
+
+.zfs_pool--warn rect {
+  stroke: var(--color-warn);
+  filter: drop-shadow(0 0 10px rgb(251 191 36 / 25%));
+}
+
+.zfs_pool--bad rect {
+  stroke: var(--color-error);
+  filter: drop-shadow(0 0 10px rgb(248 113 113 / 30%));
+}
+
+/* The same 3px meter every tile uses: border track, glowing fill. */
+.zfs_capacity_track {
+  fill: var(--color-border);
+}
+
+.zfs_capacity_fill--ok {
+  fill: var(--color-ok);
+  filter: drop-shadow(0 0 6px var(--color-ok));
+}
+
+.zfs_capacity_fill--warn {
+  fill: var(--color-warn);
+  filter: drop-shadow(0 0 6px var(--color-warn));
+}
+
+/* --- vdev --- */
+
+.zfs_vdev rect {
+  fill: var(--color-surface);
+  stroke: var(--color-border-strong);
+}
+
+.zfs_vdev--warn rect {
+  stroke: var(--color-warn);
+}
+
+.zfs_vdev--bad rect {
+  stroke: var(--color-error);
+}
+
+/* --- Disk bars: one shape for every disk, pooled or waiting --- */
+
+.zfs_disk rect {
+  fill: var(--color-surface);
+  stroke: var(--color-border-strong);
+  transition: stroke var(--transition-fast);
+}
+
+.zfs_disk--dashed rect {
+  fill: var(--color-bg);
+  stroke: var(--color-border);
+  stroke-dasharray: 4 5;
+}
+
+.zfs_disk--clickable {
+  cursor: pointer;
+}
+
+.zfs_disk--clickable:hover rect {
+  stroke: var(--color-text-muted);
+}
+
+.zfs_disk--bad rect {
+  stroke: var(--color-error);
+}
+
+.zfs_disk--selected rect {
+  stroke: var(--color-text);
+  stroke-width: 1.2;
+}
+
+.zfs_disk--clickable:focus {
+  outline: none;
+}
+
+.zfs_disk--clickable:focus-visible rect {
+  stroke: var(--color-text);
+}
+
+/* The same dot the rest of the panel uses for status: colored, glowing when
+   it has something to say, flat when idle. */
+.zfs_disk_dot {
+  fill: var(--color-text-faint);
+}
+
+.zfs_disk--ok .zfs_disk_dot {
+  fill: var(--color-ok);
+  filter: drop-shadow(0 0 5px var(--color-ok));
+}
+
+.zfs_disk--warn .zfs_disk_dot {
+  fill: var(--color-warn);
+  filter: drop-shadow(0 0 5px var(--color-warn));
+}
+
+.zfs_disk--bad .zfs_disk_dot {
+  fill: var(--color-error);
+  filter: drop-shadow(0 0 5px var(--color-error));
+}

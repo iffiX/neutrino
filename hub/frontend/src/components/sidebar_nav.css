@@ -1,0 +1,199 @@
+.sidebar_nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  width: var(--sidebar-width);
+  height: 100vh;
+  border-right: 1px solid var(--color-border);
+  background: linear-gradient(180deg, var(--color-surface), var(--color-bg));
+}
+
+.sidebar_brand {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  height: var(--top-bar-height);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sidebar_brand_mark {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-wash);
+  color: var(--color-accent);
+  box-shadow: 0 0 20px -6px var(--color-accent);
+}
+
+.sidebar_brand_text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.sidebar_brand_name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.sidebar_brand_sub {
+  color: var(--color-text-faint);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.sidebar_items {
+  display: flex;
+  overflow-y: auto;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-4) var(--space-3);
+}
+
+.sidebar_item {
+  position: relative;
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  padding: 9px var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.sidebar_item::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -12px;
+  width: 2px;
+  height: 0;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  transform: translateY(-50%);
+  transition:
+    height var(--transition-base),
+    box-shadow var(--transition-base);
+}
+
+.sidebar_item:hover {
+  background: var(--color-elevated);
+  color: var(--color-text);
+}
+
+.sidebar_item--active {
+  background: var(--color-accent-wash);
+  color: var(--color-accent);
+}
+
+.sidebar_item--active::before {
+  height: 22px;
+  box-shadow: 0 0 14px 1px var(--color-accent);
+}
+
+.sidebar_item_icon {
+  flex: none;
+}
+
+.sidebar_footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.sidebar_logout {
+  justify-content: flex-start;
+  width: 100%;
+}
+
+@media (max-width: 1024px) {
+  .sidebar_nav {
+    width: var(--sidebar-width-compact);
+  }
+
+  .sidebar_brand {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .sidebar_brand_text,
+  .sidebar_item_label,
+  .sidebar_logout_label {
+    display: none;
+  }
+
+  .sidebar_item {
+    justify-content: center;
+    padding: 10px 0;
+  }
+
+  .sidebar_item::before {
+    left: -9px;
+  }
+
+  .sidebar_logout {
+    justify-content: center;
+  }
+}
+
+/* --- Core above, Optional below --- */
+
+.sidebar_group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* The rule divides the two halves; each half names itself above its own
+   pages. When the rail narrows to icons the names go and the rule is left,
+   which is still the whole of what it has to say. */
+.sidebar_group + .sidebar_group {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.sidebar_group_label {
+  padding: 0 var(--space-3) var(--space-2);
+  color: var(--color-text-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.sidebar_group_empty {
+  padding: 2px var(--space-3);
+  color: var(--color-text-faint);
+  font-size: 12px;
+  font-style: italic;
+}
+
+@media (max-width: 1024px) {
+  .sidebar_group_label,
+  .sidebar_group_empty {
+    display: none;
+  }
+}

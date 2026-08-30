@@ -1,0 +1,48 @@
+# Tests
+
+```bash
+source set_env.sh          # optional; pytest sets the path itself
+pytest                     # everything that runs unprivileged
+sudo pytest                # adds the checks that need root
+```
+
+## What is here
+
+One directory per package, mirroring the source tree: `tests/modules/<name>/`,
+`tests/system/`, `tests/web/`.
+
+| Path | Covers |
+| --- | --- |
+| `modules/router/test_interfaces.py` | Parsing `config/router/network.json`, including both older shapes of it |
+| `modules/router/test_uplink_plan.py` | Which uplink carries traffic, and why |
+| `modules/router/test_nft_renderer.py` | The firewall and TPROXY ruleset |
+| `modules/router/test_dnsmasq_renderer.py` | DHCP and DNS for the served networks |
+| `modules/router/test_hostapd_renderer.py` | The Wi-Fi access point's configuration |
+| `web/test_network_api.py` | The Network tab's API, its validations, and the view |
+
+## Two rules
+
+**Nothing touches the real appliance.** No test reads `config/`, reconfigures an
+interface, or restarts a service. The pure layers are exercised directly, and
+the layers that talk to the system get a stub that answers from a dictionary —
+`StubLinkStatus` and `FakeRuntime` in `conftest.py`. This is not fastidiousness:
+these tests are meant to be run *on the gateway*, and a suite that could take
+the box off the network is one nobody would dare run there.
+
+**Anything that shells out declares it.** Rendered artifacts are checked against
+the real validators wherever that works unprivileged — `dnsmasq --test` does —
+and marked `needs_root` where it does not, because `nft -c` opens a netlink
+socket. Those skip with a reason instead of failing, so a plain `pytest` is
+still green and still meaningful.
+
+## Adding to it
+
+Name the test after the situation, not the function: `test_two_ports_onto_one_upstream_are_one_line`
+says what breaks if it regresses, `test_group_by_line` does not. Where a case
+exists because something once went wrong on this box, say so in the docstring —
+several of these encode failures that took the gateway off the network, and the
+reason is the part worth keeping.
+
+Assert against `without_comments(...)` when checking that a directive is
+*absent*. The renderers explain themselves in the files they produce, and those
+explanations mention the very things a test wants to prove are not there.

@@ -1,0 +1,294 @@
+/* --- Selected member action bar under the topology --- */
+
+.zfs_member_panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.zfs_member_actions {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  font-size: 13px;
+}
+
+.zfs_member_actions_state {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.zfs_member_actions_spacer {
+  flex: 1;
+}
+
+.zfs_replace_select {
+  max-width: 340px;
+}
+
+/* --- The pool builder --- */
+
+.zfs_builder_name {
+  max-width: 360px;
+}
+
+.zfs_builder_disks,
+.zfs_builder_layouts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.zfs_builder_disk {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.zfs_builder_disk:hover {
+  border-color: var(--color-border-strong);
+}
+
+.zfs_builder_disk_detail {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.zfs_layout_row {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.zfs_layout {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.zfs_layout:hover:not(:disabled) {
+  border-color: var(--color-border-strong);
+}
+
+.zfs_layout:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.zfs_layout--on {
+  border-color: var(--color-accent);
+  background: rgb(34 211 238 / 6%);
+}
+
+.zfs_layout span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.zfs_builder_actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+}
+
+/* --- Pools --- */
+
+.zfs_section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.zfs_pool_row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.zfs_pool_title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.zfs_pool_numbers {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.zfs_pool_meta {
+  display: flex;
+  gap: var(--space-4);
+  color: var(--color-text-faint);
+  font-size: 12px;
+}
+
+.zfs_pool_errors {
+  color: var(--color-error);
+}
+
+.zfs_destroy_confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-3);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-md);
+  background: var(--color-error-wash);
+  font-size: 13px;
+}
+
+.zfs_destroy_confirm .input {
+  max-width: 200px;
+}
+
+/* --- Datasets: one nested editor per dataset --- */
+
+.zfs_dataset_editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.zfs_dataset_editor_head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.zfs_dataset_editor_title {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.zfs_dataset_mount {
+  color: var(--color-text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.zfs_dataset_fields {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 260px));
+}
+
+.zfs_dataset_stats {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* --- The share dialog --- */
+
+.zfs_modal_backdrop {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(4 7 10 / 70%);
+  inset: 0;
+}
+
+.zfs_modal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(440px, calc(100vw - 48px));
+  padding: var(--space-5);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 45%);
+}
+
+/* One pool, and the builder, as nested panels: a step down from the group
+   frame, per the nesting ramp. */
+.zfs_pool_card,
+.zfs_builder {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.zfs_builder {
+  border-color: var(--color-warn);
+  box-shadow: 0 0 26px -16px var(--color-warn);
+}
+
+.zfs_builder_head h3 {
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* --- Selected disk details --- */
+
+.zfs_member_details {
+  display: grid;
+  gap: var(--space-2) var(--space-5);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.zfs_member_detail {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.zfs_member_detail dt {
+  color: var(--color-text-faint);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.zfs_member_detail dd {
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

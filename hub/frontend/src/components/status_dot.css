@@ -1,0 +1,49 @@
+.status_dot {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-dot-color);
+  box-shadow: 0 0 10px -1px var(--status-dot-color);
+}
+
+.status_dot--large {
+  width: 10px;
+  height: 10px;
+}
+
+.status_dot--ok {
+  --status-dot-color: var(--color-ok);
+}
+
+.status_dot--warn {
+  --status-dot-color: var(--color-warn);
+}
+
+.status_dot--error {
+  --status-dot-color: var(--color-error);
+}
+
+.status_dot--idle {
+  --status-dot-color: var(--color-text-faint);
+
+  box-shadow: none;
+}
+
+.status_dot--pulsing::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--status-dot-color);
+  border-radius: 50%;
+  animation: pulse_ring 2.6s ease-out infinite;
+}
+
+.status_label {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: 12px;
+}

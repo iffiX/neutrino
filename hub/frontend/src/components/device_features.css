@@ -1,0 +1,35 @@
+.device_features {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.device_feature {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.device_feature_body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.device_feature_title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.device_feature_note {
+  overflow: hidden;
+  color: var(--color-text-faint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

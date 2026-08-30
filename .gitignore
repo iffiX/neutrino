@@ -1,0 +1,50 @@
+# --- Real config (secrets). Keep the committed *.example.json siblings. ---
+config/xray/nodes.json
+config/xray/routing.json
+config/router/network.json
+config/web/settings.json
+config/samba/samba.json
+config/gitea/gitea.json
+config/podman/podman.json
+config/gitea/secrets.json
+config/devices/devices.json
+config/credentials/ai_providers.json
+config/cliproxy/cliproxy.json
+config/devices/packages/
+config/devices/known_hosts
+config/credentials/ssh_keys/*
+!config/credentials/ssh_keys/*.example.json
+
+# --- Python ---
+# Stamped in by the packaging build, never committed.
+hub/neutrino_hub/_version.py
+agent/neutrino_agent/_version.py
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# --- Frontend ---
+hub/build/
+hub/frontend/dist/
+hub/frontend/node_modules/
+hub/frontend/.vite/
+hub/frontend/*.tsbuildinfo
+hub/neutrino_hub/data/frontend/
+
+# --- Build products ---
+/dist/
+
+# --- Generated / local ---
+/etc/neutrino/
+*.log
+.DS_Store
+
+# --- Built agent packages ---
+# The tarball the hub uploads to a device, built from agent/ by
+# scripts/build_package. Never committed: it is a build product, and the
+# vendor software a device needs is fetched by the agent itself from the
+# manifests, on the device's own network.

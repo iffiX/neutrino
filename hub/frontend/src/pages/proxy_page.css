@@ -1,0 +1,128 @@
+.proxy_switches {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+}
+
+.proxy_switch_card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  transition: border-color var(--transition-base);
+}
+
+/* On, but quietly: a glow here would compete with the one that means "this
+   group has changes waiting", which is the only thing that should pull the
+   eye across the page. */
+.proxy_switch_card--on {
+  border-color: rgb(34 211 238 / 35%);
+}
+
+.proxy_switch_head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.proxy_switch_title {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.proxy_switch_icon {
+  color: var(--color-accent);
+}
+
+.proxy_switch_body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.proxy_switch_flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-elevated);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.proxy_switch_flow_arrow {
+  color: var(--color-text-faint);
+}
+
+.proxy_lists {
+  display: grid;
+  gap: var(--space-5);
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.proxy_dns_grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.proxy_dns_pair {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: 1fr 84px;
+}
+
+.proxy_info_rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.proxy_info_row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.proxy_info_icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--color-accent-secondary);
+}
+
+.proxy_footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* With the local switch gone from the row, the split card has it to itself. */
+.proxy_switch_card--wide {
+  grid-column: 1 / -1;
+}
+
+/* Inside a settings group the sub-sections are layout, not units of their own,
+   so they lose the card frame that would suggest otherwise. */
+.proxy_subcard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}

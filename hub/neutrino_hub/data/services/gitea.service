@@ -1,0 +1,19 @@
+[Unit]
+Description=Gitea
+Documentation=https://docs.gitea.com/
+After=network.target
+
+[Service]
+Type=simple
+User=git
+Group=git
+WorkingDirectory=/var/lib/gitea
+ExecStart=/usr/local/bin/gitea web --config /etc/gitea/app.ini
+Environment=USER=git
+Environment=HOME=/var/lib/gitea
+Environment=GITEA_WORK_DIR=/var/lib/gitea
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

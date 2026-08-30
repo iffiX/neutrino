@@ -1,0 +1,678 @@
+"""The Devices tab: LAN discovery, annotations, and remote actions."""
+
+import ipaddress
+import secrets
+import time
+from datetime import datetime, timezone
+from urllib.parse import quote
+
+from fastapi import APIRouter, Depends, HTTPException, status
+
+from neutrino_hub.modules.devices.registry import (
+    DeviceRegistry,
+    ManagedDevice,
+    feature_wish,
+)
+from neutrino_hub.modules.features.catalog import load_catalog
+from neutrino_hub.modules.devices.key_registry import KeyRegistry
+from neutrino_hub.modules.devices.lan_scan import LanScanner
+from neutrino_hub.modules.devices.remote_desktop import (
+    RemoteDesktopManager,
+    RemoteDesktopStatus,
+)
+from neutrino_hub.modules.devices.ssh_ops import DeviceSshOperator, SshCredentials
+from neutrino_hub.modules.devices.wake_on_lan import send_magic_packet
+from neutrino_hub import HUB_VERSION
+from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
+from neutrino_hub.web.dependencies import get_runtime, require_session
+from neutrino_hub.web.models import (
+    DeviceAnnotation,
+    DeviceClientInfoView,
+    DeviceGpuView,
+    DeviceListView,
+    DeviceProcessView,
+    DeviceEnrollmentRequest,
+    DeviceEnrollmentView,
+    DeviceFeatureListView,
+    DeviceFeatureUpdate,
+    DeviceFeatureView,
+    DeviceProcessKill,
+    DeviceSshConfig,
+    DeviceView,
+    DeviceActionRequest,
+    RemoteDesktopPassword,
+    RemoteDesktopStatusView,
+    RemoteDesktopView,
+    TaskStarted,
+    WolResult,
+)
+from neutrino_hub.web.panel_runtime import PanelRuntime
+
+router = APIRouter(
+    prefix="/api/devices", tags=["devices"], dependencies=[Depends(require_session)]
+)
+
+POWER_ACTIONS = ("reboot", "shutdown")
+
+# An agent beats every few seconds; past this it is not reporting, whatever
+# the reason.
+AGENT_ONLINE_WINDOW_S = 30
+
+ENROLLMENT_TOKEN_BYTES = 18
+# Long enough to walk to another machine and type it, short enough that a
+# forgotten link is not a standing invitation.
+ENROLLMENT_TTL_S = 30 * 60
+
+
+@router.get("", response_model=DeviceListView)
+def list_devices(runtime: PanelRuntime = Depends(get_runtime)) -> DeviceListView:
+    """Read the known devices cheaply, without an active sweep.
+
+    Reads only the kernel neighbour table plus stored annotations and live agent
+    metrics, so the panel can poll this every few seconds for auto-refresh
+    without flooding the LAN with arp-scan broadcasts. The explicit scan is a
+    separate endpoint.
+
+    Args:
+        runtime: The shared runtime.
+
+    Returns:
+        Stored devices plus whatever the neighbour table remembers.
+    """
+    return _device_list(runtime, is_active=False)
+
+
+@router.post("/scan", response_model=DeviceListView)
+def scan(runtime: PanelRuntime = Depends(get_runtime)) -> DeviceListView:
+    """Actively sweep the LAN with arp-scan and return what answered.
+
+    Args:
+        runtime: The shared runtime.
+
+    Returns:
+        Every device, with the ones that answered the sweep marked online.
+    """
+    return _device_list(runtime, is_active=True)
+
+
+def _device_list(runtime: PanelRuntime, *, is_active: bool) -> DeviceListView:
+    scanner = LanScanner(lan_interfaces=runtime.network().lan_device_names)
+    registry = DeviceRegistry()
+    return DeviceListView(
+        devices=[
+            _to_view(device, runtime.client_metrics.get(device.mac_address))
+            for device in registry.merged(scanner.scan(is_active=is_active))
+        ]
+    )
+
+
+@router.put("/{mac_address}", response_model=DeviceView)
+def annotate(mac_address: str, annotation: DeviceAnnotation) -> DeviceView:
+    """Name a device or give it SSH credentials.
+
+    Args:
+        mac_address: The device's MAC.
+        annotation: The fields to change.
+
+    Returns:
+        The device after the change, with no secret echoed back.
+
+    Raises:
+        HTTPException: 400 when the SSH block names a key id that is not stored.
+    """
+    payload = annotation.model_dump(exclude_unset=True)
+    if "ssh" in payload:
+        payload["ssh"] = _store_ssh_secrets(mac_address, annotation.ssh)
+    return _to_view(DeviceRegistry().annotate(mac_address, payload))
+
+
+@router.delete("/{mac_address}")
+def forget(mac_address: str) -> dict:
+    """Drop a device's stored annotations.
+
+    The key it referenced is left in the registry: keys outlive the devices
+    that use them, and the Credentials page is where they are removed.
+
+    Args:
+        mac_address: The device's MAC.
+
+    Returns:
+        An empty object.
+    """
+    DeviceRegistry().forget(mac_address)
+    return {}
+
+
+def _store_ssh_secrets(mac_address: str, ssh: DeviceSshConfig | None) -> dict | None:
+    """Turn a submitted SSH form into what gets stored.
+
+    Key authentication references a key from the registry by ``key_id``; no key
+    material passes through here. Passwords left blank are not cleared: the form
+    never receives them, so an empty field means "unchanged", not "delete".
+
+    Args:
+        mac_address: The device the credentials belong to.
+        ssh: The submitted credentials, or None to remove them.
+
+    Returns:
+        The dict to store, or None when credentials are being removed.
+
+    Raises:
+        HTTPException: 400 when a chosen key id does not exist.
+    """
+    if ssh is None:
+        return None
+
+    stored = {
+        "host": ssh.host,
+        "port": ssh.port,
+        "username": ssh.username,
+        "auth": ssh.auth,
+    }
+    existing = DeviceRegistry().get(mac_address).ssh or {}
+
+    if ssh.key_id:
+        if not KeyRegistry().has_key(ssh.key_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"no stored key with id {ssh.key_id!r}",
+            )
+        stored["key_id"] = ssh.key_id
+    elif existing.get("key_id"):
+        stored["key_id"] = existing["key_id"]
+
+    stored["password"] = ssh.password or existing.get("password")
+    stored["sudo_password"] = ssh.sudo_password or existing.get("sudo_password")
+    return stored
+
+
+@router.post("/{mac_address}/wol", response_model=WolResult)
+def wake(mac_address: str, runtime: PanelRuntime = Depends(get_runtime)) -> WolResult:
+    """Broadcast a Wake-on-LAN packet to a device.
+
+    Args:
+        mac_address: The device's MAC.
+        runtime: The shared runtime.
+
+    Returns:
+        Whether the packet was sent. Delivery says nothing about whether the
+        target actually wakes: that needs Wake-on-LAN armed in its firmware and
+        its NIC, which the panel cannot verify from here.
+    """
+    # A magic packet reaches only its own broadcast domain, and which of the
+    # gateway's networks the sleeping device is on is exactly what cannot be
+    # known while it is asleep. So send one to each; they are 102 bytes.
+    targets = []
+    for interface in runtime.network().lan_interfaces:
+        try:
+            subnet = ipaddress.ip_network(interface.lan.cidr, strict=False)
+        except ValueError:
+            continue
+        targets.append(str(subnet.broadcast_address))
+    if not targets:
+        return WolResult(is_sent=False, message="no interface has the LAN role")
+
+    sent = []
+    for target in targets:
+        try:
+            send_magic_packet(mac_address, broadcast_address=target)
+        except (ValueError, OSError) as error:
+            return WolResult(is_sent=False, message=str(error))
+        sent.append(target)
+    return WolResult(
+        is_sent=True,
+        message=f"magic packet sent to {', '.join(sent)}",
+    )
+
+
+@router.post("/enrollment", response_model=DeviceEnrollmentView)
+def create_enrollment(
+    request: DeviceEnrollmentRequest, runtime: PanelRuntime = Depends(get_runtime)
+) -> DeviceEnrollmentView:
+    """Mint a link a machine can join the gateway with.
+
+    For machines the gateway cannot reach first — a Windows laptop, anything
+    behind someone else's NAT. The owner installs the agent, opens its local
+    page, and pastes this; nothing else is configured by hand.
+
+    Args:
+        request: An optional name, and an existing device to bind to.
+        runtime: The shared runtime, which holds the open tickets.
+
+    Returns:
+        The link, its token, and how long it lasts.
+    """
+    token = secrets.token_urlsafe(ENROLLMENT_TOKEN_BYTES)
+    runtime.enrollments[token] = {
+        "name": request.name.strip(),
+        "mac_address": (request.mac_address or "").lower() or None,
+        "expires_at": time.time() + ENROLLMENT_TTL_S,
+    }
+    base = _panel_url(runtime)
+    link = f"neutrino://enroll?url={quote(base, safe='')}&token={quote(token)}"
+    return DeviceEnrollmentView(link=link, token=token, expires_in_s=ENROLLMENT_TTL_S)
+
+
+@router.get("/{mac_address}/features", response_model=DeviceFeatureListView)
+def list_features(
+    mac_address: str, runtime: PanelRuntime = Depends(get_runtime)
+) -> DeviceFeatureListView:
+    """Read every feature a device could run, and where each stands.
+
+    Args:
+        mac_address: The device.
+        runtime: The shared runtime, for what the agent last reported.
+
+    Returns:
+        The features, unsupported ones included so the panel can say why.
+    """
+    device = DeviceRegistry().get(mac_address)
+    reported = runtime.client_features.get(mac_address, {})
+    platform = runtime.client_platform.get(mac_address, {})
+    keys = _platform_keys(platform)
+    features = []
+    for name, manifest in sorted(load_catalog().items()):
+        status_ = reported.get(name, {})
+        platforms = manifest.get("platforms", {})
+        wanted = feature_wish(device.client.features.get(name))
+        features.append(
+            DeviceFeatureView(
+                name=name,
+                title=manifest.get("title", name),
+                description=manifest.get("description", ""),
+                # With no platform reported yet, nothing is ruled out: the
+                # agent will say what it cannot do once it beats.
+                is_supported=(any(key in platforms for key in keys) if keys else True),
+                is_enabled=wanted["is_enabled"],
+                is_removable=manifest.get("is_removable", True),
+                has_activation=manifest.get("has_activation", False),
+                is_activated=wanted["is_activated"],
+                is_active=bool(status_.get("is_active")),
+                state=status_.get("state", "unknown"),
+                message=status_.get("message", ""),
+            )
+        )
+    return DeviceFeatureListView(features=features)
+
+
+@router.put("/{mac_address}/features/{feature}", response_model=DeviceFeatureListView)
+def set_feature(
+    mac_address: str,
+    feature: str,
+    request: DeviceFeatureUpdate,
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> DeviceFeatureListView:
+    """Change what is wanted of one feature on a device.
+
+    Installing and activating are separate wishes and either can be sent on
+    its own. The agent picks the change up on its next heartbeat and
+    reconciles; this only records what should be true.
+
+    Args:
+        mac_address: The device.
+        feature: The feature name.
+        request: The wishes to change; absent ones are left alone.
+        runtime: The shared runtime.
+
+    Returns:
+        The features after the change.
+
+    Raises:
+        HTTPException: 404 for a feature with no manifest.
+    """
+    if feature not in load_catalog():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="unknown feature"
+        )
+    DeviceRegistry().set_feature(
+        mac_address,
+        feature,
+        is_enabled=request.is_enabled,
+        is_activated=request.is_activated,
+    )
+    return list_features(mac_address, runtime)
+
+
+def _is_agent_online(device: ManagedDevice) -> bool:
+    """Whether this device's agent has beaten inside the window.
+
+    Args:
+        device: The device.
+
+    Returns:
+        False when there is no agent, no heartbeat yet, or the last one is
+        older than :data:`AGENT_ONLINE_WINDOW_S`.
+    """
+    if not device.client.is_installed or not device.client.last_seen:
+        return False
+    try:
+        seen = datetime.fromisoformat(device.client.last_seen)
+    except ValueError:
+        return False
+    if seen.tzinfo is None:
+        seen = seen.replace(tzinfo=timezone.utc)
+    age = (datetime.now(timezone.utc) - seen).total_seconds()
+    return age <= AGENT_ONLINE_WINDOW_S
+
+
+def _platform_keys(platform: dict) -> list:
+    """The manifest keys a reported platform matches, most specific first."""
+    if not platform:
+        return []
+    os_name = platform.get("os", "")
+    family = platform.get("family", "")
+    arch = platform.get("arch", "")
+    keys = []
+    if family:
+        keys.append(f"{os_name}-{family}-{arch}")
+        keys.append(f"{os_name}-{family}")
+    keys.append(f"{os_name}-{arch}")
+    keys.append(os_name)
+    return keys
+
+
+def _panel_url(runtime: PanelRuntime) -> str:
+    """The address a machine should be told to reach the panel on."""
+    for interface in runtime.network().lan_interfaces:
+        if interface.lan.address:
+            port = runtime.settings.get("listen_port", 80)
+            host = interface.lan.address
+            return f"http://{host}" if port == 80 else f"http://{host}:{port}"
+    return "http://192.168.100.1"
+
+
+@router.post("/{mac_address}/kill_process")
+async def kill_process(mac_address: str, request: DeviceProcessKill) -> dict:
+    """End one process on a device, through sudo over SSH.
+
+    Args:
+        mac_address: The device's MAC.
+        request: The process id to signal.
+
+    Returns:
+        An empty acknowledgement.
+
+    Raises:
+        HTTPException: 400 for a pid no one should signal, or when the device
+            has no SSH credentials; 502 when the device refuses.
+    """
+    if request.pid <= 1:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="bad pid")
+    device = DeviceRegistry().get(mac_address)
+    if not device.has_ssh:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="no SSH credentials for this device",
+        )
+    operator = DeviceSshOperator(credentials=SshCredentials.from_dict(device.ssh or {}))
+    code, output = await operator.run_privileged_once(f"kill {int(request.pid)}")
+    if code != 0:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=output or "the device refused the signal",
+        )
+    return {}
+
+
+@router.post("/{mac_address}/action", response_model=TaskStarted)
+async def start_action(
+    mac_address: str,
+    request: DeviceActionRequest,
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> TaskStarted:
+    """Start a long-running action on a device.
+
+    The actions are ``install_client`` (over SSH), and ``reboot`` / ``shutdown``
+    (queued for the agent when installed, otherwise run over SSH). Remote
+    desktop has its own endpoints.
+
+    Declared async deliberately: it schedules the background job on the running
+    event loop, which a threadpool route would not have.
+
+    Args:
+        mac_address: The device's MAC.
+        request: Which action to run.
+        runtime: The shared runtime.
+
+    Returns:
+        A task id the browser streams output from.
+
+    Raises:
+        HTTPException: 400 for an unknown action, or 409 when the device lacks
+            the credentials or agent that action needs.
+    """
+    registry = DeviceRegistry()
+    device = registry.get(mac_address)
+    action = request.action
+
+    # reboot and shutdown prefer the installed agent, which needs no shell
+    # credentials, but fall back to SSH so an SSH-only device can still be
+    # power-controlled.
+    if action in POWER_ACTIONS:
+        if device.client.is_installed:
+            runtime.queue_client_command(mac_address, {"id": action, "action": action})
+            stream = runtime.tasks.start(
+                label=f"{action} {mac_address}", source=_queued_message(action)
+            )
+            return TaskStarted(task_id=stream.id)
+        if device.has_ssh:
+            operator = DeviceSshOperator(
+                credentials=SshCredentials.from_dict(device.ssh or {})
+            )
+            unit = "reboot" if action == "reboot" else "poweroff"
+            stream = runtime.tasks.start(
+                label=f"{action} {mac_address}",
+                source=operator.run_privileged_stream(f"systemctl {unit}"),
+            )
+            return TaskStarted(task_id=stream.id)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{action} needs the agent or SSH credentials on this device",
+        )
+
+    if action != "install_client":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"unknown action {action!r}",
+        )
+    if not device.has_ssh:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="installing the agent needs SSH credentials for this device",
+        )
+
+    operator = DeviceSshOperator(credentials=SshCredentials.from_dict(device.ssh or {}))
+    token = registry.issue_client_token(mac_address)
+    package_path = UTILS_CONFIG_DIR / runtime.settings.get(
+        "agent_package_path",
+        "devices/packages/neutrino_agent-latest.tar.gz",
+    )
+    stream = runtime.tasks.start(
+        label=f"install_client {mac_address}",
+        source=operator.install_client(
+            package_path=package_path,
+            gateway_url=_gateway_url(runtime),
+            token=token,
+        ),
+    )
+    return TaskStarted(task_id=stream.id)
+
+
+@router.get("/{mac_address}/remote_desktop", response_model=RemoteDesktopView)
+async def remote_desktop_status(mac_address: str) -> RemoteDesktopView:
+    """Report what remote-desktop software is on a device.
+
+    Args:
+        mac_address: The device's MAC.
+
+    Returns:
+        AnyDesk and ToDesk state, each showing whether it is installed and
+        running and, when it can be read, its session id to connect to.
+
+    Raises:
+        HTTPException: 409 when the device has no SSH credentials to probe with.
+    """
+    device = DeviceRegistry().get(mac_address)
+    if not device.has_ssh:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="reading remote-desktop status needs SSH credentials",
+        )
+    manager = RemoteDesktopManager(
+        operator=DeviceSshOperator(
+            credentials=SshCredentials.from_dict(device.ssh or {})
+        )
+    )
+    return RemoteDesktopView(
+        anydesk=_remote_desktop_view(await manager.status("anydesk")),
+        todesk=_remote_desktop_view(await manager.status("todesk")),
+    )
+
+
+@router.post(
+    "/{mac_address}/remote_desktop/{product}/password", response_model=TaskStarted
+)
+async def set_remote_desktop_password(
+    mac_address: str,
+    product: str,
+    request: RemoteDesktopPassword,
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> TaskStarted:
+    """Set a product's unattended-access password on a device.
+
+    Args:
+        mac_address: The device's MAC.
+        product: Either ``anydesk`` or ``todesk``.
+        request: The password to set.
+        runtime: The shared runtime.
+
+    Returns:
+        A task id to stream the result from.
+
+    Raises:
+        HTTPException: 400 for an unknown product, 409 without SSH.
+    """
+    _, manager = _remote_desktop_manager(mac_address)
+    try:
+        source = manager.set_password_stream(product, password=request.password)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+        ) from error
+    stream = runtime.tasks.start(
+        label=f"set {product} password {mac_address}", source=source
+    )
+    return TaskStarted(task_id=stream.id)
+
+
+def _remote_desktop_manager(mac_address: str):
+    device = DeviceRegistry().get(mac_address)
+    if not device.has_ssh:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="this needs SSH credentials for the device",
+        )
+    return device, RemoteDesktopManager(
+        operator=DeviceSshOperator(
+            credentials=SshCredentials.from_dict(device.ssh or {})
+        )
+    )
+
+
+def _remote_desktop_view(status_: RemoteDesktopStatus) -> RemoteDesktopStatusView:
+    return RemoteDesktopStatusView(
+        product=status_.product,
+        is_installed=status_.is_installed,
+        is_running=status_.is_running,
+        session_id=status_.session_id,
+        can_set_password=status_.can_set_password,
+    )
+
+
+async def _queued_message(action: str):
+    yield f"[{action} queued; the agent runs it on its next heartbeat]\n"
+
+
+def _gateway_url(runtime: PanelRuntime) -> str:
+    port = runtime.settings.get("listen_port", 8080)
+    return f"http://{runtime.network().primary_lan_address}:{port}"
+
+
+def _to_view(device: ManagedDevice, metrics: dict | None = None) -> DeviceView:
+    ssh_view = None
+    if device.ssh:
+        # Passwords are write-only: the browser learns whether one is stored,
+        # not what it is. The key is named so the drawer can show which one is
+        # selected without exposing anything.
+        key_id = device.ssh.get("key_id")
+        key_name = None
+        if key_id:
+            record = KeyRegistry().get(key_id)
+            key_name = record.name if record else "(deleted key)"
+        ssh_view = DeviceSshConfig(
+            host=device.ssh.get("host", ""),
+            port=device.ssh.get("port", 22),
+            username=device.ssh.get("username", ""),
+            auth=device.ssh.get("auth", "key"),
+            key_id=key_id,
+            key_name=key_name,
+            password=None,
+            sudo_password=None,
+            has_sudo_password=bool(device.ssh.get("sudo_password")),
+        )
+    client_view = None
+    if device.client.is_installed:
+        latest = metrics or {}
+        client_view = DeviceClientInfoView(
+            is_installed=True,
+            version=device.client.version,
+            is_version_mismatched=_is_version_mismatched(device.client.version),
+            last_seen=device.client.last_seen,
+            cpu_percent=latest.get("cpu_percent"),
+            memory_percent=latest.get("memory_percent"),
+            disk_percent=latest.get("disk_percent"),
+            temperature_c=latest.get("temperature_c"),
+            uptime_s=latest.get("uptime_s"),
+            load_average=latest.get("load_average") or [],
+            cpu_core_percents=latest.get("cpu_core_percents") or [],
+            gpus=[DeviceGpuView(**gpu) for gpu in latest.get("gpus") or []],
+            processes=[
+                DeviceProcessView(**process)
+                for process in latest.get("processes") or []
+            ],
+        )
+    is_agent_online = _is_agent_online(device)
+    return DeviceView(
+        mac_address=device.mac_address,
+        ipv4_address=device.ipv4_address,
+        name=device.name,
+        icon=device.icon,
+        vendor=device.vendor,
+        # A beating agent is proof of reachability the ARP sweep cannot give:
+        # a machine on the overlay has no neighbour entry on any LAN.
+        is_online=device.is_online or is_agent_online,
+        is_agent_online=is_agent_online,
+        is_wol_enabled=device.is_wol_enabled,
+        has_ssh=device.has_ssh,
+        ssh=ssh_view,
+        client=client_view,
+    )
+
+
+def _is_version_mismatched(agent_version: "str | None") -> bool:
+    """Whether an agent is a different version from this hub.
+
+    The two are released together and supported only together
+    (docs/standard/agent_work_rule/release.md), so any difference means the
+    device needs its agent upgraded. A device that has never reported one is
+    not a mismatch, only unknown.
+
+    Args:
+        agent_version: What the agent last reported, if anything.
+
+    Returns:
+        True when the versions differ.
+    """
+    if not agent_version:
+        return False
+    return agent_version.split("+")[0] != HUB_VERSION.split("+")[0]

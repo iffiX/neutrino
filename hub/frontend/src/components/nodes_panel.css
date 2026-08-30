@@ -1,0 +1,101 @@
+.nodes_grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+
+.nodes_toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+}
+
+.nodes_toolbar_group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-end;
+}
+
+.nodes_toolbar_field {
+  min-width: 170px;
+}
+
+.nodes_summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.nodes_apply_bar {
+  position: sticky;
+  bottom: var(--space-4);
+  z-index: 12;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-lg);
+  background: rgb(22 29 42 / 96%);
+  backdrop-filter: blur(10px);
+  box-shadow:
+    0 0 0 1px rgb(34 211 238 / 25%),
+    0 20px 50px -25px rgb(0 0 0 / 95%);
+  animation: fade_in_up 220ms ease both;
+}
+
+.nodes_apply_text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nodes_apply_title {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--color-accent);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.nodes_apply_diff {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.nodes_apply_actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* Adding a node is one field, because a share link already carries every part
+   of a node and retyping those parts is only a chance to get one wrong. */
+.nodes_add {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-wash);
+  animation: fade_in_up 160ms ease;
+}
+
+.nodes_add .button_row {
+  justify-content: flex-end;
+}

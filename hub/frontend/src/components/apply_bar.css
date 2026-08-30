@@ -1,0 +1,52 @@
+.apply_bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.apply_bar_row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* --- The box an apply bar closes --- */
+
+/* Every unit of change is one framed group ending in one bar. Sections that
+   were separate cards before are nested inside these, so the outer frame is
+   what gets applied and the inner ones are just how it is laid out. */
+.settings_group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  transition:
+    border-color var(--transition-base),
+    box-shadow var(--transition-base);
+}
+
+/* Unsaved changes light the frame, so which box is waiting is visible from
+   anywhere on the page rather than only from its own button. */
+.settings_group--dirty {
+  border-color: var(--color-warn);
+  box-shadow: 0 0 26px -16px var(--color-warn);
+}
+
+.settings_group_title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.settings_group_title h2 {
+  font-size: 16px;
+}

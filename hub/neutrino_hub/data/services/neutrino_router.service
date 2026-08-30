@@ -1,0 +1,18 @@
+[Unit]
+Description=Neutrino Hub routing state (forwarding, policy route, nftables)
+Documentation=file://@REPO_ROOT@/docs/config.md
+After=network-pre.target
+Wants=network-pre.target
+Before=xray.service dnsmasq.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=@REPO_ROOT@
+Environment=PYTHONPATH=@REPO_ROOT@
+ExecStart=@PYTHON@ @REPO_ROOT@/scripts/render_all/main.py --only router
+ExecStop=-/usr/sbin/nft delete table inet neutrino
+ExecStop=-/usr/sbin/ip rule del fwmark 0x1 lookup 100
+
+[Install]
+WantedBy=multi-user.target

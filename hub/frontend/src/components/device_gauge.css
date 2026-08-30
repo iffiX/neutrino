@@ -1,0 +1,53 @@
+.device_gauge {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.device_gauge_head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  color: var(--color-text-faint);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.device_gauge_value {
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.device_gauge_track {
+  display: block;
+  overflow: hidden;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--color-border);
+}
+
+.device_gauge_fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  transition: width var(--transition-base);
+}
+
+.device_gauge_fill--ok {
+  background: var(--color-ok);
+  box-shadow: 0 0 10px -2px var(--color-ok);
+}
+
+.device_gauge_fill--warn {
+  background: var(--color-warn);
+  box-shadow: 0 0 10px -2px var(--color-warn);
+}
+
+.device_gauge_fill--error {
+  background: var(--color-error);
+  box-shadow: 0 0 10px -2px var(--color-error);
+}
