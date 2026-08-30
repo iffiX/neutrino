@@ -1,15 +1,22 @@
-"""Rendering declared containers into Quadlet unit files.
+"""Rendering declared containers into systemd units.
 
 Quadlet is why podman fits this gateway: a ``.container`` file becomes an
 ordinary systemd unit, so a declared container is supervised, journalled and
 rebooted-with-the-box exactly like everything else here — no daemon, no
 second init system.
 
+Quadlet arrived in podman 4.4, and Ubuntu 22.04 ships 3.4.4.
+:class:`PodmanUnitRenderer` writes the unit Quadlet would have generated,
+from the same configuration, so a container declared on the panel means the
+same thing on both. The unit is called ``<name>.service`` either way, so
+nothing downstream of the render can tell which one produced it.
+
 Pure: config in, one file's text per container out. Writing them and telling
 systemd is :mod:`neutrino_hub.modules.podman.ops`.
 """
 
 from neutrino_hub.modules.podman.config import PodmanConfig, PodmanContainer
+from neutrino_hub.modules.podman.constants import PODMAN_BINARY
 
 
 def qualified_image(image: str) -> str:
@@ -60,32 +67,6 @@ class PodmanQuadletRenderer:
             for container in self._config.containers
         }
 
-    def render_registries(self) -> str:
-        """Render the docker.io mirror drop-in.
-
-        Returns:
-            The registries.conf.d file, or an empty string when no mirrors are
-            declared — the applier removes the drop-in then, and pulls go
-            straight to the registry.
-        """
-        if not self._config.mirrors:
-            return ""
-        lines = [
-            GENERATED_MARKER,
-            "",
-            "[[registry]]",
-            'prefix = "docker.io"',
-            'location = "registry-1.docker.io"',
-        ]
-        for mirror in self._config.mirrors:
-            lines += [
-                "",
-                "[[registry.mirror]]",
-                f'location = "{mirror}"',
-            ]
-        lines.append("")
-        return "\n".join(lines)
-
     def _render_container(self, container: PodmanContainer) -> str:
         lines = [
             GENERATED_MARKER,
@@ -119,6 +100,158 @@ class PodmanQuadletRenderer:
                 "",
                 "[Install]",
                 "WantedBy=multi-user.target",
+            ]
+        lines.append("")
+        return "\n".join(lines)
+
+
+class PodmanUnitRenderer:
+    """Builds one systemd ``.service`` file per declared container.
+
+    For a podman too old for Quadlet. The container is described on the
+    ``podman run`` command line instead of in a ``[Container]`` section, and
+    the same six properties carry across.
+    """
+
+    def __init__(self, *, config: PodmanConfig):
+        """Hold the configuration to render.
+
+        Args:
+            config: The declared containers and registry mirrors.
+        """
+        self._config = config
+
+    def render(self) -> dict[str, str]:
+        """Render every declared container.
+
+        Returns:
+            File contents keyed by file name, ``<name>.service``.
+        """
+        return {
+            f"{container.name}.service": self._render_container(container)
+            for container in self._config.containers
+        }
+
+    def _render_container(self, container: PodmanContainer) -> str:
+        lines = [
+            GENERATED_MARKER,
+            "",
+            "[Unit]",
+            f"Description={container.name} container",
+            "After=network-online.target",
+            "",
+            "[Service]",
+            # Pulling a large image on first start takes longer than the
+            # default start timeout wants to allow.
+            "TimeoutStartSec=900",
+            "Restart=on-failure",
+            # A container left behind by a hard stop would make the next
+            # start fail on the name alone; the leading dash lets the removal
+            # fail when there is nothing to remove.
+            f"ExecStartPre=-{PODMAN_BINARY} rm -f {container.name}",
+            f"ExecStart={' '.join(self._run_command(container))}",
+            f"ExecStop={PODMAN_BINARY} stop -t 10 {container.name}",
+        ]
+        if container.is_autostart:
+            lines += [
+                "",
+                "[Install]",
+                "WantedBy=multi-user.target",
+            ]
+        lines.append("")
+        return "\n".join(lines)
+
+    def _run_command(self, container: PodmanContainer) -> list:
+        """The ``podman run`` line that stands for one container.
+
+        Args:
+            container: The declared container.
+
+        Returns:
+            The argument vector, image last but for the container's own
+            command.
+        """
+        command = [
+            PODMAN_BINARY,
+            "run",
+            # The container is the unit: it lives in the foreground and is
+            # gone when the unit stops.
+            "--rm",
+            "--name",
+            container.name,
+        ]
+        for port in container.ports:
+            command += ["-p", port]
+        for volume in container.volumes:
+            command += ["-v", volume]
+        for entry in container.environment:
+            command += ["-e", _quoted(entry)]
+        command.append(qualified_image(container.image))
+        if container.command:
+            # Passed through rather than split, so systemd parses it the way
+            # Quadlet's own Exec= would.
+            command.append(container.command)
+        return command
+
+
+def _quoted(value: str) -> str:
+    """One argument of a unit's command line, quoted if systemd needs it.
+
+    An environment value may hold spaces — ``JAVA_OPTS=-Xmx1g -Xms512m`` is
+    the ordinary case — and the command line is one string by the time
+    systemd reads it.
+
+    Args:
+        value: The argument.
+
+    Returns:
+        The argument, wrapped in double quotes when it holds whitespace or a
+        quote of its own.
+    """
+    if not any(character.isspace() for character in value) and '"' not in value:
+        return value
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+class PodmanRegistriesRenderer:
+    """Builds the docker.io mirror drop-in.
+
+    The mirrors are a property of the engine rather than of any container, so
+    this stands beside the container renderers and is the same on every
+    version of podman.
+    """
+
+    def __init__(self, *, config: PodmanConfig):
+        """Hold the configuration to render.
+
+        Args:
+            config: The declared containers and registry mirrors.
+        """
+        self._config = config
+
+    def render(self) -> str:
+        """Render the drop-in.
+
+        Returns:
+            The registries.conf.d file, or an empty string when no mirrors are
+            declared — the applier removes the drop-in then, and pulls go
+            straight to the registry.
+        """
+        if not self._config.mirrors:
+            return ""
+        lines = [
+            GENERATED_MARKER,
+            "",
+            "[[registry]]",
+            'prefix = "docker.io"',
+            'location = "registry-1.docker.io"',
+        ]
+        for mirror in self._config.mirrors:
+            lines += [
+                "",
+                "[[registry.mirror]]",
+                f'location = "{mirror}"',
             ]
         lines.append("")
         return "\n".join(lines)

@@ -1,7 +1,18 @@
-"""The rendered Quadlet files, checked for what systemd will read."""
+"""The rendered container files, checked for what systemd will read.
 
-from neutrino_hub.modules.podman.config import PodmanConfig
-from neutrino_hub.modules.podman.renderer import GENERATED_MARKER, PodmanQuadletRenderer
+A machine with Quadlet gets `.container` files and one without gets `.service`
+files that say the same thing; both are checked here against the same
+configuration.
+"""
+
+from neutrino_hub.modules.podman.config import PodmanConfig, PodmanContainer
+from neutrino_hub.modules.podman.constants import PODMAN_QUADLET_DIR, PODMAN_UNIT_DIR
+from neutrino_hub.modules.podman.renderer import (
+    GENERATED_MARKER,
+    PodmanQuadletRenderer,
+    PodmanRegistriesRenderer,
+    PodmanUnitRenderer,
+)
 
 
 def render(containers: list[dict]) -> dict[str, str]:
@@ -75,7 +86,7 @@ def test_mirrors_render_in_order_and_none_renders_nothing():
     """Order matters — pulls try mirrors first-to-last — and an empty list
     must produce no file at all rather than an empty [[registry]] block."""
     from neutrino_hub.modules.podman.config import PodmanConfig
-    from neutrino_hub.modules.podman.renderer import PodmanQuadletRenderer
+    from neutrino_hub.modules.podman.renderer import PodmanRegistriesRenderer
 
     config = PodmanConfig.from_dict(
         {
@@ -83,15 +94,15 @@ def test_mirrors_render_in_order_and_none_renders_nothing():
             "mirrors": ["mirror.ccs.tencentyun.com", "registry.docker-cn.com"],
         }
     )
-    text = PodmanQuadletRenderer(config=config).render_registries()
+    text = PodmanRegistriesRenderer(config=config).render()
 
     assert 'prefix = "docker.io"' in text
     assert text.index("mirror.ccs.tencentyun.com") < text.index(
         "registry.docker-cn.com"
     )
-    empty = PodmanQuadletRenderer(
+    empty = PodmanRegistriesRenderer(
         config=PodmanConfig.from_dict({"containers": []})
-    ).render_registries()
+    ).render()
     assert empty == ""
 
 
@@ -111,3 +122,114 @@ def test_a_command_overrides_the_images_own_and_absent_stays_absent():
 
     assert "Exec=python3 -m http.server 8000" in with_command
     assert "Exec=" not in without
+
+
+def unit(container: PodmanContainer) -> str:
+    """The pre-Quadlet unit for one container."""
+    config = PodmanConfig(containers=[container], mirrors=[])
+    return PodmanUnitRenderer(config=config).render()[f"{container.name}.service"]
+
+
+def exec_start(container: PodmanContainer) -> str:
+    for line in unit(container).splitlines():
+        if line.startswith("ExecStart="):
+            return line
+    raise AssertionError("the unit has no ExecStart")
+
+
+def test_a_unit_is_named_the_same_as_its_quadlet_file_would_be():
+    """Nothing downstream of the render can tell which renderer produced it."""
+    container = PodmanContainer(name="redis", image="redis:7")
+    config = PodmanConfig(containers=[container], mirrors=[])
+    assert set(PodmanUnitRenderer(config=config).render()) == {"redis.service"}
+    assert set(PodmanQuadletRenderer(config=config).render()) == {"redis.container"}
+
+
+def test_the_six_container_properties_reach_the_command_line():
+    line = exec_start(
+        PodmanContainer(
+            name="app",
+            image="nginx",
+            ports=["8080:80", "5353:53/udp"],
+            volumes=["/srv/data:/data", "cache:/cache"],
+            environment=["TZ=UTC"],
+        )
+    )
+    assert "--name app" in line
+    assert "-p 8080:80" in line and "-p 5353:53/udp" in line
+    assert "-v /srv/data:/data" in line and "-v cache:/cache" in line
+    assert "-e TZ=UTC" in line
+    assert line.endswith("docker.io/library/nginx")
+
+
+def test_an_environment_value_with_spaces_stays_one_argument():
+    """`-e JAVA_OPTS=-Xmx1g -Xms512m` would otherwise reach podman as two."""
+    line = exec_start(
+        PodmanContainer(
+            name="app", image="nginx", environment=["JAVA_OPTS=-Xmx1g -Xms512m"]
+        )
+    )
+    assert '-e "JAVA_OPTS=-Xmx1g -Xms512m"' in line
+
+
+def test_a_command_is_passed_through_for_systemd_to_split():
+    """Quadlet hands Exec= to systemd whole; this has to mean the same thing."""
+    line = exec_start(
+        PodmanContainer(name="app", image="python:3.12", command='sh -c "sleep 3600"')
+    )
+    assert line.endswith('docker.io/library/python:3.12 sh -c "sleep 3600"')
+
+
+def test_a_leftover_container_does_not_block_the_next_start():
+    text = unit(PodmanContainer(name="app", image="nginx"))
+    assert "ExecStartPre=-/usr/bin/podman rm -f app" in text
+    assert "ExecStop=/usr/bin/podman stop -t 10 app" in text
+
+
+def test_only_an_autostart_container_is_wanted_by_the_boot_target():
+    assert "WantedBy=multi-user.target" in unit(
+        PodmanContainer(name="app", image="nginx", is_autostart=True)
+    )
+    assert "WantedBy=" not in unit(
+        PodmanContainer(name="app", image="nginx", is_autostart=False)
+    )
+
+
+def test_a_rendered_unit_carries_the_generated_marker():
+    """The applier removes only its own files, on both paths."""
+    assert unit(PodmanContainer(name="app", image="nginx")).startswith(GENERATED_MARKER)
+
+
+def test_the_version_line_podman_prints_decides_which_renderer(monkeypatch):
+    """`podman --version` says `podman version 3.4.4`; only the last word counts."""
+    from neutrino_hub.modules.podman import ops
+    from neutrino_hub.utils.subprocess_run import CommandResult
+
+    def reply(text: str, *, is_success: bool = True):
+        return lambda command, **kwargs: CommandResult(
+            command=command, exit_code=0 if is_success else 1, stdout=text, stderr=""
+        )
+
+    monkeypatch.setattr(ops, "run", reply("podman version 3.4.4\n"))
+    assert ops.is_quadlet_supported() is False
+    assert ops.container_applier().directory == PODMAN_UNIT_DIR
+
+    monkeypatch.setattr(ops, "run", reply("podman version 4.9.4-rhel\n"))
+    assert ops.is_quadlet_supported() is True
+    assert ops.container_applier().directory == PODMAN_QUADLET_DIR
+
+
+def test_a_podman_that_will_not_run_gets_the_unit_that_works_everywhere():
+    """A Quadlet file on an old podman is inert; a plain unit never is."""
+    from neutrino_hub.modules.podman import ops
+    from neutrino_hub.utils.subprocess_run import CommandResult
+
+    ops.run = lambda command, **kwargs: CommandResult(
+        command=command, exit_code=127, stdout="", stderr="not found"
+    )
+    try:
+        assert ops.is_quadlet_supported() is False
+    finally:
+        from neutrino_hub.utils.subprocess_run import run as real_run
+
+        ops.run = real_run

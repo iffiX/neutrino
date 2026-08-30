@@ -24,12 +24,10 @@ from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.gitea.config import GiteaConfig
 from neutrino_hub.modules.gitea.ops import GiteaConfigApplier, GiteaSecretStore
 from neutrino_hub.modules.gitea.renderer import GiteaConfigRenderer
+from neutrino_hub.modules.podman import ops as podman_ops
 from neutrino_hub.modules.podman.config import PodmanConfig
-from neutrino_hub.modules.podman.ops import (
-    PodmanQuadletApplier,
-    PodmanRegistriesApplier,
-)
-from neutrino_hub.modules.podman.renderer import PodmanQuadletRenderer
+from neutrino_hub.modules.podman.ops import PodmanRegistriesApplier
+from neutrino_hub.modules.podman.renderer import PodmanRegistriesRenderer
 from neutrino_hub.modules.samba.config import SambaConfig
 from neutrino_hub.modules.samba.ops import SambaConfigApplier, SambaUserManager
 from neutrino_hub.modules.samba.renderer import SambaConfigRenderer
@@ -409,12 +407,14 @@ class PanelRuntime:
     def _apply_podman_blocking(self) -> str:
         config = self.podman()
         config.validate()
-        renderer = PodmanQuadletRenderer(config=config)
-        mirror_note = PodmanRegistriesApplier().apply(renderer.render_registries())
+        renderer = podman_ops.container_renderer(config)
+        mirror_note = PodmanRegistriesApplier().apply(
+            PodmanRegistriesRenderer(config=config).render()
+        )
         autostart = [
             container.name for container in config.containers if container.is_autostart
         ]
-        note = PodmanQuadletApplier().apply(
+        note = podman_ops.container_applier().apply(
             renderer.render(), autostart_names=autostart
         )
         return f"{note}; {mirror_note}"

@@ -31,13 +31,10 @@ from neutrino_hub.modules.gitea.config import GiteaConfig
 from neutrino_hub.modules.gitea.constants import GITEA_BINARY_PATH, GITEA_CONF_LINK_PATH
 from neutrino_hub.modules.gitea.ops import GiteaConfigApplier, GiteaSecretStore
 from neutrino_hub.modules.gitea.renderer import GiteaConfigRenderer
+from neutrino_hub.modules.podman import ops as podman_ops
 from neutrino_hub.modules.podman.config import PodmanConfig
-from neutrino_hub.modules.podman.constants import PODMAN_QUADLET_DIR
-from neutrino_hub.modules.podman.ops import (
-    PodmanQuadletApplier,
-    PodmanRegistriesApplier,
-)
-from neutrino_hub.modules.podman.renderer import PodmanQuadletRenderer
+from neutrino_hub.modules.podman.ops import PodmanRegistriesApplier
+from neutrino_hub.modules.podman.renderer import PodmanRegistriesRenderer
 from neutrino_hub.modules.samba.config import SambaConfig
 from neutrino_hub.modules.samba.constants import (
     SAMBA_CONF_LINK_PATH,
@@ -162,7 +159,7 @@ def _render(selected: tuple[str, ...]) -> dict:
     elif "podman" in selected:
         podman_config = PodmanConfig.from_dict(read_config("podman/podman.json"))
         podman_config.validate()
-        artifacts["podman"] = PodmanQuadletRenderer(config=podman_config).render()
+        artifacts["podman"] = podman_ops.container_renderer(podman_config).render()
     return artifacts
 
 
@@ -183,8 +180,9 @@ def _print_artifacts(artifacts: dict) -> None:
         print(f"\n--- {GITEA_CONF_LINK_PATH} ---")
         print(artifacts["gitea"])
     if "podman" in artifacts:
+        directory = podman_ops.container_applier().directory
         for file_name, text in artifacts["podman"].items():
-            print(f"\n--- {PODMAN_QUADLET_DIR / file_name} ---")
+            print(f"\n--- {directory / file_name} ---")
             print(text)
 
 
@@ -241,11 +239,13 @@ def _apply(artifacts: dict) -> None:
         ]
         print(
             PodmanRegistriesApplier().apply(
-                PodmanQuadletRenderer(config=podman_config).render_registries()
+                PodmanRegistriesRenderer(config=podman_config).render()
             )
         )
         print(
-            PodmanQuadletApplier().apply(artifacts["podman"], autostart_names=autostart)
+            podman_ops.container_applier().apply(
+                artifacts["podman"], autostart_names=autostart
+            )
         )
 
 

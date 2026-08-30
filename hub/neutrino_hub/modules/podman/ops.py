@@ -9,14 +9,24 @@ way.
 import json
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
+from neutrino_hub.system.package_manager import is_version_at_least
 from neutrino_hub.utils.subprocess_run import CommandError, run
 
+from neutrino_hub.modules.podman.config import PodmanConfig
 from neutrino_hub.modules.podman.constants import (
+    PODMAN_BINARY,
+    PODMAN_MINIMUM_VERSION,
     PODMAN_QUADLET_DIR,
     PODMAN_REGISTRIES_CONF_PATH,
+    PODMAN_UNIT_DIR,
 )
-from neutrino_hub.modules.podman.renderer import GENERATED_MARKER
+from neutrino_hub.modules.podman.renderer import (
+    GENERATED_MARKER,
+    PodmanQuadletRenderer,
+    PodmanUnitRenderer,
+)
 
 CONTAINER_ACTIONS = ("start", "stop", "restart")
 
@@ -41,8 +51,30 @@ class PodmanContainerState:
     is_declared: bool
 
 
-class PodmanQuadletApplier:
-    """Installs rendered Quadlet files and reconciles systemd with them."""
+class PodmanUnitApplier:
+    """Installs rendered container units and reconciles systemd with them.
+
+    Where the files go and what they are called depends on whether this
+    machine's podman reads Quadlet; :func:`container_applier` decides that and
+    builds this. Everything after the write is the same either way, because a
+    container's unit is called ``<name>.service`` on both paths.
+    """
+
+    def __init__(self, *, directory: Path, suffix: str):
+        """Hold where the rendered files belong.
+
+        Args:
+            directory: Where the files are written.
+            suffix: What the rendered files are called, ``.container`` for
+                Quadlet and ``.service`` without it.
+        """
+        self._directory = directory
+        self._suffix = suffix
+
+    @property
+    def directory(self) -> Path:
+        """Where this applier writes, for a dry run that wants to say so."""
+        return self._directory
 
     def apply(self, rendered: dict[str, str], *, autostart_names: list[str]) -> str:
         """Write the rendered files, drop stale ones, and recreate what changed.
@@ -68,14 +100,14 @@ class PodmanQuadletApplier:
         Raises:
             CommandError: If systemd refuses a unit.
         """
-        PODMAN_QUADLET_DIR.mkdir(parents=True, exist_ok=True)
+        self._directory.mkdir(parents=True, exist_ok=True)
         changed = []
         for file_name, text in rendered.items():
-            path = PODMAN_QUADLET_DIR / file_name
+            path = self._directory / file_name
             if not path.is_file() or path.read_text(encoding="utf-8") != text:
                 path.write_text(text, encoding="utf-8")
                 changed.append(file_name)
-        for path in PODMAN_QUADLET_DIR.glob("*.container"):
+        for path in self._directory.glob(f"*{self._suffix}"):
             if path.name in rendered:
                 continue
             try:
@@ -94,7 +126,7 @@ class PodmanQuadletApplier:
         for file_name in rendered:
             if file_name not in changed:
                 continue
-            name = file_name.removesuffix(".container")
+            name = file_name.removesuffix(self._suffix)
             unit = f"{name}.service"
             if name in autostart_names:
                 run(["systemctl", "restart", unit])
@@ -314,3 +346,43 @@ def shell_command(name: str) -> list[str]:
         "-c",
         "command -v bash >/dev/null && exec bash || exec sh",
     ]
+
+
+def is_quadlet_supported() -> bool:
+    """Whether the installed podman turns a ``.container`` file into a unit.
+
+    Returns:
+        True from podman 4.4. False below it, and False when podman cannot be
+        run at all, which is the safe answer: a plain unit works on every
+        version, and a Quadlet file on an old podman is inert.
+    """
+    result = run([PODMAN_BINARY, "--version"], is_checked=False)
+    if not result.is_success:
+        return False
+    words = result.stdout.split()
+    return is_version_at_least(words[-1] if words else "", PODMAN_MINIMUM_VERSION)
+
+
+def container_renderer(config: PodmanConfig):
+    """The renderer whose output this machine's podman understands.
+
+    Args:
+        config: The declared containers.
+
+    Returns:
+        A Quadlet renderer, or a unit renderer on a podman without Quadlet.
+    """
+    if is_quadlet_supported():
+        return PodmanQuadletRenderer(config=config)
+    return PodmanUnitRenderer(config=config)
+
+
+def container_applier() -> PodmanUnitApplier:
+    """The applier for whichever files :func:`container_renderer` produced.
+
+    Returns:
+        An applier pointed at the directory that machine's podman reads.
+    """
+    if is_quadlet_supported():
+        return PodmanUnitApplier(directory=PODMAN_QUADLET_DIR, suffix=".container")
+    return PodmanUnitApplier(directory=PODMAN_UNIT_DIR, suffix=".service")

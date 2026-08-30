@@ -21,6 +21,14 @@ PODMAN_MINIMUM_VERSION = "4.4"
 # on the Services page — present once installed, active when listening.
 PODMAN_UNIT = "podman.socket"
 
+# Units name the binary in full: systemd runs them with a minimal PATH.
+PODMAN_BINARY = "/usr/bin/podman"
+
+# Where a unit rendered for a podman without Quadlet lands. Quadlet's own
+# output for <name>.container is called <name>.service too, so a container
+# has one unit name whichever renderer produced it.
+PODMAN_UNIT_DIR = Path("/etc/systemd/system")
+
 # Where Quadlet reads declared containers from. Each rendered <name>.container
 # becomes a systemd unit called <name>.service on the next daemon-reload.
 PODMAN_QUADLET_DIR = Path("/etc/containers/systemd")
