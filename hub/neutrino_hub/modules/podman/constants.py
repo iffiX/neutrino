@@ -1,7 +1,21 @@
 from pathlib import Path
 
-# Arrives through apt, which picks the machine's build.
+# Arrives through the package manager, which picks the machine's build.
 PODMAN_SUPPORTED_ARCHITECTURES = ("*",)
+
+# podman-docker adds a `docker` alias over podman, so hands and scripts that
+# speak docker keep working unchanged. Every family spells both the same.
+PODMAN_PACKAGES = {
+    "debian": ("podman", "podman-docker"),
+    "rhel": ("podman", "podman-docker"),
+    "arch": ("podman", "podman-docker"),
+}
+
+# Quadlet arrived in podman 4.4, and this module renders nothing else. Below
+# it the rendered .container files are inert: no generator reads them, so the
+# containers never become units and never start. Debian 12 ships 4.3.1 and
+# Ubuntu 22.04 ships 3.4.4, backports included.
+PODMAN_MINIMUM_VERSION = "4.4"
 
 # Podman has no daemon; the API socket is the unit that stands for the engine
 # on the Services page — present once installed, active when listening.

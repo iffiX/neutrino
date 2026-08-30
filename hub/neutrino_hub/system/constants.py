@@ -37,11 +37,14 @@ SYSTEM_OPTIONAL_UNITS = {
 
 SYSTEM_MANAGED_UNITS = {**SYSTEM_CORE_UNITS, **SYSTEM_OPTIONAL_UNITS}
 
-# Installed from the Ubuntu archive. Optional modules are not here — each
+# Installed from the distribution. Optional modules are not here — each
 # installs through its own provisioner, from the panel or the installer's
 # extras — and everything vendored (xray, netbird, gitea) comes from its
-# vendor because the archive versions lag badly.
-SYSTEM_APT_PACKAGES = (
+# vendor because the distribution versions lag badly.
+#
+# Every name below is spelled the same on Debian, RHEL and Arch except the
+# ones in SYSTEM_PACKAGE_NAMES.
+SYSTEM_BASE_PACKAGES = (
     "nftables",
     "dnsmasq",
     "vnstat",
@@ -63,6 +66,21 @@ SYSTEM_APT_PACKAGES = (
     "hostapd",
     "python3-venv",
 )
+
+# Where a family spells a base package differently. A name absent from a
+# family's entry keeps the name above; a name mapped to None is one that
+# family has no separate package for, because it is already installed.
+SYSTEM_PACKAGE_NAMES = {
+    "debian": {},
+    "rhel": {
+        "dnsmasq": "dnsmasq",
+        # RHEL builds venv into the interpreter rather than splitting it out.
+        "python3-venv": None,
+    },
+    "arch": {
+        "python3-venv": None,
+    },
+}
 
 # The panel runs from a virtual environment inside the repo rather than from
 # system packages: Ubuntu marks its Python externally managed, and an appliance

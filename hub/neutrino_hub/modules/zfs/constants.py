@@ -15,6 +15,25 @@ ZFS_ZED_UNIT = "zfs-zed.service"
 # tools only, so no DKMS compile is involved.
 ZFS_SUPPORTED_ARCHITECTURES = ("amd64", "arm64")
 
+# zfs-zed is spelled out on Debian: it is only a Recommends of zfsutils-linux,
+# and the install runs without recommends.
+ZFS_PACKAGES = {
+    "debian": ("zfsutils-linux", "zfs-zed", "smartmontools"),
+    "rhel": ("zfs", "smartmontools"),
+    "arch": ("zfs-utils", "smartmontools"),
+}
+
+# ZFS is under the CDDL, which nobody ships alongside a GPL kernel by default.
+# Debian keeps it in the contrib component, Fedora and RHEL have it only from
+# OpenZFS's own repository, and Arch has it only from archzfs. Installing it
+# is what the person clicked, so the repository is added without a second
+# question.
+ZFS_CONTRIB_COMPONENT = "contrib"
+ZFS_RHEL_RELEASE_URL = "https://zfsonlinux.org/epel/zfs-release-2-3.el9.noarch.rpm"
+ZFS_ARCH_REPOSITORY = "archzfs"
+ZFS_ARCH_SERVER = "https://archzfs.com/$repo/$arch"
+ZFS_ARCH_KEY = "DDF7DB817396A49B2A2723F7403BD972F75D9D76"  # scan: allow
+
 # Offered compressions, best first. zstd is the default: on a gateway's CPU it
 # is effectively free and routinely halves text-heavy datasets. Everything
 # beyond this choice (recordsize, sync, dedup) keeps its ZFS default and stays

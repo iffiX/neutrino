@@ -8,9 +8,25 @@ SAMBA_GENERATED_NAME = "smb.conf"
 
 # Every panel-created account joins this group; share directories are owned by
 # it with setgid, so files members create stay writable to the others and
-# permissions never fight. It is Ubuntu's own group for exactly this.
+# permissions never fight. Debian ships this group; RHEL and Arch do not, and
+# the provisioner creates it there. One name everywhere keeps the renderer
+# pure and keeps an existing share working after an upgrade.
 SAMBA_GROUP = "sambashare"
 
+# Debian splits the daemons into smbd and nmbd and names the unit after the
+# binary; RHEL and Arch ship one smb.service.
+SAMBA_SERVICES = {
+    "debian": "smbd",
+    "rhel": "smb",
+    "arch": "smb",
+}
+
 SAMBA_DEFAULT_SHARE_DIR = Path("/srv/share")
-# Arrives through apt, which picks the machine's build.
+# Arrives through the package manager, which picks the machine's build.
 SAMBA_SUPPORTED_ARCHITECTURES = ("*",)
+
+SAMBA_PACKAGES = {
+    "debian": ("samba",),
+    "rhel": ("samba", "samba-client"),
+    "arch": ("samba",),
+}

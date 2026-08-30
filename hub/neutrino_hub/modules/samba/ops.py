@@ -16,6 +16,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from neutrino_hub.system.machine import distribution_family
 from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
 from neutrino_hub.utils.json_file import write_generated
 from neutrino_hub.utils.subprocess_run import CommandError, run
@@ -25,6 +26,7 @@ from neutrino_hub.modules.samba.constants import (
     SAMBA_CONF_LINK_PATH,
     SAMBA_GENERATED_NAME,
     SAMBA_GROUP,
+    SAMBA_SERVICES,
 )
 
 # The include file an earlier installer wrote next to smb.conf. The rendered
@@ -32,7 +34,8 @@ from neutrino_hub.modules.samba.constants import (
 # whoever reads the directory.
 LEGACY_INCLUDE_PATH = Path("/etc/samba/neutrino_share.conf")
 
-SMBD_SERVICE = "smbd"
+# Debian names the unit after the binary; RHEL and Arch ship one smb.service.
+SMBD_SERVICE = SAMBA_SERVICES.get(distribution_family(), "smbd")
 
 
 @dataclass

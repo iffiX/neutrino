@@ -13,6 +13,7 @@ import shutil
 from pathlib import Path
 from typing import Callable
 
+from neutrino_hub.system import package_manager
 from neutrino_hub.system.provisioning import ProvisionResult, say
 from neutrino_hub.utils.subprocess_run import CommandError, run
 
@@ -83,8 +84,8 @@ class NetbirdProvisioner:
         run(["netbird", "down"], is_checked=False, timeout_s=30)
         run(["systemctl", "disable", "--now", "netbird"], is_checked=False)
 
-        say(report, "removing the package and its apt repository")
-        run(["apt-get", "remove", "-y", "netbird"], timeout_s=300)
+        say(report, "removing the package and its repository")
+        package_manager.current().remove(("netbird",))
         for path in APT_SOURCE_PATHS:
             path.unlink(missing_ok=True)
 

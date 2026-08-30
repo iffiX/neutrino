@@ -1,30 +1,45 @@
 """Installing and removing the ZFS tools.
 
-The kernel module ships with Ubuntu's kernel packages; what apt adds here is
-the userland (``zpool``/``zfs``), the event daemon, and smartmontools for the
-disk health column. Pools are never touched in either direction: they live on
-their member disks, and removing the tools merely makes them unreachable
-until the tools return.
+What the package manager adds here is the userland (``zpool``/``zfs``), the
+event daemon, and smartmontools for the disk health column. Pools are never
+touched in either direction: they live on their member disks, and removing the
+tools merely makes them unreachable until the tools return.
+
+No distribution ships ZFS in its default repositories except Ubuntu — the CDDL
+does not sit beside a GPL kernel — so this adds the repository the
+distribution keeps it in before installing. Somebody asked for ZFS by clicking
+install; being asked again about a repository would be asking the same
+question twice.
+
+Not pure: edits repository configuration and installs packages.
 """
 
 import shutil
 from pathlib import Path
 from typing import Callable
 
+from neutrino_hub.system import package_manager
+from neutrino_hub.system.machine import distribution_family, require_distribution
 from neutrino_hub.system.provisioning import ProvisionResult, say
 from neutrino_hub.utils.subprocess_run import run
 
 from neutrino_hub.modules.zfs.constants import (
     ZFS_ARC_MAX_FRACTION,
     ZFS_ARC_MAX_PARAMETER,
+    ZFS_ARCH_KEY,
+    ZFS_ARCH_REPOSITORY,
+    ZFS_ARCH_SERVER,
+    ZFS_CONTRIB_COMPONENT,
     ZFS_MODPROBE_CONF,
+    ZFS_PACKAGES,
+    ZFS_RHEL_RELEASE_URL,
 )
 
-# zfs-zed is spelled out: it is only a Recommends of zfsutils-linux, and the
-# install runs without recommends.
-ZFS_PACKAGES = ("zfsutils-linux", "zfs-zed", "smartmontools")
-
 MEMINFO_PATH = Path("/proc/meminfo")
+
+APT_SOURCES_LIST = Path("/etc/apt/sources.list")
+APT_SOURCES_DIR = Path("/etc/apt/sources.list.d")
+PACMAN_CONF = Path("/etc/pacman.conf")
 
 
 class ZfsProvisioner:
@@ -42,17 +57,23 @@ class ZfsProvisioner:
             What was done.
 
         Raises:
-            CommandError: If apt fails.
+            CommandError: If the package manager fails, which on the families
+                that build a kernel module includes the build failing.
+            RuntimeError: If this distribution has no ZFS packages named.
         """
         if shutil.which("zpool"):
             self._cap_arc(report)
             return ProvisionResult(is_changed=False, message="already installed")
-        say(report, "installing zfsutils-linux and smartmontools from Ubuntu")
-        run(["apt-get", "update"], timeout_s=300, is_checked=False)
-        run(
-            ["apt-get", "install", "-y", "--no-install-recommends", *ZFS_PACKAGES],
-            timeout_s=900,
-        )
+
+        packages = require_distribution(ZFS_PACKAGES, "ZFS")
+        controller = package_manager.current()
+        controller.refresh()
+        if not controller.available_version(packages[0]):
+            _add_repository(report)
+            controller.refresh()
+
+        say(report, f"installing {', '.join(packages)}")
+        controller.install(packages)
         self._cap_arc(report)
         return ProvisionResult(is_changed=True, message="installed")
 
@@ -78,7 +99,8 @@ class ZfsProvisioner:
         if not shutil.which("zpool"):
             return ProvisionResult(is_changed=False, message="not installed")
         say(report, "removing the ZFS tools; pools stay intact on their disks")
-        run(["apt-get", "remove", "-y", *ZFS_PACKAGES], timeout_s=600)
+        packages = ZFS_PACKAGES.get(distribution_family(), ())
+        package_manager.current().remove(packages)
         ZFS_MODPROBE_CONF.unlink(missing_ok=True)
         return ProvisionResult(
             is_changed=True, message="removed; pools remain on their disks"
@@ -121,3 +143,100 @@ def _total_memory_bytes() -> int:
     except (OSError, ValueError, IndexError):
         pass
     return 0
+
+
+def _add_repository(report: Callable[[str], None] | None) -> None:
+    """Add the repository this distribution keeps ZFS in.
+
+    Args:
+        report: Sink for progress lines, if anyone is watching.
+
+    Raises:
+        CommandError: If the repository cannot be added.
+    """
+    family = distribution_family()
+    if family == "debian":
+        say(report, "enabling the contrib component, where Debian keeps ZFS")
+        _enable_apt_component(ZFS_CONTRIB_COMPONENT)
+    elif family == "rhel":
+        say(report, "adding the OpenZFS repository")
+        run(["dnf", "-y", "install", ZFS_RHEL_RELEASE_URL], timeout_s=300)
+    elif family == "arch":
+        say(report, "adding the archzfs repository")
+        _add_pacman_repository()
+
+
+def _enable_apt_component(component: str) -> None:
+    """Add a component to every Debian repository already configured.
+
+    Two formats are in the field: the one-line entries of ``sources.list`` and
+    the deb822 stanzas Debian 12 writes into ``sources.list.d``. Both are
+    edited in place, and a file that already names the component is left
+    alone so this can run twice.
+
+    Args:
+        component: ``contrib``, or another component name.
+    """
+    for path in _apt_source_files():
+        try:
+            original = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        lines = []
+        for line in original.splitlines():
+            lines.append(_line_with_component(line, component))
+        rewritten = "\n".join(lines) + "\n"
+        if rewritten != original:
+            path.write_text(rewritten, encoding="utf-8")
+
+
+def _apt_source_files() -> list:
+    """Every file apt reads repositories from.
+
+    Returns:
+        The paths that exist, ``sources.list`` first.
+    """
+    paths = [APT_SOURCES_LIST] if APT_SOURCES_LIST.is_file() else []
+    if APT_SOURCES_DIR.is_dir():
+        paths += sorted(APT_SOURCES_DIR.glob("*.list"))
+        paths += sorted(APT_SOURCES_DIR.glob("*.sources"))
+    return paths
+
+
+def _line_with_component(line: str, component: str) -> str:
+    """One repository line with the component added, if it belongs there.
+
+    Args:
+        line: A line of a sources file, either format.
+        component: The component to add.
+
+    Returns:
+        The line, extended when it lists components and does not already name
+        this one.
+    """
+    stripped = line.strip()
+    if stripped.startswith("Components:"):
+        listed = stripped[len("Components:") :].split()
+        if component in listed:
+            return line
+        return f"Components: {' '.join(listed + [component])}"
+    if stripped.startswith(("deb ", "deb-src ")) and component not in stripped.split():
+        return f"{line.rstrip()} {component}"
+    return line
+
+
+def _add_pacman_repository() -> None:
+    """Trust the archzfs key and add its repository to pacman.conf.
+
+    Raises:
+        CommandError: If the key cannot be fetched or signed.
+    """
+    run(["pacman-key", "--recv-keys", ZFS_ARCH_KEY], timeout_s=300)
+    run(["pacman-key", "--lsign-key", ZFS_ARCH_KEY], timeout_s=120)
+    text = PACMAN_CONF.read_text(encoding="utf-8")
+    if f"[{ZFS_ARCH_REPOSITORY}]" in text:
+        return
+    PACMAN_CONF.write_text(
+        f"{text.rstrip()}\n\n[{ZFS_ARCH_REPOSITORY}]\nServer = {ZFS_ARCH_SERVER}\n",
+        encoding="utf-8",
+    )

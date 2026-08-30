@@ -9,15 +9,18 @@ through the podman-docker shim.
 import shutil
 from typing import Callable
 
+from neutrino_hub.system import package_manager
+from neutrino_hub.system.machine import require_distribution
 from neutrino_hub.system.provisioning import ProvisionResult, say
-from neutrino_hub.utils.subprocess_run import run
+from neutrino_hub.utils.subprocess_run import CommandError, run
 
-from neutrino_hub.modules.podman.constants import PODMAN_DATA_DIR, PODMAN_QUADLET_DIR
+from neutrino_hub.modules.podman.constants import (
+    PODMAN_DATA_DIR,
+    PODMAN_MINIMUM_VERSION,
+    PODMAN_PACKAGES,
+    PODMAN_QUADLET_DIR,
+)
 from neutrino_hub.modules.podman.renderer import GENERATED_MARKER
-
-# podman-docker adds a `docker` alias over podman, so hands and scripts that
-# speak docker keep working unchanged.
-PODMAN_PACKAGES = ("podman", "podman-docker")
 
 
 class PodmanProvisioner:
@@ -35,17 +38,21 @@ class PodmanProvisioner:
             What was done.
 
         Raises:
-            CommandError: If apt fails.
+            CommandError: If this distribution offers no podman new enough for
+                Quadlet, or the package manager fails.
+            RuntimeError: If this distribution has no podman packages named.
         """
         if shutil.which("podman"):
             version = run(["podman", "--version"], is_checked=False).stdout.strip()
             return ProvisionResult(is_changed=False, message=version or "present")
+
+        packages = require_distribution(PODMAN_PACKAGES, "podman")
+        controller = package_manager.current()
+        controller.refresh()
+        _require_quadlet(controller)
+
         say(report, "installing podman and the docker command shim")
-        run(["apt-get", "update"], timeout_s=300, is_checked=False)
-        run(
-            ["apt-get", "install", "-y", "--no-install-recommends", *PODMAN_PACKAGES],
-            timeout_s=900,
-        )
+        controller.install(packages)
         return ProvisionResult(is_changed=True, message="installed")
 
     def deprovision(
@@ -97,3 +104,23 @@ class PodmanProvisioner:
         return ProvisionResult(
             is_changed=True, message="removed; images and volumes kept"
         )
+
+
+def _require_quadlet(controller: package_manager.SystemPackageController) -> None:
+    """Refuse a podman that cannot read a Quadlet file.
+
+    Args:
+        controller: The machine's package manager, already refreshed.
+
+    Raises:
+        CommandError: When the version on offer is below the floor, naming it
+            so the report is about this distribution rather than about podman.
+    """
+    offered = controller.available_version("podman")
+    if package_manager.is_version_at_least(offered, PODMAN_MINIMUM_VERSION):
+        return
+    raise CommandError(
+        f"this distribution offers podman {offered or 'nothing'}; containers "
+        f"need {PODMAN_MINIMUM_VERSION} or newer, which is where Quadlet "
+        f"turns a declared container into a systemd unit"
+    )

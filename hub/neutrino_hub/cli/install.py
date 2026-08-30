@@ -20,7 +20,8 @@ from pathlib import Path
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.routes import RouterInterfaceApplier
 from neutrino_hub.system.constants import (
-    SYSTEM_APT_PACKAGES,
+    SYSTEM_BASE_PACKAGES,
+    SYSTEM_PACKAGE_NAMES,
     SYSTEM_FAIL2BAN_JAIL,
     SYSTEM_FAIL2BAN_JAIL_PATH,
     SYSTEM_SYSTEMD_DIR,
@@ -46,6 +47,7 @@ from neutrino_hub.utils.constants import (
     UTILS_PACKAGE_ROOT,
 )
 from neutrino_hub.utils.json_file import read_config, write_config
+from neutrino_hub.system import package_manager
 from neutrino_hub.utils.subprocess_run import CommandError, run
 from neutrino_hub.web.auth import hash_password
 from neutrino_hub.modules.xray.constants import XRAY_BINARY
@@ -200,41 +202,49 @@ def _step_samba(reporter: InstallReporter) -> tuple[str, bool]:
     return message, True
 
 
-def _step_apt_packages(reporter: InstallReporter) -> tuple[str, bool]:
-    missing = []
-    for package in SYSTEM_APT_PACKAGES:
-        result = run(["dpkg", "-s", package], is_checked=False)
-        if not result.is_success:
-            missing.append(package)
+def _step_base_packages(reporter: InstallReporter) -> tuple[str, bool]:
+    controller = package_manager.current()
+    wanted = _packages_for(controller.family)
+    missing = [name for name in wanted if not controller.is_installed(name)]
     if not missing:
-        return f"{len(SYSTEM_APT_PACKAGES)} packages present", False
+        return f"{len(wanted)} packages present", False
 
-    # Samba and dnsmasq both ask debconf questions when a terminal is attached,
-    # which would hang an unattended install.
-    os.environ["DEBIAN_FRONTEND"] = "noninteractive"
-    run(["apt-get", "update"], timeout_s=300)
-    result = run(
-        ["apt-get", "install", "-y", "--no-install-recommends", *missing],
-        timeout_s=900,
-        is_checked=False,
-    )
-    if not result.is_success:
+    controller.refresh()
+    try:
+        controller.install(tuple(missing))
+    except CommandError as error:
         # dnsmasq's postinst fails when its stock config collides with the
         # resolved stub on port 53. The package still unpacks, and the render
         # step below replaces that config, so a failed postinst is only fatal
         # if the binary really is missing.
-        still_missing = [
-            package
-            for package in missing
-            if not run(["dpkg", "-s", package], is_checked=False).is_success
-        ]
+        still_missing = [name for name in missing if not controller.is_installed(name)]
         if still_missing:
             raise CommandError(
-                f"apt could not install {', '.join(still_missing)}:\n"
-                f"{result.stderr or result.stdout}"
+                f"{controller.binary} could not install "
+                f"{', '.join(still_missing)}:\n{error}"
             )
         reporter.note("a package postinst failed; the render step below fixes it")
     return f"installed {', '.join(missing)}", True
+
+
+def _packages_for(family: str) -> list:
+    """The base package names this distribution spells its own way.
+
+    Args:
+        family: The distribution family, as `machine.distribution_family`
+            reports it.
+
+    Returns:
+        The names to install, with anything this family has no separate
+        package for left out.
+    """
+    renames = SYSTEM_PACKAGE_NAMES.get(family, {})
+    names = []
+    for package in SYSTEM_BASE_PACKAGES:
+        renamed = renames.get(package, package)
+        if renamed is not None:
+            names.append(renamed)
+    return names
 
 
 def _step_fail2ban(reporter: InstallReporter) -> tuple[str, bool]:
@@ -531,7 +541,7 @@ def _venv_python() -> Path:
 # gateway; EXTRA_STEPS holds the optional services and runs only with
 # --with-extras.
 CORE_STEPS = (
-    ("Installing system packages", _step_apt_packages),
+    ("Installing system packages", _step_base_packages),
     ("Guarding SSH with fail2ban", _step_fail2ban),
     ("Creating service user and directories", _step_users_and_dirs),
     ("Preparing the Python environment", _step_python_env),
