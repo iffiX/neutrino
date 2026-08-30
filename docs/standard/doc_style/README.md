@@ -94,6 +94,38 @@ summary — it says the thing is finished, never what the thing was:
 
 > 至此，`Xray` 的【回落】功能就介绍完了。希望本文能够对你理解 `Xray` 的强大有所帮助。
 
+### A document says what exists
+
+Documentation is a description of the current thing, never a record of what
+the thing used to be. A removed command, a renamed field, an approach that was
+tried and dropped — none of it appears anywhere: not in a changelog line, not
+in a "what moved" section, not in a parenthesis beside its replacement. The
+reader is told what to type today.
+
+This is the one rule here that is not drawn from the corpus. It is this
+project's, because a repository that documents its own deletions accumulates a
+second history that drifts from git and outlives the reason it was written.
+
+```text
+# BAD — the page carries its own past
+### apply
+
+Renders every config and applies it. (This was `render` before 0.2.)
+
+## What moved out
+
+`nhub scan-secrets` no longer ships; it is a development command.
+
+# GOOD — the page carries the present
+### apply
+
+Renders every module's config from `config/` and makes it true on the box.
+```
+
+A deprecation the user asked for is not a deletion. A feature kept working
+while its callers move off it still exists, so it is documented like anything
+else, with the thing that replaces it named.
+
 ### Transition filler does not appear
 
 These are measured zeroes across the whole corpus, not "used sparingly":

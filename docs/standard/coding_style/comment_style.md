@@ -22,6 +22,38 @@ nothing to retype, nothing to drift."
 routing peer, plus an access policy."
 ```
 
+## Banned: recording what was removed
+
+A comment never says what used to be there. No "formerly", no "replaced the
+old", no commented-out code kept for reference, no note that something was
+renamed or dropped. Git holds every previous version, and a comment repeating
+it is a second copy nobody updates.
+
+Something unfinished, experimental, or abandoned leaves nothing behind at all.
+Delete it and stop.
+
+```python
+# BAD — a tombstone
+# We shelled out to `ip route` here before the netlink rewrite.
+def routes() -> list:
+
+# BAD — kept because deleting felt lossy
+# def legacy_render(config):
+#     ...
+```
+
+The exception is a deprecation the user asked for. A feature that still works
+while its callers move off it is a feature that exists, and it says so, naming
+what replaces it:
+
+```python
+def render_v1(config: RouterNetworkConfig) -> str:
+    """Render the pre-2.0 network config.
+
+    Deprecated: use `render`. Kept while stored configs are migrated.
+    """
+```
+
 ## Keep changes small and simple (KISS)
 
 The smallest change that does the job. Do not restructure code you were not
