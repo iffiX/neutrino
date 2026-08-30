@@ -174,6 +174,14 @@ little servers are very welcome here.
 
 ---
 
+# License
+
+Neutrino is released under the [MIT License](LICENSE). Use it, change it,
+ship it — commercially or not — as long as the copyright notice travels
+with it.
+
+---
+
 # Acknowledgements
 
 Neutrino was built with extensive help from modern AI development tools,
