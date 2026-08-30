@@ -91,24 +91,45 @@ jobs:
       - name: Install it, use it, remove it
         shell: pwsh
         run: |
+          # A native command exiting non-zero is a value to test here, not an
+          # error to stop on: the agent reports an unenrolled machine that way.
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
+
           $setup = (Get-ChildItem dist\*-setup.exe)[0].FullName
           Start-Process -FilePath $setup -Wait `
             -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'
 
-          schtasks /query /tn "Neutrino Agent" /fo list
+          # What the task ended up storing is the one thing the quoting in the
+          # Inno script can get wrong without anything else noticing.
+          $task = Get-ScheduledTask -TaskName 'Neutrino Agent'
+          $task.Actions | Format-List
+          if ($task.Actions[0].Execute -notlike '*nagent_service.cmd*') {
+            throw "the task runs $($task.Actions[0].Execute)"
+          }
 
-          # Unenrolled, the agent reports that and exits 1. Reaching that
-          # message means the interpreter imported it.
+          # Unenrolled, the agent says so and exits 1. Reaching that message
+          # means the bundled interpreter imported it.
           & "$env:ProgramFiles\Neutrino Agent\nagent.cmd" --once
           if ($LASTEXITCODE -ne 1) {
             throw "nagent --once exited $LASTEXITCODE, expected 1"
           }
 
-          Start-Process -Wait `
-            -FilePath "$env:ProgramFiles\Neutrino Agent\unins000.exe" `
+          Start-Process -FilePath "$env:ProgramFiles\Neutrino Agent\unins000.exe" `
             -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'
-          schtasks /query /tn "Neutrino Agent" 2>$null
-          if ($LASTEXITCODE -eq 0) { throw "the task outlived the uninstaller" }
+
+          # Inno's uninstaller re-runs itself from a copy and the first process
+          # returns at once, so the task going away is what says it finished.
+          $deadline = (Get-Date).AddSeconds(90)
+          while ((Get-Date) -lt $deadline) {
+            if (-not (Get-ScheduledTask -TaskName 'Neutrino Agent' `
+                        -ErrorAction SilentlyContinue)) { break }
+            Start-Sleep -Seconds 3
+          }
+          if (Get-ScheduledTask -TaskName 'Neutrino Agent' `
+                -ErrorAction SilentlyContinue) {
+            throw 'the task outlived the uninstaller'
+          }
 
           exit 0
 
