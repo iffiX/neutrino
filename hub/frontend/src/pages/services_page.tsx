@@ -3,9 +3,14 @@ import { useContext, useEffect, useState } from "react";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { ServiceCard } from "../components/service_card";
-import { apiPost, describeError } from "../api_client";
+import { InstallConsentModal } from "../components/install_consent_modal";
+import { apiGet, apiPost, describeError } from "../api_client";
 import { ServicesContext } from "../services_context";
-import type { ServiceActionName, ServiceView } from "../api_types";
+import type {
+  ServiceActionName,
+  ServiceInstallPlanView,
+  ServiceView,
+} from "../api_types";
 
 import "./services_page.css";
 
@@ -31,6 +36,9 @@ export function ServicesPage() {
   // Install/uninstall task ids by service name. Kept after finishing so the
   // log stays readable; replaced when the next task starts.
   const [tasks, setTasks] = useState<Record<string, string>>({});
+  // The module whose install is waiting on a person, with what it would do.
+  const [pendingConsent, setPendingConsent] =
+    useState<ServiceInstallPlanView | null>(null);
 
   useEffect(() => {
     if (resource?.data != null) {
@@ -86,6 +94,38 @@ export function ServicesPage() {
     } catch (cause: unknown) {
       setActionError(describeError(cause));
     }
+  };
+
+  // Installing asks the module what it would do before it does it. A module
+  // that only installs packages says nothing and the install starts; one that
+  // would compile a kernel module or add a repository outside the
+  // distribution puts that in front of a person first.
+  const handleInstall = async (name: string) => {
+    setActionError(null);
+    try {
+      const plan = await apiGet<ServiceInstallPlanView>(
+        `/services/${name}/install-plan`,
+      );
+      if (plan.is_consent_needed) {
+        setPendingConsent(plan);
+        return;
+      }
+    } catch (cause: unknown) {
+      setActionError(describeError(cause));
+      return;
+    }
+    await startTask(name, `/services/${name}/install`, { is_consented: false });
+  };
+
+  const handleConsented = async () => {
+    const plan = pendingConsent;
+    setPendingConsent(null);
+    if (plan === null) {
+      return;
+    }
+    await startTask(plan.name, `/services/${plan.name}/install`, {
+      is_consented: true,
+    });
   };
 
   const handleDismissTask = (name: string) => {
@@ -146,9 +186,7 @@ export function ServicesPage() {
             tasks={tasks}
             onAction={handleAction}
             onToggleJournal={handleToggleJournal}
-            onInstall={(name) =>
-              void startTask(name, `/services/${name}/install`)
-            }
+            onInstall={(name) => void handleInstall(name)}
             onUninstall={(name, isDataKept) =>
               void startTask(name, `/services/${name}/uninstall`, {
                 is_data_kept: isDataKept,
@@ -166,9 +204,7 @@ export function ServicesPage() {
             tasks={tasks}
             onAction={handleAction}
             onToggleJournal={handleToggleJournal}
-            onInstall={(name) =>
-              void startTask(name, `/services/${name}/install`)
-            }
+            onInstall={(name) => void handleInstall(name)}
             onUninstall={(name, isDataKept) =>
               void startTask(name, `/services/${name}/uninstall`, {
                 is_data_kept: isDataKept,
@@ -178,6 +214,14 @@ export function ServicesPage() {
             onDismissTask={handleDismissTask}
           />
         </>
+      )}
+      {pendingConsent !== null && (
+        <InstallConsentModal
+          name={pendingConsent.name}
+          consents={pendingConsent.consents}
+          onConfirm={() => void handleConsented()}
+          onCancel={() => setPendingConsent(null)}
+        />
       )}
     </div>
   );

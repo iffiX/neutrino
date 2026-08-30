@@ -8,10 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from neutrino_hub.modules.registry import MODULE_SPECS, ModuleSpec
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.system.machine import ANY_ARCHITECTURE, machine_architecture
+from neutrino_hub.system.provisioning import plan_for
 from neutrino_hub.utils.subprocess_run import CommandError, run
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
     JournalView,
+    ProvisionConsentView,
+    ServiceInstallPlanView,
+    ServiceInstallRequest,
     ServiceListView,
     ServiceUninstallRequest,
     ServiceView,
@@ -69,9 +73,42 @@ def journal(
         ) from error
 
 
+@router.get("/{name}/install-plan", response_model=ServiceInstallPlanView)
+def install_plan(name: str) -> ServiceInstallPlanView:
+    """What installing this module on this machine would actually do.
+
+    The panel asks before it offers the button, so anything a person would
+    want to have been asked about — a kernel module compiled against the
+    running kernel, a third-party repository — is a decision rather than a
+    surprise in a log.
+
+    Args:
+        name: Panel-facing module name.
+
+    Returns:
+        The plan, with an empty consent list for the ordinary module that
+        only installs packages.
+
+    Raises:
+        HTTPException: 404 for a name the panel cannot install.
+    """
+    spec = _spec_or_404(name)
+    plan = plan_for(spec.provisioner())
+    return ServiceInstallPlanView(
+        name=name,
+        is_consent_needed=plan.is_consent_needed,
+        consents=[
+            ProvisionConsentView(code=consent.code, detail=consent.detail)
+            for consent in plan.consents
+        ],
+    )
+
+
 @router.post("/{name}/install", response_model=TaskStarted)
 async def install(
-    name: str, runtime: PanelRuntime = Depends(get_runtime)
+    name: str,
+    request: ServiceInstallRequest | None = None,
+    runtime: PanelRuntime = Depends(get_runtime),
 ) -> TaskStarted:
     """Install an optional module as a streamed background job.
 
@@ -80,6 +117,7 @@ async def install(
 
     Args:
         name: Panel-facing module name.
+        request: Whether the person agreed to what the plan listed.
         runtime: The shared runtime.
 
     Returns:
@@ -87,7 +125,8 @@ async def install(
 
     Raises:
         HTTPException: 404 for a name the panel cannot install, 400 on a
-            machine the module does not run on.
+            machine the module does not run on, and 409 when the plan needs
+            agreement that did not arrive with the request.
     """
     spec = _spec_or_404(name)
     if ANY_ARCHITECTURE not in spec.architectures:
@@ -100,8 +139,15 @@ async def install(
                     f"{', '.join(spec.architectures)}"
                 ),
             )
+    is_consented = request.is_consented if request is not None else False
+    if plan_for(spec.provisioner()).is_consent_needed and not is_consented:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"installing {name} here needs agreement that was not given",
+        )
     stream = runtime.tasks.start(
-        label=f"install {name}", source=_install_source(name, spec)
+        label=f"install {name}",
+        source=_install_source(name, spec, is_consented=is_consented),
     )
     return TaskStarted(task_id=stream.id)
 
@@ -182,9 +228,31 @@ def control(
     return _to_view(runtime.services.status(name))
 
 
-async def _install_source(name: str, spec: ModuleSpec) -> AsyncIterator[str]:
+def _provision(spec: ModuleSpec, *, is_consented: bool, report):
+    """Run a provisioner, passing consent only to one that asks for it.
+
+    Most provisioners take no such argument, and adding one to every module
+    for the sake of the two that need it would be a parameter nobody reads.
+
+    Args:
+        spec: The module being installed.
+        is_consented: Whether the person agreed to the plan.
+        report: Sink for progress lines.
+
+    Returns:
+        What the provisioner did.
+    """
+    provisioner = spec.provisioner()
+    if getattr(provisioner, "plan", None) is None:
+        return provisioner.provision(report=report)
+    return provisioner.provision(is_consented=is_consented, report=report)
+
+
+async def _install_source(
+    name: str, spec: ModuleSpec, *, is_consented: bool
+) -> AsyncIterator[str]:
     async for line in _provisioner_stream(
-        lambda report: spec.provisioner().provision(report=report)
+        lambda report: _provision(spec, is_consented=is_consented, report=report)
     ):
         yield line
     yield f"enabling and starting {spec.unit}\n"

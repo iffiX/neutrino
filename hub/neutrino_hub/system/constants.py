@@ -44,6 +44,12 @@ SYSTEM_MANAGED_UNITS = {**SYSTEM_CORE_UNITS, **SYSTEM_OPTIONAL_UNITS}
 #
 # Every name below is spelled the same on Debian, RHEL and Arch except the
 # ones in SYSTEM_PACKAGE_NAMES.
+# What a provisioner can ask agreement for. The panel words each of these;
+# nothing here or below it writes a sentence, so they can be translated and
+# these stay facts.
+SYSTEM_CONSENT_KERNEL_MODULE_BUILD = "kernel_module_build"
+SYSTEM_CONSENT_THIRD_PARTY_REPOSITORY = "third_party_repository"
+
 SYSTEM_BASE_PACKAGES = (
     "nftables",
     "dnsmasq",

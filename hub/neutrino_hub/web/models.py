@@ -670,6 +670,37 @@ class ServiceListView(BaseModel):
     services: list[ServiceView]
 
 
+class ProvisionConsentView(BaseModel):
+    """One thing installing would do that the person agrees to first.
+
+    ``code`` says what kind of consequence it is and ``detail`` carries the
+    values its sentence needs. The backend writes neither the sentence nor
+    the title: wording belongs to the panel, which is what lets it be
+    translated.
+    """
+
+    code: str
+    detail: dict
+
+
+class ServiceInstallPlanView(BaseModel):
+    """What installing a module on this machine would actually do."""
+
+    name: str
+    is_consent_needed: bool
+    consents: list[ProvisionConsentView]
+
+
+class ServiceInstallRequest(BaseModel):
+    """Whether the person has agreed to what the plan listed.
+
+    False is the ordinary case: a module whose plan asks nothing installs on
+    the press that started it.
+    """
+
+    is_consented: bool = False
+
+
 class ServiceUninstallRequest(BaseModel):
     """How much of a module to take away.
 

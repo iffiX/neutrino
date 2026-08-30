@@ -559,6 +559,21 @@ export interface ServiceView {
   data_description: string;
 }
 
+export interface ProvisionConsentView {
+  code: string;
+  detail: Record<string, unknown>;
+}
+
+export interface ServiceInstallPlanView {
+  name: string;
+  is_consent_needed: boolean;
+  consents: ProvisionConsentView[];
+}
+
+export interface ServiceInstallRequest {
+  is_consented: boolean;
+}
+
 export interface ServiceUninstallRequest {
   is_data_kept: boolean;
 }

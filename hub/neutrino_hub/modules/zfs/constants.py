@@ -28,6 +28,23 @@ ZFS_PACKAGES = {
 # OpenZFS's own repository, and Arch has it only from archzfs. Installing it
 # is what the person clicked, so the repository is added without a second
 # question.
+# Where the kernel module comes from, which decides whether installing is an
+# ordinary package install or a compile against the running kernel. Ubuntu
+# ships zfs.ko with its kernels and Arch's archzfs carries a build for the
+# stock kernel; Debian and the RHEL family compile through DKMS.
+ZFS_MODULE_PACKAGES = {
+    "debian": ("zfs-dkms",),
+    "rhel": ("zfs-dkms",),
+    "arch": ("zfs-linux",),
+}
+ZFS_MODULE_NAME = "zfs"
+
+# Families whose module package is compiled against the running kernel rather
+# than shipped built. archzfs builds zfs-linux for Arch's stock kernel, so
+# installing it there is an ordinary package install; on a custom kernel it
+# will refuse rather than quietly compile.
+ZFS_DKMS_FAMILIES = ("debian", "rhel")
+
 ZFS_CONTRIB_COMPONENT = "contrib"
 ZFS_RHEL_RELEASE_URL = "https://zfsonlinux.org/epel/zfs-release-2-3.el9.noarch.rpm"
 ZFS_ARCH_REPOSITORY = "archzfs"
