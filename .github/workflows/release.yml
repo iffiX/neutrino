@@ -1,0 +1,108 @@
+name: release
+
+# A tag builds everything and opens a draft; the notes are written by a person.
+# workflow_dispatch builds the same packages and attaches them as artifacts
+# without touching releases, which is how the pipeline is tried out.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  hub:
+    name: hub .deb (${{ matrix.architecture }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: hub/frontend/package-lock.json
+
+      # The panel is gitignored, and hub/packaging/build_deb.py refuses to
+      # package a hub without it. Vite writes straight into the package.
+      - run: npm ci
+        working-directory: hub/frontend
+
+      - run: npm run build
+        working-directory: hub/frontend
+
+      # The hub is built inside debian:12, which for arm64 means running that
+      # container under emulation on an x86-64 runner.
+      - uses: docker/setup-qemu-action@v3
+        if: matrix.architecture != 'amd64'
+
+      - run: >
+          python3 packaging/build_release.py
+          --only hub
+          --architecture ${{ matrix.architecture }}
+          --output-dir dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hub_${{ matrix.architecture }}
+          path: dist/*.deb
+          if-no-files-found: error
+
+  agent:
+    name: agent .deb
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Architecture: all, pure standard library, no interpreter to match:
+      # the runner's own python3 and dpkg-deb are the whole toolchain.
+      - run: python3 packaging/build_release.py --only agent --output-dir dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent_deb
+          path: dist/*.deb
+          if-no-files-found: error
+
+  draft:
+    name: checksums and draft release
+    needs: [hub, agent]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # SHA256SUMS covers every package at once, so it is written here rather
+      # than by the jobs that each produced one file.
+      - run: python3 packaging/build_release.py --only checksums --output-dir dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release_dist
+          path: dist/*
+
+      - name: Open the draft release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A tag with a suffix is a pre-release, so the hub's update check
+          # passes over it.
+          case "${GITHUB_REF_NAME}" in
+            *-*) prerelease=--prerelease ;;
+            *) prerelease= ;;
+          esac
+          gh release create "${GITHUB_REF_NAME}" \
+            --draft ${prerelease} \
+            --title "${GITHUB_REF_NAME}" \
+            --notes "" \
+            dist/*

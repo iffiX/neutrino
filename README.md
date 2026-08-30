@@ -151,7 +151,7 @@ your own LAN and overlay, without putting any of it on the public Internet.
 
 | | Runs on | Carries |
 | --- | --- | --- |
-| **Hub** | Debian family — x86-64, ARM64, ARM | Its own Python environment; your system packages are untouched |
+| **Hub** | Debian family — x86-64 and ARM64 | Its own Python environment; your system packages are untouched |
 | **Agent** | Linux, Windows, macOS | Nothing. Pure standard library, and one 63 KB package covers every Linux architecture |
 
 There is only one Hub. You do not need a controller on every machine.

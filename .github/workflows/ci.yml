@@ -1,0 +1,79 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  python:
+    name: black, secret scan, tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # 3.11 is what the hub's package depends on, so the tests run against
+      # the interpreter the .deb will find on a target.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: hub/pyproject.toml
+
+      - run: pip install -e "hub[dev]"
+
+      - run: black --check hub agent
+
+      # The scan reads what git would carry, so it needs the tree, not an
+      # install. detect-secrets comes from the dev extra above.
+      - run: nhub scan-secrets
+
+      # The panel is not built here: app.py mounts it only when it exists.
+      - run: pytest -q
+        working-directory: hub
+
+      - run: pytest -q
+        working-directory: agent
+
+  agent_oldest_python:
+    name: agent on Python 3.9
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # The agent's package declares python3 (>= 3.9) and carries no
+      # interpreter, so the oldest Raspbian still has to be able to run it.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - run: pip install pytest
+
+      - run: pytest -q
+        working-directory: agent
+
+  frontend:
+    name: prettier, eslint, build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: hub/frontend/package-lock.json
+
+      - run: npm ci
+        working-directory: hub/frontend
+
+      - run: npx prettier --check src
+        working-directory: hub/frontend
+
+      - run: npx eslint src --max-warnings 0
+        working-directory: hub/frontend
+
+      # `npm run build` runs `tsc -b` first, so this is the type check too.
+      - run: npm run build
+        working-directory: hub/frontend

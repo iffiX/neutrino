@@ -82,11 +82,14 @@ not only in the filename.
 The hub runs on Debian-family Linux. Each package carries its own Python
 environment and touches nothing the system installed.
 
+There is no 32-bit ARM package. The boards that would need one — Allwinner H3,
+Raspberry Pi 2 and older — have no prebuilt wheels for the hub's dependencies,
+so the environment would have to be compiled from source under emulation.
+
 | File | For |
 | --- | --- |
 | `neutrino-hub_<version>_amd64.deb` | Any x86-64 box |
 | `neutrino-hub_<version>_arm64.deb` | Raspberry Pi 4/5, and other 64-bit ARM boards |
-| `neutrino-hub_<version>_armhf.deb` | 32-bit ARM boards |
 
 ```bash
 sudo dpkg -i neutrino-hub_<version>_amd64.deb
@@ -106,6 +109,10 @@ library.
 | `neutrino-agent-<version>.noarch.rpm` | Fedora, RHEL, CentOS |
 | `neutrino-agent-<version>.pkg` | macOS 12 or newer, Intel and Apple Silicon. Carries its own Python |
 | `neutrino-agent-<version>-setup.exe` | Windows 10 or newer. Carries its own Python |
+
+Only the `.deb` is built today. The `.rpm`, the `.pkg` and the `.exe` have no
+build script yet, and the last two also need a launchd job and a Windows
+service, which the agent does not ship.
 
 ```bash
 sudo dpkg -i neutrino-agent_<version>_all.deb
@@ -137,7 +144,13 @@ python3 packaging/build_release.py --output-dir dist/
 
 One command, and it writes `SHA256SUMS` beside what it built. The agent's
 package builds anywhere. The hub's is built inside `debian:12` — that needs
-podman or docker, and `--agent-only` skips it.
+podman or docker, and `--only agent` skips it.
+
+`--architecture arm64` builds the hub for the other architecture by running
+that container under emulation; the host needs QEMU registered with
+binfmt_misc first. `--only` builds one part at a time — `hub`, `agent`, or
+`checksums` over a directory the parts were collected into — which is how the
+tag workflow splits the work across runners.
 
 Two things bind a hub package to the machine that built it, and both are why
 the container is not optional:
@@ -154,7 +167,8 @@ the container is not optional:
 Building the hub on a developer's own machine produces a package that installs
 only on machines like it. That is the mistake this container exists to stop.
 
-macOS and Windows agent packages need those platforms and are built in CI.
+macOS and Windows agent packages need those platforms, and nothing builds
+them yet.
 
 ## The release itself
 
@@ -165,9 +179,13 @@ git tag -a v0.4.0 -m "v0.4.0"
 git push origin v0.4.0
 ```
 
-CI builds every package listed above, generates `SHA256SUMS`, and opens a draft
-release. Fill in the changelog, check the section headings still match what
-shipped, and publish.
+`.github/workflows/release.yml` builds the hub for both architectures and the
+agent's `.deb`, generates `SHA256SUMS`, and opens a draft release. Fill in the
+changelog, check the section headings still match what shipped, and publish.
+
+Running the same workflow from the Actions tab builds the packages and attaches
+them as artifacts without creating a release, which is how a change to the
+pipeline is tried before a tag depends on it.
 
 Draft, not published, is deliberate: the notes are written by a person who knows
 what the release is for.

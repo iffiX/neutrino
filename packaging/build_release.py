@@ -8,8 +8,12 @@ environment carries no standard library and its compiled wheels fix the
 architecture. This runs that build in a container so the result does not
 depend on whatever this machine happens to be.
 
-macOS and Windows agent packages are not built here; they need those platforms
-and are produced in CI.
+The agent's `.rpm`, `.pkg` and `.exe` are not built here and are not built
+anywhere yet; the last two also need the platforms they are for.
+
+``--only`` builds one part of the release. The tag workflow uses it to put the
+hub's architectures on separate runners and to write the checksums once, after
+every part has been collected.
 
 Not pure: runs container and packaging tools.
 """
@@ -26,10 +30,20 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # glibc floor (2.36) and the interpreter the package depends on (python3.11).
 HUB_BUILD_IMAGE = "debian:12"
 
+# The container platform for each architecture the hub is published for.
+# Building for anything but the host's own needs QEMU registered with
+# binfmt_misc, which is what the tag workflow does before it calls this.
+HUB_BUILD_PLATFORMS = {"amd64": "linux/amd64", "arm64": "linux/arm64"}
+
+# Only what the hub's package build reads is copied in. Taking the whole tree
+# would carry `config/`, whose real files are root-owned and unreadable, and
+# `hub/frontend/node_modules`, which the package does not contain.
 CONTAINER_BUILD = (
     "apt-get -qq update >/dev/null 2>&1 && "
     "apt-get -qq install -y python3 python3-venv python3-pip dpkg-dev "
-    ">/dev/null 2>&1 && cp -r /src /build && cd /build && "
+    ">/dev/null 2>&1 && mkdir -p /build/hub && "
+    "cp -r /src/hub/neutrino_hub /src/hub/packaging /src/hub/pyproject.toml "
+    "/build/hub/ && cd /build && "
     "python3 hub/packaging/build_deb.py --output-dir /out --architecture {arch}"
 )
 
@@ -48,30 +62,36 @@ def main() -> int:
         help="the architecture to build the hub for",
     )
     parser.add_argument(
-        "--agent-only",
-        action="store_true",
-        help="skip the hub, which needs a container",
+        "--only",
+        choices=("all", "hub", "agent", "checksums"),
+        default="all",
+        help="build one part of the release instead of everything",
     )
     arguments = parser.parse_args()
 
     output_dir = (REPO_ROOT / arguments.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print("building the agent package")
-    _run(
-        [
-            sys.executable,
-            str(REPO_ROOT / "agent/packaging/build_deb.py"),
-            "--output-dir",
-            str(output_dir),
-        ]
-    )
+    if arguments.only in ("all", "agent"):
+        print("building the agent package")
+        _run(
+            [
+                sys.executable,
+                str(REPO_ROOT / "agent/packaging/build_deb.py"),
+                "--output-dir",
+                str(output_dir),
+            ]
+        )
 
-    if not arguments.agent_only:
-        print(f"building the hub package in {HUB_BUILD_IMAGE}")
+    if arguments.only in ("all", "hub"):
+        print(
+            f"building the hub package for {arguments.architecture} "
+            f"in {HUB_BUILD_IMAGE}"
+        )
         _build_hub(output_dir, arguments.architecture)
 
-    _write_checksums(output_dir)
+    if arguments.only in ("all", "checksums"):
+        _write_checksums(output_dir)
     return 0
 
 
@@ -83,13 +103,20 @@ def _build_hub(output_dir: Path, architecture: str) -> None:
         architecture: The Debian architecture to declare.
 
     Raises:
-        SystemExit: If no container tool is available or the build fails.
+        SystemExit: If the architecture is not one the hub is published for,
+            no container tool is available, or the build fails.
     """
+    platform = HUB_BUILD_PLATFORMS.get(architecture)
+    if platform is None:
+        raise SystemExit(
+            f"the hub is published for {', '.join(HUB_BUILD_PLATFORMS)}, "
+            f"not {architecture}"
+        )
     engine = _container_engine()
     if engine is None:
         raise SystemExit(
             "podman or docker is needed to build the hub package on its "
-            "baseline distribution; pass --agent-only to skip it"
+            "baseline distribution; pass --only agent to skip it"
         )
     # --network=host because this machine's own nftables rules are what a
     # container network would otherwise have to negotiate with.
@@ -99,6 +126,8 @@ def _build_hub(output_dir: Path, architecture: str) -> None:
             "run",
             "--rm",
             "--network=host",
+            "--platform",
+            platform,
             "-v",
             f"{REPO_ROOT}:/src:ro",
             "-v",
