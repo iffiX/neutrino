@@ -66,13 +66,13 @@ rem for a process that nobody is watching.
 # @NAME@ rather than str.format: an Inno script is mostly braces already.
 # Single quotes around it because the script itself is full of doubled ones,
 # which is how Inno spells a quote inside a quoted value.
-INNO_SCRIPT = '''[Setup]
+INNO_SCRIPT = r'''[Setup]
 AppId={{A7E3C1D2-5B84-4F16-9C0A-2E7D8B3F6A15}
 AppName=Neutrino Agent
 AppVersion=@VERSION@
 AppPublisher=@PUBLISHER@
 AppPublisherURL=https://github.com/iffiX/neutrino
-DefaultDirName={autopf}\\Neutrino Agent
+DefaultDirName={autopf}\Neutrino Agent
 DisableProgramGroupPage=yes
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
@@ -85,15 +85,14 @@ SolidCompression=yes
 WizardStyle=modern
 
 [Files]
-Source: "@PAYLOAD@\\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "@PAYLOAD@\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Run]
-Filename: "{sys}\\schtasks.exe"; Parameters: "/create /tn ""@TASK_NAME@"" /tr ""{app}\\nagent_service.cmd"" /sc onstart /ru SYSTEM /rl HIGHEST /f"; Flags: runhidden; StatusMsg: "Registering the agent's startup task"
-Filename: "{sys}\\schtasks.exe"; Parameters: "/run /tn ""@TASK_NAME@"""; Flags: runhidden; StatusMsg: "Starting the agent"
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Register-ScheduledTask -TaskName '@TASK_NAME@' -Force -Action (New-ScheduledTaskAction -Execute '{app}\nagent_service.cmd') -Trigger (New-ScheduledTaskTrigger -AtStartup) -Principal (New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest)"""; Flags: runhidden; StatusMsg: "Registering the agent's startup task"
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Start-ScheduledTask -TaskName '@TASK_NAME@'"""; Flags: runhidden; StatusMsg: "Starting the agent"
 
 [UninstallRun]
-Filename: "{sys}\\schtasks.exe"; Parameters: "/end /tn ""@TASK_NAME@"""; Flags: runhidden; RunOnceId: "StopAgent"
-Filename: "{sys}\\schtasks.exe"; Parameters: "/delete /tn ""@TASK_NAME@"" /f"; Flags: runhidden; RunOnceId: "DeleteAgentTask"
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Stop-ScheduledTask -TaskName '@TASK_NAME@' -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName '@TASK_NAME@' -Confirm:$false -ErrorAction SilentlyContinue"""; Flags: runhidden; RunOnceId: "RemoveAgentTask"
 '''
 
 
