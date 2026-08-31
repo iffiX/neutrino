@@ -31,6 +31,7 @@ from neutrino_hub.modules.podman.renderer import PodmanRegistriesRenderer
 from neutrino_hub.modules.samba.config import SambaConfig
 from neutrino_hub.modules.samba.ops import SambaConfigApplier, SambaUserManager
 from neutrino_hub.modules.samba.renderer import SambaConfigRenderer
+from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
 from neutrino_hub.utils.json_file import read_config, write_config, write_generated
@@ -44,12 +45,11 @@ from neutrino_hub.modules.xray.node_probe import XrayNodeProbe
 from neutrino_hub.modules.xray.stats_client import XrayStatsClient
 
 from neutrino_hub.modules.router.constants import (
-    ROUTER_DNSMASQ_LINK_PATH,
     ROUTER_DNSMASQ_PATH,
     ROUTER_NFT_PATH,
 )
 
-DNSMASQ_SERVICE_NAME = "dnsmasq"
+DNSMASQ_SERVICE_NAME = SYSTEM_CORE_UNITS["dnsmasq"]
 PENDING_COMMAND_LIMIT = 32
 
 
@@ -343,7 +343,6 @@ class PanelRuntime:
         write_generated(ROUTER_NFT_PATH, nft_ruleset)
         RouterRulesetApplier().apply(nft_ruleset)
         write_generated(ROUTER_DNSMASQ_PATH, dnsmasq_config)
-        self._link_dnsmasq_config()
         run(["systemctl", "restart", DNSMASQ_SERVICE_NAME])
 
         self.is_config_dirty = False
@@ -366,7 +365,6 @@ class PanelRuntime:
         write_generated(ROUTER_NFT_PATH, nft_ruleset)
         RouterRulesetApplier().apply(nft_ruleset)
         write_generated(ROUTER_DNSMASQ_PATH, dnsmasq_config)
-        self._link_dnsmasq_config()
 
         # The interface must carry its new address before dnsmasq is told to
         # bind it, or the restart fails with nothing to listen on. This is also
@@ -428,13 +426,6 @@ class PanelRuntime:
             secrets=GiteaSecretStore().load(),
         ).render()
         return GiteaConfigApplier().apply(rendered)
-
-    def _link_dnsmasq_config(self) -> None:
-        if ROUTER_DNSMASQ_LINK_PATH.is_symlink():
-            return
-        ROUTER_DNSMASQ_LINK_PATH.parent.mkdir(parents=True, exist_ok=True)
-        ROUTER_DNSMASQ_LINK_PATH.unlink(missing_ok=True)
-        ROUTER_DNSMASQ_LINK_PATH.symlink_to(ROUTER_DNSMASQ_PATH)
 
 
 def generated_dir_exists() -> bool:

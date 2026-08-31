@@ -1,9 +1,9 @@
 [Unit]
 Description=Neutrino Hub routing state (forwarding, policy route, nftables)
-Documentation=file://@REPO_ROOT@/docs/config.md
+Documentation=file://@REPO_ROOT@/docs/standard/misc/config.md
 After=network-pre.target
 Wants=network-pre.target
-Before=neutrino_hub_xray.service dnsmasq.service
+Before=neutrino_hub_xray.service neutrino_hub_dnsmasq.service
 
 [Service]
 Type=oneshot

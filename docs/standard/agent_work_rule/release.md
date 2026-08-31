@@ -79,8 +79,10 @@ not only in the filename.
 
 ### Hub
 
-The hub runs on Debian-family Linux. Each package carries its own Python
-environment and touches nothing the system installed.
+The hub runs on Debian, Fedora and Arch family Linux. Each package carries its
+own Python environment and touches nothing the system installed; everything
+else it needs is named in the package's dependencies, so installing the file
+installs the appliance's prerequisites with it.
 
 There is no 32-bit ARM package. The boards that would need one — Allwinner H3,
 Raspberry Pi 2 and older — have no prebuilt wheels for the hub's dependencies,
@@ -88,13 +90,28 @@ so the environment would have to be compiled from source under emulation.
 
 | File | For |
 | --- | --- |
-| `neutrino-hub_<version>_amd64.deb` | Any x86-64 box |
+| `neutrino-hub_<version>_amd64.deb` | Debian, Ubuntu, Raspberry Pi OS on x86-64 |
 | `neutrino-hub_<version>_arm64.deb` | Raspberry Pi 4/5, and other 64-bit ARM boards |
+| `neutrino-hub-<version>-1.x86_64.rpm` | Fedora, RHEL, AlmaLinux, Rocky |
+| `neutrino-hub-<version>-1-x86_64.pkg.tar.zst` | Arch, EndeavourOS, Manjaro |
 
 ```bash
-sudo dpkg -i neutrino-hub_<version>_amd64.deb
+sudo apt install ./neutrino-hub_<version>_amd64.deb      # Debian family
+sudo dnf install ./neutrino-hub-<version>-1.x86_64.rpm   # Fedora family
+sudo pacman -U neutrino-hub-<version>-1-x86_64.pkg.tar.zst
 sudo nhub setup
 ```
+
+RHEL 9 and its rebuilds need EPEL enabled first, because `fail2ban`,
+`arp-scan` and `vnstat` are there rather than in the base repositories:
+
+```bash
+sudo dnf install -y epel-release
+```
+
+Enabling it in the same transaction does not work — the new repository's
+metadata is not read until the transaction that added it has finished — so it
+is its own line, and only on RHEL rebuilds. Fedora carries all three itself.
 
 ### Agent
 

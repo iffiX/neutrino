@@ -4,9 +4,10 @@
     sudo nhub run --only-web          # one of them; this is what each unit starts
     sudo nhub run --only-xray
     sudo nhub run --only-cliproxyapi
+    sudo nhub run --only-dnsmasq
     sudo nhub --dev run               # all of them, plus the frontend dev server
 
-The three ``--only`` forms are what the units name, so systemd keeps deciding
+The ``--only`` forms are what the units name, so systemd keeps deciding
 who each daemon runs as and what it may reach for — the proxy core in
 particular is unprivileged with two capabilities, which a parent process
 cannot hand a child without re-implementing what the unit already declares.
@@ -18,6 +19,8 @@ run than read journalctl.
 
 import argparse
 import os
+import pwd
+import shutil
 import signal
 import subprocess
 import sys
@@ -29,6 +32,7 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_DIR,
     CLIPROXYAPI_GENERATED_NAME,
 )
+from neutrino_hub.modules.router.constants import ROUTER_DNSMASQ_PATH
 from neutrino_hub.modules.xray.constants import (
     XRAY_ASSET_DIR,
     XRAY_ASSET_ENV,
@@ -40,11 +44,11 @@ from neutrino_hub.utils.constants import (
     UTILS_GENERATED_DIR,
     is_dev_root_set,
 )
+from neutrino_hub.web.constants import WEB_DEFAULT_LISTEN_PORT
 from neutrino_hub.utils.json_file import read_config
 
 # --- config ---
 DEFAULT_LISTEN_HOST = "0.0.0.0"
-DEFAULT_LISTEN_PORT = 8080
 APPLICATION_PATH = "neutrino_hub.web.app:create_app"
 PANEL_SETTINGS_FILE = "web/settings.json"
 # Where the frontend's dev server is started from, relative to the checkout.
@@ -52,6 +56,13 @@ FRONTEND_DIR_NAME = "hub/frontend"
 FRONTEND_COMMAND = ("npm", "run", "dev")
 # How long a child gets to stop before it is killed.
 CHILD_STOP_TIMEOUT_S = 10
+# Where dnsmasq is, in the order the families put it. Debian and Fedora say
+# sbin, Arch says bin, and PATH under a unit is neither reliably.
+DNSMASQ_BINARIES = ("/usr/sbin/dnsmasq", "/usr/bin/dnsmasq")
+# The account dnsmasq drops to once it holds its sockets. Every family's
+# package creates it; a machine that somehow has not gets dnsmasq's built-in
+# default instead of a startup failure.
+DNSMASQ_USER = "dnsmasq"
 
 
 def main() -> int:
@@ -69,7 +80,7 @@ def main() -> int:
         "--reload", action="store_true", help="restart the panel on source changes"
     )
     group = parser.add_mutually_exclusive_group()
-    for name in ("web", "xray", "cliproxyapi"):
+    for name in ("web", "xray", "cliproxyapi", "dnsmasq"):
         group.add_argument(
             f"--only-{name}",
             dest="only",
@@ -83,6 +94,8 @@ def main() -> int:
         return _exec_xray()
     if arguments.only == "cliproxyapi":
         return _exec_cliproxyapi()
+    if arguments.only == "dnsmasq":
+        return _exec_dnsmasq()
     if not _is_set_up():
         print(
             f"error: nothing is configured under {UTILS_CONFIG_DIR}; "
@@ -131,6 +144,39 @@ def _exec_cliproxyapi() -> int:
     CLIPROXYAPI_DIR.mkdir(parents=True, exist_ok=True)
     os.chdir(CLIPROXYAPI_DIR)
     os.execv(binary, [binary, "--config", config])
+    return 1
+
+
+def _exec_dnsmasq() -> int:
+    """Become the LAN's name service.
+
+    The generated file is named outright and no configuration directory is
+    read, so what dnsmasq runs on is what the hub rendered and nothing a
+    distribution left in /etc/dnsmasq.conf beside it.
+
+    Returns:
+        Never; the process is replaced. 1 when dnsmasq is not installed.
+    """
+    binary = next((path for path in DNSMASQ_BINARIES if os.path.isfile(path)), None)
+    binary = binary or shutil.which("dnsmasq")
+    if binary is None:
+        print("error: dnsmasq is not installed", file=sys.stderr)
+        return 1
+    arguments = [
+        binary,
+        # Foreground, so systemd watches dnsmasq itself rather than a fork,
+        # and no pid file has to exist anywhere for it to start.
+        "--keep-in-foreground",
+        "--pid-file=",
+        f"--conf-file={ROUTER_DNSMASQ_PATH}",
+    ]
+    try:
+        pwd.getpwnam(DNSMASQ_USER)
+    except KeyError:
+        pass
+    else:
+        arguments.append(f"--user={DNSMASQ_USER}")
+    os.execv(binary, arguments)
     return 1
 
 
@@ -235,9 +281,11 @@ def _stop(children: list) -> None:
 def _configured_port() -> int:
     """The port the panel listens on, from the settings or the default."""
     try:
-        return read_config("web/settings.json").get("listen_port", DEFAULT_LISTEN_PORT)
+        return read_config("web/settings.json").get(
+            "listen_port", WEB_DEFAULT_LISTEN_PORT
+        )
     except (FileNotFoundError, ValueError):
-        return DEFAULT_LISTEN_PORT
+        return WEB_DEFAULT_LISTEN_PORT
 
 
 if __name__ == "__main__":

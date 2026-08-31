@@ -19,8 +19,10 @@ import shutil
 import socket
 import sys
 import tempfile
+import time
 import urllib.request
 import zipfile
+from functools import partial
 from pathlib import Path
 
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
@@ -68,17 +70,40 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_VERSION,
 )
 
+from neutrino_hub.modules.router.link_status import RouterLinkStatus
+from neutrino_hub.web.constants import (
+    WEB_DEFAULT_LISTEN_PORT,
+    WEB_SETUP_GRACE_S,
+    WEB_SETUP_WAIT_S,
+)
+from neutrino_hub.web.setup_app import WebSetupServer, WebSetupSession
+
 from neutrino_hub.cli.password import is_password_set, store_password
-from neutrino_hub.cli.reporter import InstallReporter
+from neutrino_hub.cli.reporter import InstallReporter, InstallSessionReporter
 from neutrino_hub.cli import wizard
 
 # --- config ---
-# What the panel listens on before anybody has said otherwise.
-SETUP_DEFAULT_PORT = 8080
 # What the panel is asked for, on loopback, once it is running.
 SETUP_LOGIN_PATH = "/api/auth/login"
 SETUP_ENROLLMENT_PATH = "/api/devices/enrollment"
 SETUP_PANEL_TIMEOUT_S = 10
+# How long the panel gets to start listening before its link is given up on.
+SETUP_PANEL_WAIT_S = 30.0
+SETUP_PANEL_POLL_S = 1.0
+# The browser wizard listens on every address, because whoever opens it is on
+# one of this machine's networks and setup does not yet know which.
+SETUP_BROWSER_HOST = "0.0.0.0"
+# What starting the services means. In a browser the panel is left out and
+# started last, because until then the wizard is what holds its port.
+SETUP_CORE_SERVICES = ("router", "xray", "dnsmasq", "web")
+# What opens a page on a machine that has a desktop to open one on. A box
+# without it is a box nobody is sitting at, and its setup stays in the
+# terminal rather than printing a link nothing will follow.
+SETUP_BROWSER_OPENER = "xdg-open"
+# Asking for this port is asking the operating system for whichever one is
+# free, which is what the wizard falls back to when the panel's is taken.
+SETUP_BROWSER_ANY_PORT = 0
+SETUP_SERVICES_BEFORE_PANEL = ("router", "xray", "dnsmasq")
 CONFIG_FILES = (
     "xray/nodes.json",
     "xray/routing.json",
@@ -124,18 +149,27 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+    server = None
     try:
-        answers = _answers(arguments)
+        answers, server = _answers(arguments)
     except wizard.WizardAborted as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
 
     steps = [step for step in CORE_STEPS if step[1] not in _skipped_steps()]
-    reporter = InstallReporter(
-        total_step_count=len(steps) + 1,
-        is_color_enabled=(not os.environ.get("NO_COLOR") and sys.stdout.isatty()),
-    )
-    return _setup(reporter, steps, answers)
+    is_coloured = not os.environ.get("NO_COLOR") and sys.stdout.isatty()
+    if server is None:
+        reporter = InstallReporter(
+            total_step_count=len(steps) + 2, is_color_enabled=is_coloured
+        )
+    else:
+        steps = _panel_started_last(steps)
+        reporter = InstallSessionReporter(
+            session=server.session,
+            total_step_count=len(steps) + 2,
+            is_color_enabled=is_coloured,
+        )
+    return _setup(reporter, steps, answers, server=server)
 
 
 def _answers(arguments):
@@ -145,23 +179,174 @@ def _answers(arguments):
         arguments: The parsed command line.
 
     Returns:
-        The answers to act on.
+        The answers to act on, and the server the browser answered on — None
+        for every other way of answering, because there is nothing to shut
+        down afterwards.
 
     Raises:
         WizardAborted: On an answers document that cannot be used, or a
             wizard nobody finished.
     """
     if arguments.stdin:
-        return wizard.from_document(_parsed(sys.stdin.read(), "standard input"))
+        return wizard.from_document(_parsed(sys.stdin.read(), "standard input")), None
     if arguments.json:
         path = Path(arguments.json)
         try:
-            return wizard.from_document(
-                _parsed(path.read_text(encoding="utf-8"), str(path))
-            )
+            document = _parsed(path.read_text(encoding="utf-8"), str(path))
         except OSError as error:
             raise wizard.WizardAborted(str(error)) from error
-    return wizard.ask()
+        return wizard.from_document(document), None
+    answered = _browser_answers()
+    if answered is not None:
+        return answered
+    return wizard.ask(), None
+
+
+def _browser_answers():
+    """Open the questions in a browser, and wait for them to come back.
+
+    Returns:
+        The answers and the server they arrived on, or None when there is no
+        browser to open or whoever is at the keyboard would rather answer in
+        the terminal.
+
+    Raises:
+        WizardAborted: When this machine has nothing to configure.
+    """
+    if shutil.which(SETUP_BROWSER_OPENER) is None:
+        # Nothing here can open a page, so a link would be a line nobody
+        # follows. The terminal's own screens are the whole wizard.
+        wizard.welcome()
+        return None
+    session = WebSetupSession(context=wizard.context())
+    server = _browser_server(session)
+    if server is None:
+        wizard.welcome()
+        return None
+    _open_browser(f"http://127.0.0.1:{server.port}/?token={session.token}")
+    while True:
+        is_answered = wizard.offer_browser(
+            urls=_reachable_urls(server.port),
+            token=session.token,
+            arrived=lambda: bool(session.wait(WEB_SETUP_WAIT_S)),
+        )
+        if not is_answered:
+            server.stop()
+            return None
+        try:
+            return wizard.from_document(session.wait(WEB_SETUP_WAIT_S)), server
+        except wizard.WizardAborted as error:
+            # The browser is the one that can fix this, so it is told — and so
+            # is the terminal, which is where a run that goes wrong is read.
+            print(f"\n  the browser sent answers that cannot be used: {error}")
+            session.reject(str(error))
+
+
+def _open_browser(url: str) -> None:
+    """Open the wizard on this machine, and carry on either way.
+
+    Args:
+        url: What to open, on loopback because the browser being opened is
+            this machine's own.
+    """
+    try:
+        run([SETUP_BROWSER_OPENER, url], is_checked=False, timeout_s=5)
+    except (CommandError, OSError):
+        # The link is on the screen either way; an opener that refuses is not
+        # a reason to stop.
+        pass
+
+
+def _browser_server(session):
+    """The wizard's server, on the best port it can get.
+
+    The panel's own port first, and for its reasons: it is the one the
+    firewall opens to the served networks, and the one whoever set this box up
+    will have in their address bar afterwards. Anything already holding it
+    means taking whichever port is free instead — a wizard on an odd port is
+    still a wizard, and the terminal prints the address either way.
+
+    Args:
+        session: The run to serve.
+
+    Returns:
+        A server that is listening, or None when nothing could be started at
+        all — which is not a failure, only the terminal doing the asking.
+    """
+    for wanted in (_browser_port(), SETUP_BROWSER_ANY_PORT):
+        try:
+            server = WebSetupServer(
+                session=session, host=SETUP_BROWSER_HOST, port=wanted
+            )
+            if server.start():
+                return server
+        except (OSError, RuntimeError, ValueError) as error:
+            print(f"\n  the browser wizard could not start: {error}", file=sys.stderr)
+            return None
+    print(
+        "\n  no port could be found for the browser wizard.",
+        file=sys.stderr,
+    )
+    return None
+
+
+def _browser_port() -> int:
+    """What the browser wizard asks for first.
+
+    Returns:
+        The panel's own port.
+    """
+    try:
+        return _configured_port()
+    except (FileNotFoundError, ValueError):
+        return WEB_DEFAULT_LISTEN_PORT
+
+
+def _reachable_urls(port: int) -> list:
+    """Every address this machine can be opened at right now.
+
+    Before setup there is no configuration to read a served address out of,
+    so this is what the interfaces actually carry — and all of them, because
+    which one the browser is on is not this machine's to know.
+
+    Args:
+        port: The port the wizard actually took.
+
+    Returns:
+        One URL per address, the hostname when no interface carries one.
+    """
+    urls = []
+    for link in RouterLinkStatus().all_links():
+        if link.name == "lo" or not link.ipv4_address:
+            continue
+        urls.append(f"http://{link.ipv4_address.split('/')[0]}:{port}")
+    return urls or [f"http://{socket.gethostname()}:{port}"]
+
+
+def _panel_started_last(steps: list) -> list:
+    """The step table with the panel left out of starting the services.
+
+    The browser wizard is holding the panel's port, so starting the panel
+    among the others would fail to bind. It is started at the very end
+    instead, once the wizard has let go.
+
+    Args:
+        steps: The table to rewrite.
+
+    Returns:
+        The same table, with the starting step narrowed.
+    """
+    return [
+        (
+            (
+                description,
+                partial(_step_start_services, names=SETUP_SERVICES_BEFORE_PANEL),
+            )
+            if step is _step_start_services
+            else (description, step)
+        )
+        for description, step in steps
+    ]
 
 
 def _parsed(text: str, what: str) -> dict:
@@ -199,13 +384,16 @@ def _skipped_steps() -> tuple:
     return (_step_systemd_units, _step_enable_services, _step_start_services)
 
 
-def _setup(reporter: InstallReporter, steps: list, answers) -> int:
+def _setup(reporter: InstallReporter, steps: list, answers, *, server=None) -> int:
     """Run every step, then store the password and hand the box over.
 
     Args:
         reporter: Where progress lines go.
         steps: The step table to run, in order.
         answers: What the wizard collected.
+        server: The browser wizard's server when the questions were answered
+            there, which has to give the panel's port back before the panel
+            can start. None when they were answered anywhere else.
 
     Returns:
         Process exit status.
@@ -225,9 +413,17 @@ def _setup(reporter: InstallReporter, steps: list, answers) -> int:
         if step is _step_config_files:
             # After the examples land and before anything applies them: what
             # the wizard planned replaces the three-port appliance and the
-            # placeholder nodes they describe.
-            write_config("router/network.json", answers.network.to_dict())
-            _write_proxy(answers.proxy)
+            # placeholder nodes they describe. Guarded like a step, because
+            # it fails the same ways and a traceback here says nothing.
+            reporter.start("Writing what you chose")
+            try:
+                write_config("router/network.json", answers.network.to_dict())
+                _write_proxy(answers.proxy)
+                _write_listen_port(answers.listen_port)
+            except (CommandError, OSError, ValueError, TypeError) as error:
+                reporter.failed(str(error))
+                return 1
+            reporter.done("network, proxy and panel port")
 
     for name in answers.services:
         reporter.start(f"Installing {name}")
@@ -244,13 +440,53 @@ def _setup(reporter: InstallReporter, steps: list, answers) -> int:
     # steps above copy from its example.
     reporter.start("Setting the panel password")
     store_password(answers.password)
-    SystemdServiceController().control("web", "restart")
     reporter.done("stored")
 
     panel_url = _panel_url()
+    if server is not None:
+        return _hand_over(server, panel_url)
+    _start_panel()
     link, note = _enrollment_link(answers.password)
     wizard.finish(panel_url=panel_url, link=link, note=note, joined=_joined_devices)
     return 0
+
+
+def _hand_over(server, panel_url: str) -> int:
+    """Give the port back and start the panel the browser goes on to.
+
+    The enrollment link is not minted here: a browser that has the panel has
+    the Devices page, which is where links come from. The terminal is given
+    one only because it has nothing else.
+
+    Args:
+        server: The browser wizard's server.
+        panel_url: Where the panel will answer.
+
+    Returns:
+        Process exit status.
+    """
+    server.session.finish(panel_url=panel_url)
+    # Long enough for one more poll to read that last state before the
+    # connection it reads over goes away.
+    time.sleep(WEB_SETUP_GRACE_S)
+    server.stop()
+    _start_panel()
+    print()
+    print(f"  The panel is at   {panel_url}")
+    print()
+    return 0
+
+
+def _start_panel() -> None:
+    """Start the panel, where starting it is this command's job.
+
+    A development root installs no units — `nhub --dev run` is what runs the
+    panel there — so asking systemd for one is asking for a unit nobody
+    wrote.
+    """
+    if is_dev_root_set():
+        return
+    SystemdServiceController().control("web", "restart")
 
 
 def _joined_devices() -> list:
@@ -293,13 +529,27 @@ def _install_service(name: str, reporter: InstallReporter) -> str:
     return result.message
 
 
+def _write_listen_port(port: int) -> None:
+    """Put the panel on the port that was asked for.
+
+    Args:
+        port: What the wizard collected.
+    """
+    settings = read_config("web/settings.json")
+    settings["listen_port"] = port
+    write_config("web/settings.json", settings)
+
+
 def _write_proxy(proxy) -> None:
     """Put the proxy screen's answers into `config/xray/`.
 
     Args:
         proxy: What the wizard collected.
     """
-    nodes = XrayNodeList(nodes=list(proxy.nodes))
+    # Read and replace rather than build: the list carries a balancer strategy
+    # and probe settings that are the example's to state, not the wizard's.
+    nodes = XrayNodeList.from_dict(read_config("xray/nodes.json"))
+    nodes.nodes = list(proxy.nodes)
     write_config("xray/nodes.json", nodes.to_dict())
     routing = read_config("xray/routing.json")
     routing["is_proxy_enabled"] = proxy.is_enabled
@@ -327,13 +577,24 @@ def _enrollment_link(password: str) -> tuple:
     if is_dev_root_set():
         return "", "No panel is running under --dev; start one with `nhub --dev run`."
     base = f"http://127.0.0.1:{_configured_port()}"
-    try:
-        session = _post(f"{base}{SETUP_LOGIN_PATH}", {"password": password})
-        cookie = session.headers.get("set-cookie", "").split(";")[0]
-        minted = _post(f"{base}{SETUP_ENROLLMENT_PATH}", {"name": ""}, cookie=cookie)
-        return json.loads(minted.read())["link"], ""
-    except (OSError, ValueError, KeyError):
-        return "", "The panel did not answer yet; its Devices page mints a link."
+    # The panel was started a moment ago and binds its socket when uvicorn is
+    # ready, not when systemd returns, so the first ask is often too early.
+    deadline = time.monotonic() + SETUP_PANEL_WAIT_S
+    while True:
+        try:
+            session = _post(f"{base}{SETUP_LOGIN_PATH}", {"password": password})
+            cookie = session.headers.get("set-cookie", "").split(";")[0]
+            minted = _post(
+                f"{base}{SETUP_ENROLLMENT_PATH}", {"name": ""}, cookie=cookie
+            )
+            return json.loads(minted.read())["link"], ""
+        except (OSError, ValueError, KeyError) as error:
+            if time.monotonic() >= deadline:
+                return "", (
+                    f"The panel did not answer in {SETUP_PANEL_WAIT_S:.0f}s "
+                    f"({error}); its Devices page mints a link."
+                )
+            time.sleep(SETUP_PANEL_POLL_S)
 
 
 def _post(url: str, body: dict, *, cookie: str = ""):
@@ -359,7 +620,7 @@ def _post(url: str, body: dict, *, cookie: str = ""):
 
 def _configured_port() -> int:
     """The port the panel was told to listen on."""
-    return read_config("web/settings.json").get("listen_port", SETUP_DEFAULT_PORT)
+    return read_config("web/settings.json").get("listen_port", WEB_DEFAULT_LISTEN_PORT)
 
 
 def _panel_url() -> str:
@@ -611,33 +872,51 @@ def _step_config_files(reporter: InstallReporter) -> tuple[str, bool]:
 def _step_systemd_units(reporter: InstallReporter) -> tuple[str, bool]:
     written = SystemdUnitInstaller().install()
     is_changed = bool(written)
-    if _mask_distribution_hostapd(reporter):
-        is_changed = True
+    for unit, note in DISTRIBUTION_UNITS_MASKED.items():
+        if _mask_distribution_unit(reporter, unit, note):
+            is_changed = True
     return (f"wrote {', '.join(written)}" if written else "unchanged"), is_changed
 
 
-def _mask_distribution_hostapd(reporter: InstallReporter) -> bool:
-    """Stop the packaged hostapd unit competing with the gateway's own.
+def _mask_distribution_unit(reporter: InstallReporter, unit: str, note: str) -> bool:
+    """Stop a packaged unit competing with the gateway's own.
 
-    Installing hostapd brings a system-wide ``hostapd.service`` that reads
-    /etc/hostapd/hostapd.conf and is enabled by default. It is not ours, it has
-    no configuration to read, and if it ever did it would take the radio the
-    gateway's per-interface unit wants.
+    Args:
+        reporter: Where the note goes when the unit had to be masked.
+        unit: The distribution's unit name.
+        note: What to say about it, in the words :data:`DISTRIBUTION_UNITS_MASKED`
+            gives.
 
     Returns:
         True when the unit had to be masked.
     """
-    state = run(
-        ["systemctl", "is-enabled", "hostapd.service"], is_checked=False
-    ).stdout.strip()
+    state = run(["systemctl", "is-enabled", unit], is_checked=False).stdout.strip()
     if state in ("masked", "masked-runtime", ""):
         return False
-    run(["systemctl", "disable", "--now", "hostapd.service"], is_checked=False)
-    run(["systemctl", "mask", "hostapd.service"], is_checked=False)
-    reporter.note(
-        "masked the packaged hostapd unit; the gateway runs its own per radio"
-    )
+    run(["systemctl", "disable", "--now", unit], is_checked=False)
+    run(["systemctl", "mask", unit], is_checked=False)
+    reporter.note(note)
     return True
+
+
+# Units a distribution enables for a package the hub carries its own unit
+# for. Both would run the same daemon on the same hardware, and the one the
+# hub did not write reads a configuration nobody generated.
+DISTRIBUTION_UNITS_MASKED = {
+    # Installing hostapd brings a system-wide unit reading
+    # /etc/hostapd/hostapd.conf, enabled by default with nothing to read. If
+    # it ever did have something, it would take the radio the gateway's
+    # per-interface unit wants.
+    "hostapd.service": (
+        "masked the packaged hostapd unit; the gateway runs its own per radio"
+    ),
+    # The packaged dnsmasq holds port 53 with a configuration the hub did not
+    # write, which is what stops the hub's own from starting at all.
+    "dnsmasq.service": (
+        "masked the packaged dnsmasq unit; the gateway runs its own on the "
+        "configuration it generates"
+    ),
+}
 
 
 def _network_config() -> RouterNetworkConfig:
@@ -676,7 +955,7 @@ def _step_render_all(reporter: InstallReporter) -> tuple[str, bool]:
 def _step_enable_services(reporter: InstallReporter) -> tuple[str, bool]:
     controller = SystemdServiceController()
     enabled = []
-    for name in ("router", "xray", "dnsmasq", "web"):
+    for name in SETUP_CORE_SERVICES:
         status = controller.status(name)
         if not status.is_installed or status.is_enabled:
             continue
@@ -687,10 +966,12 @@ def _step_enable_services(reporter: InstallReporter) -> tuple[str, bool]:
     return f"enabled {', '.join(enabled)}", True
 
 
-def _step_start_services(reporter: InstallReporter) -> tuple[str, bool]:
+def _step_start_services(
+    reporter: InstallReporter, *, names: tuple = SETUP_CORE_SERVICES
+) -> tuple[str, bool]:
     controller = SystemdServiceController()
     started = []
-    for name in ("router", "xray", "dnsmasq", "web"):
+    for name in names:
         status = controller.status(name)
         if not status.is_installed:
             continue

@@ -42,6 +42,19 @@ on any path.
 `setup` runs once. A box with a panel password is a box somebody configured,
 and `nhub reset all` is how one goes back to fresh.
 
+The questions are answered in the terminal or in a browser, and the welcome
+screen is where that is chosen. The browser is served the same questions on
+the panel's own port — the port the firewall opens to the served networks, and
+the one that will be in somebody's address bar afterwards — behind a one-time
+token the terminal prints. It follows that the panel cannot start while the
+wizard is serving, so in that path the panel is left out of "Starting
+services" and started at the very end, once the port has been given back.
+
+Neither way is the source of truth for the questions: both build the same
+answers document `nhub setup --stdin` reads, and `wizard.from_document` is
+what says whether it can be used. A browser that posts one this refuses is
+told, and asked again.
+
 ## The panel installs what somebody chose
 
 Samba, Gitea, NetBird, podman and ZFS are capabilities, not parts of a

@@ -21,15 +21,17 @@ SYSTEM_UNIT_TEMPLATES = {
     # Templated by interface: one access point per radio given the LAN role.
     "neutrino_hub_hostapd@.service": "neutrino_hub_hostapd@.service",
     "neutrino_hub_xray.service": "neutrino_hub_xray.service",
+    "neutrino_hub_dnsmasq.service": "neutrino_hub_dnsmasq.service",
 }
 # What a checkout's templates say, and what a package has instead.
 SYSTEM_UNIT_CHECKOUT_LINES = (
     "WorkingDirectory=@REPO_ROOT@",
     "Environment=PYTHONPATH=@REPO_ROOT@",
 )
-SYSTEM_UNIT_DOCUMENTATION = (
-    "Documentation=file://@REPO_ROOT@/docs/standard/misc/config.md"
-)
+# A checkout's units point at the document in the tree they run from. A
+# package has no tree, so the whole line is replaced rather than one spelling
+# of it: matching an exact path left two units naming @REPO_ROOT@ literally.
+SYSTEM_UNIT_DOCUMENTATION_PREFIX = "Documentation=file://@REPO_ROOT@"
 SYSTEM_UNIT_DOCUMENTATION_URL = "Documentation=https://github.com/iffiX/neutrino"
 
 
@@ -83,13 +85,12 @@ class SystemdUnitInstaller:
                 "@PYTHON@", python_path
             )
         kept = [
-            line
+            (
+                SYSTEM_UNIT_DOCUMENTATION_URL
+                if line.startswith(SYSTEM_UNIT_DOCUMENTATION_PREFIX)
+                else line
+            )
             for line in template.splitlines()
             if not line.startswith(SYSTEM_UNIT_CHECKOUT_LINES)
         ]
-        return (
-            "\n".join(kept)
-            .replace(SYSTEM_UNIT_DOCUMENTATION, SYSTEM_UNIT_DOCUMENTATION_URL)
-            .replace("@PYTHON@", python_path)
-            + "\n"
-        )
+        return "\n".join(kept).replace("@PYTHON@", python_path) + "\n"

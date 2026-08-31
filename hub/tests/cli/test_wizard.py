@@ -69,7 +69,7 @@ def test_a_misspelled_key_is_refused_rather_than_ignored():
             {
                 "password": "a-long-enough-password",
                 "network": {
-                    "mode": "bypass_router",
+                    "mode": "side_gateway",
                     "lan": ["enp1s0"],
                     "upstream_gatway": "192.168.1.1",
                 },
@@ -322,7 +322,7 @@ def test_a_one_port_machine_is_not_offered_a_mode_needing_two(monkeypatch):
     assert [mode.key for mode in asked._modes] == [
         "server",
         "one_arm_router",
-        "bypass_router",
+        "side_gateway",
     ]
 
 
@@ -344,7 +344,7 @@ class _NoPorts:
     [
         # Joining somebody's network: the port's own address, always.
         ("server", "192.168.100.1"),
-        ("bypass_router", "192.168.100.1"),
+        ("side_gateway", "192.168.100.1"),
         # Becoming the network's gateway: this port already runs one.
         ("router", "192.168.100.1"),
         # A VLAN that does not exist yet, on a trunk whose own address

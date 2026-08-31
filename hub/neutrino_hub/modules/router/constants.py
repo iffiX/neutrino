@@ -123,7 +123,6 @@ def router_hostapd_address_path(interface: str):
 
 
 ROUTER_DNSMASQ_PATH = UTILS_GENERATED_DIR / "dnsmasq_neutrino.conf"
-ROUTER_DNSMASQ_LINK_PATH = Path("/etc/dnsmasq.d/neutrino.conf")
 
 # Destinations that never go through the proxy: loopback, link-local, LAN, and
 # multicast ranges.

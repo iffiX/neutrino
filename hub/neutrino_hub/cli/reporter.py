@@ -2,10 +2,18 @@
 
 Presentation only: the installer prints a numbered step per action, says whether
 it changed anything or found it already in place, and stops at the first failure
-with the command output that explains it.
+with the command output that explains it. A run started from a browser reports
+the same steps to it as well.
 """
 
 import time
+
+from neutrino_hub.web.constants import (
+    WEB_SETUP_STEP_DONE,
+    WEB_SETUP_STEP_FAILED,
+    WEB_SETUP_STEP_RUNNING,
+    WEB_SETUP_STEP_SKIPPED,
+)
 
 GREEN = "\033[32m"
 YELLOW = "\033[33m"
@@ -112,3 +120,74 @@ class InstallReporter:
         if not self._is_color_enabled:
             return text
         return f"{code}{text}{RESET}"
+
+
+class InstallSessionReporter(InstallReporter):
+    """The same lines, and a copy of them a browser can read.
+
+    Setup run from a browser still prints to whoever started it: one machine
+    is being changed, and the terminal that started the change is where a
+    failure has to be readable. This adds the second audience rather than
+    replacing the first.
+    """
+
+    def __init__(
+        self, *, session, total_step_count: int, is_color_enabled: bool = True
+    ):
+        """
+        Args:
+            session: Where the browser reads from.
+            total_step_count: How many steps the run will report.
+            is_color_enabled: Whether to emit ANSI colour.
+        """
+        super().__init__(
+            total_step_count=total_step_count, is_color_enabled=is_color_enabled
+        )
+        self._session = session
+        self._description = ""
+
+    def start(self, description: str) -> None:
+        """Announce the next step to both.
+
+        Args:
+            description: What the step is about to do.
+        """
+        self._description = description
+        self._session.step(description, WEB_SETUP_STEP_RUNNING)
+        super().start(description)
+
+    def done(self, note: str = "") -> None:
+        """Report the current step succeeded and changed something.
+
+        Args:
+            note: Short detail, for example a version number.
+        """
+        self._session.step(self._description, WEB_SETUP_STEP_DONE, note)
+        super().done(note)
+
+    def skipped(self, note: str = "") -> None:
+        """Report the current step found its work already done.
+
+        Args:
+            note: Short detail explaining what was already in place.
+        """
+        self._session.step(self._description, WEB_SETUP_STEP_SKIPPED, note)
+        super().skipped(note)
+
+    def failed(self, message: str) -> None:
+        """Report the current step failed.
+
+        Args:
+            message: The error text to show under the step.
+        """
+        self._session.step(self._description, WEB_SETUP_STEP_FAILED, message)
+        super().failed(message)
+
+    def note(self, text: str) -> None:
+        """Print an aside, and keep it where the browser can read it.
+
+        Args:
+            text: The message.
+        """
+        self._session.note(text)
+        super().note(text)

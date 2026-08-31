@@ -20,7 +20,6 @@ import json
 import sys
 
 from neutrino_hub.modules.router.constants import (
-    ROUTER_DNSMASQ_LINK_PATH,
     ROUTER_DNSMASQ_PATH,
     ROUTER_NFT_PATH,
 )
@@ -48,6 +47,7 @@ from neutrino_hub.modules.samba.constants import (
 from neutrino_hub.modules.samba.ops import SambaConfigApplier, SambaUserManager
 from neutrino_hub.modules.samba.renderer import SambaConfigRenderer
 from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
+from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.system.units import SystemdUnitInstaller
 from neutrino_hub.utils.json_file import read_config, write_generated
 from neutrino_hub.utils.subprocess_run import CommandError, run
@@ -57,7 +57,7 @@ from neutrino_hub.modules.xray.constants import XRAY_CONFIG_PATH
 from neutrino_hub.modules.xray.node_config import XrayNodeList
 
 # --- config ---
-DNSMASQ_SERVICE_NAME = "dnsmasq"
+DNSMASQ_SERVICE_NAME = SYSTEM_CORE_UNITS["dnsmasq"]
 COMPONENTS = ("router", "xray", "dnsmasq", "samba", "gitea", "podman")
 
 
@@ -205,17 +205,8 @@ def _write(artifacts: dict) -> None:
         write_generated(ROUTER_NFT_PATH, artifacts["router"])
     if "dnsmasq" in artifacts:
         write_generated(ROUTER_DNSMASQ_PATH, artifacts["dnsmasq"])
-        _link_dnsmasq_config()
     if "samba" in artifacts:
         write_generated(UTILS_GENERATED_DIR / SAMBA_GENERATED_NAME, artifacts["samba"])
-
-
-def _link_dnsmasq_config() -> None:
-    if ROUTER_DNSMASQ_LINK_PATH.is_symlink():
-        return
-    ROUTER_DNSMASQ_LINK_PATH.parent.mkdir(parents=True, exist_ok=True)
-    ROUTER_DNSMASQ_LINK_PATH.unlink(missing_ok=True)
-    ROUTER_DNSMASQ_LINK_PATH.symlink_to(ROUTER_DNSMASQ_PATH)
 
 
 def _apply(artifacts: dict) -> None:

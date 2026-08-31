@@ -3,10 +3,10 @@
 A mode is one answer to "what is this machine for", turned into the interface
 roles the rest of the router layer already understands. None of them is a new
 capability: ``router`` is an uplink and a served network, ``one_arm_router``
-is a single trunk port going out untagged and serving on a tag, ``bypass_router`` is a served
-network whose
-own way out is that network's real router, and ``server`` is a box that routes
-nothing and only answers on the port it is reached by.
+is a single trunk port going out untagged and serving on a tag,
+``side_gateway`` is a served network whose own way out is that network's real
+router, and ``server`` is a box that routes nothing and only answers on the
+port it is reached by.
 
 Pure: builds a configuration object and touches nothing.
 """
@@ -30,7 +30,7 @@ from neutrino_hub.modules.router.interfaces import (
 # --- config ---
 ROUTER_MODE_ROUTER = "router"
 ROUTER_MODE_ONE_ARM = "one_arm_router"
-ROUTER_MODE_BYPASS = "bypass_router"
+ROUTER_MODE_SIDE_GATEWAY = "side_gateway"
 ROUTER_MODE_SERVER = "server"
 
 # The address the served network gets when nobody says otherwise. Deliberately
@@ -79,23 +79,25 @@ class RouterMode:
 ROUTER_MODES = (
     RouterMode(
         key=ROUTER_MODE_SERVER,
-        summary="Routes nothing; answers on the port you reach it by",
+        summary="Act as a server answering on at least one interface.",
     ),
     RouterMode(
         key=ROUTER_MODE_ROUTER,
-        summary="A network of its own — one port out, one port in",
+        summary="Act as a router with one or more interface out and one or "
+        "more interface in.",
         port_count=2,
     ),
     RouterMode(
         key=ROUTER_MODE_ONE_ARM,
-        summary="One port: untagged out, a VLAN tag in",
+        summary="Act as a router with one interface serving both out "
+        "(untagged) and in (tagged VLAN).",
         is_wire_needed=True,
         caution="The switch it plugs into has to pass VLAN tags. On a plain "
         "switch this looks configured and carries nothing.",
     ),
     RouterMode(
-        key=ROUTER_MODE_BYPASS,
-        summary="Joins a network somebody else already routes",
+        key=ROUTER_MODE_SIDE_GATEWAY,
+        summary="Act as a side gateway that masquerades the data sent in.",
         caution="The network's own router keeps handing out leases; this box "
         "does not, and reaches it only for the devices that name it.",
     ),
@@ -149,7 +151,7 @@ class RouterModePlanner:
             trunk_name: The port the VLANs ride on, for one-arm.
             lan_address: The gateway's own address on the served network.
             lan_prefix_len: Prefix length of the served network.
-            upstream_gateway: The network's real router, for bypass.
+            upstream_gateway: The network's real router, for a side gateway.
             lan_vlan_id: Tag carrying the served network, for one-arm. The
                 uplink needs none; it is the trunk's untagged traffic.
 
@@ -175,8 +177,8 @@ class RouterModePlanner:
         """
         if self._mode == ROUTER_MODE_ONE_ARM:
             return RouterNetworkConfig(interfaces=self._one_arm())
-        if self._mode == ROUTER_MODE_BYPASS:
-            return RouterNetworkConfig(interfaces=self._bypass())
+        if self._mode == ROUTER_MODE_SIDE_GATEWAY:
+            return RouterNetworkConfig(interfaces=self._side_gateway())
         if self._mode == ROUTER_MODE_SERVER:
             return RouterNetworkConfig(interfaces=self._server())
         return RouterNetworkConfig(interfaces=self._router())
@@ -209,7 +211,7 @@ class RouterModePlanner:
             ),
         ]
 
-    def _bypass(self) -> list:
+    def _side_gateway(self) -> list:
         """One port on somebody else's network, forwarding for what names it."""
         return [
             self._lan(

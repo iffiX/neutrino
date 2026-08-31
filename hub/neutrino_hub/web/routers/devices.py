@@ -24,6 +24,7 @@ from neutrino_hub.modules.devices.ssh_ops import DeviceSshOperator, SshCredentia
 from neutrino_hub.modules.devices.wake_on_lan import send_magic_packet
 from neutrino_hub import HUB_VERSION
 from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
+from neutrino_hub.web.constants import WEB_DEFAULT_LISTEN_PORT
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
     DeviceAnnotation,
@@ -390,7 +391,7 @@ def _panel_urls(runtime: PanelRuntime) -> list:
     Returns:
         Base URLs, in configuration order.
     """
-    port = runtime.settings.get("listen_port", 80)
+    port = runtime.settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT)
     urls = []
     for interface in runtime.network().lan_interfaces:
         host = interface.lan.address

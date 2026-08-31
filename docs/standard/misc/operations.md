@@ -32,13 +32,13 @@ dig @192.168.100.1 google.com +short  # run on the LAN machine
 
 Step 5 is the important one. If `tcpdump` prints anything while the `dig`
 answers, LAN queries are escaping to the WAN in plaintext and the dnsmasq
-upstream is wrong — check that `/etc/dnsmasq.d/neutrino.conf` has `no-resolv`
+upstream is wrong — check that the generated `dnsmasq_neutrino.conf` has `no-resolv`
 and exactly one `server=127.0.0.1#5353` line.
 
 On the gateway itself:
 
 ```bash
-systemctl status neutrino_router xray dnsmasq neutrino_web
+systemctl status neutrino_hub_router neutrino_hub_xray neutrino_hub_dnsmasq neutrino_hub_web
 sudo nft list table inet neutrino          # the ruleset that is actually loaded
 ip rule show | grep 0x1                    # the TPROXY policy rule must exist
 ip route show table 100                    # must hold "local default dev lo"

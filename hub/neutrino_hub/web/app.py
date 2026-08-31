@@ -78,6 +78,23 @@ def _mount_frontend(app: FastAPI) -> None:
     if assets_dir.is_dir():
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
+    @app.get("/api/{path:path}", include_in_schema=False)
+    def unknown_api(path: str):
+        """Anything under /api that no router claims is missing.
+
+        Without this the shell below answers it: a page asking whether a
+        route exists would be handed the app itself, with a 200 on it.
+
+        Args:
+            path: What was asked for.
+
+        Returns:
+            A 404 naming it.
+        """
+        return JSONResponse(
+            status_code=404, content={"detail": f"no such route: {path}"}
+        )
+
     @app.get("/{path:path}", include_in_schema=False)
     def serve_frontend(request: Request, path: str):
         """Serve the built single-page app.

@@ -23,8 +23,16 @@ configured box. Removing the package does not lift this: `dpkg --purge` leaves
 `/etc/neutrino/hub` in place on purpose, because it holds the proxy node
 credentials and the device keys.
 
-With no arguments it asks, one question per screen, each with a default that
-Enter takes.
+With no arguments it asks where the questions get answered — here in the
+terminal, or in a browser on another machine — and then asks them, one
+question per screen, each with a default that Enter takes.
+
+The browser is the same questions on the panel's own port, opened with a
+one-time token the terminal prints. It is the panel's port because that is the
+one the firewall opens to the served networks; the panel itself is therefore
+started last, once the wizard has given it back. Pressing `t` stops waiting
+and asks in the terminal instead, so a link that will not open is not a dead
+end.
 
 > `--stdin`, `--json <path>`
 
@@ -62,7 +70,8 @@ sudo nhub setup --json answers.json
     "is_socks_direct_enabled": false,
     "socks_direct_port": 1080
   },
-  "services": ["samba", "podman"]
+  "services": ["samba", "podman"],
+  "listen_port": 8080
 }
 ```
 
@@ -80,7 +89,11 @@ configured on its own panel page afterwards. A document naming one has agreed
 to whatever installing it does, which on a terminal is a question the screen
 asks per module.
 
-`mode` is one of `server`, `router`, `one_arm_router` or `bypass_router`;
+`listen_port` is the port the panel answers on; leaving it out keeps 8080.
+The wizard asks for it whatever shape the box is, because every one of them
+answers somewhere.
+
+`mode` is one of `server`, `router`, `one_arm_router` or `side_gateway`;
 the wizard shows each with its underscores as spaces. What each is for,
 and which of `wan`, `lan`, `trunk`, `upstream_gateway` and `lan_vlan_id`
 it reads, is what the wizard's own screens explain.
@@ -96,12 +109,17 @@ Runs everything this machine needs in the foreground: the panel, the proxy
 core and the AI gateway. On a box with units this is a second copy of what
 systemd is already running; it is meant for a working copy, which has none.
 
-> `--only-web`, `--only-xray`, `--only-cliproxyapi`
+> `--only-web`, `--only-xray`, `--only-cliproxyapi`, `--only-dnsmasq`
 
 Runs one of them, and is what each unit's `ExecStart` names. The unit decides
 who the process runs as and what it may reach for — the proxy core is
 unprivileged with two capabilities — and `run` replaces itself with the binary
 so nothing sits between systemd and the daemon it watches.
+
+`--only-dnsmasq` names the generated configuration file outright and reads no
+configuration directory, because how a distribution hands its dnsmasq a
+drop-in is not something every family agrees on: Debian passes `--conf-dir` on
+the command line and Arch reads `/etc/dnsmasq.d` not at all.
 
 Running one by hand is how its output is read without `journalctl`.
 

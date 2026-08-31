@@ -1,0 +1,57 @@
+.meter {
+  /* How long the bar is. A consumer that wants it to fill its own width
+     overrides this one value rather than restyling the parts. */
+  --meter-track-width: 64px;
+
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.meter_label {
+  color: var(--meter-color);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.meter_track {
+  display: block;
+  overflow: hidden;
+  width: var(--meter-track-width);
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--color-border);
+}
+
+.meter_fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--meter-color);
+  box-shadow: 0 0 12px -2px var(--meter-color);
+  transition:
+    width var(--transition-base),
+    background var(--transition-base);
+}
+
+.meter--error {
+  --meter-color: var(--color-error);
+}
+
+.meter--warn {
+  --meter-color: var(--color-warn);
+}
+
+.meter--accent {
+  --meter-color: var(--color-accent);
+}
+
+.meter--secondary {
+  --meter-color: var(--color-accent-secondary);
+}
+
+.meter--ok {
+  --meter-color: var(--color-ok);
+}

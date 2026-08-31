@@ -291,6 +291,13 @@ class RouterInterfaceApplier:
             # is exactly the way out.
             "ipv4.gateway": upstream or "",
             "ipv4.never-default": "no" if upstream else "yes",
+            # The box resolves where its own devices do: at the dnsmasq on
+            # this address, which forwards through the proxy or to the direct
+            # resolver as the routing config says. A manual address takes no
+            # resolver from anywhere, and a gateway with none cannot fetch its
+            # own geodata, install a module from a vendor, or run apt.
+            "ipv4.dns": interface.lan.address,
+            "ipv4.ignore-auto-dns": "yes",
             "connection.autoconnect": "yes",
         }
         if upstream:

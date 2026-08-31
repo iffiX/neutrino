@@ -68,7 +68,7 @@ MODULE_SPECS = {
         unit="neutrino_hub_gitea.service",
         provisioner=GiteaProvisioner,
         architectures=GITEA_SUPPORTED_ARCHITECTURES,
-        install_note="a private git server with its own web UI (~120 MB download)",
+        install_note="a private git server with its own web UI",
         data_description="every repository and account under /var/lib/gitea",
     ),
     "podman": ModuleSpec(

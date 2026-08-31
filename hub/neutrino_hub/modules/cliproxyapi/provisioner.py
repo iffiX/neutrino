@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Callable
 
 from neutrino_hub.system.constants import SYSTEM_SYSTEMD_DIR
+from neutrino_hub.system.installation import venv_python
+from neutrino_hub.system.units import SystemdUnitInstaller
 from neutrino_hub.system.machine import machine_architecture, require_architecture
 from neutrino_hub.system.provisioning import ProvisionResult, say
 from neutrino_hub.utils.constants import (
@@ -89,9 +91,13 @@ class CliproxyApiProvisioner:
             self._download_binary(architecture)
             is_changed = True
         if not is_dev_root_set():
-            unit_text = (UTILS_DATA_DIR / "services" / CLIPROXYAPI_UNIT).read_text(
+            # Through the same renderer every other unit goes through: the
+            # template names the interpreter as @PYTHON@, and a unit written
+            # without substituting it fails at exec with that as the path.
+            template = (UTILS_DATA_DIR / "services" / CLIPROXYAPI_UNIT).read_text(
                 encoding="utf-8"
             )
+            unit_text = SystemdUnitInstaller().render(template, str(venv_python()))
             if applier.refresh_unit(unit_text):
                 say(report, "installed the systemd unit")
                 is_changed = True

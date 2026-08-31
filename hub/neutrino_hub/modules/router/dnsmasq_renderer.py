@@ -19,7 +19,7 @@ NO_LAN_PLACEHOLDER_INTERFACE = "neutrino_none"
 
 
 class RouterDnsmasqRenderer:
-    """Builds ``/etc/dnsmasq.d/neutrino.conf`` from the router config."""
+    """Builds the whole dnsmasq configuration from the router config."""
 
     def __init__(self, *, network: RouterNetworkConfig, routing: dict | None = None):
         """
@@ -37,7 +37,10 @@ class RouterDnsmasqRenderer:
         """Render the configuration file.
 
         Returns:
-            Text ready to write into ``/etc/dnsmasq.d/``.
+            Text ready to write where ``neutrino_hub_dnsmasq.service``
+            names it. Whole rather than a fragment: no configuration
+            directory is read, so nothing a distribution ships beside it
+            takes part.
         """
         lines = self._render_listeners()
         lines += self._render_dhcp()

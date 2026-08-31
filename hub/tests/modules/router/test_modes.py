@@ -9,7 +9,7 @@ import pytest
 
 from neutrino_hub.modules.router.modes import (
     ROUTER_MODES,
-    ROUTER_MODE_BYPASS,
+    ROUTER_MODE_SIDE_GATEWAY,
     ROUTER_MODE_ONE_ARM,
     ROUTER_MODE_ROUTER,
     ROUTER_MODE_SERVER,
@@ -69,10 +69,10 @@ def test_one_arm_goes_out_untagged_and_serves_on_a_tag():
     assert lan.device_name == "enp1s0.3"
 
 
-def test_bypass_serves_no_leases_and_names_the_real_router():
+def test_a_side_gateway_serves_no_leases_and_names_the_real_router():
     """The network's own router keeps handing out leases; two would fight."""
     plan = RouterModePlanner(
-        mode=ROUTER_MODE_BYPASS,
+        mode=ROUTER_MODE_SIDE_GATEWAY,
         lan_names=("enp1s0",),
         lan_address="192.168.1.50",
         upstream_gateway="192.168.1.1",

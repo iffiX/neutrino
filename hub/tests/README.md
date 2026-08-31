@@ -23,7 +23,14 @@ One directory per package, mirroring the source tree: `tests/modules/<name>/`,
 | `system/test_units.py` | Rendering a unit for a checkout and for a package |
 | `system/test_packages.py` | What the package manager installs, in one list |
 | `cli/test_wizard.py` | The answers document a first run takes, and the uplink default |
+| `cli/test_setup_writes.py` | What the wizard's answers become in `config/` |
+| `cli/test_run_dnsmasq.py` | What `run --only-dnsmasq` hands the binary |
+| `cli/test_wizard_context.py` | One set of facts for both ways of answering |
+| `cli/test_wizard_handover.py` | Waiting for a browser, and giving up on one |
+| `web/test_setup_app.py` | The wizard a browser answers, and its token |
+| `cli/test_browser_server.py` | Getting the wizard a port, and never needing one |
 | `modules/router/test_modes.py` | The four shapes a gateway is set up as |
+| `modules/router/test_lan_resolver.py` | What a served interface leaves the box resolving with |
 
 ## Two rules
 

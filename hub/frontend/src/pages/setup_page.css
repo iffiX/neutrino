@@ -1,0 +1,601 @@
+/* The first run, before the box is a gateway.
+
+   Black, because that is where the artwork and the architecture drawing both
+   live, and because the room lighting up is what says the box is finished.
+   The questions sit on the left and the wolf works on the right; when the box
+   becomes a gateway he goes back to work, the room lights, and what is left
+   is the login page's own: same grid, same two orbs, so the panel it hands
+   over to is visibly the same place. */
+
+.setup_page {
+  position: relative;
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  min-height: 100vh;
+  padding: var(--space-5);
+  background: #000;
+}
+
+.setup_backdrop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* The lattice the panel's login sits on. Faint here, lit at the end: it is
+   there to be lit rather than arriving from nowhere. */
+.setup_backdrop::before {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  background-image:
+    linear-gradient(var(--color-border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-border) 1px, transparent 1px);
+  background-size: 46px 46px;
+  opacity: 0.07;
+  mask-image: radial-gradient(circle at 50% 45%, black, transparent 68%);
+  transition: opacity 1200ms ease;
+}
+
+.setup_orb {
+  position: absolute;
+  width: 460px;
+  height: 460px;
+  border-radius: 50%;
+  filter: blur(100px);
+  opacity: 0;
+  transition: opacity 1600ms ease;
+}
+
+.setup_orb--cyan {
+  top: -14%;
+  left: 12%;
+  background: var(--color-accent);
+  animation: drift 22s ease-in-out infinite;
+}
+
+.setup_orb--violet {
+  right: 8%;
+  bottom: -18%;
+  background: var(--color-accent-secondary);
+  animation: drift 30s ease-in-out infinite reverse;
+}
+
+/* --- the two halves --- */
+
+/* The whole composition sizes off the screen and nothing else. It has a
+   ceiling because a form line past about ninety characters stops being
+   readable however much room there is, and a floor because below it the
+   fields stop fitting — under that the portrait layout takes over. */
+.setup_stage {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: clamp(24px, 4%, 56px);
+  align-items: center;
+  justify-content: center;
+  width: min(92vw, 1560px);
+}
+
+/* One size, always, and vertically centred: the card is the only thing on
+   this page that changes, so it is the only thing that should move. */
+.setup_art {
+  flex: 0 0 42%;
+  align-self: center;
+  aspect-ratio: 900 / 733;
+  background-image: url("../images/setup_wolf.webp");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  transition:
+    flex-basis 900ms ease,
+    opacity 900ms ease;
+}
+
+/* Standing up there is no room beside the card, so he goes behind it and
+   everything is simply centred. */
+@media (max-aspect-ratio: 1 / 1), (max-width: 880px) {
+  .setup_stage {
+    display: grid;
+    place-items: center;
+  }
+
+  .setup_card,
+  .setup_art {
+    grid-area: 1 / 1;
+  }
+
+  .setup_card {
+    flex-basis: auto;
+    width: min(90%, 720px);
+  }
+
+  .setup_art {
+    width: min(86%, 460px);
+    opacity: 0.3;
+  }
+}
+
+/* --- lit: the box is a gateway, and this is the panel's room --- */
+
+.setup_page--lit {
+  background: var(--color-bg);
+}
+
+/* He is done being looked at, and the card takes the middle. */
+.setup_page--lit .setup_art {
+  flex-basis: 0;
+  opacity: 0;
+}
+
+.setup_page--lit .setup_backdrop::before {
+  opacity: 0.24;
+}
+
+.setup_page--lit .setup_orb {
+  opacity: 0.22;
+}
+
+.setup_page--lit .setup_card {
+  border-color: var(--color-border-strong);
+  background: rgb(17 23 33 / 92%);
+  box-shadow:
+    0 0 0 1px rgb(34 211 238 / 12%),
+    0 40px 90px -40px rgb(0 0 0 / 95%);
+}
+
+/* --- the card --- */
+
+/* Corner marks, drawn in the gradient the architecture drawing runs: the
+   card reads as an instrument rather than a dialog. */
+.setup_card::before,
+.setup_card::after {
+  content: "";
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
+}
+
+.setup_card::before {
+  top: -1px;
+  left: -1px;
+  border-top: 2px solid #f0158a;
+  border-left: 2px solid #f0158a;
+  border-top-left-radius: var(--radius-lg);
+}
+
+.setup_card::after {
+  right: -1px;
+  bottom: -1px;
+  border-right: 2px solid #22d3ee;
+  border-bottom: 2px solid #22d3ee;
+  border-bottom-right-radius: var(--radius-lg);
+}
+
+.setup_page--lit .setup_card::before,
+.setup_page--lit .setup_card::after {
+  opacity: 0.35;
+  transition: opacity 1200ms ease;
+}
+
+/* As tall as the screen it is showing, and no taller than two thirds of the
+   window — past that the answers scroll inside it rather than the card
+   growing off the bottom. It never scrolls as a whole: that would take the
+   heading and the buttons with it. */
+.setup_card {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  /* A share of the stage, never negotiated. Left to shrink and grow it
+     follows whatever its longest line happens to be — a pasted share link is
+     enough — and the wolf gets shoved sideways for it. */
+  flex: 0 0 clamp(380px, 46%, 760px);
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  max-width: 100%;
+  max-height: calc(100vh / 3 * 2);
+  padding: var(--space-6);
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: var(--radius-lg);
+  background: rgb(0 0 0 / 62%);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 40px 120px -50px rgb(240 21 138 / 45%);
+  animation: fade_in_up 320ms ease both;
+  transition:
+    background 1200ms ease,
+    border-color 1200ms ease;
+}
+
+/* The rule the terminal draws, drawn the same way: wordmark, a line that runs
+   the gradient of the architecture drawing, then where you are. */
+/* The three regions: what you are looking at, what you are answering, what
+   you press. Only the middle one scrolls, and only when its screen has more
+   to offer than fits. */
+.setup_head,
+.setup_foot {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.setup_scroll {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* The gutter is held whether or not there is a bar, so the answers do not
+     shift sideways the first time a screen outgrows the card. */
+  scrollbar-gutter: stable;
+  scrollbar-color: var(--color-border-strong) transparent;
+  scrollbar-width: thin;
+}
+
+.setup_scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.setup_scroll::-webkit-scrollbar-thumb {
+  border-radius: var(--radius-pill);
+  background: var(--color-border-strong);
+}
+
+.setup_scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.setup_rule {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.setup_wordmark {
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+}
+
+.setup_rule_line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, #f0158a, #c040d0, #22d3ee);
+}
+
+.setup_counter {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.setup_title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.setup_body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.setup_lead {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.setup_warn {
+  margin: 0;
+  color: var(--color-warn);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* A label with a reading about its own field on the right of it. */
+.setup_field_head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.setup_row {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.setup_row .field {
+  flex: 1;
+}
+
+.setup_field--narrow {
+  max-width: 190px;
+}
+
+/* --- welcome --- */
+
+.setup_welcome {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-4);
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.setup_welcome_title {
+  margin: 0;
+  background: linear-gradient(90deg, #f0158a, #c040d0, #22d3ee);
+  background-clip: text;
+  font-family: var(--font-mono);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  -webkit-text-fill-color: transparent;
+}
+
+.setup_welcome_line {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.setup_welcome_note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.setup_begin {
+  margin-top: var(--space-2);
+}
+
+/* --- modes and ports: one tile each, chosen by clicking it --- */
+
+.setup_modes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.setup_mode {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: rgb(255 255 255 / 3%);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+
+.setup_mode:hover {
+  border-color: var(--color-border-strong);
+}
+
+.setup_mode--chosen {
+  border-color: var(--color-accent);
+  background: var(--color-accent-wash);
+}
+
+.setup_mode_name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.setup_mode_summary {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.setup_ports {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.setup_port {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 150px;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: rgb(255 255 255 / 3%);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.setup_port:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.setup_port--chosen {
+  border-color: var(--color-accent);
+  background: var(--color-accent-wash);
+}
+
+.setup_port_name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.setup_port_kind,
+.setup_port_address {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.setup_port_route {
+  color: var(--color-accent);
+  font-size: 11px;
+}
+
+/* --- toggles, services, review --- */
+
+/* One link per row, added and dropped rather than typed into until you stop:
+   a terminal asks for the next one, a page shows the list. */
+.setup_link {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.setup_link .input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.setup_link_drop {
+  flex: none;
+  padding: 8px;
+}
+
+.setup_link_add {
+  align-self: flex-start;
+}
+
+/* A link the hub has read, shown as what it is rather than as what was
+   pasted. It truncates: a node name is as long as a provider made it, and
+   nothing on this page may be widened by its content. */
+.setup_chip {
+  flex: 1 1 auto;
+  justify-content: flex-start;
+  min-width: 0;
+}
+
+.setup_chip_name {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.setup_service {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.setup_consents {
+  margin: 0;
+  /* Indented past the switch, so it reads as belonging to that module. */
+  padding-left: 52px;
+  color: var(--color-warn);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.setup_review {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  font-size: 13px;
+}
+
+.setup_review dt {
+  color: var(--color-text-muted);
+}
+
+.setup_review dd {
+  margin: 0;
+  font-family: var(--font-mono);
+}
+
+.setup_actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+}
+
+/* --- the steps, while the box is being changed --- */
+
+.setup_steps {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.setup_step {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  gap: var(--space-3);
+  align-items: center;
+  font-size: 13px;
+}
+
+.setup_step_mark {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-text-faint);
+}
+
+.setup_step--running .setup_step_mark {
+  background: var(--color-accent);
+  box-shadow: 0 0 12px var(--color-accent);
+  animation: setup_pulse 1s ease-in-out infinite;
+}
+
+.setup_step--done .setup_step_mark {
+  background: var(--color-ok);
+}
+
+.setup_step--skipped .setup_step_mark {
+  background: var(--color-warn);
+}
+
+.setup_step--failed .setup_step_mark {
+  background: var(--color-error);
+}
+
+.setup_step_note {
+  color: var(--color-text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.setup_handover {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+@keyframes setup_pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}

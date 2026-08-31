@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import "./toggle_switch.css";
 
 /**
@@ -13,6 +15,8 @@ interface ToggleSwitchProps {
   onChange: (isOn: boolean) => void;
   label?: string;
   description?: string;
+  /** A tag beside the label, for a state this switch does not set. */
+  badge?: ReactNode;
   isDisabled?: boolean;
 }
 
@@ -21,6 +25,7 @@ export function ToggleSwitch({
   onChange,
   label,
   description,
+  badge,
   isDisabled = false,
 }: ToggleSwitchProps) {
   const handleClick = () => {
@@ -43,7 +48,10 @@ export function ToggleSwitch({
       {(label !== undefined || description !== undefined) && (
         <span className="toggle_switch_text">
           {label !== undefined && (
-            <span className="toggle_switch_label">{label}</span>
+            <span className="toggle_switch_label">
+              {label}
+              {badge}
+            </span>
           )}
           {description !== undefined && (
             <span className="toggle_switch_description">{description}</span>

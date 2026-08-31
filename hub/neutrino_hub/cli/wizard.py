@@ -16,7 +16,11 @@ import sys
 import textwrap
 from dataclasses import dataclass, field
 
-from neutrino_hub.cli.password import PasswordRefused, read_new_password
+from neutrino_hub.cli.password import (
+    PASSWORD_MIN_LENGTH,
+    PasswordRefused,
+    read_new_password,
+)
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
 from neutrino_hub.modules.xray.constants import (
     XRAY_SOCKS_DIRECT_PORT,
@@ -32,11 +36,12 @@ from neutrino_hub.system.constants import (
 from neutrino_hub.system.machine import machine_architecture
 from neutrino_hub.system.provisioning import plan_for
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
+from neutrino_hub.web.constants import WEB_DEFAULT_LISTEN_PORT
 from neutrino_hub.modules.router.modes import (
     ROUTER_MODES_BY_KEY,
     ROUTER_MODE_SERVER,
     ROUTER_MODE_ONE_ARM,
-    ROUTER_MODE_BYPASS,
+    ROUTER_MODE_SIDE_GATEWAY,
     ROUTER_MODE_DEFAULT_LAN_ADDRESS,
     ROUTER_MODE_DEFAULT_LAN_VLAN,
     ROUTER_MODE_DEFAULT_PREFIX_LEN,
@@ -59,7 +64,6 @@ WIZARD_BACK = "b"
 # One per screen, in order. The wordmark repeats; the title does not, because
 # the same five words five times teach nobody where they are.
 WIZARD_TITLES = (
-    "Welcome",
     "A password for the panel",
     "What is this machine for?",
     "Which ports?",
@@ -67,13 +71,21 @@ WIZARD_TITLES = (
     "What else to install on this box",
     "Ready",
 )
-# The screen shown once the machine has been changed, which is not one of the
-# questions and does not carry their counter.
+# The screens that are not questions about the configuration, and so carry no
+# counter: the one before the questions asking how they will be answered, the
+# one waiting for a browser to take them, and the one after everything.
+WIZARD_WELCOME_TITLE = "Welcome"
 WIZARD_DONE_TITLE = "Add your devices"
 # How often the last screen looks for a device that has joined.
 WIZARD_POLL_INTERVAL_S = 2.0
 # What the wrapped prose fits inside, leaving room for the indent.
 WIZARD_TEXT_WIDTH = 66
+# Said on the router screen, where the wizard takes one port each way and
+# the panel takes as many as somebody wants.
+WIZARD_ROUTER_NOTE = (
+    "Only the primary way out and the primary served network are set here. "
+    "The panel's Network page adds more."
+)
 WIZARD_ABORTED = "setup was aborted by user, nothing was written"
 # What a shell reports for a command somebody interrupted.
 WIZARD_STOPPED_STATUS = 130
@@ -120,12 +132,15 @@ class WizardAnswers:
         services: The optional modules to install, by their registry name.
             Installing is all this does: each is configured on its own page
             afterwards, so nothing here has to be asked twice.
+        listen_port: The port the panel answers on. Asked whatever shape this
+            box is, because every one of them answers somewhere.
     """
 
     password: str
     network: object
     proxy: WizardProxy = field(default_factory=WizardProxy)
     services: tuple = ()
+    listen_port: int = WEB_DEFAULT_LISTEN_PORT
 
 
 class WizardAborted(RuntimeError):
@@ -145,7 +160,7 @@ WIZARD_NETWORK_KEYS = {
     "upstream_gateway": "upstream_gateway",
     "lan_vlan_id": "lan_vlan_id",
 }
-WIZARD_DOCUMENT_KEYS = ("password", "network", "proxy", "services")
+WIZARD_DOCUMENT_KEYS = ("password", "network", "proxy", "services", "listen_port")
 # A document need not answer the proxy screen; skipping it is what an
 # unanswered one means, exactly as it does on the screen.
 WIZARD_PROXY_KEYS = (
@@ -201,7 +216,25 @@ def from_document(document: dict) -> WizardAnswers:
         network=planned,
         proxy=_proxy_from(document.get("proxy", {}), network["mode"]),
         services=_services_from(document.get("services", [])),
+        listen_port=_port_from(document.get("listen_port", WEB_DEFAULT_LISTEN_PORT)),
     )
+
+
+def _port_from(given) -> int:
+    """The panel's port, read rather than asked for.
+
+    Args:
+        given: The document's ``listen_port``.
+
+    Returns:
+        The port to serve the panel on.
+
+    Raises:
+        WizardAborted: When it is not a port number.
+    """
+    if isinstance(given, int) and 1 <= given <= 65535:
+        return given
+    raise WizardAborted(f"{given!r} is not a port number")
 
 
 def _services_from(given) -> tuple:
@@ -326,6 +359,7 @@ class SetupWizard:
         self._upstream = ""
         self._proxy = WizardProxy()
         self._services: list = []
+        self._listen_port = WEB_DEFAULT_LISTEN_PORT
 
     def run(self) -> WizardAnswers:
         """Ask every screen, and hand back what they answered.
@@ -338,7 +372,6 @@ class SetupWizard:
                 cannot be answered.
         """
         screens = (
-            self._welcome,
             self._ask_password,
             self._ask_mode,
             self._ask_ports,
@@ -361,22 +394,16 @@ class SetupWizard:
             network=self._plan(),
             proxy=self._proxy,
             services=tuple(self._services),
+            listen_port=self._listen_port,
         )
-
-    def _welcome(self) -> bool:
-        """What this is, and how long it takes."""
-        self._say("One always-on machine, holding your network, your other machines,")
-        self._say("your keys, your storage and your services.")
-        self._say("")
-        self._say("About a minute. Nothing is written until the last screen, and you")
-        self._say("can step back at any point.")
-        self._prompt("Press Enter to begin")
-        return WIZARD_NEXT
 
     def _ask_password(self) -> bool:
         """The one secret, asked for twice."""
-        self._say("Eight characters or more. It is stored as a hash — the panel is")
-        self._say("the only thing that uses it.")
+        self._say(
+            f"At least {PASSWORD_MIN_LENGTH} characters, and better for mixing "
+            "letters, numbers"
+        )
+        self._say("and symbols.")
         print()
         try:
             self._password = read_new_password()
@@ -405,9 +432,11 @@ class SetupWizard:
         a radio, and an option nobody may pick is noise in a list somebody has
         to read.
         """
-        caution = ROUTER_MODES_BY_KEY[self._mode].caution
-        if caution:
-            for line in textwrap.wrap(caution, width=WIZARD_TEXT_WIDTH):
+        note = ROUTER_MODES_BY_KEY[self._mode].caution
+        if self._mode == ROUTER_MODE_ROUTER:
+            note = WIZARD_ROUTER_NOTE
+        if note:
+            for line in textwrap.wrap(note, width=WIZARD_TEXT_WIDTH):
                 self._say(f"  {line}")
             self._say("")
         links = self._candidates()
@@ -420,10 +449,20 @@ class SetupWizard:
 
         names = [link.name for link in links]
         if self._mode == ROUTER_MODE_ROUTER:
-            return self._ask_router_ports(names)
-        if self._mode == ROUTER_MODE_ONE_ARM:
-            return self._ask_one_arm_port(names)
-        return self._ask_single_port(names)
+            moved = self._ask_router_ports(names)
+        elif self._mode == ROUTER_MODE_ONE_ARM:
+            moved = self._ask_one_arm_port(names)
+        else:
+            moved = self._ask_single_port(names)
+        if moved != WIZARD_NEXT:
+            return moved
+        # Asked on every path, because every shape of this box answers on a
+        # port, and the one it answers on is the address somebody types next.
+        port = self._port("Panel answers on port", self._listen_port)
+        if port is None:
+            return WIZARD_PREVIOUS
+        self._listen_port = port
+        return WIZARD_NEXT
 
     def _candidates(self) -> list:
         """The interfaces the chosen mode can be built on.
@@ -500,14 +539,20 @@ class SetupWizard:
         Returns:
             How far this screen moves the wizard.
         """
-        is_bypass = self._mode == ROUTER_MODE_BYPASS
-        # A bypass router reaches the world through that network's own router,
+        is_side_gateway = self._mode == ROUTER_MODE_SIDE_GATEWAY
+        # A side gateway reaches the world through that network's own router,
         # so the port already carrying a way out is the one; a server routes
         # nothing, and answers where it has an address.
         chosen = self._choose(
             names,
-            default=_uplink_default(names) if is_bypass else _served_default(names),
-            prompt="Port on that network" if is_bypass else "Port the panel answers on",
+            default=(
+                _uplink_default(names) if is_side_gateway else _served_default(names)
+            ),
+            prompt=(
+                "Port on that network"
+                if is_side_gateway
+                else "Port the panel answers on"
+            ),
         )
         if chosen is None:
             return WIZARD_PREVIOUS
@@ -515,7 +560,7 @@ class SetupWizard:
         self._lan = names[chosen]
         if not self._ask_address():
             return WIZARD_PREVIOUS
-        if is_bypass:
+        if is_side_gateway:
             while True:
                 answer = self._text("That network's own router", _gateway_of(self._lan))
                 if answer is None:
@@ -540,9 +585,9 @@ class SetupWizard:
 
         Three cases, and the mode names which one applies:
 
-        - **bypass, server** — this box joins a network somebody else runs, so
-          it keeps the address that port already has. A port with none has to
-          be given one; there is nothing to guess.
+        - **side gateway, server** — this box joins a network somebody else
+          runs, so it keeps the address that port already has. A port with
+          none has to be given one; there is nothing to guess.
         - **router** — this box becomes the network's gateway. A port with an
           address and no default route is already running that network, and
           moving it would take every device on it down; a port whose address
@@ -587,7 +632,7 @@ class SetupWizard:
         if self._mode == ROUTER_MODE_ONE_ARM:
             return fresh
         carried = self._carried_address(self._lan)
-        if self._mode in (ROUTER_MODE_BYPASS, ROUTER_MODE_SERVER):
+        if self._mode in (ROUTER_MODE_SIDE_GATEWAY, ROUTER_MODE_SERVER):
             return carried or ("", ROUTER_MODE_DEFAULT_PREFIX_LEN)
         if carried and self._lan not in _routed_names():
             return carried
@@ -851,20 +896,13 @@ class SetupWizard:
         ).plan()
 
     def _frame(self, step: int, total: int) -> None:
-        """Clear, then draw the wordmark, the step and what it asks.
+        """Draw the wordmark, the step and what it asks.
 
         Args:
             step: The one-based screen being drawn.
             total: How many there are.
         """
-        print()
-        label = f"{WIZARD_LABEL} {step}/{total}"
-        dashes = WIZARD_WIDTH - len(WIZARD_WORDMARK) - len(label) - 2
-        print()
-        print(f"{WIZARD_WORDMARK} {'─' * max(1, dashes)} {label}")
-        print()
-        print(f"  {WIZARD_TITLES[step - 1]}")
-        print()
+        _headline(f"{WIZARD_LABEL} {step}/{total}", title=WIZARD_TITLES[step - 1])
         self._step = step
         self._total = total
 
@@ -931,6 +969,203 @@ class SetupWizard:
                 print(f"  {names[chosen]} {reason}")
                 continue
             return chosen
+
+
+def _headline(right: str, *, title: str = "") -> None:
+    """The one rule every screen opens with.
+
+    One line rather than a title above a separator: a terminal that scrolls
+    between screens leaves a stack of separators, and a terminal that clears
+    loses the title above the fold. The rule is the title.
+
+    Args:
+        right: What sits at the right end — a counter, or the screen's name
+            when it is not one of the questions.
+        title: What this screen is about, on its own line under the rule.
+            Empty when ``right`` already says it.
+    """
+    dashes = WIZARD_WIDTH - len(WIZARD_WORDMARK) - len(right) - 2
+    print()
+    print()
+    print(f"{WIZARD_WORDMARK} {'─' * max(1, dashes)} {right}")
+    print()
+    if title:
+        print(f"  {title}")
+        print()
+
+
+def context() -> dict:
+    """The same facts the screens ask against, for a browser to ask with.
+
+    Gathered here rather than in the server, so both ways of answering are
+    looking at one machine's ports, one list of modes and one list of
+    modules — a browser offered a mode the terminal would not offer is a
+    second wizard to keep in step.
+
+    Returns:
+        The ports, the modes they allow, the modules that could be installed,
+        and what each question starts at.
+
+    Raises:
+        WizardAborted: When this machine has nothing to configure.
+    """
+    links = [link for link in RouterLinkStatus().all_links() if link.name != "lo"]
+    links.sort(key=_wired_first)
+    if not links:
+        raise WizardAborted(
+            "this machine has no network interface; a gateway needs at least one"
+        )
+    wired_count = sum(1 for link in links if not link.is_wifi)
+    installed = _installed_names()
+    return {
+        "interfaces": [
+            {
+                "name": link.name,
+                "is_wired": not link.is_wifi,
+                "ipv4_address": link.ipv4_address or "",
+                "has_route": _has_route(link.name),
+                "upstream_gateway": _gateway_of(link.name),
+            }
+            for link in links
+        ],
+        "modes": [
+            {
+                "key": mode.key,
+                "summary": mode.summary,
+                "port_count": mode.port_count,
+                "is_wire_needed": mode.is_wire_needed,
+                "caution": mode.caution,
+            }
+            for mode in modes_for(len(links), wired_count)
+        ],
+        "services": [
+            {
+                "name": name,
+                "install_note": spec.install_note,
+                "is_installed": name in installed,
+                "consents": [
+                    _consent_sentence(consent)
+                    for consent in plan_for(spec.provisioner()).consents
+                ],
+            }
+            for name, spec in _installable()
+        ],
+        "defaults": {
+            "address": ROUTER_MODE_DEFAULT_LAN_ADDRESS,
+            "prefix_len": ROUTER_MODE_DEFAULT_PREFIX_LEN,
+            "lan_vlan_id": ROUTER_MODE_DEFAULT_LAN_VLAN,
+            "socks_proxy_port": XRAY_SOCKS_PROXY_PORT,
+            "socks_direct_port": XRAY_SOCKS_DIRECT_PORT,
+            "listen_port": WEB_DEFAULT_LISTEN_PORT,
+        },
+        "router_note": WIZARD_ROUTER_NOTE,
+    }
+
+
+def welcome() -> None:
+    """What this is, before the questions start.
+
+    Shown on the way into the terminal's own screens. A machine that can open
+    a browser gets :func:`offer_browser` instead, which says the same thing
+    and then waits.
+    """
+    _headline(WIZARD_WELCOME_TITLE)
+    _intro()
+    print()
+    try:
+        input("  Press Enter to begin: ")
+    except (EOFError, KeyboardInterrupt):
+        print(f"\n\n  {WIZARD_ABORTED}\n", file=sys.stderr)
+        raise SystemExit(WIZARD_STOPPED_STATUS) from None
+
+
+def offer_browser(*, urls: list, token: str, arrived) -> bool:
+    """Say where the browser is opening, and wait for it to be answered.
+
+    A browser is already being opened on this machine when this is drawn, so
+    the addresses are for the case where it did not — another machine on one
+    of these networks can open the same wizard.
+
+    Args:
+        urls: Every address this machine can be reached at, in the order they
+            should be tried.
+        token: The one-time token the link carries.
+        arrived: Called to ask whether the browser has answered yet. It waits
+            out its own interval, so this loop does not spin.
+
+    Returns:
+        True when the browser answered, False when whoever is at the keyboard
+        would rather answer here.
+    """
+    _headline(WIZARD_WELCOME_TITLE)
+    _intro()
+    print()
+    print("  Opening it in a browser. It is the same wizard, and this terminal")
+    print("  follows along. From another machine, open:")
+    print()
+    for url in urls:
+        print(f"    {url}?token={token}")
+    print()
+    print("  The link is good for this run only.")
+    print()
+    print("  If it did not open, you can answer here instead.")
+    print()
+    # No newline, and flushed: this is a prompt somebody is looking at, and
+    # stdout is only line-buffered when it is a terminal. Nothing else is
+    # printed until the browser answers or Enter is pressed.
+    print("  Continue in terminal (will close server): ", end="")
+    sys.stdout.flush()
+    is_watching = True
+    try:
+        while True:
+            if arrived():
+                return True
+            if not is_watching:
+                continue
+            wanted = _is_terminal_wanted()
+            if wanted is None:
+                # Nobody is at the keyboard — this was started from a script,
+                # or its input has been closed. Watching a stream that is at
+                # end of file only spins.
+                is_watching = False
+            elif wanted:
+                return False
+    except (EOFError, KeyboardInterrupt):
+        print(f"\n\n  {WIZARD_ABORTED}\n", file=sys.stderr)
+        raise SystemExit(WIZARD_STOPPED_STATUS) from None
+
+
+def _intro() -> None:
+    """What this takes and how to work it, said the same way on both ways in.
+
+    One line about the box and one about the controls: whoever is reading
+    this wants to know how long it takes and how to get out of it, and
+    everything else is on the screens that follow.
+    """
+    print("  Pour a coffee and sit back — this takes about a minute.")
+    print()
+    print("  Nothing is written until the last screen confirms it. Ctrl-C stops")
+    print("  at any point, and b at a prompt steps back a question.")
+
+
+def _is_terminal_wanted():
+    """Whether somebody asked to answer in the terminal after all.
+
+    Returns:
+        True when a line is waiting on standard input, which is the Continue
+        prompt being answered, and None when there is nothing left to read
+        from, which is what a closed input looks like.
+    """
+    try:
+        ready, _, _ = select.select([sys.stdin], [], [], 0)
+    except (OSError, ValueError):
+        return None
+    if not ready:
+        return False
+    line = sys.stdin.readline()
+    if line == "":
+        return None
+    return True
 
 
 def ask() -> WizardAnswers:
@@ -1121,10 +1356,7 @@ def finish(*, panel_url: str, link: str = "", note: str = "", joined=None) -> No
         joined: Called after the wait for the names of the devices that came
             in, so this module reads no configuration of its own.
     """
-    dashes = WIZARD_WIDTH - len(WIZARD_WORDMARK) - len(WIZARD_DONE_TITLE) - 2
-    print()
-    print(f"{WIZARD_WORDMARK} {'─' * max(1, dashes)} {WIZARD_DONE_TITLE}")
-    print()
+    _headline(WIZARD_DONE_TITLE)
     print(f"  The panel is at   {panel_url}")
     print()
     if link:
@@ -1162,7 +1394,7 @@ def _watch(joined) -> None:
         if _is_enter_pressed():
             break
     if not seen:
-        print("    nothing joined; the Devices page mints another link")
+        print("    nothing joined; the Devices page mints another link.")
 
 
 def _is_enter_pressed() -> bool:

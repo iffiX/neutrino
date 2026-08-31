@@ -60,6 +60,17 @@ def test_the_proxy_core_has_a_unit_of_its_own(installer):
     )
 
 
+def test_the_lan_name_service_is_the_hubs_own_unit():
+    """The distribution's is not handed the generated file the same way twice:
+    Debian passes --conf-dir on the command line, Arch reads nothing from
+    /etc/dnsmasq.d at all, and there the packaged unit started with defaults,
+    took port 53 from systemd-resolved and left the box with no DNS."""
+    from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
+
+    assert SYSTEM_CORE_UNITS["dnsmasq"] == "neutrino_hub_dnsmasq.service"
+    assert "neutrino_hub_dnsmasq.service" in units.SYSTEM_UNIT_TEMPLATES.values()
+
+
 def _true() -> bool:
     return True
 
@@ -88,8 +99,35 @@ def test_each_unit_starts_one_process_through_the_hub():
         "neutrino_hub_web.service",
         "neutrino_hub_xray.service",
         "neutrino_hub_cliproxyapi.service",
+        "neutrino_hub_dnsmasq.service",
     ):
         text = (UTILS_DATA_DIR / "services" / template_name).read_text()
         started = [line for line in text.splitlines() if line.startswith("ExecStart=")]
         assert len(started) == 1, template_name
         assert "neutrino_hub.cli.entry run --only-" in started[0], template_name
+
+
+def test_no_rendered_unit_keeps_a_placeholder():
+    """A unit written with @PYTHON@ still in it fails at exec with that as
+    the path, which is what happened to the AI gateway: its provisioner read
+    the template and wrote it without going through this."""
+    from neutrino_hub.utils.constants import UTILS_DATA_DIR
+
+    installer = SystemdUnitInstaller()
+    for template in sorted((UTILS_DATA_DIR / "services").glob("*.service")):
+        text = template.read_text(encoding="utf-8")
+        for is_packaged_value in (True, False):
+            units.is_packaged = lambda: is_packaged_value
+            rendered = installer.render(text, "/opt/neutrino/python/bin/python3")
+            assert "@" not in rendered, f"{template.name}, packaged={is_packaged_value}"
+
+
+def test_a_template_nobody_renders_carries_no_placeholder():
+    """Gitea's provisioner writes its own unit, so its template may not need
+    substituting — and this is what says so out loud."""
+    from neutrino_hub.utils.constants import UTILS_DATA_DIR
+
+    text = (UTILS_DATA_DIR / "services" / "neutrino_hub_gitea.service").read_text()
+
+    assert "@PYTHON@" not in text
+    assert "@REPO_ROOT@" not in text

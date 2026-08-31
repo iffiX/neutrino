@@ -1,0 +1,24 @@
+[Unit]
+Description=Neutrino Hub LAN name service and leases (dnsmasq)
+Documentation=file://@REPO_ROOT@/docs/standard/misc/config.md
+After=network.target neutrino_hub_router.service
+Wants=neutrino_hub_router.service
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO_ROOT@
+Environment=PYTHONPATH=@REPO_ROOT@
+# The hub's own unit rather than the distribution's, because the generated
+# file is a whole configuration and every family disagrees about how a
+# distribution's dnsmasq is handed one: Debian passes --conf-dir on the
+# command line, Arch leaves conf-dir commented out and reads nothing from
+# /etc/dnsmasq.d at all. Naming the file outright ends the disagreement.
+#
+# Root, and dnsmasq drops itself: port 53 and the raw sockets DHCP answers on
+# are taken before it does.
+ExecStart=@PYTHON@ -m neutrino_hub.cli.entry run --only-dnsmasq
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

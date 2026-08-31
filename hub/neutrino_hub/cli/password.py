@@ -4,6 +4,10 @@
 twice, or read from standard input for an unattended run. It is never an
 argument — an argument is visible in ``ps`` to every user on the machine for as
 long as the command runs, and stays in the shell history afterwards.
+
+Eight characters is the whole of the rule. Everything else — mixing letters,
+numbers and symbols — is a preference, said out loud where it is asked for and
+never turned into a refusal.
 """
 
 import getpass
@@ -45,14 +49,17 @@ def read_new_password(*, is_stdin: bool = False) -> str:
         else:
             password = getpass.getpass("Panel password: ")
         if len(password) < PASSWORD_MIN_LENGTH:
-            raise PasswordRefused(f"use at least {PASSWORD_MIN_LENGTH} characters")
+            raise PasswordRefused(
+                f"too short: use at least {PASSWORD_MIN_LENGTH} characters, "
+                "and better for mixing letters, numbers and symbols"
+            )
         if not is_stdin and password != getpass.getpass("Repeat: "):
             raise PasswordRefused("the two passwords do not match")
     except EOFError as error:
         # Prompting with nothing to read from is an unattended run that forgot
         # --password-stdin, and a traceback is no way to say so.
         raise PasswordRefused(
-            "there is nothing to read a password from; use --password-stdin"
+            "there is nothing to read a password from; use --stdin"
         ) from error
     return password
 

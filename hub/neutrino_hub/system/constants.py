@@ -11,7 +11,7 @@ from pathlib import Path
 SYSTEM_CORE_UNITS = {
     "xray": "neutrino_hub_xray.service",
     "router": "neutrino_hub_router.service",
-    "dnsmasq": "dnsmasq.service",
+    "dnsmasq": "neutrino_hub_dnsmasq.service",
     "web": "neutrino_hub_web.service",
     # The AI gateway: every machine's tools point at it, so taking it down
     # takes their AI away — same no-off-switch treatment as netbird.
