@@ -424,3 +424,138 @@ class _RadioOnly(_WiredAndRadio):
 
     def default_routes(self) -> list:
         return []
+
+
+# A share link the parser accepts, made up: example.com, and the password
+# inside the base64 is the words "s3cret-password".
+SHARE_LINK = (
+    "ss://YWVzLTI1Ni1nY206czNjcmV0LXBhc3N3b3Jk@hk.example.com:5800#HK"  # scan: allow
+)
+
+
+def test_a_document_without_a_proxy_skips_it():
+    """Leaving it out is what skipping the screen means; a hub is a hub
+    without a proxy."""
+    answers = wizard.from_document(
+        {"password": "a-long-enough-password", "network": {"mode": "server"}}
+    )
+
+    assert not answers.proxy.is_enabled
+    assert answers.proxy.nodes == ()
+
+
+def test_a_serving_mode_routes_its_devices_and_publishes_no_socks():
+    """Everything the devices send goes through; a SOCKS port is a separate
+    ask, and nothing here is worked out from the mode."""
+    answers = wizard.from_document(
+        {
+            "password": "a-long-enough-password",
+            "network": {"mode": "router", "wan": ["a"], "lan": ["b"]},
+            "proxy": {"links": [SHARE_LINK]},
+        }
+    )
+
+    assert answers.proxy.is_enabled
+    assert not answers.proxy.is_socks_proxy_enabled
+    assert not answers.proxy.is_socks_direct_enabled
+    assert not answers.proxy.is_local
+
+
+def test_a_server_has_a_socks_port_for_its_whole_proxy():
+    """It diverts nothing, so there is no transparent path to be on."""
+    answers = wizard.from_document(
+        {
+            "password": "a-long-enough-password",
+            "network": {"mode": "server", "lan": ["a"], "address": "10.0.0.2"},
+            "proxy": {"links": [SHARE_LINK], "socks_proxy_port": 1081},
+        }
+    )
+
+    assert answers.proxy.is_socks_proxy_enabled
+    assert answers.proxy.socks_proxy_port == 1081
+
+
+def test_this_boxs_own_traffic_is_asked_for_rather_than_assumed():
+    """Both readings were defensible, which is why neither is guessed."""
+    document = {
+        "password": "a-long-enough-password",
+        "network": {"mode": "server", "lan": ["a"], "address": "10.0.0.2"},
+        "proxy": {"links": [SHARE_LINK]},
+    }
+
+    assert not wizard.from_document(document).proxy.is_local
+    document["proxy"]["is_local"] = True
+    assert wizard.from_document(document).proxy.is_local
+
+
+def test_a_link_that_cannot_be_read_is_refused():
+    with pytest.raises(wizard.WizardAborted):
+        wizard.from_document(
+            {
+                "password": "a-long-enough-password",
+                "network": {"mode": "server", "lan": ["a"]},
+                "proxy": {"links": ["https://example.com"]},
+            }
+        )
+
+
+def test_both_socks_ports_are_asked_for_rather_than_fixed():
+    """One was a constant and the other a question, which read as an
+    oversight because it was one."""
+    answers = wizard.from_document(
+        {
+            "password": "a-long-enough-password",
+            "network": {"mode": "router", "wan": ["a"], "lan": ["b"]},
+            "proxy": {
+                "links": [SHARE_LINK],
+                "is_socks_direct_enabled": True,
+                "socks_direct_port": 1088,
+            },
+        }
+    )
+
+    assert answers.proxy.is_socks_direct_enabled
+    assert answers.proxy.socks_direct_port == 1088
+
+
+def test_a_document_can_name_the_modules_to_install():
+    """Installing is all it does; each is configured on its own page."""
+    answers = wizard.from_document(
+        {
+            "password": "a-long-enough-password",
+            "network": {"mode": "server", "lan": ["a"], "address": "10.0.0.2"},
+            "services": ["samba", "podman"],
+        }
+    )
+
+    assert answers.services == ("samba", "podman")
+
+
+def test_a_module_nobody_has_is_refused_with_the_ones_there_are():
+    with pytest.raises(wizard.WizardAborted, match="postgres"):
+        wizard.from_document(
+            {
+                "password": "a-long-enough-password",
+                "network": {"mode": "server", "lan": ["a"]},
+                "services": ["postgres"],
+            }
+        )
+
+
+def test_naming_no_module_installs_none():
+    answers = wizard.from_document(
+        {
+            "password": "a-long-enough-password",
+            "network": {"mode": "server", "lan": ["a"], "address": "10.0.0.2"},
+        }
+    )
+
+    assert answers.services == ()
+
+
+def test_core_modules_are_not_offered_as_optional():
+    """Setup installs them; offering a choice with one answer is not one."""
+    offered = [name for name, _ in wizard._installable()]
+
+    assert "cliproxyapi" not in offered
+    assert "samba" in offered

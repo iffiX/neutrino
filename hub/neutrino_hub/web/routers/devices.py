@@ -248,8 +248,13 @@ def create_enrollment(
         "mac_address": (request.mac_address or "").lower() or None,
         "expires_at": time.time() + ENROLLMENT_TTL_S,
     }
-    base = _panel_url(runtime)
-    link = f"neutrino://enroll?url={quote(base, safe='')}&token={quote(token)}"
+    addresses = "&".join(f"url={quote(base, safe='')}" for base in _panel_urls(runtime))
+    if not addresses:
+        raise HTTPException(
+            status_code=400,
+            detail="no served network has an address for a machine to reach",
+        )
+    link = f"neutrino://enroll?{addresses}&token={quote(token)}"
     return DeviceEnrollmentView(link=link, token=token, expires_in_s=ENROLLMENT_TTL_S)
 
 
@@ -371,14 +376,28 @@ def _platform_keys(platform: dict) -> list:
     return keys
 
 
-def _panel_url(runtime: PanelRuntime) -> str:
-    """The address a machine should be told to reach the panel on."""
+def _panel_urls(runtime: PanelRuntime) -> list:
+    """Every address a machine could be told to reach the panel on.
+
+    All of them, not one: a hub serves more than one network, only one of its
+    addresses is on the network of the machine being enrolled, and neither the
+    hub nor the person pasting the link knows which. The agent tries them in
+    turn.
+
+    Args:
+        runtime: The shared runtime, for the served networks and the port.
+
+    Returns:
+        Base URLs, in configuration order.
+    """
+    port = runtime.settings.get("listen_port", 80)
+    urls = []
     for interface in runtime.network().lan_interfaces:
-        if interface.lan.address:
-            port = runtime.settings.get("listen_port", 80)
-            host = interface.lan.address
-            return f"http://{host}" if port == 80 else f"http://{host}:{port}"
-    return "http://192.168.100.1"
+        host = interface.lan.address
+        if not host:
+            continue
+        urls.append(f"http://{host}" if port == 80 else f"http://{host}:{port}")
+    return urls
 
 
 @router.post("/{mac_address}/kill_process")

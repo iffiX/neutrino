@@ -19,6 +19,7 @@ import shutil
 import socket
 import sys
 import tempfile
+import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -34,6 +35,8 @@ from neutrino_hub.system.constants import (
 from neutrino_hub.modules.samba.constants import SAMBA_DEFAULT_SHARE_DIR
 from neutrino_hub.modules.cliproxyapi.provisioner import CliproxyApiProvisioner
 from neutrino_hub.system.machine import machine_architecture, require_architecture
+from neutrino_hub.modules.registry import MODULE_SPECS
+from neutrino_hub.system.provisioning import plan_for
 from neutrino_hub.system.installation import (
     is_packaged,
     project_root,
@@ -53,6 +56,7 @@ from neutrino_hub.utils.constants import (
 from neutrino_hub.utils.json_file import read_config, write_config
 from neutrino_hub.system import package_manager
 from neutrino_hub.utils.subprocess_run import CommandError, run
+from neutrino_hub.modules.xray.node_config import XrayNodeList
 from neutrino_hub.modules.xray.constants import (
     XRAY_ASSET_ARCHITECTURES,
     XRAY_BINARY,
@@ -71,6 +75,10 @@ from neutrino_hub.cli import wizard
 # --- config ---
 # What the panel listens on before anybody has said otherwise.
 SETUP_DEFAULT_PORT = 8080
+# What the panel is asked for, on loopback, once it is running.
+SETUP_LOGIN_PATH = "/api/auth/login"
+SETUP_ENROLLMENT_PATH = "/api/devices/enrollment"
+SETUP_PANEL_TIMEOUT_S = 10
 CONFIG_FILES = (
     "xray/nodes.json",
     "xray/routing.json",
@@ -121,7 +129,6 @@ def main() -> int:
     except wizard.WizardAborted as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
-    wizard.summarise(answers)
 
     steps = [step for step in CORE_STEPS if step[1] not in _skipped_steps()]
     reporter = InstallReporter(
@@ -217,9 +224,21 @@ def _setup(reporter: InstallReporter, steps: list, answers) -> int:
             reporter.skipped(note)
         if step is _step_config_files:
             # After the examples land and before anything applies them: what
-            # the wizard planned replaces the three-port appliance they
-            # describe.
+            # the wizard planned replaces the three-port appliance and the
+            # placeholder nodes they describe.
             write_config("router/network.json", answers.network.to_dict())
+            _write_proxy(answers.proxy)
+
+    for name in answers.services:
+        reporter.start(f"Installing {name}")
+        try:
+            note = _install_service(name, reporter)
+        except (CommandError, OSError, ValueError, RuntimeError) as error:
+            # One optional module refusing is not a failed setup: the gateway
+            # is already a gateway, and the Services page can try again.
+            reporter.skipped(f"not installed: {error}")
+            continue
+        reporter.done(note)
 
     # Last, because the settings file it writes into is one of the files the
     # steps above copy from its example.
@@ -228,16 +247,119 @@ def _setup(reporter: InstallReporter, steps: list, answers) -> int:
     SystemdServiceController().control("web", "restart")
     reporter.done("stored")
 
-    reporter.checklist(
-        "The panel is up. Everything else is done there:",
-        [
-            f"Panel: {_panel_url()}",
-            "Proxy nodes, AI providers and devices are added on their pages",
-            "Optional services install themselves from the Services page",
-            "After editing config/ by hand: sudo nhub apply",
-        ],
-    )
+    panel_url = _panel_url()
+    link, note = _enrollment_link(answers.password)
+    wizard.finish(panel_url=panel_url, link=link, note=note, joined=_joined_devices)
     return 0
+
+
+def _joined_devices() -> list:
+    """The devices that have enrolled, as the panel wrote them down.
+
+    Returns:
+        Their names, empty when none has joined or nothing was written.
+    """
+    try:
+        devices = read_config("devices/devices.json").get("devices", {})
+    except (FileNotFoundError, ValueError):
+        return []
+    return [
+        record.get("name") or address
+        for address, record in devices.items()
+        if isinstance(record, dict)
+    ]
+
+
+def _install_service(name: str, reporter: InstallReporter) -> str:
+    """Install one optional module, as the panel's Services page would.
+
+    Consent was given on the wizard's own screen, which is why it is passed
+    rather than asked for again here.
+
+    Args:
+        name: The module's registry name.
+        reporter: Where the provisioner's progress lines go.
+
+    Returns:
+        What the provisioner reported doing.
+    """
+    spec = MODULE_SPECS[name]
+    provisioner = spec.provisioner()
+    if plan_for(provisioner).is_consent_needed:
+        result = provisioner.provision(is_consented=True, report=reporter.note)
+    else:
+        result = provisioner.provision(report=reporter.note)
+    run(["systemctl", "enable", "--now", spec.unit], is_checked=False)
+    return result.message
+
+
+def _write_proxy(proxy) -> None:
+    """Put the proxy screen's answers into `config/xray/`.
+
+    Args:
+        proxy: What the wizard collected.
+    """
+    nodes = XrayNodeList(nodes=list(proxy.nodes))
+    write_config("xray/nodes.json", nodes.to_dict())
+    routing = read_config("xray/routing.json")
+    routing["is_proxy_enabled"] = proxy.is_enabled
+    routing["is_local_proxy_enabled"] = proxy.is_enabled and proxy.is_local
+    routing["is_socks_proxy_enabled"] = proxy.is_socks_proxy_enabled
+    routing["socks_proxy_port"] = proxy.socks_proxy_port
+    routing["is_socks_direct_enabled"] = proxy.is_socks_direct_enabled
+    routing["socks_direct_port"] = proxy.socks_direct_port
+    write_config("xray/routing.json", routing)
+
+
+def _enrollment_link(password: str) -> tuple:
+    """One enrollment link, minted by the panel that has just started.
+
+    The token lives in the panel's own memory, so this asks the panel for it
+    rather than writing one: a link nothing knows about would be refused by
+    the machine that pasted it.
+
+    Args:
+        password: The panel password, to open a session with.
+
+    Returns:
+        The link and an empty note, or an empty link and why there is none.
+    """
+    if is_dev_root_set():
+        return "", "No panel is running under --dev; start one with `nhub --dev run`."
+    base = f"http://127.0.0.1:{_configured_port()}"
+    try:
+        session = _post(f"{base}{SETUP_LOGIN_PATH}", {"password": password})
+        cookie = session.headers.get("set-cookie", "").split(";")[0]
+        minted = _post(f"{base}{SETUP_ENROLLMENT_PATH}", {"name": ""}, cookie=cookie)
+        return json.loads(minted.read())["link"], ""
+    except (OSError, ValueError, KeyError):
+        return "", "The panel did not answer yet; its Devices page mints a link."
+
+
+def _post(url: str, body: dict, *, cookie: str = ""):
+    """One JSON POST to the panel on loopback.
+
+    Args:
+        url: Where to post.
+        body: What to send.
+        cookie: A session cookie, for the calls that need one.
+
+    Returns:
+        The open response.
+    """
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    if cookie:
+        request.add_header("Cookie", cookie)
+    return urllib.request.urlopen(request, timeout=SETUP_PANEL_TIMEOUT_S)
+
+
+def _configured_port() -> int:
+    """The port the panel was told to listen on."""
+    return read_config("web/settings.json").get("listen_port", SETUP_DEFAULT_PORT)
 
 
 def _panel_url() -> str:
@@ -247,7 +369,7 @@ def _panel_url() -> str:
         The LAN address a served interface carries, and the hostname when no
         interface has been given a LAN role yet.
     """
-    port = read_config("web/settings.json").get("listen_port", SETUP_DEFAULT_PORT)
+    port = _configured_port()
     for interface in _network_config().interfaces:
         if interface.role == "lan" and interface.lan.address:
             return f"http://{interface.lan.address}:{port}"

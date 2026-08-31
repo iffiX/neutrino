@@ -163,3 +163,61 @@ def test_without_the_split_everything_reaches_the_balancer():
 
     assert not any("domain" in rule for rule in config["routing"]["rules"])
     assert "balancers" in config["routing"]
+
+
+def test_a_socks_port_can_be_the_whole_proxy():
+    """A box that diverts nothing has no transparent path to be on, so the
+    port applications are pointed at is the only way through."""
+    routing = {
+        "is_proxy_enabled": True,
+        "is_socks_proxy_enabled": True,
+        "socks_proxy_port": 1081,
+    }
+
+    config = XrayConfigRenderer(
+        node_list=XrayNodeList.from_dict(NODES), routing=routing, lan_address="10.0.0.1"
+    ).render()
+
+    socks = [i for i in config["inbounds"] if i["tag"] == "socks_proxy_in"]
+    balanced = [r for r in config["routing"]["rules"] if r.get("balancerTag")]
+    assert socks and socks[0]["port"] == 1081
+    assert "socks_proxy_in" in balanced[0]["inboundTag"]
+
+
+def test_that_port_is_not_published_with_the_proxy_off():
+    """It would answer, and send everything out directly under a name that
+    says the opposite."""
+    routing = {"is_proxy_enabled": False, "is_socks_proxy_enabled": True}
+
+    config = XrayConfigRenderer(
+        node_list=XrayNodeList.from_dict(NODES), routing=routing, lan_address="10.0.0.1"
+    ).render()
+
+    assert not [i for i in config["inbounds"] if i["tag"] == "socks_proxy_in"]
+
+
+def test_the_direct_port_stays_out_of_the_proxied_rule():
+    """It exists precisely to bypass the proxy."""
+    routing = {"is_proxy_enabled": True, "is_socks_direct_enabled": True}
+
+    config = XrayConfigRenderer(
+        node_list=XrayNodeList.from_dict(NODES), routing=routing, lan_address="10.0.0.1"
+    ).render()
+
+    balanced = [r for r in config["routing"]["rules"] if r.get("balancerTag")]
+    assert "socks_direct_in" not in balanced[0]["inboundTag"]
+
+
+def test_the_direct_port_is_the_one_configured():
+    routing = {
+        "is_proxy_enabled": True,
+        "is_socks_direct_enabled": True,
+        "socks_direct_port": 1088,
+    }
+
+    config = XrayConfigRenderer(
+        node_list=XrayNodeList.from_dict(NODES), routing=routing, lan_address="10.0.0.1"
+    ).render()
+
+    socks = [i for i in config["inbounds"] if i["tag"] == "socks_direct_in"]
+    assert socks[0]["port"] == 1088

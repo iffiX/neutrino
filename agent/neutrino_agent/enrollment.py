@@ -31,14 +31,19 @@ class EnrollmentError(RuntimeError):
     """Raised when a machine cannot join a gateway."""
 
 
-def parse_link(link: str) -> "tuple[str, str]":
-    """Pull the gateway address and enrollment token out of a link.
+def parse_link(link: str) -> "tuple[list, str]":
+    """Pull the gateway addresses and enrollment token out of a link.
+
+    A hub serves more than one network, and the address that reaches it
+    depends on which one this machine is on, so the link carries every
+    address the hub answers on rather than one somebody had to pick.
 
     Args:
         link: What the owner pasted.
 
     Returns:
-        The gateway base URL and the enrollment token.
+        The gateway base URLs, in the order the hub offered them, and the
+        enrollment token.
 
     Raises:
         EnrollmentError: If the link carries neither.
@@ -48,13 +53,13 @@ def parse_link(link: str) -> "tuple[str, str]":
         raise EnrollmentError("paste the link from the gateway's Devices page")
     parsed = urllib.parse.urlparse(text)
     query = urllib.parse.parse_qs(parsed.query)
-    url = (query.get("url") or [""])[0]
+    urls = [url.rstrip("/") for url in query.get("url", []) if url.strip()]
     token = (query.get("token") or [""])[0] or parsed.fragment
-    if not url and parsed.scheme in ("http", "https"):
-        url = f"{parsed.scheme}://{parsed.netloc}"
-    if not url or not token:
+    if not urls and parsed.scheme in ("http", "https"):
+        urls = [f"{parsed.scheme}://{parsed.netloc}"]
+    if not urls or not token:
         raise EnrollmentError("that link carries no gateway address and token")
-    return url.rstrip("/"), token
+    return urls, token
 
 
 def load_config() -> dict:
@@ -122,6 +127,9 @@ def machine_id() -> str:
 def enroll(link: str) -> dict:
     """Join the gateway the link points at.
 
+    Every address in the link is tried in turn, because only one of them is
+    on this machine's network and the link cannot know which.
+
     Args:
         link: The enrollment link from the gateway's Devices page.
 
@@ -129,20 +137,27 @@ def enroll(link: str) -> dict:
         The stored configuration after joining.
 
     Raises:
-        EnrollmentError: If the link is unusable or the gateway refuses.
+        EnrollmentError: If the link is unusable or no address accepted it.
     """
-    gateway_url, enrollment_token = parse_link(link)
+    gateway_urls, enrollment_token = parse_link(link)
     payload = {
         "enrollment_token": enrollment_token,
         "device_id": machine_id(),
         "hostname": socket.gethostname(),
         "platform": platform_tuple(),
     }
-    channel = GatewayHttpChannel(gateway_url=gateway_url, token="")
-    try:
-        reply = channel.post(ENROLL_PATH, payload)
-    except GatewayUnreachable as error:
-        raise EnrollmentError(f"the gateway did not accept this: {error}")
+    reply = None
+    refusal = ""
+    for gateway_url in gateway_urls:
+        channel = GatewayHttpChannel(gateway_url=gateway_url, token="")
+        try:
+            reply = channel.post(ENROLL_PATH, payload)
+            break
+        except GatewayUnreachable as error:
+            refusal = str(error)
+    if reply is None:
+        tried = ", ".join(gateway_urls)
+        raise EnrollmentError(f"no gateway answered at {tried}: {refusal}")
 
     token = reply.get("token", "")
     if not token:

@@ -19,6 +19,8 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_NODE_TAG_PREFIX,
     XRAY_SOCKS_DIRECT_PORT,
     XRAY_SOCKS_DIRECT_TAG,
+    XRAY_SOCKS_PROXY_PORT,
+    XRAY_SOCKS_PROXY_TAG,
     XRAY_TPROXY_LISTEN,
     XRAY_TPROXY_PORT,
     XRAY_TPROXY_TAG,
@@ -62,6 +64,11 @@ class XrayConfigRenderer:
         """
         self._is_proxy_enabled = routing.get("is_proxy_enabled", True)
         self._is_socks_direct_enabled = routing.get("is_socks_direct_enabled", True)
+        self._socks_direct_port = routing.get(
+            "socks_direct_port", XRAY_SOCKS_DIRECT_PORT
+        )
+        self._is_socks_proxy_enabled = routing.get("is_socks_proxy_enabled", False)
+        self._socks_proxy_port = routing.get("socks_proxy_port", XRAY_SOCKS_PROXY_PORT)
         if self._is_proxy_enabled and not node_list.enabled_nodes:
             raise ValueError(
                 "no enabled nodes in config/xray/nodes.json; "
@@ -163,7 +170,21 @@ class XrayConfigRenderer:
                 {
                     "tag": XRAY_SOCKS_DIRECT_TAG,
                     "listen": self._lan_address,
-                    "port": XRAY_SOCKS_DIRECT_PORT,
+                    "port": self._socks_direct_port,
+                    "protocol": "socks",
+                    "settings": {"udp": True, "auth": "noauth"},
+                    "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
+                }
+            )
+        if self._is_socks_proxy_enabled and self._is_proxy_enabled:
+            # The way in for a box that diverts nothing: what arrives here
+            # leaves through the exit nodes, split the same way forwarded
+            # traffic is.
+            inbounds.append(
+                {
+                    "tag": XRAY_SOCKS_PROXY_TAG,
+                    "listen": self._lan_address,
+                    "port": self._socks_proxy_port,
                     "protocol": "socks",
                     "settings": {"udp": True, "auth": "noauth"},
                     "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
@@ -275,10 +296,13 @@ class XrayConfigRenderer:
             )
             return {"domainStrategy": "IPIfNonMatch", "rules": rules}
 
+        proxied = [XRAY_TPROXY_TAG, XRAY_DNS_TAG]
+        if self._is_socks_proxy_enabled:
+            proxied.append(XRAY_SOCKS_PROXY_TAG)
         rules.append(
             {
                 "type": "field",
-                "inboundTag": [XRAY_TPROXY_TAG, XRAY_DNS_TAG],
+                "inboundTag": proxied,
                 "balancerTag": XRAY_BALANCER_TAG,
             }
         )

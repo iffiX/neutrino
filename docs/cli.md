@@ -54,14 +54,39 @@ sudo nhub setup --json answers.json
     "lan": ["enp1s0"],
     "address": "192.168.8.1",
     "prefix_len": 24
-  }
+  },
+  "proxy": {
+    "links": ["ss://…", "vless://…"],
+    "is_local": false,
+    "socks_proxy_port": 1080,
+    "is_socks_direct_enabled": false,
+    "socks_direct_port": 1080
+  },
+  "services": ["samba", "podman"]
 }
 ```
+
+`proxy` may be left out, which is what skipping it on the screen means. What
+its keys do depends on what the box routes, and the screen asks each of them
+rather than working any of them out: a box that serves a network sends
+everything its devices send through the proxy, splitting Chinese destinations
+out, and may also publish a SOCKS port that deliberately bypasses it
+(`is_socks_direct_enabled`); a `server` diverts nothing, so its proxy *is* a
+SOCKS port, on `socks_proxy_port`. `is_local` is this box's own traffic, on
+either.
+
+`services` names optional modules to install and nothing more — each is
+configured on its own panel page afterwards. A document naming one has agreed
+to whatever installing it does, which on a terminal is a question the screen
+asks per module.
 
 `mode` is one of `server`, `router`, `one_arm_router` or `bypass_router`;
 the wizard shows each with its underscores as spaces. What each is for,
 and which of `wan`, `lan`, `trunk`, `upstream_gateway` and `lan_vlan_id`
 it reads, is what the wizard's own screens explain.
+
+Once it has run, setup asks the panel for one enrollment link and prints it,
+so the first machine can be brought in without opening the panel at all.
 
 ### run
 

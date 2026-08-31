@@ -4,6 +4,11 @@
 
   "_comment_socks": "is_socks_direct_enabled publishes the SOCKS5 listener on the LAN address, port 1080, whose traffic always leaves directly rather than through an exit node. It is what ToDesk and AnyDesk on a work machine point at, so the two ends of a session look like they are on the same continent. A second way out of the box deserves a switch as visible as the proxy's own.",
   "is_socks_direct_enabled": true,
+  "socks_direct_port": 1080,
+
+  "_comment_socks_proxy": "is_socks_proxy_enabled publishes a second SOCKS5 listener whose traffic goes out through the exit nodes, split the same way forwarded traffic is. A box that routes nothing diverts nothing, so this port is the whole of its proxy: applications are pointed at it by hand. It is not published while is_proxy_enabled is false, because it would answer and send everything out directly under a name that says the opposite.",
+  "is_socks_proxy_enabled": false,
+  "socks_proxy_port": 1080,
 
   "_comment_geoip": "is_geoip_split_enabled true means domains/IPs in direct_domains and direct_ips leave through the WAN directly and everything else goes through the JustMySocks balancer. Keep it true when the gateway sits in mainland China; set false to send absolutely everything through the proxy.",
   "is_geoip_split_enabled": true,

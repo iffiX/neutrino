@@ -71,6 +71,12 @@ XRAY_TPROXY_TAG = "tproxy_in"
 XRAY_SOCKS_DIRECT_PORT = 1080
 XRAY_SOCKS_DIRECT_TAG = "socks_direct_in"
 
+# SOCKS5 inbound whose traffic goes out through the exit nodes. A box that
+# routes nothing has no traffic to divert transparently, so this is the whole
+# of its proxy: applications are pointed at it by hand.
+XRAY_SOCKS_PROXY_PORT = 1080
+XRAY_SOCKS_PROXY_TAG = "socks_proxy_in"
+
 # DNS inbound; dnsmasq forwards every LAN query here. Not 5353: that is the
 # registered mDNS port, and avahi-daemon holds it on every desktop Ubuntu.
 XRAY_DNS_LISTEN = "127.0.0.1"

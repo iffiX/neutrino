@@ -11,12 +11,27 @@ Nothing here writes: it returns what was answered, and `setup` does the work.
 
 import ipaddress
 import os
+import select
 import sys
 import textwrap
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from neutrino_hub.cli.password import PasswordRefused, read_new_password
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
+from neutrino_hub.modules.xray.constants import (
+    XRAY_SOCKS_DIRECT_PORT,
+    XRAY_SOCKS_PROXY_PORT,
+)
+from neutrino_hub.modules.xray.node_config import parse_share_link
+from neutrino_hub.modules.registry import MODULE_SPECS
+from neutrino_hub.system.constants import (
+    SYSTEM_CONSENT_KERNEL_MODULE_BUILD,
+    SYSTEM_CONSENT_THIRD_PARTY_REPOSITORY,
+    SYSTEM_CORE_UNITS,
+)
+from neutrino_hub.system.machine import machine_architecture
+from neutrino_hub.system.provisioning import plan_for
+from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.modules.router.modes import (
     ROUTER_MODES_BY_KEY,
     ROUTER_MODE_SERVER,
@@ -48,13 +63,50 @@ WIZARD_TITLES = (
     "A password for the panel",
     "What is this machine for?",
     "Which ports?",
+    "Going out through a proxy",
+    "What else to install on this box",
     "Ready",
 )
+# The screen shown once the machine has been changed, which is not one of the
+# questions and does not carry their counter.
+WIZARD_DONE_TITLE = "Add your devices"
+# How often the last screen looks for a device that has joined.
+WIZARD_POLL_INTERVAL_S = 2.0
 # What the wrapped prose fits inside, leaving room for the indent.
 WIZARD_TEXT_WIDTH = 66
 WIZARD_ABORTED = "setup was aborted by user, nothing was written"
 # What a shell reports for a command somebody interrupted.
 WIZARD_STOPPED_STATUS = 130
+
+
+@dataclass
+class WizardProxy:
+    """What the proxy screen answered.
+
+    Every one of these is asked rather than worked out from the mode. What a
+    box that routes nothing does with a proxy has no obvious answer, and one
+    guessed here is one nobody knows was guessed.
+
+    Attributes:
+        is_enabled: Whether traffic goes through an exit node at all.
+        nodes: The exit nodes, parsed from the share links pasted in.
+        is_local: Whether this box's own traffic goes through as well.
+        is_socks_proxy_enabled: Whether a SOCKS port is published whose
+            traffic goes through the proxy. It is the whole of the proxy on a
+            box that diverts nothing.
+        socks_proxy_port: What port that is.
+        is_socks_direct_enabled: Whether a SOCKS port is published whose
+            traffic deliberately bypasses the proxy.
+        socks_direct_port: What port that is.
+    """
+
+    is_enabled: bool = False
+    nodes: tuple = ()
+    is_local: bool = False
+    is_socks_proxy_enabled: bool = False
+    socks_proxy_port: int = XRAY_SOCKS_PROXY_PORT
+    is_socks_direct_enabled: bool = False
+    socks_direct_port: int = XRAY_SOCKS_DIRECT_PORT
 
 
 @dataclass
@@ -64,10 +116,16 @@ class WizardAnswers:
     Attributes:
         password: The panel password, already accepted.
         network: The interface roles the chosen mode describes.
+        proxy: What the proxy screen answered.
+        services: The optional modules to install, by their registry name.
+            Installing is all this does: each is configured on its own page
+            afterwards, so nothing here has to be asked twice.
     """
 
     password: str
     network: object
+    proxy: WizardProxy = field(default_factory=WizardProxy)
+    services: tuple = ()
 
 
 class WizardAborted(RuntimeError):
@@ -87,7 +145,16 @@ WIZARD_NETWORK_KEYS = {
     "upstream_gateway": "upstream_gateway",
     "lan_vlan_id": "lan_vlan_id",
 }
-WIZARD_DOCUMENT_KEYS = ("password", "network")
+WIZARD_DOCUMENT_KEYS = ("password", "network", "proxy", "services")
+# A document need not answer the proxy screen; skipping it is what an
+# unanswered one means, exactly as it does on the screen.
+WIZARD_PROXY_KEYS = (
+    "links",
+    "is_local",
+    "socks_proxy_port",
+    "is_socks_direct_enabled",
+    "socks_direct_port",
+)
 
 
 def from_document(document: dict) -> WizardAnswers:
@@ -110,7 +177,7 @@ def from_document(document: dict) -> WizardAnswers:
     if not isinstance(document, dict):
         raise WizardAborted("the answers must be an object")
     _reject_unknown(document, WIZARD_DOCUMENT_KEYS, "the answers")
-    for required in WIZARD_DOCUMENT_KEYS:
+    for required in ("password", "network"):
         if required not in document:
             raise WizardAborted(f"the answers need a {required!r}")
 
@@ -129,7 +196,75 @@ def from_document(document: dict) -> WizardAnswers:
         planned = RouterModePlanner(**keywords).plan()
     except (TypeError, ValueError) as error:
         raise WizardAborted(str(error)) from error
-    return WizardAnswers(password=document["password"], network=planned)
+    return WizardAnswers(
+        password=document["password"],
+        network=planned,
+        proxy=_proxy_from(document.get("proxy", {}), network["mode"]),
+        services=_services_from(document.get("services", [])),
+    )
+
+
+def _services_from(given) -> tuple:
+    """The optional modules a document asked for.
+
+    A document naming one has agreed to whatever installing it does: there is
+    nobody at a terminal to ask, and refusing to install what was written down
+    would be a different kind of surprise.
+
+    Args:
+        given: The document's ``services`` list, empty when it has none.
+
+    Returns:
+        The module names to install.
+
+    Raises:
+        WizardAborted: On a name no module answers to.
+    """
+    unknown = [name for name in given if name not in MODULE_SPECS]
+    if unknown:
+        raise WizardAborted(
+            f"no module called {', '.join(repr(name) for name in unknown)}; "
+            f"there is: {', '.join(sorted(MODULE_SPECS))}"
+        )
+    return tuple(given)
+
+
+def _proxy_from(given, mode: str) -> WizardProxy:
+    """The proxy screen's answers, read rather than asked for.
+
+    Args:
+        given: The document's ``proxy`` object, empty when it has none.
+        mode: The network mode, which decides whose traffic goes through.
+
+    Returns:
+        What the proxy screen would have collected.
+
+    Raises:
+        WizardAborted: On a key this does not know, or a link it cannot read.
+    """
+    if not isinstance(given, dict):
+        raise WizardAborted("'proxy' must be an object")
+    _reject_unknown(given, WIZARD_PROXY_KEYS, "'proxy'")
+    links = given.get("links", [])
+    if not links:
+        return WizardProxy()
+    try:
+        nodes = tuple(parse_share_link(link) for link in links)
+    except ValueError as error:
+        raise WizardAborted(str(error)) from error
+    is_serving = mode != ROUTER_MODE_SERVER
+    port = given.get("socks_proxy_port", XRAY_SOCKS_PROXY_PORT)
+    return WizardProxy(
+        is_enabled=True,
+        nodes=nodes,
+        is_local=bool(given.get("is_local", False)),
+        # A box that diverts nothing has the SOCKS port as its whole proxy,
+        # so naming one is what asking for it means there.
+        is_socks_proxy_enabled=not is_serving,
+        socks_proxy_port=port,
+        is_socks_direct_enabled=bool(given.get("is_socks_direct_enabled", False)),
+        socks_direct_port=given.get("socks_direct_port", XRAY_SOCKS_DIRECT_PORT),
+    )
 
 
 def _reject_unknown(given: dict, known, what: str) -> None:
@@ -189,6 +324,8 @@ class SetupWizard:
         self._address = ROUTER_MODE_DEFAULT_LAN_ADDRESS
         self._prefix_len = ROUTER_MODE_DEFAULT_PREFIX_LEN
         self._upstream = ""
+        self._proxy = WizardProxy()
+        self._services: list = []
 
     def run(self) -> WizardAnswers:
         """Ask every screen, and hand back what they answered.
@@ -205,6 +342,8 @@ class SetupWizard:
             self._ask_password,
             self._ask_mode,
             self._ask_ports,
+            self._ask_proxy,
+            self._ask_services,
             self._review,
         )
         index = 0
@@ -217,7 +356,12 @@ class SetupWizard:
             # the keyboard stopped this, and a traceback would say otherwise.
             print(f"\n\n  {WIZARD_ABORTED}\n", file=sys.stderr)
             raise SystemExit(WIZARD_STOPPED_STATUS) from None
-        return WizardAnswers(password=self._password, network=self._plan())
+        return WizardAnswers(
+            password=self._password,
+            network=self._plan(),
+            proxy=self._proxy,
+            services=tuple(self._services),
+        )
 
     def _welcome(self) -> bool:
         """What this is, and how long it takes."""
@@ -464,8 +608,200 @@ class SetupWizard:
                 return address, int(prefix) if prefix.isdigit() else self._prefix_len
         return None
 
-    def _review(self) -> bool:
-        """Everything chosen, before anything is written."""
+    def _ask_proxy(self) -> int:
+        """Whether traffic leaves through an exit node, and through which.
+
+        Skipping is a first-class answer: a hub is a hub without a proxy, and
+        the Proxy page turns one on later without any of this being redone.
+        """
+        is_serving = self._mode != ROUTER_MODE_SERVER
+        whose = "your devices' traffic" if is_serving else "this box's own traffic"
+        self._say(f"Send {whose} out through an exit node you own.")
+        self._say("")
+        self._say("  1  Skip for now")
+        self._say("  2  Set it up here")
+        answer = self._choose(["skip", "set-up"], default=1, prompt="Proxy")
+        if answer is None:
+            return WIZARD_PREVIOUS
+        if answer == 0:
+            self._proxy = WizardProxy()
+            return WIZARD_NEXT
+
+        self._say("")
+        self._say("ss://… and vless://… share links are understood.")
+        nodes = []
+        while True:
+            answer = self._text(f"Add link {len(nodes) + 1} (empty to stop adding)", "")
+            if answer is None:
+                return WIZARD_PREVIOUS
+            if not answer:
+                break
+            try:
+                nodes.append(parse_share_link(answer))
+            except ValueError as error:
+                self._say(f"{error}")
+                continue
+            self._say(f"  added {nodes[-1].name or nodes[-1].id}")
+        if not nodes:
+            self._say("No links, so nothing to go out through.")
+            self._proxy = WizardProxy()
+            return WIZARD_NEXT
+
+        proxy = WizardProxy(is_enabled=True, nodes=tuple(nodes))
+        self._say("")
+        if is_serving:
+            self._say("Everything your devices send is routed through it, with")
+            self._say("Chinese destinations going out directly.")
+            answer = self._yes_no(
+                "Also publish a SOCKS port that bypasses the proxy", default=False
+            )
+            if answer is None:
+                return WIZARD_PREVIOUS
+            proxy.is_socks_direct_enabled = answer
+            if answer:
+                port = self._port("SOCKS port for that", proxy.socks_direct_port)
+                if port is None:
+                    return WIZARD_PREVIOUS
+                proxy.socks_direct_port = port
+        else:
+            answer = self._port(
+                "SOCKS port applications point at", proxy.socks_proxy_port
+            )
+            if answer is None:
+                return WIZARD_PREVIOUS
+            proxy.is_socks_proxy_enabled = True
+            proxy.socks_proxy_port = answer
+
+        answer = self._yes_no("Send this box's own traffic through it", default=False)
+        if answer is None:
+            return WIZARD_PREVIOUS
+        proxy.is_local = answer
+        self._proxy = proxy
+        return WIZARD_NEXT
+
+    def _yes_no(self, question: str, *, default: bool):
+        """Ask something with two answers.
+
+        Args:
+            question: What to ask, without its question mark.
+            default: What Enter takes.
+
+        Returns:
+            The answer, or None to step back.
+        """
+        # The default spelled out beside the choices, not only carried by the
+        # capital letter: every other prompt here shows its default as a
+        # value, and this one reading differently is one somebody skims.
+        shown = "Y/n, Y" if default else "y/N, N"
+        while True:
+            answer = self._prompt(f"{question}? [{shown}]")
+            if answer == WIZARD_BACK:
+                return None
+            if not answer:
+                return default
+            if answer in ("y", "yes"):
+                return True
+            if answer in ("n", "no"):
+                return False
+            print("  Answer y or n, or b to step back.")
+
+    def _port(self, question: str, default: int):
+        """Ask for a TCP port.
+
+        Args:
+            question: What the port is for.
+            default: What Enter takes.
+
+        Returns:
+            The port, or None to step back.
+        """
+        while True:
+            answer = self._text(question, str(default))
+            if answer is None:
+                return None
+            if answer.isdigit() and 1 <= int(answer) <= 65535:
+                return int(answer)
+            self._say("A port is a number from 1 to 65535.")
+
+    def _ask_services(self) -> int:
+        """Which optional modules to install, by number.
+
+        Installing only: what each of them is for is a page of its own, and
+        asking here for settings somebody has not seen the page for yet is
+        how a first run turns into an afternoon.
+        """
+        offered = _installable()
+        if not offered:
+            self._say("Nothing else runs on this machine's architecture.")
+            self._prompt("Press Enter to go on")
+            return WIZARD_NEXT
+        installed = _installed_names()
+        for index, (name, spec) in enumerate(offered, start=1):
+            mark = "  (installed)" if name in installed else ""
+            self._say(f"  {index}  {name:<10} {spec.install_note}{mark}")
+        self._say("")
+        self._say("Numbers separated by commas, or empty for none.")
+        answer = self._prompt("Install")
+        if answer == WIZARD_BACK:
+            return WIZARD_PREVIOUS
+        chosen = []
+        for piece in answer.replace(",", " ").split():
+            if not piece.isdigit() or not 1 <= int(piece) <= len(offered):
+                self._say(f"  {piece!r} is not one of 1 to {len(offered)}.")
+                return WIZARD_AGAIN
+            chosen.append(offered[int(piece) - 1])
+        wanted = []
+        for name, spec in chosen:
+            agreed = self._is_consented(name, spec)
+            if agreed is None:
+                return WIZARD_PREVIOUS
+            if agreed:
+                wanted.append(name)
+        self._services = wanted
+        return WIZARD_NEXT
+
+    def _is_consented(self, name: str, spec):
+        """Agree to what installing this would do beyond installing it.
+
+        Asked once per module and then moved past: declining one is a decision
+        about that module, not about the screen, so the rest are still asked.
+
+        The provisioner answers with a code and its values and never a
+        sentence, so the wording lives here and can be translated without
+        touching what it describes.
+
+        Args:
+            name: The module's registry name.
+            spec: Its entry in the registry.
+
+        Returns:
+            True when there was nothing to agree to or it was agreed to,
+            False when it was declined, None to step back.
+        """
+        plan = plan_for(spec.provisioner())
+        if not plan.is_consent_needed:
+            return True
+        self._say("")
+        self._say(f"{name}: installing it will")
+        for consent in plan.consents:
+            for index, line in enumerate(
+                textwrap.wrap(_consent_sentence(consent), width=WIZARD_TEXT_WIDTH - 4)
+            ):
+                self._say(f"    {'- ' if index == 0 else '  '}{line}")
+        answer = self._yes_no(f"Confirm {name}", default=False)
+        if answer is None:
+            return None
+        if not answer:
+            self._say(f"  {name} will not be installed.")
+        return answer
+
+    def _review(self) -> int:
+        """Everything chosen, and what saying yes to it does.
+
+        The last screen before anything is written, and the only one that
+        says so: past here the interfaces are taken over, the firewall is
+        replaced and the services start.
+        """
         for interface in self._plan().interfaces:
             line = f"  {interface.name:<14} {interface.role}"
             if interface.is_lan:
@@ -478,9 +814,26 @@ class SetupWizard:
                 if interface.lan.upstream_gateway:
                     line += f"   via {interface.lan.upstream_gateway}"
             self._say(line)
+        if self._proxy.is_enabled:
+            self._say(f"  proxy          {len(self._proxy.nodes)} exit nodes")
+            if self._proxy.is_socks_proxy_enabled:
+                self._say(
+                    f"                 SOCKS {self._proxy.socks_proxy_port}, "
+                    f"through the proxy"
+                )
+            if self._proxy.is_socks_direct_enabled:
+                self._say(f"                 SOCKS {XRAY_SOCKS_DIRECT_PORT}, direct")
+            if self._proxy.is_local:
+                self._say("                 this box's own traffic too")
+        else:
+            self._say("  proxy          off")
+        if self._services:
+            self._say(f"  also installing {', '.join(self._services)}")
         self._say("")
-        self._say("This is where the machine changes.")
-        if self._prompt("Press Enter to start, b to step back") == WIZARD_BACK:
+        self._say("Saying yes here takes the interfaces over, replaces the")
+        self._say("firewall and starts the services. The address this")
+        self._say("terminal is reached on may be one of them.")
+        if self._prompt("Start, or b to step back") == WIZARD_BACK:
             return WIZARD_PREVIOUS
         return WIZARD_NEXT
 
@@ -603,6 +956,63 @@ def _wired_first(link) -> tuple:
     return (link.is_wifi, link.name)
 
 
+def _installable() -> list:
+    """The optional modules this machine can run, in registry order.
+
+    Core modules are left out: setup installs them, and offering to install
+    what is already being installed is a choice with one answer.
+
+    Returns:
+        Pairs of registry name and spec.
+    """
+    architecture = machine_architecture()
+    return [
+        (name, spec)
+        for name, spec in MODULE_SPECS.items()
+        if name not in SYSTEM_CORE_UNITS
+        and ("*" in spec.architectures or architecture in spec.architectures)
+    ]
+
+
+def _installed_names() -> set:
+    """Which optional modules this machine already has.
+
+    Marked rather than hidden: a list whose numbering changes with what is
+    installed is one nobody can be told to answer "1,5" to, and knowing a
+    thing is already there is the point of showing it.
+
+    Returns:
+        Registry names whose unit systemd knows about.
+    """
+    controller = SystemdServiceController()
+    names = set()
+    for name, _ in _installable():
+        try:
+            if controller.status(name).is_installed:
+                names.add(name)
+        except (KeyError, OSError):
+            continue
+    return names
+
+
+def _consent_sentence(consent) -> str:
+    """One line saying what a consent code means.
+
+    Args:
+        consent: What the provisioner returned.
+
+    Returns:
+        A sentence naming the act and the values it applies to.
+    """
+    if consent.code == SYSTEM_CONSENT_KERNEL_MODULE_BUILD:
+        kernel = consent.detail.get("kernel", "the running kernel")
+        return f"build a kernel module against {kernel}, which takes minutes"
+    if consent.code == SYSTEM_CONSENT_THIRD_PARTY_REPOSITORY:
+        repository = consent.detail.get("repository", "a third-party repository")
+        return f"add the repository {repository}"
+    return f"do something this version has no wording for: {consent.code}"
+
+
 def _is_address(text: str) -> bool:
     """Whether this is an IPv4 address a network can be built on.
 
@@ -695,21 +1105,78 @@ def _served_default(names: list, *, taken: str = "") -> int:
     return 1
 
 
-def summarise(answers: WizardAnswers) -> None:
-    """Print where the panel will be, once everything is done.
+def finish(*, panel_url: str, link: str = "", note: str = "", joined=None) -> None:
+    """The last screen: where the panel is, and how a device joins it.
+
+    Drawn after the machine has been changed rather than before, because the
+    enrollment link is minted by the panel and only exists once it is running.
+    It waits, so somebody can paste the link into a device while the link is
+    still on the screen, and then says what arrived.
 
     Args:
-        answers: What the wizard collected.
+        panel_url: Where the panel answers.
+        link: An enrollment link to paste into a device, empty when none
+            could be minted.
+        note: Why there is no link, when there is none.
+        joined: Called after the wait for the names of the devices that came
+            in, so this module reads no configuration of its own.
     """
-    label = "Done"
-    dashes = WIZARD_WIDTH - len(WIZARD_WORDMARK) - len(label) - 2
+    dashes = WIZARD_WIDTH - len(WIZARD_WORDMARK) - len(WIZARD_DONE_TITLE) - 2
     print()
-    print(f"{WIZARD_WORDMARK} {'─' * max(1, dashes)} {label}")
+    print(f"{WIZARD_WORDMARK} {'─' * max(1, dashes)} {WIZARD_DONE_TITLE}")
     print()
-    for interface in answers.network.interfaces:
-        if interface.is_lan and interface.lan.address:
-            print(f"  The panel is at   http://{interface.lan.address}:8080")
-            print()
-            print("  Proxy nodes, devices, storage and services happen there.")
+    print(f"  The panel is at   {panel_url}")
+    print()
+    if link:
+        print("  To bring a device in, install the agent on it and run:")
+        print()
+        print(f"    nagent connect '{link}'")
+        print()
+        print("  The link lasts thirty minutes. The panel's Devices page mints")
+        print("  more, one per device.")
+    else:
+        print(f"  {note}" if note else "  The Devices page mints an enrollment link.")
+    print()
+    _watch(joined)
+    print()
+
+
+def _watch(joined) -> None:
+    """Name each device as it arrives, until somebody says they are done.
+
+    Shown one at a time rather than counted at the end, because the point of
+    waiting here is to watch a device you just pasted the link into come in —
+    a total afterwards tells you it worked without telling you when.
+
+    Args:
+        joined: Called for the names of the devices that have enrolled.
+    """
+    print("  Press Enter when you have finished.")
+    print()
+    seen: set = set()
+    while True:
+        for name in list(joined() if joined else []):
+            if name not in seen:
+                seen.add(name)
+                print(f"    joined  {name}")
+        if _is_enter_pressed():
             break
-    print()
+    if not seen:
+        print("    nothing joined; the Devices page mints another link")
+
+
+def _is_enter_pressed() -> bool:
+    """Whether a line arrived while waiting out one poll interval.
+
+    Returns:
+        True when there is a line to read or standard input has ended, which
+        is what a pipe looks like and what stops this hanging out of a
+        terminal.
+    """
+    try:
+        ready, _, _ = select.select([sys.stdin], [], [], WIZARD_POLL_INTERVAL_S)
+    except (OSError, ValueError):
+        return True
+    if not ready:
+        return False
+    return sys.stdin.readline() == "" or True
