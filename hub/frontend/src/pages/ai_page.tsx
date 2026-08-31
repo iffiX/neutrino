@@ -15,7 +15,7 @@ import { useApiResource } from "../use_api_resource";
 import type {
   AiProviderView,
   AiProvidersResponse,
-  CliproxyStatusView,
+  CliproxyApiStatusView,
 } from "../api_types";
 
 import "./ai_page.css";
@@ -30,8 +30,8 @@ import "./ai_page.css";
  */
 
 export function AiPage() {
-  const resource = useApiResource<CliproxyStatusView>("/cliproxy");
-  const [view, setView] = useState<CliproxyStatusView | null>(null);
+  const resource = useApiResource<CliproxyApiStatusView>("/cliproxyapi");
+  const [view, setView] = useState<CliproxyApiStatusView | null>(null);
   const [providers, setProviders] = useState<AiProviderView[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
@@ -83,7 +83,7 @@ export function AiPage() {
         <div className="placeholder">
           <span>The AI gateway is not installed</span>
           <span className="faint">
-            Install the cliproxy module from Services.
+            Install the cliproxyapi module from Services.
           </span>
         </div>
       </div>
@@ -113,24 +113,24 @@ export function AiPage() {
       setProviders((current) =>
         current.map((entry) => (entry.id === updated.id ? updated : entry)),
       );
-      await apiPost("/cliproxy/apply");
-      setView(await apiGet<CliproxyStatusView>("/cliproxy"));
+      await apiPost("/cliproxyapi/apply");
+      setView(await apiGet<CliproxyApiStatusView>("/cliproxyapi"));
     });
   };
 
   const handleApply = () => {
     setApplyMessage(null);
     void run(async () => {
-      const result = await apiPost<{ message: string }>("/cliproxy/apply");
+      const result = await apiPost<{ message: string }>("/cliproxyapi/apply");
       setApplyMessage(result.message);
-      setView(await apiGet<CliproxyStatusView>("/cliproxy"));
+      setView(await apiGet<CliproxyApiStatusView>("/cliproxyapi"));
     });
   };
 
   const handleMintKey = () => {
     void run(async () => {
       setView(
-        await apiPost<CliproxyStatusView>("/cliproxy/keys", {
+        await apiPost<CliproxyApiStatusView>("/cliproxyapi/keys", {
           name: keyName.trim() || "device",
         }),
       );
@@ -143,7 +143,9 @@ export function AiPage() {
       return;
     }
     void run(async () => {
-      setView(await apiDelete<CliproxyStatusView>(`/cliproxy/keys/${keyId}`));
+      setView(
+        await apiDelete<CliproxyApiStatusView>(`/cliproxyapi/keys/${keyId}`),
+      );
     });
   };
 

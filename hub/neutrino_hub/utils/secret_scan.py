@@ -98,7 +98,7 @@ SCAN_MAX_LINE_LENGTH = 2000
 
 # What counts as suspiciously random: length, and Shannon entropy in bits per
 # character. Base64 tops out near 6, English prose sits near 4, and an
-# identifier like ``CLIPROXY_SUPPORTED_ARCHITECTURES`` stays below 4.2.
+# identifier like ``CLIPROXYAPI_SUPPORTED_ARCHITECTURES`` stays below 4.2.
 SCAN_ENTROPY_MIN_LENGTH = 28
 SCAN_ENTROPY_THRESHOLD = 4.4
 

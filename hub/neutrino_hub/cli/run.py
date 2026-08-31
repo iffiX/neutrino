@@ -1,7 +1,10 @@
-"""Run the control panel.
+"""Run the control panel in the foreground.
 
-    sudo nhub serve               # listen on the configured port
-    sudo nhub serve --reload      # development, auto-restart
+    sudo nhub run                 # listen on the configured port
+    sudo nhub run --reload        # development, auto-restart
+
+This is what ``neutrino_web.service`` starts, and running it by hand is how its
+output is read without journalctl.
 
 The panel binds every interface, and the nftables input chain is what keeps it
 reachable only from the LAN and the overlay. Both halves matter: dropping the

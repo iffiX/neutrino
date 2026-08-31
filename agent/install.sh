@@ -137,7 +137,7 @@ if [[ -n ${ENROLL_LINK} ]]; then
              fail "that enrollment link was not accepted"; }
     ok "joined $(cat /tmp/neutrino_agent_check)"
 elif PYTHONPATH="${INSTALL_DIR}" "${PYTHON_BIN}" \
-        -m neutrino_agent.cli --once >/tmp/neutrino_agent_check 2>&1; then
+        -m neutrino_agent.cli status >/tmp/neutrino_agent_check 2>&1; then
     ok "heartbeat accepted"
 else
     skipped "join from http://127.0.0.1:8765"

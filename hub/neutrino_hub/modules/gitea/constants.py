@@ -19,6 +19,14 @@ GITEA_GENERATED_NAME = "gitea_app.ini"
 # invalidates sessions and tokens, never repositories.
 GITEA_SECRET_NAMES = ("SECRET_KEY", "INTERNAL_TOKEN", "JWT_SECRET", "LFS_JWT_SECRET")
 
+# Gitea serves repositories by running git, which the hub itself has no use
+# for. It is the module's to install, not the base package's.
+GITEA_PACKAGES = {
+    "debian": ("git",),
+    "rhel": ("git",),
+    "arch": ("git",),
+}
+
 # Gitea is downloaded as a prebuilt binary, so only the architectures the
 # vendor publishes are supported — and the download must pick the right one.
 GITEA_SUPPORTED_ARCHITECTURES = ("amd64", "arm64", "arm-6")

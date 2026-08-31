@@ -11,7 +11,11 @@ from pathlib import Path
 from typing import Callable
 
 from neutrino_hub.system.constants import SYSTEM_SYSTEMD_DIR
-from neutrino_hub.system.machine import machine_architecture, require_architecture
+from neutrino_hub.system.machine import (
+    machine_architecture,
+    require_architecture,
+    require_distribution,
+)
 from neutrino_hub.system.provisioning import ProvisionResult, say
 from neutrino_hub.utils.constants import (
     UTILS_CONFIG_DIR,
@@ -20,11 +24,13 @@ from neutrino_hub.utils.constants import (
 )
 from neutrino_hub.utils.subprocess_run import run
 
+from neutrino_hub.system import package_manager
 from neutrino_hub.modules.gitea.constants import (
     GITEA_BINARY_PATH,
     GITEA_CONF_LINK_PATH,
     GITEA_DIR,
     GITEA_GENERATED_NAME,
+    GITEA_PACKAGES,
     GITEA_SUPPORTED_ARCHITECTURES,
     GITEA_USER,
     GITEA_VERSION,
@@ -70,6 +76,13 @@ class GiteaProvisioner:
         is_changed = False
         if not GITEA_BINARY_PATH.is_file():
             require_architecture(GITEA_SUPPORTED_ARCHITECTURES, "gitea")
+            controller = package_manager.current()
+            packages = require_distribution(GITEA_PACKAGES, "the git server")
+            missing = [n for n in packages if not controller.is_installed(n)]
+            if missing:
+                say(report, f"installing {', '.join(missing)}")
+                controller.refresh()
+                controller.install(tuple(missing))
             say(report, "creating the git user and its directories")
             self._create_user()
             self._create_directories()

@@ -1,11 +1,11 @@
 {
-  "_comment": "Web control panel settings. Copy to settings.json. Set the password with: python scripts/install/main.py --set-password (it writes the argon2id hash below; the plaintext is never stored).",
+  "_comment": "Web control panel settings. Copy to settings.json. `nhub setup` writes the argon2id hash below and `nhub reset password` replaces it; the plaintext is never stored.",
   "listen_port": 8080,
   "admin_password_hash": "PLACEHOLDER_ARGON2ID_HASH",
   "session_secret": "PLACEHOLDER_RANDOM_HEX",
   "session_ttl_hours": 168,
 
-  "_comment_client": "Path to the neutrino_client tarball offered to LAN devices for one-click install. Build it in the neutrino_client repo (python scripts/build_package/main.py) and drop it in config/devices/packages/.",
+  "_comment_client": "Path to the neutrino_client tarball offered to LAN devices for one-click install. Build it in the neutrino_client repo and drop it in config/devices/packages/.",
   "agent_package_path": "devices/packages/neutrino_agent-latest.tar.gz",
 
   "_comment_remote_desktop": "Where the Devices tab downloads AnyDesk/ToDesk from. These vendor URLs change with each release; update them here if an install reports the download is not a Debian package. Omit the block to use the built-in defaults.",

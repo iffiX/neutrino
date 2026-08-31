@@ -1,11 +1,14 @@
 """Fixed values of the agent.
 
-Anything an operator changes lives in ``/etc/neutrino_agent/agent.json``,
-written by ``install.sh``; this file holds only what is wired into the protocol.
+Anything an operator changes lives in ``/etc/neutrino/agent/agent.json``; this
+file holds only what is wired into the protocol.
 """
 
-AGENT_CONFIG_PATH = "/etc/neutrino_agent/agent.json"
+# The hub and the agent share one configuration root with a directory each,
+# so a machine running both has one place to look and one place to back up.
+AGENT_CONFIG_PATH = "/etc/neutrino/agent/agent.json"
 AGENT_INSTALL_DIR = "/opt/neutrino_agent"
+
 AGENT_SERVICE_NAME = "neutrino_agent.service"
 
 AGENT_HEARTBEAT_PATH = "/api/agent/heartbeat"

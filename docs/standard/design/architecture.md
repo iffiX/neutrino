@@ -13,8 +13,8 @@ duplication, and keeps every library unit-testable with no daemon running.
   expose composable functions and classes with explicit constructor keywords.
   No `main()`, no `argparse`, no wiring-config classes.
 - Each tool is a `neutrino_hub/cli/<name>.py` that wires the libraries together with
-  plain-variable config sections. The three tools are `scripts/install/main.py`,
-  `scripts/render_all/main.py`, and `scripts/web/main.py`.
+  plain-variable config sections. The tools are `install.py`, `render_all.py`,
+  `web.py` and `scan_secrets.py`, one `nhub` subcommand each.
 
 The mechanical placement rules are in
 [../coding_style/layout_style.md](../coding_style/layout_style.md).
@@ -25,11 +25,11 @@ Everything the gateway does is a function of the JSON files under `config/`.
 State flows one way:
 
 ```
-config/<module>/*.json  ->  render (pure library)  ->  /etc/neutrino/generated/*
+config/<module>/*.json  ->  render (pure library)  ->  /var/lib/neutrino/generated/*
                         ->  validate  ->  apply (systemctl / nft / ip)
 ```
 
-- The web backend and `scripts/render_all/main.py` drive the exact same
+- The web backend and `neutrino_hub/cli/render_all.py` drive the exact same
   pipeline. A change made in the panel is a write to `config/` followed by a
   render+apply; there is no second path that edits `/etc` by hand.
 - Backing up `config/` (and restoring it on a fresh machine) reproduces the

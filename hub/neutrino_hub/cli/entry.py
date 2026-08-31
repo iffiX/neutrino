@@ -1,8 +1,9 @@
 """The ``nhub`` command.
 
-One entry point with a subcommand each for what used to be a script under
-``scripts/``. The work itself stays in the module beside this one; this file
-only decides which of them runs.
+One entry point with a subcommand each. The work itself stays in the module
+beside this one; this file only decides which of them runs.
+
+The shape is settled in [../../../../docs/cli.md](../../../../docs/cli.md).
 """
 
 import argparse
@@ -14,9 +15,11 @@ from neutrino_hub import HUB_VERSION
 # chosen rather than up front: `nhub unlock` should not pay for the installer's
 # imports.
 COMMANDS = {
-    "install": ("neutrino_hub.cli.install", "Install or repair this gateway"),
-    "render": ("neutrino_hub.cli.render_all", "Render every config and apply it"),
-    "serve": ("neutrino_hub.cli.web", "Run the control panel in the foreground"),
+    "setup": ("neutrino_hub.cli.setup", "Set this gateway up, once"),
+    "run": ("neutrino_hub.cli.run", "Run the control panel in the foreground"),
+    "apply": ("neutrino_hub.cli.apply", "Render every config and make it true"),
+    "unlock": ("neutrino_hub.cli.unlock", "Clear the login lockout and SSH bans"),
+    "reset": ("neutrino_hub.cli.reset", "Return part of the box to a fresh state"),
     "scan-secrets": (
         "neutrino_hub.cli.scan_secrets",
         "Check what a commit would carry",

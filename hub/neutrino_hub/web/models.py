@@ -418,7 +418,7 @@ class AiProviderUpdate(BaseModel):
     models: list[AiProviderModelView] | None = None
 
 
-class CliproxyKeyView(BaseModel):
+class CliproxyApiKeyView(BaseModel):
     """One client key of the AI gateway, shown in full to its owner."""
 
     id: str
@@ -427,31 +427,31 @@ class CliproxyKeyView(BaseModel):
     created_at: str = ""
 
 
-class CliproxyStatusView(BaseModel):
+class CliproxyApiStatusView(BaseModel):
     """The AI page payload."""
 
     is_installed: bool
     is_active: bool
     listen_port: int
-    client_keys: list[CliproxyKeyView] = Field(default_factory=list)
+    client_keys: list[CliproxyApiKeyView] = Field(default_factory=list)
     is_reachable: bool = False
     probe_message: str = ""
     enabled_provider_count: int = 0
 
 
-class CliproxyKeyCreate(BaseModel):
+class CliproxyApiKeyCreate(BaseModel):
     """A client key to mint under a name."""
 
     name: str
 
 
-class CliproxySettingsUpdate(BaseModel):
+class CliproxyApiSettingsUpdate(BaseModel):
     """The AI gateway's adjustable settings."""
 
     listen_port: int
 
 
-class CliproxyApplyResult(BaseModel):
+class CliproxyApiApplyResult(BaseModel):
     """Outcome of rendering and restarting the AI gateway."""
 
     message: str

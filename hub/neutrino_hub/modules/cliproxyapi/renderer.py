@@ -1,7 +1,7 @@
 """Rendering CLIProxyAPI's YAML from the panel's state.
 
 The providers come from the credentials store and the rest from
-``config/cliproxy``; CLIProxyAPI never gets configured by hand. A provider's
+``config/cliproxyapi``; CLIProxyAPI never gets configured by hand. A provider's
 kind decides which upstream block it lands in: ``anthropic`` speaks the
 Messages protocol, ``openai`` the Responses protocol, ``gemini`` Google's,
 and ``custom`` is an OpenAI-compatible chat endpoint.
@@ -13,8 +13,8 @@ import re
 
 import yaml
 
-from neutrino_hub.modules.cliproxy.config import CliproxyConfig
-from neutrino_hub.modules.cliproxy.constants import CLIPROXY_AUTH_DIR
+from neutrino_hub.modules.cliproxyapi.config import CliproxyApiConfig
+from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_AUTH_DIR
 from neutrino_hub.modules.credentials.registry import AiProviderRecord
 
 KIND_TO_BLOCK = {
@@ -24,10 +24,10 @@ KIND_TO_BLOCK = {
 }
 
 
-class CliproxyConfigRenderer:
-    """Builds ``cliproxy.yaml`` from the parsed configuration."""
+class CliproxyApiConfigRenderer:
+    """Builds ``cliproxyapi.yaml`` from the parsed configuration."""
 
-    def __init__(self, *, config: CliproxyConfig, providers: list[AiProviderRecord]):
+    def __init__(self, *, config: CliproxyApiConfig, providers: list[AiProviderRecord]):
         """
         Args:
             config: The gateway's own settings.
@@ -40,12 +40,12 @@ class CliproxyConfigRenderer:
         """Render the configuration file.
 
         Returns:
-            Text ready to write as ``cliproxy.yaml``.
+            Text ready to write as ``cliproxyapi.yaml``.
         """
         document = {
             "host": "",
             "port": self._config.listen_port,
-            "auth-dir": str(CLIPROXY_AUTH_DIR),
+            "auth-dir": str(CLIPROXYAPI_AUTH_DIR),
             "api-keys": [key.key for key in self._config.client_keys],
             "logging-to-file": False,
         }

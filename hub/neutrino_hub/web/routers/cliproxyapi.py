@@ -7,9 +7,9 @@ YAML and restarts the service.
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from neutrino_hub.modules.cliproxy.config import CliproxyClientKey
-from neutrino_hub.modules.cliproxy.ops import (
-    CliproxyConfigApplier,
+from neutrino_hub.modules.cliproxyapi.config import CliproxyApiClientKey
+from neutrino_hub.modules.cliproxyapi.ops import (
+    CliproxyApiConfigApplier,
     load_config,
     save_config,
 )
@@ -17,22 +17,22 @@ from neutrino_hub.modules.credentials.registry import AiProviderRegistry
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.web.dependencies import require_session
 from neutrino_hub.web.models import (
-    CliproxyApplyResult,
-    CliproxyKeyCreate,
-    CliproxyKeyView,
-    CliproxySettingsUpdate,
-    CliproxyStatusView,
+    CliproxyApiApplyResult,
+    CliproxyApiKeyCreate,
+    CliproxyApiKeyView,
+    CliproxyApiSettingsUpdate,
+    CliproxyApiStatusView,
 )
 
 router = APIRouter(
-    prefix="/api/cliproxy",
-    tags=["cliproxy"],
+    prefix="/api/cliproxyapi",
+    tags=["cliproxyapi"],
     dependencies=[Depends(require_session)],
 )
 
 
-@router.get("", response_model=CliproxyStatusView)
-def read_status() -> CliproxyStatusView:
+@router.get("", response_model=CliproxyApiStatusView)
+def read_status() -> CliproxyApiStatusView:
     """Read the AI gateway's state, probing it when it should be up.
 
     Returns:
@@ -41,8 +41,8 @@ def read_status() -> CliproxyStatusView:
     return _status()
 
 
-@router.post("/keys", response_model=CliproxyStatusView)
-def mint_key(request: CliproxyKeyCreate) -> CliproxyStatusView:
+@router.post("/keys", response_model=CliproxyApiStatusView)
+def mint_key(request: CliproxyApiKeyCreate) -> CliproxyApiStatusView:
     """Mint a client key and put it into service immediately.
 
     Args:
@@ -52,14 +52,14 @@ def mint_key(request: CliproxyKeyCreate) -> CliproxyStatusView:
         The state after the change.
     """
     config = load_config()
-    config.client_keys.append(CliproxyClientKey.minted(request.name))
+    config.client_keys.append(CliproxyApiClientKey.minted(request.name))
     save_config(config)
     _apply_quietly()
     return _status()
 
 
-@router.delete("/keys/{key_id}", response_model=CliproxyStatusView)
-def delete_key(key_id: str) -> CliproxyStatusView:
+@router.delete("/keys/{key_id}", response_model=CliproxyApiStatusView)
+def delete_key(key_id: str) -> CliproxyApiStatusView:
     """Revoke a client key; whatever used it stops working now.
 
     Args:
@@ -81,8 +81,8 @@ def delete_key(key_id: str) -> CliproxyStatusView:
     return _status()
 
 
-@router.put("/settings", response_model=CliproxyStatusView)
-def update_settings(request: CliproxySettingsUpdate) -> CliproxyStatusView:
+@router.put("/settings", response_model=CliproxyApiStatusView)
+def update_settings(request: CliproxyApiSettingsUpdate) -> CliproxyApiStatusView:
     """Change the listen port.
 
     Args:
@@ -107,8 +107,8 @@ def update_settings(request: CliproxySettingsUpdate) -> CliproxyStatusView:
     return _status()
 
 
-@router.post("/apply", response_model=CliproxyApplyResult)
-def apply() -> CliproxyApplyResult:
+@router.post("/apply", response_model=CliproxyApiApplyResult)
+def apply() -> CliproxyApiApplyResult:
     """Re-render the YAML from current state and restart the gateway.
 
     Returns:
@@ -118,26 +118,26 @@ def apply() -> CliproxyApplyResult:
         HTTPException: 400 when the stored settings do not validate.
     """
     try:
-        message = CliproxyConfigApplier().apply()
+        message = CliproxyApiConfigApplier().apply()
     except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
         ) from error
-    return CliproxyApplyResult(message=message)
+    return CliproxyApiApplyResult(message=message)
 
 
 def _apply_quietly() -> None:
     """Apply after a key or settings change; the status reflects failures."""
     try:
-        CliproxyConfigApplier().apply()
+        CliproxyApiConfigApplier().apply()
     except ValueError:
         return
 
 
-def _status() -> CliproxyStatusView:
-    applier = CliproxyConfigApplier()
+def _status() -> CliproxyApiStatusView:
+    applier = CliproxyApiConfigApplier()
     config = load_config()
-    service = SystemdServiceController().status("cliproxy")
+    service = SystemdServiceController().status("cliproxyapi")
     is_reachable = False
     probe_message = ""
     if service.is_active:
@@ -146,11 +146,11 @@ def _status() -> CliproxyStatusView:
             port=config.listen_port, client_key=first_key
         )
     providers = AiProviderRegistry().list_records()
-    return CliproxyStatusView(
+    return CliproxyApiStatusView(
         is_installed=applier.is_installed,
         is_active=service.is_active,
         listen_port=config.listen_port,
-        client_keys=[CliproxyKeyView(**key.to_dict()) for key in config.client_keys],
+        client_keys=[CliproxyApiKeyView(**key.to_dict()) for key in config.client_keys],
         is_reachable=is_reachable,
         probe_message=probe_message,
         enabled_provider_count=sum(1 for p in providers if p.is_enabled and p.api_key),

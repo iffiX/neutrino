@@ -19,7 +19,7 @@ import "./login_page.css";
  *
  * Repeated failures lock the gate for longer and longer, and the locked gate
  * does not pretend otherwise: the form gives way to a countdown and the room
- * turns red. The owner clears it early with ./unlock.sh on the box.
+ * turns red. The owner clears it early with `nhub unlock` on the box.
  */
 
 export function LoginPage() {

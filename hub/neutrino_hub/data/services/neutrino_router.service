@@ -10,7 +10,7 @@ Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=@REPO_ROOT@
 Environment=PYTHONPATH=@REPO_ROOT@
-ExecStart=@PYTHON@ @REPO_ROOT@/scripts/render_all/main.py --only router
+ExecStart=@PYTHON@ -m neutrino_hub.cli.entry render --only router
 ExecStop=-/usr/sbin/nft delete table inet neutrino
 ExecStop=-/usr/sbin/ip rule del fwmark 0x1 lookup 100
 

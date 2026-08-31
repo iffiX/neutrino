@@ -16,7 +16,7 @@ from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.routers import (
     agent,
     auth,
-    cliproxy,
+    cliproxyapi,
     credentials,
     dashboard,
     device_files,
@@ -44,7 +44,7 @@ API_ROUTERS = (
     device_files.router,
     keys.router,
     credentials.router,
-    cliproxy.router,
+    cliproxyapi.router,
     samba.router,
     gitea.router,
     podman.router,

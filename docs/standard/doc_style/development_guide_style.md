@@ -82,8 +82,9 @@ Where an outside tool forces something, name the tool and what it requires, so
 the next reader can tell a constraint from a preference:
 
 ```text
-`neutrino_hub/cli/` has no `__init__.py` — PEP 420 namespace packages, with the repo
-root on `PYTHONPATH` via `source set_env.sh`.
+The hub's package must be built in a `debian:12` container — its environment
+carries no standard library, so the target needs the interpreter it was built
+against.
 ```
 
 ## Design notes may have an author in them

@@ -11,6 +11,8 @@ from neutrino_hub.utils.json_file import write_generated
 from neutrino_hub.utils.subprocess_run import CommandError, run
 
 from neutrino_hub.modules.xray.constants import (
+    XRAY_ASSET_DIR,
+    XRAY_ASSET_ENV,
     XRAY_BINARY,
     XRAY_CONFIG_PATH,
     XRAY_SERVICE_NAME,
@@ -74,7 +76,10 @@ class XrayConfigApplier:
         candidate_path = XRAY_CONFIG_PATH.with_suffix(".candidate.json")
         write_generated(candidate_path, json.dumps(candidate, indent=2) + "\n")
         try:
-            run([XRAY_BINARY, "run", "-test", "-config", str(candidate_path)])
+            run(
+                [XRAY_BINARY, "run", "-test", "-config", str(candidate_path)],
+                environment={XRAY_ASSET_ENV: XRAY_ASSET_DIR},
+            )
         except CommandError as error:
             raise CommandError(f"xray rejected the rendered config: {error}") from error
         finally:

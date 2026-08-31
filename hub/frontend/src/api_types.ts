@@ -380,7 +380,7 @@ export interface AiProviderView {
 }
 
 /** One client key of the AI gateway, shown in full to its owner. */
-export interface CliproxyKeyView {
+export interface CliproxyApiKeyView {
   id: string;
   name: string;
   key: string;
@@ -388,11 +388,11 @@ export interface CliproxyKeyView {
 }
 
 /** The AI page payload. */
-export interface CliproxyStatusView {
+export interface CliproxyApiStatusView {
   is_installed: boolean;
   is_active: boolean;
   listen_port: number;
-  client_keys: CliproxyKeyView[];
+  client_keys: CliproxyApiKeyView[];
   is_reachable: boolean;
   probe_message: string;
   enabled_provider_count: number;

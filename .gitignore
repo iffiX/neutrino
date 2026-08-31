@@ -9,11 +9,17 @@ config/podman/podman.json
 config/gitea/secrets.json
 config/devices/devices.json
 config/credentials/ai_providers.json
-config/cliproxy/cliproxy.json
+config/cliproxyapi/cliproxyapi.json
 config/devices/packages/
 config/devices/known_hosts
 config/credentials/ssh_keys/*
 !config/credentials/ssh_keys/*.example.json
+
+# --- Notes about this machine, not about the project ---
+# The working copy's own memory: what has been decided and what is deliberately
+# not done yet, alongside the maintainer's address and the layout of the box it
+# runs on. Kept beside the code and out of the history.
+docs/memory.md
 
 # --- Python ---
 # Stamped in by the packaging build, never committed.

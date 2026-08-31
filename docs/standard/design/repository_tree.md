@@ -57,7 +57,7 @@ refuses an unsupported install *before* the wrong binary lands.
 **Modules may read each other, nothing reads the panel.** `modules/router`'s
 dnsmasq renderer points at `modules/xray`'s DNS inbound — modules cooperate.
 But only `web/` and `neutrino_hub/cli/` import across the whole tree; no module
-imports `web/`, so every module works headless under `scripts/render_all`.
+imports `web/`, so every module works headless under `nhub apply`.
 
 **`neutrino_hub/system/` wraps invocations, modules own meaning.** `system/systemd_ctl.py`
 knows how to ask systemd about a unit; *which* units exist and which refuse

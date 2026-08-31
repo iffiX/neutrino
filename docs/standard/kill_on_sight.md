@@ -26,7 +26,7 @@ the moment you see them.
   with an effect inside a `*_renderer.py` or any `render()` method. Rendering is
   pure; effects live in the apply/routes/services layer. See
   [design/architecture.md](design/architecture.md).
-- **Hand-editing `/etc`.** Writing a generated file (`/etc/neutrino/generated/`,
+- **Hand-editing `/etc`.** Writing a generated file (`/var/lib/neutrino/generated/`,
   `/etc/dnsmasq.d/`, an nft ruleset) from anywhere other than a renderer +
   apply. The only source of truth is `config/`; everything downstream is
   regenerated, never hand-patched.

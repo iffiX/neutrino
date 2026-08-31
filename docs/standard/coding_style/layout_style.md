@@ -18,9 +18,9 @@ modules/xray/
 modules/xray/config_renderer.py
       class XrayConfigRenderer:                       # explicit kwargs, no main()
           def __init__(self, *, nodes, routing): ...
-scripts/render_all/main.py
+neutrino_hub/cli/render_all.py
       # --- config ---
-      GENERATED_DIR = "/etc/neutrino/generated"       # plain module constant
+      GENERATED_DIR = "/var/lib/neutrino/generated"   # plain module constant
       def main() -> None:                             # the only place main() lives
           args = argparse.ArgumentParser()...
 ```
@@ -48,13 +48,13 @@ Library packages are purely functional. All execution verbosity lives in
   contain no `main()`, no `argparse`, no `if __name__ == "__main__"`, and no
   wiring-config classes. Every tunable is an explicit constructor keyword or a
   value read from `config/`.
-- `neutrino_hub/cli/` holds one directory per tool, each with a `main.py` whose tunables
-  are plain variables in commented config sections. The three tools are
-  `scripts/install/main.py` (idempotent bootstrap), `scripts/render_all/main.py`
-  (render + validate + apply every generated config from `config/`), and
-  `scripts/web/main.py` (the uvicorn entry point).
-- A new tool is a new `scripts/<name>/` directory, never a flag bolted onto an
-  unrelated script.
+- `neutrino_hub/cli/` holds one file per tool, whose tunables are plain
+  variables in commented config sections. The tools are `install.py`
+  (idempotent bootstrap), `render_all.py` (render + validate + apply every
+  generated config from `config/`), `web.py` (the uvicorn entry point) and
+  `scan_secrets.py`.
+- A new tool is a new `neutrino_hub/cli/<name>.py` and a new `nhub` subcommand,
+  never a flag bolted onto an unrelated one.
 
 The rationale (why the render libraries never touch the system, why applying is
 its own layer) lives in
@@ -92,8 +92,7 @@ from modules.router.constants import ROUTER_FWMARK_PROXY
 
 - Library packages have `__init__.py` (`modules/` and every
   `neutrino_hub/modules/<name>/`, `neutrino_hub/system/`, `neutrino_hub/web/`, `neutrino_hub/utils/`).
-- `neutrino_hub/cli/` has none. It and every subdirectory are PEP 420 implicit namespace
-  packages. Sourcing `set_env.sh` puts the repo root on `PYTHONPATH` (required
-  for every run), so `nhub render` still resolves
-  `from modules.xray.config_renderer import XrayConfigRenderer` with zero `__init__.py`
-  under `neutrino_hub/cli/`.
+- `neutrino_hub/cli/` has one too. `pip install -e "hub[dev]"` is what puts
+  `nhub` on the path and the package on `sys.path`, so every subcommand
+  resolves `from neutrino_hub.modules.xray.config_renderer import
+  XrayConfigRenderer` from a checkout and from a package alike.

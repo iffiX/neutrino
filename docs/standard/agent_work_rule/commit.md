@@ -19,14 +19,28 @@ change, including the parts an agent wrote.
 
 ## One sentence, thirty words at most
 
-The message is a single sentence naming the feature added or the change made.
-Thirty words is the ceiling; most commits need far fewer.
+The message is `<Title>: <what was done>.` — what the change is about, a
+colon, then one sentence naming the feature added or the change made. Thirty
+words is the ceiling; most commits need far fewer.
+
+The title is the area the change lives in, as a reader of the history would
+look for it: a module (`Devices`, `Podman`), a layer (`Hub`, `Agent`, `CLI`),
+or the thing itself (`Images`, `Commits`). One word wherever one will do.
 
 Good:
 
 ```
 Devices: GPU and process monitoring, SFTP transfers with folder archives, sudo kill.
 Login: escalating lockout with a red laser countdown, and fail2ban guarding SSH.
+Images: the notes describing the artwork are removed.
+```
+
+Bad — no title, so the history reads as a list of sentences with nothing to
+scan down:
+
+```
+Added GPU and process monitoring to the device page.
+The notes describing the artwork are removed.
 ```
 
 Bad — a paragraph explaining the reasoning:

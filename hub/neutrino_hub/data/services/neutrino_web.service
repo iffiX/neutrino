@@ -12,7 +12,7 @@ Type=simple
 User=root
 WorkingDirectory=@REPO_ROOT@/hub
 Environment=PYTHONPATH=@REPO_ROOT@/hub
-ExecStart=@PYTHON@ -m neutrino_hub.cli.web
+ExecStart=@PYTHON@ -m neutrino_hub.cli.run
 Restart=on-failure
 RestartSec=5
 

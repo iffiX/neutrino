@@ -218,8 +218,8 @@ def _packaged_unit() -> str:
             "Documentation=https://github.com/iffiX/neutrino",
         )
         .replace(
-            "ExecStart=/usr/bin/python3 -m neutrino_agent.cli",
-            "ExecStart=/usr/bin/nagent",
+            "ExecStart=/usr/bin/python3 -m neutrino_agent.cli run",
+            "ExecStart=/usr/bin/nagent run",
         )
         + "\n"
     )

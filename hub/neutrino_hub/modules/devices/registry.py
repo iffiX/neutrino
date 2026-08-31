@@ -53,7 +53,7 @@ class DeviceClientInfo:
             ``{"is_enabled", "is_activated"}``. Installing and activating are
             separate wishes — cc-switch can be on a machine without pointing
             at this hub.
-        ai_key_id: The cliproxy client key minted for this device's AI tools.
+        ai_key_id: The cliproxyapi client key minted for this device's AI tools.
         target_user: The account whose home the agent writes tool configs into.
     """
 
@@ -370,7 +370,7 @@ class DeviceRegistry:
         return device
 
     def set_ai_key_id(self, mac_address: str, key_id: str | None) -> None:
-        """Remember which cliproxy client key belongs to a device.
+        """Remember which cliproxyapi client key belongs to a device.
 
         Args:
             mac_address: The device's MAC.

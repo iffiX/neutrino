@@ -1,7 +1,6 @@
 # Tests
 
 ```bash
-source set_env.sh          # optional; pytest sets the path itself
 pytest                     # everything that runs unprivileged
 sudo pytest                # adds the checks that need root
 ```
@@ -9,7 +8,7 @@ sudo pytest                # adds the checks that need root
 ## What is here
 
 One directory per package, mirroring the source tree: `tests/modules/<name>/`,
-`tests/system/`, `tests/web/`.
+`tests/system/`, `tests/web/`, `tests/cli/`.
 
 | Path | Covers |
 | --- | --- |
@@ -19,6 +18,10 @@ One directory per package, mirroring the source tree: `tests/modules/<name>/`,
 | `modules/router/test_dnsmasq_renderer.py` | DHCP and DNS for the served networks |
 | `modules/router/test_hostapd_renderer.py` | The Wi-Fi access point's configuration |
 | `web/test_network_api.py` | The Network tab's API, its validations, and the view |
+| `cli/test_reset.py` | What `nhub reset all` destroys, and what it must not |
+| `cli/test_password.py` | How the panel password is taken, and what is refused |
+| `system/test_units.py` | Rendering a unit for a checkout and for a package |
+| `system/test_packages.py` | What the package manager installs, in one list |
 
 ## Two rules
 

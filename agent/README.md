@@ -30,7 +30,7 @@ verifies it can reach the gateway, then enables and starts
 ## Building the package
 
 ```bash
-source set_env.sh
+pip install -e .
 python3 -m neutrino_agent.build_package \
     --output-dir ../config/devices/packages
 ```
@@ -41,9 +41,8 @@ This writes `neutrino_agent-<version>.tar.gz` and
 ## Checking an install
 
 ```bash
-source set_env.sh
-python3 -m neutrino_agent.cli --once    # one heartbeat, then exit
-journalctl -u neutrino_agent -f        # follow the running agent
+nagent status                      # what it is bound to, and whether the hub answers
+journalctl -u neutrino_agent -f    # follow the running agent
 ```
 
 ## How it works

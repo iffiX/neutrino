@@ -1,6 +1,6 @@
 {
   "_comment_enabled": "is_proxy_enabled is the master switch. false takes the proxy out of the path entirely: LAN traffic is forwarded straight out the WAN, dnsmasq resolves through direct_dns instead of through xray, and no exit node is needed or used. It is the honest thing to reach for when working out whether the proxy is what is broken.",
-  "is_proxy_enabled": true,
+  "is_proxy_enabled": false,
 
   "_comment_socks": "is_socks_direct_enabled publishes the SOCKS5 listener on the LAN address, port 1080, whose traffic always leaves directly rather than through an exit node. It is what ToDesk and AnyDesk on a work machine point at, so the two ends of a session look like they are on the same continent. A second way out of the box deserves a switch as visible as the proxy's own.",
   "is_socks_direct_enabled": true,

@@ -12,7 +12,7 @@ User=root
 WorkingDirectory=/opt/neutrino_agent
 Environment=PYTHONPATH=/opt/neutrino_agent
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 -m neutrino_agent.cli
+ExecStart=/usr/bin/python3 -m neutrino_agent.cli run
 Restart=always
 RestartSec=10
 

@@ -171,7 +171,7 @@ class SessionStore:
         """How much longer login is refused after repeated failures.
 
         The lockout's persistent half is a file on tmpfs; deleting it —
-        which is all ``unlock.sh`` does — clears the lockout and the failure
+        which is all ``nhub unlock`` does — clears the lockout and the failure
         history together, right here on the next check.
 
         Returns:

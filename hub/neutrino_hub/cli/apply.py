@@ -3,9 +3,14 @@
 This is the command-line half of the pipeline the web panel drives. Run it after
 editing anything under ``config/`` by hand:
 
-    sudo python scripts/render_all/main.py            # render, validate, apply all
-    python scripts/render_all/main.py --dry-run       # render and print, no effects
-    sudo python scripts/render_all/main.py --only router
+    sudo nhub apply               # render, validate, apply all
+    nhub apply --dry-run          # render and print, no effects
+    sudo nhub apply --only router
+
+The unit files come with it. They ship in the package rather than being
+rendered from ``config/``, so an upgrade that changes one lands here: writing
+them is part of making the box true, and a unit already current is left
+alone.
 """
 
 import argparse
@@ -43,6 +48,7 @@ from neutrino_hub.modules.samba.constants import (
 from neutrino_hub.modules.samba.ops import SambaConfigApplier, SambaUserManager
 from neutrino_hub.modules.samba.renderer import SambaConfigRenderer
 from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
+from neutrino_hub.system.units import SystemdUnitInstaller
 from neutrino_hub.utils.json_file import read_config, write_generated
 from neutrino_hub.utils.subprocess_run import CommandError, run
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
@@ -94,6 +100,9 @@ def main() -> int:
     try:
         _write(artifacts)
         if not args.skip_apply:
+            units = SystemdUnitInstaller().install()
+            if units:
+                print(f"units refreshed: {', '.join(units)}")
             _apply(artifacts)
     except CommandError as error:
         print(f"error: {error}", file=sys.stderr)

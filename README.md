@@ -48,7 +48,7 @@ and access, connected as one environment you control.
 
 ```bash
 sudo apt install ./neutrino-hub_<version>_amd64.deb
-sudo nhub install
+sudo nhub setup
 ```
 
 **2. Open the panel** at `http://<hub-address>` and set your password.

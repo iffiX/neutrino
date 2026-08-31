@@ -10,6 +10,7 @@ the module that needs it.
 Not pure: runs the machine's package manager.
 """
 
+from neutrino_hub.system.constants import SYSTEM_PACKAGE_NAMES
 from neutrino_hub.system.machine import distribution_family, distribution_name
 from neutrino_hub.utils.subprocess_run import CommandError, run
 
@@ -33,6 +34,23 @@ class SystemPackageController:
 
     #: The executable, so a missing tool is reported by name.
     binary = ""
+
+    #: What follows the executable to install. Printed rather than run when
+    #: something the hub needs is missing: installing NetworkManager under a
+    #: hub that is already running is what design/install.md exists to
+    #: prevent, so the person is told and decides when.
+    install_arguments = ("install",)
+
+    def install_command(self, packages: tuple) -> str:
+        """The command a person would run to install these by hand.
+
+        Args:
+            packages: Package names for this family.
+
+        Returns:
+            One line, ready to paste.
+        """
+        return " ".join(("sudo", self.binary, *self.install_arguments, *packages))
 
     def refresh(self) -> None:
         """Update the package lists.
@@ -200,6 +218,7 @@ class PacmanPackageController(SystemPackageController):
 
     family = "arch"
     binary = "pacman"
+    install_arguments = ("-S", "--needed")
 
     def refresh(self) -> None:
         run(
@@ -306,3 +325,29 @@ def _numeric_parts(version: str) -> tuple:
             # decoration starts.
             break
     return tuple(parts)
+
+
+def packages_for(family: str, packages: tuple) -> list:
+    """One list of package names, spelled the way a family spells them.
+
+    The hub's dependency lists are written once, in ``constants.py``; this is
+    where they meet a distribution. Both the packaging build and a checkout's
+    ``nhub setup`` read them through here, so a package's dependency field and
+    what an installer would fetch cannot say different things.
+
+    Args:
+        family: The distribution family, as `machine.distribution_family`
+            reports it.
+        packages: Names as ``constants.py`` writes them.
+
+    Returns:
+        The names to install, with anything this family has no separate
+        package for left out.
+    """
+    renames = SYSTEM_PACKAGE_NAMES.get(family, {})
+    named = []
+    for package in packages:
+        renamed = renames.get(package, package)
+        if renamed is not None:
+            named.append(renamed)
+    return named

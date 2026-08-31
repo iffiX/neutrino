@@ -4,14 +4,10 @@
 Everything either package can do is a subcommand of one of the two, and the
 two share their verbs wherever they do the same thing.
 
-> **This page is the decided shape, not what is installed today.** What ships
-> now is `nhub install | render | serve | scan-secrets`, and a `nagent` that
-> takes `--once` and `--no-ui` and has no subcommands at all.
-
 ## nhub
 
 Runs as root. The panel it starts is root as well, for the reasons in
-[standard/privilege.md](standard/privilege.md).
+[standard/design/privilege.md](standard/design/privilege.md).
 
 ### setup
 
@@ -24,7 +20,7 @@ afterwards.
 Runs once. A hub that already has a panel password refuses and names
 `nhub reset all` instead, so a second `setup` cannot land on top of a
 configured box. Removing the package does not lift this: `dpkg --purge` leaves
-`/etc/neutrino/config` in place on purpose, because it holds the proxy node
+`/etc/neutrino/hub` in place on purpose, because it holds the proxy node
 credentials and the device keys.
 
 > `--password-stdin`

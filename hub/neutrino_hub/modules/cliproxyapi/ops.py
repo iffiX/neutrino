@@ -11,41 +11,41 @@ from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
 from neutrino_hub.utils.json_file import read_config, write_config, write_generated
 from neutrino_hub.utils.subprocess_run import run
 
-from neutrino_hub.modules.cliproxy.config import CliproxyConfig
-from neutrino_hub.modules.cliproxy.constants import (
-    CLIPROXY_BINARY_PATH,
-    CLIPROXY_GENERATED_NAME,
-    CLIPROXY_UNIT,
+from neutrino_hub.modules.cliproxyapi.config import CliproxyApiConfig
+from neutrino_hub.modules.cliproxyapi.constants import (
+    CLIPROXYAPI_BINARY_PATH,
+    CLIPROXYAPI_GENERATED_NAME,
+    CLIPROXYAPI_UNIT,
 )
-from neutrino_hub.modules.cliproxy.renderer import CliproxyConfigRenderer
+from neutrino_hub.modules.cliproxyapi.renderer import CliproxyApiConfigRenderer
 from neutrino_hub.modules.credentials.registry import AiProviderRegistry
 
-CLIPROXY_CONFIG_PATH = "cliproxy/cliproxy.json"
+CLIPROXYAPI_CONFIG_PATH = "cliproxyapi/cliproxyapi.json"
 PROBE_TIMEOUT_S = 5
 
 
-def load_config() -> CliproxyConfig:
+def load_config() -> CliproxyApiConfig:
     """Read the stored settings, empty defaults when the file is missing.
 
     Returns:
         The parsed configuration.
     """
     try:
-        return CliproxyConfig.from_dict(read_config(CLIPROXY_CONFIG_PATH))
+        return CliproxyApiConfig.from_dict(read_config(CLIPROXYAPI_CONFIG_PATH))
     except FileNotFoundError:
-        return CliproxyConfig()
+        return CliproxyApiConfig()
 
 
-def save_config(config: CliproxyConfig) -> None:
+def save_config(config: CliproxyApiConfig) -> None:
     """Write the settings back.
 
     Args:
         config: The configuration to store.
     """
-    write_config(CLIPROXY_CONFIG_PATH, config.to_dict())
+    write_config(CLIPROXYAPI_CONFIG_PATH, config.to_dict())
 
 
-class CliproxyConfigApplier:
+class CliproxyApiConfigApplier:
     """Renders the YAML and restarts the service to pick it up."""
 
     def apply(self) -> str:
@@ -60,13 +60,15 @@ class CliproxyConfigApplier:
         config = load_config()
         config.validate()
         providers = AiProviderRegistry().list_records()
-        rendered = CliproxyConfigRenderer(config=config, providers=providers).render()
+        rendered = CliproxyApiConfigRenderer(
+            config=config, providers=providers
+        ).render()
         write_generated(
-            UTILS_GENERATED_DIR / CLIPROXY_GENERATED_NAME, rendered, mode=0o600
+            UTILS_GENERATED_DIR / CLIPROXYAPI_GENERATED_NAME, rendered, mode=0o600
         )
         if not self.is_installed:
             return "rendered; the service is not installed yet"
-        run(["systemctl", "restart", CLIPROXY_UNIT])
+        run(["systemctl", "restart", CLIPROXYAPI_UNIT])
         enabled = sum(1 for p in providers if p.is_enabled and p.api_key)
         return f"applied with {enabled} provider(s) and restarted"
 
@@ -79,7 +81,7 @@ class CliproxyConfigApplier:
         Returns:
             Whether anything was written.
         """
-        unit_path = SYSTEM_SYSTEMD_DIR / CLIPROXY_UNIT
+        unit_path = SYSTEM_SYSTEMD_DIR / CLIPROXYAPI_UNIT
         if unit_path.is_file() and unit_path.read_text(encoding="utf-8") == unit_text:
             return False
         unit_path.write_text(unit_text, encoding="utf-8")
@@ -89,7 +91,7 @@ class CliproxyConfigApplier:
     @property
     def is_installed(self) -> bool:
         """Whether the binary is on the box."""
-        return CLIPROXY_BINARY_PATH.is_file()
+        return CLIPROXYAPI_BINARY_PATH.is_file()
 
     def probe(self, *, port: int, client_key: str | None) -> tuple[bool, str]:
         """Ask the running gateway for its model list.

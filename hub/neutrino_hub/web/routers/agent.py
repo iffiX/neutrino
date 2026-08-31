@@ -17,9 +17,9 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from neutrino_hub.modules.cliproxy.config import CliproxyClientKey
-from neutrino_hub.modules.cliproxy.ops import (
-    CliproxyConfigApplier,
+from neutrino_hub.modules.cliproxyapi.config import CliproxyApiClientKey
+from neutrino_hub.modules.cliproxyapi.ops import (
+    CliproxyApiConfigApplier,
     load_config,
     save_config,
 )
@@ -276,11 +276,11 @@ def _served_model() -> str:
 
 
 def _device_key(device: ManagedDevice, config, registry: DeviceRegistry):
-    """The device's cliproxy client key, minting and applying one on first need.
+    """The device's cliproxyapi client key, minting and applying one on first need.
 
     Args:
         device: The device.
-        config: The loaded cliproxy configuration.
+        config: The loaded cliproxyapi configuration.
         registry: The device registry.
 
     Returns:
@@ -290,12 +290,12 @@ def _device_key(device: ManagedDevice, config, registry: DeviceRegistry):
     existing = next((k for k in config.client_keys if k.id == key_id), None)
     if existing is not None:
         return existing
-    key = CliproxyClientKey.minted(device.name or device.mac_address)
+    key = CliproxyApiClientKey.minted(device.name or device.mac_address)
     config.client_keys.append(key)
     save_config(config)
     registry.set_ai_key_id(device.mac_address, key.id)
     try:
-        CliproxyConfigApplier().apply()
+        CliproxyApiConfigApplier().apply()
     except ValueError:
         pass
     return key

@@ -5,23 +5,23 @@ credentials store — this holds only what CLIProxyAPI needs beyond them: where
 to listen, and the client keys handed to devices.
 
 Pure: parsing and validation only. Rendering is
-:mod:`neutrino_hub.modules.cliproxy.renderer`; making it true on the box is
-:mod:`neutrino_hub.modules.cliproxy.ops`.
+:mod:`neutrino_hub.modules.cliproxyapi.renderer`; making it true on the box is
+:mod:`neutrino_hub.modules.cliproxyapi.ops`.
 """
 
 import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from neutrino_hub.modules.cliproxy.constants import (
-    CLIPROXY_CLIENT_KEY_BYTES,
-    CLIPROXY_DEFAULT_PORT,
-    CLIPROXY_ID_BYTES,
+from neutrino_hub.modules.cliproxyapi.constants import (
+    CLIPROXYAPI_CLIENT_KEY_BYTES,
+    CLIPROXYAPI_DEFAULT_PORT,
+    CLIPROXYAPI_ID_BYTES,
 )
 
 
 @dataclass
-class CliproxyClientKey:
+class CliproxyApiClientKey:
     """One key a device presents to the AI gateway.
 
     Attributes:
@@ -37,7 +37,7 @@ class CliproxyClientKey:
     created_at: str = ""
 
     @classmethod
-    def minted(cls, name: str) -> "CliproxyClientKey":
+    def minted(cls, name: str) -> "CliproxyApiClientKey":
         """Mint a fresh key under a name.
 
         Args:
@@ -47,14 +47,14 @@ class CliproxyClientKey:
             The new key.
         """
         return cls(
-            id=secrets.token_hex(CLIPROXY_ID_BYTES),
+            id=secrets.token_hex(CLIPROXYAPI_ID_BYTES),
             name=name.strip() or "unnamed",
-            key=secrets.token_urlsafe(CLIPROXY_CLIENT_KEY_BYTES),
+            key=secrets.token_urlsafe(CLIPROXYAPI_CLIENT_KEY_BYTES),
             created_at=datetime.now(timezone.utc).isoformat(),
         )
 
     @classmethod
-    def from_dict(cls, data: dict) -> "CliproxyClientKey":
+    def from_dict(cls, data: dict) -> "CliproxyApiClientKey":
         return cls(
             id=data.get("id", ""),
             name=data.get("name", ""),
@@ -72,23 +72,23 @@ class CliproxyClientKey:
 
 
 @dataclass
-class CliproxyConfig:
-    """Everything ``config/cliproxy/cliproxy.json`` holds.
+class CliproxyApiConfig:
+    """Everything ``config/cliproxyapi/cliproxyapi.json`` holds.
 
     Attributes:
         listen_port: Port the AI gateway answers on, LAN- and overlay-wide.
         client_keys: The keys devices authenticate with.
     """
 
-    listen_port: int = CLIPROXY_DEFAULT_PORT
-    client_keys: list[CliproxyClientKey] = field(default_factory=list)
+    listen_port: int = CLIPROXYAPI_DEFAULT_PORT
+    client_keys: list[CliproxyApiClientKey] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, data: dict) -> "CliproxyConfig":
+    def from_dict(cls, data: dict) -> "CliproxyApiConfig":
         return cls(
-            listen_port=int(data.get("listen_port", CLIPROXY_DEFAULT_PORT)),
+            listen_port=int(data.get("listen_port", CLIPROXYAPI_DEFAULT_PORT)),
             client_keys=[
-                CliproxyClientKey.from_dict(entry)
+                CliproxyApiClientKey.from_dict(entry)
                 for entry in data.get("client_keys", [])
             ],
         )

@@ -17,18 +17,18 @@ from neutrino_hub.system.provisioning import ProvisionResult, say
 from neutrino_hub.utils.constants import UTILS_DATA_DIR, UTILS_GENERATED_DIR
 from neutrino_hub.utils.subprocess_run import run
 
-from neutrino_hub.modules.cliproxy.constants import (
-    CLIPROXY_ASSET_ARCHITECTURES,
-    CLIPROXY_AUTH_DIR,
-    CLIPROXY_BINARY_PATH,
-    CLIPROXY_DIR,
-    CLIPROXY_DOWNLOAD_URL,
-    CLIPROXY_GENERATED_NAME,
-    CLIPROXY_SUPPORTED_ARCHITECTURES,
-    CLIPROXY_UNIT,
-    CLIPROXY_VERSION,
+from neutrino_hub.modules.cliproxyapi.constants import (
+    CLIPROXYAPI_ASSET_ARCHITECTURES,
+    CLIPROXYAPI_AUTH_DIR,
+    CLIPROXYAPI_BINARY_PATH,
+    CLIPROXYAPI_DIR,
+    CLIPROXYAPI_DOWNLOAD_URL,
+    CLIPROXYAPI_GENERATED_NAME,
+    CLIPROXYAPI_SUPPORTED_ARCHITECTURES,
+    CLIPROXYAPI_UNIT,
+    CLIPROXYAPI_VERSION,
 )
-from neutrino_hub.modules.cliproxy.ops import CliproxyConfigApplier
+from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier
 
 
 def download_url(architecture: str) -> str:
@@ -40,13 +40,13 @@ def download_url(architecture: str) -> str:
     Returns:
         The URL of the release tarball.
     """
-    return CLIPROXY_DOWNLOAD_URL.format(
-        version=CLIPROXY_VERSION,
-        asset_arch=CLIPROXY_ASSET_ARCHITECTURES[architecture],
+    return CLIPROXYAPI_DOWNLOAD_URL.format(
+        version=CLIPROXYAPI_VERSION,
+        asset_arch=CLIPROXYAPI_ASSET_ARCHITECTURES[architecture],
     )
 
 
-class CliproxyProvisioner:
+class CliproxyApiProvisioner:
     """Installs CLIProxyAPI as a single binary with a systemd unit."""
 
     def provision(
@@ -65,21 +65,26 @@ class CliproxyProvisioner:
             CommandError: If the download or any setup step fails.
         """
         is_changed = False
-        applier = CliproxyConfigApplier()
-        if not CLIPROXY_BINARY_PATH.is_file():
-            require_architecture(CLIPROXY_SUPPORTED_ARCHITECTURES, "cliproxy")
-            say(report, "creating /var/lib/neutrino_cliproxy")
-            CLIPROXY_AUTH_DIR.mkdir(parents=True, exist_ok=True)
-            CLIPROXY_DIR.chmod(0o700)
+        applier = CliproxyApiConfigApplier()
+        # Before the binary, and whether or not one has to be fetched: the
+        # package carries the binary but nothing carries a directory the
+        # gateway writes to, and the unit runs in it.
+        if not CLIPROXYAPI_AUTH_DIR.is_dir():
+            say(report, f"creating {CLIPROXYAPI_DIR}")
+            CLIPROXYAPI_AUTH_DIR.mkdir(parents=True, exist_ok=True)
+            CLIPROXYAPI_DIR.chmod(0o700)
+            is_changed = True
+        if not CLIPROXYAPI_BINARY_PATH.is_file():
+            require_architecture(CLIPROXYAPI_SUPPORTED_ARCHITECTURES, "cliproxyapi")
             architecture = machine_architecture()
             say(
                 report,
-                f"downloading CLIProxyAPI {CLIPROXY_VERSION} for "
+                f"downloading CLIProxyAPI {CLIPROXYAPI_VERSION} for "
                 f"{architecture} (~20 MB)",
             )
             self._download_binary(architecture)
             is_changed = True
-        unit_text = (UTILS_DATA_DIR / "services" / CLIPROXY_UNIT).read_text(
+        unit_text = (UTILS_DATA_DIR / "services" / CLIPROXYAPI_UNIT).read_text(
             encoding="utf-8"
         )
         if applier.refresh_unit(unit_text):
@@ -87,11 +92,13 @@ class CliproxyProvisioner:
             is_changed = True
         say(report, "rendering the configuration")
         applier.apply()
-        run(["systemctl", "enable", "--now", CLIPROXY_UNIT])
+        run(["systemctl", "enable", "--now", CLIPROXYAPI_UNIT])
         return ProvisionResult(
             is_changed=is_changed,
             message=(
-                f"cliproxy {CLIPROXY_VERSION}" if is_changed else "already provisioned"
+                f"cliproxyapi {CLIPROXYAPI_VERSION}"
+                if is_changed
+                else "already provisioned"
             ),
         )
 
@@ -104,34 +111,34 @@ class CliproxyProvisioner:
         """Remove the software; the panel-side configuration always survives.
 
         Args:
-            is_data_kept: Keep ``/var/lib/neutrino_cliproxy`` — imported
+            is_data_kept: Keep ``/var/lib/neutrino/cliproxyapi`` — imported
                 account logins live there. False deletes it.
             report: Sink for progress lines, if anyone is watching.
 
         Returns:
             What was done.
         """
-        if not CLIPROXY_BINARY_PATH.is_file():
+        if not CLIPROXYAPI_BINARY_PATH.is_file():
             return ProvisionResult(is_changed=False, message="not installed")
 
         say(report, "stopping and disabling the AI gateway")
-        run(["systemctl", "disable", "--now", CLIPROXY_UNIT], is_checked=False)
-        (SYSTEM_SYSTEMD_DIR / CLIPROXY_UNIT).unlink(missing_ok=True)
+        run(["systemctl", "disable", "--now", CLIPROXYAPI_UNIT], is_checked=False)
+        (SYSTEM_SYSTEMD_DIR / CLIPROXYAPI_UNIT).unlink(missing_ok=True)
         run(["systemctl", "daemon-reload"])
 
         say(report, "removing the binary and the rendered configuration")
-        CLIPROXY_BINARY_PATH.unlink(missing_ok=True)
-        (UTILS_GENERATED_DIR / CLIPROXY_GENERATED_NAME).unlink(missing_ok=True)
+        CLIPROXYAPI_BINARY_PATH.unlink(missing_ok=True)
+        (UTILS_GENERATED_DIR / CLIPROXYAPI_GENERATED_NAME).unlink(missing_ok=True)
 
         if not is_data_kept:
             say(report, "deleting imported account logins")
-            shutil.rmtree(CLIPROXY_DIR, ignore_errors=True)
+            shutil.rmtree(CLIPROXYAPI_DIR, ignore_errors=True)
             return ProvisionResult(is_changed=True, message="removed, data deleted")
         return ProvisionResult(is_changed=True, message="removed; logins kept")
 
     def _download_binary(self, architecture: str) -> None:
         with tempfile.TemporaryDirectory() as workdir:
-            archive = Path(workdir) / "cliproxy.tar.gz"
+            archive = Path(workdir) / "cliproxyapi.tar.gz"
             run(
                 [
                     "curl",
@@ -147,5 +154,5 @@ class CliproxyProvisioner:
             with tarfile.open(archive) as tar:
                 member = tar.getmember("cli-proxy-api")
                 tar.extract(member, workdir)
-            shutil.move(str(Path(workdir) / "cli-proxy-api"), CLIPROXY_BINARY_PATH)
-        CLIPROXY_BINARY_PATH.chmod(0o755)
+            shutil.move(str(Path(workdir) / "cli-proxy-api"), CLIPROXYAPI_BINARY_PATH)
+        CLIPROXYAPI_BINARY_PATH.chmod(0o755)

@@ -128,8 +128,7 @@ export function GiteaPage() {
         <div className="notice notice--warn">
           <Icon name="alert" size={15} />
           <div className="notice_body">
-            Gitea is not installed. Run the installer with --with-extras, then
-            enable the service on the Services page.
+            Gitea is not installed. Install it on the Services page.
           </div>
         </div>
       )}

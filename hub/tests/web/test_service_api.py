@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from neutrino_hub.system.systemd_ctl import ServiceStatus
+from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import service_control
 
@@ -71,15 +72,18 @@ def box():
 
 
 def test_the_view_says_which_units_are_core(box):
-    client, _ = box
+    """Read against the declaration, so moving a module does not move a test."""
+    client, services = box
 
     payload = client.get("/api/services").json()
 
+    listed = {entry["name"] for entry in payload["services"]}
     core = {entry["name"] for entry in payload["services"] if entry["is_core"]}
-    assert core == {"xray", "router", "dnsmasq", "web", "netbird"}
+    assert core == listed & set(SYSTEM_CORE_UNITS)
+    assert "netbird" in listed and "netbird" not in core
 
 
-@pytest.mark.parametrize("name", ["xray", "router", "dnsmasq", "web", "netbird"])
+@pytest.mark.parametrize("name", ["xray", "router", "dnsmasq", "web"])
 @pytest.mark.parametrize("action", ["stop", "disable"])
 def test_a_core_unit_cannot_be_stopped_or_disabled(box, name, action):
     client, services = box
@@ -227,8 +231,14 @@ def _wait_performed(count: int = 1) -> list[tuple]:
     return FakeProvisioner.performed
 
 
-def test_netbird_installs_from_the_panel_but_never_leaves(installable_box, monkeypatch):
-    """The way back into the box goes in through the panel and never out."""
+def test_netbird_installs_and_uninstalls_from_the_panel(installable_box, monkeypatch):
+    """Remote access is a capability, so it goes in and out like the others.
+
+    It was core once, on the reasoning that removing the way back into the box
+    is how somebody locks themselves out. A gateway routes, resolves and
+    serves without it, and the machine that installs it is the one sitting in
+    front of it.
+    """
     from neutrino_hub.modules.registry import ModuleSpec
     from neutrino_hub.web.routers import service_control
 
@@ -247,5 +257,4 @@ def test_netbird_installs_from_the_panel_but_never_leaves(installable_box, monke
     )
 
     assert installed.status_code == 200
-    assert removed.status_code == 400
-    assert "core" in removed.json()["detail"]
+    assert removed.status_code == 200

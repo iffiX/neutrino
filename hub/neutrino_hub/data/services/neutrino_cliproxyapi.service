@@ -5,11 +5,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# Root, because the rendered configuration under /etc/neutrino/generated is
+# Root, because the rendered configuration under /var/lib/neutrino/generated is
 # root-only — it carries every provider key.
 User=root
-WorkingDirectory=/var/lib/neutrino_cliproxy
-ExecStart=/usr/local/bin/cli-proxy-api --config /etc/neutrino/generated/cliproxy.yaml
+WorkingDirectory=/var/lib/neutrino/cliproxyapi
+ExecStart=/opt/neutrino/bin/cli-proxy-api --config /var/lib/neutrino/generated/cliproxyapi.yaml
 Restart=always
 RestartSec=5
 

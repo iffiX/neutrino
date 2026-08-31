@@ -23,7 +23,9 @@ and leave this pointing at it.**
 | [design/architecture.md](docs/standard/design/architecture.md) | `config/` is the only source of truth; render → validate → apply; renderers are pure, appliers touch the system. |
 | [coding_style/comment_style.md](docs/standard/coding_style/comment_style.md) | KISS, English only, no narrated reasoning anywhere, commit message shape. |
 | [agent_work_rule/commit.md](docs/standard/agent_work_rule/commit.md) | Only the user decides a commit happens. One answerable author, no agent `Co-Authored-By`. |
-| [privilege.md](docs/standard/privilege.md) | Why the panel is root, what the unit narrows, and why stepping down uses `runuser` and never `sudo`. |
+| [design/files.md](docs/standard/design/files.md) | The five roots an installed hub uses, and the one question each answers. |
+| [design/install.md](docs/standard/design/install.md) | Who installs what: the package's dependencies, what `nhub setup` may do, and what the panel does. |
+| [design/privilege.md](docs/standard/design/privilege.md) | Why the panel is root, what the unit narrows, and why stepping down uses `runuser` and never `sudo`. |
 | [kill_on_sight.md](docs/standard/kill_on_sight.md) | The self-check to run before you say you are done. |
 
 **Selective read — open the one your change touches:**
@@ -36,7 +38,7 @@ and leave this pointing at it.**
 | [design/visual.md](docs/standard/design/visual.md) | Touching panel CSS: what the accent and the glow may mean, button tiers, frames. |
 | [design/class_design.md](docs/standard/design/class_design.md) | Adding a class: one concept per class, explicit `__init__` kwargs. |
 | [design/class_hierarchy.md](docs/standard/design/class_hierarchy.md) | Naming a class: the per-package `<Domain><Thing><Role>` families. |
-| [design/repository_tree.md](docs/standard/design/repository_tree.md) | Adding a directory, or unsure what an existing one is for. |
+| [design/repository_tree.md](docs/standard/design/repository_tree.md) | Adding a directory to the source tree, or unsure what an existing one is for. |
 | [misc/config.md](docs/standard/misc/config.md) | Touching `config/`: which files are secrets, how examples map to real ones. |
 | [misc/operations.md](docs/standard/misc/operations.md) | Verifying an install, or running the appliance. |
 | [doc_style/](docs/standard/doc_style/README.md) | Writing any `.md`: which of the three kinds you are writing, and how each is worded. |
@@ -45,8 +47,8 @@ and leave this pointing at it.**
 ## Commands
 
 ```bash
-source set_env.sh                    # hub/ and agent/ on PYTHONPATH
-pip install -e "hub[dev]"            # black, pytest, detect-secrets
+pip install -e "hub[dev]"            # nhub, black, pytest, detect-secrets
+pip install -e agent                 # nagent
 
 black --check hub agent              # REQUIRED before every commit
 nhub scan-secrets                    # REQUIRED before every commit
@@ -57,7 +59,7 @@ cd hub/frontend && npx prettier --check src && npx eslint src --max-warnings 0
 cd hub/frontend && npm run build     # REQUIRED after frontend changes
                                      # builds into neutrino_hub/data/frontend/
 
-nhub render --dry-run                # render everything, no effects
+nhub apply --dry-run                 # render everything, no effects
 sudo systemctl restart neutrino_web  # deploy the panel
 ```
 
@@ -67,7 +69,7 @@ safe and marked `scan: allow` on its line. Never narrow a rule to silence it.
 ## Config
 
 `config/<module>/*.json` is the only source of truth. Every change is a write
-there, then render → validate → apply; the panel and `nhub render` drive
+there, then render → validate → apply; the panel and `nhub apply` drive
 the same pipeline, and nothing hand-edits `/etc`. Real files holding secrets are
 `.gitignore`d with a committed `<name>.example.json` beside them. Backing up
 `config/` reproduces the appliance. Details: [misc/config.md](docs/standard/misc/config.md).
@@ -128,7 +130,7 @@ examples in the document named beside it.
 - **`sudo` never appears in the hub's own code.** The panel is already root, so
   reaching a service account is `runuser -u <account> --`; sudo refuses to run
   under the unit's `NoNewPrivileges`.
-  ([privilege.md](docs/standard/privilege.md))
+  ([design/privilege.md](docs/standard/design/privilege.md))
 - **Documents open with a definition and never end with a summary.** No
   "it should be noted", no recap section, no explaining what the reader knows.
   ([doc_style/README.md](docs/standard/doc_style/README.md))

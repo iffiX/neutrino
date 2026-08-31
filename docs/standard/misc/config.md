@@ -2,7 +2,7 @@
 
 `config/` is the single source of truth for the whole appliance. Every daemon's
 real configuration is generated from these JSON files: the gateway renders them
-into `/etc/neutrino/generated/`, validates, and applies. Back up `config/` and
+into `/var/lib/neutrino/generated/`, validates, and applies. Back up `config/` and
 you can rebuild the box; change a file (by hand or through the web panel) and a
 render+apply makes it live.
 
@@ -53,15 +53,12 @@ out through the API; listings only say whether one is stored.
 
 ## First-run flow
 
-1. `sudo ./install.sh` (see the root [README](../README.md)). Its
-   `scripts/install/main.py` step copies each missing `<name>.json` from its
-   `.example.json` and prints a to-do list.
-2. Fill in `config/xray/nodes.json` with your JustMySocks nodes (the installer
-   can import them from share links — see `nodes.example.json`).
-3. Set the panel password: `nhub install --set-password` <!-- scan: allow -->
-   writes an argon2id hash into `config/web/settings.json` (never store the
-   plaintext).
-4. Apply everything: `nhub render`. This renders, runs
+1. `sudo nhub setup` (see [../../cli.md](../../cli.md)). It prompts for the
+   panel password, copies each missing `<name>.json` from its `.example.json`,
+   renders everything and starts the panel.
+2. Add the proxy nodes on the panel's Proxy page, which decodes `ss://` and
+   `vless://` share links into `config/xray/nodes.json`.
+3. After editing anything by hand, `sudo nhub apply`. This renders, runs
    `xray run -test` / `nft -c` / `dnsmasq --test`, and restarts the daemons.
 
 ## Day-to-day changes
@@ -70,18 +67,19 @@ Two equivalent paths, both driven by the same render pipeline:
 
 - **Web panel** (normal path): a change in the UI writes `config/`, then renders
   and applies automatically.
-- **Edit the JSON, then run** `nhub render`. Useful over
+- **Edit the JSON, then run** `sudo nhub apply`. Useful over
   SSH or for bulk edits.
 
 Either way, once the file is written it is already the backup-worthy state.
-Never hand-edit files under `/etc/neutrino/generated/` — they are regenerated
+Never hand-edit files under `/var/lib/neutrino/generated/` — they are regenerated
 and your edit will be lost.
 
 ## Backup and migrate
 
 - The Settings tab exports a `config/` tarball (including `credentials/ssh_keys/`).
-- A fresh machine: clone the repo, unpack the tarball into `config/`, run
-  `sudo ./install.sh`. The box converges to the same state.
+- A fresh machine: install the package, unpack the tarball into
+  `/etc/neutrino/hub/`, run `sudo nhub setup`. The box converges to the same
+  state.
 
 ## Field reference
 

@@ -6,19 +6,19 @@ declarations are gathered so the Services page, the API and the installer all
 read one list. Adding an installable module is writing its package and adding
 one entry here.
 
-Core modules may appear here too — netbird is core and still needs
-installing — but the uninstall route refuses anything core: the panel will
-put the way back into the box in place, and will not take it away.
+A core module may appear here too when it still needs installing, and the
+uninstall route refuses anything core: the panel puts what makes this a
+gateway in place, and will not take it away.
 """
 
 from dataclasses import dataclass
 from typing import Callable
 
-from neutrino_hub.modules.cliproxy.constants import (
-    CLIPROXY_SUPPORTED_ARCHITECTURES,
-    CLIPROXY_UNIT,
+from neutrino_hub.modules.cliproxyapi.constants import (
+    CLIPROXYAPI_SUPPORTED_ARCHITECTURES,
+    CLIPROXYAPI_UNIT,
 )
-from neutrino_hub.modules.cliproxy.provisioner import CliproxyProvisioner
+from neutrino_hub.modules.cliproxyapi.provisioner import CliproxyApiProvisioner
 from neutrino_hub.modules.gitea.constants import GITEA_SUPPORTED_ARCHITECTURES
 from neutrino_hub.modules.gitea.provisioner import GiteaProvisioner
 from neutrino_hub.modules.podman.constants import (
@@ -85,10 +85,10 @@ MODULE_SPECS = {
         install_note="remote access to this gateway from anywhere",
         data_description="this machine's peer identity",
     ),
-    "cliproxy": ModuleSpec(
-        unit=CLIPROXY_UNIT,
-        provisioner=CliproxyProvisioner,
-        architectures=CLIPROXY_SUPPORTED_ARCHITECTURES,
+    "cliproxyapi": ModuleSpec(
+        unit=CLIPROXYAPI_UNIT,
+        provisioner=CliproxyApiProvisioner,
+        architectures=CLIPROXYAPI_SUPPORTED_ARCHITECTURES,
         install_note="one AI endpoint for every tool on every machine (~20 MB download)",
         data_description="imported provider account logins",
     ),

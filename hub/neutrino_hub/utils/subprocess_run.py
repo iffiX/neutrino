@@ -4,6 +4,7 @@ Every system effect in the repo goes through here, so failures report the
 command and its stderr instead of a bare exit code.
 """
 
+import os
 import subprocess
 from dataclasses import dataclass
 
@@ -42,6 +43,7 @@ def run(
     input_text: str | None = None,
     timeout_s: int = DEFAULT_TIMEOUT_S,
     is_checked: bool = True,
+    environment: dict[str, str] | None = None,
 ) -> CommandResult:
     """Run a command and capture its output.
 
@@ -50,6 +52,8 @@ def run(
         input_text: Text piped to standard input, if any.
         timeout_s: Seconds before the command is killed.
         is_checked: Raise on a non-zero exit instead of returning the result.
+        environment: Variables added to this process's own, for a tool that
+            is told where to look by the environment rather than by a flag.
 
     Returns:
         The captured result.
@@ -65,6 +69,7 @@ def run(
             capture_output=True,
             text=True,
             timeout=timeout_s,
+            env={**os.environ, **environment} if environment else None,
         )
     except subprocess.TimeoutExpired as error:
         raise CommandError(

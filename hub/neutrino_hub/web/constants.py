@@ -1,8 +1,10 @@
 """Fixed values of the web layer."""
 
-from pathlib import Path
-
-from neutrino_hub.utils.constants import UTILS_DATA_DIR
+from neutrino_hub.utils.constants import (
+    UTILS_DATA_DIR,
+    UTILS_LOG_ROOT,
+    UTILS_RUNTIME_ROOT,
+)
 
 WEB_FRONTEND_DIST_DIR = UTILS_DATA_DIR / "frontend"
 WEB_SESSION_COOKIE = "neutrino_session"
@@ -25,9 +27,8 @@ WEB_LOGIN_ATTEMPT_LIMIT = 5
 # for the next step of this ladder, topping out at a day.
 WEB_LOGIN_LOCKOUT_STEPS_S = (30, 60, 300, 3600, 86400)
 # The lockout lives in a root-owned file on tmpfs, so it survives a panel
-# restart but not a reboot — and the owner clears it with ./unlock.sh, which
-# simply deletes the file.
-WEB_LOGIN_LOCKOUT_STATE_PATH = Path("/run/neutrino/login_lockout.json")
+# restart but not a reboot — and `nhub unlock` deletes the file.
+WEB_LOGIN_LOCKOUT_STATE_PATH = UTILS_RUNTIME_ROOT / "login_lockout.json"
 
 WEB_STATS_PUSH_INTERVAL_S = 2.0
-WEB_DNS_LOG_PATH = Path("/var/log/neutrino/dnsmasq.log")
+WEB_DNS_LOG_PATH = UTILS_LOG_ROOT / "dnsmasq.log"

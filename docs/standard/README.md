@@ -71,11 +71,16 @@ conventions explicit so nobody drifts.
      the two-tier library-vs-`neutrino_hub/cli/` principle, `config/` as the single
      source of truth, and the render-vs-apply separation.
    - [design/repository_tree.md](design/repository_tree.md) — what each
-     top-level directory is for, and why the tree is shaped that way.
+     top-level directory of the source tree is for, and why it is shaped that
+     way.
+   - [design/files.md](design/files.md) — where an installed hub puts things:
+     five roots, and the one question each of them answers.
+   - [design/install.md](design/install.md) — who installs what: the package,
+     `nhub setup`, and the panel, and why the order is that one.
    - [design/visual.md](design/visual.md) — what the accent, the glow and the
      colours are each allowed to mean in the panel, the three button tiers,
      frames and live sections.
-   - [privilege.md](privilege.md) — why the panel runs as root, what the
+   - [design/privilege.md](design/privilege.md) — why the panel runs as root, what the
      systemd unit narrows and what it deliberately does not, and the rule that
      stepping down to a service account uses `runuser` rather than `sudo`.
 

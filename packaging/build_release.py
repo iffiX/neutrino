@@ -26,26 +26,57 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# The oldest distribution the hub package supports. Building here sets the
-# glibc floor (2.36) and the interpreter the package depends on (python3.11).
-HUB_BUILD_IMAGE = "debian:12"
-
 # The container platform for each architecture the hub is published for.
 # Building for anything but the host's own needs QEMU registered with
 # binfmt_misc, which is what the tag workflow does before it calls this.
 HUB_BUILD_PLATFORMS = {"amd64": "linux/amd64", "arm64": "linux/arm64"}
 
-# Only what the hub's package build reads is copied in. Taking the whole tree
+# Only what the hub's package build reads is copied in — the package, the
+# packaging, and the licences of everything it carries. Taking the whole tree
 # would carry `config/`, whose real files are root-owned and unreadable, and
 # `hub/frontend/node_modules`, which the package does not contain.
+# What builds the hub for each distribution family, and what that family needs
+# installed first. Each is run inside a container of that family, because the
+# environment the package carries has no standard library of its own and the
+# compiled wheels in it fix the architecture.
+HUB_BUILDS = {
+    "debian": {
+        "image": "debian:12",
+        "install": "apt-get -qq update >/dev/null 2>&1 && "
+        "apt-get -qq install -y python3 python3-venv python3-pip dpkg-dev "
+        ">/dev/null 2>&1",
+        "script": "build_deb.py",
+        "architecture": "{arch}",
+    },
+    "rhel": {
+        "image": "fedora:41",
+        "install": "dnf -q -y install python3 python3-pip rpm-build >/dev/null 2>&1",
+        "script": "build_rpm.py",
+        "architecture": "{rpm_arch}",
+    },
+    "arch": {
+        "image": "archlinux:latest",
+        "install": "pacman -Sy --noconfirm --needed python python-pip base-devel "
+        ">/dev/null 2>&1 && useradd -m builder 2>/dev/null || true",
+        "script": "build_pkg.py",
+        "architecture": "{pkg_arch}",
+        "extra": "--build-user builder",
+    },
+}
+
 CONTAINER_BUILD = (
-    "apt-get -qq update >/dev/null 2>&1 && "
-    "apt-get -qq install -y python3 python3-venv python3-pip dpkg-dev "
-    ">/dev/null 2>&1 && mkdir -p /build/hub && "
+    "{install} && mkdir -p /build/hub && "
     "cp -r /src/hub/neutrino_hub /src/hub/packaging /src/hub/pyproject.toml "
-    "/build/hub/ && cd /build && "
-    "python3 hub/packaging/build_deb.py --output-dir /out --architecture {arch}"
+    "/build/hub/ && cp -r /src/licenses /build/licenses && cd /build && "
+    "python3 hub/packaging/{script} --output-dir /out "
+    "--architecture {architecture} {extra}"
 )
+
+# The name each family gives the same machine.
+ARCHITECTURE_NAMES = {
+    "amd64": {"debian": "amd64", "rhel": "x86_64", "arch": "x86_64"},
+    "arm64": {"debian": "arm64", "rhel": "aarch64", "arch": "aarch64"},
+}
 
 
 def main() -> int:
@@ -66,6 +97,11 @@ def main() -> int:
         choices=("all", "hub", "agent", "checksums"),
         default="all",
         help="build one part of the release instead of everything",
+    )
+    parser.add_argument(
+        "--families",
+        default=",".join(HUB_BUILDS),
+        help="which distribution families to build the hub for",
     )
     arguments = parser.parse_args()
 
@@ -96,28 +132,38 @@ def main() -> int:
             print("  no rpmbuild here, so no rpm")
 
     if arguments.only in ("all", "hub"):
-        print(
-            f"building the hub package for {arguments.architecture} "
-            f"in {HUB_BUILD_IMAGE}"
-        )
-        _build_hub(output_dir, arguments.architecture)
+        for family in arguments.families.split(","):
+            family = family.strip()
+            if family not in HUB_BUILDS:
+                raise SystemExit(
+                    f"no hub build for {family}; there is one for: "
+                    f"{', '.join(HUB_BUILDS)}"
+                )
+            print(
+                f"building the hub package for {family} "
+                f"{arguments.architecture} in {HUB_BUILDS[family]['image']}"
+            )
+            _build_hub(output_dir, arguments.architecture, family)
 
     if arguments.only in ("all", "checksums"):
         _write_checksums(output_dir)
     return 0
 
 
-def _build_hub(output_dir: Path, architecture: str) -> None:
-    """Build the hub package inside the baseline container.
+def _build_hub(output_dir: Path, architecture: str, family: str) -> None:
+    """Build the hub package for one distribution family, in a container.
 
     Args:
         output_dir: Where the package should land.
-        architecture: The Debian architecture to declare.
+        architecture: The architecture to build for, named the Debian way.
+        family: Which of :data:`HUB_BUILDS` to run.
 
     Raises:
         SystemExit: If the architecture is not one the hub is published for,
             no container tool is available, or the build fails.
     """
+    build = HUB_BUILDS[family]
+    names = ARCHITECTURE_NAMES.get(architecture, {})
     platform = HUB_BUILD_PLATFORMS.get(architecture)
     if platform is None:
         raise SystemExit(
@@ -144,10 +190,15 @@ def _build_hub(output_dir: Path, architecture: str) -> None:
             f"{REPO_ROOT}:/src:ro",
             "-v",
             f"{output_dir}:/out",
-            HUB_BUILD_IMAGE,
+            build["image"],
             "sh",
             "-c",
-            CONTAINER_BUILD.format(arch=architecture),
+            CONTAINER_BUILD.format(
+                install=build["install"],
+                script=build["script"],
+                architecture=names.get(family, architecture),
+                extra=build.get("extra", ""),
+            ),
         ]
     )
 

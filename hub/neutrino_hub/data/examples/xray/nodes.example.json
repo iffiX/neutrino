@@ -1,6 +1,6 @@
 {
   "_comment": "JustMySocks (or any xray-compatible) nodes. Copy to nodes.json and fill in. Every node needs id/name/address/is_enabled/protocol plus the block matching its protocol. Disabled nodes are omitted from the rendered xray config entirely.",
-  "_comment_import": "The installer can decode ss:// and vless:// share links for you: python scripts/install/main.py --import-nodes 'ss://... vless://...'",
+  "_comment_import": "The panel's Proxy page decodes ss:// and vless:// share links into this file.",
   "nodes": [
     {
       "_comment": "Shadowsocks node. JustMySocks SS endpoints look like ss://<base64 of method:password>@host:port#name",

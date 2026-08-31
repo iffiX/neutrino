@@ -78,7 +78,7 @@ def lookup_xray_uid() -> int:
     except KeyError as error:
         raise CommandError(
             f"system user {XRAY_SERVICE_USER!r} does not exist; "
-            f"run scripts/install/main.py first"
+            f"run `nhub setup` first"
         ) from error
 
 

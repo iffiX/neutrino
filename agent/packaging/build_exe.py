@@ -53,14 +53,14 @@ ISCC_CANDIDATES = (
 )
 
 CONSOLE_WRAPPER = """@echo off
-rem Run the agent in a terminal, for `nagent --once` and for reading errors.
+rem Run the agent in a terminal, for `nagent status` and for reading errors.
 "%~dp0python\\python.exe" -m neutrino_agent.cli %*
 """
 
 SERVICE_WRAPPER = """@echo off
 rem What the scheduled task starts. pythonw so no console window is created
 rem for a process that nobody is watching.
-"%~dp0python\\pythonw.exe" -m neutrino_agent.cli
+"%~dp0python\\pythonw.exe" -m neutrino_agent.cli run
 """
 
 # @NAME@ rather than str.format: an Inno script is mostly braces already.

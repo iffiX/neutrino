@@ -33,7 +33,7 @@ def read_config(relative_path: str) -> dict[str, Any]:
     if not path.is_file():
         raise FileNotFoundError(
             f"missing config file {path}; copy {path.with_suffix('.example.json')} "
-            f"or run nhub install"
+            f"or run nhub setup"
         )
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -62,7 +62,7 @@ def write_generated(path: Path, text: str, *, mode: int = 0o644) -> None:
     """Write a rendered artifact outside the repo, atomically.
 
     Args:
-        path: Absolute destination, normally under ``/etc/neutrino/generated/``.
+        path: Absolute destination, normally under ``/var/lib/neutrino/generated/``.
         text: The rendered file contents.
         mode: Permission bits for the result.
     """
