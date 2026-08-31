@@ -13,6 +13,7 @@ converges rather than duplicating work.
 
 import argparse
 import hashlib
+import json
 import os
 import shutil
 import socket
@@ -41,6 +42,7 @@ from neutrino_hub.system.installation import (
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.system.units import SystemdUnitInstaller
 from neutrino_hub.utils.constants import (
+    is_dev_root_set,
     UTILS_CONFIG_DIR,
     UTILS_EXAMPLES_DIR,
     UTILS_GEODATA_DIR,
@@ -48,7 +50,7 @@ from neutrino_hub.utils.constants import (
     UTILS_LOG_DIR,
     UTILS_PACKAGE_ROOT,
 )
-from neutrino_hub.utils.json_file import read_config
+from neutrino_hub.utils.json_file import read_config, write_config
 from neutrino_hub.system import package_manager
 from neutrino_hub.utils.subprocess_run import CommandError, run
 from neutrino_hub.modules.xray.constants import (
@@ -62,13 +64,9 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_VERSION,
 )
 
-from neutrino_hub.cli.password import (
-    PasswordRefused,
-    is_password_set,
-    read_new_password,
-    store_password,
-)
+from neutrino_hub.cli.password import is_password_set, store_password
 from neutrino_hub.cli.reporter import InstallReporter
+from neutrino_hub.cli import wizard
 
 # --- config ---
 # What the panel listens on before anybody has said otherwise.
@@ -95,10 +93,16 @@ def main() -> int:
         Process exit status: 0 on success, 1 on failure.
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument(
-        "--password-stdin",
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument(
+        "--stdin",
         action="store_true",
-        help="read the panel password from standard input rather than prompting",
+        help="read every answer, as one JSON object, from standard input",
+    )
+    source.add_argument(
+        "--json",
+        metavar="PATH",
+        help="read every answer from this JSON file",
     )
     arguments = parser.parse_args()
 
@@ -113,26 +117,88 @@ def main() -> int:
         )
         return 1
     try:
-        password = read_new_password(is_stdin=arguments.password_stdin)
-    except PasswordRefused as error:
+        answers = _answers(arguments)
+    except wizard.WizardAborted as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
+    wizard.summarise(answers)
 
-    steps = list(CORE_STEPS)
+    steps = [step for step in CORE_STEPS if step[1] not in _skipped_steps()]
     reporter = InstallReporter(
         total_step_count=len(steps) + 1,
         is_color_enabled=(not os.environ.get("NO_COLOR") and sys.stdout.isatty()),
     )
-    return _setup(reporter, steps, password)
+    return _setup(reporter, steps, answers)
 
 
-def _setup(reporter: InstallReporter, steps: list, password: str) -> int:
+def _answers(arguments):
+    """What this run was told, however it was told.
+
+    Args:
+        arguments: The parsed command line.
+
+    Returns:
+        The answers to act on.
+
+    Raises:
+        WizardAborted: On an answers document that cannot be used, or a
+            wizard nobody finished.
+    """
+    if arguments.stdin:
+        return wizard.from_document(_parsed(sys.stdin.read(), "standard input"))
+    if arguments.json:
+        path = Path(arguments.json)
+        try:
+            return wizard.from_document(
+                _parsed(path.read_text(encoding="utf-8"), str(path))
+            )
+        except OSError as error:
+            raise wizard.WizardAborted(str(error)) from error
+    return wizard.ask()
+
+
+def _parsed(text: str, what: str) -> dict:
+    """One JSON document, or a refusal naming where it came from.
+
+    Args:
+        text: The document.
+        what: Where it was read from, for the message.
+
+    Returns:
+        The parsed object.
+
+    Raises:
+        WizardAborted: When it is not valid JSON.
+    """
+    try:
+        return json.loads(text)
+    except ValueError as error:
+        raise wizard.WizardAborted(f"{what} is not valid JSON: {error}") from error
+
+
+def _skipped_steps() -> tuple:
+    """The steps a development root does not run.
+
+    A checkout takes the interfaces over and writes the firewall exactly as a
+    package does, because those are what it exists to develop. The one thing
+    it does not do is install the hub as a service: `nhub --dev run` is what
+    runs the panel instead. The table is in design/install_and_dev.md.
+
+    Returns:
+        The step functions to leave out, empty on a real install.
+    """
+    if not is_dev_root_set():
+        return ()
+    return (_step_systemd_units, _step_enable_services, _step_start_services)
+
+
+def _setup(reporter: InstallReporter, steps: list, answers) -> int:
     """Run every step, then store the password and hand the box over.
 
     Args:
         reporter: Where progress lines go.
         steps: The step table to run, in order.
-        password: The panel password, already read and accepted.
+        answers: What the wizard collected.
 
     Returns:
         Process exit status.
@@ -149,11 +215,16 @@ def _setup(reporter: InstallReporter, steps: list, password: str) -> int:
             reporter.done(note)
         else:
             reporter.skipped(note)
+        if step is _step_config_files:
+            # After the examples land and before anything applies them: what
+            # the wizard planned replaces the three-port appliance they
+            # describe.
+            write_config("router/network.json", answers.network.to_dict())
 
     # Last, because the settings file it writes into is one of the files the
     # steps above copy from its example.
     reporter.start("Setting the panel password")
-    store_password(password)
+    store_password(answers.password)
     SystemdServiceController().control("web", "restart")
     reporter.done("stored")
 

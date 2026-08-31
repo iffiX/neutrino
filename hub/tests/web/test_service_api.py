@@ -146,7 +146,7 @@ def installable_box(box, monkeypatch):
         "MODULE_SPECS",
         {
             "gitea": ModuleSpec(
-                unit="gitea.service",
+                unit="neutrino_hub_gitea.service",
                 provisioner=FakeProvisioner,
                 architectures=("*",),
                 install_note="",

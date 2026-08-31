@@ -12,7 +12,7 @@ the mechanical method order lives in
 class Manager:                                   # opaque, not navigable
     def run(self):
         self.cfg = XrayCfg(...)                  # config object as public API
-        subprocess.run(["systemctl", "restart", "xray"])   # effect fused in
+        subprocess.run(["systemctl", "restart", "neutrino_hub_xray"])   # effect fused in
 
 # GOOD — one cohesive renderer, clear __init__ kwargs, no system effect
 class XrayConfigRenderer:                   # inbounds, outbounds, routing in one

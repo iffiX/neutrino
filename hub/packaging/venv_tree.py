@@ -481,7 +481,7 @@ def panel_unit(documentation_url: str = "https://github.com/iffiX/neutrino") -> 
         The unit file to ship.
     """
     services = HUB_ROOT / "neutrino_hub" / "data" / "services"
-    unit = (services / "neutrino_web.service").read_text(encoding="utf-8")
+    unit = (services / "neutrino_hub_web.service").read_text(encoding="utf-8")
     return (
         unit.replace("WorkingDirectory=@REPO_ROOT@/hub\n", "")
         .replace("Environment=PYTHONPATH=@REPO_ROOT@/hub\n", "")

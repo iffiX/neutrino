@@ -12,7 +12,7 @@ CLIPROXYAPI_BINARY_PATH = UTILS_STATIC_ROOT / "bin" / "cli-proxy-api"
 CLIPROXYAPI_DIR = UTILS_STATE_ROOT / "cliproxyapi"
 CLIPROXYAPI_AUTH_DIR = CLIPROXYAPI_DIR / "auth"
 
-CLIPROXYAPI_UNIT = "neutrino_cliproxyapi.service"
+CLIPROXYAPI_UNIT = "neutrino_hub_cliproxyapi.service"
 CLIPROXYAPI_DEFAULT_PORT = 8317
 CLIPROXYAPI_GENERATED_NAME = "cliproxyapi.yaml"
 

@@ -54,7 +54,10 @@ def test_a_packaged_unit_drops_the_lines_that_would_name_its_own_environment(
 
 def test_the_proxy_core_has_a_unit_of_its_own(installer):
     """It travels in the package, so no vendor script installs one to patch."""
-    assert units.SYSTEM_UNIT_TEMPLATES["xray.service"] == "xray.service"
+    assert (
+        units.SYSTEM_UNIT_TEMPLATES["neutrino_hub_xray.service"]
+        == "neutrino_hub_xray.service"
+    )
 
 
 def _true() -> bool:
@@ -69,3 +72,24 @@ def _fake_checkout():
     from pathlib import Path
 
     return Path("/repo")
+
+
+def test_every_unit_the_hub_owns_is_named_for_the_package_that_owns_it():
+    """One prefix, so `systemctl list-units neutrino_hub_*` is the whole hub."""
+    for unit in units.SYSTEM_UNIT_TEMPLATES.values():
+        assert unit.startswith("neutrino_hub_"), unit
+
+
+def test_each_unit_starts_one_process_through_the_hub():
+    """The unit names no path of its own; the hub knows where its files are."""
+    from neutrino_hub.utils.constants import UTILS_DATA_DIR
+
+    for template_name in (
+        "neutrino_hub_web.service",
+        "neutrino_hub_xray.service",
+        "neutrino_hub_cliproxyapi.service",
+    ):
+        text = (UTILS_DATA_DIR / "services" / template_name).read_text()
+        started = [line for line in text.splitlines() if line.startswith("ExecStart=")]
+        assert len(started) == 1, template_name
+        assert "neutrino_hub.cli.entry run --only-" in started[0], template_name

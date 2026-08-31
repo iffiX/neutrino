@@ -52,7 +52,7 @@ def main() -> int:
         "target", nargs="?", choices=sorted(RESET_TARGETS), help="what to reset"
     )
     parser.add_argument(
-        "--password-stdin",
+        "--stdin",
         action="store_true",
         help="read the new password from standard input rather than prompting",
     )
@@ -73,7 +73,7 @@ def main() -> int:
         return 1
 
     if arguments.target == "password":
-        return _reset_password(is_stdin=arguments.password_stdin)
+        return _reset_password(is_stdin=arguments.stdin)
     return _reset_all()
 
 

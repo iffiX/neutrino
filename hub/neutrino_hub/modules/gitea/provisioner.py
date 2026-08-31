@@ -94,9 +94,9 @@ class GiteaProvisioner:
             )
             self._download_binary()
             is_changed = True
-        unit_text = (UTILS_DATA_DIR / "services" / "gitea.service").read_text(
-            encoding="utf-8"
-        )
+        unit_text = (
+            UTILS_DATA_DIR / "services" / "neutrino_hub_gitea.service"
+        ).read_text(encoding="utf-8")
         if GiteaConfigApplier().refresh_unit(unit_text):
             say(report, "installed the systemd unit")
             is_changed = True
@@ -130,8 +130,8 @@ class GiteaProvisioner:
             return ProvisionResult(is_changed=False, message="not installed")
 
         say(report, "stopping and disabling gitea")
-        run(["systemctl", "disable", "--now", "gitea"], is_checked=False)
-        (SYSTEM_SYSTEMD_DIR / "gitea.service").unlink(missing_ok=True)
+        run(["systemctl", "disable", "--now", "neutrino_hub_gitea"], is_checked=False)
+        (SYSTEM_SYSTEMD_DIR / "neutrino_hub_gitea.service").unlink(missing_ok=True)
         run(["systemctl", "daemon-reload"])
 
         say(report, "removing the binary and the rendered configuration")

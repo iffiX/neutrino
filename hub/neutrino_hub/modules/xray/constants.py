@@ -22,7 +22,7 @@ XRAY_BINARY = str(UTILS_STATIC_ROOT / "bin" / "xray")
 # `xray -test` before a render is accepted.
 XRAY_ASSET_ENV = "XRAY_LOCATION_ASSET"
 XRAY_ASSET_DIR = str(UTILS_GEODATA_DIR)
-XRAY_SERVICE_NAME = "xray"
+XRAY_SERVICE_NAME = "neutrino_hub_xray"
 
 # The release the hub runs, pinned to a version and to the hash of the file
 # that version serves. A package carries it; a checkout fetches the same one,

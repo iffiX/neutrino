@@ -73,7 +73,7 @@ cp -a {payload}/. %{{buildroot}}/
 %files
 /opt/neutrino
 /usr/bin/nhub
-/{unit_dir}/neutrino_web.service
+/{unit_dir}/neutrino_hub_web.service
 %dir /var/lib/neutrino
 /var/lib/neutrino/geodata
 %license /usr/share/doc/{name}/licenses/*
@@ -102,7 +102,7 @@ fi
 
 %preun
 if [ "$1" = 0 ]; then
-    for unit in neutrino_web neutrino_router neutrino_cliproxyapi; do
+    for unit in neutrino_hub_web neutrino_hub_router neutrino_hub_xray neutrino_hub_cliproxyapi; do
         systemctl stop "${{unit}}.service" >/dev/null 2>&1 || true
         systemctl disable "${{unit}}.service" >/dev/null 2>&1 || true
     done
@@ -154,7 +154,7 @@ def main() -> int:
             WRAPPER.format(python=PYTHON_DIR),
             is_executable=True,
         )
-        write(payload / UNIT_DIR / "neutrino_web.service", panel_unit())
+        write(payload / UNIT_DIR / "neutrino_hub_web.service", panel_unit())
 
         spec = root / f"{PACKAGE_NAME}.spec"
         spec.write_text(

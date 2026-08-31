@@ -42,7 +42,7 @@ def read_settings(runtime: PanelRuntime = Depends(get_runtime)) -> GiteaSettings
     return GiteaSettingsView(
         **config.to_dict(),
         is_installed=state.is_installed,
-        is_active=runtime.services.status("gitea").is_active,
+        is_active=runtime.services.status("neutrino_hub_gitea").is_active,
         version=state.version,
         has_admin=state.has_admin,
         admin_usernames=state.admin_usernames,

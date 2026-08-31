@@ -22,6 +22,8 @@ One directory per package, mirroring the source tree: `tests/modules/<name>/`,
 | `cli/test_password.py` | How the panel password is taken, and what is refused |
 | `system/test_units.py` | Rendering a unit for a checkout and for a package |
 | `system/test_packages.py` | What the package manager installs, in one list |
+| `cli/test_wizard.py` | The answers document a first run takes, and the uplink default |
+| `modules/router/test_modes.py` | The four shapes a gateway is set up as |
 
 ## Two rules
 

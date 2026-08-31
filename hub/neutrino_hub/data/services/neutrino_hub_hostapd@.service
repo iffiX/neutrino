@@ -3,7 +3,7 @@ Description=Neutrino Hub Wi-Fi access point on %i
 Documentation=file://@REPO_ROOT@/docs/config.md
 # The address has to be on the interface before dnsmasq tries to serve it, and
 # the firewall has to know about the interface before it carries anything.
-After=network-pre.target neutrino_router.service
+After=network-pre.target neutrino_hub_router.service
 Wants=network-pre.target
 Before=dnsmasq.service
 

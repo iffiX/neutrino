@@ -66,7 +66,7 @@ leaked into the rendering layer.
 
 ## The web backend runs as root, and that is a boundary, not a habit
 
-`neutrino_web.service` runs as root because it must edit nftables, restart
+`neutrino_hub_web.service` runs as root because it must edit nftables, restart
 services, and scan the LAN. That privilege is the reason the panel binds only to
 the LAN and NetBird interfaces (enforced again by the nftables input chain)
 and sits behind an argon2id password. Do not spread root-requiring calls through

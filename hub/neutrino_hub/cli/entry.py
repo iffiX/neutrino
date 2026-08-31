@@ -10,10 +10,15 @@ import argparse
 import sys
 
 from neutrino_hub import HUB_VERSION
+from neutrino_hub.cli import dev_root
+from neutrino_hub.cli.dev_root import DEV_ROOT_NAME
 
 # Each subcommand names the module that does the work. They are imported when
 # chosen rather than up front: `nhub unlock` should not pay for the installer's
 # imports.
+# What a shell reports for a command somebody interrupted.
+STOPPED_STATUS = 130
+
 COMMANDS = {
     "setup": ("neutrino_hub.cli.setup", "Set this gateway up, once"),
     "run": ("neutrino_hub.cli.run", "Run the control panel in the foreground"),
@@ -27,6 +32,31 @@ COMMANDS = {
 }
 
 
+def _without_dev(arguments: list) -> list:
+    """Take the global --dev out, having acted on it.
+
+    It is handled here rather than by a subcommand because the roots it moves
+    are resolved when `utils.constants` is imported, which every subcommand
+    module does. Acting before that import is what makes one flag enough.
+
+    Args:
+        arguments: The command line, without the program name.
+
+    Returns:
+        The same arguments with every ``--dev`` removed.
+
+    Raises:
+        SystemExit: When there is no working copy to keep a root beside.
+    """
+    if "--dev" not in arguments:
+        return arguments
+    try:
+        dev_root.enter()
+    except dev_root.NoWorkingCopy as error:
+        raise SystemExit(f"error: {error}")
+    return [argument for argument in arguments if argument != "--dev"]
+
+
 def main() -> int:
     """Dispatch to a subcommand.
 
@@ -35,11 +65,16 @@ def main() -> int:
     """
     parser = argparse.ArgumentParser(prog="nhub", description=__doc__.splitlines()[0])
     parser.add_argument("--version", action="version", version=HUB_VERSION)
+    parser.add_argument(
+        "--dev",
+        action="store_true",
+        help=f"run against {DEV_ROOT_NAME}/ in the working copy",
+    )
     subparsers = parser.add_subparsers(dest="command", metavar="<command>")
     for name, (_, summary) in COMMANDS.items():
         subparsers.add_parser(name, help=summary, add_help=False)
 
-    arguments, rest = parser.parse_known_args()
+    arguments, rest = parser.parse_known_args(_without_dev(sys.argv[1:]))
     if not arguments.command:
         parser.print_help()
         return 2
@@ -47,7 +82,13 @@ def main() -> int:
     module_name, _ = COMMANDS[arguments.command]
     module = __import__(module_name, fromlist=["main"])
     sys.argv = [f"nhub {arguments.command}"] + rest
-    return module.main()
+    try:
+        return module.main()
+    except KeyboardInterrupt:
+        # One line rather than a traceback: nothing here is a crash when the
+        # person at the keyboard is the one who stopped it.
+        print(f"\nnhub {arguments.command} was stopped", file=sys.stderr)
+        return STOPPED_STATUS
 
 
 if __name__ == "__main__":

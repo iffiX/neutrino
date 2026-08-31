@@ -3,14 +3,14 @@ Description=Neutrino Hub routing state (forwarding, policy route, nftables)
 Documentation=file://@REPO_ROOT@/docs/config.md
 After=network-pre.target
 Wants=network-pre.target
-Before=xray.service dnsmasq.service
+Before=neutrino_hub_xray.service dnsmasq.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=@REPO_ROOT@
 Environment=PYTHONPATH=@REPO_ROOT@
-ExecStart=@PYTHON@ -m neutrino_hub.cli.entry render --only router
+ExecStart=@PYTHON@ -m neutrino_hub.cli.entry apply --only router
 ExecStop=-/usr/sbin/nft delete table inet neutrino
 ExecStop=-/usr/sbin/ip rule del fwmark 0x1 lookup 100
 

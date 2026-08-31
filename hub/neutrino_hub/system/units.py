@@ -16,11 +16,11 @@ from neutrino_hub.utils.constants import UTILS_DATA_DIR
 # among them: it travels in the package, so its unit is the hub's own rather
 # than a drop-in over one a vendor's script installed.
 SYSTEM_UNIT_TEMPLATES = {
-    "neutrino_router.service": "neutrino_router.service",
-    "neutrino_web.service": "neutrino_web.service",
+    "neutrino_hub_router.service": "neutrino_hub_router.service",
+    "neutrino_hub_web.service": "neutrino_hub_web.service",
     # Templated by interface: one access point per radio given the LAN role.
-    "neutrino_hostapd@.service": "neutrino_hostapd@.service",
-    "xray.service": "xray.service",
+    "neutrino_hub_hostapd@.service": "neutrino_hub_hostapd@.service",
+    "neutrino_hub_xray.service": "neutrino_hub_xray.service",
 }
 # What a checkout's templates say, and what a package has instead.
 SYSTEM_UNIT_CHECKOUT_LINES = (

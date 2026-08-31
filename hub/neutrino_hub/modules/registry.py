@@ -65,7 +65,7 @@ MODULE_SPECS = {
         data_description="the files in every configured share",
     ),
     "gitea": ModuleSpec(
-        unit="gitea.service",
+        unit="neutrino_hub_gitea.service",
         provisioner=GiteaProvisioner,
         architectures=GITEA_SUPPORTED_ARCHITECTURES,
         install_note="a private git server with its own web UI (~120 MB download)",

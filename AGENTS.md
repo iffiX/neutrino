@@ -24,7 +24,7 @@ and leave this pointing at it.**
 | [coding_style/comment_style.md](docs/standard/coding_style/comment_style.md) | KISS, English only, no narrated reasoning anywhere, commit message shape. |
 | [agent_work_rule/commit.md](docs/standard/agent_work_rule/commit.md) | Only the user decides a commit happens. One answerable author, no agent `Co-Authored-By`. |
 | [design/files.md](docs/standard/design/files.md) | The five roots an installed hub uses, and the one question each answers. |
-| [design/install.md](docs/standard/design/install.md) | Who installs what: the package's dependencies, what `nhub setup` may do, and what the panel does. |
+| [design/install_and_dev.md](docs/standard/design/install_and_dev.md) | Who installs what: the package's dependencies, what `nhub setup` may do, and how `--dev` differs. |
 | [design/privilege.md](docs/standard/design/privilege.md) | Why the panel is root, what the unit narrows, and why stepping down uses `runuser` and never `sudo`. |
 | [kill_on_sight.md](docs/standard/kill_on_sight.md) | The self-check to run before you say you are done. |
 

@@ -84,7 +84,7 @@ PRERM = """#!/bin/sh
 set -e
 
 if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
-    for unit in neutrino_web neutrino_router neutrino_cliproxyapi; do
+    for unit in neutrino_hub_web neutrino_hub_router neutrino_hub_xray neutrino_hub_cliproxyapi; do
         systemctl stop "${unit}.service" >/dev/null 2>&1 || true
         systemctl disable "${unit}.service" >/dev/null 2>&1 || true
     done
@@ -170,7 +170,7 @@ def _lay_out(
 
     # Unit files are rendered at setup time by `nhub setup`, which knows
     # the paths; what ships here is the panel's own unit, already absolute.
-    write(tree / "lib/systemd/system/neutrino_web.service", panel_unit())
+    write(tree / "lib/systemd/system/neutrino_hub_web.service", panel_unit())
 
     size = sum(f.stat().st_size for f in tree.rglob("*") if f.is_file()) // 1024
     control = CONTROL.format(

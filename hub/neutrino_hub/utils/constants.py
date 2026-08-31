@@ -9,12 +9,44 @@ written down for the code.
 import os
 from pathlib import Path
 
+# A working copy's own root, which every root below hangs under when it is
+# set. It is what `--dev` uses to put a whole appliance's filesystem inside the
+# checkout, so deleting one directory undoes the hub. What it does not undo is
+# in design/install_and_dev.md.
+UTILS_DEV_ROOT_ENV = "NEUTRINO_DEV_ROOT"
+
+
+def _rooted(path: str) -> Path:
+    """One of the five roots, moved under the development root when there is one.
+
+    Args:
+        path: The absolute path a real machine uses.
+
+    Returns:
+        That path, or the same path inside ``NEUTRINO_DEV_ROOT``.
+    """
+    dev_root = os.environ.get(UTILS_DEV_ROOT_ENV)
+    if not dev_root:
+        return Path(path)
+    return Path(dev_root) / path.lstrip("/")
+
+
 # The five roots. Nothing below invents a sixth.
-UTILS_STATIC_ROOT = Path("/opt/neutrino")
-UTILS_CONFIG_ROOT = Path("/etc/neutrino")
-UTILS_STATE_ROOT = Path("/var/lib/neutrino")
-UTILS_LOG_ROOT = Path("/var/log/neutrino")
-UTILS_RUNTIME_ROOT = Path("/run/neutrino")
+UTILS_STATIC_ROOT = _rooted("/opt/neutrino")
+UTILS_CONFIG_ROOT = _rooted("/etc/neutrino")
+UTILS_STATE_ROOT = _rooted("/var/lib/neutrino")
+UTILS_LOG_ROOT = _rooted("/var/log/neutrino")
+UTILS_RUNTIME_ROOT = _rooted("/run/neutrino")
+
+
+def is_dev_root_set() -> bool:
+    """Whether this process runs against a development root.
+
+    Returns:
+        True when ``NEUTRINO_DEV_ROOT`` names one.
+    """
+    return bool(os.environ.get(UTILS_DEV_ROOT_ENV))
+
 
 # The installed package, and the data that ships inside it: unit templates,
 # feature manifests, the built panel, the example configs and the icons.
@@ -49,13 +81,16 @@ def resolve_config_dir() -> Path:
     """Where this instance reads and writes its configuration.
 
     Returns:
-        The environment's override, the system directory when it exists, and
-        the checkout's own ``config/`` otherwise.
+        The environment's override, the system directory under a development
+        root or when one exists, and the checkout's own ``config/`` otherwise.
     """
     override = os.environ.get(UTILS_CONFIG_ENV)
     if override:
         return Path(override)
-    if UTILS_SYSTEM_CONFIG_DIR.exists():
+    # A development root is a whole appliance, so its configuration is where an
+    # appliance keeps it. The checkout's own `config/` is what a working copy
+    # with no development root falls back to.
+    if is_dev_root_set() or UTILS_SYSTEM_CONFIG_DIR.exists():
         return UTILS_SYSTEM_CONFIG_DIR
     return UTILS_CHECKOUT_CONFIG_DIR
 

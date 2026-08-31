@@ -8,8 +8,9 @@ Type=simple
 # Root, because the rendered configuration under /var/lib/neutrino/generated is
 # root-only — it carries every provider key.
 User=root
-WorkingDirectory=/var/lib/neutrino/cliproxyapi
-ExecStart=/opt/neutrino/bin/cli-proxy-api --config /var/lib/neutrino/generated/cliproxyapi.yaml
+# The hub knows where its own state and rendered config live, and makes the
+# directory before it replaces itself with the gateway.
+ExecStart=@PYTHON@ -m neutrino_hub.cli.entry run --only-cliproxyapi
 Restart=always
 RestartSec=5
 

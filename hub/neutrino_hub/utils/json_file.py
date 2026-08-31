@@ -24,17 +24,14 @@ def read_config(relative_path: str) -> dict[str, Any]:
         The parsed object with comment keys removed.
 
     Raises:
-        FileNotFoundError: If the file does not exist. The installer copies the
-            matching ``.example.json`` on first run, so a miss here means setup
-            was skipped.
+        FileNotFoundError: If the file does not exist. `nhub setup` copies the
+            matching example out of the package on first run, so a miss here
+            means setup was skipped.
         ValueError: If the file is not valid JSON.
     """
     path = UTILS_CONFIG_DIR / relative_path
     if not path.is_file():
-        raise FileNotFoundError(
-            f"missing config file {path}; copy {path.with_suffix('.example.json')} "
-            f"or run nhub setup"
-        )
+        raise FileNotFoundError(f"missing config file {path}; run nhub setup")
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as error:

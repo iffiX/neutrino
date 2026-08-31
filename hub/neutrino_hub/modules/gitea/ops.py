@@ -24,7 +24,7 @@ from neutrino_hub.modules.gitea.constants import (
     GITEA_USER,
 )
 
-GITEA_SERVICE = "gitea"
+GITEA_SERVICE = "neutrino_hub_gitea"
 
 # What accounts may be called. Gitea has its own rules; this is the subset
 # that survives both it and a shell command line.
@@ -120,12 +120,12 @@ class GiteaConfigApplier:
         """Install the packaged unit file when it differs from what is live.
 
         Args:
-            unit_text: The content of ``services/gitea.service``.
+            unit_text: The content of ``services/neutrino_hub_gitea.service``.
 
         Returns:
             Whether anything changed.
         """
-        unit_path = SYSTEM_SYSTEMD_DIR / "gitea.service"
+        unit_path = SYSTEM_SYSTEMD_DIR / "neutrino_hub_gitea.service"
         if unit_path.is_file() and unit_path.read_text(encoding="utf-8") == unit_text:
             return False
         unit_path.write_text(unit_text, encoding="utf-8")

@@ -14,7 +14,11 @@ from typing import Callable
 from neutrino_hub.system.constants import SYSTEM_SYSTEMD_DIR
 from neutrino_hub.system.machine import machine_architecture, require_architecture
 from neutrino_hub.system.provisioning import ProvisionResult, say
-from neutrino_hub.utils.constants import UTILS_DATA_DIR, UTILS_GENERATED_DIR
+from neutrino_hub.utils.constants import (
+    UTILS_DATA_DIR,
+    UTILS_GENERATED_DIR,
+    is_dev_root_set,
+)
 from neutrino_hub.utils.subprocess_run import run
 
 from neutrino_hub.modules.cliproxyapi.constants import (
@@ -84,15 +88,19 @@ class CliproxyApiProvisioner:
             )
             self._download_binary(architecture)
             is_changed = True
-        unit_text = (UTILS_DATA_DIR / "services" / CLIPROXYAPI_UNIT).read_text(
-            encoding="utf-8"
-        )
-        if applier.refresh_unit(unit_text):
-            say(report, "installed the systemd unit")
-            is_changed = True
+        if not is_dev_root_set():
+            unit_text = (UTILS_DATA_DIR / "services" / CLIPROXYAPI_UNIT).read_text(
+                encoding="utf-8"
+            )
+            if applier.refresh_unit(unit_text):
+                say(report, "installed the systemd unit")
+                is_changed = True
         say(report, "rendering the configuration")
         applier.apply()
-        run(["systemctl", "enable", "--now", CLIPROXYAPI_UNIT])
+        # A development root runs the panel in the foreground instead of
+        # installing the hub as a service; design/install_and_dev.md.
+        if not is_dev_root_set():
+            run(["systemctl", "enable", "--now", CLIPROXYAPI_UNIT])
         return ProvisionResult(
             is_changed=is_changed,
             message=(

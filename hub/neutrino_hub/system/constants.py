@@ -9,13 +9,13 @@ from pathlib import Path
 # way to stop them: a gateway with dnsmasq disabled is not a gateway with a
 # feature turned off, it is a broken gateway.
 SYSTEM_CORE_UNITS = {
-    "xray": "xray.service",
-    "router": "neutrino_router.service",
+    "xray": "neutrino_hub_xray.service",
+    "router": "neutrino_hub_router.service",
     "dnsmasq": "dnsmasq.service",
-    "web": "neutrino_web.service",
+    "web": "neutrino_hub_web.service",
     # The AI gateway: every machine's tools point at it, so taking it down
     # takes their AI away — same no-off-switch treatment as netbird.
-    "cliproxyapi": "neutrino_cliproxyapi.service",
+    "cliproxyapi": "neutrino_hub_cliproxyapi.service",
 }
 
 # What the box also happens to host because it is already there and always on.
@@ -29,7 +29,7 @@ SYSTEM_OPTIONAL_UNITS = {
     # never carried in these packages.
     "netbird": "netbird.service",
     "samba": "smbd.service",
-    "gitea": "gitea.service",
+    "gitea": "neutrino_hub_gitea.service",
     # Podman has no daemon; its API socket stands for the engine here.
     "podman": "podman.socket",
     # The event daemon stands for ZFS: pools work without it, but it is the

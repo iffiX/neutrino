@@ -23,24 +23,62 @@ configured box. Removing the package does not lift this: `dpkg --purge` leaves
 `/etc/neutrino/hub` in place on purpose, because it holds the proxy node
 credentials and the device keys.
 
-> `--password-stdin`
+With no arguments it asks, one question per screen, each with a default that
+Enter takes.
 
-Read the password from standard input rather than prompting, for an unattended
-install. The password is never an argument: an argument is visible in `ps` to
-every user on the machine for as long as the command runs, and stays in the
-shell history afterwards.
+> `--stdin`, `--json <path>`
+
+Take every answer as one JSON object instead of asking — from standard input,
+or from a file. The two are mutually exclusive, and the document has to be
+complete: a key this does not know is refused rather than ignored, because a
+misspelled `upstream_gatway` silently becoming "no upstream router" is found a
+week after the install.
+
+Nothing is ever taken as an argument. An argument is visible in `ps` to every
+user on the machine for as long as the command runs, and stays in the shell
+history afterwards; `--stdin` additionally keeps the password off the disk,
+which `--json` cannot.
 
 ```bash
 sudo nhub setup
-printf '%s' "$PANEL_PASSWORD" | sudo nhub setup --password-stdin
+sudo nhub setup --stdin < answers.json
+sudo nhub setup --json answers.json
 ```
+
+```json
+{
+  "password": "…",
+  "network": {
+    "mode": "router",
+    "wan": ["enp2s0"],
+    "lan": ["enp1s0"],
+    "address": "192.168.8.1",
+    "prefix_len": 24
+  }
+}
+```
+
+`mode` is one of `server`, `router`, `one_arm_router` or `bypass_router`;
+the wizard shows each with its underscores as spaces. What each is for,
+and which of `wan`, `lan`, `trunk`, `upstream_gateway` and `lan_vlan_id`
+it reads, is what the wizard's own screens explain.
 
 ### run
 
 > `nhub run`
 
-Runs the panel in the foreground. This is what `neutrino_web.service` starts,
-and running it by hand is how its output is read without `journalctl`.
+Runs everything this machine needs in the foreground: the panel, the proxy
+core and the AI gateway. On a box with units this is a second copy of what
+systemd is already running; it is meant for a working copy, which has none.
+
+> `--only-web`, `--only-xray`, `--only-cliproxyapi`
+
+Runs one of them, and is what each unit's `ExecStart` names. The unit decides
+who the process runs as and what it may reach for — the proxy core is
+unprivileged with two capabilities — and `run` replaces itself with the binary
+so nothing sits between systemd and the daemon it watches.
+
+Running one by hand is how its output is read without `journalctl`.
 
 ### apply
 
@@ -66,8 +104,9 @@ without a restart.
 
 > `nhub reset password`
 
-Prompts for a new panel password and stores its hash. Takes `--password-stdin`
-on the same terms as `setup`.
+Prompts for a new panel password and stores its hash. Takes `--stdin`, which
+here is the password itself rather than a document — every command's `--stdin`
+is the input that command needs.
 
 > `nhub reset all`
 
@@ -146,6 +185,15 @@ looks the same for all three: the machine never joined, the service is not
 running, or the hub cannot be reached from here. This says which.
 
 ## Both
+
+> `--dev`
+
+Puts the five roots under `hub_dev_root/` in the working copy, so a checkout
+runs a whole appliance of its own and deleting one directory undoes it. It
+comes before the subcommand — `nhub --dev setup` — because the roots are
+resolved as the hub is imported. `nhub --dev run` starts the frontend's dev
+server as well. What `--dev` still does to the machine is in
+[standard/design/install_and_dev.md](standard/design/install_and_dev.md).
 
 > `--version`
 

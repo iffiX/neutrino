@@ -39,7 +39,7 @@ the traversal still lands.
 
 ## What is narrowed
 
-In `services/neutrino_web.service`. Each was tested under the exact property
+In `services/neutrino_hub_web.service`. Each was tested under the exact property
 set before being added.
 
 | Setting | Stops |

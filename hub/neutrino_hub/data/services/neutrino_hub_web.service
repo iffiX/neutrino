@@ -1,8 +1,8 @@
 [Unit]
 Description=Neutrino Hub web control panel
 Documentation=file://@REPO_ROOT@/docs/standard/misc/config.md
-After=network.target neutrino_router.service
-Wants=neutrino_router.service
+After=network.target neutrino_hub_router.service
+Wants=neutrino_hub_router.service
 
 [Service]
 Type=simple
@@ -12,7 +12,7 @@ Type=simple
 User=root
 WorkingDirectory=@REPO_ROOT@/hub
 Environment=PYTHONPATH=@REPO_ROOT@/hub
-ExecStart=@PYTHON@ -m neutrino_hub.cli.run
+ExecStart=@PYTHON@ -m neutrino_hub.cli.entry run --only-web
 Restart=on-failure
 RestartSec=5
 
