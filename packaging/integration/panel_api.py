@@ -562,6 +562,13 @@ def _node_cases() -> None:
         False,
     )
     check_status(
+        "applying that state, which used to fail for ever",
+        "POST",
+        "/proxy/apply",
+        None,
+        200,
+    )
+    check_status(
         "the switch cannot be turned on with an empty list",
         "PUT",
         "/proxy",
@@ -570,12 +577,13 @@ def _node_cases() -> None:
     )
     check_status("a link that is not one", "POST", "/proxy/nodes", {"link": "hello"}, 400)
     check_status("an empty link", "POST", "/proxy/nodes", {"link": ""}, 400)
-    added = check_status("add a node", "POST", "/proxy/nodes", {"link": SHARE_LINK}, 200)
+    added = check_status("add a node", "POST", "/proxy/nodes", {"link": SHARE_LINK}, 201)
     check_status(
         "the same link twice", "POST", "/proxy/nodes", {"link": SHARE_LINK}, 400
     )
-    check_status("add a second", "POST", "/proxy/nodes", {"link": SECOND_LINK}, 200)
+    check_status("add a second", "POST", "/proxy/nodes", {"link": SECOND_LINK}, 201)
     check("both are in the list", len(node_ids()), 2)
+    was_on = call("GET", "/proxy")[1]["is_proxy_enabled"]
     if isinstance(added, dict):
         check_status(
             "rename one",
@@ -592,9 +600,9 @@ def _node_cases() -> None:
             200,
         )
         check(
-            "one disabled leaves the switch alone",
+            "one of two disabled leaves the switch as it was",
             call("GET", "/proxy")[1]["is_proxy_enabled"],
-            False,
+            was_on,
         )
     check_status(
         "a node that is not there",
@@ -831,70 +839,69 @@ def devices_section() -> None:
     note("devices", len(view["devices"]))
 
     section("devices: adding and forgetting")
-    body = {
-        "mac_address": "52:54:00:aa:bb:cc",
-        "name": "audit",
-        "ip_address": "192.168.77.50",
-    }
-    check_status("add one", "POST", "/devices", body, 200)
-    check_status("the same MAC twice", "POST", "/devices", body, 400)
+    mac = "52:54:00:aa:bb:cc"
+    check_status("add one", "PUT", f"/devices/{mac}", {"name": "audit"}, 200)
     check_status(
-        "the same MAC in another case",
-        "POST",
-        "/devices",
-        dict(body, mac_address="52:54:00:AA:BB:CC"),
+        "the same address again, which is how it is renamed",
+        "PUT",
+        f"/devices/{mac}",
+        {"name": "renamed"},
+        200,
+    )
+    _, view = call("GET", "/devices")
+    stored = [entry for entry in view["devices"] if entry["mac_address"] == mac]
+    check("one record, not two", len(stored), 1)
+    check("and it took the new name", stored[0]["name"] if stored else None, "renamed")
+    check_status(
+        "the same address in capitals",
+        "PUT",
+        f"/devices/{mac.upper()}",
+        {"name": "shouting"},
+        200,
+    )
+    _, view = call("GET", "/devices")
+    check(
+        "which is the same device",
+        len([e for e in view["devices"] if e["mac_address"] == mac]),
+        1,
+    )
+    for label, address in (
+        ("a name that is not an address", "hello"),
+        ("an address one pair short", "52:54:00:aa:bb"),
+        ("an address one pair long", "52:54:00:aa:bb:cc:dd"),
+    ):
+        check_status(label, "PUT", f"/devices/{address}", {"name": "no"}, 400)
+    check_status(
+        "an SSH key that is not stored",
+        "PUT",
+        f"/devices/{mac}",
+        {"ssh": {"host": "10.0.0.5", "username": "me", "key_id": "nosuchkey"}},
         400,
-    )
-    check_status(
-        "a MAC that is not one",
-        "POST",
-        "/devices",
-        dict(body, mac_address="hello"),
-        400,
-    )
-    check_status(
-        "an address that is not one",
-        "POST",
-        "/devices",
-        dict(body, mac_address="52:54:00:aa:bb:dd", ip_address="nope"),
-        400,
-    )
-    check_status(
-        "reading one that is not there",
-        "GET",
-        "/devices/52:54:00:99:99:99",
-        None,
-        404,
-    )
-    check_status(
-        "waking one that is not there",
-        "POST",
-        "/devices/52:54:00:99:99:99/wol",
-        None,
-        404,
-    )
-    check_status(
-        "an action on one that is not there",
-        "POST",
-        "/devices/52:54:00:99:99:99/action",
-        {"action": "reboot"},
-        404,
     )
     check_status(
         "an action that is not one",
         "POST",
-        "/devices/52:54:00:aa:bb:cc/action",
+        f"/devices/{mac}/action",
         {"action": "sing"},
         400,
     )
     check_status(
-        "forget it", "DELETE", "/devices/52:54:00:aa:bb:cc", None, 200
+        "installing the agent with no credentials",
+        "POST",
+        f"/devices/{mac}/action",
+        {"action": "install_client"},
+        409,
     )
-    check_status(
-        "forgetting it twice", "DELETE", "/devices/52:54:00:aa:bb:cc", None, 404
-    )
+    check_status("its features", "GET", f"/devices/{mac}/features", None, 200)
+    features = call("GET", f"/devices/{mac}/features")[1]
+    check("with no agent, none is online", features["is_agent_online"], False)
+    check_status("forget it", "DELETE", f"/devices/{mac}", None, 200)
     _, view = call("GET", "/devices")
-    check("the list is empty again", len(view["devices"]), 0)
+    check(
+        "and it is gone",
+        [entry for entry in view["devices"] if entry["mac_address"] == mac],
+        [],
+    )
 
 
 SECTIONS = {

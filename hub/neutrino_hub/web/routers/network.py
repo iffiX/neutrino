@@ -9,11 +9,16 @@ Wi-Fi settings could take the wired LAN down with it.
 import asyncio
 from contextlib import suppress
 import ipaddress
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub.modules.router.constants import (
     ROUTER_INTENTS,
+    ROUTER_LEASE_TIME_PATTERN,
+    ROUTER_MAC_PATTERN,
+    ROUTER_PREFIX_LEN_MAX,
+    ROUTER_PREFIX_LEN_MIN,
     ROUTER_MODE_ROUTER,
     ROUTER_MODE_SIDE_GATEWAY,
     ROUTER_MODES_KEYS,
@@ -290,7 +295,9 @@ async def update_interface(
 
     network = runtime.network()
     saved = _to_interface(settings, network=network)
-    link = RouterLinkStatus().link(saved.device_name)
+    status_reader = RouterLinkStatus()
+    link = status_reader.link(saved.device_name)
+    _require_present(settings, network=network, status=status_reader)
     _validate(settings, link=link, network=network)
 
     # Leaving the split role takes the VLANs with it: they cannot exist
@@ -864,6 +871,36 @@ def _require_wifi(name: str) -> None:
         raise _bad_request(f"{name} is not a wireless interface")
 
 
+def _require_present(
+    settings: InterfaceSettings,
+    *,
+    network: RouterNetworkConfig,
+    status: RouterLinkStatus,
+) -> None:
+    """Refuse an interface this machine does not have and is not about to.
+
+    The link reader answers for a name it has never heard of with a blank
+    entry rather than nothing, so validation passes for anything at all. What
+    is written then draws as a tab, has no VLAN block so it can never be
+    deleted, and makes every apply — the panel's and the one at boot — fail on
+    a device that is not there.
+
+    Args:
+        settings: What was submitted.
+        network: The stored configuration.
+        status: The live link reader.
+
+    Raises:
+        HTTPException: 400 when the name is neither a device on this machine
+            nor a VLAN the hub is being asked to build.
+    """
+    if settings.vlan is not None or network.interface(settings.name) is not None:
+        return
+    if any(link.name == settings.name for link in status.all_links()):
+        return
+    raise _bad_request(f"{settings.name} is not an interface on this machine")
+
+
 def _validate(
     settings: InterfaceSettings, *, link: LinkStatus, network: RouterNetworkConfig
 ) -> None:
@@ -916,6 +953,14 @@ def _validate_lan(
     settings: InterfaceSettings, *, link: LinkStatus, network: RouterNetworkConfig
 ) -> None:
     lan = settings.lan
+    _require_prefix_len(lan.prefix_len)
+    if lan.is_dhcp_enabled and not re.match(
+        ROUTER_LEASE_TIME_PATTERN, lan.dhcp_lease_time.strip()
+    ):
+        raise _bad_request(
+            f"{lan.dhcp_lease_time!r} is not a lease time; write it as 30m, "
+            f"12h, 7d or infinite"
+        )
     try:
         subnet = ipaddress.ip_network(f"{lan.address}/{lan.prefix_len}", strict=False)
         address = ipaddress.ip_address(lan.address)
@@ -988,8 +1033,11 @@ def _validate_wan(settings: InterfaceSettings) -> None:
     wan = settings.wan
     if wan.intent not in ROUTER_INTENTS:
         raise _bad_request(f"unknown uplink intent {wan.intent!r}")
+    if wan.cloned_mac and not re.match(ROUTER_MAC_PATTERN, wan.cloned_mac):
+        raise _bad_request(f"{wan.cloned_mac!r} is not a MAC address")
     if wan.method != ROUTER_WAN_METHOD_STATIC:
         return
+    _require_prefix_len(wan.prefix_len)
     try:
         subnet = ipaddress.ip_network(f"{wan.address}/{wan.prefix_len}", strict=False)
     except ValueError as error:
@@ -1002,6 +1050,26 @@ def _validate_wan(settings: InterfaceSettings) -> None:
         raise _bad_request(f"static uplink gateway: {error}") from error
     if gateway not in subnet:
         raise _bad_request(f"the gateway must lie inside {subnet}")
+
+
+def _require_prefix_len(prefix_len: int) -> None:
+    """Refuse a mask that is not one.
+
+    A `/0` is accepted by `ip_network` and is not a network: it makes every
+    containment check after it pass, so a lease range on another continent and
+    an upstream router that is not on the wire both read as valid.
+
+    Args:
+        prefix_len: What was submitted.
+
+    Raises:
+        HTTPException: 400 when it is outside the usable range.
+    """
+    if not ROUTER_PREFIX_LEN_MIN <= prefix_len <= ROUTER_PREFIX_LEN_MAX:
+        raise _bad_request(
+            f"a prefix length is {ROUTER_PREFIX_LEN_MIN} to "
+            f"{ROUTER_PREFIX_LEN_MAX}; {prefix_len} is not"
+        )
 
 
 def _bad_request(detail: str) -> HTTPException:

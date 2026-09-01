@@ -749,3 +749,59 @@ def response_text(payload) -> str:
     import json
 
     return json.dumps(payload)
+
+
+# --- values that are valid JSON and not valid settings ---
+
+
+@pytest.mark.parametrize("prefix_len", [0, -1, 33, 128])
+def test_a_mask_that_is_not_one_is_refused(box, prefix_len):
+    """A /0 is not a network: `ip_network` takes it, and every containment
+    check after it — the lease range, the upstream router — then passes on a
+    subnet that is the whole internet."""
+    client, _, _ = box
+    draft = settings_of(client, "enp1s0")
+    draft["lan"]["prefix_len"] = prefix_len
+
+    response = client.put("/api/network/interfaces/enp1s0", json=draft)
+
+    assert response.status_code == 400
+
+
+@pytest.mark.parametrize("lease", ["", "forever", "12", "x", "12h\nlog-queries=1"])
+def test_a_lease_time_dnsmasq_cannot_read_is_refused(box, lease):
+    """It is written verbatim into `dhcp-range=`. A bad one is a generated
+    file dnsmasq refuses to load, found at the restart after the ruleset has
+    already been swapped; a newline in it is a directive somebody else chose."""
+    client, _, _ = box
+    draft = settings_of(client, "enp1s0")
+    draft["lan"]["dhcp_lease_time"] = lease
+
+    response = client.put("/api/network/interfaces/enp1s0", json=draft)
+
+    assert response.status_code == 400
+
+
+@pytest.mark.parametrize("mac", ["hello", "aa:bb:cc:dd:ee", "aa-bb-cc-dd-ee-ff-00"])
+def test_a_cloned_mac_that_is_not_one_is_refused(box, mac):
+    """The kernel refuses it after it is already in `config/`, where it fails
+    every apply from then on — the panel's and the one at boot."""
+    client, _, _ = box
+    draft = settings_of(client, "enp2s0")
+    draft["wan"]["cloned_mac"] = mac
+
+    response = client.put("/api/network/interfaces/enp2s0", json=draft)
+
+    assert response.status_code == 400
+
+
+def test_an_interface_this_machine_does_not_have_is_refused(box):
+    """The link reader answers for an unknown name with a blank entry, so
+    validation used to pass for anything: what was written drew as a tab, had
+    no VLAN block so it could never be deleted, and failed every apply."""
+    client, _, _ = box
+    draft = dict(settings_of(client, "enp1s0"), name="enp9s9")
+
+    response = client.put("/api/network/interfaces/enp9s9", json=draft)
+
+    assert response.status_code == 400

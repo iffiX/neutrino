@@ -55,6 +55,22 @@ ROUTER_ROLES = (
     ROUTER_ROLE_DISABLED,
 )
 
+# What a served or static address may be masked by. A /0 is not a network,
+# it is an on-link route for the whole internet, and `ip_network` accepts it
+# happily — which is what makes every containment check after it pass.
+ROUTER_PREFIX_LEN_MIN = 1
+ROUTER_PREFIX_LEN_MAX = 32
+
+# A MAC as the kernel will accept it. The panel only checks the shape; the
+# kernel refuses a multicast or broadcast address, and it does so after the
+# value is already in `config/`, where it fails every apply from then on.
+ROUTER_MAC_PATTERN = r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$"
+
+# How long a lease lasts, in dnsmasq's own spelling. Written verbatim into
+# `dhcp-range=`, so anything else is a generated file dnsmasq refuses to load
+# — and a newline in it is a directive somebody else chose.
+ROUTER_LEASE_TIME_PATTERN = r"^(\d+[smhd]|infinite)$"
+
 # 802.1Q tag bounds; 0 and 4095 are reserved by the standard.
 ROUTER_VLAN_ID_MIN = 1
 ROUTER_VLAN_ID_MAX = 4094
