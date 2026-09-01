@@ -61,6 +61,11 @@ XRAY_GEODATA = {
     },
 }
 
+# How much of the address digest a node's id carries. Eight hexadecimal
+# characters is short enough to read in a URL and long enough that two servers
+# a person actually holds will not collide.
+XRAY_NODE_ID_DIGEST = 8
+
 # Transparent-proxy inbound. The nftables prerouting chain diverts here.
 XRAY_TPROXY_LISTEN = "127.0.0.1"
 XRAY_TPROXY_PORT = 12345

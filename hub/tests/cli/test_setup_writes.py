@@ -41,7 +41,9 @@ def test_the_nodes_replace_the_examples_and_keep_their_settings(config_dir):
     )
 
     nodes = read_config("xray/nodes.json")
-    assert [node["id"] for node in nodes["nodes"]] == ["hk"]
+    # The id carries a digest of the address and port, so two servers a
+    # provider hands out under one first label stay two nodes.
+    assert [node["id"].split("_")[0] for node in nodes["nodes"]] == ["hk"]
     assert nodes["balancer"]["strategy"], "the example's strategy survived"
 
 

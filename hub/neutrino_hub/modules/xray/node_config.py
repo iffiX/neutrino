@@ -7,10 +7,12 @@ way.
 
 import base64
 import binascii
+import hashlib
 from dataclasses import dataclass
 from urllib.parse import parse_qs, unquote, urlparse
 
 from neutrino_hub.modules.xray.constants import (
+    XRAY_NODE_ID_DIGEST,
     XRAY_BALANCER_STRATEGIES,
     XRAY_NODE_TAG_PREFIX,
 )
@@ -286,7 +288,7 @@ def _parse_shadowsocks_link(link: str) -> XrayNodeConfig:
     if not host or not port:
         raise ValueError(f"shadowsocks link has no host:port: {link[:32]!r}")
     return XrayNodeConfig(
-        id=_node_id_from_host(host),
+        id=_node_id_from_host(host, int(port)),
         name=name or host,
         address=host,
         is_enabled=True,
@@ -312,7 +314,7 @@ def _parse_vless_link(link: str) -> XrayNodeConfig:
         )
     name = unquote(parsed.fragment) if parsed.fragment else ""
     return XrayNodeConfig(
-        id=_node_id_from_host(parsed.hostname),
+        id=_node_id_from_host(parsed.hostname, parsed.port),
         name=name or parsed.hostname,
         address=parsed.hostname,
         is_enabled=True,
@@ -341,5 +343,26 @@ def _decode_base64(text: str) -> str:
         raise ValueError(f"cannot decode base64 segment {text[:24]!r}") from error
 
 
-def _node_id_from_host(host: str) -> str:
-    return host.split(".")[0]
+def _node_id_from_host(host: str, port: int) -> str:
+    """A stable identifier for one server, unique to its address and port.
+
+    The first label of a hostname alone is not one: every node a provider
+    hands out by address shares it — `203.0.113.10` and `203.0.113.11` both
+    read as `203` — and the second of them is refused as a duplicate of the
+    first. Two hostnames under different domains collide the same way.
+
+    A digest of the address and port settles it, and re-adding the same link
+    still lands on the same id, which is what makes adding a node twice a
+    thing the panel can refuse. The label is kept in front where the address
+    is a name, so the id is still something a person can recognise.
+
+    Args:
+        host: The server's hostname or address.
+        port: The port it is reached on.
+
+    Returns:
+        The node's id.
+    """
+    digest = hashlib.sha256(f"{host}:{port}".encode()).hexdigest()[:XRAY_NODE_ID_DIGEST]
+    label = host.split(".")[0]
+    return digest if label.isdigit() else f"{label}_{digest}"
