@@ -243,3 +243,30 @@ def test_a_direct_port_is_published_with_the_proxy_off():
     ).render()
 
     assert [i for i in config["inbounds"] if i["tag"] == "socks_1080_in"]
+
+
+def test_the_master_switch_is_the_way_out_of_a_bad_direct_entry():
+    """The direct lists reach the xray config, and a bad entry there makes it
+    unrenderable — which used to take the whole apply with it, firewall and
+    resolver included. Turning the proxy off is documented as the blunt
+    instrument for exactly that, so with it off the lists are not read at all.
+    """
+    config = render(
+        is_proxy_enabled=False,
+        is_geoip_split_enabled=True,
+        direct_domains=["geosite:doesnotexist"],
+        direct_ips=["geoip:nope"],
+    )
+
+    body = str(config)
+    assert "doesnotexist" not in body
+    assert "geoip:nope" not in body
+
+
+def test_the_direct_resolver_is_not_named_while_the_proxy_is_off():
+    """It is the resolver for the names the split sends directly, and with the
+    proxy off every name goes directly — so the split's own entry is one more
+    place a bad value would be read from."""
+    config = render(is_proxy_enabled=False, is_geoip_split_enabled=True)
+
+    assert config["dns"]["servers"] == ["1.1.1.1"]

@@ -115,7 +115,7 @@ class XrayConfigRenderer:
     def _render_dns(self) -> dict:
         remote = self._routing.get("remote_dns", {})
         servers: list = [remote.get("address", "1.1.1.1")]
-        if self._is_geoip_split_enabled:
+        if self._is_geoip_split_enabled and self._is_proxy_enabled:
             direct = self._routing.get("direct_dns", {})
             servers.insert(
                 0,
@@ -267,6 +267,22 @@ class XrayConfigRenderer:
                     "outboundTag": XRAY_DIRECT_TAG,
                 }
             )
+        if not self._is_proxy_enabled:
+            # The proxy is out of the path, so the split has nothing to split:
+            # everything leaves directly. The lists are not read at all here,
+            # which is what makes the master switch the way out of a bad entry
+            # in one of them — the thing its documentation promises and this
+            # used to refuse, because a rejected config takes the whole apply
+            # with it.
+            rules.append(
+                {
+                    "type": "field",
+                    "inboundTag": [XRAY_TPROXY_TAG, XRAY_DNS_TAG],
+                    "outboundTag": XRAY_DIRECT_TAG,
+                }
+            )
+            return {"domainStrategy": "IPIfNonMatch", "rules": rules}
+
         if self._is_geoip_split_enabled:
             direct_domains = self._routing.get("direct_domains", [])
             direct_ips = self._routing.get("direct_ips", [])
@@ -286,19 +302,6 @@ class XrayConfigRenderer:
                         "outboundTag": XRAY_DIRECT_TAG,
                     }
                 )
-        if not self._is_proxy_enabled:
-            # The proxy is out of the path. Nothing reaches xray by TPROXY at
-            # all in this state — the firewall stops diverting — but the DNS
-            # inbound is still wired up, and it has to answer from somewhere.
-            rules.append(
-                {
-                    "type": "field",
-                    "inboundTag": [XRAY_TPROXY_TAG, XRAY_DNS_TAG],
-                    "outboundTag": XRAY_DIRECT_TAG,
-                }
-            )
-            return {"domainStrategy": "IPIfNonMatch", "rules": rules}
-
         proxied = [XRAY_TPROXY_TAG, XRAY_DNS_TAG] + self._socks_tags(is_proxied=True)
         rules.append(
             {
