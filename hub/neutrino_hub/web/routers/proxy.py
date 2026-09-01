@@ -11,6 +11,7 @@ import ipaddress
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from neutrino_hub.modules.xray.constants import XRAY_BINARY_NAME
 from neutrino_hub.modules.xray.routing_rules import (
     check_direct_address,
     check_direct_domain,
@@ -57,7 +58,8 @@ def update_settings(
     Raises:
         HTTPException: 400 when the proxy is switched on with nothing to go
             out through, when a resolver is not an address, when two listeners
-            want one port, or when a direct list holds a line xray will not
+            want one port, when a listener wants a port something on the box
+            already holds, or when a direct list holds a line xray will not
             load. Each of these reaches the xray config, where a bad value is a
             proxy that will not start rather than a setting that does nothing.
     """
@@ -94,6 +96,15 @@ def update_settings(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"a port is {WEB_PORT_MIN} to {WEB_PORT_MAX}; "
                 f"{entry.port} is not",
+            )
+    # xray's own listeners are excluded: they are the ports this file already
+    # asked for, and counting them would make every second save a conflict.
+    held = runtime.listening_ports.ports(ignoring=XRAY_BINARY_NAME)
+    for entry in settings.socks_ports:
+        if entry.port in held:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"port {entry.port} is already in use on this box",
             )
     for entries, check in (
         (settings.direct_domains, check_direct_domain),

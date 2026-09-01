@@ -121,3 +121,9 @@ XRAY_SUPPORTED_ARCHITECTURES = ("amd64", "arm64")
 # known only to the file xray loads it from.
 XRAY_RULE_DATABASE_PREFIXES = ("geoip:", "ext:")
 XRAY_RULE_REGEXP_PREFIX = "regexp:"
+
+# How long xray is given to reach its listeners before the restart is believed.
+# The unit is Type=simple, so systemd reports success at fork; a port it cannot
+# take kills it a moment later, with the apply already reported as done.
+XRAY_RESTART_SETTLE_S = 1.0
+XRAY_RESTART_LOG_LINES = 5

@@ -33,6 +33,7 @@ from neutrino_hub.modules.samba.config import SambaConfig
 from neutrino_hub.modules.samba.ops import SambaConfigApplier, SambaUserManager
 from neutrino_hub.modules.samba.renderer import SambaConfigRenderer
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
+from neutrino_hub.system.listening_ports import ListeningPortReader
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
 from neutrino_hub.utils.json_file import read_config, write_config, write_generated
@@ -66,6 +67,7 @@ class PanelRuntime:
         )
         self.tasks = TaskStreamRegistry()
         self.services = SystemdServiceController()
+        self.listening_ports = ListeningPortReader()
         self.stats = XrayStatsClient()
         self.node_probe = XrayNodeProbe()
         self.devices = DeviceRegistry()

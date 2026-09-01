@@ -3,9 +3,15 @@
 The validation step is the reason this is separate from rendering: a config that
 xray rejects must never reach the running service, because a failed restart
 takes the whole LAN offline.
+
+Validation and a successful restart are two different claims. ``xray run -test``
+builds the whole server without binding anything, and the unit is ``Type=simple``,
+so ``systemctl restart`` returns before the process has reached its first
+listener. A port something else holds passes both and leaves no proxy running.
 """
 
 import json
+import time
 
 from neutrino_hub.utils.json_file import write_generated
 from neutrino_hub.utils.subprocess_run import CommandError, run
@@ -15,6 +21,8 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_ASSET_ENV,
     XRAY_BINARY,
     XRAY_CONFIG_PATH,
+    XRAY_RESTART_LOG_LINES,
+    XRAY_RESTART_SETTLE_S,
     XRAY_SERVICE_NAME,
 )
 
@@ -29,12 +37,13 @@ class XrayConfigApplier:
             config: The rendered configuration object.
 
         Raises:
-            CommandError: If xray rejects the configuration or fails to
-                restart. The previous config file is left in place when
-                validation fails.
+            CommandError: If xray rejects the configuration, fails to restart,
+                or is gone again a moment later. The previous config file is
+                left in place when validation fails.
         """
         self.write(config)
         self.restart()
+        self.confirm_running()
 
     def write(self, config: dict) -> None:
         """Validate a configuration and install it, without restarting.
@@ -92,6 +101,35 @@ class XrayConfigApplier:
             CommandError: If systemd reports the restart failed.
         """
         run(["systemctl", "restart", XRAY_SERVICE_NAME])
+
+    def confirm_running(self, *, settle_s: float = XRAY_RESTART_SETTLE_S) -> None:
+        """Check the service is still up a moment after being restarted.
+
+        Args:
+            settle_s: How long the process is given to reach its listeners.
+
+        Raises:
+            CommandError: If the unit is not active, carrying the last lines of
+                its journal, which is where the port it could not take is named.
+        """
+        time.sleep(settle_s)
+        if self.is_running():
+            return
+        journal = run(
+            [
+                "journalctl",
+                "-u",
+                XRAY_SERVICE_NAME,
+                "-n",
+                str(XRAY_RESTART_LOG_LINES),
+                "--no-pager",
+                "-o",
+                "cat",
+            ],
+            is_checked=False,
+        )
+        reason = " ".join(journal.stdout.split()) or "no reason in its journal"
+        raise CommandError(f"xray stopped again after the restart: {reason}")
 
     def is_running(self) -> bool:
         """Whether the xray service is currently active.

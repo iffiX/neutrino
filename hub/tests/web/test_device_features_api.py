@@ -159,7 +159,7 @@ def test_an_unknown_remote_desktop_product_is_refused_at_once(api):
 
     response = client.post(
         f"/api/devices/{MAC}/remote_desktop/anydsk/password",
-        json={"password": "hunter2hunter2"},
+        json={"password": "hunter2hunter2"},  # scan: allow
     )
 
     assert response.status_code == 400

@@ -57,12 +57,20 @@ class FakeRuntime:
         self.is_config_dirty = False
         self.stats = _NoTraffic()
         self.node_probe = _NoProbes()
+        self.listening_ports = _HeldPorts()
 
     def node_list(self) -> XrayNodeList:
         return XrayNodeList.from_dict(self.files["xray/nodes.json"])
 
     def routing(self) -> dict:
         return dict(self.files["xray/routing.json"])
+
+
+class _HeldPorts:
+    """A box with something already on 8080."""
+
+    def ports(self, *, ignoring: str = "") -> set:
+        return {8080}
 
 
 class _NoTraffic:
@@ -276,3 +284,29 @@ def test_a_direct_list_of_prefixes_and_databases_is_kept(client):
         "192.0.2.0/24",
         "geoip:cn",
     ]
+
+
+def test_a_listener_cannot_take_a_port_the_box_already_holds(client):
+    """xray validates a configuration without binding it and its unit reports
+    started at fork, so this is found otherwise as a proxy that is simply
+    absent."""
+    opened, runtime = client
+    settings = dict(
+        runtime.files["xray/routing.json"],
+        socks_ports=[{"port": 8080, "is_proxied": False}],
+    )
+
+    response = opened.put("/api/proxy", json=settings)
+
+    assert response.status_code == 400
+    assert "8080" in response.json()["detail"]
+
+
+def test_a_free_port_is_still_accepted(client):
+    opened, runtime = client
+    settings = dict(
+        runtime.files["xray/routing.json"],
+        socks_ports=[{"port": 1080, "is_proxied": False}],
+    )
+
+    assert opened.put("/api/proxy", json=settings).status_code == 200
