@@ -34,6 +34,14 @@ from neutrino_hub.modules.samba.ops import SambaConfigApplier, SambaUserManager
 from neutrino_hub.modules.samba.renderer import SambaConfigRenderer
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.system.listening_ports import ListeningPortReader
+from neutrino_hub.web.constants import (
+    WEB_PROXY_SCOPE_HUB,
+    WEB_PROXY_SCOPE_LAN,
+    WEB_PROXY_SCOPE_LAN_AND_HUB,
+    WEB_PROXY_SCOPE_OFF,
+    WEB_PROXY_SCOPE_PORTS,
+    WEB_PROXY_SCOPE_UNUSED,
+)
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
 from neutrino_hub.utils.json_file import read_config, write_config, write_generated
@@ -240,26 +248,49 @@ class PanelRuntime:
         """
         return RouterLinkStatus()
 
-    def is_proxy_in_path(self) -> bool:
-        """Whether the proxy is actually carrying LAN traffic right now.
+    def proxy_scope(self) -> str:
+        """Which traffic the proxy is actually taking right now.
 
-        Read from the ruleset that was last applied rather than from
-        ``config/``, because the two disagree for as long as a change is saved
-        and not yet applied. The file is written after the load succeeds, so it
-        is what the kernel holds and not what it was about to be handed. The status strip has to answer "where is my
-        traffic going", and during that window the config would answer with
+        The diversion states are read from the ruleset that was last applied
+        rather than from ``config/``, because the two disagree for as long as
+        a change is saved and not yet applied. The file is written after the
+        load succeeds, so it is what the kernel holds and not what it was
+        about to be handed — and the status strip has to answer "where is my
+        traffic going", which during that window the config would answer with
         where it is *about* to go.
 
         Returns:
-            True when the loaded firewall diverts LAN traffic into xray, and
-            when nothing has been applied yet, in which case the configured
-            intention is the best available answer.
+            One of the ``WEB_PROXY_SCOPE_*`` answers. A server whose proxy
+            serves only its SOCKS ports is ``ports``, not ``lan``: reporting
+            a diversion there would answer a question that mode never poses.
+            When nothing has been applied yet, the configured intention is
+            the best available answer.
         """
+        routing = self.routing()
+        if not routing.get("is_proxy_enabled", True):
+            return WEB_PROXY_SCOPE_OFF
         try:
             ruleset = ROUTER_NFT_PATH.read_text(encoding="utf-8")
         except OSError:
-            return self.routing().get("is_proxy_enabled", True)
-        return "tproxy ip to" in ruleset
+            is_lan_diverted = bool(self.network().lan_interfaces)
+            is_hub_diverted = bool(routing.get("is_local_proxy_enabled", False))
+        else:
+            # The hub's own diversion hairpins through loopback, which is the
+            # one tproxy statement naming that interface; the LAN's does not.
+            diversions = [
+                line for line in ruleset.splitlines() if "tproxy ip to" in line
+            ]
+            is_lan_diverted = any('iifname "lo"' not in line for line in diversions)
+            is_hub_diverted = any('iifname "lo"' in line for line in diversions)
+        if is_lan_diverted and is_hub_diverted:
+            return WEB_PROXY_SCOPE_LAN_AND_HUB
+        if is_lan_diverted:
+            return WEB_PROXY_SCOPE_LAN
+        if is_hub_diverted:
+            return WEB_PROXY_SCOPE_HUB
+        if any(entry.get("is_proxied") for entry in routing.get("socks_ports", [])):
+            return WEB_PROXY_SCOPE_PORTS
+        return WEB_PROXY_SCOPE_UNUSED
 
     def uplink_address(self) -> str | None:
         """The address this box reaches the internet from.

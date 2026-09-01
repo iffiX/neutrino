@@ -115,6 +115,9 @@ class StatsFrame(BaseModel):
     total_downlink_bytes: int = 0
     # Carried on the frame rather than fetched separately: the status strip
     # shows both, and they are only true as of the moment the frame was taken.
+    # The scope is one of the WEB_PROXY_SCOPE_* answers — whose traffic the
+    # proxy is taking — and the flag is its master switch as applied.
+    proxy_scope: str = "off"
     is_proxy_enabled: bool = True
     lan_device_count: int = 0
     # How traffic is spread, and over how many exits. The strip needs both to

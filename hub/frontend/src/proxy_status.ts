@@ -4,27 +4,24 @@ import type { StatsFrame } from "./api_types";
 /**
  * What the status strip says traffic is doing.
  *
- * The strip answers one question — where is my traffic going — and there are
- * genuinely several answers, which is why this is not a single string lookup.
+ * The strip answers one question — where is my traffic going — and the answer
+ * has two halves: whose traffic the proxy is taking (the scope the gateway
+ * reports from the applied ruleset), and which exit carries what it takes.
  *
- * Three things it has to get right.
+ * The scope comes first because the modes differ in what there is to divert.
+ * A server forwards nobody, so its proxy is its SOCKS ports; calling that
+ * "direct" would claim traffic is bypassing a proxy every pointed application
+ * is using, and calling it "proxied" would claim a diversion the mode never
+ * poses. Off and unused are also different states: unused means the switch is
+ * on and nothing at all is sent to the proxy, which is the page's cue to say
+ * why rather than look healthy.
  *
- * "The proxy is off" and "the proxy is on but nothing has gone through it yet"
- * are different states and must not share a word. Applying anything restarts
- * xray, which zeroes the byte counters, so the second state follows every
- * apply; calling it `direct` there would claim traffic is bypassing a proxy
- * that is very much in the path.
- *
- * Under leastPing there is one exit and it can be named. Under roundRobin and
- * random there deliberately is not, and naming the busiest would pick a winner
- * where the whole point is that there is not one — so those say how traffic is
- * being spread and over how many.
- *
- * And it names an exit only once one has actually carried bytes. The obvious
- * alternative — show whichever node is answering fastest — flickers: these
- * nodes sit within a few milliseconds of each other and the ordering changes
- * between probes, so the strip would cycle through names every couple of
- * seconds while nothing at all was happening.
+ * The exit half keeps its old care. Under leastPing there is one exit and it
+ * can be named — but only once one has actually carried bytes, because these
+ * nodes sit within a few milliseconds of each other and naming the fastest
+ * would cycle through names while nothing was happening. Under roundRobin and
+ * random there deliberately is no single exit, so those say how traffic is
+ * spread and over how many.
  */
 
 export type ProxyTone = "direct" | "proxy" | "offline";
@@ -36,8 +33,15 @@ export interface ProxyStatus {
 
 const SINGLE_EXIT_STRATEGY = "leastPing";
 
+const SCOPE_PREFIXES: Record<string, string> = {
+  ports: "ports",
+  lan: "LAN",
+  hub: "hub",
+  lan_and_hub: "LAN+hub",
+};
+
 /**
- * Describe the current exit for the status strip.
+ * Describe the current scope and exit for the status strip.
  *
  * Args:
  *   frame: The newest stats frame, or null before the first arrives.
@@ -54,20 +58,29 @@ export function describeProxy(
   if (frame === null) {
     return { label: "—", tone: "offline" };
   }
-  if (!frame.is_proxy_enabled) {
+  if (frame.proxy_scope === "off") {
     return { label: "direct", tone: "direct" };
+  }
+  if (frame.proxy_scope === "unused") {
+    return { label: "unused", tone: "direct" };
   }
   if (frame.enabled_node_count === 0) {
     return { label: "no exit", tone: "offline" };
   }
+  const prefix = SCOPE_PREFIXES[frame.proxy_scope] ?? frame.proxy_scope;
+  return {
+    label: `${prefix} → ${describeExit(frame, activeExit)}`,
+    tone: "proxy",
+  };
+}
+
+/** The exit half of the label: one nameable node, or how traffic is spread. */
+function describeExit(frame: StatsFrame, activeExit: string | null): string {
   if (frame.balancer_strategy !== SINGLE_EXIT_STRATEGY) {
-    return {
-      label: `${frame.balancer_strategy} ×${frame.enabled_node_count}`,
-      tone: "proxy",
-    };
+    return `${frame.balancer_strategy} ×${frame.enabled_node_count}`;
   }
   if (activeExit === null) {
-    return { label: SINGLE_EXIT_STRATEGY, tone: "proxy" };
+    return SINGLE_EXIT_STRATEGY;
   }
-  return { label: nodeIdFromTag(activeExit) ?? activeExit, tone: "proxy" };
+  return nodeIdFromTag(activeExit) ?? activeExit;
 }

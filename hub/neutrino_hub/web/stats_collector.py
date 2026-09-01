@@ -15,6 +15,7 @@ from neutrino_hub.web.models import (
     StatsFrame,
 )
 from neutrino_hub.modules.devices.lan_scan import count_lan_neighbours
+from neutrino_hub.web.constants import WEB_PROXY_SCOPE_OFF, WEB_PROXY_SCOPE_UNUSED
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.modules.xray.constants import XRAY_DIRECT_TAG, XRAY_NODE_TAG_PREFIX
 
@@ -43,6 +44,7 @@ class PanelStatsCollector:
 
         total_uplink = sum(entry.uplink_bytes for entry in outbounds)
         total_downlink = sum(entry.downlink_bytes for entry in outbounds)
+        scope = self._runtime.proxy_scope()
 
         return StatsFrame(
             timestamp=datetime.now(timezone.utc).isoformat(),
@@ -66,7 +68,8 @@ class PanelStatsCollector:
             wan_address=self._runtime.uplink_address(),
             total_uplink_bytes=total_uplink,
             total_downlink_bytes=total_downlink,
-            is_proxy_enabled=self._runtime.is_proxy_in_path(),
+            proxy_scope=scope,
+            is_proxy_enabled=scope != WEB_PROXY_SCOPE_OFF,
             balancer_strategy=node_list.strategy,
             enabled_node_count=len(nodes),
             lan_device_count=count_lan_neighbours(
@@ -88,11 +91,11 @@ class PanelStatsCollector:
 
         Returns:
             Node tags, plus the direct outbound when it has carried traffic.
-            Nothing at all while the proxy is switched off: there is no exit
-            then, and naming the last one used would be a stale answer to
-            "where is my traffic going".
+            Nothing at all while the proxy is off or nothing is sent to it:
+            there is no exit then, and naming the last one used would be a
+            stale answer to "where is my traffic going".
         """
-        if not frame.is_proxy_enabled:
+        if frame.proxy_scope in (WEB_PROXY_SCOPE_OFF, WEB_PROXY_SCOPE_UNUSED):
             return []
         used = [
             entry

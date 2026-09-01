@@ -75,3 +75,14 @@ WEB_SETUP_STOP_TIMEOUT_S = 10.0
 # How long it gets to take the port before that is called a failure.
 WEB_SETUP_START_TIMEOUT_S = 10.0
 WEB_SETUP_START_POLL_S = 0.05
+
+# What the proxy is actually taking, read from the applied ruleset rather than
+# from `config/`. One word per answer the status strip can give: the master
+# switch is off; on but nothing is sent to it; only the SOCKS ports reach it;
+# the forwarded network is diverted; the hub's own traffic is; or both are.
+WEB_PROXY_SCOPE_OFF = "off"
+WEB_PROXY_SCOPE_UNUSED = "unused"
+WEB_PROXY_SCOPE_PORTS = "ports"
+WEB_PROXY_SCOPE_LAN = "lan"
+WEB_PROXY_SCOPE_HUB = "hub"
+WEB_PROXY_SCOPE_LAN_AND_HUB = "lan_and_hub"

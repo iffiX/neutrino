@@ -123,6 +123,15 @@ export interface NodeProbe {
   delay_ms: number | null;
 }
 
+/**
+ * Whose traffic the proxy is taking, read from the applied ruleset: the
+ * master switch is off; on but nothing is sent to it; only the SOCKS ports
+ * reach it; the forwarded network is diverted; the hub's own traffic is; or
+ * both are.
+ */
+export type ProxyScope =
+  "off" | "unused" | "ports" | "lan" | "hub" | "lan_and_hub";
+
 export interface StatsFrame {
   /** ISO 8601 UTC stamp, as produced by `datetime.now(timezone.utc)`. */
   timestamp: string;
@@ -134,7 +143,8 @@ export interface StatsFrame {
   wan_address: string | null;
   total_uplink_bytes: number;
   total_downlink_bytes: number;
-  /** Whether the proxy was in the path when this frame was taken. */
+  proxy_scope: ProxyScope;
+  /** The proxy's master switch, as applied when this frame was taken. */
   is_proxy_enabled: boolean;
   /** Devices the kernel currently has in its neighbour table on the LANs. */
   lan_device_count: number;
