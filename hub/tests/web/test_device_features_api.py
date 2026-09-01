@@ -34,6 +34,17 @@ class FakeRuntime:
         self.client_features = {}
         self.client_platform = {}
         self.client_metrics = {}
+        self.pending = {}
+
+    def forget_client_state(self, mac_address: str) -> None:
+        key = mac_address.lower()
+        for held in (
+            self.client_features,
+            self.client_platform,
+            self.client_metrics,
+            self.pending,
+        ):
+            held.pop(key, None)
 
 
 def beating(seconds_ago: float) -> str:
@@ -108,3 +119,18 @@ def test_what_the_agent_reported_is_found_whatever_case_the_MAC_is_asked_in(api)
 
     assert answer["features"][0]["state"] == "installed"
     assert answer["features"][0]["is_active"]
+
+
+def test_forgetting_a_device_drops_what_was_queued_for_it(api, monkeypatch):
+    """A command queued for a device that is forgotten would be delivered to
+    whatever machine turns up on that MAC next: enrol a rebuilt box and its
+    first heartbeat drains a shutdown nobody asked it for."""
+    client, runtime = api
+    monkeypatch.setattr(FakeRegistry, "forget", lambda self, mac: None, raising=False)
+    runtime.pending[MAC] = ["shutdown"]
+    runtime.client_features[MAC] = {"anydesk": {"state": "installed"}}
+
+    assert client.delete(f"/api/devices/{MAC}").status_code == 200
+
+    assert runtime.pending == {}
+    assert runtime.client_features == {}

@@ -128,19 +128,26 @@ def annotate(mac_address: str, annotation: DeviceAnnotation) -> DeviceView:
 
 
 @router.delete("/{mac_address}")
-def forget(mac_address: str) -> dict:
-    """Drop a device's stored annotations.
+def forget(mac_address: str, runtime: PanelRuntime = Depends(get_runtime)) -> dict:
+    """Drop a device's stored annotations and everything held about it.
 
     The key it referenced is left in the registry: keys outlive the devices
     that use them, and the Credentials page is where they are removed.
 
+    What is held in memory goes with the record. A command queued for a device
+    that is forgotten would otherwise be delivered to whatever machine turns up
+    on that MAC next — enrol a rebuilt box and its first heartbeat drains a
+    shutdown nobody asked it for.
+
     Args:
         mac_address: The device's MAC.
+        runtime: The shared runtime, for what it holds about this device.
 
     Returns:
         An empty object.
     """
     DeviceRegistry().forget(mac_address)
+    runtime.forget_client_state(mac_address)
     return {}
 
 
@@ -477,7 +484,11 @@ async def start_action(
     # credentials, but fall back to SSH so an SSH-only device can still be
     # power-controlled.
     if action in POWER_ACTIONS:
-        if device.client.is_installed:
+        # An agent that is answering, not one that was installed once: the
+        # flag stays true through a failed install and a stopped service, and
+        # a command queued for an agent that never collects it is a machine
+        # nobody rebooted and a task that ends "exit 0".
+        if _is_agent_online(device):
             runtime.queue_client_command(mac_address, {"id": action, "action": action})
             stream = runtime.tasks.start(
                 label=f"{action} {mac_address}", source=_queued_message(action)
@@ -510,7 +521,14 @@ async def start_action(
         )
 
     operator = DeviceSshOperator(credentials=SshCredentials.from_dict(device.ssh or {}))
-    token = registry.issue_client_token(mac_address)
+    # An agent that is answering keeps the token it is answering with. Minting
+    # a new one here kills the live agent before the install that would carry
+    # the replacement has even started, and an install that then fails — no
+    # package, host unreachable, wrong sudo password — leaves a device
+    # beating with a token nothing accepts, which only another install fixes.
+    token = device.client.token
+    if not token or not _is_agent_online(device):
+        token = registry.issue_client_token(mac_address)
     package_path = UTILS_CONFIG_DIR / runtime.settings.get(
         "agent_package_path",
         "devices/packages/neutrino_agent-latest.tar.gz",

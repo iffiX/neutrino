@@ -324,6 +324,23 @@ class PanelRuntime:
         )
         queue.append(command)
 
+    def forget_client_state(self, mac_address: str) -> None:
+        """Drop everything held in memory about one device.
+
+        Called when the device is forgotten. A queue that outlives its record
+        is delivered to whatever machine appears on that MAC next, and the
+        metrics and features would otherwise be drawn beside a device that has
+        only just been enrolled.
+
+        Args:
+            mac_address: The device's MAC.
+        """
+        key = mac_address.lower()
+        self._pending_commands.pop(key, None)
+        self.client_metrics.pop(key, None)
+        self.client_features.pop(key, None)
+        self.client_platform.pop(key, None)
+
     def take_client_commands(self, mac_address: str) -> list[dict]:
         """Drain the queued commands for one device.
 
