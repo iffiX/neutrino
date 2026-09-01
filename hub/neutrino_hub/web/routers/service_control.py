@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import AsyncIterator
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from neutrino_hub.modules.registry import MODULE_SPECS, ModuleSpec
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
@@ -22,6 +22,10 @@ from neutrino_hub.web.models import (
     TaskStarted,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
+
+# How much of a unit's journal one request may ask for. Unbounded, a single
+# call reads an entire journal into memory and into one JSON body.
+JOURNAL_LINE_LIMIT = 5000
 
 router = APIRouter(
     prefix="/api/services", tags=["services"], dependencies=[Depends(require_session)]
@@ -50,13 +54,18 @@ def list_services(runtime: PanelRuntime = Depends(get_runtime)) -> ServiceListVi
 
 @router.get("/{name}/journal", response_model=JournalView)
 def journal(
-    name: str, lines: int = 100, runtime: PanelRuntime = Depends(get_runtime)
+    name: str,
+    lines: int = Query(default=100, ge=1, le=JOURNAL_LINE_LIMIT),
+    runtime: PanelRuntime = Depends(get_runtime),
 ) -> JournalView:
     """Read the tail of a unit's journal.
 
     Args:
         name: Panel-facing service name.
-        lines: How many lines to return.
+        lines: How many lines to return, at most
+            :data:`JOURNAL_LINE_LIMIT`. Unbounded, this reads a whole unit
+            journal into one response; negative, journalctl rejects the option
+            and its usage message is rendered as though it were log output.
         runtime: The shared runtime.
 
     Returns:
@@ -203,13 +212,27 @@ def control(
         The unit's state after the change.
 
     Raises:
-        HTTPException: 404 for an unknown service, 400 for a disallowed action,
-            502 when systemd refuses.
+        HTTPException: 404 for an unknown service, 400 for a disallowed action
+            or a module that is not installed, 502 when systemd refuses.
     """
     if name in SYSTEM_CORE_UNITS and action in STOPPING_ACTIONS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(f"{name} is a core service and cannot be {action}ped"),
+        )
+    try:
+        state = runtime.services.status(name)
+    except KeyError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
+        ) from error
+    if not state.is_installed:
+        # Said here rather than let through: systemd's answer is "Unit
+        # x.service does not exist", which reaches the page as an error about
+        # a file when the thing to know is that the module is not installed.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{name} is not installed, so there is nothing to {action}",
         )
     try:
         runtime.services.control(name, action)

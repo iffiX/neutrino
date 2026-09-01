@@ -22,12 +22,13 @@ class RecordingServices:
 
     def __init__(self):
         self.performed: list[tuple[str, str]] = []
+        self.installed = True
 
     def status(self, name: str) -> ServiceStatus:
         return ServiceStatus(
             name=name,
             unit=f"{name}.service",
-            is_installed=True,
+            is_installed=self.installed,
             is_active=True,
             is_enabled=True,
         )
@@ -258,3 +259,24 @@ def test_netbird_installs_and_uninstalls_from_the_panel(installable_box, monkeyp
 
     assert installed.status_code == 200
     assert removed.status_code == 200
+
+
+def test_a_module_that_is_not_installed_cannot_be_started(box):
+    """systemd's own answer is "Unit x.service does not exist", which reaches
+    the page as an error about a file when the thing to know is that the
+    module was never installed."""
+    opened, services = box
+    services.installed = False
+
+    response = opened.post("/api/services/samba/action", json={"action": "start"})
+
+    assert response.status_code == 400
+    assert "not installed" in response.json()["detail"]
+
+
+def test_a_journal_longer_than_the_limit_is_refused(box):
+    """Unbounded, one call reads an entire unit journal into one response."""
+    opened, _ = box
+
+    assert opened.get("/api/services/samba/journal?lines=100000000").status_code == 422
+    assert opened.get("/api/services/samba/journal?lines=-5").status_code == 422

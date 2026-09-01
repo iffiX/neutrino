@@ -26,7 +26,7 @@ from neutrino_hub.modules.samba.constants import (
     SAMBA_CONF_LINK_PATH,
     SAMBA_GENERATED_NAME,
     SAMBA_GROUP,
-    SAMBA_SERVICES,
+    SAMBA_UNIT,
 )
 
 # The include file an earlier installer wrote next to smb.conf. The rendered
@@ -35,7 +35,7 @@ from neutrino_hub.modules.samba.constants import (
 LEGACY_INCLUDE_PATH = Path("/etc/samba/neutrino_share.conf")
 
 # Debian names the unit after the binary; RHEL and Arch ship one smb.service.
-SMBD_SERVICE = SAMBA_SERVICES.get(distribution_family(), "smbd")
+SMBD_SERVICE = SAMBA_UNIT.removesuffix(".service")
 
 
 @dataclass

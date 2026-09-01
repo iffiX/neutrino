@@ -90,9 +90,13 @@ class PodmanProvisioner:
         run(["systemctl", "daemon-reload"], is_checked=False)
 
         say(report, "removing the engine")
-        run(
-            ["apt-get", "remove", "-y", *PODMAN_PACKAGES],
-            timeout_s=600,
+        # The family's own packages through the family's own manager. The
+        # names live in a dict keyed by family, so splatting it hands the
+        # keys — `apt-get remove -y debian rhel arch` — which fails on every
+        # distribution and leaves the engine installed with its containers
+        # already stopped and its Quadlets already deleted.
+        package_manager.current().remove(
+            require_distribution(PODMAN_PACKAGES, "podman")
         )
 
         if not is_data_kept:

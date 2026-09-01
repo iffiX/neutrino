@@ -26,7 +26,10 @@ from neutrino_hub.modules.podman.constants import (
     PODMAN_UNIT,
 )
 from neutrino_hub.modules.podman.provisioner import PodmanProvisioner
-from neutrino_hub.modules.samba.constants import SAMBA_SUPPORTED_ARCHITECTURES
+from neutrino_hub.modules.samba.constants import (
+    SAMBA_SUPPORTED_ARCHITECTURES,
+    SAMBA_UNIT,
+)
 from neutrino_hub.modules.samba.provisioner import SambaProvisioner
 from neutrino_hub.modules.netbird.constants import NETBIRD_SUPPORTED_ARCHITECTURES
 from neutrino_hub.modules.netbird.provisioner import NetbirdProvisioner
@@ -58,7 +61,7 @@ class ModuleSpec:
 
 MODULE_SPECS = {
     "samba": ModuleSpec(
-        unit="smbd.service",
+        unit=SAMBA_UNIT,
         provisioner=SambaProvisioner,
         architectures=SAMBA_SUPPORTED_ARCHITECTURES,
         install_note="file sharing over SMB, for the LAN and the overlay",

@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from neutrino_hub.modules.samba.constants import SAMBA_UNIT
+
 # Units the panel shows and controls. The key is what the panel displays; the
 # value is the systemd unit behind it.
 # The units without which this is not a gateway. Traffic does not move if any
@@ -29,7 +31,7 @@ SYSTEM_OPTIONAL_UNITS = {
     # over a network. Installed from the vendor by the machine that wants it,
     # never carried in these packages.
     "netbird": "netbird.service",
-    "samba": "smbd.service",
+    "samba": SAMBA_UNIT,
     "gitea": "neutrino_hub_gitea.service",
     # Podman has no daemon; its API socket stands for the engine here.
     "podman": "podman.socket",
