@@ -435,8 +435,16 @@ class RouterInterfaceApplier:
             # A side gateway's way out is the network's own router, on this
             # same wire. Above the uplink metrics, so a box that later gains a
             # real uplink leaves by that instead.
-            links.set_default_route(device, upstream, ROUTER_METRIC_SIDE_GATEWAY)
-            changes.append(f"{interface.name} reaching the internet via {upstream}")
+            try:
+                links.set_default_route(device, upstream, ROUTER_METRIC_SIDE_GATEWAY)
+                changes.append(f"{interface.name} reaching the internet via {upstream}")
+            except CommandError as error:
+                # Reported, not raised. A next hop the kernel refuses is one
+                # interface's way out; raising here takes down the whole apply
+                # — the served address, the firewall, the resolver — and the
+                # unit that runs it at boot, leaving a box nobody can reach
+                # over a route it never had.
+                changes.append(f"{interface.name} cannot reach {upstream}: {error}")
         return changes
 
     def _apply_wan(self, interface: RouterInterface) -> list[str]:

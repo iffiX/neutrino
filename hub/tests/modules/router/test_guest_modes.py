@@ -277,3 +277,34 @@ def test_one_port_told_to_be_disabled_is_still_disabled(monkeypatch):
     routes.RouterInterfaceApplier(network=network).apply_all()
 
     assert "clear_addresses" in calls
+
+
+def test_a_next_hop_the_kernel_refuses_does_not_take_the_apply_down(monkeypatch):
+    """The whole box went with it: the served address, the firewall, the
+    resolver, and the unit that applies them at boot. A machine reachable only
+    over a route it never had is a machine nobody can reach."""
+    calls = _record_calls(monkeypatch)
+
+    def refuse(device, gateway, metric):
+        raise routes.CommandError("Error: Nexthop has invalid gateway.")
+
+    monkeypatch.setattr(routes.links, "set_default_route", refuse)
+    network = RouterNetworkConfig(
+        mode=ROUTER_MODE_ROUTER,
+        interfaces=[
+            RouterInterface(
+                name="eth0",
+                role="lan",
+                lan=RouterLanSettings(
+                    address="192.168.8.1",
+                    prefix_len=24,
+                    upstream_gateway="10.0.0.1",
+                ),
+            )
+        ],
+    )
+
+    changes = routes.RouterInterfaceApplier(network=network).apply_all()
+
+    assert any("cannot reach 10.0.0.1" in line for line in changes)
+    assert "set_address" in calls

@@ -321,6 +321,12 @@ def _interface_cases(ports: list) -> None:
             400,
         ),
         ("a cloned MAC that is not a MAC", {"wan": {"cloned_mac": "hello"}}, 400),
+        ("a lease time that is not one", {"lan": {"dhcp_lease_time": "forever"}}, 400),
+        (
+            "a lease time carrying a second directive",
+            {"lan": {"dhcp_lease_time": "12h\nlog-queries=1"}},
+            400,
+        ),
     ):
         check_status(
             label, "PUT", f"/network/interfaces/{served}", interface_body(served, role="lan", **patch), want
@@ -336,7 +342,7 @@ def _interface_cases(ports: list) -> None:
         "an interface this machine lacks",
         "PUT",
         "/network/interfaces/enp9s9",
-        interface_body(served, name="enp9s9"),
+        dict(interface_body(served), name="enp9s9"),
         400,
     )
     check_status(
