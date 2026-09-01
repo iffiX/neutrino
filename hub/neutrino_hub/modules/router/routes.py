@@ -268,6 +268,14 @@ class RouterInterfaceApplier:
             self._network.interfaces,
             key=lambda interface: order.get(interface.role, 3),
         )
+        if not any(not interface.is_disabled for interface in self._network.interfaces):
+            # Nothing holds a role, so there is nothing to make true. Not the
+            # same as "disable every interface": a machine that has just been
+            # told it is a router has no roles yet, and tearing every port
+            # down to match would take the address the panel is answering on
+            # with it. Roles are given one at a time below this panel, and
+            # each is applied as it is given.
+            return []
         changes = []
         if self._network.is_addressing_owned:
             # Before anything is configured, not after: two things driving one

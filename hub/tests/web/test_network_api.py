@@ -548,6 +548,38 @@ def test_a_machine_already_a_guest_is_not_handed_back_again(guest_box, monkeypat
     assert handed == []
 
 
+def test_a_side_gateway_answers_on_the_network_it_joined(guest_box):
+    """It is where the panel and DNS are reached. A served network the input
+    chain drops on is one the devices told to use it cannot resolve through."""
+    client, runtime, _ = guest_box
+
+    client.put("/api/network/mode", json={"mode": "side_gateway"})
+
+    assert runtime.network().interface("enp1s0").is_exposed
+
+
+def test_leaving_a_mode_with_trunks_takes_the_VLANs_with_it(box, monkeypatch):
+    """Neither guest mode has trunks. A VLAN left behind as an entry claiming
+    to be a physical port can never be deleted and its tag can never be made
+    again."""
+    removed: list = []
+    monkeypatch.setattr(
+        network_router, "remove_vlan_device", lambda name: removed.append(name) or []
+    )
+    client, runtime, _ = box
+    client.put(
+        "/api/network/interfaces/enp1s0",
+        json=dict(settings_of(client, "enp1s0"), role="split"),
+    )
+    assert any(entry.is_vlan for entry in runtime.network().interfaces)
+
+    client.put("/api/network/mode", json={"mode": "server"})
+
+    saved = runtime.network()
+    assert [entry.name for entry in saved.interfaces if entry.is_vlan] == []
+    assert removed == ["enp1s0.main"]
+
+
 def test_becoming_a_side_gateway_joins_the_network_it_is_already_on(guest_box):
     """The port carrying the way out is the network it forwards for, and the
     address it holds there is the one to keep: nobody types an address for a

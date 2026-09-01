@@ -179,7 +179,7 @@ export function ProxyPage() {
         </div>
       </div>
 
-      <NodesPanel />
+      <NodesPanel onNodesChanged={resource.reload} />
 
       <section
         className={`settings_group ${isGroupDirty("route") ? "settings_group--dirty" : ""}`}
@@ -359,10 +359,16 @@ export function ProxyPage() {
       </section>
 
       <SocksPortsPanel
-        settings={draft}
+        applied={resource.data ?? draft}
         onApplied={(saved) => {
           resource.setData(saved);
-          setDraft(saved);
+          // Only this box's own field: the rest of the page may hold edits
+          // nobody has applied yet.
+          setDraft((current) =>
+            current === null
+              ? saved
+              : { ...current, socks_ports: saved.socks_ports },
+          );
         }}
       />
     </div>

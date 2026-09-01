@@ -24,23 +24,31 @@ const PORT_MIN = 1;
 const PORT_MAX = 65535;
 
 interface SocksPortsPanelProps {
-  settings: ProxySettings;
+  /**
+   * The settings as the gateway holds them, never the page's draft: applying
+   * this box lays its own field over what the box already has, so a
+   * half-finished edit in another box is not written by pressing this one.
+   */
+  applied: ProxySettings;
   onApplied: (settings: ProxySettings) => void;
 }
 
-export function SocksPortsPanel({ settings, onApplied }: SocksPortsPanelProps) {
-  const applied = settings.socks_ports;
-  const [ports, setPorts] = useState<SocksPort[]>(applied);
+export function SocksPortsPanel({ applied, onApplied }: SocksPortsPanelProps) {
+  const [ports, setPorts] = useState<SocksPort[]>(applied.socks_ports);
   const [draftPort, setDraftPort] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  // Keyed on the listeners alone. The whole settings object is replaced on
+  // every keystroke elsewhere on the page, and resetting on that would throw
+  // away a row somebody had just added.
   useEffect(() => {
-    setPorts(settings.socks_ports);
-  }, [settings]);
+    setPorts(applied.socks_ports);
+  }, [applied.socks_ports]);
 
-  const isDirty = JSON.stringify(ports) !== JSON.stringify(applied);
+  const isDirty =
+    JSON.stringify(ports) !== JSON.stringify(applied.socks_ports);
   const problem = validate(draftPort, ports);
 
   const add = () => {
@@ -58,7 +66,7 @@ export function SocksPortsPanel({ settings, onApplied }: SocksPortsPanelProps) {
     setNotice(null);
     try {
       const saved = await apiPut<ProxySettings>("/proxy", {
-        ...settings,
+        ...applied,
         socks_ports: ports,
       });
       const result = await apiPost<ApplyResult>("/proxy/apply");
@@ -164,7 +172,7 @@ export function SocksPortsPanel({ settings, onApplied }: SocksPortsPanelProps) {
         warning="Restarts the proxy; connections through it drop."
         error={error}
         notice={notice}
-        onReset={() => setPorts(applied)}
+        onReset={() => setPorts(applied.socks_ports)}
         onApply={() => void apply()}
       />
     </section>

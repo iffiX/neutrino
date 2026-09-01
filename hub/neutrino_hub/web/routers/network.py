@@ -161,7 +161,7 @@ async def update_mode(
 
     is_leaving = network.is_addressing_owned
     network.mode = request.mode
-    _retune_roles(network, runtime=runtime)
+    orphaned = _retune_roles(network, runtime=runtime)
     if is_leaving and not network.is_addressing_owned:
         # Before the new shape is applied, and read from the interfaces it is
         # about to stop driving.
@@ -170,11 +170,13 @@ async def update_mode(
         _adopt_known_networks(runtime)
     _adopt_live_addressing(network)
     runtime.write_network(network)
+    for name in orphaned:
+        await asyncio.to_thread(remove_vlan_device, name)
     await _apply(runtime, only=None)
     return _build_view(runtime)
 
 
-def _retune_roles(network: RouterNetworkConfig, *, runtime: PanelRuntime) -> None:
+def _retune_roles(network: RouterNetworkConfig, *, runtime: PanelRuntime) -> list[str]:
     """Take away the roles the new mode cannot have, and give the one it needs.
 
     A server routes nothing, so no port holds a role in it. A side gateway
@@ -186,6 +188,10 @@ def _retune_roles(network: RouterNetworkConfig, *, runtime: PanelRuntime) -> Non
     Args:
         network: The configuration, already carrying its new mode.
         runtime: The shared runtime, for which port carries the way out.
+
+    Returns:
+        The VLAN interfaces the new mode has no place for, whose devices are
+        the caller's to remove.
     """
     if network.mode == ROUTER_MODE_ROUTER:
         # A router's way out is an uplink. A served network whose own router is
@@ -193,12 +199,17 @@ def _retune_roles(network: RouterNetworkConfig, *, runtime: PanelRuntime) -> Non
         # the panel has no field for it here.
         for interface in network.interfaces:
             interface.lan.upstream_gateway = None
-        return
+        return []
+    # A VLAN is a device the hub built on a trunk. Neither mode has trunks, so
+    # the entries go rather than being kept as entries that claim to be ports:
+    # one of those can never be deleted, and the tag can never be made again.
+    removed = [interface.name for interface in network.interfaces if interface.is_vlan]
+    for name in removed:
+        network.remove(name)
     for interface in network.interfaces:
         interface.role = ROUTER_ROLE_DISABLED
-        interface.vlan = None
     if network.mode != ROUTER_MODE_SIDE_GATEWAY:
-        return
+        return removed
     status = runtime.link_status()
     joined = next(
         (
@@ -209,12 +220,17 @@ def _retune_roles(network: RouterNetworkConfig, *, runtime: PanelRuntime) -> Non
         None,
     )
     if joined is None:
-        return
+        return removed
     interface = network.interface_or_new(joined)
     interface.role = ROUTER_ROLE_LAN
     interface.lan.is_dhcp_enabled = False
     interface.lan.upstream_gateway = status.gateway_for(joined)
+    # A served network answers by definition: it is where the panel, the
+    # leases and DNS are reached, and the planner sets this for the same
+    # reason when the wizard builds one.
+    interface.is_exposed = True
     network.replace(interface)
+    return removed
 
 
 def _set_exposure(

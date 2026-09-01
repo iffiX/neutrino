@@ -232,3 +232,48 @@ def test_a_port_that_stops_being_an_uplink_stops_taking_leases(monkeypatch):
 
     assert stopped == ["neutrino_hub_dhcpcd@eth0.service"]
     assert "dhcp.start" not in calls
+
+
+def test_a_machine_with_no_role_yet_is_not_torn_down(monkeypatch):
+    """Becoming a router is not the same as disabling every port.
+
+    A box told it is a router holds no roles yet — they are given one at a
+    time on the page below the mode panel — and applying that state used to
+    reach `_apply_disabled` for every port, which flushes its address and
+    takes the link down. The address the panel was answering on went with it.
+    """
+    calls = _record_calls(monkeypatch)
+    network = RouterNetworkConfig(
+        mode=ROUTER_MODE_ROUTER,
+        interfaces=[
+            RouterInterface(name="eth0", role="disabled"),
+            RouterInterface(name="eth1", role="disabled"),
+        ],
+    )
+
+    changes = routes.RouterInterfaceApplier(network=network).apply_all()
+
+    assert changes == []
+    assert calls == []
+
+
+def test_one_port_told_to_be_disabled_is_still_disabled(monkeypatch):
+    """The guard is about a machine with nothing configured, not about the
+    role: pressing Disabled on one interface of a working router still gives
+    that port up."""
+    calls = _record_calls(monkeypatch)
+    network = RouterNetworkConfig(
+        mode=ROUTER_MODE_ROUTER,
+        interfaces=[
+            RouterInterface(name="eth0", role="disabled"),
+            RouterInterface(
+                name="eth1",
+                role="lan",
+                lan=RouterLanSettings(address="192.168.8.1", prefix_len=24),
+            ),
+        ],
+    )
+
+    routes.RouterInterfaceApplier(network=network).apply_all()
+
+    assert "clear_addresses" in calls

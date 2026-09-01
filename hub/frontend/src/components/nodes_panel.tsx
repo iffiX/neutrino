@@ -45,7 +45,17 @@ const STRATEGY_LABELS: Record<BalancerStrategy, string> = {
   random: "random — pick per connection",
 };
 
-export function NodesPanel() {
+interface NodesPanelProps {
+  /**
+   * Called when the list changes, because the list decides something outside
+   * it: a proxy with no enabled node is switched off, and the page holding
+   * that switch has to read it again rather than go on drawing the answer it
+   * fetched on mount.
+   */
+  onNodesChanged: () => void;
+}
+
+export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
   const resource = useApiResource<NodesResponse>("/proxy/nodes");
   const { latestFrame } = useLiveStats();
 
@@ -199,6 +209,7 @@ export function NodesPanel() {
     try {
       await apiDelete<NodesResponse>(`/proxy/nodes/${node.id}`);
       resource.reload();
+      onNodesChanged();
     } catch (cause: unknown) {
       setActionError(describeError(cause));
     }
@@ -235,6 +246,7 @@ export function NodesPanel() {
       const result = await apiPost<ApplyResult>("/proxy/apply");
       setApplyMessage(result.message);
       resource.reload();
+      onNodesChanged();
     } catch (cause: unknown) {
       setActionError(describeError(cause));
     } finally {
