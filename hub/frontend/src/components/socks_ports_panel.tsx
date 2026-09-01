@@ -47,8 +47,7 @@ export function SocksPortsPanel({ applied, onApplied }: SocksPortsPanelProps) {
     setPorts(applied.socks_ports);
   }, [applied.socks_ports]);
 
-  const isDirty =
-    JSON.stringify(ports) !== JSON.stringify(applied.socks_ports);
+  const isDirty = JSON.stringify(ports) !== JSON.stringify(applied.socks_ports);
   const problem = validate(draftPort, ports);
 
   const add = () => {

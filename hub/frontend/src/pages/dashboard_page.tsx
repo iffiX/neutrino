@@ -143,7 +143,7 @@ export function DashboardPage() {
           format={formatCount}
           icon="search"
           tone="accent"
-          detail="since boot"
+          detail="in the recent log"
         />
         <StatTile
           label="CPU"

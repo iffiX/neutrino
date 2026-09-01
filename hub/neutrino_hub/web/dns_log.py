@@ -38,12 +38,11 @@ class DnsLogReader:
             Newest first. Empty when the log does not exist yet, which is
             normal before dnsmasq has served its first query.
         """
-        lines = self._read_tail_lines()
-        entries = [
-            entry
-            for entry in (self._parse(line) for line in lines)
-            if entry is not None
-        ]
+        entries = self._queries(self._read_tail_lines())
+        # Where the tail ends is where following starts. Without this the
+        # first `follow` after a `tail` re-reads the file from the beginning
+        # and sends the whole backlog a second time, as new arrivals.
+        self._last_size = self._size()
         entries.reverse()
         return entries[:entry_limit]
 
@@ -56,29 +55,41 @@ class DnsLogReader:
         """
         if not self._log_path.is_file():
             return []
-        size = self._log_path.stat().st_size
+        size = self._size()
         if size < self._last_size:
-            self._last_size = 0
+            # Rotated or truncated. Start from the new end rather than from
+            # the beginning, which would replay the whole file as arrivals.
+            self._last_size = size
+            return []
         if size == self._last_size:
             return []
         with self._log_path.open("r", encoding="utf-8", errors="replace") as stream:
             stream.seek(self._last_size)
             new_text = stream.read()
         self._last_size = size
-        entries = [
-            entry
-            for entry in (self._parse(line) for line in new_text.splitlines())
-            if entry is not None
-        ]
-        return entries
+        return self._queries(new_text.splitlines())
 
     def query_count(self) -> int:
-        """Count the queries currently visible in the log tail.
+        """Count the queries the log tail holds.
 
         Returns:
-            How many query lines the tail holds.
+            How many of the tail's lines are queries. Not how many lines it
+            has: dnsmasq writes a `forwarded` and a `reply` for most lookups
+            and a `dnsmasq-dhcp` line for every lease, all into this same
+            file, so counting lines answers several times over.
         """
-        return len(self._read_tail_lines())
+        return len(self._queries(self._read_tail_lines()))
+
+    def _queries(self, lines: list[str]) -> list[DnsLogEntry]:
+        """The query lines among these, parsed, oldest first."""
+        return [
+            entry
+            for entry in (self._parse(line) for line in lines)
+            if entry is not None
+        ]
+
+    def _size(self) -> int:
+        return self._log_path.stat().st_size if self._log_path.is_file() else 0
 
     def _read_tail_lines(self) -> list[str]:
         if not self._log_path.is_file():
