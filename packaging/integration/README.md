@@ -13,11 +13,15 @@ reconfigures a box's network, installs packages, or both.
 | `test_panel_api_services.py` | What the Services page is drawn from, and every action it refuses. |
 | `test_panel_api_devices.py` | The device register: adding, renaming, forgetting, and fifty at once. |
 | `test_install_footprint.py` | That a server or side_gateway install left the machine addressing itself. |
+| `test_mode_matrix.py` | Every mode, every ordered switch between them, the one-arm and multi-uplink shapes, and the proxy's behaviour in each — the contract network.md states. |
 | `test_reset_hands_back.py` | That `nhub reset all` gave the network back. |
-| `run_on_box.sh` | All of the above, from an uninstalled machine and back to one. |
+| `run_on_box.sh` | The single-mode lifecycle, from an uninstalled machine and back to one. |
+| `run_mode_matrix.sh` | The matrix lifecycle: install, server, the whole walk, reset. |
+| `setup_vms.sh` | The mini network the matrix wants: a hub with three ports and a client on the served wire, on a distro and version named to pin behaviour. |
 
 `panel_client.py` is the signed-in caller; `machine_state.py` reads the facts
-about the box that no API can answer.
+about the box that no API can answer; `vm_exec.py` drives a lab VM through the
+QEMU guest agent, which survives everything the tests do to its network.
 
 ## Running them
 
@@ -47,12 +51,25 @@ Options, each also readable from the environment:
 Without a password the suite skips rather than fails, so a `pytest` from the
 repository root walks past it instead of taking a workstation's network apart.
 
-## In a VM
+## The mini network
 
-The hypervisor half is not in this repository: which images exist and how a VM
-is booted belongs to whoever runs the lab. Whatever starts the VM copies this
-directory and the package in, and runs `run_on_box.sh` inside it — with a
-libvirt lab, that is a `sync` and a `run`.
+The matrix wants a machine with three ports and a neighbour to serve, and
+`setup_vms.sh` builds exactly that on a libvirt host:
 
-The file order is the run order. `test_panel_api_network.py` walks a box from
-one shape to the next, and each check starts from where the last left it.
+```bash
+./setup_vms.sh debian 12          # or: ubuntu 24.04, alma 9, arch rolling …
+python3 vm_exec.py nmxhub 'mkdir -p /opt/integration'
+for f in *.py *.sh pytest.ini; do python3 vm_exec.py nmxhub push "$PWD/$f" "/opt/integration/$f"; done
+python3 vm_exec.py nmxhub push neutrino-hub_0.1.0_amd64.deb /tmp/hub.deb
+python3 vm_exec.py nmxhub 'bash /opt/integration/run_mode_matrix.sh /tmp/hub.deb --client'
+```
+
+The distro and version name the exact cloud image, so a behaviour seen on
+`debian 12` is pinned to that release rather than to whatever the lab had
+lying around. `--client` turns the client VM's lease from a skipped check
+into an assertion. The matrix also runs on any lesser machine — the checks
+that need a port the box does not have skip and say so.
+
+The file order is the run order. `test_panel_api_network.py` and
+`test_mode_matrix.py` each walk a box from one shape to the next, and each
+check starts from where the last left it.

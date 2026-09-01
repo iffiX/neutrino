@@ -21,8 +21,23 @@ def test_the_machine_still_runs_its_own_manager(before):
     assert machine_state.is_active(before["manager"])
 
 
-def test_the_addresses_and_routes_are_the_ones_it_had(before):
-    assert machine_state.addresses_and_routes() == before["addresses_and_routes"]
+def test_the_addresses_and_routes_it_arrived_with_are_intact(before):
+    """Everything the machine held before the hub is still held.
+
+    Not equality: a reset takes no address off anything, and that includes
+    addresses the router phase put on ports that arrived bare — those stay,
+    as residue rather than damage. What must not appear is an extra address
+    on a port the machine was already using.
+    """
+    had = set(before["addresses_and_routes"])
+    now = set(machine_state.addresses_and_routes())
+    assert had <= now
+
+    addressed = {line.split()[0] for line in had if "/" in line}
+    extras = [
+        line for line in now - had if "/" in line and line.split()[0] in addressed
+    ]
+    assert extras == []
 
 
 def test_the_network_configuration_files_are_untouched(before):
