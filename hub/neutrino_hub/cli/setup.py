@@ -148,6 +148,11 @@ def main() -> int:
         metavar="PATH",
         help="read every answer from this JSON file",
     )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="agree to whatever installing the named modules entails",
+    )
     arguments = parser.parse_args()
 
     if os.geteuid() != 0:
@@ -183,7 +188,11 @@ def main() -> int:
             is_color_enabled=is_coloured,
             log_path=SETUP_LOG_PATH,
         )
-    return _setup(reporter, steps, answers, server=server)
+    # A document is a list of modules, not agreement to what installing them
+    # does. The wizard's own screens ask; a run that answers no questions has
+    # only this flag to ask with.
+    is_consented = arguments.yes or not (arguments.stdin or arguments.json)
+    return _setup(reporter, steps, answers, server=server, is_consented=is_consented)
 
 
 def _answers(arguments):
@@ -406,7 +415,14 @@ def _skipped_steps() -> tuple:
     return (_step_systemd_units, _step_enable_services, _step_start_services)
 
 
-def _setup(reporter: InstallReporter, steps: list, answers, *, server=None) -> int:
+def _setup(
+    reporter: InstallReporter,
+    steps: list,
+    answers,
+    *,
+    server=None,
+    is_consented: bool = True,
+) -> int:
     """Run every step, then store the password and hand the box over.
 
     Args:
@@ -464,7 +480,7 @@ def _setup(reporter: InstallReporter, steps: list, answers, *, server=None) -> i
     for name in answers.services:
         reporter.start(f"Installing {name}")
         try:
-            note = _install_service(name, reporter)
+            note = _install_service(name, reporter, is_consented=is_consented)
         except (CommandError, OSError, ValueError, RuntimeError) as error:
             # Reported as the failure it is, and then the run goes on: one
             # optional module refusing is not a failed setup, because the
@@ -544,22 +560,33 @@ def _joined_devices() -> list:
     ]
 
 
-def _install_service(name: str, reporter: InstallReporter) -> str:
+def _install_service(
+    name: str, reporter: InstallReporter, *, is_consented: bool = True
+) -> str:
     """Install one optional module, as the panel's Services page would.
-
-    Consent was given on the wizard's own screen, which is why it is passed
-    rather than asked for again here.
 
     Args:
         name: The module's registry name.
         reporter: Where the provisioner's progress lines go.
+        is_consented: Whether agreement was given for what installing entails.
+            The wizard's own screens collect it; a run reading a document has
+            it only from `--yes`.
 
     Returns:
         What the provisioner reported doing.
+
+    Raises:
+        ValueError: If installing this module needs agreement and none was
+            given.
     """
     spec = MODULE_SPECS[name]
     provisioner = spec.provisioner()
     if plan_for(provisioner).is_consent_needed:
+        if not is_consented:
+            raise ValueError(
+                f"installing {name} here does more than install packages; "
+                f"re-run with --yes to agree to it"
+            )
         result = provisioner.provision(is_consented=True, report=reporter.note)
     else:
         result = provisioner.provision(report=reporter.note)

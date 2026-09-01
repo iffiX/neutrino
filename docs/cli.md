@@ -54,10 +54,20 @@ user on the machine for as long as the command runs, and stays in the shell
 history afterwards; `--stdin` additionally keeps the password off the disk,
 which `--json` cannot.
 
+> `--yes`
+
+Agree to what installing the named modules entails. Some modules do more than
+install packages — ZFS builds a kernel module, and a module may add a
+repository outside the distribution — and the wizard's screens put that in
+front of a person before it happens. A document names modules and cannot
+agree to anything, so without this flag such a module is reported as not
+installed and the rest of the setup goes on.
+
 ```bash
 sudo nhub setup
 sudo nhub setup --stdin < answers.json
 sudo nhub setup --json answers.json
+sudo nhub setup --yes --stdin < answers.json
 ```
 
 ```json
