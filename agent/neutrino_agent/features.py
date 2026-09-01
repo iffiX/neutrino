@@ -69,6 +69,12 @@ class FeatureManager:
         self._catalog_hash = ""
         self._desired: dict = {}
         self._statuses: dict = {}
+        # Features whose install ran and whose verify did not confirm it.
+        # Without this the idle re-check finds them absent a minute later and
+        # installs them again, for ever: a package whose verify command names
+        # the wrong path is re-downloaded every minute until somebody notices
+        # the traffic.
+        self._unconfirmed: set = set()
         self._platform = platform_tuple()
         self._signature = ""
         self._checked_at = 0.0
@@ -346,6 +352,10 @@ class FeatureManager:
                 "is_active": False,
             }
         if not is_enabled:
+            # Asking for it to go clears the note that installing it did not
+            # confirm, so asking for it again is a fresh attempt rather than
+            # the remembered answer.
+            self._unconfirmed.discard(name)
             if not is_installed:
                 return {"state": "absent", "message": "", "is_active": False}
             removal = entry.get("uninstall", "")
@@ -366,7 +376,16 @@ class FeatureManager:
                 }
             return {"state": "absent", "message": "", "is_active": False}
         if is_installed:
+            self._unconfirmed.discard(name)
             return {"state": "installed", "message": "", "is_active": False}
+        if name in self._unconfirmed:
+            # Installed once already, and the verify still says otherwise.
+            # Repeating it would fetch the same package on every re-check.
+            return {
+                "state": "installed",
+                "message": "installed; verify did not confirm",
+                "is_active": False,
+            }
 
         self._publish(name, {"state": "installing", "message": "", "is_active": False})
         url = entry.get("url", "")
@@ -393,7 +412,9 @@ class FeatureManager:
             self._log(f"{name}: installing")
             install_package(package, package_kind=package_kind, entry=entry)
         if self._verify(manifest):
+            self._unconfirmed.discard(name)
             return {"state": "installed", "message": "", "is_active": False}
+        self._unconfirmed.add(name)
         return {
             "state": "installed",
             "message": "installed; verify did not confirm",
