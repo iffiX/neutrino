@@ -46,6 +46,19 @@ writing, validating with the real tool, reloading), `constants.py` holds the
 module-prefixed constants, `provisioner.py` installs the software itself
 where the Ubuntu archive cannot. Knowing one module is knowing all of them.
 
+**`modules/router` is bigger than that shape, and organised by engine.** It
+drives four pieces of software rather than one, so instead of a single
+`renderer.py` and `ops.py` it has a pair per engine: `nft_renderer.py`,
+`dnsmasq_renderer.py`, `hostapd_renderer.py`, `supplicant_renderer.py` and
+`dhcp_renderer.py` are pure and turn `config/` into a file; `links.py`,
+`supplicant.py`, `dhcp_client.py`, `wifi.py` and `resolver.py` touch the
+machine. `routes.py` is the applier that calls them in order, `interfaces.py`
+and `connections.py` are the two files under `config/router/`, `modes.py`
+turns a wizard answer into interface roles, `link_status.py` reads what the
+kernel says, `credentials.py` reads what another manager knew, and `stack.py`
+stops whatever was driving the machine before. Which engines and why:
+[network.md](network.md).
+
 **Every module declares what machines it runs on.** The gateway is meant to
 land on whatever box is around — an x86 mini PC, a Raspberry Pi — so each
 `constants.py` carries `<PREFIX>_SUPPORTED_ARCHITECTURES`: `("*",)` when the

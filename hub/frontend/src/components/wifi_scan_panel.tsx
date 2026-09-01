@@ -77,8 +77,8 @@ export function WifiScanPanel({
     if (network.is_active) {
       return;
     }
-    // A saved network already has its passphrase in NetworkManager, and an open
-    // one never had one, so neither needs to ask.
+    // A known network already has its passphrase in `config/`, and an open one
+    // never had one, so neither needs to ask.
     if (network.is_saved || network.security.trim().length === 0) {
       void join(network, null);
       return;

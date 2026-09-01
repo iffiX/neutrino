@@ -35,6 +35,8 @@ and leave this pointing at it.**
 | [coding_style/naming_style.md](docs/standard/coding_style/naming_style.md) | Naming anything: `is_`/`has_` bools, constant prefixes, banned terms. |
 | [coding_style/python_style.md](docs/standard/coding_style/python_style.md) | Writing Python: file and method order, black, Google docstrings. |
 | [coding_style/typescript_style.md](docs/standard/coding_style/typescript_style.md) | Touching `hub/frontend/`: no `any`, `import type`, API types mirror the backend models. |
+| [design/api.md](docs/standard/design/api.md) | Adding or renaming a panel endpoint: `/api/<module>`, plural sub-resources, when a verb is allowed. |
+| [design/network.md](docs/standard/design/network.md) | Touching the router layer: the three engines the hub drives, which modes own a machine's network and which touch nothing, and why it does not build on NetworkManager. |
 | [design/visual.md](docs/standard/design/visual.md) | Touching panel CSS: what the accent and the glow may mean, button tiers, frames. |
 | [design/class_design.md](docs/standard/design/class_design.md) | Adding a class: one concept per class, explicit `__init__` kwargs. |
 | [design/class_hierarchy.md](docs/standard/design/class_hierarchy.md) | Naming a class: the per-package `<Domain><Thing><Role>` families. |
@@ -125,6 +127,11 @@ examples in the document named beside it.
 - **Smallest change that works.** No restructuring you were not asked for, no
   layer for a case nobody has.
   ([coding_style/comment_style.md](docs/standard/coding_style/comment_style.md))
+- **A reset hands the network back before it replaces `config/`, and takes no
+  address off anything.** `config/` is the only record of which interfaces had
+  units on them, and an interface losing its address mid-reset drops the
+  session that asked for it.
+  ([design/network.md](docs/standard/design/network.md))
 - **Never commit unasked.** When work looks done, ask. A commit is a finished,
   tested feature. ([agent_work_rule/commit.md](docs/standard/agent_work_rule/commit.md))
 - **`sudo` never appears in the hub's own code.** The panel is already root, so

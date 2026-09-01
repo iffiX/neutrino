@@ -7,6 +7,8 @@ a unit that starts nothing, which is how a packaged box ends up with a panel
 that never comes up.
 """
 
+import re
+
 import pytest
 
 from neutrino_hub.system import units
@@ -110,7 +112,11 @@ def test_each_unit_starts_one_process_through_the_hub():
 def test_no_rendered_unit_keeps_a_placeholder():
     """A unit written with @PYTHON@ still in it fails at exec with that as
     the path, which is what happened to the AI gateway: its provisioner read
-    the template and wrote it without going through this."""
+    the template and wrote it without going through this.
+
+    A placeholder rather than any `@`: a templated unit names its siblings by
+    instance, and `neutrino_hub_supplicant@%i.service` is an ordinary way to
+    spell one."""
     from neutrino_hub.utils.constants import UTILS_DATA_DIR
 
     installer = SystemdUnitInstaller()
@@ -119,7 +125,8 @@ def test_no_rendered_unit_keeps_a_placeholder():
         for is_packaged_value in (True, False):
             units.is_packaged = lambda: is_packaged_value
             rendered = installer.render(text, "/opt/neutrino/python/bin/python3")
-            assert "@" not in rendered, f"{template.name}, packaged={is_packaged_value}"
+            left = re.findall(r"@[A-Z_]+@", rendered)
+            assert not left, f"{template.name}, packaged={is_packaged_value}: {left}"
 
 
 def test_a_template_nobody_renders_carries_no_placeholder():

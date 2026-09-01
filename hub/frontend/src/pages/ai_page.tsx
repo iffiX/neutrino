@@ -12,6 +12,7 @@ import {
   describeError,
 } from "../api_client";
 import { useApiResource } from "../use_api_resource";
+import { useConfirm } from "../use_confirm";
 import type {
   AiProviderView,
   AiProvidersResponse,
@@ -32,6 +33,7 @@ import "./ai_page.css";
 export function AiPage() {
   const resource = useApiResource<CliproxyApiStatusView>("/cliproxyapi");
   const [view, setView] = useState<CliproxyApiStatusView | null>(null);
+  const confirm = useConfirm();
   const [providers, setProviders] = useState<AiProviderView[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
@@ -138,10 +140,15 @@ export function AiPage() {
     });
   };
 
-  const handleDeleteKey = (keyId: string, name: string) => {
-    if (!window.confirm(`Revoke "${name}"? Whatever uses it stops working.`)) {
-      return;
-    }
+  const handleDeleteKey = (keyId: string, name: string) =>
+    confirm.ask({
+      title: `Revoke ${name}`,
+      body: "Whatever is using this key stops working at once.",
+      confirmLabel: "Revoke",
+      onConfirm: () => void deleteKey(keyId),
+    });
+
+  const deleteKey = (keyId: string) => {
     void run(async () => {
       setView(
         await apiDelete<CliproxyApiStatusView>(`/cliproxyapi/keys/${keyId}`),
@@ -300,6 +307,7 @@ export function AiPage() {
           </button>
         </div>
       </section>
+      {confirm.modal}
     </div>
   );
 }

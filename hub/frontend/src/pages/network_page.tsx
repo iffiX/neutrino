@@ -3,17 +3,24 @@ import { useEffect, useMemo, useState } from "react";
 import { ApplyBar } from "../components/apply_bar";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
+import type { IconName } from "../components/icon";
 import { NetworkDiagram } from "../components/network_diagram";
+import { NetworkExposurePanel } from "../components/network_exposure_panel";
+import { NetworkModePanel } from "../components/network_mode_panel";
+import { PanelPortPanel } from "../components/panel_port_panel";
 import { PasswordInput } from "../components/password_input";
+import { SavedNetworksPanel } from "../components/saved_networks_panel";
 import { SignalBars } from "../components/signal_bars";
 import { StatusDot } from "../components/status_dot";
 import { ToggleSwitch } from "../components/toggle_switch";
+import { UpstreamGatewayPanel } from "../components/upstream_gateway_panel";
 import { WifiScanPanel } from "../components/wifi_scan_panel";
 import { apiDelete, apiPut, describeError } from "../api_client";
 import {
   isInterfaceDraftValid,
   validateInterface,
 } from "../network_validation";
+import { interruptionWarning } from "../network_warnings";
 import type { InterfaceErrors, ServedNetwork } from "../network_validation";
 import { useApiResource } from "../use_api_resource";
 import type {
@@ -29,13 +36,14 @@ import type {
 import "./network_page.css";
 
 /**
- * What each interface is for, and what it is doing.
+ * What this machine is, and what each of its interfaces is doing.
  *
- * The page is a diagram of the wiring, a tab per interface, and one form for
- * whichever is selected. Roles rather than fixed names: an interface is an
- * uplink, a network the box serves, or unused, and the role decides what there
- * is to configure. That is what lets the same page describe a box with two
- * LANs, or one reaching the internet over Wi-Fi.
+ * The mode comes first and everything below it follows from the answer. A
+ * server has no uplink to rank and no network to hand out leases on, so it is
+ * not shown a page shaped like a router's: it gets the two questions it
+ * actually has — which interfaces answer, and on what port. The two router
+ * modes get the wiring diagram, a tab per interface and a form for whichever
+ * is selected.
  *
  * Each interface saves and applies on its own. Applying the whole page at once
  * would mean a mistake in the Wi-Fi settings could take the wired LAN down
@@ -67,6 +75,15 @@ const ROLE_OPTIONS: { value: InterfaceRole; label: string; hint: string }[] = [
   { value: "disabled", label: "Disabled", hint: "Left alone" },
 ];
 
+// What each kind of port is drawn as. A modem is the way out of a building
+// with no wire into it, so it is drawn as the world rather than as a cable.
+const LINK_ICONS: Record<string, IconName> = {
+  wifi: "wifi",
+  modem: "globe",
+  vlan: "nodes",
+  ethernet: "link",
+};
+
 const VLAN_ID_MIN = 1;
 const VLAN_ID_MAX = 4094;
 
@@ -75,6 +92,9 @@ function newVlanSettings(parent: string, id: number): InterfaceSettings {
   return {
     name: `${parent}.${id}`,
     role: "disabled",
+    // Sent and discarded: which interfaces answer is written as a set by the
+    // panel that shows all of them, not by a request about one of them.
+    is_exposed: false,
     wan: {
       method: "dhcp",
       address: null,
@@ -120,11 +140,7 @@ export function NetworkPage() {
     if (network.data === null) {
       return;
     }
-    setOptions({
-      is_ssh_from_wan_allowed: network.data.is_ssh_from_wan_allowed,
-      uplink_policy: network.data.uplink_policy,
-      is_inter_lan_allowed: network.data.is_inter_lan_allowed,
-    });
+    setOptions(optionsOf(network.data));
   }, [network.data]);
 
   // Memoised so `selected` keeps the same identity between renders while the
@@ -194,7 +210,13 @@ export function NetworkPage() {
     [interfaces, selectedName],
   );
 
+  // Which sections there are at all. The two router modes are the only ones
+  // with a wiring diagram, uplinks to rank or networks to serve.
+  const isRouting = network.data?.mode === "router";
   const isWifi = selected?.link.kind === "wifi";
+  // A carrier hands a modem one address on a point-to-point link: there is
+  // nothing to serve a network on, and nothing to carry a VLAN tag.
+  const isModem = selected?.link.kind === "modem";
   const errors =
     draft === null ? {} : validateInterface(draft, { isWifi, otherNetworks });
   const isValid = isInterfaceDraftValid(errors);
@@ -218,30 +240,17 @@ export function NetworkPage() {
     });
   };
 
+  // What applying this interface costs, in the shape every warning on this
+  // page takes: what changes, then what it interrupts.
+  const warning = interfaceWarning({ selected, draft, interfaces, vlanIds });
+
   const handleSubmit = async () => {
     if (draft === null || selected === null || !isValid) {
       return;
     }
 
-    // Leaving the split role takes every VLAN on the trunk with it.
-    if (selected.settings.role === "split" && draft.role !== "split") {
-      const children = interfaces
-        .filter(
-          (entry) => entry.settings.vlan?.parent === selected.settings.name,
-        )
-        .map((entry) => entry.settings.name);
-      if (
-        children.length > 0 &&
-        !window.confirm(
-          `Leaving the split role removes ${children.join(", ")}. Continue?`,
-        )
-      ) {
-        return;
-      }
-    }
-
     // VLAN edits only mean something while the role stays split. Crossing off
-    // a VLAN that already serves a network takes that network down.
+    // a VLAN takes the network it serves down with it.
     const vlanCreates =
       draft.role === "split"
         ? vlanIds.filter((id) => !appliedVlanIds.includes(id))
@@ -255,42 +264,8 @@ export function NetworkPage() {
               !vlanIds.includes(entry.settings.vlan.id),
           )
         : [];
-    const servingRemovals = vlanRemovals
-      .filter((entry) => entry.settings.role !== "disabled")
-      .map((entry) => entry.settings.name);
-    if (
-      servingRemovals.length > 0 &&
-      !window.confirm(
-        `Removing ${servingRemovals.join(", ")}: their networks stop existing. Continue?`,
-      )
-    ) {
-      return;
-    }
-
-    // Rewriting the address of a LAN drops every session on it, including this
-    // one. Say so before it happens, so the browser's network error afterwards
-    // reads as expected rather than as a failure.
-    const wasLan = selected.settings.role === "lan";
     const willBeLan = draft.role === "lan";
-    const isAddressChanging =
-      wasLan &&
-      (!willBeLan ||
-        draft.lan.address !== selected.settings.lan.address ||
-        draft.lan.prefix_len !== selected.settings.lan.prefix_len ||
-        draft.lan.upstream_gateway !== selected.settings.lan.upstream_gateway);
-    if (isAddressChanging) {
-      const destination = willBeLan
-        ? `http://${draft.lan.address}`
-        : "another interface";
-      if (
-        !window.confirm(
-          `${selected.settings.name} is serving ${selected.link.ipv4_address ?? "the LAN"}. ` +
-            `Changing it drops your connection to the panel — reopen it at ${destination} afterward. Continue?`,
-        )
-      ) {
-        return;
-      }
-    }
+    const isAddressChanging = isServedAddressChanging(selected, draft);
 
     setIsSaving(true);
     setSaveError(null);
@@ -330,8 +305,7 @@ export function NetworkPage() {
   const isGlobalDirty =
     options !== null &&
     network.data !== null &&
-    (options.is_ssh_from_wan_allowed !== network.data.is_ssh_from_wan_allowed ||
-      options.uplink_policy !== network.data.uplink_policy ||
+    (options.uplink_policy !== network.data.uplink_policy ||
       options.is_inter_lan_allowed !== network.data.is_inter_lan_allowed);
 
   const applyOptions = async () => {
@@ -342,7 +316,7 @@ export function NetworkPage() {
     setOptionsError(null);
     setOptionsNotice(null);
     try {
-      const view = await apiPut<NetworkView>("/network/options", options);
+      const view = await apiPut<NetworkView>("/network", options);
       network.setData(view);
       setOptionsNotice("Applied to the whole gateway.");
     } catch (cause: unknown) {
@@ -383,216 +357,309 @@ export function NetworkPage() {
         </div>
       </div>
 
-      <section className="settings_group network_topology">
-        <div className="settings_group_title">
-          <h2>Topology</h2>
-        </div>
-        {network.data === null ? (
-          <div className="skeleton" style={{ height: 360 }} />
-        ) : (
+      {network.data === null ? (
+        <div className="skeleton" style={{ height: 220 }} />
+      ) : (
+        <NetworkModePanel network={network.data} onApplied={network.setData} />
+      )}
+
+      {network.data !== null && network.data.mode === "side_gateway" && (
+        <UpstreamGatewayPanel
+          network={network.data}
+          onApplied={network.setData}
+        />
+      )}
+
+      {isRouting && network.data !== null && (
+        <section className="settings_group network_topology">
+          <div className="settings_group_title">
+            <h2>Topology</h2>
+          </div>
           <NetworkDiagram
             network={network.data}
             devices={deviceList.data?.devices ?? []}
             selectedName={selectedName}
             onSelect={setSelectedName}
           />
-        )}
-      </section>
-
-      {(network.data?.warnings ?? []).map((warning) => (
-        <div className="notice notice--warn" key={warning}>
-          <Icon name="alert" size={15} />
-          <div className="notice_body">{warning}</div>
-        </div>
-      ))}
-
-      <div className="network_tabs" role="tablist" aria-label="Interfaces">
-        {interfaces.map((entry) => (
-          <InterfaceTab
-            key={entry.settings.name}
-            entry={entry}
-            isSelected={entry.settings.name === selectedName}
-            onSelect={() => setSelectedName(entry.settings.name)}
-          />
-        ))}
-      </div>
-
-      {selected !== null && draft !== null && (
-        <section className={`card ${isDirty ? "card--dirty" : ""}`}>
-          <LinkSummary entry={selected} />
-
-          <div className="network_form">
-            <div className="network_section">
-              <span className="section_label">Role</span>
-              <div className="network_roles">
-                {ROLE_OPTIONS.filter(
-                  (option) =>
-                    option.value !== "split" ||
-                    (!isWifi && draft.vlan === null),
-                ).map((option) => {
-                  // Serving a network over Wi-Fi needs access-point mode, and
-                  // plenty of chipsets have none. Offering the role anyway
-                  // would take an SSID, a passphrase and a save before failing,
-                  // so it is refused up front and says why.
-                  const isBlocked =
-                    option.value === "lan" &&
-                    isWifi &&
-                    !selected.link.is_ap_capable;
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      className={`network_role ${draft.role === option.value ? "network_role--on" : ""} ${isBlocked ? "network_role--blocked" : ""}`}
-                      onClick={() =>
-                        update((next) => (next.role = option.value))
-                      }
-                      aria-pressed={draft.role === option.value}
-                      disabled={isBlocked}
-                      title={
-                        isBlocked
-                          ? `${selected.settings.name} has no access-point mode`
-                          : option.hint
-                      }
-                    >
-                      <span className="network_role_label">
-                        {isBlocked && (
-                          <Icon
-                            name="blocked"
-                            size={13}
-                            className="network_role_ban"
-                          />
-                        )}
-                        {option.label}
-                      </span>
-                      <span className="network_role_hint">
-                        {isBlocked
-                          ? "No access-point mode on this card."
-                          : option.hint}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {draft.role === "wan" && (
-              <WanFields
-                draft={draft}
-                errors={errors}
-                isWifi={isWifi}
-                update={update}
-                onJoined={network.setData}
-              />
-            )}
-            {draft.role === "lan" && (
-              <LanFields
-                draft={draft}
-                errors={errors}
-                isWifi={isWifi}
-                update={update}
-                onJoined={network.setData}
-              />
-            )}
-            {draft.role === "split" && (
-              <VlanSection
-                interfaces={interfaces}
-                parentName={draft.name}
-                ids={vlanIds}
-                onChange={(ids) => {
-                  setNotice(null);
-                  setVlanIds(ids);
-                }}
-                onOpen={setSelectedName}
-              />
-            )}
-            {draft.role === "disabled" && (
-              <p className="field_hint">
-                {draft.name} is unconfigured; nothing to set.
-              </p>
-            )}
-
-            <ApplyBar
-              isDirty={isDirty && isValid}
-              isBusy={isSaving}
-              label={`Apply to ${draft.name}`}
-              hint={
-                isValid
-                  ? "Reconfigures this interface, then reloads the firewall and DHCP."
-                  : "Fix the highlighted fields first."
-              }
-              error={saveError}
-              notice={notice}
-              onReset={() => {
-                setDraft(structuredClone(selected.settings));
-                setVlanIds(appliedVlanIds);
-                setNotice(null);
-                setSaveError(null);
-              }}
-              onApply={() => void handleSubmit()}
-            />
-          </div>
         </section>
+      )}
+
+      {isRouting &&
+        (network.data?.warnings ?? []).map((warning) => (
+          <div className="notice notice--warn" key={warning}>
+            <Icon name="alert" size={15} />
+            <div className="notice_body">{warning}</div>
+          </div>
+        ))}
+
+      {isRouting && (
+        <div className="network_tabs" role="tablist" aria-label="Interfaces">
+          {interfaces.map((entry) => (
+            <InterfaceTab
+              key={entry.settings.name}
+              entry={entry}
+              isSelected={entry.settings.name === selectedName}
+              onSelect={() => setSelectedName(entry.settings.name)}
+            />
+          ))}
+        </div>
+      )}
+
+      {isRouting && (
+        <>
+          {selected !== null && draft !== null && (
+            <section className={`card ${isDirty ? "card--dirty" : ""}`}>
+              <LinkSummary entry={selected} />
+
+              <div className="network_form">
+                <div className="network_section">
+                  <span className="section_label">Role</span>
+                  <div className="network_roles">
+                    {ROLE_OPTIONS.filter(
+                      (option) =>
+                        option.value !== "split" ||
+                        (!isWifi && !isModem && draft.vlan === null),
+                    ).map((option) => {
+                      // Serving a network needs somewhere to serve it: an
+                      // access-point mode plenty of Wi-Fi chipsets have none of,
+                      // or a wire. Offering the role anyway would take an SSID,
+                      // a passphrase and a save before failing, so it is refused
+                      // up front and says why.
+                      const isBlocked =
+                        option.value === "lan" && !selected.link.is_ap_capable;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`network_role ${draft.role === option.value ? "network_role--on" : ""} ${isBlocked ? "network_role--blocked" : ""}`}
+                          onClick={() =>
+                            update((next) => (next.role = option.value))
+                          }
+                          aria-pressed={draft.role === option.value}
+                          disabled={isBlocked}
+                          title={
+                            isBlocked
+                              ? isModem
+                                ? `${selected.settings.name} is a modem: the carrier gives it one address and nothing to serve`
+                                : `${selected.settings.name} has no access-point mode`
+                              : option.hint
+                          }
+                        >
+                          <span className="network_role_label">
+                            {isBlocked && (
+                              <Icon
+                                name="blocked"
+                                size={13}
+                                className="network_role_ban"
+                              />
+                            )}
+                            {option.label}
+                          </span>
+                          <span className="network_role_hint">
+                            {isBlocked
+                              ? "No access-point mode on this card."
+                              : option.hint}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {draft.role === "wan" && (
+                  <WanFields
+                    draft={draft}
+                    errors={errors}
+                    isWifi={isWifi}
+                    update={update}
+                    onJoined={network.setData}
+                  />
+                )}
+                {draft.role === "lan" && (
+                  <LanFields
+                    draft={draft}
+                    errors={errors}
+                    isWifi={isWifi}
+                    update={update}
+                    onJoined={network.setData}
+                  />
+                )}
+                {draft.role === "split" && (
+                  <VlanSection
+                    interfaces={interfaces}
+                    parentName={draft.name}
+                    ids={vlanIds}
+                    onChange={(ids) => {
+                      setNotice(null);
+                      setVlanIds(ids);
+                    }}
+                    onOpen={setSelectedName}
+                  />
+                )}
+                {draft.role === "disabled" && (
+                  <p className="field_hint">
+                    {draft.name} is unconfigured; nothing to set.
+                  </p>
+                )}
+
+                <ApplyBar
+                  isDirty={isDirty && isValid}
+                  isBusy={isSaving}
+                  label={`Apply to ${draft.name}`}
+                  hint={
+                    isValid
+                      ? "Reconfigures this interface, then reloads the firewall and DHCP."
+                      : "Fix the highlighted fields first."
+                  }
+                  warning={warning}
+                  error={saveError}
+                  notice={notice}
+                  onReset={() => {
+                    setDraft(structuredClone(selected.settings));
+                    setVlanIds(appliedVlanIds);
+                    setNotice(null);
+                    setSaveError(null);
+                  }}
+                  onApply={() => void handleSubmit()}
+                />
+              </div>
+            </section>
+          )}
+
+          {network.data !== null && (
+            <section className="network_globals">
+              {/* Only where there is a radio to use them. On a box with none
+                  this is a list nothing would ever read. */}
+              {interfaces.some((entry) => entry.link.kind === "wifi") && (
+                <SavedNetworksPanel />
+              )}
+              {options !== null && (
+                <section
+                  className={`settings_group ${isGlobalDirty ? "settings_group--dirty" : ""}`}
+                >
+                  <div className="settings_group_title">
+                    <h2>Routing behavior</h2>
+                  </div>
+                  <ToggleSwitch
+                    isOn={options.uplink_policy === "balance"}
+                    onChange={(isOn) =>
+                      setOptions({
+                        ...options,
+                        uplink_policy: isOn ? "balance" : "failover",
+                      })
+                    }
+                    label="Spread traffic across uplinks"
+                    description="Off, one uplink carries everything and the rest wait. On, connections are shared across the separate upstream lines — two ports onto the same line still count as one, so this only does something with two real connections."
+                  />
+                  <ToggleSwitch
+                    isOn={options.is_inter_lan_allowed}
+                    onChange={(isOn) =>
+                      setOptions({ ...options, is_inter_lan_allowed: isOn })
+                    }
+                    label="Networks reach each other"
+                    description="Off, devices on one of the gateway's networks cannot see devices on another; every network still reaches the internet and the overlay."
+                  />
+                  <ApplyBar
+                    isDirty={isGlobalDirty}
+                    isBusy={isSavingOptions}
+                    label="Apply routing behavior"
+                    hint="Reloads the firewall and rebuilds the uplink routes."
+                    error={optionsError}
+                    notice={optionsNotice}
+                    onReset={() => setOptions(optionsOf(network.data!))}
+                    onApply={() => void applyOptions()}
+                  />
+                </section>
+              )}
+            </section>
+          )}
+        </>
       )}
 
       {network.data !== null && (
-        <section className="network_globals">
-          <div className="page_header_text">
-            <h1>Global settings</h1>
-          </div>
-          {options !== null && (
-            <section
-              className={`settings_group ${isGlobalDirty ? "settings_group--dirty" : ""}`}
-            >
-              <ToggleSwitch
-                isOn={options.uplink_policy === "balance"}
-                onChange={(isOn) =>
-                  setOptions({
-                    ...options,
-                    uplink_policy: isOn ? "balance" : "failover",
-                  })
-                }
-                label="Spread traffic across uplinks"
-                description="Off, one uplink carries everything and the rest wait. On, connections are shared across the separate upstream lines — two ports onto the same line still count as one, so this only does something with two real connections."
-              />
-              <ToggleSwitch
-                isOn={options.is_inter_lan_allowed}
-                onChange={(isOn) =>
-                  setOptions({ ...options, is_inter_lan_allowed: isOn })
-                }
-                label="Networks reach each other"
-                description="Off, devices on one of the gateway's networks cannot see devices on another; every network still reaches the internet and the overlay."
-              />
-              <ToggleSwitch
-                isOn={options.is_ssh_from_wan_allowed}
-                onChange={(isOn) =>
-                  setOptions({ ...options, is_ssh_from_wan_allowed: isOn })
-                }
-                label="Allow SSH from the WAN"
-                description="Whether port 22 answers on the uplink interfaces, reachable from the whole internet. Leave off once Tailscale is up; remote access does not need it."
-              />
-              <ApplyBar
-                isDirty={isGlobalDirty}
-                isBusy={isSavingOptions}
-                label="Apply global settings"
-                hint="Reloads the firewall and rebuilds the uplink routes."
-                error={optionsError}
-                notice={optionsNotice}
-                onReset={() =>
-                  setOptions({
-                    is_ssh_from_wan_allowed:
-                      network.data!.is_ssh_from_wan_allowed,
-                    uplink_policy: network.data!.uplink_policy,
-                    is_inter_lan_allowed: network.data!.is_inter_lan_allowed,
-                  })
-                }
-                onApply={() => void applyOptions()}
-              />
-            </section>
-          )}
-        </section>
+        <NetworkExposurePanel
+          network={network.data}
+          onApplied={network.setData}
+        />
       )}
+
+      <PanelPortPanel />
     </div>
   );
+}
+
+/** Whether applying moves the address of a network this box already serves. */
+function isServedAddressChanging(
+  selected: InterfaceView | null,
+  draft: InterfaceSettings | null,
+): boolean {
+  if (selected === null || draft === null || selected.settings.role !== "lan") {
+    return false;
+  }
+  return (
+    draft.role !== "lan" ||
+    draft.lan.address !== selected.settings.lan.address ||
+    draft.lan.prefix_len !== selected.settings.lan.prefix_len ||
+    draft.lan.upstream_gateway !== selected.settings.lan.upstream_gateway
+  );
+}
+
+interface InterfaceWarningInput {
+  selected: InterfaceView | null;
+  draft: InterfaceSettings | null;
+  interfaces: InterfaceView[];
+  vlanIds: number[];
+}
+
+/**
+ * What applying this interface costs, or undefined when it costs nothing.
+ *
+ * One warning and never two, in the shape the whole page uses: the mechanism,
+ * then the interruption. What the change *is* belongs to the fields above it
+ * and to the bar's own hint.
+ */
+function interfaceWarning({
+  selected,
+  draft,
+  interfaces,
+  vlanIds,
+}: InterfaceWarningInput): string | undefined {
+  if (selected === null || draft === null) {
+    return undefined;
+  }
+  const dropped =
+    draft.role === "split"
+      ? interfaces
+          .filter(
+            (entry) =>
+              entry.settings.vlan?.parent === draft.name &&
+              entry.settings.vlan.id !== null &&
+              !vlanIds.includes(entry.settings.vlan.id),
+          )
+          .map((entry) => entry.settings.name)
+      : interfaces
+          .filter((entry) => entry.settings.vlan?.parent === draft.name)
+          .map((entry) => entry.settings.name);
+  return interruptionWarning(
+    dropped.length === 0
+      ? null
+      : `${dropped.join(", ")} and the networks they serve are removed.`,
+    isServedAddressChanging(selected, draft)
+      ? `The address ${selected.settings.name} serves is reassigned and its ` +
+          "leases are reissued."
+      : null,
+  );
+}
+
+/** The module's own settings, as the box holds them now. */
+function optionsOf(view: NetworkView): NetworkOptions {
+  return {
+    uplink_policy: view.uplink_policy,
+    is_inter_lan_allowed: view.is_inter_lan_allowed,
+    exposed_interfaces: view.interfaces
+      .filter((entry) => entry.settings.is_exposed)
+      .map((entry) => entry.settings.name),
+  };
 }
 
 interface InterfaceTabProps {
@@ -611,7 +678,7 @@ function InterfaceTab({ entry, isSelected, onSelect }: InterfaceTabProps) {
       className={`network_tab network_tab--${settings.role} ${isSelected ? "network_tab--on" : ""}`}
       onClick={onSelect}
     >
-      <Icon name={link.kind === "wifi" ? "wifi" : "link"} size={14} />
+      <Icon name={LINK_ICONS[link.kind] ?? "link"} size={14} />
       <span className="network_tab_name">{settings.name}</span>
       <span className="network_tab_role">{settings.role}</span>
       <StatusDot
@@ -636,7 +703,6 @@ function LinkSummary({ entry }: { entry: InterfaceView }) {
     ],
     ["Address", link.ipv4_address ?? "none"],
     ["MAC", link.mac_address ?? "unknown"],
-    ["Connection", link.connection ?? "none"],
   ];
   if (settings.role === "wan") {
     rows.splice(2, 0, ["Gateway", link.gateway ?? "none"]);
@@ -852,22 +918,6 @@ function LanFields({ draft, errors, isWifi, update }: FieldsProps) {
               update((next) => (next.lan.prefix_len = Number(value) || 0))
             }
           />
-          {!isWifi && (
-            <Field
-              label="Upstream router"
-              value={draft.lan.upstream_gateway ?? ""}
-              error={errors.lan_upstream_gateway}
-              hint="Blank normally; the existing network's router to run as a side gateway."
-              placeholder="192.168.1.1"
-              onChange={(value) =>
-                update(
-                  (next) =>
-                    (next.lan.upstream_gateway =
-                      value.trim().length > 0 ? value : null),
-                )
-              }
-            />
-          )}
         </div>
       </div>
 

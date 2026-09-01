@@ -7,12 +7,18 @@ Wi-Fi settings could take the wired LAN down with it.
 """
 
 import asyncio
+from contextlib import suppress
 import ipaddress
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub.modules.router.constants import (
     ROUTER_INTENTS,
+    ROUTER_MODE_ROUTER,
+    ROUTER_MODE_SIDE_GATEWAY,
+    ROUTER_MODES_KEYS,
+    ROUTER_KEY_MGMT_NONE,
+    ROUTER_KEY_MGMT_PSK,
     ROUTER_POLICIES,
     ROUTER_ROLE_DISABLED,
     ROUTER_ROLE_LAN,
@@ -28,24 +34,38 @@ from neutrino_hub.modules.router.interfaces import (
     RouterNetworkConfig,
     RouterVlanSettings,
 )
+from neutrino_hub.modules.router.connections import RouterConnection
+from neutrino_hub.modules.router.credentials import RouterCredentialReader
 from neutrino_hub.modules.router.link_status import (
     LINK_KIND_ETHERNET,
     LINK_KIND_WIFI,
     LinkStatus,
     RouterLinkStatus,
 )
-from neutrino_hub.modules.router.routes import build_uplink_plan, remove_vlan_device
+from neutrino_hub.modules.router.modes import (
+    ROUTER_MODE_DEFAULT_PREFIX_LEN,
+    ROUTER_MODES_BY_KEY,
+)
+from neutrino_hub.modules.router.routes import (
+    build_uplink_plan,
+    hand_back,
+    remove_vlan_device,
+)
+from neutrino_hub.modules.router.supplicant import RouterWifiClient, write_config
 from neutrino_hub.modules.router.wifi import (
     AP_PASSPHRASE_MAX_LENGTH,
     AP_PASSPHRASE_MIN_LENGTH,
-    RouterWifiRadio,
 )
 from neutrino_hub.utils.subprocess_run import CommandError
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
+    SavedNetworkListView,
+    SavedNetworkView,
     InterfaceLink,
     InterfaceSettings,
     InterfaceView,
+    NetworkModeRequest,
+    NetworkModeView,
     NetworkOptions,
     NetworkView,
     PlannedUplinkView,
@@ -78,7 +98,7 @@ def read_network(runtime: PanelRuntime = Depends(get_runtime)) -> NetworkView:
     return _build_view(runtime)
 
 
-@router.put("/options", response_model=NetworkView)
+@router.put("", response_model=NetworkView)
 async def update_options(
     options: NetworkOptions, runtime: PanelRuntime = Depends(get_runtime)
 ) -> NetworkView:
@@ -92,17 +112,136 @@ async def update_options(
         The Network tab payload.
 
     Raises:
-        HTTPException: 502 when the firewall reload fails.
+        HTTPException: 400 for an unknown policy or an interface this machine
+            does not have, 502 when the firewall reload fails.
     """
     if options.uplink_policy not in ROUTER_POLICIES:
         raise _bad_request(f"unknown uplink policy {options.uplink_policy!r}")
     network = runtime.network()
-    network.is_ssh_from_wan_allowed = options.is_ssh_from_wan_allowed
     network.uplink_policy = options.uplink_policy
     network.is_inter_lan_allowed = options.is_inter_lan_allowed
+    _set_exposure(network, options.exposed_interfaces, runtime=runtime)
     runtime.write_network(network)
     await _apply(runtime, only=None)
     return _build_view(runtime)
+
+
+@router.put("/mode", response_model=NetworkView)
+async def update_mode(
+    request: NetworkModeRequest, runtime: PanelRuntime = Depends(get_runtime)
+) -> NetworkView:
+    """Make this machine a different shape.
+
+    Its own resource rather than one of the settings above, because writing it
+    is not writing a value: it decides whether the hub addresses this machine
+    at all, so leaving the router mode hands the network back to whatever ran
+    it before and entering it starts from the addresses the ports have now.
+
+    What each role is stays with the interfaces. The mode only takes away the
+    roles the new shape cannot have — a server routes nothing — and names the
+    one a side gateway is built on, which is the port already carrying the way
+    out. Everything else is configured where it always was.
+
+    Args:
+        request: The mode to become.
+        runtime: The shared runtime.
+
+    Returns:
+        The Network tab payload.
+
+    Raises:
+        HTTPException: 400 for a mode that is not one of them, 502 when
+            applying the new shape fails.
+    """
+    if request.mode not in ROUTER_MODES_KEYS:
+        raise _bad_request(f"no mode named {request.mode!r}")
+    network = runtime.network()
+    if request.mode == network.mode:
+        return _build_view(runtime)
+
+    is_leaving = network.is_addressing_owned
+    network.mode = request.mode
+    _retune_roles(network, runtime=runtime)
+    if is_leaving and not network.is_addressing_owned:
+        # Before the new shape is applied, and read from the interfaces it is
+        # about to stop driving.
+        await asyncio.to_thread(hand_back, network)
+    if network.is_addressing_owned and not is_leaving:
+        _adopt_known_networks(runtime)
+    _adopt_live_addressing(network)
+    runtime.write_network(network)
+    await _apply(runtime, only=None)
+    return _build_view(runtime)
+
+
+def _retune_roles(network: RouterNetworkConfig, *, runtime: PanelRuntime) -> None:
+    """Take away the roles the new mode cannot have, and give the one it needs.
+
+    A server routes nothing, so no port holds a role in it. A side gateway
+    holds exactly one: the port already carrying the way out, which is the
+    network it forwards for. A router keeps every role it had — what each
+    interface is for is the interface panel's question, not the mode's — and
+    loses only the upstream router a side gateway had left on one of them.
+
+    Args:
+        network: The configuration, already carrying its new mode.
+        runtime: The shared runtime, for which port carries the way out.
+    """
+    if network.mode == ROUTER_MODE_ROUTER:
+        # A router's way out is an uplink. A served network whose own router is
+        # the way out is the side gateway this machine has stopped being, and
+        # the panel has no field for it here.
+        for interface in network.interfaces:
+            interface.lan.upstream_gateway = None
+        return
+    for interface in network.interfaces:
+        interface.role = ROUTER_ROLE_DISABLED
+        interface.vlan = None
+    if network.mode != ROUTER_MODE_SIDE_GATEWAY:
+        return
+    status = runtime.link_status()
+    joined = next(
+        (
+            link.name
+            for link in status.all_links()
+            if status.gateway_for(link.name) is not None
+        ),
+        None,
+    )
+    if joined is None:
+        return
+    interface = network.interface_or_new(joined)
+    interface.role = ROUTER_ROLE_LAN
+    interface.lan.is_dhcp_enabled = False
+    interface.lan.upstream_gateway = status.gateway_for(joined)
+    network.replace(interface)
+
+
+def _set_exposure(
+    network: RouterNetworkConfig, names: list[str], *, runtime: PanelRuntime
+) -> None:
+    """Write which interfaces answer, creating entries for ports that had none.
+
+    Args:
+        network: The configuration to change.
+        names: The interfaces that answer. Everything else stops answering.
+        runtime: The shared runtime, for the ports this machine has.
+
+    Raises:
+        HTTPException: 400 when a named interface is neither configured nor
+            present on this machine.
+    """
+    present = {link.name for link in runtime.link_status().all_links()}
+    wanted = set(names)
+    for name in wanted:
+        if name not in present and network.interface(name) is None:
+            raise _bad_request(f"{name} is not an interface on this machine")
+        opened = network.interface_or_new(name)
+        opened.is_exposed = True
+        network.replace(opened)
+    for interface in network.interfaces:
+        if interface.name not in wanted:
+            interface.is_exposed = False
 
 
 @router.put("/interfaces/{name}", response_model=NetworkView)
@@ -134,7 +273,7 @@ async def update_interface(
         raise _bad_request("the interface in the path and the body must match")
 
     network = runtime.network()
-    saved = _to_interface(settings)
+    saved = _to_interface(settings, network=network)
     link = RouterLinkStatus().link(saved.device_name)
     _validate(settings, link=link, network=network)
 
@@ -161,6 +300,7 @@ async def update_interface(
                     if was in (ROUTER_ROLE_WAN, ROUTER_ROLE_LAN)
                     else ROUTER_ROLE_DISABLED
                 ),
+                is_exposed=saved.is_exposed,
                 wan=saved.wan,
                 lan=saved.lan,
                 vlan=RouterVlanSettings(parent=name, id=None),
@@ -219,12 +359,96 @@ async def delete_interface(
     return _build_view(runtime)
 
 
+@router.get("/wifi_networks", response_model=SavedNetworkListView)
+def list_saved_networks(
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> SavedNetworkListView:
+    """Read every wireless network the box knows how to join.
+
+    Args:
+        runtime: The shared runtime.
+
+    Returns:
+        The networks, the ones it would prefer first. No passphrase comes back
+        out — only whether one is held.
+    """
+    known = runtime.connections()
+    return SavedNetworkListView(
+        networks=[
+            _to_saved_view(connection)
+            for connection in sorted(
+                known.connections, key=lambda item: (-item.priority, item.ssid)
+            )
+        ]
+    )
+
+
+@router.delete("/wifi_networks/{ssid}", response_model=SavedNetworkListView)
+async def forget_network(
+    ssid: str, runtime: PanelRuntime = Depends(get_runtime)
+) -> SavedNetworkListView:
+    """Forget a wireless network, so no radio joins it again.
+
+    The radio holding it now is not disconnected: dropping a link somebody may
+    be reading the panel over, to act on a list they were tidying, is not what
+    the button says. It goes when the radio next has cause to reassociate.
+
+    Args:
+        ssid: The network name.
+        runtime: The shared runtime.
+
+    Returns:
+        What the box knows now.
+
+    Raises:
+        HTTPException: 404 when the box does not know that network.
+    """
+    known = runtime.connections()
+    if not known.remove(ssid):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"no network named {ssid!r}"
+        )
+    runtime.write_connections(known)
+    await asyncio.to_thread(_rerender_radios, runtime, known)
+    return await asyncio.to_thread(list_saved_networks, runtime)
+
+
+def _rerender_radios(runtime: PanelRuntime, known) -> None:
+    """Write every radio's configuration again and have it re-read.
+
+    Args:
+        runtime: The shared runtime.
+        known: The networks the box knows now.
+    """
+    status_reader = RouterLinkStatus()
+    for link in status_reader.all_links():
+        if link.kind != LINK_KIND_WIFI:
+            continue
+        write_config(link.name, known)
+        client = RouterWifiClient(interface=link.name)
+        if client.is_running:
+            with suppress(CommandError):
+                client.reconfigure()
+
+
+def _to_saved_view(connection) -> SavedNetworkView:
+    return SavedNetworkView(
+        ssid=connection.ssid,
+        key_mgmt=connection.key_mgmt,
+        has_secret=connection.has_secret,
+        priority=connection.priority,
+        is_hidden=connection.is_hidden,
+        source=connection.source,
+    )
+
+
 @router.get("/interfaces/{name}/wifi/scan", response_model=WifiScanView)
-def scan_wifi(name: str) -> WifiScanView:
+def scan_wifi(name: str, runtime: PanelRuntime = Depends(get_runtime)) -> WifiScanView:
     """Scan for the networks a wireless interface can see.
 
     Args:
         name: Interface name.
+        runtime: The shared runtime, for which networks the box already knows.
 
     Returns:
         What the scan found, strongest first.
@@ -234,20 +458,29 @@ def scan_wifi(name: str) -> WifiScanView:
             scan fails.
     """
     _require_wifi(name)
+    client = RouterWifiClient(interface=name)
     try:
-        networks = RouterWifiRadio(interface=name).scan()
+        found = client.scan()
     except CommandError as error:
         raise _bad_gateway(str(error)) from error
+    # Which networks are already known is the hub's own answer now, out of
+    # `config/`, rather than a question put to whatever manager held them.
+    known = runtime.connections()
+    joined = client.joined_ssid()
     return WifiScanView(
         networks=[
             WifiNetworkView(
-                ssid=network.ssid,
-                signal_percent=network.signal_percent,
-                security=network.security,
-                is_active=network.is_active,
-                is_saved=network.is_saved,
+                ssid=network["ssid"],
+                signal_percent=network["signal_percent"],
+                security=network["security"],
+                is_active=network["ssid"] == joined,
+                is_saved=known.find(network["ssid"]) is not None,
             )
-            for network in networks
+            for network in found
+            # An enterprise network needs a certificate and an identity, which
+            # is not something this asks for. Offering it would take a
+            # passphrase and fail.
+            if not network["is_enterprise"]
         ]
     )
 
@@ -279,20 +512,114 @@ async def join_wifi(
     """
     _require_wifi(name)
     try:
-        RouterWifiRadio(interface=name).join(
-            ssid=request.ssid, passphrase=request.passphrase
-        )
+        await asyncio.to_thread(_join, runtime, name, request)
     except CommandError as error:
         raise _bad_gateway(f"could not join {request.ssid}: {error}") from error
 
     network = runtime.network()
-    interface = network.interface(name) or RouterInterface(name=name)
+    interface = network.interface_or_new(name)
     interface.role = ROUTER_ROLE_WAN
     interface.wifi.ssid = request.ssid
     network.replace(interface)
     runtime.write_network(network)
     await _apply(runtime, only=name)
     return _build_view(runtime)
+
+
+def _adopt_live_addressing(network: RouterNetworkConfig) -> None:
+    """Write down what the machine already has, before the hub starts setting it.
+
+    Taking a machine over has to reproduce the addressing it arrived with,
+    not blank it. An interface that was only ever answered on has an empty
+    address in `config/` — nobody typed one, because nobody had to — and
+    applying that would take the address away rather than keep it.
+
+    Only what is empty is filled in. An address somebody typed is a decision,
+    and a decision is not overwritten by what happens to be live.
+
+    Args:
+        network: The configuration about to become the hub's to apply.
+    """
+    status = RouterLinkStatus()
+    for interface in network.interfaces:
+        link = status.link(interface.device_name)
+        if link.ipv4_address is None:
+            continue
+        address, _, prefix_len = link.ipv4_address.partition("/")
+        if interface.is_lan and not interface.lan.address:
+            interface.lan.address = address
+            interface.lan.prefix_len = int(prefix_len or ROUTER_MODE_DEFAULT_PREFIX_LEN)
+
+
+def _join(runtime: PanelRuntime, name: str, request: WifiJoinRequest) -> None:
+    """Have a radio associate with one network.
+
+    Not a command to the radio: the network is written into `config/`, the
+    radio's configuration is rendered from it, and the supplicant is told to
+    read the file again. That is what makes the association survive a reboot
+    without anything having to remember to redo it.
+
+    Args:
+        runtime: The shared runtime.
+        name: The radio.
+        request: The network to join and, when it is not already known, its
+            passphrase.
+
+    Raises:
+        CommandError: When the association does not finish. The message says
+            what the supplicant was doing, because a wrong passphrase and a
+            network out of range look different there.
+    """
+    known = runtime.connections()
+    existing = known.find(request.ssid)
+    if request.passphrase:
+        known.replace(
+            RouterConnection(
+                ssid=request.ssid,
+                key_mgmt=ROUTER_KEY_MGMT_PSK,
+                psk=request.passphrase,
+            )
+        )
+    elif existing is None or not existing.has_secret:
+        # Nothing was typed and nothing is held. An open network is the one
+        # case where that is fine.
+        known.replace(
+            RouterConnection(ssid=request.ssid, key_mgmt=ROUTER_KEY_MGMT_NONE)
+        )
+    runtime.write_connections(known)
+
+    write_config(name, known)
+    client = RouterWifiClient(interface=name)
+    if client.is_running:
+        client.reconfigure()
+    else:
+        client.start()
+    client.wait_for_association()
+
+
+def _adopt_known_networks(runtime: PanelRuntime) -> None:
+    """Read the wireless networks whatever ran this machine already held.
+
+    Taking a radio over means the hub has to know the passphrase of the
+    network it was on, and on a machine that has been somebody's laptop that
+    passphrase is already on the disk. Reading it is the difference between a
+    box that keeps working and one that asks for every network again.
+
+    What is read is a subset, never a guess: a store that cannot be parsed is
+    skipped, and a network already held here is left alone — somebody typed
+    that one, and a decision is not overwritten by what was found lying about.
+
+    Args:
+        runtime: The shared runtime.
+    """
+    known = runtime.connections()
+    is_changed = False
+    for found in RouterCredentialReader().read_all():
+        if known.find(found.ssid) is None:
+            known.replace(found)
+            is_changed = True
+    if is_changed:
+        runtime.write_connections(known)
 
 
 def _build_view(runtime: PanelRuntime) -> NetworkView:
@@ -308,14 +635,12 @@ def _build_view(runtime: PanelRuntime) -> NetworkView:
     # on it — the untagged main first, then its VLANs by tag.
     physical_order = {name: index for index, name in enumerate(names)}
     names.sort(
-        key=lambda name: _tab_order(
-            network.interface(name) or RouterInterface(name=name), physical_order
-        )
+        key=lambda name: _tab_order(network.interface_or_new(name), physical_order)
     )
 
     views = []
     for name in names:
-        interface = network.interface(name) or RouterInterface(name=name)
+        interface = network.interface_or_new(name)
         # The main entry has no device of its own; what it is doing is what
         # the trunk port is doing.
         link = links.get(interface.device_name, LinkStatus(name=name))
@@ -329,7 +654,6 @@ def _build_view(runtime: PanelRuntime) -> NetworkView:
                     is_up=link.is_up,
                     ipv4_address=link.ipv4_address,
                     mac_address=link.mac_address,
-                    connection=link.connection,
                     ssid=link.ssid,
                     signal_percent=link.signal_percent,
                     speed_mbps=link.speed_mbps,
@@ -340,10 +664,12 @@ def _build_view(runtime: PanelRuntime) -> NetworkView:
         )
     plan = build_uplink_plan(network=network, status=status_reader)
     return NetworkView(
+        mode=network.mode,
+        modes=_mode_views(),
         interfaces=views,
-        is_ssh_from_wan_allowed=network.is_ssh_from_wan_allowed,
         uplink_policy=network.uplink_policy,
         is_inter_lan_allowed=network.is_inter_lan_allowed,
+        is_addressing_owned=network.is_addressing_owned,
         default_gateway=status_reader.default_gateway(),
         lines=[
             UpstreamLineView(
@@ -367,6 +693,27 @@ def _build_view(runtime: PanelRuntime) -> NetworkView:
         ],
         warnings=_warnings(views),
     )
+
+
+def _mode_views() -> list[NetworkModeView]:
+    """The modes the panel offers, in the order it draws them.
+
+    Every one of them, whatever ports the machine has: switching asks for no
+    port, so there is nothing a machine could be too small for. A router on
+    one wire is a router whose port is a trunk, which is the interface panel's
+    business.
+
+    Returns:
+        One entry per mode.
+    """
+    return [
+        NetworkModeView(
+            key=mode.key,
+            summary=mode.summary,
+            is_addressing_owned=mode.is_addressing_owned,
+        )
+        for mode in (ROUTER_MODES_BY_KEY[key] for key in ROUTER_MODES_KEYS)
+    ]
 
 
 def _warnings(views: list[InterfaceView]) -> list[str]:
@@ -483,8 +830,16 @@ def _propose_lan(
     return settings
 
 
-def _to_interface(settings: InterfaceSettings) -> RouterInterface:
-    return RouterInterface.from_dict(settings.model_dump())
+def _to_interface(
+    settings: InterfaceSettings, *, network: RouterNetworkConfig
+) -> RouterInterface:
+    # Whether an interface answers is written by the panel that shows all of
+    # them at once. Taking it from what is stored, not from the body, is what
+    # keeps saving one interface's role from quietly reopening or closing it.
+    interface = RouterInterface.from_dict(settings.model_dump())
+    stored = network.interface(settings.name)
+    interface.is_exposed = stored.is_exposed if stored else False
+    return interface
 
 
 def _require_wifi(name: str) -> None:

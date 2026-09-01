@@ -10,15 +10,24 @@ import pwd
 
 from neutrino_hub.utils.subprocess_run import CommandError, run
 
-from neutrino_hub.modules.router import network_manager
+from neutrino_hub.modules.router import links, resolver, stack
+from neutrino_hub.modules.router.connections import RouterConnectionSet
+from neutrino_hub.utils.json_file import read_config, write_generated
+from neutrino_hub.modules.router.dhcp_client import RouterDhcpClient
+from neutrino_hub.modules.router.dhcp_renderer import RouterDhcpRenderer
+from neutrino_hub.modules.router.supplicant import RouterWifiClient
+from neutrino_hub.modules.router.supplicant import (
+    write_config as write_supplicant_config,
+)
 from neutrino_hub.modules.router.constants import (
+    ROUTER_CONNECTIONS_FILE,
+    router_dhcp_config_path,
     ROUTER_FWMARK_TPROXY,
     ROUTER_METRIC_BALANCE,
     ROUTER_METRIC_MULTIPATH,
     ROUTER_METRIC_SIDE_GATEWAY,
     ROUTER_NFT_FAMILY,
     ROUTER_NFT_TABLE,
-    ROUTER_NM_CONNECTION_PREFIX,
     ROUTER_ROLE_DISABLED,
     ROUTER_ROLE_LAN,
     ROUTER_ROLE_SPLIT,
@@ -36,7 +45,7 @@ from neutrino_hub.modules.router.uplink_plan import (
     UplinkPlan,
     plan_uplinks,
 )
-from neutrino_hub.modules.router.wifi import RouterWifiRadio
+from neutrino_hub.modules.router.wifi import RouterWifiAccessPoint
 
 XRAY_SERVICE_USER = "xray"
 
@@ -83,11 +92,11 @@ def lookup_xray_uid() -> int:
 
 
 def remove_vlan_device(name: str) -> list[str]:
-    """Take a VLAN interface off the box, connection and device together.
+    """Take a VLAN interface off the box.
 
-    Deleting the NetworkManager connection removes the kernel device with it;
-    every saved connection bound to the device goes, so a profile left by an
-    earlier configuration cannot resurrect the VLAN at the next boot.
+    A VLAN is a kernel device and nothing else — there is no profile anywhere
+    that could bring it back at the next boot, because what builds it is the
+    apply that reads `config/`.
 
     Args:
         name: The VLAN interface name, for example ``enp1s0.10``.
@@ -95,13 +104,81 @@ def remove_vlan_device(name: str) -> list[str]:
     Returns:
         One line when something was removed; empty when there was nothing.
     """
-    connections = network_manager.connections_for_device(name)
-    for connection in connections:
-        network_manager.deactivate(connection)
-        run(["nmcli", "connection", "delete", connection], is_checked=False)
-    if not connections:
+    if not links.remove_vlan(name):
         return []
     return [f"{name} removed"]
+
+
+def _write_dhcp_config(device: str, metric: int) -> bool:
+    """Render the lease client's configuration for one uplink.
+
+    Args:
+        device: The interface.
+        metric: What its default route should land at.
+
+    Returns:
+        True when the file changed, which is what tells a running client it
+        has to be restarted to read it.
+    """
+    text = RouterDhcpRenderer(interface=device, route_metric=metric).render()
+    path = router_dhcp_config_path(device)
+    if path.is_file() and path.read_text(encoding="utf-8") == text:
+        return False
+    write_generated(path, text)
+    return True
+
+
+def _known_networks() -> RouterConnectionSet:
+    """Every wireless network the box knows, or none when it knows none.
+
+    Returns:
+        The parsed store. A box set up before this file existed has none, and
+        a radio with nothing to join is not a failure.
+    """
+    try:
+        return RouterConnectionSet.from_dict(read_config(ROUTER_CONNECTIONS_FILE))
+    except (FileNotFoundError, ValueError):
+        return RouterConnectionSet()
+
+
+def hand_back(network: RouterNetworkConfig) -> list[str]:
+    """Stop driving this machine's network and leave it as it stands.
+
+    What the hub started is stopped and what it wrote is undone; what the
+    machine had is not put back, because it was never taken away. Addresses
+    stay exactly where they are — an interface losing its address is how a
+    reset takes the box off the network it was reached on.
+
+    Args:
+        network: The configuration that was being applied, which names the
+            interfaces to stop driving.
+
+    Returns:
+        One line per thing stopped.
+    """
+    changes = []
+    for interface in network.interfaces:
+        device = interface.device_name
+        for engine in (
+            RouterDhcpClient(interface=device),
+            RouterWifiClient(interface=device),
+        ):
+            if engine.is_running:
+                engine.stop()
+                changes.append(f"stopped {engine.unit}")
+        access_point = RouterWifiAccessPoint(interface=device)
+        if access_point.is_running:
+            access_point.unpublish()
+            changes.append(f"stopped {access_point.unit}")
+    # The managers first, and the resolver after them: handing name resolution
+    # back means pointing it at `systemd-resolved` when that is what the
+    # machine had, and a masked unit answers "no such thing" to being asked
+    # whether it is enabled. Asked in the other order it is never handed back
+    # at all, and the box goes on resolving at a dnsmasq nobody is running.
+    changes += stack.stand_up()
+    if resolver.hand_back():
+        changes.append("name resolution is the machine's own again")
+    return changes
 
 
 def build_uplink_plan(
@@ -115,7 +192,7 @@ def build_uplink_plan(
 
     Args:
         network: The parsed router configuration.
-        status: An existing reader to reuse, saving a second round of nmcli
+        status: An existing reader to reuse, saving a second round of
             calls when the caller already has one.
 
     Returns:
@@ -156,7 +233,9 @@ class RouterInterfaceApplier:
         """
         self._network = network
         self._status = RouterLinkStatus()
-        self._kinds = network_manager.device_kinds()
+        # What kind each interface is, read once: the applier asks per
+        # interface and the answer does not change while it runs.
+        self._kinds = {link.name: link.kind for link in self._status.all_links()}
         self._plan = build_uplink_plan(network=network, status=self._status)
 
     def apply_all(self) -> list[str]:
@@ -190,10 +269,57 @@ class RouterInterfaceApplier:
             key=lambda interface: order.get(interface.role, 3),
         )
         changes = []
+        if self._network.is_addressing_owned:
+            # Before anything is configured, not after: two things driving one
+            # interface is where every bug in this area has come from, and the
+            # window where both are running is the window it happens in.
+            #
+            # But stopping a manager takes down what it configured, and one of
+            # those interfaces is how whoever asked for this is connected. So
+            # what they are addressed with is read first and put straight back
+            # — the roles below then replace it wherever they differ.
+            #
+            # Only where there is something to stand down. Applying is not a
+            # takeover: `neutrino_hub_router.service` runs it on every boot
+            # and every restart, and redoing the handover each time would
+            # take the addresses off and put them back for no reason — with
+            # whoever is connected over one of them in the gap.
+            if stack.running_managers():
+                devices = tuple(
+                    interface.device_name for interface in self._network.interfaces
+                )
+                carried = links.carried_state(devices)
+                changes += stack.stand_down(
+                    tuple(device for device in devices if self._is_wifi(device))
+                )
+                links.restore_state(carried)
         for interface in ordered:
             changes += self.apply(interface)
         changes += RouterDefaultRouteApplier(network=self._network).apply()
+        changes += self._apply_resolver()
         return changes
+
+    def _apply_resolver(self) -> list[str]:
+        """Point the box at its own name service, or leave it as it is.
+
+        Last, because it names the address a LAN has only once that LAN has
+        been given it.
+
+        Returns:
+            One line when name resolution changed hands.
+        """
+        if not self._network.is_addressing_owned:
+            return []
+        # The interface rather than `primary_lan_address`, which answers
+        # loopback for a box that serves nothing. That is the right answer for
+        # binding a listener and the wrong one here: naming an address no
+        # dnsmasq is on would leave the box resolving nothing at all.
+        lan = self._network.primary_lan
+        if lan is None or not lan.lan.address:
+            return []
+        if not resolver.point_at(lan.lan.address):
+            return []
+        return [f"resolving at {lan.lan.address}"]
 
     def apply(self, interface: RouterInterface) -> list[str]:
         """Apply one interface's role.
@@ -207,6 +333,13 @@ class RouterInterfaceApplier:
         Raises:
             CommandError: If NetworkManager rejects the configuration.
         """
+        if not self._network.is_addressing_owned:
+            # Somebody else's machine. Its address, its route and its lease
+            # are whatever put them there — a cloud image, a DHCP server, a
+            # person — and the hub answers on them rather than restating them.
+            # Everything that is the hub's own still happens: this interface
+            # is masqueraded out of, listened on, and forwarded through.
+            return []
         if interface.is_untagged:
             return self._apply_untagged(interface)
         if interface.is_lan:
@@ -250,25 +383,28 @@ class RouterInterfaceApplier:
         return self._apply_trunk_parent(interface.name)
 
     def _apply_trunk_parent(self, device: str) -> list[str]:
-        connection = self._ethernet_connection(device)
-        settings = {
-            # No address on purpose: the untagged main is disabled, so the
-            # port carries tagged VLANs and nothing else. The link itself
-            # stays up — the VLANs are riding on it.
-            "ipv4.method": "disabled",
-            "ipv4.addresses": "",
-            "ipv4.gateway": "",
-            "ipv4.never-default": "yes",
-            "ipv6.method": "disabled",
-            "connection.autoconnect": "yes",
-        }
-        if not self._reconfigure(device, connection, settings):
-            return []
-        return [f"{device} carrying tagged VLANs only"]
+        """Make a port carry tagged VLANs and nothing of its own.
+
+        The link stays up — the VLANs are riding on it — and every address
+        comes off, because the port's untagged traffic is disabled and an
+        address left behind would answer on a network nobody configured.
+
+        Args:
+            device: The trunk port.
+
+        Returns:
+            One line per change actually made.
+        """
+        changes = []
+        RouterDhcpClient(interface=device).stop()
+        if links.clear_addresses(device):
+            changes.append(f"{device} carrying tagged VLANs only")
+        links.set_up(device)
+        return changes
 
     def _apply_lan(self, interface: RouterInterface) -> list[str]:
         if self._is_wifi(interface.name):
-            radio = RouterWifiRadio(interface=interface.name)
+            radio = RouterWifiAccessPoint(interface=interface.name)
             is_changed = radio.publish(interface=interface)
             if not is_changed:
                 return []
@@ -277,270 +413,137 @@ class RouterInterfaceApplier:
                 f"on {interface.lan.cidr}"
             ]
 
-        connection = (
-            self._vlan_connection(interface)
-            if interface.is_vlan
-            else self._ethernet_connection(interface.name)
-        )
+        device = interface.device_name
+        changes = self._ensure_vlan(interface)
+        # A served network takes no lease: the address is the one somebody
+        # chose, and it is what dnsmasq binds and nftables masquerades out of.
+        RouterDhcpClient(interface=device).stop()
+        if links.set_address(device, interface.lan.cidr):
+            changes.append(f"{interface.name} serving {interface.lan.cidr}")
+        links.set_up(device)
+
         upstream = interface.lan.upstream_gateway
-        settings = {
-            "ipv4.method": "manual",
-            "ipv4.addresses": interface.lan.cidr,
-            # A LAN must never offer itself as the way out — unless it is a
-            # side gateway, where the network's real router on this same wire
-            # is exactly the way out.
-            "ipv4.gateway": upstream or "",
-            "ipv4.never-default": "no" if upstream else "yes",
-            # The box resolves where its own devices do: at the dnsmasq on
-            # this address, which forwards through the proxy or to the direct
-            # resolver as the routing config says. A manual address takes no
-            # resolver from anywhere, and a gateway with none cannot fetch its
-            # own geodata, install a module from a vendor, or run apt.
-            "ipv4.dns": interface.lan.address,
-            "ipv4.ignore-auto-dns": "yes",
-            "connection.autoconnect": "yes",
-        }
         if upstream:
-            settings["ipv4.route-metric"] = str(ROUTER_METRIC_SIDE_GATEWAY)
-        if not self._reconfigure(interface.name, connection, settings):
-            return []
-        if upstream:
-            return [f"{interface.name} serving {interface.lan.cidr} via {upstream}"]
-        return [f"{interface.name} serving {interface.lan.cidr}"]
+            # A side gateway's way out is the network's own router, on this
+            # same wire. Above the uplink metrics, so a box that later gains a
+            # real uplink leaves by that instead.
+            links.set_default_route(device, upstream, ROUTER_METRIC_SIDE_GATEWAY)
+            changes.append(f"{interface.name} reaching the internet via {upstream}")
+        return changes
 
     def _apply_wan(self, interface: RouterInterface) -> list[str]:
-        settings = {
-            "ipv4.never-default": "no",
-            "ipv4.route-metric": str(self._route_metric(interface)),
-            "connection.autoconnect": "yes",
-            # Turn off duplicate-address detection on the uplinks. A gateway
-            # routinely has two of its own interfaces on one upstream network —
-            # a wired port and a radio plugged into the same home broadband —
-            # and then the ARP probe for an address is answered by the box
-            # itself. NetworkManager reports that self-conflict and can end the
-            # activation with the address applied and not one route installed,
-            # which is an uplink that looks configured and carries nothing.
-            # Nothing is given up: on DHCP the server is authoritative about
-            # who holds what, and on a static uplink the address was chosen
-            # deliberately.
-            "ipv4.dad-timeout": "0",
-        }
-
-        if self._is_wifi(interface.name):
-            radio = RouterWifiRadio(interface=interface.name)
-            radio.unpublish()
-            connection = network_manager.connection_for_device(interface.name)
-            notes = []
-            if connection is None and interface.wifi.ssid:
-                # The radio remembers which network it joins, so coming back
-                # to the WAN role rejoins it rather than sitting dark until
-                # someone picks the same network from the scan again. Failing
-                # to rejoin — out of range, forgotten profile — is not a
-                # failure of the role change itself.
-                try:
-                    connection = radio.join(ssid=interface.wifi.ssid, passphrase=None)
-                    notes.append(f"{interface.name} rejoined {interface.wifi.ssid}")
-                except CommandError:
-                    notes.append(
-                        f"{interface.name} could not rejoin "
-                        f"{interface.wifi.ssid}; pick a network from the scan"
-                    )
-            if connection is None:
-                # Not a failure: an interface can be assigned the WAN role
-                # before anyone has chosen which network it should join. The
-                # page says so and offers the scan.
-                return notes
-            if not self._reconfigure(interface.name, connection, settings):
-                return notes
-            metric = self._route_metric(interface)
-            return notes + [f"{interface.name} uplink metric {metric}"]
-
-        connection = (
-            self._vlan_connection(interface)
-            if interface.is_vlan
-            else self._ethernet_connection(interface.name)
-        )
-        if interface.wan.method == ROUTER_WAN_METHOD_STATIC:
-            settings["ipv4.method"] = "manual"
-            settings["ipv4.addresses"] = (
-                f"{interface.wan.address}/{interface.wan.prefix_len}"
-            )
-            settings["ipv4.gateway"] = interface.wan.gateway or ""
-        else:
-            settings["ipv4.method"] = "auto"
-            settings["ipv4.addresses"] = ""
-            settings["ipv4.gateway"] = ""
+        device = interface.device_name
+        changes = self._ensure_vlan(interface)
         if not interface.is_vlan:
             # A VLAN inherits the trunk's hardware address; cloning belongs to
             # the physical port.
-            settings["802-3-ethernet.cloned-mac-address"] = (
-                interface.wan.cloned_mac or "permanent"
-            )
-        if not self._reconfigure(interface.name, connection, settings):
-            return []
-        return [
-            f"{interface.name} uplink reconfigured",
-            *self._verify_uplink(interface.name, connection),
-        ]
+            if links.set_mac(device, interface.wan.cloned_mac):
+                changes.append(f"{device} presenting {interface.wan.cloned_mac}")
 
-    def _verify_uplink(self, device: str, connection: str) -> list[str]:
-        """Check an uplink came out of the apply able to carry traffic.
+        if self._is_wifi(device):
+            changes += self._join_network(interface)
 
-        The failure this exists for is specific and silent: NetworkManager
-        finishes the activation, the interface holds its address, and not one
-        route was installed — no default route, not even the on-link one. The
-        box is off the internet while every command that ran reported success.
+        links.set_up(device)
+        metric = self._route_metric(interface)
+        if interface.wan.method == ROUTER_WAN_METHOD_STATIC:
+            RouterDhcpClient(interface=device).stop()
+            cidr = f"{interface.wan.address}/{interface.wan.prefix_len}"
+            if links.set_address(device, cidr):
+                changes.append(f"{interface.name} uplink on {cidr}")
+            if interface.wan.gateway:
+                links.set_default_route(device, interface.wan.gateway, metric)
+            return changes
 
-        Reactivating by hand clears it, so that is what is done here, once. A
-        second failure is reported rather than retried: at that point something
-        is wrong that repeating will not fix, and a panel that says so is worth
-        more than one that silently returns success over a dead uplink.
+        # Under DHCP the lease client owns the address and the route, and the
+        # metric it installs them at comes from its rendered configuration —
+        # which is why a changed metric is a restart rather than a route edit.
+        #
+        # Rendered here rather than by the pipeline that renders everything
+        # else: the unit reads the file at exec, so a client started before
+        # anything wrote one exits saying so and is restarted into the same
+        # nothing — an uplink that never gets an address at all.
+        is_rewritten = _write_dhcp_config(device, metric)
+        client = RouterDhcpClient(interface=device)
+        if client.is_running and is_rewritten:
+            client.restart()
+        elif not client.is_running:
+            client.start()
+        changes.append(f"{interface.name} uplink taking a lease at metric {metric}")
+        # And then let go of the address the handover carried, here rather
+        # than at the end of some longer run: an interface is reconfigured in
+        # one place, and a machine left holding an address it has no lease for
+        # is one the server will hand to somebody else.
+        #
+        # Only once a lease has actually arrived. Without one the carried
+        # address is all this interface has, and taking it off would put the
+        # uplink down rather than move it.
+        if links.await_lease(device):
+            changes += links.retire_carried((device,))
+            return changes
+        # Said rather than left to be worked out from a port that is up and
+        # carries nothing. With IPv4LL off there is no invented address and no
+        # route to nowhere, so what is left is the truth: nobody answered.
+        return changes + [f"{interface.name} got no lease; nothing answered"]
+
+    def _join_network(self, interface: RouterInterface) -> list[str]:
+        """Have a radio associate with the network its role names.
+
+        The supplicant decides which of the networks it holds to join, out of
+        those in range. So this starts it and lets it choose; what it may
+        choose from is `config/router/connections.json`, rendered beside this.
 
         Args:
-            device: Interface name.
-            connection: The connection that was activated.
+            interface: The radio, holding the WAN role.
 
         Returns:
-            A line describing the recovery, or nothing when the uplink is fine.
-
-        Raises:
-            CommandError: If the uplink still has no route after one retry.
+            One line saying what it is doing, or nothing when there is nothing
+            to say.
         """
-        if self._has_route(device):
+        RouterWifiAccessPoint(interface=interface.name).unpublish()
+        # Same reason as the lease client: the supplicant reads its file at
+        # exec, and one started before anything wrote it holds no networks.
+        write_supplicant_config(interface.name, _known_networks())
+        client = RouterWifiClient(interface=interface.name)
+        if client.is_running:
+            client.reconfigure()
             return []
-        network_manager.activate(connection)
-        if self._has_route(device):
-            return [f"{device} came up without routes; reactivating fixed it"]
-        raise CommandError(
-            f"{device} activated but has no IPv4 route, so it cannot carry "
-            f"traffic; check `nmcli device show {device}` and the "
-            f"NetworkManager journal"
-        )
+        client.start()
+        if not interface.wifi.ssid:
+            # Not a failure: a radio can be given the WAN role before anybody
+            # has chosen a network. The page says so and offers the scan.
+            return [f"{interface.name} radio up; pick a network from the scan"]
+        return [f"{interface.name} joining {interface.wifi.ssid}"]
 
-    def _has_route(self, device: str) -> bool:
-        result = run(["ip", "-4", "route", "show", "dev", device], is_checked=False)
-        return result.is_success and bool(result.stdout.strip())
+    def _ensure_vlan(self, interface: RouterInterface) -> list[str]:
+        """Build the VLAN an entry describes, when it is one.
+
+        Args:
+            interface: The interface being applied.
+
+        Returns:
+            One line when a VLAN had to be built.
+        """
+        if not interface.is_vlan or interface.is_untagged:
+            return []
+        links.set_up(interface.vlan.parent)
+        if links.add_vlan(interface.vlan.parent, interface.name, interface.vlan.id):
+            return [f"{interface.name} carved out of {interface.vlan.parent}"]
+        return []
 
     def _apply_disabled(self, interface: RouterInterface) -> list[str]:
         if interface.is_vlan:
             # A disabled VLAN does not exist: unlike a physical port, there is
             # no hardware to leave idle, so its device is simply removed.
             return remove_vlan_device(interface.name)
-        link = self._status.link(interface.name)
-        if self._is_wifi(interface.name):
-            RouterWifiRadio(interface=interface.name).stand_down()
-        else:
-            for name in network_manager.connections_for_device(interface.name):
-                network_manager.modify_if_needed(name, {"connection.autoconnect": "no"})
-        if not link.is_up and link.connection is None:
+        device = interface.device_name
+        if self._is_wifi(device):
+            RouterWifiAccessPoint(interface=device).unpublish()
+            RouterWifiClient(interface=device).stop()
+        RouterDhcpClient(interface=device).stop()
+        if not links.clear_addresses(device) and not self._status.link(device).is_up:
             return []
-        network_manager.disconnect_device(interface.name)
+        links.set_down(device)
         return [f"{interface.name} disabled"]
-
-    def _reconfigure(
-        self, device: str, connection: str, settings: dict[str, str]
-    ) -> bool:
-        """Write settings, and bring them into effect the cheapest way that works.
-
-        Three outcomes, in rising order of disruption. Nothing differs and the
-        connection is already up: do nothing at all. Only in-place properties
-        differ: write them and reapply, which the link never notices. An
-        addressing property differs, or the connection is not up: reactivate,
-        which drops the link and is the only path that can.
-
-        Args:
-            device: Interface name.
-            connection: The connection to write to.
-            settings: Wanted properties.
-
-        Returns:
-            True when anything was changed.
-        """
-        differing = network_manager.differing_properties(connection, settings)
-        is_active = network_manager.connection_for_device(device) == connection
-        if not differing and is_active:
-            return False
-
-        network_manager.modify(connection, settings)
-        if is_active and not (differing & REACTIVATION_PROPERTIES):
-            network_manager.reapply_device(device, connection=connection)
-            return True
-
-        network_manager.activate(connection)
-        return True
-
-    def _vlan_connection(self, interface: RouterInterface) -> str:
-        """Find or create the connection that realises a VLAN interface.
-
-        Creating the connection is what creates the kernel device: a VLAN has
-        no existence before NetworkManager is told to tag for it.
-
-        Args:
-            interface: An interface carrying a ``vlan`` block.
-
-        Returns:
-            The connection name.
-        """
-        saved = network_manager.connections_for_device(interface.name)
-        if saved:
-            return saved[0]
-        name = f"{ROUTER_NM_CONNECTION_PREFIX}{interface.name}"
-        if not network_manager.connection_exists(name):
-            run(
-                [
-                    "nmcli",
-                    "connection",
-                    "add",
-                    "type",
-                    "vlan",
-                    "ifname",
-                    interface.name,
-                    "con-name",
-                    name,
-                    "dev",
-                    interface.vlan.parent,
-                    "id",
-                    str(interface.vlan.id),
-                ]
-            )
-        return name
-
-    def _ethernet_connection(self, device: str) -> str:
-        """Find or create the connection this wired interface is configured by.
-
-        An interface the machine was installed with already has a connection —
-        netplan's, or one NetworkManager made on first boot — and reusing it
-        keeps the box to a single profile per port. Only an interface with
-        none gets one created here, under the gateway's own name prefix.
-
-        Args:
-            device: Interface name.
-
-        Returns:
-            The connection name.
-        """
-        active = network_manager.connection_for_device(device)
-        if active is not None:
-            return active
-        saved = network_manager.connections_for_device(device)
-        if saved:
-            return saved[0]
-        name = f"{ROUTER_NM_CONNECTION_PREFIX}{device}"
-        if not network_manager.connection_exists(name):
-            run(
-                [
-                    "nmcli",
-                    "connection",
-                    "add",
-                    "type",
-                    "ethernet",
-                    "ifname",
-                    device,
-                    "con-name",
-                    name,
-                ]
-            )
-        return name
 
     def _route_metric(self, interface: RouterInterface) -> int:
         """The metric the plan gives this uplink's default route.

@@ -1,0 +1,20 @@
+/* --- The port the panel itself answers on --- */
+
+/* The wait between the old port closing and the new one answering. It sits
+   inside the group rather than over the page: nothing else on the box is
+   affected, and covering the whole panel would say otherwise. */
+.panel_move {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-wash);
+}
+
+.panel_move_body {
+  color: var(--color-text);
+  font-size: 13px;
+  line-height: 1.5;
+}

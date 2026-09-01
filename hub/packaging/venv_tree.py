@@ -74,6 +74,7 @@ PYTHON_URL = (
 )
 PYTHON_SHA256 = {
     "x86_64": "8a70011ae25276a9925f89304cdc086466cd269ee6cfe68a9506694ca5ff4f9c",  # scan: allow
+    "aarch64": "b298e34164582305be9629a0da50701358195ce30b639f5ed4bbc50c4768f048",  # scan: allow
 }
 
 # What the hub's own modules call the machine, keyed by what the interpreter
@@ -121,12 +122,14 @@ CLIPROXYAPI_URL = (
     "https://github.com/router-for-me/CLIProxyAPI/releases/download/"
     "v{version}/CLIProxyAPI_{version}_linux_{machine}.tar.gz"
 )
-CLIPROXYAPI_MACHINES = {"x86_64": "amd64", "aarch64": "arm64"}
+# The release names the 64-bit ARM asset `aarch64`, where xray names its
+# `arm64-v8a`; neither follows the other.
+CLIPROXYAPI_MACHINES = {"x86_64": "amd64", "aarch64": "aarch64"}
 CLIPROXYAPI_X86_64_SHA256 = (
     "43e112686b4a5b7b818531144cd695eeaacdd54c46dced87be6fb3967c22e149"  # scan: allow
 )
 CLIPROXYAPI_AARCH64_SHA256 = (
-    "0019dfc4b32d63c1392aa264aed2253c1e0c2fb09216f8e2cc269bbfb8bb49b5"  # scan: allow
+    "086ae6513aa522bbd1000f4e83e5b5223df6038bd69f1c6cad56619b84c06947"  # scan: allow
 )
 CLIPROXYAPI_SHA256 = {
     "x86_64": CLIPROXYAPI_X86_64_SHA256,

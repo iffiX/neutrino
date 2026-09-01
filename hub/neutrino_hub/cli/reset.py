@@ -19,7 +19,11 @@ from neutrino_hub.cli.password import (
     read_new_password,
     store_password,
 )
+from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
+from neutrino_hub.modules.router.routes import hand_back
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
+from neutrino_hub.utils.json_file import read_config
+from neutrino_hub.utils.subprocess_run import CommandError
 from neutrino_hub.utils.constants import UTILS_CONFIG_DIR, UTILS_EXAMPLES_DIR
 
 # --- config ---
@@ -91,7 +95,9 @@ def _reset_password(*, is_stdin: bool) -> int:
     except (PasswordRefused, FileNotFoundError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
-    _restart_panel()
+    panel = _restart_panel()
+    if panel:
+        print(panel, file=sys.stderr)
     print("password updated; everyone signed in has been signed out")
     return 0
 
@@ -102,16 +108,44 @@ def _reset_all() -> int:
     Returns:
         Process exit status.
     """
+    network = _hand_back_network()
     collected = _forget_collected()
     restored = _restore_examples()
     clear_password()
-    _restart_panel()
+    panel = _restart_panel()
 
     print(f"restored {restored} config files from their examples")
     if collected:
         print(f"removed {', '.join(collected)}")
+    for line in network:
+        print(line)
+    if panel:
+        print(panel)
     print("the panel password is cleared; run `sudo nhub setup`")
     return 0
+
+
+def _hand_back_network() -> list:
+    """Stop driving the machine's network, before the configuration goes.
+
+    First, while `config/` still names the interfaces that were being driven:
+    once it has been replaced by the examples there is nothing left saying
+    which radios and uplinks the hub had units running on.
+
+    Nothing is restored, because nothing was taken. Every address stays where
+    it is, and whatever managed this machine before is started by whoever
+    starts it — the hub only stops being the one doing it.
+
+    Returns:
+        One line per thing stopped, empty on a machine the hub never drove.
+    """
+    try:
+        network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
+    except (FileNotFoundError, ValueError):
+        return []
+    if not network.is_addressing_owned:
+        return ["this machine addressed its own interfaces; nothing to hand back"]
+    return hand_back(network)
 
 
 def _forget_collected() -> list:
@@ -152,11 +186,25 @@ def _restore_examples() -> int:
     return written
 
 
-def _restart_panel() -> None:
-    """Restart the panel, so no session outlives the change."""
+def _restart_panel() -> str:
+    """Restart the panel, so no session outlives the change.
+
+    A failure here is reported rather than raised. Everything a reset exists
+    to undo has already been undone by the time this runs, and a traceback
+    over the last step would say a reset failed when what failed was one
+    service coming back — which `systemctl status` can say better.
+
+    Returns:
+        What happened, empty when there was nothing to restart.
+    """
     controller = SystemdServiceController()
-    if controller.status(RESET_PANEL_UNIT).is_installed:
+    if not controller.status(RESET_PANEL_UNIT).is_installed:
+        return ""
+    try:
         controller.control(RESET_PANEL_UNIT, "restart")
+    except CommandError as error:
+        return f"the panel did not come back: {error}"
+    return ""
 
 
 if __name__ == "__main__":

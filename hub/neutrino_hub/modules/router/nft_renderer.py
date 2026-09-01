@@ -28,7 +28,9 @@ class RouterNftRenderer:
 
     Which interfaces those chains name comes from the roles in the network
     config, so a box with two LANs or two uplinks renders the same rules over
-    a larger set rather than needing different ones.
+    a larger set rather than needing different ones. ``input`` is the one that
+    reads something else: what answers where is a firewall question, not a
+    role, and it is asked once per interface.
     """
 
     def __init__(
@@ -51,8 +53,8 @@ class RouterNftRenderer:
         # config-side only, and the firewall must match the port itself.
         self._wans = network.wan_device_names
         self._lans = network.lan_device_names
+        self._exposed = network.exposed_device_names
         self._side_lans = _side_lan_subnets(network)
-        self._is_ssh_from_wan_allowed = network.is_ssh_from_wan_allowed
         self._is_inter_lan_allowed = network.is_inter_lan_allowed
         self._is_proxy_enabled = routing.get("is_proxy_enabled", True)
         self._is_local_proxy_enabled = self._is_proxy_enabled and routing.get(
@@ -169,6 +171,18 @@ class RouterNftRenderer:
         )
 
     def _render_forward(self) -> str:
+        if not self._lans and not self._wans:
+            # Nothing here has a role that forwards, so this box is not a
+            # router and the packets crossing it are somebody else's —
+            # docker's, libvirt's, a container runtime nobody told us about.
+            # A drop policy would cut those off silently.
+            return (
+                "    # No interface routes anything: whatever forwards here is\n"
+                "    # not ours to police.\n"
+                "    chain forward {\n"
+                "        type filter hook forward priority filter; policy accept;\n"
+                "    }\n"
+            )
         lines = [
             "    chain forward {",
             "        type filter hook forward priority filter; policy drop;",
@@ -241,24 +255,29 @@ class RouterNftRenderer:
             '        iifname "lo" accept',
             "",
         ]
-        if self._lans:
+        if self._exposed:
             lines += [
-                "        # The LAN side is trusted: panel, DNS, DHCP, SSH, shares.",
-                f"        iifname {_interface_set(self._lans)} accept",
+                "        # Where this box answers. Every service here binds every",
+                "        # address and settles its own port, so which wires reach",
+                "        # them is the whole of the question, and it is one answer",
+                "        # per interface.",
+                f"        iifname {_interface_set(self._exposed)} accept",
             ]
         lines += [
+            "        # The overlay always answers: it is how a box nobody exposed",
+            "        # is reached at all.",
             '        iifname "wt0" accept',
             "",
         ]
-        if self._wans:
-            external = _interface_set(self._wans)
+        closed_wans = [name for name in self._wans if name not in self._exposed]
+        if closed_wans:
+            external = _interface_set(closed_wans)
             lines += [
-                "        # WAN side: only what the box needs to stay on the network.",
+                "        # An uplink nobody exposed still has to be able to take a",
+                "        # lease: this is the box being a client, not a service.",
                 f"        iifname {external} udp dport 68 accept",
                 f"        iifname {external} udp sport 67 accept",
             ]
-            if self._is_ssh_from_wan_allowed:
-                lines.append(f"        iifname {external} tcp dport 22 accept")
         lines += [
             "        icmp type { echo-request, destination-unreachable, "
             "time-exceeded, parameter-problem } accept",

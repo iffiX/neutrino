@@ -44,6 +44,9 @@ const POLL_INTERVAL_MS = 700;
 const HANDOVER_SECONDS = 5;
 /** How many unanswered polls mean this page is no longer on the same wire. */
 const LOST_POLL_COUNT = 5;
+/** Where the run writes itself down, named on the screen that warns about
+ * losing the connection so somebody has read it before they need it. */
+const SETUP_LOG_PATH = "/var/log/neutrino/setup.log";
 
 /** One link on the proxy screen, as it is being filled in. */
 interface DraftLink {
@@ -103,6 +106,9 @@ export function SetupPage({ token, context }: SetupPageProps) {
   const isOneArm = mode === "one_arm_router";
   const isSideGateway = mode === "side_gateway";
   const chosenMode = context.modes.find((entry) => entry.key === mode);
+  // Read from the mode rather than listed here: which modes address a machine
+  // is the backend's answer, and two copies of it drift.
+  const ownsAddressing = chosenMode?.is_addressing_owned ?? true;
 
   // Only the ports the chosen mode can be built on: 802.1Q tags do not ride
   // on a radio, so a trunk lists wires alone.
@@ -174,13 +180,13 @@ export function SetupPage({ token, context }: SetupPageProps) {
     } else if (isOneArm) {
       network.trunk = lan;
       network.lan_vlan_id = vlanId;
-    } else {
+    } else if (isSideGateway) {
       network.lan = [lan];
-    }
-    network.address = address;
-    network.prefix_len = prefixLen;
-    if (isSideGateway) {
       network.upstream_gateway = upstream;
+    }
+    if (!isServer) {
+      network.address = address;
+      network.prefix_len = prefixLen;
     }
     const document: SetupAnswers = { password, network };
     const wanted = links.map((link) => link.value.trim()).filter(Boolean);
@@ -202,6 +208,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
     mode,
     isRouter,
     isOneArm,
+    isServer,
     isSideGateway,
     wan,
     lan,
@@ -303,10 +310,11 @@ export function SetupPage({ token, context }: SetupPageProps) {
   const strength = passwordStrength(password);
   const isPasswordReady = strength.is_allowed && password === repeated;
   const isPortsReady =
-    lan !== "" &&
-    address !== "" &&
-    (!isRouter || (wan !== "" && wan !== lan)) &&
-    (!isSideGateway || upstream !== "");
+    isServer ||
+    (lan !== "" &&
+      address !== "" &&
+      (!isRouter || (wan !== "" && wan !== lan)) &&
+      (!isSideGateway || upstream !== ""));
 
   const actions = (
     <>
@@ -408,7 +416,23 @@ export function SetupPage({ token, context }: SetupPageProps) {
         </div>
       )}
 
-      {index === 2 && (
+      {index === 2 && isServer && (
+        <div className="setup_body">
+          <p className="setup_lead">
+            No port is given a job. Every one of them keeps the address it has
+            and answers to begin with; the panel&apos;s Network page narrows
+            that afterwards.
+          </p>
+          <PortList ports={context.interfaces} />
+          <PortField
+            label="Panel answers on port"
+            value={listenPort}
+            onChange={setListenPort}
+          />
+        </div>
+      )}
+
+      {index === 2 && !isServer && (
         <div className="setup_body">
           {isRouter && <p className="setup_lead">{context.router_note}</p>}
           {isRouter && (
@@ -653,15 +677,44 @@ export function SetupPage({ token, context }: SetupPageProps) {
       {index === 5 && (
         <div className="setup_body">
           <p className="setup_lead">
-            This is what the box becomes. Confirming applies it: the ports
-            change, the firewall loads and the services start.
+            This is what the box becomes. Confirming applies it:{" "}
+            {ownsAddressing
+              ? "the ports change, the firewall loads and the services start."
+              : "the firewall loads and the services start. Every address on this machine is left as it is."}
           </p>
+          {/* The same sentence the terminal says, and for the same reason:
+              not whether this page is being read over one of these ports,
+              which is not something to work out, but that nothing is left
+              half done if it is. */}
+          {ownsAddressing && (
+            <div className="notice notice--warn setup_notice">
+              <Icon name="alert" size={15} />
+              <div className="notice_body">
+                The initialization process will finish on its own, network might
+                be interrupted, please refresh and reconnect when interruption
+                happens. The panel will be at{" "}
+                <strong>
+                  http://{address}:{listenPort}
+                </strong>
+                , and the run is written to <code>{SETUP_LOG_PATH}</code>.
+              </div>
+            </div>
+          )}
           <dl className="setup_review">
             <Row name="Shape" value={mode.replace(/_/g, " ")} />
             {isRouter && <Row name="Out to the internet" value={wan} />}
-            <Row name={isOneArm ? "Trunk" : "Served on"} value={lan} />
+            {isServer ? (
+              <Row
+                name="Answers on"
+                value={context.interfaces.map((port) => port.name).join(", ")}
+              />
+            ) : (
+              <Row name={isOneArm ? "Trunk" : "Served on"} value={lan} />
+            )}
             {isOneArm && <Row name="VLAN tag" value={String(vlanId)} />}
-            <Row name="This box" value={`${address}/${prefixLen}`} />
+            {!isServer && (
+              <Row name="This box" value={`${address}/${prefixLen}`} />
+            )}
             <Row name="Panel port" value={String(listenPort)} />
             {isSideGateway && <Row name="Its own router" value={upstream} />}
             <Row
@@ -692,6 +745,30 @@ export function SetupPage({ token, context }: SetupPageProps) {
  * so the heading and the buttons are always in the same place and nothing
  * moves as a screen is filled in.
  */
+/**
+ * A box waiting to be set up, opened without the token that reaches it.
+ *
+ * Drawn in the wizard's own frame rather than the panel's login card: there is
+ * no panel on this machine yet, and a password field for one would be asking
+ * for something that does not exist.
+ */
+export function SetupTokenMissing() {
+  return (
+    <SetupFrame title="This box is waiting to be set up">
+      <div className="setup_body">
+        <p className="setup_lead">
+          Open the link the terminal printed. It carries a one-time token, and
+          the wizard does not answer without it.
+        </p>
+        <p className="field_hint">
+          The token is good for this run only. If the terminal has scrolled past
+          it, stop the run with Ctrl-C and start it again.
+        </p>
+      </div>
+    </SetupFrame>
+  );
+}
+
 function SetupFrame({
   step,
   total,
@@ -864,6 +941,31 @@ function PortChoice({
               <span className="setup_port_route">the way out today</span>
             )}
           </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Every port, said rather than asked about. */
+function PortList({ ports }: { ports: SetupInterface[] }) {
+  return (
+    <div className="field">
+      <span className="field_label">This machine&apos;s ports</span>
+      <div className="setup_ports">
+        {ports.map((port) => (
+          <div className="setup_port setup_port--read_only" key={port.name}>
+            <span className="setup_port_name">{port.name}</span>
+            <span className="setup_port_kind">
+              {port.is_wired ? "wired" : "wifi"}
+            </span>
+            <span className="setup_port_address">
+              {port.ipv4_address || "no address"}
+            </span>
+            {port.has_route && (
+              <span className="setup_port_route">the way out today</span>
+            )}
+          </div>
         ))}
       </div>
     </div>

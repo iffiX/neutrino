@@ -1,4 +1,4 @@
-"""The Settings tab: password, config backup and restore, versions."""
+"""The Settings tab: the panel's own port, password, backup and versions."""
 
 import io
 import platform
@@ -6,15 +6,34 @@ import tarfile
 import time
 
 import psutil
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    UploadFile,
+    status,
+)
 from fastapi.responses import StreamingResponse
 
+from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
 from neutrino_hub.utils.json_file import read_config, write_config
 from neutrino_hub.utils.subprocess_run import run
 from neutrino_hub.web.auth import hash_password, verify_password
+from neutrino_hub.web.constants import (
+    WEB_DEFAULT_LISTEN_PORT,
+    WEB_PORT_MAX,
+    WEB_PORT_MIN,
+    WEB_RESTART_DELAY_S,
+)
 from neutrino_hub.web.dependencies import get_runtime, require_session
-from neutrino_hub.web.models import AboutView, PasswordChange, PasswordChangeResult
+from neutrino_hub.web.models import (
+    AboutView,
+    PanelSettings,
+    PasswordChange,
+    PasswordChangeResult,
+)
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub import HUB_VERSION
 from neutrino_hub.modules.xray.constants import XRAY_BINARY
@@ -27,6 +46,77 @@ router = APIRouter(
 # is asked to upgrade rather than negotiated with.
 GATEWAY_VERSION = HUB_VERSION
 RESTORE_SIZE_LIMIT_BYTES = 32 * 1024 * 1024
+PANEL_SETTINGS_FILE = "web/settings.json"
+
+
+@router.get("", response_model=PanelSettings)
+def read_settings(runtime: PanelRuntime = Depends(get_runtime)) -> PanelSettings:
+    """Read the panel's own settings.
+
+    Args:
+        runtime: The shared runtime.
+
+    Returns:
+        The port the panel answers on.
+    """
+    return PanelSettings(
+        listen_port=int(runtime.settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT))
+    )
+
+
+@router.put("", response_model=PanelSettings)
+def update_settings(
+    request: PanelSettings,
+    background: BackgroundTasks,
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> PanelSettings:
+    """Move the panel to another port.
+
+    The answer goes out first and the restart happens behind it, because the
+    process serving this request is the one being restarted: the browser is
+    told where to look before the socket it asked on closes.
+
+    Args:
+        request: The port to answer on.
+        background: Where the restart is queued.
+        runtime: The shared runtime.
+
+    Returns:
+        The port the panel is moving to.
+
+    Raises:
+        HTTPException: 400 when the port is not one a listener may take.
+    """
+    if not WEB_PORT_MIN <= request.listen_port <= WEB_PORT_MAX:
+        raise _bad_request(
+            f"a port is {WEB_PORT_MIN} to {WEB_PORT_MAX}; {request.listen_port} is not"
+        )
+    settings = read_config(PANEL_SETTINGS_FILE)
+    if int(settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT)) == request.listen_port:
+        return request
+    settings["listen_port"] = request.listen_port
+    write_config(PANEL_SETTINGS_FILE, settings)
+    runtime.settings["listen_port"] = request.listen_port
+    background.add_task(_restart_panel)
+    return request
+
+
+def _restart_panel() -> None:
+    """Restart the unit this is running inside.
+
+    ``--no-block`` and a moment's wait, for the same reason everything else
+    the hub asks systemd for uses them: the job stops the process making the
+    request, and waiting on it would be waiting on itself.
+    """
+    time.sleep(WEB_RESTART_DELAY_S)
+    run(
+        ["systemctl", "restart", "--no-block", SYSTEM_CORE_UNITS["web"]],
+        is_checked=False,
+    )
+
+
+def _bad_request(detail: str) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
 
 @router.put("/password", response_model=PasswordChangeResult)
@@ -49,7 +139,7 @@ def change_password(
         HTTPException: 400 when the current password is wrong or the new one is
             too short.
     """
-    settings = read_config("web/settings.json")
+    settings = read_config(PANEL_SETTINGS_FILE)
     if not verify_password(
         request.current_password, settings.get("admin_password_hash", "")
     ):
@@ -63,7 +153,7 @@ def change_password(
         )
     new_hash = hash_password(request.new_password)
     settings["admin_password_hash"] = new_hash
-    write_config("web/settings.json", settings)
+    write_config(PANEL_SETTINGS_FILE, settings)
     runtime.sessions.update_password_hash(new_hash)
     return PasswordChangeResult(is_changed=True)
 

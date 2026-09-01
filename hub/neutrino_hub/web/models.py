@@ -217,6 +217,10 @@ class InterfaceSettings(BaseModel):
 
     name: str
     role: str
+    # Read-only here. Which interfaces answer is written as a set, by the
+    # panel that shows all of them at once, so a save of one interface takes
+    # the stored answer and ignores whatever arrives in the body.
+    is_exposed: bool = False
     wan: WanInterfaceSettings = Field(default_factory=WanInterfaceSettings)
     lan: LanInterfaceSettings = Field(default_factory=LanInterfaceSettings)
     wifi: WifiInterfaceSettings = Field(default_factory=WifiInterfaceSettings)
@@ -232,7 +236,6 @@ class InterfaceLink(BaseModel):
     is_up: bool = False
     ipv4_address: str | None = None
     mac_address: str | None = None
-    connection: str | None = None
     ssid: str | None = None
     signal_percent: int | None = None
     speed_mbps: int | None = None
@@ -273,13 +276,23 @@ class UpstreamLineView(BaseModel):
     members: list[PlannedUplinkView] = Field(default_factory=list)
 
 
+class NetworkModeView(BaseModel):
+    """One mode, as the Mode panel lists it."""
+
+    key: str
+    summary: str
+    is_addressing_owned: bool
+
+
 class NetworkView(BaseModel):
     """The Network tab payload."""
 
+    mode: str
+    modes: list[NetworkModeView] = Field(default_factory=list)
     interfaces: list[InterfaceView]
-    is_ssh_from_wan_allowed: bool
     uplink_policy: str = "failover"
     is_inter_lan_allowed: bool = True
+    is_addressing_owned: bool = True
     default_gateway: str | None = None
     lines: list[UpstreamLineView] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
@@ -288,9 +301,18 @@ class NetworkView(BaseModel):
 class NetworkOptions(BaseModel):
     """The Network tab's settings that belong to no single interface."""
 
-    is_ssh_from_wan_allowed: bool
     uplink_policy: str = "failover"
     is_inter_lan_allowed: bool = True
+    # Which interfaces answer, by name. A set rather than a flag per request,
+    # because the panel shows every interface at once and applying it is one
+    # decision about the whole box.
+    exposed_interfaces: list[str] = Field(default_factory=list)
+
+
+class NetworkModeRequest(BaseModel):
+    """The mode to become. Nothing else: what each port is for is its own."""
+
+    mode: str
 
 
 class WifiNetworkView(BaseModel):
@@ -316,6 +338,29 @@ class WifiJoinRequest(BaseModel):
     passphrase: str | None = None
 
 
+class SavedNetworkView(BaseModel):
+    """One wireless network the box knows how to join.
+
+    The passphrase never comes back out: ``has_secret`` is the whole of what
+    the panel is told about it. False means the network was read from a store
+    that kept its key somewhere unreadable — a desktop keyring — and the page
+    asks for it once.
+    """
+
+    ssid: str
+    key_mgmt: str
+    has_secret: bool
+    priority: int
+    is_hidden: bool
+    source: str
+
+
+class SavedNetworkListView(BaseModel):
+    """Every network the box knows."""
+
+    networks: list[SavedNetworkView]
+
+
 class NodeCreate(BaseModel):
     """A share link to add as a node.
 
@@ -326,15 +371,25 @@ class NodeCreate(BaseModel):
     link: str
 
 
+class SocksPortView(BaseModel):
+    """One SOCKS5 listener: a port, and which way what arrives there leaves."""
+
+    port: int
+    # True goes out through the exit nodes, split the way forwarded traffic
+    # is; False leaves straight out the uplink, which is what an application
+    # that must appear to come from this network is pointed at.
+    is_proxied: bool = False
+
+
 class ProxySettings(BaseModel):
     """The Proxy tab's switches and the routing lists behind them."""
 
     is_proxy_enabled: bool = True
-    is_socks_direct_enabled: bool = True
     is_geoip_split_enabled: bool
     direct_domains: list[str]
     direct_ips: list[str]
     is_local_proxy_enabled: bool
+    socks_ports: list[SocksPortView] = Field(default_factory=list)
     remote_dns: DnsServerView
     direct_dns: DnsServerView
 
@@ -729,6 +784,16 @@ class PasswordChangeResult(BaseModel):
     """Outcome of a password change."""
 
     is_changed: bool
+
+
+class PanelSettings(BaseModel):
+    """The panel's own network settings.
+
+    One field, and it is the one nowhere else can hold: every other service
+    settles its port in its own tab, and the panel is a service too.
+    """
+
+    listen_port: int
 
 
 class AboutView(BaseModel):

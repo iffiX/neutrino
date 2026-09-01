@@ -11,6 +11,7 @@ import json
 import pytest
 
 from neutrino_hub.cli import password, reset
+from neutrino_hub.utils.subprocess_run import CommandError
 
 
 @pytest.fixture
@@ -96,3 +97,39 @@ def test_a_box_carrying_only_the_example_has_no_password_yet(box):
     password.clear_password()
 
     assert not password.is_password_set()
+
+
+# --- when the last step of a reset will not work ---
+
+
+def test_a_panel_that_will_not_restart_is_reported_rather_than_raised(monkeypatch):
+    """Everything a reset exists to undo is undone before this runs, so a
+    service that will not come back is a line to print — a traceback here
+    would say the reset failed when what failed was one service starting."""
+
+    class RefusingController:
+        def status(self, name):
+            return type("Status", (), {"is_installed": True})()
+
+        def control(self, name, action):
+            raise CommandError("systemctl restart timed out after 60s")
+
+    monkeypatch.setattr(reset, "SystemdServiceController", RefusingController)
+
+    message = reset._restart_panel()
+
+    assert "did not come back" in message
+    assert "timed out" in message
+
+
+def test_a_box_with_no_panel_unit_has_nothing_to_report(monkeypatch):
+    class AbsentController:
+        def status(self, name):
+            return type("Status", (), {"is_installed": False})()
+
+        def control(self, name, action):
+            raise AssertionError("there was nothing to restart")
+
+    monkeypatch.setattr(reset, "SystemdServiceController", AbsentController)
+
+    assert reset._restart_panel() == ""

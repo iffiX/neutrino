@@ -104,7 +104,7 @@ export function ServicesPage() {
     setActionError(null);
     try {
       const plan = await apiGet<ServiceInstallPlanView>(
-        `/services/${name}/install-plan`,
+        `/services/${name}/install_plan`,
       );
       if (plan.is_consent_needed) {
         setPendingConsent(plan);

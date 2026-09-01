@@ -66,16 +66,20 @@ XRAY_TPROXY_LISTEN = "127.0.0.1"
 XRAY_TPROXY_PORT = 12345
 XRAY_TPROXY_TAG = "tproxy_in"
 
-# SOCKS5 inbound on the LAN whose traffic bypasses the proxy and leaves through
-# the WAN directly. Used by LAN applications that must appear local.
-XRAY_SOCKS_DIRECT_PORT = 1080
-XRAY_SOCKS_DIRECT_TAG = "socks_direct_in"
+# Where every SOCKS inbound binds. Every address, as every service on this box
+# binds every address: which interfaces they answer on is one firewall answer
+# per interface rather than a listen address each of them gets half right —
+# and a listener pinned to a LAN address is one that vanishes when the LAN
+# address changes under it.
+XRAY_SOCKS_LISTEN = "0.0.0.0"
 
-# SOCKS5 inbound whose traffic goes out through the exit nodes. A box that
-# routes nothing has no traffic to divert transparently, so this is the whole
-# of its proxy: applications are pointed at it by hand.
-XRAY_SOCKS_PROXY_PORT = 1080
-XRAY_SOCKS_PROXY_TAG = "socks_proxy_in"
+# A SOCKS5 inbound is a port and one question about it: does what arrives
+# there leave through an exit node, or straight out the WAN. Applications are
+# pointed at one by hand — a box that diverts nothing transparently has this
+# as the whole of its proxy, and a box that does still needs a direct port for
+# the applications that must appear to come from this network.
+XRAY_SOCKS_PORT = 1080
+XRAY_SOCKS_TAG = "socks_{port}_in"
 
 # DNS inbound; dnsmasq forwards every LAN query here. Not 5353: that is the
 # registered mDNS port, and avahi-daemon holds it on every desktop Ubuntu.

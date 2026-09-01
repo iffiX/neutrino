@@ -1,73 +1,111 @@
-"""What a served interface tells the box to resolve with.
+"""What a served interface leaves the box resolving with.
 
-A manual address takes no resolver from anywhere, so a gateway set up as a
-server or a side gateway came up with an address, a route and nothing to ask
-a name of. It showed on every VM in the lab except Arch, whose resolver
-happens to ship compiled-in fallback servers.
+A gateway that comes up with an address, a route and nothing to ask a name of
+cannot fetch its own geodata, install a module from a vendor, or run apt. It
+showed on every VM in the lab except Arch, whose resolver happens to ship
+compiled-in fallback servers.
+
+Nothing else writes the file any more: the lease client's `resolv.conf` hook is
+off, and on a machine whose resolver was `systemd-resolved` that daemon is
+stopped in an owner mode.
 """
 
+import pytest
+
+from neutrino_hub.modules.router import resolver, routes
+from neutrino_hub.modules.router.constants import ROUTER_MODE_SERVER
 from neutrino_hub.modules.router.interfaces import (
     RouterInterface,
     RouterLanSettings,
     RouterNetworkConfig,
 )
-from neutrino_hub.modules.router import routes
 
 
-def test_a_served_interface_points_the_box_at_its_own_dnsmasq(monkeypatch):
-    written = {}
-    _stub_network_manager(monkeypatch, written)
-
-    routes.RouterInterfaceApplier(network=_served("192.168.8.1")).apply_all()
-
-    assert written["ipv4.dns"] == "192.168.8.1"
-    assert written["ipv4.ignore-auto-dns"] == "yes"
+@pytest.fixture
+def resolv_conf(tmp_path, monkeypatch):
+    """A `/etc/resolv.conf` a test may write."""
+    path = tmp_path / "resolv.conf"
+    monkeypatch.setattr(resolver, "RESOLVER_PATH", path)
+    return path
 
 
-def test_the_resolver_follows_the_address_rather_than_a_default(monkeypatch):
-    written = {}
-    _stub_network_manager(monkeypatch, written)
+def test_a_served_interface_points_the_box_at_its_own_dnsmasq(resolv_conf):
+    assert resolver.point_at("192.168.8.1")
 
-    routes.RouterInterfaceApplier(network=_served("10.9.0.1")).apply_all()
-
-    assert written["ipv4.dns"] == "10.9.0.1"
+    assert "nameserver 192.168.8.1" in resolv_conf.read_text()
 
 
-def test_it_is_taken_in_place_rather_than_by_dropping_the_link():
-    """Reactivating a LAN drops the panel session that asked for the change,
-    so a resolver edit must not be one of the properties that does."""
-    assert "ipv4.dns" not in routes.REACTIVATION_PROPERTIES
+def test_the_resolver_follows_the_address_rather_than_a_default(resolv_conf):
+    resolver.point_at("192.168.8.1")
+
+    assert resolver.point_at("10.9.0.1")
+    assert "nameserver 10.9.0.1" in resolv_conf.read_text()
+    assert "192.168.8.1" not in resolv_conf.read_text()
 
 
-def _served(address: str) -> RouterNetworkConfig:
-    return RouterNetworkConfig(
+def test_writing_the_same_answer_twice_changes_nothing(resolv_conf):
+    """The applier reports what it changed, and a file rewritten identically
+    is a change nobody made."""
+    resolver.point_at("192.168.8.1")
+
+    assert not resolver.point_at("192.168.8.1")
+
+
+def test_a_symlink_is_replaced_rather_than_written_through(resolv_conf, tmp_path):
+    """On a machine using `systemd-resolved` this path is a link into /run.
+    Writing through it puts our nameserver in a file that daemon rewrites —
+    or, once it is stopped, under a directory that no longer exists."""
+    target = tmp_path / "stub-resolv.conf"
+    target.write_text("nameserver 127.0.0.53\n")
+    resolv_conf.symlink_to(target)
+
+    resolver.point_at("192.168.8.1")
+
+    assert not resolv_conf.is_symlink()
+    assert "nameserver 192.168.8.1" in resolv_conf.read_text()
+    assert target.read_text() == "nameserver 127.0.0.53\n"
+
+
+def test_a_file_somebody_else_wrote_is_never_handed_back(resolv_conf):
+    """Handing back only undoes what this wrote. Anything else on the machine
+    is somebody's arrangement and is left alone."""
+    resolv_conf.write_text("nameserver 1.1.1.1\n")
+
+    assert not resolver.hand_back()
+    assert resolv_conf.read_text() == "nameserver 1.1.1.1\n"
+
+
+def test_a_machine_the_hub_only_answers_on_keeps_its_own_resolver(monkeypatch):
+    """Guest mode changes nothing about how the machine resolves, exactly as
+    it changes nothing about how it is addressed."""
+    written = []
+    monkeypatch.setattr(resolver, "point_at", lambda address: written.append(address))
+    network = RouterNetworkConfig(
+        mode=ROUTER_MODE_SERVER,
         interfaces=[
             RouterInterface(
                 name="eth0",
                 role="lan",
-                lan=RouterLanSettings(
-                    address=address, prefix_len=24, is_dhcp_enabled=False
-                ),
+                lan=RouterLanSettings(address="192.168.8.1", prefix_len=24),
             )
-        ]
+        ],
     )
 
+    applier = routes.RouterInterfaceApplier.__new__(routes.RouterInterfaceApplier)
+    applier._network = network
 
-def _stub_network_manager(monkeypatch, written: dict):
-    """Every nmcli call replaced, keeping what would have been written."""
-    monkeypatch.setattr(routes.network_manager, "device_kinds", dict)
-    monkeypatch.setattr(
-        routes.network_manager, "differing_properties", lambda *_: set()
-    )
-    monkeypatch.setattr(
-        routes.network_manager, "connection_for_device", lambda name: None
-    )
-    monkeypatch.setattr(
-        routes.network_manager,
-        "modify",
-        lambda connection, settings: written.update(settings),
-    )
-    monkeypatch.setattr(routes.network_manager, "activate", lambda *_: None)
-    monkeypatch.setattr(routes.network_manager, "reapply_device", lambda *_, **__: None)
-    monkeypatch.setattr(routes.network_manager, "connection_exists", lambda name: True)
-    monkeypatch.setattr(routes.RouterDefaultRouteApplier, "apply", lambda self: [])
+    assert applier._apply_resolver() == []
+    assert written == []
+
+
+def test_a_gateway_serving_nothing_is_left_resolving_as_it_was(monkeypatch):
+    """No served network means no dnsmasq of ours to point at."""
+    written = []
+    monkeypatch.setattr(resolver, "point_at", lambda address: written.append(address))
+    network = RouterNetworkConfig(interfaces=[RouterInterface(name="eth0", role="wan")])
+
+    applier = routes.RouterInterfaceApplier.__new__(routes.RouterInterfaceApplier)
+    applier._network = network
+
+    assert applier._apply_resolver() == []
+    assert written == []

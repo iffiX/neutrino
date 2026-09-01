@@ -1,9 +1,14 @@
 {
+  "_comment_mode": "What this whole machine is set up as, and the one answer everything else is read from. 'router' is an uplink and a served network; 'one_arm_router' is a single trunk port going out untagged and serving on a tag; 'side_gateway' is a served network whose own way out is that network's real router; 'server' is a box that routes nothing and only answers where it is reached. The two router modes address this machine's interfaces; the other two change nothing about how it is addressed, because it is somebody else's machine.",
+  "mode": "router",
+
   "_comment": "Every network interface carries a role, and the role decides which of its three settings blocks is live. 'wan' is an uplink to the internet, 'lan' is a network the gateway serves, 'disabled' is left alone. All three blocks are kept whatever the current role, so switching a port from LAN to WAN and back does not lose what was typed in for the other. Edit this by hand if you like, then run scripts/render_all/main.py \u2014 or use the Network tab, which writes the same file.",
   "interfaces": [
     {
       "_comment": "The uplink. DHCP so that plugging into any network \u2014 campus, hotel, home broadband \u2014 just works.",
       "name": "enp2s0",
+      "_comment_is_exposed": "Whether what this box listens on answers on this interface. One answer for the whole interface and not a port list: every service here binds every address and settles its own port in its own tab, so which wires reach them is all that is left to decide. An uplink is closed by default \u2014 remote access arrives over the overlay, which always answers.",
+      "is_exposed": false,
       "role": "wan",
       "wan": {
         "_comment_method": "'dhcp' or 'static'. address, prefix_len and gateway are read only when static.",
@@ -36,6 +41,7 @@
     {
       "_comment": "The wired LAN the work machines plug into. Its address is what clients get as their gateway and resolver, and it is where the panel, the SOCKS listener, and the shares are reachable.",
       "name": "enp1s0",
+      "is_exposed": true,
       "role": "lan",
       "wan": {
         "method": "dhcp",
@@ -63,8 +69,9 @@
       "vlan": null
     },
     {
-      "_comment": "The radio, unused by default. Give it the 'wan' role to reach the internet over Wi-Fi \u2014 scan and join from the Network tab, which is also where NetworkManager gets the passphrase; it is not stored here. Give it the 'lan' role to publish an access point instead, using ap_ssid and ap_passphrase below.",
+      "_comment": "The radio, unused by default. Give it the 'wan' role to reach the internet over Wi-Fi \u2014 scan and join from the Network tab. The passphrase is not stored here; it lives in connections.json with every other network this box knows how to join. Give it the 'lan' role to publish an access point instead, using ap_ssid and ap_passphrase below.",
       "name": "wlp3s0",
+      "is_exposed": false,
       "role": "disabled",
       "wan": {
         "method": "dhcp",
@@ -85,7 +92,7 @@
         "upstream_gateway": null
       },
       "wifi": {
-        "_comment_ssid": "The network joined in the 'wan' role, remembered so the page can show it. The passphrase lives in NetworkManager, not here.",
+        "_comment_ssid": "The network joined in the 'wan' role, remembered so the page can show it. The passphrase lives in connections.json, not here.",
         "ssid": "",
         "_comment_ap": "The network published in the 'lan' role. WPA2 only: the passphrase is 8 to 63 characters and is not optional, because an open access point would be an open route into the LAN. Band is 'bg' for 2.4 GHz or 'a' for 5 GHz.",
         "ap_ssid": "neutrino",
@@ -97,7 +104,5 @@
   ],
   "_comment_policy": "What to do when the box has more than one way out. 'failover' keeps one uplink carrying everything and the rest waiting; 'balance' spreads across the distinct upstream lines. Balance is opt-in rather than inferred, because inferring it would put traffic on a metered link whose owner forgot to mark it backup_only. Note that two interfaces onto the same upstream are one line however this is set, so balancing never splits them.",
   "uplink_policy": "failover",
-  "_comment_ssh": "Whether port 22 is reachable from the uplink side. Remote access normally goes through Tailscale, so false is the safer default once Tailscale is up.",
-  "is_ssh_from_wan_allowed": true,
   "is_inter_lan_allowed": true
 }

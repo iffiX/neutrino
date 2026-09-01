@@ -1,0 +1,24 @@
+/* --- The router of the network a side gateway sits on --- */
+
+.joined_rows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+}
+
+.joined_row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+
+.joined_row dt {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.joined_row dd {
+  margin: 0;
+  color: var(--color-text);
+}

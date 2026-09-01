@@ -1,0 +1,25 @@
+[Unit]
+Description=Neutrino Hub Wi-Fi supplicant on %i
+Documentation=file://@REPO_ROOT@/docs/standard/design/network.md
+# Association is layer 2 and has to finish before anything asks the interface
+# for an address, which is what the lease client on the same radio waits for.
+After=network-pre.target
+Wants=network-pre.target
+Before=neutrino_hub_dhcpcd@%i.service
+# One radio cannot both join a network and publish one.
+Conflicts=neutrino_hub_hostapd@%i.service
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO_ROOT@
+Environment=PYTHONPATH=@REPO_ROOT@
+# The socket the panel's scan and join talk to. Ours rather than
+# /run/wpa_supplicant, which the machine's own supplicant may be holding.
+RuntimeDirectory=neutrino/wpa_supplicant
+ExecStartPre=/bin/sh -c 'command -v ip >/dev/null && ip link set %i up || true'
+ExecStart=@PYTHON@ -m neutrino_hub.cli.entry run --only-supplicant --interface %i
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

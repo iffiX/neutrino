@@ -63,10 +63,12 @@ def test_every_proxy_answer_reaches_the_routing_file(config_dir):
     routing = read_config("xray/routing.json")
     assert routing["is_proxy_enabled"] is True
     assert routing["is_local_proxy_enabled"] is True
-    assert routing["is_socks_proxy_enabled"] is True
-    assert routing["socks_proxy_port"] == 1081
-    assert routing["is_socks_direct_enabled"] is True
-    assert routing["socks_direct_port"] == 1088
+    # Two questions, one list: each answered port becomes a listener, and
+    # which way its traffic leaves is what it carries.
+    assert routing["socks_ports"] == [
+        {"port": 1081, "is_proxied": True},
+        {"port": 1088, "is_proxied": False},
+    ]
 
 
 def test_skipping_the_proxy_empties_the_example_nodes(config_dir):
@@ -77,3 +79,115 @@ def test_skipping_the_proxy_empties_the_example_nodes(config_dir):
 
     assert read_config("xray/nodes.json")["nodes"] == []
     assert read_config("xray/routing.json")["is_proxy_enabled"] is False
+
+
+# --- a step that fails without ending the run ---
+
+
+def test_the_box_survives_the_two_steps_it_is_a_gateway_without():
+    """Hardening SSH and installing the AI gateway are both worth having and
+    neither is what makes this a gateway. A first run that stops at step two
+    over one of them leaves a machine with nothing."""
+    assert setup._step_fail2ban in setup.SETUP_STEPS_THE_BOX_SURVIVES
+    assert setup._step_cliproxyapi in setup.SETUP_STEPS_THE_BOX_SURVIVES
+
+
+def test_every_other_step_still_ends_the_run():
+    """The ones the box is not a gateway without: its interfaces, its
+    firewall, its own configuration."""
+    for step in (
+        setup._step_config_files,
+        setup._step_interfaces,
+        setup._step_render_all,
+        setup._step_systemd_units,
+    ):
+        assert step not in setup.SETUP_STEPS_THE_BOX_SURVIVES
+
+
+def test_hardening_ssh_never_restarts_the_unit_it_just_started(monkeypatch, tmp_path):
+    """Starting fail2ban with `--now` and then restarting it races the unit
+    against itself: the restart's stop half runs `fail2ban-client stop` before
+    the server it just started has made its socket, that exits 255, and
+    systemd falls back to signalling and waits out the stop timeout — a minute
+    of a first run spent on a race nobody needed."""
+    commands: list = []
+    monkeypatch.setattr(
+        setup, "run", lambda command, **keywords: commands.append(command) or _Ran()
+    )
+    monkeypatch.setattr(setup, "SYSTEM_FAIL2BAN_JAIL_PATH", tmp_path / "jail.conf")
+
+    setup._step_fail2ban(_SilentReporter())
+
+    verbs = [command[1] for command in commands if command[0] == "systemctl"]
+    assert "restart" not in verbs
+    assert "--now" not in [word for command in commands for word in command]
+
+
+class _Ran:
+    is_success = True
+    stdout = ""
+
+
+class _SilentReporter:
+    def note(self, text: str) -> None:
+        pass
+
+    def banner(self, text: str) -> None:
+        pass
+
+    def blank(self) -> None:
+        pass
+
+    def start(self, description: str) -> None:
+        pass
+
+    def done(self, note: str = "") -> None:
+        pass
+
+
+# --- a run that outlives the session watching it ---
+
+
+def test_the_run_ignores_a_hang_up_once_it_starts_changing_the_machine(monkeypatch):
+    """A first run reconfigures the interface it is often watched over. A
+    hang-up from that must not end it: a run stopped halfway leaves a box that
+    is neither what it was nor what it was asked to be, and nobody is there to
+    see which."""
+    import signal
+
+    handled: list = []
+    monkeypatch.setattr(
+        signal, "signal", lambda number, action: handled.append((number, action))
+    )
+    monkeypatch.setattr(setup, "store_password", lambda password: None)
+    monkeypatch.setattr(setup, "_panel_url", lambda: "http://192.168.8.1:8080")
+    monkeypatch.setattr(setup, "_start_panel", lambda: None)
+    monkeypatch.setattr(setup, "_enrollment_link", lambda password: ("", ""))
+    monkeypatch.setattr(setup.wizard, "finish", lambda **keywords: None)
+
+    setup._setup(_SilentReporter(), [], _NoAnswers())
+
+    assert (signal.SIGHUP, signal.SIG_IGN) in handled
+
+
+def test_the_log_is_named_before_the_first_step(monkeypatch):
+    """Somebody who loses the session at step nine needs to have already read
+    where to look."""
+    said: list = []
+    reporter = _SilentReporter()
+    reporter.note = said.append
+    monkeypatch.setattr(setup, "store_password", lambda password: None)
+    monkeypatch.setattr(setup, "_panel_url", lambda: "http://192.168.8.1:8080")
+    monkeypatch.setattr(setup, "_start_panel", lambda: None)
+    monkeypatch.setattr(setup, "_enrollment_link", lambda password: ("", ""))
+    monkeypatch.setattr(setup.wizard, "finish", lambda **keywords: None)
+
+    setup._setup(reporter, [], _NoAnswers())
+
+    assert any(str(setup.SETUP_LOG_PATH) in line for line in said)
+    assert any("will finish on its own" in line for line in said)
+
+
+class _NoAnswers:
+    password = "x"
+    services: tuple = ()

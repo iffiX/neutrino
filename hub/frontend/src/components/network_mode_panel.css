@@ -1,0 +1,47 @@
+/* --- What this whole machine is --- */
+
+/* A grid rather than a row: four cards, each with a sentence under its name,
+   and a row would either wrap badly or squeeze the sentences to nothing. */
+.mode_choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-3);
+}
+
+.mode_choice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-base),
+    background var(--transition-base);
+}
+
+.mode_choice:hover {
+  border-color: var(--color-accent);
+}
+
+.mode_choice--on {
+  border-color: var(--color-accent);
+  background: var(--color-accent-wash);
+  color: var(--color-text);
+}
+
+.mode_choice_head {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--color-text);
+}
+
+.mode_choice_summary {
+  font-size: 13px;
+  line-height: 1.45;
+}

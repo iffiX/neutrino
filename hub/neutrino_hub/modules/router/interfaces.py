@@ -20,6 +20,9 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_INTENT_BACKUP_ONLY,
     ROUTER_INTENT_PRIMARY,
     ROUTER_INTENTS,
+    ROUTER_MODE_ROUTER,
+    ROUTER_MODES_ADDRESSING_OWNED,
+    ROUTER_MODES_KEYS,
     ROUTER_POLICIES,
     ROUTER_POLICY_FAILOVER,
     ROUTER_ROLE_DISABLED,
@@ -114,26 +117,17 @@ class RouterWanSettings:
 
 
 def _read_intent(data: dict) -> str:
-    """Read an uplink's intent, accepting the older ``mode`` field.
-
-    Before the gateway ranked uplinks itself, each one was told outright
-    whether to balance or to stand by. ``backup`` said the one thing that is
-    still worth saying, so it carries over; ``balance`` was a statement about
-    ordering, which is now inferred, so it becomes ``auto``.
+    """Read an uplink's intent.
 
     Args:
         data: The ``wan`` object from an interface entry.
 
     Returns:
-        One of the intent constants.
+        One of the intent constants. Anything else reads as ``auto``: an
+        uplink nobody has an opinion about is one the gateway places itself.
     """
-    intent = data.get("intent")
-    if intent is not None:
-        text = str(intent)
-        return text if text in ROUTER_INTENTS else ROUTER_INTENT_AUTO
-    if str(data.get("mode", "")) == "backup":
-        return ROUTER_INTENT_BACKUP_ONLY
-    return ROUTER_INTENT_AUTO
+    text = str(data.get("intent", ROUTER_INTENT_AUTO))
+    return text if text in ROUTER_INTENTS else ROUTER_INTENT_AUTO
 
 
 @dataclass
@@ -316,6 +310,10 @@ class RouterInterface:
         name: Kernel interface name, for example ``enp1s0`` — or
             ``enp1s0.10`` for a VLAN, following the kernel's own convention.
         role: One of ``wan``, ``lan``, ``split``, ``disabled``.
+        is_exposed: Whether what this box listens on answers on this
+            interface. One answer for the whole interface rather than a port
+            list: every service here binds every address and settles its own
+            port, so what is left to decide is which wires reach them.
         wan: Settings used while the role is ``wan``.
         lan: Settings used while the role is ``lan``.
         wifi: Radio settings, used in either role on a wireless interface.
@@ -325,6 +323,7 @@ class RouterInterface:
 
     name: str
     role: str = ROUTER_ROLE_DISABLED
+    is_exposed: bool = False
     wan: RouterWanSettings = field(default_factory=RouterWanSettings)
     lan: RouterLanSettings = field(default_factory=RouterLanSettings)
     wifi: RouterWifiSettings = field(default_factory=RouterWifiSettings)
@@ -393,6 +392,7 @@ class RouterInterface:
         return cls(
             name=str(data["name"]),
             role=role if role in ROUTER_ROLES else ROUTER_ROLE_DISABLED,
+            is_exposed=bool(data.get("is_exposed", False)),
             wan=RouterWanSettings.from_dict(data.get("wan") or {}),
             lan=RouterLanSettings.from_dict(data.get("lan") or {}),
             wifi=RouterWifiSettings.from_dict(data.get("wifi") or {}),
@@ -408,6 +408,7 @@ class RouterInterface:
         return {
             "name": self.name,
             "role": self.role,
+            "is_exposed": self.is_exposed,
             "wan": self.wan.to_dict(),
             "lan": self.lan.to_dict(),
             "wifi": self.wifi.to_dict(),
@@ -420,10 +421,11 @@ class RouterNetworkConfig:
     """The whole of ``config/router/network.json``.
 
     Attributes:
+        mode: What the whole machine is set up as, one of
+            :data:`ROUTER_MODES_KEYS`. It decides which panel the page draws
+            and whether the hub addresses anything at all.
         interfaces: Every interface the gateway has an opinion about, in the
             order the panel shows them.
-        is_ssh_from_wan_allowed: Whether port 22 is reachable from the uplink
-            side. Remote access normally arrives over the overlay instead.
         uplink_policy: ``failover`` to keep one uplink carrying everything, or
             ``balance`` to spread across the distinct upstream lines. Opt-in
             rather than inferred: guessing it would put traffic on a metered
@@ -435,10 +437,36 @@ class RouterNetworkConfig:
             complexity.
     """
 
+    mode: str = ROUTER_MODE_ROUTER
     interfaces: list[RouterInterface] = field(default_factory=list)
-    is_ssh_from_wan_allowed: bool = True
     uplink_policy: str = ROUTER_POLICY_FAILOVER
     is_inter_lan_allowed: bool = True
+
+    @property
+    def is_addressing_owned(self) -> bool:
+        """Whether the hub addresses this box's interfaces at all.
+
+        A machine is wholly one or the other, and which it is was settled by
+        the mode. Sharing an interface with another manager is where every bug
+        in this area has come from, so there is no half-managed state to ask
+        an interface about.
+        """
+        return self.mode in ROUTER_MODES_ADDRESSING_OWNED
+
+    @property
+    def exposed_device_names(self) -> list[str]:
+        """The kernel devices what this box listens on answers on.
+
+        Returns:
+            One name per exposed interface, deduplicated: a trunk and its
+            untagged main are one device, and naming it twice would render an
+            nft set with a repeated element.
+        """
+        return _unique(
+            interface.device_name
+            for interface in self.interfaces
+            if interface.is_exposed
+        )
 
     @property
     def wan_interfaces(self) -> list[RouterInterface]:
@@ -548,6 +576,21 @@ class RouterNetworkConfig:
                 return interface
         return None
 
+    def interface_or_new(self, name: str) -> RouterInterface:
+        """This interface as configured, or a fresh one with no job.
+
+        A port the box has and the configuration does not still has to be
+        shown, and a port nobody has said anything about answers nothing: an
+        interface appearing on its own is not a reason to open it.
+
+        Args:
+            name: Kernel interface name.
+
+        Returns:
+            The stored interface, or a new roleless one.
+        """
+        return self.interface(name) or RouterInterface(name=name)
+
     def vlan_children(self, parent: str) -> list[RouterInterface]:
         """The VLANs riding on one trunk port, in configuration order.
 
@@ -614,12 +657,7 @@ class RouterNetworkConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "RouterNetworkConfig":
-        """Parse the router configuration, migrating the older shape.
-
-        Before roles existed the file named one WAN and one LAN in flat keys.
-        Those installations are upgraded on read rather than at install time,
-        so pulling a new version and restarting the panel is enough; the
-        migrated shape is written back the next time the page is saved.
+        """Parse the router configuration.
 
         Args:
             data: Parsed ``config/router/network.json``.
@@ -627,16 +665,15 @@ class RouterNetworkConfig:
         Returns:
             The configuration.
         """
-        if "interfaces" not in data:
-            return _migrate_flat_config(data)
         policy = str(data.get("uplink_policy", ROUTER_POLICY_FAILOVER))
+        mode = str(data.get("mode", ROUTER_MODE_ROUTER))
         return cls(
+            mode=mode if mode in ROUTER_MODES_KEYS else ROUTER_MODE_ROUTER,
             interfaces=[
                 RouterInterface.from_dict(entry)
                 for entry in data.get("interfaces", [])
                 if entry.get("name")
             ],
-            is_ssh_from_wan_allowed=bool(data.get("is_ssh_from_wan_allowed", True)),
             uplink_policy=(
                 policy if policy in ROUTER_POLICIES else ROUTER_POLICY_FAILOVER
             ),
@@ -650,65 +687,11 @@ class RouterNetworkConfig:
             A plain object ready for ``config/router/network.json``.
         """
         return {
+            "mode": self.mode,
             "interfaces": [interface.to_dict() for interface in self.interfaces],
-            "is_ssh_from_wan_allowed": self.is_ssh_from_wan_allowed,
             "uplink_policy": self.uplink_policy,
             "is_inter_lan_allowed": self.is_inter_lan_allowed,
         }
-
-
-def _migrate_flat_config(data: dict) -> RouterNetworkConfig:
-    interfaces: list[RouterInterface] = []
-
-    wan_name = data.get("wan_interface")
-    if wan_name:
-        interfaces.append(
-            RouterInterface(
-                name=str(wan_name),
-                role=ROUTER_ROLE_WAN,
-                wan=RouterWanSettings(
-                    method=ROUTER_WAN_METHOD_DHCP,
-                    cloned_mac=_optional_text(data.get("wan_cloned_mac")),
-                ),
-            )
-        )
-
-    lan_name = data.get("lan_interface")
-    if lan_name:
-        interfaces.append(
-            RouterInterface(
-                name=str(lan_name),
-                role=ROUTER_ROLE_LAN,
-                lan=RouterLanSettings(
-                    address=str(data.get("lan_address", "")),
-                    prefix_len=int(data.get("lan_prefix_len", 24)),
-                    is_dhcp_enabled=True,
-                    dhcp_range_start=str(data.get("dhcp_range_start", "")),
-                    dhcp_range_end=str(data.get("dhcp_range_end", "")),
-                    dhcp_lease_time=str(
-                        data.get("dhcp_lease_time", DEFAULT_DHCP_LEASE_TIME)
-                    ),
-                ),
-            )
-        )
-
-    wifi_name = data.get("wifi_interface")
-    if wifi_name:
-        # The old flag meant "let Wi-Fi take over when the wire is down", which
-        # is exactly a backup WAN; off meant the radio was left unused.
-        is_fallback = bool(data.get("is_wifi_fallback_enabled", False))
-        interfaces.append(
-            RouterInterface(
-                name=str(wifi_name),
-                role=ROUTER_ROLE_WAN if is_fallback else ROUTER_ROLE_DISABLED,
-                wan=RouterWanSettings(intent=ROUTER_INTENT_BACKUP_ONLY),
-            )
-        )
-
-    return RouterNetworkConfig(
-        interfaces=interfaces,
-        is_ssh_from_wan_allowed=bool(data.get("is_ssh_from_wan_allowed", True)),
-    )
 
 
 def _optional_text(value: object) -> str | None:

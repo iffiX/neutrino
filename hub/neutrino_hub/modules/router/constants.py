@@ -7,10 +7,38 @@ in ``config/router/network.json`` instead.
 
 from pathlib import Path
 
-from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
+from neutrino_hub.utils.constants import (
+    UTILS_GENERATED_DIR,
+    UTILS_RUNTIME_ROOT,
+    UTILS_STATE_ROOT,
+)
 
 ROUTER_NFT_TABLE = "neutrino"
 ROUTER_NFT_FAMILY = "inet"
+
+# What the whole machine is, stored in ``config/router/network.json``.
+# Everything downstream of it — which panels the page draws, whether the hub
+# addresses anything — is a reading of it rather than a separate answer
+# somebody has to keep in step.
+#
+# Three, and a one-armed router is not a fourth: it is a router whose single
+# port is a trunk, which is a wiring the interface panel already describes.
+ROUTER_MODE_ROUTER = "router"
+ROUTER_MODE_SIDE_GATEWAY = "side_gateway"
+ROUTER_MODE_SERVER = "server"
+ROUTER_MODES_KEYS = (
+    ROUTER_MODE_SERVER,
+    ROUTER_MODE_SIDE_GATEWAY,
+    ROUTER_MODE_ROUTER,
+)
+# The mode in which this box addresses its own interfaces. The other two are
+# a guest on somebody else's machine: they answer on the address a port
+# already has and change nothing about how it got there.
+ROUTER_MODES_ADDRESSING_OWNED = (ROUTER_MODE_ROUTER,)
+
+# The layout the wizard offers for a router on one wire. Not a mode: what it
+# plans is a router, and what reaches `config/` says so.
+ROUTER_LAYOUT_ONE_ARM = "one_arm_router"
 
 # What an interface is for. Every interface carries exactly one of these, and
 # the role decides which block of its settings applies. ``split`` turns a wired
@@ -73,17 +101,6 @@ ROUTER_METRIC_SIDE_GATEWAY = 300
 # below both, so it wins whenever it exists.
 ROUTER_METRIC_MULTIPATH = 90
 
-# NetworkManager connections the gateway creates and owns. Anything with this
-# prefix was made here and may be rewritten; everything else is the user's and
-# is only ever modified in place.
-ROUTER_NM_CONNECTION_PREFIX = "neutrino-"
-
-# Where NetworkManager is told which interfaces are not its business. Marking a
-# device unmanaged with nmcli lasts only until the next reboot, and a radio that
-# NetworkManager reclaims at boot is one it will fight hostapd for.
-ROUTER_NM_UNMANAGED_CONF = Path("/etc/NetworkManager/conf.d/99_neutrino_unmanaged.conf")
-ROUTER_NM_AP_CONNECTION_PREFIX = "neutrino-ap-"
-
 # Packets carrying this mark are delivered locally to the TPROXY socket.
 ROUTER_FWMARK_TPROXY = 0x1
 # xray stamps its own egress sockets with this mark so they escape the proxy.
@@ -123,6 +140,83 @@ def router_hostapd_address_path(interface: str):
 
 
 ROUTER_DNSMASQ_PATH = UTILS_GENERATED_DIR / "dnsmasq_neutrino.conf"
+
+# --- the networks this box knows how to join ---
+# What `wpa_supplicant` calls each way of authenticating. Only these three are
+# stored: an enterprise network needs a certificate and an identity, which is
+# not something the wizard asks for and not something to half-hold.
+ROUTER_KEY_MGMT_PSK = "WPA-PSK"
+ROUTER_KEY_MGMT_SAE = "SAE"
+ROUTER_KEY_MGMT_NONE = "NONE"
+ROUTER_KEY_MGMTS = (ROUTER_KEY_MGMT_PSK, ROUTER_KEY_MGMT_SAE, ROUTER_KEY_MGMT_NONE)
+
+# Where an entry came from. A network somebody typed into the panel and one
+# read out of what this machine already held are both decisions; which is
+# which is what lets the panel say where a passphrase it never asked for came
+# from.
+ROUTER_SOURCE_PANEL = "panel"
+ROUTER_SOURCE_INHERITED = "inherited:{manager}"
+
+# A derived key is 64 hexadecimal characters. wpa_supplicant takes either that
+# or the passphrase in quotes, and the two are told apart by looking.
+ROUTER_PSK_HEX_LENGTH = 64
+# WPA2 permits 8 to 63 characters, which is also what a derived key is made
+# from. Shorter is not a passphrase any network would have accepted.
+ROUTER_PASSPHRASE_MIN_LENGTH = 8
+ROUTER_PASSPHRASE_MAX_LENGTH = 63
+
+# One supplicant per radio, so the rendered file and the unit are named after
+# the interface they drive, exactly as the access point already is.
+ROUTER_SUPPLICANT_UNIT = "neutrino_hub_supplicant@{interface}.service"
+# Our own control socket directory, not `/run/wpa_supplicant`: the machine's
+# own supplicant may be running, and two of them in one directory is a
+# collision that shows up as whichever started second failing to bind.
+ROUTER_SUPPLICANT_CONTROL_DIR = UTILS_RUNTIME_ROOT / "wpa_supplicant"
+
+
+def router_supplicant_config_path(interface: str):
+    """Where a radio's rendered supplicant configuration lives.
+
+    Args:
+        interface: Wireless interface name.
+
+    Returns:
+        The path the systemd unit reads.
+    """
+    return UTILS_GENERATED_DIR / f"wpa_supplicant_{interface}.conf"
+
+
+# --- the lease client ---
+# Driven the way dnsmasq already is: our binary invocation, our configuration,
+# our state directory, and every hook the distribution ships turned off. Left
+# on, dhcpcd is not an engine that fetches a lease, it is a second manager
+# with opinions about the resolver, the hostname and the clock.
+ROUTER_DHCP_UNIT = "neutrino_hub_dhcpcd@{interface}.service"
+
+# --- what the hub stood down ---
+# Which units the hub stopped so it could drive the interfaces itself. State
+# rather than configuration: it is a note of what was done, not a copy of
+# anybody's files, and losing it costs one `systemctl unmask` by hand.
+ROUTER_STACK_RECORD_PATH = UTILS_STATE_ROOT / "stood_down.json"
+
+# What the two files under `config/router/` are called, for the code that
+# reads them by name rather than through the panel's runtime.
+ROUTER_NETWORK_FILE = "router/network.json"
+ROUTER_CONNECTIONS_FILE = "router/connections.json"
+ROUTER_DHCP_STATE_DIR = UTILS_STATE_ROOT / "dhcpcd"
+
+
+def router_dhcp_config_path(interface: str):
+    """Where an uplink's rendered dhcpcd configuration lives.
+
+    Args:
+        interface: Interface name.
+
+    Returns:
+        The path the systemd unit reads.
+    """
+    return UTILS_GENERATED_DIR / f"dhcpcd_{interface}.conf"
+
 
 # Destinations that never go through the proxy: loopback, link-local, LAN, and
 # multicast ranges.

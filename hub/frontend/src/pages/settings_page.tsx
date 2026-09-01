@@ -7,6 +7,7 @@ import { apiDownload, apiPut, apiUpload, describeError } from "../api_client";
 import { formatDuration } from "../format_duration";
 import { PasswordInput } from "../components/password_input";
 import { useApiResource } from "../use_api_resource";
+import { useConfirm } from "../use_confirm";
 import type {
   AboutInfo,
   PasswordChangeResult,
@@ -39,6 +40,7 @@ export function SettingsPage() {
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [restoreName, setRestoreName] = useState<string | null>(null);
+  const confirm = useConfirm();
   const [backupNotice, setBackupNotice] = useState<string | null>(null);
   const [backupError, setBackupError] = useState<string | null>(null);
 
@@ -89,19 +91,23 @@ export function SettingsPage() {
     }
   };
 
-  const handleRestoreFile = async (event: ChangeEvent<HTMLInputElement>) => {
+  const handleRestoreFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (file === undefined) {
       return;
     }
-    if (
-      !window.confirm(
-        `Restore ${file.name}? This overwrites every file under config/ on the gateway.`,
-      )
-    ) {
-      return;
-    }
+    confirm.ask({
+      title: `Restore ${file.name}`,
+      body:
+        "Every file under config/ is overwritten by the archive's, and the " +
+        "services are reconfigured from it.",
+      confirmLabel: "Restore",
+      onConfirm: () => void restoreFile(file),
+    });
+  };
+
+  const restoreFile = async (file: File) => {
     setRestoreName(file.name);
     setIsRestoring(true);
     setBackupError(null);
@@ -255,7 +261,7 @@ export function SettingsPage() {
                 type="file"
                 accept=".tar.gz,.tgz,application/gzip"
                 className="settings_file_input"
-                onChange={(event) => void handleRestoreFile(event)}
+                onChange={handleRestoreFile}
               />
             </div>
           </div>
@@ -314,6 +320,7 @@ export function SettingsPage() {
           )}
         </section>
       </div>
+      {confirm.modal}
     </div>
   );
 }

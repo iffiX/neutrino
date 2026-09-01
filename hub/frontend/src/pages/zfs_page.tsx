@@ -7,6 +7,7 @@ import { ZfsTopology } from "../components/zfs_topology";
 import { apiDelete, apiGet, apiPost, describeError } from "../api_client";
 import { formatBytes } from "../format_bytes";
 import { useApiResource } from "../use_api_resource";
+import { useConfirm } from "../use_confirm";
 import type { ZfsDataset, ZfsDisk, ZfsView } from "../api_types";
 
 import "./samba_page.css";
@@ -70,6 +71,7 @@ export function ZfsPage() {
     recordsize: "128K",
   });
   const [shareTarget, setShareTarget] = useState<ZfsDataset | null>(null);
+  const confirm = useConfirm();
   const [isBusy, setIsBusy] = useState(false);
   // Errors surface beside the control that caused them, keyed by scope.
   const [actionError, setActionError] = useState<{
@@ -799,19 +801,22 @@ export function ZfsPage() {
                         }),
                       )
                     }
-                    onDestroy={() => {
-                      if (
-                        window.confirm(
-                          `Destroy ${dataset.name} and every file on it?`,
-                        )
-                      ) {
-                        void act("datasets", () =>
-                          apiPost<ZfsView>("/zfs/datasets/destroy", {
-                            dataset: dataset.name,
-                          }),
-                        );
-                      }
-                    }}
+                    onDestroy={() =>
+                      confirm.ask({
+                        title: `Destroy ${dataset.name}`,
+                        body:
+                          "The dataset and every file on it are removed from " +
+                          "the pool. There is no snapshot to return to unless " +
+                          "one was taken.",
+                        confirmLabel: "Destroy",
+                        onConfirm: () =>
+                          void act("datasets", () =>
+                            apiPost<ZfsView>("/zfs/datasets/destroy", {
+                              dataset: dataset.name,
+                            }),
+                          ),
+                      })
+                    }
                   />
                 )),
             )}
@@ -986,6 +991,7 @@ export function ZfsPage() {
           }
         />
       )}
+      {confirm.modal}
     </div>
   );
 }

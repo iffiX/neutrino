@@ -31,6 +31,11 @@ One directory per package, mirroring the source tree: `tests/modules/<name>/`,
 | `cli/test_browser_server.py` | Getting the wizard a port, and never needing one |
 | `modules/router/test_modes.py` | The four shapes a gateway is set up as |
 | `modules/router/test_lan_resolver.py` | What a served interface leaves the box resolving with |
+| `modules/router/test_carried_addresses.py` | Letting go of the address a handover carried, and never before a lease arrives |
+| `modules/router/test_credentials.py` | Reading the Wi-Fi keys a machine already held, in four other managers' formats |
+| `modules/router/test_supplicant_renderer.py` | What a radio is told to join, and what is never written into the file |
+| `modules/router/test_link_kinds.py` | Which interfaces get a role, and which are docker's, the overlay's or a modem |
+| `modules/router/test_guest_modes.py` | The modes that address nothing, and that applying one calls nothing |
 
 ## Two rules
 

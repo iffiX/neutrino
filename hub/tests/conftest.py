@@ -41,9 +41,20 @@ def pytest_collection_modifyitems(config, items):
 # --- Builders for configuration ---------------------------------------------
 
 
-def wan_entry(name: str, *, intent: str = "auto", **wan) -> dict:
-    """One WAN interface as it appears in ``config/router/network.json``."""
-    return {"name": name, "role": "wan", "wan": {"intent": intent, **wan}}
+def wan_entry(
+    name: str, *, intent: str = "auto", is_exposed: bool = False, **wan
+) -> dict:
+    """One WAN interface as it appears in ``config/router/network.json``.
+
+    Closed by default, as the planner leaves an uplink: what this box listens
+    on has no business answering the whole internet.
+    """
+    return {
+        "name": name,
+        "role": "wan",
+        "is_exposed": is_exposed,
+        "wan": {"intent": intent, **wan},
+    }
 
 
 def lan_entry(
@@ -52,17 +63,23 @@ def lan_entry(
     address: str,
     prefix_len: int = 24,
     is_dhcp_enabled: bool = True,
+    is_exposed: bool = True,
     pool: tuple[str, str] | None = None,
     lease: str = "12h",
     **wifi,
 ) -> dict:
-    """One LAN interface, with a DHCP pool derived from its address by default."""
+    """One LAN interface, with a DHCP pool derived from its address by default.
+
+    Exposed by default, as the planner leaves a served network: it is where
+    the panel, the leases and DNS are reached.
+    """
     if pool is None:
         head = address.rsplit(".", 1)[0]
         pool = (f"{head}.100", f"{head}.200")
     return {
         "name": name,
         "role": "lan",
+        "is_exposed": is_exposed,
         "lan": {
             "address": address,
             "prefix_len": prefix_len,
@@ -143,7 +160,6 @@ def link(
         is_up=is_up,
         ipv4_address=address,
         mac_address="aa:bb:cc:dd:ee:ff",
-        connection=f"conn-{name}",
         speed_mbps=speed_mbps,
         is_ap_capable=is_ap_capable,
     )

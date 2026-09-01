@@ -17,6 +17,7 @@ import {
   toDeviceReach,
   toDevicePresence,
 } from "../device_level";
+import { useConfirm } from "../use_confirm";
 import { formatTimeAgo } from "../format_duration";
 import { PRIVATE_KEY_PLACEHOLDER } from "../private_key_placeholder";
 import { stripAnsi } from "../strip_ansi";
@@ -100,7 +101,7 @@ export function DeviceDrawer({
   // Key auth references a stored key by id. The keys come from the registry, so
   // the drawer never holds key material — it either picks an existing key or
   // pastes a new one, which is created in the registry on save.
-  const keys = useApiResource<KeysResponse>("/keys");
+  const keys = useApiResource<KeysResponse>("/credentials/ssh_keys");
   const [keyId, setKeyId] = useState<string>(device.ssh?.key_id ?? "");
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyMaterial, setNewKeyMaterial] = useState("");
@@ -115,6 +116,7 @@ export function DeviceDrawer({
   const [isSaving, setIsSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const confirm = useConfirm();
   const [taskId, setTaskId] = useState<string | null>(null);
   const [runningLabel, setRunningLabel] = useState<string | null>(null);
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
@@ -156,7 +158,7 @@ export function DeviceDrawer({
       // references it — the same key any other device can then reuse.
       let resolvedKeyId = keyId;
       if (auth === "key" && isAddingKey) {
-        const created = await apiPost<KeyView>("/keys", {
+        const created = await apiPost<KeyView>("/credentials/ssh_keys", {
           name: newKeyName.trim() || `${name.trim() || host.trim()} key`,
           private_key: newKeyMaterial,
           passphrase: newKeyPassphrase.length > 0 ? newKeyPassphrase : null,
@@ -215,15 +217,20 @@ export function DeviceDrawer({
     }
   };
 
-  const handleAction = async (deviceAction: DeviceAction) => {
-    if (
-      deviceAction.isDestructive &&
-      !window.confirm(
-        `${deviceAction.label} ${device.name ?? device.mac_address}?`,
-      )
-    ) {
+  const handleAction = (deviceAction: DeviceAction) => {
+    if (!deviceAction.isDestructive) {
+      void runAction(deviceAction);
       return;
     }
+    confirm.ask({
+      title: `${deviceAction.label} ${device.name ?? device.mac_address}`,
+      body: "The machine is told to do this at once; anything unsaved on it is lost.",
+      confirmLabel: deviceAction.label,
+      onConfirm: () => void runAction(deviceAction),
+    });
+  };
+
+  const runAction = async (deviceAction: DeviceAction) => {
     setError(null);
     setNotice(null);
     setTaskId(null);
@@ -240,12 +247,15 @@ export function DeviceDrawer({
     }
   };
 
-  const handleForget = async () => {
-    if (
-      !window.confirm("Forget this device and delete its saved credentials?")
-    ) {
-      return;
-    }
+  const handleForget = () =>
+    confirm.ask({
+      title: `Forget ${device.name ?? device.mac_address}`,
+      body: "The device and its saved credentials are deleted from this box.",
+      confirmLabel: "Forget",
+      onConfirm: () => void forgetDevice(),
+    });
+
+  const forgetDevice = async () => {
     setError(null);
     try {
       await apiDelete<Record<string, never>>(`/devices/${device.mac_address}`);
@@ -565,7 +575,7 @@ export function DeviceDrawer({
                     type="button"
                     className={`button ${deviceAction.isDestructive ? "button--danger" : ""}`}
                     disabled={task.isRunning}
-                    onClick={() => void handleAction(deviceAction)}
+                    onClick={() => handleAction(deviceAction)}
                   >
                     <Icon name={deviceAction.icon} size={14} />
                     {deviceAction.label}
@@ -621,7 +631,7 @@ export function DeviceDrawer({
           <button
             type="button"
             className="button button--ghost button--small"
-            onClick={() => void handleForget()}
+            onClick={() => handleForget()}
           >
             <Icon name="trash" size={13} />
             Forget device
@@ -651,6 +661,7 @@ export function DeviceDrawer({
           onClose={() => setIsFilesOpen(false)}
         />
       )}
+      {confirm.modal}
     </>,
     document.body,
   );

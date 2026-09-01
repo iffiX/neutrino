@@ -57,14 +57,22 @@ testable. Details of the files themselves:
 
 ```
 /var/lib/neutrino/
-    generated/      rendered nftables, dnsmasq, smb.conf, xray and gateway configs
+    generated/      rendered nftables, dnsmasq, hostapd, wpa_supplicant, dhcpcd,
+                    smb.conf, xray and gateway configs
     geodata/        geoip.dat and geosite.dat
     cliproxyapi/    the AI gateway's accounts and tokens
+    stood_down.json which units the hub stopped so it could drive the network
 ```
 
 State, not configuration: everything here is either derived from
 `/etc/neutrino/` and rebuilt by the next render, or accumulated by a service
 while it runs. Losing it costs a render or a re-login, never a decision.
+
+`stood_down.json` is a note of what the hub did, not a copy of what anybody
+else had: an owner mode stops the manager that was running and writes down
+which units those were, so handing the machine back starts exactly those. No
+configuration of another manager is ever read, copied or restored. Losing the
+file costs one `systemctl unmask` by hand.
 
 **The databases live here rather than beside the binary that reads them.** They
 ship with the package and are replaced by newer ones while the machine runs,
@@ -82,6 +90,17 @@ chowns rather than leaves them to root.
 
 ## /run/neutrino — what is true until the next boot
 
-The login lockout, and nothing else. It is on tmpfs deliberately: a reboot
-clearing the lockout is part of the design, and `nhub unlock` deletes the same
-file without one.
+The login lockout, and the control sockets of the supplicants the hub runs.
+
+The lockout is on tmpfs deliberately: a reboot clearing it is part of the
+design, and `nhub unlock` deletes the same file without one.
+
+```
+/run/neutrino/
+    wpa_supplicant/ one control socket per radio the hub drives
+```
+
+Its own directory rather than `/run/wpa_supplicant`, which is where the
+machine's own supplicant puts its sockets. Two of them in one directory is a
+collision that shows up as whichever started second failing to bind, and the
+hub is not the one entitled to win that.

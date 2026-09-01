@@ -81,7 +81,7 @@ def delete_key(key_id: str) -> CliproxyApiStatusView:
     return _status()
 
 
-@router.put("/settings", response_model=CliproxyApiStatusView)
+@router.put("", response_model=CliproxyApiStatusView)
 def update_settings(request: CliproxyApiSettingsUpdate) -> CliproxyApiStatusView:
     """Change the listen port.
 

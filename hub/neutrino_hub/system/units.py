@@ -18,8 +18,13 @@ from neutrino_hub.utils.constants import UTILS_DATA_DIR
 SYSTEM_UNIT_TEMPLATES = {
     "neutrino_hub_router.service": "neutrino_hub_router.service",
     "neutrino_hub_web.service": "neutrino_hub_web.service",
-    # Templated by interface: one access point per radio given the LAN role.
+    # Templated by interface. One access point per radio given the LAN role,
+    # one supplicant per radio given the WAN role, and one lease client per
+    # uplink — because what differs between two uplinks is the route metric,
+    # and that lives in each one's rendered configuration.
     "neutrino_hub_hostapd@.service": "neutrino_hub_hostapd@.service",
+    "neutrino_hub_supplicant@.service": "neutrino_hub_supplicant@.service",
+    "neutrino_hub_dhcpcd@.service": "neutrino_hub_dhcpcd@.service",
     "neutrino_hub_xray.service": "neutrino_hub_xray.service",
     "neutrino_hub_dnsmasq.service": "neutrino_hub_dnsmasq.service",
 }

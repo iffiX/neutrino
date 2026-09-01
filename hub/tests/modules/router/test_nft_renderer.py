@@ -91,19 +91,42 @@ def test_every_uplink_is_masqueraded():
     assert 'oifname { "enp2s0", "wlp3s0" } masquerade' in ruleset
 
 
-def test_ssh_from_the_uplink_is_off_unless_asked_for():
+def test_an_uplink_answers_nothing_until_it_is_exposed():
+    """Remote access arrives over the overlay. An uplink that answers is one
+    somebody asked to answer, and then it answers with everything this box
+    listens on — there is no port list to get half right."""
     served = lan_entry("enp1s0", address="192.168.100.1")
-    closed = RouterNftRenderer(
-        network=network_config(
-            wan_entry("enp2s0"), served, is_ssh_from_wan_allowed=False
-        ),
-        routing=ROUTING_DIRECT,
-        xray_uid=999,
-    ).render()
-    opened = render(wan_entry("enp2s0"), served)
+    closed = render(wan_entry("enp2s0"), served)
+    opened = render(wan_entry("enp2s0", is_exposed=True), served)
 
-    assert 'iifname { "enp2s0" } tcp dport 22 accept' not in closed
-    assert 'iifname { "enp2s0" } tcp dport 22 accept' in opened
+    assert 'iifname { "enp2s0" } accept' not in closed
+    assert 'iifname { "enp2s0", "enp1s0" } accept' in opened
+
+
+def test_a_closed_uplink_can_still_take_a_lease():
+    """That is the box being a DHCP client, not a service answering."""
+    ruleset = render(wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.100.1"))
+
+    assert 'iifname { "enp2s0" } udp dport 68 accept' in ruleset
+
+
+def test_an_exposed_uplink_is_not_told_twice_about_its_lease():
+    """The accept for the whole interface already covers it, and a second
+    rule saying so is a rule somebody has to read and dismiss."""
+    ruleset = render(
+        wan_entry("enp2s0", is_exposed=True), lan_entry("enp1s0", address="10.0.0.1")
+    )
+
+    assert "udp dport 68" not in ruleset
+
+
+def test_the_overlay_answers_on_a_box_that_exposes_nothing():
+    """Otherwise closing the last interface is a lockout with no way back."""
+    ruleset = render(
+        wan_entry("enp2s0"), lan_entry("enp1s0", address="10.0.0.1", is_exposed=False)
+    )
+
+    assert 'iifname "wt0" accept' in ruleset
 
 
 def test_the_local_proxy_chain_cannot_loop_back_into_itself():

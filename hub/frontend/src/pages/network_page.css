@@ -278,9 +278,10 @@
   border-top: 1px solid var(--color-border);
 }
 
-/* Settings that belong to the box rather than to any one interface. Given a
-   heading of their own instead of a card, so they read as a second section of
-   the page rather than as one more panel among the interfaces. */
+/* The panels that belong to the box rather than to any one interface: the
+   networks its radios know, and how it routes. Stacked with the same gap the
+   page uses everywhere else, so they read as further sections rather than as
+   a group of their own. */
 .network_globals {
   display: flex;
   flex-direction: column;

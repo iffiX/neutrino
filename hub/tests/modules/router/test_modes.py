@@ -10,7 +10,7 @@ import pytest
 from neutrino_hub.modules.router.modes import (
     ROUTER_MODES,
     ROUTER_MODE_SIDE_GATEWAY,
-    ROUTER_MODE_ONE_ARM,
+    ROUTER_LAYOUT_ONE_ARM,
     ROUTER_MODE_ROUTER,
     ROUTER_MODE_SERVER,
     RouterModePlanner,
@@ -59,7 +59,7 @@ def test_one_arm_goes_out_untagged_and_serves_on_a_tag():
     before the port could reach anything, which is a machine that looks
     configured and has no way out.
     """
-    plan = RouterModePlanner(mode=ROUTER_MODE_ONE_ARM, trunk_name="enp1s0").plan()
+    plan = RouterModePlanner(mode=ROUTER_LAYOUT_ONE_ARM, trunk_name="enp1s0").plan()
 
     trunk, wan, lan = plan.interfaces
     assert trunk.role == "split" and trunk.vlan is None
@@ -86,15 +86,26 @@ def test_a_side_gateway_serves_no_leases_and_names_the_real_router():
 
 def test_server_mode_routes_nothing_but_stays_reachable():
     """The failure this guards: an input chain that drops the panel too."""
-    plan = RouterModePlanner(
-        mode=ROUTER_MODE_SERVER, lan_names=("enp1s0",), lan_address="10.0.0.5"
-    ).plan()
+    plan = RouterModePlanner(mode=ROUTER_MODE_SERVER, port_names=("enp1s0",)).plan()
 
     rendered = RouterNftRenderer(network=plan, routing={}, xray_uid=None).render()
 
     assert 'iifname { "enp1s0" } accept' in rendered
     assert "masquerade" not in without_comments(rendered)
     assert not plan.wan_interfaces
+    assert not plan.lan_interfaces
+
+
+def test_server_mode_polices_no_traffic_that_is_not_its_own():
+    """A box that routes nothing is not the firewall for whatever docker,
+    libvirt or a container runtime forwards across it — and a drop policy
+    there cuts every one of them off without saying so."""
+    plan = RouterModePlanner(mode=ROUTER_MODE_SERVER, port_names=("enp1s0",)).plan()
+
+    rendered = RouterNftRenderer(network=plan, routing={}, xray_uid=None).render()
+
+    forward = rendered[rendered.index("chain forward") :]
+    assert "policy accept" in forward[: forward.index("}")]
 
 
 @pytest.mark.parametrize("mode", [mode.key for mode in ROUTER_MODES])

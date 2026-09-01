@@ -13,6 +13,13 @@ WEB_SESSION_COOKIE = "neutrino_session"
 # offers it, the unit serves on it, and an enrollment link points a device at
 # it, and three copies of it is how a device ends up sent to the wrong port.
 WEB_DEFAULT_LISTEN_PORT = 8080
+# What a listener may be moved to. Port 0 asks the kernel to choose, which is
+# not an answer anybody can then type into a browser.
+WEB_PORT_MIN = 1
+WEB_PORT_MAX = 65535
+# How long the answer gets to reach the browser before the process serving it
+# is restarted onto the new port.
+WEB_RESTART_DELAY_S = 0.5
 
 # Password hashing. scrypt comes from the standard library, so the appliance
 # needs no native crypto dependency to store an admin password safely.
@@ -48,10 +55,13 @@ WEB_SETUP_STATE_REJECTED = "rejected"
 WEB_SETUP_STATE_RUNNING = "running"
 WEB_SETUP_STATE_DONE = "done"
 WEB_SETUP_STATE_FAILED = "failed"
-# Where one step has got to, in the words the terminal reports it in.
+# Where one step has got to, in the words the terminal reports it in. Three
+# and no more: a step is running, it succeeded, or it did not. "Already so" is
+# a note beside a step that succeeded, not a state of its own — a fourth
+# colour in the column makes the run read as though something in it went
+# wrong.
 WEB_SETUP_STEP_RUNNING = "running"
 WEB_SETUP_STEP_DONE = "done"
-WEB_SETUP_STEP_SKIPPED = "skipped"
 WEB_SETUP_STEP_FAILED = "failed"
 # How long the browser has to appear before the terminal asks again whether
 # to keep waiting.

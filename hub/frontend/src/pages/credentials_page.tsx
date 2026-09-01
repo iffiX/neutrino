@@ -7,6 +7,7 @@ import { apiDelete, apiPost, apiPut, describeError } from "../api_client";
 import { formatTimeAgo } from "../format_duration";
 import { PRIVATE_KEY_PLACEHOLDER } from "../private_key_placeholder";
 import { useApiResource } from "../use_api_resource";
+import { useConfirm } from "../use_confirm";
 import type {
   AiProviderKind,
   AiProviderModel,
@@ -76,7 +77,7 @@ export function CredentialsPage() {
 }
 
 function SshKeysSection() {
-  const resource = useApiResource<KeysResponse>("/keys");
+  const resource = useApiResource<KeysResponse>("/credentials/ssh_keys");
   const [keys, setKeys] = useState<KeyView[]>([]);
   const [isAdding, setIsAdding] = useState(false);
 
@@ -397,11 +398,17 @@ interface ProviderCardProps {
 function ProviderCard({ value, onEdit, onDeleted }: ProviderCardProps) {
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const confirm = useConfirm();
 
-  const handleDelete = async () => {
-    if (!window.confirm(`Delete "${value.name}"?`)) {
-      return;
-    }
+  const handleDelete = () =>
+    confirm.ask({
+      title: `Delete ${value.name}`,
+      body: "The provider and the key held for it are removed from this box.",
+      confirmLabel: "Delete",
+      onConfirm: () => void deleteProvider(),
+    });
+
+  const deleteProvider = async () => {
     setIsBusy(true);
     setError(null);
     try {
@@ -454,12 +461,13 @@ function ProviderCard({ value, onEdit, onDeleted }: ProviderCardProps) {
           type="button"
           className="button button--ghost button--small button--danger"
           disabled={isBusy}
-          onClick={() => void handleDelete()}
+          onClick={handleDelete}
         >
           <Icon name="trash" size={13} />
           Delete
         </button>
       </div>
+      {confirm.modal}
     </div>
   );
 }
@@ -482,7 +490,7 @@ function AddKeyForm({ onAdded, onCancel }: AddKeyFormProps) {
     setIsSaving(true);
     setError(null);
     try {
-      const created = await apiPost<KeyView>("/keys", {
+      const created = await apiPost<KeyView>("/credentials/ssh_keys", {
         name: name.trim(),
         private_key: privateKey,
         passphrase: passphrase.length > 0 ? passphrase : null,
@@ -561,6 +569,7 @@ interface KeyCardProps {
 
 function KeyCard({ value, onRenamed, onDeleted }: KeyCardProps) {
   const [isEditingName, setIsEditingName] = useState(false);
+  const confirm = useConfirm();
   const [draftName, setDraftName] = useState(value.name);
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
@@ -574,9 +583,12 @@ function KeyCard({ value, onRenamed, onDeleted }: KeyCardProps) {
     setIsBusy(true);
     setError(null);
     try {
-      const updated = await apiPut<KeyView>(`/keys/${value.id}`, {
-        name: draftName.trim(),
-      });
+      const updated = await apiPut<KeyView>(
+        `/credentials/ssh_keys/${value.id}`,
+        {
+          name: draftName.trim(),
+        },
+      );
       onRenamed(updated);
       setIsEditingName(false);
     } catch (cause: unknown) {
@@ -586,18 +598,26 @@ function KeyCard({ value, onRenamed, onDeleted }: KeyCardProps) {
     }
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () =>
+    confirm.ask({
+      title: `Delete ${value.name}`,
+      body:
+        value.device_count > 0
+          ? `${value.device_count} device(s) authenticate with this key and ` +
+            "fall back to password authentication once it is gone."
+          : "The private key is deleted from this box.",
+      confirmLabel: "Delete",
+      onConfirm: () => void deleteKey(),
+    });
+
+  const deleteKey = async () => {
     const inUse = value.device_count > 0;
-    const prompt = inUse
-      ? `${value.device_count} device(s) use "${value.name}". Delete it anyway? They will fall back to password auth.`
-      : `Delete "${value.name}"?`;
-    if (!window.confirm(prompt)) {
-      return;
-    }
     setIsBusy(true);
     setError(null);
     try {
-      await apiDelete(`/keys/${value.id}${inUse ? "?force=true" : ""}`);
+      await apiDelete(
+        `/credentials/ssh_keys/${value.id}${inUse ? "?force=true" : ""}`,
+      );
       onDeleted(value.id);
     } catch (cause: unknown) {
       setError(describeError(cause));
@@ -670,12 +690,13 @@ function KeyCard({ value, onRenamed, onDeleted }: KeyCardProps) {
           type="button"
           className="button button--ghost button--small button--danger"
           disabled={isBusy}
-          onClick={() => void handleDelete()}
+          onClick={handleDelete}
         >
           <Icon name="trash" size={13} />
           Delete
         </button>
       </div>
+      {confirm.modal}
     </div>
   );
 }

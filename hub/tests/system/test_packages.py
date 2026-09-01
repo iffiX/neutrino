@@ -30,14 +30,39 @@ def test_every_family_spells_every_runtime_package(family):
 
 
 def test_the_families_disagree_only_where_they_were_measured_to():
-    """Measured in containers on 2026-08-31; two names, three families."""
+    """Measured in containers on 2026-09-01. Debian is the family that splits
+    a daemon from its binary, and the only one that spells the supplicant
+    without an underscore."""
     debian = packages_for("debian", SYSTEM_RUNTIME_PACKAGES)
     rhel = packages_for("rhel", SYSTEM_RUNTIME_PACKAGES)
     arch = packages_for("arch", SYSTEM_RUNTIME_PACKAGES)
 
-    assert set(debian) - set(rhel) == {"iproute2", "network-manager"}
-    assert set(rhel) - set(debian) == {"iproute", "NetworkManager"}
-    assert set(debian) - set(arch) == {"network-manager"}
+    debian_only = {"iproute2", "dnsmasq-base", "dhcpcd-base", "wpasupplicant"}
+    assert set(debian) - set(rhel) == debian_only
+    assert set(rhel) - set(debian) == {
+        "iproute",
+        "dnsmasq",
+        "dhcpcd",
+        "wpa_supplicant",
+    }
+    assert set(debian) - set(arch) == {"dnsmasq-base", "dhcpcd-base", "wpasupplicant"}
+
+
+def test_nothing_installed_as_a_dependency_manages_a_network():
+    """A dependency lands before any of the hub's code runs, and on Debian
+    installing a service starts it: NetworkManager pulled in that way took the
+    interface on a machine the hub was only ever going to answer on."""
+    managers = ("network-manager", "networkmanager", "NetworkManager", "netplan")
+    for family in ("debian", "rhel", "arch"):
+        named = packages_for(family, SYSTEM_RUNTIME_PACKAGES)
+        assert not set(named) & set(managers)
+
+
+def test_the_dnsmasq_debian_installs_brings_no_unit_with_it():
+    """The packaged unit only competes with `neutrino_hub_dnsmasq` for port
+    53; `dnsmasq-base` is the same binary without one."""
+    assert "dnsmasq-base" in packages_for("debian", SYSTEM_RUNTIME_PACKAGES)
+    assert "dnsmasq" not in packages_for("debian", SYSTEM_RUNTIME_PACKAGES)
 
 
 def test_no_package_depends_on_a_system_python():

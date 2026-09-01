@@ -569,18 +569,18 @@
   background: var(--color-ok);
 }
 
-.setup_step--skipped .setup_step_mark {
-  background: var(--color-warn);
-}
-
 .setup_step--failed .setup_step_mark {
   background: var(--color-error);
 }
 
+/* Right-aligned even when it wraps. The notes read as a column down the right
+   edge, and a long one — the seven unit files, the whole xray version line —
+   otherwise breaks that column by starting flush left across two lines. */
 .setup_step_note {
   color: var(--color-text-faint);
   font-family: var(--font-mono);
   font-size: 11px;
+  text-align: right;
 }
 
 .setup_handover {
@@ -598,4 +598,21 @@
   50% {
     opacity: 1;
   }
+}
+
+/* A port a mode gives no job to. Listed rather than offered, so it reads as
+   what the machine has rather than as something waiting to be picked. */
+/* A port this shape gives no job to. Nothing here is a choice, so it carries
+   none of the card's chrome: no border to invite a press, no background to
+   mark a selection, and the name muted to the weight of the facts under it. */
+.setup_port--read_only {
+  padding: 0 var(--space-4) 0 0;
+  border: 0;
+  background: none;
+  cursor: default;
+}
+
+.setup_port--read_only .setup_port_name {
+  color: var(--color-text-muted);
+  font-weight: 500;
 }

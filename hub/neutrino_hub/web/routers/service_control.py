@@ -73,7 +73,7 @@ def journal(
         ) from error
 
 
-@router.get("/{name}/install-plan", response_model=ServiceInstallPlanView)
+@router.get("/{name}/install_plan", response_model=ServiceInstallPlanView)
 def install_plan(name: str) -> ServiceInstallPlanView:
     """What installing this module on this machine would actually do.
 

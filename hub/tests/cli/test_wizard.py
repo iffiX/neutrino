@@ -321,8 +321,8 @@ def test_a_one_port_machine_is_not_offered_a_mode_needing_two(monkeypatch):
 
     assert [mode.key for mode in asked._modes] == [
         "server",
-        "one_arm_router",
         "side_gateway",
+        "one_arm_router",
     ]
 
 
@@ -343,7 +343,6 @@ class _NoPorts:
     "mode,expected",
     [
         # Joining somebody's network: the port's own address, always.
-        ("server", "192.168.100.1"),
         ("side_gateway", "192.168.100.1"),
         # Becoming the network's gateway: this port already runs one.
         ("router", "192.168.100.1"),
@@ -365,10 +364,22 @@ def test_a_port_with_nothing_to_keep_offers_nothing_to_a_joining_mode(monkeypatc
     """There is no guessing somebody else's network; it has to be typed."""
     monkeypatch.setattr(wizard, "RouterLinkStatus", _OnePort)
     asked = wizard.SetupWizard(links=_OnePort().all_links())
-    asked._mode = "server"
+    asked._mode = "side_gateway"
     asked._lan = "eth0"
 
     assert asked._address_default()[0] == ""
+
+
+def test_a_server_is_asked_nothing_about_its_ports(monkeypatch):
+    """It gives none of them a job, so there is nothing to choose between."""
+    monkeypatch.setattr(wizard, "RouterLinkStatus", _AddressedLinks)
+    asked = wizard.SetupWizard(links=_AddressedLinks().all_links())
+    asked._mode = "server"
+
+    planned = asked._plan()
+
+    assert {interface.role for interface in planned.interfaces} == {"disabled"}
+    assert all(interface.is_exposed for interface in planned.interfaces)
 
 
 class _WiredAndRadio:

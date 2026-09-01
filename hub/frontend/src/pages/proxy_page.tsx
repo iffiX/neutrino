@@ -4,6 +4,7 @@ import { ApplyBar } from "../components/apply_bar";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { NodesPanel } from "../components/nodes_panel";
+import { SocksPortsPanel } from "../components/socks_ports_panel";
 import { StringListEditor } from "../components/string_list_editor";
 import { ToggleSwitch } from "../components/toggle_switch";
 import { apiPost, apiPut, describeError } from "../api_client";
@@ -26,8 +27,6 @@ import "./proxy_page.css";
  * for when working out whether the proxy is what is broken.
  */
 
-const SOCKS5_DIRECT_PORT = 1080;
-
 /**
  * Which settings move together.
  *
@@ -36,13 +35,13 @@ const SOCKS5_DIRECT_PORT = 1080;
  * already has, so a half-finished edit in another box is never written by
  * accident.
  */
-type GroupName = "proxy" | "route";
+type GroupName = "route";
 
 const GROUP_FIELDS: Record<GroupName, (keyof ProxySettings)[]> = {
-  proxy: ["is_proxy_enabled", "is_local_proxy_enabled"],
   route: [
+    "is_proxy_enabled",
+    "is_local_proxy_enabled",
     "is_geoip_split_enabled",
-    "is_socks_direct_enabled",
     "direct_domains",
     "direct_ips",
     "remote_dns",
@@ -180,12 +179,22 @@ export function ProxyPage() {
         </div>
       </div>
 
-      {/* Who goes through the proxy: the machines behind the gateway, and the
-          gateway itself. Two independent answers to one question, so they sit
-          together rather than one being buried in the routing rules. */}
+      <NodesPanel />
+
       <section
-        className={`settings_group ${isGroupDirty("proxy") ? "settings_group--dirty" : ""}`}
+        className={`settings_group ${isGroupDirty("route") ? "settings_group--dirty" : ""}`}
       >
+        <div className="settings_group_title">
+          <h2>Route</h2>
+        </div>
+        <p className="field_hint">
+          Whose traffic goes through the exit nodes, and which destinations are
+          left out of it.
+        </p>
+
+        {/* Who goes through the proxy: the machines behind the gateway, and
+            the gateway itself. Two independent answers to one question, so
+            they sit together rather than one being buried in the rules. */}
         <ToggleSwitch
           isOn={draft.is_proxy_enabled}
           onChange={(isOn) => updateDraft({ is_proxy_enabled: isOn })}
@@ -199,27 +208,7 @@ export function ProxyPage() {
           label="Send this gateway's own traffic through the proxy"
           description="The box itself, tailscaled included. This is the way back in when Tailscale cannot reach its control plane over the local link. LAN clients are unaffected either way."
         />
-        <ApplyBar
-          isDirty={isGroupDirty("proxy")}
-          isBusy={busyGroup === "proxy"}
-          label="Apply proxy"
-          hint="Rewrites the firewall, the resolver and the xray config together."
-          warning="Restarts the proxy; connections through it drop."
-          error={errors.proxy ?? null}
-          notice={notice.proxy ?? null}
-          onReset={() => resetGroup("proxy")}
-          onApply={() => void applyGroup("proxy")}
-        />
-      </section>
 
-      <h1>Exit nodes</h1>
-      <NodesPanel />
-
-      <h1>Route</h1>
-
-      <section
-        className={`settings_group ${isGroupDirty("route") ? "settings_group--dirty" : ""}`}
-      >
         <div className="proxy_switches">
           <section
             className={`proxy_switch_card proxy_switch_card--wide ${draft.is_geoip_split_enabled ? "proxy_switch_card--on" : ""}`}
@@ -356,35 +345,6 @@ export function ProxyPage() {
           </div>
         </section>
 
-        <section
-          className={`proxy_switch_card ${draft.is_socks_direct_enabled ? "proxy_switch_card--on" : ""}`}
-        >
-          <div className="proxy_switch_head">
-            <span className="proxy_switch_title">
-              <Icon name="link" size={16} className="proxy_switch_icon" />
-              SOCKS5 direct listener
-            </span>
-            <ToggleSwitch
-              isOn={draft.is_socks_direct_enabled}
-              onChange={(isOn) =>
-                updateDraft({ is_socks_direct_enabled: isOn })
-              }
-              label="Publish the SOCKS5 direct listener"
-            />
-          </div>
-          <div className="proxy_switch_body">
-            <p>
-              Port {SOCKS5_DIRECT_PORT} on the gateway&apos;s LAN address,
-              always egressing <strong>directly</strong> and never through an
-              exit node. Point applications at it that must appear to come from
-              this network — ToDesk and AnyDesk are the usual cases, since they
-              degrade badly when the two ends look like they are on different
-              continents.
-            </p>
-            <p>Listens on LAN interfaces only.</p>
-          </div>
-        </section>
-
         <ApplyBar
           isDirty={isGroupDirty("route")}
           isBusy={busyGroup === "route"}
@@ -397,6 +357,14 @@ export function ProxyPage() {
           onApply={() => void applyGroup("route")}
         />
       </section>
+
+      <SocksPortsPanel
+        settings={draft}
+        onApplied={(saved) => {
+          resource.setData(saved);
+          setDraft(saved);
+        }}
+      />
     </div>
   );
 }

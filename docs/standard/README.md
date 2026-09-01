@@ -78,6 +78,12 @@ conventions explicit so nobody drifts.
    - [design/install_and_dev.md](design/install_and_dev.md) — who installs what:
      the package, `nhub setup`, and the panel; and what `--dev` does
      differently against a root of its own.
+   - [design/api.md](design/api.md) — how the panel's endpoints are named
+     and organised: one module one prefix, what the bare prefix means, and
+     when an operation may be a verb.
+   - [design/network.md](design/network.md) — the three engines the hub drives
+     instead of a network manager, which modes own a machine's network and
+     which touch nothing at all, and what was measured on each distribution.
    - [design/visual.md](design/visual.md) — what the accent, the glow and the
      colours are each allowed to mean in the panel, the three button tiers,
      frames and live sections.

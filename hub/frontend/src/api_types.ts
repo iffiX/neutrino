@@ -224,6 +224,12 @@ export interface VlanInterfaceSettings {
 export interface InterfaceSettings {
   name: string;
   role: InterfaceRole;
+  /**
+   * Whether what this box listens on answers on this interface. Read-only
+   * here: the whole set is written at once by the panel that shows every
+   * interface, so a save of one interface cannot reopen or close it.
+   */
+  is_exposed: boolean;
   wan: WanInterfaceSettings;
   lan: LanInterfaceSettings;
   wifi: WifiInterfaceSettings;
@@ -238,7 +244,6 @@ export interface InterfaceLink {
   is_up: boolean;
   ipv4_address: string | null;
   mac_address: string | null;
-  connection: string | null;
   ssid: string | null;
   signal_percent: number | null;
   speed_mbps: number | null;
@@ -280,11 +285,29 @@ export interface UpstreamLine {
   members: PlannedUplink[];
 }
 
+/** One mode, as the Mode panel lists it. */
+export interface NetworkMode {
+  key: NetworkModeKey;
+  summary: string;
+  is_addressing_owned: boolean;
+  caution: string;
+}
+
+export type NetworkModeKey = "server" | "side_gateway" | "router";
+
 export interface NetworkView {
+  /** What this whole machine is; the page below the Mode panel follows it. */
+  mode: NetworkModeKey;
+  modes: NetworkMode[];
   interfaces: InterfaceView[];
-  is_ssh_from_wan_allowed: boolean;
   uplink_policy: UplinkPolicy;
   is_inter_lan_allowed: boolean;
+  /**
+   * Whether the hub addresses this machine's interfaces. False is a machine
+   * somebody else configured, where the panel answers on the addresses the
+   * ports already have and the Network form is read-only.
+   */
+  is_addressing_owned: boolean;
   default_gateway: string | null;
   lines: UpstreamLine[];
   /** Live conditions worth pointing at that the gateway cannot resolve itself. */
@@ -292,9 +315,15 @@ export interface NetworkView {
 }
 
 export interface NetworkOptions {
-  is_ssh_from_wan_allowed: boolean;
   uplink_policy: UplinkPolicy;
   is_inter_lan_allowed: boolean;
+  /** The interfaces that answer, by name. Everything else is closed. */
+  exposed_interfaces: string[];
+}
+
+/** The mode to become. Nothing else: what each port is for is its own. */
+export interface NetworkModeRequest {
+  mode: NetworkModeKey;
 }
 
 export interface WifiNetwork {
@@ -303,6 +332,27 @@ export interface WifiNetwork {
   security: string;
   is_active: boolean;
   is_saved: boolean;
+}
+
+/**
+ * One wireless network the box knows how to join. The passphrase never comes
+ * back out — `has_secret` is the whole of what the panel is told about it.
+ */
+export interface SavedNetwork {
+  ssid: string;
+  key_mgmt: string;
+  /** False when the key was read from a store that kept it somewhere
+   * unreadable, such as a desktop keyring. The page asks for it once. */
+  has_secret: boolean;
+  priority: number;
+  is_hidden: boolean;
+  /** `panel` for one somebody typed, `inherited:<manager>` for one read out of
+   * what this machine already held. */
+  source: string;
+}
+
+export interface SavedNetworkList {
+  networks: SavedNetwork[];
 }
 
 export interface WifiScan {
@@ -321,15 +371,21 @@ export interface DnsServer {
   port: number;
 }
 
+/** One SOCKS5 listener: a port, and which way what arrives there leaves. */
+export interface SocksPort {
+  port: number;
+  /** True goes out through the exit nodes; false leaves out the uplink. */
+  is_proxied: boolean;
+}
+
 export interface ProxySettings {
   /** The master switch: off takes the proxy out of the path entirely. */
   is_proxy_enabled: boolean;
-  /** Whether the always-direct SOCKS5 listener is published on the LAN. */
-  is_socks_direct_enabled: boolean;
   is_geoip_split_enabled: boolean;
   direct_domains: string[];
   direct_ips: string[];
   is_local_proxy_enabled: boolean;
+  socks_ports: SocksPort[];
   remote_dns: DnsServer;
   direct_dns: DnsServer;
 }
@@ -599,6 +655,11 @@ export interface PasswordChangeResult {
 
 export interface RestoreResult {
   is_restored: boolean;
+}
+
+/** The panel's own settings. */
+export interface PanelSettings {
+  listen_port: number;
 }
 
 export interface AboutInfo {

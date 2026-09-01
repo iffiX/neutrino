@@ -23,6 +23,7 @@ key ever reaches git history.
 | `config/xray/nodes.json` | `nodes.example.json` | yes — node passwords / UUIDs |
 | `config/xray/routing.json` | `routing.example.json` | no |
 | `config/router/network.json` | `network.example.json` | no |
+| `config/router/connections.json` | `connections.example.json` | yes — wireless passphrases |
 | `config/web/settings.json` | `settings.example.json` | yes — password hash, session secret |
 | `config/devices/devices.json` | `devices.example.json` | yes — device SSH creds |
 | `config/credentials/ssh_keys/registry.json` | `registry.example.json` | yes — key metadata + passphrases |
@@ -93,17 +94,26 @@ Each `*.example.json` is annotated field-by-field. The load-bearing ones:
   go direct, everything else through JustMySocks), `is_local_proxy_enabled`
   (the gateway's own traffic through the proxy — default `false`), and the DNS
   servers for each side.
-- **`network.json`** — one entry per interface with a `role`: `wan` (uplink,
-  DHCP or static, optional cloned MAC for MAC-registration networks), `lan`
-  (served network with its address and DHCP range — set `upstream_gateway` to
-  an existing network's router to run as a side gateway, where that router is
-  the box's way out over the same wire), `split` (an 802.1Q trunk),
-  or `disabled`. A VLAN is a further interface entry named `<trunk>.<id>` with
-  a `vlan: {parent, id}` block and a role of its own; the trunk's untagged
-  traffic is the `<trunk>.main` entry (`id: null`), created with the split and
-  configured like any other interface. Global switches: `uplink_policy` (`failover`/`balance`),
-  `is_ssh_from_wan_allowed`, and `is_inter_lan_allowed` (off fences the served
-  networks from each other; every network still reaches the internet and the
-  overlay).
+- **`connections.json`** — `connections[]`, one per wireless network the box
+  knows: `ssid`, `key_mgmt` (`WPA-PSK` | `SAE` | `NONE`), `psk` (the
+  passphrase or the 64-character key derived from it), `priority` (higher wins
+  between two in range), `is_hidden`, and `source`. An empty `psk` on a known
+  network means its key was held somewhere that could not be read; the panel
+  asks for it once.
+- **`network.json`** — `mode` first, one of `router`, `one_arm_router`,
+  `side_gateway` or `server`: it says what the whole machine is, and whether
+  the hub addresses its interfaces at all. Then one entry per interface with a
+  `role`: `wan` (uplink, DHCP or static, optional cloned MAC for
+  MAC-registration networks), `lan` (served network with its address and DHCP
+  range — set `upstream_gateway` to an existing network's router to run as a
+  side gateway, where that router is the box's way out over the same wire),
+  `split` (an 802.1Q trunk), or `disabled`. Each also carries `is_exposed`:
+  whether what this box listens on answers there. A VLAN is a further interface
+  entry named `<trunk>.<id>` with a `vlan: {parent, id}` block and a role of
+  its own; the trunk's untagged traffic is the `<trunk>.main` entry
+  (`id: null`), created with the split and configured like any other interface.
+  Global switches: `uplink_policy` (`failover`/`balance`) and
+  `is_inter_lan_allowed` (off fences the served networks from each other; every
+  network still reaches the internet and the overlay).
 - **`settings.json`** — panel port, argon2id password hash, session secret and
   TTL, and `client_package_path` for the neutrino_agent tarball.

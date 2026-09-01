@@ -27,9 +27,12 @@ from neutrino_hub.modules.router.dnsmasq_renderer import RouterDnsmasqRenderer
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
 from neutrino_hub.modules.router.routes import (
-    RouterDefaultRouteApplier,
+    RouterInterfaceApplier,
     RouterRulesetApplier,
     lookup_xray_uid,
+)
+from neutrino_hub.modules.router.supplicant import (
+    write_config as write_supplicant_config,
 )
 from neutrino_hub.modules.gitea.config import GiteaConfig
 from neutrino_hub.modules.gitea.constants import GITEA_BINARY_PATH, GITEA_CONF_LINK_PATH
@@ -122,7 +125,6 @@ def _render(selected: tuple[str, ...]) -> dict:
         artifacts["xray"] = XrayConfigRenderer(
             node_list=node_list,
             routing=routing,
-            lan_address=network.primary_lan_address,
         ).render()
     if "router" in selected:
         artifacts["router"] = RouterNftRenderer(
@@ -215,11 +217,13 @@ def _apply(artifacts: dict) -> None:
         XrayConfigApplier().restart()
     if "router" in artifacts:
         RouterRulesetApplier().apply(artifacts["router"])
-        # Rebuilt every time rather than only when the config changes: a next
-        # hop whose uplink has since gone away is a black hole, so the route is
-        # made to match the uplinks that are live right now.
+        # Rebuilt every time rather than only when the config changes: an
+        # address the hub set does not survive a reboot by itself, and a next
+        # hop whose uplink has since gone away is a black hole. Applying the
+        # whole thing is what brings the box back as configured — this runs
+        # from `neutrino_hub_router.service`, before anything it serves.
         network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
-        for change in RouterDefaultRouteApplier(network=network).apply():
+        for change in RouterInterfaceApplier(network=network).apply_all():
             print(change)
     if "dnsmasq" in artifacts:
         run(["systemctl", "restart", DNSMASQ_SERVICE_NAME])

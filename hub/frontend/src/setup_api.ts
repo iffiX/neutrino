@@ -24,6 +24,9 @@ export interface SetupMode {
   summary: string;
   port_count: number;
   is_wire_needed: boolean;
+  /** Whether this mode sets the machine's addresses, or answers on what is
+   * already there. */
+  is_addressing_owned: boolean;
   caution: string;
 }
 
@@ -59,7 +62,9 @@ export interface SetupContext {
 /** One installation step, as the terminal reports it. */
 export interface SetupStep {
   description: string;
-  status: "running" | "done" | "skipped" | "failed";
+  /** Three and no more: a step is running, it succeeded, or it did not.
+   * "Already so" is a note beside a step that succeeded. */
+  status: "running" | "done" | "failed";
   note: string;
 }
 
@@ -110,9 +115,34 @@ export interface SetupLinkReading {
   detail: string;
 }
 
+/** The route asked for to tell the two servers apart. Any of them would do;
+ * this one is the wizard's first call anyway. */
+const SETUP_PROBE_ROUTE = "context";
+
 /** The token this page was opened with, `""` when it was opened without one. */
 export function setupToken(): string {
   return new URLSearchParams(window.location.search).get("token") ?? "";
+}
+
+/**
+ * Whether this page is being served by `nhub setup` rather than by the panel.
+ *
+ * Asked of the server rather than inferred from the address, because the two
+ * serve the same bundle and a link without its token is the one case where
+ * guessing gets it wrong: the panel's own login card would be drawn over a
+ * box that has no panel yet, and its first request would fail on a route that
+ * does not exist.
+ */
+export async function isSetupWaiting(): Promise<boolean> {
+  try {
+    const response = await fetch(`/api/setup/${SETUP_PROBE_ROUTE}`);
+    // 404 is the panel, which has no such route. Anything else — 200 with a
+    // good token, 403 without one — is the wizard's own server answering.
+    return response.status !== 404;
+  } catch {
+    // Nothing answered at all, which is not something the setup server does.
+    return false;
+  }
 }
 
 export async function readSetupContext(token: string): Promise<SetupContext> {

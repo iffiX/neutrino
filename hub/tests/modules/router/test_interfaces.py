@@ -1,99 +1,14 @@
-"""Parsing ``config/router/network.json``, including the older shapes of it.
+"""Parsing ``config/router/network.json``.
 
-The migrations matter more than they look. This file is the only description of
-how the box is wired, it is gitignored so it is never replaced wholesale by a
-pull, and a box that fails to parse it has no LAN, no firewall and no way back
-in but a keyboard.
+Reading it defensively matters more than it looks. This file is the only
+description of how the box is wired, it is gitignored so it is never replaced
+wholesale by a pull, and a box that fails to parse it has no LAN, no firewall
+and no way back in but a keyboard.
 """
 
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 
 from tests.conftest import lan_entry, network_config, wan_entry
-
-LEGACY_FLAT_CONFIG = {
-    "wan_interface": "enp2s0",
-    "lan_interface": "enp1s0",
-    "lan_address": "192.168.100.1",
-    "lan_prefix_len": 24,
-    "dhcp_range_start": "192.168.100.100",
-    "dhcp_range_end": "192.168.100.200",
-    "dhcp_lease_time": "12h",
-    "is_wifi_fallback_enabled": True,
-    "wifi_interface": "wlp3s0",
-    "is_ssh_from_wan_allowed": True,
-    "wan_cloned_mac": "aa:bb:cc:dd:ee:ff",
-}
-
-
-# --- The pre-roles shape ----------------------------------------------------
-
-
-def test_flat_config_becomes_roles():
-    config = RouterNetworkConfig.from_dict(LEGACY_FLAT_CONFIG)
-
-    assert config.wan_names == ["enp2s0", "wlp3s0"]
-    assert config.lan_names == ["enp1s0"]
-    assert config.interface("enp2s0").wan.cloned_mac == "aa:bb:cc:dd:ee:ff"
-    assert config.interface("enp1s0").lan.address == "192.168.100.1"
-    assert config.interface("enp1s0").lan.dhcp_range_end == "192.168.100.200"
-
-
-def test_wifi_fallback_becomes_a_backup_uplink():
-    """The old flag meant "use Wi-Fi when the wire is down", which is a backup."""
-    config = RouterNetworkConfig.from_dict(LEGACY_FLAT_CONFIG)
-
-    wifi = config.interface("wlp3s0")
-    assert wifi.is_wan
-    assert wifi.wan.is_backup_only
-
-
-def test_wifi_without_the_fallback_flag_is_left_unused():
-    config = RouterNetworkConfig.from_dict(
-        {**LEGACY_FLAT_CONFIG, "is_wifi_fallback_enabled": False}
-    )
-
-    assert config.interface("wlp3s0").is_disabled
-
-
-def test_migration_round_trips():
-    """Writing the migrated shape back and reading it again changes nothing."""
-    migrated = RouterNetworkConfig.from_dict(LEGACY_FLAT_CONFIG)
-
-    assert RouterNetworkConfig.from_dict(migrated.to_dict()).to_dict() == (
-        migrated.to_dict()
-    )
-
-
-# --- The pre-planner shape --------------------------------------------------
-
-
-def test_old_backup_mode_becomes_the_backup_only_intent():
-    """``backup`` said the one thing still worth saying, so it carries over."""
-    config = network_config({"name": "usb0", "role": "wan", "wan": {"mode": "backup"}})
-
-    assert config.interface("usb0").wan.is_backup_only
-
-
-def test_old_balance_mode_becomes_automatic():
-    """``balance`` was a statement about ordering, which is now inferred."""
-    config = network_config(
-        {"name": "enp2s0", "role": "wan", "wan": {"mode": "balance"}}
-    )
-
-    assert config.interface("enp2s0").wan.intent == "auto"
-
-
-def test_an_explicit_intent_wins_over_a_leftover_mode():
-    config = network_config(
-        {
-            "name": "enp2s0",
-            "role": "wan",
-            "wan": {"mode": "backup", "intent": "primary"},
-        }
-    )
-
-    assert config.interface("enp2s0").wan.is_pinned_primary
-
 
 # --- Hand-edited files that are wrong ---------------------------------------
 

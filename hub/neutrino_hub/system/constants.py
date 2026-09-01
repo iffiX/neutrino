@@ -14,7 +14,8 @@ SYSTEM_CORE_UNITS = {
     "dnsmasq": "neutrino_hub_dnsmasq.service",
     "web": "neutrino_hub_web.service",
     # The AI gateway: every machine's tools point at it, so taking it down
-    # takes their AI away — same no-off-switch treatment as netbird.
+    # takes their AI away. It ships in the package and starts with the box,
+    # which is what puts it here rather than beside the optional modules.
     "cliproxyapi": "neutrino_hub_cliproxyapi.service",
 }
 
@@ -54,13 +55,28 @@ SYSTEM_CONSENT_THIRD_PARTY_REPOSITORY = "third_party_repository"
 # `<PREFIX>_PACKAGES` and installs it when the panel provisions it, and
 # everything vendored (xray, the AI gateway, NetBird, Gitea) comes from its
 # vendor because the distribution versions lag badly.
+#
+# Nothing here may manage a network. A dependency is installed before any of
+# the hub's own code runs, and on Debian installing a service starts it: a
+# NetworkManager pulled in this way took the interface on a pristine Debian 12,
+# fetched a second lease and installed a second default route, four seconds
+# after dpkg configured it and long before the wizard asked anything. What the
+# hub drives, it drives itself. See design/network.md.
 SYSTEM_RUNTIME_PACKAGES = (
     "nftables",
+    # The binary, not the distribution's service: the hub runs its own
+    # `neutrino_hub_dnsmasq` against its own config, and the packaged unit
+    # only competes for port 53. Debian splits the two, which is what the
+    # family table below spends its `dnsmasq-base` entry on.
     "dnsmasq",
     "iproute2",
-    # The router layer is 351 lines of nmcli; without it no interface has a
-    # role and nothing routes.
-    "network-manager",
+    # The two engines the hub drives for what `ip` cannot do: association is
+    # layer 2, and a lease comes off the wire. Neither ships a unit that
+    # installing it starts — `dhcpcd-base` is the binary alone, the same split
+    # `dnsmasq-base` is taken for, and wpa_supplicant's units are templated by
+    # interface and enabled by nobody.
+    "wpasupplicant",
+    "dhcpcd",
     # Bans SSH brute-force sources at the firewall, on the same escalating
     # ladder the panel login uses. Configured by the installer's jail file.
     "fail2ban",
@@ -76,10 +92,10 @@ SYSTEM_RUNTIME_PACKAGES = (
 )
 
 # Wanted only by a machine that serves Wi-Fi, which is why it is a
-# recommendation rather than a dependency. NetworkManager will not run the
-# access point on our terms: its AP mode forces shared addressing, which
-# starts a second dnsmasq that both holds port 53 and answers clients outside
-# the proxy, so the gateway runs hostapd itself.
+# recommendation rather than a dependency. The gateway runs hostapd itself
+# rather than asking a manager for an access point: NetworkManager's AP mode
+# forces shared addressing, which starts a second dnsmasq that both holds
+# port 53 and answers clients outside the proxy.
 SYSTEM_WIFI_PACKAGES = ("hostapd",)
 
 # Wanted by a checkout, which builds a virtual environment. A package carries
@@ -92,15 +108,23 @@ SYSTEM_CHECKOUT_PACKAGES = ("python3-venv",)
 # Measured in containers on 2026-08-31, not inferred: every other name above
 # is spelled the same on Debian, Fedora and Arch.
 SYSTEM_PACKAGE_NAMES = {
-    "debian": {},
+    "debian": {
+        # Debian is the one family that ships a dnsmasq unit enabled by
+        # installing it. `dnsmasq-base` is the same binary with no unit and
+        # no /etc/dnsmasq.conf, which is all the hub's own unit needs.
+        "dnsmasq": "dnsmasq-base",
+        # The same split again: `dhcpcd` pulls in a unit that runs the client
+        # on every interface, `dhcpcd-base` is the binary and nothing else.
+        "dhcpcd": "dhcpcd-base",
+    },
     "rhel": {
         "iproute2": "iproute",
-        "network-manager": "NetworkManager",
+        "wpasupplicant": "wpa_supplicant",
         # RHEL builds venv into the interpreter rather than splitting it out.
         "python3-venv": None,
     },
     "arch": {
-        "network-manager": "networkmanager",
+        "wpasupplicant": "wpa_supplicant",
         "python3-venv": None,
     },
 }

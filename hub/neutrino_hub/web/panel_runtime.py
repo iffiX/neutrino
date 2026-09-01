@@ -11,6 +11,7 @@ import ipaddress
 from collections import deque
 
 from neutrino_hub.modules.router.dnsmasq_renderer import RouterDnsmasqRenderer
+from neutrino_hub.modules.router.connections import RouterConnectionSet
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
 from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
@@ -103,6 +104,23 @@ class PanelRuntime:
                 with each other.
         """
         write_config("router/network.json", network.to_dict())
+
+    def connections(self) -> RouterConnectionSet:
+        """Read the wireless networks this box knows how to join.
+
+        Returns:
+            Parsed ``config/router/connections.json``.
+        """
+        return RouterConnectionSet.from_dict(read_config("router/connections.json"))
+
+    def write_connections(self, connections: RouterConnectionSet) -> None:
+        """Store the wireless networks.
+
+        Args:
+            connections: The whole set, always: it is small, and a partial
+                write would leave the supplicant with half a list.
+        """
+        write_config("router/connections.json", connections.to_dict())
 
     def routing(self) -> dict:
         """Read the current routing configuration.
@@ -330,7 +348,6 @@ class PanelRuntime:
         xray_config = XrayConfigRenderer(
             node_list=node_list,
             routing=routing,
-            lan_address=network.primary_lan_address,
         ).render()
         nft_ruleset = RouterNftRenderer(
             network=network, routing=routing, xray_uid=lookup_xray_uid()

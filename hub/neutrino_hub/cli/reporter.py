@@ -12,11 +12,16 @@ from neutrino_hub.web.constants import (
     WEB_SETUP_STEP_DONE,
     WEB_SETUP_STEP_FAILED,
     WEB_SETUP_STEP_RUNNING,
-    WEB_SETUP_STEP_SKIPPED,
 )
 
+import re
+import sys
+from pathlib import Path
+
+# Colour is for the terminal; the log keeps the words without it.
+REPORTER_ANSI = re.compile(r"\033\[[0-9;]*m")
+
 GREEN = "\033[32m"
-YELLOW = "\033[33m"
 RED = "\033[31m"
 BLUE = "\033[36m"
 DIM = "\033[2m"
@@ -25,19 +30,57 @@ RESET = "\033[0m"
 
 
 class InstallReporter:
-    """Prints numbered installation steps with timing and outcome."""
+    """Prints numbered installation steps with timing and outcome.
 
-    def __init__(self, *, total_step_count: int, is_color_enabled: bool = True):
+    Writes to a file as well as to the terminal, and outlives the terminal. A
+    first run reconfigures the interface it is often being watched over, so
+    the session can go away in the middle of it — and a run that dies at that
+    moment leaves a half-configured machine, which is the one outcome a first
+    run must not have. So every line goes to the log first, and a terminal
+    that has hung up is written off rather than raised over.
+    """
+
+    def __init__(
+        self,
+        *,
+        total_step_count: int,
+        is_color_enabled: bool = True,
+        log_path: Path | None = None,
+    ):
         """
         Args:
             total_step_count: How many steps the run will report, used for the
                 ``[3/12]`` counter.
             is_color_enabled: Whether to emit ANSI colour.
+            log_path: Where to keep a copy of everything printed, so a run
+                whose terminal went away can still be read afterwards.
         """
         self._total_step_count = total_step_count
         self._is_color_enabled = is_color_enabled
         self._step_index = 0
         self._started_at = 0.0
+        self._log = _opened(log_path)
+
+    def _say(self, text: str = "", *, end: str = "\n") -> None:
+        """Write one line, to the log and to the terminal if there is one.
+
+        Args:
+            text: What to write.
+            end: What to end it with; empty for a line continued later.
+        """
+        if self._log is not None:
+            try:
+                self._log.write(REPORTER_ANSI.sub("", text) + end)
+                self._log.flush()
+            except OSError:
+                self._log = None
+        try:
+            sys.stdout.write(text + end)
+            sys.stdout.flush()
+        except (OSError, ValueError):
+            # The terminal has gone. The log still has every line, and the run
+            # carries on — stopping here is what would leave a box half done.
+            pass
 
     def banner(self, text: str) -> None:
         """Print the run's header.
@@ -45,10 +88,10 @@ class InstallReporter:
         Args:
             text: Title line.
         """
-        print()
-        print(self._color(f"  {text}", BOLD))
-        print(self._color("  " + "─" * max(len(text), 40), DIM))
-        print()
+        self._say()
+        self._say(self._color(f"  {text}", BOLD))
+        self._say(self._color("  " + "─" * max(len(text), 40), DIM))
+        self._say()
 
     def start(self, description: str) -> None:
         """Announce the next step.
@@ -59,23 +102,21 @@ class InstallReporter:
         self._step_index += 1
         self._started_at = time.monotonic()
         counter = f"[{self._step_index}/{self._total_step_count}]"
-        print(f"  {self._color(counter, BLUE)} {description} ... ", end="", flush=True)
+        self._say(f"  {self._color(counter, BLUE)} {description} ... ", end="")
 
     def done(self, note: str = "") -> None:
-        """Report the current step succeeded and changed something.
+        """Report the current step succeeded.
+
+        There is no third outcome. A step that found its work already done
+        succeeded, and saying so in another colour makes a column of green
+        read as though something in it went wrong — which is what the note
+        beside it is for.
 
         Args:
-            note: Short detail, for example a version number.
+            note: Short detail, for example a version number or what was
+                already in place.
         """
         self._finish("OK", GREEN, note)
-
-    def skipped(self, note: str = "") -> None:
-        """Report the current step found its work already done.
-
-        Args:
-            note: Short detail explaining what was already in place.
-        """
-        self._finish("already set", YELLOW, note)
 
     def failed(self, message: str) -> None:
         """Report the current step failed.
@@ -84,10 +125,14 @@ class InstallReporter:
             message: The error text to show under the step.
         """
         self._finish("FAILED", RED, "")
-        print()
+        self._say()
         for line in message.strip().splitlines():
-            print(f"      {self._color(line, RED)}")
-        print()
+            self._say(f"      {self._color(line, RED)}")
+        self._say()
+
+    def blank(self) -> None:
+        """One empty line, for separating what is said from what is done."""
+        self._say()
 
     def note(self, text: str) -> None:
         """Print an indented informational line between steps.
@@ -95,7 +140,7 @@ class InstallReporter:
         Args:
             text: The message.
         """
-        print(f"      {self._color(text, DIM)}")
+        self._say(f"      {self._color(text, DIM)}")
 
     def checklist(self, title: str, items: list[str]) -> None:
         """Print the closing to-do list.
@@ -104,17 +149,17 @@ class InstallReporter:
             title: Heading for the list.
             items: One line per remaining manual action.
         """
-        print()
-        print(self._color(f"  {title}", BOLD))
+        self._say()
+        self._say(self._color(f"  {title}", BOLD))
         for item in items:
-            print(f"    {self._color('•', BLUE)} {item}")
-        print()
+            self._say(f"    {self._color('•', BLUE)} {item}")
+        self._say()
 
     def _finish(self, label: str, color: str, note: str) -> None:
         elapsed = time.monotonic() - self._started_at
         suffix = f" {self._color(f'({note})', DIM)}" if note else ""
         timing = self._color(f"{elapsed:5.1f}s", DIM)
-        print(f"{self._color(label, color)}{suffix} {timing}")
+        self._say(f"{self._color(label, color)}{suffix} {timing}")
 
     def _color(self, text: str, code: str) -> str:
         if not self._is_color_enabled:
@@ -132,16 +177,24 @@ class InstallSessionReporter(InstallReporter):
     """
 
     def __init__(
-        self, *, session, total_step_count: int, is_color_enabled: bool = True
+        self,
+        *,
+        session,
+        total_step_count: int,
+        is_color_enabled: bool = True,
+        log_path: Path | None = None,
     ):
         """
         Args:
             session: Where the browser reads from.
             total_step_count: How many steps the run will report.
             is_color_enabled: Whether to emit ANSI colour.
+            log_path: Where to keep a copy of everything printed.
         """
         super().__init__(
-            total_step_count=total_step_count, is_color_enabled=is_color_enabled
+            total_step_count=total_step_count,
+            is_color_enabled=is_color_enabled,
+            log_path=log_path,
         )
         self._session = session
         self._description = ""
@@ -157,22 +210,14 @@ class InstallSessionReporter(InstallReporter):
         super().start(description)
 
     def done(self, note: str = "") -> None:
-        """Report the current step succeeded and changed something.
+        """Report the current step succeeded, here and in the browser.
 
         Args:
-            note: Short detail, for example a version number.
+            note: Short detail, for example a version number or what was
+                already in place.
         """
         self._session.step(self._description, WEB_SETUP_STEP_DONE, note)
         super().done(note)
-
-    def skipped(self, note: str = "") -> None:
-        """Report the current step found its work already done.
-
-        Args:
-            note: Short detail explaining what was already in place.
-        """
-        self._session.step(self._description, WEB_SETUP_STEP_SKIPPED, note)
-        super().skipped(note)
 
     def failed(self, message: str) -> None:
         """Report the current step failed.
@@ -183,6 +228,10 @@ class InstallSessionReporter(InstallReporter):
         self._session.step(self._description, WEB_SETUP_STEP_FAILED, message)
         super().failed(message)
 
+    def blank(self) -> None:
+        """One empty line, for separating what is said from what is done."""
+        self._say()
+
     def note(self, text: str) -> None:
         """Print an aside, and keep it where the browser can read it.
 
@@ -191,3 +240,22 @@ class InstallSessionReporter(InstallReporter):
         """
         self._session.note(text)
         super().note(text)
+
+
+def _opened(path: Path | None):
+    """Open the log to append to, or nothing when there is nowhere to write.
+
+    Args:
+        path: Where the copy goes, or None for a run that keeps none.
+
+    Returns:
+        The open file, or None — a log that cannot be opened is not a reason
+        to refuse to run.
+    """
+    if path is None:
+        return None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path.open("a", encoding="utf-8")
+    except OSError:
+        return None

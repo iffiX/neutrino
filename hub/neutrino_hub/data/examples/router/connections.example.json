@@ -1,0 +1,15 @@
+{
+  "_comment": "The wireless networks this box knows how to join. One entry per network; wpa_supplicant picks among them itself, taking the highest priority of those actually in range. This file holds passphrases, so it is gitignored and written 0600. Networks are added from the Network tab, or read once out of whatever managed this machine before — NetworkManager, netplan, iwd or wpa_supplicant — when the box is switched to Owner mode.",
+
+  "_comment_fields": "key_mgmt is WPA-PSK, SAE (WPA3) or NONE (open). psk is either the passphrase or the 64-character key derived from it; both are accepted and an open network needs neither. An empty psk on a known network means its key was held somewhere that could not be read, and the panel asks for it once. priority ranks two networks in range of each other, higher first. is_hidden probes for a network that does not broadcast its name. source is 'panel' or 'inherited:<manager>'.",
+  "connections": [
+    {
+      "ssid": "example-network",
+      "key_mgmt": "WPA-PSK",
+      "psk": "replace-me",
+      "priority": 0,
+      "is_hidden": false,
+      "source": "panel"
+    }
+  ]
+}

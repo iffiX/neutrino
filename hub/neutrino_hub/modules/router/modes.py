@@ -1,12 +1,15 @@
-"""The four shapes a gateway is set up as, and what each one writes.
+"""The shapes a machine is set up as, and what each one writes.
 
-A mode is one answer to "what is this machine for", turned into the interface
+A shape is one answer to "what is this machine for", turned into the interface
 roles the rest of the router layer already understands. None of them is a new
-capability: ``router`` is an uplink and a served network, ``one_arm_router``
-is a single trunk port going out untagged and serving on a tag,
-``side_gateway`` is a served network whose own way out is that network's real
-router, and ``server`` is a box that routes nothing and only answers on the
-port it is reached by.
+capability: ``router`` is an uplink and a served network, ``side_gateway`` is a
+served network whose own way out is that network's real router, and ``server``
+is a box that routes nothing and only answers where it is reached.
+
+``one_arm_router`` is the fourth shape and not a fourth mode: a single trunk
+port going out untagged and serving on a tag is a router, and what it writes
+says ``router``. The distinction is a wizard's — it decides which questions to
+ask — and it ends there.
 
 Pure: builds a configuration object and touches nothing.
 """
@@ -15,6 +18,13 @@ import ipaddress
 from dataclasses import dataclass
 
 from neutrino_hub.modules.router.constants import (
+    ROUTER_LAYOUT_ONE_ARM,
+    ROUTER_MODE_ROUTER,
+    ROUTER_MODE_SERVER,
+    ROUTER_MODE_SIDE_GATEWAY,
+    ROUTER_MODES_ADDRESSING_OWNED,
+    ROUTER_MODES_KEYS,
+    ROUTER_ROLE_DISABLED,
     ROUTER_ROLE_LAN,
     ROUTER_ROLE_SPLIT,
     ROUTER_ROLE_WAN,
@@ -28,11 +38,6 @@ from neutrino_hub.modules.router.interfaces import (
 )
 
 # --- config ---
-ROUTER_MODE_ROUTER = "router"
-ROUTER_MODE_ONE_ARM = "one_arm_router"
-ROUTER_MODE_SIDE_GATEWAY = "side_gateway"
-ROUTER_MODE_SERVER = "server"
-
 # The address the served network gets when nobody says otherwise. Deliberately
 # not 192.168.0.0/24 or 192.168.1.0/24: those are what the router upstream is
 # most likely already using, and two networks with one address route nowhere.
@@ -53,57 +58,75 @@ ROUTER_MODE_DEFAULT_LAN_VLAN = 3
 
 @dataclass(frozen=True)
 class RouterMode:
-    """One mode, and what has to be answered before it can be planned.
+    """One shape, and what has to be answered before it can be planned.
 
     Attributes:
-        key: What `config/` and the wizard call it.
+        key: What the wizard calls it.
+        stored_mode: What `config/` calls what it plans, which is the key
+            itself for every shape that is a mode of its own.
         summary: One line, shown beside the key when choosing.
         port_count: How many ports it needs. A machine with fewer is not
             offered the mode at all, rather than offered it and then told.
         is_wire_needed: Whether its ports have to be wired. 802.1Q tags do
             not ride on a radio, so a trunk cannot be one.
-        caution: What somebody choosing it should know first, empty when
-            there is nothing surprising about it.
+        caution: A consequence of choosing this shape that the machine cannot
+            be checked for beforehand, empty where there is none. What a shape
+            *is* belongs to its summary; this is what it costs.
     """
 
     key: str
     summary: str
+    stored_mode: str = ""
     port_count: int = 1
     is_wire_needed: bool = False
     caution: str = ""
 
+    @property
+    def mode(self) -> str:
+        """What `config/` calls what this shape plans."""
+        return self.stored_mode or self.key
 
-# In the order they are offered: the one that changes least about the
-# machine first, then the one most boxes become, then the two that need
-# something of the network they plug into.
+    @property
+    def is_addressing_owned(self) -> bool:
+        """Whether this shape addresses the machine's interfaces.
+
+        False for the modes that are a guest on somebody else's machine,
+        which answer on the address a port already has and change nothing
+        about how it got there.
+        """
+        return self.mode in ROUTER_MODES_ADDRESSING_OWNED
+
+
+# In the order they are offered: what changes least about the machine first,
+# then what needs something of the network it plugs into, then what takes the
+# machine over — with the one-wire router beside the router it is one of.
 ROUTER_MODES = (
     RouterMode(
         key=ROUTER_MODE_SERVER,
-        summary="Act as a server answering on at least one interface.",
+        summary="Routes nothing; answers where it is reached.",
+    ),
+    RouterMode(
+        key=ROUTER_MODE_SIDE_GATEWAY,
+        summary="Forwards for hosts that name it as their gateway.",
     ),
     RouterMode(
         key=ROUTER_MODE_ROUTER,
-        summary="Act as a router with one or more interface out and one or "
-        "more interface in.",
+        summary="Routes between uplinks and the networks it serves.",
         port_count=2,
     ),
     RouterMode(
-        key=ROUTER_MODE_ONE_ARM,
-        summary="Act as a router with one interface serving both out "
-        "(untagged) and in (tagged VLAN).",
+        key=ROUTER_LAYOUT_ONE_ARM,
+        summary="Routes on one wire: untagged out, tagged VLAN in.",
+        stored_mode=ROUTER_MODE_ROUTER,
         is_wire_needed=True,
         caution="The switch it plugs into has to pass VLAN tags. On a plain "
         "switch this looks configured and carries nothing.",
     ),
-    RouterMode(
-        key=ROUTER_MODE_SIDE_GATEWAY,
-        summary="Act as a side gateway that masquerades the data sent in.",
-        caution="The network's own router keeps handing out leases; this box "
-        "does not, and reaches it only for the devices that name it.",
-    ),
 )
 
 ROUTER_MODES_BY_KEY = {mode.key: mode for mode in ROUTER_MODES}
+
+assert ROUTER_MODES_KEYS == tuple(dict.fromkeys(mode.mode for mode in ROUTER_MODES))
 
 
 def modes_for(port_count: int, wired_count: int) -> tuple:
@@ -136,6 +159,7 @@ class RouterModePlanner:
         mode: str,
         wan_names: tuple = (),
         lan_names: tuple = (),
+        port_names: tuple = (),
         trunk_name: str = "",
         lan_address: str = ROUTER_MODE_DEFAULT_LAN_ADDRESS,
         lan_prefix_len: int = ROUTER_MODE_DEFAULT_PREFIX_LEN,
@@ -144,10 +168,12 @@ class RouterModePlanner:
     ):
         """
         Args:
-            mode: One of :data:`ROUTER_MODES_BY_KEY`.
+            mode: One shape, keyed as :data:`ROUTER_MODES_BY_KEY` keys it.
             wan_names: Ports carrying the uplink.
-            lan_names: Ports carrying the served network, or the ports the
-                panel answers on in server mode.
+            lan_names: Ports carrying the served network.
+            port_names: Every port the machine has. The guest modes leave all
+                of them answering, which is what they were doing before the
+                hub arrived; only the panel narrows that afterwards.
             trunk_name: The port the VLANs ride on, for one-arm.
             lan_address: The gateway's own address on the served network.
             lan_prefix_len: Prefix length of the served network.
@@ -159,10 +185,11 @@ class RouterModePlanner:
             ValueError: When the mode is not one this knows.
         """
         if mode not in ROUTER_MODES_BY_KEY:
-            raise ValueError(f"no mode named {mode!r}")
+            raise ValueError(f"no shape named {mode!r}")
         self._mode = mode
         self._wan_names = tuple(wan_names)
         self._lan_names = tuple(lan_names)
+        self._port_names = tuple(port_names)
         self._trunk_name = trunk_name
         self._lan_address = lan_address
         self._lan_prefix_len = lan_prefix_len
@@ -175,13 +202,17 @@ class RouterModePlanner:
         Returns:
             A network configuration ready to be validated and written.
         """
-        if self._mode == ROUTER_MODE_ONE_ARM:
-            return RouterNetworkConfig(interfaces=self._one_arm())
-        if self._mode == ROUTER_MODE_SIDE_GATEWAY:
-            return RouterNetworkConfig(interfaces=self._side_gateway())
-        if self._mode == ROUTER_MODE_SERVER:
-            return RouterNetworkConfig(interfaces=self._server())
-        return RouterNetworkConfig(interfaces=self._router())
+        if self._mode == ROUTER_LAYOUT_ONE_ARM:
+            interfaces = self._one_arm()
+        elif self._mode == ROUTER_MODE_SIDE_GATEWAY:
+            interfaces = self._side_gateway()
+        elif self._mode == ROUTER_MODE_SERVER:
+            interfaces = self._server()
+        else:
+            interfaces = self._router()
+        return RouterNetworkConfig(
+            mode=ROUTER_MODES_BY_KEY[self._mode].mode, interfaces=interfaces
+        )
 
     def _router(self) -> list:
         """An uplink port and a served port."""
@@ -213,7 +244,7 @@ class RouterModePlanner:
 
     def _side_gateway(self) -> list:
         """One port on somebody else's network, forwarding for what names it."""
-        return [
+        joined = [
             self._lan(
                 name,
                 is_dhcp_enabled=False,
@@ -221,15 +252,39 @@ class RouterModePlanner:
             )
             for name in self._lan_names
         ]
+        return joined + self._bystanders(self._lan_names)
 
     def _server(self) -> list:
-        """Ports the panel answers on, serving and routing nothing."""
-        return [self._lan(name, is_dhcp_enabled=False) for name in self._lan_names]
+        """Every port the machine has, none of them given a job.
+
+        A server routes nothing and serves nothing, so no port holds a role.
+        What is left to say about one is whether what this box listens on
+        answers there, which is not a role but a firewall.
+        """
+        return self._bystanders(())
+
+    def _bystanders(self, taken: tuple) -> list:
+        """The ports this mode gives no job to, left answering as they were.
+
+        Args:
+            taken: The ports the mode has already made something of.
+
+        Returns:
+            One entry per remaining port, roleless and exposed.
+        """
+        return [
+            RouterInterface(name=name, role=ROUTER_ROLE_DISABLED, is_exposed=True)
+            for name in self._port_names
+            if name not in taken
+        ]
 
     def _wan(self, name: str, *, vlan: RouterVlanSettings | None = None):
         """One uplink interface, on DHCP."""
         return RouterInterface(
-            name=name, role=ROUTER_ROLE_WAN, wan=RouterWanSettings(), vlan=vlan
+            name=name,
+            role=ROUTER_ROLE_WAN,
+            wan=RouterWanSettings(),
+            vlan=vlan,
         )
 
     def _lan(
@@ -245,6 +300,10 @@ class RouterModePlanner:
         return RouterInterface(
             name=name,
             role=ROUTER_ROLE_LAN,
+            # A served network answers by definition: it is where the panel,
+            # DNS and the leases are reached, and a fence around it would fence
+            # out the devices it exists for.
+            is_exposed=True,
             lan=RouterLanSettings(
                 address=self._lan_address,
                 prefix_len=self._lan_prefix_len,

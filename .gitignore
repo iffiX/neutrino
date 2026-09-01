@@ -2,6 +2,7 @@
 config/xray/nodes.json
 config/xray/routing.json
 config/router/network.json
+config/router/connections.json
 config/web/settings.json
 config/samba/samba.json
 config/gitea/gitea.json

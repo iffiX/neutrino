@@ -1,0 +1,38 @@
+/* --- The wireless networks the box knows --- */
+
+.saved_networks_list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.saved_networks_row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+/* The name takes what is left, so the badges and the button stay put however
+   long an SSID is. */
+.saved_networks_ssid {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved_networks_tags {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--space-2);
+  align-items: center;
+}

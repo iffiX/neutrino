@@ -23,6 +23,13 @@ configured box. Removing the package does not lift this: `dpkg --purge` leaves
 `/etc/neutrino/hub` in place on purpose, because it holds the proxy node
 credentials and the device keys.
 
+The mode decides whether it configures this machine's network at all. As a
+`router` or a `one_arm_router` it addresses the interfaces; as a `server` or a
+`side_gateway` it addresses nothing — the address, route and lease each port
+arrived with are the ones it keeps, and the panel answers on them. So a VPS or
+a laptop has the same address after setup as before it, and the last screen
+says which of the two this run is.
+
 With no arguments it asks where the questions get answered — here in the
 terminal, or in a browser on another machine — and then asks them, one
 question per screen, each with a default that Enter takes.
@@ -157,8 +164,15 @@ Returns every module's config to its committed example and clears the panel
 password, so the next `nhub setup` runs on a fresh box.
 
 This destroys the proxy node credentials, the device records and their tokens,
-the SSH keys, and the AI provider keys. Nothing recovers them but a backup of
-`config/`; take one first ([standard/misc/config.md](standard/misc/config.md)).
+the SSH keys, the wireless passphrases, and the AI provider keys. Nothing
+recovers them but a backup of `config/`; take one first
+([standard/misc/config.md](standard/misc/config.md)).
+
+It also stops driving the network, on a machine where it was. The units the hub
+started on each radio and uplink are stopped, name resolution goes back to the
+machine's own, and whatever manager was stood down is started again. **No
+address is taken off anything** — every interface keeps what it has, so the
+session that asked for the reset is still there when it finishes.
 
 > `nhub reset`
 

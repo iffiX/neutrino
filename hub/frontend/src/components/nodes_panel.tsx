@@ -10,6 +10,7 @@ import { diffNodeDraft, isNodeChanged } from "../node_draft";
 import { formatBytes } from "../format_bytes";
 import { nodeIdFromTag } from "../node_tag";
 import { useApiResource } from "../use_api_resource";
+import { useConfirm } from "../use_confirm";
 import { useLiveStats } from "../use_live_stats";
 import type {
   BalancerSettings,
@@ -45,7 +46,7 @@ const STRATEGY_LABELS: Record<BalancerStrategy, string> = {
 };
 
 export function NodesPanel() {
-  const resource = useApiResource<NodesResponse>("/nodes");
+  const resource = useApiResource<NodesResponse>("/proxy/nodes");
   const { latestFrame } = useLiveStats();
 
   const [draftNodes, setDraftNodes] = useState<NodeView[]>([]);
@@ -62,6 +63,7 @@ export function NodesPanel() {
   const [shareLink, setShareLink] = useState("");
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   useEffect(() => {
     if (resource.data === null) {
@@ -132,7 +134,9 @@ export function NodesPanel() {
     setActionError(null);
     setTestingIds((ids) => [...ids, nodeId]);
     try {
-      const result = await apiPost<NodeTestResult>(`/nodes/${nodeId}/test`);
+      const result = await apiPost<NodeTestResult>(
+        `/proxy/nodes/${nodeId}/test`,
+      );
       applyTestResult(nodeId, result, setDraftNodes, setProbeHistory);
     } catch (cause: unknown) {
       setActionError(describeError(cause));
@@ -149,7 +153,7 @@ export function NodesPanel() {
       const results = await Promise.all(
         ids.map(async (nodeId) => ({
           nodeId,
-          result: await apiPost<NodeTestResult>(`/nodes/${nodeId}/test`),
+          result: await apiPost<NodeTestResult>(`/proxy/nodes/${nodeId}/test`),
         })),
       );
       for (const { nodeId, result } of results) {
@@ -171,7 +175,7 @@ export function NodesPanel() {
     setIsAdding(true);
     setActionError(null);
     try {
-      await apiPost<NodeView>("/nodes", { link });
+      await apiPost<NodeView>("/proxy/nodes", { link });
       setShareLink("");
       setIsAddOpen(false);
       resource.reload();
@@ -182,13 +186,18 @@ export function NodesPanel() {
     }
   };
 
-  const handleRemoveNode = async (node: NodeView) => {
-    if (!window.confirm(`Remove ${node.name}? Its share link is not kept.`)) {
-      return;
-    }
+  const handleRemoveNode = (node: NodeView) =>
+    confirm.ask({
+      title: `Remove ${node.name}`,
+      body: "The exit node is deleted and its share link is not kept.",
+      confirmLabel: "Remove",
+      onConfirm: () => void removeNode(node),
+    });
+
+  const removeNode = async (node: NodeView) => {
     setActionError(null);
     try {
-      await apiDelete<NodesResponse>(`/nodes/${node.id}`);
+      await apiDelete<NodesResponse>(`/proxy/nodes/${node.id}`);
       resource.reload();
     } catch (cause: unknown) {
       setActionError(describeError(cause));
@@ -214,14 +223,14 @@ export function NodesPanel() {
     try {
       for (const node of draftNodes) {
         if (isNodeChanged(applied.nodes, node)) {
-          await apiPut<NodeView>(`/nodes/${node.id}`, {
+          await apiPut<NodeView>(`/proxy/nodes/${node.id}`, {
             is_enabled: node.is_enabled,
             name: node.name,
           });
         }
       }
       if (diff.isBalancerChanged) {
-        await apiPut<BalancerSettings>("/nodes/balancer", draftBalancer);
+        await apiPut<BalancerSettings>("/proxy/balancer", draftBalancer);
       }
       const result = await apiPost<ApplyResult>("/proxy/apply");
       setApplyMessage(result.message);
@@ -236,6 +245,13 @@ export function NodesPanel() {
   if (resource.error !== null && resource.data === null) {
     return <ErrorPanel message={resource.error} onRetry={resource.reload} />;
   }
+
+  // Adding or removing a node writes it at once — there is no draft of a list
+  // membership to hold — so the gateway can be carrying a configuration this
+  // panel has nothing dirty about. Applying is still what makes it run, which
+  // is why the bar has to be pressable in exactly that state.
+  const isSavedNotApplied =
+    (applied?.is_dirty ?? false) && !(diff?.isDirty ?? false);
 
   const enabledCount = draftNodes.filter((node) => node.is_enabled).length;
   const aliveCount = draftNodes.filter((node) => node.is_alive).length;
@@ -253,6 +269,14 @@ export function NodesPanel() {
         diff?.isDirty ? "settings_group--dirty" : ""
       }`}
     >
+      <div className="settings_group_title">
+        <h2>Exit nodes</h2>
+      </div>
+      <p className="field_hint">
+        Where proxied traffic leaves the internet. The balancer picks between
+        the enabled ones by the strategy below.
+      </p>
+
       {actionError !== null && (
         <div className="notice notice--error">
           <Icon name="alert" size={15} />
@@ -260,17 +284,14 @@ export function NodesPanel() {
         </div>
       )}
 
-      {applied !== null &&
-        applied.is_dirty &&
-        diff !== null &&
-        !diff.isDirty && (
-          <div className="notice notice--warn">
-            <Icon name="alert" size={15} />
-            <div className="notice_body">
-              Saved but not applied; press Apply.
-            </div>
+      {isSavedNotApplied && (
+        <div className="notice notice--warn">
+          <Icon name="alert" size={15} />
+          <div className="notice_body">
+            A node was added or removed and is not in the running proxy yet.
           </div>
-        )}
+        </div>
+      )}
 
       <div className="nodes_toolbar">
         <div className="nodes_toolbar_group">
@@ -404,22 +425,27 @@ export function NodesPanel() {
               isTesting={testingIds.includes(node.id)}
               onToggle={(isEnabled) => handleToggleNode(node.id, isEnabled)}
               onTest={() => void handleTestNode(node.id)}
-              onRemove={() => void handleRemoveNode(node)}
+              onRemove={() => handleRemoveNode(node)}
             />
           ))}
         </div>
       )}
 
       <ApplyBar
-        isDirty={diff?.isDirty ?? false}
+        isDirty={(diff?.isDirty ?? false) || isSavedNotApplied}
         isBusy={isApplying}
         label="Apply nodes"
-        hint={diff?.summary ?? ""}
+        hint={
+          isSavedNotApplied
+            ? "Loads the exit nodes into the running proxy."
+            : (diff?.summary ?? "")
+        }
         warning="Restarts the proxy; connections through it drop."
         notice={applyMessage}
         onReset={handleDiscard}
         onApply={() => void handleApply()}
       />
+      {confirm.modal}
     </div>
   );
 }

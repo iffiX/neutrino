@@ -1,4 +1,10 @@
-"""The Nodes tab: enabling nodes, choosing a balancer strategy, applying."""
+"""The proxy's exit nodes: enabling them, ranking them, testing one.
+
+A file of its own rather than a section of ``proxy.py`` because the nodes
+are a collection with a life of their own — added from a share link,
+renamed, tested, deleted — where the module's own settings are two
+switches. Both answer under ``/api/proxy``.
+"""
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -21,11 +27,11 @@ from neutrino_hub.modules.xray.node_config import (
 )
 
 router = APIRouter(
-    prefix="/api/nodes", tags=["nodes"], dependencies=[Depends(require_session)]
+    prefix="/api/proxy", tags=["proxy"], dependencies=[Depends(require_session)]
 )
 
 
-@router.get("", response_model=NodeListView)
+@router.get("/nodes", response_model=NodeListView)
 def list_nodes(runtime: PanelRuntime = Depends(get_runtime)) -> NodeListView:
     """Read every node with its live traffic and latency.
 
@@ -102,7 +108,7 @@ def update_balancer(
     return settings
 
 
-@router.post("", response_model=NodeView, status_code=status.HTTP_201_CREATED)
+@router.post("/nodes", response_model=NodeView, status_code=status.HTTP_201_CREATED)
 def add_node(
     request: NodeCreate, runtime: PanelRuntime = Depends(get_runtime)
 ) -> NodeView:
@@ -147,7 +153,7 @@ def add_node(
     )
 
 
-@router.delete("/{node_id}", response_model=NodeListView)
+@router.delete("/nodes/{node_id}", response_model=NodeListView)
 def remove_node(
     node_id: str, runtime: PanelRuntime = Depends(get_runtime)
 ) -> NodeListView:
@@ -178,7 +184,7 @@ def remove_node(
     return list_nodes(runtime)
 
 
-@router.put("/{node_id}", response_model=NodeView)
+@router.put("/nodes/{node_id}", response_model=NodeView)
 def update_node(
     node_id: str, update: NodeUpdate, runtime: PanelRuntime = Depends(get_runtime)
 ) -> NodeView:
@@ -220,7 +226,7 @@ def update_node(
     )
 
 
-@router.post("/{node_id}/test", response_model=NodeTestResult)
+@router.post("/nodes/{node_id}/test", response_model=NodeTestResult)
 def test_node(
     node_id: str, runtime: PanelRuntime = Depends(get_runtime)
 ) -> NodeTestResult:

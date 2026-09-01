@@ -3,6 +3,11 @@
 Read-only: the panel draws this, nothing acts on it. It answers what the roles
 in ``config/`` cannot — whether a cable is actually plugged in, which address
 DHCP handed out, which network the radio joined and how well it hears it.
+
+Asked of the kernel, through `ip` and `iw`, and never of a network manager.
+A machine the hub is only a guest on runs whatever it runs and may have no
+manager the hub knows; its ports still have to be drawn, because the panel
+shows them and offers to take them over.
 """
 
 import json
@@ -11,15 +16,32 @@ from pathlib import Path
 
 from neutrino_hub.utils.subprocess_run import run
 
-# The interface kinds the Network page is about. Everything else NetworkManager
-# knows of — loopback, wt0, bridges, tunnels — is machinery the gateway
+# The interface kinds the Network page is about. Everything else the kernel
+# holds — loopback, wt0, bridges, tunnels, veth — is machinery the gateway
 # manages elsewhere and never assigns a role to. VLANs count: they are the
 # gateway's own creations, but they hold roles exactly as a physical port does.
 LINK_KIND_ETHERNET = "ethernet"
 LINK_KIND_WIFI = "wifi"
+LINK_KIND_MODEM = "modem"
 LINK_KIND_VLAN = "vlan"
-PHYSICAL_LINK_KINDS = (LINK_KIND_ETHERNET, LINK_KIND_WIFI)
-ROLE_LINK_KINDS = (LINK_KIND_ETHERNET, LINK_KIND_WIFI, LINK_KIND_VLAN)
+PHYSICAL_LINK_KINDS = (LINK_KIND_ETHERNET, LINK_KIND_WIFI, LINK_KIND_MODEM)
+ROLE_LINK_KINDS = PHYSICAL_LINK_KINDS + (LINK_KIND_VLAN,)
+
+# What the kernel calls an interface's hardware type: the number in
+# `/sys/class/net/<name>/type`. Ethernet is the only one the hub drives, and
+# that is the whole rule — a 4G card in MBIM or ECM mode reports it and takes
+# a lease like any wired port, while a CAN adapter (280), a PPP session (512),
+# an 802.15.4 radio (804), an InfiniBand card (32) and a modem handing up bare
+# IP (519, 65534) do not. What is and is not driven is in design/network.md.
+LINK_ARPHRD_ETHER = 1
+# systemd's predictable naming gives every WWAN interface this prefix. What it
+# separates is a cellular card from a wired port, both of which speak ethernet
+# and take a lease: the card is an uplink and nothing else, because a carrier
+# hands up one address with no network to serve behind it.
+LINK_MODEM_PREFIX = "ww"
+# Where the kernel publishes what it knows about each interface. Named rather
+# than written out at each use so a test can point it somewhere it may write.
+LINK_SYSFS_ROOT = Path("/sys/class/net")
 
 
 @dataclass
@@ -33,7 +55,6 @@ class LinkStatus:
         is_up: Whether the link is administratively up and carrying.
         ipv4_address: First IPv4 address with its prefix, or None.
         mac_address: Current (possibly cloned) hardware address.
-        connection: Name of the NetworkManager connection in use, or None.
         ssid: Network the radio has joined, for a Wi-Fi interface.
         signal_percent: Signal strength of that network, 0 to 100.
         speed_mbps: Negotiated link speed, or None when the driver will not
@@ -54,7 +75,6 @@ class LinkStatus:
     is_up: bool = False
     ipv4_address: str | None = None
     mac_address: str | None = None
-    connection: str | None = None
     ssid: str | None = None
     signal_percent: int | None = None
     speed_mbps: int | None = None
@@ -86,10 +106,8 @@ class RouterLinkStatus:
         order = {LINK_KIND_ETHERNET: 0, LINK_KIND_WIFI: 1, LINK_KIND_VLAN: 2}
         addresses = self._addresses()
         links = []
-        for name, (kind, connection) in self._devices().items():
-            if kind not in ROLE_LINK_KINDS:
-                continue
-            links.append(self._build(name, kind, connection, addresses.get(name)))
+        for name, kind in self._devices().items():
+            links.append(self._build(name, kind, addresses.get(name)))
         links.sort(key=lambda link: (order.get(link.kind, 3), link.name))
         return links
 
@@ -166,11 +184,9 @@ class RouterLinkStatus:
                     return str(hop["gateway"])
         return None
 
-    def _build(
-        self, name: str, kind: str, connection: str | None, entry: dict | None
-    ) -> LinkStatus:
+    def _build(self, name: str, kind: str, entry: dict | None) -> LinkStatus:
         if entry is None:
-            return LinkStatus(name=name, kind=kind, connection=connection)
+            return LinkStatus(name=name, kind=kind)
         link = LinkStatus(
             name=name,
             kind=kind,
@@ -178,12 +194,14 @@ class RouterLinkStatus:
             is_up=entry.get("operstate") == "UP",
             ipv4_address=_first_ipv4(entry),
             mac_address=entry.get("address"),
-            connection=connection,
         )
         if link.is_wifi:
-            link.ssid, link.signal_percent = self._joined_network(name, connection)
+            link.ssid, link.signal_percent, link.speed_mbps = self._radio(name)
             link.is_ap_capable = self._is_ap_capable(name)
-            link.speed_mbps = self._wireless_speed(name)
+        elif link.kind == LINK_KIND_MODEM:
+            # A carrier hands up one address on a point-to-point link. There
+            # is nothing to serve a network on and nothing to bridge to it.
+            link.is_ap_capable = False
         else:
             link.speed_mbps = self._wired_speed(name)
         return link
@@ -196,34 +214,43 @@ class RouterLinkStatus:
             declines to say — a down port reports -1 rather than failing.
         """
         try:
-            speed = int(Path(f"/sys/class/net/{name}/speed").read_text().strip())
+            speed = int((LINK_SYSFS_ROOT / name / "speed").read_text().strip())
         except (OSError, ValueError):
             return None
         return speed if speed > 0 else None
 
-    def _wireless_speed(self, name: str) -> int | None:
-        """Read a radio's current transmit rate in Mbit/s.
+    def _radio(self, name: str) -> tuple[str | None, int | None, int | None]:
+        """What a radio is associated with, how well it hears it, how fast.
 
-        This is the PHY rate, which overstates real throughput by roughly half.
-        It is used only to separate two radios from each other, never to
+        One `iw` call for all three, because the page reads them together on
+        every poll and asking separately costs a process launch each.
+
+        The rate is the PHY rate, which overstates real throughput by roughly
+        half. It is used only to separate two radios from each other, never to
         compare one against a wire, so the overstatement does not matter.
 
+        Args:
+            name: Wireless interface name.
+
         Returns:
-            The rate, or None when the radio is not associated.
+            SSID, signal as a percentage, and transmit rate in Mbit/s. All
+            three are None when the radio is not associated with anything.
         """
         result = run(["iw", "dev", name, "link"], is_checked=False)
         if not result.is_success:
-            return None
+            return None, None, None
+        ssid = None
+        signal_percent = None
+        speed_mbps = None
         for line in result.stdout.splitlines():
             stripped = line.strip()
-            if not stripped.startswith("tx bitrate:"):
-                continue
-            for token in stripped.split():
-                try:
-                    return int(float(token))
-                except ValueError:
-                    continue
-        return None
+            if stripped.startswith("SSID:"):
+                ssid = stripped[len("SSID:") :].strip() or None
+            elif stripped.startswith("signal:"):
+                signal_percent = _signal_percent(stripped)
+            elif stripped.startswith("tx bitrate:"):
+                speed_mbps = _first_number(stripped)
+        return ssid, signal_percent, speed_mbps
 
     def _is_ap_capable(self, name: str) -> bool:
         """Whether a radio's chipset can run as an access point.
@@ -247,7 +274,7 @@ class RouterLinkStatus:
         return self._ap_capability[name]
 
     def _read_ap_capability(self, name: str) -> bool:
-        phy_path = Path(f"/sys/class/net/{name}/phy80211/name")
+        phy_path = LINK_SYSFS_ROOT / name / "phy80211" / "name"
         try:
             phy = phy_path.read_text(encoding="utf-8").strip()
         except OSError:
@@ -272,73 +299,24 @@ class RouterLinkStatus:
                 return True
         return False
 
-    def _joined_network(
-        self, name: str, connection: str | None
-    ) -> tuple[str | None, int | None]:
-        """Read which network a radio joined, and how strongly it hears it.
+    def _devices(self) -> dict[str, str]:
+        """Every interface a role can be assigned to, and what kind it is.
 
-        The name comes from the active connection rather than the scan list's
-        own ACTIVE column, which a rescan blanks for a moment and would
-        otherwise report a connected radio as connected to nothing. Strength
-        still comes from the list, matched by name.
+        Returns:
+            Interface name to kind. Loopback, bridges, tunnels, veth pairs and
+            the overlay are left out: they are not ports anybody gives a role
+            to, and nothing here has to name them one by one to exclude them.
         """
-        if connection is None:
-            return None, None
-        ssid = run(
-            ["nmcli", "-g", "802-11-wireless.ssid", "connection", "show", connection],
-            is_checked=False,
-        ).stdout.strip()
-        if not ssid:
-            return None, None
-        return ssid, self._signal_for(name, ssid)
-
-    def _signal_for(self, name: str, ssid: str) -> int | None:
-        result = run(
-            [
-                "nmcli",
-                "-t",
-                "-f",
-                "SIGNAL,SSID",
-                "device",
-                "wifi",
-                "list",
-                "ifname",
-                name,
-                "--rescan",
-                "no",
-            ],
-            is_checked=False,
-        )
-        if not result.is_success:
-            return None
-        strengths = []
-        for line in result.stdout.splitlines():
-            signal, _, found = line.partition(":")
-            if _unescape(found) == ssid:
-                strength = _as_int(signal)
-                if strength is not None:
-                    strengths.append(strength)
-        return max(strengths) if strengths else None
-
-    def _devices(self) -> dict[str, tuple[str, str | None]]:
-        result = run(
-            ["nmcli", "-t", "-f", "DEVICE,TYPE,CONNECTION", "device", "status"],
-            is_checked=False,
-        )
+        result = run(["ip", "-d", "-json", "link", "show"], is_checked=False)
         if not result.is_success:
             return {}
-        devices = {}
-        for line in result.stdout.splitlines():
-            parts = line.split(":", 2)
-            if len(parts) != 3:
-                continue
-            device, kind, connection = parts
-            connection = _unescape(connection)
-            devices[device] = (
-                kind,
-                connection if connection and connection != "--" else None,
-            )
-        return devices
+        kinds = {}
+        for entry in json.loads(result.stdout or "[]"):
+            name = str(entry.get("ifname", ""))
+            kind = _kind_of(name, entry)
+            if name and kind is not None:
+                kinds[name] = kind
+        return kinds
 
     def _addresses(self) -> dict[str, dict]:
         result = run(["ip", "-json", "addr", "show"], is_checked=False)
@@ -362,13 +340,97 @@ def _first_ipv4(entry: dict) -> str | None:
     return None
 
 
-def _unescape(value: str) -> str:
-    """Undo the backslash escaping ``nmcli -t`` applies to field separators."""
-    return value.replace("\\:", ":").replace("\\\\", "\\")
+def _kind_of(name: str, entry: dict) -> str | None:
+    """Which kind an interface is, or None for one the hub does not drive.
 
+    A whitelist of three, plus the VLANs the gateway builds itself. Everything
+    else a machine may carry gets no role: docker's and podman's bridges, a
+    container's veth, the overlay's tun, a bond, a dialer's PPP session,
+    Bluetooth tethering, a CAN adapter, an InfiniBand card.
+    Half-driving something is worse than leaving it alone, and a list of what
+    is refused does not have to keep up with what the world adds.
 
-def _as_int(value: str) -> int | None:
-    try:
-        return int(value)
-    except ValueError:
+    The order matters:
+
+    1. **Every interface the kernel synthesised names itself**, in
+       ``info_kind``. Only `vlan` among them is the gateway's.
+    2. **A port has hardware behind it.** No `device`, no role.
+    3. **A radio has a `phy80211`.**
+    4. **The hardware type has to be ethernet.** A 4G or 5G card in MBIM or
+       ECM mode reports it and takes a lease like any wired port; one in
+       raw-IP mode does not, and neither does a bus.
+    5. **The name separates a cellular card from a wire**, which changes only
+       what it may be used for.
+
+    Args:
+        name: Interface name.
+        entry: One entry of ``ip -d -json link show``.
+
+    Returns:
+        The kind, or None to leave the interface out.
+    """
+    info_kind = entry.get("linkinfo", {}).get("info_kind")
+    if info_kind is not None:
+        return LINK_KIND_VLAN if info_kind == LINK_KIND_VLAN else None
+    if not (LINK_SYSFS_ROOT / name / "device").exists():
         return None
+    if (LINK_SYSFS_ROOT / name / "phy80211").exists():
+        return LINK_KIND_WIFI
+    if _arphrd(name) != LINK_ARPHRD_ETHER:
+        return None
+    if name.startswith(LINK_MODEM_PREFIX):
+        return LINK_KIND_MODEM
+    return LINK_KIND_ETHERNET
+
+
+def _arphrd(name: str) -> int:
+    """The kernel's hardware type for an interface.
+
+    Args:
+        name: Interface name.
+
+    Returns:
+        The ARPHRD number. Ethernet when it cannot be read: the interface got
+        this far by having hardware behind it, and hiding a port because one
+        sysfs file would not open is the worse way to be wrong.
+    """
+    try:
+        return int((LINK_SYSFS_ROOT / name / "type").read_text().strip())
+    except (OSError, ValueError):
+        return LINK_ARPHRD_ETHER
+
+
+def _signal_percent(line: str) -> int | None:
+    """Turn `signal: -52 dBm` into the percentage the panel draws.
+
+    Twice the strength above -100 dBm, capped at both ends: the mapping every
+    desktop uses, where -50 reads full and -100 reads empty. It says how a
+    person should read the bar rather than stating a physical quantity.
+
+    Args:
+        line: The `signal:` line of ``iw dev <name> link``.
+
+    Returns:
+        0 to 100, or None when the line carries no number.
+    """
+    dbm = _first_number(line)
+    if dbm is None:
+        return None
+    return max(0, min(100, 2 * (dbm + 100)))
+
+
+def _first_number(line: str) -> int | None:
+    """The first token of a line that reads as a number.
+
+    Args:
+        line: One line of `iw` output.
+
+    Returns:
+        It as an integer, or None when the line holds no number.
+    """
+    for token in line.split():
+        try:
+            return int(float(token))
+        except ValueError:
+            continue
+    return None

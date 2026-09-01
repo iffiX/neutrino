@@ -5,6 +5,8 @@
     sudo nhub run --only-xray
     sudo nhub run --only-cliproxyapi
     sudo nhub run --only-dnsmasq
+    sudo nhub run --only-supplicant --interface wlp3s0
+    sudo nhub run --only-dhcpcd --interface enp2s0
     sudo nhub --dev run               # all of them, plus the frontend dev server
 
 The ``--only`` forms are what the units name, so systemd keeps deciding
@@ -32,7 +34,12 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_DIR,
     CLIPROXYAPI_GENERATED_NAME,
 )
-from neutrino_hub.modules.router.constants import ROUTER_DNSMASQ_PATH
+from neutrino_hub.modules.router.constants import (
+    ROUTER_DNSMASQ_PATH,
+    ROUTER_SUPPLICANT_CONTROL_DIR,
+    router_dhcp_config_path,
+    router_supplicant_config_path,
+)
 from neutrino_hub.modules.xray.constants import (
     XRAY_ASSET_DIR,
     XRAY_ASSET_ENV,
@@ -63,6 +70,14 @@ DNSMASQ_BINARIES = ("/usr/sbin/dnsmasq", "/usr/bin/dnsmasq")
 # package creates it; a machine that somehow has not gets dnsmasq's built-in
 # default instead of a startup failure.
 DNSMASQ_USER = "dnsmasq"
+# Where the two engines are, in the order the families put them. Same reason
+# as dnsmasq above: PATH under a unit is not reliable, and the families
+# disagree about sbin.
+SUPPLICANT_BINARIES = ("/usr/sbin/wpa_supplicant", "/usr/bin/wpa_supplicant")
+DHCP_BINARIES = ("/usr/sbin/dhcpcd", "/usr/bin/dhcpcd")
+# The driver to ask for first. nl80211 is what every current card uses; wext
+# is the twenty-year-old fallback, and naming both lets the supplicant pick.
+SUPPLICANT_DRIVERS = "nl80211,wext"
 
 
 def main() -> int:
@@ -79,8 +94,13 @@ def main() -> int:
     parser.add_argument(
         "--reload", action="store_true", help="restart the panel on source changes"
     )
+    parser.add_argument(
+        "--interface",
+        default=None,
+        help="which interface, for the per-interface engines",
+    )
     group = parser.add_mutually_exclusive_group()
-    for name in ("web", "xray", "cliproxyapi", "dnsmasq"):
+    for name in ("web", "xray", "cliproxyapi", "dnsmasq", "supplicant", "dhcpcd"):
         group.add_argument(
             f"--only-{name}",
             dest="only",
@@ -96,6 +116,13 @@ def main() -> int:
         return _exec_cliproxyapi()
     if arguments.only == "dnsmasq":
         return _exec_dnsmasq()
+    if arguments.only in ("supplicant", "dhcpcd"):
+        if not arguments.interface:
+            print(f"error: --only-{arguments.only} needs --interface", file=sys.stderr)
+            return 1
+        if arguments.only == "supplicant":
+            return _exec_supplicant(arguments.interface)
+        return _exec_dhcpcd(arguments.interface)
     if not _is_set_up():
         print(
             f"error: nothing is configured under {UTILS_CONFIG_DIR}; "
@@ -178,6 +205,90 @@ def _exec_dnsmasq() -> int:
         arguments.append(f"--user={DNSMASQ_USER}")
     os.execv(binary, arguments)
     return 1
+
+
+def _exec_supplicant(interface: str) -> int:
+    """Become the supplicant on one radio.
+
+    Args:
+        interface: The radio.
+
+    Returns:
+        Never; the process is replaced. 1 when wpa_supplicant is not there or
+        nothing has been rendered for this radio.
+    """
+    binary = _first_binary(SUPPLICANT_BINARIES, "wpa_supplicant")
+    if binary is None:
+        return 1
+    config = router_supplicant_config_path(interface)
+    if not config.is_file():
+        print(f"error: nothing rendered for {interface} at {config}", file=sys.stderr)
+        return 1
+    ROUTER_SUPPLICANT_CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+    os.execv(
+        binary,
+        [
+            binary,
+            # Foreground, so systemd watches the supplicant itself.
+            "-i",
+            interface,
+            "-c",
+            str(config),
+            "-D",
+            SUPPLICANT_DRIVERS,
+        ],
+    )
+    return 1
+
+
+def _exec_dhcpcd(interface: str) -> int:
+    """Become the lease client on one interface.
+
+    Args:
+        interface: The uplink.
+
+    Returns:
+        Never; the process is replaced. 1 when dhcpcd is not there or nothing
+        has been rendered for this uplink.
+    """
+    binary = _first_binary(DHCP_BINARIES, "dhcpcd")
+    if binary is None:
+        return 1
+    config = router_dhcp_config_path(interface)
+    if not config.is_file():
+        print(f"error: nothing rendered for {interface} at {config}", file=sys.stderr)
+        return 1
+    os.execv(
+        binary,
+        [
+            binary,
+            # Foreground, and our own configuration rather than
+            # /etc/dhcpcd.conf — which on a Raspberry Pi may hold somebody's
+            # static address for this very interface.
+            "--nobackground",
+            "--config",
+            str(config),
+            interface,
+        ],
+    )
+    return 1
+
+
+def _first_binary(candidates: tuple, name: str):
+    """The first of several paths that is there, or what PATH says.
+
+    Args:
+        candidates: Absolute paths, in the order the families use them.
+        name: What to look for on PATH, and to name in the error.
+
+    Returns:
+        The path, or None after saying it is not installed.
+    """
+    binary = next((path for path in candidates if os.path.isfile(path)), None)
+    binary = binary or shutil.which(name)
+    if binary is None:
+        print(f"error: {name} is not installed", file=sys.stderr)
+    return binary
 
 
 def _serve_panel(arguments) -> int:

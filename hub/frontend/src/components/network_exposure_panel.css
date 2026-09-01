@@ -1,0 +1,44 @@
+/* --- Which interfaces the services on this box answer on --- */
+
+.exposure_chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Off is the plain state and on is the lit one: the question is which of
+   these answer, not which are disabled. */
+.exposure_chip {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: 7px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-base),
+    background var(--transition-base),
+    color var(--transition-base);
+}
+
+.exposure_chip:hover {
+  border-color: var(--color-accent);
+}
+
+.exposure_chip--on {
+  border-color: var(--color-accent);
+  background: var(--color-accent-wash);
+  color: var(--color-text);
+}
+
+.exposure_chip_name {
+  color: var(--color-text);
+}
+
+.exposure_chip_state {
+  font-size: 12px;
+}

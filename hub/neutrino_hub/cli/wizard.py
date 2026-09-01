@@ -14,6 +14,7 @@ import os
 import select
 import sys
 import textwrap
+from pathlib import Path
 from dataclasses import dataclass, field
 
 from neutrino_hub.cli.password import (
@@ -22,10 +23,7 @@ from neutrino_hub.cli.password import (
     read_new_password,
 )
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
-from neutrino_hub.modules.xray.constants import (
-    XRAY_SOCKS_DIRECT_PORT,
-    XRAY_SOCKS_PROXY_PORT,
-)
+from neutrino_hub.modules.xray.constants import XRAY_SOCKS_PORT
 from neutrino_hub.modules.xray.node_config import parse_share_link
 from neutrino_hub.modules.registry import MODULE_SPECS
 from neutrino_hub.system.constants import (
@@ -37,10 +35,11 @@ from neutrino_hub.system.machine import machine_architecture
 from neutrino_hub.system.provisioning import plan_for
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.web.constants import WEB_DEFAULT_LISTEN_PORT
+from neutrino_hub.utils.constants import UTILS_LOG_DIR
 from neutrino_hub.modules.router.modes import (
     ROUTER_MODES_BY_KEY,
     ROUTER_MODE_SERVER,
-    ROUTER_MODE_ONE_ARM,
+    ROUTER_LAYOUT_ONE_ARM,
     ROUTER_MODE_SIDE_GATEWAY,
     ROUTER_MODE_DEFAULT_LAN_ADDRESS,
     ROUTER_MODE_DEFAULT_LAN_VLAN,
@@ -75,6 +74,9 @@ WIZARD_TITLES = (
 # counter: the one before the questions asking how they will be answered, the
 # one waiting for a browser to take them, and the one after everything.
 WIZARD_WELCOME_TITLE = "Welcome"
+# Where the run writes itself down, named here so the screen that warns
+# about losing the session can say where to read what happened.
+SETUP_LOG_PATH = UTILS_LOG_DIR / "setup.log"
 WIZARD_DONE_TITLE = "Add your devices"
 # How often the last screen looks for a device that has joined.
 WIZARD_POLL_INTERVAL_S = 2.0
@@ -85,6 +87,11 @@ WIZARD_TEXT_WIDTH = 66
 WIZARD_ROUTER_NOTE = (
     "Only the primary way out and the primary served network are set here. "
     "The panel's Network page adds more."
+)
+WIZARD_SERVER_NOTE = (
+    "No port is given a job here. Every one of them answers to begin with, "
+    "which is what this machine was already doing; the panel's Network page "
+    "narrows that."
 )
 WIZARD_ABORTED = "setup was aborted by user, nothing was written"
 # What a shell reports for a command somebody interrupted.
@@ -116,9 +123,9 @@ class WizardProxy:
     nodes: tuple = ()
     is_local: bool = False
     is_socks_proxy_enabled: bool = False
-    socks_proxy_port: int = XRAY_SOCKS_PROXY_PORT
+    socks_proxy_port: int = XRAY_SOCKS_PORT
     is_socks_direct_enabled: bool = False
-    socks_direct_port: int = XRAY_SOCKS_DIRECT_PORT
+    socks_direct_port: int = XRAY_SOCKS_PORT
 
 
 @dataclass
@@ -207,8 +214,9 @@ def from_document(document: dict) -> WizardAnswers:
         WIZARD_NETWORK_KEYS[key]: _as_tuple(key, value)
         for key, value in network.items()
     }
+    ports = tuple(link.name for link in RouterLinkStatus().all_links())
     try:
-        planned = RouterModePlanner(**keywords).plan()
+        planned = RouterModePlanner(port_names=ports, **keywords).plan()
     except (TypeError, ValueError) as error:
         raise WizardAborted(str(error)) from error
     return WizardAnswers(
@@ -286,7 +294,7 @@ def _proxy_from(given, mode: str) -> WizardProxy:
     except ValueError as error:
         raise WizardAborted(str(error)) from error
     is_serving = mode != ROUTER_MODE_SERVER
-    port = given.get("socks_proxy_port", XRAY_SOCKS_PROXY_PORT)
+    port = given.get("socks_proxy_port", XRAY_SOCKS_PORT)
     return WizardProxy(
         is_enabled=True,
         nodes=nodes,
@@ -296,7 +304,7 @@ def _proxy_from(given, mode: str) -> WizardProxy:
         is_socks_proxy_enabled=not is_serving,
         socks_proxy_port=port,
         is_socks_direct_enabled=bool(given.get("is_socks_direct_enabled", False)),
-        socks_direct_port=given.get("socks_direct_port", XRAY_SOCKS_DIRECT_PORT),
+        socks_direct_port=given.get("socks_direct_port", XRAY_SOCKS_PORT),
     )
 
 
@@ -435,6 +443,8 @@ class SetupWizard:
         note = ROUTER_MODES_BY_KEY[self._mode].caution
         if self._mode == ROUTER_MODE_ROUTER:
             note = WIZARD_ROUTER_NOTE
+        if self._mode == ROUTER_MODE_SERVER:
+            note = WIZARD_SERVER_NOTE
         if note:
             for line in textwrap.wrap(note, width=WIZARD_TEXT_WIDTH):
                 self._say(f"  {line}")
@@ -450,10 +460,14 @@ class SetupWizard:
         names = [link.name for link in links]
         if self._mode == ROUTER_MODE_ROUTER:
             moved = self._ask_router_ports(names)
-        elif self._mode == ROUTER_MODE_ONE_ARM:
+        elif self._mode == ROUTER_LAYOUT_ONE_ARM:
             moved = self._ask_one_arm_port(names)
+        elif self._mode == ROUTER_MODE_SIDE_GATEWAY:
+            moved = self._ask_side_gateway_port(names)
         else:
-            moved = self._ask_single_port(names)
+            # A server gives no port a job. Every one of them answers to
+            # begin with, which is what the machine was already doing.
+            moved = WIZARD_NEXT
         if moved != WIZARD_NEXT:
             return moved
         # Asked on every path, because every shape of this box answers on a
@@ -530,8 +544,8 @@ class SetupWizard:
             self._say("  A VLAN tag is a number from 1 to 4094.")
         return WIZARD_NEXT if self._ask_address() else WIZARD_PREVIOUS
 
-    def _ask_single_port(self, names: list) -> int:
-        """The one port this box answers on, and its address there.
+    def _ask_side_gateway_port(self, names: list) -> int:
+        """The port on the network this box joins, and that network's router.
 
         Args:
             names: The ports on offer, as listed.
@@ -539,20 +553,10 @@ class SetupWizard:
         Returns:
             How far this screen moves the wizard.
         """
-        is_side_gateway = self._mode == ROUTER_MODE_SIDE_GATEWAY
-        # A side gateway reaches the world through that network's own router,
-        # so the port already carrying a way out is the one; a server routes
-        # nothing, and answers where it has an address.
+        # It reaches the world through that network's own router, so the port
+        # already carrying a way out is the one.
         chosen = self._choose(
-            names,
-            default=(
-                _uplink_default(names) if is_side_gateway else _served_default(names)
-            ),
-            prompt=(
-                "Port on that network"
-                if is_side_gateway
-                else "Port the panel answers on"
-            ),
+            names, default=_uplink_default(names), prompt="Port on that network"
         )
         if chosen is None:
             return WIZARD_PREVIOUS
@@ -560,20 +564,19 @@ class SetupWizard:
         self._lan = names[chosen]
         if not self._ask_address():
             return WIZARD_PREVIOUS
-        if is_side_gateway:
-            while True:
-                answer = self._text("That network's own router", _gateway_of(self._lan))
-                if answer is None:
-                    return WIZARD_PREVIOUS
-                if _is_address(answer):
-                    self._upstream = answer
-                    break
-                if not answer:
-                    self._say(
-                        "  Needed: this box reaches the rest of the world through it."
-                    )
-                else:
-                    self._say(f"  {answer!r} is not an IPv4 address.")
+        while True:
+            answer = self._text("That network's own router", _gateway_of(self._lan))
+            if answer is None:
+                return WIZARD_PREVIOUS
+            if _is_address(answer):
+                self._upstream = answer
+                break
+            if not answer:
+                self._say(
+                    "  Needed: this box reaches the rest of the world through it."
+                )
+            else:
+                self._say(f"  {answer!r} is not an IPv4 address.")
         return WIZARD_NEXT
 
     def _ask_address(self) -> bool:
@@ -585,9 +588,9 @@ class SetupWizard:
 
         Three cases, and the mode names which one applies:
 
-        - **side gateway, server** — this box joins a network somebody else
-          runs, so it keeps the address that port already has. A port with
-          none has to be given one; there is nothing to guess.
+        - **side gateway** — this box joins a network somebody else runs, so
+          it keeps the address that port already has. A port with none has to
+          be given one; there is nothing to guess.
         - **router** — this box becomes the network's gateway. A port with an
           address and no default route is already running that network, and
           moving it would take every device on it down; a port whose address
@@ -629,10 +632,10 @@ class SetupWizard:
             has none to keep and nothing may be guessed.
         """
         fresh = (ROUTER_MODE_DEFAULT_LAN_ADDRESS, ROUTER_MODE_DEFAULT_PREFIX_LEN)
-        if self._mode == ROUTER_MODE_ONE_ARM:
+        if self._mode == ROUTER_LAYOUT_ONE_ARM:
             return fresh
         carried = self._carried_address(self._lan)
-        if self._mode in (ROUTER_MODE_SIDE_GATEWAY, ROUTER_MODE_SERVER):
+        if self._mode == ROUTER_MODE_SIDE_GATEWAY:
             return carried or ("", ROUTER_MODE_DEFAULT_PREFIX_LEN)
         if carried and self._lan not in _routed_names():
             return carried
@@ -867,7 +870,7 @@ class SetupWizard:
                     f"through the proxy"
                 )
             if self._proxy.is_socks_direct_enabled:
-                self._say(f"                 SOCKS {XRAY_SOCKS_DIRECT_PORT}, direct")
+                self._say(f"                 SOCKS {XRAY_SOCKS_PORT}, direct")
             if self._proxy.is_local:
                 self._say("                 this box's own traffic too")
         else:
@@ -875,9 +878,28 @@ class SetupWizard:
         if self._services:
             self._say(f"  also installing {', '.join(self._services)}")
         self._say("")
-        self._say("Saying yes here takes the interfaces over, replaces the")
-        self._say("firewall and starts the services. The address this")
-        self._say("terminal is reached on may be one of them.")
+        if ROUTER_MODES_BY_KEY[self._mode].is_addressing_owned:
+            self._say("Saying yes here takes the interfaces over, replaces the")
+            self._say("firewall and starts the services.")
+            self._say("")
+            # Said to everyone, because whether this is being read over one
+            # of these ports is not something to work out: sudo hides what
+            # sshd set, and a serial console, a KVM or a shell inside a shell
+            # would each answer differently. The sentence is true either way,
+            # and the one that matters is the second — that nothing is left
+            # half done.
+            self._say("The initialization process will finish on its own,")
+            self._say("network might be interrupted, please reconnect when")
+            self._say("interruption happens.")
+            self._say("")
+            self._say(
+                f"The panel will be at http://{self._address}:{self._listen_port}"
+            )
+            self._say(f"and the run is written to {SETUP_LOG_PATH}.")
+        else:
+            self._say("Saying yes here replaces the firewall and starts the")
+            self._say("services. Every address on this machine is left as it")
+            self._say("is, including the one this terminal is reached on.")
         if self._prompt("Start, or b to step back") == WIZARD_BACK:
             return WIZARD_PREVIOUS
         return WIZARD_NEXT
@@ -886,9 +908,10 @@ class SetupWizard:
         """The configuration the answers so far describe."""
         return RouterModePlanner(
             mode=self._mode,
+            port_names=tuple(self._names),
             wan_names=(self._wan,) if self._wan else (),
             lan_names=(self._lan,) if self._lan else (),
-            trunk_name=self._lan if self._mode == ROUTER_MODE_ONE_ARM else "",
+            trunk_name=self._lan if self._mode == ROUTER_LAYOUT_ONE_ARM else "",
             lan_address=self._address,
             lan_prefix_len=self._prefix_len,
             upstream_gateway=self._upstream or None,
@@ -1034,6 +1057,7 @@ def context() -> dict:
                 "summary": mode.summary,
                 "port_count": mode.port_count,
                 "is_wire_needed": mode.is_wire_needed,
+                "is_addressing_owned": mode.is_addressing_owned,
                 "caution": mode.caution,
             }
             for mode in modes_for(len(links), wired_count)
@@ -1054,8 +1078,8 @@ def context() -> dict:
             "address": ROUTER_MODE_DEFAULT_LAN_ADDRESS,
             "prefix_len": ROUTER_MODE_DEFAULT_PREFIX_LEN,
             "lan_vlan_id": ROUTER_MODE_DEFAULT_LAN_VLAN,
-            "socks_proxy_port": XRAY_SOCKS_PROXY_PORT,
-            "socks_direct_port": XRAY_SOCKS_DIRECT_PORT,
+            "socks_proxy_port": XRAY_SOCKS_PORT,
+            "socks_direct_port": XRAY_SOCKS_PORT,
             "listen_port": WEB_DEFAULT_LISTEN_PORT,
         },
         "router_note": WIZARD_ROUTER_NOTE,
@@ -1079,12 +1103,13 @@ def welcome() -> None:
         raise SystemExit(WIZARD_STOPPED_STATUS) from None
 
 
-def offer_browser(*, urls: list, token: str, arrived) -> bool:
-    """Say where the browser is opening, and wait for it to be answered.
+def offer_browser(*, urls: list, token: str, arrived, is_opened: bool = True) -> bool:
+    """Say where the wizard can be answered, and wait for it to be.
 
-    A browser is already being opened on this machine when this is drawn, so
-    the addresses are for the case where it did not — another machine on one
-    of these networks can open the same wizard.
+    Offered whatever this machine is. A box set up over SSH has no browser of
+    its own and every reason to be answered from one — the person is sitting
+    at a machine that has one — so the addresses are the point rather than the
+    fallback, and this says so.
 
     Args:
         urls: Every address this machine can be reached at, in the order they
@@ -1092,6 +1117,8 @@ def offer_browser(*, urls: list, token: str, arrived) -> bool:
         token: The one-time token the link carries.
         arrived: Called to ask whether the browser has answered yet. It waits
             out its own interval, so this loop does not spin.
+        is_opened: Whether a browser was opened here. False on a machine with
+            nothing to open one, where the addresses are the only way in.
 
     Returns:
         True when the browser answered, False when whoever is at the keyboard
@@ -1100,15 +1127,19 @@ def offer_browser(*, urls: list, token: str, arrived) -> bool:
     _headline(WIZARD_WELCOME_TITLE)
     _intro()
     print()
-    print("  Opening it in a browser. It is the same wizard, and this terminal")
-    print("  follows along. From another machine, open:")
+    if is_opened:
+        print("  Opening it in a browser. It is the same wizard, and this terminal")
+        print("  follows along. From another machine, open:")
+    else:
+        print("  Answer it in a browser — it is the same wizard, and this terminal")
+        print("  follows along. From any machine that can reach this one, open:")
     print()
     for url in urls:
         print(f"    {url}?token={token}")
     print()
     print("  The link is good for this run only.")
     print()
-    print("  If it did not open, you can answer here instead.")
+    print("  Or answer here instead.")
     print()
     # No newline, and flushed: this is a prompt somebody is looking at, and
     # stdout is only line-buffered when it is a terminal. Nothing else is

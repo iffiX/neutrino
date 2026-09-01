@@ -60,13 +60,6 @@ export const NAV_ITEMS: NavItem[] = [
     group: "core",
   },
   {
-    path: "/netbird",
-    label: "NetBird",
-    icon: "link",
-    description: "Remote access to this gateway",
-    group: "core",
-  },
-  {
     path: "/devices",
     label: "Devices",
     icon: "devices",
@@ -103,6 +96,14 @@ export const NAV_ITEMS: NavItem[] = [
   },
   // Named for the service, because that is what the page configures: someone
   // arriving to change a share is looking for samba, not for "Files".
+  {
+    path: "/netbird",
+    label: "NetBird",
+    icon: "link",
+    description: "Remote access to this gateway",
+    group: "optional",
+    service: "netbird",
+  },
   {
     path: "/samba",
     label: "Samba",

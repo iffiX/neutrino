@@ -17,10 +17,8 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_DNS_TAG,
     XRAY_EGRESS_MARK,
     XRAY_NODE_TAG_PREFIX,
-    XRAY_SOCKS_DIRECT_PORT,
-    XRAY_SOCKS_DIRECT_TAG,
-    XRAY_SOCKS_PROXY_PORT,
-    XRAY_SOCKS_PROXY_TAG,
+    XRAY_SOCKS_LISTEN,
+    XRAY_SOCKS_TAG,
     XRAY_TPROXY_LISTEN,
     XRAY_TPROXY_PORT,
     XRAY_TPROXY_TAG,
@@ -39,9 +37,9 @@ class XrayConfigRenderer:
 
     Four inbounds are always present. ``tproxy_in`` receives everything the
     router diverts from the LAN and goes to the balancer. ``socks_direct_in``
-    listens on the LAN and goes straight out the WAN, so applications that must
-    look like they come from this network (remote desktop back home, for one)
-    have a path that skips the proxy. ``dns_in`` is dnsmasq's only upstream.
+    goes straight out the WAN, so applications that must look like they come
+    from this network (remote desktop back home, for one) have a path that
+    skips the proxy. ``dns_in`` is dnsmasq's only upstream.
     ``api_in`` exposes traffic statistics to the panel on loopback.
     """
 
@@ -50,25 +48,25 @@ class XrayConfigRenderer:
         *,
         node_list: XrayNodeList,
         routing: dict,
-        lan_address: str,
     ):
         """
         Args:
             node_list: Parsed ``config/xray/nodes.json``.
             routing: Parsed ``config/xray/routing.json``.
-            lan_address: Address the direct SOCKS inbound binds to.
 
         Raises:
             ValueError: If no node is enabled, since the balancer would have
                 nothing to select and every proxied connection would fail.
         """
         self._is_proxy_enabled = routing.get("is_proxy_enabled", True)
-        self._is_socks_direct_enabled = routing.get("is_socks_direct_enabled", True)
-        self._socks_direct_port = routing.get(
-            "socks_direct_port", XRAY_SOCKS_DIRECT_PORT
-        )
-        self._is_socks_proxy_enabled = routing.get("is_socks_proxy_enabled", False)
-        self._socks_proxy_port = routing.get("socks_proxy_port", XRAY_SOCKS_PROXY_PORT)
+        # A proxied listener with the proxy off would answer and send
+        # everything out directly under a name that says the opposite, so it
+        # is not published at all in that state.
+        self._socks_ports = [
+            entry
+            for entry in routing.get("socks_ports", [])
+            if self._is_proxy_enabled or not entry.get("is_proxied", False)
+        ]
         if self._is_proxy_enabled and not node_list.enabled_nodes:
             raise ValueError(
                 "no enabled nodes in config/xray/nodes.json; "
@@ -76,7 +74,6 @@ class XrayConfigRenderer:
             )
         self._node_list = node_list
         self._routing = routing
-        self._lan_address = lan_address
 
     def render(self) -> dict:
         """Render the whole configuration.
@@ -163,34 +160,36 @@ class XrayConfigRenderer:
                 },
             },
         ]
-        if self._is_socks_direct_enabled:
-            # A second way out of the box, and the one an application is
-            # pointed at by hand, so it is published only when asked for.
+        # One inbound per published port, tagged by the port so a rule can name
+        # exactly the listeners that leave one way.
+        for entry in self._socks_ports:
             inbounds.append(
                 {
-                    "tag": XRAY_SOCKS_DIRECT_TAG,
-                    "listen": self._lan_address,
-                    "port": self._socks_direct_port,
-                    "protocol": "socks",
-                    "settings": {"udp": True, "auth": "noauth"},
-                    "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
-                }
-            )
-        if self._is_socks_proxy_enabled and self._is_proxy_enabled:
-            # The way in for a box that diverts nothing: what arrives here
-            # leaves through the exit nodes, split the same way forwarded
-            # traffic is.
-            inbounds.append(
-                {
-                    "tag": XRAY_SOCKS_PROXY_TAG,
-                    "listen": self._lan_address,
-                    "port": self._socks_proxy_port,
+                    "tag": XRAY_SOCKS_TAG.format(port=entry["port"]),
+                    "listen": XRAY_SOCKS_LISTEN,
+                    "port": entry["port"],
                     "protocol": "socks",
                     "settings": {"udp": True, "auth": "noauth"},
                     "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
                 }
             )
         return inbounds
+
+    def _socks_tags(self, *, is_proxied: bool) -> list[str]:
+        """The inbound tags of the listeners that leave one way.
+
+        Args:
+            is_proxied: True for the ones going out through an exit node,
+                False for the ones leaving directly.
+
+        Returns:
+            One tag per matching listener, in configuration order.
+        """
+        return [
+            XRAY_SOCKS_TAG.format(port=entry["port"])
+            for entry in self._socks_ports
+            if bool(entry.get("is_proxied", False)) is is_proxied
+        ]
 
     def _render_outbounds(self) -> list[dict]:
         outbounds = (
@@ -256,11 +255,12 @@ class XrayConfigRenderer:
                 "outboundTag": XRAY_API_TAG,
             },
         ]
-        if self._is_socks_direct_enabled:
+        direct_ports = self._socks_tags(is_proxied=False)
+        if direct_ports:
             rules.append(
                 {
                     "type": "field",
-                    "inboundTag": [XRAY_SOCKS_DIRECT_TAG],
+                    "inboundTag": direct_ports,
                     "outboundTag": XRAY_DIRECT_TAG,
                 }
             )
@@ -296,9 +296,7 @@ class XrayConfigRenderer:
             )
             return {"domainStrategy": "IPIfNonMatch", "rules": rules}
 
-        proxied = [XRAY_TPROXY_TAG, XRAY_DNS_TAG]
-        if self._is_socks_proxy_enabled:
-            proxied.append(XRAY_SOCKS_PROXY_TAG)
+        proxied = [XRAY_TPROXY_TAG, XRAY_DNS_TAG] + self._socks_tags(is_proxied=True)
         rules.append(
             {
                 "type": "field",

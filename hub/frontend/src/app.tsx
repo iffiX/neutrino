@@ -3,9 +3,9 @@ import { BrowserRouter } from "react-router-dom";
 
 import { AuthenticatedRoutes } from "./authenticated_routes";
 import { AuthProvider } from "./auth_provider";
-import { SetupPage } from "./pages/setup_page";
+import { SetupPage, SetupTokenMissing } from "./pages/setup_page";
 import type { SetupContext } from "./setup_api";
-import { readSetupContext, setupToken } from "./setup_api";
+import { isSetupWaiting, readSetupContext, setupToken } from "./setup_api";
 
 /**
  * The application root.
@@ -16,35 +16,60 @@ import { readSetupContext, setupToken } from "./setup_api";
  *
  * Before there is a panel there is no session to provide: `nhub setup` serves
  * this same bundle on a one-time token while it waits for the first run to be
- * answered in a browser. A token in the address is what says so, and it is
- * checked against the server rather than believed, so a link kept in somebody's
- * history opens the panel it now points at.
+ * answered in a browser. Which of the two is serving is asked of the server
+ * rather than read off the address, because a link that has lost its token is
+ * exactly the case where the address says nothing — and drawing the panel's
+ * login card over a box that has no panel is how that ends up looking like a
+ * broken API rather than a missing link.
  */
+type Showing = "checking" | "panel" | "wizard" | "needs_token";
+
 export function App() {
   const token = setupToken();
   const [context, setContext] = useState<SetupContext | null>(null);
-  const [isChecked, setIsChecked] = useState(token === "");
+  const [showing, setShowing] = useState<Showing>("checking");
 
   useEffect(() => {
-    if (token === "") {
-      return;
-    }
     let isCancelled = false;
-    readSetupContext(token)
-      .then((answer) => !isCancelled && setContext(answer))
-      .catch(() => {
-        // Not a box waiting to be set up, so this is the panel.
-      })
-      .finally(() => !isCancelled && setIsChecked(true));
+    void (async () => {
+      if (!(await isSetupWaiting())) {
+        if (!isCancelled) {
+          setShowing("panel");
+        }
+        return;
+      }
+      if (token === "") {
+        if (!isCancelled) {
+          setShowing("needs_token");
+        }
+        return;
+      }
+      try {
+        const answer = await readSetupContext(token);
+        if (!isCancelled) {
+          setContext(answer);
+          setShowing("wizard");
+        }
+      } catch {
+        // The server is the wizard's, so the token is the thing that is
+        // wrong: stale, mistyped, or from a run that has since ended.
+        if (!isCancelled) {
+          setShowing("needs_token");
+        }
+      }
+    })();
     return () => {
       isCancelled = true;
     };
   }, [token]);
 
-  if (!isChecked) {
+  if (showing === "checking") {
     return null;
   }
-  if (context !== null) {
+  if (showing === "needs_token") {
+    return <SetupTokenMissing />;
+  }
+  if (showing === "wizard" && context !== null) {
     return <SetupPage token={token} context={context} />;
   }
   return (

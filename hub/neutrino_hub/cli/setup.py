@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 import shutil
+import signal
 import socket
 import sys
 import tempfile
@@ -26,6 +27,7 @@ from functools import partial
 from pathlib import Path
 
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
+from neutrino_hub.modules.router.link_status import RouterLinkStatus
 from neutrino_hub.modules.router.routes import RouterInterfaceApplier
 from neutrino_hub.system.constants import (
     SYSTEM_CHECKOUT_PACKAGES,
@@ -70,6 +72,7 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_VERSION,
 )
 
+from neutrino_hub.modules.router import links
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
 from neutrino_hub.web.constants import (
     WEB_DEFAULT_LISTEN_PORT,
@@ -100,6 +103,13 @@ SETUP_CORE_SERVICES = ("router", "xray", "dnsmasq", "web")
 # without it is a box nobody is sitting at, and its setup stays in the
 # terminal rather than printing a link nothing will follow.
 SETUP_BROWSER_OPENER = "xdg-open"
+# The distribution's own unit. It ships an ExecReload, which is what a
+# newly written jail wants.
+SETUP_FAIL2BAN_UNIT = "fail2ban"
+# Where the run is written down as well as printed. A first run
+# reconfigures the interface it is often watched over, so the terminal can
+# go away in the middle of one — this is where to read what happened.
+SETUP_LOG_PATH = UTILS_LOG_DIR / "setup.log"
 # Asking for this port is asking the operating system for whichever one is
 # free, which is what the wizard falls back to when the panel's is taken.
 SETUP_BROWSER_ANY_PORT = 0
@@ -108,6 +118,7 @@ CONFIG_FILES = (
     "xray/nodes.json",
     "xray/routing.json",
     "router/network.json",
+    "router/connections.json",
     "web/settings.json",
     "samba/samba.json",
     "gitea/gitea.json",
@@ -160,7 +171,9 @@ def main() -> int:
     is_coloured = not os.environ.get("NO_COLOR") and sys.stdout.isatty()
     if server is None:
         reporter = InstallReporter(
-            total_step_count=len(steps) + 2, is_color_enabled=is_coloured
+            total_step_count=len(steps) + 2,
+            is_color_enabled=is_coloured,
+            log_path=SETUP_LOG_PATH,
         )
     else:
         steps = _panel_started_last(steps)
@@ -168,6 +181,7 @@ def main() -> int:
             session=server.session,
             total_step_count=len(steps) + 2,
             is_color_enabled=is_coloured,
+            log_path=SETUP_LOG_PATH,
         )
     return _setup(reporter, steps, answers, server=server)
 
@@ -205,30 +219,38 @@ def _answers(arguments):
 def _browser_answers():
     """Open the questions in a browser, and wait for them to come back.
 
+    The page is offered whatever this machine is. A box being set up over SSH
+    has no browser of its own and every reason to be answered from one: the
+    person is sitting at a machine that has one, and the terminal prints the
+    address to open. Only somebody pressing Enter goes to the terminal's own
+    screens.
+
     Returns:
-        The answers and the server they arrived on, or None when there is no
-        browser to open or whoever is at the keyboard would rather answer in
+        The answers and the server they arrived on, or None when the server
+        cannot be started or whoever is at the keyboard would rather answer in
         the terminal.
 
     Raises:
         WizardAborted: When this machine has nothing to configure.
     """
-    if shutil.which(SETUP_BROWSER_OPENER) is None:
-        # Nothing here can open a page, so a link would be a line nobody
-        # follows. The terminal's own screens are the whole wizard.
-        wizard.welcome()
-        return None
     session = WebSetupSession(context=wizard.context())
     server = _browser_server(session)
     if server is None:
+        # No port to answer on, so there is no page to offer. The terminal's
+        # own screens are the whole wizard.
         wizard.welcome()
         return None
-    _open_browser(f"http://127.0.0.1:{server.port}/?token={session.token}")
+    # Something here may be able to open a page; where nothing can, the
+    # addresses printed below are how it is reached.
+    is_opened = shutil.which(SETUP_BROWSER_OPENER) is not None
+    if is_opened:
+        _open_browser(f"http://127.0.0.1:{server.port}/?token={session.token}")
     while True:
         is_answered = wizard.offer_browser(
             urls=_reachable_urls(server.port),
             token=session.token,
             arrived=lambda: bool(session.wait(WEB_SETUP_WAIT_S)),
+            is_opened=is_opened,
         )
         if not is_answered:
             server.stop()
@@ -398,18 +420,32 @@ def _setup(reporter: InstallReporter, steps: list, answers, *, server=None) -> i
     Returns:
         Process exit status.
     """
+    # From here the machine is being changed, and the session watching it is
+    # often held over an interface this run is about to reconfigure. A hang-up
+    # from that must not end the run: a first run stopped halfway leaves a box
+    # that is neither what it was nor what it was asked to be, and nobody is
+    # there to see which. Every line is already going to the log as well, so
+    # what happened is readable after reconnecting.
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
     reporter.banner("Neutrino Hub setup")
+    # Before the first step rather than after the last: somebody who loses the
+    # session at step nine needs to have already read where to look.
+    reporter.note(f"this run is written to {SETUP_LOG_PATH}")
+    reporter.note(
+        "The initialization process will finish on its own, network might be "
+        "interrupted, please reconnect when interruption happens"
+    )
+    reporter.blank()
     for description, step in steps:
         reporter.start(description)
         try:
-            note, is_changed = step(reporter)
+            note = step(reporter)
         except (CommandError, OSError, ValueError) as error:
             reporter.failed(str(error))
-            return 1
-        if is_changed:
-            reporter.done(note)
-        else:
-            reporter.skipped(note)
+            if step not in SETUP_STEPS_THE_BOX_SURVIVES:
+                return 1
+            continue
+        reporter.done(note)
         if step is _step_config_files:
             # After the examples land and before anything applies them: what
             # the wizard planned replaces the three-port appliance and the
@@ -430,9 +466,11 @@ def _setup(reporter: InstallReporter, steps: list, answers, *, server=None) -> i
         try:
             note = _install_service(name, reporter)
         except (CommandError, OSError, ValueError, RuntimeError) as error:
-            # One optional module refusing is not a failed setup: the gateway
-            # is already a gateway, and the Services page can try again.
-            reporter.skipped(f"not installed: {error}")
+            # Reported as the failure it is, and then the run goes on: one
+            # optional module refusing is not a failed setup, because the
+            # gateway is already a gateway and the Services page can try
+            # again.
+            reporter.failed(f"not installed: {error}")
             continue
         reporter.done(note)
 
@@ -554,10 +592,16 @@ def _write_proxy(proxy) -> None:
     routing = read_config("xray/routing.json")
     routing["is_proxy_enabled"] = proxy.is_enabled
     routing["is_local_proxy_enabled"] = proxy.is_enabled and proxy.is_local
-    routing["is_socks_proxy_enabled"] = proxy.is_socks_proxy_enabled
-    routing["socks_proxy_port"] = proxy.socks_proxy_port
-    routing["is_socks_direct_enabled"] = proxy.is_socks_direct_enabled
-    routing["socks_direct_port"] = proxy.socks_direct_port
+    # Two questions, one list: a listener is a port and which way what
+    # arrives there leaves, and the wizard asks about one of each kind.
+    ports = []
+    if proxy.is_socks_proxy_enabled:
+        ports.append({"port": proxy.socks_proxy_port, "is_proxied": True})
+    if proxy.is_socks_direct_enabled and proxy.socks_direct_port != (
+        proxy.socks_proxy_port if proxy.is_socks_proxy_enabled else 0
+    ):
+        ports.append({"port": proxy.socks_direct_port, "is_proxied": False})
+    routing["socks_ports"] = ports
     write_config("xray/routing.json", routing)
 
 
@@ -627,24 +671,31 @@ def _panel_url() -> str:
     """Where the panel answers, as the machine in front of it would reach it.
 
     Returns:
-        The LAN address a served interface carries, and the hostname when no
-        interface has been given a LAN role yet.
+        The address of a network this box serves, or of an interface it
+        answers on where it serves none — which is every address a server has
+        — and the hostname when it has neither.
     """
     port = _configured_port()
-    for interface in _network_config().interfaces:
+    network = _network_config()
+    for interface in network.interfaces:
         if interface.role == "lan" and interface.lan.address:
             return f"http://{interface.lan.address}:{port}"
+    status = RouterLinkStatus()
+    for name in network.exposed_device_names:
+        address = status.link(name).ipv4_address
+        if address:
+            return f"http://{address.partition('/')[0]}:{port}"
     return f"http://{socket.gethostname()}:{port}"
 
 
-def _step_cliproxyapi(reporter: InstallReporter) -> tuple[str, bool]:
+def _step_cliproxyapi(reporter: InstallReporter) -> str:
     result = CliproxyApiProvisioner().provision(report=reporter.note)
     if result.is_changed:
         reporter.note("add providers on the panel's Credentials page")
-    return result.message, result.is_changed
+    return result.message
 
 
-def _step_required_packages(reporter: InstallReporter) -> tuple[str, bool]:
+def _step_required_packages(reporter: InstallReporter) -> str:
     """Check what the hub cannot run without is here, and install nothing.
 
     A package declares these as its dependencies, so on a packaged machine the
@@ -670,30 +721,42 @@ def _step_required_packages(reporter: InstallReporter) -> tuple[str, bool]:
         )
     missing = [name for name in wanted if not controller.is_installed(name)]
     if not missing:
-        return f"{len(wanted)} present", False
+        return f"{len(wanted)} present"
     raise CommandError(
         f"missing: {', '.join(missing)}\n"
         f"  install them first: {controller.install_command(tuple(missing))}"
     )
 
 
-def _step_fail2ban(reporter: InstallReporter) -> tuple[str, bool]:
+def _step_fail2ban(reporter: InstallReporter) -> str:
     """Point fail2ban at SSH with the escalating ban ladder."""
     if (
         SYSTEM_FAIL2BAN_JAIL_PATH.is_file()
         and SYSTEM_FAIL2BAN_JAIL_PATH.read_text(encoding="utf-8")
         == SYSTEM_FAIL2BAN_JAIL
     ):
-        return "already guarding ssh", False
+        return "already guarding ssh"
     SYSTEM_FAIL2BAN_JAIL_PATH.parent.mkdir(parents=True, exist_ok=True)
     SYSTEM_FAIL2BAN_JAIL_PATH.write_text(SYSTEM_FAIL2BAN_JAIL, encoding="utf-8")
-    run(["systemctl", "enable", "--now", "fail2ban"], is_checked=False)
-    run(["systemctl", "restart", "fail2ban"], is_checked=False)
+    run(["systemctl", "enable", SETUP_FAIL2BAN_UNIT], is_checked=False)
+    # Reload if it is up, start it if it is not — and never both. Starting it
+    # with `--now` and then restarting it races the unit against itself: the
+    # restart's stop half runs `fail2ban-client stop` before the server it
+    # just started has made its socket, that fails with 255, and systemd
+    # falls back to signalling and waits out the stop timeout. What the jail
+    # written a line above actually needs is a reload.
+    is_running = run(
+        ["systemctl", "is-active", "--quiet", SETUP_FAIL2BAN_UNIT], is_checked=False
+    ).is_success
+    run(
+        ["systemctl", "reload" if is_running else "start", SETUP_FAIL2BAN_UNIT],
+        is_checked=False,
+    )
     reporter.note("ssh failures now ban the source, 30 seconds up to a day")
-    return "ssh guarded", True
+    return "ssh guarded"
 
 
-def _step_users_and_dirs(reporter: InstallReporter) -> tuple[str, bool]:
+def _step_users_and_dirs(reporter: InstallReporter) -> str:
     is_changed = False
     if not run(["id", SYSTEM_XRAY_USER], is_checked=False).is_success:
         run(
@@ -726,12 +789,12 @@ def _step_users_and_dirs(reporter: InstallReporter) -> tuple[str, bool]:
     for log_path in UTILS_LOG_DIR.glob("xray_*.log"):
         shutil.chown(log_path, user=SYSTEM_XRAY_USER)
     SAMBA_DEFAULT_SHARE_DIR.chmod(0o2775)
-    return ("created user and directories" if is_changed else "present"), is_changed
+    return "created user and directories" if is_changed else "present"
 
 
-def _step_python_env(reporter: InstallReporter) -> tuple[str, bool]:
+def _step_python_env(reporter: InstallReporter) -> str:
     if is_packaged():
-        return "carried by the package", False
+        return "carried by the package"
     interpreter = venv_python()
     is_changed = False
     if not interpreter.is_file():
@@ -746,7 +809,7 @@ def _step_python_env(reporter: InstallReporter) -> tuple[str, bool]:
         is_checked=False,
     )
     if probe.is_success and not is_changed:
-        return "dependencies present", False
+        return "dependencies present"
     reporter.note("installing panel dependencies from pyproject.toml")
     run(
         [str(interpreter), "-m", "pip", "install", "--quiet", "--upgrade", "pip"],
@@ -764,10 +827,10 @@ def _step_python_env(reporter: InstallReporter) -> tuple[str, bool]:
         ],
         timeout_s=900,
     )
-    return "environment ready", True
+    return "environment ready"
 
 
-def _step_xray_core(reporter: InstallReporter) -> tuple[str, bool]:
+def _step_xray_core(reporter: InstallReporter) -> str:
     is_changed = False
     if not Path(XRAY_BINARY).is_file():
         if is_packaged():
@@ -791,8 +854,8 @@ def _step_xray_core(reporter: InstallReporter) -> tuple[str, bool]:
         is_changed = True
     if not is_changed:
         version = run([XRAY_BINARY, "version"], is_checked=False).stdout
-        return version.splitlines()[0] if version else "present", False
-    return f"xray {XRAY_VERSION} and the databases", True
+        return version.splitlines()[0] if version else "present"
+    return f"xray {XRAY_VERSION} and the databases"
 
 
 def _fetch_xray_binary() -> None:
@@ -848,7 +911,7 @@ def _fetch_pinned(url: str, sha256: str, target: Path) -> None:
         shutil.move(str(staged), target)
 
 
-def _step_config_files(reporter: InstallReporter) -> tuple[str, bool]:
+def _step_config_files(reporter: InstallReporter) -> str:
     created = []
     for relative_path in CONFIG_FILES:
         real_path = UTILS_CONFIG_DIR / relative_path
@@ -864,18 +927,18 @@ def _step_config_files(reporter: InstallReporter) -> tuple[str, bool]:
         real_path.chmod(0o600)
         created.append(relative_path)
     if not created:
-        return f"{len(CONFIG_FILES)} files present", False
+        return f"{len(CONFIG_FILES)} files present"
     reporter.note(f"copied from examples: {', '.join(created)}")
-    return f"created {len(created)}", True
+    return f"created {len(created)}"
 
 
-def _step_systemd_units(reporter: InstallReporter) -> tuple[str, bool]:
+def _step_systemd_units(reporter: InstallReporter) -> str:
     written = SystemdUnitInstaller().install()
     is_changed = bool(written)
     for unit, note in DISTRIBUTION_UNITS_MASKED.items():
         if _mask_distribution_unit(reporter, unit, note):
             is_changed = True
-    return (f"wrote {', '.join(written)}" if written else "unchanged"), is_changed
+    return f"wrote {', '.join(written)}" if written else "unchanged"
 
 
 def _mask_distribution_unit(reporter: InstallReporter, unit: str, note: str) -> bool:
@@ -923,22 +986,24 @@ def _network_config() -> RouterNetworkConfig:
     return RouterNetworkConfig.from_dict(read_config("router/network.json"))
 
 
-def _step_interfaces(reporter: InstallReporter) -> tuple[str, bool]:
+def _step_interfaces(reporter: InstallReporter) -> str:
     network = _network_config()
     if not network.interfaces:
         reporter.note(
             "no interface has a role yet; open the Network tab to assign them"
         )
-        return "nothing configured", False
+        return "nothing configured"
+    if not network.is_addressing_owned:
+        return "this machine addresses its own interfaces"
     changes = RouterInterfaceApplier(network=network).apply_all()
     if not changes:
-        return "already as configured", False
+        return "already as configured"
     for change in changes:
         reporter.note(change)
-    return f"{len(changes)} interface changes", True
+    return f"{len(changes)} interface changes"
 
 
-def _step_render_all(reporter: InstallReporter) -> tuple[str, bool]:
+def _step_render_all(reporter: InstallReporter) -> str:
     render_script = UTILS_PACKAGE_ROOT / "cli" / "apply.py"
     result = run(
         [sys.executable, str(render_script), "--skip-apply"],
@@ -949,10 +1014,10 @@ def _step_render_all(reporter: InstallReporter) -> tuple[str, bool]:
         raise CommandError(
             f"rendering failed; fix config/ and re-run:\n{result.stdout}{result.stderr}"
         )
-    return f"generated {UTILS_GENERATED_DIR}", True
+    return f"generated {UTILS_GENERATED_DIR}"
 
 
-def _step_enable_services(reporter: InstallReporter) -> tuple[str, bool]:
+def _step_enable_services(reporter: InstallReporter) -> str:
     controller = SystemdServiceController()
     enabled = []
     for name in SETUP_CORE_SERVICES:
@@ -962,13 +1027,13 @@ def _step_enable_services(reporter: InstallReporter) -> tuple[str, bool]:
         controller.control(name, "enable")
         enabled.append(name)
     if not enabled:
-        return "already enabled", False
-    return f"enabled {', '.join(enabled)}", True
+        return "already enabled"
+    return f"enabled {', '.join(enabled)}"
 
 
 def _step_start_services(
     reporter: InstallReporter, *, names: tuple = SETUP_CORE_SERVICES
-) -> tuple[str, bool]:
+) -> str:
     controller = SystemdServiceController()
     started = []
     for name in names:
@@ -977,8 +1042,14 @@ def _step_start_services(
             continue
         controller.control(name, "restart")
         started.append(name)
-    return f"restarted {', '.join(started)}", True
+    return f"restarted {', '.join(started)}"
 
+
+# Steps the box is still a gateway without. One of these failing is said out
+# loud and the run goes on: hardening SSH and installing the AI gateway are
+# both worth having and neither is what makes this a gateway, and a first run
+# that stops at step two over one of them leaves a machine with nothing.
+SETUP_STEPS_THE_BOX_SURVIVES = (_step_fail2ban, _step_cliproxyapi)
 
 # Defined here, after the functions it names. Everything the appliance is not
 # itself without: routing, the proxy core and the AI gateway. Samba, Gitea,
