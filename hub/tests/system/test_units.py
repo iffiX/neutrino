@@ -138,3 +138,21 @@ def test_a_template_nobody_renders_carries_no_placeholder():
 
     assert "@PYTHON@" not in text
     assert "@REPO_ROOT@" not in text
+
+
+def test_the_units_the_panel_restarts_are_not_rate_limited():
+    """systemd stops a unit after five starts in ten seconds and leaves it
+    down until the window clears. The panel restarts these by design — every
+    interface saved, every proxy applied — so a person editing two interfaces
+    in a row lost DHCP and DNS on the LAN, and every apply after that answered
+    with the limiter's own message.
+
+    The directive belongs in [Unit]; systemd ignores it in [Service], which is
+    what makes this worth pinning rather than trusting to review.
+    """
+    from neutrino_hub.utils.constants import UTILS_DATA_DIR
+
+    for name in ("neutrino_hub_dnsmasq.service", "neutrino_hub_xray.service"):
+        text = (UTILS_DATA_DIR / "services" / name).read_text(encoding="utf-8")
+        unit_section = text.split("[Service]")[0]
+        assert "StartLimitIntervalSec=0" in unit_section, name

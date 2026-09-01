@@ -4,6 +4,14 @@ Documentation=https://xtls.github.io
 After=network.target nss-lookup.target neutrino_hub_router.service
 Wants=neutrino_hub_router.service
 
+# The panel restarts this by design: every interface saved, every proxy
+# applied, every mode switched. systemd's default limiter stops a unit after
+# five starts in ten seconds and leaves it down until the window clears — so a
+# person editing two interfaces in a row loses DHCP and DNS on the LAN, and
+# every later apply answers with the limiter's own message. What keeps a
+# failing service from spinning is RestartSec, not this.
+StartLimitIntervalSec=0
+
 [Service]
 Type=simple
 # Unprivileged, with the two capabilities transparent proxying needs: TPROXY

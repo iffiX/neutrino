@@ -916,6 +916,15 @@ def _validate(
     elif settings.role == ROUTER_ROLE_SPLIT:
         if link.kind != LINK_KIND_ETHERNET:
             raise _bad_request("only a wired port can be split into VLANs")
+    # Both blocks are checked whatever the role is live. Every interface keeps
+    # all of them so that switching a port back and forth loses nothing, and
+    # splitting one copies them verbatim onto the untagged main — so a value
+    # stored under a role nobody is using becomes the value that is applied
+    # the moment somebody selects it.
+    if settings.wan.cloned_mac and not re.match(
+        ROUTER_MAC_PATTERN, settings.wan.cloned_mac
+    ):
+        raise _bad_request(f"{settings.wan.cloned_mac!r} is not a MAC address")
     if settings.role == ROUTER_ROLE_LAN:
         _validate_lan(settings, link=link, network=network)
     elif settings.role == ROUTER_ROLE_WAN:
@@ -1033,8 +1042,6 @@ def _validate_wan(settings: InterfaceSettings) -> None:
     wan = settings.wan
     if wan.intent not in ROUTER_INTENTS:
         raise _bad_request(f"unknown uplink intent {wan.intent!r}")
-    if wan.cloned_mac and not re.match(ROUTER_MAC_PATTERN, wan.cloned_mac):
-        raise _bad_request(f"{wan.cloned_mac!r} is not a MAC address")
     if wan.method != ROUTER_WAN_METHOD_STATIC:
         return
     _require_prefix_len(wan.prefix_len)

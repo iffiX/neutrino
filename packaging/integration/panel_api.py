@@ -204,6 +204,11 @@ def _exposure_cases(ports: list) -> None:
 
 
 def _mode_cases(ports: list) -> None:
+    # From a known shape, so the walk below means the same thing whatever the
+    # machine was left as. Applying the mode it is already in is a no-op by
+    # design — the panel cannot press Apply on an unchanged box — so a run
+    # starting in the mode it wants to test would test nothing.
+    call("PUT", "/network/mode", {"mode": "server"})
     for mode in ("side_gateway", "router", "server"):
         check_status(f"become a {mode}", "PUT", "/network/mode", {"mode": mode}, 200)
         _, view = call("GET", "/network")

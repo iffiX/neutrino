@@ -783,11 +783,14 @@ def test_a_lease_time_dnsmasq_cannot_read_is_refused(box, lease):
 
 
 @pytest.mark.parametrize("mac", ["hello", "aa:bb:cc:dd:ee", "aa-bb-cc-dd-ee-ff-00"])
-def test_a_cloned_mac_that_is_not_one_is_refused(box, mac):
-    """The kernel refuses it after it is already in `config/`, where it fails
-    every apply from then on — the panel's and the one at boot."""
+@pytest.mark.parametrize("role", ["wan", "lan", "disabled"])
+def test_a_cloned_mac_that_is_not_one_is_refused(box, mac, role):
+    """Checked whatever role is live. Every interface keeps all three settings
+    blocks, and splitting a port copies them onto the untagged main, so a bad
+    value parked under a role nobody is using is the value that gets applied
+    the moment somebody selects it."""
     client, _, _ = box
-    draft = settings_of(client, "enp2s0")
+    draft = dict(settings_of(client, "enp2s0"), role=role)
     draft["wan"]["cloned_mac"] = mac
 
     response = client.put("/api/network/interfaces/enp2s0", json=draft)
