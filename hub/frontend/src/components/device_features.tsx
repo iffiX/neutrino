@@ -65,11 +65,15 @@ interface AskedStep {
 
 interface DeviceFeaturesProps {
   macAddress: string;
-  hasAgent: boolean;
 }
 
-export function DeviceFeatures({ macAddress, hasAgent }: DeviceFeaturesProps) {
+export function DeviceFeatures({ macAddress }: DeviceFeaturesProps) {
   const [reported, setReported] = useState<DeviceFeatureView[]>([]);
+  // Whether the agent is installed, and whether it is answering. Both come
+  // from the same response the features do, because they are what makes the
+  // features readable: every state below is the agent's report, so with no
+  // agent answering they are all unknown rather than all absent.
+  const [agent, setAgent] = useState({ isInstalled: false, isOnline: false });
   const [asked, setAsked] = useState<Record<string, AskedStep>>({});
   const [error, setError] = useState<string | null>(null);
 
@@ -79,6 +83,10 @@ export function DeviceFeatures({ macAddress, hasAgent }: DeviceFeaturesProps) {
         `/devices/${macAddress}/features`,
       );
       setReported(response.features);
+      setAgent({
+        isInstalled: response.is_agent_installed,
+        isOnline: response.is_agent_online,
+      });
     } catch (cause: unknown) {
       setError(describeError(cause));
     }
@@ -142,6 +150,10 @@ export function DeviceFeatures({ macAddress, hasAgent }: DeviceFeaturesProps) {
         wish,
       );
       setReported(response.features);
+      setAgent({
+        isInstalled: response.is_agent_installed,
+        isOnline: response.is_agent_online,
+      });
     } catch (cause: unknown) {
       setError(describeError(cause));
       setAsked((current) => {
@@ -155,16 +167,24 @@ export function DeviceFeatures({ macAddress, hasAgent }: DeviceFeaturesProps) {
   return (
     <div className="device_drawer_section">
       <span className="section_label">Modules</span>
-      {!hasAgent && (
+      {!agent.isInstalled && (
         <span className="field_hint">
           Install the agent to have these installed and kept in place.
+        </span>
+      )}
+      {agent.isInstalled && !agent.isOnline && (
+        <span className="field_hint">
+          The agent is not checking in, so what is on this device is unknown.
+          What it was last told to run is shown; nothing can be changed until it
+          answers.
         </span>
       )}
       {error !== null && <span className="field_error">{error}</span>}
       <div className="device_features">
         {features.map((feature) => {
           const isBusy = BUSY_STATES.includes(feature.state);
-          const isActionable = feature.is_supported && hasAgent && !isBusy;
+          const isActionable =
+            feature.is_supported && agent.isOnline && !isBusy;
           const here = standing(feature);
           return (
             <div key={feature.name} className="device_feature">

@@ -585,10 +585,7 @@ export function DeviceDrawer({
             )}
           </div>
 
-          <DeviceFeatures
-            macAddress={device.mac_address}
-            hasAgent={device.client?.is_installed ?? false}
-          />
+          <DeviceFeatures macAddress={device.mac_address} />
 
           {device.ssh !== null && <RemoteDesktopPanel device={device} />}
 

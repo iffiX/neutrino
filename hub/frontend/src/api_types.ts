@@ -500,6 +500,9 @@ export interface DeviceProcessInfo {
 
 export interface DeviceClientInfo {
   is_installed: boolean;
+  /** Whether the agent is answering now, as opposed to having been installed
+   * once. A stopped agent, or an install that failed, reads installed. */
+  is_online: boolean;
   version: string | null;
   is_version_mismatched: boolean;
   last_seen: string | null;
@@ -533,6 +536,12 @@ export interface DeviceFeatureView {
 
 export interface DeviceFeaturesResponse {
   features: DeviceFeatureView[];
+  /** Whether an agent install was ever asked for. Never cleared by itself. */
+  is_agent_installed: boolean;
+  /** Whether the agent has checked in inside the heartbeat window. Every
+   * feature state below comes from it, so this is what says whether they
+   * mean anything. */
+  is_agent_online: boolean;
 }
 
 /** A link a machine can join the gateway with. */

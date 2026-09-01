@@ -273,8 +273,12 @@ def list_features(
         The features, unsupported ones included so the panel can say why.
     """
     device = DeviceRegistry().get(mac_address)
-    reported = runtime.client_features.get(mac_address, {})
-    platform = runtime.client_platform.get(mac_address, {})
+    # Lowercased, as everything else that keys by MAC is: the registry
+    # normalises on the way in, and looking the runtime up by the raw path
+    # segment finds nothing for a caller that used capitals.
+    key = mac_address.lower()
+    reported = runtime.client_features.get(key, {})
+    platform = runtime.client_platform.get(key, {})
     keys = _platform_keys(platform)
     features = []
     for name, manifest in sorted(load_catalog().items()):
@@ -298,7 +302,11 @@ def list_features(
                 message=status_.get("message", ""),
             )
         )
-    return DeviceFeatureListView(features=features)
+    return DeviceFeatureListView(
+        features=features,
+        is_agent_installed=device.client.is_installed,
+        is_agent_online=_is_agent_online(device),
+    )
 
 
 @router.put("/{mac_address}/features/{feature}", response_model=DeviceFeatureListView)
@@ -640,11 +648,13 @@ def _to_view(device: ManagedDevice, metrics: dict | None = None) -> DeviceView:
             sudo_password=None,
             has_sudo_password=bool(device.ssh.get("sudo_password")),
         )
+    is_agent_online = _is_agent_online(device)
     client_view = None
     if device.client.is_installed:
         latest = metrics or {}
         client_view = DeviceClientInfoView(
             is_installed=True,
+            is_online=is_agent_online,
             version=device.client.version,
             is_version_mismatched=_is_version_mismatched(device.client.version),
             last_seen=device.client.last_seen,
@@ -661,7 +671,6 @@ def _to_view(device: ManagedDevice, metrics: dict | None = None) -> DeviceView:
                 for process in latest.get("processes") or []
             ],
         )
-    is_agent_online = _is_agent_online(device)
     return DeviceView(
         mac_address=device.mac_address,
         ipv4_address=device.ipv4_address,

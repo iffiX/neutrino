@@ -1,0 +1,110 @@
+"""What the Modules block on a device is told, and what it can act on.
+
+The bug these came from: a device showed AnyDesk and ToDesk running in the
+remote-desktop block and "not installed, waiting for the agent" in the module
+list above it. Two halves of one drawer disagreeing, because one asks the
+machine over SSH and the other reads a flag that records only that an install
+was once asked for. `is_installed` is never cleared — not when the install
+fails, not when the agent is stopped, not when somebody removes it by hand —
+so it cannot be what the list is drawn from.
+"""
+
+from datetime import datetime, timedelta, timezone
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice
+from neutrino_hub.web.dependencies import get_runtime, require_session
+from neutrino_hub.web.routers import devices as devices_router
+
+MAC = "aa:bb:cc:dd:ee:ff"
+
+
+class FakeRegistry:
+    device: ManagedDevice
+
+    def get(self, mac_address: str) -> ManagedDevice:
+        return FakeRegistry.device
+
+
+class FakeRuntime:
+    def __init__(self):
+        self.client_features = {}
+        self.client_platform = {}
+        self.client_metrics = {}
+
+
+def beating(seconds_ago: float) -> str:
+    stamp = datetime.now(timezone.utc) - timedelta(seconds=seconds_ago)
+    return stamp.isoformat()
+
+
+@pytest.fixture
+def api(monkeypatch):
+    FakeRegistry.device = ManagedDevice(
+        mac_address=MAC,
+        name="testbox",
+        client=DeviceClientInfo(is_installed=True, token="t"),
+    )
+    monkeypatch.setattr(devices_router, "DeviceRegistry", FakeRegistry)
+    monkeypatch.setattr(
+        devices_router,
+        "load_catalog",
+        lambda: {"anydesk": {"title": "AnyDesk", "platforms": {"debian": {}}}},
+    )
+    app = FastAPI()
+    app.include_router(devices_router.router)
+    app.dependency_overrides[require_session] = lambda: None
+    runtime = FakeRuntime()
+    app.dependency_overrides[get_runtime] = lambda: runtime
+    with TestClient(app) as client:
+        yield client, runtime
+
+
+def test_an_agent_that_has_never_beaten_is_not_online(api):
+    client, _ = api
+
+    answer = client.get(f"/api/devices/{MAC}/features").json()
+
+    assert answer["is_agent_installed"]
+    assert not answer["is_agent_online"]
+
+
+def test_an_agent_that_beat_just_now_is_online(api):
+    client, _ = api
+    FakeRegistry.device.client.last_seen = beating(2)
+
+    answer = client.get(f"/api/devices/{MAC}/features").json()
+
+    assert answer["is_agent_online"]
+
+
+def test_an_agent_that_stopped_beating_is_not_online(api):
+    """Which is the reported bug: the install flag stays true for ever, so
+    this device drew every module as absent while its remote desktop was
+    plainly running."""
+    client, _ = api
+    FakeRegistry.device.client.last_seen = beating(3600)
+
+    answer = client.get(f"/api/devices/{MAC}/features").json()
+
+    assert answer["is_agent_installed"]
+    assert not answer["is_agent_online"]
+
+
+def test_what_the_agent_reported_is_found_whatever_case_the_MAC_is_asked_in(api):
+    """Everything else keys by the lowercased address; looking the runtime up
+    by the raw path segment finds nothing, and every module then reads as
+    waiting for an agent that is in fact answering."""
+    client, runtime = api
+    FakeRegistry.device.client.last_seen = beating(2)
+    runtime.client_features[MAC] = {
+        "anydesk": {"state": "installed", "is_active": True}
+    }
+
+    answer = client.get(f"/api/devices/{MAC.upper()}/features").json()
+
+    assert answer["features"][0]["state"] == "installed"
+    assert answer["features"][0]["is_active"]
