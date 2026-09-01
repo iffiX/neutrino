@@ -95,3 +95,16 @@ ZFS_MODPROBE_CONF = Path("/etc/modprobe.d/99_neutrino_zfs.conf")
 ZFS_ARC_MAX_PARAMETER = Path("/sys/module/zfs/parameters/zfs_arc_max")
 
 ZFS_DISK_BY_ID_DIR = Path("/dev/disk/by-id")
+
+# The hosts whose repositories may have a component added to them. ZFS lives
+# in Debian's own `contrib`, so only Debian's own entries are edited: a vendor
+# repository somebody else installed — NetBird's, docker's — has no such
+# component, and adding it makes every `apt-get update` on the box 404 on a
+# file the vendor never published.
+ZFS_DEBIAN_MIRRORS = (
+    "debian.org",
+    "debian.map.fastlydns.net",
+    "deb.debian.org",
+    "security.debian.org",
+    "ftp.debian.org",
+)

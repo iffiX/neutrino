@@ -34,6 +34,7 @@ from neutrino_hub.system.provisioning import (
 from neutrino_hub.utils.subprocess_run import run
 
 from neutrino_hub.modules.zfs.constants import (
+    ZFS_DEBIAN_MIRRORS,
     ZFS_ARC_MAX_FRACTION,
     ZFS_ARC_MAX_PARAMETER,
     ZFS_ARCH_KEY,
@@ -251,7 +252,7 @@ def _enable_apt_component(component: str) -> None:
             continue
         lines = []
         for line in original.splitlines():
-            lines.append(_line_with_component(line, component))
+            lines.append(_line_with_component(line, component, stanza=original))
         rewritten = "\n".join(lines) + "\n"
         if rewritten != original:
             path.write_text(rewritten, encoding="utf-8")
@@ -270,24 +271,50 @@ def _apt_source_files() -> list:
     return paths
 
 
-def _line_with_component(line: str, component: str) -> str:
+def _is_debian_source(text: str) -> bool:
+    """Whether a repository line or stanza is one of Debian's own.
+
+    `contrib` is a component of Debian's archive. A vendor repository has no
+    such component, so adding it there makes every later `apt-get update` 404
+    on a file that was never published — and the update the panel runs
+    swallows that, so nothing says why installs stopped working.
+
+    Args:
+        text: The line, or the stanza it belongs to.
+
+    Returns:
+        True when it points at a Debian mirror.
+    """
+    return any(mirror in text for mirror in ZFS_DEBIAN_MIRRORS)
+
+
+def _line_with_component(line: str, component: str, *, stanza: str = "") -> str:
     """One repository line with the component added, if it belongs there.
 
     Args:
         line: A line of a sources file, either format.
         component: The component to add.
+        stanza: The deb822 stanza the line sits in, whose URIs say whose
+            repository it is; empty for a one-line entry, which carries its
+            own URI.
 
     Returns:
-        The line, extended when it lists components and does not already name
-        this one.
+        The line, extended when it is Debian's own, lists components, and does
+        not already name this one.
     """
     stripped = line.strip()
     if stripped.startswith("Components:"):
+        if not _is_debian_source(stanza):
+            return line
         listed = stripped[len("Components:") :].split()
         if component in listed:
             return line
         return f"Components: {' '.join(listed + [component])}"
-    if stripped.startswith(("deb ", "deb-src ")) and component not in stripped.split():
+    if (
+        stripped.startswith(("deb ", "deb-src "))
+        and _is_debian_source(stripped)
+        and component not in stripped.split()
+    ):
         return f"{line.rstrip()} {component}"
     return line
 
