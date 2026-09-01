@@ -4,11 +4,16 @@
 #   run_on_box.sh <package file> [server|side_gateway|router]
 #
 # Run on the machine under test, as root. It records what the machine's
-# network is, installs the package, sets the box up in the named mode, runs
-# every check in this directory against it, resets, and checks again. The exit
-# status is the number of phases that failed.
+# network is, installs the package, and then walks the box through the phases
+# below. The exit status is the number of phases that failed.
 #
-# The mode is the whole variable. A guest mode — server or side_gateway — has
+# The order is the argument. A fresh install is measured against the machine
+# it landed on, then handed back and measured again — both of those are about
+# a box nobody has reconfigured. Only then is the box set up a second time and
+# driven through every page, because that walk leaves it as a router with a
+# served network and nothing after it could still ask what the machine was.
+#
+# The mode is the other variable. A guest mode — server or side_gateway — has
 # to leave the machine addressing itself, and that is what the footprint
 # checks are for; router takes the machine over on purpose and skips them.
 set -uo pipefail
@@ -47,7 +52,21 @@ if ! command -v nhub >/dev/null; then
     exit 1
 fi
 
-phase "set up as a $MODE"
+# The checks below are pytest, and a machine under test is a machine with
+# nothing on it. Installed from the distribution rather than pip: the system
+# Python is externally managed on every one of these.
+if ! python3 -m pytest --version >/dev/null 2>&1; then
+    if command -v apt-get >/dev/null; then
+        DEBIAN_FRONTEND=noninteractive apt-get -qq install -y python3-pytest >> /tmp/install.log 2>&1
+    elif command -v dnf >/dev/null; then
+        dnf -q -y install python3-pytest >> /tmp/install.log 2>&1
+    else
+        pacman -S --noconfirm python-pytest >> /tmp/install.log 2>&1
+    fi
+fi
+python3 -m pytest --version >/dev/null 2>&1 || { echo "no pytest on this box"; exit 1; }
+
+write_answers() {
 if [ "$MODE" = server ]; then
     cat > /tmp/answers.json <<JSON
 { "password": "$PASSWORD", "network": { "mode": "server" } }
@@ -77,26 +96,38 @@ else
 }
 JSON
 fi
-nhub setup --yes --stdin < /tmp/answers.json > /tmp/setup.log 2>&1
-ran $?
+}
 
 export NEUTRINO_PANEL_PASSWORD="$PASSWORD"
 export NEUTRINO_BEFORE_STATE="$BEFORE"
 export NEUTRINO_SETUP_MODE="$MODE"
 
-phase "the machine is still its own"
-python3 -m pytest "$HERE/test_install_footprint.py" -q
+phase "set up as a $MODE"
+write_answers
+nhub setup --yes --stdin < /tmp/answers.json > /tmp/setup.log 2>&1
 ran $?
 
-phase "the panel, every page"
-python3 -m pytest "$HERE" -q --ignore="$HERE/test_install_footprint.py" \
-    --ignore="$HERE/test_reset_hands_back.py"
+phase "the machine is still its own"
+python3 -m pytest "$HERE/test_install_footprint.py" -q
 ran $?
 
 phase "reset"
 nhub reset all > /tmp/reset.log 2>&1
 ran $?
 python3 -m pytest "$HERE/test_reset_hands_back.py" -q
+ran $?
+
+phase "set up again, on the box that was just handed back"
+write_answers
+nhub setup --yes --stdin < /tmp/answers.json > /tmp/setup2.log 2>&1
+ran $?
+
+# Last, and it leaves the box a router with a served network on whatever it
+# has: every check after this one would be asking about a machine this walk
+# has already reconfigured.
+phase "the panel, every page"
+python3 -m pytest "$HERE" -q --ignore="$HERE/test_install_footprint.py" \
+    --ignore="$HERE/test_reset_hands_back.py"
 ran $?
 
 echo

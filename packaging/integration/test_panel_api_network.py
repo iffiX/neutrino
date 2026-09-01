@@ -305,9 +305,12 @@ def test_a_served_network_refuses_what_it_cannot_serve(panel, served, label, pat
 
 
 def test_the_name_in_the_path_must_be_the_name_in_the_body(panel, ports, served):
+    other = next((name for name in ports if name != served), "")
+    if not other:
+        pytest.skip("this machine has one interface")
     body = interface_body(panel, served)
 
-    assert panel.status("PUT", f"/network/interfaces/{ports[0]}", body) == 400
+    assert panel.status("PUT", f"/network/interfaces/{other}", body) == 400
 
 
 def test_an_interface_this_machine_lacks_cannot_be_configured(panel, served):

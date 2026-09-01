@@ -1,8 +1,9 @@
 # What was found and what was done
 
-One night's work: the three bugs you hit by hand, then a hunt for the rest.
-Twenty commits, all local — nothing pushed. Every one has tests; the suite is
-681 passed / 12 skipped, black, prettier, eslint and `nhub scan-secrets` clean.
+The three bugs you hit by hand, then a hunt for the rest, then the nine that
+were left over. Every one has tests; the suite is 732 passed / 12 skipped,
+black, prettier, eslint and `nhub scan-secrets` clean, and the integration
+harness is green on a Debian 12 VM from install to reset.
 
 How they were found: four Opus subagents read the Network, Proxy, Devices and
 Services code paths in parallel while I drove a live VM through the panel's own
@@ -127,54 +128,57 @@ port.
   the switch the node list can flip, so it showed "on" while nothing was
   proxied and the control did nothing.
 
-## Left undone, deliberately
+## The nine that were left, and how each was settled
 
-Real, verified, not fixed — each needs a design decision or more surgery than a
-night's unattended work should take:
+All nine are fixed and committed. What each one turned into:
 
-1. **A dropped task socket leaves an undismissable log.** `useTaskStream` sets
-   an error the card never reads, so an install whose websocket drops leaves a
-   truncated log with no result badge and no Close button, and the Services
-   list is never refetched.
-2. **Reloading the browser loses a running install.** Task ids live only in
-   React state; there is no listing endpoint and no way to cancel a job. The
-   card reads "not installed" with a live Install button while the install runs.
-3. **`TaskStreamRegistry` and `runtime.enrollments` never shrink.** Every
-   install, reboot and password set holds up to 2000 lines for the life of the
-   process.
-4. **A rejected xray config aborts the apply before the firewall and resolver
-   are touched** — and a bad entry in the direct lists is read even with the
-   proxy off, so the master switch cannot be used as the escape hatch its
-   documentation promises.
-5. **`is_proxy_in_path()` reads the ruleset file, which is written before it is
-   loaded**, so the dashboard can report where traffic was *about* to go.
-6. **Saving a device blanks its monitor** for one poll: the PUT response is
-   built with no metrics, so the tile flips offline until the next refresh.
-7. **`nhub setup --stdin` asserts consent** on the person's behalf — an answers
-   document naming `zfs` starts a kernel-module build with no consent recorded.
-   The HTTP path is sound; only the file path is not.
-8. **A SOCKS listener on an occupied or privileged port** kills xray and takes
-   LAN DNS with it, while the apply reports success: `xray run -test` builds the
-   config but never binds, and `Type=simple` makes the restart return 0.
-9. **`docs/standard/design/repository_tree.md` is stale** — it describes a
-   layout from before the `hub/` and `agent/` split.
+1. **A dropped task socket left an undismissable log.** The stream hook now
+   reopens once and replays the job from its first line — the panel restarting
+   drops every socket it holds while the jobs behind them carry on. A second
+   close with no result ends as a state the card can close, and refreshes the
+   services list, because whatever the job did before it dropped is on the box.
+2. **Reloading the browser lost a running install.** `GET /api/services/tasks`
+   lists the jobs the panel is running, and the Services page adopts its
+   module's job on load. No cancel: interrupting a package manager leaves dpkg
+   needing `--configure -a`.
+3. **The registry and the enrolment tickets never shrank.** Finished jobs are
+   evicted past the most recent eight, which is what keeps a reopened drawer
+   showing its install; lapsed tickets are swept whenever one is minted, and a
+   ticket is minted only after the link it goes in is known to exist.
+4. **A rejected xray config took the apply with it.** All three parts: the
+   direct lists are checked when they are saved, the master switch off means
+   they are not read at all, and an Apply that xray refuses still loads the
+   firewall and restarts DNS, reporting the refusal.
+5. **`is_proxy_in_path()` read a file written before it was loaded.** The
+   ruleset is now written after the kernel takes it, in both the panel and
+   `nhub apply`.
+6. **Saving a device blanked its monitor.** The PUT answers with the metrics
+   its agent reported, like every other view of a device.
+7. **`nhub setup --stdin` asserted consent.** `--yes` is consent given on the
+   command line; without it a module that does more than install packages is
+   reported as not installed and the rest of the setup goes on.
+8. **A SOCKS listener on a port that cannot be bound.** A port the box already
+   holds is refused when it is saved, and xray is checked alive a second after
+   its restart, with the reason carried out of its journal. No rollback.
+9. **`repository_tree.md` was stale.** Rewritten around the two packages this
+   repository actually ships.
+
+Also asked for and done: every module page carries its unit's state beside the
+title, so an xray that is not running is visible from the page it serves.
 
 ## The harness
 
-`packaging/integration/panel_api.py` — signs in, walks every operation the four
-panels offer, and checks what the box does. 126 checks: deleting to nothing
-(every node, every listener, every VLAN, every exposed interface, fifty devices
-added and forgotten), adding far more than anybody would (30 VLANs, 30
-listeners, 1000 direct domains), and sequences that leave one page's state
-stale in another. It runs on the machine under test, beside the two shell
-matrices, and is deliberately not in pytest — it needs a live box.
+`packaging/integration/` — one pytest file per page (`test_panel_api_network`,
+`_proxy`, `_services`, `_devices`), beside `test_install_footprint.py`, which
+checks a guest install left the machine addressing itself, and
+`test_reset_hands_back.py`, which checks `nhub reset all` gave the network
+back. `run_on_box.sh` walks a machine through the lot: snapshot, install, set
+up, footprint, reset, set up again, then every page.
 
-    python3 panel_api.py <password> [network|proxy|services|devices ...]
+    ./run_on_box.sh /path/to/neutrino-hub_0.1.0_amd64.deb side_gateway
 
-A package was built from this code and both shell matrices run against a clean
-install of it: guest/server untouched on Debian 12, guest/side-gateway
-untouched on Ubuntu 24.04, owner round trip clean on Debian 12. The deb is at
-`~/neutrino_dist/neutrino-hub_0.1.0_amd64.deb` and on xenode.
-
-The VM `apitest` on xenode is patched to this code and green if you want to
-poke at it; `fresh1` is where you left it.
+It needs a live box, so it is outside `hub/tests` and out of CI; without a
+panel password every check skips. The two shell matrices it replaced are gone,
+and what they proved that no API can see — configuration trees byte-identical
+across an install, no manager masked, `resolv.conf` untouched — is
+`machine_state.py` and the two files that read it.

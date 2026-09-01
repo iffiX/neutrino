@@ -17,6 +17,14 @@ def devices(panel) -> list:
     return panel.read("/devices")["devices"]
 
 
+def crowd(panel) -> list:
+    """The devices this file added. A device the box discovered by scanning has
+    no name at all, so the name is read as one it may not have."""
+    return [
+        entry for entry in devices(panel) if (entry["name"] or "").startswith("crowd")
+    ]
+
+
 def named(panel, mac_address: str) -> list:
     """The records held for one address."""
     return [entry for entry in devices(panel) if entry["mac_address"] == mac_address]
@@ -90,15 +98,15 @@ def test_a_crowd_of_devices_is_added_and_forgotten(panel):
     )
     assert made == CROWD_SIZE
 
-    crowd = [entry for entry in devices(panel) if entry["name"].startswith("crowd")]
-    assert len(crowd) == CROWD_SIZE
+    added = crowd(panel)
+    assert len(added) == CROWD_SIZE
 
     gone = sum(
         panel.status("DELETE", f"/devices/{entry['mac_address']}") == 200
-        for entry in crowd
+        for entry in added
     )
     assert gone == CROWD_SIZE
-    assert [e for e in devices(panel) if e["name"].startswith("crowd")] == []
+    assert crowd(panel) == []
 
 
 def test_a_device_is_forgotten(panel):

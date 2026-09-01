@@ -28,7 +28,8 @@ cd packaging/integration
 NEUTRINO_PANEL_PASSWORD=... python3 -m pytest test_panel_api_network.py -q
 ```
 
-The whole lifecycle, from a machine with no hub on it, as root:
+The whole lifecycle, from a machine with no hub on it, as root. It installs
+the distribution's pytest if the box has none:
 
 ```bash
 ./run_on_box.sh /path/to/neutrino-hub_0.1.0_amd64.deb side_gateway
