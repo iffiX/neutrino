@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { ApplyBar } from "../components/apply_bar";
 import { ErrorPanel } from "../components/error_panel";
+import { ServiceStateBadge } from "../components/service_state_badge";
 import { Icon } from "../components/icon";
 import { NodesPanel } from "../components/nodes_panel";
 import { SocksPortsPanel } from "../components/socks_ports_panel";
@@ -171,6 +172,7 @@ export function ProxyPage() {
       <div className="page_header">
         <div className="page_title_row">
           <h1>Proxy</h1>
+          <ServiceStateBadge name="xray" />
           <span
             className={`badge ${draft.is_proxy_enabled ? "badge--ok" : "badge--warn"}`}
           >

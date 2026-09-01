@@ -10,6 +10,7 @@ import { NetworkModePanel } from "../components/network_mode_panel";
 import { PanelPortPanel } from "../components/panel_port_panel";
 import { PasswordInput } from "../components/password_input";
 import { SavedNetworksPanel } from "../components/saved_networks_panel";
+import { ServiceStateBadge } from "../components/service_state_badge";
 import { SignalBars } from "../components/signal_bars";
 import { StatusDot } from "../components/status_dot";
 import { ToggleSwitch } from "../components/toggle_switch";
@@ -338,8 +339,9 @@ export function NetworkPage() {
   return (
     <div className="page">
       <div className="page_header">
-        <div className="page_header_text">
+        <div className="page_title_row">
           <h1>Network</h1>
+          <ServiceStateBadge name="router" />
         </div>
         <div className="page_actions">
           <button

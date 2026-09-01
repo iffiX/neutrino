@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { ApplyBar } from "../components/apply_bar";
 import { ErrorPanel } from "../components/error_panel";
+import { ServiceStateBadge } from "../components/service_state_badge";
 import { Icon } from "../components/icon";
 import { PasswordInput } from "../components/password_input";
 import { StatusDot } from "../components/status_dot";
@@ -196,13 +197,7 @@ export function SambaPage() {
       <div className="page_header">
         <div className="page_title_row">
           <h1>Samba</h1>
-          {status.data !== null && (
-            <span
-              className={`badge ${status.data.is_active ? "badge--ok" : "badge--warn"}`}
-            >
-              {status.data.is_active ? "serving" : "stopped"}
-            </span>
-          )}
+          <ServiceStateBadge name="samba" />
         </div>
       </div>
 

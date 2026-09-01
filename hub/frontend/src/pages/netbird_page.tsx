@@ -4,6 +4,7 @@ import { ErrorPanel } from "../components/error_panel";
 import { NetbirdTopology } from "../components/netbird_topology";
 import { Icon } from "../components/icon";
 import { PasswordInput } from "../components/password_input";
+import { ServiceStateBadge } from "../components/service_state_badge";
 import { StatusDot } from "../components/status_dot";
 import { apiPost, describeError } from "../api_client";
 import { useApiResource } from "../use_api_resource";
@@ -58,15 +59,15 @@ export function NetbirdPage() {
       <div className="page_header">
         <div className="page_title_row">
           <h1>NetBird</h1>
-          {!view.is_installed ? (
-            <span className="badge">not installed</span>
-          ) : !view.is_enrolled ? (
-            <span className="badge badge--warn">not joined</span>
-          ) : view.is_management_connected ? (
-            <span className="badge badge--ok">connected</span>
-          ) : (
-            <span className="badge badge--error">management unreachable</span>
-          )}
+          <ServiceStateBadge name="netbird" />
+          {view.is_installed &&
+            (!view.is_enrolled ? (
+              <span className="badge badge--warn">not joined</span>
+            ) : view.is_management_connected ? (
+              <span className="badge badge--ok">connected</span>
+            ) : (
+              <span className="badge badge--error">management unreachable</span>
+            ))}
           {view.version !== "" && (
             <span className="badge">v{view.version}</span>
           )}
