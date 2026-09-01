@@ -54,7 +54,11 @@ class XrayNodeProbe:
         """
         self._timeout_s = timeout_s
         self._cache: dict[str, NodeProbeResult] = {}
-        self._probed_at = 0.0
+        # None, not zero: `time.monotonic()` on Linux counts from boot, so a
+        # panel that starts early in one is younger than the cache's own age
+        # and never probes at all — every node reads unreachable until the
+        # machine has been up for longer than the window.
+        self._probed_at: float | None = None
 
     def results(self, nodes: list[XrayNodeConfig]) -> list[NodeProbeResult]:
         """Read every node's reachability, probing only when the cache is stale.
@@ -65,7 +69,10 @@ class XrayNodeProbe:
         Returns:
             One result per node, in the order given.
         """
-        if time.monotonic() - self._probed_at > PROBE_CACHE_TTL_S:
+        if (
+            self._probed_at is None
+            or time.monotonic() - self._probed_at > PROBE_CACHE_TTL_S
+        ):
             self.refresh(nodes)
         return [
             self._cache.get(node.tag, NodeProbeResult(node.tag, False, None))

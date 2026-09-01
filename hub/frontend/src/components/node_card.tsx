@@ -39,8 +39,17 @@ export function NodeCard({
   onTest,
   onRemove,
 }: NodeCardProps) {
+  // Three states, not two. A node nobody probed is not a node that answered
+  // and is not a node that failed: only the enabled ones are probed, so a
+  // disabled one arrives with no measurement at all and used to draw a red
+  // dot reading "unreachable".
+  const isMeasured = node.is_enabled && node.delay_ms !== null;
   const latencyTone = toLatencyTone(node.delay_ms, node.is_alive);
-  const statusTone: StatusTone = node.is_alive ? "ok" : "error";
+  const statusTone: StatusTone = !node.is_enabled
+    ? "idle"
+    : node.is_alive
+      ? "ok"
+      : "error";
   const cardClassNames = [
     "node_card",
     node.is_enabled ? "node_card--enabled" : "node_card--disabled",
@@ -54,7 +63,10 @@ export function NodeCard({
       <div className="node_card_head">
         <div className="node_card_identity">
           <div className="node_card_name">
-            <StatusDot tone={statusTone} isPulsing={node.is_alive} />
+            <StatusDot
+              tone={statusTone}
+              isPulsing={node.is_enabled && node.is_alive}
+            />
             <span className="node_card_name_text" title={node.name}>
               {node.name}
             </span>
@@ -87,7 +99,13 @@ export function NodeCard({
             {isTesting ? "testing…" : formatLatency(node.delay_ms)}
           </span>
           <span className="node_card_latency_label">
-            {node.is_alive ? "last probe" : "unreachable"}
+            {!node.is_enabled
+              ? "not probed"
+              : isMeasured && node.is_alive
+                ? "last probe"
+                : node.is_alive
+                  ? "no answer yet"
+                  : "unreachable"}
           </span>
         </div>
         <Sparkline values={probeHistory} tone={latencyTone} />

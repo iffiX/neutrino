@@ -73,7 +73,10 @@ export function computeActiveExits(
       downlinkBytes,
       totalBytes,
       delayMs: probe?.delay_ms ?? null,
-      is_alive: probe?.is_alive ?? true,
+      // No probe is not proof of health. The frame carries probes for the
+      // enabled nodes only, while the traffic counters carry every tag xray
+      // still knows, so an exit without one is one nobody measured.
+      is_alive: probe?.is_alive ?? false,
     });
   }
 
