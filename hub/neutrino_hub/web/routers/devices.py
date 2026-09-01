@@ -655,6 +655,7 @@ def _remote_desktop_view(status_: RemoteDesktopStatus) -> RemoteDesktopStatusVie
         product=status_.product,
         is_installed=status_.is_installed,
         is_running=status_.is_running,
+        unreachable=status_.unreachable,
         session_id=status_.session_id,
         can_set_password=status_.can_set_password,
     )

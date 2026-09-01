@@ -16,6 +16,7 @@ import shlex
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
+from neutrino_hub.modules.devices.constants import SSH_UNREACHABLE_STATUS
 from neutrino_hub.modules.devices.ssh_ops import DeviceSshOperator
 
 SUPPORTED_PRODUCTS = ("anydesk", "todesk")
@@ -49,6 +50,12 @@ class RemoteDesktopStatus:
         is_running: Whether its background service is active.
         session_id: The id to connect to, when it can be read.
         can_set_password: Whether an unattended password can be set headless.
+        unreachable: Why the device could not be asked, empty when it was.
+            A machine that is off, a wrong password and a changed host key all
+            come back as one failed command, and reporting that as "not
+            installed" advises installing software onto a device nobody can
+            reach — and contradicts what the module list says about the same
+            machine.
     """
 
     product: str
@@ -56,6 +63,7 @@ class RemoteDesktopStatus:
     is_running: bool
     session_id: str | None
     can_set_password: bool
+    unreachable: str = ""
 
 
 class RemoteDesktopManager:
@@ -100,7 +108,16 @@ class RemoteDesktopManager:
             f"dpkg -s {units['package']} 2>/dev/null",
             f"rpm -q {units['package']} 2>/dev/null",
         ]
-        code, _ = await self._operator.run_once(" || ".join(checks))
+        code, output = await self._operator.run_once(" || ".join(checks))
+        if code == SSH_UNREACHABLE_STATUS:
+            return RemoteDesktopStatus(
+                product=product,
+                is_installed=False,
+                is_running=False,
+                session_id=None,
+                can_set_password=product == "anydesk",
+                unreachable=output.strip() or "the device could not be reached",
+            )
         if code != 0:
             return RemoteDesktopStatus(
                 product=product,

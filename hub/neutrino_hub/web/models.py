@@ -671,6 +671,10 @@ class RemoteDesktopStatusView(BaseModel):
     product: str
     is_installed: bool
     is_running: bool
+    # Why the device could not be asked, empty when it was. Without it a
+    # machine that is off, a wrong password and a changed host key all read as
+    # "not installed", and the panel offers to install what is already there.
+    unreachable: str = ""
     session_id: str | None = None
     can_set_password: bool = False
 

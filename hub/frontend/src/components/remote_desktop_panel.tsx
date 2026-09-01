@@ -128,14 +128,22 @@ function ProductCard({ status, macAddress, isBusy, onRun }: ProductCardProps) {
         <span className="remote_desktop_card_name">{label}</span>
         <StatusDot
           tone={
-            !status.is_installed ? "idle" : status.is_running ? "ok" : "warn"
+            status.unreachable.length > 0
+              ? "warn"
+              : !status.is_installed
+                ? "idle"
+                : status.is_running
+                  ? "ok"
+                  : "warn"
           }
           label={
-            !status.is_installed
-              ? "not installed"
-              : status.is_running
-                ? "running"
-                : "stopped"
+            status.unreachable.length > 0
+              ? "not reached"
+              : !status.is_installed
+                ? "not installed"
+                : status.is_running
+                  ? "running"
+                  : "stopped"
           }
         />
       </div>
@@ -189,6 +197,11 @@ function ProductCard({ status, macAddress, isBusy, onRun }: ProductCardProps) {
             </span>
           )}
         </>
+      ) : status.unreachable.length > 0 ? (
+        <span className="field_hint">
+          This device could not be asked, so what it is running is unknown:{" "}
+          {status.unreachable}
+        </span>
       ) : (
         <span className="field_hint">
           Not on this device. Install it from Modules above.

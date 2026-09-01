@@ -22,6 +22,9 @@ export interface RemoteDesktopStatus {
   product: "anydesk" | "todesk";
   is_installed: boolean;
   is_running: boolean;
+  /** Why the device could not be asked, empty when it was. A machine that is
+   * off and one without the software are not the same answer. */
+  unreachable: string;
   session_id: string | null;
   can_set_password: boolean;
 }

@@ -207,7 +207,7 @@ class DeviceSshOperator:
                 output = (result.stdout or "") + (result.stderr or "")
                 return result.exit_status or 0, output.strip()
         except (OSError, asyncssh.Error, asyncio.TimeoutError) as error:
-            return 255, str(error)
+            return SSH_UNREACHABLE_STATUS, str(error)
 
     async def run_privileged_once(
         self, command: str, *, timeout_s: int = 30
