@@ -93,15 +93,18 @@ def test_the_proxy_off_needs_no_nodes_at_all():
     assert tags(config, "outbounds") == ["direct", "block"]
 
 
-def test_the_proxy_on_with_no_enabled_node_is_refused():
-    """The balancer would have nothing to select and every request would fail."""
-    with pytest.raises(ValueError, match="at least one"):
-        XrayConfigRenderer(
-            node_list=XrayNodeList.from_dict(
-                {"nodes": [], "balancer": NODES["balancer"]}
-            ),
-            routing={"is_proxy_enabled": True},
-        )
+def test_the_proxy_on_with_no_enabled_node_renders_as_off():
+    """It used to raise, and every Apply on a box in that state failed with
+    it — including the one that would have turned the switch off. The panel
+    writes the switch off when the list empties; this is what keeps a
+    hand-edited file renderable."""
+    config = XrayConfigRenderer(
+        node_list=XrayNodeList.from_dict({"nodes": [], "balancer": NODES["balancer"]}),
+        routing={"is_proxy_enabled": True},
+    ).render()
+
+    assert "balancers" not in config["routing"]
+    assert tags(config, "outbounds") == ["direct", "block"]
 
 
 # --- The direct SOCKS listener ----------------------------------------------

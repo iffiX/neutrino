@@ -67,11 +67,14 @@ class XrayConfigRenderer:
             for entry in routing.get("socks_ports", [])
             if self._is_proxy_enabled or not entry.get("is_proxied", False)
         ]
+        # A proxy with nothing to go out through renders as one that is off.
+        # Raising here instead made every apply fail on a box that reached
+        # this state — and the one thing that fixes it, the master switch, is
+        # what the failure prevented anybody from applying. The panel writes
+        # the switch off when the list empties, so the two agree; this is what
+        # keeps a hand-edited file from being unrenderable.
         if self._is_proxy_enabled and not node_list.enabled_nodes:
-            raise ValueError(
-                "no enabled nodes in config/xray/nodes.json; "
-                "the balancer needs at least one, or turn the proxy off"
-            )
+            self._is_proxy_enabled = False
         self._node_list = node_list
         self._routing = routing
 

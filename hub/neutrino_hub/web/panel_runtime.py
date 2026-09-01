@@ -359,8 +359,8 @@ class PanelRuntime:
 
     def _apply_all_blocking(self) -> str:
         network = self.network()
-        routing = self.routing()
         node_list = self.node_list()
+        routing = self._settled_routing(node_list)
 
         xray_config = XrayConfigRenderer(
             node_list=node_list,
@@ -384,6 +384,25 @@ class PanelRuntime:
             f"applied {len(node_list.enabled_nodes)} nodes, "
             f"strategy {node_list.strategy}"
         )
+
+    def _settled_routing(self, node_list: XrayNodeList) -> dict:
+        """The routing options, with the proxy switched off if it cannot run.
+
+        A proxy with no enabled node has nothing to select and renders as off.
+        Writing that back means the panel and the box agree about it rather
+        than the page showing a switch that does nothing.
+
+        Args:
+            node_list: The nodes as they are now.
+
+        Returns:
+            The routing options as they will be rendered.
+        """
+        routing = self.routing()
+        if routing.get("is_proxy_enabled", True) and not node_list.enabled_nodes:
+            routing["is_proxy_enabled"] = False
+            write_config("xray/routing.json", routing)
+        return routing
 
     def _apply_network_blocking(self, only: str | None) -> str:
         network = self.network()

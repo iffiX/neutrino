@@ -218,3 +218,24 @@ def test_many_listeners_are_kept_in_the_order_they_were_given(client):
 
     assert response.status_code == 200
     assert runtime.files["xray/routing.json"]["socks_ports"] == ports
+
+
+@pytest.mark.parametrize(
+    "resolver",
+    [
+        {"address": "not.an.address", "port": 53},
+        {"address": "", "port": 53},
+        {"address": "1.1.1.1", "port": 0},
+        {"address": "1.1.1.1", "port": 70000},
+    ],
+)
+def test_a_resolver_the_proxy_cannot_use_is_refused(client, resolver):
+    """Both resolvers are written straight into the xray config. A bad one is
+    a proxy that will not start, found at the next Apply rather than here."""
+    opened, runtime = client
+
+    response = opened.put(
+        "/api/proxy", json=dict(runtime.files["xray/routing.json"], direct_dns=resolver)
+    )
+
+    assert response.status_code == 400

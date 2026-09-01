@@ -7,6 +7,8 @@ netbird — goes through it, which is the way back in when the overlay cannot
 reach its management plane directly.
 """
 
+import ipaddress
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub.utils.json_file import write_config
@@ -50,14 +52,32 @@ def update_settings(
 
     Raises:
         HTTPException: 400 when the proxy is switched on with nothing to go
-            out through. The balancer needs a node to select, so this is not a
-            state to store and fail on at the next Apply.
+            out through, when a resolver is not an address, or when two
+            listeners want one port. Each of these reaches the xray config,
+            where a bad value is a proxy that will not start rather than a
+            setting that does nothing.
     """
     if settings.is_proxy_enabled and not runtime.node_list().enabled_nodes:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="no exit node is enabled, so there is nothing to proxy through",
         )
+    for name, resolver in (
+        ("remote resolver", settings.remote_dns),
+        ("direct resolver", settings.direct_dns),
+    ):
+        try:
+            ipaddress.ip_address(resolver.address)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{name}: {error}",
+            ) from error
+        if not WEB_PORT_MIN <= resolver.port <= WEB_PORT_MAX:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{name}: a port is {WEB_PORT_MIN} to {WEB_PORT_MAX}",
+            )
     seen = [entry.port for entry in settings.socks_ports]
     if len(set(seen)) != len(seen):
         raise HTTPException(

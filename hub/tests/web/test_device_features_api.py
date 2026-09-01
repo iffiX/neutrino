@@ -134,3 +134,17 @@ def test_forgetting_a_device_drops_what_was_queued_for_it(api, monkeypatch):
 
     assert runtime.pending == {}
     assert runtime.client_features == {}
+
+
+@pytest.mark.parametrize(
+    "address", ["hello", "aa:bb:cc:dd:ee", "aa:bb:cc:dd:ee:ff:00", "", "12345"]
+)
+def test_a_device_has_to_be_addressed_by_a_MAC(api, address):
+    """Every part of a device is keyed by its address — the registry, the host
+    key store, the command queue, the magic packet — so a record stored under
+    something else is one none of them can act on."""
+    client, _ = api
+
+    response = client.put(f"/api/devices/{address}", json={"name": "nonsense"})
+
+    assert response.status_code in (400, 404, 405)

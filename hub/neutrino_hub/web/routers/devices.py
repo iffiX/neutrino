@@ -1,6 +1,7 @@
 """The Devices tab: LAN discovery, annotations, and remote actions."""
 
 import ipaddress
+import re
 import secrets
 import time
 from datetime import datetime, timezone
@@ -8,6 +9,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from neutrino_hub.modules.devices.constants import DEVICE_MAC_PATTERN
 from neutrino_hub.modules.devices.registry import (
     DeviceRegistry,
     ManagedDevice,
@@ -119,8 +121,10 @@ def annotate(mac_address: str, annotation: DeviceAnnotation) -> DeviceView:
         The device after the change, with no secret echoed back.
 
     Raises:
-        HTTPException: 400 when the SSH block names a key id that is not stored.
+        HTTPException: 400 when the address is not a MAC, or when the SSH
+            block names a key id that is not stored.
     """
+    _require_mac(mac_address)
     payload = annotation.model_dump(exclude_unset=True)
     if "ssh" in payload:
         payload["ssh"] = _store_ssh_secrets(mac_address, annotation.ssh)
@@ -352,6 +356,27 @@ def set_feature(
         is_activated=request.is_activated,
     )
     return list_features(mac_address, runtime)
+
+
+def _require_mac(mac_address: str) -> None:
+    """Refuse an address that is not one.
+
+    Every device is keyed by its MAC — the registry, the host-key store, the
+    command queue and the magic packet all address it that way — so a name
+    that is not a MAC is a record none of them can act on and one the panel
+    cannot delete by any other route.
+
+    Args:
+        mac_address: What was in the path.
+
+    Raises:
+        HTTPException: 400 when it is not a MAC.
+    """
+    if not re.match(DEVICE_MAC_PATTERN, mac_address):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{mac_address!r} is not a MAC address",
+        )
 
 
 def _is_agent_online(device: ManagedDevice) -> bool:
