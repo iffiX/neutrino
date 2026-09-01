@@ -245,7 +245,8 @@ class PanelRuntime:
 
         Read from the ruleset that was last applied rather than from
         ``config/``, because the two disagree for as long as a change is saved
-        and not yet applied. The status strip has to answer "where is my
+        and not yet applied. The file is written after the load succeeds, so it
+        is what the kernel holds and not what it was about to be handed. The status strip has to answer "where is my
         traffic going", and during that window the config would answer with
         where it is *about* to go.
 
@@ -384,8 +385,8 @@ class PanelRuntime:
         except CommandError as error:
             xray_failure = str(error)
 
-        write_generated(ROUTER_NFT_PATH, nft_ruleset)
         RouterRulesetApplier().apply(nft_ruleset)
+        write_generated(ROUTER_NFT_PATH, nft_ruleset)
         write_generated(ROUTER_DNSMASQ_PATH, dnsmasq_config)
         run(["systemctl", "restart", DNSMASQ_SERVICE_NAME])
 
@@ -430,8 +431,8 @@ class PanelRuntime:
             network=network, routing=routing
         ).render()
 
-        write_generated(ROUTER_NFT_PATH, nft_ruleset)
         RouterRulesetApplier().apply(nft_ruleset)
+        write_generated(ROUTER_NFT_PATH, nft_ruleset)
         write_generated(ROUTER_DNSMASQ_PATH, dnsmasq_config)
 
         # The interface must carry its new address before dnsmasq is told to

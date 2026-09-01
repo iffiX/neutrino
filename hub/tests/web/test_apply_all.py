@@ -8,6 +8,7 @@ node left the LAN with no firewall rules and no DNS until it was fixed.
 
 import pytest
 
+from neutrino_hub.modules.router.constants import ROUTER_NFT_PATH as NFT_PATH
 from neutrino_hub.utils.subprocess_run import CommandError
 from neutrino_hub.web import panel_runtime as runtime_module
 from neutrino_hub.web.panel_runtime import PanelRuntime
@@ -90,6 +91,18 @@ def test_the_apply_still_reports_that_xray_refused(applied):
         panel._apply_all_blocking()
 
     assert "xray rejected" in str(refusal.value)
+
+
+def test_the_ruleset_is_recorded_only_after_the_kernel_takes_it(applied):
+    """The panel reads that file to say where traffic is going. Written first,
+    it answers with where traffic was about to go."""
+    panel, written = applied
+
+    with pytest.raises(CommandError):
+        panel._apply_all_blocking()
+
+    steps = [step for step in written if step[1] in ("nft", str(NFT_PATH))]
+    assert steps.index(("loaded", "nft")) < steps.index(("wrote", str(NFT_PATH)))
 
 
 def test_a_refused_apply_leaves_the_configuration_dirty(applied):

@@ -203,8 +203,6 @@ def _write(artifacts: dict) -> None:
         # the xray unit points at this file, so systemd cannot start the
         # service until it exists.
         XrayConfigApplier().write(artifacts["xray"])
-    if "router" in artifacts:
-        write_generated(ROUTER_NFT_PATH, artifacts["router"])
     if "dnsmasq" in artifacts:
         write_generated(ROUTER_DNSMASQ_PATH, artifacts["dnsmasq"])
     if "samba" in artifacts:
@@ -217,6 +215,10 @@ def _apply(artifacts: dict) -> None:
         XrayConfigApplier().restart()
     if "router" in artifacts:
         RouterRulesetApplier().apply(artifacts["router"])
+        # Written after the load, never before: the panel reads this file to
+        # say where traffic is going, and a ruleset that only reached the disk
+        # is where traffic was about to go.
+        write_generated(ROUTER_NFT_PATH, artifacts["router"])
         # Rebuilt every time rather than only when the config changes: an
         # address the hub set does not survive a reboot by itself, and a next
         # hop whose uplink has since gone away is a black hole. Applying the
