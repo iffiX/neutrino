@@ -204,6 +204,7 @@ def _exposure_cases(ports: list) -> None:
 
 
 def _mode_cases(ports: list) -> None:
+    _clean_slate(ports)
     # From a known shape, so the walk below means the same thing whatever the
     # machine was left as. Applying the mode it is already in is a no-op by
     # design — the panel cannot press Apply on an unchanged box — so a run
@@ -228,12 +229,9 @@ def _mode_cases(ports: list) -> None:
                 if entry["settings"]["role"] == "lan"
             ]
             check("a side gateway joins one network", len(joined), 1)
-            check(
-                "and it holds the address it already had",
-                joined[0]["settings"]["lan"]["address"]
-                in (joined[0]["link"]["ipv4_address"] or "").split("/")[0],
-                True,
-            )
+            stored = joined[0]["settings"]["lan"]["address"]
+            live = (joined[0]["link"]["ipv4_address"] or "").split("/")[0]
+            check("and it holds the address it already had", stored, live)
     check_status(
         "a mode that is not one of them",
         "PUT",
@@ -264,7 +262,49 @@ def interface_body(name: str, **over) -> dict:
     return {}
 
 
+def pristine(name: str) -> dict:
+    """One interface as a machine that has never been configured has it."""
+    return {
+        "name": name,
+        "role": "disabled",
+        "is_exposed": False,
+        "wan": {
+            "method": "dhcp",
+            "address": None,
+            "prefix_len": 24,
+            "gateway": None,
+            "intent": "auto",
+            "cloned_mac": None,
+        },
+        "lan": {
+            "address": "",
+            "prefix_len": 24,
+            "is_dhcp_enabled": False,
+            "dhcp_range_start": "",
+            "dhcp_range_end": "",
+            "dhcp_lease_time": "12h",
+            "upstream_gateway": None,
+        },
+        "wifi": {"ssid": "", "ap_ssid": "", "ap_passphrase": "", "ap_band": "bg"},
+        "vlan": None,
+    }
+
+
+def _clean_slate(ports: list) -> None:
+    """Put every interface back to nothing before a section that checks one.
+
+    A value refused today may already be stored from a run before it was
+    refused, and a settings block is sent back whole — so one stale field
+    fails every later save of that interface and every check after it reads as
+    broken for the wrong reason.
+    """
+    call("PUT", "/network/mode", {"mode": "server"})
+    for name in ports:
+        call("PUT", f"/network/interfaces/{name}", pristine(name))
+
+
 def _interface_cases(ports: list) -> None:
+    _clean_slate(ports)
     check_status("become a router", "PUT", "/network/mode", {"mode": "router"}, 200)
     served = ports[-1]
     check_status(
@@ -387,6 +427,8 @@ def _interface_cases(ports: list) -> None:
 
 
 def _vlan_cases(ports: list) -> None:
+    _clean_slate(ports)
+    call("PUT", "/network/mode", {"mode": "router"})
     trunk = ports[-1]
     check_status(
         "split a port into a trunk",
@@ -478,6 +520,14 @@ def _vlan_cases(ports: list) -> None:
         if entry["settings"].get("vlan")
     ]
     check("and every one of them is listed", len(devices), 33)
+    # Exposure follows a VLAN that is removed: a name left in the set is one
+    # the firewall would name and nft would refuse.
+    call("PUT", "/network", options_body(exposed_interfaces=[f"{trunk}.1"]))
+    check("a VLAN can be exposed", exposed_now(), [f"{trunk}.1"])
+    check_status(
+        "removing an exposed VLAN", "DELETE", f"/network/interfaces/{trunk}.1", None, 200
+    )
+    check("and it leaves the exposed set with it", exposed_now(), [])
     check_status(
         "removing the untagged main on its own",
         "DELETE",
@@ -906,6 +956,32 @@ def devices_section() -> None:
     check_status("its features", "GET", f"/devices/{mac}/features", None, 200)
     features = call("GET", f"/devices/{mac}/features")[1]
     check("with no agent, none is online", features["is_agent_online"], False)
+    section("devices: fifty of them")
+    made = 0
+    for index in range(50):
+        code, _ = call(
+            "PUT",
+            f"/devices/52:54:00:00:{index // 16:02x}:{index % 16:02x}",
+            {"name": f"crowd{index}"},
+        )
+        made += code == 200
+    check("fifty devices", made, 50)
+    _, view = call("GET", "/devices")
+    crowd = [entry for entry in view["devices"] if entry["name"].startswith("crowd")]
+    check("and every one is listed", len(crowd), 50)
+    gone = 0
+    for entry in crowd:
+        code, _ = call("DELETE", f"/devices/{entry['mac_address']}")
+        gone += code == 200
+    check("forgetting all fifty", gone, 50)
+    _, view = call("GET", "/devices")
+    check(
+        "leaves none of them",
+        [e for e in view["devices"] if e["name"].startswith("crowd")],
+        [],
+    )
+
+    section("devices: adding and forgetting")
     check_status("forget it", "DELETE", f"/devices/{mac}", None, 200)
     _, view = call("GET", "/devices")
     check(
