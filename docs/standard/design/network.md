@@ -72,6 +72,28 @@ machine over starts from the addresses it already has. Leaving router mode
 hands the network back the way a reset does — the managers that were stood
 down are started again, and no address is taken off anything.
 
+## Switching shapes, and what each one costs
+
+A box is re-purposed by switching its mode, and every transition is ordinary:
+none may strand the box, and each has a cost that is the transition's nature
+rather than a defect. What follows is the contract the mode-matrix
+integration tests hold the code to.
+
+| Transition | What happens | What breaks, by design |
+| --- | --- | --- |
+| `server` ↔ `side_gateway` | roles change, addressing does not | leaving `side_gateway`, the machines that named this box as their gateway lose their way out |
+| into `router` | the stack is taken over: the machine's manager is stood down, its addresses carried, and a DHCP uplink re-leases under the hub's own client identity | the uplink's address can change with the new lease, and the session that asked comes back on the new one |
+| out of `router` | the hand-back: the hub's engines stop, the managers that were stood down start again, no address is taken off anything | the served networks end — their devices lose DHCP, DNS and their gateway, and live out their leases |
+| two-arm ↔ one-arm | the LAN moves between a port of its own and a VLAN tag | every LAN device drops and re-leases; on a switch that does not pass tags, the one-arm LAN looks configured and carries nothing |
+| one uplink ↔ several | the plan re-ranks, and balance installs or removes the multipath route | connections pinned to an uplink that lost its role break; re-balancing spreads new connections only |
+
+The proxy's switches survive every one of these. They are the person's
+answers, not the mode's: what each one *does* follows the mode — the LAN
+switch means nothing on a box serving no network, and reads as `unused` on
+the strip — and the diversion is re-rendered on every mode apply, so entering
+`server` takes the TPROXY rules out of the kernel and returning to `router`
+puts them back, with nothing retyped on the Proxy page.
+
 ## What answers, and where
 
 Every service this box runs binds every address and settles its own port in
