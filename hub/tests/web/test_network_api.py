@@ -805,3 +805,18 @@ def test_an_interface_this_machine_does_not_have_is_refused(box):
     response = client.put("/api/network/interfaces/enp9s9", json=draft)
 
     assert response.status_code == 400
+
+
+def test_a_side_gateway_joins_a_network_even_with_no_route_out(box, monkeypatch):
+    """With nothing carrying a default route — an uplink that is down, or a
+    machine the panel has just taken every role from — picking no network at
+    all leaves the mode with no panel to fix it from: the one control it
+    offers is drawn from the network it joined."""
+    client, runtime, status = box
+    status.gateways = {}
+
+    response = client.put("/api/network/mode", json={"mode": "side_gateway"})
+
+    assert response.status_code == 200
+    joined = [entry for entry in runtime.network().interfaces if entry.is_lan]
+    assert len(joined) == 1
