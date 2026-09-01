@@ -339,6 +339,11 @@ def test_the_router_diverts_its_lan_and_itself(panel, wiring):
     assert "tproxy" not in firewall()
     assert "server=127.0.0.1#15353" not in dnsmasq_conf()
 
+    # Left on for the rest of the walk: what the modes after this do to a
+    # diversion nobody switches off again is the thing worth watching.
+    put_proxy(panel, is_proxy_enabled=True)
+    assert "tproxy" in firewall()
+
 
 # --- router, one wire ---------------------------------------------------------
 
@@ -443,6 +448,17 @@ def test_the_router_hands_back_to_a_server(panel, wiring):
     )
 
 
+def test_the_diversion_follows_the_mode_with_nothing_retyped(panel):
+    """Nobody has touched the Proxy page since the router served a network.
+
+    The switch is the person's answer and it survives; what it does is the
+    mode's, and a server forwards nobody — so the diversion is gone from the
+    kernel while the answer is still on the page.
+    """
+    assert panel.read("/proxy")["is_proxy_enabled"]
+    assert "tproxy" not in firewall()
+
+
 # --- server -> router ---------------------------------------------------------
 
 
@@ -474,6 +490,14 @@ def test_the_router_becomes_a_side_gateway(panel, wiring):
     assert joined["role"] == "lan"
     assert joined["lan"]["upstream_gateway"]
     assert "masquerade" in firewall()
+
+
+def test_the_diversion_comes_back_with_the_network_to_divert(panel):
+    """The other half of it: a mode that forwards again is a mode where the
+    switch means something, and the mode's own apply is what puts the rules
+    back — no visit to the Proxy page, no second Apply."""
+    assert panel.read("/proxy")["is_proxy_enabled"]
+    assert "tproxy" in firewall()
 
 
 # --- side gateway -> server ---------------------------------------------------

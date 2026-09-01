@@ -13,7 +13,11 @@ stopped in router mode.
 import pytest
 
 from neutrino_hub.modules.router import resolver, routes
-from neutrino_hub.modules.router.constants import ROUTER_MODE_SERVER
+from neutrino_hub.modules.router.constants import (
+    ROUTER_MODE_ROUTER,
+    ROUTER_MODE_SERVER,
+    ROUTER_ROLE_LAN,
+)
 from neutrino_hub.modules.router.interfaces import (
     RouterInterface,
     RouterLanSettings,
@@ -94,7 +98,7 @@ def test_a_machine_the_hub_only_answers_on_keeps_its_own_resolver(monkeypatch):
     applier = routes.RouterInterfaceApplier.__new__(routes.RouterInterfaceApplier)
     applier._network = network
 
-    assert applier._apply_resolver() == []
+    assert applier.apply_resolver() == []
     assert written == []
 
 
@@ -107,5 +111,30 @@ def test_a_gateway_serving_nothing_is_left_resolving_as_it_was(monkeypatch):
     applier = routes.RouterInterfaceApplier.__new__(routes.RouterInterfaceApplier)
     applier._network = network
 
-    assert applier._apply_resolver() == []
+    assert applier.apply_resolver() == []
     assert written == []
+
+
+def test_saving_one_interface_still_points_the_box_at_its_own_dnsmasq(monkeypatch):
+    """The panel gives a LAN its role one interface at a time, and that path
+    used to end before the resolver step — so a router built from the page
+    went on asking whatever its uplink handed it, while one built by a
+    whole-network apply did not."""
+    pointed: list = []
+    monkeypatch.setattr(
+        routes.resolver, "point_at", lambda address: pointed.append(address) or True
+    )
+    network = RouterNetworkConfig(
+        mode=ROUTER_MODE_ROUTER,
+        interfaces=[
+            RouterInterface(
+                name="eth0",
+                role=ROUTER_ROLE_LAN,
+                lan=RouterLanSettings(address="192.168.90.1", prefix_len=24),
+            )
+        ],
+    )
+
+    routes.RouterInterfaceApplier(network=network).apply_resolver()
+
+    assert pointed == ["192.168.90.1"]

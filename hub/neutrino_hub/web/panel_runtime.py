@@ -504,6 +504,11 @@ class PanelRuntime:
                 raise CommandError(f"{only!r} is not a configured interface")
             changes = applier.apply(interface)
             changes += RouterDefaultRouteApplier(network=network).apply()
+            # The same tail the whole-network apply ends with. A LAN given
+            # its role from the page is still the address this box resolves
+            # at, and leaving it out is how a router ends up asking whatever
+            # its uplink handed it.
+            changes += applier.apply_resolver()
         run(["systemctl", "restart", DNSMASQ_SERVICE_NAME])
 
         self.is_config_dirty = False

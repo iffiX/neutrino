@@ -281,7 +281,7 @@ class RouterInterfaceApplier:
         for interface in ordered:
             changes += self.apply(interface)
         changes += RouterDefaultRouteApplier(network=self._network).apply()
-        changes += self._apply_resolver()
+        changes += self.apply_resolver()
         return changes
 
     def _take_over(self) -> list[str]:
@@ -322,11 +322,13 @@ class RouterInterfaceApplier:
         links.restore_state(carried)
         return changes
 
-    def _apply_resolver(self) -> list[str]:
+    def apply_resolver(self) -> list[str]:
         """Point the box at its own name service, or leave it as it is.
 
         Last, because it names the address a LAN has only once that LAN has
-        been given it.
+        been given it — and public, because the panel applies one interface
+        at a time: a router given its LAN from the page rather than by a
+        whole-network apply must end up resolving at its own dnsmasq too.
 
         Returns:
             One line when name resolution changed hands.
