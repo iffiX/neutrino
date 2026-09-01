@@ -60,6 +60,10 @@ const COLUMN_CLOUD = 10;
 const COLUMN_JUNCTION = 118;
 const COLUMN_WAN_TRUNK = DIVIDER_LEFT - NODE_WIDTH - 6;
 const COLUMN_UPLINK = COLUMN_WAN_TRUNK - CHAIN_GAP - NODE_WIDTH;
+// Where the uplinks sit when no trunk column is needed: hugging the divider
+// the way the served ports hug theirs, so the gateway is centred between the
+// two sides instead of the WAN side trailing off leftwards.
+const COLUMN_UPLINK_SNUG = DIVIDER_LEFT - 20 - NODE_WIDTH;
 const COLUMN_GATEWAY = DIVIDER_LEFT + (LANE_MIDDLE_WIDTH - GATEWAY_WIDTH) / 2;
 const COLUMN_LAN = DIVIDER_RIGHT + 20;
 const COLUMN_VLAN = COLUMN_LAN + NODE_WIDTH + CHAIN_GAP;
@@ -204,6 +208,8 @@ export function NetworkDiagram({
   // box the served side shows, mirrored, so a port split into both WAN and
   // LAN appears as one port in each lane.
   const wanTrunks = buildWanTrunks(network, uplinks, uplinkY, middle);
+  const uplinkColumn =
+    wanTrunks.length > 0 ? COLUMN_UPLINK : COLUMN_UPLINK_SNUG;
 
   // A side gateway is a way out with no WAN lane presence: a LAN whose
   // upstream router carries the box's traffic. It lights the cloud, and when
@@ -277,7 +283,7 @@ export function NetworkDiagram({
             d={curve(
               COLUMN_CLOUD + CLOUD_WIDTH,
               middle,
-              line.is_shared ? COLUMN_JUNCTION : COLUMN_UPLINK,
+              line.is_shared ? COLUMN_JUNCTION : uplinkColumn,
               line.is_shared ? y : (uplinkY.get(first?.name ?? "") ?? y),
             )}
           />
@@ -313,7 +319,7 @@ export function NetworkDiagram({
               d={curve(
                 COLUMN_JUNCTION,
                 lineY.get(line.id) ?? middle,
-                COLUMN_UPLINK,
+                uplinkColumn,
                 uplinkY.get(member.name) ?? middle,
               )}
             />
@@ -332,7 +338,7 @@ export function NetworkDiagram({
               plannedFor(network, entry.settings.name)?.is_active ?? false,
             )}
             d={curve(
-              COLUMN_UPLINK + NODE_WIDTH,
+              uplinkColumn + NODE_WIDTH,
               uplinkY.get(entry.settings.name) ?? middle,
               trunk !== undefined ? COLUMN_WAN_TRUNK : COLUMN_GATEWAY,
               trunk !== undefined ? trunk.y : middle,
@@ -399,7 +405,7 @@ export function NetworkDiagram({
           key={entry.settings.name}
           entry={entry}
           planned={plannedFor(network, entry.settings.name)}
-          x={COLUMN_UPLINK}
+          x={uplinkColumn}
           y={uplinkY.get(entry.settings.name) ?? middle}
           isSelected={entry.settings.name === selectedName}
           onSelect={onSelect}
