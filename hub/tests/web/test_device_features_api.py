@@ -148,3 +148,18 @@ def test_a_device_has_to_be_addressed_by_a_MAC(api, address):
     response = client.put(f"/api/devices/{address}", json={"name": "nonsense"})
 
     assert response.status_code in (400, 404, 405)
+
+
+def test_an_unknown_remote_desktop_product_is_refused_at_once(api):
+    """`set_password_stream` is an async generator, so calling it runs none of
+    its body: the refusal it documents used to surface minutes later as a
+    failed task rather than as this answer."""
+    client, _ = api
+    FakeRegistry.device.ssh = {"host": "10.0.0.5", "username": "me"}
+
+    response = client.post(
+        f"/api/devices/{MAC}/remote_desktop/anydsk/password",
+        json={"password": "hunter2hunter2"},
+    )
+
+    assert response.status_code == 400

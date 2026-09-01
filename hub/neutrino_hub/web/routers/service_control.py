@@ -190,9 +190,9 @@ async def uninstall(
 
     Raises:
         HTTPException: 404 for a name the panel cannot uninstall, 400 for a
-            core module — netbird installs from here but never leaves from
-            here, because removing the way back in from abroad is how the
-            owner locks themselves out.
+            core module. netbird is not one: a gateway routes, resolves and
+            serves without it, so it installs and leaves from here like any
+            other optional module.
     """
     spec = _spec_or_404(name)
     if name in SYSTEM_CORE_UNITS:

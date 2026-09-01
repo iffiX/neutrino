@@ -19,6 +19,9 @@ from neutrino_hub.modules.features.catalog import load_catalog
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
 from neutrino_hub.modules.devices.lan_scan import LanScanner
 from neutrino_hub.modules.devices.remote_desktop import (
+    SUPPORTED_PRODUCTS,
+)
+from neutrino_hub.modules.devices.remote_desktop import (
     RemoteDesktopManager,
     RemoteDesktopStatus,
 )
@@ -624,12 +627,17 @@ async def set_remote_desktop_password(
         HTTPException: 400 for an unknown product, 409 without SSH.
     """
     _, manager = _remote_desktop_manager(mac_address)
-    try:
-        source = manager.set_password_stream(product, password=request.password)
-    except ValueError as error:
+    # Checked here rather than caught from the call below: that is an async
+    # generator, so calling it runs none of its body and the ValueError it
+    # documents can never arrive. The refusal used to surface minutes later as
+    # a failed task instead of as this 400.
+    if product not in SUPPORTED_PRODUCTS:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
-        ) from error
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"unknown remote desktop product {product!r}; "
+            f"expected one of {', '.join(SUPPORTED_PRODUCTS)}",
+        )
+    source = manager.set_password_stream(product, password=request.password)
     stream = runtime.tasks.start(
         label=f"set {product} password {mac_address}", source=source
     )
