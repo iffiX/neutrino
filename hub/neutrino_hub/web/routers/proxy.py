@@ -7,10 +7,11 @@ netbird — goes through it, which is the way back in when the overlay cannot
 reach its management plane directly.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub.utils.json_file import write_config
 from neutrino_hub.utils.subprocess_run import CommandError
+from neutrino_hub.web.constants import WEB_PORT_MAX, WEB_PORT_MIN
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import ApplyResult, ProxySettings
 from neutrino_hub.web.panel_runtime import PanelRuntime
@@ -46,7 +47,30 @@ def update_settings(
     Returns:
         The stored options. Flipping either switch re-renders both the xray
         config and the nftables ruleset, so it takes effect on the next Apply.
+
+    Raises:
+        HTTPException: 400 when the proxy is switched on with nothing to go
+            out through. The balancer needs a node to select, so this is not a
+            state to store and fail on at the next Apply.
     """
+    if settings.is_proxy_enabled and not runtime.node_list().enabled_nodes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="no exit node is enabled, so there is nothing to proxy through",
+        )
+    seen = [entry.port for entry in settings.socks_ports]
+    if len(set(seen)) != len(seen):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="two listeners cannot share a port",
+        )
+    for entry in settings.socks_ports:
+        if not WEB_PORT_MIN <= entry.port <= WEB_PORT_MAX:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"a port is {WEB_PORT_MIN} to {WEB_PORT_MAX}; "
+                f"{entry.port} is not",
+            )
     write_config("xray/routing.json", settings.model_dump())
     runtime.is_config_dirty = True
     return settings

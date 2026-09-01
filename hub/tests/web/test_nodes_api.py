@@ -1,0 +1,194 @@
+"""What the exit-node list does to the proxy switch.
+
+The pairing these guard: a proxy that is on and a list with nothing enabled in
+it is not a state — the balancer has nothing to select, so rendering the xray
+configuration raises and every Apply after it fails with that. The panel used
+to let somebody reach it by deleting the last node, and then offered no way
+out: the one thing that fixes it is the switch the page never mentioned.
+"""
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from neutrino_hub.modules.xray.node_config import XrayNodeList
+from neutrino_hub.web.dependencies import get_runtime, require_session
+from neutrino_hub.web.routers import nodes as nodes_router
+from neutrino_hub.web.routers import proxy as proxy_router
+
+# One reachable-looking node, as a share link and as stored configuration.
+SHARE_LINK = "ss://YWVzLTI1Ni1nY206c2VjcmV0@203.0.113.10:5800#Tokyo"  # scan: allow
+STORED = {
+    "nodes": [
+        {
+            "id": "hk1",
+            "name": "Tokyo",
+            "address": "203.0.113.10",
+            "is_enabled": True,
+            "protocol": "shadowsocks",
+            "shadowsocks": {"port": 5800, "method": "aes-256-gcm", "password": "x"},
+        }
+    ],
+    "balancer": {
+        "strategy": "leastPing",
+        "probe_url": "https://www.gstatic.com/generate_204",
+        "probe_interval_s": 60,
+    },
+}
+
+
+class FakeRuntime:
+    """The two files these routes read and write, held in memory."""
+
+    def __init__(self):
+        self.files = {
+            "xray/nodes.json": dict(STORED),
+            "xray/routing.json": {
+                "is_proxy_enabled": True,
+                "is_geoip_split_enabled": True,
+                "direct_domains": [],
+                "direct_ips": [],
+                "is_local_proxy_enabled": False,
+                "socks_ports": [],
+                "remote_dns": {"address": "1.1.1.1", "port": 53},
+                "direct_dns": {"address": "223.5.5.5", "port": 53},
+            },
+        }
+        self.is_config_dirty = False
+        self.stats = _NoTraffic()
+        self.node_probe = _NoProbes()
+
+    def node_list(self) -> XrayNodeList:
+        return XrayNodeList.from_dict(self.files["xray/nodes.json"])
+
+    def routing(self) -> dict:
+        return dict(self.files["xray/routing.json"])
+
+
+class _NoTraffic:
+    def outbound_traffic(self) -> list:
+        return []
+
+
+class _NoProbes:
+    def results(self, nodes) -> list:
+        return []
+
+
+@pytest.fixture
+def client(monkeypatch):
+    runtime = FakeRuntime()
+    for module in (nodes_router, proxy_router):
+        monkeypatch.setattr(
+            module,
+            "write_config",
+            lambda name, data, runtime=runtime: runtime.files.__setitem__(name, data),
+        )
+    app = FastAPI()
+    app.include_router(nodes_router.router)
+    app.include_router(proxy_router.router)
+    app.dependency_overrides[require_session] = lambda: None
+    app.dependency_overrides[get_runtime] = lambda: runtime
+    with TestClient(app) as opened:
+        yield opened, runtime
+
+
+def is_proxy_on(runtime) -> bool:
+    return runtime.files["xray/routing.json"]["is_proxy_enabled"]
+
+
+def test_removing_the_last_node_switches_the_proxy_off(client):
+    """Otherwise the next Apply fails on a configuration that cannot be
+    rendered, and the page says nothing about the switch that fixes it."""
+    opened, runtime = client
+
+    response = opened.delete("/api/proxy/nodes/hk1")
+
+    assert response.status_code == 200
+    assert not is_proxy_on(runtime)
+
+
+def test_disabling_the_last_node_switches_the_proxy_off(client):
+    """The same state reached by the other door. It used to be refused here
+    and allowed there, which is one rule with two answers."""
+    opened, runtime = client
+
+    response = opened.put("/api/proxy/nodes/hk1", json={"is_enabled": False})
+
+    assert response.status_code == 200
+    assert not is_proxy_on(runtime)
+
+
+def test_a_node_that_stays_leaves_the_switch_alone(client):
+    opened, runtime = client
+    opened.post("/api/proxy/nodes", json={"link": SHARE_LINK.replace("hk1", "hk2")})
+
+    opened.delete("/api/proxy/nodes/hk1")
+
+    assert is_proxy_on(runtime)
+
+
+def test_adding_a_node_does_not_switch_the_proxy_back_on(client):
+    """It is the person's switch. Emptying the list is what turns it off,
+    because that state cannot be rendered; filling it again is not consent to
+    start proxying."""
+    opened, runtime = client
+    opened.delete("/api/proxy/nodes/hk1")
+
+    opened.post("/api/proxy/nodes", json={"link": SHARE_LINK})
+
+    assert not is_proxy_on(runtime)
+
+
+def test_the_switch_cannot_be_turned_on_with_nothing_to_go_out_through(client):
+    opened, runtime = client
+    opened.delete("/api/proxy/nodes/hk1")
+    settings = dict(runtime.files["xray/routing.json"], is_proxy_enabled=True)
+
+    response = opened.put("/api/proxy", json=settings)
+
+    assert response.status_code == 400
+    assert "exit node" in response.json()["detail"]
+
+
+def test_two_listeners_cannot_share_a_port(client):
+    opened, runtime = client
+    settings = dict(
+        runtime.files["xray/routing.json"],
+        socks_ports=[
+            {"port": 1080, "is_proxied": False},
+            {"port": 1080, "is_proxied": True},
+        ],
+    )
+
+    response = opened.put("/api/proxy", json=settings)
+
+    assert response.status_code == 400
+
+
+@pytest.mark.parametrize("port", [0, -1, 65536])
+def test_a_port_no_listener_can_take_is_refused(client, port):
+    opened, runtime = client
+    settings = dict(
+        runtime.files["xray/routing.json"],
+        socks_ports=[{"port": port, "is_proxied": False}],
+    )
+
+    response = opened.put("/api/proxy", json=settings)
+
+    assert response.status_code == 400
+
+
+def test_many_listeners_are_kept_in_the_order_they_were_given(client):
+    """Adding a row at a time is how the page works, and a list that reorders
+    itself under that is one nobody can edit."""
+    opened, runtime = client
+    ports = [
+        {"port": 2000 + index, "is_proxied": index % 2 == 0} for index in range(32)
+    ]
+    settings = dict(runtime.files["xray/routing.json"], socks_ports=ports)
+
+    response = opened.put("/api/proxy", json=settings)
+
+    assert response.status_code == 200
+    assert runtime.files["xray/routing.json"]["socks_ports"] == ports

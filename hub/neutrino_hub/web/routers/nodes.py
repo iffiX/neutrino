@@ -141,6 +141,7 @@ def add_node(
         )
     node_list.nodes.append(node)
     write_config("xray/nodes.json", node_list.to_dict())
+    _follow_the_nodes(node_list, runtime)
     runtime.is_config_dirty = True
     return NodeView(
         id=node.id,
@@ -180,6 +181,7 @@ def remove_node(
         )
     node_list.nodes = remaining
     write_config("xray/nodes.json", node_list.to_dict())
+    _follow_the_nodes(node_list, runtime)
     runtime.is_config_dirty = True
     return list_nodes(runtime)
 
@@ -199,8 +201,7 @@ def update_node(
         The node after the change. It does not take effect until Apply.
 
     Raises:
-        HTTPException: 404 when the node is unknown, or 400 when the change
-            would leave no node enabled.
+        HTTPException: 404 when the node is unknown.
     """
     node_list = runtime.node_list()
     node = _find_node(node_list, node_id)
@@ -208,12 +209,8 @@ def update_node(
         node.name = update.name
     if update.is_enabled is not None:
         node.is_enabled = update.is_enabled
-        if not node_list.enabled_nodes:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="at least one node must stay enabled",
-            )
     write_config("xray/nodes.json", node_list.to_dict())
+    _follow_the_nodes(node_list, runtime)
     runtime.is_config_dirty = True
     return NodeView(
         id=node.id,
@@ -250,6 +247,30 @@ def test_node(
     return NodeTestResult(
         tag=probe.tag, is_alive=probe.is_alive, delay_ms=probe.delay_ms
     )
+
+
+def _follow_the_nodes(node_list: XrayNodeList, runtime: PanelRuntime) -> None:
+    """Switch the proxy off once nothing is left to go out through.
+
+    A proxy with no enabled node is not a setting, it is a configuration that
+    cannot be rendered: the balancer would have nothing to select. Leaving the
+    switch on made every Apply fail with that in it, and the one way out —
+    turning the switch off — was something the page never said.
+
+    Written into `config/` rather than worked around at render time, so the
+    panel shows the state the box is actually in.
+
+    Args:
+        node_list: The nodes as they are now.
+        runtime: The shared runtime.
+    """
+    if node_list.enabled_nodes:
+        return
+    routing = runtime.routing()
+    if not routing.get("is_proxy_enabled", True):
+        return
+    routing["is_proxy_enabled"] = False
+    write_config("xray/routing.json", routing)
 
 
 def _find_node(node_list: XrayNodeList, node_id: str) -> XrayNodeConfig:
