@@ -113,15 +113,23 @@ def _device_list(runtime: PanelRuntime, *, is_active: bool) -> DeviceListView:
 
 
 @router.put("/{mac_address}", response_model=DeviceView)
-def annotate(mac_address: str, annotation: DeviceAnnotation) -> DeviceView:
+def annotate(
+    mac_address: str,
+    annotation: DeviceAnnotation,
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> DeviceView:
     """Name a device or give it SSH credentials.
 
     Args:
         mac_address: The device's MAC.
         annotation: The fields to change.
+        runtime: The shared runtime.
 
     Returns:
-        The device after the change, with no secret echoed back.
+        The device after the change, with no secret echoed back. It carries the
+        metrics its agent last reported, like every other view of a device:
+        built without them, the tile the page redraws from this reads as a
+        machine that has gone offline until the next poll.
 
     Raises:
         HTTPException: 400 when the address is not a MAC, or when the SSH
@@ -131,7 +139,8 @@ def annotate(mac_address: str, annotation: DeviceAnnotation) -> DeviceView:
     payload = annotation.model_dump(exclude_unset=True)
     if "ssh" in payload:
         payload["ssh"] = _store_ssh_secrets(mac_address, annotation.ssh)
-    return _to_view(DeviceRegistry().annotate(mac_address, payload))
+    device = DeviceRegistry().annotate(mac_address, payload)
+    return _to_view(device, runtime.client_metrics.get(device.mac_address))
 
 
 @router.delete("/{mac_address}")

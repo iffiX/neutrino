@@ -28,6 +28,11 @@ class FakeRegistry:
     def get(self, mac_address: str) -> ManagedDevice:
         return FakeRegistry.device
 
+    def annotate(self, mac_address: str, payload: dict) -> ManagedDevice:
+        if "name" in payload:
+            FakeRegistry.device.name = payload["name"]
+        return FakeRegistry.device
+
 
 class FakeRuntime:
     def __init__(self):
@@ -163,3 +168,16 @@ def test_an_unknown_remote_desktop_product_is_refused_at_once(api):
     )
 
     assert response.status_code == 400
+
+
+def test_renaming_a_device_keeps_its_monitor_alive(api):
+    """The page redraws the tile from this answer. Built with no metrics, it
+    reads as a machine that went offline the moment somebody renamed it."""
+    client, runtime = api
+    FakeRegistry.device.client.last_seen = beating(2)
+    runtime.client_metrics[MAC] = {"cpu_percent": 12.5, "memory_percent": 40.0}
+
+    answer = client.put(f"/api/devices/{MAC}", json={"name": "renamed"}).json()
+
+    assert answer["name"] == "renamed"
+    assert answer["client"]["cpu_percent"] == 12.5
