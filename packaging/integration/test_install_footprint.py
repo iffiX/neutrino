@@ -111,6 +111,16 @@ def test_a_server_leaves_forwarded_traffic_alone(mode):
     assert "masquerade" not in machine_state.firewall_table()
 
 
+def test_a_server_keeps_its_own_forwarding_switch(mode, before):
+    """`ip_forward` on somebody's server is not the hub's to flip: the box
+    routes nothing, so the sysctls that make a router are never asked for."""
+    if mode != "server":
+        pytest.skip("only a server forwards nothing")
+    now = machine_state.run(["sysctl", "-n", "net.ipv4.ip_forward"]).strip()
+
+    assert now == before.get("ip_forward", now)
+
+
 def test_a_side_gateway_forwards_for_the_devices_that_name_it(mode):
     if mode != "side_gateway":
         pytest.skip("only a side gateway forwards")

@@ -437,7 +437,7 @@ class PanelRuntime:
         except CommandError as error:
             xray_failure = str(error)
 
-        RouterRulesetApplier().apply(nft_ruleset)
+        RouterRulesetApplier().apply(nft_ruleset, is_forwarding=_is_forwarding(network))
         write_generated(ROUTER_NFT_PATH, nft_ruleset)
         write_generated(ROUTER_DNSMASQ_PATH, dnsmasq_config)
         run(["systemctl", "restart", DNSMASQ_SERVICE_NAME])
@@ -487,7 +487,7 @@ class PanelRuntime:
             network=network, routing=routing
         ).render()
 
-        RouterRulesetApplier().apply(nft_ruleset)
+        RouterRulesetApplier().apply(nft_ruleset, is_forwarding=_is_forwarding(network))
         write_generated(ROUTER_NFT_PATH, nft_ruleset)
         write_generated(ROUTER_DNSMASQ_PATH, dnsmasq_config)
 
@@ -551,6 +551,19 @@ class PanelRuntime:
             secrets=GiteaSecretStore().load(),
         ).render()
         return GiteaConfigApplier().apply(rendered)
+
+
+def _is_forwarding(network: RouterNetworkConfig) -> bool:
+    """Whether any interface holds a role that routes.
+
+    Args:
+        network: The parsed router configuration.
+
+    Returns:
+        True when something forwards, which is what earns the forwarding
+        sysctls; a box with no roles is somebody's machine and keeps its own.
+    """
+    return bool(network.lan_interfaces or network.wan_interfaces)
 
 
 def generated_dir_exists() -> bool:

@@ -214,7 +214,11 @@ def _apply(artifacts: dict) -> None:
         # _write already validated and installed the config.
         XrayConfigApplier().restart()
     if "router" in artifacts:
-        RouterRulesetApplier().apply(artifacts["router"])
+        network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
+        RouterRulesetApplier().apply(
+            artifacts["router"],
+            is_forwarding=bool(network.lan_interfaces or network.wan_interfaces),
+        )
         # Written after the load, never before: the panel reads this file to
         # say where traffic is going, and a ruleset that only reached the disk
         # is where traffic was about to go.
@@ -224,7 +228,6 @@ def _apply(artifacts: dict) -> None:
         # hop whose uplink has since gone away is a black hole. Applying the
         # whole thing is what brings the box back as configured — this runs
         # from `neutrino_hub_router.service`, before anything it serves.
-        network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
         for change in RouterInterfaceApplier(network=network).apply_all():
             print(change)
     if "dnsmasq" in artifacts:

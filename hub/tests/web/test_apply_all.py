@@ -52,7 +52,7 @@ def applied(monkeypatch):
     monkeypatch.setattr(
         runtime_module.RouterRulesetApplier,
         "apply",
-        lambda self, ruleset: written.append(("loaded", "nft")),
+        lambda self, ruleset, **kwargs: written.append(("loaded", "nft")),
     )
     monkeypatch.setattr(
         runtime_module,

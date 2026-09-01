@@ -187,6 +187,7 @@ def snapshot() -> dict:
         "addresses_and_routes": addresses_and_routes(),
         "resolv_conf": resolv_conf(),
         "interface": first_interface(),
+        "ip_forward": run(["sysctl", "-n", "net.ipv4.ip_forward"]).strip(),
     }
 
 

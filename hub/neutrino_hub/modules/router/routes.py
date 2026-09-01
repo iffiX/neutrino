@@ -711,7 +711,7 @@ class RouterDefaultRouteApplier:
 class RouterRulesetApplier:
     """Applies forwarding, policy routing, and the nftables ruleset."""
 
-    def apply(self, ruleset: str) -> None:
+    def apply(self, ruleset: str, *, is_forwarding: bool = True) -> None:
         """Bring the whole routing state up.
 
         Order matters: the policy route must exist before the TPROXY rules are
@@ -719,42 +719,90 @@ class RouterRulesetApplier:
         connections after a reload are dropped.
 
         Args:
-            ruleset: Rendered nftables ruleset text.
+            ruleset: Rendered nftables ruleset text. What it contains decides
+                what the kernel is asked for: the TPROXY plumbing is only set
+                up when something in it diverts, so a box that forwards and
+                proxies nothing gets its rules loaded and nothing else.
+            is_forwarding: Whether any interface holds a role that routes.
+                False leaves every forwarding sysctl exactly as the machine
+                had it — a server is somebody's machine, and `ip_forward` on
+                it is not the hub's to flip.
 
         Raises:
             CommandError: If validation or any step fails.
         """
-        self.enable_forwarding()
-        self.apply_policy_route()
+        is_diverting = "tproxy ip to" in ruleset
+        self.enable_forwarding(is_forwarding=is_forwarding, is_diverting=is_diverting)
+        if is_diverting:
+            self.apply_policy_route()
+        else:
+            self.remove_policy_route()
         self.load_ruleset(ruleset)
 
-    def enable_forwarding(self) -> None:
-        """Turn on IPv4 forwarding and the sysctls a multi-homed router needs."""
-        settings = {
-            "net.ipv4.ip_forward": "1",
-            "net.ipv4.conf.all.route_localnet": "1",
-            # Answer ARP only for addresses that live on the interface the
-            # request arrived on, and source ARP from the address belonging to
-            # that network. Without these a box with two interfaces on one
-            # subnet answers for both from either, which poisons the upstream
-            # router's table and makes it unpredictable which of the two a
-            # reply comes back through.
-            "net.ipv4.conf.all.arp_ignore": "1",
-            "net.ipv4.conf.all.arp_announce": "2",
-            # Loose reverse-path filtering. With more than one uplink a reply
-            # can legitimately arrive on the interface its request did not
-            # leave by; strict filtering drops exactly those packets.
-            "net.ipv4.conf.all.rp_filter": "2",
-            # Hash multipath next hops on ports as well as addresses. The
-            # kernel's default hashes on addresses alone, which means every
-            # connection to one destination takes the same uplink however many
-            # are balanced — measurably so: six requests to one host all left
-            # by the same interface until this was turned on. Ports in the hash
-            # spread connections while still pinning each one to a single path.
-            "net.ipv4.fib_multipath_hash_policy": "1",
-        }
+    def enable_forwarding(self, *, is_forwarding: bool, is_diverting: bool) -> None:
+        """Turn on the sysctls the loaded ruleset actually needs.
+
+        Nothing is ever set back to zero: docker, libvirt and whatever else
+        runs on the box may depend on `ip_forward` for reasons of their own,
+        so the hub only ever stops asking.
+        """
+        settings = {}
+        if is_forwarding:
+            settings.update(
+                {
+                    "net.ipv4.ip_forward": "1",
+                    # Answer ARP only for addresses that live on the interface
+                    # the request arrived on, and source ARP from the address
+                    # belonging to that network. Without these a box with two
+                    # interfaces on one subnet answers for both from either,
+                    # which poisons the upstream router's table and makes it
+                    # unpredictable which of the two a reply comes back
+                    # through.
+                    "net.ipv4.conf.all.arp_ignore": "1",
+                    "net.ipv4.conf.all.arp_announce": "2",
+                    # Loose reverse-path filtering. With more than one uplink
+                    # a reply can legitimately arrive on the interface its
+                    # request did not leave by; strict filtering drops exactly
+                    # those packets.
+                    "net.ipv4.conf.all.rp_filter": "2",
+                    # Hash multipath next hops on ports as well as addresses.
+                    # The kernel's default hashes on addresses alone, which
+                    # means every connection to one destination takes the same
+                    # uplink however many are balanced — measurably so: six
+                    # requests to one host all left by the same interface
+                    # until this was turned on. Ports in the hash spread
+                    # connections while still pinning each one to a single
+                    # path.
+                    "net.ipv4.fib_multipath_hash_policy": "1",
+                }
+            )
+        if is_diverting:
+            settings["net.ipv4.conf.all.route_localnet"] = "1"
         for key, value in settings.items():
             run(["sysctl", "-w", f"{key}={value}"])
+
+    def remove_policy_route(self) -> None:
+        """Take down the fwmark rule and local route nothing diverts into.
+
+        Left standing they are harmless to traffic — nothing marks packets —
+        but they are routing state on a machine whose mode promises none.
+        """
+        run(
+            [
+                "ip",
+                "rule",
+                "del",
+                "fwmark",
+                hex(ROUTER_FWMARK_TPROXY),
+                "lookup",
+                str(ROUTER_ROUTE_TABLE),
+            ],
+            is_checked=False,
+        )
+        run(
+            ["ip", "route", "flush", "table", str(ROUTER_ROUTE_TABLE)],
+            is_checked=False,
+        )
 
     def apply_policy_route(self) -> None:
         """Create the fwmark rule and the local default route, idempotently."""
