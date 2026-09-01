@@ -313,7 +313,45 @@ def test_installing_another_module_is_its_own_job(box, monkeypatch):
     assert first.json()["task_id"] != other.json()["task_id"]
 
 
+def test_a_running_install_can_be_found_again(box, monkeypatch):
+    """The task id lived in the browser and the job did not, so a reload used
+    to leave a package manager running with a live Install button beside it."""
+    opened, _ = box
+    monkeypatch.setattr(service_control, "_install_source", _never_finishes)
+    started = opened.post("/api/services/samba/install").json()
+
+    listed = opened.get("/api/services/tasks").json()["tasks"]
+
+    assert listed == [{"id": started["task_id"], "label": "install samba"}]
+
+
+def test_a_box_with_nothing_running_lists_nothing(box):
+    opened, _ = box
+
+    assert opened.get("/api/services/tasks").json()["tasks"] == []
+
+
+def test_a_finished_job_is_not_offered_to_adopt(box, monkeypatch):
+    """Adopting one reopens a socket on a task that is over, which the stream
+    hook reads as a transport failure rather than as a finished install."""
+    opened, _ = box
+    monkeypatch.setattr(service_control, "_install_source", _finishes_at_once)
+    opened.post("/api/services/samba/install")
+
+    for _ in range(20):
+        listed = opened.get("/api/services/tasks").json()["tasks"]
+        if not listed:
+            break
+
+    assert listed == []
+
+
 async def _never_finishes(name, spec, *, is_consented=False):
     """An install that is still going when the second press arrives."""
     yield f"installing {name}"
     await asyncio.sleep(30)
+
+
+async def _finishes_at_once(name, spec, *, is_consented=False):
+    """An install that is over before anything asks about it."""
+    yield f"installed {name}"

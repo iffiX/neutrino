@@ -19,7 +19,9 @@ from neutrino_hub.web.models import (
     ServiceListView,
     ServiceUninstallRequest,
     ServiceView,
+    TaskListView,
     TaskStarted,
+    TaskView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 
@@ -49,6 +51,27 @@ def list_services(runtime: PanelRuntime = Depends(get_runtime)) -> ServiceListVi
     """
     return ServiceListView(
         services=[_to_view(entry) for entry in runtime.services.status_all()]
+    )
+
+
+@router.get("/tasks", response_model=TaskListView)
+def list_tasks(runtime: PanelRuntime = Depends(get_runtime)) -> TaskListView:
+    """Read the background jobs this panel is still running.
+
+    Args:
+        runtime: The shared runtime.
+
+    Returns:
+        One entry per unfinished job, with the label it was started under. A
+        page reads this on load: the id it was streaming lived in the browser,
+        the job did not, so a reload used to leave an install running with
+        nothing watching it and a live Install button beside it.
+    """
+    return TaskListView(
+        tasks=[
+            TaskView(id=stream.id, label=stream.label)
+            for stream in runtime.tasks.running_all()
+        ]
     )
 
 

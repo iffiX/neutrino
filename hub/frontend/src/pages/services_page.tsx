@@ -10,6 +10,7 @@ import type {
   ServiceActionName,
   ServiceInstallPlanView,
   ServiceView,
+  TaskListResponse,
 } from "../api_types";
 
 import "./services_page.css";
@@ -45,6 +46,35 @@ export function ServicesPage() {
       setServices(resource.data.services);
     }
   }, [resource?.data]);
+
+  // A task id lives in the browser and the job it names does not, so a reload
+  // during an install used to leave the module reading "not installed" with a
+  // live Install button beside a package manager still running. The panel is
+  // asked what it is doing instead.
+  useEffect(() => {
+    let isMounted = true;
+    void apiGet<TaskListResponse>("/services/tasks")
+      .then((response) => {
+        if (!isMounted) {
+          return;
+        }
+        const adopted: Record<string, string> = {};
+        for (const task of response.tasks) {
+          const [verb, name] = task.label.split(" ");
+          if (
+            name !== undefined &&
+            (verb === "install" || verb === "uninstall")
+          ) {
+            adopted[name] = task.id;
+          }
+        }
+        setTasks((current) => ({ ...adopted, ...current }));
+      })
+      .catch(() => undefined);
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const reload = resource?.reload;
   useEffect(() => {

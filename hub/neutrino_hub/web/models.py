@@ -698,6 +698,19 @@ class TaskStarted(BaseModel):
     task_id: str
 
 
+class TaskView(BaseModel):
+    """One background job of this panel, and what it is doing."""
+
+    id: str
+    label: str
+
+
+class TaskListView(BaseModel):
+    """The background jobs still running."""
+
+    tasks: list[TaskView]
+
+
 class WolResult(BaseModel):
     """Outcome of sending a magic packet."""
 

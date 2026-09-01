@@ -654,6 +654,17 @@ export interface ServiceJournal {
   text: string;
 }
 
+/** One background job the panel is still running. */
+export interface TaskView {
+  id: string;
+  /** How the job was started: `install <module>`, `uninstall <module>`. */
+  label: string;
+}
+
+export interface TaskListResponse {
+  tasks: TaskView[];
+}
+
 // --- Settings ---
 
 export interface PasswordChangeRequest {

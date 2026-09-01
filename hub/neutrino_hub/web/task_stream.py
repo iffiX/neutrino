@@ -115,6 +115,16 @@ class TaskStreamRegistry:
                 return stream
         return None
 
+    def running_all(self) -> list[TaskStream]:
+        """Every job that has not finished.
+
+        Returns:
+            The unfinished streams, oldest first. A browser reload loses the id
+            it was streaming while the job carries on, so this is how a page
+            reopened part-way through an install finds its own again.
+        """
+        return [stream for stream in self._streams.values() if stream.exit_code is None]
+
     def get(self, task_id: str) -> TaskStream | None:
         """Look up a job by id.
 
