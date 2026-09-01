@@ -40,6 +40,7 @@ class FakeRuntime:
         self.client_platform = {}
         self.client_metrics = {}
         self.pending = {}
+        self.enrollments = {}
 
     def forget_client_state(self, mac_address: str) -> None:
         key = mac_address.lower()
@@ -181,3 +182,29 @@ def test_renaming_a_device_keeps_its_monitor_alive(api):
 
     assert answer["name"] == "renamed"
     assert answer["client"]["cpu_percent"] == 12.5
+
+
+def test_a_link_that_cannot_be_built_mints_no_ticket(api, monkeypatch):
+    """The ticket is a join secret. One nobody was ever shown is one lying
+    around until the panel restarts."""
+    client, runtime = api
+    monkeypatch.setattr(devices_router, "_panel_urls", lambda runtime: [])
+
+    response = client.post("/api/devices/enrollment", json={"name": "laptop"})
+
+    assert response.status_code == 400
+    assert runtime.enrollments == {}
+
+
+def test_a_lapsed_ticket_is_swept_when_the_next_one_is_minted(api, monkeypatch):
+    client, runtime = api
+    monkeypatch.setattr(
+        devices_router, "_panel_urls", lambda runtime: ["http://192.168.8.1:8080"]
+    )
+    runtime.enrollments["stale"] = {"expires_at": 0.0}
+
+    response = client.post("/api/devices/enrollment", json={"name": "laptop"})
+
+    assert response.status_code == 200
+    assert "stale" not in runtime.enrollments
+    assert len(runtime.enrollments) == 1

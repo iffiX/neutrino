@@ -265,19 +265,30 @@ def create_enrollment(
 
     Returns:
         The link, its token, and how long it lasts.
+
+    Raises:
+        HTTPException: 400 when no served network has an address, so there is
+            nothing for a machine to reach the panel at.
     """
-    token = secrets.token_urlsafe(ENROLLMENT_TOKEN_BYTES)
-    runtime.enrollments[token] = {
-        "name": request.name.strip(),
-        "mac_address": (request.mac_address or "").lower() or None,
-        "expires_at": time.time() + ENROLLMENT_TTL_S,
-    }
     addresses = "&".join(f"url={quote(base, safe='')}" for base in _panel_urls(runtime))
     if not addresses:
         raise HTTPException(
             status_code=400,
             detail="no served network has an address for a machine to reach",
         )
+    # Minted after the link is known to exist, and the lapsed ones swept on the
+    # way past: a ticket nobody was ever shown is a join secret lying around,
+    # and one that has expired is the same thing an hour later.
+    now = time.time()
+    for token, ticket in list(runtime.enrollments.items()):
+        if ticket.get("expires_at", 0) <= now:
+            del runtime.enrollments[token]
+    token = secrets.token_urlsafe(ENROLLMENT_TOKEN_BYTES)
+    runtime.enrollments[token] = {
+        "name": request.name.strip(),
+        "mac_address": (request.mac_address or "").lower() or None,
+        "expires_at": now + ENROLLMENT_TTL_S,
+    }
     link = f"neutrino://enroll?{addresses}&token={quote(token)}"
     return DeviceEnrollmentView(link=link, token=token, expires_in_s=ENROLLMENT_TTL_S)
 

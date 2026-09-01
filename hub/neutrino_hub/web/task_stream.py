@@ -13,6 +13,10 @@ from dataclasses import dataclass, field
 
 TASK_ID_BYTES = 8
 BUFFER_LINE_LIMIT = 2000
+# How many finished jobs keep their output. A drawer reopened after an install
+# still shows its log; a panel that has been up for a month does not hold every
+# log it ever produced, at two thousand lines each.
+FINISHED_TASK_LIMIT = 8
 
 
 @dataclass
@@ -96,6 +100,7 @@ class TaskStreamRegistry:
         Returns:
             The stream, whose ``id`` the caller returns to the browser.
         """
+        self._evict_finished()
         stream = TaskStream(id=secrets.token_hex(TASK_ID_BYTES), label=label)
         self._streams[stream.id] = stream
         asyncio.create_task(self._drain(stream, source))
@@ -135,6 +140,24 @@ class TaskStreamRegistry:
             The stream, or None when the id is unknown.
         """
         return self._streams.get(task_id)
+
+    def streams(self) -> list[TaskStream]:
+        """Every job still held, running or finished.
+
+        Returns:
+            The streams, oldest first.
+        """
+        return list(self._streams.values())
+
+    def _evict_finished(self) -> None:
+        """Drop the oldest finished jobs, keeping the most recent few."""
+        finished = [
+            task_id
+            for task_id, stream in self._streams.items()
+            if stream.exit_code is not None
+        ]
+        for task_id in finished[: max(0, len(finished) - FINISHED_TASK_LIMIT)]:
+            del self._streams[task_id]
 
     async def _drain(self, stream: TaskStream, source: AsyncIterator[str]) -> None:
         exit_code = 0
