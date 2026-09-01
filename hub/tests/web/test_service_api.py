@@ -7,6 +7,8 @@ buttons, which is not the same as the gateway refusing them — a stopped
 caller passes.
 """
 
+import asyncio
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -67,7 +69,11 @@ def box():
     app = FastAPI()
     app.include_router(service_control.router)
     app.dependency_overrides[require_session] = lambda: None
-    app.dependency_overrides[get_runtime] = lambda: FakeRuntime(services)
+    # One runtime for the whole fixture: a fresh one per request would give
+    # every call its own task registry, and nothing that spans two requests —
+    # a second install joining the first — could be seen at all.
+    runtime = FakeRuntime(services)
+    app.dependency_overrides[get_runtime] = lambda: runtime
     with TestClient(app) as client:
         yield client, services
 
@@ -280,3 +286,34 @@ def test_a_journal_longer_than_the_limit_is_refused(box):
 
     assert opened.get("/api/services/samba/journal?lines=100000000").status_code == 422
     assert opened.get("/api/services/samba/journal?lines=-5").status_code == 422
+
+
+def test_a_second_install_joins_the_first(box, monkeypatch):
+    """Two downloads writing one path and two package managers on one lock:
+    the second corrupts what the first fetched, and the browser only ever sees
+    the log of whichever started last. Double-clicking Install is all it takes.
+    """
+    opened, _ = box
+    monkeypatch.setattr(service_control, "_install_source", _never_finishes)
+
+    first = opened.post("/api/services/samba/install")
+    second = opened.post("/api/services/samba/install")
+
+    assert first.status_code == 200
+    assert first.json()["task_id"] == second.json()["task_id"]
+
+
+def test_installing_another_module_is_its_own_job(box, monkeypatch):
+    opened, _ = box
+    monkeypatch.setattr(service_control, "_install_source", _never_finishes)
+
+    first = opened.post("/api/services/samba/install")
+    other = opened.post("/api/services/gitea/install")
+
+    assert first.json()["task_id"] != other.json()["task_id"]
+
+
+async def _never_finishes(name, spec, *, is_consented=False):
+    """An install that is still going when the second press arrives."""
+    yield f"installing {name}"
+    await asyncio.sleep(30)

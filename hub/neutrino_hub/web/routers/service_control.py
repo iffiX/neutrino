@@ -132,6 +132,9 @@ async def install(
     Returns:
         The task id to stream on ``/ws/task/{task_id}``.
 
+    Returns the running job's id when one is already installing this module,
+    so a second press joins the first rather than starting a second install.
+
     Raises:
         HTTPException: 404 for a name the panel cannot install, 400 on a
             machine the module does not run on, and 409 when the plan needs
@@ -154,6 +157,13 @@ async def install(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"installing {name} here needs agreement that was not given",
         )
+    # One at a time. Two installs of one module are two downloads writing one
+    # path and two package managers on one lock: the second corrupts what the
+    # first fetched, and the browser only ever sees the log of whichever
+    # started last.
+    running = runtime.tasks.running(f"install {name}")
+    if running is not None:
+        return TaskStarted(task_id=running.id)
     stream = runtime.tasks.start(
         label=f"install {name}",
         source=_install_source(name, spec, is_consented=is_consented),
@@ -190,6 +200,9 @@ async def uninstall(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(f"{name} is a core service and cannot be uninstalled"),
         )
+    running = runtime.tasks.running(f"uninstall {name}")
+    if running is not None:
+        return TaskStarted(task_id=running.id)
     stream = runtime.tasks.start(
         label=f"uninstall {name}",
         source=_uninstall_source(name, spec, is_data_kept=request.is_data_kept),

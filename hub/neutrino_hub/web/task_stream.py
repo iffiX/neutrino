@@ -101,6 +101,20 @@ class TaskStreamRegistry:
         asyncio.create_task(self._drain(stream, source))
         return stream
 
+    def running(self, label: str) -> TaskStream | None:
+        """The unfinished job with this label, if one is running.
+
+        Args:
+            label: The label the job was started with.
+
+        Returns:
+            The stream, or None when nothing by that label is still going.
+        """
+        for stream in self._streams.values():
+            if stream.label == label and stream.exit_code is None:
+                return stream
+        return None
+
     def get(self, task_id: str) -> TaskStream | None:
         """Look up a job by id.
 
