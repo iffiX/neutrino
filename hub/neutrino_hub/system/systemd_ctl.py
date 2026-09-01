@@ -49,21 +49,45 @@ class SystemdServiceController:
             KeyError: If the name is not a managed unit.
         """
         unit = self._unit_for(name)
-        active = run(["systemctl", "is-active", unit], is_checked=False)
-        enabled = run(["systemctl", "is-enabled", unit], is_checked=False)
-        # systemd reports an unknown unit as "not-found" on stdout from
-        # is-enabled, while is-active just says "inactive", so a missing unit is
-        # indistinguishable from a stopped one unless both streams are read.
-        enabled_output = (enabled.stdout + enabled.stderr).strip()
-        is_installed = "not-found" not in enabled_output
+        # Properties rather than the words `is-enabled` prints: what it says
+        # about a unit that does not exist is a systemd version's wording, and
+        # matching on it reads a missing unit as an installed one on any
+        # release that phrases it differently. Debian 12 says "Failed to get
+        # unit file state for x.service: No such file or directory" where
+        # Ubuntu 25 says "not-found"; `LoadState` says `not-found` on both.
+        properties = self._properties(
+            unit, ("LoadState", "ActiveState", "UnitFileState")
+        )
         return ServiceStatus(
             name=name,
             unit=unit,
-            is_installed=is_installed,
-            is_active=active.stdout.strip() == "active",
-            is_enabled=enabled.stdout.strip()
+            is_installed=properties.get("LoadState", "not-found") != "not-found",
+            is_active=properties.get("ActiveState") == "active",
+            is_enabled=properties.get("UnitFileState")
             in ("enabled", "enabled-runtime", "static"),
         )
+
+    def _properties(self, unit: str, names: tuple) -> dict:
+        """Read systemd's own answers for one unit.
+
+        Args:
+            unit: The systemd unit name.
+            names: The properties to ask for.
+
+        Returns:
+            Property name to value. A unit systemd does not know still answers,
+            with the values it has for one that is not there.
+        """
+        asked = []
+        for name in names:
+            asked += ["-p", name]
+        result = run(["systemctl", "show", unit, *asked], is_checked=False)
+        answers = {}
+        for line in result.stdout.splitlines():
+            key, _, value = line.partition("=")
+            if key:
+                answers[key] = value.strip()
+        return answers
 
     def status_all(self) -> list[ServiceStatus]:
         """Read every managed unit's state.
