@@ -13,6 +13,7 @@ import {
 import { ChartTooltip } from "../components/chart_tooltip";
 import { DnsLogList } from "../components/dns_log_list";
 import { ErrorPanel } from "../components/error_panel";
+import { DeadExitsNotice } from "../components/dead_exits_notice";
 import { StatTile } from "../components/stat_tile";
 import { StatusDot } from "../components/status_dot";
 import { computeActiveExits } from "../active_exits";
@@ -95,6 +96,8 @@ export function DashboardPage() {
           onRetry={summary.reload}
         />
       )}
+
+      <DeadExitsNotice />
 
       <div className="stat_tile_grid">
         <StatTile

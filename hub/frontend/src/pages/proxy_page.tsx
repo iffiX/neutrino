@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { ApplyBar } from "../components/apply_bar";
+import { DeadExitsNotice } from "../components/dead_exits_notice";
 import { ErrorPanel } from "../components/error_panel";
 import { ServiceStateBadge } from "../components/service_state_badge";
 import { Icon } from "../components/icon";
@@ -196,6 +197,8 @@ export function ProxyPage() {
           </span>
         </div>
       </div>
+
+      <DeadExitsNotice />
 
       <NodesPanel onNodesChanged={resource.reload} />
 
