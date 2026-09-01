@@ -373,11 +373,24 @@ class PanelRuntime:
             network=network, routing=routing
         ).render()
 
-        XrayConfigApplier().apply(xray_config)
+        # A refused xray configuration does not stop the other two. The
+        # firewall is what makes the LAN reachable and dnsmasq is what answers
+        # its queries, and neither has anything to do with why xray said no.
+        xray_failure = ""
+        try:
+            XrayConfigApplier().apply(xray_config)
+        except CommandError as error:
+            xray_failure = str(error)
+
         write_generated(ROUTER_NFT_PATH, nft_ruleset)
         RouterRulesetApplier().apply(nft_ruleset)
         write_generated(ROUTER_DNSMASQ_PATH, dnsmasq_config)
         run(["systemctl", "restart", DNSMASQ_SERVICE_NAME])
+
+        if xray_failure:
+            raise CommandError(
+                f"{xray_failure}. The firewall and DNS were applied without it."
+            )
 
         self.is_config_dirty = False
         return (
