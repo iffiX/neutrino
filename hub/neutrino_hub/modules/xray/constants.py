@@ -115,3 +115,9 @@ XRAY_EGRESS_MARK = 255
 
 XRAY_BALANCER_STRATEGIES = ("leastPing", "roundRobin", "random")
 XRAY_SUPPORTED_ARCHITECTURES = ("amd64", "arm64")
+
+# The direct lists reach xray as one routing rule each. An entry naming a
+# database rather than an address is taken as written: what is inside it is
+# known only to the file xray loads it from.
+XRAY_RULE_DATABASE_PREFIXES = ("geoip:", "ext:")
+XRAY_RULE_REGEXP_PREFIX = "regexp:"

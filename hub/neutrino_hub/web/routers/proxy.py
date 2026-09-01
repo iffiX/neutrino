@@ -11,6 +11,10 @@ import ipaddress
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from neutrino_hub.modules.xray.routing_rules import (
+    check_direct_address,
+    check_direct_domain,
+)
 from neutrino_hub.utils.json_file import write_config
 from neutrino_hub.utils.subprocess_run import CommandError
 from neutrino_hub.web.constants import WEB_PORT_MAX, WEB_PORT_MIN
@@ -52,10 +56,10 @@ def update_settings(
 
     Raises:
         HTTPException: 400 when the proxy is switched on with nothing to go
-            out through, when a resolver is not an address, or when two
-            listeners want one port. Each of these reaches the xray config,
-            where a bad value is a proxy that will not start rather than a
-            setting that does nothing.
+            out through, when a resolver is not an address, when two listeners
+            want one port, or when a direct list holds a line xray will not
+            load. Each of these reaches the xray config, where a bad value is a
+            proxy that will not start rather than a setting that does nothing.
     """
     if settings.is_proxy_enabled and not runtime.node_list().enabled_nodes:
         raise HTTPException(
@@ -91,6 +95,17 @@ def update_settings(
                 detail=f"a port is {WEB_PORT_MIN} to {WEB_PORT_MAX}; "
                 f"{entry.port} is not",
             )
+    for entries, check in (
+        (settings.direct_domains, check_direct_domain),
+        (settings.direct_ips, check_direct_address),
+    ):
+        for entry in entries:
+            try:
+                check(entry)
+            except ValueError as error:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+                ) from error
     write_config("xray/routing.json", settings.model_dump())
     runtime.is_config_dirty = True
     return settings

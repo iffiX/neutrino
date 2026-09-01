@@ -239,3 +239,40 @@ def test_a_resolver_the_proxy_cannot_use_is_refused(client, resolver):
     )
 
     assert response.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "lists,label",
+    [
+        ({"direct_ips": ["192.0.2.300"]}, "an address with a byte over 255"),
+        ({"direct_ips": ["cn"]}, "a country code where an address goes"),
+        ({"direct_ips": [""]}, "a blank line left in the list"),
+        ({"direct_domains": ["regexp:(unclosed"]}, "a regular expression that is not"),
+    ],
+)
+def test_a_direct_list_xray_will_not_load_is_refused(client, lists, label):
+    """xray refuses the whole configuration over one of these, so accepting it
+    here is a page that saves and then fails every Apply after it."""
+    opened, runtime = client
+    settings = dict(runtime.files["xray/routing.json"], **lists)
+
+    response = opened.put("/api/proxy", json=settings)
+
+    assert response.status_code == 400
+
+
+def test_a_direct_list_of_prefixes_and_databases_is_kept(client):
+    opened, runtime = client
+    settings = dict(
+        runtime.files["xray/routing.json"],
+        direct_ips=["192.0.2.0/24", "geoip:cn"],
+        direct_domains=["geosite:cn", "example.com"],
+    )
+
+    response = opened.put("/api/proxy", json=settings)
+
+    assert response.status_code == 200
+    assert runtime.files["xray/routing.json"]["direct_ips"] == [
+        "192.0.2.0/24",
+        "geoip:cn",
+    ]
