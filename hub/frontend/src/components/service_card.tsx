@@ -63,16 +63,26 @@ export function ServiceCard({
   const task = useTaskStream(taskId);
   const [reportedTaskId, setReportedTaskId] = useState<string | null>(null);
   useEffect(() => {
+    // A socket that gave up counts as finished here. Whatever the job did
+    // before it dropped is on the box, and the list is the only thing that
+    // says so.
     if (
       taskId !== null &&
       !task.isRunning &&
-      task.exitCode !== null &&
+      (task.exitCode !== null || task.error !== null) &&
       reportedTaskId !== taskId
     ) {
       setReportedTaskId(taskId);
       onTaskFinished();
     }
-  }, [taskId, task.isRunning, task.exitCode, reportedTaskId, onTaskFinished]);
+  }, [
+    taskId,
+    task.isRunning,
+    task.exitCode,
+    task.error,
+    reportedTaskId,
+    onTaskFinished,
+  ]);
   const isTaskRunning = taskId !== null && task.isRunning;
 
   return (
