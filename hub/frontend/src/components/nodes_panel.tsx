@@ -296,15 +296,6 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
         </div>
       )}
 
-      {isSavedNotApplied && (
-        <div className="notice notice--warn">
-          <Icon name="alert" size={15} />
-          <div className="notice_body">
-            A node was added or removed and is not in the running proxy yet.
-          </div>
-        </div>
-      )}
-
       <div className="nodes_toolbar">
         <div className="nodes_toolbar_group">
           <label className="field nodes_toolbar_field">
