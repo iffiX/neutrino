@@ -310,3 +310,31 @@ def test_a_free_port_is_still_accepted(client):
     )
 
     assert opened.put("/api/proxy", json=settings).status_code == 200
+
+
+def test_a_proxied_listener_needs_no_exit_node_to_be_saved(client):
+    """It is a listener waiting for a node, not a contradiction: the renderer
+    declines to publish it while there is nothing to go out through, so the
+    page has nothing to refuse."""
+    opened, runtime = client
+    opened.delete("/api/proxy/nodes/hk1")
+    settings = dict(
+        runtime.files["xray/routing.json"],
+        socks_ports=[{"port": 1081, "is_proxied": True}],
+    )
+
+    response = opened.put("/api/proxy", json=settings)
+
+    assert response.status_code == 200
+
+
+def test_the_hubs_own_switch_cannot_be_turned_on_with_nothing_to_go_out_through(client):
+    """It diverts, so it needs somewhere for what it diverts to go."""
+    opened, runtime = client
+    opened.delete("/api/proxy/nodes/hk1")
+    settings = dict(runtime.files["xray/routing.json"], is_local_proxy_enabled=True)
+
+    response = opened.put("/api/proxy", json=settings)
+
+    assert response.status_code == 400
+    assert "exit node" in response.json()["detail"]

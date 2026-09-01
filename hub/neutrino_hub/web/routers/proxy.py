@@ -64,11 +64,10 @@ def update_settings(
             load. Each of these reaches the xray config, where a bad value is a
             proxy that will not start rather than a setting that does nothing.
     """
-    is_exit_needed = (
-        settings.is_proxy_enabled
-        or settings.is_local_proxy_enabled
-        or any(entry.is_proxied for entry in settings.socks_ports)
-    )
+    # The scopes that divert, not the listeners. A proxied port with no exit
+    # is simply not published — the renderer already declines it — and that is
+    # a listener waiting for a node, not a contradiction to refuse.
+    is_exit_needed = settings.is_proxy_enabled or settings.is_local_proxy_enabled
     if is_exit_needed and not runtime.node_list().enabled_nodes:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
