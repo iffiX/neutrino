@@ -90,9 +90,9 @@ class RouterMode:
     def is_addressing_owned(self) -> bool:
         """Whether this shape addresses the machine's interfaces.
 
-        False for the modes that are a guest on somebody else's machine,
-        which answer on the address a port already has and change nothing
-        about how it got there.
+        False for the modes that leave addressing to the machine, which
+        answer on the address a port already has and change nothing about
+        how it got there.
         """
         return self.mode in ROUTER_MODES_ADDRESSING_OWNED
 
@@ -171,8 +171,8 @@ class RouterModePlanner:
             mode: One shape, keyed as :data:`ROUTER_MODES_BY_KEY` keys it.
             wan_names: Ports carrying the uplink.
             lan_names: Ports carrying the served network.
-            port_names: Every port the machine has. The guest modes leave all
-                of them answering, which is what they were doing before the
+            port_names: Every port the machine has. The modes that address
+                nothing leave all of them answering, which is what they were doing before the
                 hub arrived; only the panel narrows that afterwards.
             trunk_name: The port the VLANs ride on, for one-arm.
             lan_address: The gateway's own address on the served network.

@@ -120,7 +120,7 @@ export function NetworkModePanel({
 
 /**
  * The one thing switching mode can cost: which side of the machine drives the
- * interfaces. Between the two guest modes nothing about addressing changes, so
+ * interfaces. Between server and side gateway nothing about addressing changes, so
  * there is nothing to warn about.
  */
 function handoverWarning(

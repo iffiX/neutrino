@@ -1,6 +1,6 @@
-"""What a guest install left of the machine it landed on.
+"""What a server or side_gateway install left of the machine it landed on.
 
-A guest mode — `server` or `side_gateway` — promises that the machine goes on
+Both of those modes promise that the machine goes on
 addressing itself: its manager keeps running, its configuration files are not
 edited, and its addresses are the ones it already had. That promise is about
 files and units, not about anything the panel's API can be asked, which is why
@@ -16,7 +16,7 @@ import pytest
 
 import machine_state
 
-GUEST_MODES = ("server", "side_gateway")
+MODES_ADDRESSING_NOTHING = ("server", "side_gateway")
 CORE_UNITS = (
     "neutrino_hub_web",
     "neutrino_hub_router",
@@ -26,11 +26,11 @@ CORE_UNITS = (
 
 
 @pytest.fixture(scope="module", autouse=True)
-def only_a_guest_mode(mode):
-    """An owner mode is supposed to take the machine over, so it is not asked
+def only_the_modes_that_address_nothing(mode):
+    """Router mode is supposed to take the machine over, so it is not asked
     to have left it alone."""
-    if mode not in GUEST_MODES:
-        pytest.skip(f"{mode} is an owner mode: it addresses the machine on purpose")
+    if mode not in MODES_ADDRESSING_NOTHING:
+        pytest.skip(f"{mode} addresses the machine on purpose")
 
 
 def test_the_machine_still_runs_its_own_manager(before):
@@ -41,8 +41,8 @@ def test_the_machine_still_runs_its_own_manager(before):
 
 
 def test_no_manager_of_this_machine_was_masked():
-    """Masking is how an owner mode stops the manager it is replacing. A guest
-    mode replaces nothing, so it masks nothing."""
+    """Masking is how router mode stops the manager it is replacing. These
+    modes replace nothing, so they mask nothing."""
     masked = [
         unit for unit in machine_state.MACHINE_MANAGERS if machine_state.is_masked(unit)
     ]
@@ -78,7 +78,7 @@ def test_nothing_of_ours_was_dropped_into_another_manager(directory):
 )
 def test_no_engine_of_ours_drives_this_machine(pattern):
     """A supplicant or a lease client of ours on one of its radios is exactly
-    the takeover a guest mode promises not to do."""
+    the takeover these modes promise not to do."""
     assert machine_state.units_matching(pattern) == []
 
 
@@ -94,7 +94,7 @@ def test_the_hub_is_doing_its_job_on_it(unit):
 
 
 def test_the_interface_it_arrived_on_still_answers(before):
-    """A guest mode that firewalls the one interface a machine has is a machine
+    """An install that firewalls the one interface a machine has is a machine
     nobody can reach."""
     assert machine_state.is_answering_on(before["interface"])
 

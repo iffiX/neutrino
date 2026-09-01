@@ -1,7 +1,8 @@
 """What the machine itself says about its network, read without the panel.
 
-The panel's API cannot answer the question a guest install has to answer:
-whether the machine is still the machine its owner had. That is a question
+The panel's API cannot answer the question a server or side_gateway install
+has to answer: whether the machine is still the machine its owner had. That
+is a question
 about files nobody asked the hub to touch, about the manager that was already
 running, and about what the kernel holds — so it is read here, from the box.
 """
@@ -36,7 +37,7 @@ MACHINE_MANAGERS = (
 )
 MACHINE_RESOLV_PATH = Path("/etc/resolv.conf")
 # The note a mode that took a machine over leaves behind, so a reset knows what
-# to hand back. A guest install writes none.
+# to hand back. A server or side_gateway install writes none.
 MACHINE_STOOD_DOWN_PATH = Path("/var/lib/neutrino/stood_down.json")
 
 

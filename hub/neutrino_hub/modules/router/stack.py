@@ -1,6 +1,6 @@
 """The manager this machine ran before, and standing it down.
 
-In an owner mode the hub drives the interfaces itself, and two things driving
+In router mode the hub drives the interfaces itself, and two things driving
 one interface is where every bug in this area has come from. So whatever was
 driving them is stopped.
 

@@ -12,7 +12,7 @@ reconfigures a box's network, installs packages, or both.
 | `test_panel_api_proxy.py` | The exit-node list, the SOCKS listeners, the direct lists and the resolvers. |
 | `test_panel_api_services.py` | What the Services page is drawn from, and every action it refuses. |
 | `test_panel_api_devices.py` | The device register: adding, renaming, forgetting, and fifty at once. |
-| `test_install_footprint.py` | That a guest install left the machine addressing itself. |
+| `test_install_footprint.py` | That a server or side_gateway install left the machine addressing itself. |
 | `test_reset_hands_back.py` | That `nhub reset all` gave the network back. |
 | `run_on_box.sh` | All of the above, from an uninstalled machine and back to one. |
 

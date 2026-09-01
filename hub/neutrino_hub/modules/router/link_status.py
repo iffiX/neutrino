@@ -5,7 +5,7 @@ in ``config/`` cannot — whether a cable is actually plugged in, which address
 DHCP handed out, which network the radio joined and how well it hears it.
 
 Asked of the kernel, through `ip` and `iw`, and never of a network manager.
-A machine the hub is only a guest on runs whatever it runs and may have no
+A machine the hub does not address runs whatever it runs and may have no
 manager the hub knows; its ports still have to be drawn, because the panel
 shows them and offers to take them over.
 """

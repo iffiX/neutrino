@@ -31,9 +31,9 @@ ROUTER_MODES_KEYS = (
     ROUTER_MODE_SIDE_GATEWAY,
     ROUTER_MODE_ROUTER,
 )
-# The mode in which this box addresses its own interfaces. The other two are
-# a guest on somebody else's machine: they answer on the address a port
-# already has and change nothing about how it got there.
+# The mode in which this box addresses its own interfaces. The other two
+# leave that to the machine: they answer on the address a port already has
+# and change nothing about how it got there.
 ROUTER_MODES_ADDRESSING_OWNED = (ROUTER_MODE_ROUTER,)
 
 # The layout the wizard offers for a router on one wire. Not a mode: what it

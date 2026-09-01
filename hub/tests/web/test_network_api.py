@@ -559,7 +559,7 @@ def test_a_side_gateway_answers_on_the_network_it_joined(guest_box):
 
 
 def test_leaving_a_mode_with_trunks_takes_the_VLANs_with_it(box, monkeypatch):
-    """Neither guest mode has trunks. A VLAN left behind as an entry claiming
+    """Neither server nor side_gateway has trunks. A VLAN left behind as an entry claiming
     to be a physical port can never be deleted and its tag can never be made
     again."""
     removed: list = []

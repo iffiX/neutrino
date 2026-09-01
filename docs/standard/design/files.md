@@ -69,7 +69,7 @@ State, not configuration: everything here is either derived from
 while it runs. Losing it costs a render or a re-login, never a decision.
 
 `stood_down.json` is a note of what the hub did, not a copy of what anybody
-else had: an owner mode stops the manager that was running and writes down
+else had: router mode stops the manager that was running and writes down
 which units those were, so handing the machine back starts exactly those. No
 configuration of another manager is ever read, copied or restored. Losing the
 file costs one `systemctl unmask` by hand.

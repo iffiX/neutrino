@@ -1,6 +1,6 @@
 """What the box itself resolves names with.
 
-A box in an owner mode resolves where its own devices do: at the dnsmasq on its
+A box in router mode resolves where its own devices do: at the dnsmasq on its
 served network, which forwards through the proxy or to the direct resolver as
 the routing configuration says. Without this the gateway comes up with an
 address, a route, and nothing to ask a name of — it cannot fetch its own
@@ -10,9 +10,9 @@ It has to be written rather than inherited. The lease client's `resolv.conf`
 hook is off, because a hook that writes the upstream network's servers into
 this file is a second opinion about the one thing the whole box exists to
 route; and on a machine whose resolver was `systemd-resolved`, that daemon is
-stopped in an owner mode and the stub it answered on is gone.
+stopped in router mode and the stub it answered on is gone.
 
-Only in an owner mode. A machine the hub is a guest on keeps whatever it was
+Only in router mode. A machine the hub does not address keeps whatever it was
 resolving with, like everything else about it.
 
 Not pure: writes a file outside the hub's own roots.

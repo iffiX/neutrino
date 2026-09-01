@@ -26,14 +26,14 @@ and still does not want to spend an evening on it. So:
 A configuration surface wide enough to express every network is a surface
 nobody in that description can cross.
 
-## Guest and owner, and the mode says which
+## Three modes, and which of them addresses the machine
 
-| Mode | Kind | What the machine is | What the hub owns |
+| Mode | Addressing | What the machine is | What the hub owns |
 | --- | --- | --- | --- |
-| `server` | guest | somebody's machine — a VPS, a laptop | **nothing**: no port holds a role, and it answers on the address each already has |
-| `side_gateway` | guest | a machine on a network somebody else routes | **nothing**: forwarding, masquerade and DNS are all in our own nftables and dnsmasq |
-| `router` | owner | this box *is* the router | the network stack |
-| `one_arm_router` | owner | this box is the router, on one wire | the network stack |
+| `server` | the machine's own | somebody's machine — a VPS, a laptop | **nothing**: no port holds a role, and it answers on the address each already has |
+| `side_gateway` | the machine's own | a machine on a network somebody else routes | **nothing**: forwarding, masquerade and DNS are all in our own nftables and dnsmasq |
+| `router` | the hub's | this box *is* the router | the network stack |
+| `one_arm_router` | the hub's | this box is the router, on one wire | the network stack |
 
 A machine is wholly one or the other. There is no half-managed state, because
 every bug worth having found so far came from sharing an interface with
@@ -46,8 +46,11 @@ left `accept` — docker, libvirt and whatever else forwards across that machine
 are not the hub's to police, and a drop policy there cuts every one of them off
 without saying so.
 
-**The guest modes touch nothing at all.** No connection is edited, no manager
-is stopped, no file outside the hub's own roots is written. `side_gateway`
+**`server` and `side_gateway` touch nothing at all.** No connection is edited,
+no manager is stopped, no file outside the hub's own roots is written. A
+kernel switch is flipped only for a rule that needs it: `server` forwards
+nothing and leaves `ip_forward` alone, while `side_gateway` forwards and asks
+for exactly that. `side_gateway`
 needs no interface configuration whatsoever: the box already has an address
 and a way out — that is how it was reached — and everything it adds is a
 forward rule, a masquerade, and a resolver, all of which are the hub's own:
@@ -62,10 +65,10 @@ directly, the reply never passes back through the box, and conntrack — which
 the proxy interception depends on — never sees the other half of the session.
 The `ip daddr !=` guard keeps traffic between the network's own hosts alone.
 
-**The owner modes own the stack**, and say so before anything is done. The
+**`router` owns the stack**, and says so before anything is done. The
 mode is stored in `config/router/network.json` and is the first thing the
 Network page asks; changing it there re-plans every interface, and taking a
-machine over starts from the addresses it already has. Leaving an owner mode
+machine over starts from the addresses it already has. Leaving router mode
 hands the network back the way a reset does — the managers that were stood
 down are started again, and no address is taken off anything.
 
@@ -90,9 +93,55 @@ a per-port list on the one interface facing the internet is a list that gets
 half right, and the honest control is the whole interface with what it costs
 written beside it.
 
-A guest mode starts with every interface open. That is what the machine was
-already doing before the hub arrived, and a VPS that answers on nothing after
-an install is a VPS nobody can reach.
+`server` and `side_gateway` start with every interface open. That is what the
+machine was already doing before the hub arrived, and a VPS that answers on
+nothing after an install is a VPS nobody can reach.
+
+## What the proxy may divert
+
+The proxy is one xray process, and the mode decides which traffic can reach
+it. Four paths exist, each with its own mechanism, and none of them implies
+another:
+
+| Traffic | server | side_gateway | router | Diverted by |
+| --- | --- | --- | --- | --- |
+| Machines whose traffic this box forwards | — | yes | yes | the prerouting chain, into the TPROXY inbound |
+| This box's own traffic | yes | yes | yes | the output chain, behind `is_local_proxy_enabled` |
+| Applications pointed at a SOCKS port | yes | yes | yes | the port's own `is_proxied` answer |
+| The forwarded machines' DNS | — | yes | yes | dnsmasq's only upstream, the xray DNS inbound |
+
+`server` has no row for forwarded traffic because nothing is forwarded: no
+interface holds a role, so there is no network to divert. On such a box the
+proxy is its listeners — the SOCKS ports, plus the box's own traffic when
+asked — and reporting it as "diverting" or "direct" would answer a question
+the mode never poses. What the panel reports is therefore a *scope*: off,
+unused, ports only, the forwarded network, this box, or both.
+
+The master switch gates all of it at once. Off is the honest state for
+finding out whether the proxy is what is broken: nothing is diverted, the
+proxied SOCKS ports are not published, and DNS goes to the direct resolver.
+
+One consequence looks like a malfunction and is not: with the proxy on and
+every enabled node dead, proxied traffic and the forwarded machines' DNS
+both fail — names resolve at the exit by design, so a dead exit is a dead
+resolver. The panel's job there is to say so, not to look healthy.
+
+## More than one way out, and the proxy
+
+xray's egress sockets use the main routing table like any local process, so
+the proxy follows whatever the uplinks decide and needs no rules of its own.
+Under failover its node connections leave by the active uplink and move when
+that changes. Under balance the multipath default route spreads them per
+connection, ports in the hash, exactly as it spreads the direct-list traffic
+beside them. A `backup_only` uplink stays dark for the proxy for the same
+reason it stays dark for everything: the metric bands, not a proxy rule.
+
+Two limits are accepted rather than solved. The multipath route is rebuilt
+when something applies — a save, a boot — so an uplink that comes alive
+between applies carries nothing until the next one. And an uplink's health is
+carrier and an address, nothing more: a line that is up but going nowhere
+keeps its share until its carrier drops, because measuring throughput means
+probing, and a ranking that follows a probe flaps.
 
 ## What gets a role, and what does not
 
@@ -212,8 +261,8 @@ not a dependency. Its control sockets are in `/run/wpa_supplicant` and the
 hub's are in `/run/neutrino/wpa_supplicant`, so the two never meet.
 
 What does hold a radio is `wpa_supplicant@<interface>.service`, the templated
-unit systemd-networkd and ifupdown start per interface, and that is what an
-owner mode stands down — one per radio it takes, rather than the machine-wide
+unit systemd-networkd and ifupdown start per interface, and that is what
+router mode stands down — one per radio it takes, rather than the machine-wide
 one that owns nothing.
 
 One thing NetworkManager gives away that this has to earn: **an address
@@ -270,8 +319,8 @@ whether the floor under it is stable.
 ## What is never touched
 
 **Their configuration is read, never written.** The hub does not edit, move or
-delete a NetworkManager profile, a netplan file or a `.network`. In an
-an owner mode the manager is stopped, and a stopped manager's files are inert
+delete a NetworkManager profile, a netplan file or a `.network`. In router
+mode the manager is stopped, and a stopped manager's files are inert
 — so nothing has to be backed up, emptied or put back, and `nhub reset all` is
 stopping ours and starting theirs. The whole class of failure that comes from
 restoring somebody's configuration tree — merge or replace, a directory copied
@@ -343,7 +392,7 @@ which regenerates that configuration into `/run` on every boot — including lon
 after whatever wrote it is gone.
 
 **A dependency is a change to the machine.** Declaring `network-manager` was
-enough to break the promise the guest modes make, with no line of the hub's own
+enough to break the promise `server` and `side_gateway` make, with no line of the hub's own
 code running: on a pristine Debian 12 managed by systemd-networkd, dpkg
 configured it at 02:29:52 and four seconds later it had claimed the interface,
 taken a second DHCP lease, installed a second default route and made itself
@@ -355,8 +404,8 @@ is taken as `dnsmasq-base`, the same binary with no unit to start.
 
 ## The probe table
 
-What the machine is running now, so an owner mode knows what to stop and a
-guest mode knows to leave it alone. Probed one fact at a time and never keyed
+What the machine is running now, so router mode knows what to stop and the
+other modes know to leave it alone. Probed one fact at a time and never keyed
 off the distribution: a Raspberry Pi trips `dhcpcd` on one release and nothing
 on the next, and that is the same code path.
 
@@ -378,7 +427,8 @@ write.
 ## What exists today
 
 All four modes drive the three engines above; `nmcli` is gone from the layer
-and NetworkManager is not a dependency. The guest modes are verified byte for
-byte on Ubuntu 24.04 and Debian 12 — four configuration trees compared before
-and after an install — and the owner round trip is exercised end to end on
-Debian 12: take the machine over, drive it, hand it back.
+and NetworkManager is not a dependency. `server` and `side_gateway` are
+verified byte for byte on Ubuntu 24.04 and Debian 12 — four configuration
+trees compared before and after an install — and the router round trip is
+exercised end to end on Debian 12: take the machine over, drive it, hand it
+back.

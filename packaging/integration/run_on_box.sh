@@ -13,9 +13,9 @@
 # driven through every page, because that walk leaves it as a router with a
 # served network and nothing after it could still ask what the machine was.
 #
-# The mode is the other variable. A guest mode — server or side_gateway — has
-# to leave the machine addressing itself, and that is what the footprint
-# checks are for; router takes the machine over on purpose and skips them.
+# The mode is the other variable. server and side_gateway have to leave the
+# machine addressing itself, and that is what the footprint checks are for;
+# router takes the machine over on purpose and skips them.
 set -uo pipefail
 
 PACKAGE="${1:?usage: run_on_box.sh <package file> [mode]}"

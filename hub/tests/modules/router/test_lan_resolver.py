@@ -7,7 +7,7 @@ compiled-in fallback servers.
 
 Nothing else writes the file any more: the lease client's `resolv.conf` hook is
 off, and on a machine whose resolver was `systemd-resolved` that daemon is
-stopped in an owner mode.
+stopped in router mode.
 """
 
 import pytest
@@ -76,7 +76,7 @@ def test_a_file_somebody_else_wrote_is_never_handed_back(resolv_conf):
 
 
 def test_a_machine_the_hub_only_answers_on_keeps_its_own_resolver(monkeypatch):
-    """Guest mode changes nothing about how the machine resolves, exactly as
+    """server and side_gateway change nothing about how the machine resolves, exactly as
     it changes nothing about how it is addressed."""
     written = []
     monkeypatch.setattr(resolver, "point_at", lambda address: written.append(address))
