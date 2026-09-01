@@ -9,9 +9,18 @@
   cursor: pointer;
 }
 
+/* Only the control fades: the label and description stay readable, because
+   they are where a disabled switch explains why it is disabled. */
 .toggle_switch:disabled {
-  opacity: 0.45;
   cursor: not-allowed;
+}
+
+.toggle_switch:disabled .toggle_switch_track {
+  opacity: 0.45;
+}
+
+.toggle_switch:disabled .toggle_switch_label {
+  color: var(--color-text-muted);
 }
 
 .toggle_switch_track {

@@ -10,7 +10,12 @@ import { StringListEditor } from "../components/string_list_editor";
 import { ToggleSwitch } from "../components/toggle_switch";
 import { apiPost, apiPut, describeError } from "../api_client";
 import { useApiResource } from "../use_api_resource";
-import type { DnsServer, ApplyResult, ProxySettings } from "../api_types";
+import type {
+  DnsServer,
+  ApplyResult,
+  NetworkView,
+  ProxySettings,
+} from "../api_types";
 
 import "./proxy_page.css";
 
@@ -52,6 +57,9 @@ const GROUP_FIELDS: Record<GroupName, (keyof ProxySettings)[]> = {
 
 export function ProxyPage() {
   const resource = useApiResource<ProxySettings>("/proxy");
+  // The LAN scope only means something on a box that forwards a network, and
+  // which boxes do is the network mode's answer.
+  const network = useApiResource<NetworkView>("/network");
 
   const [draft, setDraft] = useState<ProxySettings | null>(null);
   const [busyGroup, setBusyGroup] = useState<GroupName | null>(null);
@@ -167,6 +175,14 @@ export function ProxyPage() {
     );
   }
 
+  const mode = network.data?.mode ?? null;
+  const isForwardingMode =
+    mode === null || mode === "router" || mode === "side_gateway";
+  const isAnyScopeOn =
+    draft.is_proxy_enabled ||
+    draft.is_local_proxy_enabled ||
+    draft.socks_ports.some((entry) => entry.is_proxied);
+
   return (
     <div className="page">
       <div className="page_header">
@@ -174,9 +190,9 @@ export function ProxyPage() {
           <h1>Proxy</h1>
           <ServiceStateBadge name="xray" />
           <span
-            className={`badge ${draft.is_proxy_enabled ? "badge--ok" : "badge--warn"}`}
+            className={`badge ${isAnyScopeOn ? "badge--ok" : "badge--warn"}`}
           >
-            {draft.is_proxy_enabled ? "on" : "off"}
+            {isAnyScopeOn ? "on" : "off"}
           </span>
         </div>
       </div>
@@ -194,21 +210,25 @@ export function ProxyPage() {
           left out of it.
         </p>
 
-        {/* Who goes through the proxy: the machines behind the gateway, and
-            the gateway itself. Two independent answers to one question, so
+        {/* Who goes through the proxy: the machines this box forwards for,
+            and the box itself. Two independent answers to one question, so
             they sit together rather than one being buried in the rules. */}
         <ToggleSwitch
           isOn={draft.is_proxy_enabled}
           onChange={(isOn) => updateDraft({ is_proxy_enabled: isOn })}
+          isDisabled={!isForwardingMode}
           label="Send LAN traffic through the proxy"
-          description="The machines behind the gateway. Off takes the proxy out of their path entirely: the firewall stops diverting, names resolve directly, and no exit node is used. Reach for it to find out whether the proxy is what is broken."
+          description={
+            isForwardingMode
+              ? "The machines this box forwards for. Off takes the proxy out of their path entirely: the firewall stops diverting, names resolve directly, and no exit node is used. Reach for it to find out whether the proxy is what is broken."
+              : "This box forwards no one's traffic in server mode; there is no LAN to send. Available when the network mode is router or side gateway."
+          }
         />
         <ToggleSwitch
           isOn={draft.is_local_proxy_enabled}
           onChange={(isOn) => updateDraft({ is_local_proxy_enabled: isOn })}
-          isDisabled={!draft.is_proxy_enabled}
-          label="Send this gateway's own traffic through the proxy"
-          description="The box itself, tailscaled included. This is the way back in when Tailscale cannot reach its control plane over the local link. LAN clients are unaffected either way."
+          label="Send Neutrino Hub's own traffic through the proxy"
+          description="The box itself, tailscaled included, in any network mode and independently of the LAN switch. This is the way back in when Tailscale cannot reach its control plane over the local link."
         />
 
         <div className="proxy_switches">
@@ -231,9 +251,9 @@ export function ProxyPage() {
             <div className="proxy_switch_body">
               <p>
                 Domains and IPs matching the direct lists below leave straight
-                out of the WAN. Everything else goes through the JustMySocks
-                balancer. Turn this off to send absolutely every LAN request
-                through the proxy.
+                out of the WAN. Everything else that is sent to the proxy goes
+                through the exit-node balancer. Turn this off to proxy
+                absolutely everything that is sent.
               </p>
               <div className="proxy_switch_flow">
                 <span>LAN</span>
