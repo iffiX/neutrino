@@ -312,13 +312,16 @@ function TaskLog({ task, onDismiss }: TaskLogProps) {
         ))}
         {task.isRunning && <div className="faint">working…</div>}
       </div>
-      {!task.isRunning && task.exitCode !== null && (
+      {!task.isRunning && (task.exitCode !== null || task.error !== null) && (
         <div className="service_card_task_footer">
           <span
             className={`badge ${task.exitCode === 0 ? "badge--ok" : "badge--error"}`}
           >
             {task.exitCode === 0 ? "done" : "failed"}
           </span>
+          {task.error !== null && (
+            <span className="field_error">{task.error}</span>
+          )}
           <button
             type="button"
             className="button button--ghost button--small"

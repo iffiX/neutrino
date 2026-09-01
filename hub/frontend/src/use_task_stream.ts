@@ -6,14 +6,18 @@ import type { StreamServerMessage } from "./api_types";
 /**
  * Follow one device action to completion over `/ws/task/{task_id}`.
  *
- * Unlike the dashboard feeds this socket must not reconnect: a task id is
- * consumed once, so reopening after the `done` frame would only produce a
- * stream of failed handshakes. The hook therefore opens exactly one socket per
- * task and keeps the output after it closes, which is what lets the drawer
- * show the log of a finished install.
+ * A socket that closes without a result is not a finished task: the panel
+ * restarting drops every socket it holds while the jobs behind them carry on.
+ * The stream replays a job's whole log to whoever subscribes, so the hook
+ * reopens once and starts the log again from the replay. A second close with
+ * no result is reported, and the task is left in a state the page can close.
+ *
+ * It never reconnects after a result: the job is over, and reopening would
+ * only redraw a log the person has already read.
  */
 
 const MAX_LOG_LINES = 2000;
+const RECONNECT_LIMIT = 1;
 
 export interface TaskStreamState {
   lines: string[];
@@ -50,36 +54,55 @@ export function useTaskStream(taskId: string | null): TaskStreamState {
 
     setIsRunning(true);
     let isFinished = false;
-    const socket = new WebSocket(websocketUrl(`/ws/task/${taskId}`));
+    let isDisposed = false;
+    let reconnectsLeft = RECONNECT_LIMIT;
+    let socket: WebSocket;
 
-    socket.onmessage = (event: MessageEvent<unknown>) => {
-      if (typeof event.data !== "string") {
-        return;
-      }
-      const message = parseStreamMessage(event.data);
-      if (message === null) {
-        return;
-      }
-      if (message.type === "output") {
-        setLines((previous) =>
-          [...previous, ...splitLines(message.data)].slice(-MAX_LOG_LINES),
-        );
-        return;
-      }
-      isFinished = true;
-      setExitCode(message.type === "done" ? message.exit_code : message.code);
-      setIsRunning(false);
-      socket.close();
-    };
+    const open = () => {
+      socket = new WebSocket(websocketUrl(`/ws/task/${taskId}`));
 
-    socket.onclose = () => {
-      setIsRunning(false);
-      if (!isFinished) {
+      socket.onmessage = (event: MessageEvent<unknown>) => {
+        if (typeof event.data !== "string") {
+          return;
+        }
+        const message = parseStreamMessage(event.data);
+        if (message === null) {
+          return;
+        }
+        if (message.type === "output") {
+          setLines((previous) =>
+            [...previous, ...splitLines(message.data)].slice(-MAX_LOG_LINES),
+          );
+          return;
+        }
+        isFinished = true;
+        setExitCode(message.type === "done" ? message.exit_code : message.code);
+        setIsRunning(false);
+        socket.close();
+      };
+
+      socket.onclose = () => {
+        if (isDisposed || isFinished) {
+          setIsRunning(false);
+          return;
+        }
+        if (reconnectsLeft > 0) {
+          reconnectsLeft -= 1;
+          // The new subscription replays the job from its first line, so what
+          // is on screen goes rather than being written twice.
+          setLines([]);
+          open();
+          return;
+        }
+        setIsRunning(false);
         setError("The task stream closed before the task reported a result");
-      }
+      };
     };
+
+    open();
 
     return () => {
+      isDisposed = true;
       socket.onclose = null;
       socket.close();
     };
