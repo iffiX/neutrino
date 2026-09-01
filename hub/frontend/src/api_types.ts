@@ -144,8 +144,6 @@ export interface StatsFrame {
   total_uplink_bytes: number;
   total_downlink_bytes: number;
   proxy_scope: ProxyScope;
-  /** The proxy's master switch, as applied when this frame was taken. */
-  is_proxy_enabled: boolean;
   /** Devices the kernel currently has in its neighbour table on the LANs. */
   lan_device_count: number;
   /** How the balancer spreads traffic: leastPing has one exit, the others do not. */

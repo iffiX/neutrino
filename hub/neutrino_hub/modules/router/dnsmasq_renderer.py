@@ -26,7 +26,7 @@ class RouterDnsmasqRenderer:
         Args:
             network: The parsed router configuration. Every interface with the
                 LAN role gets served; the rest are not mentioned at all.
-            routing: Parsed ``config/xray/routing.json``. Only the master proxy
+            routing: Parsed ``config/xray/routing.json``. Only the LAN proxy
                 switch and the direct resolver are read, to decide where
                 queries go.
         """
@@ -95,9 +95,10 @@ class RouterDnsmasqRenderer:
         return lines
 
     def _render_upstream(self) -> list[str]:
-        """Where queries go, which follows the master proxy switch.
+        """Where queries go, which follows the LAN proxy switch.
 
-        With the proxy on, the only upstream is the xray DNS inbound, so a name
+        LAN queries belong to the LAN scope, so they go where LAN traffic
+        goes. With it on, the only upstream is the xray DNS inbound, so a name
         is resolved at the exit node and no plaintext query ever leaves by an
         uplink. With it off, sending queries through xray anyway would be both
         pointless and fragile — the answer would come from the exit node for
@@ -117,7 +118,7 @@ class RouterDnsmasqRenderer:
         address = direct.get("address", "223.5.5.5")
         port = direct.get("port", 53)
         return [
-            "# The proxy is switched off, so queries go straight to the direct",
+            "# LAN traffic is not proxied, so queries go straight to the direct",
             "# resolver. Routing them through xray would resolve them at an exit",
             "# node the traffic is not using, and would take DNS off the LAN",
             "# entirely whenever xray was stopped.",

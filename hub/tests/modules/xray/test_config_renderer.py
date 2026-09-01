@@ -55,7 +55,7 @@ def tags(config: dict, section: str) -> list[str]:
     return [entry["tag"] for entry in config[section]]
 
 
-# --- The master switch ------------------------------------------------------
+# --- The LAN switch ---------------------------------------------------------
 
 
 def test_the_proxy_on_balances_across_the_nodes():
@@ -216,9 +216,9 @@ def test_a_socks_port_can_be_the_whole_proxy():
     assert "socks_1081_in" in balanced[0]["inboundTag"]
 
 
-def test_a_proxied_port_is_not_published_with_the_proxy_off():
-    """It would answer, and send everything out directly under a name that
-    says the opposite."""
+def test_a_proxied_port_outlives_the_lan_switch():
+    """The scopes stand alone: a server keeps its proxied port with the LAN
+    switch off, because it has no LAN for that switch to mean anything on."""
     routing = {
         "is_proxy_enabled": False,
         "socks_ports": [{"port": 1081, "is_proxied": True}],
@@ -228,7 +228,49 @@ def test_a_proxied_port_is_not_published_with_the_proxy_off():
         node_list=XrayNodeList.from_dict(NODES), routing=routing
     ).render()
 
+    balanced = next(r for r in config["routing"]["rules"] if r.get("balancerTag"))
+    assert [i for i in config["inbounds"] if i["tag"] == "socks_1081_in"]
+    assert balanced["inboundTag"] == ["socks_1081_in"]
+
+
+def test_a_proxied_port_is_not_published_without_an_exit():
+    """It would answer, and send everything out directly under a name that
+    says the opposite."""
+    routing = {
+        "is_proxy_enabled": False,
+        "socks_ports": [{"port": 1081, "is_proxied": True}],
+    }
+
+    config = XrayConfigRenderer(
+        node_list=XrayNodeList.from_dict({"nodes": [], "balancer": NODES["balancer"]}),
+        routing=routing,
+    ).render()
+
     assert not [i for i in config["inbounds"] if i["tag"] == "socks_1081_in"]
+
+
+def test_the_hub_scope_stands_alone():
+    """The box's own traffic reaches the balancer with the LAN switch off,
+    while the DNS inbound — LAN queries — still answers directly."""
+    routing = {
+        "is_proxy_enabled": False,
+        "is_local_proxy_enabled": True,
+        "socks_ports": [],
+    }
+
+    config = XrayConfigRenderer(
+        node_list=XrayNodeList.from_dict(NODES), routing=routing
+    ).render()
+
+    balanced = next(r for r in config["routing"]["rules"] if r.get("balancerTag"))
+    dns = next(
+        r
+        for r in config["routing"]["rules"]
+        if r.get("inboundTag") == ["dns_in"] and r.get("outboundTag") == "direct"
+    )
+    assert balanced["inboundTag"] == ["tproxy_in"]
+    assert dns is not None
+    assert "node_hk1" in tags(config, "outbounds")
 
 
 def test_a_direct_port_is_published_with_the_proxy_off():
@@ -245,11 +287,12 @@ def test_a_direct_port_is_published_with_the_proxy_off():
     assert [i for i in config["inbounds"] if i["tag"] == "socks_1080_in"]
 
 
-def test_the_master_switch_is_the_way_out_of_a_bad_direct_entry():
+def test_every_scope_off_is_the_way_out_of_a_bad_direct_entry():
     """The direct lists reach the xray config, and a bad entry there makes it
     unrenderable — which used to take the whole apply with it, firewall and
-    resolver included. Turning the proxy off is documented as the blunt
-    instrument for exactly that, so with it off the lists are not read at all.
+    resolver included. Switching every scope off is documented as the blunt
+    instrument for exactly that, so with nothing sent to the balancer the
+    lists are not read at all.
     """
     config = render(
         is_proxy_enabled=False,

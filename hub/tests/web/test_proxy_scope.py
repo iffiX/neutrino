@@ -32,12 +32,14 @@ def runtime_with(
     *,
     routing: dict,
     ruleset: str | None,
-    network: dict | None = None
+    network: dict | None = None,
+    nodes: dict | None = None,
 ) -> PanelRuntime:
     runtime = object.__new__(PanelRuntime)
     config = {
         "xray/routing.json": routing,
         "router/network.json": network or {"mode": "server", "interfaces": []},
+        "xray/nodes.json": nodes or {"nodes": []},
     }
     monkeypatch.setattr(runtime_module, "read_config", lambda name: config[name])
     path = tmp_path / "router.nft"
@@ -47,7 +49,20 @@ def runtime_with(
     return runtime
 
 
-def test_the_master_switch_off_is_off(monkeypatch, tmp_path):
+def test_every_switch_off_is_off(monkeypatch, tmp_path):
+    runtime = runtime_with(
+        monkeypatch,
+        tmp_path,
+        routing=routing(is_proxy_enabled=False),
+        ruleset="chain prerouting {\n}\n",
+    )
+
+    assert runtime.proxy_scope() == "off"
+
+
+def test_the_kernel_outranks_a_switch_nobody_applied(monkeypatch, tmp_path):
+    """A switch turned off and not yet applied is a firewall still diverting,
+    and the strip answers for the traffic, not the form."""
     runtime = runtime_with(
         monkeypatch,
         tmp_path,
@@ -55,7 +70,7 @@ def test_the_master_switch_off_is_off(monkeypatch, tmp_path):
         ruleset=LAN_DIVERSION,
     )
 
-    assert runtime.proxy_scope() == "off"
+    assert runtime.proxy_scope() == "lan"
 
 
 def test_a_diverted_lan_reads_as_lan(monkeypatch, tmp_path):
@@ -94,8 +109,26 @@ def test_a_proxied_port_with_no_diversion_reads_as_ports(monkeypatch, tmp_path):
     runtime = runtime_with(
         monkeypatch,
         tmp_path,
-        routing=routing(socks_ports=[{"port": 1080, "is_proxied": True}]),
+        routing=routing(
+            is_proxy_enabled=False,
+            socks_ports=[{"port": 1080, "is_proxied": True}],
+        ),
         ruleset="chain prerouting {\n}\n",
+        nodes={
+            "nodes": [
+                {
+                    "id": "hk1",
+                    "protocol": "shadowsocks",
+                    "address": "1.2.3.4",
+                    "is_enabled": True,
+                    "shadowsocks": {
+                        "port": 8388,
+                        "method": "aes-256-gcm",
+                        "password": "pw",  # scan: allow
+                    },
+                }
+            ]
+        },
     )
 
     assert runtime.proxy_scope() == "ports"

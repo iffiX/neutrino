@@ -1,16 +1,16 @@
 {
-  "_comment_enabled": "is_proxy_enabled is the master switch. false takes the proxy out of the path entirely: LAN traffic is forwarded straight out the WAN, dnsmasq resolves through direct_dns instead of through xray, and no exit node is needed or used. It is the honest thing to reach for when working out whether the proxy is what is broken.",
+  "_comment_enabled": "is_proxy_enabled sends the traffic this box forwards - the networks it serves - through the exit nodes. false leaves forwarded traffic alone: the firewall stops diverting, LAN names resolve directly through direct_dns, and the box works as a plain router. It reads as nothing on a server, which forwards nobody. Every scope here needs an enabled exit node; switched on with none, it renders as off and the panel writes it back off.",
   "is_proxy_enabled": false,
 
-  "_comment_socks_ports": "SOCKS5 listeners, one per port. is_proxied false leaves straight out the uplink — what ToDesk and AnyDesk on a work machine are pointed at, so the two ends of a session look like they are on the same continent. is_proxied true goes out through the exit nodes, split the same way forwarded traffic is; a box that diverts nothing transparently has that port as the whole of its proxy. A proxied listener is not published while is_proxy_enabled is false, because it would answer and send everything out directly under a name that says the opposite.",
+  "_comment_socks_ports": "SOCKS5 listeners, one per port, independent of the switches above. is_proxied false leaves straight out the uplink - what ToDesk and AnyDesk on a work machine are pointed at, so the two ends of a session look like they are on the same continent. is_proxied true goes out through the exit nodes, split the same way forwarded traffic is; on a server this is the whole of the proxy. A proxied listener is not published while no exit node is enabled, because it would answer and send everything out directly under a name that says the opposite.",
   "socks_ports": [{ "port": 1080, "is_proxied": false }],
 
-  "_comment_geoip": "is_geoip_split_enabled true means domains/IPs in direct_domains and direct_ips leave through the WAN directly and everything else goes through the JustMySocks balancer. Keep it true when the gateway sits in mainland China; set false to send absolutely everything through the proxy.",
+  "_comment_geoip": "is_geoip_split_enabled true means domains/IPs in direct_domains and direct_ips leave through the WAN directly and everything else goes through the balancer. Keep it true when the gateway sits in mainland China; set false to send absolutely everything through the proxy.",
   "is_geoip_split_enabled": true,
   "direct_domains": ["geosite:cn", "geosite:private"],
   "direct_ips": ["geoip:cn", "geoip:private"],
 
-  "_comment_local": "is_local_proxy_enabled controls the gateway's OWN traffic (the box itself, including tailscaled). false = straight out the WAN. true = through the proxy, which is the fallback when Tailscale's control plane is unreachable locally. The web panel toggles this.",
+  "_comment_local": "is_local_proxy_enabled controls the hub's OWN traffic (the box itself, tailscaled included), in any network mode and independently of the LAN switch above. false = straight out the WAN. true = through the proxy, which is the fallback when Tailscale's control plane is unreachable locally. The web panel toggles this.",
   "is_local_proxy_enabled": false,
 
   "_comment_dns": "remote_dns resolves proxied names at the exit node; direct_dns resolves the geoip-split direct names locally. LAN clients always ask dnsmasq, which forwards to xray, so plaintext DNS never leaves the WAN.",

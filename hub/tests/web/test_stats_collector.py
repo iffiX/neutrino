@@ -22,7 +22,6 @@ def frame(*, proxy_scope: str) -> StatsFrame:
             OutboundTrafficView(tag="direct", uplink_bytes=5, downlink_bytes=5),
         ],
         proxy_scope=proxy_scope,
-        is_proxy_enabled=proxy_scope != "off",
     )
 
 

@@ -53,30 +53,37 @@ class XrayConfigRenderer:
         Args:
             node_list: Parsed ``config/xray/nodes.json``.
             routing: Parsed ``config/xray/routing.json``.
-
-        Raises:
-            ValueError: If no node is enabled, since the balancer would have
-                nothing to select and every proxied connection would fail.
         """
-        self._is_proxy_enabled = routing.get("is_proxy_enabled", True)
-        # A proxied listener with the proxy off would answer and send
-        # everything out directly under a name that says the opposite, so it
-        # is not published at all in that state.
+        # A scope switched on with nothing to go out through renders as off.
+        # Raising instead made every apply fail on a box in that state — and
+        # the one thing that fixes it, switching the scope off, is what the
+        # failure prevented anybody from applying. The panel writes the
+        # switches off when the list empties, so the two agree; this is what
+        # keeps a hand-edited file from being unrenderable.
+        has_exit = bool(node_list.enabled_nodes)
+        self._is_lan_proxied = routing.get("is_proxy_enabled", True) and has_exit
+        self._is_local_proxied = (
+            routing.get("is_local_proxy_enabled", False) and has_exit
+        )
+        # A proxied listener with no exit would answer and send everything out
+        # directly under a name that says the opposite, so it is not published
+        # at all in that state.
         self._socks_ports = [
             entry
             for entry in routing.get("socks_ports", [])
-            if self._is_proxy_enabled or not entry.get("is_proxied", False)
+            if has_exit or not entry.get("is_proxied", False)
         ]
-        # A proxy with nothing to go out through renders as one that is off.
-        # Raising here instead made every apply fail on a box that reached
-        # this state — and the one thing that fixes it, the master switch, is
-        # what the failure prevented anybody from applying. The panel writes
-        # the switch off when the list empties, so the two agree; this is what
-        # keeps a hand-edited file from being unrenderable.
-        if self._is_proxy_enabled and not node_list.enabled_nodes:
-            self._is_proxy_enabled = False
         self._node_list = node_list
         self._routing = routing
+
+    @property
+    def _is_anything_proxied(self) -> bool:
+        """Whether any scope sends traffic to the balancer at all."""
+        return bool(
+            self._is_lan_proxied
+            or self._is_local_proxied
+            or self._socks_tags(is_proxied=True)
+        )
 
     def render(self) -> dict:
         """Render the whole configuration.
@@ -108,14 +115,14 @@ class XrayConfigRenderer:
             "outbounds": self._render_outbounds(),
             "routing": self._render_routing(),
         }
-        if self._is_proxy_enabled and self._node_list.is_observatory_needed:
+        if self._is_anything_proxied and self._node_list.is_observatory_needed:
             config["observatory"] = self._render_observatory()
         return config
 
     def _render_dns(self) -> dict:
         remote = self._routing.get("remote_dns", {})
         servers: list = [remote.get("address", "1.1.1.1")]
-        if self._is_geoip_split_enabled and self._is_proxy_enabled:
+        if self._is_geoip_split_enabled and self._is_anything_proxied:
             direct = self._routing.get("direct_dns", {})
             servers.insert(
                 0,
@@ -197,7 +204,7 @@ class XrayConfigRenderer:
     def _render_outbounds(self) -> list[dict]:
         outbounds = (
             [self._render_node_outbound(node) for node in self._node_list.enabled_nodes]
-            if self._is_proxy_enabled
+            if self._is_anything_proxied
             else []
         )
         outbounds.append(
@@ -267,20 +274,31 @@ class XrayConfigRenderer:
                     "outboundTag": XRAY_DIRECT_TAG,
                 }
             )
-        if not self._is_proxy_enabled:
-            # The proxy is out of the path, so the split has nothing to split:
-            # everything leaves directly. The lists are not read at all here,
-            # which is what makes the master switch the way out of a bad entry
-            # in one of them — the thing its documentation promises and this
-            # used to refuse, because a rejected config takes the whole apply
-            # with it.
+        balanced = self._socks_tags(is_proxied=True)
+        if self._is_lan_proxied:
+            balanced = [XRAY_TPROXY_TAG, XRAY_DNS_TAG] + balanced
+        else:
+            # With the LAN scope off, whatever still reaches these inbounds
+            # leaves directly — the DNS inbound has to answer from somewhere,
+            # and the transparent inbound carries the hub's own traffic when
+            # that scope stands alone.
+            if self._is_local_proxied:
+                balanced = [XRAY_TPROXY_TAG] + balanced
+                direct_inbounds = [XRAY_DNS_TAG]
+            else:
+                direct_inbounds = [XRAY_TPROXY_TAG, XRAY_DNS_TAG]
             rules.append(
                 {
                     "type": "field",
-                    "inboundTag": [XRAY_TPROXY_TAG, XRAY_DNS_TAG],
+                    "inboundTag": direct_inbounds,
                     "outboundTag": XRAY_DIRECT_TAG,
                 }
             )
+        if not balanced:
+            # Nothing is sent to the balancer, so the split has nothing to
+            # split and the lists are not read at all — which is what makes
+            # switching every scope off the way out of a bad entry in one of
+            # them: a rejected config takes the whole apply with it.
             return {"domainStrategy": "IPIfNonMatch", "rules": rules}
 
         if self._is_geoip_split_enabled:
@@ -302,11 +320,10 @@ class XrayConfigRenderer:
                         "outboundTag": XRAY_DIRECT_TAG,
                     }
                 )
-        proxied = [XRAY_TPROXY_TAG, XRAY_DNS_TAG] + self._socks_tags(is_proxied=True)
         rules.append(
             {
                 "type": "field",
-                "inboundTag": proxied,
+                "inboundTag": balanced,
                 "balancerTag": XRAY_BALANCER_TAG,
             }
         )

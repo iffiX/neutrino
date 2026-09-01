@@ -273,12 +273,12 @@ def test_node(
 
 
 def _follow_the_nodes(node_list: XrayNodeList, runtime: PanelRuntime) -> None:
-    """Switch the proxy off once nothing is left to go out through.
+    """Switch the proxied scopes off once nothing is left to go out through.
 
-    A proxy with no enabled node is not a setting, it is a configuration that
-    cannot be rendered: the balancer would have nothing to select. Leaving the
+    A scope with no enabled node is not a setting, it is a configuration that
+    cannot be rendered: the balancer would have nothing to select. Leaving a
     switch on made every Apply fail with that in it, and the one way out —
-    turning the switch off — was something the page never said.
+    turning it off — was something the page never said.
 
     Written into `config/` rather than worked around at render time, so the
     panel shows the state the box is actually in.
@@ -290,9 +290,12 @@ def _follow_the_nodes(node_list: XrayNodeList, runtime: PanelRuntime) -> None:
     if node_list.enabled_nodes:
         return
     routing = runtime.routing()
-    if not routing.get("is_proxy_enabled", True):
+    if not routing.get("is_proxy_enabled", True) and not routing.get(
+        "is_local_proxy_enabled", False
+    ):
         return
     routing["is_proxy_enabled"] = False
+    routing["is_local_proxy_enabled"] = False
     write_config("xray/routing.json", routing)
 
 

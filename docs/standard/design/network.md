@@ -117,9 +117,12 @@ asked — and reporting it as "diverting" or "direct" would answer a question
 the mode never poses. What the panel reports is therefore a *scope*: off,
 unused, ports only, the forwarded network, this box, or both.
 
-The master switch gates all of it at once. Off is the honest state for
-finding out whether the proxy is what is broken: nothing is diverted, the
-proxied SOCKS ports are not published, and DNS goes to the direct resolver.
+There is no master switch above these: each scope is its own switch, and
+off is all of them off — the honest state for finding out whether the proxy
+is what is broken. What every scope shares is the need for an exit: switched
+on with no enabled node it renders as off, and the panel writes the switch
+back rather than showing a proxy that is not there. The forwarded machines'
+DNS follows the forwarded scope, because the queries belong to the traffic.
 
 One consequence looks like a malfunction and is not: with the proxy on and
 every enabled node dead, proxied traffic and the forwarded machines' DNS

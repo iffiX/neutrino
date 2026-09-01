@@ -1,10 +1,11 @@
 """The Proxy tab: the GeoIP split and the gateway's own routing.
 
-The two switches here are the ones that change what leaves the box and how.
-``is_geoip_split_enabled`` decides whether Chinese destinations skip the proxy;
-``is_local_proxy_enabled`` decides whether the gateway's own traffic — including
-netbird — goes through it, which is the way back in when the overlay cannot
-reach its management plane directly.
+The switches here are the proxy's scopes, and each stands alone.
+``is_proxy_enabled`` sends the traffic this box forwards through the exit
+nodes; ``is_local_proxy_enabled`` sends the box's own traffic — including
+netbird, which is the way back in when the overlay cannot reach its management
+plane directly; ``is_geoip_split_enabled`` decides whether Chinese
+destinations skip the proxy for whatever is sent to it.
 """
 
 import ipaddress
@@ -56,14 +57,19 @@ def update_settings(
         config and the nftables ruleset, so it takes effect on the next Apply.
 
     Raises:
-        HTTPException: 400 when the proxy is switched on with nothing to go
-            out through, when a resolver is not an address, when two listeners
+        HTTPException: 400 when a proxied scope is switched on with nothing
+            to go out through, when a resolver is not an address, when two listeners
             want one port, when a listener wants a port something on the box
             already holds, or when a direct list holds a line xray will not
             load. Each of these reaches the xray config, where a bad value is a
             proxy that will not start rather than a setting that does nothing.
     """
-    if settings.is_proxy_enabled and not runtime.node_list().enabled_nodes:
+    is_exit_needed = (
+        settings.is_proxy_enabled
+        or settings.is_local_proxy_enabled
+        or any(entry.is_proxied for entry in settings.socks_ports)
+    )
+    if is_exit_needed and not runtime.node_list().enabled_nodes:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="no exit node is enabled, so there is nothing to proxy through",

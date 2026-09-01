@@ -69,7 +69,6 @@ class PanelStatsCollector:
             total_uplink_bytes=total_uplink,
             total_downlink_bytes=total_downlink,
             proxy_scope=scope,
-            is_proxy_enabled=scope != WEB_PROXY_SCOPE_OFF,
             balancer_strategy=node_list.strategy,
             enabled_node_count=len(nodes),
             lan_device_count=count_lan_neighbours(

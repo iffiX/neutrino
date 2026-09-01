@@ -168,7 +168,7 @@ def test_a_box_with_no_uplink_still_serves_and_firewalls_its_lan():
     assert "masquerade" not in without_comments(ruleset)
 
 
-def test_the_master_switch_off_stops_the_firewall_diverting():
+def test_the_lan_switch_off_stops_the_firewall_diverting():
     """The proxy has to leave the path everywhere at once.
 
     A ruleset that still diverts into a proxy the rest of the box has been told
@@ -187,15 +187,19 @@ def test_the_master_switch_off_stops_the_firewall_diverting():
     assert 'oifname { "enp2s0" } masquerade' in body
 
 
-def test_the_master_switch_off_also_stops_the_local_proxy():
-    """The gateway's own traffic cannot go through a proxy that is switched off."""
+def test_the_hub_scope_outlives_the_lan_switch():
+    """The scopes stand alone: the box's own traffic is still diverted with
+    the LAN switch off, and the LAN's is still not."""
     ruleset = render(
         wan_entry("enp2s0"),
         lan_entry("enp1s0", address="192.168.100.1"),
         routing={"is_proxy_enabled": False, "is_local_proxy_enabled": True},
     )
+    body = without_comments(ruleset)
 
-    assert "meta skuid 999 return" not in ruleset
+    assert "meta skuid 999 return" in body
+    assert 'iifname "lo"' in body
+    assert "iifname !=" not in body
 
 
 def test_fenced_lans_cannot_reach_each_other():

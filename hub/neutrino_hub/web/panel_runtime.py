@@ -267,12 +267,12 @@ class PanelRuntime:
             the best available answer.
         """
         routing = self.routing()
-        if not routing.get("is_proxy_enabled", True):
-            return WEB_PROXY_SCOPE_OFF
         try:
             ruleset = ROUTER_NFT_PATH.read_text(encoding="utf-8")
         except OSError:
-            is_lan_diverted = bool(self.network().lan_interfaces)
+            is_lan_diverted = routing.get("is_proxy_enabled", True) and bool(
+                self.network().lan_interfaces
+            )
             is_hub_diverted = bool(routing.get("is_local_proxy_enabled", False))
         else:
             # The hub's own diversion hairpins through loopback, which is the
@@ -288,9 +288,18 @@ class PanelRuntime:
             return WEB_PROXY_SCOPE_LAN
         if is_hub_diverted:
             return WEB_PROXY_SCOPE_HUB
-        if any(entry.get("is_proxied") for entry in routing.get("socks_ports", [])):
+        is_port_proxied = any(
+            entry.get("is_proxied") for entry in routing.get("socks_ports", [])
+        )
+        if is_port_proxied and self.node_list().enabled_nodes:
             return WEB_PROXY_SCOPE_PORTS
-        return WEB_PROXY_SCOPE_UNUSED
+        if (
+            routing.get("is_proxy_enabled", True)
+            or routing.get("is_local_proxy_enabled", False)
+            or is_port_proxied
+        ):
+            return WEB_PROXY_SCOPE_UNUSED
+        return WEB_PROXY_SCOPE_OFF
 
     def uplink_address(self) -> str | None:
         """The address this box reaches the internet from.
@@ -445,11 +454,11 @@ class PanelRuntime:
         )
 
     def _settled_routing(self, node_list: XrayNodeList) -> dict:
-        """The routing options, with the proxy switched off if it cannot run.
+        """The routing options, with the scopes switched off if they cannot run.
 
-        A proxy with no enabled node has nothing to select and renders as off.
-        Writing that back means the panel and the box agree about it rather
-        than the page showing a switch that does nothing.
+        A scope with no enabled node has nothing to leave through and renders
+        as off. Writing that back means the panel and the box agree about it
+        rather than the page showing switches that do nothing.
 
         Args:
             node_list: The nodes as they are now.
@@ -458,8 +467,12 @@ class PanelRuntime:
             The routing options as they will be rendered.
         """
         routing = self.routing()
-        if routing.get("is_proxy_enabled", True) and not node_list.enabled_nodes:
+        is_scoped = routing.get("is_proxy_enabled", True) or routing.get(
+            "is_local_proxy_enabled", False
+        )
+        if is_scoped and not node_list.enabled_nodes:
             routing["is_proxy_enabled"] = False
+            routing["is_local_proxy_enabled"] = False
             write_config("xray/routing.json", routing)
         return routing
 

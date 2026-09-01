@@ -43,8 +43,8 @@ class RouterNftRenderer:
         """
         Args:
             network: The parsed router configuration.
-            routing: Parsed ``config/xray/routing.json``; only the local-proxy
-                toggle is read here.
+            routing: Parsed ``config/xray/routing.json``; only the LAN and
+                local-proxy switches are read here.
             xray_uid: Numeric uid the xray service runs as. Traffic from this
                 uid is never diverted, which is what stops the proxy from
                 looping into itself.
@@ -56,10 +56,11 @@ class RouterNftRenderer:
         self._exposed = network.exposed_device_names
         self._side_lans = _side_lan_subnets(network)
         self._is_inter_lan_allowed = network.is_inter_lan_allowed
-        self._is_proxy_enabled = routing.get("is_proxy_enabled", True)
-        self._is_local_proxy_enabled = self._is_proxy_enabled and routing.get(
-            "is_local_proxy_enabled", False
-        )
+        # Two independent scopes: what the box forwards, and the box itself.
+        # Neither implies the other, so a server can proxy its own traffic
+        # while forwarding nobody's.
+        self._is_lan_proxy_enabled = routing.get("is_proxy_enabled", True)
+        self._is_local_proxy_enabled = routing.get("is_local_proxy_enabled", False)
         self._xray_uid = xray_uid
 
     def render(self) -> str:
@@ -121,10 +122,10 @@ class RouterNftRenderer:
                 f"tproxy ip to {target} accept",
                 "",
             ]
-        if not self._is_proxy_enabled:
+        if not self._is_lan_proxy_enabled:
             lines += [
-                "        # The proxy is switched off, so nothing is diverted into it.",
-                "        # LAN traffic is forwarded and masqueraded like any router's.",
+                "        # LAN traffic is not sent to the proxy: it is forwarded",
+                "        # and masqueraded like any router's.",
                 "    }\n",
             ]
             return "\n".join(lines)
