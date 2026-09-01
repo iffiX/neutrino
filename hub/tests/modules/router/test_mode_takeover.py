@@ -1,4 +1,4 @@
-"""A machine the hub is a guest on keeps its own addresses.
+"""A machine the hub does not address keeps its own addresses.
 
 Two of the four modes are somebody else's machine — a VPS, a laptop — where
 the panel answers on the address a port already has. The mode is what says
@@ -41,7 +41,7 @@ APPLIER_DRIVERS = (
 
 
 @pytest.mark.parametrize("mode", GUEST_MODES)
-def test_a_guest_mode_addresses_nothing(mode):
+def test_a_mode_that_addresses_nothing_addresses_nothing(mode):
     network = _planned(mode)
 
     assert network.interfaces
@@ -91,7 +91,7 @@ def test_applying_an_addressed_interface_still_writes(monkeypatch):
 
 
 def test_a_port_appearing_later_answers_to_the_box_it_appeared_on():
-    """A machine is wholly a guest or wholly an owner, so a port nobody has
+    """A machine is wholly addressed by the hub or not at all, so a port nobody has
     configured yet is whatever the machine is."""
     network = _planned(ROUTER_MODE_SERVER)
     network.replace(network.interface_or_new("eth9"))
@@ -308,3 +308,27 @@ def test_a_next_hop_the_kernel_refuses_does_not_take_the_apply_down(monkeypatch)
 
     assert any("cannot reach 10.0.0.1" in line for line in changes)
     assert "set_address" in calls
+
+
+def test_a_single_interface_save_still_takes_the_machine_over(monkeypatch):
+    """The panel applies one interface at a time, and that path used to skip
+    the handover entirely: the hub configured the port while the machine's own
+    manager still held it — two managers on one wire, found live on a box
+    whose networkd was never stopped."""
+    calls = _record_calls(monkeypatch)
+    network = _one_lan(mode=ROUTER_MODE_ROUTER)
+
+    routes.RouterInterfaceApplier(network=network).apply(network.interfaces[0])
+
+    assert "stand_down" in calls
+    assert "restore_state" in calls
+
+
+def test_tearing_one_interface_down_is_not_a_takeover(monkeypatch):
+    calls = _record_calls(monkeypatch)
+    network = _one_lan(mode=ROUTER_MODE_ROUTER)
+    network.interfaces[0].role = "disabled"
+
+    routes.RouterInterfaceApplier(network=network).apply(network.interfaces[0])
+
+    assert "stand_down" not in calls

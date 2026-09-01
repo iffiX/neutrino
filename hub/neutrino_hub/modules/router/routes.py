@@ -237,6 +237,7 @@ class RouterInterfaceApplier:
         # interface and the answer does not change while it runs.
         self._kinds = {link.name: link.kind for link in self._status.all_links()}
         self._plan = build_uplink_plan(network=network, status=self._status)
+        self._is_takeover_checked = False
 
     def apply_all(self) -> list[str]:
         """Apply every interface's role, then rebuild the default route.
@@ -276,35 +277,49 @@ class RouterInterfaceApplier:
             # with it. Roles are given one at a time below this panel, and
             # each is applied as it is given.
             return []
-        changes = []
-        if self._network.is_addressing_owned:
-            # Before anything is configured, not after: two things driving one
-            # interface is where every bug in this area has come from, and the
-            # window where both are running is the window it happens in.
-            #
-            # But stopping a manager takes down what it configured, and one of
-            # those interfaces is how whoever asked for this is connected. So
-            # what they are addressed with is read first and put straight back
-            # — the roles below then replace it wherever they differ.
-            #
-            # Only where there is something to stand down. Applying is not a
-            # takeover: `neutrino_hub_router.service` runs it on every boot
-            # and every restart, and redoing the handover each time would
-            # take the addresses off and put them back for no reason — with
-            # whoever is connected over one of them in the gap.
-            if stack.running_managers():
-                devices = tuple(
-                    interface.device_name for interface in self._network.interfaces
-                )
-                carried = links.carried_state(devices)
-                changes += stack.stand_down(
-                    tuple(device for device in devices if self._is_wifi(device))
-                )
-                links.restore_state(carried)
+        changes = self._take_over()
         for interface in ordered:
             changes += self.apply(interface)
         changes += RouterDefaultRouteApplier(network=self._network).apply()
         changes += self._apply_resolver()
+        return changes
+
+    def _take_over(self) -> list[str]:
+        """Stand the machine's own manager down, once, before the first role.
+
+        Before anything is configured, not after: two things driving one
+        interface is where every bug in this area has come from, and the
+        window where both are running is the window it happens in. This runs
+        from every path that makes a role real — the whole-network apply and
+        the panel's single-interface save alike — because a takeover that
+        only happens on one of them leaves the other configuring ports a
+        manager still holds.
+
+        But stopping a manager takes down what it configured, and one of
+        those interfaces is how whoever asked for this is connected. So what
+        they are addressed with is read first and put straight back — the
+        roles applied after this then replace it wherever they differ.
+
+        Only where there is something to stand down. Applying is not a
+        takeover: `neutrino_hub_router.service` runs it on every boot and
+        every restart, and redoing the handover each time would take the
+        addresses off and put them back for no reason — with whoever is
+        connected over one of them in the gap.
+
+        Returns:
+            One line per manager stood down; empty when there was nothing to.
+        """
+        if self._is_takeover_checked or not self._network.is_addressing_owned:
+            return []
+        self._is_takeover_checked = True
+        if not stack.running_managers():
+            return []
+        devices = tuple(interface.device_name for interface in self._network.interfaces)
+        carried = links.carried_state(devices)
+        changes = stack.stand_down(
+            tuple(device for device in devices if self._is_wifi(device))
+        )
+        links.restore_state(carried)
         return changes
 
     def _apply_resolver(self) -> list[str]:
@@ -348,6 +363,12 @@ class RouterInterfaceApplier:
             # Everything that is the hub's own still happens: this interface
             # is masqueraded out of, listened on, and forwarded through.
             return []
+        # A role being made real is the moment two managers must not share
+        # the wire; tearing a role down needs no takeover of its own.
+        taken = [] if interface.is_disabled else self._take_over()
+        return taken + self._apply_role(interface)
+
+    def _apply_role(self, interface: RouterInterface) -> list[str]:
         if interface.is_untagged:
             return self._apply_untagged(interface)
         if interface.is_lan:
