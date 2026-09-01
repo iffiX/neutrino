@@ -7,6 +7,7 @@ credentials it becomes a stored device and survives reboots.
 """
 
 import secrets
+import threading
 from dataclasses import dataclass, field
 
 from neutrino_hub.utils.json_file import read_config, write_config
@@ -162,8 +163,20 @@ class ManagedDevice:
         }
 
 
+# Held across every read-modify-write of the device file. The panel is one
+# process with many threads — a heartbeat, a page load and a save all land at
+# once — and the file is written whole.
+_WRITE_LOCK = threading.RLock()
+
+
 class DeviceRegistry:
-    """Reads, merges, and writes the device list."""
+    """Reads, merges, and writes the device list.
+
+    Every write re-reads the file first. An agent beats every five seconds and
+    each beat rewrites the whole list, so a panel action that took its own
+    snapshot a moment earlier would put every other device back as it was —
+    including one somebody has just forgotten, credentials and all.
+    """
 
     def __init__(self):
         self._stored = self._read_stored()
@@ -258,12 +271,38 @@ class DeviceRegistry:
         Args:
             mac_address: The device's MAC. Unknown addresses are ignored.
         """
-        entry = self._stored.get(mac_address.lower(), {})
-        ssh = entry.get("ssh") or {}
-        if ssh.get("host"):
-            DeviceHostKeyStore().forget(ssh["host"], ssh.get("port", 22))
-        self._stored.pop(mac_address.lower(), None)
-        self._write_stored()
+        with _WRITE_LOCK:
+            self._stored = self._read_stored()
+            entry = self._stored.get(mac_address.lower(), {})
+            ssh = entry.get("ssh") or {}
+            # Only where no other record still points at that address: the
+            # store is keyed by host and port, and a machine whose MAC changed
+            # is two records on one host. Forgetting the stale one would
+            # unpin the live one.
+            if ssh.get("host") and not self._others_on(mac_address, ssh):
+                DeviceHostKeyStore().forget(ssh["host"], ssh.get("port", 22))
+            self._stored.pop(mac_address.lower(), None)
+            self._write_stored()
+
+    def _others_on(self, mac_address: str, ssh: dict) -> bool:
+        """Whether another stored device is reached at this host and port.
+
+        Args:
+            mac_address: The device being forgotten.
+            ssh: Its SSH settings.
+
+        Returns:
+            True when some other record names the same address.
+        """
+        for other_mac, entry in self._stored.items():
+            if other_mac == mac_address.lower():
+                continue
+            other = entry.get("ssh") or {}
+            if other.get("host") == ssh.get("host") and other.get(
+                "port", 22
+            ) == ssh.get("port", 22):
+                return True
+        return False
 
     def issue_client_token(self, mac_address: str) -> str:
         """Create and store a heartbeat token for a device.
@@ -408,8 +447,13 @@ class DeviceRegistry:
         )
 
     def _store(self, device: ManagedDevice) -> None:
-        self._stored[device.mac_address] = device.to_dict()
-        self._write_stored()
+        with _WRITE_LOCK:
+            # Re-read inside the lock: what this holds is one device, and
+            # writing a snapshot taken before somebody else's change would
+            # undo theirs.
+            self._stored = self._read_stored()
+            self._stored[device.mac_address] = device.to_dict()
+            self._write_stored()
 
     def _read_stored(self) -> dict:
         try:
