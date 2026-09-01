@@ -19,7 +19,11 @@ from neutrino_hub.web.models import (
     NodeView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
-from neutrino_hub.modules.xray.constants import XRAY_BALANCER_STRATEGIES
+from neutrino_hub.modules.xray.constants import (
+    XRAY_BALANCER_STRATEGIES,
+    XRAY_PROBE_INTERVAL_MAX_S,
+    XRAY_PROBE_INTERVAL_MIN_S,
+)
 from neutrino_hub.modules.xray.node_config import (
     XrayNodeConfig,
     XrayNodeList,
@@ -92,12 +96,31 @@ def update_balancer(
         The stored settings.
 
     Raises:
-        HTTPException: 400 when the strategy is not one xray supports.
+        HTTPException: 400 when the strategy is not one xray supports, the
+            probe interval is not one it can keep, or the probe URL is not a
+            URL. All three reach the observatory, which fails at run time
+            rather than at load time — a bad one is a proxy that starts and
+            never picks a node.
     """
     if settings.strategy not in XRAY_BALANCER_STRATEGIES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"unknown strategy {settings.strategy!r}",
+        )
+    if not (
+        XRAY_PROBE_INTERVAL_MIN_S
+        <= settings.probe_interval_s
+        <= XRAY_PROBE_INTERVAL_MAX_S
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"the probe interval is {XRAY_PROBE_INTERVAL_MIN_S} to "
+            f"{XRAY_PROBE_INTERVAL_MAX_S} seconds",
+        )
+    if not settings.probe_url.startswith(("http://", "https://")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="the probe URL has to be an http or https address",
         )
     node_list = runtime.node_list()
     node_list.strategy = settings.strategy

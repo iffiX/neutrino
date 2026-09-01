@@ -61,6 +61,12 @@ XRAY_GEODATA = {
     },
 }
 
+# What the observatory's probe interval may be. Zero is not a fast probe, it
+# is xray probing in a loop; the ceiling is a day, past which a "latency" is a
+# number from another era.
+XRAY_PROBE_INTERVAL_MIN_S = 5
+XRAY_PROBE_INTERVAL_MAX_S = 86400
+
 # How much of the address digest a node's id carries. Eight hexadecimal
 # characters is short enough to read in a URL and long enough that two servers
 # a person actually holds will not collide.

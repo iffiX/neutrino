@@ -179,6 +179,32 @@ def test_a_port_no_listener_can_take_is_refused(client, port):
     assert response.status_code == 400
 
 
+@pytest.mark.parametrize(
+    "settings,label",
+    [
+        ({"probe_interval_s": 0}, "a probe interval of zero"),
+        ({"probe_interval_s": -60}, "a probe interval running backwards"),
+        ({"probe_interval_s": 999999}, "a probe interval of days"),
+        ({"probe_url": "not a url"}, "a probe target that is not a URL"),
+        ({"probe_url": ""}, "no probe target at all"),
+    ],
+)
+def test_the_balancer_refuses_what_the_observatory_cannot_keep(client, settings, label):
+    """These reach xray's observatory, which fails at run time rather than at
+    load time: a bad one is a proxy that starts and then never picks a node."""
+    opened, _ = client
+    body = {
+        "strategy": "leastPing",
+        "probe_url": "https://www.gstatic.com/generate_204",
+        "probe_interval_s": 60,
+    }
+    body.update(settings)
+
+    response = opened.put("/api/proxy/balancer", json=body)
+
+    assert response.status_code == 400, label
+
+
 def test_many_listeners_are_kept_in_the_order_they_were_given(client):
     """Adding a row at a time is how the page works, and a list that reorders
     itself under that is one nobody can edit."""
