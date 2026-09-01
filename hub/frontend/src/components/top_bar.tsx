@@ -104,7 +104,9 @@ export function TopBar() {
  * The address the strip shows as "wan".
  *
  * With more than one uplink there is no single answer, so it names the first
- * one holding an address — the same one the gateway itself reports.
+ * one holding an address — the same one the gateway itself reports. In the
+ * modes that give no port the WAN role, the way out is whichever interface
+ * carries the default route.
  */
 function firstUplinkAddress(view: NetworkView | null): string | null {
   if (view === null) {
@@ -114,5 +116,11 @@ function firstUplinkAddress(view: NetworkView | null): string | null {
     (entry) =>
       entry.settings.role === "wan" && entry.link.ipv4_address !== null,
   );
-  return uplink?.link.ipv4_address ?? null;
+  if (uplink !== undefined) {
+    return uplink.link.ipv4_address;
+  }
+  const carrying = view.interfaces.find(
+    (entry) => entry.link.gateway !== null && entry.link.ipv4_address !== null,
+  );
+  return carrying?.link.ipv4_address ?? null;
 }

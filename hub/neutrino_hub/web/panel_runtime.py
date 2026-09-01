@@ -262,18 +262,30 @@ class PanelRuntime:
         return "tproxy ip to" in ruleset
 
     def uplink_address(self) -> str | None:
-        """The address of the uplink currently carrying traffic.
+        """The address this box reaches the internet from.
 
         Returns:
-            The first configured WAN that has an address, or None when no
-            uplink is up. The dashboard shows this as "the WAN address"; with
-            several uplinks it is the one nearest the front of the list.
+            The first configured WAN that has an address — with several
+            uplinks it is the one nearest the front of the list — or, in the
+            modes that give no port the WAN role, the address of the interface
+            carrying the default route. None when the box has no way out. The
+            strip shows this as "the WAN address", and it has to answer in
+            every mode: a server has no uplink and still got here somehow.
         """
         status = RouterLinkStatus()
         for interface in self.network().wan_interfaces:
             link = status.link(interface.device_name)
             if link.ipv4_address:
                 return link.ipv4_address
+        for route in status.default_routes():
+            hops = route.get("nexthops") or [route]
+            for hop in hops:
+                device = hop.get("dev")
+                if not device:
+                    continue
+                link = status.link(str(device))
+                if link.ipv4_address:
+                    return link.ipv4_address
         return None
 
     async def apply_all(self) -> str:
