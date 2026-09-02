@@ -30,9 +30,9 @@ from neutrino_hub.modules.podman.config import PodmanConfig
 from neutrino_hub.modules.podman.ops import PodmanRegistriesApplier
 from neutrino_hub.modules.podman.renderer import PodmanRegistriesRenderer
 from neutrino_hub.modules.samba.config import SambaConfig
-from neutrino_hub.modules.services.probe import DeclaredServiceProbe
 from neutrino_hub.modules.samba.ops import SambaConfigApplier, SambaUserManager
 from neutrino_hub.modules.samba.renderer import SambaConfigRenderer
+from neutrino_hub.modules.services.probe import DeclaredServiceProbe
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.system.listening_ports import ListeningPortReader
 from neutrino_hub.web.constants import (

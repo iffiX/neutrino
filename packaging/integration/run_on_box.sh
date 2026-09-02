@@ -152,11 +152,18 @@ python3 -m pytest "$HERE" -q --ignore="$HERE/test_install_footprint.py" \
     --ignore="$HERE/test_reset_hands_back.py" \
     --ignore="$HERE/test_reinstall.py" --ignore="$HERE/test_mode_matrix.py" \
     --ignore="$HERE/test_install_a_module.py" \
-    --ignore="$HERE/test_device_lifecycle.py"
+    --ignore="$HERE/test_device_lifecycle.py" \
+    --ignore="$HERE/test_agent_channel.py"
 ran $?
 
-# Last of all: it rewires the box into a router serving the spare wire and
-# drives a second machine, so nothing may still be asking about this one.
+# The two walks below rewire the box into a router serving the spare wire and
+# drive a second machine, so nothing may still be asking about this one. The
+# channel walk proves the pinned transport; the lifecycle walk proves the
+# state machine that rides it.
+phase "the agent channel, pinned end to end"
+python3 -m pytest "$HERE/test_agent_channel.py" -q
+ran $?
+
 phase "the device lifecycle, end to end"
 python3 -m pytest "$HERE/test_device_lifecycle.py" -q
 ran $?

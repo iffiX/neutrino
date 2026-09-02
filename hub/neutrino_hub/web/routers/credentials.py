@@ -19,12 +19,12 @@ from neutrino_hub.modules.credentials.vault import (
     VaultError,
 )
 from neutrino_hub.modules.devices.registry import DeviceRegistry
-from neutrino_hub.modules.services.config import DeclaredServiceRegistry
 from neutrino_hub.modules.devices.key_registry import (
     KeyMaterialError,
     KeyRecord,
     KeyRegistry,
 )
+from neutrino_hub.modules.services.config import DeclaredServiceRegistry
 from neutrino_hub.web.dependencies import require_session
 from neutrino_hub.web.models import (
     AiProviderCreate,
