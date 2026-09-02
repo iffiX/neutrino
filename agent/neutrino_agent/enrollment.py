@@ -98,6 +98,22 @@ def is_configured() -> bool:
     return bool(config.get("gateway_url") and config.get("token"))
 
 
+def config_stamp() -> int:
+    """A marker that moves whenever the configuration file does.
+
+    The running service compares it between beats, so a binding written by
+    another process — ``nagent connect``, ``nagent disconnect`` — is adopted
+    without a restart.
+
+    Returns:
+        The file's mtime in nanoseconds, or 0 when it does not exist.
+    """
+    try:
+        return os.stat(AGENT_CONFIG_PATH).st_mtime_ns
+    except OSError:
+        return 0
+
+
 def machine_id() -> str:
     """A stable identifier for this machine.
 

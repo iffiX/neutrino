@@ -59,6 +59,8 @@ class Agent:
         self._pending: dict = {}
         self._channel = None
         self._operator = None
+        self._binding: tuple = ("", "")
+        self._binding_stamp = 0
         self._load_connection()
 
     # --- what the local page reads ---
@@ -126,8 +128,7 @@ class Agent:
             self._desired = {}
             self._pending = {}
             self._last_error = ""
-            self._channel = None
-            self._operator = None
+        self._load_connection()
         self._features.update(desired={}, catalog=None, catalog_hash="")
         self._log("disconnected from the gateway")
 
@@ -196,6 +197,7 @@ class Agent:
             after a success, a backing-off delay after a failure, and a short
             idle poll while the machine belongs to no gateway.
         """
+        self._adopt_external_binding()
         with self._lock:
             channel = self._channel
         if channel is None:
@@ -246,12 +248,37 @@ class Agent:
         gateway_url = config.get("gateway_url", "")
         token = config.get("token", "")
         with self._lock:
+            self._binding = (gateway_url, token)
+            self._binding_stamp = enrollment.config_stamp()
             if gateway_url and token:
                 self._channel = GatewayHttpChannel(gateway_url=gateway_url, token=token)
                 self._operator = DeviceOperator(gateway_url=gateway_url)
             else:
                 self._channel = None
                 self._operator = None
+
+    def _adopt_external_binding(self) -> None:
+        """Pick up a binding another process wrote.
+
+        ``nagent connect`` and ``nagent disconnect`` edit the configuration
+        from their own process. The service notices the file changing and
+        converges, so leaving the hub takes no restart and never goes on
+        beating with a token the hub already dropped.
+        """
+        with self._lock:
+            if enrollment.config_stamp() == self._binding_stamp:
+                return
+            binding = self._binding
+        self._load_connection()
+        with self._lock:
+            if self._binding == binding:
+                return
+            self._desired = {}
+            self._pending = {}
+            self._last_error = ""
+            self._backoff_s = AGENT_BACKOFF_MIN_S
+        self._features.update(desired={}, catalog=None, catalog_hash="")
+        self._log("adopted the binding written on disk")
 
     def _execute(self, command: dict) -> None:
         with self._lock:
