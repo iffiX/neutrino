@@ -155,6 +155,42 @@ A feature nobody has decided about is inspected and reported, never acted on;
 an offer gone from the catalog stops being reported. Removal is the same
 loop: a subscription switched off is converged on, not commanded.
 
+## Managed is a completed handshake
+
+A device becomes managed two ways — the hub installs the agent over SSH and
+hands it a token, or the owner pastes an enrollment link into the agent — and
+either way management begins at the same moment: the first heartbeat the hub
+authenticates. A minted token is an offer, not a relationship; an install
+that fails after minting leaves a dangling offer that shows nowhere and is
+overwritten by the next attempt.
+
+Three states, and no fourth:
+
+| State | Holds when | The page shows |
+| --- | --- | --- |
+| unmanaged | no token, or a token never authenticated | the Unmanaged section — a scan finds routers and printers, and they belong here |
+| managed, reporting | token, authenticated, heartbeat inside the window | the Managed section, with live gauges |
+| managed, quiet | token, authenticated, heartbeat stale | the Managed section, with when it was last seen — the hub cannot tell a machine that is off from one that is gone, and says so |
+
+Severing propagates from whichever end acts, over no channel but the ones
+that exist:
+
+- **The hub lets go by deleting the token** — forgetting the device. The
+  agent's next heartbeats are refused, which is its own condition and not an
+  unreachable hub; after a few in a row the agent drops its binding, goes
+  back to waiting for a link, and says why on its own page. A hub whose
+  device records were reset or restored sheds its old fleet the same way.
+- **The device lets go by leaving** — the agent's page, `nagent disconnect`,
+  or the package's own removal — which tells the hub first; the hub drops
+  the token and keeps the name and credentials the owner typed.
+- A device that joins a different hub cannot tell the first one, which keeps
+  a managed-and-quiet row until somebody forgets it there.
+
+The agent mirrors the three states: unbound and waiting for a link, bound and
+beating, and bound but refused — the one state that resolves itself. Its
+binding lives in one file, and the running service adopts what another
+process writes there, so the CLI and the page need no service restart.
+
 ## The credential vault
 
 Every secret the hub keeps for somebody is sealed in one store:
