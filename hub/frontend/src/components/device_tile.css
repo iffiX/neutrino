@@ -139,7 +139,8 @@
   font-size: 11px;
 }
 
-.device_tile_add_ssh {
+/* The step that would manage this device, named on its own tile. */
+.device_tile_path {
   display: inline-flex;
   gap: var(--space-1);
   align-items: center;

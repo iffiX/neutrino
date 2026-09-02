@@ -639,6 +639,10 @@ class DeviceClientInfoView(BaseModel):
     # than trying to interoperate.
     is_version_mismatched: bool = False
     last_seen: str | None = None
+    # What the agent said it runs on, held in memory from its heartbeats and
+    # never stored: None until it beats again after a panel restart.
+    platform_os: str | None = None
+    platform_arch: str | None = None
     cpu_percent: float | None = None
     memory_percent: float | None = None
     disk_percent: float | None = None

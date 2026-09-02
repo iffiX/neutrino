@@ -3,8 +3,14 @@ import { Icon } from "./icon";
 import { StatusDot } from "./status_dot";
 import { formatTimeAgo } from "../format_duration";
 import { toDeviceIconName } from "../device_icon";
-import { toDeviceReach, toDevicePresence } from "../device_level";
-import type { DeviceGpuInfo, DeviceView } from "../api_types";
+import {
+  isDeviceManaged,
+  toDeviceReach,
+  toDevicePresence,
+  toDeviceUpgradePath,
+} from "../device_level";
+import type { DeviceUpgradePath } from "../device_level";
+import type { DeviceClientInfo, DeviceGpuInfo, DeviceView } from "../api_types";
 
 import "./device_tile.css";
 
@@ -21,6 +27,23 @@ import "./device_tile.css";
 const TEMPERATURE_WARN_C = 70;
 const TEMPERATURE_ERROR_C = 85;
 
+// The footer of an unmanaged tile names the step that manages it.
+const UPGRADE_PATH_LABELS: Record<DeviceUpgradePath, string> = {
+  install: "Install agent",
+  link: "Get link",
+};
+
+const UPGRADE_PATH_ICONS: Record<DeviceUpgradePath, "download" | "link"> = {
+  install: "download",
+  link: "link",
+};
+
+const VERSION_MISMATCH_TITLES: Record<DeviceUpgradePath, string> = {
+  install:
+    "This agent is a different version from the hub. Reinstall it from the drawer.",
+  link: "This agent is a different version from the hub. Re-enroll it with a fresh link from the drawer.",
+};
+
 interface DeviceTileProps {
   device: DeviceView;
   onOpen: () => void;
@@ -29,7 +52,10 @@ interface DeviceTileProps {
 export function DeviceTile({ device, onOpen }: DeviceTileProps) {
   const reach = toDeviceReach(device);
   const presence = toDevicePresence(device);
+  const upgradePath = toDeviceUpgradePath(device);
+  const isManaged = isDeviceManaged(device);
   const client = device.client;
+  const platform = client === null ? null : toPlatformLabel(client);
 
   return (
     <button
@@ -72,12 +98,15 @@ export function DeviceTile({ device, onOpen }: DeviceTileProps) {
             className={`badge${client.is_version_mismatched ? " badge--warn" : ""}`}
             title={
               client.is_version_mismatched
-                ? "This agent is a different version from the hub. Reinstall it from the drawer."
+                ? VERSION_MISMATCH_TITLES[upgradePath]
                 : undefined
             }
           >
             v{client.version}
           </span>
+        )}
+        {isManaged && platform !== null && (
+          <span className="badge">{platform}</span>
         )}
       </div>
 
@@ -103,20 +132,31 @@ export function DeviceTile({ device, onOpen }: DeviceTileProps) {
       )}
 
       <div className="device_tile_footer">
-        {reach === "none" ? (
-          <span className="device_tile_add_ssh">
-            <Icon name="plus" size={12} />
-            Add SSH
-          </span>
-        ) : (
+        {isManaged ? (
           <span className="mono">{device.mac_address}</span>
+        ) : (
+          <span className="device_tile_path">
+            <Icon name={UPGRADE_PATH_ICONS[upgradePath]} size={12} />
+            {UPGRADE_PATH_LABELS[upgradePath]}
+          </span>
         )}
-        {reach === "agent" && client !== null && (
+        {isManaged && client !== null && (
           <span>{formatTimeAgo(client.last_seen)}</span>
         )}
       </div>
     </button>
   );
+}
+
+/** What the agent says the machine is, once it has reported it. */
+function toPlatformLabel(client: DeviceClientInfo): string | null {
+  if (client.platform_os === null) {
+    return null;
+  }
+  if (client.platform_arch === null) {
+    return client.platform_os;
+  }
+  return `${client.platform_os} · ${client.platform_arch}`;
 }
 
 /** The busiest card's load — on a multi-GPU box that is the one that matters. */

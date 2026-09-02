@@ -547,6 +547,10 @@ export interface DeviceClientInfo {
   version: string | null;
   is_version_mismatched: boolean;
   last_seen: string | null;
+  /** What the agent reports it runs on: `linux`, `windows`, `darwin`. Null
+   * until it beats again after a panel restart, since it is never stored. */
+  platform_os: string | null;
+  platform_arch: string | null;
   cpu_percent: number | null;
   memory_percent: number | null;
   disk_percent: number | null;

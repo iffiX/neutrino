@@ -196,6 +196,26 @@ def test_a_link_that_cannot_be_built_mints_no_ticket(api, monkeypatch):
     assert runtime.enrollments == {}
 
 
+def test_a_link_minted_for_a_device_binds_to_that_device(api, monkeypatch):
+    """The per-device link on an unmanaged card. Bound to the MAC, the machine
+    that pastes it joins as the device already on the page rather than as a
+    second record keyed by its own machine id."""
+    client, runtime = api
+    monkeypatch.setattr(
+        devices_router, "_panel_urls", lambda runtime: ["http://192.168.8.1:8080"]
+    )
+
+    response = client.post(
+        "/api/devices/enrollment",
+        json={"name": "xenode", "mac_address": MAC.upper()},
+    )
+
+    assert response.status_code == 200
+    ticket = runtime.enrollments[response.json()["token"]]
+    assert ticket["mac_address"] == MAC
+    assert ticket["name"] == "xenode"
+
+
 def test_a_lapsed_ticket_is_swept_when_the_next_one_is_minted(api, monkeypatch):
     client, runtime = api
     monkeypatch.setattr(

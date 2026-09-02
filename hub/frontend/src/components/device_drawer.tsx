@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 
 import { Icon } from "./icon";
 import type { IconName } from "./icon";
+import { DeviceEnrollmentNotice } from "./device_enrollment_notice";
 import { DeviceFeatures } from "./device_features";
 import { FileTransferModal } from "./file_transfer_modal";
 import { PasswordInput } from "./password_input";
@@ -20,9 +21,12 @@ import {
 import { DEVICE_ICON_NAMES, toDeviceIconName } from "../device_icon";
 import {
   DEVICE_REACH_LABELS,
+  isDeviceManaged,
   toDeviceReach,
   toDevicePresence,
+  toDeviceUpgradePath,
 } from "../device_level";
+import type { DeviceUpgradePath } from "../device_level";
 import { useConfirm } from "../use_confirm";
 import { formatTimeAgo } from "../format_duration";
 import { PRIVATE_KEY_PLACEHOLDER } from "../private_key_placeholder";
@@ -34,6 +38,7 @@ import type {
   DeviceActionResult,
   DeviceAnnotation,
   DeviceAuthMethod,
+  DeviceEnrollmentView,
   DeviceView,
   DeviceWolResult,
   KeyView,
@@ -64,6 +69,25 @@ const NEW_KEY_OPTION = "__new__";
 // choosing an existing one.
 const NEW_PASSWORD_OPTION = "__new__";
 
+// Wording for the way this device becomes managed, or catches up with the hub.
+const GUIDANCE_TITLES: Record<DeviceUpgradePath, string> = {
+  install: "Install the agent to manage this device.",
+  link: "No credentials for this machine yet.",
+};
+
+const GUIDANCE_HINTS: Record<DeviceUpgradePath, string> = {
+  install: "The Install agent action below runs the installer over SSH.",
+  link: "Add SSH details above and save, or send it an enrollment link.",
+};
+
+const VERSION_MISMATCH_TITLE =
+  "This agent is a different version from the hub.";
+
+const VERSION_MISMATCH_HINTS: Record<DeviceUpgradePath, string> = {
+  install: "Reinstall it with the Install agent action below.",
+  link: "Re-enroll it with a fresh link. The SSH installer needs Linux.",
+};
+
 // Wording for the save refusals the backend reports as codes.
 const UNKNOWN_CREDENTIAL_WORDING: Record<string, string> = {
   key_id: "The chosen SSH key is no longer stored; pick another.",
@@ -77,6 +101,15 @@ interface DeviceAction {
   label: string;
   icon: IconName;
   isDestructive: boolean;
+}
+
+/** What this device needs next, drawn above its actions. */
+interface DeviceGuidance {
+  tone: string;
+  icon: IconName;
+  title: string;
+  hint: string;
+  hasEnrollmentLink: boolean;
 }
 
 const DEVICE_ACTIONS: DeviceAction[] = [
@@ -151,6 +184,10 @@ export function DeviceDrawer({
   const [runningLabel, setRunningLabel] = useState<string | null>(null);
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
   const [isFilesOpen, setIsFilesOpen] = useState(false);
+  // A link minted for this machine alone, for the ones no installer reaches.
+  const [enrollment, setEnrollment] = useState<DeviceEnrollmentView | null>(
+    null,
+  );
 
   const task = useTaskStream(taskId);
   const logRef = useRef<HTMLPreElement | null>(null);
@@ -174,6 +211,7 @@ export function DeviceDrawer({
 
   const reach = toDeviceReach(device);
   const presence = toDevicePresence(device);
+  const guidance = toGuidance(device);
   const isPortValid = isValidPort(port);
   const isSshComplete =
     !hasSshDraft ||
@@ -259,6 +297,21 @@ export function DeviceDrawer({
     }
   };
 
+  const handleEnrollmentLink = async () => {
+    setError(null);
+    setNotice(null);
+    try {
+      setEnrollment(
+        await apiPost<DeviceEnrollmentView>("/devices/enrollment", {
+          name: device.name ?? "",
+          mac_address: device.mac_address,
+        }),
+      );
+    } catch (cause: unknown) {
+      setError(describeError(cause));
+    }
+  };
+
   const handleWakeOnLan = async () => {
     setError(null);
     setNotice(null);
@@ -298,7 +351,7 @@ export function DeviceDrawer({
       setTaskId(result.task_id);
     } catch (cause: unknown) {
       setRunningLabel(null);
-      setError(describeError(cause));
+      setError(describeActionError(cause));
     }
   };
 
@@ -667,17 +720,35 @@ export function DeviceDrawer({
 
           <div className="device_drawer_section">
             <span className="section_label">Actions</span>
-            {reach === "none" ? (
-              <div className="notice">
-                <Icon name="lock" size={15} />
+            {guidance !== null && (
+              <div className={`notice ${guidance.tone}`}>
+                <Icon name={guidance.icon} size={15} />
                 <div className="notice_body">
-                  <strong>No credentials yet.</strong>
-                  <span className="muted">
-                    Add SSH details above and save to enable actions.
-                  </span>
+                  <strong>{guidance.title}</strong>
+                  <span className="muted">{guidance.hint}</span>
+                  {guidance.hasEnrollmentLink && (
+                    <div className="device_drawer_guidance_action">
+                      <button
+                        type="button"
+                        className="button"
+                        onClick={() => void handleEnrollmentLink()}
+                      >
+                        <Icon name="link" size={14} />
+                        Get link
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
-            ) : (
+            )}
+            {enrollment !== null && (
+              <DeviceEnrollmentNotice
+                enrollment={enrollment}
+                deviceName={device.name ?? device.mac_address}
+                onDismiss={() => setEnrollment(null)}
+              />
+            )}
+            {reach !== "none" && (
               <div className="device_drawer_actions">
                 <button
                   type="button"
@@ -798,7 +869,49 @@ export function DeviceDrawer({
   );
 }
 
+/**
+ * What this device needs next, or null when it is managed and in step.
+ *
+ * An unmanaged device is told which of the two ways onto the hub is open to
+ * it; a managed one is told only when its agent no longer matches the hub.
+ */
+function toGuidance(device: DeviceView): DeviceGuidance | null {
+  const path = toDeviceUpgradePath(device);
+  if (!isDeviceManaged(device)) {
+    return {
+      tone: "",
+      icon: path === "link" ? "link" : "download",
+      title: GUIDANCE_TITLES[path],
+      hint: GUIDANCE_HINTS[path],
+      hasEnrollmentLink: path === "link",
+    };
+  }
+  if (device.client?.is_version_mismatched !== true) {
+    return null;
+  }
+  return {
+    tone: "notice--warn",
+    icon: "alert",
+    title: VERSION_MISMATCH_TITLE,
+    hint: VERSION_MISMATCH_HINTS[path],
+    hasEnrollmentLink: path === "link",
+  };
+}
+
 /** Wording for a failed save, with the coded refusals spelled out. */
+function describeActionError(cause: unknown): string {
+  if (
+    cause instanceof ApiError &&
+    cause.code === "unsupported_remote_install" &&
+    typeof cause.detail === "object" &&
+    cause.detail !== null
+  ) {
+    const os = String((cause.detail as Record<string, unknown>).os ?? "");
+    return `This machine reports ${os || "another OS"}; the SSH installer is for Linux — use Get link instead.`;
+  }
+  return describeError(cause);
+}
+
 function describeSaveError(cause: unknown): string {
   if (
     cause instanceof ApiError &&

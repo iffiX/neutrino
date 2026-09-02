@@ -19,21 +19,38 @@ export type DeviceReach = "none" | "ssh" | "agent";
 /** Whether it is answering, and by what. */
 export type DevicePresence = "offline" | "seen" | "reporting";
 
+/** How a device reaches the managed state, or gets its agent back in step. */
+export type DeviceUpgradePath = "install" | "link";
+
 export const DEVICE_REACH_LABELS: Record<DeviceReach, string> = {
   none: "No access",
   ssh: "SSH",
   agent: "Agent",
 };
 
-export const DEVICE_REACH_HINTS: Record<DeviceReach, string> = {
-  none: "Found on the network. Add SSH details to manage it.",
-  ssh: "Terminal, file transfer, deployments, reboot and shutdown.",
-  agent: "Reports its own vitals and installs modules without SSH.",
-};
+/** Whether the hub manages this device through its own agent. */
+export function isDeviceManaged(device: DeviceView): boolean {
+  return device.client !== null && device.client.is_installed;
+}
+
+/**
+ * Which way this device gets an agent that matches the hub.
+ *
+ * The SSH installer needs systemd, so a machine that reports another
+ * platform, or holds no credentials, joins by enrollment link. A platform
+ * nobody has reported yet stays on the SSH path.
+ */
+export function toDeviceUpgradePath(device: DeviceView): DeviceUpgradePath {
+  if (!device.has_ssh) {
+    return "link";
+  }
+  const platformOs = device.client?.platform_os ?? null;
+  return platformOs !== null && platformOs !== "linux" ? "link" : "install";
+}
 
 /** What the gateway holds for this device. */
 export function toDeviceReach(device: DeviceView): DeviceReach {
-  if (device.client !== null && device.client.is_installed) {
+  if (isDeviceManaged(device)) {
     return "agent";
   }
   if (device.has_ssh) {

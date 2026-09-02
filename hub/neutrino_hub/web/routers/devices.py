@@ -104,10 +104,31 @@ def _device_list(runtime: PanelRuntime, *, is_active: bool) -> DeviceListView:
     registry = DeviceRegistry()
     return DeviceListView(
         devices=[
-            _to_view(device, runtime.client_metrics.get(device.mac_address))
+            _device_view(runtime, device)
             for device in registry.merged(scanner.scan(is_active=is_active))
         ]
     )
+
+
+def _device_view(runtime: PanelRuntime, device: ManagedDevice) -> DeviceView:
+    """One device as the panel sees it, with what its agent last reported.
+
+    Args:
+        runtime: The shared runtime, which holds the live metrics and the
+            platform each agent reports.
+        device: The stored device.
+
+    Returns:
+        The view, carrying the platform on a device whose agent has beaten
+        since the panel started.
+    """
+    key = device.mac_address.lower()
+    view = _to_view(device, runtime.client_metrics.get(key))
+    platform = runtime.client_platform.get(key, {})
+    if view.client is not None:
+        view.client.platform_os = platform.get("os") or None
+        view.client.platform_arch = platform.get("arch") or None
+    return view
 
 
 @router.put("/{mac_address}", response_model=DeviceView)
@@ -138,7 +159,7 @@ def annotate(
     if "ssh" in payload:
         payload["ssh"] = _store_ssh_secrets(annotation.ssh)
     device = DeviceRegistry().annotate(mac_address, payload)
-    return _to_view(device, runtime.client_metrics.get(device.mac_address))
+    return _device_view(runtime, device)
 
 
 @router.delete("/{mac_address}")
@@ -508,7 +529,9 @@ async def start_action(
 
     Raises:
         HTTPException: 400 for an unknown action, or 409 when the device lacks
-            the credentials or agent that action needs.
+            the credentials or agent that action needs, or when the install
+            pre-flight finds a device that is not Linux
+            (``{"code": "unsupported_remote_install", "os": ...}``).
     """
     registry = DeviceRegistry()
     device = registry.get(mac_address)
@@ -555,6 +578,15 @@ async def start_action(
         )
 
     operator = DeviceSshOperator(credentials=SshCredentials.from_dict(device.ssh or {}))
+    # Pre-flight, refused before a task starts. A probe that failed — device
+    # off, wrong credentials — is not a refusal: the task runs and its log
+    # reports the failure, the same surface as every mid-install one.
+    code, kernel = await operator.run_once("uname -s")
+    if code == 0 and kernel and kernel != "Linux":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "unsupported_remote_install", "os": kernel},
+        )
     # An agent that is answering keeps the token it is answering with. Minting
     # a new one here kills the live agent before the install that would carry
     # the replacement has even started, and an install that then fails — no
