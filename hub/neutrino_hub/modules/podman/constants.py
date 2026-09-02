@@ -11,11 +11,14 @@ PODMAN_PACKAGES = {
     "arch": ("podman", "podman-docker"),
 }
 
-# Quadlet arrived in podman 4.4, and this module renders nothing else. Below
-# it the rendered .container files are inert: no generator reads them, so the
-# containers never become units and never start. Debian 12 ships 4.3.1 and
-# Ubuntu 22.04 ships 3.4.4, backports included.
-PODMAN_MINIMUM_VERSION = "4.4"
+# Where Quadlet arrives, which is a question about which files this machine's
+# podman reads — not about whether podman is worth installing. From 4.4 a
+# rendered .container file becomes a unit; below it that file is inert, so
+# `PodmanUnitRenderer` writes plain .service units running `podman run`
+# instead and the containers work either way. Debian 12 ships 4.3.1 and
+# Ubuntu 22.04 ships 3.4.4, backports included, so the older path is what
+# those machines actually use.
+PODMAN_QUADLET_VERSION = "4.4"
 
 # Podman has no daemon; the API socket is the unit that stands for the engine
 # on the Services page — present once installed, active when listening.

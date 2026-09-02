@@ -17,7 +17,7 @@ from neutrino_hub.utils.subprocess_run import CommandError, run
 from neutrino_hub.modules.podman.config import PodmanConfig
 from neutrino_hub.modules.podman.constants import (
     PODMAN_BINARY,
-    PODMAN_MINIMUM_VERSION,
+    PODMAN_QUADLET_VERSION,
     PODMAN_QUADLET_DIR,
     PODMAN_REGISTRIES_CONF_PATH,
     PODMAN_UNIT_DIR,
@@ -360,7 +360,7 @@ def is_quadlet_supported() -> bool:
     if not result.is_success:
         return False
     words = result.stdout.split()
-    return is_version_at_least(words[-1] if words else "", PODMAN_MINIMUM_VERSION)
+    return is_version_at_least(words[-1] if words else "", PODMAN_QUADLET_VERSION)
 
 
 def container_renderer(config: PodmanConfig):

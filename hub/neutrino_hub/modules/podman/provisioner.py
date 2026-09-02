@@ -16,7 +16,7 @@ from neutrino_hub.utils.subprocess_run import CommandError, run
 
 from neutrino_hub.modules.podman.constants import (
     PODMAN_DATA_DIR,
-    PODMAN_MINIMUM_VERSION,
+    PODMAN_QUADLET_VERSION,
     PODMAN_PACKAGES,
     PODMAN_QUADLET_DIR,
 )
@@ -49,7 +49,7 @@ class PodmanProvisioner:
         packages = require_distribution(PODMAN_PACKAGES, "podman")
         controller = package_manager.current()
         controller.refresh()
-        _require_quadlet(controller)
+        say(report, _require_podman(controller))
 
         say(report, "installing podman and the docker command shim")
         controller.install(packages)
@@ -110,21 +110,31 @@ class PodmanProvisioner:
         )
 
 
-def _require_quadlet(controller: package_manager.SystemPackageController) -> None:
-    """Refuse a podman that cannot read a Quadlet file.
+def _require_podman(controller: package_manager.SystemPackageController) -> str:
+    """Refuse only a distribution that offers no podman at all.
+
+    It used to refuse anything below the Quadlet version, which read the
+    module's own floor as podman's: `PodmanUnitRenderer` exists precisely for
+    the older ones, and Debian 12 and Ubuntu 22.04 — where podman is 4.3.1 and
+    3.4.4 — could not install it at all.
 
     Args:
         controller: The machine's package manager, already refreshed.
 
+    Returns:
+        Which unit style this version will be driven through, to say in the
+        report: the two behave the same and are worth telling apart when a
+        container misbehaves.
+
     Raises:
-        CommandError: When the version on offer is below the floor, naming it
-            so the report is about this distribution rather than about podman.
+        CommandError: When the distribution has no podman to offer.
     """
     offered = controller.available_version("podman")
-    if package_manager.is_version_at_least(offered, PODMAN_MINIMUM_VERSION):
-        return
-    raise CommandError(
-        f"this distribution offers podman {offered or 'nothing'}; containers "
-        f"need {PODMAN_MINIMUM_VERSION} or newer, which is where Quadlet "
-        f"turns a declared container into a systemd unit"
+    if not offered:
+        raise CommandError("this distribution offers no podman")
+    if package_manager.is_version_at_least(offered, PODMAN_QUADLET_VERSION):
+        return f"podman {offered}, driven through Quadlet"
+    return (
+        f"podman {offered}, driven through plain systemd units: Quadlet "
+        f"arrives in {PODMAN_QUADLET_VERSION}"
     )

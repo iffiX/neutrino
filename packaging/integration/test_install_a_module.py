@@ -17,9 +17,8 @@ hub can pass a flag to, which is the hardest shape of the failure above. A
 module whose packages happen to be cached would pass with the bug still in
 place.
 
-Not `podman`: Debian 12 offers 4.3.1 and containers need 4.4 for Quadlet, so
-the hub refuses it there — correctly, and in under three seconds, which looks
-exactly like the failure this file is watching for.
+`podman` would do as well now that a version without Quadlet installs and is
+driven through plain units — but netbird's shape is the one that broke.
 """
 
 import json
