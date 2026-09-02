@@ -718,6 +718,11 @@ export interface RestoreResult {
   is_restored: boolean;
 }
 
+/** What a config backup download is asked for; blank leaves it plain. */
+export interface BackupRequest {
+  passphrase: string;
+}
+
 /** The panel's own settings. */
 export interface PanelSettings {
   listen_port: number;

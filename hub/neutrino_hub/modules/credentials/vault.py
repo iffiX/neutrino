@@ -119,6 +119,38 @@ def unwrap_master_key(wrapped: dict, passphrase: str) -> bytes:
         raise VaultError("the passphrase does not open this key") from error
 
 
+def read_master_key() -> bytes:
+    """Read the master key the store is sealed under, minting none.
+
+    A leftover ``vault.key.new`` is settled first, so the key handed back is
+    the one that opens the store rather than the one a rekey left behind.
+
+    Returns:
+        The raw master key.
+
+    Raises:
+        VaultError: If this box has no master key, or the file does not hold a
+            usable one.
+    """
+    with _WRITE_LOCK:
+        if not _key_path().is_file():
+            raise VaultError(f"{_key_path()} does not exist")
+        return SecretVault()._master_key()
+
+
+def install_master_key(key_bytes: bytes) -> None:
+    """Write the master key a restored store is sealed under.
+
+    Args:
+        key_bytes: The raw master key.
+    """
+    with _WRITE_LOCK:
+        path = _key_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.parent.chmod(stat.S_IRWXU)
+        _write_key_material(path, key_bytes)
+
+
 def _derive_wrap_key(passphrase: str, salt: bytes, n: int, r: int, p: int) -> bytes:
     return hashlib.scrypt(
         passphrase.encode(),

@@ -42,7 +42,9 @@ def _throwaway_key_text() -> str:
 def test_password_lifecycle(panel):
     name = f"itest login {_suffix()}"
     status, created = panel.call(
-        "POST", "/credentials/passwords", {"name": name, "password": "pw-one"}
+        "POST",
+        "/credentials/passwords",
+        {"name": name, "password": "pw-one"},  # scan: allow
     )
     assert status == 200, created
     assert "password" not in created
@@ -65,7 +67,7 @@ def test_password_referenced_by_a_device_blocks_delete(panel):
     status, password = panel.call(
         "POST",
         "/credentials/passwords",
-        {"name": f"itest sudo {_suffix()}", "password": "pw-sudo"},
+        {"name": f"itest sudo {_suffix()}", "password": "pw-sudo"},  # scan: allow
     )
     assert status == 200, password
 
@@ -134,7 +136,11 @@ def test_service_account_lifecycle(panel):
     status, created = panel.call(
         "POST",
         "/credentials/service_accounts",
-        {"name": f"itest nas {_suffix()}", "username": "smbuser", "password": "pw"},
+        {
+            "name": f"itest nas {_suffix()}",
+            "username": "smbuser",
+            "password": "pw",  # scan: allow
+        },
     )
     assert status == 200, created
     assert "password" not in created
@@ -177,7 +183,9 @@ def test_ai_provider_key_is_write_only(panel):
 def test_backup_wraps_the_key_and_restores_the_vault(panel):
     marker = f"itest backup {_suffix()}"
     status, secret = panel.call(
-        "POST", "/credentials/passwords", {"name": marker, "password": "pw-backup"}
+        "POST",
+        "/credentials/passwords",
+        {"name": marker, "password": "pw-backup"},  # scan: allow
     )
     assert status == 200, secret
 

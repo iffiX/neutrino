@@ -888,6 +888,16 @@ class PanelSettings(BaseModel):
     listen_port: int
 
 
+class BackupRequest(BaseModel):
+    """What a config backup download is asked for.
+
+    A blank passphrase downloads ``config/`` as it stands; anything else seals
+    the vault master key into the archive in place of the key file.
+    """
+
+    passphrase: str = ""
+
+
 class AboutView(BaseModel):
     """Versions and uptime for the Settings tab."""
 

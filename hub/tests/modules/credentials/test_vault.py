@@ -12,6 +12,8 @@ from neutrino_hub.modules.credentials.constants import CREDENTIALS_VAULT_PATH
 from neutrino_hub.modules.credentials.vault import (
     SecretVault,
     VaultError,
+    install_master_key,
+    read_master_key,
     unwrap_master_key,
     wrap_master_key,
 )
@@ -197,6 +199,30 @@ def test_wrap_and_unwrap_master_key():
     assert unwrap_master_key(wrapped, "correct horse") == key
     with pytest.raises(VaultError):
         unwrap_master_key(wrapped, "wrong horse")
+
+
+def test_install_master_key_writes_a_key_a_restored_store_opens(config_dir):
+    record = SecretVault().add(kind="password", name="x", secret={"password": "p"})
+    key = read_master_key()
+    store = (config_dir / CREDENTIALS_VAULT_PATH).read_text()
+    for path in (config_dir / "credentials").iterdir():
+        path.unlink()
+    (config_dir / "credentials").rmdir()
+
+    install_master_key(key)
+    (config_dir / CREDENTIALS_VAULT_PATH).write_text(store)
+
+    key_path = config_dir / "credentials" / "vault.key"
+    assert stat.S_IMODE(key_path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(key_path.parent.stat().st_mode) == 0o700
+    assert read_master_key() == key
+    assert SecretVault().open(record.id) == {"password": "p"}
+
+
+def test_read_master_key_mints_nothing_on_a_box_without_one(config_dir):
+    with pytest.raises(VaultError):
+        read_master_key()
+    assert not (config_dir / "credentials" / "vault.key").exists()
 
 
 def test_hostile_wrap_factors_are_refused():

@@ -3,7 +3,13 @@ import type { ChangeEvent, FormEvent } from "react";
 
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
-import { apiDownload, apiPut, apiUpload, describeError } from "../api_client";
+import {
+  ApiError,
+  apiPostDownload,
+  apiPut,
+  apiUpload,
+  describeError,
+} from "../api_client";
 import { formatDuration } from "../format_duration";
 import { PasswordInput } from "../components/password_input";
 import { useApiResource } from "../use_api_resource";
@@ -26,6 +32,15 @@ import "./settings_page.css";
 
 const MIN_PASSWORD_LENGTH = 8;
 
+const BACKUP_PASSPHRASE_NEEDED = "backup_passphrase_needed";
+const BACKUP_PASSPHRASE_WRONG = "backup_passphrase_wrong";
+
+const RESTORE_ERROR_SENTENCES: Record<string, string> = {
+  [BACKUP_PASSPHRASE_NEEDED]:
+    "This archive is protected. Enter its passphrase to restore it.",
+  [BACKUP_PASSPHRASE_WRONG]: "That passphrase does not open this archive.",
+};
+
 export function SettingsPage() {
   const about = useApiResource<AboutInfo>("/settings/about");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -43,6 +58,9 @@ export function SettingsPage() {
   const confirm = useConfirm();
   const [backupNotice, setBackupNotice] = useState<string | null>(null);
   const [backupError, setBackupError] = useState<string | null>(null);
+  const [backupPassphrase, setBackupPassphrase] = useState("");
+  const [restorePassphrase, setRestorePassphrase] = useState("");
+  const [sealedFile, setSealedFile] = useState<File | null>(null);
 
   const isPasswordValid =
     currentPassword.length > 0 &&
@@ -82,7 +100,11 @@ export function SettingsPage() {
     setBackupError(null);
     setBackupNotice(null);
     try {
-      await apiDownload("/settings/backup", backupFilename());
+      await apiPostDownload(
+        "/settings/backup",
+        { passphrase: backupPassphrase },
+        backupFilename(),
+      );
       setBackupNotice("Backup downloaded.");
     } catch (cause: unknown) {
       setBackupError(describeError(cause));
@@ -97,30 +119,39 @@ export function SettingsPage() {
     if (file === undefined) {
       return;
     }
+    setSealedFile(null);
+    setRestorePassphrase("");
     confirm.ask({
       title: `Restore ${file.name}`,
       body:
         "Every file under config/ is overwritten by the archive's, and the " +
         "services are reconfigured from it.",
       confirmLabel: "Restore",
-      onConfirm: () => void restoreFile(file),
+      onConfirm: () => void restoreFile(file, ""),
     });
   };
 
-  const restoreFile = async (file: File) => {
+  const restoreFile = async (file: File, passphrase: string) => {
     setRestoreName(file.name);
     setIsRestoring(true);
     setBackupError(null);
     setBackupNotice(null);
     try {
-      const result = await apiUpload<RestoreResult>("/settings/restore", file);
+      const result = await apiUpload<RestoreResult>("/settings/restore", file, {
+        passphrase,
+      });
+      setSealedFile(null);
+      setRestorePassphrase("");
       setBackupNotice(
         result.is_restored
           ? "Config restored. Re-render and restart services to apply it."
           : "The gateway rejected the archive.",
       );
     } catch (cause: unknown) {
-      setBackupError(describeError(cause));
+      if (isSealedArchiveError(cause)) {
+        setSealedFile(file);
+      }
+      setBackupError(describeRestoreError(cause));
     } finally {
       setIsRestoring(false);
     }
@@ -213,6 +244,31 @@ export function SettingsPage() {
               included. Keep it secret.
             </p>
 
+            <label className="field">
+              <span className="field_label">Backup passphrase</span>
+              <PasswordInput
+                value={backupPassphrase}
+                onChange={setBackupPassphrase}
+              />
+              <span className="field_hint">
+                Protects the download; blank keeps it plain.
+              </span>
+            </label>
+
+            {sealedFile !== null && (
+              <label className="field">
+                <span className="field_label">Archive passphrase</span>
+                <PasswordInput
+                  value={restorePassphrase}
+                  onChange={setRestorePassphrase}
+                  autoFocus
+                />
+                <span className="field_hint">
+                  The passphrase {sealedFile.name} was protected with.
+                </span>
+              </label>
+            )}
+
             {backupError !== null && (
               <div className="notice notice--error">
                 <Icon name="alert" size={15} />
@@ -253,6 +309,19 @@ export function SettingsPage() {
                 <Icon name="upload" size={14} />
                 {isRestoring ? "Restoring…" : "Restore from file"}
               </button>
+              {sealedFile !== null && (
+                <button
+                  type="button"
+                  className="button"
+                  onClick={() =>
+                    void restoreFile(sealedFile, restorePassphrase)
+                  }
+                  disabled={isRestoring || restorePassphrase.length === 0}
+                >
+                  <Icon name="check" size={14} />
+                  Unlock and restore
+                </button>
+              )}
               {restoreName !== null && (
                 <span className="settings_restore_name">{restoreName}</span>
               )}
@@ -328,4 +397,22 @@ export function SettingsPage() {
 function backupFilename(): string {
   const stamp = new Date().toISOString().slice(0, 10);
   return `neutrino_config_${stamp}.tar.gz`;
+}
+
+function isSealedArchiveError(cause: unknown): boolean {
+  return (
+    cause instanceof ApiError &&
+    (cause.code === BACKUP_PASSPHRASE_NEEDED ||
+      cause.code === BACKUP_PASSPHRASE_WRONG)
+  );
+}
+
+function describeRestoreError(cause: unknown): string {
+  if (cause instanceof ApiError) {
+    const sentence = RESTORE_ERROR_SENTENCES[cause.code];
+    if (sentence !== undefined) {
+      return sentence;
+    }
+  }
+  return describeError(cause);
 }

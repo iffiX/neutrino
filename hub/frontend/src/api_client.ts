@@ -19,12 +19,16 @@ export class ApiError extends Error {
   readonly status: number;
   /** The response's `detail` payload; an object for code-shaped errors. */
   readonly detail: unknown;
+  /** The name the API gave the failure, empty when it named none. */
+  readonly code: string;
 
   constructor(status: number, message: string, detail: unknown = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
+    const detailRecord = asRecord(detail);
+    this.code = typeof detailRecord?.code === "string" ? detailRecord.code : "";
   }
 
   /** Whether this error means the session is gone and login is required. */
@@ -59,36 +63,56 @@ export async function apiDelete<T>(path: string): Promise<T> {
   return request<T>(path, { method: "DELETE" });
 }
 
-/** POST a multipart upload, used by the config restore form. */
-export async function apiUpload<T>(path: string, file: File): Promise<T> {
+/**
+ * POST a multipart upload, used by the config restore form.
+ *
+ * `fields` carries the text parts that travel beside the file.
+ */
+export async function apiUpload<T>(
+  path: string,
+  file: File,
+  fields: Record<string, string> = {},
+): Promise<T> {
   const form = new FormData();
   form.append("file", file);
+  for (const [name, value] of Object.entries(fields)) {
+    form.append(name, value);
+  }
   return request<T>(path, { method: "POST", body: form });
 }
 
 /**
- * Trigger a browser download of an API endpoint that answers with a file.
+ * POST a JSON body and save the file the API answers with.
  *
  * The blob is fetched rather than linked directly so a 401 still routes
  * through the shared error handling instead of navigating away from the app.
+ * The name comes from `Content-Disposition`, falling back to the caller's.
  */
-export async function apiDownload(path: string, filename: string) {
-  const response = await fetch(`${API_PREFIX}${path}`, {
-    method: "GET",
-    credentials: "same-origin",
-  });
+export async function apiPostDownload(
+  path: string,
+  body: unknown,
+  fallbackFilename: string,
+) {
+  let response: Response;
+  try {
+    response = await fetch(`${API_PREFIX}${path}`, {
+      method: "POST",
+      credentials: "same-origin",
+      ...jsonBody(body),
+    });
+  } catch {
+    throw new ApiError(0, "Cannot reach the gateway API");
+  }
+  if (response.status === 401) {
+    unauthorizedHandler?.();
+  }
   if (!response.ok) {
     throw await toApiError(response);
   }
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  const filename =
+    filenameFromDisposition(response.headers.get("Content-Disposition")) ??
+    fallbackFilename;
+  saveBlob(await response.blob(), filename);
 }
 
 /** Absolute websocket URL for a `/ws/...` path on the serving origin. */
@@ -150,6 +174,25 @@ function jsonBody(body: unknown): RequestInit {
   };
 }
 
+function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function filenameFromDisposition(header: string | null): string | null {
+  if (header === null) {
+    return null;
+  }
+  const match = /filename="([^"]+)"/.exec(header);
+  return match?.[1] ?? null;
+}
+
 async function toApiError(response: Response): Promise<ApiError> {
   const fallback = `${response.status} ${response.statusText}`.trim();
   let message = "";
@@ -157,9 +200,7 @@ async function toApiError(response: Response): Promise<ApiError> {
   try {
     const parsed: unknown = JSON.parse(await response.text());
     message = readDetail(parsed);
-    if (typeof parsed === "object" && parsed !== null) {
-      detail = (parsed as Record<string, unknown>).detail ?? null;
-    }
+    detail = asRecord(parsed)?.detail ?? null;
   } catch {
     message = "";
   }
@@ -167,10 +208,10 @@ async function toApiError(response: Response): Promise<ApiError> {
 }
 
 function readDetail(parsed: unknown): string {
-  if (typeof parsed !== "object" || parsed === null) {
+  const record = asRecord(parsed);
+  if (record === null) {
     return "";
   }
-  const record = parsed as Record<string, unknown>;
   if (typeof record.detail === "string") {
     return record.detail;
   }
@@ -178,4 +219,11 @@ function readDetail(parsed: unknown): string {
     return record.message;
   }
   return "";
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  return value as Record<string, unknown>;
 }
