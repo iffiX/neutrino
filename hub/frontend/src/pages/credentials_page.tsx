@@ -15,17 +15,21 @@ import type {
   AiProvidersResponse,
   KeyView,
   KeysResponse,
+  PasswordView,
+  PasswordsResponse,
+  ServiceAccountView,
+  ServiceAccountsResponse,
 } from "../api_types";
 
 import "./credentials_page.css";
 
 /**
  * Everything the gateway holds on your behalf to reach other things: the SSH
- * keys it uses to manage devices, and the AI endpoints and tokens it wires
- * into those devices' tools.
+ * keys and passwords it uses to manage devices, the accounts it presents to
+ * services, and the AI endpoints and tokens it wires into devices' tools.
  *
- * Secrets travel one way. A key or token is pasted once and never shown
- * again; everything on this page is metadata.
+ * Secrets travel one way. A key, password or token is typed once and never
+ * shown again; everything on this page is metadata.
  */
 
 const PROVIDER_KINDS: AiProviderKind[] = [
@@ -64,13 +68,15 @@ export function CredentialsPage() {
         <div>
           <h1 className="page_title">Credentials</h1>
           <p className="page_subtitle">
-            SSH keys for reaching devices, and the AI endpoints and tokens
-            handed to their tools.
+            SSH keys and passwords for reaching devices, accounts for the
+            services they use, and the AI endpoints handed to their tools.
           </p>
         </div>
       </header>
 
       <SshKeysSection />
+      <PasswordsSection />
+      <ServiceAccountsSection />
       <AiProvidersSection />
     </div>
   );
@@ -144,6 +150,199 @@ function SshKeysSection() {
               onDeleted={handleDeleted}
             />
           ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PasswordsSection() {
+  const resource = useApiResource<PasswordsResponse>("/credentials/passwords");
+  const [passwords, setPasswords] = useState<PasswordView[]>([]);
+  const [isAdding, setIsAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (resource.data !== null) {
+      setPasswords(resource.data.passwords);
+    }
+  }, [resource.data]);
+
+  const handleSaved = (saved: PasswordView) => {
+    setPasswords((current) => {
+      const exists = current.some((password) => password.id === saved.id);
+      return exists
+        ? current.map((password) =>
+            password.id === saved.id ? saved : password,
+          )
+        : [saved, ...current];
+    });
+    setIsAdding(false);
+    setEditingId(null);
+  };
+
+  const handleDeleted = (passwordId: string) => {
+    setPasswords((current) =>
+      current.filter((password) => password.id !== passwordId),
+    );
+  };
+
+  return (
+    <section className="settings_group">
+      <div className="settings_group_title">
+        <h2>Passwords</h2>
+        {!isAdding && (
+          <button
+            type="button"
+            className="button credentials_section_action"
+            onClick={() => setIsAdding(true)}
+          >
+            <Icon name="plus" size={14} />
+            Add password
+          </button>
+        )}
+      </div>
+      <p className="field_hint">
+        Used for a device&apos;s SSH login and for its sudo prompt.
+      </p>
+
+      {resource.error !== null && (
+        <ErrorPanel message={resource.error} onRetry={resource.reload} />
+      )}
+
+      {isAdding && (
+        <PasswordForm
+          onSaved={handleSaved}
+          onCancel={() => setIsAdding(false)}
+        />
+      )}
+
+      {passwords.length === 0 && !isAdding ? (
+        <div className="keys_empty">
+          <Icon name="lock" size={22} />
+          <span className="keys_empty_title">No passwords yet</span>
+          <span className="keys_empty_hint">
+            Add a password here, then pick it when a device signs in without a
+            key.
+          </span>
+        </div>
+      ) : (
+        <div className="keys_list">
+          {passwords.map((password) =>
+            editingId === password.id ? (
+              <PasswordForm
+                key={password.id}
+                initial={password}
+                onSaved={handleSaved}
+                onCancel={() => setEditingId(null)}
+              />
+            ) : (
+              <PasswordCard
+                key={password.id}
+                value={password}
+                onSaved={handleSaved}
+                onEdit={() => setEditingId(password.id)}
+                onDeleted={handleDeleted}
+              />
+            ),
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ServiceAccountsSection() {
+  const resource = useApiResource<ServiceAccountsResponse>(
+    "/credentials/service_accounts",
+  );
+  const [accounts, setAccounts] = useState<ServiceAccountView[]>([]);
+  const [isAdding, setIsAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (resource.data !== null) {
+      setAccounts(resource.data.service_accounts);
+    }
+  }, [resource.data]);
+
+  const handleSaved = (saved: ServiceAccountView) => {
+    setAccounts((current) => {
+      const exists = current.some((account) => account.id === saved.id);
+      return exists
+        ? current.map((account) => (account.id === saved.id ? saved : account))
+        : [saved, ...current];
+    });
+    setIsAdding(false);
+    setEditingId(null);
+  };
+
+  const handleDeleted = (accountId: string) => {
+    setAccounts((current) =>
+      current.filter((account) => account.id !== accountId),
+    );
+  };
+
+  return (
+    <section className="settings_group">
+      <div className="settings_group_title">
+        <h2>Service accounts</h2>
+        {!isAdding && (
+          <button
+            type="button"
+            className="button credentials_section_action"
+            onClick={() => setIsAdding(true)}
+          >
+            <Icon name="plus" size={14} />
+            Add account
+          </button>
+        )}
+      </div>
+      <p className="field_hint">
+        Used to sign in to declared services and to the Samba shares devices
+        mount.
+      </p>
+
+      {resource.error !== null && (
+        <ErrorPanel message={resource.error} onRetry={resource.reload} />
+      )}
+
+      {isAdding && (
+        <ServiceAccountForm
+          onSaved={handleSaved}
+          onCancel={() => setIsAdding(false)}
+        />
+      )}
+
+      {accounts.length === 0 && !isAdding ? (
+        <div className="keys_empty">
+          <Icon name="services" size={22} />
+          <span className="keys_empty_title">No accounts yet</span>
+          <span className="keys_empty_hint">
+            Add a username and password once, instead of typing them into every
+            service.
+          </span>
+        </div>
+      ) : (
+        <div className="keys_list">
+          {accounts.map((account) =>
+            editingId === account.id ? (
+              <ServiceAccountForm
+                key={account.id}
+                initial={account}
+                onSaved={handleSaved}
+                onCancel={() => setEditingId(null)}
+              />
+            ) : (
+              <ServiceAccountCard
+                key={account.id}
+                value={account}
+                onSaved={handleSaved}
+                onEdit={() => setEditingId(account.id)}
+                onDeleted={handleDeleted}
+              />
+            ),
+          )}
         </div>
       )}
     </section>
@@ -686,6 +885,485 @@ function KeyCard({ value, onRenamed, onDeleted }: KeyCardProps) {
       {error !== null && <span className="field_error">{error}</span>}
 
       <div className="key_card_actions">
+        <button
+          type="button"
+          className="button button--ghost button--small button--danger"
+          disabled={isBusy}
+          onClick={handleDelete}
+        >
+          <Icon name="trash" size={13} />
+          Delete
+        </button>
+      </div>
+      {confirm.modal}
+    </div>
+  );
+}
+
+interface PasswordFormProps {
+  initial?: PasswordView;
+  onSaved: (password: PasswordView) => void;
+  onCancel: () => void;
+}
+
+function PasswordForm({ initial, onSaved, onCancel }: PasswordFormProps) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [password, setPassword] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isEditing = initial !== undefined;
+  const isReady = name.trim().length > 0 && (isEditing || password.length > 0);
+
+  const handleSubmit = async () => {
+    setIsSaving(true);
+    setError(null);
+    try {
+      const payload = { name: name.trim(), password };
+      const saved = isEditing
+        ? await apiPut<PasswordView>(
+            `/credentials/passwords/${initial.id}`,
+            payload,
+          )
+        : await apiPost<PasswordView>("/credentials/passwords", payload);
+      onSaved(saved);
+    } catch (cause: unknown) {
+      setError(describeError(cause));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="keys_add">
+      <div className="section_label">
+        {isEditing ? `Edit ${initial.name}` : "New password"}
+      </div>
+      <label className="field">
+        <span className="field_label">Name</span>
+        <input
+          className="input"
+          value={name}
+          placeholder="lab machines"
+          autoFocus
+          onChange={(event) => setName(event.target.value)}
+        />
+      </label>
+      <label className="field">
+        <span className="field_label">Password</span>
+        <PasswordInput value={password} onChange={setPassword} />
+        <span className="field_hint">
+          {isEditing
+            ? "Stored; type a new one to replace it."
+            : "Stored sealed on the gateway, and never shown again."}
+        </span>
+      </label>
+      {error !== null && <span className="field_error">{error}</span>}
+      <div className="keys_add_actions">
+        <button
+          type="button"
+          className="button button--ghost"
+          onClick={onCancel}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="button button--primary"
+          disabled={!isReady || isSaving}
+          onClick={() => void handleSubmit()}
+        >
+          <Icon name="check" size={14} />
+          {isSaving ? "Saving…" : "Save password"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+interface PasswordCardProps {
+  value: PasswordView;
+  onSaved: (password: PasswordView) => void;
+  onEdit: () => void;
+  onDeleted: (passwordId: string) => void;
+}
+
+function PasswordCard({
+  value,
+  onSaved,
+  onEdit,
+  onDeleted,
+}: PasswordCardProps) {
+  const [isEditingName, setIsEditingName] = useState(false);
+  const confirm = useConfirm();
+  const [draftName, setDraftName] = useState(value.name);
+  const [error, setError] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
+
+  const handleRename = async () => {
+    if (draftName.trim().length === 0 || draftName.trim() === value.name) {
+      setIsEditingName(false);
+      setDraftName(value.name);
+      return;
+    }
+    setIsBusy(true);
+    setError(null);
+    try {
+      const updated = await apiPut<PasswordView>(
+        `/credentials/passwords/${value.id}`,
+        { name: draftName.trim() },
+      );
+      onSaved(updated);
+      setIsEditingName(false);
+    } catch (cause: unknown) {
+      setError(describeError(cause));
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleDelete = () =>
+    confirm.ask({
+      title: `Delete ${value.name}`,
+      body:
+        value.device_count > 0
+          ? `${value.device_count} device(s) sign in with this password and ` +
+            "are left without one once it is gone."
+          : "The password is deleted from this box.",
+      confirmLabel: "Delete",
+      onConfirm: () => void deletePassword(),
+    });
+
+  const deletePassword = async () => {
+    const inUse = value.device_count > 0;
+    setIsBusy(true);
+    setError(null);
+    try {
+      await apiDelete(
+        `/credentials/passwords/${value.id}${inUse ? "?force=true" : ""}`,
+      );
+      onDeleted(value.id);
+    } catch (cause: unknown) {
+      setError(describeError(cause));
+      setIsBusy(false);
+    }
+  };
+
+  return (
+    <div className="key_card">
+      <div className="key_card_head">
+        {isEditingName ? (
+          <input
+            className="input key_card_name_input"
+            value={draftName}
+            autoFocus
+            onChange={(event) => setDraftName(event.target.value)}
+            onBlur={() => void handleRename()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                void handleRename();
+              } else if (event.key === "Escape") {
+                setIsEditingName(false);
+                setDraftName(value.name);
+              }
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            className="key_card_name"
+            onClick={() => setIsEditingName(true)}
+            title="Rename"
+          >
+            {value.name}
+            <Icon name="edit" size={12} />
+          </button>
+        )}
+      </div>
+
+      <div className="key_card_meta">
+        <span
+          className={`key_card_tag ${
+            value.device_count > 0 ? "key_card_tag--used" : ""
+          }`}
+        >
+          {value.device_count === 0
+            ? "unused"
+            : `${value.device_count} device${value.device_count === 1 ? "" : "s"}`}
+        </span>
+        {value.created_at.length > 0 && (
+          <span className="key_card_added">
+            added {formatTimeAgo(value.created_at)}
+          </span>
+        )}
+      </div>
+
+      {error !== null && <span className="field_error">{error}</span>}
+
+      <div className="key_card_actions">
+        <button
+          type="button"
+          className="button button--ghost button--small"
+          disabled={isBusy}
+          onClick={onEdit}
+        >
+          <Icon name="edit" size={13} />
+          Edit
+        </button>
+        <button
+          type="button"
+          className="button button--ghost button--small button--danger"
+          disabled={isBusy}
+          onClick={handleDelete}
+        >
+          <Icon name="trash" size={13} />
+          Delete
+        </button>
+      </div>
+      {confirm.modal}
+    </div>
+  );
+}
+
+interface ServiceAccountFormProps {
+  initial?: ServiceAccountView;
+  onSaved: (account: ServiceAccountView) => void;
+  onCancel: () => void;
+}
+
+function ServiceAccountForm({
+  initial,
+  onSaved,
+  onCancel,
+}: ServiceAccountFormProps) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [username, setUsername] = useState(initial?.username ?? "");
+  const [password, setPassword] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isEditing = initial !== undefined;
+  const isReady =
+    name.trim().length > 0 &&
+    username.trim().length > 0 &&
+    (isEditing || password.length > 0);
+
+  const handleSubmit = async () => {
+    setIsSaving(true);
+    setError(null);
+    try {
+      const payload = {
+        name: name.trim(),
+        username: username.trim(),
+        password,
+      };
+      const saved = isEditing
+        ? await apiPut<ServiceAccountView>(
+            `/credentials/service_accounts/${initial.id}`,
+            payload,
+          )
+        : await apiPost<ServiceAccountView>(
+            "/credentials/service_accounts",
+            payload,
+          );
+      onSaved(saved);
+    } catch (cause: unknown) {
+      setError(describeError(cause));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="keys_add">
+      <div className="section_label">
+        {isEditing ? `Edit ${initial.name}` : "New service account"}
+      </div>
+      <div className="credentials_form_row">
+        <label className="field">
+          <span className="field_label">Name</span>
+          <input
+            className="input"
+            value={name}
+            placeholder="NAS backup"
+            autoFocus
+            onChange={(event) => setName(event.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span className="field_label">Username</span>
+          <input
+            className="input"
+            value={username}
+            placeholder="backup"
+            spellCheck={false}
+            onChange={(event) => setUsername(event.target.value)}
+          />
+        </label>
+      </div>
+      <label className="field">
+        <span className="field_label">Password</span>
+        <PasswordInput value={password} onChange={setPassword} />
+        <span className="field_hint">
+          {isEditing
+            ? "Stored; type a new one to replace it."
+            : "Stored sealed on the gateway, and never shown again."}
+        </span>
+      </label>
+      {error !== null && <span className="field_error">{error}</span>}
+      <div className="keys_add_actions">
+        <button
+          type="button"
+          className="button button--ghost"
+          onClick={onCancel}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="button button--primary"
+          disabled={!isReady || isSaving}
+          onClick={() => void handleSubmit()}
+        >
+          <Icon name="check" size={14} />
+          {isSaving ? "Saving…" : "Save account"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+interface ServiceAccountCardProps {
+  value: ServiceAccountView;
+  onSaved: (account: ServiceAccountView) => void;
+  onEdit: () => void;
+  onDeleted: (accountId: string) => void;
+}
+
+function ServiceAccountCard({
+  value,
+  onSaved,
+  onEdit,
+  onDeleted,
+}: ServiceAccountCardProps) {
+  const [isEditingName, setIsEditingName] = useState(false);
+  const confirm = useConfirm();
+  const [draftName, setDraftName] = useState(value.name);
+  const [error, setError] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
+
+  const handleRename = async () => {
+    if (draftName.trim().length === 0 || draftName.trim() === value.name) {
+      setIsEditingName(false);
+      setDraftName(value.name);
+      return;
+    }
+    setIsBusy(true);
+    setError(null);
+    try {
+      const updated = await apiPut<ServiceAccountView>(
+        `/credentials/service_accounts/${value.id}`,
+        { name: draftName.trim() },
+      );
+      onSaved(updated);
+      setIsEditingName(false);
+    } catch (cause: unknown) {
+      setError(describeError(cause));
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleDelete = () =>
+    confirm.ask({
+      title: `Delete ${value.name}`,
+      body:
+        value.service_count > 0
+          ? `${value.service_count} service(s) sign in with this account and ` +
+            "are left without one once it is gone."
+          : "The account and its password are deleted from this box.",
+      confirmLabel: "Delete",
+      onConfirm: () => void deleteAccount(),
+    });
+
+  const deleteAccount = async () => {
+    const inUse = value.service_count > 0;
+    setIsBusy(true);
+    setError(null);
+    try {
+      await apiDelete(
+        `/credentials/service_accounts/${value.id}${inUse ? "?force=true" : ""}`,
+      );
+      onDeleted(value.id);
+    } catch (cause: unknown) {
+      setError(describeError(cause));
+      setIsBusy(false);
+    }
+  };
+
+  return (
+    <div className="key_card">
+      <div className="key_card_head">
+        {isEditingName ? (
+          <input
+            className="input key_card_name_input"
+            value={draftName}
+            autoFocus
+            onChange={(event) => setDraftName(event.target.value)}
+            onBlur={() => void handleRename()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                void handleRename();
+              } else if (event.key === "Escape") {
+                setIsEditingName(false);
+                setDraftName(value.name);
+              }
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            className="key_card_name"
+            onClick={() => setIsEditingName(true)}
+            title="Rename"
+          >
+            {value.name}
+            <Icon name="edit" size={12} />
+          </button>
+        )}
+      </div>
+
+      <div className="key_card_fingerprint">{value.username}</div>
+
+      <div className="key_card_meta">
+        <span
+          className={`key_card_tag ${
+            value.service_count > 0 ? "key_card_tag--used" : ""
+          }`}
+        >
+          {value.service_count === 0
+            ? "unused"
+            : `${value.service_count} service${value.service_count === 1 ? "" : "s"}`}
+        </span>
+        {value.created_at.length > 0 && (
+          <span className="key_card_added">
+            added {formatTimeAgo(value.created_at)}
+          </span>
+        )}
+      </div>
+
+      {error !== null && <span className="field_error">{error}</span>}
+
+      <div className="key_card_actions">
+        <button
+          type="button"
+          className="button button--ghost button--small"
+          disabled={isBusy}
+          onClick={onEdit}
+        >
+          <Icon name="edit" size={13} />
+          Edit
+        </button>
         <button
           type="button"
           className="button button--ghost button--small button--danger"

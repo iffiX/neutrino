@@ -436,6 +436,67 @@ class KeyRename(BaseModel):
     name: str
 
 
+class PasswordView(BaseModel):
+    """One stored password, without its material."""
+
+    id: str
+    name: str
+    created_at: str = ""
+    device_count: int = 0
+
+
+class PasswordListView(BaseModel):
+    """The Credentials page's password section."""
+
+    passwords: list[PasswordView]
+
+
+class PasswordCreate(BaseModel):
+    """A password to store under a name; the material travels one way."""
+
+    name: str
+    password: str
+
+
+class PasswordUpdate(BaseModel):
+    """Partial update to one password; a blank password keeps the stored one."""
+
+    name: str | None = None
+    password: str | None = None
+
+
+class ServiceAccountView(BaseModel):
+    """One stored service account, without its password."""
+
+    id: str
+    name: str
+    username: str = ""
+    created_at: str = ""
+    service_count: int = 0
+
+
+class ServiceAccountListView(BaseModel):
+    """The Credentials page's service account section."""
+
+    service_accounts: list[ServiceAccountView]
+
+
+class ServiceAccountCreate(BaseModel):
+    """A service account to store; the password travels one way."""
+
+    name: str
+    username: str
+    password: str
+
+
+class ServiceAccountUpdate(BaseModel):
+    """Partial update to one account; a blank password keeps the stored one."""
+
+    name: str | None = None
+    username: str | None = None
+    password: str | None = None
+
+
 class AiProviderModelView(BaseModel):
     """One model alias a provider serves: real name in, served alias out."""
 

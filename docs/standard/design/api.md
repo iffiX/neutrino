@@ -107,7 +107,7 @@ Booleans are questions in all three: `is_`, `has_`
 | `/api/agent` | Device agents checking in: heartbeat, enrolment, results |
 | `/api/auth` | Signing in and out, and what the session is |
 | `/api/cliproxyapi` | The AI gateway: its keys and settings |
-| `/api/credentials` | The secrets the box holds for somebody: SSH keys, AI providers |
+| `/api/credentials` | The secrets the box holds for somebody: SSH keys, passwords, service accounts, AI providers |
 | `/api/dashboard` | The summary, the traffic history, the DNS log |
 | `/api/devices` | Managed LAN machines, their features and their files |
 | `/api/gitea` | The Gitea module |

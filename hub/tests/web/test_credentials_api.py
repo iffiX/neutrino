@@ -1,20 +1,27 @@
 """The Credentials tab's API.
 
-The provider and key halves of the router share one file, and each serializes
-through its own view helper. The provider endpoints once broke without any
-test noticing — a second helper of the same name shadowed the first at import
-— so this file walks every provider endpoint end to end.
+The provider, key, password and service account quarters of the router share
+one file, and each serializes through its own view helper. The provider
+endpoints once broke without any test noticing — a second helper of the same
+name shadowed the first at import — so this file walks every endpoint end to
+end.
 """
+
+import json
 
 import asyncssh
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.web.dependencies import require_session
 from neutrino_hub.web.routers import credentials as credentials_router
 
 PUBLIC_KEY = "ssh-ed25519 AAAAC3Nz"  # scan: allow
+STORED_PASSWORD = "hunter2hunter2"  # scan: allow
+STORED_ACCOUNT_PASSWORD = "svc-pw-1"  # scan: allow
+REPLACEMENT_PASSWORD = "next-one"  # scan: allow
 
 
 @pytest.fixture
@@ -25,6 +32,25 @@ def client(monkeypatch, tmp_path):
     app.dependency_overrides[require_session] = lambda: None
     with TestClient(app) as test_client:
         yield test_client
+
+
+def write_device(tmp_path, ssh: dict) -> None:
+    """Store one device whose SSH block references stored secrets."""
+    path = tmp_path / "devices"
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "devices.json").write_text(
+        json.dumps(
+            {
+                "devices": {
+                    "aa:bb:cc:dd:ee:ff": {
+                        "name": "xenode",
+                        "is_wol_enabled": False,
+                        "ssh": {"host": "192.168.100.2", "username": "root", **ssh},
+                    }
+                }
+            }
+        )
+    )
 
 
 def test_provider_roundtrip(client):
@@ -127,3 +153,197 @@ def test_key_refusals(client):
         == 404
     )
     assert client.delete("/api/credentials/ssh_keys/absent").status_code == 200
+
+
+def test_password_roundtrip(client):
+    assert client.get("/api/credentials/passwords").json() == {"passwords": []}
+
+    created = client.post(
+        "/api/credentials/passwords",
+        json={"name": "lab machines", "password": STORED_PASSWORD},
+    )
+    assert created.status_code == 200
+    view = created.json()
+    assert view["name"] == "lab machines"
+    assert view["device_count"] == 0
+    assert "password" not in view
+
+    listed = client.get("/api/credentials/passwords").json()["passwords"]
+    assert [item["name"] for item in listed] == ["lab machines"]
+
+    renamed = client.put(
+        f"/api/credentials/passwords/{view['id']}", json={"name": "workshop"}
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["name"] == "workshop"
+    assert SecretVault().open(view["id"]) == {"password": STORED_PASSWORD}
+
+    blank_password = client.put(
+        f"/api/credentials/passwords/{view['id']}", json={"password": ""}
+    )
+    assert blank_password.status_code == 200
+    assert SecretVault().open(view["id"]) == {"password": STORED_PASSWORD}
+
+    replaced = client.put(
+        f"/api/credentials/passwords/{view['id']}",
+        json={"password": REPLACEMENT_PASSWORD},
+    )
+    assert replaced.status_code == 200
+    assert SecretVault().open(view["id"]) == {"password": REPLACEMENT_PASSWORD}
+
+    assert client.delete(f"/api/credentials/passwords/{view['id']}").status_code == 200
+    assert client.get("/api/credentials/passwords").json() == {"passwords": []}
+
+
+def test_password_refusals(client):
+    blank_name = client.post(
+        "/api/credentials/passwords", json={"name": "  ", "password": STORED_PASSWORD}
+    )
+    assert blank_name.status_code == 400
+    blank_password = client.post(
+        "/api/credentials/passwords", json={"name": "lab machines", "password": ""}
+    )
+    assert blank_password.status_code == 400
+    assert (
+        client.put("/api/credentials/passwords/absent", json={"name": "x"}).status_code
+        == 404
+    )
+    assert client.delete("/api/credentials/passwords/absent").status_code == 404
+
+
+def test_password_is_not_pulled_out_from_under_a_device(client, tmp_path):
+    created = client.post(
+        "/api/credentials/passwords",
+        json={"name": "lab machines", "password": STORED_PASSWORD},
+    )
+    password_id = created.json()["id"]
+    write_device(
+        tmp_path, {"password_id": password_id, "sudo_password_id": password_id}
+    )
+
+    listed = client.get("/api/credentials/passwords").json()["passwords"]
+    assert listed[0]["device_count"] == 1
+
+    refused = client.delete(f"/api/credentials/passwords/{password_id}")
+    assert refused.status_code == 409
+    assert "1 device(s)" in refused.json()["detail"]
+
+    forced = client.delete(f"/api/credentials/passwords/{password_id}?force=true")
+    assert forced.status_code == 200
+    assert client.get("/api/credentials/passwords").json() == {"passwords": []}
+
+
+def test_password_of_another_kind_is_not_addressable(client):
+    key = asyncssh.generate_private_key("ssh-ed25519")
+    created = client.post(
+        "/api/credentials/ssh_keys",
+        json={"name": "work laptop", "private_key": key.export_private_key().decode()},
+    )
+    key_id = created.json()["id"]
+    assert client.get("/api/credentials/passwords").json() == {"passwords": []}
+    assert (
+        client.put(
+            f"/api/credentials/passwords/{key_id}", json={"name": "x"}
+        ).status_code
+        == 404
+    )
+    assert client.delete(f"/api/credentials/passwords/{key_id}").status_code == 404
+    assert len(client.get("/api/credentials/ssh_keys").json()["keys"]) == 1
+
+
+def test_service_account_roundtrip(client):
+    assert client.get("/api/credentials/service_accounts").json() == {
+        "service_accounts": []
+    }
+
+    created = client.post(
+        "/api/credentials/service_accounts",
+        json={
+            "name": "NAS backup",
+            "username": "backup",
+            "password": STORED_ACCOUNT_PASSWORD,
+        },
+    )
+    assert created.status_code == 200
+    view = created.json()
+    assert view["username"] == "backup"
+    assert view["service_count"] == 0
+    assert "password" not in view
+
+    listed = client.get("/api/credentials/service_accounts").json()["service_accounts"]
+    assert [item["name"] for item in listed] == ["NAS backup"]
+
+    renamed_user = client.put(
+        f"/api/credentials/service_accounts/{view['id']}",
+        json={"name": "NAS archive", "username": "archive"},
+    )
+    assert renamed_user.status_code == 200
+    assert renamed_user.json()["name"] == "NAS archive"
+    assert renamed_user.json()["username"] == "archive"
+    assert SecretVault().open(view["id"]) == {"password": STORED_ACCOUNT_PASSWORD}
+
+    replaced = client.put(
+        f"/api/credentials/service_accounts/{view['id']}",
+        json={"password": REPLACEMENT_PASSWORD},
+    )
+    assert replaced.status_code == 200
+    assert replaced.json()["username"] == "archive"
+    assert SecretVault().open(view["id"]) == {"password": REPLACEMENT_PASSWORD}
+
+    assert (
+        client.delete(f"/api/credentials/service_accounts/{view['id']}").status_code
+        == 200
+    )
+    assert client.get("/api/credentials/service_accounts").json() == {
+        "service_accounts": []
+    }
+
+
+def test_service_account_refusals(client):
+    blank_name = client.post(
+        "/api/credentials/service_accounts",
+        json={"name": " ", "username": "backup", "password": STORED_ACCOUNT_PASSWORD},
+    )
+    assert blank_name.status_code == 400
+    blank_username = client.post(
+        "/api/credentials/service_accounts",
+        json={
+            "name": "NAS backup",
+            "username": "",
+            "password": STORED_ACCOUNT_PASSWORD,
+        },
+    )
+    assert blank_username.status_code == 400
+    blank_password = client.post(
+        "/api/credentials/service_accounts",
+        json={"name": "NAS backup", "username": "backup", "password": ""},
+    )
+    assert blank_password.status_code == 400
+    assert (
+        client.put(
+            "/api/credentials/service_accounts/absent", json={"name": "x"}
+        ).status_code
+        == 404
+    )
+    assert client.delete("/api/credentials/service_accounts/absent").status_code == 404
+
+
+def test_service_accounts_and_passwords_do_not_mix(client):
+    client.post(
+        "/api/credentials/passwords",
+        json={"name": "lab machines", "password": STORED_PASSWORD},
+    )
+    client.post(
+        "/api/credentials/service_accounts",
+        json={
+            "name": "NAS backup",
+            "username": "backup",
+            "password": STORED_ACCOUNT_PASSWORD,
+        },
+    )
+    passwords = client.get("/api/credentials/passwords").json()["passwords"]
+    accounts = client.get("/api/credentials/service_accounts").json()[
+        "service_accounts"
+    ]
+    assert [item["name"] for item in passwords] == ["lab machines"]
+    assert [item["name"] for item in accounts] == ["NAS backup"]

@@ -432,6 +432,33 @@ export interface KeysResponse {
   keys: KeyView[];
 }
 
+/** One password the gateway holds, without its material. */
+export interface PasswordView {
+  id: string;
+  name: string;
+  created_at: string;
+  device_count: number;
+}
+
+/** The Credentials page's password section payload. */
+export interface PasswordsResponse {
+  passwords: PasswordView[];
+}
+
+/** One service account the gateway holds, without its password. */
+export interface ServiceAccountView {
+  id: string;
+  name: string;
+  username: string;
+  created_at: string;
+  service_count: number;
+}
+
+/** The Credentials page's service account section payload. */
+export interface ServiceAccountsResponse {
+  service_accounts: ServiceAccountView[];
+}
+
 export type AiProviderKind = "anthropic" | "openai" | "gemini" | "custom";
 
 /** One model alias a provider serves: real name in, served alias out. */

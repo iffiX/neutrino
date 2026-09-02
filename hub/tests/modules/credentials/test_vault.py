@@ -129,6 +129,25 @@ def test_replace_changes_nonce_and_data(config_dir):
     assert SecretVault().open(record.id) == {"password": "new"}
 
 
+def test_update_meta_leaves_the_seal_alone(config_dir):
+    vault = SecretVault()
+    record = vault.add(
+        kind="service_account",
+        name="nas",
+        secret={"password": "p"},
+        meta={"username": "backup"},
+    )
+    before = dict(read_store(config_dir)["secrets"][record.id])
+    updated = vault.update_meta(record.id, {"username": "archive"})
+    after = read_store(config_dir)["secrets"][record.id]
+    assert updated.meta == {"username": "archive"}
+    assert after["nonce"] == before["nonce"]
+    assert after["data"] == before["data"]
+    assert SecretVault().open(record.id) == {"password": "p"}
+    with pytest.raises(VaultError):
+        vault.update_meta("0" * 32, {"username": "archive"})
+
+
 def test_rekey_preserves_secrets_and_changes_the_key(config_dir):
     vault = SecretVault()
     password = vault.add(kind="password", name="a", secret={"password": "pa"})

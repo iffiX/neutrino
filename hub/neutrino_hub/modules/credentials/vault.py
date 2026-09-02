@@ -299,6 +299,28 @@ class SecretVault:
             self._write_store(store)
             return self._to_record(secret_id, entry)
 
+    def update_meta(self, secret_id: str, meta: dict) -> SecretRecord:
+        """Replace a secret's plaintext annotations, leaving the seal alone.
+
+        Args:
+            secret_id: The secret's id.
+            meta: The annotations to store in place of the current ones.
+
+        Returns:
+            The record after the change.
+
+        Raises:
+            VaultError: If the id is unknown.
+        """
+        with _WRITE_LOCK:
+            store = self._read_store()
+            entry = store["secrets"].get(secret_id)
+            if entry is None:
+                raise VaultError(f"no secret with id {secret_id!r}")
+            entry["meta"] = meta
+            self._write_store(store)
+            return self._to_record(secret_id, entry)
+
     def replace(
         self, secret_id: str, *, secret: dict, meta: dict | None = None
     ) -> SecretRecord:
