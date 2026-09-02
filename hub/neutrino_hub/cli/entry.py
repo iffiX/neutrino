@@ -22,6 +22,7 @@ STOPPED_STATUS = 130
 COMMANDS = {
     "setup": ("neutrino_hub.cli.setup", "Set this gateway up, once"),
     "run": ("neutrino_hub.cli.run", "Run the control panel in the foreground"),
+    "stop": ("neutrino_hub.cli.stop", "Stop what the hub runs on this box"),
     "apply": ("neutrino_hub.cli.apply", "Render every config and make it true"),
     "unlock": ("neutrino_hub.cli.unlock", "Clear the login lockout and SSH bans"),
     "reset": ("neutrino_hub.cli.reset", "Return part of the box to a fresh state"),
