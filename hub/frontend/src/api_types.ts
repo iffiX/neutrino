@@ -692,8 +692,50 @@ export interface ServiceUninstallRequest {
   is_data_kept: boolean;
 }
 
+export type DeclaredServiceKind =
+  "samba" | "http" | "docker_engine" | "generic_tcp";
+
+/** One share a declared Samba service exports. */
+export interface DeclaredShareView {
+  name: string;
+  service_account_id: string | null;
+}
+
+/** A declared service's cached health; every field null before the first probe. */
+export interface DeclaredServiceProbeView {
+  is_healthy: boolean | null;
+  checked_at: string | null;
+  detail_code: string | null;
+}
+
+/** One user-declared service, with its cached health. */
+export interface DeclaredServiceView {
+  id: string;
+  name: string;
+  kind: DeclaredServiceKind;
+  host: string;
+  port: number;
+  scheme: string | null;
+  path: string | null;
+  shares: DeclaredShareView[];
+  created_at: string;
+  probe: DeclaredServiceProbeView;
+}
+
+/** A declared service as the form submits it; also the full-record update body. */
+export interface DeclaredServiceCreate {
+  name: string;
+  kind: DeclaredServiceKind;
+  host: string;
+  port: number | null;
+  scheme: string | null;
+  path: string | null;
+  shares: DeclaredShareView[];
+}
+
 export interface ServicesResponse {
   services: ServiceView[];
+  declared: DeclaredServiceView[];
 }
 
 export interface ServiceJournal {
