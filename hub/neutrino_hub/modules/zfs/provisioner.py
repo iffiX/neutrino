@@ -53,6 +53,9 @@ MEMINFO_PATH = Path("/proc/meminfo")
 
 APT_SOURCES_LIST = Path("/etc/apt/sources.list")
 APT_SOURCES_DIR = Path("/etc/apt/sources.list.d")
+# How Debian's own cloud images name a mirror: not in the stanza, but in a
+# file the stanza points at.
+APT_MIRROR_FILE_PREFIX = "mirror+file://"
 PACMAN_CONF = Path("/etc/pacman.conf")
 
 
@@ -283,9 +286,44 @@ def _is_debian_source(text: str) -> bool:
         text: The line, or the stanza it belongs to.
 
     Returns:
-        True when it points at a Debian mirror.
+        True when it points at a Debian mirror, including through the
+        indirection Debian's own cloud images use.
     """
-    return any(mirror in text for mirror in ZFS_DEBIAN_MIRRORS)
+    if any(mirror in text for mirror in ZFS_DEBIAN_MIRRORS):
+        return True
+    return any(
+        _is_debian_source(mirror_list) for mirror_list in _mirror_list_contents(text)
+    )
+
+
+def _mirror_list_contents(text: str) -> list:
+    """What the mirror files a source points at actually name.
+
+    Debian's cloud images do not write a mirror into the stanza. They write
+    `URIs: mirror+file:///etc/apt/mirrors/debian.list`, and that file holds
+    the address — so a source that is Debian's own carries no Debian
+    hostname, and reading only the stanza finds none. Measured on the Debian
+    12 generic cloud image, where the whole archive is configured that way
+    and enabling `contrib` therefore did nothing at all.
+
+    Args:
+        text: The line, or the stanza it belongs to.
+
+    Returns:
+        The contents of every mirror file it names, skipping any that cannot
+        be read: a source pointing at a file that is not there is not one to
+        add a component to either.
+    """
+    contents = []
+    for word in text.replace(",", " ").split():
+        _, marker, path = word.partition(APT_MIRROR_FILE_PREFIX)
+        if not marker or not path.startswith("/"):
+            continue
+        try:
+            contents.append(Path(path).read_text(encoding="utf-8"))
+        except OSError:
+            continue
+    return contents
 
 
 def _line_with_component(line: str, component: str, *, stanza: str = "") -> str:

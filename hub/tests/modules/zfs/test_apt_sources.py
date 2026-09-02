@@ -56,3 +56,58 @@ def test_a_comment_is_not_a_repository():
     line = "# deb http://deb.debian.org/debian bookworm main"
 
     assert _line_with_component(line, "contrib") == line
+
+
+# --- the mirror Debian's own cloud images point at rather than name ---
+
+MIRROR_STANZA = (
+    "Types: deb\nURIs: mirror+file:///etc/apt/mirrors/debian.list\n"
+    "Suites: bookworm\nComponents: main\n"
+)
+
+
+def test_a_stanza_that_points_at_a_debian_mirror_file_gains_the_component(
+    tmp_path, monkeypatch
+):
+    """Debian's generic cloud image writes no mirror into the stanza at all:
+    `URIs: mirror+file:///etc/apt/mirrors/debian.list`, with the address in
+    that file. Reading only the stanza finds no Debian hostname, so `contrib`
+    was never enabled and every ZFS install ended with "Unable to locate
+    package zfs-dkms" — measured on Debian 12."""
+    mirrors = tmp_path / "etc/apt/mirrors"
+    mirrors.mkdir(parents=True)
+    (mirrors / "debian.list").write_text("https://deb.debian.org/debian\n")
+    stanza = MIRROR_STANZA.replace("/etc/apt/mirrors", str(mirrors))
+
+    assert (
+        _line_with_component("Components: main", "contrib", stanza=stanza)
+        == "Components: main contrib"
+    )
+
+
+def test_a_mirror_file_naming_somebody_else_is_left_alone(tmp_path):
+    mirrors = tmp_path / "mirrors"
+    mirrors.mkdir()
+    (mirrors / "vendor.list").write_text("https://pkgs.netbird.io/debian\n")
+    stanza = (
+        f"Types: deb\nURIs: mirror+file://{mirrors}/vendor.list\nComponents: main\n"
+    )
+
+    assert (
+        _line_with_component("Components: main", "contrib", stanza=stanza)
+        == "Components: main"
+    )
+
+
+def test_a_mirror_file_that_is_not_there_is_left_alone():
+    """A source pointing at a file nobody wrote is not one to add a component
+    to either."""
+    stanza = (
+        "Types: deb\nURIs: mirror+file:///etc/apt/mirrors/gone.list\n"
+        "Components: main\n"
+    )
+
+    assert (
+        _line_with_component("Components: main", "contrib", stanza=stanza)
+        == "Components: main"
+    )
