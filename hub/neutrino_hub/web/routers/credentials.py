@@ -46,7 +46,7 @@ def list_providers() -> AiProviderListView:
         The providers, newest first, keys withheld.
     """
     return AiProviderListView(
-        providers=[_to_view(r) for r in AiProviderRegistry().list_records()]
+        providers=[_provider_view(r) for r in AiProviderRegistry().list_records()]
     )
 
 
@@ -75,7 +75,7 @@ def create_provider(request: AiProviderCreate) -> AiProviderView:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
         ) from error
-    return _to_view(record)
+    return _provider_view(record)
 
 
 @router.put("/ai_providers/{provider_id}", response_model=AiProviderView)
@@ -114,7 +114,7 @@ def update_provider(provider_id: str, request: AiProviderUpdate) -> AiProviderVi
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
         ) from error
-    return _to_view(record)
+    return _provider_view(record)
 
 
 @router.delete("/ai_providers/{provider_id}")
@@ -139,7 +139,7 @@ def delete_provider(provider_id: str) -> dict:
     return {}
 
 
-def _to_view(record: AiProviderRecord) -> AiProviderView:
+def _provider_view(record: AiProviderRecord) -> AiProviderView:
     return AiProviderView(
         id=record.id,
         name=record.name,
@@ -165,7 +165,7 @@ def list_keys() -> KeyListView:
     """
     counts = _device_counts()
     return KeyListView(
-        keys=[_to_view(record, counts) for record in KeyRegistry().list_records()]
+        keys=[_key_view(record, counts) for record in KeyRegistry().list_records()]
     )
 
 
@@ -194,7 +194,7 @@ def create_key(request: KeyCreate) -> KeyView:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
         ) from error
-    return _to_view(record, _device_counts())
+    return _key_view(record, _device_counts())
 
 
 @router.put("/ssh_keys/{key_id}", response_model=KeyView)
@@ -220,7 +220,7 @@ def rename_key(key_id: str, request: KeyRename) -> KeyView:
             else status.HTTP_400_BAD_REQUEST
         )
         raise HTTPException(status_code=code, detail=str(error)) from error
-    return _to_view(record, _device_counts())
+    return _key_view(record, _device_counts())
 
 
 @router.delete("/ssh_keys/{key_id}")
@@ -257,7 +257,7 @@ def _device_counts() -> dict[str, int]:
     return counts
 
 
-def _to_view(record: KeyRecord, counts: dict[str, int]) -> KeyView:
+def _key_view(record: KeyRecord, counts: dict[str, int]) -> KeyView:
     return KeyView(
         id=record.id,
         name=record.name,
