@@ -16,6 +16,15 @@ class GatewayUnreachable(RuntimeError):
     """Raised when the gateway cannot be reached or answers with an error."""
 
 
+class GatewayRefused(RuntimeError):
+    """Raised when the gateway answered but rejected this machine's token.
+
+    Not a network problem: the hub deliberately no longer knows this device —
+    it was forgotten on the panel, or the hub was reset — and retrying with
+    the same token can never succeed.
+    """
+
+
 class GatewayHttpChannel:
     """Posts JSON to the gateway and parses its replies."""
 
@@ -58,6 +67,10 @@ class GatewayHttpChannel:
             ) as response:
                 text = response.read().decode("utf-8")
         except urllib.error.HTTPError as error:
+            if error.code in (401, 403):
+                raise GatewayRefused(
+                    f"gateway refused this machine's token ({error.code})"
+                ) from error
             raise GatewayUnreachable(
                 f"gateway answered {error.code} for {path}"
             ) from error

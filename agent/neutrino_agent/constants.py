@@ -7,6 +7,11 @@ file holds only what is wired into the protocol.
 # The hub and the agent share one configuration root with a directory each,
 # so a machine running both has one place to look and one place to back up.
 AGENT_CONFIG_PATH = "/etc/neutrino/agent/agent.json"
+
+# How many heartbeats in a row the hub may refuse before the agent accepts
+# that it was let go and drops its binding. More than one, so a hub caught
+# mid-restore does not shed its whole fleet over a moment's inconsistency.
+AGENT_REFUSALS_BEFORE_UNBIND = 3
 AGENT_INSTALL_DIR = "/opt/neutrino_agent"
 
 AGENT_SERVICE_NAME = "neutrino_agent.service"

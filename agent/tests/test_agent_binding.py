@@ -10,6 +10,7 @@ import json
 import pytest
 
 import neutrino_agent.enrollment as enrollment
+import neutrino_agent.http_channel as http_channel
 from neutrino_agent.agent import Agent
 
 
@@ -81,3 +82,33 @@ def test_disconnect_leaves_the_service_unbound(config_path):
     assert "gateway_url" not in stored and "token" not in stored
     agent._adopt_external_binding()
     assert agent._channel is None
+
+
+def test_repeated_refusals_unbind_the_machine(config_path, monkeypatch):
+    bind(config_path)
+    agent = Agent(log=lambda message: None)
+
+    def refuse(path, payload):
+        raise http_channel.GatewayRefused("gateway refused this machine's token (401)")
+
+    monkeypatch.setattr(agent._channel, "post", refuse)
+    delays = [agent.run_once() for _ in range(3)]
+
+    assert agent._channel is None
+    assert "gateway_url" not in json.loads(config_path.read_text())
+    assert "paste a new link" in agent.last_error()
+    assert delays[-1] == 2
+
+
+def test_a_single_refusal_keeps_the_binding(config_path, monkeypatch):
+    bind(config_path)
+    agent = Agent(log=lambda message: None)
+
+    def refuse(path, payload):
+        raise http_channel.GatewayRefused("gateway refused this machine's token (401)")
+
+    monkeypatch.setattr(agent._channel, "post", refuse)
+    agent.run_once()
+
+    assert agent._channel is not None
+    assert "gateway_url" in json.loads(config_path.read_text())

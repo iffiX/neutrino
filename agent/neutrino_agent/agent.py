@@ -25,10 +25,15 @@ from neutrino_agent.constants import (
     AGENT_HEARTBEAT_INTERVAL_S,
     AGENT_HEARTBEAT_PATH,
     AGENT_LEAVE_PATH,
+    AGENT_REFUSALS_BEFORE_UNBIND,
     AGENT_RESULT_PATH,
 )
 from neutrino_agent.features import FeatureManager
-from neutrino_agent.http_channel import GatewayHttpChannel, GatewayUnreachable
+from neutrino_agent.http_channel import (
+    GatewayHttpChannel,
+    GatewayRefused,
+    GatewayUnreachable,
+)
 from neutrino_agent.metrics import HostMetricsReader, hostname
 from neutrino_agent.ops import DeviceOperator
 
@@ -61,6 +66,7 @@ class Agent:
         self._operator = None
         self._binding: tuple = ("", "")
         self._binding_stamp = 0
+        self._refusals = 0
         self._load_connection()
 
     # --- what the local page reads ---
@@ -218,6 +224,8 @@ class Agent:
         }
         try:
             reply = channel.post(AGENT_HEARTBEAT_PATH, payload)
+        except GatewayRefused as error:
+            return self._on_refused(str(error))
         except GatewayUnreachable as error:
             with self._lock:
                 self._last_error = str(error)
@@ -229,6 +237,7 @@ class Agent:
         with self._lock:
             self._backoff_s = AGENT_BACKOFF_MIN_S
             self._last_error = ""
+            self._refusals = 0
             # Accepted requests are dropped: what comes back is now the truth.
             for name in requests:
                 self._pending.pop(name, None)
@@ -242,6 +251,42 @@ class Agent:
         for command in reply.get("commands", []):
             self._execute(command)
         return AGENT_HEARTBEAT_INTERVAL_S
+
+    def _on_refused(self, reason: str) -> int:
+        """Take a deliberate rejection for what it is, after a short grace.
+
+        The hub authenticates a heartbeat against its own device records, so
+        a refusal means this machine was forgotten there or the hub was
+        reset. After a few in a row the binding is dropped: retrying with the
+        same token can never succeed, and the machine goes back to waiting
+        for a link. The local page says why.
+
+        Args:
+            reason: What the channel reported.
+
+        Returns:
+            Seconds until the next loop turn.
+        """
+        with self._lock:
+            self._refusals += 1
+            refusals = self._refusals
+            self._last_error = reason
+        if refusals < AGENT_REFUSALS_BEFORE_UNBIND:
+            self._log(f"{reason}; asking again")
+            return AGENT_HEARTBEAT_INTERVAL_S
+        enrollment.disconnect()
+        with self._lock:
+            self._desired = {}
+            self._pending = {}
+            self._refusals = 0
+        self._load_connection()
+        with self._lock:
+            self._last_error = (
+                "the hub no longer knows this machine; paste a new link to rejoin"
+            )
+        self._features.update(desired={}, catalog=None, catalog_hash="")
+        self._log("the hub let this machine go; unbound")
+        return IDLE_POLL_INTERVAL_S
 
     def _load_connection(self) -> None:
         config = enrollment.load_config()

@@ -74,6 +74,12 @@ PRERM = """#!/bin/sh
 set -e
 
 if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
+    if [ "$1" = remove ]; then
+        # Removal is this machine leaving: the hub is told, so its panel
+        # stops showing the device as managed. Best-effort — an unreachable
+        # hub does not block the removal.
+        nagent disconnect >/dev/null 2>&1 || true
+    fi
     systemctl stop neutrino_agent.service >/dev/null 2>&1 || true
     systemctl disable neutrino_agent.service >/dev/null 2>&1 || true
 fi
