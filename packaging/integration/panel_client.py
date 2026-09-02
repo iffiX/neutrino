@@ -108,3 +108,76 @@ class PanelClient:
         assert status == 200, f"GET {path} answered {status}: {answer}"
         assert isinstance(answer, dict), f"GET {path} answered {answer!r}"
         return answer
+
+    def download(self, method: str, path: str, body=None) -> tuple:
+        """One call whose answer is bytes, not JSON — a backup, a file.
+
+        Args:
+            method: HTTP method.
+            path: Path under ``/api``.
+            body: Object to send as JSON, or None.
+
+        Returns:
+            The status code and the raw body. A socket that never answered is
+            status 0 and empty bytes.
+        """
+        data = None if body is None else json.dumps(body).encode()
+        request = urllib.request.Request(
+            f"{self.base_url}/api{path}",
+            data=data,
+            method=method,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with self._opener.open(request, timeout=self._timeout_s) as answer:
+                return answer.status, answer.read()
+        except urllib.error.HTTPError as error:
+            return error.code, error.read()
+        except Exception:  # noqa: BLE001 - a dead socket is a result
+            return 0, b""
+
+    def upload(self, path: str, *, filename: str, content: bytes, fields=None) -> tuple:
+        """One multipart POST carrying a file, the way the restore form does.
+
+        Args:
+            path: Path under ``/api``.
+            filename: The name the file part carries.
+            content: The file's bytes.
+            fields: Extra plain form fields, as a dict.
+
+        Returns:
+            The status code and the decoded answer, as :meth:`call` shapes it.
+        """
+        boundary = "panelclientboundary7f3a"
+        parts = []
+        for name, value in (fields or {}).items():
+            parts.append(
+                f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"'
+                f"\r\n\r\n{value}\r\n".encode()
+            )
+        parts.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; name="file"; '
+            f'filename="{filename}"\r\nContent-Type: application/gzip\r\n\r\n'.encode()
+            + content
+            + b"\r\n"
+        )
+        parts.append(f"--{boundary}--\r\n".encode())
+        body = b"".join(parts)
+        request = urllib.request.Request(
+            f"{self.base_url}/api{path}",
+            data=body,
+            method="POST",
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        )
+        try:
+            with self._opener.open(request, timeout=self._timeout_s) as answer:
+                text = answer.read().decode()
+                return answer.status, (json.loads(text) if text else None)
+        except urllib.error.HTTPError as error:
+            text = error.read().decode()
+            try:
+                return error.code, json.loads(text)
+            except ValueError:
+                return error.code, text
+        except Exception as error:  # noqa: BLE001 - a dead socket is a result
+            return 0, str(error)
