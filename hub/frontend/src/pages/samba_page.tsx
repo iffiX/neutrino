@@ -90,6 +90,12 @@ export function SambaPage() {
   const isUsersDirty =
     resource.data !== null &&
     JSON.stringify(users) !== JSON.stringify(savedUserNames);
+  // A staged password is a change like any other, and the frame has to say so:
+  // the glow and the Apply beneath it answer one question — is there something
+  // here that has not been applied — so a box that lights the button and not
+  // its own edge is telling two stories.
+  const isUsersUnapplied =
+    isUsersDirty || Object.keys(pendingPasswords).length > 0;
 
   const applyGroup = async (group: GroupName) => {
     setBusyGroup(group);
@@ -245,7 +251,9 @@ export function SambaPage() {
       </section>
 
       <section
-        className={`settings_group ${isUsersDirty ? "settings_group--dirty" : ""}`}
+        className={`settings_group ${
+          isUsersUnapplied ? "settings_group--dirty" : ""
+        }`}
       >
         <div className="settings_group_title">
           <h2>Users</h2>
@@ -288,7 +296,7 @@ export function SambaPage() {
           </button>
         </div>
         <ApplyBar
-          isDirty={isUsersDirty || Object.keys(pendingPasswords).length > 0}
+          isDirty={isUsersUnapplied}
           isBusy={busyGroup === "users"}
           label="Apply users"
           hint="Creates accounts, sets staged passwords, revokes removed ones."

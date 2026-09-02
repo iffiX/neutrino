@@ -61,7 +61,13 @@ disabled button is the other thing allowed to lose its border.
 ## Frames
 
 - One framed group (`settings_group`) per unit of change, closed by one apply
-  bar. Unsaved changes light the frame (`settings_group--dirty`).
+  bar. Anything unapplied lights the frame (`settings_group--dirty`).
+- **The frame and its apply bar answer one question**: is there something here
+  that has not been applied. A lit bar over an unlit frame is a box telling two
+  stories, and it happens wherever the bar has a term the frame does not — a
+  change written straight through with no draft behind it, a staged password.
+  The bar may be the *stricter* of the two, staying dark on a value that is not
+  valid yet, but never the more generous.
 - Surface ramp: page background → `--color-surface` for the unit of change →
   `--color-bg` for its contents → `--color-elevated` for emphasis.
 - Destructive confirmation is a red-bordered box inside the card, and deleting

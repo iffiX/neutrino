@@ -264,6 +264,11 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
   // is why the bar has to be pressable in exactly that state.
   const isSavedNotApplied =
     (applied?.is_dirty ?? false) && !(diff?.isDirty ?? false);
+  // What the frame and the bar both read. Adding or removing a node writes it
+  // at once, so there is no draft to be dirty about and the panel would sit
+  // unlit beside a lit Apply — the glow and the button have to answer the same
+  // question, which is "is there something here to apply".
+  const isUnapplied = (diff?.isDirty ?? false) || isSavedNotApplied;
 
   const enabledCount = draftNodes.filter((node) => node.is_enabled).length;
   const aliveCount = draftNodes.filter((node) => node.is_alive).length;
@@ -277,9 +282,7 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
     // know this box has unsaved changes, and the glow that says so has to come
     // from whatever holds the state.
     <div
-      className={`settings_group ${
-        diff?.isDirty ? "settings_group--dirty" : ""
-      }`}
+      className={`settings_group ${isUnapplied ? "settings_group--dirty" : ""}`}
     >
       <div className="settings_group_title">
         <h2>Exit nodes</h2>
@@ -435,7 +438,7 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
       )}
 
       <ApplyBar
-        isDirty={(diff?.isDirty ?? false) || isSavedNotApplied}
+        isDirty={isUnapplied}
         isBusy={isApplying}
         label="Apply nodes"
         hint={
