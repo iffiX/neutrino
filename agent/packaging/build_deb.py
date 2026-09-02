@@ -58,6 +58,11 @@ fi
 
 systemctl daemon-reload || true
 
+# The agent runs from install: unbound it idles waiting for a link, and its
+# local page answers on 127.0.0.1:8765. A service that only starts after a
+# connect is a heartbeat counter that never accumulates.
+systemctl enable --now neutrino_agent.service >/dev/null 2>&1 || true
+
 if [ -d /usr/share/icons/hicolor ]; then
     gtk-update-icon-cache -f /usr/share/icons/hicolor >/dev/null 2>&1 || true
 fi

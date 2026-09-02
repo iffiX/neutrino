@@ -103,6 +103,21 @@ def _connect(link: str, *, is_forced: bool) -> int:
         print(f"error: {error}", file=sys.stderr)
         return 1
     print(f"joined {enrollment.load_config().get('gateway_url', '')}")
+    if _service_state() != "running":
+        subprocess.run(
+            ["systemctl", "enable", "--now", AGENT_SERVICE_NAME],
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+        state = _service_state()
+        print(f"service    {state}")
+        if state != "running":
+            print(
+                "start it for heartbeats: "
+                f"sudo systemctl enable --now {AGENT_SERVICE_NAME}",
+                file=sys.stderr,
+            )
     return 0
 
 
@@ -153,7 +168,15 @@ def _status() -> int:
         print(f"service    {_service_state()}")
         return 1
     print(f"hub        {gateway_url}   connected")
-    print(f"service    {_service_state()}")
+    service_state = _service_state()
+    if service_state == "running":
+        print(f"service    {service_state}")
+    else:
+        print(
+            f"service    {service_state} — the machine beats only while "
+            "status runs; start it: sudo systemctl enable --now "
+            f"{AGENT_SERVICE_NAME}"
+        )
 
     agent = Agent(log=_discard)
     started_at = time.monotonic()
@@ -162,6 +185,12 @@ def _status() -> int:
     error = agent.last_error()
     if error:
         print(f"heartbeat  {error}")
+        if "refused" in error:
+            print(
+                "           the hub has let this machine go; the running "
+                "service unbinds by itself, or run `sudo nagent disconnect` "
+                "and join with a fresh link"
+            )
         return 1
     print(f"heartbeat  ok, {elapsed_ms} ms — next report in {delay}s")
     return 0
