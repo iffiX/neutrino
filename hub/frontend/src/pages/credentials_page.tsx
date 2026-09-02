@@ -632,10 +632,16 @@ function ProviderCard({ value, onEdit, onDeleted }: ProviderCardProps) {
 
       <div className="key_card_meta">
         <span
-          className={`key_card_tag ${value.has_api_key ? "key_card_tag--used" : ""}`}
+          className={`key_card_tag ${
+            value.has_api_key && value.is_enabled ? "key_card_tag--used" : ""
+          }`}
         >
           <Icon name="lock" size={11} />
-          {value.has_api_key ? "key stored" : "no key"}
+          {!value.has_api_key
+            ? "no key"
+            : value.is_enabled
+              ? "serving"
+              : "unused"}
         </span>
         {value.created_at.length > 0 && (
           <span className="key_card_added">

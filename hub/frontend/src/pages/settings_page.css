@@ -60,3 +60,10 @@
   font-family: var(--font-mono);
   font-size: 12px;
 }
+
+.settings_restore_fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+}

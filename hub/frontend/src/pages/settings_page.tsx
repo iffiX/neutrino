@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 
 import { ErrorPanel } from "../components/error_panel";
@@ -13,7 +13,6 @@ import {
 import { formatDuration } from "../format_duration";
 import { PasswordInput } from "../components/password_input";
 import { useApiResource } from "../use_api_resource";
-import { useConfirm } from "../use_confirm";
 import type {
   AboutInfo,
   PasswordChangeResult,
@@ -35,11 +34,9 @@ const MIN_PASSWORD_LENGTH = 8;
 const BACKUP_PASSPHRASE_NEEDED = "backup_passphrase_needed";
 const BACKUP_PASSPHRASE_WRONG = "backup_passphrase_wrong";
 
-const RESTORE_ERROR_SENTENCES: Record<string, string> = {
-  [BACKUP_PASSPHRASE_NEEDED]:
-    "This archive is protected. Enter its passphrase to restore it.",
-  [BACKUP_PASSPHRASE_WRONG]: "That passphrase does not open this archive.",
-};
+const RESTORE_PROTECTED_NOTE =
+  "This archive is protected. Its passphrase is needed to restore it.";
+const RESTORE_WRONG_PASSPHRASE = "That passphrase does not open this archive.";
 
 export function SettingsPage() {
   const about = useApiResource<AboutInfo>("/settings/about");
@@ -55,12 +52,13 @@ export function SettingsPage() {
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [restoreName, setRestoreName] = useState<string | null>(null);
-  const confirm = useConfirm();
   const [backupNotice, setBackupNotice] = useState<string | null>(null);
   const [backupError, setBackupError] = useState<string | null>(null);
   const [backupPassphrase, setBackupPassphrase] = useState("");
   const [restorePassphrase, setRestorePassphrase] = useState("");
-  const [sealedFile, setSealedFile] = useState<File | null>(null);
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [isArchiveProtected, setIsArchiveProtected] = useState(false);
 
   const isPasswordValid =
     currentPassword.length > 0 &&
@@ -106,6 +104,7 @@ export function SettingsPage() {
         backupFilename(),
       );
       setBackupNotice("Backup downloaded.");
+      setBackupPassphrase("");
     } catch (cause: unknown) {
       setBackupError(describeError(cause));
     } finally {
@@ -119,39 +118,55 @@ export function SettingsPage() {
     if (file === undefined) {
       return;
     }
-    setSealedFile(null);
     setRestorePassphrase("");
-    confirm.ask({
-      title: `Restore ${file.name}`,
-      body:
-        "Every file under config/ is overwritten by the archive's, and the " +
-        "services are reconfigured from it.",
-      confirmLabel: "Restore",
-      onConfirm: () => void restoreFile(file, ""),
-    });
+    setRestoreError(null);
+    setIsArchiveProtected(false);
+    setRestoreFile(file);
   };
 
-  const restoreFile = async (file: File, passphrase: string) => {
-    setRestoreName(file.name);
+  const closeRestore = () => {
+    setRestoreFile(null);
+    setRestorePassphrase("");
+    setRestoreError(null);
+    setIsArchiveProtected(false);
+  };
+
+  const restoreArchive = async () => {
+    if (restoreFile === null) {
+      return;
+    }
+    setRestoreName(restoreFile.name);
     setIsRestoring(true);
+    setRestoreError(null);
     setBackupError(null);
     setBackupNotice(null);
     try {
-      const result = await apiUpload<RestoreResult>("/settings/restore", file, {
-        passphrase,
-      });
-      setSealedFile(null);
-      setRestorePassphrase("");
+      const result = await apiUpload<RestoreResult>(
+        "/settings/restore",
+        restoreFile,
+        { passphrase: restorePassphrase },
+      );
+      closeRestore();
       setBackupNotice(
         result.is_restored
           ? "Config restored. Re-render and restart services to apply it."
           : "The gateway rejected the archive.",
       );
     } catch (cause: unknown) {
-      if (isSealedArchiveError(cause)) {
-        setSealedFile(file);
+      if (
+        cause instanceof ApiError &&
+        cause.code === BACKUP_PASSPHRASE_NEEDED
+      ) {
+        setIsArchiveProtected(true);
+      } else if (
+        cause instanceof ApiError &&
+        cause.code === BACKUP_PASSPHRASE_WRONG
+      ) {
+        setIsArchiveProtected(true);
+        setRestoreError(RESTORE_WRONG_PASSPHRASE);
+      } else {
+        setRestoreError(describeError(cause));
       }
-      setBackupError(describeRestoreError(cause));
     } finally {
       setIsRestoring(false);
     }
@@ -255,20 +270,6 @@ export function SettingsPage() {
               </span>
             </label>
 
-            {sealedFile !== null && (
-              <label className="field">
-                <span className="field_label">Archive passphrase</span>
-                <PasswordInput
-                  value={restorePassphrase}
-                  onChange={setRestorePassphrase}
-                  autoFocus
-                />
-                <span className="field_hint">
-                  The passphrase {sealedFile.name} was protected with.
-                </span>
-              </label>
-            )}
-
             {backupError !== null && (
               <div className="notice notice--error">
                 <Icon name="alert" size={15} />
@@ -281,14 +282,6 @@ export function SettingsPage() {
                 <div className="notice_body">{backupNotice}</div>
               </div>
             )}
-
-            <div className="notice notice--warn">
-              <Icon name="alert" size={15} />
-              <div className="notice_body">
-                Restoring overwrites the live config. Render and restart
-                services afterwards for it to take effect.
-              </div>
-            </div>
 
             <div className="settings_actions">
               <button
@@ -309,19 +302,6 @@ export function SettingsPage() {
                 <Icon name="upload" size={14} />
                 {isRestoring ? "Restoring…" : "Restore from file"}
               </button>
-              {sealedFile !== null && (
-                <button
-                  type="button"
-                  className="button"
-                  onClick={() =>
-                    void restoreFile(sealedFile, restorePassphrase)
-                  }
-                  disabled={isRestoring || restorePassphrase.length === 0}
-                >
-                  <Icon name="check" size={14} />
-                  Unlock and restore
-                </button>
-              )}
               {restoreName !== null && (
                 <span className="settings_restore_name">{restoreName}</span>
               )}
@@ -389,7 +369,119 @@ export function SettingsPage() {
           )}
         </section>
       </div>
-      {confirm.modal}
+      {restoreFile !== null && (
+        <RestoreArchiveModal
+          file={restoreFile}
+          passphrase={restorePassphrase}
+          onPassphrase={setRestorePassphrase}
+          error={restoreError}
+          isProtected={isArchiveProtected}
+          isRestoring={isRestoring}
+          onCancel={closeRestore}
+          onRestore={() => void restoreArchive()}
+        />
+      )}
+    </div>
+  );
+}
+
+interface RestoreArchiveModalProps {
+  file: File;
+  passphrase: string;
+  onPassphrase: (value: string) => void;
+  error: string | null;
+  isProtected: boolean;
+  isRestoring: boolean;
+  onCancel: () => void;
+  onRestore: () => void;
+}
+
+function RestoreArchiveModal({
+  file,
+  passphrase,
+  onPassphrase,
+  error,
+  isProtected,
+  isRestoring,
+  onCancel,
+  onRestore,
+}: RestoreArchiveModalProps) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !isRestoring) {
+        onCancel();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel, isRestoring]);
+
+  return (
+    <div
+      className="confirm_backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Restore ${file.name}`}
+      onClick={(event) => {
+        if (event.target === event.currentTarget && !isRestoring) {
+          onCancel();
+        }
+      }}
+    >
+      <div className="confirm_modal">
+        <div className="confirm_head">
+          <Icon name="upload" size={16} />
+          <h2>Restore {file.name}</h2>
+        </div>
+        <p className="confirm_body">
+          Every file under config/ is overwritten by the archive&apos;s. Render
+          and restart services afterwards for it to take effect.
+        </p>
+        <div className="settings_restore_fields">
+          {isProtected && (
+            <div className="notice notice--warn">
+              <Icon name="alert" size={15} />
+              <div className="notice_body">{RESTORE_PROTECTED_NOTE}</div>
+            </div>
+          )}
+          <label className="field">
+            <span className="field_label">Archive passphrase</span>
+            <PasswordInput
+              value={passphrase}
+              onChange={onPassphrase}
+              autoFocus
+            />
+            <span className="field_hint">
+              Only a protected archive needs one; leave blank for a plain
+              backup.
+            </span>
+          </label>
+          {error !== null && (
+            <div className="notice notice--error">
+              <Icon name="alert" size={15} />
+              <div className="notice_body">{error}</div>
+            </div>
+          )}
+        </div>
+        <div className="confirm_foot">
+          <button
+            type="button"
+            className="button"
+            onClick={onCancel}
+            disabled={isRestoring}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="button button--primary"
+            onClick={onRestore}
+            disabled={isRestoring || (isProtected && passphrase.length === 0)}
+          >
+            {isRestoring ? "Restoring…" : "Restore"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -397,22 +489,4 @@ export function SettingsPage() {
 function backupFilename(): string {
   const stamp = new Date().toISOString().slice(0, 10);
   return `neutrino_config_${stamp}.tar.gz`;
-}
-
-function isSealedArchiveError(cause: unknown): boolean {
-  return (
-    cause instanceof ApiError &&
-    (cause.code === BACKUP_PASSPHRASE_NEEDED ||
-      cause.code === BACKUP_PASSPHRASE_WRONG)
-  );
-}
-
-function describeRestoreError(cause: unknown): string {
-  if (cause instanceof ApiError) {
-    const sentence = RESTORE_ERROR_SENTENCES[cause.code];
-    if (sentence !== undefined) {
-      return sentence;
-    }
-  }
-  return describeError(cause);
 }
