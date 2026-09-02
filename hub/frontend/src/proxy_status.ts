@@ -2,19 +2,20 @@ import { nodeIdFromTag } from "./node_tag";
 import type { StatsFrame } from "./api_types";
 
 /**
- * What the status strip says traffic is doing.
+ * Where traffic is going, in one line.
  *
- * The strip answers one question — where is my traffic going — and the answer
- * has two halves: whose traffic the proxy is taking (the scope the gateway
- * reports from the applied ruleset), and which exit carries what it takes.
+ * One describer, two readers: the status strip's chip and the Proxy page's
+ * own heading. They used to disagree — the page said on or off, which was
+ * really "is a node enabled", while the strip said where traffic went — so a
+ * server could read `on` beside `direct` and both be telling the truth about
+ * different questions. There is one question now, and the chip is a thumbnail
+ * of the page rather than a second opinion.
  *
- * The scope comes first because the modes differ in what there is to divert.
- * A server forwards nobody, so its proxy is its SOCKS ports; calling that
- * "direct" would claim traffic is bypassing a proxy every pointed application
- * is using, and calling it "proxied" would claim a diversion the mode never
- * poses. Off and unused are also different states: unused means the switch is
- * on and nothing at all is sent to the proxy, which is the page's cue to say
- * why rather than look healthy.
+ * The answer has two halves. The scope is whose traffic the proxy is taking,
+ * which the gateway reports from the applied ruleset; the modes differ in what
+ * there is to divert, so a server's proxy is its SOCKS ports and saying
+ * `direct` there would claim traffic is bypassing a proxy every pointed
+ * application is using.
  *
  * The exit half keeps its old care. Under leastPing there is one exit and it
  * can be named — but only once one has actually carried bytes, because these
@@ -27,21 +28,26 @@ import type { StatsFrame } from "./api_types";
 export type ProxyTone = "direct" | "proxy" | "offline";
 
 export interface ProxyStatus {
+  /** The scope half: whose traffic is being taken, or why none is. */
+  scope: string;
+  /** The exit half, empty when nothing is being taken. */
+  exit: string;
+  /** Both halves as the strip shows them. */
   label: string;
   tone: ProxyTone;
 }
 
 const SINGLE_EXIT_STRATEGY = "leastPing";
 
-const SCOPE_PREFIXES: Record<string, string> = {
+const SCOPE_WORDS: Record<string, string> = {
   ports: "ports",
-  lan: "LAN",
+  lan: "lan",
   hub: "hub",
-  lan_and_hub: "LAN+hub",
+  lan_and_hub: "lan+hub",
 };
 
 /**
- * Describe the current scope and exit for the status strip.
+ * Describe the current scope and exit.
  *
  * Args:
  *   frame: The newest stats frame, or null before the first arrives.
@@ -49,32 +55,35 @@ const SCOPE_PREFIXES: Record<string, string> = {
  *     across the retained frame window.
  *
  * Returns:
- *   The label to show and the tone to show it in.
+ *   The two halves, a label joining them, and the tone to show it in.
  */
 export function describeProxy(
   frame: StatsFrame | null,
   activeExit: string | null,
 ): ProxyStatus {
   if (frame === null) {
-    return { label: "—", tone: "offline" };
+    return { scope: "—", exit: "", label: "—", tone: "offline" };
   }
   if (frame.proxy_scope === "off") {
-    return { label: "direct", tone: "direct" };
+    return { scope: "direct", exit: "", label: "direct", tone: "direct" };
   }
   if (frame.proxy_scope === "unused") {
-    return { label: "unused", tone: "direct" };
+    return { scope: "unused", exit: "", label: "unused", tone: "direct" };
   }
+  const scope = SCOPE_WORDS[frame.proxy_scope] ?? frame.proxy_scope;
   if (frame.enabled_node_count === 0) {
-    return { label: "no exit", tone: "offline" };
+    return {
+      scope,
+      exit: "no exit",
+      label: `${scope} → no exit`,
+      tone: "offline",
+    };
   }
-  const prefix = SCOPE_PREFIXES[frame.proxy_scope] ?? frame.proxy_scope;
-  return {
-    label: `${prefix} → ${describeExit(frame, activeExit)}`,
-    tone: "proxy",
-  };
+  const exit = describeExit(frame, activeExit);
+  return { scope, exit, label: `${scope} → ${exit}`, tone: "proxy" };
 }
 
-/** The exit half of the label: one nameable node, or how traffic is spread. */
+/** The exit half: one nameable node, or how traffic is spread. */
 function describeExit(frame: StatsFrame, activeExit: string | null): string {
   if (frame.balancer_strategy !== SINGLE_EXIT_STRATEGY) {
     return `${frame.balancer_strategy} ×${frame.enabled_node_count}`;

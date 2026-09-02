@@ -4,7 +4,7 @@ import { StatusDot } from "./status_dot";
 import type { StatusTone } from "./status_dot";
 import { computeActiveExits, primaryExitTag } from "../active_exits";
 import { describeProxy } from "../proxy_status";
-import type { NetworkView } from "../api_types";
+import type { CliproxyApiStatusView, NetworkView } from "../api_types";
 import { NAV_ITEMS } from "../nav_items";
 import { useApiResource } from "../use_api_resource";
 import { useLiveStats } from "../use_live_stats";
@@ -14,10 +14,16 @@ import "./top_bar.css";
 /**
  * The always-visible status strip above the page body.
  *
- * It answers what someone opens this panel to ask, in the order traffic runs
- * through the box: is the panel still talking to the gateway, what the uplink
- * holds, how many machines are behind it, and where their traffic is going.
- * None of it should need a particular page to be open.
+ * One chip per core page, in the sidebar's own order, each a thumbnail of the
+ * page behind it: what this machine is, where its traffic goes, what the AI
+ * gateway is serving, how many devices report in. Opening the page is how you
+ * get the rest; none of this should need a page open to be seen.
+ *
+ * It used to show `wan`, `lan` and `proxy`, which was a router's summary on a
+ * panel with three modes: a server has no uplink to name and serves no
+ * network, so two of the three chips answered questions that mode does not
+ * pose. The mode itself was the one thing never shown, and every other chip's
+ * meaning depends on it.
  */
 
 const SOCKET_TONES: Record<string, StatusTone> = {
@@ -32,13 +38,21 @@ const SOCKET_LABELS: Record<string, string> = {
   closed: "offline",
 };
 
+/** What each mode is called wherever a person reads it. */
+const MODE_LABELS: Record<string, string> = {
+  server: "server",
+  side_gateway: "side gateway",
+  router: "router",
+};
+
 export function TopBar() {
   const location = useLocation();
   const { frames, latestFrame, status } = useLiveStats();
-  // The socket takes a moment to deliver its first frame. Reading the
-  // interfaces once over HTTP as well means the strip shows the real address
-  // immediately instead of claiming there is none, which reads as a fault.
+  // The socket takes a moment to deliver its first frame. Reading the mode
+  // once over HTTP as well means the strip names it immediately rather than
+  // starting on a default that is wrong for most machines.
   const network = useApiResource<NetworkView>("/network");
+  const ai = useApiResource<CliproxyApiStatusView>("/cliproxyapi");
 
   const currentItem = NAV_ITEMS.find((item) =>
     item.path === "/"
@@ -46,10 +60,9 @@ export function TopBar() {
       : location.pathname.startsWith(item.path),
   );
   const activeExit = primaryExitTag(computeActiveExits(frames));
-  const wanAddress =
-    latestFrame?.wan_address ?? firstUplinkAddress(network.data);
   const proxy = describeProxy(latestFrame, activeExit);
-  const deviceCount = latestFrame?.lan_device_count ?? null;
+  const mode = latestFrame?.network_mode ?? network.data?.mode ?? null;
+  const agentCount = latestFrame?.agent_device_count ?? null;
 
   return (
     <header className="top_bar">
@@ -73,21 +86,10 @@ export function TopBar() {
           </span>
         </span>
 
-        <span
-          className={`top_bar_chip ${wanAddress === null ? "top_bar_chip--offline" : ""}`}
-        >
-          <span className="top_bar_chip_key">wan</span>
-          <span className="top_bar_chip_value">
-            {wanAddress ?? "no address"}
-          </span>
-        </span>
-
         <span className="top_bar_chip">
-          <span className="top_bar_chip_key">lan</span>
+          <span className="top_bar_chip_key">network</span>
           <span className="top_bar_chip_value">
-            {deviceCount === null
-              ? "—"
-              : `${deviceCount} device${deviceCount === 1 ? "" : "s"}`}
+            {mode === null ? "—" : (MODE_LABELS[mode] ?? mode)}
           </span>
         </span>
 
@@ -95,32 +97,43 @@ export function TopBar() {
           <span className="top_bar_chip_key">proxy</span>
           <span className="top_bar_chip_value">{proxy.label}</span>
         </span>
+
+        <span className="top_bar_chip">
+          <span className="top_bar_chip_key">ai</span>
+          <span className="top_bar_chip_value">{describeAi(ai.data)}</span>
+        </span>
+
+        <span className="top_bar_chip">
+          <span className="top_bar_chip_key">devices</span>
+          <span className="top_bar_chip_value">
+            {agentCount === null
+              ? "—"
+              : `${agentCount} agent${agentCount === 1 ? "" : "s"}`}
+          </span>
+        </span>
       </div>
     </header>
   );
 }
 
 /**
- * The address the strip shows as "wan".
+ * What the AI chip says.
  *
- * With more than one uplink there is no single answer, so it names the first
- * one holding an address — the same one the gateway itself reports. In the
- * modes that give no port the WAN role, the way out is whichever interface
- * carries the default route.
+ * A placeholder for the number this chip is meant to carry: what the gateway
+ * has served. CLIProxyAPI publishes only the chat endpoints — no usage, no
+ * metrics — so a token count has to be counted here first, and until it is,
+ * the honest thumbnail of that page is how many providers are behind it.
  */
-function firstUplinkAddress(view: NetworkView | null): string | null {
-  if (view === null) {
-    return null;
+function describeAi(status: CliproxyApiStatusView | null): string {
+  if (status === null) {
+    return "—";
   }
-  const uplink = view.interfaces.find(
-    (entry) =>
-      entry.settings.role === "wan" && entry.link.ipv4_address !== null,
-  );
-  if (uplink !== undefined) {
-    return uplink.link.ipv4_address;
+  if (!status.is_installed) {
+    return "not installed";
   }
-  const carrying = view.interfaces.find(
-    (entry) => entry.link.gateway !== null && entry.link.ipv4_address !== null,
-  );
-  return carrying?.link.ipv4_address ?? null;
+  if (!status.is_active) {
+    return "stopped";
+  }
+  const count = status.enabled_provider_count;
+  return `${count} provider${count === 1 ? "" : "s"}`;
 }

@@ -45,6 +45,7 @@ class PanelStatsCollector:
         total_uplink = sum(entry.uplink_bytes for entry in outbounds)
         total_downlink = sum(entry.downlink_bytes for entry in outbounds)
         scope = self._runtime.proxy_scope()
+        network = self._runtime.network()
 
         return StatsFrame(
             timestamp=datetime.now(timezone.utc).isoformat(),
@@ -69,11 +70,15 @@ class PanelStatsCollector:
             total_uplink_bytes=total_uplink,
             total_downlink_bytes=total_downlink,
             proxy_scope=scope,
+            network_mode=network.mode,
+            agent_device_count=sum(
+                1
+                for device in self._runtime.devices.all_stored()
+                if device.is_agent_online
+            ),
             balancer_strategy=node_list.strategy,
             enabled_node_count=len(nodes),
-            lan_device_count=count_lan_neighbours(
-                self._runtime.network().lan_device_names
-            ),
+            lan_device_count=count_lan_neighbours(network.lan_device_names),
         )
 
     def active_exit_tags(self, frame: StatsFrame) -> list[str]:

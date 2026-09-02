@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
-import { ServiceStateBadge } from "../components/service_state_badge";
 import { StatusDot } from "../components/status_dot";
 import {
   apiDelete,
@@ -163,7 +162,6 @@ export function AiPage() {
         <div>
           <div className="page_title_row">
             <h1 className="page_title">AI</h1>
-            <ServiceStateBadge name="cliproxyapi" />
           </div>
           <p className="page_subtitle">
             One endpoint for every machine&apos;s AI tools; which provider

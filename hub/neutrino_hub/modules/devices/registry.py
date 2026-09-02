@@ -9,9 +9,11 @@ credentials it becomes a stored device and survives reboots.
 import secrets
 import threading
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from neutrino_hub.utils.json_file import read_config, write_config
 
+from neutrino_hub.modules.devices.constants import DEVICE_AGENT_ONLINE_WINDOW_S
 from neutrino_hub.modules.devices.host_keys import DeviceHostKeyStore
 from neutrino_hub.modules.devices.lan_scan import DiscoveredDevice
 
@@ -140,6 +142,29 @@ class ManagedDevice:
     def has_ssh(self) -> bool:
         """Whether SSH credentials are stored for this device."""
         return bool(self.ssh and self.ssh.get("host") and self.ssh.get("username"))
+
+    @property
+    def is_agent_online(self) -> bool:
+        """Whether this device's agent has beaten inside the window.
+
+        On the device rather than in the panel, because two callers ask it:
+        the page that draws one device, and the strip that counts them.
+
+        Returns:
+            False when there is no agent, no heartbeat yet, or the last one is
+            older than :data:`DEVICE_AGENT_ONLINE_WINDOW_S`. An SSH login is
+            not an agent and never counts here.
+        """
+        if not self.client.is_installed or not self.client.last_seen:
+            return False
+        try:
+            seen = datetime.fromisoformat(self.client.last_seen)
+        except ValueError:
+            return False
+        if seen.tzinfo is None:
+            seen = seen.replace(tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - seen).total_seconds()
+        return age <= DEVICE_AGENT_ONLINE_WINDOW_S
 
     @property
     def is_stored(self) -> bool:

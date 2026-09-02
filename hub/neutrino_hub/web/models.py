@@ -117,7 +117,15 @@ class StatsFrame(BaseModel):
     # and it is only true as of the moment the frame was taken. One of the
     # WEB_PROXY_SCOPE_* answers — whose traffic the proxy is taking.
     proxy_scope: str = "off"
+    # What this machine is set up as, so the strip can say it. Every other
+    # chip's meaning follows from it, and the strip used to show none of them
+    # a mode to read them by.
+    network_mode: str = "server"
     lan_device_count: int = 0
+    # Devices whose agent is reporting. Not the neighbour count: a machine
+    # this box can see is not a machine it manages, and an SSH login is not
+    # an agent.
+    agent_device_count: int = 0
     # How traffic is spread, and over how many exits. The strip needs both to
     # answer "where is my traffic going": under leastPing there is one exit to
     # name, and under the others there deliberately is not.

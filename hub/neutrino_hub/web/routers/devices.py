@@ -4,7 +4,6 @@ import ipaddress
 import re
 import secrets
 import time
-from datetime import datetime, timezone
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -59,10 +58,6 @@ router = APIRouter(
 )
 
 POWER_ACTIONS = ("reboot", "shutdown")
-
-# An agent beats every few seconds; past this it is not reporting, whatever
-# the reason.
-AGENT_ONLINE_WINDOW_S = 30
 
 ENROLLMENT_TOKEN_BYTES = 18
 # Long enough to walk to another machine and type it, short enough that a
@@ -339,7 +334,7 @@ def list_features(
     return DeviceFeatureListView(
         features=features,
         is_agent_installed=device.client.is_installed,
-        is_agent_online=_is_agent_online(device),
+        is_agent_online=device.is_agent_online,
     )
 
 
@@ -400,28 +395,6 @@ def _require_mac(mac_address: str) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"{mac_address!r} is not a MAC address",
         )
-
-
-def _is_agent_online(device: ManagedDevice) -> bool:
-    """Whether this device's agent has beaten inside the window.
-
-    Args:
-        device: The device.
-
-    Returns:
-        False when there is no agent, no heartbeat yet, or the last one is
-        older than :data:`AGENT_ONLINE_WINDOW_S`.
-    """
-    if not device.client.is_installed or not device.client.last_seen:
-        return False
-    try:
-        seen = datetime.fromisoformat(device.client.last_seen)
-    except ValueError:
-        return False
-    if seen.tzinfo is None:
-        seen = seen.replace(tzinfo=timezone.utc)
-    age = (datetime.now(timezone.utc) - seen).total_seconds()
-    return age <= AGENT_ONLINE_WINDOW_S
 
 
 def _platform_keys(platform: dict) -> list:
@@ -536,7 +509,7 @@ async def start_action(
         # flag stays true through a failed install and a stopped service, and
         # a command queued for an agent that never collects it is a machine
         # nobody rebooted and a task that ends "exit 0".
-        if _is_agent_online(device):
+        if device.is_agent_online:
             runtime.queue_client_command(mac_address, {"id": action, "action": action})
             stream = runtime.tasks.start(
                 label=f"{action} {mac_address}", source=_queued_message(action)
@@ -575,7 +548,7 @@ async def start_action(
     # package, host unreachable, wrong sudo password — leaves a device
     # beating with a token nothing accepts, which only another install fixes.
     token = device.client.token
-    if not token or not _is_agent_online(device):
+    if not token or not device.is_agent_online:
         token = registry.issue_client_token(mac_address)
     package_path = UTILS_CONFIG_DIR / runtime.settings.get(
         "agent_package_path",
@@ -720,7 +693,7 @@ def _to_view(device: ManagedDevice, metrics: dict | None = None) -> DeviceView:
             sudo_password=None,
             has_sudo_password=bool(device.ssh.get("sudo_password")),
         )
-    is_agent_online = _is_agent_online(device)
+    is_agent_online = device.is_agent_online
     client_view = None
     if device.client.is_installed:
         latest = metrics or {}

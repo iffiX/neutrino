@@ -13,6 +13,9 @@ export type NodeProtocol = "shadowsocks" | "vless";
 
 export type BalancerStrategy = "leastPing" | "roundRobin" | "random";
 
+/** What the whole machine is set up as. */
+export type NetworkModeKey = "server" | "side_gateway" | "router";
+
 export type DeviceAuthMethod = "key" | "password";
 
 export type DeviceActionName = "install_client" | "reboot" | "shutdown";
@@ -144,6 +147,10 @@ export interface StatsFrame {
   total_uplink_bytes: number;
   total_downlink_bytes: number;
   proxy_scope: ProxyScope;
+  /** What this machine is set up as; every other chip is read by it. */
+  network_mode: NetworkModeKey;
+  /** Devices whose agent is reporting, which an SSH login is not. */
+  agent_device_count: number;
   /** Devices the kernel currently has in its neighbour table on the LANs. */
   lan_device_count: number;
   /** How the balancer spreads traffic: leastPing has one exit, the others do not. */
@@ -303,8 +310,6 @@ export interface NetworkMode {
   is_addressing_owned: boolean;
   caution: string;
 }
-
-export type NetworkModeKey = "server" | "side_gateway" | "router";
 
 export interface NetworkView {
   /** What this whole machine is; the page below the Mode panel follows it. */

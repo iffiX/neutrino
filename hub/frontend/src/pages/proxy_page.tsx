@@ -3,14 +3,17 @@ import { useEffect, useState } from "react";
 import { ApplyBar } from "../components/apply_bar";
 import { DeadExitsNotice } from "../components/dead_exits_notice";
 import { ErrorPanel } from "../components/error_panel";
-import { ServiceStateBadge } from "../components/service_state_badge";
 import { Icon } from "../components/icon";
 import { NodesPanel } from "../components/nodes_panel";
 import { SocksPortsPanel } from "../components/socks_ports_panel";
 import { StringListEditor } from "../components/string_list_editor";
 import { ToggleSwitch } from "../components/toggle_switch";
 import { apiPost, apiPut, describeError } from "../api_client";
+import { computeActiveExits, primaryExitTag } from "../active_exits";
+import { describeProxy } from "../proxy_status";
+import type { ProxyTone } from "../proxy_status";
 import { useApiResource } from "../use_api_resource";
+import { useLiveStats } from "../use_live_stats";
 import type {
   DnsServer,
   ApplyResult,
@@ -44,6 +47,13 @@ import "./proxy_page.css";
  */
 type GroupName = "route";
 
+/** The badge each proxy tone wears, matching the strip's own colouring. */
+const BADGE_TONES: Record<ProxyTone, string> = {
+  proxy: "badge--accent",
+  direct: "badge--warn",
+  offline: "badge--error",
+};
+
 const GROUP_FIELDS: Record<GroupName, (keyof ProxySettings)[]> = {
   route: [
     "is_proxy_enabled",
@@ -61,6 +71,7 @@ export function ProxyPage() {
   // The LAN scope only means something on a box that forwards a network, and
   // which boxes do is the network mode's answer.
   const network = useApiResource<NetworkView>("/network");
+  const { frames, latestFrame } = useLiveStats();
 
   const [draft, setDraft] = useState<ProxySettings | null>(null);
   const [busyGroup, setBusyGroup] = useState<GroupName | null>(null);
@@ -179,22 +190,26 @@ export function ProxyPage() {
   const mode = network.data?.mode ?? null;
   const isForwardingMode =
     mode === null || mode === "router" || mode === "side_gateway";
-  const isAnyScopeOn =
-    draft.is_proxy_enabled ||
-    draft.is_local_proxy_enabled ||
-    draft.socks_ports.some((entry) => entry.is_proxied);
+  // The same describer the strip's chip uses, so the page and its thumbnail
+  // are one answer rather than two. An on/off badge here used to mean "is a
+  // node enabled", which a server could show as `on` beside a strip saying
+  // `direct` — both true, about different questions.
+  const proxy = describeProxy(
+    latestFrame,
+    primaryExitTag(computeActiveExits(frames)),
+  );
 
   return (
     <div className="page">
       <div className="page_header">
         <div className="page_title_row">
           <h1>Proxy</h1>
-          <ServiceStateBadge name="xray" />
-          <span
-            className={`badge ${isAnyScopeOn ? "badge--ok" : "badge--warn"}`}
-          >
-            {isAnyScopeOn ? "on" : "off"}
+          <span className={`badge ${BADGE_TONES[proxy.tone]}`}>
+            {proxy.scope}
           </span>
+          {proxy.exit !== "" && (
+            <span className="badge badge--accent">{proxy.exit}</span>
+          )}
         </div>
       </div>
 

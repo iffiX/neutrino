@@ -5,6 +5,9 @@
 DEVICE_MAC_PATTERN = r"^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$"
 
 DEVICE_LAN_SCAN_TIMEOUT_S = 30
+# How long an agent's last heartbeat still counts as "reporting". It beats
+# every five seconds, so this is several missed beats rather than one.
+DEVICE_AGENT_ONLINE_WINDOW_S = 30
 DEVICE_WOL_PORT = 9
 # Pure Python over the network; nothing architecture-bound is installed here.
 DEVICE_SUPPORTED_ARCHITECTURES = ("*",)
