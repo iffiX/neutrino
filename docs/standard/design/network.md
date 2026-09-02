@@ -17,8 +17,8 @@ and still does not want to spend an evening on it. So:
   server, a router, a side gateway — and works out the interfaces, the routes,
   the NAT and the DNS from that. There is no configuration language to learn
   and none to invent.
-- **Four modes are the whole vocabulary.** Anything a mode cannot express is a
-  thing this does not do, on purpose.
+- **Three modes are the whole vocabulary.** Anything a mode cannot express is
+  a thing this does not do, on purpose.
 - **The defaults have to be right**, because most people will press through
   them. That is why the address a port is offered is the one it already has,
   and why the mode a machine cannot be is not on the list.
@@ -33,7 +33,15 @@ nobody in that description can cross.
 | `server` | the machine's own | somebody's machine — a VPS, a laptop | **nothing**: no port holds a role, and it answers on the address each already has |
 | `side_gateway` | the machine's own | a machine on a network somebody else routes | **nothing**: forwarding, masquerade and DNS are all in our own nftables and dnsmasq |
 | `router` | the hub's | this box *is* the router | the network stack |
-| `one_arm_router` | the hub's | this box is the router, on one wire | the network stack |
+
+Three, and `config/router/network.json` stores one of exactly these three.
+Router mode is wired two ways and both are supported: the ordinary one, an
+uplink port and a served port; and the **one-arm router**, a single trunk
+port going out untagged and serving on a VLAN tag of the same wire. The
+wizard offers that as a fourth choice because it has different questions to
+ask, but what it plans is a router and what it writes says `router` — the
+difference is wiring, which the interface panel already describes, and it
+ends there.
 
 A machine is wholly one or the other. There is no half-managed state, because
 every bug worth having found so far came from sharing an interface with
@@ -451,7 +459,7 @@ write.
 
 ## What exists today
 
-All four modes drive the three engines above; `nmcli` is gone from the layer
+All three modes drive the three engines above; `nmcli` is gone from the layer
 and NetworkManager is not a dependency. `server` and `side_gateway` are
 verified byte for byte on Ubuntu 24.04 and Debian 12 — four configuration
 trees compared before and after an install — and the router round trip is
