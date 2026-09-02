@@ -25,7 +25,16 @@ BEFORE=/tmp/neutrino_before.json
 PASSWORD=integration-test-pw
 FAILURES=0
 
-phase() { printf '\n== %s ==\n' "$1"; }
+# The phase header carries whether the box can still resolve a name. Every
+# phase after the first can take that away — a mode change, a proxy pointed at
+# a node that is not there — and a failure two phases later reads as the
+# feature's fault unless the header already said the network had gone.
+phase() {
+    printf '\n== %s ==' "$1"
+    if getent hosts deb.debian.org >/dev/null 2>&1; then printf '\n'; else
+        printf '   [this box cannot resolve names]\n'
+    fi
+}
 ran() { [ "$1" -eq 0 ] || FAILURES=$((FAILURES + 1)); }
 
 phase "the machine as it arrived"
@@ -131,10 +140,18 @@ ran $?
 # Last, and it leaves the box a router with a served network on whatever it
 # has: every check after this one would be asking about a machine this walk
 # has already reconfigured.
+# Before the page walk, which leaves the box a router: an install is a
+# package manager reaching the internet, and it needs the way out the box
+# arrived with.
+phase "installing a module through the panel"
+python3 -m pytest "$HERE/test_install_a_module.py" -q
+ran $?
+
 phase "the panel, every page"
 python3 -m pytest "$HERE" -q --ignore="$HERE/test_install_footprint.py" \
     --ignore="$HERE/test_reset_hands_back.py" \
-    --ignore="$HERE/test_reinstall.py" --ignore="$HERE/test_mode_matrix.py"
+    --ignore="$HERE/test_reinstall.py" --ignore="$HERE/test_mode_matrix.py" \
+    --ignore="$HERE/test_install_a_module.py"
 ran $?
 
 echo

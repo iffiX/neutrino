@@ -11,6 +11,7 @@ reconfigures a box's network, installs packages, or both.
 | `test_panel_api_network.py` | Every operation the Network page offers: exposure, the three modes, one interface at a time, VLANs on a trunk, the panel's own port. |
 | `test_panel_api_proxy.py` | The exit-node list, the SOCKS listeners, the direct lists and the resolvers. |
 | `test_panel_api_services.py` | What the Services page is drawn from, and every action it refuses. |
+| `test_install_a_module.py` | That a module actually installs through the panel — the one check here that runs a package manager, and the one that catches a sandbox the installer cannot work inside. |
 | `test_panel_api_devices.py` | The device register: adding, renaming, forgetting, and fifty at once. |
 | `test_install_footprint.py` | That a server or side_gateway install left the machine addressing itself. |
 | `test_mode_matrix.py` | Every mode, every ordered switch between them, the one-arm and multi-uplink shapes, and the proxy's behaviour in each — the contract network.md states. |
