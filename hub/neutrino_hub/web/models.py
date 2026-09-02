@@ -970,6 +970,9 @@ class ClientEnroll(BaseModel):
     device_id: str
     hostname: str = ""
     platform: dict = Field(default_factory=dict)
+    # Every MAC the machine's interfaces carry, so an unbound link still
+    # lands on the device a scan or an SSH setup already listed.
+    mac_addresses: list[str] = Field(default_factory=list)
 
 
 class ClientEnrollReply(BaseModel):

@@ -12,6 +12,7 @@ and the client key minted for that device.
 """
 
 import ipaddress
+import re
 import time
 from datetime import datetime, timezone
 
@@ -24,6 +25,7 @@ from neutrino_hub.modules.cliproxyapi.ops import (
     save_config,
 )
 from neutrino_hub.modules.credentials.registry import AiProviderRegistry
+from neutrino_hub.modules.devices.constants import DEVICE_MAC_PATTERN
 from neutrino_hub.modules.devices.registry import (
     DeviceRegistry,
     ManagedDevice,
@@ -139,7 +141,7 @@ def enroll(
     runtime.enrollments.pop(request.enrollment_token, None)
 
     registry = DeviceRegistry()
-    key = ticket.get("mac_address") or f"id:{request.device_id[:24]}"
+    key = ticket.get("mac_address") or _reported_key(registry, request)
     device = registry.get(key)
     name = ticket.get("name") or device.name or request.hostname or key
     registry.annotate(key, {"name": name})
@@ -147,6 +149,34 @@ def enroll(
     if request.platform:
         runtime.client_platform[key] = dict(request.platform)
     return ClientEnrollReply(token=token, mac_address=key)
+
+
+def _reported_key(registry: DeviceRegistry, request: ClientEnroll) -> str:
+    """The record an unbound enrollment lands on.
+
+    A machine that reports its MACs joins as the device a scan or an SSH
+    setup already listed rather than as a second record, an already-stored
+    MAC winning over the rest. A machine reporting nothing usable — overlay
+    only, or another platform — is keyed by its machine id.
+
+    Args:
+        registry: The stored devices.
+        request: What the machine said it is.
+
+    Returns:
+        The key the device is stored under.
+    """
+    reported = [
+        address.lower()
+        for address in request.mac_addresses
+        if re.fullmatch(DEVICE_MAC_PATTERN, address or "")
+    ]
+    for address in reported:
+        if registry.get(address).is_stored:
+            return address
+    if reported:
+        return reported[0]
+    return f"id:{request.device_id[:24]}"
 
 
 @router.post("/leave")

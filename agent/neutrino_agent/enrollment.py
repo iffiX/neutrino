@@ -32,6 +32,7 @@ from neutrino_agent.http_channel import (
 from neutrino_agent.platform_info import platform_tuple
 
 ENROLL_PATH = "/api/agent/enroll"
+SYS_NET_DIR = "/sys/class/net"
 
 
 class EnrollmentError(RuntimeError):
@@ -160,6 +161,35 @@ def machine_id() -> str:
     return generated
 
 
+def machine_mac_addresses() -> list:
+    """The MAC addresses this machine's interfaces carry.
+
+    The hub keys devices by MAC, so enrolling with them lets it fold this
+    machine into the row a scan or an SSH setup already made instead of
+    minting a second record. Linux publishes them under ``/sys``; elsewhere
+    the list is empty and the hub falls back to the machine id.
+
+    Returns:
+        Lower-case addresses, loopback and unset ones left out.
+    """
+    addresses = []
+    try:
+        names = sorted(os.listdir(SYS_NET_DIR))
+    except OSError:
+        return addresses
+    for name in names:
+        if name == "lo":
+            continue
+        try:
+            with open(f"{SYS_NET_DIR}/{name}/address", encoding="utf-8") as stream:
+                address = stream.read().strip().lower()
+        except OSError:
+            continue
+        if address and address != "00:00:00:00:00:00" and address not in addresses:
+            addresses.append(address)
+    return addresses
+
+
 def enroll(link: str) -> dict:
     """Join the gateway the link points at.
 
@@ -181,6 +211,7 @@ def enroll(link: str) -> dict:
         "device_id": machine_id(),
         "hostname": socket.gethostname(),
         "platform": platform_tuple(),
+        "mac_addresses": machine_mac_addresses(),
     }
     reply = None
     refusal = ""

@@ -33,7 +33,9 @@ class FakeRegistry:
         cls.device = device
 
     def get(self, mac_address):
-        return FakeRegistry.device
+        if mac_address.lower() == FakeRegistry.device.mac_address:
+            return FakeRegistry.device
+        return ManagedDevice(mac_address=mac_address.lower())
 
     def find_by_client_token(self, token):
         stored = FakeRegistry.device.client.token
@@ -228,3 +230,67 @@ def test_expired_ticket_is_refused(api):
     )
 
     assert response.status_code == 401
+
+
+def test_an_unbound_enrollment_lands_on_the_device_its_mac_names(api):
+    """The machine reports its MACs, so an unbound link folds it into the row
+    a scan or an SSH setup already made instead of minting a second record."""
+    client, runtime, device = api
+    runtime.enrollments["t1"] = {
+        "name": "",
+        "mac_address": None,
+        "expires_at": time.time() + 60,
+    }
+
+    response = client.post(
+        "/api/agent/enroll",
+        json={
+            "enrollment_token": "t1",
+            "device_id": "abc123",
+            "mac_addresses": ["11:22:33:44:55:66", "AA:BB:CC:DD:EE:FF"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["mac_address"] == device.mac_address
+
+
+def test_an_unknown_reported_mac_still_keys_by_mac(api):
+    """A real MAC, even an unknown one, is what a later scan merges by."""
+    client, runtime, _ = api
+    runtime.enrollments["t2"] = {
+        "name": "",
+        "mac_address": None,
+        "expires_at": time.time() + 60,
+    }
+
+    response = client.post(
+        "/api/agent/enroll",
+        json={
+            "enrollment_token": "t2",
+            "device_id": "abc123",
+            "mac_addresses": ["11:22:33:44:55:66"],
+        },
+    )
+
+    assert response.json()["mac_address"] == "11:22:33:44:55:66"
+
+
+def test_nothing_usable_reported_keys_by_machine_id(api):
+    client, runtime, _ = api
+    runtime.enrollments["t3"] = {
+        "name": "",
+        "mac_address": None,
+        "expires_at": time.time() + 60,
+    }
+
+    response = client.post(
+        "/api/agent/enroll",
+        json={
+            "enrollment_token": "t3",
+            "device_id": "abc123",
+            "mac_addresses": ["not-a-mac"],
+        },
+    )
+
+    assert response.json()["mac_address"] == "id:abc123"
