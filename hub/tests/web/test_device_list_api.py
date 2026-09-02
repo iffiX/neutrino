@@ -1,6 +1,6 @@
 """What one device carries into the panel's two sections.
 
-The Devices page splits on ``client.is_installed`` and draws a managed tile
+The Devices page splits on ``client.is_managed`` and draws a managed tile
 with what its agent says the machine is. That platform is held in memory from
 heartbeats and never stored, so what these pin is that the list carries it
 when an agent has reported one, carries nulls when none has, and does not
@@ -65,7 +65,9 @@ def api(monkeypatch):
         mac_address=MAC,
         name="xenode",
         ipv4_address="192.168.100.2",
-        client=DeviceClientInfo(is_installed=True, token="t", version="0.3.0"),
+        client=DeviceClientInfo(
+            token="t", last_seen="2026-01-01T00:00:00+00:00", version="0.3.0"
+        ),
     )
     monkeypatch.setattr(devices_router, "DeviceRegistry", FakeRegistry)
     monkeypatch.setattr(devices_router, "LanScanner", FakeScanner)
@@ -105,7 +107,7 @@ def test_a_platform_nobody_has_reported_reads_as_unknown(api):
 
 def test_a_device_with_no_agent_has_no_client_block(api):
     client, runtime = api
-    FakeRegistry.device.client = DeviceClientInfo(is_installed=False)
+    FakeRegistry.device.client = DeviceClientInfo()
     runtime.client_platform[MAC] = {"os": "windows", "arch": "amd64"}
 
     device = client.get("/api/devices").json()["devices"][0]

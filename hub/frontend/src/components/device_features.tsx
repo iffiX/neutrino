@@ -84,7 +84,7 @@ export function DeviceFeatures({ macAddress }: DeviceFeaturesProps) {
       );
       setReported(response.features);
       setAgent({
-        isInstalled: response.is_agent_installed,
+        isInstalled: response.is_agent_managed,
         isOnline: response.is_agent_online,
       });
     } catch (cause: unknown) {
@@ -151,7 +151,7 @@ export function DeviceFeatures({ macAddress }: DeviceFeaturesProps) {
       );
       setReported(response.features);
       setAgent({
-        isInstalled: response.is_agent_installed,
+        isInstalled: response.is_agent_managed,
         isOnline: response.is_agent_online,
       });
     } catch (cause: unknown) {

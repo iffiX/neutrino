@@ -30,7 +30,7 @@ export const DEVICE_REACH_LABELS: Record<DeviceReach, string> = {
 
 /** Whether the hub manages this device through its own agent. */
 export function isDeviceManaged(device: DeviceView): boolean {
-  return device.client !== null && device.client.is_installed;
+  return device.client !== null && device.client.is_managed;
 }
 
 /**

@@ -2,11 +2,9 @@
 
 The bug these came from: a device showed AnyDesk and ToDesk running in the
 remote-desktop block and "not installed, waiting for the agent" in the module
-list above it. Two halves of one drawer disagreeing, because one asks the
-machine over SSH and the other reads a flag that records only that an install
-was once asked for. `is_installed` is never cleared — not when the install
-fails, not when the agent is stopped, not when somebody removes it by hand —
-so it cannot be what the list is drawn from.
+list above it. Management is a completed handshake — a token the agent has
+authenticated with — so a failed install or a forgotten device never reads
+managed here.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -63,7 +61,7 @@ def api(monkeypatch):
     FakeRegistry.device = ManagedDevice(
         mac_address=MAC,
         name="testbox",
-        client=DeviceClientInfo(is_installed=True, token="t"),
+        client=DeviceClientInfo(token="t", last_seen="2026-01-01T00:00:00+00:00"),
     )
     monkeypatch.setattr(devices_router, "DeviceRegistry", FakeRegistry)
     monkeypatch.setattr(
@@ -85,7 +83,7 @@ def test_an_agent_that_has_never_beaten_is_not_online(api):
 
     answer = client.get(f"/api/devices/{MAC}/features").json()
 
-    assert answer["is_agent_installed"]
+    assert answer["is_agent_managed"]
     assert not answer["is_agent_online"]
 
 
@@ -107,7 +105,7 @@ def test_an_agent_that_stopped_beating_is_not_online(api):
 
     answer = client.get(f"/api/devices/{MAC}/features").json()
 
-    assert answer["is_agent_installed"]
+    assert answer["is_agent_managed"]
     assert not answer["is_agent_online"]
 
 

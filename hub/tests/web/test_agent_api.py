@@ -42,7 +42,6 @@ class FakeRegistry:
     def record_heartbeat(self, mac_address, *, version, seen_at):
         FakeRegistry.device.client.version = version
         FakeRegistry.device.client.last_seen = seen_at
-        FakeRegistry.device.client.is_installed = True
 
     def set_feature(self, mac_address, feature, is_enabled):
         FakeRegistry.device.client.features[feature] = is_enabled
@@ -57,12 +56,10 @@ class FakeRegistry:
 
     def issue_client_token(self, mac_address):
         FakeRegistry.device.client.token = "issued-token"
-        FakeRegistry.device.client.is_installed = True
         return "issued-token"
 
     def forget_client(self, mac_address):
         client = FakeRegistry.device.client
-        client.is_installed = False
         client.token = None
         client.version = None
         client.last_seen = None
@@ -96,7 +93,9 @@ def api(monkeypatch):
         mac_address="aa:bb:cc:dd:ee:ff",
         name="testbox",
         ssh={"host": "10.0.0.5", "username": "me"},
-        client=DeviceClientInfo(is_installed=True, token="device-token"),
+        client=DeviceClientInfo(
+            token="device-token", last_seen="2026-01-01T00:00:00+00:00"
+        ),
     )
     FakeRegistry.reset(device)
     monkeypatch.setattr(agent_router, "DeviceRegistry", FakeRegistry)
@@ -176,7 +175,6 @@ def test_leaving_drops_the_agent_but_keeps_the_device(api):
     response = client.post("/api/agent/leave", json={"token": "device-token"})
 
     assert response.status_code == 200
-    assert device.client.is_installed is False
     assert device.client.token is None
     # What the owner gave it survives; only the agent is gone.
     assert device.name == "testbox"
@@ -189,7 +187,7 @@ def test_leaving_with_an_unknown_token_is_refused(api):
     client, _, device = api
     response = client.post("/api/agent/leave", json={"token": "nonsense"})
     assert response.status_code == 401
-    assert device.client.is_installed is True
+    assert device.client.token is not None
 
 
 def test_enrolling_with_a_ticket_issues_a_token(api):

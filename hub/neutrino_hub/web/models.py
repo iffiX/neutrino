@@ -627,11 +627,10 @@ class DeviceProcessView(BaseModel):
 class DeviceClientInfoView(BaseModel):
     """Agent state and latest metrics for one device."""
 
-    is_installed: bool = False
-    # Whether the agent has checked in inside the heartbeat window. Not the
-    # same question as `is_installed`, which records that an install was
-    # asked for and is never cleared: a device whose agent is stopped, or
-    # whose install failed, reads installed and answers nothing.
+    # An agent that completed its handshake and still holds a token. A minted
+    # token whose install then failed never reads managed.
+    is_managed: bool = False
+    # Whether the agent has checked in inside the heartbeat window.
     is_online: bool = False
     version: str | None = None
     # True when the agent's version is not this hub's. The two ship together
@@ -1010,7 +1009,7 @@ class DeviceFeatureListView(BaseModel):
     """
 
     features: list[DeviceFeatureView] = Field(default_factory=list)
-    is_agent_installed: bool = False
+    is_agent_managed: bool = False
     is_agent_online: bool = False
 
 

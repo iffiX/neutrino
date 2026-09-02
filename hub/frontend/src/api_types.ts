@@ -540,9 +540,10 @@ export interface DeviceProcessInfo {
 }
 
 export interface DeviceClientInfo {
-  is_installed: boolean;
-  /** Whether the agent is answering now, as opposed to having been installed
-   * once. A stopped agent, or an install that failed, reads installed. */
+  /** An agent that completed its handshake and still holds a token; a
+   * failed install never reads managed. */
+  is_managed: boolean;
+  /** Whether the agent is answering inside the heartbeat window. */
   is_online: boolean;
   version: string | null;
   is_version_mismatched: boolean;
@@ -582,7 +583,7 @@ export interface DeviceFeatureView {
 export interface DeviceFeaturesResponse {
   features: DeviceFeatureView[];
   /** Whether an agent install was ever asked for. Never cleared by itself. */
-  is_agent_installed: boolean;
+  is_agent_managed: boolean;
   /** Whether the agent has checked in inside the heartbeat window. Every
    * feature state below comes from it, so this is what says whether they
    * mean anything. */

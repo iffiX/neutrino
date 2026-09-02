@@ -44,8 +44,8 @@ class DeviceClientInfo:
     """State reported by the neutrino_agent agent on a device.
 
     Attributes:
-        is_installed: Whether the agent has been installed.
-        token: Shared secret the agent authenticates its heartbeats with.
+        token: Shared secret the agent authenticates its heartbeats with; a
+            token nobody has used yet is an offer, not management.
         version: Agent version from the last heartbeat.
         last_seen: ISO timestamp of the last heartbeat.
         cpu_percent: Latest processor load, when reported.
@@ -60,7 +60,6 @@ class DeviceClientInfo:
         target_user: The account whose home the agent writes tool configs into.
     """
 
-    is_installed: bool = False
     token: str | None = None
     version: str | None = None
     last_seen: str | None = None
@@ -83,7 +82,6 @@ class DeviceClientInfo:
             The parsed info.
         """
         return cls(
-            is_installed=data.get("is_installed", False),
             token=data.get("token"),
             version=data.get("version"),
             last_seen=data.get("last_seen"),
@@ -102,7 +100,6 @@ class DeviceClientInfo:
             A JSON-ready object.
         """
         return {
-            "is_installed": self.is_installed,
             "token": self.token,
             "version": self.version,
             "last_seen": self.last_seen,
@@ -144,6 +141,17 @@ class ManagedDevice:
         return bool(self.ssh and self.ssh.get("host") and self.ssh.get("username"))
 
     @property
+    def is_managed(self) -> bool:
+        """Whether an agent completed its handshake and still holds a token.
+
+        A token alone is an offer — an install that failed after minting
+        leaves one dangling, invisibly — and the first authenticated
+        heartbeat is what turns the offer into management. The hub lets go
+        by deleting the token; the device lets go by leaving.
+        """
+        return bool(self.client.token and self.client.last_seen)
+
+    @property
     def is_agent_online(self) -> bool:
         """Whether this device's agent has beaten inside the window.
 
@@ -155,7 +163,7 @@ class ManagedDevice:
             older than :data:`DEVICE_AGENT_ONLINE_WINDOW_S`. An SSH login is
             not an agent and never counts here.
         """
-        if not self.client.is_installed or not self.client.last_seen:
+        if not self.is_managed:
             return False
         try:
             seen = datetime.fromisoformat(self.client.last_seen)
@@ -169,9 +177,7 @@ class ManagedDevice:
     @property
     def is_stored(self) -> bool:
         """Whether this device has anything worth persisting."""
-        return bool(
-            self.name or self.ssh or self.is_wol_enabled or self.client.is_installed
-        )
+        return bool(self.name or self.ssh or self.is_wol_enabled or self.client.token)
 
     def to_dict(self) -> dict:
         """Serialize to the ``devices.json`` shape.
@@ -333,7 +339,9 @@ class DeviceRegistry:
         """Create and store a heartbeat token for a device.
 
         A fresh token is generated every time the agent is installed, so
-        reinstalling invalidates the old one.
+        reinstalling invalidates the old one. The device does not become
+        managed here: an install can still fail after the token exists, and
+        it is the first heartbeat that proves an agent is really there.
 
         Args:
             mac_address: The device's MAC.
@@ -343,7 +351,6 @@ class DeviceRegistry:
         """
         device = self.get(mac_address)
         device.client.token = secrets.token_urlsafe(AGENT_TOKEN_BYTES)
-        device.client.is_installed = True
         self._store(device)
         return device.client.token
 
@@ -373,7 +380,6 @@ class DeviceRegistry:
         device = self.get(mac_address)
         device.client.version = version
         device.client.last_seen = seen_at
-        device.client.is_installed = True
         self._store(device)
 
     def forget_client(self, mac_address: str) -> None:
@@ -388,7 +394,6 @@ class DeviceRegistry:
             mac_address: The device's MAC.
         """
         device = self.get(mac_address)
-        device.client.is_installed = False
         device.client.token = None
         device.client.version = None
         device.client.last_seen = None

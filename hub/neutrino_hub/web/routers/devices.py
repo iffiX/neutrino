@@ -367,7 +367,7 @@ def list_features(
         )
     return DeviceFeatureListView(
         features=features,
-        is_agent_installed=device.client.is_installed,
+        is_agent_managed=device.is_managed,
         is_agent_online=device.is_agent_online,
     )
 
@@ -739,10 +739,10 @@ def _to_view(device: ManagedDevice, metrics: dict | None = None) -> DeviceView:
         )
     is_agent_online = device.is_agent_online
     client_view = None
-    if device.client.is_installed:
+    if device.is_managed:
         latest = metrics or {}
         client_view = DeviceClientInfoView(
-            is_installed=True,
+            is_managed=True,
             is_online=is_agent_online,
             version=device.client.version,
             is_version_mismatched=_is_version_mismatched(device.client.version),
