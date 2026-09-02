@@ -156,7 +156,15 @@ def hand_back(network: RouterNetworkConfig) -> list[str]:
     Returns:
         One line per thing stopped.
     """
+    # The firewall first, and whatever the mode was: the table is the hub's
+    # own, it is loaded in every mode, and a machine that has been handed back
+    # must not keep a forward chain that drops. Whatever docker, libvirt or a
+    # container runtime forwards across that box is not ours to police once we
+    # have stopped being its router, and a drop policy cuts every one of them
+    # off without saying so.
     changes = []
+    RouterRulesetApplier().flush()
+    changes.append("the firewall and the policy route are the machine's own again")
     for interface in network.interfaces:
         device = interface.device_name
         for engine in (

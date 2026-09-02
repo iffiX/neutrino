@@ -23,8 +23,8 @@ from neutrino_hub.modules.router.modes import (
     RouterModePlanner,
 )
 
-GUEST_MODES = (ROUTER_MODE_SERVER, ROUTER_MODE_SIDE_GATEWAY)
-OWNER_MODES = (ROUTER_MODE_ROUTER, ROUTER_LAYOUT_ONE_ARM)
+MODES_ADDRESSING_NOTHING = (ROUTER_MODE_SERVER, ROUTER_MODE_SIDE_GATEWAY)
+MODES_THE_HUB_ADDRESSES = (ROUTER_MODE_ROUTER, ROUTER_LAYOUT_ONE_ARM)
 
 # Every way the applier can reach the machine, so that "it did nothing" is a
 # claim about the whole surface rather than about the parts one test knows.
@@ -40,7 +40,7 @@ APPLIER_DRIVERS = (
 )
 
 
-@pytest.mark.parametrize("mode", GUEST_MODES)
+@pytest.mark.parametrize("mode", MODES_ADDRESSING_NOTHING)
 def test_a_mode_that_addresses_nothing_addresses_nothing(mode):
     network = _planned(mode)
 
@@ -48,7 +48,7 @@ def test_a_mode_that_addresses_nothing_addresses_nothing(mode):
     assert not network.is_addressing_owned
 
 
-@pytest.mark.parametrize("mode", OWNER_MODES)
+@pytest.mark.parametrize("mode", MODES_THE_HUB_ADDRESSES)
 def test_an_owner_mode_addresses_the_machine(mode):
     network = _planned(mode)
 
@@ -56,7 +56,7 @@ def test_an_owner_mode_addresses_the_machine(mode):
     assert network.is_addressing_owned
 
 
-@pytest.mark.parametrize("mode", GUEST_MODES + OWNER_MODES)
+@pytest.mark.parametrize("mode", MODES_ADDRESSING_NOTHING + MODES_THE_HUB_ADDRESSES)
 def test_the_mode_survives_a_round_trip(mode):
     network = _planned(mode)
 
@@ -332,3 +332,37 @@ def test_tearing_one_interface_down_is_not_a_takeover(monkeypatch):
     routes.RouterInterfaceApplier(network=network).apply(network.interfaces[0])
 
     assert "stand_down" not in calls
+
+
+def test_handing_back_takes_the_firewall_with_it(monkeypatch):
+    """The table is the hub's own and is loaded in every mode. Left behind on
+    a machine that has been handed back, its forward chain goes on dropping —
+    which is docker, libvirt and every container runtime losing the internet
+    on a box nobody is routing any more, silently."""
+    _record_calls(monkeypatch)
+    flushed: list = []
+    monkeypatch.setattr(
+        routes.RouterRulesetApplier, "flush", lambda self: flushed.append(True)
+    )
+    monkeypatch.setattr(routes.stack, "stand_up", list)
+    monkeypatch.setattr(routes.resolver, "hand_back", lambda: False)
+
+    routes.hand_back(_one_lan(mode=ROUTER_MODE_ROUTER))
+
+    assert flushed == [True]
+
+
+def test_a_machine_that_addressed_itself_still_loses_the_firewall(monkeypatch):
+    """server and side_gateway never had their interfaces driven, and still
+    had a table loaded: that is how exposure is implemented."""
+    _record_calls(monkeypatch)
+    flushed: list = []
+    monkeypatch.setattr(
+        routes.RouterRulesetApplier, "flush", lambda self: flushed.append(True)
+    )
+    monkeypatch.setattr(routes.stack, "stand_up", list)
+    monkeypatch.setattr(routes.resolver, "hand_back", lambda: False)
+
+    routes.hand_back(_one_lan(mode=ROUTER_MODE_SERVER))
+
+    assert flushed == [True]

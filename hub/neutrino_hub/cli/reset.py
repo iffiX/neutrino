@@ -136,6 +136,11 @@ def _hand_back_network() -> list:
     it is, and whatever managed this machine before is started by whoever
     starts it — the hub only stops being the one doing it.
 
+    In every mode, not only the one that addressed the interfaces: the
+    firewall is the hub's own wherever it ran, and the rest of the hand-back
+    is already a list of things that are not running on a machine that never
+    started them.
+
     Returns:
         One line per thing stopped, empty on a machine the hub never drove.
     """
@@ -143,8 +148,6 @@ def _hand_back_network() -> list:
         network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
     except (FileNotFoundError, ValueError):
         return []
-    if not network.is_addressing_owned:
-        return ["this machine addressed its own interfaces; nothing to hand back"]
     return hand_back(network)
 
 
