@@ -1,10 +1,11 @@
 """The Devices tab: LAN discovery, annotations, and remote actions."""
 
+import base64
 import ipaddress
+import json
 import re
 import secrets
 import time
-from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -299,8 +300,8 @@ def create_enrollment(
         HTTPException: 400 when no served network has an address, so there is
             nothing for a machine to reach the panel at.
     """
-    addresses = "&".join(f"url={quote(base, safe='')}" for base in _panel_urls(runtime))
-    if not addresses:
+    urls = _panel_urls(runtime)
+    if not urls:
         raise HTTPException(
             status_code=400,
             detail="no served network has an address for a machine to reach",
@@ -318,7 +319,14 @@ def create_enrollment(
         "mac_address": (request.mac_address or "").lower() or None,
         "expires_at": now + ENROLLMENT_TTL_S,
     }
-    link = f"neutrino://enroll?{addresses}&token={quote(token)}"
+    # The whole payload rides base64url, whose alphabet has no character a
+    # shell splits or a URL escapes — the link pastes anywhere unquoted.
+    payload = (
+        base64.urlsafe_b64encode(json.dumps({"urls": urls, "token": token}).encode())
+        .decode()
+        .rstrip("=")
+    )
+    link = f"neutrino://enroll/{payload}"
     return DeviceEnrollmentView(link=link, token=token, expires_in_s=ENROLLMENT_TTL_S)
 
 

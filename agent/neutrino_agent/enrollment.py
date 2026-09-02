@@ -5,23 +5,30 @@ gateway, so it introduces itself instead: the owner pastes one enrollment link
 into the agent's own page, and the agent posts to the gateway, which hands
 back the token its heartbeats will carry. Nothing else has to be configured.
 
-The link is ``neutrino://enroll?url=<gateway>&token=<enrollment token>``, and
-a plain ``http://gateway/enroll#<token>`` URL is accepted too, because a link
-that can be typed from a phone screen is worth more than a tidy scheme.
+The link is ``neutrino://enroll/<payload>`` where the payload is base64url
+over ``{"urls": [...], "token": ...}``. That alphabet holds no character a
+shell splits or a URL escapes, so the link pastes into a terminal, a page or
+a chat unquoted; and being one JSON object, later fields — a certificate
+fingerprint — cost nothing.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 import socket
-import urllib.parse
 import uuid
 
 from neutrino_agent.constants import AGENT_CONFIG_PATH
-from neutrino_agent.http_channel import GatewayHttpChannel, GatewayUnreachable
+from neutrino_agent.http_channel import (
+    GatewayHttpChannel,
+    GatewayRefused,
+    GatewayUnreachable,
+)
 from neutrino_agent.platform_info import platform_tuple
 
 ENROLL_PATH = "/api/agent/enroll"
@@ -31,12 +38,17 @@ class EnrollmentError(RuntimeError):
     """Raised when a machine cannot join a gateway."""
 
 
+LINK_PREFIX = "neutrino://enroll/"
+
+
 def parse_link(link: str) -> "tuple[list, str]":
     """Pull the gateway addresses and enrollment token out of a link.
 
     A hub serves more than one network, and the address that reaches it
     depends on which one this machine is on, so the link carries every
-    address the hub answers on rather than one somebody had to pick.
+    address the hub answers on rather than one somebody had to pick. The
+    bare payload without its scheme is accepted too, because it is the part
+    a partial copy loses last.
 
     Args:
         link: What the owner pasted.
@@ -51,12 +63,20 @@ def parse_link(link: str) -> "tuple[list, str]":
     text = link.strip()
     if not text:
         raise EnrollmentError("paste the link from the gateway's Devices page")
-    parsed = urllib.parse.urlparse(text)
-    query = urllib.parse.parse_qs(parsed.query)
-    urls = [url.rstrip("/") for url in query.get("url", []) if url.strip()]
-    token = (query.get("token") or [""])[0] or parsed.fragment
-    if not urls and parsed.scheme in ("http", "https"):
-        urls = [f"{parsed.scheme}://{parsed.netloc}"]
+    if text.startswith(LINK_PREFIX):
+        text = text[len(LINK_PREFIX) :]
+    try:
+        padded = text + "=" * (-len(text) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode()))
+        urls = [
+            str(url).rstrip("/") for url in payload.get("urls", []) if str(url).strip()
+        ]
+        token = str(payload.get("token", ""))
+    except (binascii.Error, ValueError, UnicodeDecodeError, AttributeError) as error:
+        raise EnrollmentError(
+            "that is not an enrollment link; copy the whole line from the "
+            "gateway's Devices page"
+        ) from error
     if not urls or not token:
         raise EnrollmentError("that link carries no gateway address and token")
     return urls, token
@@ -169,6 +189,13 @@ def enroll(link: str) -> dict:
         try:
             reply = channel.post(ENROLL_PATH, payload)
             break
+        except GatewayRefused as error:
+            # The gateway answered and said no: the ticket is spent or has
+            # expired. The other addresses reach the same gateway.
+            raise EnrollmentError(
+                "the gateway refused this link — it may have expired; mint a "
+                "fresh one on the Devices page"
+            ) from error
         except GatewayUnreachable as error:
             refusal = str(error)
     if reply is None:

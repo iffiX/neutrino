@@ -308,7 +308,7 @@ function draw(rawState) {
     const row = document.createElement('div');
     row.className = 'row';
     const input = document.createElement('input');
-    input.placeholder = 'neutrino://enroll?url=...&token=...';
+    input.placeholder = 'neutrino://enroll/...';
     input.onkeydown = (e) => { if (e.key === 'Enter') join(); };
     const button = document.createElement('button');
     button.textContent = 'Connect';

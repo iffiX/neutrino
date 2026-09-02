@@ -17,7 +17,7 @@ const ENROLLMENT_TITLE_DEVICE =
   "Paste this link into the agent page on {name}.";
 
 const ENROLLMENT_HINT =
-  "Install the agent there, open http://127.0.0.1:8765, and paste the link. It works for {minutes} minutes.";
+  "Install the agent there, then paste the link into http://127.0.0.1:8765 — or run `sudo nagent connect <link>` in its terminal; it pastes safely unquoted. It works for {minutes} minutes.";
 
 interface DeviceEnrollmentNoticeProps {
   enrollment: DeviceEnrollmentView;

@@ -7,6 +7,8 @@ authenticated with — so a failed install or a forgotten device never reads
 managed here.
 """
 
+import base64
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -212,6 +214,28 @@ def test_a_link_minted_for_a_device_binds_to_that_device(api, monkeypatch):
     ticket = runtime.enrollments[response.json()["token"]]
     assert ticket["mac_address"] == MAC
     assert ticket["name"] == "xenode"
+
+
+def test_the_link_is_one_shell_safe_token(api, monkeypatch):
+    """base64url end to end: no character a shell splits or a URL escapes,
+    and the payload decodes to every address plus the ticket."""
+    client, runtime = api
+    monkeypatch.setattr(
+        devices_router,
+        "_panel_urls",
+        lambda runtime: ["http://192.168.8.1:8080", "http://10.0.0.1:8080"],
+    )
+
+    answer = client.post("/api/devices/enrollment", json={"name": "laptop"}).json()
+
+    link = answer["link"]
+    assert link.startswith("neutrino://enroll/")
+    payload_text = link.removeprefix("neutrino://enroll/")
+    assert not any(character in payload_text for character in "?&%#;|<> '\"=")
+    padded = payload_text + "=" * (-len(payload_text) % 4)
+    payload = json.loads(base64.urlsafe_b64decode(padded))
+    assert payload["urls"] == ["http://192.168.8.1:8080", "http://10.0.0.1:8080"]
+    assert payload["token"] == answer["token"]
 
 
 def test_a_lapsed_ticket_is_swept_when_the_next_one_is_minted(api, monkeypatch):

@@ -5,7 +5,7 @@ clicking it opens the agent's own page on http://127.0.0.1:8765, which is where
 the enrollment link is pasted. These commands do the same things from a
 terminal, for machines with no desktop and for reading what went wrong.
 
-    nagent connect neutrino://enroll?url=...&token=...
+    nagent connect neutrino://enroll/...
     nagent disconnect
     nagent run
     nagent status
@@ -39,7 +39,13 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest="command", metavar="<command>")
 
     connect = subparsers.add_parser("connect", help="join the hub a link names")
-    connect.add_argument("link", help="the neutrino://enroll link from the hub")
+    connect.add_argument(
+        "link",
+        nargs="?",
+        default="",
+        help="the neutrino://enroll link from the hub; omit it to paste at "
+        "a prompt instead",
+    )
     connect.add_argument(
         "--yes",
         action="store_true",
@@ -76,6 +82,15 @@ def _connect(link: str, *, is_forced: bool) -> int:
     Returns:
         Process exit status.
     """
+    link = link.strip()
+    if not link:
+        try:
+            link = input("paste the enrollment link: ").strip()
+        except EOFError:
+            link = ""
+    if not link:
+        print("error: no link was given", file=sys.stderr)
+        return 1
     bound_to = enrollment.load_config().get("gateway_url", "")
     if bound_to and not is_forced:
         answer = input(f"this machine is bound to {bound_to}; replace it? [y/N] ")
