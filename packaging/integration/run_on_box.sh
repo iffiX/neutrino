@@ -151,7 +151,14 @@ phase "the panel, every page"
 python3 -m pytest "$HERE" -q --ignore="$HERE/test_install_footprint.py" \
     --ignore="$HERE/test_reset_hands_back.py" \
     --ignore="$HERE/test_reinstall.py" --ignore="$HERE/test_mode_matrix.py" \
-    --ignore="$HERE/test_install_a_module.py"
+    --ignore="$HERE/test_install_a_module.py" \
+    --ignore="$HERE/test_device_lifecycle.py"
+ran $?
+
+# Last of all: it rewires the box into a router serving the spare wire and
+# drives a second machine, so nothing may still be asking about this one.
+phase "the device lifecycle, end to end"
+python3 -m pytest "$HERE/test_device_lifecycle.py" -q
 ran $?
 
 echo
