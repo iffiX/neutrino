@@ -26,6 +26,10 @@ def box(tmp_path, monkeypatch):
             {"admin_password_hash": "PLACEHOLDER_ARGON2ID_HASH"},
         ),
         ("xray/nodes.example.json", {"nodes": []}),
+        (
+            "credentials/vault.example.json",
+            {"version": 1, "cipher": "aes-256-gcm", "secrets": {}},
+        ),
     ):
         path = examples / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -39,8 +43,18 @@ def box(tmp_path, monkeypatch):
     (config / "xray/nodes.json").write_text(json.dumps({"nodes": [{"id": "hk"}]}))
     (config / "gitea").mkdir()
     (config / "gitea/secrets.json").write_text("{}")
-    (config / "credentials/ssh_keys").mkdir(parents=True)
-    (config / "credentials/ssh_keys/048044bd").write_text("PRIVATE KEY")
+    (config / "credentials").mkdir(parents=True)
+    (config / "credentials/vault.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "cipher": "aes-256-gcm",
+                "secrets": {"048044bd": {"name": "a key", "kind": "ssh_key"}},
+            }
+        )
+    )
+    (config / "credentials/vault.key").write_text("aa" * 32)
+    (config / "credentials/vault.key.new").write_text("bb" * 32)
 
     monkeypatch.setattr(reset, "UTILS_CONFIG_DIR", config)
     monkeypatch.setattr(reset, "UTILS_EXAMPLES_DIR", examples)
@@ -55,12 +69,15 @@ def test_reset_all_returns_every_config_to_its_example(box):
     assert json.loads((box / "xray/nodes.json").read_text()) == {"nodes": []}
 
 
-def test_reset_all_forgets_the_keys_no_example_replaces(box):
+def test_reset_all_forgets_the_keys_the_box_was_holding(box):
     """A key left behind after a reset is a key the next owner inherits."""
     reset._reset_all()
 
-    assert not (box / "credentials/ssh_keys/048044bd").exists()
+    vault = json.loads((box / "credentials/vault.json").read_text())
+    assert vault["secrets"] == {}
     assert not (box / "gitea/secrets.json").exists()
+    assert not (box / "credentials/vault.key").exists()
+    assert not (box / "credentials/vault.key.new").exists()
 
 
 def test_reset_all_clears_the_password_so_setup_runs_again(box):

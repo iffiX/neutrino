@@ -39,7 +39,10 @@ RESET_COLLECTED_PATHS = (
     "gitea/secrets.json",
     "devices/known_hosts",
     "devices/packages",
-    "credentials/ssh_keys",
+    # The vault master key goes with the store it opened: a key surviving a
+    # reset is a key the next owner inherits.
+    "credentials/vault.key",
+    "credentials/vault.key.new",
 )
 RESET_EXAMPLE_SUFFIX = ".example.json"
 RESET_PANEL_UNIT = "web"
