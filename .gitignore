@@ -10,6 +10,9 @@ config/podman/podman.json
 config/gitea/secrets.json
 config/devices/devices.json
 config/credentials/ai_providers.json
+config/credentials/vault.json
+config/credentials/vault.key
+config/credentials/vault.key.new
 config/cliproxyapi/cliproxyapi.json
 config/devices/packages/
 config/devices/known_hosts

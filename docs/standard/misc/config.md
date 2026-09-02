@@ -28,6 +28,8 @@ key ever reaches git history.
 | `config/devices/devices.json` | `devices.example.json` | yes — device SSH creds |
 | `config/credentials/ssh_keys/registry.json` | `registry.example.json` | yes — key metadata + passphrases |
 | `config/credentials/ssh_keys/<id>` | — | yes — private SSH key material |
+| `config/credentials/vault.json` | `vault.example.json` | yes — every sealed secret |
+| `config/credentials/vault.key` | — | yes — the master key |
 | `config/devices/packages/*` | — | no (build artifacts, just large) |
 
 `.gitignore` ignores the real names, `config/credentials/ssh_keys/` (except its example), and
@@ -51,6 +53,13 @@ or a custom relay) in `config/credentials/ai_providers.json` (gitignored;
 example committed). Stored once here and handed to features that need them —
 Dev Setup writes them into a device's AI tool configs. Keys never come back
 out through the API; listings only say whether one is stored.
+
+**The vault** — every other secret sits sealed in
+`config/credentials/vault.json`, one AES-256-GCM ciphertext per object under
+the master key in `config/credentials/vault.key` (mode 0600). Names, kinds
+and timestamps stay readable; the material and the key never leave the box —
+an exported backup carries the key wrapped under a passphrase instead.
+`nhub vault rekey` re-encrypts everything under a fresh key.
 
 ## First-run flow
 

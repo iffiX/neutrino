@@ -16,6 +16,8 @@ dependencies = [
     "httpx>=0.27",
     # CLIProxyAPI's configuration is YAML, rendered by the panel.
     "pyyaml>=6.0",
+    # Seals the credential vault; already present transitively via asyncssh.
+    "cryptography>=43",
 ]
 
 [project.optional-dependencies]
