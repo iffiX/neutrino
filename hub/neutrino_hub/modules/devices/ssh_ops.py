@@ -377,8 +377,10 @@ class DeviceSshOperator:
         """
         if not package_path.is_file():
             yield (
-                f"[client package missing at {package_path}; build it in the "
-                f"neutrino_agent repo with scripts/build_package/main.py]\n"
+                f"[no agent package at {package_path}; an installed hub "
+                f"carries one — for a checkout, build it: python3 -m "
+                f"neutrino_agent.build_package --latest --output-dir "
+                f"<config>/devices/packages]\n"
             )
             return
         remote_archive = f"{AGENT_INSTALL_DIR}/client.tar.gz"

@@ -26,6 +26,9 @@ docs/memory.md
 # The appliance a working copy runs against under `--dev`. Deleting it is how
 # a development hub goes back to nothing; design/install_and_dev.md.
 hub_dev_root/
+
+# Built into the hub package in the container; never committed.
+hub/neutrino_hub/data/agent_package/
 agent_dev_root/
 
 # --- Python ---

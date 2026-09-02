@@ -30,6 +30,7 @@ import urllib.request
 from pathlib import Path
 
 HUB_ROOT = Path(__file__).resolve().parent.parent
+AGENT_ROOT = HUB_ROOT.parent / "agent"
 PACKAGE_NAME = "neutrino-hub"
 
 
@@ -240,8 +241,34 @@ def build_environment(tree: Path, version: str, machine: str) -> None:
         stamp.unlink(missing_ok=True)
 
     strip_build_paths(staged_python, tree)
+    stage_agent_package(staged_python)
     stage_vendored(tree, machine)
     stage_licenses(tree)
+
+
+def stage_agent_package(staged_python: Path) -> None:
+    """Bake the agent tarball the panel installs over SSH into the hub's data.
+
+    Built from the same checkout, so the hub and the agent it hands out
+    cannot drift; the panel falls back to ``data/agent_package/`` when
+    ``config/`` holds no deliberately pinned build.
+
+    Args:
+        staged_python: The interpreter tree the hub was installed into.
+    """
+    site_packages = next((staged_python / "lib").glob("python*/site-packages"))
+    output = site_packages / "neutrino_hub" / "data" / "agent_package"
+    run(
+        [
+            str(staged_python / "bin" / "python3"),
+            "-m",
+            "neutrino_agent.build_package",
+            "--output-dir",
+            str(output),
+            "--latest",
+        ],
+        cwd=AGENT_ROOT,
+    )
 
 
 def stage_vendored(tree: Path, machine: str) -> None:
@@ -517,16 +544,17 @@ def version() -> str:
     raise SystemExit("no version in hub/pyproject.toml")
 
 
-def run(command: list) -> None:
+def run(command: list, *, cwd: "Path | None" = None) -> None:
     """Run a build step, failing loudly.
 
     Args:
         command: The argument vector.
+        cwd: Directory to run in, when it is not the caller's.
 
     Raises:
         SystemExit: If the command fails.
     """
-    result = subprocess.run(command, capture_output=True, text=True)
+    result = subprocess.run(command, capture_output=True, text=True, cwd=cwd)
     if result.returncode != 0:
         raise SystemExit(
             f"{' '.join(command[:3])} failed:\n{(result.stderr or result.stdout).strip()}"

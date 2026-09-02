@@ -19,8 +19,8 @@ from pathlib import Path
 from neutrino_agent import AGENT_VERSION
 
 # --- config ---
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-PACKAGE_MEMBERS = ("neutrino_agent", "scripts", "systemd", "desktop", "install.sh")
+REPO_ROOT = Path(__file__).resolve().parent.parent
+PACKAGE_MEMBERS = ("neutrino_agent", "systemd", "desktop", "install.sh")
 EXCLUDED_NAMES = ("__pycache__", ".pyc")
 
 

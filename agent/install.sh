@@ -88,7 +88,6 @@ step "Installing agent files"
 mkdir -p "${INSTALL_DIR}"
 rm -rf "${INSTALL_DIR}/neutrino_agent" "${INSTALL_DIR}/scripts"
 cp -r "${SOURCE_DIR}/neutrino_agent" "${INSTALL_DIR}/"
-cp -r "${SOURCE_DIR}/scripts" "${INSTALL_DIR}/"
 ok "$(find "${INSTALL_DIR}" -name '*.py' | wc -l) files"
 
 step "Writing ${CONFIG_DIR}/agent.json"

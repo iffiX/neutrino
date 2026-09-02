@@ -29,7 +29,7 @@ from neutrino_hub.modules.devices.remote_desktop import (
 from neutrino_hub.modules.devices.ssh_ops import DeviceSshOperator, SshCredentials
 from neutrino_hub.modules.devices.wake_on_lan import send_magic_packet
 from neutrino_hub import HUB_VERSION
-from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
+from neutrino_hub.utils.constants import UTILS_CONFIG_DIR, UTILS_DATA_DIR
 from neutrino_hub.web.constants import WEB_DEFAULT_LISTEN_PORT
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
@@ -62,6 +62,8 @@ router = APIRouter(
 POWER_ACTIONS = ("reboot", "shutdown")
 
 PASSWORD_KIND = "password"
+
+AGENT_PACKAGE_NAME = "neutrino_agent-latest.tar.gz"
 
 ENROLLMENT_TOKEN_BYTES = 18
 # Long enough to walk to another machine and type it, short enough that a
@@ -607,6 +609,11 @@ async def start_action(
         "agent_package_path",
         "devices/packages/neutrino_agent-latest.tar.gz",
     )
+    if not package_path.is_file():
+        # The hub package carries the agent tarball it was built with, so an
+        # installed box needs nothing placed by hand; the config path stays
+        # first for a deliberately pinned build.
+        package_path = UTILS_DATA_DIR / "agent_package" / AGENT_PACKAGE_NAME
     stream = runtime.tasks.start(
         label=f"install_client {mac_address}",
         source=operator.install_client(
