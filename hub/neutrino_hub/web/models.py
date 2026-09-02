@@ -818,10 +818,59 @@ class ServiceView(BaseModel):
     data_description: str = ""
 
 
+class DeclaredShareView(BaseModel):
+    """One share a declared Samba service exports."""
+
+    name: str
+    service_account_id: str | None = None
+
+
+class DeclaredServiceProbeView(BaseModel):
+    """A declared service's cached health; every field None before the
+    first probe."""
+
+    is_healthy: bool | None = None
+    checked_at: str | None = None
+    detail_code: str | None = None
+
+
+class DeclaredServiceView(BaseModel):
+    """One user-declared service, with its cached health."""
+
+    id: str
+    name: str
+    kind: str
+    host: str
+    port: int
+    scheme: str | None = None
+    path: str | None = None
+    shares: list[DeclaredShareView] = []
+    created_at: str
+    probe: DeclaredServiceProbeView
+
+
+class DeclaredServiceCreate(BaseModel):
+    """A declared service as the form submits it, whole.
+
+    The same body serves the create and the full-record update. A ``samba``
+    kind left without a port gets 445; the fields a kind does not have are
+    ignored.
+    """
+
+    name: str
+    kind: str
+    host: str
+    port: int | None = None
+    scheme: str | None = None
+    path: str | None = None
+    shares: list[DeclaredShareView] = []
+
+
 class ServiceListView(BaseModel):
     """The Services tab payload."""
 
     services: list[ServiceView]
+    declared: list[DeclaredServiceView] = []
 
 
 class ProvisionConsentView(BaseModel):

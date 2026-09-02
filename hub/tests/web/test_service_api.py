@@ -61,10 +61,16 @@ class FakeRuntime:
         from neutrino_hub.web.task_stream import TaskStreamRegistry
 
         self.tasks = TaskStreamRegistry()
+        # The real probe too: with nothing declared it opens no socket.
+        from neutrino_hub.modules.services.probe import DeclaredServiceProbe
+
+        self.declared_probe = DeclaredServiceProbe()
 
 
 @pytest.fixture
-def box():
+def box(monkeypatch, tmp_path):
+    # An empty config dir, so the view reads no declared services.
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
     services = RecordingServices()
     app = FastAPI()
     app.include_router(service_control.router)

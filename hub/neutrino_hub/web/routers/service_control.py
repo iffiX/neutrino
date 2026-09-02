@@ -24,6 +24,7 @@ from neutrino_hub.web.models import (
     TaskView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
+from neutrino_hub.web.routers.declared_services import declared_service_views
 
 # How much of a unit's journal one request may ask for. Unbounded, a single
 # call reads an entire journal into memory and into one JSON body.
@@ -47,10 +48,12 @@ def list_services(runtime: PanelRuntime = Depends(get_runtime)) -> ServiceListVi
         runtime: The shared runtime.
 
     Returns:
-        One entry per managed unit.
+        One entry per managed unit, and the declared services with their
+        cached health.
     """
     return ServiceListView(
-        services=[_to_view(entry) for entry in runtime.services.status_all()]
+        services=[_to_view(entry) for entry in runtime.services.status_all()],
+        declared=declared_service_views(runtime),
     )
 
 

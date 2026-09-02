@@ -19,6 +19,7 @@ from neutrino_hub.modules.credentials.vault import (
     VaultError,
 )
 from neutrino_hub.modules.devices.registry import DeviceRegistry
+from neutrino_hub.modules.services.config import DeclaredServiceRegistry
 from neutrino_hub.modules.devices.key_registry import (
     KeyMaterialError,
     KeyRecord,
@@ -549,10 +550,14 @@ def delete_service_account(account_id: str, force: bool = False) -> dict:
 
 
 def _service_counts() -> dict[str, int]:
-    # Declared services carrying a service_account_id land in
-    # config/services/declared.json in a later phase; nothing references an
-    # account before then.
-    return {}
+    counts: dict[str, int] = {}
+    for service in DeclaredServiceRegistry().list_records():
+        # A service naming one account on several shares counts once.
+        referenced = {share.service_account_id for share in service.shares}
+        for account_id in referenced:
+            if account_id:
+                counts[account_id] = counts.get(account_id, 0) + 1
+    return counts
 
 
 def _service_account_view(

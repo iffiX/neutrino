@@ -30,6 +30,7 @@ from neutrino_hub.modules.podman.config import PodmanConfig
 from neutrino_hub.modules.podman.ops import PodmanRegistriesApplier
 from neutrino_hub.modules.podman.renderer import PodmanRegistriesRenderer
 from neutrino_hub.modules.samba.config import SambaConfig
+from neutrino_hub.modules.services.probe import DeclaredServiceProbe
 from neutrino_hub.modules.samba.ops import SambaConfigApplier, SambaUserManager
 from neutrino_hub.modules.samba.renderer import SambaConfigRenderer
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
@@ -79,6 +80,7 @@ class PanelRuntime:
         self.listening_ports = ListeningPortReader()
         self.stats = XrayStatsClient()
         self.node_probe = XrayNodeProbe()
+        self.declared_probe = DeclaredServiceProbe()
         self.devices = DeviceRegistry()
         self.is_config_dirty = False
         # Latest agent metrics, keyed by MAC. Runtime only: these are stale the

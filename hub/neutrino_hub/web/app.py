@@ -23,6 +23,7 @@ from neutrino_hub.web.routers import (
     cliproxyapi,
     credentials,
     dashboard,
+    declared_services,
     device_files,
     devices,
     gitea,
@@ -53,6 +54,7 @@ API_ROUTERS = (
     netbird.router,
     zfs.router,
     service_control.router,
+    declared_services.router,
     settings.router,
 )
 

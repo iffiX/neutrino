@@ -1,0 +1,5 @@
+{
+  "_comment": "Services declared on machines the hub does not run — a NAS's Samba, an HTTP server, a Docker engine — managed from the Services page. The hub probes each one for health and can later offer it to devices. No secrets live here: a share names a vault service_account by id.",
+  "_comment_fields": "Each entry: id (panel-assigned uuid), name, kind (samba | http | docker_engine | generic_tcp), host, port, created_at. An http entry adds scheme (http | https) and path; a samba entry adds shares, each {name, service_account_id (a vault service_account id, or null for guest access)}. The list ships empty; the panel fills it.",
+  "services": []
+}
