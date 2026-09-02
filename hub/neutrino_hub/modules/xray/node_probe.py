@@ -9,6 +9,13 @@ That measures the path to the node endpoint rather than a full proxy round
 trip. It is the right thing to show anyway, because it answers the question the
 Nodes tab is actually asking — can this box reach this node from where it is
 sitting, and how far away is it.
+
+Every probe leaves under xray's own egress mark. Without it, a box proxying
+its own traffic diverts the probe into its own TPROXY socket: the handshake
+completes locally in no time at all, so every node reads alive at 0 ms
+whatever the node is doing. The mark is the same exemption xray stamps on its
+outbound sockets, and for the same reason — the connection xray makes to a
+node is direct, so the measurement of it has to be.
 """
 
 import socket
@@ -16,6 +23,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
+from neutrino_hub.modules.xray.constants import XRAY_EGRESS_MARK
 from neutrino_hub.modules.xray.node_config import XrayNodeConfig
 
 PROBE_TIMEOUT_S = 5.0
@@ -111,10 +119,55 @@ class XrayNodeProbe:
         """
         started_at = time.monotonic()
         try:
-            with socket.create_connection(
-                (node.address, node.port), timeout=self._timeout_s
-            ):
+            with _direct_connection(node.address, node.port, timeout_s=self._timeout_s):
                 elapsed_ms = int((time.monotonic() - started_at) * 1000)
         except OSError:
             return NodeProbeResult(tag=node.tag, is_alive=False, delay_ms=None)
         return NodeProbeResult(tag=node.tag, is_alive=True, delay_ms=elapsed_ms)
+
+
+def _direct_connection(address: str, port: int, *, timeout_s: float):
+    """Open a TCP connection that the proxy will not divert.
+
+    Args:
+        address: The node's address.
+        port: Its port.
+        timeout_s: How long to wait for the connect.
+
+    Returns:
+        The connected socket, for use as a context manager.
+
+    Raises:
+        OSError: If the name does not resolve, or nothing answers in time.
+    """
+    error: OSError = OSError(f"no address for {address}")
+    for family, kind, protocol, _, sockaddr in socket.getaddrinfo(
+        address, port, type=socket.SOCK_STREAM
+    ):
+        connection = socket.socket(family, kind, protocol)
+        try:
+            _mark_as_egress(connection)
+            connection.settimeout(timeout_s)
+            connection.connect(sockaddr)
+            return connection
+        except OSError as failure:
+            connection.close()
+            error = failure
+    raise error
+
+
+def _mark_as_egress(connection: socket.socket) -> None:
+    """Stamp the socket so the router's output chain lets it out.
+
+    Best effort: the mark needs CAP_NET_ADMIN, which the panel has and a
+    developer running the module by hand may not. Without it the probe still
+    measures something — just the local proxy, when one is in the path — and
+    that is better than refusing to probe at all.
+
+    Args:
+        connection: The socket, before it is connected.
+    """
+    try:
+        connection.setsockopt(socket.SOL_SOCKET, socket.SO_MARK, XRAY_EGRESS_MARK)
+    except (OSError, AttributeError):
+        return
