@@ -120,6 +120,14 @@ seed_for() {
         echo "    ssh_authorized_keys:"
         echo "      - $(cat "$KEY.pub")"
         echo "ssh_pwauth: false"
+        if [ "$is_provisioned" != yes ]; then
+            # The client's whole job is asking DHCP forever, but a cloud
+            # image's own client gives up when nobody answers for long
+            # enough. This loop keeps the contract however late the hub
+            # starts serving.
+            echo "runcmd:"
+            echo "  - [ sh, -c, \"nohup sh -c 'while true; do dhclient -1 >/dev/null 2>&1 || true; sleep 20; done' >/dev/null 2>&1 &\" ]"
+        fi
         if [ "$is_provisioned" = yes ]; then
             echo "package_update: true"
             echo "packages:"

@@ -24,7 +24,7 @@ import test_mode_matrix as matrix
 ID_LAB = Path(__file__).resolve().parent / "id_lab"
 LIFECYCLE_LAN = "192.168.93.1"
 
-CLIENT_TIMEOUT_S = 120
+CLIENT_TIMEOUT_S = 180
 INSTALL_TIMEOUT_S = 240
 UNBIND_TIMEOUT_S = 60
 LEAVE_TIMEOUT_S = 30
