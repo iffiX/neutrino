@@ -9,8 +9,19 @@ import { useLiveStats } from "../use_live_stats";
  * this line the page looks healthy — every switch on, every card green —
  * while the network behind the box is dark, which reads as "the proxy does
  * nothing" rather than "the exit is unreachable".
+ *
+ * With the direct fallback on nothing is dark, and the line still has to be
+ * there: traffic somebody meant to proxy is going out under this machine's
+ * own address, which is worth knowing before it goes on for a week.
  */
-export function DeadExitsNotice() {
+interface DeadExitsNoticeProps {
+  /** Whether the person has asked for a dead exit to fall back to direct. */
+  isFallingBack?: boolean;
+}
+
+export function DeadExitsNotice({
+  isFallingBack = false,
+}: DeadExitsNoticeProps) {
   const { latestFrame } = useLiveStats();
   if (latestFrame === null) {
     return null;
@@ -24,11 +35,12 @@ export function DeadExitsNotice() {
     return null;
   }
   return (
-    <div className="notice notice--error">
+    <div className={`notice notice--${isFallingBack ? "warn" : "error"}`}>
       <Icon name="alert" size={15} />
       <div className="notice_body">
-        Every enabled exit node is unreachable. Traffic sent to the proxy — LAN
-        DNS included — fails until one answers.
+        {isFallingBack
+          ? "Every enabled exit node is unreachable, so traffic sent to the proxy is leaving through the WAN instead, under this machine's own address."
+          : "Every enabled exit node is unreachable. Traffic sent to the proxy — the LAN's names included — fails until one answers."}
       </div>
     </div>
   );

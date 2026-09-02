@@ -214,7 +214,7 @@ export function ProxyPage() {
         </div>
       </div>
 
-      <DeadExitsNotice />
+      <DeadExitsNotice isFallingBack={draft.is_direct_fallback_enabled} />
 
       <NodesPanel onNodesChanged={resource.reload} />
 
