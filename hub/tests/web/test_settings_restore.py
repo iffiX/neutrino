@@ -29,7 +29,7 @@ from neutrino_hub.modules.credentials.vault import (
 )
 from neutrino_hub.web.dependencies import require_session
 from neutrino_hub.web.routers import settings as settings_router
-from neutrino_hub.web.routers.settings import _checked_member
+from neutrino_hub.web.routers.settings import _checked_member, _renamed_member
 
 PASSPHRASE = "correct horse battery"  # scan: allow
 SEALED_PASSWORD = "hunter2hunter2"  # scan: allow
@@ -55,7 +55,26 @@ def member(name: str, kind: bytes = tarfile.REGTYPE) -> tarfile.TarInfo:
     ],
 )
 def test_paths_inside_config_are_accepted(name):
-    assert _checked_member(member(name)).name == name
+    checked = _checked_member(_renamed_member(member(name)))
+    assert checked.name.split("/")[0] == settings_router.UTILS_CONFIG_DIR.name
+
+
+def test_the_archive_root_is_mapped_to_the_real_directory(monkeypatch, tmp_path):
+    """An installed hub keeps config/ at /etc/neutrino/hub; the archive says config."""
+    real = tmp_path / "hub"
+    real.mkdir()
+    monkeypatch.setattr(settings_router, "UTILS_CONFIG_DIR", real, raising=True)
+
+    renamed = _renamed_member(member("config/xray/nodes.json"))
+
+    assert renamed.name == "hub/xray/nodes.json"
+    assert _checked_member(renamed).name == "hub/xray/nodes.json"
+
+
+def test_a_member_outside_the_config_root_is_refused():
+    with pytest.raises(HTTPException) as raised:
+        _renamed_member(member("etc/passwd"))
+    assert raised.value.status_code == 400
 
 
 @pytest.mark.parametrize(
@@ -72,7 +91,7 @@ def test_paths_inside_config_are_accepted(name):
 )
 def test_paths_that_would_land_outside_config_are_refused(name):
     with pytest.raises(HTTPException) as raised:
-        _checked_member(member(name))
+        _checked_member(_renamed_member(member(name)))
     assert raised.value.status_code == 400
 
 
@@ -99,7 +118,9 @@ def test_a_directory_inside_config_is_accepted():
 @pytest.fixture
 def client(monkeypatch, tmp_path):
     """The Settings router over a config directory of its own."""
-    config_dir = tmp_path / "config"
+    # Named like an installed box's directory, not like a checkout's, so the
+    # archive-root mapping is what these tests exercise.
+    config_dir = tmp_path / "hub"
     config_dir.mkdir()
     monkeypatch.setattr(
         neutrino_hub.utils.json_file, "UTILS_CONFIG_DIR", config_dir, raising=True

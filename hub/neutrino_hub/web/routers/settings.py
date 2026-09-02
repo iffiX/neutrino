@@ -283,7 +283,10 @@ async def restore(file: UploadFile, passphrase: str = Form("")) -> dict:
     payload = _checked_payload(blob, passphrase)
     try:
         with tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz") as archive:
-            members = [_checked_member(member) for member in archive.getmembers()]
+            members = [
+                _checked_member(_renamed_member(member))
+                for member in archive.getmembers()
+            ]
             # The data filter is the second line of defence, not the first:
             # it also refuses absolute paths, traversal and special files.
             archive.extractall(
@@ -364,6 +367,33 @@ def _coded_bad_request(code: str) -> HTTPException:
         The exception to raise.
     """
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"code": code})
+
+
+def _renamed_member(member: tarfile.TarInfo) -> tarfile.TarInfo:
+    """Point the archive's ``config`` root at the directory this box uses.
+
+    The archive's top segment is always ``config``; what the directory is
+    called on the box restoring it is the box's own business — an installed
+    hub keeps it at ``/etc/neutrino/hub`` — so the segment is mapped rather
+    than trusted to match.
+
+    Args:
+        member: The member about to be unpacked.
+
+    Returns:
+        The member, renamed onto the real directory.
+
+    Raises:
+        HTTPException: 400 when the member does not live under ``config``.
+    """
+    root, _, rest = member.name.partition("/")
+    if root != "config":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"unexpected path in backup: {member.name}",
+        )
+    member.name = UTILS_CONFIG_DIR.name + (f"/{rest}" if rest else "")
+    return member
 
 
 def _checked_member(member: tarfile.TarInfo) -> tarfile.TarInfo:
