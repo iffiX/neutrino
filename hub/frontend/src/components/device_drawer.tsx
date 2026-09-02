@@ -898,7 +898,7 @@ function toGuidance(device: DeviceView): DeviceGuidance | null {
   };
 }
 
-/** Wording for a failed save, with the coded refusals spelled out. */
+/** Wording for a failed action, with the coded refusals spelled out. */
 function describeActionError(cause: unknown): string {
   if (
     cause instanceof ApiError &&
@@ -908,6 +908,9 @@ function describeActionError(cause: unknown): string {
   ) {
     const os = String((cause.detail as Record<string, unknown>).os ?? "");
     return `This machine reports ${os || "another OS"}; the SSH installer is for Linux — use Get link instead.`;
+  }
+  if (cause instanceof ApiError && cause.code === "agent_package_missing") {
+    return "This hub carries no agent package. An installed hub ships one; a checkout builds one into config/devices/packages with agent/packaging/build_deb.py.";
   }
   return describeError(cause);
 }

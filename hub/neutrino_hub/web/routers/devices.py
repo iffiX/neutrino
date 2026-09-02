@@ -63,8 +63,6 @@ POWER_ACTIONS = ("reboot", "shutdown")
 
 PASSWORD_KIND = "password"
 
-AGENT_PACKAGE_NAME = "neutrino_agent-latest.tar.gz"
-
 ENROLLMENT_TOKEN_BYTES = 18
 # Long enough to walk to another machine and type it, short enough that a
 # forgotten link is not a standing invitation.
@@ -302,23 +300,49 @@ def create_enrollment(
         HTTPException: 400 when no served network has an address, so there is
             nothing for a machine to reach the panel at.
     """
+    link, token = _mint_enrollment_link(
+        runtime, name=request.name, mac_address=request.mac_address
+    )
+    return DeviceEnrollmentView(link=link, token=token, expires_in_s=ENROLLMENT_TTL_S)
+
+
+def _mint_enrollment_link(
+    runtime: PanelRuntime, *, name: str, mac_address: "str | None"
+) -> tuple[str, str]:
+    """One ticket and the link that carries it, however the join begins.
+
+    The panel's link button and the SSH install mint here alike, so both
+    joins walk the same enrollment path. Lapsed tickets are swept on the way
+    past: a ticket nobody was ever shown is a join secret lying around, and
+    one that has expired is the same thing an hour later.
+
+    Args:
+        runtime: The shared runtime, which holds the open tickets.
+        name: What the joining machine should be called, blank to keep what
+            it has or says.
+        mac_address: The device record to bind to, or None for any machine.
+
+    Returns:
+        The link and its ticket.
+
+    Raises:
+        HTTPException: 400 when no served network has an address, so there is
+            nothing for a machine to reach the panel at.
+    """
     urls = _panel_urls(runtime)
     if not urls:
         raise HTTPException(
             status_code=400,
             detail="no served network has an address for a machine to reach",
         )
-    # Minted after the link is known to exist, and the lapsed ones swept on the
-    # way past: a ticket nobody was ever shown is a join secret lying around,
-    # and one that has expired is the same thing an hour later.
     now = time.time()
     for token, ticket in list(runtime.enrollments.items()):
         if ticket.get("expires_at", 0) <= now:
             del runtime.enrollments[token]
     token = secrets.token_urlsafe(ENROLLMENT_TOKEN_BYTES)
     runtime.enrollments[token] = {
-        "name": request.name.strip(),
-        "mac_address": (request.mac_address or "").lower() or None,
+        "name": name.strip(),
+        "mac_address": (mac_address or "").lower() or None,
         "expires_at": now + ENROLLMENT_TTL_S,
     }
     # The whole payload rides base64url, whose alphabet has no character a
@@ -328,8 +352,29 @@ def create_enrollment(
         .decode()
         .rstrip("=")
     )
-    link = f"neutrino://enroll/{payload}"
-    return DeviceEnrollmentView(link=link, token=token, expires_in_s=ENROLLMENT_TTL_S)
+    return f"neutrino://enroll/{payload}", token
+
+
+def _agent_packages() -> dict:
+    """The agent packages the panel can deliver, newest per family.
+
+    A build pinned under ``config/devices/packages`` wins over the one the
+    hub package carries in its own data.
+
+    Returns:
+        Family (``deb``, ``rpm``) to package path, for the families found.
+    """
+    packages: dict = {}
+    for family, pattern in (("deb", "*.deb"), ("rpm", "*.rpm")):
+        for root in (
+            UTILS_CONFIG_DIR / "devices" / "packages",
+            UTILS_DATA_DIR / "agent_package",
+        ):
+            found = sorted(root.glob(pattern)) if root.is_dir() else []
+            if found:
+                packages[family] = found[-1]
+                break
+    return packages
 
 
 @router.get("/{mac_address}/features", response_model=DeviceFeatureListView)
@@ -597,30 +642,21 @@ async def start_action(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "unsupported_remote_install", "os": kernel},
         )
-    # An agent that is answering keeps the token it is answering with. Minting
-    # a new one here kills the live agent before the install that would carry
-    # the replacement has even started, and an install that then fails — no
-    # package, host unreachable, wrong sudo password — leaves a device
-    # beating with a token nothing accepts, which only another install fixes.
-    token = device.client.token
-    if not token or not device.is_agent_online:
-        token = registry.issue_client_token(mac_address)
-    package_path = UTILS_CONFIG_DIR / runtime.settings.get(
-        "agent_package_path",
-        "devices/packages/neutrino_agent-latest.tar.gz",
+    packages = _agent_packages()
+    if not packages:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "agent_package_missing"},
+        )
+    # A ticket, not a heartbeat token: the install walks the same enrollment
+    # path a pasted link does, and a failed install leaves any live agent
+    # beating exactly as it was.
+    link, _ = _mint_enrollment_link(
+        runtime, name=device.name or "", mac_address=mac_address
     )
-    if not package_path.is_file():
-        # The hub package carries the agent tarball it was built with, so an
-        # installed box needs nothing placed by hand; the config path stays
-        # first for a deliberately pinned build.
-        package_path = UTILS_DATA_DIR / "agent_package" / AGENT_PACKAGE_NAME
     stream = runtime.tasks.start(
         label=f"install_client {mac_address}",
-        source=operator.install_client(
-            package_path=package_path,
-            gateway_url=_gateway_url(runtime),
-            token=token,
-        ),
+        source=operator.install_client(packages=packages, enrollment_link=link),
     )
     return TaskStarted(task_id=stream.id)
 
@@ -724,11 +760,6 @@ def _remote_desktop_view(status_: RemoteDesktopStatus) -> RemoteDesktopStatusVie
 
 async def _queued_message(action: str):
     yield f"[{action} queued; the agent runs it on its next heartbeat]\n"
-
-
-def _gateway_url(runtime: PanelRuntime) -> str:
-    port = runtime.settings.get("listen_port", 8080)
-    return f"http://{runtime.network().primary_lan_address}:{port}"
 
 
 def _to_view(device: ManagedDevice, metrics: dict | None = None) -> DeviceView:

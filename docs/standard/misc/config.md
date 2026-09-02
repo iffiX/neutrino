@@ -122,5 +122,7 @@ Each `*.example.json` is annotated field-by-field. The load-bearing ones:
   Global switches: `uplink_policy` (`failover`/`balance`) and
   `is_inter_lan_allowed` (off fences the served networks from each other; every
   network still reaches the internet and the overlay).
-- **`settings.json`** — panel port, argon2id password hash, session secret and
-  TTL, and `client_package_path` for the neutrino_agent tarball.
+- **`settings.json`** — panel port, argon2id password hash, session secret
+  and TTL. The agent package the panel installs over SSH rides inside the hub
+  package; drop a ``.deb``/``.rpm`` into ``config/devices/packages/`` to pin
+  a different build.

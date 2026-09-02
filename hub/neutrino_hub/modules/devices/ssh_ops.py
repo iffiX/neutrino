@@ -36,6 +36,8 @@ from neutrino_hub.modules.devices.key_registry import KeyRegistry
 PASSWORD_KIND = "password"
 
 CONNECT_TIMEOUT_S = 15
+# Room for apt to fetch python3 on a minimal image before the tiny package.
+INSTALL_TIMEOUT_S = 300
 
 # Shown when a device answers with a key other than the recorded one. It says
 # what to do because the honest answer — reinstalled, or something else is on
@@ -46,7 +48,6 @@ HOST_KEY_CHANGED_MESSAGE = (
     "something else has taken its address. Remove the device and add it again "
     "to accept the new key."
 )
-AGENT_INSTALL_DIR = "/tmp/neutrino_agent_install"
 READ_CHUNK_BYTES = 4096
 SFTP_CHUNK_BYTES = 256 * 1024
 
@@ -355,35 +356,27 @@ class DeviceSshOperator:
     async def install_client(
         self,
         *,
-        package_path: Path,
-        gateway_url: str,
-        token: str,
+        packages: "dict[str, Path]",
+        enrollment_link: str,
     ) -> AsyncIterator[str]:
-        """Upload and install the neutrino_agent agent.
+        """Deliver the agent as a native package and join it to this hub.
 
-        The token travels to the installer over stdin, behind the sudo
-        password line when one is needed, so neither appears in the device's
-        process table.
+        The same two acts a person performs by hand — install the package,
+        run ``nagent connect`` — so there is one install story and one
+        enrollment path. The link rides the connect's stdin: single-use,
+        bound to this device's record, and never in the remote process table.
 
         Args:
-            package_path: Local path to the client tarball.
-            gateway_url: Base URL the agent reports back to.
-            token: Per-device token the agent authenticates with.
+            packages: The agent package per family, ``deb`` and ``rpm``,
+                whichever the hub carries.
+            enrollment_link: The ticket the panel minted for this device.
 
         Yields:
-            Progress lines and the remote installer's output. A device whose
-            ``uname -s`` is not Linux ends the task with exit
-            :data:`SSH_UNSUPPORTED_OS_STATUS` before anything is uploaded.
+            Progress lines and the remote tools' output. A device that is not
+            Linux, or whose package manager the hub carries no package for,
+            ends the task before anything lands on it.
         """
-        if not package_path.is_file():
-            yield (
-                f"[no agent package at {package_path}; an installed hub "
-                f"carries one — for a checkout, build it: python3 -m "
-                f"neutrino_agent.build_package --latest --output-dir "
-                f"<config>/devices/packages]\n"
-            )
-            return
-        remote_archive = f"{AGENT_INSTALL_DIR}/client.tar.gz"
+        family = None
         try:
             async with self._connect() as connection:
                 result = await connection.run("uname -s", check=False)
@@ -395,31 +388,57 @@ class DeviceSshOperator:
                     )
                     yield f"\n[exit {SSH_UNSUPPORTED_OS_STATUS}]\n"
                     return
-                yield f"[creating {AGENT_INSTALL_DIR}]\n"
-                await connection.run(f"mkdir -p {AGENT_INSTALL_DIR}", check=False)
+                for candidate, tool in (("deb", "dpkg"), ("rpm", "rpm")):
+                    if candidate not in packages:
+                        continue
+                    probe = await connection.run(f"command -v {tool}", check=False)
+                    if (probe.exit_status or 0) == 0:
+                        family = candidate
+                        break
+                if family is None:
+                    yield (
+                        "[no package manager the hub carries a package for "
+                        "(dpkg or rpm); join this machine with an enrollment "
+                        "link instead]\n"
+                    )
+                    yield f"\n[exit {SSH_UNSUPPORTED_OS_STATUS}]\n"
+                    return
+                package_path = packages[family]
+                remote_package = f"/tmp/{package_path.name}"
                 yield f"[uploading {package_path.name}]\n"
                 async with connection.start_sftp_client() as sftp:
-                    await sftp.put(str(package_path), remote_archive)
-                yield "[unpacking]\n"
-                await connection.run(
-                    f"tar -xzf {shlex.quote(remote_archive)} "
-                    f"-C {shlex.quote(AGENT_INSTALL_DIR)}",
-                    check=False,
-                )
+                    await sftp.put(str(package_path), remote_package)
         except (OSError, asyncssh.Error) as error:
             yield f"\n[upload failed: {error}]\n"
             return
 
-        # NO_COLOR keeps the installer's ANSI codes out of the panel's plain
-        # log, where they would show as literal escape sequences.
-        install_command = (
-            f"cd {shlex.quote(AGENT_INSTALL_DIR)} && NO_COLOR=1 bash install.sh "
-            f"--gateway-url {shlex.quote(gateway_url)} --token-stdin"
+        if family == "deb":
+            install_command = (
+                "DEBIAN_FRONTEND=noninteractive apt-get install -y "
+                f"--allow-downgrades {shlex.quote(remote_package)}"
+            )
+        else:
+            install_command = (
+                f"dnf install -y {shlex.quote(remote_package)} || "
+                f"rpm -Uvh --oldpackage {shlex.quote(remote_package)}"
+            )
+        yield f"[installing the {family} package]\n"
+        code, output = await self.run_privileged_once(
+            install_command, timeout_s=INSTALL_TIMEOUT_S
         )
-        async for chunk in self.run_privileged_stream(
-            install_command, input_text=f"{token}\n"
-        ):
-            yield chunk
+        if output:
+            yield output + "\n"
+        if code != 0:
+            yield f"\n[exit {code}]\n"
+            return
+
+        yield "[joining this hub]\n"
+        code, output = await self.run_privileged_once(
+            "nagent connect --yes", input_text=f"{enrollment_link}\n"
+        )
+        if output:
+            yield output + "\n"
+        yield f"\n[exit {code}]\n"
 
     async def open_shell(
         self,

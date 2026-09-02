@@ -49,11 +49,11 @@ set -e
 # /etc/systemd/system, which takes precedence over this package's. Left in
 # place it would keep starting the copy under /opt, and the hub would go on
 # seeing the version that copy reports.
-if [ -f /etc/systemd/system/neutrino_agent.service ]; then
-    echo "  Removing the agent installed by install.sh, which this replaces."
+if [ -f /etc/systemd/system/neutrino_agent.service ] || [ -d /opt/neutrino_agent ]; then
+    echo "  Removing the tarball-era agent, which this package replaces."
     systemctl stop neutrino_agent.service >/dev/null 2>&1 || true
     rm -f /etc/systemd/system/neutrino_agent.service
-    rm -rf /opt/neutrino_agent
+    rm -rf /opt/neutrino_agent /etc/neutrino_agent
 fi
 
 systemctl daemon-reload || true
@@ -147,7 +147,7 @@ def _lay_out(tree: Path, version: str, maintainer: str) -> None:
     shutil.copytree(
         AGENT_ROOT / "neutrino_agent",
         package_dir,
-        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "build_package.py"),
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
     )
     # dpkg installs no .dist-info, so importlib.metadata cannot answer for a
     # packaged agent. The version is stamped into the tree instead, and the

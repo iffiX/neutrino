@@ -247,28 +247,28 @@ def build_environment(tree: Path, version: str, machine: str) -> None:
 
 
 def stage_agent_package(staged_python: Path) -> None:
-    """Bake the agent tarball the panel installs over SSH into the hub's data.
+    """Bake the agent's native packages into the hub's own data.
 
     Built from the same checkout, so the hub and the agent it hands out
-    cannot drift; the panel falls back to ``data/agent_package/`` when
-    ``config/`` holds no deliberately pinned build.
+    cannot drift. The panel installs these over SSH, falling back here when
+    ``config/devices/packages`` holds no deliberately pinned build. The
+    build container carries ``dpkg-dev`` and ``rpm`` for these.
 
     Args:
         staged_python: The interpreter tree the hub was installed into.
     """
     site_packages = next((staged_python / "lib").glob("python*/site-packages"))
     output = site_packages / "neutrino_hub" / "data" / "agent_package"
-    run(
-        [
-            str(staged_python / "bin" / "python3"),
-            "-m",
-            "neutrino_agent.build_package",
-            "--output-dir",
-            str(output),
-            "--latest",
-        ],
-        cwd=AGENT_ROOT,
-    )
+    for script in ("build_deb.py", "build_rpm.py"):
+        run(
+            [
+                str(staged_python / "bin" / "python3"),
+                str(AGENT_ROOT / "packaging" / script),
+                "--output-dir",
+                str(output),
+            ],
+            cwd=AGENT_ROOT,
+        )
 
 
 def stage_vendored(tree: Path, machine: str) -> None:

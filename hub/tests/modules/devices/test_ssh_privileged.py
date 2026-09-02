@@ -1,10 +1,11 @@
 """What a privileged SSH command sends, and over which channel.
 
-The sudo password and the agent's heartbeat token land in the device's process
-table if they travel in the command string, so what these pin is that both
-travel over stdin: the command asyncssh is handed never contains either, and
-the stdin payload carries the password line first, then whatever the command
-itself reads.
+The sudo password and the enrollment link land in the device's process table
+if they travel in the command string, so what these pin is that both travel
+over stdin: the command asyncssh is handed never contains either, and the
+stdin payload carries the password line first, then whatever the command
+itself reads. The install half pins the package flow: the family the device's
+own tools pick, and a failure stopping before the join.
 """
 
 import asyncio
@@ -17,8 +18,9 @@ from neutrino_hub.modules.devices.constants import SSH_UNSUPPORTED_OS_STATUS
 from neutrino_hub.modules.devices.ssh_ops import DeviceSshOperator, SshCredentials
 
 SUDO_PASSWORD = "a-sudo-password"  # scan: allow
-TOKEN = "a-heartbeat-token"
-GATEWAY_URL = "http://192.168.100.1"
+LINK = "neutrino://enroll/eyJmYWtlIjogdHJ1ZX0"
+# Any secret-shaped line a wrapped command reads from its own stdin.
+TOKEN = "a-secret-line"  # scan: allow
 
 
 class FakeSftp:
@@ -38,17 +40,24 @@ class FakeSftp:
 
 
 class FakeConnection:
-    """Answers ``uname -s`` with one kernel name and records everything."""
+    """Answers ``uname -s`` and ``command -v`` and records everything."""
 
-    def __init__(self, kernel: str = "Linux"):
+    def __init__(self, kernel: str = "Linux", tools: tuple = ("dpkg",)):
         self.kernel = kernel
+        self.tools = tools
         self.commands: list[str] = []
         self.uploads: list = []
 
     async def run(self, command, check=False, timeout=None, input=None):
         self.commands.append(command)
-        stdout = f"{self.kernel}\n" if "uname -s" in command else ""
-        return SimpleNamespace(stdout=stdout, stderr="", exit_status=0)
+        stdout = ""
+        exit_status = 0
+        if "uname -s" in command:
+            stdout = f"{self.kernel}\n"
+        elif command.startswith("command -v "):
+            tool = command.split()[-1]
+            exit_status = 0 if tool in self.tools else 1
+        return SimpleNamespace(stdout=stdout, stderr="", exit_status=exit_status)
 
     def start_sftp_client(self):
         return FakeSftp(self.uploads)
@@ -156,67 +165,94 @@ def test_run_privileged_stream_feeds_the_composed_stdin():
 
 
 @pytest.fixture
-def package(tmp_path):
-    path = tmp_path / "neutrino_agent-latest.tar.gz"
-    path.write_bytes(b"tarball")
-    return path
+def packages(tmp_path) -> dict:
+    deb = tmp_path / "neutrino-agent_0.1.0_all.deb"
+    deb.write_bytes(b"deb")
+    rpm = tmp_path / "neutrino-agent-0.1.0.noarch.rpm"
+    rpm.write_bytes(b"rpm")
+    return {"deb": deb, "rpm": rpm}
 
 
-async def install_lines(op: DeviceSshOperator, package) -> list[str]:
+async def install_lines(op: DeviceSshOperator, packages: dict) -> list[str]:
     lines = []
-    async for chunk in op.install_client(
-        package_path=package, gateway_url=GATEWAY_URL, token=TOKEN
-    ):
+    async for chunk in op.install_client(packages=packages, enrollment_link=LINK):
         lines.append(chunk)
     return lines
 
 
-def test_install_refuses_a_device_that_is_not_linux(package):
+def capture_privileged_once(op: DeviceSshOperator, codes=(0, 0)) -> list:
+    calls: list = []
+    remaining = list(codes)
+
+    async def run_privileged_once(command, *, timeout_s=30, input_text=None):
+        calls.append({"command": command, "input_text": input_text})
+        return remaining.pop(0), "[remote output]"
+
+    op.run_privileged_once = run_privileged_once
+    return calls
+
+
+def test_install_refuses_a_device_that_is_not_linux(packages):
     op = operator(sudo_password=SUDO_PASSWORD)
     connection = FakeConnection(kernel="Darwin")
     op._connect = fake_connect(connection)
-    captured = capture_run_stream(op)
+    calls = capture_privileged_once(op)
 
-    lines = asyncio.run(install_lines(op, package))
+    lines = asyncio.run(install_lines(op, packages))
 
     assert any("unsupported OS Darwin" in line for line in lines)
     assert lines[-1] == f"\n[exit {SSH_UNSUPPORTED_OS_STATUS}]\n"
     assert connection.uploads == []
-    assert captured == {}
+    assert calls == []
 
 
-def test_install_sends_the_token_and_password_over_stdin(package):
+def test_install_picks_deb_and_joins_over_stdin(packages):
     op = operator(sudo_password=SUDO_PASSWORD)
-    op._connect = fake_connect(FakeConnection())
-    captured = capture_run_stream(op)
+    connection = FakeConnection(tools=("dpkg",))
+    op._connect = fake_connect(connection)
+    calls = capture_privileged_once(op)
 
-    asyncio.run(install_lines(op, package))
+    lines = asyncio.run(install_lines(op, packages))
 
-    assert "--token-stdin" in captured["command"]
-    assert GATEWAY_URL in captured["command"]
-    assert TOKEN not in captured["command"]
-    assert SUDO_PASSWORD not in captured["command"]
-    assert captured["input_text"] == f"{SUDO_PASSWORD}\n{TOKEN}\n"
+    assert connection.uploads[0][1].endswith(".deb")
+    assert "apt-get install" in calls[0]["command"]
+    assert calls[1]["command"] == "nagent connect --yes"
+    assert calls[1]["input_text"] == f"{LINK}\n"
+    assert all(LINK not in call["command"] for call in calls)
+    assert lines[-1] == "\n[exit 0]\n"
 
 
-def test_install_without_a_sudo_password_sends_only_the_token(package):
+def test_install_picks_rpm_where_dpkg_is_absent(packages):
     op = operator()
-    op._connect = fake_connect(FakeConnection())
-    captured = capture_run_stream(op)
+    connection = FakeConnection(tools=("rpm",))
+    op._connect = fake_connect(connection)
+    calls = capture_privileged_once(op)
 
-    asyncio.run(install_lines(op, package))
+    asyncio.run(install_lines(op, packages))
 
-    assert TOKEN not in captured["command"]
-    assert captured["input_text"] == f"{TOKEN}\n"
+    assert connection.uploads[0][1].endswith(".rpm")
+    assert "dnf install" in calls[0]["command"]
 
 
-def test_install_as_root_sends_only_the_token(package):
-    op = operator(username="root")
-    op._connect = fake_connect(FakeConnection())
-    captured = capture_run_stream(op)
+def test_install_stops_where_no_package_manager_answers(packages):
+    op = operator()
+    connection = FakeConnection(tools=())
+    op._connect = fake_connect(connection)
+    calls = capture_privileged_once(op)
 
-    asyncio.run(install_lines(op, package))
+    lines = asyncio.run(install_lines(op, packages))
 
-    assert "sudo" not in captured["command"]
-    assert TOKEN not in captured["command"]
-    assert captured["input_text"] == f"{TOKEN}\n"
+    assert any("enrollment link instead" in line for line in lines)
+    assert connection.uploads == []
+    assert calls == []
+
+
+def test_a_failed_install_never_reaches_the_join(packages):
+    op = operator()
+    op._connect = fake_connect(FakeConnection(tools=("dpkg",)))
+    calls = capture_privileged_once(op, codes=(1,))
+
+    lines = asyncio.run(install_lines(op, packages))
+
+    assert len(calls) == 1
+    assert lines[-1] == "\n[exit 1]\n"
