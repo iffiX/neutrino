@@ -32,8 +32,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 HUB_BUILD_PLATFORMS = {"amd64": "linux/amd64", "arm64": "linux/arm64"}
 
 # Only what the hub's package build reads is copied in — the package, the
-# packaging, and the licences of everything it carries. Taking the whole tree
-# would carry `config/`, whose real files are root-owned and unreadable, and
+# packaging, the agent tree it bakes native packages from, and the licences
+# of everything it carries. Taking the whole tree would carry `config/`,
+# whose real files are root-owned and unreadable, and
 # `hub/frontend/node_modules`, which the package does not contain.
 # What builds the hub for each distribution family, and what that family needs
 # installed first. Each is run inside a container of that family, because the
@@ -43,21 +44,22 @@ HUB_BUILDS = {
     "debian": {
         "image": "debian:12",
         "install": "apt-get -qq update >/dev/null 2>&1 && "
-        "apt-get -qq install -y python3 python3-venv python3-pip dpkg-dev "
+        "apt-get -qq install -y python3 python3-venv python3-pip dpkg-dev rpm "
         ">/dev/null 2>&1",
         "script": "build_deb.py",
         "architecture": "{arch}",
     },
     "rhel": {
         "image": "fedora:41",
-        "install": "dnf -q -y install python3 python3-pip rpm-build >/dev/null 2>&1",
+        "install": "dnf -q -y install python3 python3-pip rpm-build dpkg "
+        ">/dev/null 2>&1",
         "script": "build_rpm.py",
         "architecture": "{rpm_arch}",
     },
     "arch": {
         "image": "archlinux:latest",
         "install": "pacman -Sy --noconfirm --needed python python-pip base-devel "
-        ">/dev/null 2>&1 && useradd -m builder 2>/dev/null || true",
+        "dpkg rpm-tools >/dev/null 2>&1 && useradd -m builder 2>/dev/null || true",
         "script": "build_pkg.py",
         "architecture": "{pkg_arch}",
         "extra": "--build-user builder",
@@ -65,9 +67,13 @@ HUB_BUILDS = {
 }
 
 CONTAINER_BUILD = (
-    "{install} && mkdir -p /build/hub && "
+    "{install} && mkdir -p /build/hub /build/agent && "
     "cp -r /src/hub/neutrino_hub /src/hub/packaging /src/hub/pyproject.toml "
-    "/build/hub/ && cp -r /src/licenses /build/licenses && cd /build && "
+    "/build/hub/ && "
+    "cp -r /src/agent/neutrino_agent /src/agent/packaging "
+    "/src/agent/pyproject.toml /src/agent/desktop /src/agent/systemd "
+    "/build/agent/ && "
+    "cp -r /src/licenses /build/licenses && cd /build && "
     "python3 hub/packaging/{script} --output-dir /out "
     "--architecture {architecture} {extra}"
 )
