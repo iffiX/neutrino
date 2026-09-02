@@ -26,7 +26,10 @@ from pathlib import Path
 import asyncssh
 
 from neutrino_hub.modules.credentials.vault import SecretVault, VaultError
-from neutrino_hub.modules.devices.constants import SSH_UNREACHABLE_STATUS
+from neutrino_hub.modules.devices.constants import (
+    SSH_UNREACHABLE_STATUS,
+    SSH_UNSUPPORTED_OS_STATUS,
+)
 from neutrino_hub.modules.devices.host_keys import DeviceHostKeyStore
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
 
@@ -105,9 +108,10 @@ class SshCredentials:
         private_key_passphrase: Passphrase, when the key is encrypted.
         password: Login password, opened from the vault for the device's
             ``password_id``.
-        sudo_password: Password piped to ``sudo -S`` for privileged steps,
-            opened from the vault for the device's ``sudo_password_id``. None
-            means the account has passwordless sudo.
+        sudo_password: Password fed to ``sudo -S`` over stdin for privileged
+            steps, opened from the vault for the device's
+            ``sudo_password_id``. None means the account has passwordless
+            sudo.
     """
 
     host: str
@@ -214,7 +218,9 @@ class DeviceSshOperator:
         except (OSError, asyncssh.Error) as error:
             return False, str(error)
 
-    async def run_once(self, command: str, *, timeout_s: int = 20) -> tuple[int, str]:
+    async def run_once(
+        self, command: str, *, timeout_s: int = 20, input_text: str | None = None
+    ) -> tuple[int, str]:
         """Run one command and collect its output.
 
         For quick status probes, where streaming would be overkill. A locale is
@@ -224,6 +230,7 @@ class DeviceSshOperator:
         Args:
             command: Shell command to run on the device.
             timeout_s: How long to wait before giving up.
+            input_text: Written to the command's stdin, which is then closed.
 
         Returns:
             The exit code and the combined output. A connection failure is
@@ -236,6 +243,7 @@ class DeviceSshOperator:
                     f"LANG=C.UTF-8 LC_ALL=C.UTF-8 {command}",
                     check=False,
                     timeout=timeout_s,
+                    input=input_text,
                 )
                 output = (result.stdout or "") + (result.stderr or "")
                 return result.exit_status or 0, output.strip()
@@ -243,23 +251,27 @@ class DeviceSshOperator:
             return SSH_UNREACHABLE_STATUS, str(error)
 
     async def run_privileged_once(
-        self, command: str, *, timeout_s: int = 30
+        self, command: str, *, timeout_s: int = 30, input_text: str | None = None
     ) -> tuple[int, str]:
         """Run one command through sudo and collect its output.
 
         The streaming :meth:`run_privileged_stream` is for output the panel
         shows live; this is for a quick privileged step, like starting a
         service, whose result the caller only needs to check. The stored sudo
-        password is supplied, so it works without passwordless sudo.
+        password travels over stdin, so it works without passwordless sudo and
+        never appears in the device's process table.
 
         Args:
             command: Shell command to run as root on the device.
             timeout_s: How long to wait before giving up.
+            input_text: What the command itself reads from stdin, after the
+                sudo password line when one is needed.
 
         Returns:
             The exit code and combined output.
         """
-        return await self.run_once(self._sudo_wrap(command), timeout_s=timeout_s)
+        wrapped, payload = self._sudo_wrap(command, input_text)
+        return await self.run_once(wrapped, timeout_s=timeout_s, input_text=payload)
 
     async def detect_system(self) -> tuple[str, str]:
         """Read the device's OS family and architecture.
@@ -299,11 +311,14 @@ class DeviceSshOperator:
             async with connection.start_sftp_client() as sftp:
                 await sftp.put(str(local_path), remote_path)
 
-    async def run_stream(self, command: str) -> AsyncIterator[str]:
+    async def run_stream(
+        self, command: str, *, input_text: str | None = None
+    ) -> AsyncIterator[str]:
         """Run a command and yield its output as it arrives.
 
         Args:
             command: Shell command to run on the device.
+            input_text: Written to the command's stdin, which is then closed.
 
         Yields:
             Chunks of combined stdout and stderr, then a final status line.
@@ -311,7 +326,7 @@ class DeviceSshOperator:
         try:
             async with self._connect() as connection:
                 process = await connection.create_process(
-                    command, stderr=asyncssh.STDOUT
+                    command, stderr=asyncssh.STDOUT, input=input_text
                 )
                 async for chunk in process.stdout:
                     yield chunk
@@ -320,16 +335,21 @@ class DeviceSshOperator:
         except (OSError, asyncssh.Error) as error:
             yield f"\n[connection failed: {error}]\n"
 
-    async def run_privileged_stream(self, command: str) -> AsyncIterator[str]:
+    async def run_privileged_stream(
+        self, command: str, *, input_text: str | None = None
+    ) -> AsyncIterator[str]:
         """Run a command through sudo and yield its output.
 
         Args:
             command: Shell command to run as root on the device.
+            input_text: What the command itself reads from stdin, after the
+                sudo password line when one is needed.
 
         Yields:
             Chunks of combined output, then a final status line.
         """
-        async for chunk in self.run_stream(self._sudo_wrap(command)):
+        wrapped, payload = self._sudo_wrap(command, input_text)
+        async for chunk in self.run_stream(wrapped, input_text=payload):
             yield chunk
 
     async def install_client(
@@ -341,13 +361,19 @@ class DeviceSshOperator:
     ) -> AsyncIterator[str]:
         """Upload and install the neutrino_agent agent.
 
+        The token travels to the installer over stdin, behind the sudo
+        password line when one is needed, so neither appears in the device's
+        process table.
+
         Args:
             package_path: Local path to the client tarball.
             gateway_url: Base URL the agent reports back to.
             token: Per-device token the agent authenticates with.
 
         Yields:
-            Progress lines and the remote installer's output.
+            Progress lines and the remote installer's output. A device whose
+            ``uname -s`` is not Linux ends the task with exit
+            :data:`SSH_UNSUPPORTED_OS_STATUS` before anything is uploaded.
         """
         if not package_path.is_file():
             yield (
@@ -358,6 +384,15 @@ class DeviceSshOperator:
         remote_archive = f"{AGENT_INSTALL_DIR}/client.tar.gz"
         try:
             async with self._connect() as connection:
+                result = await connection.run("uname -s", check=False)
+                kernel = (result.stdout or "").strip()
+                if kernel != "Linux":
+                    yield (
+                        f"[unsupported OS {kernel or 'unknown'}; the agent "
+                        f"installs over SSH on Linux devices]\n"
+                    )
+                    yield f"\n[exit {SSH_UNSUPPORTED_OS_STATUS}]\n"
+                    return
                 yield f"[creating {AGENT_INSTALL_DIR}]\n"
                 await connection.run(f"mkdir -p {AGENT_INSTALL_DIR}", check=False)
                 yield f"[uploading {package_path.name}]\n"
@@ -377,9 +412,11 @@ class DeviceSshOperator:
         # log, where they would show as literal escape sequences.
         install_command = (
             f"cd {shlex.quote(AGENT_INSTALL_DIR)} && NO_COLOR=1 bash install.sh "
-            f"--gateway-url {shlex.quote(gateway_url)} --token {shlex.quote(token)}"
+            f"--gateway-url {shlex.quote(gateway_url)} --token-stdin"
         )
-        async for chunk in self.run_privileged_stream(install_command):
+        async for chunk in self.run_privileged_stream(
+            install_command, input_text=f"{token}\n"
+        ):
             yield chunk
 
     async def open_shell(
@@ -567,13 +604,31 @@ class DeviceSshOperator:
                 else:
                     await sftp.remove(path)
 
-    def _sudo_wrap(self, command: str) -> str:
+    def _sudo_wrap(
+        self, command: str, input_text: str | None = None
+    ) -> tuple[str, str | None]:
+        """Wrap a command for root and compose what its stdin carries.
+
+        Args:
+            command: The command to run as root.
+            input_text: What the command itself reads from stdin, when
+                anything.
+
+        Returns:
+            The command to send and the stdin payload to feed it. With a
+            stored sudo password the payload's first line is the password,
+            which ``sudo -S`` consumes before the command reads anything of
+            its own; the password is never part of the command string.
+        """
         if self._credentials.username == "root":
-            return command
+            return command, input_text
         if self._credentials.has_sudo_password:
-            password = shlex.quote(self._credentials.sudo_password or "")
-            return f"echo {password} | sudo -S -p '' bash -lc {shlex.quote(command)}"
-        return f"sudo -n bash -lc {shlex.quote(command)}"
+            password = self._credentials.sudo_password or ""
+            return (
+                f"sudo -S -p '' bash -lc {shlex.quote(command)}",
+                f"{password}\n{input_text or ''}",
+            )
+        return f"sudo -n bash -lc {shlex.quote(command)}", input_text
 
     @asynccontextmanager
     async def _connect(self):

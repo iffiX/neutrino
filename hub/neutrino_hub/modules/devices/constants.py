@@ -18,3 +18,8 @@ DEVICE_SUPPORTED_ARCHITECTURES = ("*",)
 # own, so one is chosen here — and it is not a failure of the command, which
 # is what makes it worth telling apart.
 SSH_UNREACHABLE_STATUS = 255
+
+# What an install task ends with when the device answered `uname -s` with
+# something other than Linux. Distinct from the installer's own failures (1)
+# and from SSH_UNREACHABLE_STATUS.
+SSH_UNSUPPORTED_OS_STATUS = 95

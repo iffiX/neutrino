@@ -5,6 +5,7 @@
 #   sudo ./install.sh                        # then join from the agent's page
 #   sudo ./install.sh --enroll '<link>'      # join right away
 #   sudo ./install.sh --gateway-url <url> --token <token>
+#   sudo ./install.sh --gateway-url <url> --token-stdin   # token on stdin, first line
 #
 # The gateway runs this for you from its Devices tab when it can reach the
 # machine over SSH. When it cannot — a laptop, anything behind someone else's
@@ -34,6 +35,7 @@ SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GATEWAY_URL=""
 TOKEN=""
 ENROLL_LINK=""
+IS_TOKEN_ON_STDIN=0
 
 step() {
     STEP=$((STEP + 1))
@@ -50,11 +52,18 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --gateway-url) GATEWAY_URL="$2"; shift 2 ;;
         --token)       TOKEN="$2";       shift 2 ;;
+        --token-stdin) IS_TOKEN_ON_STDIN=1; shift ;;
         --enroll)      ENROLL_LINK="$2"; shift 2 ;;
-        -h|--help)     sed -n '2,10p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        -h|--help)     sed -n '2,11p' "${BASH_SOURCE[0]}"; exit 0 ;;
         *)             fail "unknown option: $1" ;;
     esac
 done
+
+# The token stays off the command line; --token-stdin wins over --token.
+if [[ ${IS_TOKEN_ON_STDIN} -eq 1 ]]; then
+    IFS= read -r TOKEN || true
+    [[ -n ${TOKEN} ]] || fail "--token-stdin was given but stdin carried no token"
+fi
 
 [[ ${EUID} -eq 0 ]]     || fail "run this with sudo: sudo ./install.sh ..."
 [[ -n ${GATEWAY_URL} ]] || fail "--gateway-url is required"
