@@ -74,6 +74,40 @@ having — it would have contained that path traversal — and it needs package
 installation moved out of this process first. That is the next step whenever
 privilege comes up again, not another sudo scheme.
 
+## Installing software happens outside the sandbox
+
+The narrowing above has a cost that only shows up on an install, and it is not
+the one it looks like. Under `NoNewPrivileges` systemd installs the seccomp
+filters the other directives need, and the effective capability set loses
+`CAP_SETUID`. Measured on Debian 12: `NoNewPrivileges` **plus any one** of the
+others is enough, and without `NoNewPrivileges` systemd applies no filter at
+all — which is why taking it out appears to fix this and is the one thing that
+must not be done.
+
+apt is what finds it. It drops to the `_apt` account to fetch, cannot, and
+every download dies:
+
+```text
+E: seteuid 42 failed - seteuid (1: Operation not permitted)
+E: Method http has died unexpectedly!
+```
+
+Measured as netbird, podman and zfs all failing to install from the panel
+while the same installs from a shell succeeded. A vendor's installer piped to
+`sh` hits the same wall one level further down, where no flag of ours reaches
+its package manager at all.
+
+So an install is handed to systemd rather than run here: `system/sandbox.py`
+wraps the command in a transient unit, which has its own properties and none
+of this one's. The panel keeps every directive, apt keeps its own sandbox, and
+what changed is where the install runs.
+
+**Anything that installs software goes through it.** The package controller
+does for every family — dnf and pacman do not drop privileges the way apt
+does, but one rule beats three — and so does any vendor script that runs a
+package manager of its own. A working copy started from a shell is not inside
+a unit and gets the command unchanged.
+
 ## Stepping down uses runuser, never sudo
 
 The panel is already root, so reaching a service account is a step down.

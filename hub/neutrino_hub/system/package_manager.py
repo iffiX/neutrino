@@ -12,6 +12,7 @@ Not pure: runs the machine's package manager.
 
 from neutrino_hub.system.constants import SYSTEM_PACKAGE_NAMES
 from neutrino_hub.system.machine import distribution_family, distribution_name
+from neutrino_hub.system.sandbox import outside_sandbox
 from neutrino_hub.utils.subprocess_run import CommandError, run
 
 # Package managers are slow on a cold cache and this is not the place to find
@@ -119,28 +120,30 @@ class AptPackageController(SystemPackageController):
 
     def refresh(self) -> None:
         run(
-            [*self._ENVIRONMENT, "apt-get", "update"],
+            outside_sandbox([*self._ENVIRONMENT, "apt-get", "update"]),
             timeout_s=PACKAGE_REFRESH_TIMEOUT_S,
             is_checked=False,
         )
 
     def install(self, packages: tuple) -> None:
         run(
-            [
-                *self._ENVIRONMENT,
-                "apt-get",
-                "install",
-                "-y",
-                "--no-install-recommends",
-                *packages,
-            ],
+            outside_sandbox(
+                [
+                    *self._ENVIRONMENT,
+                    "apt-get",
+                    "install",
+                    "-y",
+                    "--no-install-recommends",
+                    *packages,
+                ]
+            ),
             timeout_s=PACKAGE_INSTALL_TIMEOUT_S,
         )
 
     def remove(self, packages: tuple, *, is_purged: bool = False) -> None:
         action = ["remove", "--purge"] if is_purged else ["remove"]
         run(
-            [*self._ENVIRONMENT, "apt-get", *action, "-y", *packages],
+            outside_sandbox([*self._ENVIRONMENT, "apt-get", *action, "-y", *packages]),
             timeout_s=PACKAGE_REMOVE_TIMEOUT_S,
             is_checked=False,
         )
@@ -165,14 +168,16 @@ class DnfPackageController(SystemPackageController):
 
     def refresh(self) -> None:
         run(
-            ["dnf", "-y", "makecache"],
+            outside_sandbox(["dnf", "-y", "makecache"]),
             timeout_s=PACKAGE_REFRESH_TIMEOUT_S,
             is_checked=False,
         )
 
     def install(self, packages: tuple) -> None:
         run(
-            ["dnf", "-y", "--setopt=install_weak_deps=False", "install", *packages],
+            outside_sandbox(
+                ["dnf", "-y", "--setopt=install_weak_deps=False", "install", *packages]
+            ),
             timeout_s=PACKAGE_INSTALL_TIMEOUT_S,
         )
 
@@ -181,7 +186,7 @@ class DnfPackageController(SystemPackageController):
         # .rpmsave either way.
         del is_purged
         run(
-            ["dnf", "-y", "remove", *packages],
+            outside_sandbox(["dnf", "-y", "remove", *packages]),
             timeout_s=PACKAGE_REMOVE_TIMEOUT_S,
             is_checked=False,
         )
@@ -222,14 +227,14 @@ class PacmanPackageController(SystemPackageController):
 
     def refresh(self) -> None:
         run(
-            ["pacman", "-Sy", "--noconfirm"],
+            outside_sandbox(["pacman", "-Sy", "--noconfirm"]),
             timeout_s=PACKAGE_REFRESH_TIMEOUT_S,
             is_checked=False,
         )
 
     def install(self, packages: tuple) -> None:
         run(
-            ["pacman", "-S", "--needed", "--noconfirm", *packages],
+            outside_sandbox(["pacman", "-S", "--needed", "--noconfirm", *packages]),
             timeout_s=PACKAGE_INSTALL_TIMEOUT_S,
         )
 
@@ -238,7 +243,7 @@ class PacmanPackageController(SystemPackageController):
         # configuration they own; pacman does not separate the two.
         del is_purged
         run(
-            ["pacman", "-Rns", "--noconfirm", *packages],
+            outside_sandbox(["pacman", "-Rns", "--noconfirm", *packages]),
             timeout_s=PACKAGE_REMOVE_TIMEOUT_S,
             is_checked=False,
         )

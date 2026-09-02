@@ -15,6 +15,7 @@ from typing import Callable
 
 from neutrino_hub.system import package_manager
 from neutrino_hub.system.provisioning import ProvisionResult, say
+from neutrino_hub.system.sandbox import outside_sandbox
 from neutrino_hub.utils.subprocess_run import CommandError, run
 
 NETBIRD_INSTALL_URL = "https://pkgs.netbird.io/install.sh"
@@ -52,7 +53,10 @@ class NetbirdProvisioner:
             return ProvisionResult(is_changed=False, message=version or "present")
         say(report, "adding the vendor repository and installing netbird")
         script = run(["curl", "-fsSL", NETBIRD_INSTALL_URL], timeout_s=120).stdout
-        run(["sh", "-"], input_text=script, timeout_s=600)
+        # The script runs the machine's own package manager, which is a level
+        # below anything this process can pass a flag to — so the whole script
+        # goes outside the panel's sandbox rather than the apt call inside it.
+        run(outside_sandbox(["sh", "-"]), input_text=script, timeout_s=600)
         if not shutil.which("netbird"):
             raise CommandError("the NetBird installer finished but left no binary")
         return ProvisionResult(is_changed=True, message="installed")
