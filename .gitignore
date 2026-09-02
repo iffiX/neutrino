@@ -16,8 +16,6 @@ config/credentials/vault.key.new
 config/cliproxyapi/cliproxyapi.json
 config/devices/packages/
 config/devices/known_hosts
-config/credentials/ssh_keys/*
-!config/credentials/ssh_keys/*.example.json
 
 # --- Notes about this machine, not about the project ---
 # The working copy's own memory: what has been decided and what is deliberately

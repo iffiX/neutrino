@@ -29,7 +29,7 @@ def member(name: str, kind: bytes = tarfile.REGTYPE) -> tarfile.TarInfo:
         "config",
         "config/",
         "config/xray/nodes.json",
-        "config/credentials/ssh_keys/somekey",
+        "config/credentials/vault.json",
         "config/sub/../still_inside.json",
     ],
 )

@@ -5,7 +5,7 @@
       "name": "work-laptop",
       "icon": "laptop",
       "is_wol_enabled": true,
-      "_comment_ssh": "Written by the panel, not by hand. auth is 'key' or 'password'. For key auth, key_id references a key in the Credentials tab (config/credentials/ssh_keys/); the material is never stored here.",
+      "_comment_ssh": "Written by the panel, not by hand. auth is 'key' or 'password'. For key auth, key_id references a key sealed in the credential vault (config/credentials/vault.json); the material is never stored here.",
       "ssh": {
         "host": "192.168.100.150",
         "port": 22,

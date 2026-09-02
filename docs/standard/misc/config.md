@@ -26,24 +26,20 @@ key ever reaches git history.
 | `config/router/connections.json` | `connections.example.json` | yes — wireless passphrases |
 | `config/web/settings.json` | `settings.example.json` | yes — password hash, session secret |
 | `config/devices/devices.json` | `devices.example.json` | yes — device SSH creds |
-| `config/credentials/ssh_keys/registry.json` | `registry.example.json` | yes — key metadata + passphrases |
-| `config/credentials/ssh_keys/<id>` | — | yes — private SSH key material |
 | `config/credentials/vault.json` | `vault.example.json` | yes — every sealed secret |
 | `config/credentials/vault.key` | — | yes — the master key |
 | `config/devices/packages/*` | — | no (build artifacts, just large) |
 
-`.gitignore` ignores the real names, `config/credentials/ssh_keys/` (except its example), and
-`config/devices/packages/` wholesale, while keeping every `*.example.json`
-tracked.
+`.gitignore` ignores the real names and `config/devices/packages/` wholesale,
+while keeping every `*.example.json` tracked.
 
 ## Credentials
 
 The secrets the gateway uses on your behalf are managed in the panel's
 **Credentials** tab, not by editing files.
 
-**SSH keys** — pasted once, validated, and stored as
-`config/credentials/ssh_keys/<id>` (mode 0600) with metadata and passphrase in
-`config/credentials/ssh_keys/registry.json`.
+**SSH keys** — pasted once, validated, and sealed in the vault as `ssh_key`
+objects; the key type and fingerprint stay readable beside the ciphertext.
 Devices reference a key by its id, so one key can serve many devices and the
 material never sits in a device's config. Deleting a device leaves its key in
 place; the tab warns before deleting a key still in use.
@@ -86,7 +82,7 @@ and your edit will be lost.
 
 ## Backup and migrate
 
-- The Settings tab exports a `config/` tarball (including `credentials/ssh_keys/`).
+- The Settings tab exports a `config/` tarball.
 - A fresh machine: install the package, unpack the tarball into
   `/etc/neutrino/hub/`, run `sudo nhub setup`. The box converges to the same
   state.

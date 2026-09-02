@@ -25,6 +25,7 @@ from pathlib import Path
 
 import asyncssh
 
+from neutrino_hub.modules.devices.constants import SSH_UNREACHABLE_STATUS
 from neutrino_hub.modules.devices.host_keys import DeviceHostKeyStore
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
 
@@ -71,8 +72,10 @@ class SshCredentials:
         host: Address or hostname.
         port: SSH port.
         username: Login user.
-        private_key_path: Path to a private key, when key authentication is
-            used. Written by the panel from a pasted key, not chosen by hand.
+        private_key: Private key text, opened from the vault for the device's
+            ``key_id``.
+        private_key_path: Path to a private key file, for a device whose config
+            names one directly.
         private_key_passphrase: Passphrase, when the key is encrypted.
         password: Login password, when password authentication is used.
         sudo_password: Password piped to ``sudo -S`` for privileged steps. None
@@ -82,6 +85,7 @@ class SshCredentials:
     host: str
     port: int
     username: str
+    private_key: str | None = None
     private_key_path: str | None = None
     private_key_passphrase: str | None = None
     password: str | None = None
@@ -91,10 +95,9 @@ class SshCredentials:
     def from_dict(cls, data: dict) -> "SshCredentials":
         """Build from a device's ``ssh`` block in ``config/devices``.
 
-        A device references a key by ``key_id``; the path and passphrase are
-        resolved here from the key registry, so the device config never holds
-        key material. An older ``private_key_path`` is still honoured for a
-        device configured before the registry existed.
+        A device references a key by ``key_id``; the material and passphrase
+        are opened from the vault here, so the device config never holds key
+        material. A ``private_key_path`` naming a file is still honoured.
 
         Args:
             data: The stored SSH settings.
@@ -102,19 +105,19 @@ class SshCredentials:
         Returns:
             The parsed credentials.
         """
-        key_path = data.get("private_key_path")
+        private_key = None
         passphrase = data.get("private_key_passphrase")
         key_id = data.get("key_id")
         if key_id:
             registry = KeyRegistry()
             if registry.has_key(key_id):
-                key_path = str(registry.path_for(key_id))
-                passphrase = registry.passphrase_for(key_id)
+                private_key, passphrase = registry.material_for(key_id)
         return cls(
             host=data["host"],
             port=data.get("port", 22),
             username=data["username"],
-            private_key_path=key_path,
+            private_key=private_key,
+            private_key_path=data.get("private_key_path"),
             private_key_passphrase=passphrase,
             password=data.get("password"),
             sudo_password=data.get("sudo_password"),
@@ -592,7 +595,14 @@ class DeviceSshOperator:
             ),
             "connect_timeout": CONNECT_TIMEOUT_S,
         }
-        if self._credentials.private_key_path:
+        if self._credentials.private_key:
+            options["client_keys"] = [
+                asyncssh.import_private_key(
+                    self._credentials.private_key,
+                    passphrase=self._credentials.private_key_passphrase,
+                )
+            ]
+        elif self._credentials.private_key_path:
             options["client_keys"] = [self._credentials.private_key_path]
             if self._credentials.private_key_passphrase:
                 options["passphrase"] = self._credentials.private_key_passphrase

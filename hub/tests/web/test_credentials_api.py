@@ -6,12 +6,15 @@ test noticing — a second helper of the same name shadowed the first at import
 — so this file walks every provider endpoint end to end.
 """
 
+import asyncssh
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from neutrino_hub.web.dependencies import require_session
 from neutrino_hub.web.routers import credentials as credentials_router
+
+PUBLIC_KEY = "ssh-ed25519 AAAAC3Nz"  # scan: allow
 
 
 @pytest.fixture
@@ -77,3 +80,50 @@ def test_key_listing_is_untouched_by_provider_traffic(client):
         json={"name": "p", "kind": "openai", "base_url": "", "api_key": "k"},
     )
     assert client.get("/api/credentials/ssh_keys").json() == {"keys": []}
+
+
+def test_key_roundtrip(client):
+    key = asyncssh.generate_private_key("ssh-ed25519")
+    created = client.post(
+        "/api/credentials/ssh_keys",
+        json={
+            "name": "work laptop",
+            "private_key": key.export_private_key().decode(),
+            "passphrase": "",
+        },
+    )
+    assert created.status_code == 200
+    view = created.json()
+    assert view["fingerprint"] == key.get_fingerprint()
+    assert view["key_type"] == "ssh-ed25519"
+    assert view["has_passphrase"] is False
+    assert view["device_count"] == 0
+    assert "private_key" not in view
+
+    listed = client.get("/api/credentials/ssh_keys").json()["keys"]
+    assert [item["name"] for item in listed] == ["work laptop"]
+
+    renamed = client.put(
+        f"/api/credentials/ssh_keys/{view['id']}", json={"name": "home desktop"}
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["name"] == "home desktop"
+
+    assert client.delete(f"/api/credentials/ssh_keys/{view['id']}").status_code == 200
+    assert client.get("/api/credentials/ssh_keys").json() == {"keys": []}
+
+
+def test_key_refusals(client):
+    pasted_public_key = client.post(
+        "/api/credentials/ssh_keys",
+        json={"name": "wrong file", "private_key": PUBLIC_KEY},
+    )
+    assert pasted_public_key.status_code == 400
+    assert "public key" in pasted_public_key.json()["detail"]
+    assert (
+        client.put(
+            "/api/credentials/ssh_keys/absent", json={"name": "anything"}
+        ).status_code
+        == 404
+    )
+    assert client.delete("/api/credentials/ssh_keys/absent").status_code == 200
