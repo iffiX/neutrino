@@ -33,6 +33,7 @@ from neutrino_agent.http_channel import (
     GatewayHttpChannel,
     GatewayRefused,
     GatewayUnreachable,
+    GatewayUntrusted,
 )
 from neutrino_agent.metrics import HostMetricsReader, hostname
 from neutrino_agent.ops import DeviceOperator
@@ -64,7 +65,7 @@ class Agent:
         self._pending: dict = {}
         self._channel = None
         self._operator = None
-        self._binding: tuple = ("", "")
+        self._binding: tuple = ("", "", "")
         self._binding_stamp = 0
         self._refusals = 0
         self._load_connection()
@@ -127,7 +128,7 @@ class Agent:
         if channel is not None:
             try:
                 channel.post(AGENT_LEAVE_PATH, {})
-            except GatewayUnreachable as error:
+            except (GatewayUnreachable, GatewayUntrusted) as error:
                 self._log(f"could not tell the gateway we are leaving: {error}")
         enrollment.disconnect()
         with self._lock:
@@ -226,7 +227,9 @@ class Agent:
             reply = channel.post(AGENT_HEARTBEAT_PATH, payload)
         except GatewayRefused as error:
             return self._on_refused(str(error))
-        except GatewayUnreachable as error:
+        except (GatewayUnreachable, GatewayUntrusted) as error:
+            # An untrusted peer is not a refusal: nothing was sent, the token
+            # was not judged, and the refusal counter stays where it is.
             with self._lock:
                 self._last_error = str(error)
                 delay = self._backoff_s
@@ -292,11 +295,14 @@ class Agent:
         config = enrollment.load_config()
         gateway_url = config.get("gateway_url", "")
         token = config.get("token", "")
+        fingerprint = config.get("fingerprint", "")
         with self._lock:
-            self._binding = (gateway_url, token)
+            self._binding = (gateway_url, token, fingerprint)
             self._binding_stamp = enrollment.config_stamp()
             if gateway_url and token:
-                self._channel = GatewayHttpChannel(gateway_url=gateway_url, token=token)
+                self._channel = GatewayHttpChannel(
+                    gateway_url=gateway_url, token=token, fingerprint=fingerprint
+                )
                 self._operator = DeviceOperator(gateway_url=gateway_url)
             else:
                 self._channel = None
@@ -344,5 +350,5 @@ class Agent:
                     "output": outcome.output,
                 },
             )
-        except GatewayUnreachable as error:
+        except (GatewayUnreachable, GatewayUntrusted) as error:
             self._log(f"could not report {action} result: {error}")

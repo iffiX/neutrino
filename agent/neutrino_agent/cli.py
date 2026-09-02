@@ -191,6 +191,12 @@ def _status() -> int:
                 "service unbinds by itself, or run `sudo nagent disconnect` "
                 "and join with a fresh link"
             )
+        elif "fingerprint" in error:
+            print(
+                "           what answers there is not the hub this machine "
+                "pinned; if the hub was reinstalled, rejoin with a fresh "
+                "link from its Devices page"
+            )
         return 1
     print(f"heartbeat  ok, {elapsed_ms} ms — next report in {delay}s")
     return 0

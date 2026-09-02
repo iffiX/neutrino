@@ -6,10 +6,11 @@ into the agent's own page, and the agent posts to the gateway, which hands
 back the token its heartbeats will carry. Nothing else has to be configured.
 
 The link is ``neutrino://enroll/<payload>`` where the payload is base64url
-over ``{"urls": [...], "token": ...}``. That alphabet holds no character a
-shell splits or a URL escapes, so the link pastes into a terminal, a page or
-a chat unquoted; and being one JSON object, later fields — a certificate
-fingerprint — cost nothing.
+over ``{"urls": [...], "token": ..., "fp": ...}``. That alphabet holds no
+character a shell splits or a URL escapes, so the link pastes into a
+terminal, a page or a chat unquoted. ``fp`` pins the hub: it is the SHA-256
+fingerprint of the agent channel's TLS certificate, checked on every
+connection before anything is sent.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -28,6 +29,7 @@ from neutrino_agent.http_channel import (
     GatewayHttpChannel,
     GatewayRefused,
     GatewayUnreachable,
+    GatewayUntrusted,
 )
 from neutrino_agent.platform_info import platform_tuple
 
@@ -42,8 +44,8 @@ class EnrollmentError(RuntimeError):
 LINK_PREFIX = "neutrino://enroll/"
 
 
-def parse_link(link: str) -> "tuple[list, str]":
-    """Pull the gateway addresses and enrollment token out of a link.
+def parse_link(link: str) -> "tuple[list, str, str]":
+    """Pull the addresses, enrollment token and fingerprint out of a link.
 
     A hub serves more than one network, and the address that reaches it
     depends on which one this machine is on, so the link carries every
@@ -55,11 +57,12 @@ def parse_link(link: str) -> "tuple[list, str]":
         link: What the owner pasted.
 
     Returns:
-        The gateway base URLs, in the order the hub offered them, and the
-        enrollment token.
+        The gateway base URLs in the order the hub offered them, the
+        enrollment token, and the certificate fingerprint the hub pins —
+        empty when the link carries none.
 
     Raises:
-        EnrollmentError: If the link carries neither.
+        EnrollmentError: If the link carries no address or token.
     """
     text = link.strip()
     if not text:
@@ -73,6 +76,7 @@ def parse_link(link: str) -> "tuple[list, str]":
             str(url).rstrip("/") for url in payload.get("urls", []) if str(url).strip()
         ]
         token = str(payload.get("token", ""))
+        fingerprint = str(payload.get("fp", "")).strip().lower()
     except (binascii.Error, ValueError, UnicodeDecodeError, AttributeError) as error:
         raise EnrollmentError(
             "that is not an enrollment link; copy the whole line from the "
@@ -80,7 +84,7 @@ def parse_link(link: str) -> "tuple[list, str]":
         ) from error
     if not urls or not token:
         raise EnrollmentError("that link carries no gateway address and token")
-    return urls, token
+    return urls, token, fingerprint
 
 
 def load_config() -> dict:
@@ -203,9 +207,10 @@ def enroll(link: str) -> dict:
         The stored configuration after joining.
 
     Raises:
-        EnrollmentError: If the link is unusable or no address accepted it.
+        EnrollmentError: If the link is unusable, the fingerprint does not
+            match what answers, or no address accepted it.
     """
-    gateway_urls, enrollment_token = parse_link(link)
+    gateway_urls, enrollment_token, fingerprint = parse_link(link)
     payload = {
         "enrollment_token": enrollment_token,
         "device_id": machine_id(),
@@ -216,7 +221,9 @@ def enroll(link: str) -> dict:
     reply = None
     refusal = ""
     for gateway_url in gateway_urls:
-        channel = GatewayHttpChannel(gateway_url=gateway_url, token="")
+        channel = GatewayHttpChannel(
+            gateway_url=gateway_url, token="", fingerprint=fingerprint
+        )
         try:
             reply = channel.post(ENROLL_PATH, payload)
             break
@@ -226,6 +233,13 @@ def enroll(link: str) -> dict:
             raise EnrollmentError(
                 "the gateway refused this link — it may have expired; mint a "
                 "fresh one on the Devices page"
+            ) from error
+        except GatewayUntrusted as error:
+            # Whatever answered is not the hub this link pins, and it was
+            # sent nothing.
+            raise EnrollmentError(
+                f"{gateway_url} presented a certificate this link does not "
+                f"pin; mint a fresh link on the hub's Devices page"
             ) from error
         except GatewayUnreachable as error:
             refusal = str(error)
@@ -241,6 +255,7 @@ def enroll(link: str) -> dict:
         {
             "gateway_url": gateway_url,
             "token": token,
+            "fingerprint": fingerprint,
             "device_id": payload["device_id"],
         }
     )
@@ -257,4 +272,5 @@ def disconnect() -> None:
     config = load_config()
     config.pop("gateway_url", None)
     config.pop("token", None)
+    config.pop("fingerprint", None)
     save_config(config)

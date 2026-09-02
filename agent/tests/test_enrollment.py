@@ -18,18 +18,25 @@ def link_for(payload: dict) -> str:
 
 
 def test_a_link_round_trips():
-    urls, token = parse_link(
-        link_for({"urls": ["http://192.168.100.1:8080"], "token": "abc123"})
+    urls, token, fingerprint = parse_link(
+        link_for(
+            {
+                "urls": ["https://192.168.100.1:8443"],
+                "token": "abc123",
+                "fp": "AB" * 32,
+            }
+        )
     )
-    assert urls == ["http://192.168.100.1:8080"]
+    assert urls == ["https://192.168.100.1:8443"]
     assert token == "abc123"
+    assert fingerprint == "ab" * 32
 
 
 def test_every_address_the_hub_answers_on_is_carried():
     """A hub serves more than one network, and only one of its addresses is
     on the network of the machine being enrolled — which the hub cannot know
     and the person pasting the link should not have to."""
-    urls, token = parse_link(
+    urls, token, _ = parse_link(
         link_for(
             {
                 "urls": ["http://192.168.8.1:8080", "http://10.0.0.1:8080"],
@@ -51,14 +58,21 @@ def test_the_link_needs_no_quoting():
 def test_the_bare_payload_is_accepted():
     link = link_for({"urls": ["http://gateway:8080"], "token": "t"})
     payload = link.split("/")[-1]
-    urls, token = parse_link(payload)
+    urls, token, _ = parse_link(payload)
     assert urls == ["http://gateway:8080"]
     assert token == "t"
 
 
 def test_a_trailing_slash_is_trimmed():
-    urls, _ = parse_link(link_for({"urls": ["http://gateway:8080/"], "token": "t"}))
+    urls, _, _ = parse_link(link_for({"urls": ["http://gateway:8080/"], "token": "t"}))
     assert urls == ["http://gateway:8080"]
+
+
+def test_a_link_without_a_fingerprint_carries_an_empty_one():
+    _, _, fingerprint = parse_link(
+        link_for({"urls": ["http://gateway:8080"], "token": "t"})
+    )
+    assert fingerprint == ""
 
 
 @pytest.mark.parametrize(
