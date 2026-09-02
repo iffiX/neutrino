@@ -330,3 +330,34 @@ def test_the_fallback_names_the_direct_outbound():
     config = render(is_direct_fallback_enabled=True)
 
     assert config["routing"]["balancers"][0]["fallbackTag"] == "direct"
+
+
+@pytest.mark.parametrize("strategy", ["leastPing", "roundRobin", "random"])
+def test_the_fallback_brings_the_observatory_with_it(strategy):
+    """xray refuses the whole configuration with "not all dependencies are
+    resolved" when a balancer names a fallbackTag and no observatory is
+    configured: falling back means knowing every node is dead, and the
+    observatory is what knows it. Only leastPing needs one for its own sake,
+    so turning the fallback on under either other strategy used to render a
+    config xray would not load — measured on Debian 12, xray 26.3.27."""
+    nodes = dict(NODES, balancer=dict(NODES["balancer"], strategy=strategy))
+    config = XrayConfigRenderer(
+        node_list=XrayNodeList.from_dict(nodes),
+        routing={"is_proxy_enabled": True, "is_direct_fallback_enabled": True},
+    ).render()
+
+    assert config["routing"]["balancers"][0]["fallbackTag"] == "direct"
+    assert "observatory" in config
+
+
+@pytest.mark.parametrize("strategy", ["roundRobin", "random"])
+def test_without_the_fallback_those_strategies_need_no_observatory(strategy):
+    """They pick without measuring, and probing every node for nothing is a
+    request a minute to somebody's exit."""
+    nodes = dict(NODES, balancer=dict(NODES["balancer"], strategy=strategy))
+    config = XrayConfigRenderer(
+        node_list=XrayNodeList.from_dict(nodes),
+        routing={"is_proxy_enabled": True},
+    ).render()
+
+    assert "observatory" not in config

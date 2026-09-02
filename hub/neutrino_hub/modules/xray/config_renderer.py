@@ -77,6 +77,24 @@ class XrayConfigRenderer:
         self._routing = routing
 
     @property
+    def _is_observatory_needed(self) -> bool:
+        """Whether the balancer depends on the observatory being configured.
+
+        Two things need it and only one of them is the strategy. `leastPing`
+        ranks the nodes by what it measures, and `fallbackTag` has to know
+        every node is dead before it can fall back — so a `roundRobin`
+        balancer that never needed probing needs one the moment somebody
+        turns the fallback on. Rendered without it, xray refuses the whole
+        configuration with "not all dependencies are resolved".
+        """
+        return self._node_list.is_observatory_needed or self._is_fallback_enabled
+
+    @property
+    def _is_fallback_enabled(self) -> bool:
+        """Whether the balancer sends traffic out directly when no node answers."""
+        return bool(self._routing.get("is_direct_fallback_enabled", False))
+
+    @property
     def _is_anything_proxied(self) -> bool:
         """Whether any scope sends traffic to the balancer at all."""
         return bool(
@@ -115,7 +133,7 @@ class XrayConfigRenderer:
             "outbounds": self._render_outbounds(),
             "routing": self._render_routing(),
         }
-        if self._is_anything_proxied and self._node_list.is_observatory_needed:
+        if self._is_anything_proxied and self._is_observatory_needed:
             config["observatory"] = self._render_observatory()
         return config
 
@@ -350,7 +368,7 @@ class XrayConfigRenderer:
             "selector": [XRAY_NODE_TAG_PREFIX],
             "strategy": {"type": self._node_list.strategy},
         }
-        if self._routing.get("is_direct_fallback_enabled", False):
+        if self._is_fallback_enabled:
             balancer["fallbackTag"] = XRAY_DIRECT_TAG
         return balancer
 
