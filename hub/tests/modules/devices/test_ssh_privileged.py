@@ -206,7 +206,9 @@ def test_install_refuses_a_device_that_is_not_linux(packages):
     assert calls == []
 
 
-def test_install_picks_deb_and_joins_over_stdin(packages):
+def test_install_picks_deb_and_joins_with_the_link_on_argv(packages):
+    """The link was shaped for a command line; stdin stays sudo's alone, so
+    an account whose sudo never prompts cannot shift what connect reads."""
     op = operator(sudo_password=SUDO_PASSWORD)
     connection = FakeConnection(tools=("dpkg",))
     op._connect = fake_connect(connection)
@@ -216,9 +218,8 @@ def test_install_picks_deb_and_joins_over_stdin(packages):
 
     assert connection.uploads[0][1].endswith(".deb")
     assert "apt-get install" in calls[0]["command"]
-    assert calls[1]["command"] == "nagent connect --yes"
-    assert calls[1]["input_text"] == f"{LINK}\n"
-    assert all(LINK not in call["command"] for call in calls)
+    assert calls[1]["command"] == f"nagent connect --yes {LINK}"
+    assert calls[1]["input_text"] is None
     assert lines[-1] == "\n[exit 0]\n"
 
 

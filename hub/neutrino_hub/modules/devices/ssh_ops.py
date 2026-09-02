@@ -363,8 +363,11 @@ class DeviceSshOperator:
 
         The same two acts a person performs by hand — install the package,
         run ``nagent connect`` — so there is one install story and one
-        enrollment path. The link rides the connect's stdin: single-use,
-        bound to this device's record, and never in the remote process table.
+        enrollment path. The link goes on the command line, which it was
+        shaped for: a single-use ticket bound to this device's record, no
+        different from a person pasting it into a terminal. Stdin stays the
+        sudo password's alone — sudo reads it only when it actually prompts,
+        so nothing else may need lines counted behind it.
 
         Args:
             packages: The agent package per family, ``deb`` and ``rpm``,
@@ -434,7 +437,7 @@ class DeviceSshOperator:
 
         yield "[joining this hub]\n"
         code, output = await self.run_privileged_once(
-            "nagent connect --yes", input_text=f"{enrollment_link}\n"
+            f"nagent connect --yes {shlex.quote(enrollment_link)}"
         )
         if output:
             yield output + "\n"
