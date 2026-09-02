@@ -202,6 +202,9 @@ class DeviceSshOperator:
         """
         self._credentials = credentials
         self._host_keys = host_keys or DeviceHostKeyStore()
+        # Whether sudo on the device prompts, learned once from sudo itself
+        # (``sudo -n true``); None until asked.
+        self._is_sudo_passwordless: "bool | None" = None
 
     async def check_connection(self) -> tuple[bool, str]:
         """Try to connect and report the result.
@@ -258,9 +261,7 @@ class DeviceSshOperator:
 
         The streaming :meth:`run_privileged_stream` is for output the panel
         shows live; this is for a quick privileged step, like starting a
-        service, whose result the caller only needs to check. The stored sudo
-        password travels over stdin, so it works without passwordless sudo and
-        never appears in the device's process table.
+        service, whose result the caller only needs to check.
 
         Args:
             command: Shell command to run as root on the device.
@@ -271,7 +272,10 @@ class DeviceSshOperator:
         Returns:
             The exit code and combined output.
         """
-        wrapped, payload = self._sudo_wrap(command, input_text)
+        plan, refusal = await self._sudo_plan(command, input_text)
+        if plan is None:
+            return 1, refusal
+        wrapped, payload = plan
         return await self.run_once(wrapped, timeout_s=timeout_s, input_text=payload)
 
     async def detect_system(self) -> tuple[str, str]:
@@ -349,7 +353,12 @@ class DeviceSshOperator:
         Yields:
             Chunks of combined output, then a final status line.
         """
-        wrapped, payload = self._sudo_wrap(command, input_text)
+        plan, refusal = await self._sudo_plan(command, input_text)
+        if plan is None:
+            yield f"{refusal}\n"
+            yield "\n[exit 1]\n"
+            return
+        wrapped, payload = plan
         async for chunk in self.run_stream(wrapped, input_text=payload):
             yield chunk
 
@@ -628,10 +637,16 @@ class DeviceSshOperator:
                 else:
                     await sftp.remove(path)
 
-    def _sudo_wrap(
+    async def _sudo_plan(
         self, command: str, input_text: str | None = None
-    ) -> tuple[str, str | None]:
-        """Wrap a command for root and compose what its stdin carries.
+    ) -> "tuple[tuple[str, str | None] | None, str]":
+        """Compose a privileged run so stdin is never shared by accident.
+
+        Sudo itself is asked first — ``sudo -n true``, once per operator —
+        whether it would prompt. The password line is then sent exactly when
+        sudo is going to consume it (``-k`` discards a cached timestamp so it
+        must), and a password the account does not need never leaves the hub
+        at all. Nothing behind sudo ever has to count stdin lines.
 
         Args:
             command: The command to run as root.
@@ -639,20 +654,26 @@ class DeviceSshOperator:
                 anything.
 
         Returns:
-            The command to send and the stdin payload to feed it. With a
-            stored sudo password the payload's first line is the password,
-            which ``sudo -S`` consumes before the command reads anything of
-            its own; the password is never part of the command string.
+            The plan — the command to send and its stdin payload — and an
+            empty string; or None and the line saying why there is no plan.
         """
         if self._credentials.username == "root":
-            return command, input_text
-        if self._credentials.has_sudo_password:
-            password = self._credentials.sudo_password or ""
-            return (
-                f"sudo -S -p '' bash -lc {shlex.quote(command)}",
-                f"{password}\n{input_text or ''}",
+            return (command, input_text), ""
+        if self._is_sudo_passwordless is None:
+            code, _ = await self.run_once("sudo -n true")
+            self._is_sudo_passwordless = code == 0
+        if self._is_sudo_passwordless:
+            return (f"sudo -n bash -lc {shlex.quote(command)}", input_text), ""
+        if not self._credentials.has_sudo_password:
+            return None, (
+                "[sudo on this device wants a password and none is stored; "
+                "add one in the device's drawer]"
             )
-        return f"sudo -n bash -lc {shlex.quote(command)}", input_text
+        password = self._credentials.sudo_password or ""
+        return (
+            f"sudo -S -p '' -k bash -lc {shlex.quote(command)}",
+            f"{password}\n{input_text or ''}",
+        ), ""
 
     @asynccontextmanager
     async def _connect(self):

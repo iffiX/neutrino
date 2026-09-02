@@ -95,63 +95,93 @@ def capture_run_stream(op: DeviceSshOperator) -> dict:
     return captured
 
 
-def test_root_runs_the_command_bare():
-    assert operator(username="root")._sudo_wrap("whoami") == ("whoami", None)
+def stub_probe(op: DeviceSshOperator, *, is_passwordless: bool) -> list:
+    """Answer ``sudo -n true`` without a network, recording every run_once."""
+    calls: list = []
+
+    async def run_once(command, *, timeout_s=20, input_text=None):
+        calls.append({"command": command, "input_text": input_text})
+        if command == "sudo -n true":
+            return (0 if is_passwordless else 1), ""
+        return 0, ""
+
+    op.run_once = run_once
+    return calls
 
 
-def test_root_passes_the_commands_stdin_through():
-    command, payload = operator(username="root")._sudo_wrap("cat", f"{TOKEN}\n")
-    assert command == "cat"
-    assert payload == f"{TOKEN}\n"
+def plan(op: DeviceSshOperator, command: str, input_text=None):
+    return asyncio.run(op._sudo_plan(command, input_text))
 
 
-def test_passwordless_sudo_sends_nothing_on_stdin():
-    command, payload = operator()._sudo_wrap("whoami")
-    assert command == "sudo -n bash -lc whoami"
-    assert payload is None
+def test_root_needs_no_probe_and_no_wrap():
+    op = operator(username="root")
+    calls = stub_probe(op, is_passwordless=False)
+
+    assert plan(op, "cat", f"{TOKEN}\n") == (("cat", f"{TOKEN}\n"), "")
+    assert calls == []
 
 
-def test_passwordless_sudo_passes_the_commands_stdin_through():
-    command, payload = operator()._sudo_wrap("cat", f"{TOKEN}\n")
+def test_a_passwordless_account_never_receives_the_stored_password():
+    """The probe asks sudo itself, so a password the account does not need
+    never leaves the hub — and never lies in wait on anyone's stdin."""
+    op = operator(sudo_password=SUDO_PASSWORD)
+    stub_probe(op, is_passwordless=True)
+
+    (command, payload), refusal = plan(op, "cat", f"{TOKEN}\n")
+
+    assert refusal == ""
     assert command == "sudo -n bash -lc cat"
     assert payload == f"{TOKEN}\n"
+    assert SUDO_PASSWORD not in (payload or "")
 
 
-def test_the_sudo_password_travels_on_stdin_not_in_the_command():
-    command, payload = operator(sudo_password=SUDO_PASSWORD)._sudo_wrap("whoami")
-    assert command == "sudo -S -p '' bash -lc whoami"
-    assert SUDO_PASSWORD not in command
-    assert payload == f"{SUDO_PASSWORD}\n"
+def test_a_prompting_account_gets_exactly_one_password_line():
+    op = operator(sudo_password=SUDO_PASSWORD)
+    stub_probe(op, is_passwordless=False)
 
+    (command, payload), refusal = plan(op, "cat", f"{TOKEN}\n")
 
-def test_the_commands_own_stdin_follows_the_password_line():
-    command, payload = operator(sudo_password=SUDO_PASSWORD)._sudo_wrap(
-        "cat", f"{TOKEN}\n"
-    )
+    assert refusal == ""
+    assert command == "sudo -S -p '' -k bash -lc cat"
     assert SUDO_PASSWORD not in command
     assert TOKEN not in command
     assert payload == f"{SUDO_PASSWORD}\n{TOKEN}\n"
 
 
-def test_run_privileged_once_feeds_the_composed_stdin():
+def test_a_prompting_account_with_no_stored_password_is_refused():
+    op = operator()
+    stub_probe(op, is_passwordless=False)
+
+    planned, refusal = plan(op, "whoami")
+
+    assert planned is None
+    assert "none is stored" in refusal
+
+
+def test_the_probe_runs_once_per_operator():
     op = operator(sudo_password=SUDO_PASSWORD)
-    captured: dict = {}
+    calls = stub_probe(op, is_passwordless=False)
 
-    async def run_once(command, *, timeout_s=20, input_text=None):
-        captured["command"] = command
-        captured["input_text"] = input_text
-        return 0, ""
+    plan(op, "whoami")
+    plan(op, "cat")
 
-    op.run_once = run_once
+    assert [c["command"] for c in calls].count("sudo -n true") == 1
+
+
+def test_run_privileged_once_probes_then_feeds_the_composed_stdin():
+    op = operator(sudo_password=SUDO_PASSWORD)
+    calls = stub_probe(op, is_passwordless=False)
 
     asyncio.run(op.run_privileged_once("systemctl restart x"))
 
-    assert SUDO_PASSWORD not in captured["command"]
-    assert captured["input_text"] == f"{SUDO_PASSWORD}\n"
+    assert calls[0]["command"] == "sudo -n true"
+    assert SUDO_PASSWORD not in calls[1]["command"]
+    assert calls[1]["input_text"] == f"{SUDO_PASSWORD}\n"
 
 
 def test_run_privileged_stream_feeds_the_composed_stdin():
     op = operator(sudo_password=SUDO_PASSWORD)
+    op._is_sudo_passwordless = False
     captured = capture_run_stream(op)
 
     async def drain():
@@ -162,6 +192,21 @@ def test_run_privileged_stream_feeds_the_composed_stdin():
 
     assert SUDO_PASSWORD not in captured["command"]
     assert captured["input_text"] == f"{SUDO_PASSWORD}\n"
+
+
+def test_a_refused_stream_reports_and_runs_nothing():
+    op = operator()
+    op._is_sudo_passwordless = False
+    captured = capture_run_stream(op)
+
+    async def collect():
+        return [chunk async for chunk in op.run_privileged_stream("whoami")]
+
+    lines = asyncio.run(collect())
+
+    assert any("none is stored" in line for line in lines)
+    assert lines[-1] == "\n[exit 1]\n"
+    assert captured == {}
 
 
 @pytest.fixture
