@@ -139,7 +139,6 @@ export function DeviceDrawer({
   const [newPasswordValue, setNewPasswordValue] = useState("");
   const [newSudoPasswordName, setNewSudoPasswordName] = useState("");
   const [newSudoPasswordValue, setNewSudoPasswordValue] = useState("");
-  const hasStoredSudoPassword = (device.ssh?.sudo_password_id ?? null) !== null;
   const isAddingKey = keyId === NEW_KEY_OPTION;
   const isAddingPassword = passwordId === NEW_PASSWORD_OPTION;
   const isAddingSudoPassword = sudoPasswordId === NEW_PASSWORD_OPTION;
@@ -609,12 +608,7 @@ export function DeviceDrawer({
                 )}
 
                 <label className="field">
-                  <span className="field_label">
-                    Sudo password
-                    {hasStoredSudoPassword ? (
-                      <span className="field_badge">stored</span>
-                    ) : null}
-                  </span>
+                  <span className="field_label">Sudo password</span>
                   <select
                     className="select"
                     value={sudoPasswordId}
