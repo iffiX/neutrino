@@ -123,3 +123,11 @@ def test_delete_unknown_id_raises(config_dir):
 
 def test_missing_file_reads_empty(config_dir):
     assert AiProviderRegistry().list_records() == []
+
+
+def test_a_dangling_secret_reference_reads_as_no_key(config_dir):
+    registry = AiProviderRegistry()
+    record = registry.add(name="p", kind="openai", base_url="", api_key="sk-x")
+    SecretVault().delete(record.secret_id)
+
+    assert AiProviderRegistry().open_api_key(record) == ""

@@ -237,12 +237,18 @@ class AiProviderRegistry:
             record: The provider.
 
         Returns:
-            The decrypted key, empty when the provider holds none.
+            The decrypted key, empty when the provider holds none or the
+            referenced object is gone.
 
         Raises:
-            VaultError: If the referenced object is gone or does not decrypt.
+            VaultError: If the stored ciphertext does not decrypt.
         """
         if not record.secret_id:
+            return ""
+        # A reference whose object is gone reads as no key rather than
+        # refusing the whole render: the other providers still deserve to be
+        # served. A ciphertext that will not decrypt still raises.
+        if self._vault.get(record.secret_id) is None:
             return ""
         return self._vault.open(record.secret_id).get("api_key", "")
 
