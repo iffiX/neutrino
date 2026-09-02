@@ -426,7 +426,7 @@ function ShareEditor({
         isOn={share.is_read_only}
         onChange={(isOn) => onChange({ is_read_only: isOn })}
         label="Read only"
-        description="Refuse writing for everyone, whoever they are."
+        description="Whether writing is refused for everyone, whoever they are."
       />
       <div className="field">
         <span className="field_label">Who may use it</span>

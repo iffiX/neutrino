@@ -380,7 +380,7 @@ export function DeviceDrawer({
               isOn={hasSshDraft}
               onChange={setHasSshDraft}
               label="Manage this device over SSH"
-              description="Unlocks the terminal, one-click installs, reboot and shutdown."
+              description="Whether this device is managed over SSH. It unlocks the terminal, one-click installs, reboot and shutdown."
             />
 
             {hasSshDraft && (
@@ -525,7 +525,7 @@ export function DeviceDrawer({
                   isOn={isWolEnabled}
                   onChange={setIsWolEnabled}
                   label="Wake-on-LAN"
-                  description="Send a magic packet to this MAC from the LAN interface."
+                  description="Whether this device can be woken with a magic packet sent to its MAC from the LAN interface."
                 />
               </>
             )}

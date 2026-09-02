@@ -223,15 +223,15 @@ export function ProxyPage() {
           label="Send LAN traffic through the proxy"
           description={
             isForwardingMode
-              ? "The machines this box forwards for. Off takes the proxy out of their path entirely: the firewall stops diverting, names resolve directly, and no exit node is used. Reach for it to find out whether the proxy is what is broken."
-              : "This box forwards no one's traffic in server mode; there is no LAN to send. Available when the network mode is router or side gateway."
+              ? "Whether name resolution and connections from the LAN go through the proxy."
+              : "Whether name resolution and connections from the LAN go through the proxy. This box forwards no one's traffic in server mode, so there is no LAN to send."
           }
         />
         <ToggleSwitch
           isOn={draft.is_local_proxy_enabled}
           onChange={(isOn) => updateDraft({ is_local_proxy_enabled: isOn })}
           label="Send Neutrino Hub's own traffic through the proxy"
-          description="The box itself, tailscaled included, in any network mode and independently of the LAN switch. This is the way back in when Tailscale cannot reach its control plane over the local link."
+          description="Whether name resolution and connections from Neutrino Hub itself go through the proxy. It works in any network mode, and independently of the LAN switch."
         />
 
         <div className="proxy_switches">

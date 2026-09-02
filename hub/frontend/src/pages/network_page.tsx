@@ -551,7 +551,7 @@ export function NetworkPage() {
                       })
                     }
                     label="Spread traffic across uplinks"
-                    description="Off, one uplink carries everything and the rest wait. On, connections are shared across the separate upstream lines — two ports onto the same line still count as one, so this only does something with two real connections."
+                    description="Whether connections are spread across the separate upstream lines. Two ports onto one line still count as one, so this only does something with two real connections."
                   />
                   <ToggleSwitch
                     isOn={options.is_inter_lan_allowed}
@@ -559,7 +559,7 @@ export function NetworkPage() {
                       setOptions({ ...options, is_inter_lan_allowed: isOn })
                     }
                     label="Networks reach each other"
-                    description="Off, devices on one of the gateway's networks cannot see devices on another; every network still reaches the internet and the overlay."
+                    description="Whether devices on one of the gateway's networks can reach devices on another. Every network reaches the internet and the overlay either way."
                   />
                   <ApplyBar
                     isDirty={isGlobalDirty}
@@ -932,7 +932,7 @@ function LanFields({ draft, errors, isWifi, update }: FieldsProps) {
               update((next) => (next.lan.is_dhcp_enabled = isOn))
             }
             label="Allocate address on this network"
-            description="Off leaves clients to configure themselves; the gateway still answers DNS."
+            description="Whether this network hands out addresses. The gateway answers DNS on it either way."
           />
         </div>
         {draft.lan.is_dhcp_enabled && (

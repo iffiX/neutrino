@@ -177,7 +177,7 @@ export function GiteaPage() {
             setDraft({ ...draft, is_registration_enabled: isOn })
           }
           label="Open registration"
-          description="Let visitors create their own accounts."
+          description="Whether visitors can create their own accounts."
         />
         <ApplyBar
           isDirty={isDirty}

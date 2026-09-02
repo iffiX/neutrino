@@ -493,7 +493,7 @@ function ContainerEditor({
         isOn={container.is_autostart}
         onChange={(isOn) => onChange({ is_autostart: isOn })}
         label="Start with the box"
-        description="Off, it stays declared but only starts when asked."
+        description="Whether this container starts with the box. Off, it stays declared and starts only when asked."
       />
     </div>
   );
