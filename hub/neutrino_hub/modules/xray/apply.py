@@ -16,6 +16,8 @@ import time
 from neutrino_hub.utils.json_file import write_generated
 from neutrino_hub.utils.subprocess_run import CommandError, run
 
+from neutrino_hub.modules.xray.output import failure_of, warnings_of
+
 from neutrino_hub.modules.xray.constants import (
     XRAY_ASSET_DIR,
     XRAY_ASSET_ENV,
@@ -76,7 +78,11 @@ class XrayConfigApplier:
             config: The rendered configuration object.
 
         Raises:
-            CommandError: If xray reports the configuration invalid.
+            CommandError: If xray reports the configuration invalid. The
+                message is xray's own reason, not everything it printed on the
+                way to it: the banner, the file it read and whatever it wants
+                deprecated are on that stream too, and none of them is why it
+                said no.
         """
         candidate = dict(config)
         candidate["log"] = {
@@ -90,9 +96,43 @@ class XrayConfigApplier:
                 environment={XRAY_ASSET_ENV: XRAY_ASSET_DIR},
             )
         except CommandError as error:
-            raise CommandError(f"xray rejected the rendered config: {error}") from error
+            raise CommandError(
+                f"xray rejected this configuration: {failure_of(str(error))}"
+            ) from error
         finally:
             candidate_path.unlink(missing_ok=True)
+
+    def warnings(self, config: dict) -> list[str]:
+        """What xray would complain about in a configuration it accepts.
+
+        Asked separately from validation because they are a different kind of
+        answer: a deprecated protocol is worth saying once, beside the node it
+        is about, and never inside the message that says an apply failed.
+
+        Args:
+            config: The rendered configuration object.
+
+        Returns:
+            One line per warning, empty when xray had none or could not be
+            run at all — this reports, so it never raises.
+        """
+        candidate = dict(config)
+        candidate["log"] = {
+            "loglevel": config.get("log", {}).get("loglevel", "warning")
+        }
+        candidate_path = XRAY_CONFIG_PATH.with_suffix(".warnings.json")
+        try:
+            write_generated(candidate_path, json.dumps(candidate, indent=2) + "\n")
+            result = run(
+                [XRAY_BINARY, "run", "-test", "-config", str(candidate_path)],
+                environment={XRAY_ASSET_ENV: XRAY_ASSET_DIR},
+                is_checked=False,
+            )
+        except (CommandError, OSError):
+            return []
+        finally:
+            candidate_path.unlink(missing_ok=True)
+        return warnings_of(result.stdout + result.stderr)
 
     def restart(self) -> None:
         """Restart the xray service.
