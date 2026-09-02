@@ -20,6 +20,7 @@ from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
 
 MAC = "aa:bb:cc:dd:ee:ff"
+FINGERPRINT = "ab" * 32
 
 
 class FakeRegistry:
@@ -66,6 +67,7 @@ def api(monkeypatch):
         client=DeviceClientInfo(token="t", last_seen="2026-01-01T00:00:00+00:00"),
     )
     monkeypatch.setattr(devices_router, "DeviceRegistry", FakeRegistry)
+    monkeypatch.setattr(devices_router, "certificate_fingerprint", lambda: FINGERPRINT)
     monkeypatch.setattr(
         devices_router,
         "load_catalog",
@@ -188,7 +190,7 @@ def test_a_link_that_cannot_be_built_mints_no_ticket(api, monkeypatch):
     """The ticket is a join secret. One nobody was ever shown is one lying
     around until the panel restarts."""
     client, runtime = api
-    monkeypatch.setattr(devices_router, "_panel_urls", lambda runtime: [])
+    monkeypatch.setattr(devices_router, "_agent_urls", lambda runtime: [])
 
     response = client.post("/api/devices/enrollment", json={"name": "laptop"})
 
@@ -202,7 +204,7 @@ def test_a_link_minted_for_a_device_binds_to_that_device(api, monkeypatch):
     second record keyed by its own machine id."""
     client, runtime = api
     monkeypatch.setattr(
-        devices_router, "_panel_urls", lambda runtime: ["http://192.168.8.1:8080"]
+        devices_router, "_agent_urls", lambda runtime: ["http://192.168.8.1:8080"]
     )
 
     response = client.post(
@@ -222,7 +224,7 @@ def test_the_link_is_one_shell_safe_token(api, monkeypatch):
     client, runtime = api
     monkeypatch.setattr(
         devices_router,
-        "_panel_urls",
+        "_agent_urls",
         lambda runtime: ["http://192.168.8.1:8080", "http://10.0.0.1:8080"],
     )
 
@@ -236,12 +238,13 @@ def test_the_link_is_one_shell_safe_token(api, monkeypatch):
     payload = json.loads(base64.urlsafe_b64decode(padded))
     assert payload["urls"] == ["http://192.168.8.1:8080", "http://10.0.0.1:8080"]
     assert payload["token"] == answer["token"]
+    assert payload["fp"] == FINGERPRINT
 
 
 def test_a_lapsed_ticket_is_swept_when_the_next_one_is_minted(api, monkeypatch):
     client, runtime = api
     monkeypatch.setattr(
-        devices_router, "_panel_urls", lambda runtime: ["http://192.168.8.1:8080"]
+        devices_router, "_agent_urls", lambda runtime: ["http://192.168.8.1:8080"]
     )
     runtime.enrollments["stale"] = {"expires_at": 0.0}
 

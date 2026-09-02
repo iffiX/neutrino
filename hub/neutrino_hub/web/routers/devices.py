@@ -30,7 +30,8 @@ from neutrino_hub.modules.devices.ssh_ops import DeviceSshOperator, SshCredentia
 from neutrino_hub.modules.devices.wake_on_lan import send_magic_packet
 from neutrino_hub import HUB_VERSION
 from neutrino_hub.utils.constants import UTILS_CONFIG_DIR, UTILS_DATA_DIR
-from neutrino_hub.web.constants import WEB_DEFAULT_LISTEN_PORT
+from neutrino_hub.web.agent_tls import certificate_fingerprint
+from neutrino_hub.web.constants import WEB_DEFAULT_AGENT_LISTEN_PORT
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
     DeviceAnnotation,
@@ -327,14 +328,23 @@ def _mint_enrollment_link(
 
     Raises:
         HTTPException: 400 when no served network has an address, so there is
-            nothing for a machine to reach the panel at.
+            nothing for a machine to reach the panel at; 409 with
+            ``{"code": "agent_tls_missing"}`` when the channel has no
+            certificate to pin.
     """
-    urls = _panel_urls(runtime)
+    urls = _agent_urls(runtime)
     if not urls:
         raise HTTPException(
             status_code=400,
             detail="no served network has an address for a machine to reach",
         )
+    try:
+        fingerprint = certificate_fingerprint()
+    except (OSError, ValueError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "agent_tls_missing"},
+        ) from error
     now = time.time()
     for token, ticket in list(runtime.enrollments.items()):
         if ticket.get("expires_at", 0) <= now:
@@ -348,7 +358,9 @@ def _mint_enrollment_link(
     # The whole payload rides base64url, whose alphabet has no character a
     # shell splits or a URL escapes — the link pastes anywhere unquoted.
     payload = (
-        base64.urlsafe_b64encode(json.dumps({"urls": urls, "token": token}).encode())
+        base64.urlsafe_b64encode(
+            json.dumps({"urls": urls, "token": token, "fp": fingerprint}).encode()
+        )
         .decode()
         .rstrip("=")
     )
@@ -502,8 +514,8 @@ def _platform_keys(platform: dict) -> list:
     return keys
 
 
-def _panel_urls(runtime: PanelRuntime) -> list:
-    """Every address a machine could be told to reach the panel on.
+def _agent_urls(runtime: PanelRuntime) -> list:
+    """Every address a machine could be told to reach the agent channel on.
 
     All of them, not one: a hub serves more than one network, only one of its
     addresses is on the network of the machine being enrolled, and neither the
@@ -514,15 +526,15 @@ def _panel_urls(runtime: PanelRuntime) -> list:
         runtime: The shared runtime, for the served networks and the port.
 
     Returns:
-        Base URLs, in configuration order.
+        Base ``https`` URLs, in configuration order.
     """
-    port = runtime.settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT)
+    port = runtime.settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
     urls = []
     for interface in runtime.network().lan_interfaces:
         host = interface.lan.address
         if not host:
             continue
-        urls.append(f"http://{host}" if port == 80 else f"http://{host}:{port}")
+        urls.append(f"https://{host}:{port}")
     return urls
 
 

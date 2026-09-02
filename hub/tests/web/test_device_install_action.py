@@ -86,8 +86,9 @@ def hub_carries_a_package(tmp_path, monkeypatch):
     packages.mkdir(parents=True, exist_ok=True)
     (packages / "neutrino-agent_0.1.0_all.deb").write_bytes(b"deb")
     monkeypatch.setattr(
-        devices_router, "_panel_urls", lambda runtime: ["http://192.168.100.1:8080"]
+        devices_router, "_agent_urls", lambda runtime: ["https://192.168.100.1:8443"]
     )
+    monkeypatch.setattr(devices_router, "certificate_fingerprint", lambda: "ab" * 32)
 
 
 def test_a_non_linux_device_is_refused_before_any_task(api, monkeypatch, tmp_path):

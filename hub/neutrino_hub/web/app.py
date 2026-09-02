@@ -1,8 +1,12 @@
-"""Assembling the FastAPI application.
+"""Assembling the FastAPI applications.
 
-The panel serves both the API and the built frontend, so one process and one
-port cover the whole thing. The frontend is a single-page app: any path that is
-not an API route, a websocket, or a real file falls through to ``index.html``.
+One process, two applications: the panel serves its API and the built
+frontend on plain HTTP, and the agent channel serves the ``/api/agent``
+routes alone on its own TLS port. Both share one runtime, which is where the
+enrollment tickets the panel mints and the reports the agents post meet.
+
+The frontend is a single-page app: any panel path that is not an API route, a
+websocket, or a real file falls through to ``index.html``.
 """
 
 from fastapi import FastAPI
@@ -50,18 +54,19 @@ API_ROUTERS = (
     zfs.router,
     service_control.router,
     settings.router,
-    agent.router,
 )
+
+_shared_runtime = None
 
 
 def create_app() -> FastAPI:
-    """Build the application with its routes and static files.
+    """Build the panel application with its routes and static files.
 
     Returns:
         The configured application.
     """
     app = FastAPI(title="Neutrino Hub", docs_url=None, redoc_url=None)
-    app.state.runtime = PanelRuntime()
+    app.state.runtime = _runtime()
 
     for router in API_ROUTERS:
         app.include_router(router)
@@ -69,6 +74,30 @@ def create_app() -> FastAPI:
 
     _mount_frontend(app)
     return app
+
+
+def create_agent_app() -> FastAPI:
+    """Build the agent channel: the ``/api/agent`` routes and nothing else.
+
+    Returns:
+        The configured application, sharing the panel's runtime.
+    """
+    app = FastAPI(title="Neutrino Hub Agent Channel", docs_url=None, redoc_url=None)
+    app.state.runtime = _runtime()
+    app.include_router(agent.router)
+    return app
+
+
+def _runtime() -> PanelRuntime:
+    """The one runtime both applications hand their routes.
+
+    Returns:
+        The process-wide instance, built on first use.
+    """
+    global _shared_runtime
+    if _shared_runtime is None:
+        _shared_runtime = PanelRuntime()
+    return _shared_runtime
 
 
 def _mount_frontend(app: FastAPI) -> None:

@@ -20,6 +20,7 @@ run than read journalctl.
 """
 
 import argparse
+import asyncio
 import os
 import pwd
 import shutil
@@ -51,12 +52,19 @@ from neutrino_hub.utils.constants import (
     UTILS_GENERATED_DIR,
     is_dev_root_set,
 )
-from neutrino_hub.web.constants import WEB_DEFAULT_LISTEN_PORT
+from neutrino_hub.web.agent_tls import ensure_certificate
+from neutrino_hub.web.constants import (
+    WEB_AGENT_TLS_CERT_PATH,
+    WEB_AGENT_TLS_KEY_PATH,
+    WEB_DEFAULT_AGENT_LISTEN_PORT,
+    WEB_DEFAULT_LISTEN_PORT,
+)
 from neutrino_hub.utils.json_file import read_config
 
 # --- config ---
 DEFAULT_LISTEN_HOST = "0.0.0.0"
 APPLICATION_PATH = "neutrino_hub.web.app:create_app"
+AGENT_APPLICATION_PATH = "neutrino_hub.web.app:create_agent_app"
 PANEL_SETTINGS_FILE = "web/settings.json"
 # Where the frontend's dev server is started from, relative to the checkout.
 FRONTEND_DIR_NAME = "hub/frontend"
@@ -292,7 +300,11 @@ def _first_binary(candidates: tuple, name: str):
 
 
 def _serve_panel(arguments) -> int:
-    """Run the control panel, and nothing else.
+    """Run the control panel and the agent channel, and nothing else.
+
+    Two servers, one loop: the panel on plain HTTP, the agent routes on their
+    own TLS port. ``--reload`` serves the panel alone, because uvicorn's
+    reloader supervises a single server.
 
     Args:
         arguments: The parsed command line.
@@ -301,15 +313,55 @@ def _serve_panel(arguments) -> int:
         Process exit status.
     """
     port = arguments.port if arguments.port is not None else _configured_port()
-    uvicorn.run(
-        APPLICATION_PATH,
-        factory=True,
-        host=arguments.host,
-        port=port,
-        reload=arguments.reload,
-        log_level="info",
+    if arguments.reload:
+        print("  --reload serves the panel only; the agent port is not served")
+        uvicorn.run(
+            APPLICATION_PATH,
+            factory=True,
+            host=arguments.host,
+            port=port,
+            reload=True,
+            log_level="info",
+        )
+        return 0
+    ensure_certificate()
+    panel_server = uvicorn.Server(
+        uvicorn.Config(
+            APPLICATION_PATH,
+            factory=True,
+            host=arguments.host,
+            port=port,
+            log_level="info",
+        )
     )
+    agent_server = uvicorn.Server(
+        uvicorn.Config(
+            AGENT_APPLICATION_PATH,
+            factory=True,
+            host=arguments.host,
+            port=_configured_agent_port(),
+            log_level="info",
+            ssl_certfile=str(WEB_AGENT_TLS_CERT_PATH),
+            ssl_keyfile=str(WEB_AGENT_TLS_KEY_PATH),
+        )
+    )
+    asyncio.run(_serve_together([panel_server, agent_server]))
     return 0
+
+
+async def _serve_together(servers: list) -> None:
+    """Run every server in one loop, and stop them all when one stops.
+
+    Args:
+        servers: Configured uvicorn servers.
+    """
+    tasks = [asyncio.create_task(server.serve()) for server in servers]
+    try:
+        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for server in servers:
+            server.should_exit = True
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def _supervise(arguments) -> int:
@@ -397,6 +449,18 @@ def _configured_port() -> int:
         )
     except (FileNotFoundError, ValueError):
         return WEB_DEFAULT_LISTEN_PORT
+
+
+def _configured_agent_port() -> int:
+    """The agent channel's port, from the settings or the default."""
+    try:
+        return int(
+            read_config(PANEL_SETTINGS_FILE).get(
+                "agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT
+            )
+        )
+    except (FileNotFoundError, ValueError):
+        return WEB_DEFAULT_AGENT_LISTEN_PORT
 
 
 if __name__ == "__main__":

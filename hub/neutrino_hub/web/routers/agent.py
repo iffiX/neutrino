@@ -1,8 +1,9 @@
 """Endpoints the neutrino_agent agents talk to.
 
 These are the only routes without a session: agents authenticate with a
-per-device token issued when the agent was installed. They are reachable from
-the LAN and the overlay only, the same as the rest of the panel.
+per-device token issued when the agent was installed. They are served on the
+agent channel's own TLS port, never on the panel's, and every enrollment link
+carries the certificate fingerprint the agent pins.
 
 A heartbeat now carries more than metrics: the agent reports which features it
 is reconciling and in what state, and the reply tells it which features should
