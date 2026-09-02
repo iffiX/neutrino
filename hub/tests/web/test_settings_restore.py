@@ -21,7 +21,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 import neutrino_hub.utils.json_file
-from neutrino_hub.modules.credentials.vault import SecretVault
+from neutrino_hub.modules.credentials.vault import (
+    SecretVault,
+    VAULT_SEALED_MAGIC,
+    unseal_bytes,
+)
 from neutrino_hub.web.dependencies import require_session
 from neutrino_hub.web.routers import settings as settings_router
 from neutrino_hub.web.routers.settings import _checked_member
@@ -29,7 +33,6 @@ from neutrino_hub.web.routers.settings import _checked_member
 PASSPHRASE = "correct horse battery"  # scan: allow
 SEALED_PASSWORD = "hunter2hunter2"  # scan: allow
 KEY_MEMBER = "config/credentials/vault.key"
-WRAPPED_MEMBER = "config/credentials/vault.key.wrapped"
 
 
 def member(name: str, kind: bytes = tarfile.REGTYPE) -> tarfile.TarInfo:
@@ -144,15 +147,17 @@ def upload_restore(opened, payload: bytes, passphrase: str):
     )
 
 
-def test_a_sealed_backup_carries_the_key_wrapped_instead_of_readable(client):
+def test_a_sealed_backup_is_one_container_with_the_key_inside(client):
     opened, config_dir = client
     seed_config(config_dir)
 
-    names = member_names(download_backup(opened, PASSPHRASE))
+    payload = download_backup(opened, PASSPHRASE)
 
-    assert KEY_MEMBER not in names
-    assert f"{KEY_MEMBER}.new" not in names
-    assert WRAPPED_MEMBER in names
+    assert payload.startswith(VAULT_SEALED_MAGIC)
+    with pytest.raises(tarfile.TarError):
+        member_names(payload)
+    names = member_names(unseal_bytes(payload, PASSPHRASE))
+    assert KEY_MEMBER in names
     assert "config/credentials/vault.json" in names
 
 
@@ -160,21 +165,21 @@ def test_a_plain_backup_is_exactly_what_it_always_was(client):
     opened, config_dir = client
     seed_config(config_dir)
 
-    names = member_names(download_backup(opened, ""))
+    payload = download_backup(opened, "")
 
-    assert KEY_MEMBER in names
-    assert WRAPPED_MEMBER not in names
+    assert not payload.startswith(VAULT_SEALED_MAGIC)
+    assert KEY_MEMBER in member_names(payload)
 
 
-def test_a_box_without_a_vault_backs_up_plain_whatever_the_passphrase(client):
+def test_a_box_without_a_vault_still_seals_under_a_passphrase(client):
     opened, config_dir = client
     (config_dir / "xray").mkdir()
     (config_dir / "xray" / "nodes.json").write_text("{}")
 
-    names = member_names(download_backup(opened, PASSPHRASE))
+    payload = download_backup(opened, PASSPHRASE)
 
-    assert WRAPPED_MEMBER not in names
-    assert "config/xray/nodes.json" in names
+    assert payload.startswith(VAULT_SEALED_MAGIC)
+    assert "config/xray/nodes.json" in member_names(unseal_bytes(payload, PASSPHRASE))
 
 
 def test_a_sealed_backup_restores_the_store_it_left_with(client):
@@ -187,7 +192,6 @@ def test_a_sealed_backup_restores_the_store_it_left_with(client):
 
     assert response.status_code == 200
     assert response.json() == {"is_restored": True}
-    assert not (config_dir / "credentials" / "vault.key.wrapped").exists()
     assert SecretVault().open(secret_id) == {"password": SEALED_PASSWORD}
 
 
@@ -230,22 +234,16 @@ def test_a_wrong_passphrase_writes_nothing(client):
     assert list(config_dir.rglob("*")) == []
 
 
-@pytest.mark.parametrize("sealed_key", [b"not json at all", b"[]", b'{"kdf": "acme"}'])
-def test_a_sealed_key_that_is_not_one_writes_nothing(client, sealed_key):
+def test_a_corrupt_container_writes_nothing(client):
     opened, config_dir = client
-    buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
-        entry = tarfile.TarInfo("config/xray/nodes.json")
-        entry.size = 2
-        archive.addfile(entry, io.BytesIO(b"{}"))
-        entry = tarfile.TarInfo(WRAPPED_MEMBER)
-        entry.size = len(sealed_key)
-        archive.addfile(entry, io.BytesIO(sealed_key))
+    seed_config(config_dir)
+    payload = download_backup(opened, PASSPHRASE)
+    wipe_config(config_dir)
 
-    response = upload_restore(opened, buffer.getvalue(), PASSPHRASE)
+    response = upload_restore(opened, payload[:40], PASSPHRASE)
 
     assert response.status_code == 400
-    assert response.json()["detail"] == {"code": "backup_passphrase_wrong"}
+    assert "unreadable backup" in response.json()["detail"]
     assert list(config_dir.rglob("*")) == []
 
 

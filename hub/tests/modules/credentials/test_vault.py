@@ -12,10 +12,10 @@ from neutrino_hub.modules.credentials.constants import CREDENTIALS_VAULT_PATH
 from neutrino_hub.modules.credentials.vault import (
     SecretVault,
     VaultError,
-    install_master_key,
-    read_master_key,
-    unwrap_master_key,
-    wrap_master_key,
+    VaultPassphraseError,
+    is_sealed,
+    seal_bytes,
+    unseal_bytes,
 )
 
 SEALED_BY_KIND = {
@@ -192,41 +192,52 @@ def test_key_file_and_directory_modes(config_dir):
     assert stat.S_IMODE(key_path.parent.stat().st_mode) == 0o700
 
 
-def test_wrap_and_unwrap_master_key():
-    key = secrets.token_bytes(32)
-    wrapped = wrap_master_key(key, "correct horse")
-    assert wrapped["kdf"] == "scrypt"
-    assert unwrap_master_key(wrapped, "correct horse") == key
+def test_seal_and_unseal_bytes():
+    payload = secrets.token_bytes(500)
+    sealed = seal_bytes(payload, "correct horse")
+    assert is_sealed(sealed)
+    assert not is_sealed(payload)
+    assert unseal_bytes(sealed, "correct horse") == payload
+
+
+def test_wrong_passphrase_is_its_own_refusal():
+    sealed = seal_bytes(b"payload", "correct horse")
+    with pytest.raises(VaultPassphraseError):
+        unseal_bytes(sealed, "wrong horse")
+
+
+def test_tampered_seal_reads_as_a_wrong_passphrase():
+    sealed = bytearray(seal_bytes(b"payload", "pass"))
+    sealed[-1] ^= 0x01
+    with pytest.raises(VaultPassphraseError):
+        unseal_bytes(bytes(sealed), "pass")
+
+
+def test_malformed_seal_is_refused_before_the_passphrase_matters():
+    with pytest.raises(VaultError) as refusal:
+        unseal_bytes(b"not a sealed archive at all", "pass")
+    assert not isinstance(refusal.value, VaultPassphraseError)
+
+    magic_only = seal_bytes(b"x", "pass")[:20]
+    with pytest.raises(VaultError) as refusal:
+        unseal_bytes(magic_only, "pass")
+    assert not isinstance(refusal.value, VaultPassphraseError)
+
+
+def test_hostile_seal_factors_are_refused():
+    import json as json_module
+
+    sealed = seal_bytes(b"payload", "pass")
+    offset = len(b"NEUTRINO-SEALED-1\n")
+    header_length = int.from_bytes(sealed[offset : offset + 4], "big")
+    header = json_module.loads(sealed[offset + 4 : offset + 4 + header_length])
+    header["n"] = 2**30
+    raised = json_module.dumps(header).encode()
+    hostile = (
+        sealed[:offset]
+        + len(raised).to_bytes(4, "big")
+        + raised
+        + sealed[offset + 4 + header_length :]
+    )
     with pytest.raises(VaultError):
-        unwrap_master_key(wrapped, "wrong horse")
-
-
-def test_install_master_key_writes_a_key_a_restored_store_opens(config_dir):
-    record = SecretVault().add(kind="password", name="x", secret={"password": "p"})
-    key = read_master_key()
-    store = (config_dir / CREDENTIALS_VAULT_PATH).read_text()
-    for path in (config_dir / "credentials").iterdir():
-        path.unlink()
-    (config_dir / "credentials").rmdir()
-
-    install_master_key(key)
-    (config_dir / CREDENTIALS_VAULT_PATH).write_text(store)
-
-    key_path = config_dir / "credentials" / "vault.key"
-    assert stat.S_IMODE(key_path.stat().st_mode) == 0o600
-    assert stat.S_IMODE(key_path.parent.stat().st_mode) == 0o700
-    assert read_master_key() == key
-    assert SecretVault().open(record.id) == {"password": "p"}
-
-
-def test_read_master_key_mints_nothing_on_a_box_without_one(config_dir):
-    with pytest.raises(VaultError):
-        read_master_key()
-    assert not (config_dir / "credentials" / "vault.key").exists()
-
-
-def test_hostile_wrap_factors_are_refused():
-    wrapped = wrap_master_key(b"k" * 32, "pass")
-    wrapped["n"] = 2**30
-    with pytest.raises(VaultError):
-        unwrap_master_key(wrapped, "pass")
+        unseal_bytes(hostile, "pass")

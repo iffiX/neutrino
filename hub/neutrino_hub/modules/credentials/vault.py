@@ -6,8 +6,9 @@ timestamps stay readable, so the file says what it holds without saying what
 anything is; each object's AAD binds its ciphertext to its id and kind, so two
 objects cannot be swapped. The key lives beside the store because backing up
 ``config/`` must reproduce the appliance and the panel must decrypt with
-nobody at the keyboard; a copy that leaves the box carries the key sealed
-under a passphrase instead, via :func:`wrap_master_key`.
+nobody at the keyboard; a copy that leaves the box travels as one
+container sealed under a passphrase, via :func:`seal_bytes`, master key and
+all.
 
 A rekey writes the fresh key to ``vault.key.new``, rewrites the store under
 it, and renames it over ``vault.key`` last. In every crash window a key that
@@ -45,6 +46,7 @@ from neutrino_hub.utils.json_file import read_config, write_config
 VAULT_KEY_BYTES = 32
 VAULT_NONCE_BYTES = 12
 VAULT_WRAP_SALT_BYTES = 16
+VAULT_SEALED_MAGIC = b"NEUTRINO-SEALED-1\n"
 VAULT_SCRYPT_N = 2**15
 VAULT_SCRYPT_R = 8
 VAULT_SCRYPT_P = 1
@@ -56,99 +58,97 @@ class VaultError(ValueError):
     """Raised when the vault refuses an operation."""
 
 
-def wrap_master_key(key_bytes: bytes, passphrase: str) -> dict:
-    """Seal the master key under a passphrase, for a copy that leaves the box.
+class VaultPassphraseError(VaultError):
+    """Raised when a passphrase does not open what it was offered."""
+
+
+def seal_bytes(data: bytes, passphrase: str) -> bytes:
+    """Seal a byte payload under a passphrase, for a copy that leaves the box.
+
+    The container is the magic line, a four-byte header length, a JSON header
+    naming the scrypt parameters, then the AES-256-GCM ciphertext with the
+    magic as its AAD. Everything inside travels sealed, the master key
+    included, so nothing needs wrapping separately.
 
     Args:
-        key_bytes: The raw master key.
+        data: The payload to seal.
         passphrase: What the copy is protected with.
 
     Returns:
-        A JSON-ready object naming the scrypt parameters, salt, nonce and
-        ciphertext.
+        The sealed container.
     """
     salt = secrets.token_bytes(VAULT_WRAP_SALT_BYTES)
     kek = _derive_wrap_key(
         passphrase, salt, VAULT_SCRYPT_N, VAULT_SCRYPT_R, VAULT_SCRYPT_P
     )
     nonce = secrets.token_bytes(VAULT_NONCE_BYTES)
-    data = AESGCM(kek).encrypt(nonce, key_bytes, None)
-    return {
-        "kdf": "scrypt",
-        "salt": base64.b64encode(salt).decode(),
-        "n": VAULT_SCRYPT_N,
-        "r": VAULT_SCRYPT_R,
-        "p": VAULT_SCRYPT_P,
-        "nonce": base64.b64encode(nonce).decode(),
-        "data": base64.b64encode(data).decode(),
-    }
+    header = json.dumps(
+        {
+            "kdf": "scrypt",
+            "salt": base64.b64encode(salt).decode(),
+            "n": VAULT_SCRYPT_N,
+            "r": VAULT_SCRYPT_R,
+            "p": VAULT_SCRYPT_P,
+            "nonce": base64.b64encode(nonce).decode(),
+        }
+    ).encode()
+    ciphertext = AESGCM(kek).encrypt(nonce, data, VAULT_SEALED_MAGIC)
+    return VAULT_SEALED_MAGIC + len(header).to_bytes(4, "big") + header + ciphertext
 
 
-def unwrap_master_key(wrapped: dict, passphrase: str) -> bytes:
-    """Open a wrapped master key.
+def is_sealed(blob: bytes) -> bool:
+    """Whether a byte payload is a sealed container.
 
     Args:
-        wrapped: What :func:`wrap_master_key` produced.
+        blob: The payload, or its first bytes.
+
+    Returns:
+        True when it begins with the sealed-container magic.
+    """
+    return blob.startswith(VAULT_SEALED_MAGIC)
+
+
+def unseal_bytes(blob: bytes, passphrase: str) -> bytes:
+    """Open a sealed container.
+
+    Args:
+        blob: What :func:`seal_bytes` produced.
         passphrase: The passphrase it was sealed under.
 
     Returns:
-        The raw master key.
+        The payload.
 
     Raises:
-        VaultError: If the object is not a usable wrap or the passphrase does
-            not open it.
+        VaultPassphraseError: If the passphrase does not open it.
+        VaultError: If the container is not a usable seal. The parameters come
+            from the container itself, so a hostile or corrupt value refuses
+            rather than crashing or eating the box's memory.
     """
-    if wrapped.get("kdf") != "scrypt":
-        raise VaultError(f"unknown key wrap kdf {wrapped.get('kdf')!r}")
+    if not is_sealed(blob):
+        raise VaultError("not a sealed archive")
+    offset = len(VAULT_SEALED_MAGIC)
     try:
-        salt = base64.b64decode(wrapped["salt"])
-        nonce = base64.b64decode(wrapped["nonce"])
-        data = base64.b64decode(wrapped["data"])
-        factors = (int(wrapped["n"]), int(wrapped["r"]), int(wrapped["p"]))
+        header_length = int.from_bytes(blob[offset : offset + 4], "big")
+        header = json.loads(blob[offset + 4 : offset + 4 + header_length])
+        if header.get("kdf") != "scrypt":
+            raise ValueError(f"unknown kdf {header.get('kdf')!r}")
+        salt = base64.b64decode(header["salt"])
+        nonce = base64.b64decode(header["nonce"])
+        factors = (int(header["n"]), int(header["r"]), int(header["p"]))
     except (KeyError, TypeError, ValueError) as error:
-        raise VaultError("the wrapped key is malformed") from error
+        raise VaultError("the sealed archive is malformed") from error
     try:
         kek = _derive_wrap_key(passphrase, salt, *factors)
     except ValueError as error:
-        # A restore reads these factors from the tarball, so a hostile or
-        # corrupt value must refuse, not crash or eat the box's memory.
-        raise VaultError("the wrapped key is malformed") from error
+        raise VaultError("the sealed archive is malformed") from error
     try:
-        return AESGCM(kek).decrypt(nonce, data, None)
+        return AESGCM(kek).decrypt(
+            nonce, blob[offset + 4 + header_length :], VAULT_SEALED_MAGIC
+        )
     except InvalidTag as error:
-        raise VaultError("the passphrase does not open this key") from error
-
-
-def read_master_key() -> bytes:
-    """Read the master key the store is sealed under, minting none.
-
-    A leftover ``vault.key.new`` is settled first, so the key handed back is
-    the one that opens the store rather than the one a rekey left behind.
-
-    Returns:
-        The raw master key.
-
-    Raises:
-        VaultError: If this box has no master key, or the file does not hold a
-            usable one.
-    """
-    with _WRITE_LOCK:
-        if not _key_path().is_file():
-            raise VaultError(f"{_key_path()} does not exist")
-        return SecretVault()._master_key()
-
-
-def install_master_key(key_bytes: bytes) -> None:
-    """Write the master key a restored store is sealed under.
-
-    Args:
-        key_bytes: The raw master key.
-    """
-    with _WRITE_LOCK:
-        path = _key_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.parent.chmod(stat.S_IRWXU)
-        _write_key_material(path, key_bytes)
+        raise VaultPassphraseError(
+            "the passphrase does not open this archive"
+        ) from error
 
 
 def _derive_wrap_key(passphrase: str, salt: bytes, n: int, r: int, p: int) -> bytes:

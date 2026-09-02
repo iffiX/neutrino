@@ -34,9 +34,20 @@ const MIN_PASSWORD_LENGTH = 8;
 const BACKUP_PASSPHRASE_NEEDED = "backup_passphrase_needed";
 const BACKUP_PASSPHRASE_WRONG = "backup_passphrase_wrong";
 
-const RESTORE_PROTECTED_NOTE =
-  "This archive is protected. Its passphrase is needed to restore it.";
 const RESTORE_WRONG_PASSPHRASE = "That passphrase does not open this archive.";
+
+// A sealed backup announces itself in its first bytes, so which modal to
+// show is settled before anything is uploaded.
+const SEALED_MAGIC = "NEUTRINO-SEALED-1\n";
+
+async function isSealedArchive(file: File): Promise<boolean> {
+  try {
+    const head = await file.slice(0, SEALED_MAGIC.length).arrayBuffer();
+    return new TextDecoder().decode(new Uint8Array(head)) === SEALED_MAGIC;
+  } catch {
+    return false;
+  }
+}
 
 export function SettingsPage() {
   const about = useApiResource<AboutInfo>("/settings/about");
@@ -101,7 +112,7 @@ export function SettingsPage() {
       await apiPostDownload(
         "/settings/backup",
         { passphrase: backupPassphrase },
-        backupFilename(),
+        backupFilename(backupPassphrase.length > 0),
       );
       setBackupNotice("Backup downloaded.");
       setBackupPassphrase("");
@@ -112,15 +123,16 @@ export function SettingsPage() {
     }
   };
 
-  const handleRestoreFile = (event: ChangeEvent<HTMLInputElement>) => {
+  const handleRestoreFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (file === undefined) {
       return;
     }
+    const isProtected = await isSealedArchive(file);
     setRestorePassphrase("");
     setRestoreError(null);
-    setIsArchiveProtected(false);
+    setIsArchiveProtected(isProtected);
     setRestoreFile(file);
   };
 
@@ -308,9 +320,9 @@ export function SettingsPage() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".tar.gz,.tgz,application/gzip"
+                accept=".tar.gz,.tgz,.sealed,application/gzip"
                 className="settings_file_input"
-                onChange={handleRestoreFile}
+                onChange={(event) => void handleRestoreFile(event)}
               />
             </div>
           </div>
@@ -437,32 +449,29 @@ function RestoreArchiveModal({
           Every file under config/ is overwritten by the archive&apos;s. Render
           and restart services afterwards for it to take effect.
         </p>
-        <div className="settings_restore_fields">
-          {isProtected && (
-            <div className="notice notice--warn">
-              <Icon name="alert" size={15} />
-              <div className="notice_body">{RESTORE_PROTECTED_NOTE}</div>
-            </div>
-          )}
-          <label className="field">
-            <span className="field_label">Archive passphrase</span>
-            <PasswordInput
-              value={passphrase}
-              onChange={onPassphrase}
-              autoFocus
-            />
-            <span className="field_hint">
-              Only a protected archive needs one; leave blank for a plain
-              backup.
-            </span>
-          </label>
-          {error !== null && (
-            <div className="notice notice--error">
-              <Icon name="alert" size={15} />
-              <div className="notice_body">{error}</div>
-            </div>
-          )}
-        </div>
+        {(isProtected || error !== null) && (
+          <div className="settings_restore_fields">
+            {isProtected && (
+              <label className="field">
+                <span className="field_label">Archive passphrase</span>
+                <PasswordInput
+                  value={passphrase}
+                  onChange={onPassphrase}
+                  autoFocus
+                />
+                <span className="field_hint">
+                  The passphrase this archive was sealed under.
+                </span>
+              </label>
+            )}
+            {error !== null && (
+              <div className="notice notice--error">
+                <Icon name="alert" size={15} />
+                <div className="notice_body">{error}</div>
+              </div>
+            )}
+          </div>
+        )}
         <div className="confirm_foot">
           <button
             type="button"
@@ -486,7 +495,7 @@ function RestoreArchiveModal({
   );
 }
 
-function backupFilename(): string {
+function backupFilename(isSealed: boolean): string {
   const stamp = new Date().toISOString().slice(0, 10);
-  return `neutrino_config_${stamp}.tar.gz`;
+  return `neutrino_config_${stamp}.${isSealed ? "sealed" : "tar.gz"}`;
 }

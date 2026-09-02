@@ -1,7 +1,6 @@
 """The Settings tab: the panel's own port, password, backup and versions."""
 
 import io
-import json
 import platform
 import tarfile
 import time
@@ -18,13 +17,12 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 
-from neutrino_hub.modules.credentials.constants import CREDENTIALS_VAULT_KEY_PATH
 from neutrino_hub.modules.credentials.vault import (
     VaultError,
-    install_master_key,
-    read_master_key,
-    unwrap_master_key,
-    wrap_master_key,
+    VaultPassphraseError,
+    is_sealed,
+    seal_bytes,
+    unseal_bytes,
 )
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
@@ -58,12 +56,6 @@ router = APIRouter(
 GATEWAY_VERSION = HUB_VERSION
 RESTORE_SIZE_LIMIT_BYTES = 32 * 1024 * 1024
 PANEL_SETTINGS_FILE = "web/settings.json"
-
-# What the vault's key files are called inside an archive, and the member a
-# sealed archive carries in their place.
-BACKUP_KEY_MEMBER = f"config/{CREDENTIALS_VAULT_KEY_PATH}"
-BACKUP_KEY_NEW_MEMBER = f"{BACKUP_KEY_MEMBER}.new"
-BACKUP_WRAPPED_KEY_MEMBER = f"{BACKUP_KEY_MEMBER}.wrapped"
 
 # The 400s the panel turns into its own sentences.
 BACKUP_ERROR_PASSPHRASE_NEEDED = "backup_passphrase_needed"
@@ -181,30 +173,36 @@ def change_password(
 
 @router.post("/backup")
 def backup(request: BackupRequest) -> StreamingResponse:
-    """Download the whole ``config/`` directory as a tarball.
+    """Download the whole ``config/`` directory, plain or sealed.
 
     Restoring this on a fresh machine and running the installer reproduces the
-    appliance, which is why it includes the device keys. Under a passphrase the
-    vault's master key travels sealed instead of in the clear, in a
-    ``vault.key.wrapped`` member the key files are left out for.
+    appliance, which is why it includes the device keys. Under a passphrase
+    the whole archive travels as one sealed container — the vault's master key
+    rides inside it, protected with everything else.
 
     Args:
-        request: The passphrase to seal the master key under; blank downloads
-            the archive plain.
+        request: The passphrase to seal the archive under; blank downloads it
+            plain.
 
     Returns:
-        A streaming ``.tar.gz`` download.
+        A streaming download: a ``.tar.gz``, or a ``.sealed`` container.
     """
-    wrapped_key = _wrapped_master_key(request.passphrase)
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
-        if wrapped_key is None:
-            archive.add(UTILS_CONFIG_DIR, arcname="config")
-        else:
-            archive.add(UTILS_CONFIG_DIR, arcname="config", filter=_without_key_files)
-            _add_wrapped_key(archive, wrapped_key)
-    buffer.seek(0)
+        archive.add(UTILS_CONFIG_DIR, arcname="config")
     stamp = time.strftime("%Y%m%d_%H%M%S")
+    if request.passphrase:
+        payload = seal_bytes(buffer.getvalue(), request.passphrase)
+        return StreamingResponse(
+            io.BytesIO(payload),
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="neutrino_config_{stamp}.sealed"'
+                )
+            },
+        )
+    buffer.seek(0)
     return StreamingResponse(
         buffer,
         media_type="application/gzip",
@@ -216,65 +214,17 @@ def backup(request: BackupRequest) -> StreamingResponse:
     )
 
 
-def _wrapped_master_key(passphrase: str) -> dict | None:
-    """Seal the vault's master key for an archive that leaves the box.
-
-    Args:
-        passphrase: What to seal it under; blank asks for a plain archive.
-
-    Returns:
-        The sealed key, or None when the archive stays plain because no
-        passphrase was given or this box holds no master key yet.
-    """
-    if not passphrase:
-        return None
-    try:
-        return wrap_master_key(read_master_key(), passphrase)
-    except VaultError:
-        return None
-
-
-def _without_key_files(member: tarfile.TarInfo) -> tarfile.TarInfo | None:
-    """Leave the master key out of an archive carrying a sealed one.
-
-    Args:
-        member: The member about to be written.
-
-    Returns:
-        The same member, or None to drop it.
-    """
-    if member.name in (BACKUP_KEY_MEMBER, BACKUP_KEY_NEW_MEMBER):
-        return None
-    return member
-
-
-def _add_wrapped_key(archive: tarfile.TarFile, wrapped_key: dict) -> None:
-    """Write the sealed master key into an archive.
-
-    Args:
-        archive: The archive being built.
-        wrapped_key: What :func:`wrap_master_key` produced.
-    """
-    payload = json.dumps(wrapped_key, indent=2).encode()
-    member = tarfile.TarInfo(BACKUP_WRAPPED_KEY_MEMBER)
-    member.size = len(payload)
-    member.mode = 0o600
-    member.mtime = int(time.time())
-    archive.addfile(member, io.BytesIO(payload))
-
-
 @router.post("/restore")
 async def restore(file: UploadFile, passphrase: str = Form("")) -> dict:
     """Replace ``config/`` from an uploaded backup.
 
-    A sealed archive is settled before anything is written: the passphrase has
-    to open its master key first, and the key is installed after the files are
-    unpacked, so no interruption leaves a restored store without the key that
-    opens it.
+    A sealed container is opened in memory before anything is written, so a
+    missing or wrong passphrase leaves the box exactly as it was.
 
     Args:
-        file: The uploaded ``.tar.gz``.
-        passphrase: What the archive was sealed under, blank for a plain one.
+        file: The uploaded ``.tar.gz`` or ``.sealed`` container.
+        passphrase: What the container was sealed under, blank for a plain
+            archive.
 
     Returns:
         Whether the restore succeeded.
@@ -291,68 +241,36 @@ async def restore(file: UploadFile, passphrase: str = Form("")) -> dict:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="backup is too large"
         )
+    if is_sealed(payload):
+        if not passphrase:
+            raise _coded_bad_request(BACKUP_ERROR_PASSPHRASE_NEEDED)
+        try:
+            payload = unseal_bytes(payload, passphrase)
+        except VaultPassphraseError as error:
+            raise _coded_bad_request(BACKUP_ERROR_PASSPHRASE_WRONG) from error
+        except VaultError as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"unreadable backup: {error}",
+            ) from error
+        if len(payload) > RESTORE_SIZE_LIMIT_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="backup is too large"
+            )
     try:
         with tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz") as archive:
             members = [_checked_member(member) for member in archive.getmembers()]
-            key_bytes = _unsealed_master_key(archive, members, passphrase)
             # The data filter is the second line of defence, not the first:
             # it also refuses absolute paths, traversal and special files.
             archive.extractall(
-                path=UTILS_CONFIG_DIR.parent,
-                members=[
-                    member
-                    for member in members
-                    if member.name != BACKUP_WRAPPED_KEY_MEMBER
-                ],
-                filter="data",
+                path=UTILS_CONFIG_DIR.parent, members=members, filter="data"
             )
     except tarfile.TarError as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"unreadable backup: {error}",
         ) from error
-    if key_bytes is not None:
-        install_master_key(key_bytes)
     return {"is_restored": True}
-
-
-def _unsealed_master_key(
-    archive: tarfile.TarFile, members: list[tarfile.TarInfo], passphrase: str
-) -> bytes | None:
-    """Open the master key an archive carries, before anything is written.
-
-    Args:
-        archive: The uploaded archive.
-        members: Its members, already checked.
-        passphrase: What the uploader gave, blank when they gave nothing.
-
-    Returns:
-        The raw master key, or None when the archive carries no sealed one.
-
-    Raises:
-        HTTPException: 400 when the archive is sealed and the passphrase is
-            missing or does not open it.
-    """
-    sealed = next(
-        (member for member in members if member.name == BACKUP_WRAPPED_KEY_MEMBER), None
-    )
-    if sealed is None:
-        return None
-    if not passphrase:
-        raise _coded_bad_request(BACKUP_ERROR_PASSPHRASE_NEEDED)
-    stream = archive.extractfile(sealed)
-    if stream is None:
-        raise _coded_bad_request(BACKUP_ERROR_PASSPHRASE_WRONG)
-    try:
-        sealed_key = json.loads(stream.read())
-    except (ValueError, UnicodeDecodeError) as error:
-        raise _coded_bad_request(BACKUP_ERROR_PASSPHRASE_WRONG) from error
-    if not isinstance(sealed_key, dict):
-        raise _coded_bad_request(BACKUP_ERROR_PASSPHRASE_WRONG)
-    try:
-        return unwrap_master_key(sealed_key, passphrase)
-    except VaultError as error:
-        raise _coded_bad_request(BACKUP_ERROR_PASSPHRASE_WRONG) from error
 
 
 def _coded_bad_request(code: str) -> HTTPException:

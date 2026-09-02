@@ -175,10 +175,12 @@ without saying what anything is. Each object's AAD binds its ciphertext to its
 id and kind; two objects cannot be swapped.
 
 The key lives inside `config/` because backing up `config/` must reproduce the
-appliance and the panel must decrypt with nobody at the keyboard. What the
-vault protects is every copy that leaves the box: the backup export wraps
-`vault.key` under a passphrase (scrypt), and a restore asks for it once. On
-the box itself the panel is root and the vault claims nothing against root.
+appliance and the panel must decrypt with nobody at the keyboard. What
+protects a copy that leaves the box is the backup export: given a passphrase
+it seals the whole archive as one container (scrypt → AES-256-GCM), the
+master key riding inside with everything else, and a restore asks for the
+passphrase once before anything touches disk. On the box itself the panel is
+root and the vault claims nothing against root.
 
 Secrets travel one way through the API: written in, listed back as `has_*`
 booleans, fingerprints and reference counts, never read out. Deleting an

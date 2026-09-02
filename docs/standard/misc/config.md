@@ -53,9 +53,10 @@ out through the API; listings only say whether one is stored.
 **The vault** — every other secret sits sealed in
 `config/credentials/vault.json`, one AES-256-GCM ciphertext per object under
 the master key in `config/credentials/vault.key` (mode 0600). Names, kinds
-and timestamps stay readable; the material and the key never leave the box —
-an exported backup carries the key wrapped under a passphrase instead.
-`nhub vault rekey` re-encrypts everything under a fresh key.
+and timestamps stay readable; the material and the key never leave the box in
+the clear — a backup exported under a passphrase is one sealed `.sealed`
+container, master key inside. `nhub vault rekey` re-encrypts everything under
+a fresh key.
 
 ## First-run flow
 
