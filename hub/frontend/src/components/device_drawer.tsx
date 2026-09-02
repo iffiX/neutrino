@@ -830,14 +830,16 @@ export function DeviceDrawer({
         </div>
 
         <div className="device_drawer_footer">
-          <button
-            type="button"
-            className="button button--ghost button--small"
-            onClick={() => handleForget()}
-          >
-            <Icon name="trash" size={13} />
-            Forget device
-          </button>
+          {device.is_stored && (
+            <button
+              type="button"
+              className="button button--ghost button--small"
+              onClick={() => handleForget()}
+            >
+              <Icon name="trash" size={13} />
+              Forget device
+            </button>
+          )}
           <button
             type="button"
             className="button button--primary button--commit"

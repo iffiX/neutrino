@@ -673,6 +673,10 @@ class DeviceView(BaseModel):
     is_agent_online: bool = False
     is_wol_enabled: bool = False
     has_ssh: bool = False
+    # Whether this box holds anything about the device — a name, credentials,
+    # an agent token. A scan-only row holds nothing, so there is nothing to
+    # forget.
+    is_stored: bool = False
     ssh: DeviceSshConfig | None = None
     client: DeviceClientInfoView | None = None
 

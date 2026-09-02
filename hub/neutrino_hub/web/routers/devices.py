@@ -818,6 +818,7 @@ def _to_view(device: ManagedDevice, metrics: dict | None = None) -> DeviceView:
         is_agent_online=is_agent_online,
         is_wol_enabled=device.is_wol_enabled,
         has_ssh=device.has_ssh,
+        is_stored=device.is_stored,
         ssh=ssh_view,
         client=client_view,
     )

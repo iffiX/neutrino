@@ -622,6 +622,9 @@ export interface DeviceView {
   is_agent_online: boolean;
   is_wol_enabled: boolean;
   has_ssh: boolean;
+  /** Whether this box holds anything about the device; a scan-only row has
+   * nothing to forget. */
+  is_stored: boolean;
   ssh: DeviceSshConfig | null;
   client: DeviceClientInfo | null;
 }
