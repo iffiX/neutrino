@@ -14,6 +14,7 @@ reconfigures a box's network, installs packages, or both.
 | `test_panel_api_devices.py` | The device register: adding, renaming, forgetting, and fifty at once. |
 | `test_install_footprint.py` | That a server or side_gateway install left the machine addressing itself. |
 | `test_mode_matrix.py` | Every mode, every ordered switch between them, the one-arm and multi-uplink shapes, and the proxy's behaviour in each — the contract network.md states. |
+| `test_reinstall.py` | That installing the same version over a working box keeps every configuration file and restarts what runs the new code. |
 | `test_reset_hands_back.py` | That `nhub reset all` gave the network back. |
 | `run_on_box.sh` | The single-mode lifecycle, from an uninstalled machine and back to one. |
 | `run_mode_matrix.sh` | The matrix lifecycle: install, server, the whole walk, reset. |
@@ -47,6 +48,7 @@ Options, each also readable from the environment:
 | `--password` | `NEUTRINO_PANEL_PASSWORD` | Its password. Without it every check skips. |
 | `--before` | `NEUTRINO_BEFORE_STATE` | The machine's state from before the install, written by `machine_state.write_snapshot()`. |
 | `--mode` | `NEUTRINO_SETUP_MODE` | Which mode the box was set up in. |
+| `--package` | `NEUTRINO_PACKAGE` | The package file, for the checks that install it a second time. |
 
 Without a password the suite skips rather than fails, so a `pytest` from the
 repository root walks past it instead of taking a workstation's network apart.

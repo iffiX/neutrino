@@ -111,6 +111,12 @@ phase "the machine is still its own"
 python3 -m pytest "$HERE/test_install_footprint.py" -q
 ran $?
 
+# Before the reset, because it needs a box that is set up and working: what
+# it measures is a package landing on one somebody is using.
+phase "the same version, installed over itself"
+NEUTRINO_PACKAGE="$PACKAGE" python3 -m pytest "$HERE/test_reinstall.py" -q
+ran $?
+
 phase "reset"
 nhub reset all > /tmp/reset.log 2>&1
 ran $?
@@ -127,7 +133,8 @@ ran $?
 # has already reconfigured.
 phase "the panel, every page"
 python3 -m pytest "$HERE" -q --ignore="$HERE/test_install_footprint.py" \
-    --ignore="$HERE/test_reset_hands_back.py"
+    --ignore="$HERE/test_reset_hands_back.py" \
+    --ignore="$HERE/test_reinstall.py" --ignore="$HERE/test_mode_matrix.py"
 ran $?
 
 echo

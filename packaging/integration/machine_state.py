@@ -10,6 +10,7 @@ running, and about what the kernel holds — so it is read here, from the box.
 import json
 import re
 import subprocess
+import time
 from pathlib import Path
 
 # Where the distributions keep their network configuration. A hub that leaves
@@ -100,6 +101,108 @@ def config_trees() -> dict:
             digest, _, path = line.partition("  ")
             digests[path] = digest
     return digests
+
+
+# The hub's own configuration: the whole of what a set-up box is, and what a
+# package must not touch. Not the generated tree beside it, which is rendered
+# from this one and is supposed to change.
+MACHINE_HUB_CONFIG_DIR = "/etc/neutrino/hub"
+
+
+def config_digests() -> dict:
+    """The hub's own configuration files, by digest.
+
+    Returns:
+        One entry per file, path to md5, empty on a box that has never been
+        set up.
+    """
+    if not Path(MACHINE_HUB_CONFIG_DIR).is_dir():
+        return {}
+    digests = {}
+    for line in run(
+        ["find", MACHINE_HUB_CONFIG_DIR, "-type", "f", "-exec", "md5sum", "{}", "+"]
+    ).splitlines():
+        digest, _, path = line.partition("  ")
+        digests[path] = digest
+    return digests
+
+
+def started_at(unit: str) -> str:
+    """When systemd last brought a unit up.
+
+    Args:
+        unit: The unit name, without ``.service``.
+
+    Returns:
+        The timestamp as systemd prints it, empty when the unit is not
+        running. Comparing it across a reinstall is how "was restarted" is
+        told from "was left alone" — both of which leave the unit active.
+    """
+    return run(
+        ["systemctl", "show", "-p", "ActiveEnterTimestamp", "--value", unit]
+    ).strip()
+
+
+# How long the panel gets to answer again after the package restarted it.
+# Measured at two to three seconds on a Debian 12 VM; the ceiling is for a
+# slower box rather than a hung one.
+MACHINE_PANEL_RETURN_S = 60
+
+
+def reinstall(package: str) -> None:
+    """Install a package over the copy of it that is already there.
+
+    Every maintainer script an upgrade runs, runs here, which is what makes
+    this a test of the upgrade path without needing two releases to exist.
+
+    Returns once the panel answers again: the package restarts it, and a
+    check that ran in the second before it finished binding would be
+    measuring the restart rather than the upgrade.
+
+    Args:
+        package: Path to the package file.
+
+    Raises:
+        AssertionError: When the package manager refuses it, or the panel does
+            not come back.
+    """
+    if package.endswith(".deb"):
+        command = ["dpkg", "-i", package]
+    elif package.endswith(".rpm"):
+        command = ["rpm", "-Uvh", "--replacepkgs", package]
+    else:
+        command = ["pacman", "-U", "--noconfirm", package]
+    result = subprocess.run(command, capture_output=True, text=True)
+    assert result.returncode == 0, (result.stderr or result.stdout).strip()
+
+    deadline = time.monotonic() + MACHINE_PANEL_RETURN_S
+    while time.monotonic() < deadline:
+        if is_active("neutrino_hub_web") and _panel_answers():
+            return
+        time.sleep(1.0)
+    raise AssertionError("the panel never answered again after the reinstall")
+
+
+def _panel_answers() -> bool:
+    """Whether the panel is serving on its own port."""
+    port = run(
+        ["python3", "-c", PANEL_PORT_SCRIPT],
+    ).strip()
+    probe = subprocess.run(
+        ["curl", "-s", "-o", "/dev/null", f"http://127.0.0.1:{port or 8080}/"],
+        capture_output=True,
+    )
+    return probe.returncode == 0
+
+
+# Read from the panel's own settings rather than assumed: the port is a thing
+# somebody can move, and a check that hard-codes it reports a moved panel as a
+# dead one.
+PANEL_PORT_SCRIPT = (
+    "import json;"
+    "print(json.load(open('/etc/neutrino/hub/web/settings.json'))"
+    ".get('listen_port', 8080))"
+)
 
 
 def addresses_and_routes() -> list:
