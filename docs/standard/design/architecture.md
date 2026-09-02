@@ -2,6 +2,41 @@
 
 The load-bearing structural principles of this repo.
 
+## The shape of the system
+
+One box runs the hub; every other machine runs at most the agent.
+
+```
+config/ ──render──▶ /var/lib/neutrino/generated/ ──apply──▶ the daemons:
+  ▲                                              xray, dnsmasq, cliproxyapi,
+  │ every change is a write here                 nftables, hostapd, units
+  │
+web/ (FastAPI, root) ◀────── hub/frontend/ (browser, plain HTTP, password)
+  ▲
+  │ heartbeat over pinned TLS — report up, desired state down
+  │
+neutrino_agent (root, stdlib only) ──── reconciles features and mounts
+  ▲
+  │ loopback only
+agent's own page (the machine's owner, no password)
+```
+
+Inside the hub package the layers only reach downward:
+
+- `modules/<name>/` — one feature each (config, renderer, ops, provisioner),
+  pure library. Modules reference each other by id, never by import of
+  behavior: a device references a vault object, an offer references a
+  declared service, the AI gateway renders the providers the credentials
+  module stores.
+- `system/` — wrappers around OS invocations; the only code that shells out.
+- `web/` — one router file per API module, models shared with the frontend
+  by field name.
+- `cli/` — every entry point, one `nhub` subcommand each.
+
+The agent has no dependencies and opens no port toward the hub: it polls, so
+it survives restarts, sleep and NAT in between. Everything the hub "does" to
+a device is desired state the agent converges on.
+
 ## The two-tier principle: library vs. scripts
 
 Reusable logic lives in purely functional library packages. All execution
@@ -63,6 +98,140 @@ modules/router/routes.py  ->  RouterRulesetApplier.apply(ruleset)   # nft -c the
 Litmus test: if you deleted systemd and nft tomorrow, every renderer should
 still import, run, and pass its tests unchanged. If it would not, an effect has
 leaked into the rendering layer.
+
+## Services are the unit; the hub is the broker
+
+A service is anything a device can consume: the hub's own routing, the hub's
+Samba shares, the AI gateway, and the services somebody declares on machines
+the hub does not run — a NAS's Samba, an HTTP server, a Docker engine. A
+device never integrates with a service directly; the hub renders what a
+service offers into the device catalog, and a device subscribes.
+
+```
+service       hub-provided, or declared in config/services/declared.json
+  -> offer          pure render: one catalog entry per thing a device can take
+  -> subscription   per-device wish in devices.json:
+                    {is_enabled, is_activated, settings}
+```
+
+- **The catalog carries no secrets.** It is fleet-global and hashed, and every
+  agent holds a copy. A share's password or an AI key is resolved per device
+  into `desired_features[<id>].config` when that device's heartbeat is
+  answered, and travels nowhere else.
+- **Settings flow both ways through the hub.** An offer declares its settings
+  (`mountpoint`), the panel and the agent's own page both render the form from
+  that one declaration, and an edit on the agent's page travels up as a
+  `feature_requests` entry and comes back as desired state. The hub is the
+  only decider, so the two pages cannot disagree for longer than one beat.
+- **Subscriptions reconcile; nothing is executed remotely.** The agent
+  converges on desired state every beat, which is what re-mounts a share
+  after a reboot with no fstab entry and no command queue.
+
+Which offers exist is itself a function of `config/`: a gateway offer is
+rendered only in `router` and `side_gateway` modes, a mount offer only for a
+share that exists. There is one AI service, the hub's own gateway; an outside
+model endpoint becomes a provider behind it, never an offer of its own.
+
+### How a device subscribes
+
+Subscriptions live in `devices.json` under `client.features`, keyed by offer
+id. A toggle on the panel writes the wish there; a toggle or a setting typed
+on the agent's own page arrives as a `feature_requests` entry and is written
+to the same place. The heartbeat carries everything, in both directions:
+
+1. The agent posts its report — platform, metrics, per-feature state, the
+   hash of the catalog it holds, and any local requests.
+2. The hub stores the report, folds the requests into the stored
+   subscriptions, and answers with `desired_features`: one entry per
+   subscription, `{is_enabled, is_activated, settings, config}`, the config
+   resolved for this device alone — the vault opened for its share password,
+   its AI key minted, its mountpoint filled in. The catalog itself rides
+   along only when the agent's hash is stale.
+3. The agent reconciles the machine toward what came down, then reports the
+   new state on its next beat. A state is `{code, params}`; the pages do the
+   wording.
+
+A feature nobody has decided about is inspected and reported, never acted on;
+an offer gone from the catalog stops being reported. Removal is the same
+loop: a subscription switched off is converged on, not commanded.
+
+## The credential vault
+
+Every secret the hub keeps for somebody is sealed in one store:
+`config/credentials/vault.json`, one AES-256-GCM ciphertext per object under
+the master key in `config/credentials/vault.key` (mode 0600). The rest of
+`config/` holds references — `key_id`, `password_id`, `sudo_password_id`,
+`secret_id` — and no secret material at all.
+
+| kind | sealed | plaintext meta |
+| --- | --- | --- |
+| `password` | password | — |
+| `ssh_key` | private_key, passphrase | key_type, fingerprint |
+| `api_token` | api_key | — |
+| `service_account` | password | username |
+
+Names, kinds and timestamps stay readable, so the file says what it holds
+without saying what anything is. Each object's AAD binds its ciphertext to its
+id and kind; two objects cannot be swapped.
+
+The key lives inside `config/` because backing up `config/` must reproduce the
+appliance and the panel must decrypt with nobody at the keyboard. What the
+vault protects is every copy that leaves the box: the backup export wraps
+`vault.key` under a passphrase (scrypt), and a restore asks for it once. On
+the box itself the panel is root and the vault claims nothing against root.
+
+Secrets travel one way through the API: written in, listed back as `has_*`
+booleans, fingerprints and reference counts, never read out. Deleting an
+object still referenced is refused before it is allowed.
+
+Two things stay out: the panel password, which is a hash and not a kept
+secret, and the CLIProxyAPI client keys, which the hub mints itself, shows in
+full to their owner, and renders whole into the gateway's own config.
+
+`nhub vault rekey` re-encrypts every object under a fresh master key.
+
+## The network the hub assumes
+
+Every enrolled machine — on the LAN, on NetBird, on whatever overlay comes
+later — is somebody's own: locally administered, deliberately joined. The hub
+is not multi-tenant and does not defend one enrolled machine from another.
+
+The wire gets no such trust. A "LAN" can be a campus network with a thousand
+strangers on it, so the panel answers only on served interfaces and the
+overlay, behind a password, and the agent channel carries its secrets under
+pinned TLS. Trusting the machines and distrusting the wire is the whole
+model.
+
+## The agent channel is pinned TLS; the panel is not
+
+Desired state carries real secrets, so the wire between hub and agent is
+treated as hostile even where the machines on it are not. The agent API is
+served on its own TLS-only port with a self-signed certificate generated at
+setup. The
+enrollment link carries the certificate's SHA-256 fingerprint, and the agent
+pins it — verification is the fingerprint, not a chain, so no device installs
+a CA and no name has to match.
+
+The panel a browser reads stays plain HTTP on its own port: a self-signed
+certificate in a browser is a warning on every page, while the same
+certificate pinned by an agent is exact. Two audiences, two transports,
+because they verify differently.
+
+## The AI gateway is metered at the hub
+
+CLIProxyAPI's management API is served on loopback only, unlocked by a key
+held in the vault. The panel accumulates what it reports — requests and
+tokens, per client key, per day — under `/var/lib/neutrino/cliproxyapi/`, and
+a client key belongs to a device, so usage lands on the subscription that
+spent it. The dashboard, the AI page and the status strip all read that one
+store.
+
+## One identifier shape
+
+A stored record is keyed by a UUIDv4 hex string, minted at creation and
+meaning nothing. The exception is a device, keyed by what the network knows it
+by: its MAC address, or the `id:`-prefixed machine id of a machine enrolled
+from behind someone else's NAT.
 
 ## The web backend runs as root, and that is a boundary, not a habit
 
