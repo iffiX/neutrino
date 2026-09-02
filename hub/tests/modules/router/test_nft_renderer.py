@@ -41,11 +41,15 @@ TOPOLOGIES = {
 }
 
 
+AGENT_PORT = 8443
+
+
 def render(*entries, routing=None) -> str:
     return RouterNftRenderer(
         network=network_config(*entries),
         routing={**ROUTING_DIRECT, **(routing or {})},
         xray_uid=999,
+        agent_port=AGENT_PORT,
     ).render()
 
 
@@ -213,6 +217,7 @@ def test_fenced_lans_cannot_reach_each_other():
         network=network_config(*entries, is_inter_lan_allowed=False),
         routing=ROUTING_DIRECT,
         xray_uid=999,
+        agent_port=AGENT_PORT,
     ).render()
 
     lan_set = 'iifname { "enp1s0", "enp1s0.10" }'
@@ -275,3 +280,25 @@ def test_an_exposed_lan_needs_no_extra_serving_rules():
 
     assert 'iifname { "enp1s0" } accept' in ruleset
     assert 'iifname { "enp1s0" } udp dport 67 accept' not in ruleset
+    assert f"tcp dport {AGENT_PORT}" not in ruleset
+
+
+def test_the_agent_port_answers_on_a_served_network_nobody_exposed():
+    """The agent channel opens wherever the panel does and on every served
+    wire besides: a device the hub manages heartbeats to it whether or not
+    its network hosts anything else."""
+    ruleset = render(
+        wan_entry("enp2s0"),
+        lan_entry("enp1s0", address="192.168.93.1", is_exposed=False),
+    )
+
+    assert f'iifname {{ "enp1s0" }} tcp dport {AGENT_PORT} accept' in ruleset
+
+
+def test_a_closed_uplink_does_not_answer_the_agent_port():
+    ruleset = render(
+        wan_entry("enp2s0"),
+        lan_entry("enp1s0", address="192.168.93.1"),
+    )
+
+    assert f'iifname {{ "enp2s0" }} tcp dport {AGENT_PORT} accept' not in ruleset

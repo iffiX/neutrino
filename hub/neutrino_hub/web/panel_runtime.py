@@ -35,6 +35,7 @@ from neutrino_hub.modules.samba.renderer import SambaConfigRenderer
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.system.listening_ports import ListeningPortReader
 from neutrino_hub.web.constants import (
+    WEB_DEFAULT_AGENT_LISTEN_PORT,
     WEB_PROXY_SCOPE_HUB,
     WEB_PROXY_SCOPE_LAN,
     WEB_PROXY_SCOPE_LAN_AND_HUB,
@@ -412,6 +413,12 @@ class PanelRuntime:
         queue.clear()
         return commands
 
+    def _agent_port(self) -> int:
+        """The agent channel's port, from the settings or the default."""
+        return int(
+            self.settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
+        )
+
     def _apply_all_blocking(self) -> str:
         network = self.network()
         node_list = self.node_list()
@@ -422,7 +429,10 @@ class PanelRuntime:
             routing=routing,
         ).render()
         nft_ruleset = RouterNftRenderer(
-            network=network, routing=routing, xray_uid=lookup_xray_uid()
+            network=network,
+            routing=routing,
+            xray_uid=lookup_xray_uid(),
+            agent_port=self._agent_port(),
         ).render()
         dnsmasq_config = RouterDnsmasqRenderer(
             network=network, routing=routing
@@ -481,7 +491,10 @@ class PanelRuntime:
         routing = self.routing()
 
         nft_ruleset = RouterNftRenderer(
-            network=network, routing=routing, xray_uid=lookup_xray_uid()
+            network=network,
+            routing=routing,
+            xray_uid=lookup_xray_uid(),
+            agent_port=self._agent_port(),
         ).render()
         dnsmasq_config = RouterDnsmasqRenderer(
             network=network, routing=routing

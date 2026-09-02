@@ -39,6 +39,7 @@ class RouterNftRenderer:
         network: RouterNetworkConfig,
         routing: dict,
         xray_uid: int,
+        agent_port: int,
     ):
         """
         Args:
@@ -48,6 +49,9 @@ class RouterNftRenderer:
             xray_uid: Numeric uid the xray service runs as. Traffic from this
                 uid is never diverted, which is what stops the proxy from
                 looping into itself.
+            agent_port: TCP port the agent channel answers on. Opened toward
+                every served network, exposed or not, the way leases and
+                names are.
         """
         # Device names, not entry names: the untagged main of a split port is
         # config-side only, and the firewall must match the port itself.
@@ -62,6 +66,7 @@ class RouterNftRenderer:
         self._is_lan_proxy_enabled = routing.get("is_proxy_enabled", True)
         self._is_local_proxy_enabled = routing.get("is_local_proxy_enabled", False)
         self._xray_uid = xray_uid
+        self._agent_port = agent_port
 
     def render(self) -> str:
         """Render the complete ruleset.
@@ -289,6 +294,9 @@ class RouterNftRenderer:
                 f"        iifname {served} udp dport 67 accept",
                 f"        iifname {served} udp dport 53 accept",
                 f"        iifname {served} tcp dport 53 accept",
+                "        # Its agents heartbeat the same way: the agent channel",
+                "        # is the hub managing its own devices.",
+                f"        iifname {served} tcp dport {self._agent_port} accept",
             ]
         lines += [
             "        icmp type { echo-request, destination-unreachable, "

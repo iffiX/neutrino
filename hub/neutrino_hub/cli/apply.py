@@ -53,6 +53,11 @@ from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.system.units import SystemdUnitInstaller
 from neutrino_hub.utils.json_file import read_config, write_generated
+from neutrino_hub.web.agent_tls import ensure_certificate
+from neutrino_hub.web.constants import (
+    WEB_AGENT_TLS_CERT_PATH,
+    WEB_DEFAULT_AGENT_LISTEN_PORT,
+)
 from neutrino_hub.utils.subprocess_run import CommandError, run
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
 from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
@@ -100,6 +105,9 @@ def main() -> int:
         _print_artifacts(artifacts)
         return 0
 
+    if ensure_certificate():
+        print(f"agent certificate generated at {WEB_AGENT_TLS_CERT_PATH}")
+
     try:
         _write(artifacts)
         if not args.skip_apply:
@@ -131,6 +139,7 @@ def _render(selected: tuple[str, ...]) -> dict:
             network=network,
             routing=routing,
             xray_uid=lookup_xray_uid(),
+            agent_port=_agent_port(),
         ).render()
     if "dnsmasq" in selected:
         artifacts["dnsmasq"] = RouterDnsmasqRenderer(
@@ -172,6 +181,18 @@ def _render(selected: tuple[str, ...]) -> dict:
         podman_config.validate()
         artifacts["podman"] = podman_ops.container_renderer(podman_config).render()
     return artifacts
+
+
+def _agent_port() -> int:
+    """The agent channel's port, from the panel settings or the default."""
+    try:
+        return int(
+            read_config("web/settings.json").get(
+                "agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT
+            )
+        )
+    except (FileNotFoundError, ValueError):
+        return WEB_DEFAULT_AGENT_LISTEN_PORT
 
 
 def _print_artifacts(artifacts: dict) -> None:

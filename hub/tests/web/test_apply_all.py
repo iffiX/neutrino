@@ -61,6 +61,7 @@ def applied(monkeypatch):
     )
     panel = object.__new__(PanelRuntime)
     panel.is_config_dirty = True
+    panel.settings = {}
     return panel, written
 
 

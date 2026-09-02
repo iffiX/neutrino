@@ -88,7 +88,9 @@ def test_server_mode_routes_nothing_but_stays_reachable():
     """The failure this guards: an input chain that drops the panel too."""
     plan = RouterModePlanner(mode=ROUTER_MODE_SERVER, port_names=("enp1s0",)).plan()
 
-    rendered = RouterNftRenderer(network=plan, routing={}, xray_uid=None).render()
+    rendered = RouterNftRenderer(
+        network=plan, routing={}, xray_uid=None, agent_port=8443
+    ).render()
 
     assert 'iifname { "enp1s0" } accept' in rendered
     assert "masquerade" not in without_comments(rendered)
@@ -102,7 +104,9 @@ def test_server_mode_polices_no_traffic_that_is_not_its_own():
     there cuts every one of them off without saying so."""
     plan = RouterModePlanner(mode=ROUTER_MODE_SERVER, port_names=("enp1s0",)).plan()
 
-    rendered = RouterNftRenderer(network=plan, routing={}, xray_uid=None).render()
+    rendered = RouterNftRenderer(
+        network=plan, routing={}, xray_uid=None, agent_port=8443
+    ).render()
 
     forward = rendered[rendered.index("chain forward") :]
     assert "policy accept" in forward[: forward.index("}")]
@@ -115,7 +119,9 @@ def test_every_mode_renders_a_ruleset(mode):
         mode=mode, wan_names=("enp2s0",), lan_names=("enp1s0",), trunk_name="enp1s0"
     ).plan()
 
-    rendered = RouterNftRenderer(network=plan, routing={}, xray_uid=None).render()
+    rendered = RouterNftRenderer(
+        network=plan, routing={}, xray_uid=None, agent_port=8443
+    ).render()
 
     assert "chain input" in rendered
     assert "chain forward" in rendered
