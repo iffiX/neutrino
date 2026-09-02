@@ -43,6 +43,9 @@ RESET_COLLECTED_PATHS = (
     # reset is a key the next owner inherits.
     "credentials/vault.key",
     "credentials/vault.key.new",
+    # The agent channel's certificate and key go the same way; the next setup
+    # mints a fresh identity for its own fleet.
+    "web/agent_tls",
 )
 RESET_EXAMPLE_SUFFIX = ".example.json"
 RESET_PANEL_UNIT = "web"

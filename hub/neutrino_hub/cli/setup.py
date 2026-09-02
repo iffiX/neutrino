@@ -74,6 +74,7 @@ from neutrino_hub.modules.xray.constants import (
 
 from neutrino_hub.modules.router import links
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
+from neutrino_hub.web.agent_tls import ensure_certificate
 from neutrino_hub.web.constants import (
     WEB_DEFAULT_LISTEN_PORT,
     WEB_SETUP_GRACE_S,
@@ -959,6 +960,17 @@ def _step_config_files(reporter: InstallReporter) -> str:
     return f"created {len(created)}"
 
 
+def _step_agent_tls(reporter: InstallReporter) -> str:
+    """Give the agent channel its certificate, once.
+
+    Regenerating would change the fingerprint every enrolled agent pins, so
+    an existing pair is left alone.
+    """
+    if ensure_certificate():
+        return "generated"
+    return "present"
+
+
 def _step_systemd_units(reporter: InstallReporter) -> str:
     written = SystemdUnitInstaller().install()
     is_changed = bool(written)
@@ -1088,6 +1100,7 @@ CORE_STEPS = (
     ("Preparing the Python environment", _step_python_env),
     ("Installing xray-core and geodata", _step_xray_core),
     ("Preparing config/ from examples", _step_config_files),
+    ("Generating the agent channel certificate", _step_agent_tls),
     ("Installing systemd units", _step_systemd_units),
     ("Applying the interface roles", _step_interfaces),
     ("Rendering and applying configuration", _step_render_all),

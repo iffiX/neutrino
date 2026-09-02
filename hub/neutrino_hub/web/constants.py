@@ -1,6 +1,7 @@
 """Fixed values of the web layer."""
 
 from neutrino_hub.utils.constants import (
+    UTILS_CONFIG_DIR,
     UTILS_DATA_DIR,
     UTILS_LOG_ROOT,
     UTILS_RUNTIME_ROOT,
@@ -13,6 +14,17 @@ WEB_SESSION_COOKIE = "neutrino_session"
 # offers it, the unit serves on it, and an enrollment link points a device at
 # it, and three copies of it is how a device ends up sent to the wrong port.
 WEB_DEFAULT_LISTEN_PORT = 8080
+
+# The agent channel: the /api/agent routes on their own TLS port, pinned by
+# the fingerprint every enrollment link carries.
+WEB_DEFAULT_AGENT_LISTEN_PORT = 8443
+WEB_AGENT_TLS_DIR = UTILS_CONFIG_DIR / "web" / "agent_tls"
+WEB_AGENT_TLS_CERT_PATH = WEB_AGENT_TLS_DIR / "certificate.pem"
+WEB_AGENT_TLS_KEY_PATH = WEB_AGENT_TLS_DIR / "key.pem"
+WEB_AGENT_TLS_SUBJECT = "neutrino-hub"
+# Verification is the pinned fingerprint, not the validity window, so the
+# certificate simply has to outlive the box.
+WEB_AGENT_TLS_VALIDITY_DAYS = 3650
 # What a listener may be moved to. Port 0 asks the kernel to choose, which is
 # not an answer anybody can then type into a browser.
 WEB_PORT_MIN = 1
