@@ -279,6 +279,17 @@ class RouterNftRenderer:
                 f"        iifname {external} udp dport 68 accept",
                 f"        iifname {external} udp sport 67 accept",
             ]
+        closed_lans = [name for name in self._lans if name not in self._exposed]
+        if closed_lans:
+            served = _interface_set(closed_lans)
+            lines += [
+                "        # A served network nobody exposed still gets its leases",
+                "        # and its names: that is this box being its router, not a",
+                "        # service somebody opted into.",
+                f"        iifname {served} udp dport 67 accept",
+                f"        iifname {served} udp dport 53 accept",
+                f"        iifname {served} tcp dport 53 accept",
+            ]
         lines += [
             "        icmp type { echo-request, destination-unreachable, "
             "time-exceeded, parameter-problem } accept",

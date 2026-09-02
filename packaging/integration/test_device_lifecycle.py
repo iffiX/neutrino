@@ -86,6 +86,16 @@ def serving(panel, before):
     matrix.put_interface(
         panel, spares[-1], role="lan", lan=matrix.lan_body(LIFECYCLE_LAN)
     )
+    # Exposure is written as a whole set, never as a side effect of one
+    # interface's save; the agent on the served wire needs the panel to
+    # answer there.
+    exposed = [
+        entry["settings"]["name"]
+        for entry in panel.read("/network")["interfaces"]
+        if entry["settings"]["is_exposed"]
+    ]
+    if spares[-1] not in exposed:
+        matrix.put_options(panel, exposed_interfaces=exposed + [spares[-1]])
     return spares[-1]
 
 

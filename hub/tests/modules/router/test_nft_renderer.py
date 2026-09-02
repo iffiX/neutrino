@@ -251,3 +251,27 @@ def test_a_side_gateway_hairpins_and_masquerades_precisely():
 
     assert 'iifname { "enp1s0" } oifname { "enp1s0" } accept' in ruleset
     assert 'oifname "enp1s0" ip daddr != 192.168.1.0/24 masquerade' in ruleset
+
+
+def test_a_closed_lan_is_still_served_its_lease_and_names():
+    """Exposure gates what the box hosts, never the serving itself: a LAN
+    nobody exposed still gets DHCP and DNS through the input chain."""
+    ruleset = render(
+        wan_entry("enp2s0"),
+        lan_entry("enp1s0", address="192.168.93.1", is_exposed=False),
+    )
+
+    assert 'iifname { "enp1s0" } udp dport 67 accept' in ruleset
+    assert 'iifname { "enp1s0" } udp dport 53 accept' in ruleset
+    assert 'iifname { "enp1s0" } tcp dport 53 accept' in ruleset
+    assert 'iifname { "enp1s0" } accept' not in ruleset
+
+
+def test_an_exposed_lan_needs_no_extra_serving_rules():
+    ruleset = render(
+        wan_entry("enp2s0"),
+        lan_entry("enp1s0", address="192.168.93.1"),
+    )
+
+    assert 'iifname { "enp1s0" } accept' in ruleset
+    assert 'iifname { "enp1s0" } udp dport 67 accept' not in ruleset
