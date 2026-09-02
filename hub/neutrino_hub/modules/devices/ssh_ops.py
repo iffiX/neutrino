@@ -25,9 +25,12 @@ from pathlib import Path
 
 import asyncssh
 
+from neutrino_hub.modules.credentials.vault import SecretVault, VaultError
 from neutrino_hub.modules.devices.constants import SSH_UNREACHABLE_STATUS
 from neutrino_hub.modules.devices.host_keys import DeviceHostKeyStore
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
+
+PASSWORD_KIND = "password"
 
 CONNECT_TIMEOUT_S = 15
 
@@ -64,6 +67,29 @@ def _normalise_machine(machine: str) -> str:
     return MACHINE_TO_ARCH.get(machine, machine)
 
 
+def _password_material(password_id: str | None) -> str | None:
+    """Open one referenced vault password.
+
+    Args:
+        password_id: The vault object's id, or None when the device names
+            none.
+
+    Returns:
+        The password, or None when the id is absent, stale, or names another
+        kind — the same stance as a stale ``key_id``.
+    """
+    if not password_id:
+        return None
+    vault = SecretVault()
+    record = vault.get(password_id)
+    if record is None or record.kind != PASSWORD_KIND:
+        return None
+    try:
+        return vault.open(password_id).get("password")
+    except VaultError:
+        return None
+
+
 @dataclass
 class SshCredentials:
     """How to reach and authenticate to one device.
@@ -77,8 +103,10 @@ class SshCredentials:
         private_key_path: Path to a private key file, for a device whose config
             names one directly.
         private_key_passphrase: Passphrase, when the key is encrypted.
-        password: Login password, when password authentication is used.
-        sudo_password: Password piped to ``sudo -S`` for privileged steps. None
+        password: Login password, opened from the vault for the device's
+            ``password_id``.
+        sudo_password: Password piped to ``sudo -S`` for privileged steps,
+            opened from the vault for the device's ``sudo_password_id``. None
             means the account has passwordless sudo.
     """
 
@@ -95,9 +123,11 @@ class SshCredentials:
     def from_dict(cls, data: dict) -> "SshCredentials":
         """Build from a device's ``ssh`` block in ``config/devices``.
 
-        A device references a key by ``key_id``; the material and passphrase
-        are opened from the vault here, so the device config never holds key
-        material. A ``private_key_path`` naming a file is still honoured.
+        A device references its key by ``key_id`` and its passwords by
+        ``password_id`` and ``sudo_password_id``; the material is opened from
+        the vault here, so the device config never holds any. A stale
+        reference yields no material rather than an error. A
+        ``private_key_path`` naming a file is still honoured.
 
         Args:
             data: The stored SSH settings.
@@ -119,8 +149,8 @@ class SshCredentials:
             private_key=private_key,
             private_key_path=data.get("private_key_path"),
             private_key_passphrase=passphrase,
-            password=data.get("password"),
-            sudo_password=data.get("sudo_password"),
+            password=_password_material(data.get("password_id")),
+            sudo_password=_password_material(data.get("sudo_password_id")),
         )
 
     @property

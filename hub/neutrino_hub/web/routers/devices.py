@@ -14,6 +14,7 @@ from neutrino_hub.modules.devices.registry import (
     ManagedDevice,
     feature_wish,
 )
+from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.features.catalog import load_catalog
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
 from neutrino_hub.modules.devices.lan_scan import LanScanner
@@ -58,6 +59,8 @@ router = APIRouter(
 )
 
 POWER_ACTIONS = ("reboot", "shutdown")
+
+PASSWORD_KIND = "password"
 
 ENROLLMENT_TOKEN_BYTES = 18
 # Long enough to walk to another machine and type it, short enough that a
@@ -128,12 +131,12 @@ def annotate(
 
     Raises:
         HTTPException: 400 when the address is not a MAC, or when the SSH
-            block names a key id that is not stored.
+            block references a credential that is not stored.
     """
     _require_mac(mac_address)
     payload = annotation.model_dump(exclude_unset=True)
     if "ssh" in payload:
-        payload["ssh"] = _store_ssh_secrets(mac_address, annotation.ssh)
+        payload["ssh"] = _store_ssh_secrets(annotation.ssh)
     device = DeviceRegistry().annotate(mac_address, payload)
     return _to_view(device, runtime.client_metrics.get(device.mac_address))
 
@@ -162,22 +165,22 @@ def forget(mac_address: str, runtime: PanelRuntime = Depends(get_runtime)) -> di
     return {}
 
 
-def _store_ssh_secrets(mac_address: str, ssh: DeviceSshConfig | None) -> dict | None:
+def _store_ssh_secrets(ssh: DeviceSshConfig | None) -> dict | None:
     """Turn a submitted SSH form into what gets stored.
 
-    Key authentication references a key from the registry by ``key_id``; no key
-    material passes through here. Passwords left blank are not cleared: the form
-    never receives them, so an empty field means "unchanged", not "delete".
+    Every credential is a reference: ``key_id`` into the key registry,
+    ``password_id`` and ``sudo_password_id`` into the vault's stored
+    passwords. No secret material passes through here.
 
     Args:
-        mac_address: The device the credentials belong to.
         ssh: The submitted credentials, or None to remove them.
 
     Returns:
         The dict to store, or None when credentials are being removed.
 
     Raises:
-        HTTPException: 400 when a chosen key id does not exist.
+        HTTPException: 400 with ``{"code": "unknown_credential", "field":
+            <name>}`` when a referenced id is not stored under the right kind.
     """
     if ssh is None:
         return None
@@ -188,21 +191,31 @@ def _store_ssh_secrets(mac_address: str, ssh: DeviceSshConfig | None) -> dict | 
         "username": ssh.username,
         "auth": ssh.auth,
     }
-    existing = DeviceRegistry().get(mac_address).ssh or {}
-
     if ssh.key_id:
         if not KeyRegistry().has_key(ssh.key_id):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"no stored key with id {ssh.key_id!r}",
-            )
+            _refuse_unknown_credential("key_id")
         stored["key_id"] = ssh.key_id
-    elif existing.get("key_id"):
-        stored["key_id"] = existing["key_id"]
-
-    stored["password"] = ssh.password or existing.get("password")
-    stored["sudo_password"] = ssh.sudo_password or existing.get("sudo_password")
+    if ssh.password_id:
+        if not _is_stored_password(ssh.password_id):
+            _refuse_unknown_credential("password_id")
+        stored["password_id"] = ssh.password_id
+    if ssh.sudo_password_id:
+        if not _is_stored_password(ssh.sudo_password_id):
+            _refuse_unknown_credential("sudo_password_id")
+        stored["sudo_password_id"] = ssh.sudo_password_id
     return stored
+
+
+def _is_stored_password(password_id: str) -> bool:
+    record = SecretVault().get(password_id)
+    return record is not None and record.kind == PASSWORD_KIND
+
+
+def _refuse_unknown_credential(field: str) -> None:
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={"code": "unknown_credential", "field": field},
+    )
 
 
 @router.post("/{mac_address}/wol", response_model=WolResult)
@@ -674,9 +687,9 @@ def _gateway_url(runtime: PanelRuntime) -> str:
 def _to_view(device: ManagedDevice, metrics: dict | None = None) -> DeviceView:
     ssh_view = None
     if device.ssh:
-        # Passwords are write-only: the browser learns whether one is stored,
-        # not what it is. The key is named so the drawer can show which one is
-        # selected without exposing anything.
+        # The block holds only references, so the ids can be echoed for the
+        # drawer's pickers. The key is named so the drawer can show which one
+        # is selected without exposing anything.
         key_id = device.ssh.get("key_id")
         key_name = None
         if key_id:
@@ -689,9 +702,8 @@ def _to_view(device: ManagedDevice, metrics: dict | None = None) -> DeviceView:
             auth=device.ssh.get("auth", "key"),
             key_id=key_id,
             key_name=key_name,
-            password=None,
-            sudo_password=None,
-            has_sudo_password=bool(device.ssh.get("sudo_password")),
+            password_id=device.ssh.get("password_id"),
+            sudo_password_id=device.ssh.get("sudo_password_id"),
         )
     is_agent_online = device.is_agent_online
     client_view = None

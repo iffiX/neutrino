@@ -10,7 +10,13 @@ import { StatusDot } from "./status_dot";
 import { TerminalModal } from "./terminal_modal";
 import { RemoteDesktopPanel } from "./remote_desktop_panel";
 import { ToggleSwitch } from "./toggle_switch";
-import { apiDelete, apiPost, apiPut, describeError } from "../api_client";
+import {
+  ApiError,
+  apiDelete,
+  apiPost,
+  apiPut,
+  describeError,
+} from "../api_client";
 import { DEVICE_ICON_NAMES, toDeviceIconName } from "../device_icon";
 import {
   DEVICE_REACH_LABELS,
@@ -32,6 +38,8 @@ import type {
   DeviceWolResult,
   KeyView,
   KeysResponse,
+  PasswordView,
+  PasswordsResponse,
 } from "../api_types";
 
 import "./device_drawer.css";
@@ -51,6 +59,18 @@ const DEFAULT_SSH_PORT = 22;
 // The <select> sentinel for "paste a new key" rather than choosing an existing
 // one.
 const NEW_KEY_OPTION = "__new__";
+
+// The password pickers' sentinel for "store a new password" rather than
+// choosing an existing one.
+const NEW_PASSWORD_OPTION = "__new__";
+
+// Wording for the save refusals the backend reports as codes.
+const UNKNOWN_CREDENTIAL_WORDING: Record<string, string> = {
+  key_id: "The chosen SSH key is no longer stored; pick another.",
+  password_id: "The chosen password is no longer stored; pick another.",
+  sudo_password_id:
+    "The chosen sudo password is no longer stored; pick another.",
+};
 
 interface DeviceAction {
   action: DeviceActionName;
@@ -106,12 +126,23 @@ export function DeviceDrawer({
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyMaterial, setNewKeyMaterial] = useState("");
   const [newKeyPassphrase, setNewKeyPassphrase] = useState("");
-  // Passwords start blank on every open: the gateway never sends them back, and
-  // leaving one blank on save keeps whatever is already stored.
-  const [password, setPassword] = useState("");
-  const [sudoPassword, setSudoPassword] = useState("");
-  const hasStoredSudoPassword = device.ssh?.has_sudo_password ?? false;
+  // Password auth references a vault password by id, the same way key auth
+  // references a key: pick a stored one, or store a new one on save.
+  const passwords = useApiResource<PasswordsResponse>("/credentials/passwords");
+  const [passwordId, setPasswordId] = useState<string>(
+    device.ssh?.password_id ?? "",
+  );
+  const [sudoPasswordId, setSudoPasswordId] = useState<string>(
+    device.ssh?.sudo_password_id ?? "",
+  );
+  const [newPasswordName, setNewPasswordName] = useState("");
+  const [newPasswordValue, setNewPasswordValue] = useState("");
+  const [newSudoPasswordName, setNewSudoPasswordName] = useState("");
+  const [newSudoPasswordValue, setNewSudoPasswordValue] = useState("");
+  const hasStoredSudoPassword = (device.ssh?.sudo_password_id ?? null) !== null;
   const isAddingKey = keyId === NEW_KEY_OPTION;
+  const isAddingPassword = passwordId === NEW_PASSWORD_OPTION;
+  const isAddingSudoPassword = sudoPasswordId === NEW_PASSWORD_OPTION;
 
   const [isSaving, setIsSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -154,16 +185,33 @@ export function DeviceDrawer({
     setError(null);
     setNotice(null);
     try {
-      // Pasting a new key creates it in the registry first, then the device
-      // references it — the same key any other device can then reuse.
+      // A new credential is created first, then the device references it —
+      // the same key or password any other device can then reuse.
       let resolvedKeyId = keyId;
-      if (auth === "key" && isAddingKey) {
+      if (hasSshDraft && auth === "key" && isAddingKey) {
         const created = await apiPost<KeyView>("/credentials/ssh_keys", {
           name: newKeyName.trim() || `${name.trim() || host.trim()} key`,
           private_key: newKeyMaterial,
           passphrase: newKeyPassphrase.length > 0 ? newKeyPassphrase : null,
         });
         resolvedKeyId = created.id;
+      }
+      let resolvedPasswordId = passwordId;
+      if (hasSshDraft && auth === "password" && isAddingPassword) {
+        const created = await apiPost<PasswordView>("/credentials/passwords", {
+          name: newPasswordName.trim() || `${name.trim() || host.trim()} login`,
+          password: newPasswordValue,
+        });
+        resolvedPasswordId = created.id;
+      }
+      let resolvedSudoPasswordId = sudoPasswordId;
+      if (hasSshDraft && isAddingSudoPassword) {
+        const created = await apiPost<PasswordView>("/credentials/passwords", {
+          name:
+            newSudoPasswordName.trim() || `${name.trim() || host.trim()} sudo`,
+          password: newSudoPasswordValue,
+        });
+        resolvedSudoPasswordId = created.id;
       }
       const annotation: DeviceAnnotation = {
         name: name.trim(),
@@ -175,15 +223,11 @@ export function DeviceDrawer({
               port: Number(port),
               username: username.trim(),
               auth,
-              key_id:
-                auth === "key" && resolvedKeyId !== NEW_KEY_OPTION
-                  ? resolvedKeyId || null
-                  : null,
+              key_id: auth === "key" ? resolvedKeyId || null : null,
               key_name: null,
-              password:
-                auth === "password" && password.length > 0 ? password : null,
-              sudo_password: sudoPassword.length > 0 ? sudoPassword : null,
-              has_sudo_password: hasStoredSudoPassword,
+              password_id:
+                auth === "password" ? resolvedPasswordId || null : null,
+              sudo_password_id: resolvedSudoPasswordId || null,
             }
           : null,
       };
@@ -193,12 +237,24 @@ export function DeviceDrawer({
       );
       onSaved(saved);
       setKeyId(saved.ssh?.key_id ?? "");
+      setPasswordId(saved.ssh?.password_id ?? "");
+      setSudoPasswordId(saved.ssh?.sudo_password_id ?? "");
       setNewKeyName("");
       setNewKeyMaterial("");
       setNewKeyPassphrase("");
+      setNewPasswordName("");
+      setNewPasswordValue("");
+      setNewSudoPasswordName("");
+      setNewSudoPasswordValue("");
+      if (isAddingKey) {
+        keys.reload();
+      }
+      if (isAddingPassword || isAddingSudoPassword) {
+        passwords.reload();
+      }
       setNotice("Saved.");
     } catch (cause: unknown) {
-      setError(describeError(cause));
+      setError(describeSaveError(cause));
     } finally {
       setIsSaving(false);
     }
@@ -497,10 +553,59 @@ export function DeviceDrawer({
                     )}
                   </>
                 ) : (
-                  <label className="field">
-                    <span className="field_label">Password</span>
-                    <PasswordInput value={password} onChange={setPassword} />
-                  </label>
+                  <>
+                    <label className="field">
+                      <span className="field_label">Password</span>
+                      <select
+                        className="select"
+                        value={passwordId}
+                        onChange={(event) => setPasswordId(event.target.value)}
+                      >
+                        <option value="">Select a password…</option>
+                        {(passwords.data?.passwords ?? []).map(
+                          (storedPassword) => (
+                            <option
+                              key={storedPassword.id}
+                              value={storedPassword.id}
+                            >
+                              {storedPassword.name}
+                            </option>
+                          ),
+                        )}
+                        <option value={NEW_PASSWORD_OPTION}>
+                          ＋ Store a new password…
+                        </option>
+                      </select>
+                      <span className="field_hint">
+                        Pick a stored password, or store a new one.
+                      </span>
+                    </label>
+                    {isAddingPassword && (
+                      <div className="device_drawer_newkey">
+                        <label className="field">
+                          <span className="field_label">New password name</span>
+                          <input
+                            className="input"
+                            value={newPasswordName}
+                            placeholder={`${name.trim() || host.trim() || "device"} login`}
+                            onChange={(event) =>
+                              setNewPasswordName(event.target.value)
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span className="field_label">Password</span>
+                          <PasswordInput
+                            value={newPasswordValue}
+                            onChange={setNewPasswordValue}
+                          />
+                          <span className="field_hint">
+                            Sealed in the vault and never shown again.
+                          </span>
+                        </label>
+                      </div>
+                    )}
+                  </>
                 )}
 
                 <label className="field">
@@ -510,16 +615,51 @@ export function DeviceDrawer({
                       <span className="field_badge">stored</span>
                     ) : null}
                   </span>
-                  <PasswordInput
-                    value={sudoPassword}
-                    onChange={setSudoPassword}
-                  />
+                  <select
+                    className="select"
+                    value={sudoPasswordId}
+                    onChange={(event) => setSudoPasswordId(event.target.value)}
+                  >
+                    <option value="">(none)</option>
+                    {(passwords.data?.passwords ?? []).map((storedPassword) => (
+                      <option key={storedPassword.id} value={storedPassword.id}>
+                        {storedPassword.name}
+                      </option>
+                    ))}
+                    <option value={NEW_PASSWORD_OPTION}>
+                      ＋ Store a new password…
+                    </option>
+                  </select>
                   <span className="field_hint">
-                    {hasStoredSudoPassword
-                      ? "Stored; type a new one to replace it."
-                      : "Needed for installs. Leave blank when the account has passwordless sudo."}
+                    Needed for installs. Leave (none) when the account has
+                    passwordless sudo.
                   </span>
                 </label>
+                {isAddingSudoPassword && (
+                  <div className="device_drawer_newkey">
+                    <label className="field">
+                      <span className="field_label">New password name</span>
+                      <input
+                        className="input"
+                        value={newSudoPasswordName}
+                        placeholder={`${name.trim() || host.trim() || "device"} sudo`}
+                        onChange={(event) =>
+                          setNewSudoPasswordName(event.target.value)
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span className="field_label">Sudo password</span>
+                      <PasswordInput
+                        value={newSudoPasswordValue}
+                        onChange={setNewSudoPasswordValue}
+                      />
+                      <span className="field_hint">
+                        Sealed in the vault and never shown again.
+                      </span>
+                    </label>
+                  </div>
+                )}
 
                 <ToggleSwitch
                   isOn={isWolEnabled}
@@ -662,6 +802,24 @@ export function DeviceDrawer({
     </>,
     document.body,
   );
+}
+
+/** Wording for a failed save, with the coded refusals spelled out. */
+function describeSaveError(cause: unknown): string {
+  if (
+    cause instanceof ApiError &&
+    typeof cause.detail === "object" &&
+    cause.detail !== null
+  ) {
+    const detail = cause.detail as Record<string, unknown>;
+    if (detail.code === "unknown_credential") {
+      const wording = UNKNOWN_CREDENTIAL_WORDING[String(detail.field)];
+      if (wording !== undefined) {
+        return wording;
+      }
+    }
+  }
+  return describeError(cause);
 }
 
 function isValidPort(value: string): boolean {

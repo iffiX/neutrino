@@ -506,11 +506,9 @@ export interface AiProvidersResponse {
 /**
  * SSH credentials for a device.
  *
- * Key authentication references a stored key by `key_id`; the material lives in
- * the key registry, and `key_name` is the resolved label for display. The
- * password fields are write-only: the gateway accepts them but never sends them
- * back, reporting only `has_sudo_password`. A blank password on save means
- * "leave what is stored alone", not "clear it".
+ * Every credential is a reference: `key_id` names a stored key, `password_id`
+ * and `sudo_password_id` name vault password objects. No secret material
+ * crosses this shape; `key_name` is the resolved label for display.
  */
 export interface DeviceSshConfig {
   host: string;
@@ -519,9 +517,8 @@ export interface DeviceSshConfig {
   auth: DeviceAuthMethod;
   key_id: string | null;
   key_name: string | null;
-  password: string | null;
-  sudo_password: string | null;
-  has_sudo_password: boolean;
+  password_id: string | null;
+  sudo_password_id: string | null;
 }
 
 export interface DeviceGpuInfo {

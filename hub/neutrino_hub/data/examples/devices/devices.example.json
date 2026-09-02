@@ -5,16 +5,16 @@
       "name": "work-laptop",
       "icon": "laptop",
       "is_wol_enabled": true,
-      "_comment_ssh": "Written by the panel, not by hand. auth is 'key' or 'password'. For key auth, key_id references a key sealed in the credential vault (config/credentials/vault.json); the material is never stored here.",
+      "_comment_ssh": "Written by the panel, not by hand. auth is 'key' or 'password'. Every credential is a reference into the vault (config/credentials/vault.json): key_id names a sealed SSH key, password_id the sealed login password. No secret material is stored here.",
       "ssh": {
         "host": "192.168.100.150",
         "port": 22,
         "username": "me",
         "auth": "key",
         "key_id": "d9d20c004ab4b212",
-        "password": null,
-        "_comment_sudo": "sudo_password is needed for one-click installs (ToDesk, AnyDesk, neutrino_client). Leave null if the account has passwordless sudo.",
-        "sudo_password": null
+        "password_id": null,
+        "_comment_sudo": "sudo_password_id names the sealed password piped to sudo for one-click installs (ToDesk, AnyDesk, neutrino_client). Leave null if the account has passwordless sudo.",
+        "sudo_password_id": null
       },
       "_comment_client": "Filled in automatically once neutrino_client is installed on the device.",
       "client": {

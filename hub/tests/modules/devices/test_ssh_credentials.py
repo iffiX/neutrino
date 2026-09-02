@@ -1,19 +1,21 @@
-"""How a device's stored key reaches an SSH connection.
+"""How a device's stored credentials reach an SSH connection.
 
-A device's config carries a key id and no material, so what these pin is that
-the id is opened from the vault when the credentials are built and handed to
-asyncssh as a loaded key rather than a path.
+A device's config carries only references — a key id, a password id — so what
+these pin is that each id is opened from the vault when the credentials are
+built, and that a stale id yields no material rather than an error.
 """
 
 import asyncssh
 import pytest
 
+from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.host_keys import DeviceHostKeyStore
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
 from neutrino_hub.modules.devices.ssh_ops import DeviceSshOperator, SshCredentials
 
 PASSPHRASE = "opens-the-key"
 LOGIN_PASSWORD = "a-password"  # scan: allow
+SUDO_PASSWORD = "a-sudo-password"  # scan: allow
 
 
 @pytest.fixture
@@ -32,6 +34,14 @@ def stored_key(passphrase: str | None = None) -> tuple[str, str]:
         passphrase=passphrase,
     )
     return record.id, key.get_fingerprint()
+
+
+def stored_password(password: str) -> str:
+    """A password in the vault, as the Credentials page would have sealed it."""
+    record = SecretVault().add(
+        kind="password", name="a password", secret={"password": password}
+    )
+    return record.id
 
 
 def operator(credentials: SshCredentials, tmp_path) -> DeviceSshOperator:
@@ -110,10 +120,53 @@ def test_a_key_file_named_by_the_config_is_still_used(config_dir, tmp_path):
 
 def test_a_password_device_offers_no_key(config_dir, tmp_path):
     credentials = SshCredentials.from_dict(
-        {"host": "192.168.100.2", "username": "iffi", "password": LOGIN_PASSWORD}
+        {
+            "host": "192.168.100.2",
+            "username": "iffi",
+            "password_id": stored_password(LOGIN_PASSWORD),
+        }
     )
 
     options = operator(credentials, tmp_path)._connect_options()
 
     assert "client_keys" not in options
     assert options["password"] == LOGIN_PASSWORD
+
+
+def test_both_password_ids_are_opened_from_the_vault(config_dir):
+    credentials = SshCredentials.from_dict(
+        {
+            "host": "192.168.100.2",
+            "username": "iffi",
+            "password_id": stored_password(LOGIN_PASSWORD),
+            "sudo_password_id": stored_password(SUDO_PASSWORD),
+        }
+    )
+
+    assert credentials.password == LOGIN_PASSWORD
+    assert credentials.sudo_password == SUDO_PASSWORD
+
+
+def test_a_password_id_that_is_gone_leaves_no_material(config_dir, tmp_path):
+    credentials = SshCredentials.from_dict(
+        {
+            "host": "192.168.100.2",
+            "username": "iffi",
+            "password_id": "absent",
+            "sudo_password_id": "absent",
+        }
+    )
+
+    assert credentials.password is None
+    assert credentials.sudo_password is None
+    assert "password" not in operator(credentials, tmp_path)._connect_options()
+
+
+def test_a_password_id_naming_another_kind_leaves_no_material(config_dir):
+    key_id, _ = stored_key()
+
+    credentials = SshCredentials.from_dict(
+        {"host": "192.168.100.2", "username": "iffi", "password_id": key_id}
+    )
+
+    assert credentials.password is None

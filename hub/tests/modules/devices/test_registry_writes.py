@@ -4,7 +4,7 @@ An agent beats every five seconds and each beat rewrites the whole list, so
 the window between somebody else's read and their write is never closed for
 long. What used to happen in it: forget a device while a heartbeat was in
 flight and the heartbeat's older snapshot put the device back — name, SSH
-host, password and sudo password intact — and the page's next poll showed it
+host and credential references intact — and the page's next poll showed it
 as though nothing had been deleted.
 """
 

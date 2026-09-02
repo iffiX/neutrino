@@ -17,11 +17,14 @@ let unauthorizedHandler: UnauthorizedHandler | null = null;
 /** One failed API call, with the HTTP status that caused it. */
 export class ApiError extends Error {
   readonly status: number;
+  /** The response's `detail` payload; an object for code-shaped errors. */
+  readonly detail: unknown;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, detail: unknown = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.detail = detail;
   }
 
   /** Whether this error means the session is gone and login is required. */
@@ -149,14 +152,18 @@ function jsonBody(body: unknown): RequestInit {
 
 async function toApiError(response: Response): Promise<ApiError> {
   const fallback = `${response.status} ${response.statusText}`.trim();
-  let detail = "";
+  let message = "";
+  let detail: unknown = null;
   try {
     const parsed: unknown = JSON.parse(await response.text());
-    detail = readDetail(parsed);
+    message = readDetail(parsed);
+    if (typeof parsed === "object" && parsed !== null) {
+      detail = (parsed as Record<string, unknown>).detail ?? null;
+    }
   } catch {
-    detail = "";
+    message = "";
   }
-  return new ApiError(response.status, detail || fallback);
+  return new ApiError(response.status, message || fallback, detail);
 }
 
 function readDetail(parsed: unknown): string {
