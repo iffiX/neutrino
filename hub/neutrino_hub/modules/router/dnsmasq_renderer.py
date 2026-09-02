@@ -106,17 +106,34 @@ class RouterDnsmasqRenderer:
         whenever xray was stopped. So they go straight to the direct resolver,
         and the box works as a plain router with xray not running at all.
         """
-        if self._routing.get("is_proxy_enabled", True):
-            return [
-                "# The only upstream is the xray DNS inbound, so queries resolve at",
-                "# the exit node instead of leaking to whatever DNS the WAN handed us.",
-                "no-resolv",
-                f"server={XRAY_DNS_LISTEN}#{XRAY_DNS_PORT}",
-                "",
-            ]
         direct = self._routing.get("direct_dns") or {}
         address = direct.get("address", "223.5.5.5")
         port = direct.get("port", 53)
+        if self._routing.get("is_proxy_enabled", True):
+            lines = [
+                "# The first upstream is the xray DNS inbound, so queries resolve at",
+                "# the exit node instead of leaking to whatever DNS the WAN handed us.",
+                "no-resolv",
+            ]
+            if self._routing.get("is_direct_fallback_enabled", False):
+                lines += [
+                    "#",
+                    "# And a second one behind it, tried only when the first does not",
+                    "# answer: a dead exit is a dead resolver, and without this the",
+                    "# LAN loses every name rather than the proxied ones. strict-order",
+                    "# is what makes it a fallback instead of a race — dnsmasq would",
+                    "# otherwise ask both and leak every query to the direct resolver.",
+                    "#",
+                    "# The direct resolver rather than the remote one: the remote is",
+                    "# reached in plaintext once the proxy is out of the path, which",
+                    "# is exactly where it is answered wrongly.",
+                    "strict-order",
+                ]
+            lines.append(f"server={XRAY_DNS_LISTEN}#{XRAY_DNS_PORT}")
+            if self._routing.get("is_direct_fallback_enabled", False):
+                lines.append(f"server={address}#{port}")
+            lines.append("")
+            return lines
         return [
             "# LAN traffic is not proxied, so queries go straight to the direct",
             "# resolver. Routing them through xray would resolve them at an exit",

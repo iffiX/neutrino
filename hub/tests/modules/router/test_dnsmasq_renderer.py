@@ -20,8 +20,10 @@ from tests.conftest import (
 )
 
 
-def render(*entries) -> str:
-    return RouterDnsmasqRenderer(network=network_config(*entries)).render()
+def render(*entries, routing: dict | None = None) -> str:
+    return RouterDnsmasqRenderer(
+        network=network_config(*entries), routing=routing
+    ).render()
 
 
 def test_one_lan_serves_its_own_interface(tmp_path):
@@ -147,3 +149,33 @@ def test_queries_go_direct_while_the_proxy_is_off(tmp_path):
     assert "server=223.5.5.5#53" in config
     assert "15353" not in without_comments(config)
     validate_dnsmasq(config, tmp_path)
+
+
+def test_the_fallback_puts_the_direct_resolver_behind_xray():
+    """A dead exit is a dead resolver, and without a second upstream the LAN
+    loses every name rather than the proxied ones."""
+    rendered = render(
+        lan_entry("enp1s0", address="192.168.100.1"),
+        routing={
+            "is_proxy_enabled": True,
+            "is_direct_fallback_enabled": True,
+            "direct_dns": {"address": "223.5.5.5", "port": 53},
+        },
+    )
+    servers = [line for line in rendered.splitlines() if line.startswith("server=")]
+
+    assert servers == ["server=127.0.0.1#15353", "server=223.5.5.5#53"]
+    # Ordered rather than raced: without this dnsmasq asks both at once and
+    # every query leaks to the direct resolver.
+    assert "strict-order" in rendered
+
+
+def test_without_the_fallback_xray_is_the_only_upstream():
+    rendered = render(
+        lan_entry("enp1s0", address="192.168.100.1"),
+        routing={"is_proxy_enabled": True},
+    )
+    servers = [line for line in rendered.splitlines() if line.startswith("server=")]
+
+    assert servers == ["server=127.0.0.1#15353"]
+    assert "strict-order" not in rendered

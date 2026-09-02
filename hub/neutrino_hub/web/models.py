@@ -394,6 +394,7 @@ class ProxySettings(BaseModel):
     """The Proxy tab's switches and the routing lists behind them."""
 
     is_proxy_enabled: bool = True
+    is_direct_fallback_enabled: bool = False
     is_geoip_split_enabled: bool
     direct_domains: list[str]
     direct_ips: list[str]

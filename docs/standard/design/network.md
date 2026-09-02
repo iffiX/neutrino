@@ -154,10 +154,41 @@ on with no enabled node it renders as off, and the panel writes the switch
 back rather than showing a proxy that is not there. The forwarded machines'
 DNS follows the forwarded scope, because the queries belong to the traffic.
 
-One consequence looks like a malfunction and is not: with the proxy on and
-every enabled node dead, proxied traffic and the forwarded machines' DNS
-both fail — names resolve at the exit by design, so a dead exit is a dead
-resolver. The panel's job there is to say so, not to look healthy.
+## When no exit answers
+
+A dead exit is a dead resolver: names resolve at the exit by design, so with
+every enabled node unreachable the traffic sent to the proxy fails *and* so
+does every name the forwarded machines ask for — including the ones the
+direct list would have answered locally. Measured on Debian 12 with one
+unreachable node, proxy on: `dig @<lan address> example.com` returns nothing
+at all.
+
+`is_direct_fallback_enabled` is the answer to that, and it is the person's to
+give rather than a default, because the two ways of being wrong are not equal.
+Failing costs connectivity. Falling back costs the thing the proxy was for:
+traffic nobody meant to send in the clear leaves under this machine's own
+address. A personal appliance whose main use is reaching past a censor must
+not do the second quietly, so it is **off** unless somebody turns it on, and
+the panel names the state either way — the strip reads `lan → no exit` when
+there is nothing to go out through.
+
+Turned on, two things change together:
+
+| Half | Mechanism | Why not the obvious one |
+| --- | --- | --- |
+| Traffic | `fallbackTag: direct` on the balancer | xray's own; nothing to build |
+| Names | dnsmasq gets `strict-order` and the **direct** resolver as a second upstream behind xray | letting DNS fall back through the balancer would query the *remote* resolver in plaintext — which, in the network this exists for, is answered wrongly rather than not at all |
+
+`strict-order` is what makes the second upstream a fallback rather than a
+race: without it dnsmasq asks both and every query leaks to the direct
+resolver in normal operation.
+
+Measured on the same box, one unreachable node, before and after:
+
+| | LAN DNS | Proxied traffic |
+| --- | --- | --- |
+| Fallback off | no answer | fails |
+| Fallback on | answers | leaves through the WAN |
 
 ## More than one way out, and the proxy
 

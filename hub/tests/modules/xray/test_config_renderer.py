@@ -313,3 +313,20 @@ def test_the_direct_resolver_is_not_named_while_the_proxy_is_off():
     config = render(is_proxy_enabled=False, is_geoip_split_enabled=True)
 
     assert config["dns"]["servers"] == ["1.1.1.1"]
+
+
+# --- what happens when no exit answers ----------------------------------------
+
+
+def test_without_the_fallback_a_dead_exit_takes_the_traffic_with_it():
+    """The default: what was sent to the proxy fails rather than leaving in
+    the clear under the real address."""
+    config = render()
+
+    assert "fallbackTag" not in config["routing"]["balancers"][0]
+
+
+def test_the_fallback_names_the_direct_outbound():
+    config = render(is_direct_fallback_enabled=True)
+
+    assert config["routing"]["balancers"][0]["fallbackTag"] == "direct"

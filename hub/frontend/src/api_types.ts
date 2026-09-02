@@ -397,6 +397,7 @@ export interface SocksPort {
 export interface ProxySettings {
   /** The master switch: off takes the proxy out of the path entirely. */
   is_proxy_enabled: boolean;
+  is_direct_fallback_enabled: boolean;
   is_geoip_split_enabled: boolean;
   direct_domains: string[];
   direct_ips: string[];

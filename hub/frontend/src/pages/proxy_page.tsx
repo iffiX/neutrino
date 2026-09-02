@@ -58,6 +58,7 @@ const GROUP_FIELDS: Record<GroupName, (keyof ProxySettings)[]> = {
   route: [
     "is_proxy_enabled",
     "is_local_proxy_enabled",
+    "is_direct_fallback_enabled",
     "is_geoip_split_enabled",
     "direct_domains",
     "direct_ips",
@@ -247,6 +248,13 @@ export function ProxyPage() {
           onChange={(isOn) => updateDraft({ is_local_proxy_enabled: isOn })}
           label="Send Neutrino Hub's own traffic through the proxy"
           description="Whether name resolution and connections from Neutrino Hub itself go through the proxy. It works in any network mode, and independently of the LAN switch."
+        />
+
+        <ToggleSwitch
+          isOn={draft.is_direct_fallback_enabled}
+          onChange={(isOn) => updateDraft({ is_direct_fallback_enabled: isOn })}
+          label="Let traffic out directly when no exit node answers"
+          description="Whether traffic sent to the proxy leaves through the WAN when every enabled exit node is unreachable. Off, it fails instead — and so do the LAN's names, because they are resolved at the exit."
         />
 
         <div className="proxy_switches">

@@ -329,15 +329,30 @@ class XrayConfigRenderer:
         )
         return {
             "domainStrategy": "IPIfNonMatch",
-            "balancers": [
-                {
-                    "tag": XRAY_BALANCER_TAG,
-                    "selector": [XRAY_NODE_TAG_PREFIX],
-                    "strategy": {"type": self._node_list.strategy},
-                }
-            ],
+            "balancers": [self._render_balancer()],
             "rules": rules,
         }
+
+    def _render_balancer(self) -> dict:
+        """The balancer, and what it does when no exit answers.
+
+        Without a fallback a dead exit is a dead network: what was sent to the
+        proxy fails, and so does every name, because the LAN's resolver is
+        this same balancer. With one, that traffic leaves directly instead —
+        which is connectivity bought with the thing the proxy was for, and so
+        is the person's switch to throw rather than a default.
+
+        Returns:
+            The balancer object.
+        """
+        balancer = {
+            "tag": XRAY_BALANCER_TAG,
+            "selector": [XRAY_NODE_TAG_PREFIX],
+            "strategy": {"type": self._node_list.strategy},
+        }
+        if self._routing.get("is_direct_fallback_enabled", False):
+            balancer["fallbackTag"] = XRAY_DIRECT_TAG
+        return balancer
 
     def _render_observatory(self) -> dict:
         return {
