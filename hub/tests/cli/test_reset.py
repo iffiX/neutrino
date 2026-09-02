@@ -11,6 +11,7 @@ import json
 import pytest
 
 from neutrino_hub.cli import password, reset
+from neutrino_hub.cli import stop as stop_module
 from neutrino_hub.utils.subprocess_run import CommandError
 
 
@@ -44,12 +45,8 @@ def box(tmp_path, monkeypatch):
     monkeypatch.setattr(reset, "UTILS_CONFIG_DIR", config)
     monkeypatch.setattr(reset, "UTILS_EXAMPLES_DIR", examples)
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", config)
-    monkeypatch.setattr(reset, "_restart_panel", _do_nothing)
+    monkeypatch.setattr(reset, "stop_everything", lambda: 0)
     return config
-
-
-def _do_nothing() -> None:
-    """Stand in for the panel restart, which no test may perform."""
 
 
 def test_reset_all_returns_every_config_to_its_example(box):
@@ -99,37 +96,75 @@ def test_a_box_carrying_only_the_example_has_no_password_yet(box):
     assert not password.is_password_set()
 
 
-# --- when the last step of a reset will not work ---
+# --- what is left running afterwards ---
 
 
-def test_a_panel_that_will_not_restart_is_reported_rather_than_raised(monkeypatch):
-    """Everything a reset exists to undo is undone before this runs, so a
-    service that will not come back is a line to print — a traceback here
-    would say the reset failed when what failed was one service starting."""
+def _controller(monkeypatch, *, is_active=True, refusing=()):
+    """A systemd that records what it was asked to stop."""
+    asked: list = []
 
-    class RefusingController:
+    class Controller:
         def status(self, name):
-            return type("Status", (), {"is_installed": True})()
+            return type("Status", (), {"is_installed": True, "is_active": is_active})()
 
         def control(self, name, action):
-            raise CommandError("systemctl restart timed out after 60s")
+            asked.append((name, action))
+            if name in refusing:
+                raise CommandError("systemctl stop timed out after 60s")
 
-    monkeypatch.setattr(reset, "SystemdServiceController", RefusingController)
-
-    message = reset._restart_panel()
-
-    assert "did not come back" in message
-    assert "timed out" in message
+    monkeypatch.setattr(stop_module, "SystemdServiceController", Controller)
+    return asked
 
 
-def test_a_box_with_no_panel_unit_has_nothing_to_report(monkeypatch):
-    class AbsentController:
-        def status(self, name):
-            return type("Status", (), {"is_installed": False})()
+def test_a_reset_leaves_nothing_of_the_hub_running(monkeypatch, box):
+    """A reset is the box before anybody set it up, and on that box none of
+    this is running. The panel used to be restarted instead — left answering
+    with no password to let anyone in, on a configuration nobody chose."""
+    asked = _controller(monkeypatch)
+    monkeypatch.setattr(
+        reset, "stop_everything", lambda: stop_module.stop(list(stop_module.STOP_ORDER))
+    )
 
-        def control(self, name, action):
-            raise AssertionError("there was nothing to restart")
+    reset._reset_all()
 
-    monkeypatch.setattr(reset, "SystemdServiceController", AbsentController)
+    assert [name for name, _ in asked] == list(stop_module.STOP_ORDER)
+    assert {action for _, action in asked} == {"stop"}
 
-    assert reset._restart_panel() == ""
+
+def test_the_panel_goes_first(monkeypatch, box):
+    """It is what somebody is holding: stopping it while the proxy under it
+    is already gone means a page that hangs rather than one that closes."""
+    asked = _controller(monkeypatch)
+    monkeypatch.setattr(
+        reset, "stop_everything", lambda: stop_module.stop(list(stop_module.STOP_ORDER))
+    )
+
+    reset._reset_all()
+
+    assert asked[0][0] == "web"
+
+
+def test_a_service_that_will_not_stop_is_reported_rather_than_raised(
+    monkeypatch, box, capsys
+):
+    """One unit refusing must not hide what happened to the others, and a
+    traceback would say the reset failed when what failed was one stop."""
+    asked = _controller(monkeypatch, refusing=("xray",))
+    monkeypatch.setattr(
+        reset, "stop_everything", lambda: stop_module.stop(list(stop_module.STOP_ORDER))
+    )
+
+    assert reset._reset_all() == 0
+    assert [name for name, _ in asked] == list(stop_module.STOP_ORDER)
+    assert "did not stop" in capsys.readouterr().err
+
+
+def test_what_is_already_stopped_is_not_stopped_again(monkeypatch, box):
+    asked = _controller(monkeypatch, is_active=False)
+    monkeypatch.setattr(
+        reset, "stop_everything", lambda: stop_module.stop(list(stop_module.STOP_ORDER))
+    )
+
+    reset._reset_all()
+
+    assert asked == []

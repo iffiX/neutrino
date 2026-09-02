@@ -140,6 +140,37 @@ the command line and Arch reads `/etc/dnsmasq.d` not at all.
 
 Running one by hand is how its output is read without `journalctl`.
 
+### stop
+
+> `nhub stop`
+
+Stops everything the hub runs on this box: the panel, the AI gateway, the LAN
+name service, the proxy core, and the routing state. The mirror of `run`, and
+named the same way — the values are the hub's own service names rather than
+systemd unit files.
+
+> `--only-web`, `--only-xray`, `--only-cliproxyapi`, `--only-dnsmasq`,
+> `--only-router`
+
+Stops one of them, spelled the way `run` spells the same service: the pair is
+read together, and a person who has typed one should not have to look up the
+other. `--only-router` is the one name `run` has no use for, because the
+routing state is a unit that finishes rather than a process to watch.
+
+> `--only-supplicant --interface wlp3s0`, `--only-dhcpcd --interface enp2s0`
+
+The two engines that run one unit per interface, named as `run` names them.
+With no `--only` these are stopped too, on every interface `config/` says the
+hub was driving: a box left holding a lease it asked for has not stopped
+running the hub, whatever the panel is doing.
+
+The optional modules are left running. Samba serves shares whether or not this
+box routes anything, so a plain `nhub stop` is the hub going quiet rather than
+the machine going down.
+
+Nothing is disabled, so everything comes back at the next boot. Removing the
+hub is the package manager's business, and undoing a setup is `reset`.
+
 ### apply
 
 > `nhub apply`
@@ -179,10 +210,17 @@ recovers them but a backup of `config/`; take one first
 ([standard/misc/config.md](standard/misc/config.md)).
 
 It also stops driving the network, on a machine where it was. The units the hub
-started on each radio and uplink are stopped, name resolution goes back to the
-machine's own, and whatever manager was stood down is started again. **No
-address is taken off anything** — every interface keeps what it has, so the
-session that asked for the reset is still there when it finishes.
+started on each radio and uplink are stopped, the hub's own firewall table and
+policy route are removed, name resolution goes back to the machine's own, and
+whatever manager was stood down is started again. **No address is taken off
+anything** — every interface keeps what it has, so the session that asked for
+the reset is still there when it finishes.
+
+Then everything the hub runs is stopped, as `nhub stop` does. A reset is the
+box as it was before anybody set it up, and on that box none of this is
+running: the panel has no password to let anyone in with, and every service
+is configured from the examples rather than from what this machine was. It is
+reached over SSH afterwards, until `nhub setup` runs again.
 
 > `nhub reset`
 

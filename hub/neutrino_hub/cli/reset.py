@@ -6,6 +6,11 @@
 
 Resetting is always named: the bare command lists and stops, so nothing here
 is destroyed by a command that was meant to ask a question.
+
+``all`` leaves the box as it was before anybody set it up, which includes
+nothing of the hub's running: it hands the network back, returns every config
+to its example, clears the password, and then stops the services. The machine
+is reached over SSH until ``nhub setup`` runs again.
 """
 
 import argparse
@@ -13,6 +18,7 @@ import os
 import shutil
 import sys
 
+from neutrino_hub.cli.stop import stop_everything
 from neutrino_hub.cli.password import (
     PasswordRefused,
     clear_password,
@@ -40,7 +46,7 @@ RESET_PANEL_UNIT = "web"
 RESET_TARGETS = {
     "password": "the panel password, leaving every other setting alone",  # scan: allow
     "all": "every module's config, the panel password, and the keys and tokens "
-    "this box collected",
+    "this box collected; stops the hub's services too",
 }
 
 
@@ -112,15 +118,19 @@ def _reset_all() -> int:
     collected = _forget_collected()
     restored = _restore_examples()
     clear_password()
-    panel = _restart_panel()
 
     print(f"restored {restored} config files from their examples")
     if collected:
         print(f"removed {', '.join(collected)}")
     for line in network:
         print(line)
-    if panel:
-        print(panel)
+    # Last, and stopped rather than restarted. A reset is the box before
+    # anybody set it up, and on that box nothing of the hub's is running: the
+    # panel has no password to let anyone in with, and the services are
+    # configured from the examples rather than from what this machine was.
+    # Leaving the panel up would leave the one part of a reset box that
+    # answers, on a configuration nobody chose.
+    stop_everything()
     print("the panel password is cleared; run `sudo nhub setup`")
     return 0
 
