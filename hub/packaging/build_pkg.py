@@ -80,6 +80,13 @@ post_upgrade() {
     install -d -m 755 /var/log/neutrino
     nhub apply >/dev/null 2>&1 ||
         echo "  Run 'sudo nhub apply' to pick up this version."
+    # And the panel, because it is the process running the code this package
+    # just replaced. `nhub apply` re-renders what the modules produce and
+    # restarts what consumes it, but the panel serves itself: without this it
+    # goes on running the old Python behind the new frontend, which is a strip
+    # asking for fields the old API does not send. Only when it is already up
+    # — a box nobody has set up has no panel to restart.
+    systemctl try-restart neutrino_hub_web.service >/dev/null 2>&1 || true
 }
 
 pre_remove() {
