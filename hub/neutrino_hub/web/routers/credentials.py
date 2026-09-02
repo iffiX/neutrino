@@ -145,7 +145,7 @@ def _provider_view(record: AiProviderRecord) -> AiProviderView:
         name=record.name,
         kind=record.kind,
         base_url=record.base_url,
-        has_api_key=bool(record.api_key),
+        has_api_key=bool(record.secret_id),
         is_enabled=record.is_enabled,
         models=[AiProviderModelView(**model) for model in record.models],
         created_at=record.created_at,

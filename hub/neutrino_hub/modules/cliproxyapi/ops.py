@@ -55,13 +55,20 @@ class CliproxyApiConfigApplier:
             A one-line summary of what happened.
 
         Raises:
-            ValueError: If the stored settings do not validate.
+            ValueError: If the stored settings do not validate, or a provider's
+                sealed key does not open.
         """
         config = load_config()
         config.validate()
-        providers = AiProviderRegistry().list_records()
+        registry = AiProviderRegistry()
+        providers = registry.list_records()
+        api_keys = {
+            provider.id: registry.open_api_key(provider)
+            for provider in providers
+            if provider.is_enabled
+        }
         rendered = CliproxyApiConfigRenderer(
-            config=config, providers=providers
+            config=config, providers=providers, api_keys=api_keys
         ).render()
         write_generated(
             UTILS_GENERATED_DIR / CLIPROXYAPI_GENERATED_NAME, rendered, mode=0o600
@@ -69,7 +76,7 @@ class CliproxyApiConfigApplier:
         if not self.is_installed:
             return "rendered; the service is not installed yet"
         run(["systemctl", "restart", CLIPROXYAPI_UNIT])
-        enabled = sum(1 for p in providers if p.is_enabled and p.api_key)
+        enabled = sum(1 for key in api_keys.values() if key)
         return f"applied with {enabled} provider(s) and restarted"
 
     def refresh_unit(self, unit_text: str) -> bool:

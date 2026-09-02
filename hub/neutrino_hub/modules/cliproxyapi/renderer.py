@@ -6,7 +6,8 @@ kind decides which upstream block it lands in: ``anthropic`` speaks the
 Messages protocol, ``openai`` the Responses protocol, ``gemini`` Google's,
 and ``custom`` is an OpenAI-compatible chat endpoint.
 
-Pure: state in, text out.
+Pure: state in, text out. The key material arrives already resolved from the
+vault; the renderer opens nothing.
 """
 
 import re
@@ -27,14 +28,23 @@ KIND_TO_BLOCK = {
 class CliproxyApiConfigRenderer:
     """Builds ``cliproxyapi.yaml`` from the parsed configuration."""
 
-    def __init__(self, *, config: CliproxyApiConfig, providers: list[AiProviderRecord]):
+    def __init__(
+        self,
+        *,
+        config: CliproxyApiConfig,
+        providers: list[AiProviderRecord],
+        api_keys: dict[str, str],
+    ):
         """
         Args:
             config: The gateway's own settings.
             providers: Every stored provider; disabled ones are left out.
+            api_keys: The resolved key per provider id; a provider with no
+                entry here, or an empty one, is left out too.
         """
         self._config = config
         self._providers = providers
+        self._api_keys = api_keys
 
     def render(self) -> str:
         """Render the configuration file.
@@ -51,10 +61,11 @@ class CliproxyApiConfigRenderer:
         }
         compatibility = []
         for provider in self._providers:
-            if not provider.is_enabled or not provider.api_key:
+            api_key = self._api_keys.get(provider.id, "")
+            if not provider.is_enabled or not api_key:
                 continue
             if provider.kind in KIND_TO_BLOCK:
-                entry = {"api-key": provider.api_key}
+                entry = {"api-key": api_key}
                 if provider.base_url:
                     entry["base-url"] = provider.base_url
                 models = self._models(provider)
@@ -65,7 +76,7 @@ class CliproxyApiConfigRenderer:
                 entry = {
                     "name": _slug(provider.name),
                     "base-url": provider.base_url,
-                    "api-key-entries": [{"api-key": provider.api_key}],
+                    "api-key-entries": [{"api-key": api_key}],
                 }
                 models = self._models(provider)
                 if models:

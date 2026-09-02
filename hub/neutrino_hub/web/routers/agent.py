@@ -266,7 +266,7 @@ def _served_model() -> str:
         A model name, or empty when no provider names one.
     """
     for provider in AiProviderRegistry().list_records():
-        if not provider.is_enabled or not provider.api_key:
+        if not provider.is_enabled or not provider.secret_id:
             continue
         for entry in provider.models:
             served = str(entry.get("alias") or entry.get("name") or "").strip()

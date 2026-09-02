@@ -6,8 +6,6 @@ CREDENTIALS_AI_PROVIDERS_PATH = "credentials/ai_providers.json"
 # covers relays and self-hosted endpoints speaking one of these APIs.
 CREDENTIALS_AI_PROVIDER_KINDS = ("anthropic", "openai", "gemini", "custom")
 
-CREDENTIALS_ID_BYTES = 8
-
 CREDENTIALS_VAULT_PATH = "credentials/vault.json"
 CREDENTIALS_VAULT_KEY_PATH = "credentials/vault.key"
 CREDENTIALS_VAULT_VERSION = 1

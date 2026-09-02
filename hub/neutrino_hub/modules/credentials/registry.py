@@ -2,23 +2,28 @@
 
 Every machine a developer touches needs the same endpoint and token for each
 AI service, and pasting them into dotfiles on every box is how they end up
-scattered and stale. They live here instead: named entries in one gitignored
-file, which Dev Setup reads when wiring a device's tools.
+scattered and stale. They live here instead: named entries in one file, which
+Dev Setup reads when wiring a device's tools.
 
-The key never travels back to the browser — listings carry only whether one is
-stored.
+The key itself is sealed in the vault as an ``api_token`` object; this file
+holds its id and no secret material. The key never travels back to the browser
+— listings carry only whether one is stored.
 """
 
-import secrets
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from neutrino_hub.modules.credentials.constants import (
     CREDENTIALS_AI_PROVIDERS_PATH,
     CREDENTIALS_AI_PROVIDER_KINDS,
-    CREDENTIALS_ID_BYTES,
 )
+from neutrino_hub.modules.credentials.vault import SecretVault, VaultError
 from neutrino_hub.utils.json_file import read_config, write_config
+
+
+def _secret_name(provider_name: str) -> str:
+    return f"{provider_name} api key"
 
 
 @dataclass
@@ -30,7 +35,7 @@ class AiProviderRecord:
         name: Human-chosen label.
         kind: One of :data:`CREDENTIALS_AI_PROVIDER_KINDS`.
         base_url: API endpoint; empty means the service's default.
-        api_key: The secret itself.
+        secret_id: The vault object sealing the key, None when none is stored.
         is_enabled: Whether the AI gateway forwards to this provider.
         models: Alias mappings, each ``{"name": real, "alias": served}`` —
             what relays that insist on their own model names need.
@@ -41,7 +46,7 @@ class AiProviderRecord:
     name: str
     kind: str
     base_url: str = ""
-    api_key: str = ""
+    secret_id: str | None = None
     is_enabled: bool = True
     models: list = field(default_factory=list)
     created_at: str = ""
@@ -61,7 +66,7 @@ class AiProviderRecord:
             name=data.get("name", ""),
             kind=data.get("kind", "custom"),
             base_url=data.get("base_url", ""),
-            api_key=data.get("api_key", ""),
+            secret_id=data.get("secret_id") or None,
             is_enabled=data.get("is_enabled", True),
             models=data.get("models", []),
             created_at=data.get("created_at", ""),
@@ -78,7 +83,7 @@ class AiProviderRecord:
             "name": self.name,
             "kind": self.kind,
             "base_url": self.base_url,
-            "api_key": self.api_key,
+            "secret_id": self.secret_id,
             "is_enabled": self.is_enabled,
             "models": self.models,
             "created_at": self.created_at,
@@ -90,6 +95,7 @@ class AiProviderRegistry:
 
     def __init__(self):
         self._records = self._read()
+        self._vault = SecretVault()
 
     def list_records(self) -> list[AiProviderRecord]:
         """Read every provider, newest first.
@@ -125,7 +131,7 @@ class AiProviderRegistry:
             name: Human-chosen label.
             kind: One of :data:`CREDENTIALS_AI_PROVIDER_KINDS`.
             base_url: API endpoint; empty means the service's default.
-            api_key: The secret.
+            api_key: The secret, sealed in the vault when non-empty.
 
         Returns:
             The stored record.
@@ -138,14 +144,15 @@ class AiProviderRegistry:
         if not name.strip():
             raise ValueError("the provider needs a name")
         record = AiProviderRecord(
-            id=secrets.token_hex(CREDENTIALS_ID_BYTES),
+            id=uuid.uuid4().hex,
             name=name.strip(),
             kind=kind,
             base_url=base_url.strip(),
-            api_key=api_key,
             models=models or [],
             created_at=datetime.now(timezone.utc).isoformat(),
         )
+        if api_key:
+            self._seal_key(record, api_key)
         self._records.append(record)
         self._write()
         return record
@@ -171,7 +178,9 @@ class AiProviderRegistry:
             name: New label, when given.
             kind: New kind, when given.
             base_url: New endpoint, when given.
-            api_key: New secret, when given and non-empty.
+            api_key: New secret, when given and non-empty; it replaces the
+                sealed material, or gets an object of its own when the
+                provider had none.
 
         Returns:
             The record after the change.
@@ -192,7 +201,7 @@ class AiProviderRegistry:
         if base_url is not None:
             record.base_url = base_url.strip()
         if api_key:
-            record.api_key = api_key
+            self._seal_key(record, api_key)
         if is_enabled is not None:
             record.is_enabled = is_enabled
         if models is not None:
@@ -201,7 +210,7 @@ class AiProviderRegistry:
         return record
 
     def delete(self, provider_id: str) -> None:
-        """Remove a provider.
+        """Remove a provider and the vault object holding its key.
 
         Args:
             provider_id: The record's id.
@@ -209,10 +218,47 @@ class AiProviderRegistry:
         Raises:
             KeyError: If the id is unknown.
         """
-        if self.get(provider_id) is None:
+        record = self.get(provider_id)
+        if record is None:
             raise KeyError(provider_id)
+        if record.secret_id:
+            try:
+                self._vault.delete(record.secret_id)
+            except VaultError:
+                # An object already gone leaves the provider deletable.
+                pass
         self._records = [r for r in self._records if r.id != provider_id]
         self._write()
+
+    def open_api_key(self, record: AiProviderRecord) -> str:
+        """Read one provider's key material out of the vault.
+
+        Args:
+            record: The provider.
+
+        Returns:
+            The decrypted key, empty when the provider holds none.
+
+        Raises:
+            VaultError: If the referenced object is gone or does not decrypt.
+        """
+        if not record.secret_id:
+            return ""
+        return self._vault.open(record.secret_id).get("api_key", "")
+
+    def _seal_key(self, record: AiProviderRecord, api_key: str) -> None:
+        if record.secret_id:
+            try:
+                self._vault.replace(record.secret_id, secret={"api_key": api_key})
+                return
+            except VaultError:
+                # The referenced object is gone; a fresh one takes its place.
+                pass
+        record.secret_id = self._vault.add(
+            kind="api_token",
+            name=_secret_name(record.name),
+            secret={"api_key": api_key},
+        ).id
 
     def _read(self) -> list[AiProviderRecord]:
         try:

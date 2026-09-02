@@ -153,5 +153,7 @@ def _status() -> CliproxyApiStatusView:
         client_keys=[CliproxyApiKeyView(**key.to_dict()) for key in config.client_keys],
         is_reachable=is_reachable,
         probe_message=probe_message,
-        enabled_provider_count=sum(1 for p in providers if p.is_enabled and p.api_key),
+        enabled_provider_count=sum(
+            1 for p in providers if p.is_enabled and p.secret_id
+        ),
     )
