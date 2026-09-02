@@ -32,20 +32,71 @@ import "./settings_page.css";
 const MIN_PASSWORD_LENGTH = 8;
 
 const BACKUP_PASSPHRASE_NEEDED = "backup_passphrase_needed";
-const BACKUP_PASSPHRASE_WRONG = "backup_passphrase_wrong";
 
-const RESTORE_WRONG_PASSPHRASE = "That passphrase does not open this archive.";
+const RESTORE_ERROR_SENTENCES: Record<string, string> = {
+  backup_passphrase_wrong: "That passphrase does not open this archive.",
+  backup_unrecognized: "This is not a Neutrino backup.",
+  backup_corrupt: "The backup is damaged; its checksum does not match.",
+  backup_wrong_extension: "Backups are .tar.gz files.",
+};
 
-// A sealed backup announces itself in its first bytes, so which modal to
-// show is settled before anything is uploaded.
-const SEALED_MAGIC = "NEUTRINO-SEALED-1\n";
+const WRONG_FILE_SENTENCE = "Backups are .tar.gz files; that file is not one.";
 
-async function isSealedArchive(file: File): Promise<boolean> {
+// Every backup is a tar.gz whose first member is its manifest, so which
+// restore dialog to show is settled by streaming just the head of the file:
+// a tar header is 512 bytes — name in the first 100, size in octal at 124.
+const BACKUP_MANIFEST_MEMBER = "neutrino_backup.json";
+const BACKUP_KIND = "neutrino_config_backup";
+
+interface BackupManifest {
+  kind?: string;
+  is_sealed?: boolean;
+}
+
+function isBackupFilename(name: string): boolean {
+  return /\.(tar\.gz|tgz)$/i.test(name);
+}
+
+async function readBackupManifest(file: File): Promise<BackupManifest | null> {
   try {
-    const head = await file.slice(0, SEALED_MAGIC.length).arrayBuffer();
-    return new TextDecoder().decode(new Uint8Array(head)) === SEALED_MAGIC;
+    const reader = file
+      .stream()
+      .pipeThrough(new DecompressionStream("gzip"))
+      .getReader();
+    let head = new Uint8Array(0);
+    while (head.length < 4096) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      const grown = new Uint8Array(head.length + value.length);
+      grown.set(head);
+      grown.set(value, head.length);
+      head = grown;
+    }
+    await reader.cancel();
+    const text = new TextDecoder();
+    const memberName = text.decode(head.slice(0, 100)).split("\0")[0];
+    if (memberName !== BACKUP_MANIFEST_MEMBER) {
+      return null;
+    }
+    const size = parseInt(text.decode(head.slice(124, 136)).trim(), 8);
+    if (!Number.isFinite(size) || size <= 0 || 512 + size > head.length) {
+      return null;
+    }
+    const parsed: unknown = JSON.parse(
+      text.decode(head.slice(512, 512 + size)),
+    );
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      (parsed as BackupManifest).kind !== BACKUP_KIND
+    ) {
+      return null;
+    }
+    return parsed as BackupManifest;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -112,7 +163,7 @@ export function SettingsPage() {
       await apiPostDownload(
         "/settings/backup",
         { passphrase: backupPassphrase },
-        backupFilename(backupPassphrase.length > 0),
+        backupFilename(),
       );
       setBackupNotice("Backup downloaded.");
       setBackupPassphrase("");
@@ -129,10 +180,15 @@ export function SettingsPage() {
     if (file === undefined) {
       return;
     }
-    const isProtected = await isSealedArchive(file);
+    if (!isBackupFilename(file.name)) {
+      setBackupNotice(null);
+      setBackupError(WRONG_FILE_SENTENCE);
+      return;
+    }
+    const manifest = await readBackupManifest(file);
     setRestorePassphrase("");
     setRestoreError(null);
-    setIsArchiveProtected(isProtected);
+    setIsArchiveProtected(manifest?.is_sealed === true);
     setRestoreFile(file);
   };
 
@@ -172,10 +228,12 @@ export function SettingsPage() {
         setIsArchiveProtected(true);
       } else if (
         cause instanceof ApiError &&
-        cause.code === BACKUP_PASSPHRASE_WRONG
+        RESTORE_ERROR_SENTENCES[cause.code] !== undefined
       ) {
-        setIsArchiveProtected(true);
-        setRestoreError(RESTORE_WRONG_PASSPHRASE);
+        if (cause.code === "backup_passphrase_wrong") {
+          setIsArchiveProtected(true);
+        }
+        setRestoreError(RESTORE_ERROR_SENTENCES[cause.code] ?? null);
       } else {
         setRestoreError(describeError(cause));
       }
@@ -320,7 +378,7 @@ export function SettingsPage() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".tar.gz,.tgz,.sealed,application/gzip"
+                accept=".tar.gz,.tgz,application/gzip"
                 className="settings_file_input"
                 onChange={(event) => void handleRestoreFile(event)}
               />
@@ -495,7 +553,7 @@ function RestoreArchiveModal({
   );
 }
 
-function backupFilename(isSealed: boolean): string {
+function backupFilename(): string {
   const stamp = new Date().toISOString().slice(0, 10);
-  return `neutrino_config_${stamp}.${isSealed ? "sealed" : "tar.gz"}`;
+  return `neutrino_config_${stamp}.tar.gz`;
 }

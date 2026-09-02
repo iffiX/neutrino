@@ -12,6 +12,7 @@ and the master key is installed last, so no interruption leaves a restored
 store nothing can open.
 """
 
+import hashlib
 import io
 import json
 import tarfile
@@ -128,47 +129,82 @@ def wipe_config(config_dir) -> None:
 
 
 def download_backup(opened, passphrase: str) -> bytes:
-    """Ask for a backup and hand back the tarball."""
+    """Ask for a backup and hand back the envelope."""
     response = opened.post("/api/settings/backup", json={"passphrase": passphrase})
     assert response.status_code == 200
     return response.content
 
 
-def member_names(payload: bytes) -> list[str]:
+def read_manifest(envelope: bytes) -> dict:
+    with tarfile.open(fileobj=io.BytesIO(envelope), mode="r:gz") as archive:
+        assert archive.getmembers()[0].name == "neutrino_backup.json"
+        return json.loads(archive.extractfile("neutrino_backup.json").read())
+
+
+def read_payload(envelope: bytes) -> bytes:
+    manifest = read_manifest(envelope)
+    with tarfile.open(fileobj=io.BytesIO(envelope), mode="r:gz") as archive:
+        return archive.extractfile(manifest["payload"]).read()
+
+
+def inner_names(envelope: bytes, passphrase: str = "") -> list[str]:
+    payload = read_payload(envelope)
+    if passphrase:
+        payload = unseal_bytes(payload, passphrase)
     with tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz") as archive:
         return archive.getnames()
 
 
-def upload_restore(opened, payload: bytes, passphrase: str):
+def repacked(manifest: dict, payload: bytes) -> bytes:
+    """An envelope built by hand, for the tests that forge or damage one."""
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+        for name, blob in (
+            ("neutrino_backup.json", json.dumps(manifest).encode()),
+            (manifest.get("payload", "config.tar.gz"), payload),
+        ):
+            entry = tarfile.TarInfo(name)
+            entry.size = len(blob)
+            archive.addfile(entry, io.BytesIO(blob))
+    return buffer.getvalue()
+
+
+def upload_restore(opened, payload: bytes, passphrase: str, name="backup.tar.gz"):
     return opened.post(
         "/api/settings/restore",
-        files={"file": ("backup.tar.gz", payload, "application/gzip")},
+        files={"file": (name, payload, "application/gzip")},
         data={"passphrase": passphrase},
     )
 
 
-def test_a_sealed_backup_is_one_container_with_the_key_inside(client):
+def test_a_backup_is_an_envelope_with_the_manifest_first(client):
     opened, config_dir = client
     seed_config(config_dir)
 
-    payload = download_backup(opened, PASSPHRASE)
+    envelope = download_backup(opened, "")
+    manifest = read_manifest(envelope)
 
+    assert manifest["kind"] == "neutrino_config_backup"
+    assert manifest["is_sealed"] is False
+    assert manifest["payload"] == "config.tar.gz"
+    assert manifest["sha256"] == hashlib.sha256(read_payload(envelope)).hexdigest()
+    assert KEY_MEMBER in inner_names(envelope)
+
+
+def test_a_sealed_backup_seals_the_key_inside_the_payload(client):
+    opened, config_dir = client
+    seed_config(config_dir)
+
+    envelope = download_backup(opened, PASSPHRASE)
+    manifest = read_manifest(envelope)
+    payload = read_payload(envelope)
+
+    assert manifest["is_sealed"] is True
+    assert manifest["payload"] == "config.sealed"
     assert payload.startswith(VAULT_SEALED_MAGIC)
-    with pytest.raises(tarfile.TarError):
-        member_names(payload)
-    names = member_names(unseal_bytes(payload, PASSPHRASE))
+    names = inner_names(envelope, PASSPHRASE)
     assert KEY_MEMBER in names
     assert "config/credentials/vault.json" in names
-
-
-def test_a_plain_backup_is_exactly_what_it_always_was(client):
-    opened, config_dir = client
-    seed_config(config_dir)
-
-    payload = download_backup(opened, "")
-
-    assert not payload.startswith(VAULT_SEALED_MAGIC)
-    assert KEY_MEMBER in member_names(payload)
 
 
 def test_a_box_without_a_vault_still_seals_under_a_passphrase(client):
@@ -176,19 +212,19 @@ def test_a_box_without_a_vault_still_seals_under_a_passphrase(client):
     (config_dir / "xray").mkdir()
     (config_dir / "xray" / "nodes.json").write_text("{}")
 
-    payload = download_backup(opened, PASSPHRASE)
+    envelope = download_backup(opened, PASSPHRASE)
 
-    assert payload.startswith(VAULT_SEALED_MAGIC)
-    assert "config/xray/nodes.json" in member_names(unseal_bytes(payload, PASSPHRASE))
+    assert read_manifest(envelope)["is_sealed"] is True
+    assert "config/xray/nodes.json" in inner_names(envelope, PASSPHRASE)
 
 
 def test_a_sealed_backup_restores_the_store_it_left_with(client):
     opened, config_dir = client
     secret_id = seed_config(config_dir)
-    payload = download_backup(opened, PASSPHRASE)
+    envelope = download_backup(opened, PASSPHRASE)
     wipe_config(config_dir)
 
-    response = upload_restore(opened, payload, PASSPHRASE)
+    response = upload_restore(opened, envelope, PASSPHRASE)
 
     assert response.status_code == 200
     assert response.json() == {"is_restored": True}
@@ -199,11 +235,11 @@ def test_a_restored_key_replaces_the_one_already_on_the_box(client):
     """The restored store needs its own key, not the key this box was using."""
     opened, config_dir = client
     secret_id = seed_config(config_dir)
-    payload = download_backup(opened, PASSPHRASE)
+    envelope = download_backup(opened, PASSPHRASE)
     wipe_config(config_dir)
     stale_id = seed_config(config_dir)
 
-    assert upload_restore(opened, payload, PASSPHRASE).status_code == 200
+    assert upload_restore(opened, envelope, PASSPHRASE).status_code == 200
     assert SecretVault().open(secret_id) == {"password": SEALED_PASSWORD}
     assert SecretVault().get(stale_id) is None
 
@@ -211,10 +247,10 @@ def test_a_restored_key_replaces_the_one_already_on_the_box(client):
 def test_a_sealed_backup_without_a_passphrase_writes_nothing(client):
     opened, config_dir = client
     seed_config(config_dir)
-    payload = download_backup(opened, PASSPHRASE)
+    envelope = download_backup(opened, PASSPHRASE)
     wipe_config(config_dir)
 
-    response = upload_restore(opened, payload, "")
+    response = upload_restore(opened, envelope, "")
 
     assert response.status_code == 400
     assert response.json()["detail"] == {"code": "backup_passphrase_needed"}
@@ -224,35 +260,79 @@ def test_a_sealed_backup_without_a_passphrase_writes_nothing(client):
 def test_a_wrong_passphrase_writes_nothing(client):
     opened, config_dir = client
     seed_config(config_dir)
-    payload = download_backup(opened, PASSPHRASE)
+    envelope = download_backup(opened, PASSPHRASE)
     wipe_config(config_dir)
 
-    response = upload_restore(opened, payload, "not the passphrase")
+    response = upload_restore(opened, envelope, "not the passphrase")
 
     assert response.status_code == 400
     assert response.json()["detail"] == {"code": "backup_passphrase_wrong"}
     assert list(config_dir.rglob("*")) == []
 
 
-def test_a_corrupt_container_writes_nothing(client):
+def test_a_wrong_file_extension_is_refused_by_name(client):
     opened, config_dir = client
     seed_config(config_dir)
-    payload = download_backup(opened, PASSPHRASE)
+    envelope = download_backup(opened, "")
     wipe_config(config_dir)
 
-    response = upload_restore(opened, payload[:40], PASSPHRASE)
+    response = upload_restore(opened, envelope, "", name="backup.bin")
 
     assert response.status_code == 400
-    assert "unreadable backup" in response.json()["detail"]
+    assert response.json()["detail"] == {"code": "backup_wrong_extension"}
+    assert list(config_dir.rglob("*")) == []
+
+
+def test_a_foreign_tarball_is_refused_before_anything_is_read(client):
+    opened, config_dir = client
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+        entry = tarfile.TarInfo("config/xray/nodes.json")
+        entry.size = 2
+        archive.addfile(entry, io.BytesIO(b"{}"))
+
+    response = upload_restore(opened, buffer.getvalue(), "")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {"code": "backup_unrecognized"}
+    assert list(config_dir.rglob("*")) == []
+
+
+def test_a_tampered_payload_fails_its_checksum(client):
+    opened, config_dir = client
+    seed_config(config_dir)
+    envelope = download_backup(opened, "")
+    manifest = read_manifest(envelope)
+    payload = bytearray(read_payload(envelope))
+    payload[-1] ^= 0x01
+    wipe_config(config_dir)
+
+    response = upload_restore(opened, repacked(manifest, bytes(payload)), "")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {"code": "backup_corrupt"}
+    assert list(config_dir.rglob("*")) == []
+
+
+def test_a_truncated_envelope_writes_nothing(client):
+    opened, config_dir = client
+    seed_config(config_dir)
+    envelope = download_backup(opened, PASSPHRASE)
+    wipe_config(config_dir)
+
+    response = upload_restore(opened, envelope[:60], PASSPHRASE)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {"code": "backup_unrecognized"}
     assert list(config_dir.rglob("*")) == []
 
 
 def test_a_plain_backup_restores_as_it_always_did(client):
     opened, config_dir = client
     secret_id = seed_config(config_dir)
-    payload = download_backup(opened, "")
+    envelope = download_backup(opened, "")
     wipe_config(config_dir)
 
-    assert upload_restore(opened, payload, "").status_code == 200
+    assert upload_restore(opened, envelope, "").status_code == 200
     assert json.loads((config_dir / "xray" / "nodes.json").read_text()) == {"nodes": []}
     assert SecretVault().open(secret_id) == {"password": SEALED_PASSWORD}

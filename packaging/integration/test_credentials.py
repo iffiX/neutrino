@@ -2,14 +2,15 @@
 
 What matters here is what no unit test can promise about the running panel:
 that secrets go in and never come back out, that a reference held by a device
-blocks a delete, and that a passphrase backup leaves the master key out of the
-tarball and a restore puts the whole vault back.
+blocks a delete, and that the backup envelope proves itself — manifest,
+checksum, passphrase — before a restore puts the whole vault back.
 
 The backup roundtrip restores the same box's own config over itself, which is
 safe on the disposable machines these tests are for and on nothing else.
 """
 
 import io
+import json
 import secrets
 import subprocess
 import tarfile
@@ -191,7 +192,13 @@ def test_backup_wraps_the_key_and_restores_the_vault(panel):
 
     status, plain = panel.download("POST", "/settings/backup", {"passphrase": ""})
     assert status == 200
-    with tarfile.open(fileobj=io.BytesIO(plain), mode="r:gz") as archive:
+    with tarfile.open(fileobj=io.BytesIO(plain), mode="r:gz") as envelope:
+        assert envelope.getmembers()[0].name == "neutrino_backup.json"
+        manifest = json.loads(envelope.extractfile("neutrino_backup.json").read())
+        assert manifest["kind"] == "neutrino_config_backup"
+        assert manifest["is_sealed"] is False
+        inner = envelope.extractfile("config.tar.gz").read()
+    with tarfile.open(fileobj=io.BytesIO(inner), mode="r:gz") as archive:
         assert "config/credentials/vault.key" in archive.getnames()
 
     passphrase = "itest-roundtrip-pp"
@@ -199,7 +206,16 @@ def test_backup_wraps_the_key_and_restores_the_vault(panel):
         "POST", "/settings/backup", {"passphrase": passphrase}
     )
     assert status == 200
-    assert wrapped.startswith(b"NEUTRINO-SEALED-1\n")
+    with tarfile.open(fileobj=io.BytesIO(wrapped), mode="r:gz") as envelope:
+        manifest = json.loads(envelope.extractfile("neutrino_backup.json").read())
+        assert manifest["is_sealed"] is True
+        payload = envelope.extractfile("config.sealed").read()
+    assert payload.startswith(b"NEUTRINO-SEALED-1\n")
+
+    status, refused = panel.upload(
+        "/settings/restore", filename="backup.bin", content=wrapped
+    )
+    assert status == 400 and refused["detail"]["code"] == "backup_wrong_extension"
 
     status, refused = panel.upload(
         "/settings/restore", filename="backup.tar.gz", content=wrapped

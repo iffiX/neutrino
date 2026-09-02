@@ -1,9 +1,12 @@
 """The Settings tab: the panel's own port, password, backup and versions."""
 
+import hashlib
 import io
+import json
 import platform
 import tarfile
 import time
+from datetime import datetime, timezone
 
 import psutil
 from fastapi import (
@@ -20,7 +23,6 @@ from fastapi.responses import StreamingResponse
 from neutrino_hub.modules.credentials.vault import (
     VaultError,
     VaultPassphraseError,
-    is_sealed,
     seal_bytes,
     unseal_bytes,
 )
@@ -57,9 +59,22 @@ GATEWAY_VERSION = HUB_VERSION
 RESTORE_SIZE_LIMIT_BYTES = 32 * 1024 * 1024
 PANEL_SETTINGS_FILE = "web/settings.json"
 
+# The envelope every backup travels in: a plain tar.gz whose first member is
+# the manifest naming what the payload is and what it hashes to, so a restore
+# can refuse a foreign or damaged file before anything touches disk.
+BACKUP_MANIFEST_MEMBER = "neutrino_backup.json"
+BACKUP_PLAIN_PAYLOAD = "config.tar.gz"
+BACKUP_SEALED_PAYLOAD = "config.sealed"
+BACKUP_KIND = "neutrino_config_backup"
+BACKUP_FORMAT_VERSION = 1
+BACKUP_EXTENSIONS = (".tar.gz", ".tgz")
+
 # The 400s the panel turns into its own sentences.
 BACKUP_ERROR_PASSPHRASE_NEEDED = "backup_passphrase_needed"
 BACKUP_ERROR_PASSPHRASE_WRONG = "backup_passphrase_wrong"
+BACKUP_ERROR_WRONG_EXTENSION = "backup_wrong_extension"
+BACKUP_ERROR_UNRECOGNIZED = "backup_unrecognized"
+BACKUP_ERROR_CORRUPT = "backup_corrupt"
 
 
 @router.get("", response_model=PanelSettings)
@@ -176,35 +191,46 @@ def backup(request: BackupRequest) -> StreamingResponse:
     """Download the whole ``config/`` directory, plain or sealed.
 
     Restoring this on a fresh machine and running the installer reproduces the
-    appliance, which is why it includes the device keys. Under a passphrase
-    the whole archive travels as one sealed container — the vault's master key
-    rides inside it, protected with everything else.
+    appliance, which is why it includes the device keys. The download is
+    always a ``.tar.gz``: the manifest first, then the payload — the config
+    tree's own tarball, or, under a passphrase, one sealed container with the
+    vault's master key riding inside it, protected with everything else.
 
     Args:
-        request: The passphrase to seal the archive under; blank downloads it
+        request: The passphrase to seal the payload under; blank keeps it
             plain.
 
     Returns:
-        A streaming download: a ``.tar.gz``, or a ``.sealed`` container.
+        A streaming ``.tar.gz`` download.
     """
-    buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+    inner = io.BytesIO()
+    with tarfile.open(fileobj=inner, mode="w:gz") as archive:
         archive.add(UTILS_CONFIG_DIR, arcname="config")
-    stamp = time.strftime("%Y%m%d_%H%M%S")
     if request.passphrase:
-        payload = seal_bytes(buffer.getvalue(), request.passphrase)
-        return StreamingResponse(
-            io.BytesIO(payload),
-            media_type="application/octet-stream",
-            headers={
-                "Content-Disposition": (
-                    f'attachment; filename="neutrino_config_{stamp}.sealed"'
-                )
-            },
-        )
-    buffer.seek(0)
+        payload = seal_bytes(inner.getvalue(), request.passphrase)
+        payload_name = BACKUP_SEALED_PAYLOAD
+    else:
+        payload = inner.getvalue()
+        payload_name = BACKUP_PLAIN_PAYLOAD
+    manifest = json.dumps(
+        {
+            "kind": BACKUP_KIND,
+            "version": BACKUP_FORMAT_VERSION,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "is_sealed": bool(request.passphrase),
+            "payload": payload_name,
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        },
+        indent=2,
+    ).encode()
+    outer = io.BytesIO()
+    with tarfile.open(fileobj=outer, mode="w:gz") as archive:
+        _add_member(archive, BACKUP_MANIFEST_MEMBER, manifest)
+        _add_member(archive, payload_name, payload)
+    outer.seek(0)
+    stamp = time.strftime("%Y%m%d_%H%M%S")
     return StreamingResponse(
-        buffer,
+        outer,
         media_type="application/gzip",
         headers={
             "Content-Disposition": (
@@ -214,49 +240,47 @@ def backup(request: BackupRequest) -> StreamingResponse:
     )
 
 
+def _add_member(archive: tarfile.TarFile, name: str, payload: bytes) -> None:
+    member = tarfile.TarInfo(name)
+    member.size = len(payload)
+    member.mode = 0o600
+    member.mtime = int(time.time())
+    archive.addfile(member, io.BytesIO(payload))
+
+
 @router.post("/restore")
 async def restore(file: UploadFile, passphrase: str = Form("")) -> dict:
     """Replace ``config/`` from an uploaded backup.
 
-    A sealed container is opened in memory before anything is written, so a
-    missing or wrong passphrase leaves the box exactly as it was.
+    Nothing touches disk until the file has proven itself: the name, the
+    manifest, the payload's checksum, and — for a sealed payload — the
+    passphrase are all settled in memory first, so a foreign, damaged or
+    locked file leaves the box exactly as it was.
 
     Args:
-        file: The uploaded ``.tar.gz`` or ``.sealed`` container.
-        passphrase: What the container was sealed under, blank for a plain
-            archive.
+        file: The uploaded ``.tar.gz`` backup.
+        passphrase: What the payload was sealed under, blank for a plain one.
 
     Returns:
         Whether the restore succeeded.
 
     Raises:
-        HTTPException: 400 when the archive is too large, unreadable, holds a
-            member that would land outside ``config/``, or is sealed and the
-            passphrase is missing or wrong. This endpoint unpacks as root, so
-            where each member resolves to is checked rather than where its
-            name appears to start.
+        HTTPException: 400 when the file is too large, is not named like a
+            backup, does not carry this panel's manifest, fails its checksum,
+            holds a member that would land outside ``config/``, or is sealed
+            and the passphrase is missing or wrong. This endpoint unpacks as
+            root, so where each member resolves to is checked rather than
+            where its name appears to start.
     """
-    payload = await file.read(RESTORE_SIZE_LIMIT_BYTES + 1)
-    if len(payload) > RESTORE_SIZE_LIMIT_BYTES:
+    name = file.filename or ""
+    if not name.endswith(BACKUP_EXTENSIONS):
+        raise _coded_bad_request(BACKUP_ERROR_WRONG_EXTENSION)
+    blob = await file.read(RESTORE_SIZE_LIMIT_BYTES + 1)
+    if len(blob) > RESTORE_SIZE_LIMIT_BYTES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="backup is too large"
         )
-    if is_sealed(payload):
-        if not passphrase:
-            raise _coded_bad_request(BACKUP_ERROR_PASSPHRASE_NEEDED)
-        try:
-            payload = unseal_bytes(payload, passphrase)
-        except VaultPassphraseError as error:
-            raise _coded_bad_request(BACKUP_ERROR_PASSPHRASE_WRONG) from error
-        except VaultError as error:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"unreadable backup: {error}",
-            ) from error
-        if len(payload) > RESTORE_SIZE_LIMIT_BYTES:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="backup is too large"
-            )
+    payload = _checked_payload(blob, passphrase)
     try:
         with tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz") as archive:
             members = [_checked_member(member) for member in archive.getmembers()]
@@ -265,12 +289,69 @@ async def restore(file: UploadFile, passphrase: str = Form("")) -> dict:
             archive.extractall(
                 path=UTILS_CONFIG_DIR.parent, members=members, filter="data"
             )
-    except tarfile.TarError as error:
+    except (tarfile.TarError, EOFError, OSError) as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"unreadable backup: {error}",
         ) from error
     return {"is_restored": True}
+
+
+def _checked_payload(blob: bytes, passphrase: str) -> bytes:
+    """Open the envelope and hand back the config tree's own tarball.
+
+    Args:
+        blob: The uploaded file.
+        passphrase: What a sealed payload was sealed under.
+
+    Returns:
+        The inner ``config.tar.gz`` bytes, verified and unsealed.
+
+    Raises:
+        HTTPException: 400 with the code naming what refused — not this
+            panel's manifest, a checksum that does not match, or a passphrase
+            that is missing or wrong.
+    """
+    try:
+        with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as envelope:
+            manifest_member = envelope.extractfile(BACKUP_MANIFEST_MEMBER)
+            manifest = json.loads(manifest_member.read())
+            if manifest.get("kind") != BACKUP_KIND or manifest.get("payload") not in (
+                BACKUP_PLAIN_PAYLOAD,
+                BACKUP_SEALED_PAYLOAD,
+            ):
+                raise _coded_bad_request(BACKUP_ERROR_UNRECOGNIZED)
+            payload_member = envelope.extractfile(manifest["payload"])
+            payload = payload_member.read()
+    except HTTPException:
+        raise
+    # A truncated gzip stream surfaces as EOFError or BadGzipFile (an
+    # OSError), not as a TarError.
+    except (
+        tarfile.TarError,
+        EOFError,
+        OSError,
+        KeyError,
+        AttributeError,
+        ValueError,
+    ) as error:
+        raise _coded_bad_request(BACKUP_ERROR_UNRECOGNIZED) from error
+    if hashlib.sha256(payload).hexdigest() != manifest.get("sha256"):
+        raise _coded_bad_request(BACKUP_ERROR_CORRUPT)
+    if manifest["payload"] == BACKUP_SEALED_PAYLOAD:
+        if not passphrase:
+            raise _coded_bad_request(BACKUP_ERROR_PASSPHRASE_NEEDED)
+        try:
+            payload = unseal_bytes(payload, passphrase)
+        except VaultPassphraseError as error:
+            raise _coded_bad_request(BACKUP_ERROR_PASSPHRASE_WRONG) from error
+        except VaultError as error:
+            raise _coded_bad_request(BACKUP_ERROR_CORRUPT) from error
+    if len(payload) > RESTORE_SIZE_LIMIT_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="backup is too large"
+        )
+    return payload
 
 
 def _coded_bad_request(code: str) -> HTTPException:
