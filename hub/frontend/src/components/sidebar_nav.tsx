@@ -12,8 +12,8 @@ import "./sidebar_nav.css";
  *
  * The active route is marked by a glowing cyan bar rather than a filled block,
  * so the eye finds the current page instantly without the nav competing with
- * the page content for attention. Below tablet width the labels drop and the
- * rail narrows to icons.
+ * the page content for attention. Narrow and portrait viewports hide the rail
+ * and show the bottom bar (bottom_nav.tsx) in its place.
  *
  * Two zones, always both. Core is what makes this a gateway; Optional is what
  * the box also hosts, and each of those appears only once its service is

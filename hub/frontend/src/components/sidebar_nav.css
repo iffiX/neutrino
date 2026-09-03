@@ -128,33 +128,10 @@
   width: 100%;
 }
 
-@media (max-width: 1024px) {
+/* Narrow and portrait viewports get the bottom bar instead. */
+@media (max-aspect-ratio: 1 / 1), (max-width: 880px) {
   .sidebar_nav {
-    width: var(--sidebar-width-compact);
-  }
-
-  .sidebar_brand {
-    justify-content: center;
-    padding: 0;
-  }
-
-  .sidebar_brand_text,
-  .sidebar_item_label,
-  .sidebar_logout_label {
     display: none;
-  }
-
-  .sidebar_item {
-    justify-content: center;
-    padding: 10px 0;
-  }
-
-  .sidebar_item::before {
-    left: -9px;
-  }
-
-  .sidebar_logout {
-    justify-content: center;
   }
 }
 
@@ -167,8 +144,7 @@
 }
 
 /* The rule divides the two halves; each half names itself above its own
-   pages. When the rail narrows to icons the names go and the rule is left,
-   which is still the whole of what it has to say. */
+   pages. */
 .sidebar_group + .sidebar_group {
   margin-top: var(--space-4);
   padding-top: var(--space-4);
@@ -189,11 +165,4 @@
   color: var(--color-text-faint);
   font-size: 12px;
   font-style: italic;
-}
-
-@media (max-width: 1024px) {
-  .sidebar_group_label,
-  .sidebar_group_empty {
-    display: none;
-  }
 }

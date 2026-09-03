@@ -1,6 +1,7 @@
 import { Outlet, useLocation } from "react-router-dom";
 
 import { TerminalPage } from "../pages/terminal_page";
+import { BottomNav } from "./bottom_nav";
 import { SidebarNav } from "./sidebar_nav";
 import { TopBar } from "./top_bar";
 import { ServicesContext } from "../services_context";
@@ -13,7 +14,8 @@ import type { ServicesResponse } from "../api_types";
 import "./app_shell.css";
 
 /**
- * The authenticated layout: fixed rail, status bar, routed body.
+ * The authenticated layout: fixed rail — a bottom bar on narrow and portrait
+ * viewports — status bar, routed body.
  *
  * The window's height is divided up here rather than grown into: the body is
  * what scrolls, so the bar above it stays put and a page can ask to fill
@@ -66,6 +68,7 @@ export function AppShell() {
               </div>
             </main>
           </div>
+          <BottomNav onLogout={handleLogout} />
         </div>
       </ServicesContext.Provider>
     </StatsContext.Provider>

@@ -86,7 +86,7 @@
 
   /* --- Layout --- */
   --sidebar-width: 232px;
-  --sidebar-width-compact: 68px;
+  --bottom-nav-height: 56px;
   --top-bar-height: 56px;
 }
 

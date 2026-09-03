@@ -72,10 +72,6 @@
 }
 
 @media (max-width: 1024px) {
-  .app_shell {
-    padding-left: var(--sidebar-width-compact);
-  }
-
   .app_shell_body {
     padding: var(--space-5);
   }
@@ -84,5 +80,20 @@
 @media (max-width: 720px) {
   .app_shell_body {
     padding: var(--space-4);
+  }
+}
+
+/* Narrow and portrait: the rail gives way to the bottom bar, and the body's
+   bottom padding keeps the last of a page clear of it. */
+@media (max-aspect-ratio: 1 / 1), (max-width: 880px) {
+  .app_shell {
+    padding-left: 0;
+  }
+
+  .app_shell_body {
+    padding-bottom: calc(
+      var(--space-4) + var(--bottom-nav-height) +
+        env(safe-area-inset-bottom, 0px)
+    );
   }
 }
