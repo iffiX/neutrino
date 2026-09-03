@@ -21,6 +21,27 @@ command has to be on the path, `/lib/systemd/system/` because systemd reads
 units from there and nowhere else, and `/usr/share/doc/neutrino-hub/licenses/`
 because that is where a package's licences are looked for.
 
+## What each operation leaves behind
+
+Four operations can take things away, and each answers to one rule: the
+package manager owns what the package put here, the person owns what they
+decided, and `purge` and `reset` are the two ways of saying "all of it" —
+one to dpkg, one to the hub.
+
+| Operation | `/opt/neutrino` | `/etc/neutrino/hub` | `/var/lib`, `/var/log`, `/run` |
+| --- | --- | --- | --- |
+| upgrade / reinstall | replaced whole | untouched, byte for byte | kept; the next render rewrites what it derives |
+| `apt remove` | deleted | **kept** | kept |
+| `apt purge` | deleted | **deleted** | deleted |
+| `nhub reset all` | kept (still installed) | replaced from the examples; the vault key and the agent TLS identity go with it | cleared of everything the hub wrote |
+
+`remove` keeps the decisions because that is dpkg's own convention — a
+package can come back and find its configuration waiting. `purge` is the
+explicit request to forget everything, and it honours that to the letter;
+what the vault held is gone with it, so a backup taken first is the only way
+back. `/etc/neutrino/agent` is the agent package's and survives the hub's
+purge untouched.
+
 ## /opt/neutrino — what the package put here
 
 ```

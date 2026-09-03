@@ -111,8 +111,8 @@ if [ "$1" = remove ] || [ "$1" = purge ]; then
 fi
 
 if [ "$1" = purge ]; then
-    echo "  Leaving /etc/neutrino/hub in place; remove it by hand if you"
-    echo "  no longer need the node credentials and device keys it holds."
+    rm -rf /etc/neutrino/hub /var/lib/neutrino /var/log/neutrino /run/neutrino
+    rmdir /etc/neutrino 2>/dev/null || true
 fi
 """
 
