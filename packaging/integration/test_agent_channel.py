@@ -147,6 +147,34 @@ def test_the_channel_is_pinned_tls_end_to_end(panel, stranger):
         INSTALL_TIMEOUT_S,
     )
 
+    # The package endpoint answers over the same pinned channel with the same
+    # token, and the bytes match the digest the reply names — the transport a
+    # self-updating agent trusts. Run with the device's own installed agent
+    # code, as an update would.
+    script = (
+        "import hashlib; "
+        "from neutrino_agent import enrollment; "
+        "from neutrino_agent.constants import AGENT_PACKAGE_PATH; "
+        "from neutrino_agent.http_channel import GatewayHttpChannel; "
+        "from neutrino_agent.platform_info import platform_tuple; "
+        "from neutrino_agent.self_update import package_kind; "
+        "config = enrollment.load_config(); "
+        'channel = GatewayHttpChannel(gateway_url=config["gateway_url"], '
+        'token=config["token"], fingerprint=config.get("fingerprint", "")); '
+        "kind = package_kind(platform_tuple()); "
+        "named = channel.post_download(AGENT_PACKAGE_PATH, "
+        '{"family": kind}, "/tmp/hub_agent_package"); '
+        'data = open("/tmp/hub_agent_package", "rb").read(); '
+        "matched = named == hashlib.sha256(data).hexdigest(); "
+        'print(kind, "digest-ok" if matched else "digest-bad", len(data))'
+    )
+    fetched = lifecycle.ssh_to(host, f"sudo python3 -c '{script}'")
+    assert fetched.returncode == 0, fetched.stdout + fetched.stderr
+    kind, verdict, size = fetched.stdout.split()
+    assert kind in ("deb", "rpm")
+    assert verdict == "digest-ok"
+    assert int(size) > 10 * 1024
+
     # Unbind from the device side, so the refusals below are the link's alone.
     left = lifecycle.ssh_to(host, "sudo nagent disconnect")
     assert "left the hub" in left.stdout, left.stdout + left.stderr
