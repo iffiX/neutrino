@@ -26,6 +26,7 @@ from neutrino_hub.modules.ai.registry import AiProviderRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
+from neutrino_hub.web.constants import WEB_JOURNAL_LINE_LIMIT
 from neutrino_hub.web.dependencies import require_session
 from neutrino_hub.web.models import (
     CliproxyApiApplyResult,
@@ -42,10 +43,6 @@ from neutrino_hub.web.models import (
     CliproxyApiUsageTotals,
     CliproxyApiUsageView,
 )
-
-# How much of the unit's journal one request may ask for; the same ceiling
-# the Services tab holds its own journal reads to.
-JOURNAL_LINE_LIMIT = 5000
 
 router = APIRouter(
     prefix="/api/cliproxyapi",
@@ -127,12 +124,12 @@ def usage(
 
 @router.get("/journal", response_model=CliproxyApiJournalView)
 def journal(
-    lines: int = Query(default=200, ge=1, le=JOURNAL_LINE_LIMIT),
+    lines: int = Query(default=200, ge=1, le=WEB_JOURNAL_LINE_LIMIT),
 ) -> CliproxyApiJournalView:
     """Read the tail of the gateway's journal.
 
     Args:
-        lines: How many lines to return, at most :data:`JOURNAL_LINE_LIMIT`.
+        lines: How many lines to return, at most :data:`WEB_JOURNAL_LINE_LIMIT`.
 
     Returns:
         The journal lines, most recent last.

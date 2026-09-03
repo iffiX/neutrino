@@ -10,6 +10,7 @@ from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.system.machine import ANY_ARCHITECTURE, machine_architecture
 from neutrino_hub.system.provisioning import plan_for
 from neutrino_hub.utils.subprocess_run import CommandError, run
+from neutrino_hub.web.constants import WEB_JOURNAL_LINE_LIMIT
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
     JournalView,
@@ -25,10 +26,6 @@ from neutrino_hub.web.models import (
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.routers.declared_services import declared_service_views
-
-# How much of a unit's journal one request may ask for. Unbounded, a single
-# call reads an entire journal into memory and into one JSON body.
-JOURNAL_LINE_LIMIT = 5000
 
 router = APIRouter(
     prefix="/api/services", tags=["services"], dependencies=[Depends(require_session)]
@@ -81,7 +78,7 @@ def list_tasks(runtime: PanelRuntime = Depends(get_runtime)) -> TaskListView:
 @router.get("/{name}/journal", response_model=JournalView)
 def journal(
     name: str,
-    lines: int = Query(default=100, ge=1, le=JOURNAL_LINE_LIMIT),
+    lines: int = Query(default=100, ge=1, le=WEB_JOURNAL_LINE_LIMIT),
     runtime: PanelRuntime = Depends(get_runtime),
 ) -> JournalView:
     """Read the tail of a unit's journal.
@@ -89,7 +86,7 @@ def journal(
     Args:
         name: Panel-facing service name.
         lines: How many lines to return, at most
-            :data:`JOURNAL_LINE_LIMIT`. Unbounded, this reads a whole unit
+            :data:`WEB_JOURNAL_LINE_LIMIT`. Unbounded, this reads a whole unit
             journal into one response; negative, journalctl rejects the option
             and its usage message is rendered as though it were log output.
         runtime: The shared runtime.

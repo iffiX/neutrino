@@ -66,6 +66,10 @@ WEB_LOGIN_LOCKOUT_STATE_PATH = UTILS_RUNTIME_ROOT / "login_lockout.json"
 WEB_STATS_PUSH_INTERVAL_S = 1.0
 WEB_DNS_LOG_PATH = UTILS_LOG_ROOT / "dnsmasq.log"
 
+# How much of a unit's journal one request may ask for. Unbounded, a single
+# call reads an entire journal into memory and into one JSON body.
+WEB_JOURNAL_LINE_LIMIT = 5000
+
 # --- the wizard in a browser ---
 # The token the terminal prints and the browser carries. It is the whole of
 # the access control: this serves before there is a password to ask for.
