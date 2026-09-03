@@ -17,6 +17,7 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_GENERATED_NAME,
     CLIPROXYAPI_UNIT,
 )
+from neutrino_hub.modules.cliproxyapi.management_key import resolve_management_key
 from neutrino_hub.modules.cliproxyapi.renderer import CliproxyApiConfigRenderer
 from neutrino_hub.modules.ai.registry import AiProviderRegistry
 
@@ -68,7 +69,10 @@ class CliproxyApiConfigApplier:
             if provider.is_enabled
         }
         rendered = CliproxyApiConfigRenderer(
-            config=config, providers=providers, api_keys=api_keys
+            config=config,
+            providers=providers,
+            api_keys=api_keys,
+            management_key=resolve_management_key(),
         ).render()
         write_generated(
             UTILS_GENERATED_DIR / CLIPROXYAPI_GENERATED_NAME, rendered, mode=0o600

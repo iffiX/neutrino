@@ -19,6 +19,15 @@ CLIPROXYAPI_GENERATED_NAME = "cliproxyapi.yaml"
 CLIPROXYAPI_CLIENT_KEY_BYTES = 24
 CLIPROXYAPI_ID_BYTES = 8
 
+# The management API: served by the gateway on its own port, loopback callers
+# only, unlocked by a key of the hub's own. The sealed key travels with a
+# config backup like the agent channel's; the working copy is state. Both
+# paths are resolved per call in management_key.py, against the roots as
+# they are right now.
+CLIPROXYAPI_MANAGEMENT_SEALED_KEY_RELATIVE = "cliproxyapi/management_key.sealed"
+CLIPROXYAPI_MANAGEMENT_KEY_RELATIVE = "cliproxyapi/management.key"
+CLIPROXYAPI_MANAGEMENT_KEY_AAD = b"cliproxyapi:management_key"
+
 CLIPROXYAPI_SUPPORTED_ARCHITECTURES = ("amd64", "arm64")
 # The vendor's release assets name arm64 the kernel way.
 CLIPROXYAPI_ASSET_ARCHITECTURES = {"amd64": "amd64", "arm64": "aarch64"}

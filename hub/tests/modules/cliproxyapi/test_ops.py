@@ -57,3 +57,19 @@ def test_a_provider_with_no_sealed_key_renders_nothing(box):
     )
     CliproxyApiConfigApplier().apply()
     assert "openai-compatibility" not in _rendered(box)
+
+
+def test_the_management_key_is_minted_on_first_apply(box):
+    CliproxyApiConfigApplier().apply()
+    sealed = box / "cliproxyapi" / "management_key.sealed"
+    working = box / "state" / "cliproxyapi" / "management.key"
+    assert sealed.is_file()
+    key = working.read_text(encoding="utf-8").strip()
+    assert len(key) == 64
+    document = _rendered(box)
+    assert document["usage-statistics-enabled"] is True
+    assert document["remote-management"]["secret-key"] == key
+    assert document["remote-management"]["allow-remote"] is False
+    # A second apply reuses the sealed key rather than rotating it.
+    CliproxyApiConfigApplier().apply()
+    assert working.read_text(encoding="utf-8").strip() == key

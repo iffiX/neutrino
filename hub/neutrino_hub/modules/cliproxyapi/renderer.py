@@ -34,17 +34,22 @@ class CliproxyApiConfigRenderer:
         config: CliproxyApiConfig,
         providers: list[AiProviderRecord],
         api_keys: dict[str, str],
+        management_key: str,
     ):
         """
         Args:
             config: The gateway's own settings.
-            providers: Every stored provider; disabled ones are left out.
+            providers: Every stored provider, in served order; disabled ones
+                are left out.
             api_keys: The resolved key per provider id; a provider with no
                 entry here, or an empty one, is left out too.
+            management_key: The resolved management API key; empty renders
+                with the management API and usage metering off.
         """
         self._config = config
         self._providers = providers
         self._api_keys = api_keys
+        self._management_key = management_key
 
     def render(self) -> str:
         """Render the configuration file.
@@ -59,6 +64,17 @@ class CliproxyApiConfigRenderer:
             "api-keys": [key.key for key in self._config.client_keys],
             "logging-to-file": False,
         }
+        if self._management_key:
+            document["usage-statistics-enabled"] = True
+            # The gateway replaces the plaintext with a bcrypt hash of it the
+            # first time it reads the file; callers keep authenticating with
+            # the plaintext. allow-remote off keeps the management routes for
+            # loopback callers, and the control panel assets are not fetched.
+            document["remote-management"] = {
+                "allow-remote": False,
+                "disable-control-panel": True,
+                "secret-key": self._management_key,
+            }
         compatibility = []
         for provider in self._providers:
             api_key = self._api_keys.get(provider.id, "")

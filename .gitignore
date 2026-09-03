@@ -13,6 +13,7 @@ config/devices/devices.json
 config/ai/providers.json
 config/credentials/vault.json
 config/cliproxyapi/cliproxyapi.json
+config/cliproxyapi/management_key.sealed
 config/services/declared.json
 config/devices/packages/
 config/devices/known_hosts

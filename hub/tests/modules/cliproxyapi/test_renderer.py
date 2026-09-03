@@ -25,13 +25,16 @@ def _provider(**overrides) -> AiProviderRecord:
     return AiProviderRecord(**base)
 
 
-def _render(providers, api_keys) -> dict:
+def _render(providers, api_keys, management_key: str = "") -> dict:
     config = CliproxyApiConfig(
         listen_port=8317,
         client_keys=[CliproxyApiClientKey(id="k1", name="laptop", key="client-key-1")],
     )
     text = CliproxyApiConfigRenderer(
-        config=config, providers=providers, api_keys=api_keys
+        config=config,
+        providers=providers,
+        api_keys=api_keys,
+        management_key=management_key,
     ).render()
     return yaml.safe_load(text)
 
@@ -96,3 +99,31 @@ def test_model_aliases_render_with_alias_defaulting_to_name():
 def test_base_url_is_omitted_when_empty():
     document = _render([_provider()], {"p1": "sk-x"})
     assert "base-url" not in document["claude-api-key"][0]
+
+
+def test_a_management_key_turns_metering_on():
+    document = _render([], {}, management_key="mk-1")
+    assert document["usage-statistics-enabled"] is True
+    assert document["remote-management"] == {
+        "allow-remote": False,
+        "disable-control-panel": True,
+        "secret-key": "mk-1",
+    }
+
+
+def test_no_management_key_leaves_the_management_api_off():
+    document = _render([], {})
+    assert "remote-management" not in document
+    assert "usage-statistics-enabled" not in document
+
+
+def test_provider_blocks_follow_the_given_order():
+    document = _render(
+        [
+            _provider(id="p2", kind="custom", name="Second", base_url="https://b/v1"),
+            _provider(id="p1", kind="custom", name="First", base_url="https://a/v1"),
+        ],
+        {"p1": "k1", "p2": "k2"},
+    )
+    names = [entry["name"] for entry in document["openai-compatibility"]]
+    assert names == ["second", "first"]

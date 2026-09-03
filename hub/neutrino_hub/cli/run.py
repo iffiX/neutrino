@@ -52,6 +52,7 @@ from neutrino_hub.utils.constants import (
     UTILS_GENERATED_DIR,
     is_dev_root_set,
 )
+from neutrino_hub.modules.cliproxyapi.management_key import resolve_management_key
 from neutrino_hub.modules.credentials.vault import VaultError
 from neutrino_hub.web.agent_tls import ensure_certificate, write_served_key
 from neutrino_hub.web.constants import (
@@ -315,6 +316,14 @@ def _serve_panel(arguments) -> int:
         Process exit status.
     """
     port = arguments.port if arguments.port is not None else _configured_port()
+    # The same belt the agent key gets: the usage collector reads the working
+    # copy, and a panel started fresh after a restore has none yet.
+    if not resolve_management_key():
+        print(
+            'error: {"code": "management_key_unavailable"}: the AI gateway has '
+            "no management key; usage metering stays off",
+            file=sys.stderr,
+        )
     if arguments.reload:
         print("  --reload serves the panel only; the agent port is not served")
         uvicorn.run(

@@ -53,6 +53,10 @@ from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.system.units import SystemdUnitInstaller
 from neutrino_hub.utils.json_file import read_config, write_generated
+from neutrino_hub.modules.cliproxyapi.management_key import (
+    ensure_management_key,
+    write_working_key,
+)
 from neutrino_hub.modules.credentials.vault import VaultError
 from neutrino_hub.web.agent_tls import ensure_certificate, write_served_key
 from neutrino_hub.web.constants import (
@@ -116,6 +120,18 @@ def main() -> int:
         print(
             f'error: {{"code": "{code}"}}: the agent channel has no served key '
             f"({error})",
+            file=sys.stderr,
+        )
+
+    try:
+        if ensure_management_key():
+            print("AI gateway management key generated")
+        write_working_key()
+    except (VaultError, OSError, ValueError) as error:
+        code = getattr(error, "code", "management_key_unavailable")
+        print(
+            f'error: {{"code": "{code}"}}: the AI gateway has no management key '
+            f"({error}); usage metering stays off",
             file=sys.stderr,
         )
 
