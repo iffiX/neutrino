@@ -505,11 +505,84 @@ export interface CliproxyApiStatusView {
   is_reachable: boolean;
   probe_message: string;
   enabled_provider_count: number;
+  /** Served over the current UTC day; absent until usage is collected. */
+  requests_today?: number;
+  tokens_today?: number;
 }
 
 /** The Credentials page's AI provider section payload. */
 export interface AiProvidersResponse {
   providers: AiProviderView[];
+}
+
+/** The serving order write: every provider id, in the order tried. */
+export interface AiProviderOrderUpdate {
+  provider_ids: string[];
+}
+
+export type AiUsageRange = "day" | "week" | "month" | "year";
+
+/** Request and token rates averaged over the last 60 minutes. */
+export interface AiUsageRates {
+  rpm: number;
+  tpm: number;
+}
+
+/** Counter set shared by usage totals, buckets, keys and providers. */
+export interface AiUsageCounters {
+  requests: number;
+  failed: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+}
+
+/** One time bucket of the usage series; hourly for day, daily otherwise. */
+export interface AiUsageBucket extends AiUsageCounters {
+  bucket: string;
+}
+
+/** One client key's usage; `device_name` when a device owns the key. */
+export interface AiUsageKey extends AiUsageCounters {
+  key_id: string;
+  name: string;
+  device_name: string | null;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+/** One hourly slot of a provider's last-5h health window. */
+export interface AiUsageHealthBucket {
+  bucket: string;
+  requests: number;
+  failed: number;
+}
+
+/** One provider's usage over the requested range. */
+export interface AiUsageProvider extends AiUsageCounters {
+  provider_id: string;
+  name: string;
+  kind: AiProviderKind;
+  first_seen_at: string;
+  last_seen_at: string;
+  health: AiUsageHealthBucket[];
+}
+
+/** The `/cliproxyapi/usage` payload. */
+export interface AiUsageResponse {
+  range: AiUsageRange;
+  generated_at: string;
+  rates: AiUsageRates;
+  totals: AiUsageCounters;
+  series: AiUsageBucket[];
+  keys: AiUsageKey[];
+  providers: AiUsageProvider[];
+}
+
+/** The gateway's journal tail, most recent line last. */
+export interface CliproxyApiJournalResponse {
+  lines: string[];
 }
 
 /**

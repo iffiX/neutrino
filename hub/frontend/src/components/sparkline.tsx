@@ -15,6 +15,8 @@ interface SparklineProps {
   tone?: "accent" | "secondary" | "ok" | "warn" | "error";
   width?: number;
   height?: number;
+  /** Fill the parent's width instead of rendering at natural size. */
+  isStretchy?: boolean;
 }
 
 export function Sparkline({
@@ -22,6 +24,7 @@ export function Sparkline({
   tone = "accent",
   width = 68,
   height = 20,
+  isStretchy = false,
 }: SparklineProps) {
   if (values.length < 2) {
     return <span className="sparkline_empty">no probes</span>;
@@ -36,10 +39,13 @@ export function Sparkline({
 
   return (
     <svg
-      className={`sparkline sparkline--${tone}`}
+      className={`sparkline sparkline--${tone}${
+        isStretchy ? " sparkline--stretch" : ""
+      }`}
       width={width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio={isStretchy ? "none" : undefined}
       aria-hidden="true"
     >
       <path className="sparkline_area" d={areaPath} />
