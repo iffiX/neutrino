@@ -8,9 +8,11 @@ file holds only what is wired into the protocol.
 # so a machine running both has one place to look and one place to back up.
 AGENT_CONFIG_PATH = "/etc/neutrino/agent/agent.json"
 
-# How many heartbeats in a row the hub may refuse before the agent accepts
-# that it was let go and drops its binding. More than one, so a hub caught
-# mid-restore does not shed its whole fleet over a moment's inconsistency.
+# How many heartbeats in a row the hub may reject — a refused token, a
+# certificate off the pin, an agent newer than the hub — before the agent
+# drops its binding. One counter for every kind. More than one, so a hub
+# caught mid-restore does not shed its whole fleet over a moment's
+# inconsistency.
 AGENT_REFUSALS_BEFORE_UNBIND = 3
 
 AGENT_SERVICE_NAME = "neutrino_agent.service"

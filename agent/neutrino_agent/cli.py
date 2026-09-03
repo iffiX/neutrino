@@ -222,13 +222,16 @@ def _status() -> int:
         elif "fingerprint" in error:
             print(
                 "           what answers there is not the hub this machine "
-                "pinned; if the hub was reinstalled, rejoin with a fresh "
-                "link from its Devices page"
+                "pinned — it was reset or reinstalled; the running service "
+                "unbinds by itself after a few of these, and a fresh link "
+                "from the hub's Devices page rejoins"
             )
         elif "newer than the hub" in error:
             print(
-                "           the binding is fine; heartbeats resume once the "
-                "hub is updated to this agent's version or later"
+                "           the hub turns this agent away; the running "
+                "service unbinds by itself after a few of these — update "
+                "the hub, then rejoin with a fresh link from its Devices "
+                "page"
             )
         return 1
     print(f"heartbeat  ok, {elapsed_ms} ms — next report in {delay}s")

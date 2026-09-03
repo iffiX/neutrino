@@ -7,9 +7,7 @@ def test_the_gate_covers_exactly_what_changes_the_machine():
     assert sorted(cli.ROOT_COMMANDS) == ["connect", "disconnect", "run"]
 
 
-def test_an_unprivileged_disconnect_is_refused_with_the_command(
-    monkeypatch, capsys
-):
+def test_an_unprivileged_disconnect_is_refused_with_the_command(monkeypatch, capsys):
     monkeypatch.setattr(cli.os, "geteuid", lambda: 1000)
     monkeypatch.setattr(cli.sys, "argv", ["nagent", "disconnect"])
 

@@ -1,10 +1,11 @@
 """One version between hub and agent: refusal upward, self-update downward.
 
-A hub that finds an agent newer than itself turns it away with a coded 409,
-which the agent must never read as being let go; a hub that reports a later
-version makes the agent pull the hub's baked package and install it in a
-transient unit that outlives the process. Nothing here talks to a network:
-the channel is replaced at the seam the agent uses it through.
+A hub that finds an agent newer than itself turns it away with a coded 409 —
+a definitive rejection that unbinds the agent after three consecutive beats,
+its reason naming the version skew; a hub that reports a later version makes
+the agent pull the hub's baked package and install it in a transient unit
+that outlives the process. Nothing here talks to a network: the channel is
+replaced at the seam the agent uses it through.
 """
 
 import base64
@@ -88,10 +89,10 @@ def discard(message: str) -> None:
     """Swallow the agent's log lines."""
 
 
-# --- a newer agent is refused, and never unbinds over it ---
+# --- a newer agent is refused, and three refused beats unbind it ---
 
 
-def test_a_version_refusal_never_unbinds(config_path, monkeypatch):
+def test_three_version_refused_beats_unbind(config_path, monkeypatch):
     bind(config_path)
     agent = Agent(log=discard)
 
@@ -99,14 +100,31 @@ def test_a_version_refusal_never_unbinds(config_path, monkeypatch):
         raise GatewayVersionRefused(hub_version="0.1.0", agent_version="0.2.0")
 
     monkeypatch.setattr(agent._channel, "post", refuse)
-    delays = [agent.run_once() for _ in range(4)]
+    delays = [agent.run_once() for _ in range(3)]
+
+    assert agent._channel is None
+    assert "gateway_url" not in json.loads(config_path.read_text())
+    assert "newer than the hub" in agent.last_error()
+    assert "fresh link" in agent.last_error()
+    # Counted beats wait one plain interval — no backoff, this is an answer,
+    # not an outage — and the third drops to the unbound idle poll.
+    assert delays == [5, 5, 2]
+
+
+def test_two_version_refused_beats_keep_the_binding(config_path, monkeypatch):
+    bind(config_path)
+    agent = Agent(log=discard)
+
+    def refuse(path, payload):
+        raise GatewayVersionRefused(hub_version="0.1.0", agent_version="0.2.0")
+
+    monkeypatch.setattr(agent._channel, "post", refuse)
+    for _ in range(2):
+        agent.run_once()
 
     assert agent._channel is not None
-    assert agent._refusals == 0
     assert "gateway_url" in json.loads(config_path.read_text())
     assert "newer than the hub" in agent.last_error()
-    # Backing off the way an unreachable hub does, not counting refusals.
-    assert delays == [5, 10, 20, 40]
 
 
 def test_connect_refuses_a_newer_agent_visibly(config_path, monkeypatch):
@@ -145,7 +163,8 @@ def test_status_words_a_version_refusal_distinctly(config_path, monkeypatch, cap
     assert cli._status() == 1
     out = capsys.readouterr().out
     assert "newer than the hub" in out
-    assert "hub is updated" in out
+    assert "unbinds by itself" in out
+    assert "fresh link" in out
 
 
 # --- an older agent updates itself ---

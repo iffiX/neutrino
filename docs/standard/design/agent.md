@@ -102,17 +102,35 @@ entire identity.
 
 ## What each failure means to the agent
 
-| The hub answered… | Exception | Counts toward self-unbind | What the agent does |
-| --- | --- | --- | --- |
-| wrong certificate | `GatewayUntrusted` | never | backs off; nothing was sent, not even the request line |
-| 401 / 403 | `GatewayRefused` | yes — three beats unbind | the hub deliberately no longer knows this machine |
-| version mismatch (409, `agent_newer_than_hub`) | its own state | never | backs off and says the hub must be updated first |
-| anything else, or nothing | `GatewayUnreachable` | never | backs off and retries |
+A binding either connects, or it cannot. Every definitive rejection — the hub
+answered and said no — self-unbinds after three consecutive beats; only a hub
+that did not answer at all is retried forever.
 
-The distinction is the point: a refusal is the one answer that can never heal
-by retrying, so it is the only one that unbinds. An impersonator, an outage
-and a version skew all look different from a hub that forgot you, and none of
-them may cost a working binding.
+| The hub answered… | Exception | Counts toward self-unbind | The unbind reason says |
+| --- | --- | --- | --- |
+| wrong certificate | `GatewayUntrusted` | yes | the hub's identity changed (it was reset or reinstalled) |
+| 401 / 403 | `GatewayRefused` | yes | the hub no longer knows this machine |
+| version mismatch (409, `agent_newer_than_hub`) | `GatewayVersionRefused` | yes | this agent is newer than the hub |
+| anything else, or nothing | `GatewayUnreachable` | no | — a broken wire is not an answer; the agent backs off and retries |
+
+One counter covers all three rejection kinds: consecutive rejections of any
+kind total together, and the third drops the binding. Only a successful beat
+resets the counter — an unreachable beat in the middle of a run of rejections
+neither counts nor resets, so an outage cannot launder a hub that keeps
+saying no. The three-beat grace exists for the hub's sake: a hub caught
+mid-restore refuses for a moment without shedding its fleet.
+
+While the counter runs, `last_error` carries the channel's own wording, so
+the local page and `nagent status` say which no is being heard before the
+unbind lands. The reason left behind after it names the cause in plain words
+and ends the same way every time: rejoin by pasting a fresh link from the
+hub's Devices page. Rejoining is always that one action; there is no
+bound-but-stuck state to diagnose. A wrong certificate still hands an
+impersonator nothing — the agent hangs up before a byte is sent — but one
+that keeps answering for three beats does talk the machine into unbinding,
+and that is the trade accepted here: an attacker who owns the wire could
+already deny the heartbeat, and what they gain over that is making the
+owner paste one link.
 
 ## What an attacker in each position gets
 
@@ -163,9 +181,12 @@ carries the hub's.
   agent service that started it. A failed attempt is not retried for the same
   target version and lands in `last_error`.
 - **Agent newer**: the hub refuses the connection — 409
-  `{"code": "agent_newer_than_hub", ...}`, on enroll and heartbeat alike —
-  and `nagent connect` prints that the hub must be updated first. Never a
-  401: a version skew must not unbind anybody.
+  `{"code": "agent_newer_than_hub", ...}`, on enroll and heartbeat alike.
+  `nagent connect` prints that the hub must be updated first and writes no
+  binding; a bound agent counts each such beat as a rejection and unbinds on
+  the third, like any other no. The 409 is distinct from a 401 so the agent
+  can say which thing is wrong — update the hub, then rejoin — not so the
+  binding survives it.
 
 ## Atomicity is a rule, not a habit
 

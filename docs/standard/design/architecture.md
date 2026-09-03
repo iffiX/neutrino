@@ -175,11 +175,13 @@ Three states, and no fourth:
 Severing propagates from whichever end acts, over no channel but the ones
 that exist:
 
-- **The hub lets go by deleting the token** — forgetting the device. The
-  agent's next heartbeats are refused, which is its own condition and not an
-  unreachable hub; after a few in a row the agent drops its binding, goes
-  back to waiting for a link, and says why on its own page. A hub whose
-  device records were reset or restored sheds its old fleet the same way.
+- **The hub lets go by answering no** — a deleted token refuses the beat, a
+  hub reset or reinstalled answers with a certificate off the agent's pin,
+  a hub older than its agent turns it away. Each is a definitive rejection,
+  not an unreachable hub, and the agent treats all three alike: after a few
+  in a row it drops its binding, goes back to waiting for a link, and says
+  why on its own page. Only a hub that does not answer at all is retried
+  forever.
 - **The device lets go by leaving** — the agent's page, `nagent disconnect`,
   or the package's own removal — which tells the hub first; the hub drops
   the token and keeps the name and credentials the owner typed.
@@ -187,9 +189,10 @@ that exist:
   a managed-and-quiet row until somebody forgets it there.
 
 The agent mirrors the three states: unbound and waiting for a link, bound and
-beating, and bound but refused — the one state that resolves itself. Its
-binding lives in one file, and the running service adopts what another
-process writes there, so the CLI and the page need no service restart.
+beating, and bound but rejected — the one state that resolves itself, always
+into unbound and waiting for a link. Its binding lives in one file, and the
+running service adopts what another process writes there, so the CLI and the
+page need no service restart.
 
 ## The credential vault
 

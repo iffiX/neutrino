@@ -50,8 +50,8 @@ class GatewayRefused(RuntimeError):
 class GatewayVersionRefused(RuntimeError):
     """Raised when the gateway turned this agent away as newer than itself.
 
-    Not a token refusal and never counted as one: the binding is fine, and
-    the condition clears when the hub is updated.
+    A definitive rejection, not a network problem: the hub answered and said
+    no, and keeps saying no until it is updated to this agent's version.
     """
 
     def __init__(self, *, hub_version: str, agent_version: str):
@@ -71,9 +71,9 @@ class GatewayVersionRefused(RuntimeError):
 class GatewayUntrusted(RuntimeError):
     """Raised when the peer's certificate does not match the pinned fingerprint.
 
-    Neither a refusal nor a network problem: whatever answered at that address
-    is not the hub this machine pinned. Nothing was sent — the check runs on
-    the peer certificate before any request bytes leave the machine.
+    Whatever answered at that address is not the hub this machine pinned — a
+    hub reset or reinstalled, or an impersonator. Nothing was sent: the check
+    runs on the peer certificate before any request bytes leave the machine.
     """
 
 

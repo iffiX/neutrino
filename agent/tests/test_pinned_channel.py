@@ -3,7 +3,8 @@
 The certificate is generated at test runtime with the ``openssl`` binary —
 no key material lives in the repository. What these pin: the right
 fingerprint talks, the wrong one is refused before a single request byte is
-sent, and a mismatch never counts toward the refusals that unbind a machine.
+sent, and a bound agent beating against the wrong certificate unbinds the
+way a refused token does.
 """
 
 import base64
@@ -154,9 +155,10 @@ def test_an_https_url_without_a_pin_sends_nothing(tls_server):
     assert RecordingHandler.requests == []
 
 
-def test_a_mismatch_never_counts_toward_the_refusals(tls_server, config_path):
-    """Three refused tokens unbind a machine; three wrong certificates must
-    not, because the token was never judged — it was never sent."""
+def test_three_mismatched_beats_unbind_the_machine(tls_server, config_path):
+    """A hub reset or reinstalled answers with a new certificate for good, so
+    three beats against the wrong one drop the binding — with nothing ever
+    sent, and the reason naming the changed identity."""
     url, _ = tls_server
     config_path.write_text(
         json.dumps(
@@ -166,6 +168,25 @@ def test_a_mismatch_never_counts_toward_the_refusals(tls_server, config_path):
     agent = Agent(log=discard)
 
     for _ in range(3):
+        agent.run_once()
+
+    assert agent._channel is None
+    assert "gateway_url" not in json.loads(config_path.read_text())
+    assert "identity changed" in agent.last_error()
+    assert "fresh link" in agent.last_error()
+    assert RecordingHandler.requests == []
+
+
+def test_two_mismatched_beats_keep_the_binding(tls_server, config_path):
+    url, _ = tls_server
+    config_path.write_text(
+        json.dumps(
+            {"gateway_url": url, "token": "tok", "fingerprint": WRONG_FINGERPRINT}
+        )
+    )
+    agent = Agent(log=discard)
+
+    for _ in range(2):
         agent.run_once()
 
     assert agent._channel is not None
