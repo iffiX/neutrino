@@ -14,14 +14,16 @@ The shape is settled in ../../docs/cli.md.
 """
 
 import argparse
+import json
 import subprocess
 import sys
 import time
+import urllib.request
 
 from neutrino_agent import AGENT_VERSION, enrollment
 from neutrino_agent.agent import Agent
-from neutrino_agent.constants import AGENT_SERVICE_NAME
-from neutrino_agent.mini_ui import MiniUiServer
+from neutrino_agent.constants import AGENT_CONFIG_PATH, AGENT_SERVICE_NAME
+from neutrino_agent.mini_ui import MINI_UI_HOST, MINI_UI_PORT, MiniUiServer
 
 # --- config ---
 STATUS_UNBOUND = "this machine has joined no gateway"
@@ -162,6 +164,17 @@ def _status() -> int:
         Process exit status: 0 when bound and the hub answered, 1 otherwise.
     """
     print(f"neutrino-agent {AGENT_VERSION}")
+    # The running service is the one that knows, and any local user may ask
+    # it. Files are only read when there is no service to ask, and a binding
+    # this account cannot read is said to be that — never mistaken for no
+    # binding at all.
+    state = _local_state()
+    if state is not None:
+        return _status_from_service(state)
+    if not _is_binding_readable():
+        print("hub        the binding is root's to read: sudo nagent status")
+        print(f"service    {_service_state()}")
+        return 1
     gateway_url = enrollment.load_config().get("gateway_url", "")
     if not gateway_url:
         print(f"hub        {STATUS_UNBOUND}")
@@ -205,6 +218,62 @@ def _status() -> int:
         return 1
     print(f"heartbeat  ok, {elapsed_ms} ms — next report in {delay}s")
     return 0
+
+
+def _local_state() -> "dict | None":
+    """What the running service says about itself.
+
+    Returns:
+        The service's own state, or None when nothing answers on the local
+        page's port.
+    """
+    try:
+        with urllib.request.urlopen(
+            f"http://{MINI_UI_HOST}:{MINI_UI_PORT}/api/state", timeout=2
+        ) as reply:
+            state = json.loads(reply.read().decode("utf-8"))
+    except (OSError, ValueError):
+        return None
+    return state if isinstance(state, dict) else None
+
+
+def _status_from_service(state: dict) -> int:
+    """Report from the running service's own account of itself.
+
+    Args:
+        state: The local page's state payload.
+
+    Returns:
+        Process exit status: 0 when bound and beating cleanly, 1 otherwise.
+    """
+    if not state.get("is_connected"):
+        print(f"hub        {STATUS_UNBOUND}")
+        print("service    running")
+        return 1
+    print(f"hub        {state.get('gateway_url', '')}   connected")
+    print("service    running")
+    error = str(state.get("last_error", ""))
+    if error:
+        print(f"heartbeat  {error}")
+        return 1
+    print("heartbeat  ok — the service reports every few seconds")
+    return 0
+
+
+def _is_binding_readable() -> bool:
+    """Whether this account may read the binding file at all.
+
+    Returns:
+        True when it is readable or absent; False only on a permission
+        refusal, which must never read as an empty binding.
+    """
+    try:
+        with open(AGENT_CONFIG_PATH, "r", encoding="utf-8"):
+            return True
+    except PermissionError:
+        return False
+    except OSError:
+        return True
 
 
 def _service_state() -> str:
