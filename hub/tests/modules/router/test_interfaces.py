@@ -244,3 +244,24 @@ def test_a_side_gateway_lan_round_trips():
     assert not network_config(
         lan_entry("enp1s0", address="192.168.100.1")
     ).side_gateway_lans
+
+
+def test_device_facing_is_served_plus_exposed_and_never_an_uplink():
+    network = network_config(
+        wan_entry("enp2s0", is_exposed=True),
+        lan_entry("enp1s0", address="192.168.100.1", is_exposed=False),
+        {"name": "enp3s0", "role": "disabled", "is_exposed": True},
+        {"name": "enp4s0", "role": "disabled", "is_exposed": False},
+    )
+
+    assert network.device_facing_device_names == ["enp1s0", "enp3s0"]
+
+
+def test_a_server_faces_devices_on_its_exposed_ports_alone():
+    network = network_config(
+        {"name": "enp1s0", "role": "disabled", "is_exposed": True},
+        {"name": "enp2s0", "role": "disabled", "is_exposed": False},
+        mode="server",
+    )
+
+    assert network.device_facing_device_names == ["enp1s0"]

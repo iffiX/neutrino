@@ -57,6 +57,8 @@ class FakeRuntime:
 class _EmptyNetwork:
     lan_device_names: list = []
     lan_interfaces: list = []
+    device_facing_device_names: list = []
+    device_facing_interfaces: list = []
 
 
 @pytest.fixture

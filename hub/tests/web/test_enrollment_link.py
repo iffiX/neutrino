@@ -28,10 +28,14 @@ class FakeRuntime:
 
     def network(self):
         interfaces = [
-            SimpleNamespace(lan=SimpleNamespace(address=address))
-            for address in self._addresses
+            SimpleNamespace(
+                is_lan=True,
+                device_name=f"lan{index}",
+                lan=SimpleNamespace(address=address, cidr=f"{address}/24"),
+            )
+            for index, address in enumerate(self._addresses)
         ]
-        return SimpleNamespace(lan_interfaces=interfaces)
+        return SimpleNamespace(device_facing_interfaces=interfaces)
 
 
 def client_for(runtime) -> TestClient:
@@ -73,6 +77,24 @@ def test_the_agent_port_defaults_beside_the_panel_port(fingerprinted):
     answer = client_for(runtime).post("/api/devices/enrollment", json={"name": ""})
 
     assert decoded(answer.json()["link"])["urls"] == ["https://192.168.8.1:8443"]
+
+
+def test_a_server_mints_from_its_exposed_ports_live_address(fingerprinted, monkeypatch):
+    runtime = FakeRuntime(addresses=())
+    exposed = SimpleNamespace(is_lan=False, device_name="enp1s0", lan=None)
+    runtime.network = lambda: SimpleNamespace(device_facing_interfaces=[exposed])
+
+    class FakeReader:
+        def link(self, name):
+            assert name == "enp1s0"
+            return SimpleNamespace(ipv4_address="192.168.100.7/24")
+
+    monkeypatch.setattr(devices_router, "RouterLinkStatus", FakeReader)
+
+    answer = client_for(runtime).post("/api/devices/enrollment", json={"name": ""})
+
+    assert answer.status_code == 200
+    assert decoded(answer.json()["link"])["urls"] == ["https://192.168.100.7:8443"]
 
 
 def test_minting_again_replaces_the_outstanding_ticket(fingerprinted):

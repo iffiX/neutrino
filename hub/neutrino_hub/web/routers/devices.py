@@ -29,6 +29,7 @@ from neutrino_hub.modules.devices.remote_desktop import (
 )
 from neutrino_hub.modules.devices.ssh_ops import DeviceSshOperator, SshCredentials
 from neutrino_hub.modules.devices.wake_on_lan import send_magic_packet
+from neutrino_hub.modules.router.link_status import RouterLinkStatus
 from neutrino_hub import HUB_VERSION
 from neutrino_hub.web.agent_tls import certificate_fingerprint
 from neutrino_hub.web.constants import WEB_DEFAULT_AGENT_LISTEN_PORT
@@ -102,7 +103,7 @@ def scan(runtime: PanelRuntime = Depends(get_runtime)) -> DeviceListView:
 
 
 def _device_list(runtime: PanelRuntime, *, is_active: bool) -> DeviceListView:
-    scanner = LanScanner(lan_interfaces=runtime.network().lan_device_names)
+    scanner = LanScanner(lan_interfaces=runtime.network().device_facing_device_names)
     registry = DeviceRegistry()
     return DeviceListView(
         devices=[
@@ -258,14 +259,16 @@ def wake(mac_address: str, runtime: PanelRuntime = Depends(get_runtime)) -> WolR
     # gateway's networks the sleeping device is on is exactly what cannot be
     # known while it is asleep. So send one to each; they are 102 bytes.
     targets = []
-    for interface in runtime.network().lan_interfaces:
+    for cidr in _facing_cidrs(runtime):
         try:
-            subnet = ipaddress.ip_network(interface.lan.cidr, strict=False)
+            subnet = ipaddress.ip_network(cidr, strict=False)
         except ValueError:
             continue
         targets.append(str(subnet.broadcast_address))
     if not targets:
-        return WolResult(is_sent=False, message="no interface has the LAN role")
+        return WolResult(
+            is_sent=False, message="no device-facing interface has an address"
+        )
 
     sent = []
     for target in targets:
@@ -500,19 +503,44 @@ def _agent_urls(runtime: PanelRuntime) -> list:
     turn.
 
     Args:
-        runtime: The shared runtime, for the served networks and the port.
+        runtime: The shared runtime, for the device-facing networks and the
+            port.
 
     Returns:
         Base ``https`` URLs, in configuration order.
     """
     port = runtime.settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
     urls = []
-    for interface in runtime.network().lan_interfaces:
-        host = interface.lan.address
-        if not host:
-            continue
-        urls.append(f"https://{host}:{port}")
+    for cidr in _facing_cidrs(runtime):
+        urls.append(f"https://{cidr.split('/')[0]}:{port}")
     return urls
+
+
+def _facing_cidrs(runtime: PanelRuntime) -> list:
+    """IPv4 CIDRs of the device-facing interfaces.
+
+    A served network's address is configuration; an exposed port on a
+    ``server`` has whatever address the machine's own manager gave it, which
+    only the live link can answer.
+
+    Args:
+        runtime: The shared runtime, for the network configuration.
+
+    Returns:
+        CIDR strings in configuration order, one per addressed interface.
+    """
+    reader = None
+    cidrs = []
+    for interface in runtime.network().device_facing_interfaces:
+        if interface.is_lan and interface.lan.address:
+            cidrs.append(interface.lan.cidr)
+            continue
+        if reader is None:
+            reader = RouterLinkStatus()
+        live = reader.link(interface.device_name).ipv4_address
+        if live:
+            cidrs.append(live)
+    return cidrs
 
 
 @router.post("/{mac_address}/kill_process")

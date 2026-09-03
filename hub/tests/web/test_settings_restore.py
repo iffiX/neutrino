@@ -112,7 +112,8 @@ def test_only_files_and_directories_are_unpacked(kind):
 
 
 def test_a_directory_inside_config_is_accepted():
-    assert _checked_member(member("config/xray", tarfile.DIRTYPE)).isdir()
+    root = settings_router.UTILS_CONFIG_DIR.name
+    assert _checked_member(member(f"{root}/xray", tarfile.DIRTYPE)).isdir()
 
 
 @pytest.fixture
