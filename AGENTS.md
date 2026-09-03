@@ -37,6 +37,7 @@ and leave this pointing at it.**
 | [coding_style/typescript_style.md](docs/standard/coding_style/typescript_style.md) | Touching `hub/frontend/`: no `any`, `import type`, API types mirror the backend models. |
 | [design/api.md](docs/standard/design/api.md) | Adding or renaming a panel endpoint: `/api/<module>`, plural sub-resources, when a verb is allowed. |
 | [design/network.md](docs/standard/design/network.md) | Touching the router layer: the three engines the hub drives, which modes own a machine's network and which touch nothing, and why it does not build on NetworkManager. |
+| [design/agent.md](docs/standard/design/agent.md) | Touching the hub↔agent channel: the two ports, the pinned identity, tickets and tokens, the failure states, version sync. |
 | [design/visual.md](docs/standard/design/visual.md) | Touching panel CSS: what the accent and the glow may mean, button tiers, frames. |
 | [design/class_design.md](docs/standard/design/class_design.md) | Adding a class: one concept per class, explicit `__init__` kwargs. |
 | [design/class_hierarchy.md](docs/standard/design/class_hierarchy.md) | Naming a class: the per-package `<Domain><Thing><Role>` families. |
