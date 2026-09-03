@@ -106,6 +106,9 @@ SETUP_CORE_SERVICES = ("router", "xray", "dnsmasq", "web")
 # without it is a box nobody is sitting at, and its setup stays in the
 # terminal rather than printing a link nothing will follow.
 SETUP_BROWSER_OPENER = "xdg-open"
+# Where a signed-in user's session bus lives; the opener steps down to reach
+# it, because setup runs as root and root has no browser session.
+SETUP_USER_RUNTIME_ROOT = Path("/run/user")
 # The distribution's own unit. It ships an ExecReload, which is what a
 # newly written jail wants.
 SETUP_FAIL2BAN_UNIT = "fail2ban"
@@ -254,9 +257,10 @@ def _browser_answers():
         return None
     # Something here may be able to open a page; where nothing can, the
     # addresses printed below are how it is reached.
-    is_opened = shutil.which(SETUP_BROWSER_OPENER) is not None
-    if is_opened:
-        _open_browser(f"http://127.0.0.1:{server.port}/?token={session.token}")
+    command = _browser_command(f"http://127.0.0.1:{server.port}/?token={session.token}")
+    is_opened = command is not None
+    if command is not None:
+        _open_browser(command)
     while True:
         is_answered = wizard.offer_browser(
             urls=_reachable_urls(server.port),
@@ -276,15 +280,58 @@ def _browser_answers():
             session.reject(str(error))
 
 
-def _open_browser(url: str) -> None:
+def _browser_command(url: str) -> "list | None":
+    """The command that opens this machine's own browser, or None.
+
+    Setup runs under sudo, and root has no browser session: the opener must
+    run as the person who called sudo, on their session bus, or the page
+    silently never appears. Stepping down is ``runuser``, never sudo.
+
+    Args:
+        url: What the browser should open.
+
+    Returns:
+        An argument vector, or None when nothing here can open a page.
+    """
+    if shutil.which(SETUP_BROWSER_OPENER) is None:
+        return None
+    if os.geteuid() != 0:
+        return [SETUP_BROWSER_OPENER, url]
+    account = os.environ.get("SUDO_USER", "")
+    uid = os.environ.get("SUDO_UID", "")
+    if not account or account == "root" or not uid.isdigit():
+        return None
+    runtime_dir = SETUP_USER_RUNTIME_ROOT / uid
+    if not runtime_dir.is_dir():
+        return None
+    environment = [
+        f"XDG_RUNTIME_DIR={runtime_dir}",
+        f"DBUS_SESSION_BUS_ADDRESS=unix:path={runtime_dir}/bus",
+    ]
+    for name in ("DISPLAY", "WAYLAND_DISPLAY"):
+        value = os.environ.get(name)
+        if value:
+            environment.append(f"{name}={value}")
+    return [
+        "runuser",
+        "-u",
+        account,
+        "--",
+        "env",
+        *environment,
+        SETUP_BROWSER_OPENER,
+        url,
+    ]
+
+
+def _open_browser(command: list) -> None:
     """Open the wizard on this machine, and carry on either way.
 
     Args:
-        url: What to open, on loopback because the browser being opened is
-            this machine's own.
+        command: The opener to run, from :func:`_browser_command`.
     """
     try:
-        run([SETUP_BROWSER_OPENER, url], is_checked=False, timeout_s=5)
+        run(command, is_checked=False, timeout_s=5)
     except (CommandError, OSError):
         # The link is on the screen either way; an opener that refuses is not
         # a reason to stop.
