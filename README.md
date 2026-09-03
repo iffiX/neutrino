@@ -184,7 +184,22 @@ with it.
 
 # Acknowledgements
 
-Neutrino was built with extensive help from modern AI development tools,
+Neutrino connects excellent software rather than reinventing it:
+
+- [Xray-core](https://github.com/XTLS/Xray-core) — the proxy engine behind transparent routing.
+- [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) — the AI gateway every machine's tools speak to.
+- [cpa-usage-keeper](https://github.com/Willxup/cpa-usage-keeper) — the panel's AI usage screens follow its design.
+- [NetBird](https://netbird.io) — the WireGuard overlay that lets you back in from anywhere.
+- [cc-switch](https://github.com/SaladDay/cc-switch-cli) — how the Agent points Claude Code and Codex at the Hub.
+- [Gitea](https://about.gitea.com) — the self-hosted Git service the Hub can run for you.
+- [Samba](https://www.samba.org) — the file shares every OS already knows how to mount.
+- [Podman](https://podman.io) — the engine behind the Containers page.
+- [OpenZFS](https://openzfs.org) — the pools, datasets and disk health behind storage.
+- [dnsmasq](https://thekelleys.org.uk/dnsmasq/doc.html) — DHCP and DNS on the LAN side.
+- [hostapd](https://w1.fi/hostapd/) — the access point when the Hub carries the Wi-Fi.
+- [v2fly geodata](https://github.com/v2fly) — the geo databases routing decisions match against.
+
+Neutrino was also built with extensive help from modern AI development tools,
 especially Claude Code and ChatGPT, for implementation, debugging, design
 discussion and documentation. Released code and design decisions are reviewed
 and maintained by the project author.
