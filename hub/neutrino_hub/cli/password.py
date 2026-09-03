@@ -10,7 +10,6 @@ prompts, words a refusal, and stores what was accepted.
 """
 
 import getpass
-import secrets
 import sys
 
 from neutrino_hub.utils.json_file import read_config, write_config
@@ -26,10 +25,8 @@ from neutrino_hub.web.auth import hash_password
 # --- config ---
 PASSWORD_SETTINGS_FILE = "web/settings.json"  # scan: allow
 PASSWORD_HASH_FIELD = "admin_password_hash"  # scan: allow
-PASSWORD_SECRET_FIELD = "session_secret"  # scan: allow
 # What the committed example carries until a real hash lands.
 PASSWORD_PLACEHOLDER_PREFIX = "PLACEHOLDER"  # scan: allow
-PASSWORD_SESSION_SECRET_BYTES = 32
 
 
 class PasswordRefused(ValueError):
@@ -91,7 +88,7 @@ def read_new_password(
 
 
 def store_password(password: str) -> None:
-    """Write the password's hash, and a session secret if there is none yet.
+    """Write the password's hash.
 
     Args:
         password: The password to store the hash of. The plaintext is never
@@ -99,18 +96,13 @@ def store_password(password: str) -> None:
     """
     settings = read_config(PASSWORD_SETTINGS_FILE)
     settings[PASSWORD_HASH_FIELD] = hash_password(password)
-    if _is_placeholder(settings.get(PASSWORD_SECRET_FIELD, "")):
-        settings[PASSWORD_SECRET_FIELD] = secrets.token_hex(
-            PASSWORD_SESSION_SECRET_BYTES
-        )
     write_config(PASSWORD_SETTINGS_FILE, settings)
 
 
 def clear_password() -> None:
-    """Return the password and the session secret to the example's placeholders."""
+    """Return the password to the example's placeholder."""
     settings = read_config(PASSWORD_SETTINGS_FILE)
     settings[PASSWORD_HASH_FIELD] = f"{PASSWORD_PLACEHOLDER_PREFIX}_ARGON2ID_HASH"
-    settings[PASSWORD_SECRET_FIELD] = f"{PASSWORD_PLACEHOLDER_PREFIX}_RANDOM_HEX"
     write_config(PASSWORD_SETTINGS_FILE, settings)
 
 

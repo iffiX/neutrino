@@ -4,7 +4,6 @@
   "_comment_agent": "The TLS port the /api/agent routes answer on, pinned by the fingerprint in every enrollment link.",
   "agent_listen_port": 8443,
   "admin_password_hash": "PLACEHOLDER_ARGON2ID_HASH",
-  "session_secret": "PLACEHOLDER_RANDOM_HEX",
   "session_ttl_hours": 168,
 
   "_comment_client": "Path to the neutrino_client tarball offered to LAN devices for one-click install. Build it in the neutrino_client repo and drop it in config/devices/packages/.",

@@ -48,7 +48,7 @@ from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
 from neutrino_hub.utils.json_file import read_config, write_config, write_generated
 from neutrino_hub.utils.subprocess_run import CommandError, run
-from neutrino_hub.web.auth import SessionStore
+from neutrino_hub.web.auth import SessionStore, session_secret
 from neutrino_hub.web.task_stream import TaskStreamRegistry
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
 from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
@@ -71,6 +71,7 @@ class PanelRuntime:
     def __init__(self):
         settings = read_config("web/settings.json")
         self.settings = settings
+        self.session_secret = session_secret()
         self.sessions = SessionStore(
             password_hash=settings.get("admin_password_hash", ""),
             session_ttl_hours=settings.get("session_ttl_hours", 168),

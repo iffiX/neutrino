@@ -5,10 +5,15 @@ from neutrino_hub.utils.constants import (
     UTILS_DATA_DIR,
     UTILS_LOG_ROOT,
     UTILS_RUNTIME_ROOT,
+    UTILS_STATE_ROOT,
 )
 
 WEB_FRONTEND_DIST_DIR = UTILS_DATA_DIR / "frontend"
 WEB_SESSION_COOKIE = "neutrino_session"
+# The session secret is state, not configuration: it is minted on the box and
+# a restore deliberately does not carry one in, so every session dies with it.
+WEB_SESSION_SECRET_PATH = UTILS_STATE_ROOT / "session.secret"
+WEB_SESSION_SECRET_BYTES = 32
 
 # What the panel listens on until somebody says otherwise. One value: setup
 # offers it, the unit serves on it, and an enrollment link points a device at

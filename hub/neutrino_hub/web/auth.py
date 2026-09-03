@@ -9,7 +9,9 @@ import hashlib
 import hmac
 import json
 import math
+import os
 import secrets
+import stat
 import time
 from dataclasses import dataclass
 
@@ -23,6 +25,8 @@ from neutrino_hub.web.constants import (
     WEB_SCRYPT_MAX_MEMORY_BYTES,
     WEB_SCRYPT_PARALLELISM,
     WEB_SCRYPT_SALT_BYTES,
+    WEB_SESSION_SECRET_BYTES,
+    WEB_SESSION_SECRET_PATH,
 )
 
 HASH_PREFIX = "scrypt"
@@ -63,6 +67,28 @@ def verify_password(password: str, encoded_hash: str) -> bool:
     except ValueError:
         return False
     return hmac.compare_digest(_derive_key(password, salt), expected)
+
+
+def session_secret() -> str:
+    """Read the panel's session secret, minting one when there is none.
+
+    Returns:
+        The secret's hex text.
+    """
+    try:
+        return WEB_SESSION_SECRET_PATH.read_text(encoding="utf-8").strip()
+    except OSError:
+        pass
+    minted = secrets.token_hex(WEB_SESSION_SECRET_BYTES)
+    WEB_SESSION_SECRET_PATH.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(
+        WEB_SESSION_SECRET_PATH,
+        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+        stat.S_IRUSR | stat.S_IWUSR,
+    )
+    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+        stream.write(minted + "\n")
+    return minted
 
 
 @dataclass

@@ -37,7 +37,7 @@ def box(tmp_path, monkeypatch):
 
     (config / "web").mkdir(parents=True)
     (config / "web/settings.json").write_text(
-        json.dumps({"admin_password_hash": "real-hash", "session_secret": "abc"})
+        json.dumps({"admin_password_hash": "real-hash"})
     )
     (config / "xray").mkdir()
     (config / "xray/nodes.json").write_text(json.dumps({"nodes": [{"id": "hk"}]}))
@@ -56,8 +56,13 @@ def box(tmp_path, monkeypatch):
     (config / "credentials/vault.key").write_text("aa" * 32)
     (config / "credentials/vault.key.new").write_text("bb" * 32)
 
+    state = config.parent / "state"
+    state.mkdir()
+    (state / "session.secret").write_text("aa" * 32)
+
     monkeypatch.setattr(reset, "UTILS_CONFIG_DIR", config)
     monkeypatch.setattr(reset, "UTILS_EXAMPLES_DIR", examples)
+    monkeypatch.setattr(reset, "UTILS_STATE_ROOT", state)
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", config)
     monkeypatch.setattr(reset, "stop_everything", lambda: 0)
     return config
@@ -78,6 +83,7 @@ def test_reset_all_forgets_the_keys_the_box_was_holding(box):
     assert not (box / "gitea/secrets.json").exists()
     assert not (box / "credentials/vault.key").exists()
     assert not (box / "credentials/vault.key.new").exists()
+    assert not (box.parent / "state" / "session.secret").exists()
 
 
 def test_reset_all_clears_the_password_so_setup_runs_again(box):
@@ -91,7 +97,6 @@ def test_reset_password_leaves_every_other_setting_alone(box):
         json.dumps(
             {
                 "admin_password_hash": "real-hash",
-                "session_secret": "abc",
                 "listen_port": 9999,
             }
         )
@@ -101,7 +106,6 @@ def test_reset_password_leaves_every_other_setting_alone(box):
 
     settings = json.loads((box / "web/settings.json").read_text())
     assert settings["listen_port"] == 9999
-    assert settings["session_secret"] == "abc"
     assert settings["admin_password_hash"] != "real-hash"
     assert password.is_password_set()
 

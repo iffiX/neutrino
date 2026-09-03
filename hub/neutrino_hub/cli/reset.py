@@ -30,7 +30,11 @@ from neutrino_hub.modules.router.routes import hand_back
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.utils.json_file import read_config
 from neutrino_hub.utils.subprocess_run import CommandError
-from neutrino_hub.utils.constants import UTILS_CONFIG_DIR, UTILS_EXAMPLES_DIR
+from neutrino_hub.utils.constants import (
+    UTILS_CONFIG_DIR,
+    UTILS_EXAMPLES_DIR,
+    UTILS_STATE_ROOT,
+)
 
 # --- config ---
 # What `all` clears that no example replaces: material a running box collected
@@ -47,6 +51,9 @@ RESET_COLLECTED_PATHS = (
     # mints a fresh identity for its own fleet.
     "web/agent_tls",
 )
+# The secrets under /var/lib/neutrino that `all` clears for the same reason:
+# state a fresh box mints for itself, and the next owner must not inherit.
+RESET_STATE_PATHS = ("session.secret",)
 RESET_EXAMPLE_SUFFIX = ".example.json"
 RESET_PANEL_UNIT = "web"
 RESET_TARGETS = {
@@ -183,6 +190,11 @@ def _forget_collected() -> list:
         else:
             continue
         removed.append(relative_path)
+    for relative_path in RESET_STATE_PATHS:
+        path = UTILS_STATE_ROOT / relative_path
+        if path.exists():
+            path.unlink()
+            removed.append(str(path))
     return removed
 
 
