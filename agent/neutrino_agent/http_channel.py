@@ -18,6 +18,22 @@ import urllib.parse
 from neutrino_agent.constants import AGENT_REQUEST_TIMEOUT_S
 
 
+def _error_detail(data: bytes) -> dict:
+    """The ``detail`` object of an error reply, empty when there is none.
+
+    Args:
+        data: The reply body.
+
+    Returns:
+        The detail dictionary, or an empty one.
+    """
+    try:
+        detail = json.loads(data.decode("utf-8")).get("detail")
+    except (ValueError, UnicodeDecodeError, AttributeError):
+        return {}
+    return detail if isinstance(detail, dict) else {}
+
+
 class GatewayUnreachable(RuntimeError):
     """Raised when the gateway cannot be reached or answers with an error."""
 
@@ -29,6 +45,27 @@ class GatewayRefused(RuntimeError):
     it was forgotten on the panel, or the hub was reset — and retrying with
     the same token can never succeed.
     """
+
+
+class GatewayVersionRefused(RuntimeError):
+    """Raised when the gateway turned this agent away as newer than itself.
+
+    Not a token refusal and never counted as one: the binding is fine, and
+    the condition clears when the hub is updated.
+    """
+
+    def __init__(self, *, hub_version: str, agent_version: str):
+        """
+        Args:
+            hub_version: What the hub reported itself as.
+            agent_version: What this agent reported itself as.
+        """
+        super().__init__(
+            f"this agent ({agent_version}) is newer than the hub "
+            f"({hub_version}); update the hub first"
+        )
+        self.hub_version = hub_version
+        self.agent_version = agent_version
 
 
 class GatewayUntrusted(RuntimeError):
@@ -72,20 +109,12 @@ class GatewayHttpChannel:
             GatewayUntrusted: When the gateway's certificate is not the pinned
                 one; nothing was sent.
             GatewayRefused: When the gateway rejected this machine's token.
+            GatewayVersionRefused: When the gateway turned this agent away as
+                newer than itself.
             GatewayUnreachable: On any network error, timeout, other HTTP
                 error status, or unparseable reply.
         """
-        body = json.dumps({**payload, "token": self._token}).encode("utf-8")
-        status, data = self._request(
-            "POST",
-            f"{self._gateway_url}{path}",
-            body=body,
-            headers={"Content-Type": "application/json"},
-        )
-        if status in (401, 403):
-            raise GatewayRefused(f"gateway refused this machine's token ({status})")
-        if status >= 400:
-            raise GatewayUnreachable(f"gateway answered {status} for {path}")
+        _, data, _ = self._post(path, payload)
         text = data.decode("utf-8")
         if not text.strip():
             return {}
@@ -94,28 +123,73 @@ class GatewayHttpChannel:
         except json.JSONDecodeError as error:
             raise GatewayUnreachable(f"gateway sent invalid JSON: {error}") from error
 
-    def download(self, url: str, destination: str) -> None:
-        """Fetch a file to disk, used for agent self-updates.
+    def post_download(self, path: str, payload: dict, destination: str) -> str:
+        """Post a JSON body and write the bytes that come back to disk.
 
         Args:
-            url: Absolute URL to fetch, pinned the same way when ``https``.
-            destination: Local path to write.
+            path: Path below the gateway URL, starting with a slash.
+            payload: The body to send; the token is added.
+            destination: Local file to write.
+
+        Returns:
+            The reply's ``X-Checksum-Sha256`` value, empty when none came.
 
         Raises:
-            GatewayUntrusted: When the peer's certificate is not the pinned
-                one.
-            GatewayUnreachable: If the download fails.
+            GatewayUntrusted: When the gateway's certificate is not the pinned
+                one; nothing was sent.
+            GatewayRefused: When the gateway rejected this machine's token.
+            GatewayUnreachable: On any network error, error status, or a
+                destination that cannot be written.
         """
-        status, data = self._request("GET", url)
-        if status >= 400:
-            raise GatewayUnreachable(
-                f"cannot download {url}: gateway answered {status}"
-            )
+        _, data, headers = self._post(path, payload)
         try:
             with open(destination, "wb") as target:
                 target.write(data)
         except OSError as error:
-            raise GatewayUnreachable(f"cannot download {url}: {error}") from error
+            raise GatewayUnreachable(f"cannot save {path}: {error}") from error
+        return headers.get("x-checksum-sha256", "")
+
+    def _post(self, path: str, payload: dict):
+        """One POST with the token added, its status already judged.
+
+        Args:
+            path: Path below the gateway URL, starting with a slash.
+            payload: The body to send.
+
+        Returns:
+            The status code, the response body, and the response headers
+            lower-cased.
+
+        Raises:
+            GatewayUntrusted: When the peer failed the fingerprint check.
+            GatewayRefused: On a 401 or 403.
+            GatewayVersionRefused: On a 409 naming this agent as too new.
+            GatewayUnreachable: On any network error or other error status.
+        """
+        body = json.dumps({**payload, "token": self._token}).encode("utf-8")
+        status, data, headers = self._request(
+            "POST",
+            f"{self._gateway_url}{path}",
+            body=body,
+            headers={"Content-Type": "application/json"},
+        )
+        if status in (401, 403):
+            raise GatewayRefused(f"gateway refused this machine's token ({status})")
+        if status == 409:
+            detail = _error_detail(data)
+            params = detail.get("params") or {}
+            if detail.get("code") == "agent_newer_than_hub":
+                raise GatewayVersionRefused(
+                    hub_version=str(params.get("hub_version", "")),
+                    agent_version=str(params.get("agent_version", "")),
+                )
+            if detail.get("code"):
+                raise GatewayUnreachable(
+                    f"gateway answered 409 ({detail['code']}) for {path}"
+                )
+        if status >= 400:
+            raise GatewayUnreachable(f"gateway answered {status} for {path}")
+        return status, data, headers
 
     def _request(self, method: str, url: str, *, body=None, headers=None):
         """One request over a fresh connection.
@@ -127,7 +201,8 @@ class GatewayHttpChannel:
             headers: Header dictionary, or None.
 
         Returns:
-            The status code and the response body.
+            The status code, the response body, and the response headers with
+            lower-cased names.
 
         Raises:
             GatewayUntrusted: When the peer failed the fingerprint check.
@@ -141,7 +216,8 @@ class GatewayHttpChannel:
         try:
             connection.request(method, target, body=body, headers=headers or {})
             response = connection.getresponse()
-            return response.status, response.read()
+            named = {name.lower(): value for name, value in response.getheaders()}
+            return response.status, response.read(), named
         except (OSError, http.client.HTTPException) as error:
             raise GatewayUnreachable(f"cannot reach gateway: {error}") from error
         finally:

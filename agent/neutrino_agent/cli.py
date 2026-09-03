@@ -197,6 +197,11 @@ def _status() -> int:
                 "pinned; if the hub was reinstalled, rejoin with a fresh "
                 "link from its Devices page"
             )
+        elif "newer than the hub" in error:
+            print(
+                "           the binding is fine; heartbeats resume once the "
+                "hub is updated to this agent's version or later"
+            )
         return 1
     print(f"heartbeat  ok, {elapsed_ms} ms — next report in {delay}s")
     return 0

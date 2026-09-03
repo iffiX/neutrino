@@ -18,7 +18,7 @@ from __future__ import annotations
 import threading
 import time
 
-from neutrino_agent import AGENT_VERSION, enrollment
+from neutrino_agent import AGENT_VERSION, enrollment, self_update
 from neutrino_agent.constants import (
     AGENT_BACKOFF_MAX_S,
     AGENT_BACKOFF_MIN_S,
@@ -34,9 +34,11 @@ from neutrino_agent.http_channel import (
     GatewayRefused,
     GatewayUnreachable,
     GatewayUntrusted,
+    GatewayVersionRefused,
 )
 from neutrino_agent.metrics import HostMetricsReader, hostname
 from neutrino_agent.ops import DeviceOperator
+from neutrino_agent.version_number import parse_version
 
 # How often an unenrolled agent looks again, which is only to notice that its
 # own page has since been used to join a gateway.
@@ -68,6 +70,10 @@ class Agent:
         self._binding: tuple = ("", "", "")
         self._binding_stamp = 0
         self._refusals = 0
+        # The hub version last acted on and how the attempt went, so a target
+        # that failed is not retried every beat.
+        self._update_target = ""
+        self._update_error = ""
         self._load_connection()
 
     # --- what the local page reads ---
@@ -95,7 +101,7 @@ class Agent:
     def last_error(self) -> str:
         """The most recent problem worth showing on the page."""
         with self._lock:
-            return self._last_error
+            return self._last_error or self._update_error
 
     # --- what the local page does ---
 
@@ -111,6 +117,8 @@ class Agent:
         enrollment.enroll(link)
         with self._lock:
             self._last_error = ""
+            self._update_target = ""
+            self._update_error = ""
             self._backoff_s = AGENT_BACKOFF_MIN_S
         self._load_connection()
         self._log("joined the gateway")
@@ -135,6 +143,8 @@ class Agent:
             self._desired = {}
             self._pending = {}
             self._last_error = ""
+            self._update_target = ""
+            self._update_error = ""
         self._load_connection()
         self._features.update(desired={}, catalog=None, catalog_hash="")
         self._log("disconnected from the gateway")
@@ -227,9 +237,10 @@ class Agent:
             reply = channel.post(AGENT_HEARTBEAT_PATH, payload)
         except GatewayRefused as error:
             return self._on_refused(str(error))
-        except (GatewayUnreachable, GatewayUntrusted) as error:
-            # An untrusted peer is not a refusal: nothing was sent, the token
-            # was not judged, and the refusal counter stays where it is.
+        except (GatewayUnreachable, GatewayUntrusted, GatewayVersionRefused) as error:
+            # None of these rejects the token — an untrusted peer was sent
+            # nothing, and a version mismatch resolves by updating the hub —
+            # so the refusal counter stays where it is.
             with self._lock:
                 self._last_error = str(error)
                 delay = self._backoff_s
@@ -253,6 +264,7 @@ class Agent:
         )
         for command in reply.get("commands", []):
             self._execute(command)
+        self._maybe_self_update(str(reply.get("hub_version", "")))
         return AGENT_HEARTBEAT_INTERVAL_S
 
     def _on_refused(self, reason: str) -> int:
@@ -282,6 +294,8 @@ class Agent:
             self._desired = {}
             self._pending = {}
             self._refusals = 0
+            self._update_target = ""
+            self._update_error = ""
         self._load_connection()
         with self._lock:
             self._last_error = (
@@ -303,7 +317,7 @@ class Agent:
                 self._channel = GatewayHttpChannel(
                     gateway_url=gateway_url, token=token, fingerprint=fingerprint
                 )
-                self._operator = DeviceOperator(gateway_url=gateway_url)
+                self._operator = DeviceOperator()
             else:
                 self._channel = None
                 self._operator = None
@@ -327,6 +341,8 @@ class Agent:
             self._desired = {}
             self._pending = {}
             self._last_error = ""
+            self._update_target = ""
+            self._update_error = ""
             self._backoff_s = AGENT_BACKOFF_MIN_S
         self._features.update(desired={}, catalog=None, catalog_hash="")
         self._log("adopted the binding written on disk")
@@ -352,3 +368,48 @@ class Agent:
             )
         except (GatewayUnreachable, GatewayUntrusted) as error:
             self._log(f"could not report {action} result: {error}")
+
+    def _maybe_self_update(self, hub_version: str) -> None:
+        """Update this agent when the hub runs a later release, once per target.
+
+        The hub and the agent share a version, so a heartbeat reply naming a
+        later ``hub_version`` means this machine's package is behind. The
+        install is launched detached and restarts the agent's own service; a
+        target that failed is remembered and not retried until the hub
+        reports a different one.
+
+        Args:
+            hub_version: What the heartbeat reply named.
+        """
+        with self._lock:
+            if not hub_version or hub_version == self._update_target:
+                return
+            self._update_target = hub_version
+            self._update_error = ""
+            channel = self._channel
+        hub = parse_version(hub_version)
+        agent = parse_version(AGENT_VERSION)
+        if hub is None or agent is None:
+            self._log(f"no self-update: cannot order {AGENT_VERSION} and {hub_version}")
+            return
+        if agent >= hub or channel is None:
+            return
+        kind = self_update.package_kind(self._features.platform)
+        if not kind:
+            self._log(f"no self-update to {hub_version}: no package for this platform")
+            return
+        self._log(f"updating to {hub_version}")
+        try:
+            self_update.run_update(channel, kind=kind)
+        except (
+            self_update.SelfUpdateError,
+            GatewayRefused,
+            GatewayUnreachable,
+            GatewayUntrusted,
+        ) as error:
+            message = f"self-update to {hub_version} failed: {error}"
+            with self._lock:
+                self._update_error = message
+            self._log(message)
+            return
+        self._log(f"self-update to {hub_version} launched; the service restarts")

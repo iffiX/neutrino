@@ -24,12 +24,14 @@ import os
 import socket
 import uuid
 
+from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import AGENT_CONFIG_PATH
 from neutrino_agent.http_channel import (
     GatewayHttpChannel,
     GatewayRefused,
     GatewayUnreachable,
     GatewayUntrusted,
+    GatewayVersionRefused,
 )
 from neutrino_agent.platform_info import platform_tuple
 
@@ -208,13 +210,15 @@ def enroll(link: str) -> dict:
 
     Raises:
         EnrollmentError: If the link is unusable, the fingerprint does not
-            match what answers, or no address accepted it.
+            match what answers, this agent is newer than the hub, or no
+            address accepted it.
     """
     gateway_urls, enrollment_token, fingerprint = parse_link(link)
     payload = {
         "enrollment_token": enrollment_token,
         "device_id": machine_id(),
         "hostname": socket.gethostname(),
+        "client_version": AGENT_VERSION,
         "platform": platform_tuple(),
         "mac_addresses": machine_mac_addresses(),
     }
@@ -234,6 +238,10 @@ def enroll(link: str) -> dict:
                 "the gateway refused this link — it may have expired; mint a "
                 "fresh one on the Devices page"
             ) from error
+        except GatewayVersionRefused as error:
+            # The link is fine and unspent; the hub is the side that must
+            # move.
+            raise EnrollmentError(str(error)) from error
         except GatewayUntrusted as error:
             # Whatever answered is not the hub this link pins, and it was
             # sent nothing.

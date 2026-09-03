@@ -12,13 +12,19 @@ AGENT_CONFIG_PATH = "/etc/neutrino/agent/agent.json"
 # that it was let go and drops its binding. More than one, so a hub caught
 # mid-restore does not shed its whole fleet over a moment's inconsistency.
 AGENT_REFUSALS_BEFORE_UNBIND = 3
-AGENT_INSTALL_DIR = "/opt/neutrino_agent"
 
 AGENT_SERVICE_NAME = "neutrino_agent.service"
 
 AGENT_HEARTBEAT_PATH = "/api/agent/heartbeat"
 AGENT_RESULT_PATH = "/api/agent/result"
 AGENT_LEAVE_PATH = "/api/agent/leave"
+AGENT_PACKAGE_PATH = "/api/agent/package"
+
+# The transient unit a self-update runs in. Installing the package restarts
+# neutrino_agent.service, so the install must outlive the process that
+# started it.
+AGENT_UPDATE_UNIT = "neutrino_agent_update"
+AGENT_UPDATE_LAUNCH_TIMEOUT_S = 30
 
 AGENT_HEARTBEAT_INTERVAL_S = 5
 AGENT_REQUEST_TIMEOUT_S = 10
