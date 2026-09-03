@@ -8,10 +8,18 @@ the example files and are stripped before the data reaches any library.
 import json
 import os
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any
 
 from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
+
+# The one lock every config mutation takes: a read-modify-write re-reads its
+# file inside it, and an operation spanning two files (a provider and its
+# vault object, a device and its key) nests under the same re-entrant lock
+# and becomes one step. Global rather than per file, because references
+# cross files and a narrower lock would let a composite interleave.
+CONFIG_WRITE_LOCK = threading.RLock()
 
 
 def read_config(relative_path: str) -> dict[str, Any]:

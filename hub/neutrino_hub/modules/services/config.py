@@ -10,7 +10,6 @@ Pure: this module parses, validates and stores configuration. Measuring
 whether a declared service answers is :mod:`neutrino_hub.modules.services.probe`.
 """
 
-import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -26,7 +25,11 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_PORT_MIN,
     SERVICES_SAMBA_DEFAULT_PORT,
 )
-from neutrino_hub.utils.json_file import read_config, write_config
+from neutrino_hub.utils.json_file import (
+    CONFIG_WRITE_LOCK,
+    read_config,
+    write_config,
+)
 
 
 class DeclaredServiceError(ValueError):
@@ -137,9 +140,9 @@ class DeclaredService:
         return entry
 
 
-# One lock for every instance: registries are built per request, and a
-# mutation re-reads the file under it so no write starts from a stale copy.
-_WRITE_LOCK = threading.RLock()
+# The config-wide lock: a mutation re-reads the file under it, and an
+# operation that also touches another store nests under the same lock.
+_WRITE_LOCK = CONFIG_WRITE_LOCK
 
 
 class DeclaredServiceRegistry:

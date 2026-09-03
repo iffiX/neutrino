@@ -7,11 +7,14 @@ credentials it becomes a stored device and survives reboots.
 """
 
 import secrets
-import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from neutrino_hub.utils.json_file import read_config, write_config
+from neutrino_hub.utils.json_file import (
+    CONFIG_WRITE_LOCK,
+    read_config,
+    write_config,
+)
 
 from neutrino_hub.modules.devices.constants import DEVICE_AGENT_ONLINE_WINDOW_S
 from neutrino_hub.modules.devices.host_keys import DeviceHostKeyStore
@@ -194,10 +197,10 @@ class ManagedDevice:
         }
 
 
-# Held across every read-modify-write of the device file. The panel is one
-# process with many threads — a heartbeat, a page load and a save all land at
-# once — and the file is written whole.
-_WRITE_LOCK = threading.RLock()
+# The config-wide lock, held across every read-modify-write of the device
+# file. The panel is one process with many threads — a heartbeat, a page load
+# and a save all land at once — and the file is written whole.
+_WRITE_LOCK = CONFIG_WRITE_LOCK
 
 
 class DeviceRegistry:

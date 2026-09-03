@@ -172,13 +172,15 @@ Everything the channel and the panel mutate follows two laws:
 - **On disk**: every `config/` write goes through `write_config` — a
   temporary file in the same directory, then `os.replace` — so a crash
   mid-write cannot leave a truncated file.
-- **In the process**: a registry mutation takes its module's write lock,
-  **re-reads the file inside the lock**, applies the change, and writes —
-  never writing a snapshot taken before somebody else's change. The devices
-  registry, the vault, the AI providers and the declared services all follow
-  it; a new registry copies the idiom, not just the lock. In-memory stores
-  spend-and-judge in one operation, the way the enrollment ticket is popped
-  before it is inspected.
+- **In the process**: every mutation takes the one `CONFIG_WRITE_LOCK`
+  (re-entrant, in `utils/json_file.py`), **re-reads its file inside the
+  lock**, applies the change, and writes — never writing a snapshot taken
+  before somebody else's change. One global lock rather than one per file,
+  because references cross files — a provider names a vault object, a device
+  names a key — and a composite operation must nest under a single lock to
+  be one step. Reads take no lock; a stale read is tolerable, a lost write
+  is not. In-memory stores spend-and-judge in one operation, the way the
+  enrollment ticket is popped before it is inspected.
 
 The reason it is a law: the panel's sync routes run concurrently in a thread
 pool, and a heartbeat writes the same file a rename on the panel writes. The

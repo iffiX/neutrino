@@ -24,7 +24,6 @@ import json
 import os
 import secrets
 import stat
-import threading
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -41,7 +40,11 @@ from neutrino_hub.modules.credentials.constants import (
     CREDENTIALS_VAULT_VERSION,
 )
 from neutrino_hub.utils import json_file
-from neutrino_hub.utils.json_file import read_config, write_config
+from neutrino_hub.utils.json_file import (
+    CONFIG_WRITE_LOCK,
+    read_config,
+    write_config,
+)
 
 VAULT_KEY_BYTES = 32
 VAULT_NONCE_BYTES = 12
@@ -208,7 +211,7 @@ class SecretRecord:
 
 # Held across every read-modify-write of the store and the key files. The
 # panel is one process with many threads, and both files are written whole.
-_WRITE_LOCK = threading.RLock()
+_WRITE_LOCK = CONFIG_WRITE_LOCK
 
 
 class SecretVault:

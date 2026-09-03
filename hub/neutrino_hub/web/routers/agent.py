@@ -36,6 +36,7 @@ from neutrino_hub.modules.devices.registry import (
     feature_wish,
 )
 from neutrino_hub.modules.features.catalog import catalog_hash, load_catalog
+from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.utils.version_number import parse_version
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.models import (
@@ -343,9 +344,8 @@ def _ai_config(
     Returns:
         ``{"base_url", "api_key", "target_user", "tools"}``.
     """
-    config = load_config()
-    key = _device_key(device, config, registry)
-    port = config.listen_port
+    key = _device_key(device, registry)
+    port = load_config().listen_port
     base_url = f"{_gateway_host(runtime, device.ipv4_address)}:{port}"
     return {
         "base_url": base_url,
@@ -380,25 +380,26 @@ def _served_model() -> str:
     return ""
 
 
-def _device_key(device: ManagedDevice, config, registry: DeviceRegistry):
+def _device_key(device: ManagedDevice, registry: DeviceRegistry):
     """The device's cliproxyapi client key, minting and applying one on first need.
 
     Args:
         device: The device.
-        config: The loaded cliproxyapi configuration.
         registry: The device registry.
 
     Returns:
         The client key, or None when the gateway has none to give.
     """
-    key_id = device.client.ai_key_id
-    existing = next((k for k in config.client_keys if k.id == key_id), None)
-    if existing is not None:
-        return existing
-    key = CliproxyApiClientKey.minted(device.name or device.mac_address)
-    config.client_keys.append(key)
-    save_config(config)
-    registry.set_ai_key_id(device.mac_address, key.id)
+    with CONFIG_WRITE_LOCK:
+        config = load_config()
+        key_id = device.client.ai_key_id
+        existing = next((k for k in config.client_keys if k.id == key_id), None)
+        if existing is not None:
+            return existing
+        key = CliproxyApiClientKey.minted(device.name or device.mac_address)
+        config.client_keys.append(key)
+        save_config(config)
+        registry.set_ai_key_id(device.mac_address, key.id)
     try:
         CliproxyApiConfigApplier().apply()
     except ValueError:

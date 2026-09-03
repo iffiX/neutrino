@@ -15,6 +15,7 @@ from neutrino_hub.modules.cliproxyapi.ops import (
 )
 from neutrino_hub.modules.credentials.registry import AiProviderRegistry
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
+from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.web.dependencies import require_session
 from neutrino_hub.web.models import (
     CliproxyApiApplyResult,
@@ -51,9 +52,10 @@ def mint_key(request: CliproxyApiKeyCreate) -> CliproxyApiStatusView:
     Returns:
         The state after the change.
     """
-    config = load_config()
-    config.client_keys.append(CliproxyApiClientKey.minted(request.name))
-    save_config(config)
+    with CONFIG_WRITE_LOCK:
+        config = load_config()
+        config.client_keys.append(CliproxyApiClientKey.minted(request.name))
+        save_config(config)
     _apply_quietly()
     return _status()
 
@@ -71,12 +73,15 @@ def delete_key(key_id: str) -> CliproxyApiStatusView:
     Raises:
         HTTPException: 404 for an unknown key.
     """
-    config = load_config()
-    remaining = [key for key in config.client_keys if key.id != key_id]
-    if len(remaining) == len(config.client_keys):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="unknown key")
-    config.client_keys = remaining
-    save_config(config)
+    with CONFIG_WRITE_LOCK:
+        config = load_config()
+        remaining = [key for key in config.client_keys if key.id != key_id]
+        if len(remaining) == len(config.client_keys):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="unknown key"
+            )
+        config.client_keys = remaining
+        save_config(config)
     _apply_quietly()
     return _status()
 
@@ -94,15 +99,16 @@ def update_settings(request: CliproxyApiSettingsUpdate) -> CliproxyApiStatusView
     Raises:
         HTTPException: 400 when the settings do not validate.
     """
-    config = load_config()
-    config.listen_port = request.listen_port
-    try:
-        config.validate()
-    except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
-        ) from error
-    save_config(config)
+    with CONFIG_WRITE_LOCK:
+        config = load_config()
+        config.listen_port = request.listen_port
+        try:
+            config.validate()
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+            ) from error
+        save_config(config)
     _apply_quietly()
     return _status()
 
