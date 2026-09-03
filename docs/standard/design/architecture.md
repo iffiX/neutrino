@@ -24,11 +24,13 @@ agent's own page (the machine's owner, no password)
 Inside the hub package the layers only reach downward:
 
 - `modules/<name>/` — one feature each (config, renderer, ops, provisioner),
-  pure library. Modules reference each other by id, never by import of
-  behavior: a device references a vault object, an offer references a
-  declared service, the AI gateway renders the providers the credentials
-  module stores.
-- `system/` — wrappers around OS invocations; the only code that shells out.
+  pure library. Modules cross-reference by id rather than by embedding each
+  other's data: a device names a vault SSH key, an xray node and an AI
+  provider each name a vault secret, an offer names a declared service. The
+  providers themselves live in `modules/ai/`, and the AI gateway renders what
+  that module stores.
+- `system/` — wrappers around OS invocations more than one module needs. A
+  module's own effects stay in its `ops`, `apply` or `provisioner`.
 - `web/` — one router file per API module, models shared with the frontend
   by field name.
 - `cli/` — every entry point, one `nhub` subcommand each.
@@ -36,23 +38,6 @@ Inside the hub package the layers only reach downward:
 The agent has no dependencies and opens no port toward the hub: it polls, so
 it survives restarts, sleep and NAT in between. Everything the hub "does" to
 a device is desired state the agent converges on.
-
-## The two-tier principle: library vs. scripts
-
-Reusable logic lives in purely functional library packages. All execution
-verbosity lives in `neutrino_hub/cli/`. This is not a formatting preference; it lets the
-same rendering logic drive both the web panel and the command-line tools without
-duplication, and keeps every library unit-testable with no daemon running.
-
-- Library packages (`neutrino_hub/modules/<name>/`, `neutrino_hub/system/`, `neutrino_hub/web/`, `neutrino_hub/utils/`)
-  expose composable functions and classes with explicit constructor keywords.
-  No `main()`, no `argparse`, no wiring-config classes.
-- Each tool is a `neutrino_hub/cli/<name>.py` that wires the libraries together with
-  plain-variable config sections. The tools are `install.py`, `render_all.py`,
-  `web.py` and `scan_secrets.py`, one `nhub` subcommand each.
-
-The mechanical placement rules are in
-[../coding_style/layout_style.md](../coding_style/layout_style.md).
 
 ## config/ is the single source of truth
 
@@ -64,9 +49,9 @@ config/<module>/*.json  ->  render (pure library)  ->  /var/lib/neutrino/generat
                         ->  validate  ->  apply (systemctl / nft / ip)
 ```
 
-- The web backend and `neutrino_hub/cli/render_all.py` drive the exact same
-  pipeline. A change made in the panel is a write to `config/` followed by a
-  render+apply; there is no second path that edits `/etc` by hand.
+- The web backend and `nhub apply` drive the exact same pipeline. A change
+  made in the panel is a write to `config/` followed by a render+apply; there
+  is no second path that edits `/etc` by hand.
 - Backing up `config/` (and restoring it on a fresh machine) reproduces the
   whole appliance. Nothing load-bearing lives only in `/etc` or in a daemon's
   memory.
@@ -98,6 +83,26 @@ modules/router/routes.py  ->  RouterRulesetApplier.apply(ruleset)   # nft -c the
 Litmus test: if you deleted systemd and nft tomorrow, every renderer should
 still import, run, and pass its tests unchanged. If it would not, an effect has
 leaked into the rendering layer.
+
+## Libraries carry the logic; `nhub` carries the execution
+
+Reusable logic lives in purely functional library packages. All execution
+verbosity lives in `neutrino_hub/cli/`. This is not a formatting preference: it
+is what lets one rendering implementation drive both the web panel and the
+command line, and what keeps every library unit-testable with no daemon
+running.
+
+- Library packages (`neutrino_hub/modules/<name>/`, `neutrino_hub/system/`,
+  `neutrino_hub/web/`, `neutrino_hub/utils/`) expose composable functions and
+  classes with explicit constructor keywords. No `main()`, no `argparse`, no
+  wiring-config classes.
+- Each tool is a `neutrino_hub/cli/<name>.py` that wires the libraries together
+  with plain-variable config sections, and one `nhub` subcommand.
+  `cli/entry.py` holds the subcommand table and dispatches; what each command
+  does is [../../cli.md](../../cli.md).
+
+The mechanical placement rules are in
+[../coding_style/layout_style.md](../coding_style/layout_style.md).
 
 ## Services are the unit; the hub is the broker
 
@@ -194,6 +199,37 @@ into unbound and waiting for a link. Its binding lives in one file, and the
 running service adopts what another process writes there, so the CLI and the
 page need no service restart.
 
+## The network the hub assumes
+
+Every enrolled machine — on the LAN, on NetBird, on whatever overlay comes
+later — is somebody's own: locally administered, deliberately joined. The hub
+is not multi-tenant and does not defend one enrolled machine from another.
+
+The wire gets no such trust. A "LAN" can be a campus network with a thousand
+strangers on it, so the panel answers only where an interface was deliberately
+exposed and on the overlay ([network.md](network.md), "What answers, and
+where"), behind a password, and the agent channel carries its secrets under
+pinned TLS. Trusting the machines and distrusting the wire is the whole
+model.
+
+## The agent channel is pinned TLS; the panel is not
+
+Desired state carries real secrets, so the wire between hub and agent is
+treated as hostile even where the machines on it are not. The agent API is
+served on its own TLS-only port with a self-signed certificate generated at
+setup. The enrollment link carries the certificate's SHA-256 fingerprint, and
+the agent pins it — verification is the fingerprint, not a chain, so no device
+installs a CA and no name has to match.
+
+The panel a browser reads stays plain HTTP on its own port: a self-signed
+certificate in a browser is a warning on every page, while the same
+certificate pinned by an agent is exact. Two audiences, two transports,
+because they verify differently.
+
+The wire-level detail — which port serves what, the enrollment ticket, what
+each failure means to the agent, what an attacker in each position gets — is
+[agent.md](agent.md).
+
 ## The credential vault
 
 Every secret the hub keeps for somebody is sealed in one store:
@@ -208,12 +244,14 @@ references — `key_id`, `password_id`, `sudo_password_id`, `login_id`,
 | --- | --- |
 | `token` | value |
 | `login` | password, username |
-| `ssh_key` | private_key, passphrase, key_type, fingerprint |
+| `ssh_key` | private_key, passphrase |
 
-Inside the outer seal each object is a ciphertext of its own, its AAD
-binding it to its id and kind; two objects cannot be swapped. A locked
-vault therefore hides even the list — the panel shows that credentials
-exist to be unlocked, not what they are.
+An `ssh_key`'s type and fingerprint are annotations rather than material, so
+the panel reads them back without the key itself ever being opened. Inside
+the outer seal each object is a ciphertext of its own, its
+AAD binding it to its id and kind; two objects cannot be swapped. A locked
+vault therefore hides even the list — the panel shows that credentials exist
+to be unlocked, not what they are.
 
 The data key never sits in `config/`. The store carries it wrapped under the
 master passphrase chosen at setup (scrypt → AES-256-GCM), so backing up
@@ -228,42 +266,19 @@ last. On the box itself the panel is root and the vault claims nothing
 against root.
 
 Secrets travel one way through the API: written in, listed back as ids,
-fingerprints and reference counts, never read out. Deleting an object still
-referenced is refused before it is allowed.
+fingerprints and reference counts, never read out. A delete is allowed and
+cascades: every reference to the object is cleared in the same step — devices
+lose the key, shares and providers lose theirs, a token-keyed proxy node is
+disabled because it cannot serve — and the answer says how many of each.
 
-Two things stay out: the panel password, which is a hash and not a kept
-secret, and the CLIProxyAPI client keys, which the hub mints itself, shows in
-full to their owner, and renders whole into the gateway's own config.
+Three things stay out. The panel password and a device's heartbeat token are
+verifiers rather than secrets — one kept as a scrypt hash, the other as a
+SHA-256 digest, and neither ever needed back. The CLIProxyAPI client keys the
+hub mints itself, shows in full to their owner, and renders whole into the
+gateway's own config.
 
 `nhub vault rekey` wraps the data key under a new passphrase; nothing sealed
 is re-encrypted.
-
-## The network the hub assumes
-
-Every enrolled machine — on the LAN, on NetBird, on whatever overlay comes
-later — is somebody's own: locally administered, deliberately joined. The hub
-is not multi-tenant and does not defend one enrolled machine from another.
-
-The wire gets no such trust. A "LAN" can be a campus network with a thousand
-strangers on it, so the panel answers only on served interfaces and the
-overlay, behind a password, and the agent channel carries its secrets under
-pinned TLS. Trusting the machines and distrusting the wire is the whole
-model.
-
-## The agent channel is pinned TLS; the panel is not
-
-Desired state carries real secrets, so the wire between hub and agent is
-treated as hostile even where the machines on it are not. The agent API is
-served on its own TLS-only port with a self-signed certificate generated at
-setup. The
-enrollment link carries the certificate's SHA-256 fingerprint, and the agent
-pins it — verification is the fingerprint, not a chain, so no device installs
-a CA and no name has to match.
-
-The panel a browser reads stays plain HTTP on its own port: a self-signed
-certificate in a browser is a warning on every page, while the same
-certificate pinned by an agent is exact. Two audiences, two transports,
-because they verify differently.
 
 ## The AI gateway is metered at the hub
 
@@ -273,6 +288,20 @@ tokens, per client key, per day — under `/var/lib/neutrino/cliproxyapi/`, and
 a client key belongs to a device, so usage lands on the subscription that
 spent it. The dashboard, the AI page and the status strip all read that one
 store.
+
+## The panel heals itself; nothing ever asks for a manual refresh
+
+The panel is a single-page app, and the machine under it restarts — a
+restored backup, a package upgrade, an operator's restart — while pages sit
+open. Every open page, the login page included, watches one signal: the
+unauthenticated session endpoint carries `panel_started_at`, a constant of
+the server process. A page remembers the first value it saw; a later answer
+with a different one means a restarted panel — new code, and sessions gone
+with the old process — and the page reloads itself once. An unreachable
+backend is only ever waited out, and the same identity answering again is a
+network blip: the page's own channels resume in place. Downtime and 401s are
+deliberately not signals — restarts are too brief to catch by polling, and a
+signed-out answer cannot be told from a lockout.
 
 ## One identifier shape
 
@@ -284,10 +313,12 @@ from behind someone else's NAT.
 ## The web backend runs as root, and that is a boundary, not a habit
 
 `neutrino_hub_web.service` runs as root because it must edit nftables, restart
-services, and scan the LAN. That privilege is the reason the panel binds only to
-the LAN and NetBird interfaces (enforced again by the nftables input chain)
-and sits behind an argon2id password. Do not spread root-requiring calls through
-the codebase: they live in the `neutrino_hub/system/` and `*/ops`/`apply` layers behind
-named operations, so the surface that needs privilege is small and auditable. If
-this ever becomes multi-user or WAN-exposed, split the privileged helper out
-then — the apply layer is already the seam to split on.
+services, and scan the LAN. That privilege is why the panel sits behind a
+password — a scrypt hash, never the password itself — and why what reaches it
+is narrowed in the nftables input chain rather than left to what the process
+binds. Do not spread root-requiring calls through the codebase: they live in the
+`neutrino_hub/system/` and `*/ops`/`apply` layers behind named operations, so
+the surface that needs privilege is small and auditable. What the unit narrows,
+and what it deliberately does not, is [privilege.md](privilege.md). If this
+ever becomes multi-user or WAN-exposed, split the privileged helper out then —
+the apply layer is already the seam to split on.

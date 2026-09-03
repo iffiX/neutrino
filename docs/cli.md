@@ -226,6 +226,24 @@ reached over SSH afterwards, until `nhub setup` runs again.
 
 Lists what can be reset and does nothing. Resetting is always named.
 
+### vault
+
+> `sudo nhub vault rekey`
+
+Wraps the vault's data key under a new master passphrase, prompting for it
+twice. Nothing sealed is re-encrypted — the records stay as they are, and
+every backup taken afterwards opens with the new passphrase. Takes
+`--stdin`, which here is the new passphrase.
+
+### scan-secrets
+
+> `nhub scan-secrets`
+
+Checks what a commit would carry for secret material, across the whole
+working copy. The one subcommand that never needs root: it reads the
+checkout, not the machine. A finding is either real and removed, or safe
+and marked `scan: allow` on its line.
+
 ## nagent
 
 Most machines never see this. The agent installs with a desktop entry, and

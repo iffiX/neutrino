@@ -18,7 +18,7 @@ modules/xray/
 modules/xray/config_renderer.py
       class XrayConfigRenderer:                       # explicit kwargs, no main()
           def __init__(self, *, nodes, routing): ...
-neutrino_hub/cli/render_all.py
+neutrino_hub/cli/apply.py
       # --- config ---
       GENERATED_DIR = "/var/lib/neutrino/generated"   # plain module constant
       def main() -> None:                             # the only place main() lives
@@ -49,10 +49,9 @@ Library packages are purely functional. All execution verbosity lives in
   wiring-config classes. Every tunable is an explicit constructor keyword or a
   value read from `config/`.
 - `neutrino_hub/cli/` holds one file per tool, whose tunables are plain
-  variables in commented config sections. The tools are `install.py`
-  (idempotent bootstrap), `render_all.py` (render + validate + apply every
-  generated config from `config/`), `web.py` (the uvicorn entry point) and
-  `scan_secrets.py`.
+  variables in commented config sections. `entry.py` dispatches, and each of
+  the others is one `nhub` subcommand — the set lives in its `COMMANDS`
+  table and is documented in [docs/cli.md](../../cli.md).
 - A new tool is a new `neutrino_hub/cli/<name>.py` and a new `nhub` subcommand,
   never a flag bolted onto an unrelated one.
 
