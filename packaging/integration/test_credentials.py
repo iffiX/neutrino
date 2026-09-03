@@ -1,10 +1,10 @@
 """The Credentials and AI pages against a live box, and the backup roundtrip.
 
 What matters here is what no unit test can promise about the running panel:
-that secrets go in and never come back out, that a reference held by a device
-blocks a delete, and that a backup proves itself — manifest, every member's
-digest, the vault passphrase opening the wrapped key — before a restore puts
-the whole vault back.
+that secrets go in and never come back out, that deleting a credential clears
+every reference to it, and that a backup proves itself — manifest, every
+member's digest, the vault passphrase opening the wrapped key — before a
+restore puts the whole vault back.
 
 The backup roundtrip restores the same box's own config over itself, which is
 safe on the disposable machines these tests are for and on nothing else.
@@ -91,7 +91,7 @@ def test_a_login_carries_its_username_but_never_its_password(panel):
     assert panel.status("DELETE", f"/credentials/logins/{created['id']}") == 200
 
 
-def test_a_login_referenced_by_a_device_blocks_delete(panel):
+def test_deleting_a_login_clears_the_device_that_referenced_it(panel):
     status, login = panel.call(
         "POST",
         "/credentials/logins",
@@ -119,12 +119,17 @@ def test_a_login_referenced_by_a_device_blocks_delete(panel):
     assert ssh_view["password_id"] == login["id"]
     assert "password" not in ssh_view and "sudo_password" not in ssh_view
 
-    status, refused = panel.call("DELETE", f"/credentials/logins/{login['id']}")
-    assert status == 409
-    assert refused["detail"]["code"] == "login_in_use"
-    assert (
-        panel.status("DELETE", f"/credentials/logins/{login['id']}?force=true") == 200
+    status, cleared = panel.call("DELETE", f"/credentials/logins/{login['id']}")
+    assert status == 200, cleared
+    assert cleared == {"cleared": {"device_count": 1, "service_count": 0}}
+
+    stored = next(
+        entry
+        for entry in panel.read("/devices")["devices"]
+        if entry["mac_address"].lower() == TEST_MAC
     )
+    assert stored["ssh"]["password_id"] is None
+    assert stored["ssh"]["sudo_password_id"] is None
     assert panel.status("DELETE", f"/devices/{TEST_MAC}") == 200
 
 
@@ -161,7 +166,7 @@ def test_ssh_key_material_never_reads_back(panel):
     assert panel.status("DELETE", f"/credentials/ssh_keys/{created['id']}") == 200
 
 
-def test_a_provider_references_a_token_and_outlives_neither_way(panel):
+def test_deleting_a_token_clears_the_provider_that_referenced_it(panel):
     status, token = panel.call(
         "POST",
         "/credentials/tokens",
@@ -188,14 +193,17 @@ def test_a_provider_references_a_token_and_outlives_neither_way(panel):
     referenced = next(entry for entry in listed if entry["id"] == token["id"])
     assert referenced["provider_count"] == 1
 
-    status, refused = panel.call("DELETE", f"/credentials/tokens/{token['id']}")
-    assert status == 409, refused
-    assert refused["detail"]["code"] == "token_in_use"
-    assert refused["detail"]["params"]["provider_count"] == 1
+    status, cleared = panel.call("DELETE", f"/credentials/tokens/{token['id']}")
+    assert status == 200, cleared
+    assert cleared == {"cleared": {"provider_count": 1, "node_count": 0}}
 
+    stripped = next(
+        entry
+        for entry in panel.read("/ai/providers")["providers"]
+        if entry["id"] == created["id"]
+    )
+    assert stripped["secret_id"] is None
     assert panel.status("DELETE", f"/ai/providers/{created['id']}") == 200
-    # The provider is gone; the token stays until deleted on its own page.
-    assert panel.status("DELETE", f"/credentials/tokens/{token['id']}") == 200
 
 
 def test_a_provider_refuses_a_bogus_token_reference(panel):
@@ -278,6 +286,7 @@ def test_backup_is_plain_digested_and_restores_the_vault(panel, vault_passphrase
     )
     assert status == 400 and refused["detail"]["code"] == "vault_passphrase_wrong"
 
+    started_at = panel.read("/auth/session").get("panel_started_at", "")
     status, restored = panel.upload(
         "/settings/restore",
         filename="backup.tar.gz",
@@ -287,26 +296,22 @@ def test_backup_is_plain_digested_and_restores_the_vault(panel, vault_passphrase
     assert status == 200, restored
     assert restored["is_restored"] is True
 
-    # The restore applies itself and restarts the panel. The restart window
-    # is too brief to catch by polling for a dead socket; what cannot be
-    # missed is the session itself — the old process honours this token, the
-    # restarted one never does. 401 (or a dead socket mid-restart) is the
-    # restart, and then a fresh sign-in must eventually stick.
+    # The restore applies itself and restarts the panel. Downtime is too
+    # brief to poll for and the session survives the restart; the panel's
+    # start moment is the one signal that cannot be missed.
     deadline = time.monotonic() + 150
     while time.monotonic() < deadline:
         time.sleep(2)
-        if panel.status("GET", "/settings") != 200:
+        code, state = panel.call("GET", "/auth/session")
+        if (
+            code == 200
+            and isinstance(state, dict)
+            and state.get("panel_started_at") not in ("", started_at)
+        ):
             break
     else:
         raise AssertionError("the panel never restarted after the restore")
-    while time.monotonic() < deadline:
-        try:
-            panel.sign_in(os.environ["NEUTRINO_PANEL_PASSWORD"])
-            break
-        except (RuntimeError, OSError):
-            time.sleep(2)
-    else:
-        raise AssertionError("the panel never came back after the restore")
+    panel.sign_in(os.environ["NEUTRINO_PANEL_PASSWORD"])
 
     listed = panel.read("/credentials/logins")["logins"]
     survivor = next(entry for entry in listed if entry["name"] == marker)

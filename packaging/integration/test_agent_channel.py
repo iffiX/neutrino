@@ -211,4 +211,4 @@ def test_the_channel_is_pinned_tls_end_to_end(panel, stranger):
     # Leave the box as this file found it.
     lifecycle.ssh_to(host, "sudo nagent disconnect")
     assert panel.status("DELETE", f"/devices/{mac}") == 200
-    panel.call("DELETE", f"/credentials/ssh_keys/{key['id']}?force=true")
+    panel.call("DELETE", f"/credentials/ssh_keys/{key['id']}")

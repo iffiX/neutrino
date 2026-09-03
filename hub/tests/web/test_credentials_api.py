@@ -8,6 +8,7 @@ end.
 """
 
 import json
+from types import SimpleNamespace
 
 import asyncssh
 import pytest
@@ -15,8 +16,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from neutrino_hub.modules.credentials.vault import SecretVault, VaultLockedError
+from neutrino_hub.modules.services.config import DeclaredServiceRegistry, DeclaredShare
 from neutrino_hub.web.app import _vault_locked
-from neutrino_hub.web.dependencies import require_session
+from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import credentials as credentials_router
 from tests.conftest import unlock_vault
 
@@ -34,6 +36,9 @@ def client(monkeypatch, tmp_path):
     app.add_exception_handler(VaultLockedError, _vault_locked)
     app.include_router(credentials_router.router)
     app.dependency_overrides[require_session] = lambda: None
+    app.dependency_overrides[get_runtime] = lambda: SimpleNamespace(
+        is_config_dirty=False
+    )
     with TestClient(app) as test_client:
         yield test_client
 
@@ -85,6 +90,28 @@ def test_key_roundtrip(client):
     assert renamed.json()["name"] == "home desktop"
 
     assert client.delete(f"/api/credentials/ssh_keys/{view['id']}").status_code == 200
+    assert client.get("/api/credentials/ssh_keys").json() == {"keys": []}
+
+
+def test_deleting_a_key_clears_device_references(client, tmp_path):
+    key = asyncssh.generate_private_key("ssh-ed25519")
+    created = client.post(
+        "/api/credentials/ssh_keys",
+        json={"name": "work laptop", "private_key": key.export_private_key().decode()},
+    )
+    key_id = created.json()["id"]
+    write_device(tmp_path, {"key_id": key_id})
+
+    listed = client.get("/api/credentials/ssh_keys").json()["keys"]
+    assert listed[0]["device_count"] == 1
+
+    response = client.delete(f"/api/credentials/ssh_keys/{key_id}")
+    assert response.status_code == 200
+    assert response.json() == {"cleared": {"device_count": 1}}
+
+    ssh = read_device_ssh(tmp_path)
+    assert ssh["key_id"] is None
+    assert ssh["host"] == "192.168.100.2"
     assert client.get("/api/credentials/ssh_keys").json() == {"keys": []}
 
 
@@ -237,25 +264,73 @@ def test_login_refusals(client):
     assert client.delete("/api/credentials/logins/absent").status_code == 404
 
 
-def test_a_login_is_not_pulled_out_from_under_a_device(client, tmp_path):
+def declare_samba_share(login_id: str) -> None:
+    """Store one declared Samba service whose share names the login."""
+    DeclaredServiceRegistry().add(
+        name="nas",
+        kind="samba",
+        host="192.168.100.7",
+        port=None,
+        shares=[DeclaredShare(name="media", login_id=login_id)],
+    )
+
+
+def read_device_ssh(tmp_path) -> dict:
+    """Read the stored test device's SSH block back off disk."""
+    data = json.loads((tmp_path / "devices" / "devices.json").read_text())
+    return data["devices"]["aa:bb:cc:dd:ee:ff"]["ssh"]
+
+
+def read_shares(tmp_path) -> list:
+    """Read the declared Samba service's shares back off disk."""
+    data = json.loads((tmp_path / "services" / "declared.json").read_text())
+    return data["services"][0]["shares"]
+
+
+def test_deleting_a_login_clears_its_references(client, tmp_path):
     created = client.post(
         "/api/credentials/logins",
         json={"name": "lab machines", "password": STORED_PASSWORD},
     )
     login_id = created.json()["id"]
     write_device(tmp_path, {"password_id": login_id, "sudo_password_id": login_id})
+    declare_samba_share(login_id)
 
     listed = client.get("/api/credentials/logins").json()["logins"]
     assert listed[0]["device_count"] == 1
+    assert listed[0]["service_count"] == 1
 
-    refused = client.delete(f"/api/credentials/logins/{login_id}")
-    assert refused.status_code == 409
-    assert refused.json()["detail"]["code"] == "login_in_use"
-    assert refused.json()["detail"]["params"]["device_count"] == 1
+    response = client.delete(f"/api/credentials/logins/{login_id}")
+    assert response.status_code == 200
+    assert response.json() == {"cleared": {"device_count": 1, "service_count": 1}}
 
-    forced = client.delete(f"/api/credentials/logins/{login_id}?force=true")
-    assert forced.status_code == 200
+    ssh = read_device_ssh(tmp_path)
+    assert ssh["password_id"] is None
+    assert ssh["sudo_password_id"] is None
+    assert ssh["host"] == "192.168.100.2"
+    assert ssh["username"] == "root"
+    assert read_shares(tmp_path) == [{"name": "media", "login_id": None}]
     assert client.get("/api/credentials/logins").json() == {"logins": []}
+
+
+def test_deleting_an_unreferenced_login_touches_nothing(client, tmp_path):
+    kept = client.post(
+        "/api/credentials/logins",
+        json={"name": "kept", "password": STORED_PASSWORD},
+    ).json()
+    spare = client.post(
+        "/api/credentials/logins",
+        json={"name": "spare", "password": STORED_PASSWORD},
+    ).json()
+    write_device(tmp_path, {"password_id": kept["id"]})
+    declare_samba_share(kept["id"])
+
+    response = client.delete(f"/api/credentials/logins/{spare['id']}")
+
+    assert response.status_code == 200
+    assert response.json() == {"cleared": {"device_count": 0, "service_count": 0}}
+    assert read_device_ssh(tmp_path)["password_id"] == kept["id"]
+    assert read_shares(tmp_path) == [{"name": "media", "login_id": kept["id"]}]
 
 
 def test_a_login_of_another_kind_is_not_addressable(client):
@@ -340,7 +415,7 @@ def test_token_refusals(client):
     assert client.delete("/api/credentials/tokens/absent").status_code == 404
 
 
-def test_a_token_referenced_by_a_provider_blocks_delete(client):
+def test_deleting_a_token_clears_provider_references(client):
     from neutrino_hub.modules.ai.registry import AiProviderRegistry
 
     created = client.post(
@@ -355,15 +430,10 @@ def test_a_token_referenced_by_a_provider_blocks_delete(client):
     listed = client.get("/api/credentials/tokens").json()["tokens"]
     assert listed[0]["provider_count"] == 1
 
-    refused = client.delete(f"/api/credentials/tokens/{token_id}")
-    assert refused.status_code == 409
-    assert refused.json()["detail"] == {
-        "code": "token_in_use",
-        "params": {"provider_count": 1, "node_count": 0},
-    }
-
-    forced = client.delete(f"/api/credentials/tokens/{token_id}?force=true")
-    assert forced.status_code == 200
+    response = client.delete(f"/api/credentials/tokens/{token_id}")
+    assert response.status_code == 200
+    assert response.json() == {"cleared": {"provider_count": 1, "node_count": 0}}
+    assert AiProviderRegistry().list_records()[0].secret_id is None
     assert client.get("/api/credentials/tokens").json() == {"tokens": []}
 
 
@@ -390,7 +460,7 @@ def write_node(tmp_path, secret_id: str) -> None:
     )
 
 
-def test_a_token_referenced_by_a_node_blocks_delete(client, tmp_path):
+def test_deleting_a_token_disables_the_nodes_it_keyed(client, tmp_path):
     created = client.post(
         "/api/credentials/tokens",
         json={"name": "node secret", "value": "sk-node"},  # scan: allow
@@ -402,19 +472,17 @@ def test_a_token_referenced_by_a_node_blocks_delete(client, tmp_path):
     assert listed[0]["node_count"] == 1
     assert listed[0]["provider_count"] == 0
 
-    refused = client.delete(f"/api/credentials/tokens/{token_id}")
-    assert refused.status_code == 409
-    assert refused.json()["detail"] == {
-        "code": "token_in_use",
-        "params": {"provider_count": 0, "node_count": 1},
-    }
+    response = client.delete(f"/api/credentials/tokens/{token_id}")
+    assert response.status_code == 200
+    assert response.json() == {"cleared": {"provider_count": 0, "node_count": 1}}
 
-    forced = client.delete(f"/api/credentials/tokens/{token_id}?force=true")
-    assert forced.status_code == 200
+    node = json.loads((tmp_path / "xray" / "nodes.json").read_text())["nodes"][0]
+    assert node["secret_id"] is None
+    assert node["is_enabled"] is False
     assert client.get("/api/credentials/tokens").json() == {"tokens": []}
 
 
-def test_a_token_nothing_references_deletes_without_force(client, tmp_path):
+def test_deleting_a_token_leaves_unrelated_nodes_alone(client, tmp_path):
     created = client.post(
         "/api/credentials/tokens",
         json={"name": "spare key", "value": "sk-spare"},  # scan: allow
@@ -422,10 +490,13 @@ def test_a_token_nothing_references_deletes_without_force(client, tmp_path):
     token_id = created.json()["id"]
     write_node(tmp_path, "0" * 32)
 
-    listed = client.get("/api/credentials/tokens").json()["tokens"]
-    assert listed[0]["node_count"] == 0
+    response = client.delete(f"/api/credentials/tokens/{token_id}")
 
-    assert client.delete(f"/api/credentials/tokens/{token_id}").status_code == 200
+    assert response.status_code == 200
+    assert response.json() == {"cleared": {"provider_count": 0, "node_count": 0}}
+    node = json.loads((tmp_path / "xray" / "nodes.json").read_text())["nodes"][0]
+    assert node["secret_id"] == "0" * 32
+    assert node["is_enabled"] is True
 
 
 def test_a_token_of_another_kind_is_not_addressable(client):

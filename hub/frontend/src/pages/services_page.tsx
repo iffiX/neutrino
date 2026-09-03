@@ -52,7 +52,7 @@ import "./services_page.css";
 const DECLARED_TITLE = "Declared";
 const DECLARED_HINT =
   "Services on machines the hub does not run, declared here and watched.";
-const DECLARED_BADGE = "{healthy} of {total} healthy";
+const DECLARED_BADGE = "{healthy} of {total} reachable";
 const DECLARED_ADD_LABEL = "Declare service";
 const DECLARED_EMPTY = "Nothing is declared yet.";
 const DECLARED_FORM_NEW = "New declared service";
@@ -89,14 +89,13 @@ const DECLARED_KIND_LABELS: Record<DeclaredServiceKind, string> = {
 };
 
 const DECLARED_STATE_LABELS: Record<"ok" | "error" | "idle", string> = {
-  ok: "healthy",
+  ok: "reachable",
   error: "unreachable",
-  idle: "not probed",
+  idle: "checking…",
 };
 
-// The probe's detail_code, worded.
+// The probe's detail_code, worded. A code without an entry shows no sentence.
 const DECLARED_DETAIL_WORDING: Record<string, string> = {
-  connect_failed: "Nothing answered the connection.",
   ping_rejected: "Answered, but not as a Docker engine.",
   server_error: "Answered with a server error.",
 };

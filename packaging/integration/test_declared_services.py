@@ -216,7 +216,7 @@ def test_a_bad_record_is_refused_with_a_code(panel):
     assert answer["detail"] == {"code": "declared_service_unknown"}
 
 
-def test_a_share_account_is_counted_and_blocks_its_own_delete(panel, tcp_port):
+def test_a_share_account_is_counted_and_cleared_by_its_delete(panel, tcp_port):
     run = _suffix()
     status, account = panel.call(
         "POST",
@@ -244,11 +244,16 @@ def test_a_share_account_is_counted_and_blocks_its_own_delete(panel, tcp_port):
         listed = next(entry for entry in accounts if entry["id"] == account["id"])
         assert listed["service_count"] == 1
 
-        status = panel.status("DELETE", f"/credentials/logins/{account['id']}")
-        assert status == 409
+        status, cleared = panel.call("DELETE", f"/credentials/logins/{account['id']}")
+        assert status == 200, cleared
+        assert cleared == {"cleared": {"device_count": 0, "service_count": 1}}
+
+        declared = panel.read("/services")["declared"]
+        stored = next(entry for entry in declared if entry["id"] == record["id"])
+        assert stored["shares"] == [{"name": "media", "login_id": None}]
     finally:
         _delete(panel, record["id"])
-        panel.call("DELETE", f"/credentials/logins/{account['id']}?force=true")
+        panel.call("DELETE", f"/credentials/logins/{account['id']}")
 
     status, answer = panel.call(
         "POST",

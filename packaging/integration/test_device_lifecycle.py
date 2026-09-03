@@ -208,4 +208,4 @@ def test_the_lifecycle_walks_every_transition(panel, stranger):
 
     # Leave the box as this file found it.
     assert panel.status("DELETE", f"/devices/{mac}") == 200
-    panel.call("DELETE", f"/credentials/ssh_keys/{key['id']}?force=true")
+    panel.call("DELETE", f"/credentials/ssh_keys/{key['id']}")

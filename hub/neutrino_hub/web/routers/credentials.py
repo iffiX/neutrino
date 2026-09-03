@@ -26,8 +26,9 @@ from neutrino_hub.modules.devices.key_registry import (
 )
 from neutrino_hub.modules.services.config import DeclaredServiceRegistry
 from neutrino_hub.modules.xray.node_config import XrayNodeList
-from neutrino_hub.utils.json_file import read_config
-from neutrino_hub.web.dependencies import require_session
+from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK, read_config, write_config
+from neutrino_hub.web.dependencies import get_runtime, require_session
+from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.models import (
     KeyCreate,
     KeyListView,
@@ -125,28 +126,19 @@ def rename_key(key_id: str, request: KeyRename) -> KeyView:
 
 
 @router.delete("/ssh_keys/{key_id}")
-def delete_key(key_id: str, force: bool = False) -> dict:
-    """Remove a key and its material.
+def delete_key(key_id: str) -> dict:
+    """Remove a key and its material, clearing every device reference to it.
 
     Args:
         key_id: The key's identifier.
-        force: Delete even when devices still reference it.
 
     Returns:
-        An empty object.
-
-    Raises:
-        HTTPException: 409 when devices still use the key and ``force`` is not
-            set, so a key is not pulled out from under a device by accident.
+        Under ``cleared``, how many devices lost the key.
     """
-    count = _device_counts().get(key_id, 0)
-    if count > 0 and not force:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"{count} device(s) still use this key; use force to delete",
-        )
-    KeyRegistry().delete(key_id)
-    return {}
+    with CONFIG_WRITE_LOCK:
+        device_count = _clear_key_on_devices(key_id)
+        KeyRegistry().delete(key_id)
+    return {"cleared": {"device_count": device_count}}
 
 
 def _device_counts() -> dict[str, int]:
@@ -156,6 +148,18 @@ def _device_counts() -> dict[str, int]:
         if key_id:
             counts[key_id] = counts.get(key_id, 0) + 1
     return counts
+
+
+def _clear_key_on_devices(key_id: str) -> int:
+    registry = DeviceRegistry()
+    cleared = 0
+    for device in registry.all_stored():
+        ssh = device.ssh or {}
+        if ssh.get("key_id") != key_id:
+            continue
+        registry.annotate(device.mac_address, {"ssh": {**ssh, "key_id": None}})
+        cleared += 1
+    return cleared
 
 
 def _key_view(record: KeyRecord, counts: dict[str, int]) -> KeyView:
@@ -276,19 +280,20 @@ def update_login(login_id: str, request: LoginUpdate) -> LoginView:
 
 
 @router.delete("/logins/{login_id}")
-def delete_login(login_id: str, force: bool = False) -> dict:
-    """Remove a login and its password.
+def delete_login(login_id: str) -> dict:
+    """Remove a login and its password, clearing every reference to it.
+
+    A device naming it for its account or its sudo prompt loses that id; a
+    declared share naming it becomes a guest share.
 
     Args:
         login_id: The login's identifier.
-        force: Delete even when devices or services still reference it.
 
     Returns:
-        An empty object.
+        Under ``cleared``, how many devices and services lost the login.
 
     Raises:
-        HTTPException: 409 when something still uses the login and ``force``
-            is not set, 404 when the id is unknown.
+        HTTPException: 404 when the id is unknown.
     """
     vault = SecretVault()
     record = vault.get(login_id)
@@ -297,21 +302,11 @@ def delete_login(login_id: str, force: bool = False) -> dict:
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "unknown_login", "params": {}},
         )
-    device_count = _login_device_counts().get(login_id, 0)
-    service_count = _service_counts().get(login_id, 0)
-    if (device_count or service_count) and not force:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "login_in_use",
-                "params": {
-                    "device_count": device_count,
-                    "service_count": service_count,
-                },
-            },
-        )
-    vault.delete(login_id)
-    return {}
+    with CONFIG_WRITE_LOCK:
+        device_count = _clear_login_on_devices(login_id)
+        service_count = _clear_login_on_shares(login_id)
+        vault.delete(login_id)
+    return {"cleared": {"device_count": device_count, "service_count": service_count}}
 
 
 def _login_secret(username: "str | None", password: str) -> dict:
@@ -343,6 +338,46 @@ def _service_counts() -> dict[str, int]:
             if login_id:
                 counts[login_id] = counts.get(login_id, 0) + 1
     return counts
+
+
+def _clear_login_on_devices(login_id: str) -> int:
+    registry = DeviceRegistry()
+    cleared = 0
+    for device in registry.all_stored():
+        ssh = device.ssh or {}
+        if login_id not in (ssh.get("password_id"), ssh.get("sudo_password_id")):
+            continue
+        updated = dict(ssh)
+        if updated.get("password_id") == login_id:
+            updated["password_id"] = None
+        if updated.get("sudo_password_id") == login_id:
+            updated["sudo_password_id"] = None
+        registry.annotate(device.mac_address, {"ssh": updated})
+        cleared += 1
+    return cleared
+
+
+def _clear_login_on_shares(login_id: str) -> int:
+    registry = DeclaredServiceRegistry()
+    cleared = 0
+    for service in registry.list_records():
+        if all(share.login_id != login_id for share in service.shares):
+            continue
+        for share in service.shares:
+            if share.login_id == login_id:
+                share.login_id = None
+        registry.replace(
+            service.id,
+            name=service.name,
+            kind=service.kind,
+            host=service.host,
+            port=service.port,
+            scheme=service.scheme,
+            path=service.path,
+            shares=service.shares,
+        )
+        cleared += 1
+    return cleared
 
 
 def _login_view(
@@ -459,19 +494,21 @@ def update_token(token_id: str, request: TokenUpdate) -> TokenView:
 
 
 @router.delete("/tokens/{token_id}")
-def delete_token(token_id: str, force: bool = False) -> dict:
-    """Remove a token and its value.
+def delete_token(token_id: str, runtime: PanelRuntime = Depends(get_runtime)) -> dict:
+    """Remove a token and its value, clearing every reference to it.
+
+    A provider keyed with it loses its key reference; a node keyed with it
+    loses its secret reference and is disabled, since it cannot serve.
 
     Args:
         token_id: The token's identifier.
-        force: Delete even when AI providers still reference it.
+        runtime: The shared runtime.
 
     Returns:
-        An empty object.
+        Under ``cleared``, how many providers and nodes lost the token.
 
     Raises:
-        HTTPException: 409 when providers or nodes still use the token and
-            ``force`` is not set, 404 when the id is unknown.
+        HTTPException: 404 when the id is unknown.
     """
     vault = SecretVault()
     record = vault.get(token_id)
@@ -480,21 +517,13 @@ def delete_token(token_id: str, force: bool = False) -> dict:
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "unknown_token", "params": {}},
         )
-    provider_count = _provider_counts().get(token_id, 0)
-    node_count = _node_counts().get(token_id, 0)
-    if (provider_count or node_count) and not force:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "token_in_use",
-                "params": {
-                    "provider_count": provider_count,
-                    "node_count": node_count,
-                },
-            },
-        )
-    vault.delete(token_id)
-    return {}
+    with CONFIG_WRITE_LOCK:
+        provider_count = _clear_token_on_providers(token_id)
+        node_count = _clear_token_on_nodes(token_id)
+        vault.delete(token_id)
+    if node_count:
+        runtime.is_config_dirty = True
+    return {"cleared": {"provider_count": provider_count, "node_count": node_count}}
 
 
 def _provider_counts() -> dict[str, int]:
@@ -515,6 +544,32 @@ def _node_counts() -> dict[str, int]:
         if node.secret_id:
             counts[node.secret_id] = counts.get(node.secret_id, 0) + 1
     return counts
+
+
+def _clear_token_on_providers(token_id: str) -> int:
+    registry = AiProviderRegistry()
+    cleared = 0
+    for provider in registry.list_records():
+        if provider.secret_id == token_id:
+            registry.update(provider.id, secret_id=None)
+            cleared += 1
+    return cleared
+
+
+def _clear_token_on_nodes(token_id: str) -> int:
+    try:
+        node_list = XrayNodeList.from_dict(read_config("xray/nodes.json"))
+    except FileNotFoundError:
+        return 0
+    cleared = 0
+    for node in node_list.nodes:
+        if node.secret_id == token_id:
+            node.secret_id = None
+            node.is_enabled = False
+            cleared += 1
+    if cleared:
+        write_config("xray/nodes.json", node_list.to_dict())
+    return cleared
 
 
 def _token_view(

@@ -3,13 +3,7 @@ import { useEffect, useState } from "react";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { PasswordInput } from "../components/password_input";
-import {
-  ApiError,
-  apiDelete,
-  apiPost,
-  apiPut,
-  describeError,
-} from "../api_client";
+import { apiDelete, apiPost, apiPut, describeError } from "../api_client";
 import { formatTimeAgo } from "../format_duration";
 import { PRIVATE_KEY_PLACEHOLDER } from "../private_key_placeholder";
 import { useApiResource } from "../use_api_resource";
@@ -82,6 +76,7 @@ function SshKeysSection() {
 
   const handleDeleted = (keyId: string) => {
     setKeys((current) => current.filter((key) => key.id !== keyId));
+    resource.reload();
   };
 
   return (
@@ -157,6 +152,7 @@ function LoginsSection() {
 
   const handleDeleted = (loginId: string) => {
     setLogins((current) => current.filter((login) => login.id !== loginId));
+    resource.reload();
   };
 
   return (
@@ -248,6 +244,7 @@ function TokensSection() {
 
   const handleDeleted = (tokenId: string) => {
     setTokens((current) => current.filter((token) => token.id !== tokenId));
+    resource.reload();
   };
 
   return (
@@ -441,23 +438,16 @@ function KeyCard({ value, onRenamed, onDeleted }: KeyCardProps) {
   const handleDelete = () =>
     confirm.ask({
       title: `Delete ${value.name}`,
-      body:
-        value.device_count > 0
-          ? `${value.device_count} device(s) authenticate with this key and ` +
-            "fall back to password authentication once it is gone."
-          : "The private key is deleted from this box.",
+      body: keyDeleteBody(value.device_count),
       confirmLabel: "Delete",
       onConfirm: () => void deleteKey(),
     });
 
   const deleteKey = async () => {
-    const inUse = value.device_count > 0;
     setIsBusy(true);
     setError(null);
     try {
-      await apiDelete(
-        `/credentials/ssh_keys/${value.id}${inUse ? "?force=true" : ""}`,
-      );
+      await apiDelete(`/credentials/ssh_keys/${value.id}`);
       onDeleted(value.id);
     } catch (cause: unknown) {
       setError(describeError(cause));
@@ -677,22 +667,16 @@ function LoginCard({ value, onSaved, onEdit, onDeleted }: LoginCardProps) {
   const handleDelete = () =>
     confirm.ask({
       title: `Delete ${value.name}`,
-      body:
-        value.device_count + value.service_count > 0
-          ? "Whatever signs in with this login is left without it once it is gone."
-          : "The login and its password are deleted from this box.",
+      body: loginDeleteBody(value.device_count, value.service_count),
       confirmLabel: "Delete",
       onConfirm: () => void deleteLogin(),
     });
 
   const deleteLogin = async () => {
-    const inUse = value.device_count + value.service_count > 0;
     setIsBusy(true);
     setError(null);
     try {
-      await apiDelete(
-        `${LOGINS_PATH}/${value.id}${inUse ? "?force=true" : ""}`,
-      );
+      await apiDelete(`${LOGINS_PATH}/${value.id}`);
       onDeleted(value.id);
     } catch (cause: unknown) {
       setError(describeError(cause));
@@ -744,7 +728,7 @@ function LoginCard({ value, onSaved, onEdit, onDeleted }: LoginCardProps) {
               : ""
           }`}
         >
-          {loginUsage(value)}
+          {loginUsage(value.device_count, value.service_count)}
         </span>
         {value.created_at.length > 0 && (
           <span className="key_card_added">
@@ -896,25 +880,19 @@ function TokenCard({ value, onSaved, onEdit, onDeleted }: TokenCardProps) {
   const handleDelete = () =>
     confirm.ask({
       title: `Delete ${value.name}`,
-      body:
-        value.provider_count + value.node_count > 0
-          ? "Whatever is keyed with this token is left without it once it is gone."
-          : "The token is deleted from this box.",
+      body: tokenDeleteBody(value.provider_count, value.node_count),
       confirmLabel: "Delete",
       onConfirm: () => void deleteToken(),
     });
 
   const deleteToken = async () => {
-    const inUse = value.provider_count + value.node_count > 0;
     setIsBusy(true);
     setError(null);
     try {
-      await apiDelete(
-        `${TOKENS_PATH}/${value.id}${inUse ? "?force=true" : ""}`,
-      );
+      await apiDelete(`${TOKENS_PATH}/${value.id}`);
       onDeleted(value.id);
     } catch (cause: unknown) {
-      setError(describeTokenDeleteError(cause));
+      setError(describeError(cause));
       setIsBusy(false);
     }
   };
@@ -995,18 +973,19 @@ function TokenCard({ value, onSaved, onEdit, onDeleted }: TokenCardProps) {
   );
 }
 
+/** One count with its pluralized noun, e.g. "2 devices". */
+function countNoun(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
 /** The usage tag's wording: which counts are nonzero, joined. */
-function loginUsage(login: LoginView): string {
+function loginUsage(deviceCount: number, serviceCount: number): string {
   const parts: string[] = [];
-  if (login.device_count > 0) {
-    parts.push(
-      `${login.device_count} device${login.device_count === 1 ? "" : "s"}`,
-    );
+  if (deviceCount > 0) {
+    parts.push(countNoun(deviceCount, "device"));
   }
-  if (login.service_count > 0) {
-    parts.push(
-      `${login.service_count} service${login.service_count === 1 ? "" : "s"}`,
-    );
+  if (serviceCount > 0) {
+    parts.push(countNoun(serviceCount, "service"));
   }
   return parts.length === 0 ? "unused" : parts.join(" · ");
 }
@@ -1015,31 +994,57 @@ function loginUsage(login: LoginView): string {
 function tokenUsage(providerCount: number, nodeCount: number): string {
   const parts: string[] = [];
   if (providerCount > 0) {
-    parts.push(`${providerCount} provider${providerCount === 1 ? "" : "s"}`);
+    parts.push(countNoun(providerCount, "provider"));
   }
   if (nodeCount > 0) {
-    parts.push(`${nodeCount} node${nodeCount === 1 ? "" : "s"}`);
+    parts.push(countNoun(nodeCount, "node"));
   }
   return parts.length === 0 ? "unused" : parts.join(" · ");
 }
 
-/** Wording for a refused token delete, the coded refusal spelled out. */
-function describeTokenDeleteError(cause: unknown): string {
-  if (
-    cause instanceof ApiError &&
-    cause.code === "token_in_use" &&
-    typeof cause.detail === "object" &&
-    cause.detail !== null
-  ) {
-    const detail = cause.detail as Record<string, unknown>;
-    const params = (detail.params ?? {}) as Record<string, unknown>;
-    const usage = tokenUsage(
-      Number(params.provider_count) || 0,
-      Number(params.node_count) || 0,
-    );
-    return usage === "unused"
-      ? "The token is still in use."
-      : `The token is still in use: ${usage}.`;
+/** The delete confirmation's body for a key: who loses it. */
+function keyDeleteBody(deviceCount: number): string {
+  if (deviceCount === 0) {
+    return "The private key is deleted from this box.";
   }
-  return describeError(cause);
+  const verb = deviceCount === 1 ? "loses" : "lose";
+  return `${countNoun(deviceCount, "device")} ${verb} this key and will need a new one.`;
+}
+
+/** The delete confirmation's body for a login: who loses it. */
+function loginDeleteBody(deviceCount: number, serviceCount: number): string {
+  const parts: string[] = [];
+  if (deviceCount > 0) {
+    parts.push(countNoun(deviceCount, "device"));
+  }
+  if (serviceCount > 0) {
+    parts.push(countNoun(serviceCount, "service"));
+  }
+  if (parts.length === 0) {
+    return "The login and its password are deleted from this box.";
+  }
+  const verb = deviceCount + serviceCount === 1 ? "loses" : "lose";
+  return `${parts.join(" and ")} ${verb} this login and will need a new one.`;
+}
+
+/** The delete confirmation's body for a token: who loses it. */
+function tokenDeleteBody(providerCount: number, nodeCount: number): string {
+  const parts: string[] = [];
+  if (providerCount > 0) {
+    parts.push(countNoun(providerCount, "provider"));
+  }
+  if (nodeCount > 0) {
+    parts.push(countNoun(nodeCount, "node"));
+  }
+  if (parts.length === 0) {
+    return "The token is deleted from this box.";
+  }
+  const verb = providerCount + nodeCount === 1 ? "loses" : "lose";
+  const disabled =
+    nodeCount === 0
+      ? ""
+      : nodeCount === 1
+        ? " The node is disabled."
+        : " The nodes are disabled.";
+  return `${parts.join(" and ")} ${verb} this token and will need a new one.${disabled}`;
 }
