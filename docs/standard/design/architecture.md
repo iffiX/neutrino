@@ -194,20 +194,23 @@ process writes there, so the CLI and the page need no service restart.
 ## The credential vault
 
 Every secret the hub keeps for somebody is sealed in one store:
-`config/credentials/vault.json`, one AES-256-GCM ciphertext per object under
-a random data key. The rest of `config/` holds references — `key_id`,
-`password_id`, `sudo_password_id`, `login_id`, `secret_id` — and no secret
-material at all.
+`config/credentials/vault.json`. The file has two members and nothing
+readable — the wrapped data key, and one AES-256-GCM ciphertext sealing
+every record whole, names, kinds, metadata and timestamps included, so the
+file does not even say what it holds. The rest of `config/` holds
+references — `key_id`, `password_id`, `sudo_password_id`, `login_id`,
+`secret_id` — and no secret material at all.
 
-| kind | sealed | plaintext meta |
-| --- | --- | --- |
-| `token` | value | — |
-| `login` | password, username | — |
-| `ssh_key` | private_key, passphrase | key_type, fingerprint |
+| kind | sealed |
+| --- | --- |
+| `token` | value |
+| `login` | password, username |
+| `ssh_key` | private_key, passphrase, key_type, fingerprint |
 
-Names, kinds and timestamps stay readable, so the file says what it holds
-without saying what anything is. Each object's AAD binds its ciphertext to its
-id and kind; two objects cannot be swapped.
+Inside the outer seal each object is a ciphertext of its own, its AAD
+binding it to its id and kind; two objects cannot be swapped. A locked
+vault therefore hides even the list — the panel shows that credentials
+exist to be unlocked, not what they are.
 
 The data key never sits in `config/`. The store carries it wrapped under the
 master passphrase chosen at setup (scrypt → AES-256-GCM), so backing up

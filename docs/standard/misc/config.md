@@ -61,13 +61,15 @@ references a token from the Credentials page, and deleting the provider
 leaves the token where it is.
 
 **The vault** — every secret sits sealed in
-`config/credentials/vault.json`, one AES-256-GCM ciphertext per object under
-a random data key. The data key itself rides in the same file wrapped under
-the master passphrase chosen at setup, and the working copy is state at
-`/var/lib/neutrino/vault.key` (mode 0600) — so `config/` holds no unsealed
-secret, and a box without the state key is a locked vault that refuses with
-`vault_locked` until a restore supplies the passphrase. `nhub vault rekey`
-wraps the data key under a new passphrase; nothing sealed is re-encrypted.
+`config/credentials/vault.json`, whose only readable member is the wrapped
+data key: the records ride as one AES-256-GCM ciphertext, names and kinds
+included, so the file says nothing about what it holds. The data key rides
+wrapped under the master passphrase chosen at setup, and the working copy is
+state at `/var/lib/neutrino/vault.key` (mode 0600) — so `config/` holds no
+unsealed secret, and a box without the state key is a locked vault that
+refuses with `vault_locked`, listings included, until a restore supplies the
+passphrase. `nhub vault rekey` wraps the data key under a new passphrase;
+nothing sealed is re-encrypted.
 
 ## First-run flow
 

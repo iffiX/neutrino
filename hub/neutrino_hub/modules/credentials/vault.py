@@ -1,9 +1,10 @@
 """Every secret the hub keeps for somebody, sealed in one store.
 
-One AES-256-GCM ciphertext per object in ``config/credentials/vault.json``,
-under a random data key. Names, kinds and timestamps stay readable, so the
-file says what it holds without saying what anything is; each object's AAD
-binds its ciphertext to its id and kind, so two objects cannot be swapped.
+``config/credentials/vault.json`` holds two members and nothing readable:
+the wrapped data key, and one AES-256-GCM ciphertext sealing every record —
+names, kinds, metadata and timestamps included, so the file does not even
+say what it holds. Inside the seal each object is a ciphertext of its own,
+its AAD binding it to its id and kind, so two objects cannot be swapped.
 
 The data key never sits in ``config/``. The store carries it wrapped under
 the master passphrase (scrypt, then AES-256-GCM), so a backup of ``config/``
@@ -45,6 +46,7 @@ VAULT_KEY_BYTES = 32
 VAULT_NONCE_BYTES = 12
 VAULT_WRAP_SALT_BYTES = 16
 VAULT_WRAP_AAD = b"neutrino-vault-data-key"
+VAULT_RECORDS_AAD = b"neutrino-vault-records"
 VAULT_SCRYPT_N = 2**15
 VAULT_SCRYPT_R = 8
 VAULT_SCRYPT_P = 1
@@ -302,13 +304,13 @@ class SecretVault:
                 passphrase does not open its wrapped key.
         """
         with _WRITE_LOCK:
-            store = self._read_store()
+            store = self._read_store(is_opened=False)
             if store.get("wrapped_key"):
                 try:
                     write_state_key(unwrap_data_key(passphrase, store["wrapped_key"]))
                     return False
                 except VaultPassphraseError:
-                    if store["secrets"]:
+                    if store.get("sealed"):
                         raise
             data_key = secrets.token_bytes(VAULT_KEY_BYTES)
             store["wrapped_key"] = wrap_data_key(passphrase, data_key)
@@ -337,7 +339,7 @@ class SecretVault:
         Returns:
             The ``wrapped_key`` object, or None before setup wrote one.
         """
-        return self._read_store().get("wrapped_key")
+        return self._read_store(is_opened=False).get("wrapped_key")
 
     def is_locked(self) -> bool:
         """Whether vault operations would refuse for want of the data key.
@@ -585,7 +587,23 @@ class SecretVault:
             created_at=entry.get("created_at", ""),
         )
 
-    def _read_store(self) -> dict:
+    def _read_store(self, *, is_opened: bool = True) -> dict:
+        """Read the store, opening the sealed records unless told not to.
+
+        Args:
+            is_opened: Whether to unseal the records. The bootstrap paths —
+                reading the wrapped key, initializing — must work with no
+                data key on the box, and they pass False.
+
+        Returns:
+            The store, with ``secrets`` as a plaintext mapping when opened.
+
+        Raises:
+            VaultLockedError: If opening is asked for and there is no data
+                key on this box.
+            VaultError: If the version is not this one's, or the sealed
+                records do not decrypt or parse.
+        """
         try:
             data = read_config(CREDENTIALS_VAULT_PATH)
         except FileNotFoundError:
@@ -593,17 +611,37 @@ class SecretVault:
         version = data.get("version", CREDENTIALS_VAULT_VERSION)
         if version != CREDENTIALS_VAULT_VERSION:
             raise VaultError(f"vault version {version!r} is not supported")
-        return {
+        store = {
             "version": CREDENTIALS_VAULT_VERSION,
             "wrapped_key": data.get("wrapped_key"),
-            "secrets": data.get("secrets", {}),
+            "sealed": data.get("sealed"),
+            "secrets": {},
+            "is_opened": is_opened,
         }
+        if is_opened and store["sealed"]:
+            opened = unseal_bytes(store["sealed"], VAULT_RECORDS_AAD)
+            try:
+                store["secrets"] = json.loads(opened.decode("utf-8"))
+            except ValueError as error:
+                raise VaultError("the sealed records are malformed") from error
+        return store
 
     def _write_store(self, store: dict) -> None:
-        written = {
-            "version": CREDENTIALS_VAULT_VERSION,
-            "secrets": store.get("secrets", {}),
-        }
+        """Write the store, sealing the records whole.
+
+        Nothing about a record — name, kind, meta, timestamp — is readable
+        in the file; the wrapped key is the only cleartext member, and it is
+        itself a ciphertext with its derivation parameters.
+        """
+        written = {"version": CREDENTIALS_VAULT_VERSION}
         if store.get("wrapped_key"):
             written["wrapped_key"] = store["wrapped_key"]
+        if store.get("secrets"):
+            written["sealed"] = seal_bytes(
+                json.dumps(store["secrets"]).encode("utf-8"), VAULT_RECORDS_AAD
+            )
+        elif not store.get("is_opened") and store.get("sealed"):
+            # Records a bootstrap write never opened ride through untouched;
+            # an opened store whose last record was deleted writes none.
+            written["sealed"] = store["sealed"]
         write_config(CREDENTIALS_VAULT_PATH, written)
