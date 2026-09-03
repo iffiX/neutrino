@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import { StatusDot } from "./status_dot";
 import type { StatusTone } from "./status_dot";
 import { computeActiveExits, primaryExitTag } from "../active_exits";
+import { formatCompact } from "../format_compact";
 import { describeProxy } from "../proxy_status";
 import type { CliproxyApiStatusView, NetworkView } from "../api_types";
 import { NAV_ITEMS } from "../nav_items";
@@ -117,12 +118,11 @@ export function TopBar() {
 }
 
 /**
- * What the AI chip says.
+ * What the AI chip says: what the gateway has served today.
  *
- * A placeholder for the number this chip is meant to carry: what the gateway
- * has served. CLIProxyAPI publishes only the chat endpoints — no usage, no
- * metrics — so a token count has to be counted here first, and until it is,
- * the honest thumbnail of that page is how many providers are behind it.
+ * The count falls back to how many providers are behind the gateway while
+ * usage is absent or zero — a hub that served nothing today has nothing to
+ * report but is still worth a thumbnail.
  */
 function describeAi(status: CliproxyApiStatusView | null): string {
   if (status === null) {
@@ -133,6 +133,10 @@ function describeAi(status: CliproxyApiStatusView | null): string {
   }
   if (!status.is_active) {
     return "stopped";
+  }
+  const tokensToday = status.tokens_today ?? 0;
+  if (tokensToday > 0) {
+    return `${formatCompact(tokensToday)} tokens today`;
   }
   const count = status.enabled_provider_count;
   return `${count} provider${count === 1 ? "" : "s"}`;
