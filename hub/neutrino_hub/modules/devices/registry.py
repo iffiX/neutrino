@@ -6,6 +6,7 @@ has never touched is shown but not stored; the moment it gets a name or SSH
 credentials it becomes a stored device and survives reboots.
 """
 
+import hashlib
 import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -42,13 +43,27 @@ def feature_wish(stored) -> dict:
     return {"is_enabled": bool(stored), "is_activated": False}
 
 
+def _token_digest(token: str) -> str:
+    """The stored form of a heartbeat token.
+
+    Args:
+        token: The raw token an agent holds.
+
+    Returns:
+        Its SHA-256 hex.
+    """
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 @dataclass
 class DeviceClientInfo:
     """State reported by the neutrino_agent agent on a device.
 
     Attributes:
-        token: Shared secret the agent authenticates its heartbeats with; a
-            token nobody has used yet is an offer, not management.
+        token_sha256: SHA-256 hex of the shared secret the agent
+            authenticates its heartbeats with; the raw token exists only in
+            the enroll reply and on the device. A token nobody has used yet
+            is an offer, not management.
         version: Agent version from the last heartbeat.
         last_seen: ISO timestamp of the last heartbeat.
         cpu_percent: Latest processor load, when reported.
@@ -63,7 +78,7 @@ class DeviceClientInfo:
         target_user: The account whose home the agent writes tool configs into.
     """
 
-    token: str | None = None
+    token_sha256: str | None = None
     version: str | None = None
     last_seen: str | None = None
     cpu_percent: float | None = None
@@ -85,7 +100,7 @@ class DeviceClientInfo:
             The parsed info.
         """
         return cls(
-            token=data.get("token"),
+            token_sha256=data.get("token_sha256"),
             version=data.get("version"),
             last_seen=data.get("last_seen"),
             features=data.get("features", {}),
@@ -103,7 +118,7 @@ class DeviceClientInfo:
             A JSON-ready object.
         """
         return {
-            "token": self.token,
+            "token_sha256": self.token_sha256,
             "version": self.version,
             "last_seen": self.last_seen,
             "features": self.features,
@@ -152,7 +167,7 @@ class ManagedDevice:
         heartbeat is what turns the offer into management. The hub lets go
         by deleting the token; the device lets go by leaving.
         """
-        return bool(self.client.token and self.client.last_seen)
+        return bool(self.client.token_sha256 and self.client.last_seen)
 
     @property
     def is_agent_online(self) -> bool:
@@ -180,7 +195,9 @@ class ManagedDevice:
     @property
     def is_stored(self) -> bool:
         """Whether this device has anything worth persisting."""
-        return bool(self.name or self.ssh or self.is_wol_enabled or self.client.token)
+        return bool(
+            self.name or self.ssh or self.is_wol_enabled or self.client.token_sha256
+        )
 
     def to_dict(self) -> dict:
         """Serialize to the ``devices.json`` shape.
@@ -340,24 +357,28 @@ class DeviceRegistry:
         return False
 
     def issue_client_token(self, mac_address: str) -> str:
-        """Create and store a heartbeat token for a device.
+        """Create a heartbeat token for a device, storing only its hash.
 
         A fresh token is generated every time the agent is installed, so
-        reinstalling invalidates the old one. The device does not become
-        managed here: an install can still fail after the token exists, and
-        it is the first heartbeat that proves an agent is really there.
+        reinstalling invalidates the old one. The raw token goes to the
+        device and nowhere else; ``devices.json`` holds its SHA-256, so the
+        file authenticates heartbeats without carrying what an agent
+        presents. The device does not become managed here: an install can
+        still fail after the token exists, and it is the first heartbeat
+        that proves an agent is really there.
 
         Args:
             mac_address: The device's MAC.
 
         Returns:
-            The new token.
+            The new raw token, for the enroll reply alone.
         """
         with _WRITE_LOCK:
             device = self._fresh(mac_address)
-            device.client.token = secrets.token_urlsafe(AGENT_TOKEN_BYTES)
+            token = secrets.token_urlsafe(AGENT_TOKEN_BYTES)
+            device.client.token_sha256 = _token_digest(token)
             self._store(device)
-            return device.client.token
+            return token
 
     def find_by_client_token(self, token: str) -> ManagedDevice | None:
         """Look up the device a heartbeat token belongs to.
@@ -368,9 +389,10 @@ class DeviceRegistry:
         Returns:
             The matching device, or None when the token is unknown.
         """
+        presented = _token_digest(token)
         for mac_address, entry in self._stored.items():
-            stored_token = entry.get("client", {}).get("token")
-            if stored_token and secrets.compare_digest(stored_token, token):
+            stored = entry.get("client", {}).get("token_sha256")
+            if stored and secrets.compare_digest(stored, presented):
                 return self._from_stored(mac_address, entry)
         return None
 
@@ -401,7 +423,7 @@ class DeviceRegistry:
         """
         with _WRITE_LOCK:
             device = self._fresh(mac_address)
-            device.client.token = None
+            device.client.token_sha256 = None
             device.client.version = None
             device.client.last_seen = None
             device.client.features = {}

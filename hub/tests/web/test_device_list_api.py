@@ -68,7 +68,9 @@ def api(monkeypatch):
         name="xenode",
         ipv4_address="192.168.100.2",
         client=DeviceClientInfo(
-            token="t", last_seen="2026-01-01T00:00:00+00:00", version="0.3.0"
+            token_sha256="t" * 64,
+            last_seen="2026-01-01T00:00:00+00:00",
+            version="0.3.0",
         ),
     )
     monkeypatch.setattr(devices_router, "DeviceRegistry", FakeRegistry)

@@ -39,8 +39,9 @@ class FakeRegistry:
         return ManagedDevice(mac_address=mac_address.lower())
 
     def find_by_client_token(self, token):
-        stored = FakeRegistry.device.client.token
-        return FakeRegistry.device if stored and stored == token else None
+        stored = FakeRegistry.device.client.token_sha256
+        presented = hashlib.sha256(token.encode()).hexdigest()
+        return FakeRegistry.device if stored and stored == presented else None
 
     def record_heartbeat(self, mac_address, *, version, seen_at):
         FakeRegistry.device.client.version = version
@@ -58,12 +59,14 @@ class FakeRegistry:
         return FakeRegistry.device
 
     def issue_client_token(self, mac_address):
-        FakeRegistry.device.client.token = "issued-token"
+        FakeRegistry.device.client.token_sha256 = hashlib.sha256(
+            b"issued-token"
+        ).hexdigest()
         return "issued-token"
 
     def forget_client(self, mac_address):
         client = FakeRegistry.device.client
-        client.token = None
+        client.token_sha256 = None
         client.version = None
         client.last_seen = None
         client.features = {}
@@ -97,7 +100,8 @@ def api(monkeypatch):
         name="testbox",
         ssh={"host": "10.0.0.5", "username": "me"},
         client=DeviceClientInfo(
-            token="device-token", last_seen="2026-01-01T00:00:00+00:00"
+            token_sha256=hashlib.sha256(b"device-token").hexdigest(),
+            last_seen="2026-01-01T00:00:00+00:00",
         ),
     )
     FakeRegistry.reset(device)
@@ -181,7 +185,7 @@ def test_leaving_drops_the_agent_but_keeps_the_device(api):
     response = client.post("/api/agent/leave", json={"token": "device-token"})
 
     assert response.status_code == 200
-    assert device.client.token is None
+    assert device.client.token_sha256 is None
     # What the owner gave it survives; only the agent is gone.
     assert device.name == "testbox"
     assert device.ssh == {"host": "10.0.0.5", "username": "me"}
@@ -193,7 +197,7 @@ def test_leaving_with_an_unknown_token_is_refused(api):
     client, _, device = api
     response = client.post("/api/agent/leave", json={"token": "nonsense"})
     assert response.status_code == 401
-    assert device.client.token is not None
+    assert device.client.token_sha256 is not None
 
 
 def test_enrolling_with_a_ticket_issues_a_token(api):
@@ -334,7 +338,7 @@ def test_a_newer_agent_is_turned_away_with_a_code(api):
         "params": {"hub_version": "1.2.3", "agent_version": "1.3.0"},
     }
     # The token survives, so a beat from a matching build still lands.
-    assert device.client.token == "device-token"
+    assert device.client.token_sha256 == hashlib.sha256(b"device-token").hexdigest()
     accepted = client.post(
         "/api/agent/heartbeat",
         json={"token": "device-token", "hostname": "x", "client_version": "1.2.3"},
