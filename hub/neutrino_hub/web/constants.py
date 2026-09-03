@@ -21,11 +21,15 @@ WEB_SESSION_SECRET_BYTES = 32
 WEB_DEFAULT_LISTEN_PORT = 8080
 
 # The agent channel: the /api/agent routes on their own TLS port, pinned by
-# the fingerprint every enrollment link carries.
+# the fingerprint every enrollment link carries. The certificate is public
+# and travels plainly in a backup; the private key beside it is sealed under
+# the vault's data key, and the unsealed copy uvicorn serves with is state.
 WEB_DEFAULT_AGENT_LISTEN_PORT = 8443
 WEB_AGENT_TLS_DIR = UTILS_CONFIG_DIR / "web" / "agent_tls"
 WEB_AGENT_TLS_CERT_PATH = WEB_AGENT_TLS_DIR / "certificate.pem"
-WEB_AGENT_TLS_KEY_PATH = WEB_AGENT_TLS_DIR / "key.pem"
+WEB_AGENT_TLS_SEALED_KEY_PATH = WEB_AGENT_TLS_DIR / "key.sealed"
+WEB_AGENT_TLS_SERVED_KEY_PATH = UTILS_STATE_ROOT / "agent_tls_key.pem"
+WEB_AGENT_TLS_KEY_AAD = b"agent_tls:key"
 WEB_AGENT_TLS_SUBJECT = "neutrino-hub"
 # Verification is the pinned fingerprint, not the validity window, so the
 # certificate simply has to outlive the box.

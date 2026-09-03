@@ -51,7 +51,7 @@ RESET_COLLECTED_PATHS = (
 # state a fresh box mints for itself, and the next owner must not inherit.
 # The vault's data key in particular — left behind, it opens whatever store
 # the next owner restores under the same wrap.
-RESET_STATE_PATHS = ("session.secret", "vault.key")
+RESET_STATE_PATHS = ("session.secret", "vault.key", "agent_tls_key.pem")
 RESET_EXAMPLE_SUFFIX = ".example.json"
 RESET_PANEL_UNIT = "web"
 RESET_TARGETS = {

@@ -52,10 +52,10 @@ from neutrino_hub.utils.constants import (
     UTILS_GENERATED_DIR,
     is_dev_root_set,
 )
-from neutrino_hub.web.agent_tls import ensure_certificate
+from neutrino_hub.modules.credentials.vault import VaultError
+from neutrino_hub.web.agent_tls import ensure_certificate, write_served_key
 from neutrino_hub.web.constants import (
     WEB_AGENT_TLS_CERT_PATH,
-    WEB_AGENT_TLS_KEY_PATH,
     WEB_DEFAULT_AGENT_LISTEN_PORT,
     WEB_DEFAULT_LISTEN_PORT,
 )
@@ -303,8 +303,9 @@ def _serve_panel(arguments) -> int:
     """Run the control panel and the agent channel, and nothing else.
 
     Two servers, one loop: the panel on plain HTTP, the agent routes on their
-    own TLS port. ``--reload`` serves the panel alone, because uvicorn's
-    reloader supervises a single server.
+    own TLS port — the latter only when the vault's data key can unseal the
+    channel's private key. ``--reload`` serves the panel alone, because
+    uvicorn's reloader supervises a single server.
 
     Args:
         arguments: The parsed command line.
@@ -324,7 +325,6 @@ def _serve_panel(arguments) -> int:
             log_level="info",
         )
         return 0
-    ensure_certificate()
     panel_server = uvicorn.Server(
         uvicorn.Config(
             APPLICATION_PATH,
@@ -334,19 +334,45 @@ def _serve_panel(arguments) -> int:
             log_level="info",
         )
     )
-    agent_server = uvicorn.Server(
-        uvicorn.Config(
-            AGENT_APPLICATION_PATH,
-            factory=True,
-            host=arguments.host,
-            port=_configured_agent_port(),
-            log_level="info",
-            ssl_certfile=str(WEB_AGENT_TLS_CERT_PATH),
-            ssl_keyfile=str(WEB_AGENT_TLS_KEY_PATH),
+    servers = [panel_server]
+    agent_key_path = _agent_key()
+    if agent_key_path is not None:
+        servers.append(
+            uvicorn.Server(
+                uvicorn.Config(
+                    AGENT_APPLICATION_PATH,
+                    factory=True,
+                    host=arguments.host,
+                    port=_configured_agent_port(),
+                    log_level="info",
+                    ssl_certfile=str(WEB_AGENT_TLS_CERT_PATH),
+                    ssl_keyfile=str(agent_key_path),
+                )
+            )
         )
-    )
-    asyncio.run(_serve_together([panel_server, agent_server]))
+    asyncio.run(_serve_together(servers))
     return 0
+
+
+def _agent_key():
+    """Unseal the agent channel's key into the file uvicorn serves with.
+
+    Returns:
+        The served key's path, or None when the channel cannot start — a
+        locked vault, or a sealed key that will not open. The panel is served
+        either way; the refusal is one coded line in the log.
+    """
+    try:
+        ensure_certificate()
+        return write_served_key()
+    except (VaultError, OSError, ValueError) as error:
+        code = getattr(error, "code", "agent_tls_key_unavailable")
+        print(
+            f'error: {{"code": "{code}"}}: the agent channel cannot start '
+            f"({error}); serving the panel alone",
+            file=sys.stderr,
+        )
+        return None
 
 
 async def _serve_together(servers: list) -> None:

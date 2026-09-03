@@ -53,7 +53,8 @@ from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.system.units import SystemdUnitInstaller
 from neutrino_hub.utils.json_file import read_config, write_generated
-from neutrino_hub.web.agent_tls import ensure_certificate
+from neutrino_hub.modules.credentials.vault import VaultError
+from neutrino_hub.web.agent_tls import ensure_certificate, write_served_key
 from neutrino_hub.web.constants import (
     WEB_AGENT_TLS_CERT_PATH,
     WEB_DEFAULT_AGENT_LISTEN_PORT,
@@ -105,8 +106,17 @@ def main() -> int:
         _print_artifacts(artifacts)
         return 0
 
-    if ensure_certificate():
-        print(f"agent certificate generated at {WEB_AGENT_TLS_CERT_PATH}")
+    try:
+        if ensure_certificate():
+            print(f"agent certificate generated at {WEB_AGENT_TLS_CERT_PATH}")
+        write_served_key()
+    except (VaultError, OSError, ValueError) as error:
+        code = getattr(error, "code", "agent_tls_key_unavailable")
+        print(
+            f'error: {{"code": "{code}"}}: the agent channel has no served key '
+            f"({error})",
+            file=sys.stderr,
+        )
 
     try:
         _write(artifacts)
