@@ -18,6 +18,7 @@ from neutrino_hub.modules.credentials.vault import VaultLockedError
 from neutrino_hub.web import ws
 from neutrino_hub.web.constants import WEB_FRONTEND_DIST_DIR
 from neutrino_hub.web.panel_runtime import PanelRuntime
+from neutrino_hub.web.usage_collector import PanelUsageCollector
 from neutrino_hub.web.routers import (
     agent,
     ai,
@@ -62,6 +63,7 @@ API_ROUTERS = (
 )
 
 _shared_runtime = None
+_usage_collector = None
 
 
 def create_app() -> FastAPI:
@@ -73,6 +75,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Neutrino Hub", docs_url=None, redoc_url=None)
     app.state.runtime = _runtime()
     app.add_exception_handler(VaultLockedError, _vault_locked)
+    _start_usage_collector()
 
     for router in API_ROUTERS:
         app.include_router(router)
@@ -122,6 +125,14 @@ def _runtime() -> PanelRuntime:
     if _shared_runtime is None:
         _shared_runtime = PanelRuntime()
     return _shared_runtime
+
+
+def _start_usage_collector() -> None:
+    """The process-wide usage poller, started with the panel application."""
+    global _usage_collector
+    if _usage_collector is None:
+        _usage_collector = PanelUsageCollector()
+        _usage_collector.start()
 
 
 def _mount_frontend(app: FastAPI) -> None:

@@ -572,6 +572,80 @@ class CliproxyApiStatusView(BaseModel):
     is_reachable: bool = False
     probe_message: str = ""
     enabled_provider_count: int = 0
+    # The strip's numbers: the current UTC day, tokens as input plus output.
+    requests_today: int = 0
+    tokens_today: int = 0
+
+
+class CliproxyApiUsageRates(BaseModel):
+    """Requests and tokens per minute, averaged over the last hour."""
+
+    rpm: float = 0.0
+    tpm: float = 0.0
+
+
+class CliproxyApiUsageTotals(BaseModel):
+    """One counter set over a range or bucket."""
+
+    requests: int = 0
+    failed: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+
+
+class CliproxyApiUsageBucket(CliproxyApiUsageTotals):
+    """One series bucket: an ISO hour for day range, a date for the rest."""
+
+    bucket: str
+
+
+class CliproxyApiUsageKey(CliproxyApiUsageTotals):
+    """One client key's usage over the range."""
+
+    key_id: str
+    name: str
+    device_name: str | None = None
+    first_seen_at: str = ""
+    last_seen_at: str = ""
+
+
+class CliproxyApiHealthBucket(BaseModel):
+    """One hour of a provider's health bar."""
+
+    bucket: str
+    requests: int = 0
+    failed: int = 0
+
+
+class CliproxyApiUsageProvider(CliproxyApiUsageTotals):
+    """One upstream provider's usage over the range."""
+
+    provider_id: str
+    name: str
+    kind: str
+    first_seen_at: str = ""
+    last_seen_at: str = ""
+    health: list[CliproxyApiHealthBucket] = Field(default_factory=list)
+
+
+class CliproxyApiUsageView(BaseModel):
+    """The usage answer: rates, totals, the series, keys and providers."""
+
+    range: str
+    generated_at: str
+    rates: CliproxyApiUsageRates
+    totals: CliproxyApiUsageTotals
+    series: list[CliproxyApiUsageBucket] = Field(default_factory=list)
+    keys: list[CliproxyApiUsageKey] = Field(default_factory=list)
+    providers: list[CliproxyApiUsageProvider] = Field(default_factory=list)
+
+
+class CliproxyApiJournalView(BaseModel):
+    """The AI gateway's journal tail, most recent last."""
+
+    lines: list[str] = Field(default_factory=list)
 
 
 class CliproxyApiKeyCreate(BaseModel):

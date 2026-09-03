@@ -28,6 +28,15 @@ CLIPROXYAPI_MANAGEMENT_SEALED_KEY_RELATIVE = "cliproxyapi/management_key.sealed"
 CLIPROXYAPI_MANAGEMENT_KEY_RELATIVE = "cliproxyapi/management.key"
 CLIPROXYAPI_MANAGEMENT_KEY_AAD = b"cliproxyapi:management_key"
 
+# Usage metering: the collector pops the gateway's per-request queue and
+# accumulates under the state root. Days are kept forever; hours carry the
+# day series and the health bars; minutes carry the rpm/tpm window.
+CLIPROXYAPI_USAGE_RELATIVE = "cliproxyapi/usage.json"
+CLIPROXYAPI_USAGE_POLL_INTERVAL_S = 30
+CLIPROXYAPI_USAGE_QUEUE_COUNT = 1000
+CLIPROXYAPI_USAGE_HOURS_KEPT = 48
+CLIPROXYAPI_USAGE_MINUTES_KEPT = 90
+
 CLIPROXYAPI_SUPPORTED_ARCHITECTURES = ("amd64", "arm64")
 # The vendor's release assets name arm64 the kernel way.
 CLIPROXYAPI_ASSET_ARCHITECTURES = {"amd64": "amd64", "arm64": "aarch64"}
