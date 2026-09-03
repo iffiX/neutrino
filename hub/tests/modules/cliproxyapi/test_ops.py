@@ -8,6 +8,7 @@ from neutrino_hub.modules.cliproxyapi import ops
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_GENERATED_NAME
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier
 from neutrino_hub.modules.ai.registry import AiProviderRegistry
+from neutrino_hub.modules.credentials.vault import SecretVault
 from tests.conftest import unlock_vault
 
 
@@ -33,11 +34,16 @@ def _rendered(box) -> dict:
 
 
 def test_the_sealed_key_reaches_the_rendered_file(box):
+    token_id = (
+        SecretVault()
+        .add(kind="token", name="relay key", secret={"value": "sealed-key"})
+        .id
+    )
     AiProviderRegistry().add(
         name="relay",
         kind="custom",
         base_url="https://relay.example/v1",
-        api_key="sealed-key",
+        secret_id=token_id,
     )
     message = CliproxyApiConfigApplier().apply()
     assert message == "rendered; the service is not installed yet"
@@ -47,7 +53,7 @@ def test_the_sealed_key_reaches_the_rendered_file(box):
 
 def test_a_provider_with_no_sealed_key_renders_nothing(box):
     AiProviderRegistry().add(
-        name="relay", kind="custom", base_url="https://relay.example/v1", api_key=""
+        name="relay", kind="custom", base_url="https://relay.example/v1"
     )
     CliproxyApiConfigApplier().apply()
     assert "openai-compatibility" not in _rendered(box)

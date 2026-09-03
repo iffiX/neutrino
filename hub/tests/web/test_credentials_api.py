@@ -253,3 +253,99 @@ def test_a_locked_vault_answers_with_its_code(client, tmp_path):
 
     assert refused.status_code == 400
     assert refused.json()["detail"] == {"code": "vault_locked", "params": {}}
+
+
+# --- Tokens ---
+
+
+def test_token_roundtrip(client):
+    assert client.get("/api/credentials/tokens").json() == {"tokens": []}
+
+    created = client.post(
+        "/api/credentials/tokens",
+        json={"name": "relay key", "value": "sk-one"},  # scan: allow
+    )
+    assert created.status_code == 200
+    view = created.json()
+    assert view["name"] == "relay key"
+    assert view["provider_count"] == 0
+    assert "value" not in view
+
+    listed = client.get("/api/credentials/tokens").json()["tokens"]
+    assert [item["name"] for item in listed] == ["relay key"]
+
+    renamed = client.put(
+        f"/api/credentials/tokens/{view['id']}", json={"name": "relay key 2"}
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["name"] == "relay key 2"
+    assert SecretVault().open(view["id"]) == {"value": "sk-one"}
+
+    blank_value = client.put(
+        f"/api/credentials/tokens/{view['id']}", json={"value": ""}
+    )
+    assert blank_value.status_code == 200
+    assert SecretVault().open(view["id"]) == {"value": "sk-one"}
+
+    replaced = client.put(
+        f"/api/credentials/tokens/{view['id']}", json={"value": "sk-two"}  # scan: allow
+    )
+    assert replaced.status_code == 200
+    assert SecretVault().open(view["id"]) == {"value": "sk-two"}
+
+    assert client.delete(f"/api/credentials/tokens/{view['id']}").status_code == 200
+    assert client.get("/api/credentials/tokens").json() == {"tokens": []}
+
+
+def test_token_refusals(client):
+    blank_value = client.post(
+        "/api/credentials/tokens", json={"name": "relay key", "value": ""}
+    )
+    assert blank_value.status_code == 400
+    assert blank_value.json()["detail"] == {"code": "token_value_needed", "params": {}}
+    refused = client.put("/api/credentials/tokens/absent", json={"name": "x"})
+    assert refused.status_code == 404
+    assert refused.json()["detail"]["code"] == "unknown_token"
+    assert client.delete("/api/credentials/tokens/absent").status_code == 404
+
+
+def test_a_token_referenced_by_a_provider_blocks_delete(client):
+    from neutrino_hub.modules.ai.registry import AiProviderRegistry
+
+    created = client.post(
+        "/api/credentials/tokens",
+        json={"name": "relay key", "value": "sk-one"},  # scan: allow
+    )
+    token_id = created.json()["id"]
+    AiProviderRegistry().add(
+        name="relay", kind="custom", base_url="", secret_id=token_id
+    )
+
+    listed = client.get("/api/credentials/tokens").json()["tokens"]
+    assert listed[0]["provider_count"] == 1
+
+    refused = client.delete(f"/api/credentials/tokens/{token_id}")
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == {
+        "code": "token_in_use",
+        "params": {"provider_count": 1},
+    }
+
+    forced = client.delete(f"/api/credentials/tokens/{token_id}?force=true")
+    assert forced.status_code == 200
+    assert client.get("/api/credentials/tokens").json() == {"tokens": []}
+
+
+def test_a_token_of_another_kind_is_not_addressable(client):
+    login = client.post(
+        "/api/credentials/logins",
+        json={"name": "not a token", "password": STORED_PASSWORD},
+    ).json()
+    assert client.get("/api/credentials/tokens").json() == {"tokens": []}
+    assert (
+        client.put(
+            f"/api/credentials/tokens/{login['id']}", json={"name": "x"}
+        ).status_code
+        == 404
+    )
+    assert client.delete(f"/api/credentials/tokens/{login['id']}").status_code == 404

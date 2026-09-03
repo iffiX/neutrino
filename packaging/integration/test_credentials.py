@@ -159,7 +159,15 @@ def test_ssh_key_material_never_reads_back(panel):
     assert panel.status("DELETE", f"/credentials/ssh_keys/{created['id']}") == 200
 
 
-def test_ai_provider_key_is_write_only(panel):
+def test_a_provider_references_a_token_and_outlives_neither_way(panel):
+    status, token = panel.call(
+        "POST",
+        "/credentials/tokens",
+        {"name": f"itest relay key {_suffix()}", "value": "sk-itest"},  # scan: allow
+    )
+    assert status == 200, token
+    assert "value" not in token
+
     status, created = panel.call(
         "POST",
         "/ai/providers",
@@ -167,17 +175,42 @@ def test_ai_provider_key_is_write_only(panel):
             "name": f"itest relay {_suffix()}",
             "kind": "custom",
             "base_url": "https://relay.invalid/v1",
-            "api_key": "sk-itest",  # scan: allow
+            "secret_id": token["id"],
         },
     )
     assert status == 200, created
-    assert created["has_api_key"] is True
+    assert created["secret_id"] == token["id"]
     assert "api_key" not in created
 
-    status, kept = panel.call("PUT", f"/ai/providers/{created['id']}", {"api_key": ""})
-    assert status == 200 and kept["has_api_key"] is True
+    listed = panel.read("/credentials/tokens")["tokens"]
+    referenced = next(entry for entry in listed if entry["id"] == token["id"])
+    assert referenced["provider_count"] == 1
+
+    status, refused = panel.call("DELETE", f"/credentials/tokens/{token['id']}")
+    assert status == 409, refused
+    assert refused["detail"]["code"] == "token_in_use"
 
     assert panel.status("DELETE", f"/ai/providers/{created['id']}") == 200
+    # The provider is gone; the token stays until deleted on its own page.
+    assert panel.status("DELETE", f"/credentials/tokens/{token['id']}") == 200
+
+
+def test_a_provider_refuses_a_bogus_token_reference(panel):
+    status, answer = panel.call(
+        "POST",
+        "/ai/providers",
+        {
+            "name": f"itest relay {_suffix()}",
+            "kind": "custom",
+            "base_url": "https://relay.invalid/v1",
+            "secret_id": "0" * 32,
+        },
+    )
+    assert status == 400, answer
+    assert answer["detail"] == {
+        "code": "unknown_credential",
+        "params": {"field": "secret_id"},
+    }
 
 
 def _archive_contents(archive_bytes: bytes) -> dict:

@@ -469,6 +469,35 @@ class LoginUpdate(BaseModel):
     password: str | None = None
 
 
+class TokenView(BaseModel):
+    """One stored token, without its value."""
+
+    id: str
+    name: str
+    created_at: str = ""
+    provider_count: int = 0
+
+
+class TokenListView(BaseModel):
+    """The Credentials page's token section."""
+
+    tokens: list[TokenView]
+
+
+class TokenCreate(BaseModel):
+    """A token to store under a name; the value travels one way."""
+
+    name: str
+    value: str
+
+
+class TokenUpdate(BaseModel):
+    """Partial update to one token; a blank value keeps the sealed one."""
+
+    name: str | None = None
+    value: str | None = None
+
+
 class AiProviderModelView(BaseModel):
     """One model alias a provider serves: real name in, served alias out."""
 
@@ -477,41 +506,42 @@ class AiProviderModelView(BaseModel):
 
 
 class AiProviderView(BaseModel):
-    """One stored AI provider, without its key."""
+    """One stored AI provider; its key is a reference into the vault."""
 
     id: str
     name: str
     kind: str
     base_url: str = ""
-    has_api_key: bool = False
+    secret_id: str | None = None
     is_enabled: bool = True
     models: list[AiProviderModelView] = Field(default_factory=list)
     created_at: str = ""
 
 
 class AiProviderListView(BaseModel):
-    """The Credentials page's AI provider section."""
+    """The AI page's provider section."""
 
     providers: list[AiProviderView]
 
 
 class AiProviderCreate(BaseModel):
-    """A provider to store; the key travels one way."""
+    """A provider to store; ``secret_id`` names a vault token, or nothing."""
 
     name: str
     kind: str
     base_url: str = ""
-    api_key: str = ""
+    secret_id: str | None = None
     models: list[AiProviderModelView] = Field(default_factory=list)
 
 
 class AiProviderUpdate(BaseModel):
-    """Partial update to one provider; a blank key keeps the stored one."""
+    """Partial update to one provider; ``secret_id`` sent as null clears the
+    reference, and left out keeps it."""
 
     name: str | None = None
     kind: str | None = None
     base_url: str | None = None
-    api_key: str | None = None
+    secret_id: str | None = None
     is_enabled: bool | None = None
     models: list[AiProviderModelView] | None = None
 

@@ -221,9 +221,9 @@ passphrase — before anything touches disk and writing the unwrapped key
 last. On the box itself the panel is root and the vault claims nothing
 against root.
 
-Secrets travel one way through the API: written in, listed back as `has_*`
-booleans, fingerprints and reference counts, never read out. Deleting an
-object still referenced is refused before it is allowed.
+Secrets travel one way through the API: written in, listed back as ids,
+fingerprints and reference counts, never read out. Deleting an object still
+referenced is refused before it is allowed.
 
 Two things stay out: the panel password, which is a hash and not a kept
 secret, and the CLIProxyAPI client keys, which the hub mints itself, shows in

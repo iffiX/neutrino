@@ -49,11 +49,15 @@ as `login` objects. A device's SSH password and sudo password reference them
 by id, and so does a declared Samba share's `login_id`; the tab warns before
 deleting a login something still uses.
 
-**AI providers** — named API endpoints and keys (Anthropic, OpenAI, Gemini,
-or a custom relay) in `config/ai/providers.json` (gitignored; example
-committed), managed on the AI page. Each key is sealed in the vault as a
-`token` object the provider references. Keys never come back out through the
-API; listings only say whether one is stored.
+**Tokens** — one bare secret string each, sealed as `token` objects. AI
+providers reference them by id, and the tab warns before deleting a token a
+provider still uses. Values never come back out through the API.
+
+**AI providers** — named API endpoints (Anthropic, OpenAI, Gemini, or a
+custom relay) in `config/ai/providers.json` (gitignored; example committed),
+managed on the AI page. A provider holds no key of its own: its `secret_id`
+references a token from the Credentials page, and deleting the provider
+leaves the token where it is.
 
 **The vault** — every secret sits sealed in
 `config/credentials/vault.json`, one AES-256-GCM ciphertext per object under

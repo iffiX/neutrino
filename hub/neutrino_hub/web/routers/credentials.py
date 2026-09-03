@@ -1,11 +1,12 @@
-"""The Credentials page: the SSH keys and logins the box holds.
+"""The Credentials page: the SSH keys, logins and tokens the box holds.
 
 All of them are secrets the gateway uses on somebody's behalf, and none comes
 back out through the API — a listing says a secret is stored, never what it
 is. Each reaches a device or a service through an id, so the material never
 sits in a device's own configuration. A login is one account — a password
 with an optional username — and devices and declared services both reference
-the same collection.
+the same collection; a token is one bare secret string, and AI providers
+reference those.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -16,6 +17,7 @@ from neutrino_hub.modules.credentials.vault import (
     VaultError,
     VaultLockedError,
 )
+from neutrino_hub.modules.ai.registry import AiProviderRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.devices.key_registry import (
     KeyMaterialError,
@@ -33,9 +35,14 @@ from neutrino_hub.web.models import (
     LoginListView,
     LoginUpdate,
     LoginView,
+    TokenCreate,
+    TokenListView,
+    TokenUpdate,
+    TokenView,
 )
 
 LOGIN_KIND = "login"
+TOKEN_KIND = "token"
 
 router = APIRouter(
     prefix="/api/credentials",
@@ -354,4 +361,144 @@ def _login_view(
         created_at=record.created_at,
         device_count=device_counts.get(record.id, 0),
         service_count=service_counts.get(record.id, 0),
+    )
+
+
+# --- Tokens ---
+
+
+@router.get("/tokens", response_model=TokenListView)
+def list_tokens() -> TokenListView:
+    """Read every stored token with how many AI providers use it.
+
+    Returns:
+        The tokens, newest first, values withheld.
+    """
+    counts = _provider_counts()
+    return TokenListView(
+        tokens=[
+            _token_view(record, counts)
+            for record in SecretVault().list_records(kind=TOKEN_KIND)
+        ]
+    )
+
+
+@router.post("/tokens", response_model=TokenView)
+def create_token(request: TokenCreate) -> TokenView:
+    """Seal a token under a name.
+
+    Args:
+        request: The name and the value.
+
+    Returns:
+        The stored token, without its value.
+
+    Raises:
+        HTTPException: 400 when the value is blank or the vault refuses.
+    """
+    if not request.value.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "token_value_needed", "params": {}},
+        )
+    try:
+        record = SecretVault().add(
+            kind=TOKEN_KIND,
+            name=request.name,
+            secret={"value": request.value},
+        )
+    except VaultLockedError:
+        raise
+    except VaultError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+        ) from error
+    return _token_view(record, _provider_counts())
+
+
+@router.put("/tokens/{token_id}", response_model=TokenView)
+def update_token(token_id: str, request: TokenUpdate) -> TokenView:
+    """Change a token's label, its value, or both.
+
+    Args:
+        token_id: The token's identifier.
+        request: The fields to change; a blank one is left alone.
+
+    Returns:
+        The token after the change.
+
+    Raises:
+        HTTPException: 404 when the id is unknown, 400 when the vault refuses
+            the change.
+    """
+    vault = SecretVault()
+    record = vault.get(token_id)
+    if record is None or record.kind != TOKEN_KIND:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "unknown_token", "params": {}},
+        )
+    try:
+        if request.name is not None and request.name.strip():
+            record = vault.rename(token_id, request.name)
+        if request.value is not None and request.value.strip():
+            record = vault.replace(token_id, secret={"value": request.value})
+    except VaultLockedError:
+        raise
+    except VaultError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+        ) from error
+    return _token_view(record, _provider_counts())
+
+
+@router.delete("/tokens/{token_id}")
+def delete_token(token_id: str, force: bool = False) -> dict:
+    """Remove a token and its value.
+
+    Args:
+        token_id: The token's identifier.
+        force: Delete even when AI providers still reference it.
+
+    Returns:
+        An empty object.
+
+    Raises:
+        HTTPException: 409 when providers still use the token and ``force``
+            is not set, 404 when the id is unknown.
+    """
+    vault = SecretVault()
+    record = vault.get(token_id)
+    if record is None or record.kind != TOKEN_KIND:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "unknown_token", "params": {}},
+        )
+    count = _provider_counts().get(token_id, 0)
+    if count and not force:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "token_in_use",
+                "params": {"provider_count": count},
+            },
+        )
+    vault.delete(token_id)
+    return {}
+
+
+def _provider_counts() -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for provider in AiProviderRegistry().list_records():
+        if provider.secret_id:
+            counts[provider.secret_id] = counts.get(provider.secret_id, 0) + 1
+    return counts
+
+
+def _token_view(record: SecretRecord, counts: dict[str, int]) -> TokenView:
+    return TokenView(
+        id=record.id,
+        name=record.name,
+        created_at=record.created_at,
+        provider_count=counts.get(record.id, 0),
     )

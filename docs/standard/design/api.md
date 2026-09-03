@@ -108,7 +108,7 @@ Booleans are questions in all three: `is_`, `has_`
 | `/api/ai` | The AI providers the gateway forwards to |
 | `/api/auth` | Signing in and out, and what the session is |
 | `/api/cliproxyapi` | The AI gateway: its keys and settings |
-| `/api/credentials` | The secrets the box holds for somebody: SSH keys and logins |
+| `/api/credentials` | The secrets the box holds for somebody: SSH keys, logins and tokens |
 | `/api/dashboard` | The summary, the traffic history, the DNS log |
 | `/api/devices` | Managed LAN machines, their features and their files |
 | `/api/gitea` | The Gitea module |
