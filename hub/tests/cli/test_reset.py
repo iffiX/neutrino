@@ -28,7 +28,7 @@ def box(tmp_path, monkeypatch):
         ("xray/nodes.example.json", {"nodes": []}),
         (
             "credentials/vault.example.json",
-            {"version": 1, "cipher": "aes-256-gcm", "secrets": {}},
+            {"version": 2, "secrets": {}},
         ),
     ):
         path = examples / name
@@ -47,18 +47,19 @@ def box(tmp_path, monkeypatch):
     (config / "credentials/vault.json").write_text(
         json.dumps(
             {
-                "version": 1,
-                "cipher": "aes-256-gcm",
+                "version": 2,
+                "wrapped_key": {"kdf": "scrypt"},
                 "secrets": {"048044bd": {"name": "a key", "kind": "ssh_key"}},
             }
         )
     )
-    (config / "credentials/vault.key").write_text("aa" * 32)
-    (config / "credentials/vault.key.new").write_text("bb" * 32)
+    (config / "web/agent_tls").mkdir()
+    (config / "web/agent_tls/certificate.pem").write_text("cert")
 
     state = config.parent / "state"
     state.mkdir()
     (state / "session.secret").write_text("aa" * 32)
+    (state / "vault.key").write_text("bb" * 32)
 
     monkeypatch.setattr(reset, "UTILS_CONFIG_DIR", config)
     monkeypatch.setattr(reset, "UTILS_EXAMPLES_DIR", examples)
@@ -80,10 +81,11 @@ def test_reset_all_forgets_the_keys_the_box_was_holding(box):
 
     vault = json.loads((box / "credentials/vault.json").read_text())
     assert vault["secrets"] == {}
+    assert "wrapped_key" not in vault
     assert not (box / "gitea/secrets.json").exists()
-    assert not (box / "credentials/vault.key").exists()
-    assert not (box / "credentials/vault.key.new").exists()
+    assert not (box / "web/agent_tls").exists()
     assert not (box.parent / "state" / "session.secret").exists()
+    assert not (box.parent / "state" / "vault.key").exists()
 
 
 def test_reset_all_clears_the_password_so_setup_runs_again(box):

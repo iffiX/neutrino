@@ -6,7 +6,6 @@ import json
 import platform
 import tarfile
 import time
-from datetime import datetime, timezone
 
 import psutil
 from fastapi import (
@@ -23,12 +22,16 @@ from fastapi.responses import StreamingResponse
 from neutrino_hub.modules.credentials.vault import (
     VaultError,
     VaultPassphraseError,
-    seal_bytes,
-    unseal_bytes,
+    unwrap_data_key,
+    write_state_key,
 )
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
-from neutrino_hub.utils.json_file import read_config, write_config
+from neutrino_hub.utils.json_file import (
+    CONFIG_WRITE_LOCK,
+    read_config,
+    write_config,
+)
 from neutrino_hub.utils.passwords import (
     PASSWORDS_PANEL_RULES,
     PasswordRuleError,
@@ -45,7 +48,6 @@ from neutrino_hub.web.constants import (
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
     AboutView,
-    BackupRequest,
     PanelSettings,
     PasswordChange,
     PasswordChangeResult,
@@ -64,22 +66,23 @@ GATEWAY_VERSION = HUB_VERSION
 RESTORE_SIZE_LIMIT_BYTES = 32 * 1024 * 1024
 PANEL_SETTINGS_FILE = "web/settings.json"
 
-# The envelope every backup travels in: a plain tar.gz whose first member is
-# the manifest naming what the payload is and what it hashes to, so a restore
-# can refuse a foreign or damaged file before anything touches disk.
+# The archive every backup travels as: one plain tar.gz whose first member
+# names what it is, whose second lists every following member's digest, and
+# whose rest is the ``config/`` tree as it stands — which after the vault
+# rework holds no unsealed secret.
 BACKUP_MANIFEST_MEMBER = "neutrino_backup.json"
-BACKUP_PLAIN_PAYLOAD = "config.tar.gz"
-BACKUP_SEALED_PAYLOAD = "config.sealed"
+BACKUP_SUMS_MEMBER = "SHA256SUMS"
 BACKUP_KIND = "neutrino_config_backup"
-BACKUP_FORMAT_VERSION = 1
+BACKUP_FORMAT_VERSION = 2
 BACKUP_EXTENSIONS = (".tar.gz", ".tgz")
+BACKUP_VAULT_MEMBER = "credentials/vault.json"
 
 # The 400s the panel turns into its own sentences.
-BACKUP_ERROR_PASSPHRASE_NEEDED = "backup_passphrase_needed"
-BACKUP_ERROR_PASSPHRASE_WRONG = "backup_passphrase_wrong"
 BACKUP_ERROR_WRONG_EXTENSION = "backup_wrong_extension"
 BACKUP_ERROR_UNRECOGNIZED = "backup_unrecognized"
 BACKUP_ERROR_CORRUPT = "backup_corrupt"
+BACKUP_ERROR_PASSPHRASE_NEEDED = "vault_passphrase_needed"
+BACKUP_ERROR_PASSPHRASE_WRONG = "vault_passphrase_wrong"
 
 
 @router.get("", response_model=PanelSettings)
@@ -195,46 +198,35 @@ def change_password(
 
 
 @router.post("/backup")
-def backup(request: BackupRequest) -> StreamingResponse:
-    """Download the whole ``config/`` directory, plain or sealed.
+def backup() -> StreamingResponse:
+    """Download the whole ``config/`` directory as one plain archive.
 
-    Restoring this on a fresh machine and running the installer reproduces the
-    appliance, which is why it includes the device keys. The download is
-    always a ``.tar.gz``: the manifest first, then the payload — the config
-    tree's own tarball, or, under a passphrase, one sealed container with the
-    vault's master key riding inside it, protected with everything else.
-
-    Args:
-        request: The passphrase to seal the payload under; blank keeps it
-            plain.
+    Restoring this on a fresh machine and running the installer reproduces
+    the appliance. The archive travels plainly because ``config/`` holds no
+    unsealed secret: the vault's data key rides only wrapped under the master
+    passphrase, which is what a restore asks for.
 
     Returns:
-        A streaming ``.tar.gz`` download.
+        A streaming ``.tar.gz`` download: the manifest, the digest list, then
+        the ``config/`` tree.
     """
-    inner = io.BytesIO()
-    with tarfile.open(fileobj=inner, mode="w:gz") as archive:
-        archive.add(UTILS_CONFIG_DIR, arcname="config")
-    if request.passphrase:
-        payload = seal_bytes(inner.getvalue(), request.passphrase)
-        payload_name = BACKUP_SEALED_PAYLOAD
-    else:
-        payload = inner.getvalue()
-        payload_name = BACKUP_PLAIN_PAYLOAD
+    with CONFIG_WRITE_LOCK:
+        directories, files = _config_snapshot()
     manifest = json.dumps(
-        {
-            "kind": BACKUP_KIND,
-            "version": BACKUP_FORMAT_VERSION,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "is_sealed": bool(request.passphrase),
-            "payload": payload_name,
-            "sha256": hashlib.sha256(payload).hexdigest(),
-        },
-        indent=2,
+        {"kind": BACKUP_KIND, "version": BACKUP_FORMAT_VERSION}, indent=2
+    ).encode()
+    sums = "".join(
+        f"{hashlib.sha256(content).hexdigest()}  {path}\n" for path, content in files
     ).encode()
     outer = io.BytesIO()
     with tarfile.open(fileobj=outer, mode="w:gz") as archive:
         _add_member(archive, BACKUP_MANIFEST_MEMBER, manifest)
-        _add_member(archive, payload_name, payload)
+        _add_member(archive, BACKUP_SUMS_MEMBER, sums)
+        _add_directory(archive, "config")
+        for path in directories:
+            _add_directory(archive, f"config/{path}")
+        for path, content in files:
+            _add_member(archive, f"config/{path}", content)
     outer.seek(0)
     stamp = time.strftime("%Y%m%d_%H%M%S")
     return StreamingResponse(
@@ -248,6 +240,24 @@ def backup(request: BackupRequest) -> StreamingResponse:
     )
 
 
+def _config_snapshot() -> tuple[list[str], list[tuple[str, bytes]]]:
+    """Read the whole ``config/`` tree into memory, in one consistent pass.
+
+    Returns:
+        The directory paths and the file paths with their bytes, both
+        config-relative and sorted.
+    """
+    directories: list[str] = []
+    files: list[tuple[str, bytes]] = []
+    for path in sorted(UTILS_CONFIG_DIR.rglob("*")):
+        relative = str(path.relative_to(UTILS_CONFIG_DIR))
+        if path.is_dir():
+            directories.append(relative)
+        elif path.is_file():
+            files.append((relative, path.read_bytes()))
+    return directories, files
+
+
 def _add_member(archive: tarfile.TarFile, name: str, payload: bytes) -> None:
     member = tarfile.TarInfo(name)
     member.size = len(payload)
@@ -256,29 +266,38 @@ def _add_member(archive: tarfile.TarFile, name: str, payload: bytes) -> None:
     archive.addfile(member, io.BytesIO(payload))
 
 
+def _add_directory(archive: tarfile.TarFile, name: str) -> None:
+    member = tarfile.TarInfo(name)
+    member.type = tarfile.DIRTYPE
+    member.mode = 0o700
+    member.mtime = int(time.time())
+    archive.addfile(member)
+
+
 @router.post("/restore")
-async def restore(file: UploadFile, passphrase: str = Form("")) -> dict:
+async def restore(file: UploadFile, vault_passphrase: str = Form("")) -> dict:
     """Replace ``config/`` from an uploaded backup.
 
     Nothing touches disk until the file has proven itself: the name, the
-    manifest, the payload's checksum, and — for a sealed payload — the
-    passphrase are all settled in memory first, so a foreign, damaged or
-    locked file leaves the box exactly as it was.
+    manifest, every member's digest, and the vault passphrase are all settled
+    in memory first, so a foreign, damaged or locked file leaves the box
+    exactly as it was. The passphrase is always required — it is what turns
+    the archive's wrapped data key back into a working vault.
 
     Args:
         file: The uploaded ``.tar.gz`` backup.
-        passphrase: What the payload was sealed under, blank for a plain one.
+        vault_passphrase: The master passphrase of the box the backup left.
 
     Returns:
         Whether the restore succeeded.
 
     Raises:
         HTTPException: 400 when the file is too large, is not named like a
-            backup, does not carry this panel's manifest, fails its checksum,
-            holds a member that would land outside ``config/``, or is sealed
-            and the passphrase is missing or wrong. This endpoint unpacks as
-            root, so where each member resolves to is checked rather than
-            where its name appears to start.
+            backup, does not carry this panel's manifest, fails a digest,
+            holds a member that would land outside ``config/``, or the
+            passphrase is missing or wrong. This endpoint unpacks as root, so
+            where each member resolves to is checked rather than where its
+            name appears to start.
     """
     name = file.filename or ""
     if not name.endswith(BACKUP_EXTENSIONS):
@@ -288,81 +307,143 @@ async def restore(file: UploadFile, passphrase: str = Form("")) -> dict:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="backup is too large"
         )
-    payload = _checked_payload(blob, passphrase)
-    try:
-        with tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz") as archive:
-            members = [
-                _checked_member(_renamed_member(member))
-                for member in archive.getmembers()
-            ]
-            # The data filter is the second line of defence, not the first:
-            # it also refuses absolute paths, traversal and special files.
-            archive.extractall(
-                path=UTILS_CONFIG_DIR.parent, members=members, filter="data"
-            )
-    except (tarfile.TarError, EOFError, OSError) as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"unreadable backup: {error}",
-        ) from error
+    contents = _read_archive(blob)
+    _check_manifest(contents)
+    _check_digests(contents)
+    data_key = _unwrapped_key(contents, vault_passphrase)
+    with CONFIG_WRITE_LOCK:
+        try:
+            with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as archive:
+                members = [
+                    _checked_member(_renamed_member(member))
+                    for member in archive.getmembers()
+                    if member.name not in (BACKUP_MANIFEST_MEMBER, BACKUP_SUMS_MEMBER)
+                ]
+                # The data filter is the second line of defence, not the
+                # first: it also refuses absolute paths, traversal and
+                # special files.
+                archive.extractall(
+                    path=UTILS_CONFIG_DIR.parent, members=members, filter="data"
+                )
+        except (tarfile.TarError, EOFError, OSError) as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"unreadable backup: {error}",
+            ) from error
+        write_state_key(data_key)
     return {"is_restored": True}
 
 
-def _checked_payload(blob: bytes, passphrase: str) -> bytes:
-    """Open the envelope and hand back the config tree's own tarball.
+def _read_archive(blob: bytes) -> dict[str, bytes]:
+    """Read every regular member of the uploaded archive into memory.
 
     Args:
         blob: The uploaded file.
-        passphrase: What a sealed payload was sealed under.
 
     Returns:
-        The inner ``config.tar.gz`` bytes, verified and unsealed.
+        Member name to bytes, in archive order.
 
     Raises:
-        HTTPException: 400 with the code naming what refused — not this
-            panel's manifest, a checksum that does not match, or a passphrase
-            that is missing or wrong.
+        HTTPException: 400 ``backup_unrecognized`` when it does not open as a
+            tar.gz at all.
     """
     try:
-        with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as envelope:
-            manifest_member = envelope.extractfile(BACKUP_MANIFEST_MEMBER)
-            manifest = json.loads(manifest_member.read())
-            if manifest.get("kind") != BACKUP_KIND or manifest.get("payload") not in (
-                BACKUP_PLAIN_PAYLOAD,
-                BACKUP_SEALED_PAYLOAD,
-            ):
-                raise _coded_bad_request(BACKUP_ERROR_UNRECOGNIZED)
-            payload_member = envelope.extractfile(manifest["payload"])
-            payload = payload_member.read()
-    except HTTPException:
-        raise
+        with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as archive:
+            return {
+                member.name: archive.extractfile(member).read()
+                for member in archive.getmembers()
+                if member.isreg()
+            }
     # A truncated gzip stream surfaces as EOFError or BadGzipFile (an
     # OSError), not as a TarError.
-    except (
-        tarfile.TarError,
-        EOFError,
-        OSError,
-        KeyError,
-        AttributeError,
-        ValueError,
-    ) as error:
+    except (tarfile.TarError, EOFError, OSError, AttributeError) as error:
         raise _coded_bad_request(BACKUP_ERROR_UNRECOGNIZED) from error
-    if hashlib.sha256(payload).hexdigest() != manifest.get("sha256"):
+
+
+def _check_manifest(contents: dict[str, bytes]) -> None:
+    """Confirm the archive opens with this panel's manifest.
+
+    Args:
+        contents: The archive's regular members.
+
+    Raises:
+        HTTPException: 400 ``backup_unrecognized`` when the first member is
+            not the manifest, or it names another kind or version.
+    """
+    if next(iter(contents), None) != BACKUP_MANIFEST_MEMBER:
+        raise _coded_bad_request(BACKUP_ERROR_UNRECOGNIZED)
+    try:
+        manifest = json.loads(contents[BACKUP_MANIFEST_MEMBER])
+    except ValueError as error:
+        raise _coded_bad_request(BACKUP_ERROR_UNRECOGNIZED) from error
+    if not isinstance(manifest, dict) or manifest.get("kind") != BACKUP_KIND:
+        raise _coded_bad_request(BACKUP_ERROR_UNRECOGNIZED)
+    if manifest.get("version") != BACKUP_FORMAT_VERSION:
+        raise _coded_bad_request(BACKUP_ERROR_UNRECOGNIZED)
+
+
+def _check_digests(contents: dict[str, bytes]) -> None:
+    """Confirm every member matches the digest list, and the list its members.
+
+    Args:
+        contents: The archive's regular members.
+
+    Raises:
+        HTTPException: 400 ``backup_corrupt`` when the digest list is
+            missing, a member fails its digest, or the two sides disagree
+            about what the archive holds.
+    """
+    if BACKUP_SUMS_MEMBER not in contents:
         raise _coded_bad_request(BACKUP_ERROR_CORRUPT)
-    if manifest["payload"] == BACKUP_SEALED_PAYLOAD:
-        if not passphrase:
-            raise _coded_bad_request(BACKUP_ERROR_PASSPHRASE_NEEDED)
-        try:
-            payload = unseal_bytes(payload, passphrase)
-        except VaultPassphraseError as error:
-            raise _coded_bad_request(BACKUP_ERROR_PASSPHRASE_WRONG) from error
-        except VaultError as error:
-            raise _coded_bad_request(BACKUP_ERROR_CORRUPT) from error
-    if len(payload) > RESTORE_SIZE_LIMIT_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="backup is too large"
-        )
-    return payload
+    listed: dict[str, str] = {}
+    for line in contents[BACKUP_SUMS_MEMBER].decode("utf-8", "replace").splitlines():
+        digest, _, path = line.partition("  ")
+        if not digest or not path:
+            raise _coded_bad_request(BACKUP_ERROR_CORRUPT)
+        listed[path] = digest
+    members = {
+        name.partition("/")[2]: content
+        for name, content in contents.items()
+        if name not in (BACKUP_MANIFEST_MEMBER, BACKUP_SUMS_MEMBER)
+    }
+    if set(members) != set(listed):
+        raise _coded_bad_request(BACKUP_ERROR_CORRUPT)
+    for path, content in members.items():
+        if hashlib.sha256(content).hexdigest() != listed[path]:
+            raise _coded_bad_request(BACKUP_ERROR_CORRUPT)
+
+
+def _unwrapped_key(contents: dict[str, bytes], vault_passphrase: str) -> bytes:
+    """Open the archive's wrapped data key with the passphrase.
+
+    Args:
+        contents: The archive's regular members.
+        vault_passphrase: What the uploader typed.
+
+    Returns:
+        The data key the restored vault opens with.
+
+    Raises:
+        HTTPException: 400 ``vault_passphrase_needed`` when none was given,
+            ``vault_passphrase_wrong`` when it does not open the key, and
+            ``backup_corrupt`` when the archive's vault store is missing or
+            carries no usable wrapped key.
+    """
+    stored = contents.get(f"config/{BACKUP_VAULT_MEMBER}")
+    if stored is None:
+        raise _coded_bad_request(BACKUP_ERROR_CORRUPT)
+    try:
+        wrapped = json.loads(stored).get("wrapped_key")
+    except (ValueError, AttributeError) as error:
+        raise _coded_bad_request(BACKUP_ERROR_CORRUPT) from error
+    if not vault_passphrase:
+        raise _coded_bad_request(BACKUP_ERROR_PASSPHRASE_NEEDED)
+    try:
+        return unwrap_data_key(vault_passphrase, wrapped)
+    except VaultPassphraseError as error:
+        raise _coded_bad_request(BACKUP_ERROR_PASSPHRASE_WRONG) from error
+    except VaultError as error:
+        raise _coded_bad_request(BACKUP_ERROR_CORRUPT) from error
 
 
 def _coded_bad_request(code: str) -> HTTPException:

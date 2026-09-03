@@ -18,6 +18,7 @@ from neutrino_hub.modules.credentials.vault import (
     SecretRecord,
     SecretVault,
     VaultError,
+    VaultLockedError,
 )
 
 KEY_KIND = "ssh_key"
@@ -140,6 +141,8 @@ class KeyRegistry:
             raise KeyMaterialError(f"no key with id {key_id!r}")
         try:
             return self._to_record(SecretVault().rename(key_id, name))
+        except VaultLockedError:
+            raise
         except VaultError as error:
             raise KeyMaterialError(str(error)) from error
 
@@ -167,6 +170,8 @@ class KeyRegistry:
         """
         try:
             secret = SecretVault().open(key_id)
+        except VaultLockedError:
+            raise
         except VaultError as error:
             raise KeyMaterialError(str(error)) from error
         return secret["private_key"], secret.get("passphrase")

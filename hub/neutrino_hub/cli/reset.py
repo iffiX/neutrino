@@ -43,17 +43,15 @@ RESET_COLLECTED_PATHS = (
     "gitea/secrets.json",
     "devices/known_hosts",
     "devices/packages",
-    # The vault master key goes with the store it opened: a key surviving a
-    # reset is a key the next owner inherits.
-    "credentials/vault.key",
-    "credentials/vault.key.new",
-    # The agent channel's certificate and key go the same way; the next setup
-    # mints a fresh identity for its own fleet.
+    # The agent channel's certificate and key go with the fleet that pinned
+    # them; the next setup mints a fresh identity for its own.
     "web/agent_tls",
 )
 # The secrets under /var/lib/neutrino that `all` clears for the same reason:
 # state a fresh box mints for itself, and the next owner must not inherit.
-RESET_STATE_PATHS = ("session.secret",)
+# The vault's data key in particular — left behind, it opens whatever store
+# the next owner restores under the same wrap.
+RESET_STATE_PATHS = ("session.secret", "vault.key")
 RESET_EXAMPLE_SUFFIX = ".example.json"
 RESET_PANEL_UNIT = "web"
 RESET_TARGETS = {

@@ -1,21 +1,17 @@
 """Every secret the hub keeps for somebody, sealed in one store.
 
 One AES-256-GCM ciphertext per object in ``config/credentials/vault.json``,
-under the master key in ``config/credentials/vault.key``. Names, kinds and
-timestamps stay readable, so the file says what it holds without saying what
-anything is; each object's AAD binds its ciphertext to its id and kind, so two
-objects cannot be swapped. The key lives beside the store because backing up
-``config/`` must reproduce the appliance and the panel must decrypt with
-nobody at the keyboard; a copy that leaves the box travels as one
-container sealed under a passphrase, via :func:`seal_bytes`, master key and
-all.
+under a random data key. Names, kinds and timestamps stay readable, so the
+file says what it holds without saying what anything is; each object's AAD
+binds its ciphertext to its id and kind, so two objects cannot be swapped.
 
-A rekey writes the fresh key to ``vault.key.new``, rewrites the store under
-it, and renames it over ``vault.key`` last. In every crash window a key that
-opens the store is on disk: the old key until the store is rewritten,
-``vault.key.new`` after. A leftover ``vault.key.new`` is settled on the next
-use — renamed into place when it opens the store, discarded when the old key
-still does.
+The data key never sits in ``config/``. The store carries it wrapped under
+the master passphrase (scrypt, then AES-256-GCM), so a backup of ``config/``
+holds no unsealed secret; the working copy is state at
+``/var/lib/neutrino/vault.key``, written by setup and by a successful
+restore. With that state file missing the vault is locked, and every
+operation that needs the key refuses with ``vault_locked``. Changing the
+passphrase re-wraps the same data key; nothing sealed is touched.
 """
 
 import base64
@@ -34,12 +30,11 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from neutrino_hub.modules.credentials.constants import (
     CREDENTIALS_SECRET_KINDS,
-    CREDENTIALS_VAULT_CIPHER,
-    CREDENTIALS_VAULT_KEY_PATH,
     CREDENTIALS_VAULT_PATH,
+    CREDENTIALS_VAULT_STATE_KEY_NAME,
     CREDENTIALS_VAULT_VERSION,
 )
-from neutrino_hub.utils import json_file
+from neutrino_hub.utils import constants
 from neutrino_hub.utils.json_file import (
     CONFIG_WRITE_LOCK,
     read_config,
@@ -49,12 +44,14 @@ from neutrino_hub.utils.json_file import (
 VAULT_KEY_BYTES = 32
 VAULT_NONCE_BYTES = 12
 VAULT_WRAP_SALT_BYTES = 16
-VAULT_SEALED_MAGIC = b"NEUTRINO-SEALED-1\n"
+VAULT_WRAP_AAD = b"neutrino-vault-data-key"
 VAULT_SCRYPT_N = 2**15
 VAULT_SCRYPT_R = 8
 VAULT_SCRYPT_P = 1
 # scrypt needs 128 * r * n bytes; OpenSSL's default ceiling is exactly that.
 VAULT_SCRYPT_MAXMEM = 2**26
+
+VAULT_ERROR_LOCKED = "vault_locked"
 
 
 class VaultError(ValueError):
@@ -65,93 +62,165 @@ class VaultPassphraseError(VaultError):
     """Raised when a passphrase does not open what it was offered."""
 
 
-def seal_bytes(data: bytes, passphrase: str) -> bytes:
-    """Seal a byte payload under a passphrase, for a copy that leaves the box.
+class VaultLockedError(VaultError):
+    """Raised when the data key's state file is missing.
 
-    The container is the magic line, a four-byte header length, a JSON header
-    naming the scrypt parameters, then the AES-256-GCM ciphertext with the
-    magic as its AAD. Everything inside travels sealed, the master key
-    included, so nothing needs wrapping separately.
+    Attributes:
+        code: The machine name callers answer with.
+    """
+
+    code = VAULT_ERROR_LOCKED
+
+    def __init__(self):
+        super().__init__("the vault is locked: no data key on this box")
+
+
+def wrap_data_key(passphrase: str, data_key: bytes) -> dict:
+    """Wrap the data key under the master passphrase.
 
     Args:
-        data: The payload to seal.
-        passphrase: What the copy is protected with.
+        passphrase: The master passphrase.
+        data_key: The random data key the store's objects are sealed with.
 
     Returns:
-        The sealed container.
+        The ``wrapped_key`` object: the scrypt parameters and the seal.
     """
     salt = secrets.token_bytes(VAULT_WRAP_SALT_BYTES)
     kek = _derive_wrap_key(
         passphrase, salt, VAULT_SCRYPT_N, VAULT_SCRYPT_R, VAULT_SCRYPT_P
     )
     nonce = secrets.token_bytes(VAULT_NONCE_BYTES)
-    header = json.dumps(
-        {
-            "kdf": "scrypt",
-            "salt": base64.b64encode(salt).decode(),
-            "n": VAULT_SCRYPT_N,
-            "r": VAULT_SCRYPT_R,
-            "p": VAULT_SCRYPT_P,
-            "nonce": base64.b64encode(nonce).decode(),
-        }
-    ).encode()
-    ciphertext = AESGCM(kek).encrypt(nonce, data, VAULT_SEALED_MAGIC)
-    return VAULT_SEALED_MAGIC + len(header).to_bytes(4, "big") + header + ciphertext
+    sealed = AESGCM(kek).encrypt(nonce, data_key, VAULT_WRAP_AAD)
+    return {
+        "kdf": "scrypt",
+        "salt": base64.b64encode(salt).decode(),
+        "n": VAULT_SCRYPT_N,
+        "r": VAULT_SCRYPT_R,
+        "p": VAULT_SCRYPT_P,
+        "nonce": base64.b64encode(nonce).decode(),
+        "data": base64.b64encode(sealed).decode(),
+    }
 
 
-def is_sealed(blob: bytes) -> bool:
-    """Whether a byte payload is a sealed container.
+def unwrap_data_key(passphrase: str, wrapped: dict | None = None) -> bytes:
+    """Open a wrapped data key with the master passphrase.
 
     Args:
-        blob: The payload, or its first bytes.
+        passphrase: The master passphrase.
+        wrapped: The ``wrapped_key`` object to open; None reads the store on
+            this box.
 
     Returns:
-        True when it begins with the sealed-container magic.
+        The data key.
+
+    Raises:
+        VaultPassphraseError: If the passphrase does not open it.
+        VaultError: If there is no wrapped key, or the object is not a usable
+            wrap. The parameters come from the object itself, so a hostile or
+            corrupt value refuses rather than crashing or eating the box's
+            memory.
     """
-    return blob.startswith(VAULT_SEALED_MAGIC)
+    if wrapped is None:
+        wrapped = SecretVault().wrapped_key()
+    if not isinstance(wrapped, dict):
+        raise VaultError("the vault holds no wrapped key")
+    try:
+        if wrapped.get("kdf") != "scrypt":
+            raise ValueError(f"unknown kdf {wrapped.get('kdf')!r}")
+        salt = base64.b64decode(wrapped["salt"])
+        nonce = base64.b64decode(wrapped["nonce"])
+        sealed = base64.b64decode(wrapped["data"])
+        factors = (int(wrapped["n"]), int(wrapped["r"]), int(wrapped["p"]))
+    except (KeyError, TypeError, ValueError) as error:
+        raise VaultError("the wrapped key is malformed") from error
+    try:
+        kek = _derive_wrap_key(passphrase, salt, *factors)
+    except ValueError as error:
+        raise VaultError("the wrapped key is malformed") from error
+    try:
+        return AESGCM(kek).decrypt(nonce, sealed, VAULT_WRAP_AAD)
+    except InvalidTag as error:
+        raise VaultPassphraseError("the passphrase does not open this vault") from error
 
 
-def unseal_bytes(blob: bytes, passphrase: str) -> bytes:
-    """Open a sealed container.
+def seal_bytes(data: bytes, aad: bytes) -> dict:
+    """Seal a byte payload under the data key, bound to what it is for.
 
     Args:
-        blob: What :func:`seal_bytes` produced.
-        passphrase: The passphrase it was sealed under.
+        data: The payload to seal.
+        aad: What binds the seal to its use, for example ``agent_tls:key``.
+
+    Returns:
+        A JSON-ready object holding the nonce and the ciphertext.
+
+    Raises:
+        VaultLockedError: If there is no data key on this box.
+    """
+    key = _read_state_key()
+    nonce = secrets.token_bytes(VAULT_NONCE_BYTES)
+    sealed = AESGCM(key).encrypt(nonce, data, aad)
+    return {
+        "nonce": base64.b64encode(nonce).decode(),
+        "data": base64.b64encode(sealed).decode(),
+    }
+
+
+def unseal_bytes(sealed: dict, aad: bytes) -> bytes:
+    """Open what :func:`seal_bytes` produced.
+
+    Args:
+        sealed: The sealed object.
+        aad: The binding it was sealed under.
 
     Returns:
         The payload.
 
     Raises:
-        VaultPassphraseError: If the passphrase does not open it.
-        VaultError: If the container is not a usable seal. The parameters come
-            from the container itself, so a hostile or corrupt value refuses
-            rather than crashing or eating the box's memory.
+        VaultLockedError: If there is no data key on this box.
+        VaultError: If the object is malformed or does not decrypt.
     """
-    if not is_sealed(blob):
-        raise VaultError("not a sealed archive")
-    offset = len(VAULT_SEALED_MAGIC)
+    key = _read_state_key()
     try:
-        header_length = int.from_bytes(blob[offset : offset + 4], "big")
-        header = json.loads(blob[offset + 4 : offset + 4 + header_length])
-        if header.get("kdf") != "scrypt":
-            raise ValueError(f"unknown kdf {header.get('kdf')!r}")
-        salt = base64.b64decode(header["salt"])
-        nonce = base64.b64decode(header["nonce"])
-        factors = (int(header["n"]), int(header["r"]), int(header["p"]))
+        nonce = base64.b64decode(sealed["nonce"])
+        data = base64.b64decode(sealed["data"])
     except (KeyError, TypeError, ValueError) as error:
-        raise VaultError("the sealed archive is malformed") from error
+        raise VaultError("the sealed payload is malformed") from error
     try:
-        kek = _derive_wrap_key(passphrase, salt, *factors)
-    except ValueError as error:
-        raise VaultError("the sealed archive is malformed") from error
-    try:
-        return AESGCM(kek).decrypt(
-            nonce, blob[offset + 4 + header_length :], VAULT_SEALED_MAGIC
-        )
-    except InvalidTag as error:
-        raise VaultPassphraseError(
-            "the passphrase does not open this archive"
+        return AESGCM(key).decrypt(nonce, data, aad)
+    except (InvalidTag, ValueError) as error:
+        raise VaultError(
+            "the sealed payload does not decrypt: the data key is not the one "
+            "it was sealed under, or it was modified"
         ) from error
+
+
+def write_state_key(data_key: bytes) -> None:
+    """Put the working data key on this box, unlocking the vault.
+
+    Args:
+        data_key: The unwrapped data key.
+    """
+    path = _state_key_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _write_key_material(path, data_key)
+
+
+def _state_key_path() -> Path:
+    # Resolved per call, against the state root as it is right now.
+    return constants.UTILS_STATE_ROOT / CREDENTIALS_VAULT_STATE_KEY_NAME
+
+
+def _read_state_key() -> bytes:
+    path = _state_key_path()
+    if not path.is_file():
+        raise VaultLockedError()
+    try:
+        key = bytes.fromhex(path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError) as error:
+        raise VaultError(f"{path} does not hold a usable key") from error
+    if len(key) != VAULT_KEY_BYTES:
+        raise VaultError(f"{path} does not hold a usable key")
+    return key
 
 
 def _derive_wrap_key(passphrase: str, salt: bytes, n: int, r: int, p: int) -> bytes:
@@ -168,16 +237,6 @@ def _derive_wrap_key(passphrase: str, salt: bytes, n: int, r: int, p: int) -> by
 
 def _aad(secret_id: str, kind: str) -> bytes:
     return f"{secret_id}:{kind}".encode()
-
-
-def _key_path() -> Path:
-    # Resolved per call, against the same root read_config uses right now.
-    return json_file.UTILS_CONFIG_DIR / CREDENTIALS_VAULT_KEY_PATH
-
-
-def _key_new_path() -> Path:
-    path = _key_path()
-    return path.with_name(path.name + ".new")
 
 
 def _write_key_material(path: Path, key: bytes) -> None:
@@ -198,7 +257,7 @@ class SecretRecord:
         id: Stable identifier the rest of ``config/`` references.
         name: Human-chosen label.
         kind: One of :data:`CREDENTIALS_SECRET_KINDS`.
-        meta: Plaintext annotations, for example a fingerprint or username.
+        meta: Plaintext annotations, for example a fingerprint.
         created_at: ISO timestamp of when it was added.
     """
 
@@ -209,13 +268,77 @@ class SecretRecord:
     created_at: str
 
 
-# Held across every read-modify-write of the store and the key files. The
-# panel is one process with many threads, and both files are written whole.
+# The config-wide lock, held across every read-modify-write of the store and
+# the state key. The panel is one process with many threads, and both files
+# are written whole.
 _WRITE_LOCK = CONFIG_WRITE_LOCK
 
 
 class SecretVault:
-    """Seals, lists, opens, and re-keys the stored secrets."""
+    """Seals, lists, opens, and re-wraps the stored secrets."""
+
+    def initialize(self, passphrase: str) -> bool:
+        """Give a fresh box its data key, wrapped under the passphrase.
+
+        A store that already carries a wrapped key is unlocked instead: the
+        passphrase opens it and the state key is rewritten, so an interrupted
+        setup converges. A store with sealed secrets is never re-keyed here.
+
+        Args:
+            passphrase: The master passphrase.
+
+        Returns:
+            True when a fresh data key was minted.
+
+        Raises:
+            VaultPassphraseError: If the store holds secrets and the
+                passphrase does not open its wrapped key.
+        """
+        with _WRITE_LOCK:
+            store = self._read_store()
+            if store.get("wrapped_key"):
+                try:
+                    write_state_key(unwrap_data_key(passphrase, store["wrapped_key"]))
+                    return False
+                except VaultPassphraseError:
+                    if store["secrets"]:
+                        raise
+            data_key = secrets.token_bytes(VAULT_KEY_BYTES)
+            store["wrapped_key"] = wrap_data_key(passphrase, data_key)
+            self._write_store(store)
+            write_state_key(data_key)
+            return True
+
+    def change_passphrase(self, passphrase: str) -> None:
+        """Re-wrap the data key under a new passphrase; nothing sealed moves.
+
+        Args:
+            passphrase: The new master passphrase.
+
+        Raises:
+            VaultLockedError: If there is no data key on this box.
+        """
+        with _WRITE_LOCK:
+            key = _read_state_key()
+            store = self._read_store()
+            store["wrapped_key"] = wrap_data_key(passphrase, key)
+            self._write_store(store)
+
+    def wrapped_key(self) -> dict | None:
+        """Read the store's wrapped data key.
+
+        Returns:
+            The ``wrapped_key`` object, or None before setup wrote one.
+        """
+        return self._read_store().get("wrapped_key")
+
+    def is_locked(self) -> bool:
+        """Whether vault operations would refuse for want of the data key.
+
+        Returns:
+            True when no state key is on this box.
+        """
+        return not _state_key_path().is_file()
 
     def add(
         self, *, kind: str, name: str, secret: dict, meta: dict | None = None
@@ -232,6 +355,7 @@ class SecretVault:
             The stored record.
 
         Raises:
+            VaultLockedError: If there is no data key on this box.
             VaultError: If the kind is unknown, the name is blank, or the
                 secret's field names do not match the kind.
         """
@@ -241,7 +365,7 @@ class SecretVault:
             raise VaultError("a secret needs a name")
         self._validate_fields(kind, secret)
         with _WRITE_LOCK:
-            key = self._master_key()
+            key = _read_state_key()
             store = self._read_store()
             secret_id = uuid.uuid4().hex
             nonce, data = self._seal(key, secret_id, kind, secret)
@@ -300,11 +424,12 @@ class SecretVault:
             The sealed fields, as they were given to :meth:`add`.
 
         Raises:
+            VaultLockedError: If there is no data key on this box.
             VaultError: If the id is unknown or the ciphertext does not
-                decrypt under the current master key.
+                decrypt under the data key.
         """
         with _WRITE_LOCK:
-            key = self._master_key()
+            key = _read_state_key()
             entry = self._read_store()["secrets"].get(secret_id)
             if entry is None:
                 raise VaultError(f"no secret with id {secret_id!r}")
@@ -370,11 +495,12 @@ class SecretVault:
             The record after the change.
 
         Raises:
+            VaultLockedError: If there is no data key on this box.
             VaultError: If the id is unknown or the secret's field names do
                 not match the stored kind.
         """
         with _WRITE_LOCK:
-            key = self._master_key()
+            key = _read_state_key()
             store = self._read_store()
             entry = store["secrets"].get(secret_id)
             if entry is None:
@@ -404,33 +530,6 @@ class SecretVault:
             del store["secrets"][secret_id]
             self._write_store(store)
 
-    def rekey(self) -> int:
-        """Re-encrypt every secret under a fresh master key.
-
-        Returns:
-            How many secrets were re-sealed.
-
-        Raises:
-            VaultError: If a stored secret does not decrypt under the current
-                key; nothing is changed then.
-        """
-        with _WRITE_LOCK:
-            old_key = self._master_key()
-            store = self._read_store()
-            opened = {
-                secret_id: self._unseal(old_key, secret_id, entry)
-                for secret_id, entry in store["secrets"].items()
-            }
-            new_key = secrets.token_bytes(VAULT_KEY_BYTES)
-            _write_key_material(_key_new_path(), new_key)
-            for secret_id, entry in store["secrets"].items():
-                entry["nonce"], entry["data"] = self._seal(
-                    new_key, secret_id, entry["kind"], opened[secret_id]
-                )
-            self._write_store(store)
-            os.replace(_key_new_path(), _key_path())
-            return len(opened)
-
     def _validate_fields(self, kind: str, secret: dict) -> None:
         fields = CREDENTIALS_SECRET_KINDS[kind]
         required = set(fields["required"])
@@ -443,50 +542,6 @@ class SecretVault:
             raise VaultError(
                 f"a {kind} secret does not take {', '.join(sorted(extras))}"
             )
-
-    def _master_key(self) -> bytes:
-        with _WRITE_LOCK:
-            path = _key_path()
-            if _key_new_path().is_file():
-                self._settle_rekey(path, _key_new_path())
-            if not path.is_file():
-                key = secrets.token_bytes(VAULT_KEY_BYTES)
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.parent.chmod(stat.S_IRWXU)
-                _write_key_material(path, key)
-                return key
-            return self._read_key(path)
-
-    def _settle_rekey(self, path: Path, new_path: Path) -> None:
-        try:
-            new_key = self._read_key(new_path)
-        except VaultError:
-            # The crash came while the new key was being written; the store
-            # was never rewritten under it.
-            new_path.unlink()
-            return
-        store = self._read_store()
-        if store["secrets"] and self._key_opens(new_key, store):
-            os.replace(new_path, path)
-        else:
-            new_path.unlink()
-
-    def _key_opens(self, key: bytes, store: dict) -> bool:
-        try:
-            for secret_id, entry in store["secrets"].items():
-                self._unseal(key, secret_id, entry)
-        except VaultError:
-            return False
-        return True
-
-    def _read_key(self, path: Path) -> bytes:
-        try:
-            key = bytes.fromhex(path.read_text(encoding="utf-8").strip())
-        except ValueError as error:
-            raise VaultError(f"{path} does not hold a usable key") from error
-        if len(key) != VAULT_KEY_BYTES:
-            raise VaultError(f"{path} does not hold a usable key")
-        return key
 
     def _seal(
         self, key: bytes, secret_id: str, kind: str, secret: dict
@@ -509,7 +564,7 @@ class SecretVault:
             )
         except InvalidTag as error:
             raise VaultError(
-                f"secret {secret_id!r} does not decrypt: the master key is not "
+                f"secret {secret_id!r} does not decrypt: the data key is not "
                 "the one it was sealed under, or the store was modified"
             ) from error
         return json.loads(plain)
@@ -531,14 +586,17 @@ class SecretVault:
         version = data.get("version", CREDENTIALS_VAULT_VERSION)
         if version != CREDENTIALS_VAULT_VERSION:
             raise VaultError(f"vault version {version!r} is not supported")
-        cipher = data.get("cipher", CREDENTIALS_VAULT_CIPHER)
-        if cipher != CREDENTIALS_VAULT_CIPHER:
-            raise VaultError(f"vault cipher {cipher!r} is not supported")
         return {
             "version": CREDENTIALS_VAULT_VERSION,
-            "cipher": CREDENTIALS_VAULT_CIPHER,
+            "wrapped_key": data.get("wrapped_key"),
             "secrets": data.get("secrets", {}),
         }
 
     def _write_store(self, store: dict) -> None:
-        write_config(CREDENTIALS_VAULT_PATH, store)
+        written = {
+            "version": CREDENTIALS_VAULT_VERSION,
+            "secrets": store.get("secrets", {}),
+        }
+        if store.get("wrapped_key"):
+            written["wrapped_key"] = store["wrapped_key"]
+        write_config(CREDENTIALS_VAULT_PATH, written)

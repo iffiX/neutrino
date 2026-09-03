@@ -8,11 +8,13 @@ import neutrino_hub.utils.json_file
 from neutrino_hub.modules.credentials.constants import CREDENTIALS_AI_PROVIDERS_PATH
 from neutrino_hub.modules.credentials.registry import AiProviderRegistry
 from neutrino_hub.modules.credentials.vault import SecretVault
+from tests.conftest import unlock_vault
 
 
 @pytest.fixture()
 def config_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(neutrino_hub.utils.json_file, "UTILS_CONFIG_DIR", tmp_path)
+    unlock_vault(monkeypatch, tmp_path)
     return tmp_path
 
 

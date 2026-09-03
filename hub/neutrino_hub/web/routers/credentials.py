@@ -17,6 +17,7 @@ from neutrino_hub.modules.credentials.vault import (
     SecretRecord,
     SecretVault,
     VaultError,
+    VaultLockedError,
 )
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.devices.key_registry import (
@@ -329,6 +330,8 @@ def create_password(request: PasswordCreate) -> PasswordView:
             name=request.name,
             secret={"password": request.password},
         )
+    except VaultLockedError:
+        raise
     except VaultError as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
@@ -362,6 +365,8 @@ def update_password(password_id: str, request: PasswordUpdate) -> PasswordView:
             record = vault.rename(password_id, request.name)
         if request.password is not None and request.password.strip():
             record = vault.replace(password_id, secret={"password": request.password})
+    except VaultLockedError:
+        raise
     except VaultError as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
@@ -472,6 +477,8 @@ def create_service_account(request: ServiceAccountCreate) -> ServiceAccountView:
             secret={"password": request.password},
             meta={"username": request.username.strip()},
         )
+    except VaultLockedError:
+        raise
     except VaultError as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
@@ -511,6 +518,8 @@ def update_service_account(
             )
         if request.password is not None and request.password.strip():
             record = vault.replace(account_id, secret={"password": request.password})
+    except VaultLockedError:
+        raise
     except VaultError as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)

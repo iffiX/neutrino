@@ -12,6 +12,7 @@ from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.host_keys import DeviceHostKeyStore
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
 from neutrino_hub.modules.devices.ssh_ops import DeviceSshOperator, SshCredentials
+from tests.conftest import unlock_vault
 
 PASSPHRASE = "opens-the-key"
 LOGIN_PASSWORD = "a-password"  # scan: allow
@@ -22,6 +23,7 @@ SUDO_PASSWORD = "a-sudo-password"  # scan: allow
 def config_dir(tmp_path, monkeypatch):
     """A `config/` of this test's own, so nothing reads the real one."""
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    unlock_vault(monkeypatch, tmp_path)
     return tmp_path
 
 

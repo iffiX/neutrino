@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.web.dependencies import require_session
 from neutrino_hub.web.routers import credentials as credentials_router
+from tests.conftest import unlock_vault
 
 PUBLIC_KEY = "ssh-ed25519 AAAAC3Nz"  # scan: allow
 STORED_PASSWORD = "hunter2hunter2"  # scan: allow
@@ -27,6 +28,7 @@ REPLACEMENT_PASSWORD = "next-one"  # scan: allow
 @pytest.fixture
 def client(monkeypatch, tmp_path):
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    unlock_vault(monkeypatch, tmp_path)
     app = FastAPI()
     app.include_router(credentials_router.router)
     app.dependency_overrides[require_session] = lambda: None

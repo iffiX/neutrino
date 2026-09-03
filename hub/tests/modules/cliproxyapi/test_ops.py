@@ -8,6 +8,7 @@ from neutrino_hub.modules.cliproxyapi import ops
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_GENERATED_NAME
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier
 from neutrino_hub.modules.credentials.registry import AiProviderRegistry
+from tests.conftest import unlock_vault
 
 
 @pytest.fixture()
@@ -18,6 +19,7 @@ def box(tmp_path, monkeypatch):
     reached ``systemctl restart`` would bounce the gateway it runs on.
     """
     monkeypatch.setattr(neutrino_hub.utils.json_file, "UTILS_CONFIG_DIR", tmp_path)
+    unlock_vault(monkeypatch, tmp_path)
     monkeypatch.setattr(ops, "UTILS_GENERATED_DIR", tmp_path / "generated")
     monkeypatch.setattr(
         CliproxyApiConfigApplier, "is_installed", property(lambda self: False)

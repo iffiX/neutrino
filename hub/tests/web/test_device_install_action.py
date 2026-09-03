@@ -18,6 +18,7 @@ from neutrino_hub.modules.devices.constants import SSH_UNREACHABLE_STATUS
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
 from neutrino_hub.web.task_stream import TaskStreamRegistry
+from tests.conftest import unlock_vault
 
 MAC = "aa:bb:cc:dd:ee:ff"
 LOGIN_PASSWORD = "a-password"  # scan: allow
@@ -40,6 +41,7 @@ class FakeRuntime:
 @pytest.fixture
 def api(monkeypatch, tmp_path):
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    unlock_vault(monkeypatch, tmp_path)
     monkeypatch.setattr(
         "neutrino_hub.modules.devices.agent_package.UTILS_CONFIG_DIR", tmp_path
     )

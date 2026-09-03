@@ -1,4 +1,4 @@
-"""The credential vault: sealing, binding, replacing, and rekeying."""
+"""The credential vault: sealing, binding, the passphrase wrap, and the lock."""
 
 import base64
 import json
@@ -12,11 +12,14 @@ from neutrino_hub.modules.credentials.constants import CREDENTIALS_VAULT_PATH
 from neutrino_hub.modules.credentials.vault import (
     SecretVault,
     VaultError,
+    VaultLockedError,
     VaultPassphraseError,
-    is_sealed,
     seal_bytes,
     unseal_bytes,
+    unwrap_data_key,
+    wrap_data_key,
 )
+from tests.conftest import unlock_vault
 
 SEALED_BY_KIND = {
     "password": {"password": "hunter2hunter2"},  # scan: allow
@@ -24,11 +27,22 @@ SEALED_BY_KIND = {
     "api_token": {"api_key": "sk-test"},  # scan: allow
     "service_account": {"password": "svc-pw"},  # scan: allow
 }
+PASSPHRASE = "A-vault-passphrase-16!"  # scan: allow
 
 
 @pytest.fixture()
 def config_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(neutrino_hub.utils.json_file, "UTILS_CONFIG_DIR", tmp_path)
+    unlock_vault(monkeypatch, tmp_path)
+    return tmp_path
+
+
+@pytest.fixture()
+def locked_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(neutrino_hub.utils.json_file, "UTILS_CONFIG_DIR", tmp_path)
+    state = tmp_path / "state"
+    state.mkdir()
+    monkeypatch.setattr("neutrino_hub.utils.constants.UTILS_STATE_ROOT", state)
     return tmp_path
 
 
@@ -37,7 +51,9 @@ def read_store(config_dir) -> dict:
 
 
 def write_store(config_dir, store: dict) -> None:
-    (config_dir / CREDENTIALS_VAULT_PATH).write_text(json.dumps(store))
+    path = config_dir / CREDENTIALS_VAULT_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(store))
 
 
 @pytest.mark.parametrize("kind", sorted(SEALED_BY_KIND))
@@ -150,94 +166,141 @@ def test_update_meta_leaves_the_seal_alone(config_dir):
         vault.update_meta("0" * 32, {"username": "archive"})
 
 
-def test_rekey_preserves_secrets_and_changes_the_key(config_dir):
+def test_an_unsupported_store_version_is_refused(config_dir):
+    write_store(config_dir, {"version": 1, "secrets": {}})
+    with pytest.raises(VaultError, match="version"):
+        SecretVault().get("anything")
+
+
+# --- the lock ---------------------------------------------------------------
+
+
+def test_a_locked_vault_refuses_what_needs_the_key(locked_dir):
     vault = SecretVault()
-    password = vault.add(kind="password", name="a", secret={"password": "pa"})
-    token = vault.add(kind="api_token", name="b", secret={"api_key": "kb"})
-    key_path = config_dir / "credentials" / "vault.key"
-    old_key = key_path.read_text()
-    assert vault.rekey() == 2
-    assert key_path.read_text() != old_key
-    assert not (config_dir / "credentials" / "vault.key.new").exists()
-    assert SecretVault().open(password.id) == {"password": "pa"}
-    assert SecretVault().open(token.id) == {"api_key": "kb"}
+    assert vault.is_locked()
+    with pytest.raises(VaultLockedError):
+        vault.add(kind="password", name="x", secret={"password": "p"})
+    with pytest.raises(VaultLockedError):
+        vault.open("0" * 32)
+    with pytest.raises(VaultLockedError):
+        vault.change_passphrase(PASSPHRASE)
+    with pytest.raises(VaultLockedError):
+        seal_bytes(b"payload", b"purpose")
 
 
-def test_leftover_rekey_key_is_discarded_when_the_old_key_still_opens(config_dir):
-    record = SecretVault().add(kind="password", name="x", secret={"password": "p"})
-    new_path = config_dir / "credentials" / "vault.key.new"
-    new_path.write_text(secrets.token_bytes(32).hex())
-    assert SecretVault().open(record.id) == {"password": "p"}
-    assert not new_path.exists()
-
-
-def test_interrupted_rekey_is_finished_from_the_new_key(config_dir):
-    vault = SecretVault()
-    record = vault.add(kind="password", name="x", secret={"password": "p"})
-    key_path = config_dir / "credentials" / "vault.key"
-    old_key = key_path.read_text()
-    vault.rekey()
-    new_key = key_path.read_text()
-    (config_dir / "credentials" / "vault.key.new").write_text(new_key)
-    key_path.write_text(old_key)
-    assert SecretVault().open(record.id) == {"password": "p"}
-    assert key_path.read_text() == new_key
-    assert not (config_dir / "credentials" / "vault.key.new").exists()
-
-
-def test_key_file_and_directory_modes(config_dir):
-    SecretVault().add(kind="password", name="x", secret={"password": "p"})
-    key_path = config_dir / "credentials" / "vault.key"
-    assert stat.S_IMODE(key_path.stat().st_mode) == 0o600
-    assert stat.S_IMODE(key_path.parent.stat().st_mode) == 0o700
-
-
-def test_seal_and_unseal_bytes():
-    payload = secrets.token_bytes(500)
-    sealed = seal_bytes(payload, "correct horse")
-    assert is_sealed(sealed)
-    assert not is_sealed(payload)
-    assert unseal_bytes(sealed, "correct horse") == payload
-
-
-def test_wrong_passphrase_is_its_own_refusal():
-    sealed = seal_bytes(b"payload", "correct horse")
-    with pytest.raises(VaultPassphraseError):
-        unseal_bytes(sealed, "wrong horse")
-
-
-def test_tampered_seal_reads_as_a_wrong_passphrase():
-    sealed = bytearray(seal_bytes(b"payload", "pass"))
-    sealed[-1] ^= 0x01
-    with pytest.raises(VaultPassphraseError):
-        unseal_bytes(bytes(sealed), "pass")
-
-
-def test_malformed_seal_is_refused_before_the_passphrase_matters():
-    with pytest.raises(VaultError) as refusal:
-        unseal_bytes(b"not a sealed archive at all", "pass")
-    assert not isinstance(refusal.value, VaultPassphraseError)
-
-    magic_only = seal_bytes(b"x", "pass")[:20]
-    with pytest.raises(VaultError) as refusal:
-        unseal_bytes(magic_only, "pass")
-    assert not isinstance(refusal.value, VaultPassphraseError)
-
-
-def test_hostile_seal_factors_are_refused():
-    import json as json_module
-
-    sealed = seal_bytes(b"payload", "pass")
-    offset = len(b"NEUTRINO-SEALED-1\n")
-    header_length = int.from_bytes(sealed[offset : offset + 4], "big")
-    header = json_module.loads(sealed[offset + 4 : offset + 4 + header_length])
-    header["n"] = 2**30
-    raised = json_module.dumps(header).encode()
-    hostile = (
-        sealed[:offset]
-        + len(raised).to_bytes(4, "big")
-        + raised
-        + sealed[offset + 4 + header_length :]
+def test_a_locked_vault_still_lists_and_deletes(locked_dir):
+    write_store(
+        locked_dir,
+        {
+            "version": 2,
+            "secrets": {
+                "abc123": {"name": "a key", "kind": "ssh_key", "nonce": "", "data": ""}
+            },
+        },
     )
+    vault = SecretVault()
+    assert [record.id for record in vault.list_records()] == ["abc123"]
+    vault.delete("abc123")
+    assert vault.list_records() == []
+
+
+# --- the passphrase wrap ----------------------------------------------------
+
+
+def test_wrap_and_unwrap_roundtrip():
+    data_key = secrets.token_bytes(32)
+    wrapped = wrap_data_key(PASSPHRASE, data_key)
+    assert unwrap_data_key(PASSPHRASE, wrapped) == data_key
+    assert data_key.hex() not in json.dumps(wrapped)
+
+
+def test_a_wrong_passphrase_is_its_own_refusal():
+    wrapped = wrap_data_key(PASSPHRASE, secrets.token_bytes(32))
+    with pytest.raises(VaultPassphraseError):
+        unwrap_data_key("Not-the-passphrase-1!", wrapped)
+
+
+def test_a_malformed_wrap_is_refused_before_the_passphrase_matters():
+    with pytest.raises(VaultError) as refusal:
+        unwrap_data_key(PASSPHRASE, {"kdf": "acme"})
+    assert not isinstance(refusal.value, VaultPassphraseError)
+    with pytest.raises(VaultError) as refusal:
+        unwrap_data_key(PASSPHRASE, "not an object")
+    assert not isinstance(refusal.value, VaultPassphraseError)
+
+
+def test_hostile_wrap_factors_are_refused():
+    wrapped = wrap_data_key(PASSPHRASE, secrets.token_bytes(32))
+    wrapped["n"] = 2**30
     with pytest.raises(VaultError):
-        unseal_bytes(hostile, "pass")
+        unwrap_data_key(PASSPHRASE, wrapped)
+
+
+def test_initialize_mints_wraps_and_unlocks(locked_dir):
+    vault = SecretVault()
+    assert vault.initialize(PASSPHRASE) is True
+    assert not vault.is_locked()
+    key_path = locked_dir / "state" / "vault.key"
+    assert stat.S_IMODE(key_path.stat().st_mode) == 0o600
+    wrapped = read_store(locked_dir)["wrapped_key"]
+    assert unwrap_data_key(PASSPHRASE, wrapped) == bytes.fromhex(
+        key_path.read_text().strip()
+    )
+
+
+def test_initialize_converges_on_a_wrapped_store(locked_dir):
+    vault = SecretVault()
+    vault.initialize(PASSPHRASE)
+    data_key = (locked_dir / "state" / "vault.key").read_text()
+    (locked_dir / "state" / "vault.key").unlink()
+    assert vault.initialize(PASSPHRASE) is False
+    assert (locked_dir / "state" / "vault.key").read_text() == data_key
+
+
+def test_initialize_never_rekeys_a_store_with_secrets(locked_dir):
+    vault = SecretVault()
+    vault.initialize(PASSPHRASE)
+    vault.add(kind="password", name="x", secret={"password": "p"})
+    with pytest.raises(VaultPassphraseError):
+        vault.initialize("Not-the-passphrase-1!")
+
+
+def test_initialize_replaces_an_empty_store_whose_passphrase_is_lost(locked_dir):
+    vault = SecretVault()
+    vault.initialize(PASSPHRASE)
+    before = read_store(locked_dir)["wrapped_key"]
+    assert vault.initialize("Another-passphrase-2!") is True
+    assert read_store(locked_dir)["wrapped_key"] != before
+
+
+def test_change_passphrase_rewraps_and_nothing_sealed_moves(config_dir):
+    vault = SecretVault()
+    vault.initialize(PASSPHRASE)
+    record = vault.add(kind="password", name="x", secret={"password": "p"})
+    sealed_before = dict(read_store(config_dir)["secrets"][record.id])
+    key_before = (config_dir / "state" / "vault.key").read_text()
+
+    vault.change_passphrase("Another-passphrase-2!")
+
+    assert read_store(config_dir)["secrets"][record.id] == sealed_before
+    assert (config_dir / "state" / "vault.key").read_text() == key_before
+    wrapped = read_store(config_dir)["wrapped_key"]
+    with pytest.raises(VaultPassphraseError):
+        unwrap_data_key(PASSPHRASE, wrapped)
+    assert unwrap_data_key("Another-passphrase-2!", wrapped) == bytes.fromhex(
+        key_before.strip()
+    )
+    assert SecretVault().open(record.id) == {"password": "p"}
+
+
+# --- byte payloads under the data key ---------------------------------------
+
+
+def test_seal_bytes_binds_to_its_purpose(config_dir):
+    payload = secrets.token_bytes(120)
+    sealed = seal_bytes(payload, b"agent_tls:key")
+    assert unseal_bytes(sealed, b"agent_tls:key") == payload
+    with pytest.raises(VaultError):
+        unseal_bytes(sealed, b"something_else")
+    with pytest.raises(VaultError):
+        unseal_bytes({"nonce": "!", "data": "!"}, b"agent_tls:key")

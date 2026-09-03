@@ -83,6 +83,7 @@ from neutrino_hub.web.constants import (
 from neutrino_hub.web.setup_app import WebSetupServer, WebSetupSession
 
 from neutrino_hub.cli.password import is_password_set, store_password
+from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.cli.reporter import InstallReporter, InstallSessionReporter
 from neutrino_hub.cli import wizard
 
@@ -467,16 +468,19 @@ def _setup(
             # After the examples land and before anything applies them: what
             # the wizard planned replaces the three-port appliance and the
             # placeholder nodes they describe. Guarded like a step, because
-            # it fails the same ways and a traceback here says nothing.
+            # it fails the same ways and a traceback here says nothing. The
+            # vault comes first: the steps after this seal material under its
+            # data key.
             reporter.start("Writing what you chose")
             try:
+                SecretVault().initialize(answers.vault_passphrase)
                 write_config("router/network.json", answers.network.to_dict())
                 _write_proxy(answers.proxy)
                 _write_listen_port(answers.listen_port)
             except (CommandError, OSError, ValueError, TypeError) as error:
                 reporter.failed(str(error))
                 return 1
-            reporter.done("network, proxy and panel port")
+            reporter.done("vault, network, proxy and panel port")
 
     for name in answers.services:
         reporter.start(f"Installing {name}")

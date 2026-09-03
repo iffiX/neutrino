@@ -12,6 +12,7 @@ import pytest
 from neutrino_hub.modules.credentials.constants import CREDENTIALS_VAULT_PATH
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.key_registry import KeyMaterialError, KeyRegistry
+from tests.conftest import unlock_vault
 
 PASSPHRASE = "opens-the-key"
 PUBLIC_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyMaterialForTests"
@@ -22,6 +23,7 @@ NOT_A_KEY = "my key is in the drawer"  # scan: allow
 def config_dir(tmp_path, monkeypatch):
     """A `config/` of this test's own, so nothing reads the real one."""
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    unlock_vault(monkeypatch, tmp_path)
     return tmp_path
 
 

@@ -18,7 +18,11 @@ from neutrino_hub.modules.credentials.constants import (
     CREDENTIALS_AI_PROVIDERS_PATH,
     CREDENTIALS_AI_PROVIDER_KINDS,
 )
-from neutrino_hub.modules.credentials.vault import SecretVault, VaultError
+from neutrino_hub.modules.credentials.vault import (
+    SecretVault,
+    VaultError,
+    VaultLockedError,
+)
 from neutrino_hub.utils.json_file import (
     CONFIG_WRITE_LOCK,
     read_config,
@@ -272,6 +276,8 @@ class AiProviderRegistry:
             try:
                 self._vault.replace(record.secret_id, secret={"api_key": api_key})
                 return
+            except VaultLockedError:
+                raise
             except VaultError:
                 # The referenced object is gone; a fresh one takes its place.
                 pass

@@ -16,6 +16,7 @@ from neutrino_hub.modules.services.probe import DeclaredServiceHealth
 from neutrino_hub.system.systemd_ctl import ServiceStatus
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import declared_services, service_control
+from tests.conftest import unlock_vault
 
 
 class RecordingProbe:
@@ -66,6 +67,7 @@ class FakeRuntime:
 @pytest.fixture
 def box(monkeypatch, tmp_path):
     monkeypatch.setattr(neutrino_hub.utils.json_file, "UTILS_CONFIG_DIR", tmp_path)
+    unlock_vault(monkeypatch, tmp_path)
     app = FastAPI()
     app.include_router(service_control.router)
     app.include_router(declared_services.router)

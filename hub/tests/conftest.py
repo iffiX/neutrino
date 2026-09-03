@@ -15,6 +15,7 @@ netlink socket. Those skip with a reason rather than failing.
 """
 
 import os
+import secrets
 import subprocess
 
 import pytest
@@ -36,6 +37,24 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "needs_root" in item.keywords:
             item.add_marker(skip)
+
+
+def unlock_vault(monkeypatch, tmp_path) -> bytes:
+    """Point the vault's state root at a fresh unlocked key under tmp_path.
+
+    Args:
+        monkeypatch: pytest's patcher.
+        tmp_path: pytest's per-test directory.
+
+    Returns:
+        The data key the vault now seals with.
+    """
+    state = tmp_path / "state"
+    state.mkdir(exist_ok=True)
+    data_key = secrets.token_bytes(32)
+    (state / "vault.key").write_text(data_key.hex() + "\n")
+    monkeypatch.setattr("neutrino_hub.utils.constants.UTILS_STATE_ROOT", state)
+    return data_key
 
 
 # --- Builders for configuration ---------------------------------------------

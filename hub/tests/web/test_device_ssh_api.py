@@ -17,6 +17,7 @@ from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
+from tests.conftest import unlock_vault
 
 MAC = "aa:bb:cc:dd:ee:ff"
 LOGIN_PASSWORD = "a-password"  # scan: allow
@@ -32,6 +33,7 @@ class FakeRuntime:
 @pytest.fixture
 def api(monkeypatch, tmp_path):
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    unlock_vault(monkeypatch, tmp_path)
     app = FastAPI()
     app.include_router(devices_router.router)
     app.dependency_overrides[require_session] = lambda: None
