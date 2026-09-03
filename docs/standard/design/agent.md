@@ -30,7 +30,9 @@ service somebody opted into. The panel port opens only where exposure says so.
 ## The identity agents pin
 
 `nhub setup` writes a self-signed pair under `config/web/agent_tls/`
-(`certificate.pem`, `key.pem` mode 0600): EC P-256, valid ten years — the
+(`certificate.pem` in the clear, `key.sealed` — the private key sealed under
+the vault's data key, unsealed into `/var/lib/neutrino/agent_tls_key.pem`
+mode 0600 for serving): EC P-256, valid ten years — the
 validity window is decoration, because verification is the fingerprint, and
 the certificate merely has to outlive the box. `nhub apply` and
 `run --only-web` also mint it when it is missing (a restored backup, an

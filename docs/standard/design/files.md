@@ -11,7 +11,7 @@ answers rather than to add a directory.
 | --- | --- | --- |
 | `/opt/neutrino/` | The interpreter, `xray`, `cli-proxy-api` | What did the package put here? |
 | `/etc/neutrino/` | `hub/`, `agent/` | What has somebody decided? |
-| `/var/lib/neutrino/` | `generated/`, `geodata/`, `cliproxyapi/`, statistics | What has this machine accumulated? |
+| `/var/lib/neutrino/` | `generated/`, `geodata/`, `cliproxyapi/`, the working vault key, the session secret, statistics | What has this machine accumulated? |
 | `/var/log/neutrino/` | The panel's and dnsmasq's logs | What happened? |
 | `/run/neutrino/` | The login lockout | What is true only until the next boot? |
 

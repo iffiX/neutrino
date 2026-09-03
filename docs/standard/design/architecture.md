@@ -195,29 +195,31 @@ process writes there, so the CLI and the page need no service restart.
 
 Every secret the hub keeps for somebody is sealed in one store:
 `config/credentials/vault.json`, one AES-256-GCM ciphertext per object under
-the master key in `config/credentials/vault.key` (mode 0600). The rest of
-`config/` holds references — `key_id`, `password_id`, `sudo_password_id`,
-`secret_id` — and no secret material at all.
+a random data key. The rest of `config/` holds references — `key_id`,
+`password_id`, `sudo_password_id`, `login_id`, `secret_id` — and no secret
+material at all.
 
 | kind | sealed | plaintext meta |
 | --- | --- | --- |
-| `password` | password | — |
+| `token` | value | — |
+| `login` | password, username | — |
 | `ssh_key` | private_key, passphrase | key_type, fingerprint |
-| `api_token` | api_key | — |
-| `service_account` | password | username |
 
 Names, kinds and timestamps stay readable, so the file says what it holds
 without saying what anything is. Each object's AAD binds its ciphertext to its
 id and kind; two objects cannot be swapped.
 
-The key lives inside `config/` because backing up `config/` must reproduce the
-appliance and the panel must decrypt with nobody at the keyboard. What
-protects a copy that leaves the box is the backup export: every backup is a
-tar.gz envelope whose manifest names and checksums its payload, and a
-passphrase seals that payload whole (scrypt → AES-256-GCM), the master key
-riding inside with everything else. A restore proves the file — name,
-manifest, checksum, passphrase — before anything touches disk. On the box itself the panel is
-root and the vault claims nothing against root.
+The data key never sits in `config/`. The store carries it wrapped under the
+master passphrase chosen at setup (scrypt → AES-256-GCM), so backing up
+`config/` produces a file that is safe as it stands; the working copy the
+panel decrypts with — with nobody at the keyboard — is state at
+`/var/lib/neutrino/vault.key` (mode 0600). A box without that state file is a
+locked vault: every operation that needs the key refuses with
+`vault_locked`, and a restore is what unlocks it, proving the archive —
+name, manifest, every member's digest, the wrapped key opening under the
+passphrase — before anything touches disk and writing the unwrapped key
+last. On the box itself the panel is root and the vault claims nothing
+against root.
 
 Secrets travel one way through the API: written in, listed back as `has_*`
 booleans, fingerprints and reference counts, never read out. Deleting an
@@ -227,7 +229,8 @@ Two things stay out: the panel password, which is a hash and not a kept
 secret, and the CLIProxyAPI client keys, which the hub mints itself, shows in
 full to their owner, and renders whole into the gateway's own config.
 
-`nhub vault rekey` re-encrypts every object under a fresh master key.
+`nhub vault rekey` wraps the data key under a new passphrase; nothing sealed
+is re-encrypted.
 
 ## The network the hub assumes
 

@@ -13,9 +13,9 @@ Runs as root. The panel it starts is root as well, for the reasons in
 
 > `nhub setup`
 
-First run. Prompts for the panel password, installs what the modules need,
-renders every config, and starts the panel. Nothing else has to be run
-afterwards.
+First run. Prompts for the panel password and the vault passphrase — the one
+a backup is later restored with — installs what the modules need, renders
+every config, and starts the panel. Nothing else has to be run afterwards.
 
 Runs once. A hub that already has a panel password refuses and names
 `nhub reset all` instead, so a second `setup` cannot land on top of a

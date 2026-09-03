@@ -20,14 +20,14 @@ key ever reaches git history.
 
 | Real file (read at runtime) | Committed example | Secret? |
 | --- | --- | --- |
-| `config/xray/nodes.json` | `nodes.example.json` | yes — node passwords / UUIDs |
+| `config/xray/nodes.json` | `nodes.example.json` | no — secrets live in the vault |
 | `config/xray/routing.json` | `routing.example.json` | no |
 | `config/router/network.json` | `network.example.json` | no |
 | `config/router/connections.json` | `connections.example.json` | yes — wireless passphrases |
-| `config/web/settings.json` | `settings.example.json` | yes — password hash, session secret |
+| `config/web/settings.json` | `settings.example.json` | yes — password hash |
 | `config/devices/devices.json` | `devices.example.json` | yes — device SSH creds |
+| `config/ai/providers.json` | `providers.example.json` | no — keys live in the vault |
 | `config/credentials/vault.json` | `vault.example.json` | yes — every sealed secret |
-| `config/credentials/vault.key` | — | yes — the master key |
 | `config/devices/packages/*` | — | no (build artifacts, just large) |
 
 `.gitignore` ignores the real names and `config/devices/packages/` wholesale,
@@ -44,20 +44,25 @@ Devices reference a key by its id, so one key can serve many devices and the
 material never sits in a device's config. Deleting a device leaves its key in
 place; the tab warns before deleting a key still in use.
 
-**AI providers** — named API endpoints and tokens (Anthropic, OpenAI, Gemini,
-or a custom relay) in `config/credentials/ai_providers.json` (gitignored;
-example committed). Stored once here and handed to features that need them —
-Dev Setup writes them into a device's AI tool configs. Keys never come back
-out through the API; listings only say whether one is stored.
+**Logins** — one account each, a password with an optional username, sealed
+as `login` objects. A device's SSH password and sudo password reference them
+by id, and so does a declared Samba share's `login_id`; the tab warns before
+deleting a login something still uses.
 
-**The vault** — every other secret sits sealed in
+**AI providers** — named API endpoints and keys (Anthropic, OpenAI, Gemini,
+or a custom relay) in `config/ai/providers.json` (gitignored; example
+committed), managed on the AI page. Each key is sealed in the vault as a
+`token` object the provider references. Keys never come back out through the
+API; listings only say whether one is stored.
+
+**The vault** — every secret sits sealed in
 `config/credentials/vault.json`, one AES-256-GCM ciphertext per object under
-the master key in `config/credentials/vault.key` (mode 0600). Names, kinds
-and timestamps stay readable; the material and the key never leave the box in
-the clear — every backup is a `.tar.gz` envelope carrying a manifest and its
-payload's checksum, and under a passphrase the payload is one sealed
-container, master key inside. `nhub vault rekey` re-encrypts everything under
-a fresh key.
+a random data key. The data key itself rides in the same file wrapped under
+the master passphrase chosen at setup, and the working copy is state at
+`/var/lib/neutrino/vault.key` (mode 0600) — so `config/` holds no unsealed
+secret, and a box without the state key is a locked vault that refuses with
+`vault_locked` until a restore supplies the passphrase. `nhub vault rekey`
+wraps the data key under a new passphrase; nothing sealed is re-encrypted.
 
 ## First-run flow
 
@@ -84,19 +89,25 @@ and your edit will be lost.
 
 ## Backup and migrate
 
-- The Settings tab exports a `config/` tarball.
-- A fresh machine: install the package, unpack the tarball into
-  `/etc/neutrino/hub/`, run `sudo nhub setup`. The box converges to the same
-  state.
+- The Settings tab exports one plain `.tar.gz`: a manifest naming what it is,
+  a `SHA256SUMS` digest list, then the `config/` tree. Safe to store as it
+  stands — the vault's data key travels only wrapped under the master
+  passphrase.
+- Restore uploads it on the Settings tab and always asks for the vault
+  passphrase: everything is verified in memory — manifest, every digest, the
+  wrapped key opening — before a byte lands, and the unwrapped data key is
+  written to `/var/lib/neutrino/vault.key` last.
 
 ## Field reference
 
 Each `*.example.json` is annotated field-by-field. The load-bearing ones:
 
 - **`nodes.json`** — `nodes[]` (each with `id`, `name`, `address`,
-  `is_enabled`, `protocol`, and a `shadowsocks` or `vless` block) plus
-  `balancer` (`strategy`: `leastPing` | `roundRobin` | `random`, `probe_url`,
-  `probe_interval_s`). Disabled nodes are dropped from the rendered config.
+  `is_enabled`, `protocol`, `secret_id` — the vault `token` holding the node's
+  password or uuid — and a `shadowsocks` or `vless` block) plus `balancer`
+  (`strategy`: `leastPing` | `roundRobin` | `random`, `probe_url`,
+  `probe_interval_s`). Disabled nodes and nodes whose reference does not
+  resolve are dropped from the rendered config.
 - **`routing.json`** — `is_geoip_split_enabled` (default `true`: CN domains/IPs
   go direct, everything else through JustMySocks), `is_local_proxy_enabled`
   (the gateway's own traffic through the proxy — default `false`), and the DNS
@@ -122,7 +133,8 @@ Each `*.example.json` is annotated field-by-field. The load-bearing ones:
   Global switches: `uplink_policy` (`failover`/`balance`) and
   `is_inter_lan_allowed` (off fences the served networks from each other; every
   network still reaches the internet and the overlay).
-- **`settings.json`** — panel port, argon2id password hash, session secret
-  and TTL. The agent package the panel installs over SSH rides inside the hub
+- **`settings.json`** — panel port, agent port, password hash and session
+  TTL. The session secret is state at `/var/lib/neutrino/session.secret`,
+  minted by the panel when missing. The agent package the panel installs over SSH rides inside the hub
   package; drop a ``.deb``/``.rpm`` into ``config/devices/packages/`` to pin
   a different build.
