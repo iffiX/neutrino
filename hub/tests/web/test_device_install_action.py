@@ -40,8 +40,13 @@ class FakeRuntime:
 @pytest.fixture
 def api(monkeypatch, tmp_path):
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
-    monkeypatch.setattr(devices_router, "UTILS_CONFIG_DIR", tmp_path)
-    monkeypatch.setattr(devices_router, "UTILS_DATA_DIR", tmp_path / "no_data")
+    monkeypatch.setattr(
+        "neutrino_hub.modules.devices.agent_package.UTILS_CONFIG_DIR", tmp_path
+    )
+    monkeypatch.setattr(
+        "neutrino_hub.modules.devices.agent_package.UTILS_DATA_DIR",
+        tmp_path / "no_data",
+    )
     app = FastAPI()
     app.include_router(devices_router.router)
     app.dependency_overrides[require_session] = lambda: None

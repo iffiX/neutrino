@@ -12,13 +12,15 @@ resolves the parts an agent cannot know for itself, chiefly the AI endpoint
 and the client key minted for that device.
 """
 
+import hashlib
 import ipaddress
 import re
 import time
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
+from neutrino_hub import HUB_VERSION
 from neutrino_hub.modules.cliproxyapi.config import CliproxyApiClientKey
 from neutrino_hub.modules.cliproxyapi.ops import (
     CliproxyApiConfigApplier,
@@ -26,6 +28,7 @@ from neutrino_hub.modules.cliproxyapi.ops import (
     save_config,
 )
 from neutrino_hub.modules.credentials.registry import AiProviderRegistry
+from neutrino_hub.modules.devices.agent_package import agent_packages
 from neutrino_hub.modules.devices.constants import DEVICE_MAC_PATTERN
 from neutrino_hub.modules.devices.registry import (
     DeviceRegistry,
@@ -33,6 +36,7 @@ from neutrino_hub.modules.devices.registry import (
     feature_wish,
 )
 from neutrino_hub.modules.features.catalog import catalog_hash, load_catalog
+from neutrino_hub.utils.version_number import parse_version
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.models import (
     ClientCommand,
@@ -42,6 +46,7 @@ from neutrino_hub.web.models import (
     ClientHeartbeat,
     ClientHeartbeatReply,
     ClientLeave,
+    ClientPackageRequest,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 
@@ -63,7 +68,8 @@ def heartbeat(
         queued commands.
 
     Raises:
-        HTTPException: 401 when the token matches no device.
+        HTTPException: 401 when the token matches no device, 409 when the
+            agent is a later release than this hub.
     """
     registry = DeviceRegistry()
     device = registry.find_by_client_token(beat.token)
@@ -71,6 +77,7 @@ def heartbeat(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="unknown client token"
         )
+    _refuse_newer_agent(beat.client_version)
     if beat.feature_requests:
         # A request from the machine's own page carries whichever wish was
         # changed there; the rest is left as the panel has it.
@@ -107,6 +114,7 @@ def heartbeat(
         desired_features=desired,
         catalog=catalog if beat.catalog_hash != served_hash else None,
         catalog_hash=served_hash,
+        hub_version=HUB_VERSION,
     )
 
 
@@ -130,8 +138,11 @@ def enroll(
         The heartbeat token and the key the device is stored under.
 
     Raises:
-        HTTPException: 401 when the ticket is unknown or has expired.
+        HTTPException: 401 when the ticket is unknown or has expired, 409
+            when the agent is a later release than this hub — judged before
+            the ticket so a refused machine has not spent the link.
     """
+    _refuse_newer_agent(request.client_version)
     # Taken before it is judged: a ticket leaves the store in one step, so
     # two machines racing the same link cannot both spend it.
     ticket = runtime.enrollments.pop(request.enrollment_token, None)
@@ -149,7 +160,7 @@ def enroll(
     token = registry.issue_client_token(key)
     if request.platform:
         runtime.client_platform[key] = dict(request.platform)
-    return ClientEnrollReply(token=token, mac_address=key)
+    return ClientEnrollReply(token=token, mac_address=key, hub_version=HUB_VERSION)
 
 
 def _reported_key(registry: DeviceRegistry, request: ClientEnroll) -> str:
@@ -231,6 +242,69 @@ def result(report: ClientCommandResult) -> dict:
             status_code=status.HTTP_401_UNAUTHORIZED, detail="unknown client token"
         )
     return {}
+
+
+@router.post("/package")
+def package(request: ClientPackageRequest) -> Response:
+    """Hand an agent the hub's baked package for its family.
+
+    This is how an older agent updates itself: the reply's ``hub_version``
+    tells it to move, and this hands it the same build an SSH install would
+    deliver, over the same pinned channel its heartbeats use.
+
+    Args:
+        request: The token and the package family.
+
+    Returns:
+        The package bytes, with their SHA-256 in ``X-Checksum-Sha256``.
+
+    Raises:
+        HTTPException: 401 when the token matches no device, 409 when the
+            hub holds no package for the family.
+    """
+    device = DeviceRegistry().find_by_client_token(request.token)
+    if device is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="unknown client token"
+        )
+    path = agent_packages().get(request.family)
+    if path is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "agent_package_missing"},
+        )
+    data = path.read_bytes()
+    return Response(
+        content=data,
+        media_type="application/octet-stream",
+        headers={"X-Checksum-Sha256": hashlib.sha256(data).hexdigest()},
+    )
+
+
+def _refuse_newer_agent(agent_version: str) -> None:
+    """Turn away an agent from a later release than this hub.
+
+    The two ship together and are supported only together, so a newer agent
+    is not negotiated with — the hub must be updated first. A version that
+    does not parse on either side refuses nothing.
+
+    Args:
+        agent_version: What the agent reported itself as.
+
+    Raises:
+        HTTPException: 409 naming both versions.
+    """
+    agent = parse_version(agent_version)
+    hub = parse_version(HUB_VERSION)
+    if agent is None or hub is None or agent <= hub:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "agent_newer_than_hub",
+            "params": {"hub_version": HUB_VERSION, "agent_version": agent_version},
+        },
+    )
 
 
 def _desired_features(

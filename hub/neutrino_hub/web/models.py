@@ -999,6 +999,10 @@ class ClientHeartbeatReply(BaseModel):
     desired_features: dict = Field(default_factory=dict)
     catalog: dict | None = None
     catalog_hash: str = ""
+    # The hub's own version, on every reply: an older agent updates itself
+    # from it, so a hub restarted with a new release reaches its fleet within
+    # one beat.
+    hub_version: str = ""
 
 
 class DeviceEnrollmentRequest(BaseModel):
@@ -1022,6 +1026,7 @@ class ClientEnroll(BaseModel):
     enrollment_token: str
     device_id: str
     hostname: str = ""
+    client_version: str = ""
     platform: dict = Field(default_factory=dict)
     # Every MAC the machine's interfaces carry, so an unbound link still
     # lands on the device a scan or an SSH setup already listed.
@@ -1033,6 +1038,14 @@ class ClientEnrollReply(BaseModel):
 
     token: str
     mac_address: str
+    hub_version: str = ""
+
+
+class ClientPackageRequest(BaseModel):
+    """An agent asking for the hub's baked package for its family."""
+
+    token: str
+    family: str
 
 
 class DeviceFeatureView(BaseModel):

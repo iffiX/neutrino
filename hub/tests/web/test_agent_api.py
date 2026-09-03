@@ -7,6 +7,7 @@ stops the panel treating the device as managed while keeping everything its
 owner typed.
 """
 
+import hashlib
 import time
 
 import pytest
@@ -101,6 +102,9 @@ def api(monkeypatch):
     )
     FakeRegistry.reset(device)
     monkeypatch.setattr(agent_router, "DeviceRegistry", FakeRegistry)
+    # Pinned so the version comparisons below are about the protocol, not
+    # about what the checkout happens to be versioned.
+    monkeypatch.setattr(agent_router, "HUB_VERSION", "1.2.3")
     # The catalog is read from the repo's manifests; a small fixed one keeps
     # the test about the protocol rather than about what ships today.
     monkeypatch.setattr(
@@ -287,6 +291,143 @@ def test_an_unknown_reported_mac_still_keys_by_mac(api):
     )
 
     assert response.json()["mac_address"] == "11:22:33:44:55:66"
+
+
+def test_replies_carry_the_hub_version(api):
+    client, runtime, _ = api
+    runtime.enrollments["ticket"] = {
+        "name": "",
+        "mac_address": None,
+        "expires_at": time.time() + 600,
+    }
+
+    beaten = client.post(
+        "/api/agent/heartbeat",
+        json={"token": "device-token", "hostname": "x", "client_version": "1.2.3"},
+    )
+    enrolled = client.post(
+        "/api/agent/enroll",
+        json={
+            "enrollment_token": "ticket",
+            "device_id": "abc123",
+            "client_version": "1.2.3",
+        },
+    )
+
+    assert beaten.json()["hub_version"] == "1.2.3"
+    assert enrolled.json()["hub_version"] == "1.2.3"
+
+
+def test_a_newer_agent_is_turned_away_with_a_code(api):
+    """A 409, never a 401: the token was fine, so the refusal must not feed
+    the agent's self-unbind counter."""
+    client, _, device = api
+
+    refused = client.post(
+        "/api/agent/heartbeat",
+        json={"token": "device-token", "hostname": "x", "client_version": "1.3.0"},
+    )
+
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == {
+        "code": "agent_newer_than_hub",
+        "params": {"hub_version": "1.2.3", "agent_version": "1.3.0"},
+    }
+    # The token survives, so a beat from a matching build still lands.
+    assert device.client.token == "device-token"
+    accepted = client.post(
+        "/api/agent/heartbeat",
+        json={"token": "device-token", "hostname": "x", "client_version": "1.2.3"},
+    )
+    assert accepted.status_code == 200
+
+
+def test_a_newer_agent_cannot_spend_an_enrollment_ticket(api):
+    client, runtime, _ = api
+    runtime.enrollments["ticket"] = {
+        "name": "",
+        "mac_address": None,
+        "expires_at": time.time() + 600,
+    }
+
+    refused = client.post(
+        "/api/agent/enroll",
+        json={
+            "enrollment_token": "ticket",
+            "device_id": "abc123",
+            "client_version": "2.0.0",
+        },
+    )
+
+    assert refused.status_code == 409
+    assert refused.json()["detail"]["code"] == "agent_newer_than_hub"
+    # The link is still whole for the machine that will use it properly.
+    assert "ticket" in runtime.enrollments
+
+
+def test_an_older_agent_still_beats(api):
+    client, _, _ = api
+
+    response = client.post(
+        "/api/agent/heartbeat",
+        json={"token": "device-token", "hostname": "x", "client_version": "1.0.0"},
+    )
+
+    assert response.status_code == 200
+
+
+def test_an_unparseable_version_refuses_nothing(api):
+    client, _, _ = api
+
+    response = client.post(
+        "/api/agent/heartbeat",
+        json={"token": "device-token", "hostname": "x", "client_version": "wat"},
+    )
+
+    assert response.status_code == 200
+
+
+def test_the_package_endpoint_serves_the_bytes_and_their_digest(
+    api, monkeypatch, tmp_path
+):
+    client, _, _ = api
+    baked = tmp_path / "neutrino-agent_9.9.9_all.deb"
+    baked.write_bytes(b"!<arch>agent-bytes")
+    monkeypatch.setattr(agent_router, "agent_packages", lambda: {"deb": baked})
+
+    response = client.post(
+        "/api/agent/package", json={"token": "device-token", "family": "deb"}
+    )
+
+    assert response.status_code == 200
+    assert response.content == b"!<arch>agent-bytes"
+    expected = hashlib.sha256(b"!<arch>agent-bytes").hexdigest()
+    assert response.headers["x-checksum-sha256"] == expected
+
+
+def test_the_package_endpoint_refuses_an_unknown_token(api, monkeypatch, tmp_path):
+    client, _, _ = api
+    baked = tmp_path / "neutrino-agent_9.9.9_all.deb"
+    baked.write_bytes(b"!<arch>agent-bytes")
+    monkeypatch.setattr(agent_router, "agent_packages", lambda: {"deb": baked})
+
+    response = client.post(
+        "/api/agent/package", json={"token": "nonsense", "family": "deb"}
+    )
+
+    assert response.status_code == 401
+
+
+def test_a_family_the_hub_has_no_package_for_is_a_coded_conflict(api, monkeypatch):
+    client, _, _ = api
+    monkeypatch.setattr(agent_router, "agent_packages", lambda: {})
+
+    response = client.post(
+        "/api/agent/package", json={"token": "device-token", "family": "rpm"}
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {"code": "agent_package_missing"}
 
 
 def test_nothing_usable_reported_keys_by_machine_id(api):

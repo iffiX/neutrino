@@ -9,6 +9,7 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from neutrino_hub.modules.devices.agent_package import agent_packages
 from neutrino_hub.modules.devices.constants import DEVICE_MAC_PATTERN
 from neutrino_hub.modules.devices.registry import (
     DeviceRegistry,
@@ -29,7 +30,6 @@ from neutrino_hub.modules.devices.remote_desktop import (
 from neutrino_hub.modules.devices.ssh_ops import DeviceSshOperator, SshCredentials
 from neutrino_hub.modules.devices.wake_on_lan import send_magic_packet
 from neutrino_hub import HUB_VERSION
-from neutrino_hub.utils.constants import UTILS_CONFIG_DIR, UTILS_DATA_DIR
 from neutrino_hub.web.agent_tls import certificate_fingerprint
 from neutrino_hub.web.constants import WEB_DEFAULT_AGENT_LISTEN_PORT
 from neutrino_hub.web.dependencies import get_runtime, require_session
@@ -366,28 +366,6 @@ def _mint_enrollment_link(
     return f"neutrino://enroll/{payload}", token
 
 
-def _agent_packages() -> dict:
-    """The agent packages the panel can deliver, newest per family.
-
-    A build pinned under ``config/devices/packages`` wins over the one the
-    hub package carries in its own data.
-
-    Returns:
-        Family (``deb``, ``rpm``) to package path, for the families found.
-    """
-    packages: dict = {}
-    for family, pattern in (("deb", "*.deb"), ("rpm", "*.rpm")):
-        for root in (
-            UTILS_CONFIG_DIR / "devices" / "packages",
-            UTILS_DATA_DIR / "agent_package",
-        ):
-            found = sorted(root.glob(pattern)) if root.is_dir() else []
-            if found:
-                packages[family] = found[-1]
-                break
-    return packages
-
-
 @router.get("/{mac_address}/features", response_model=DeviceFeatureListView)
 def list_features(
     mac_address: str, runtime: PanelRuntime = Depends(get_runtime)
@@ -653,7 +631,7 @@ async def start_action(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "unsupported_remote_install", "os": kernel},
         )
-    packages = _agent_packages()
+    packages = agent_packages()
     if not packages:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
