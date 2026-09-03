@@ -123,6 +123,15 @@ def test_the_pinned_fingerprint_talks(tls_server):
     assert json.loads(body)["token"] == "tok"
 
 
+def test_the_pinned_connection_floors_at_tls_1_2():
+    from neutrino_agent.http_channel import _PinnedHttpsConnection
+
+    connection = _PinnedHttpsConnection(
+        "127.0.0.1", 1, fingerprint="0" * 64, timeout=1.0
+    )
+    assert connection._context.minimum_version == ssl.TLSVersion.TLSv1_2
+
+
 def test_a_wrong_fingerprint_is_refused_before_anything_is_sent(tls_server):
     url, _ = tls_server
     channel = GatewayHttpChannel(

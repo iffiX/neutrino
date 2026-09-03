@@ -132,14 +132,14 @@ def enroll(
     Raises:
         HTTPException: 401 when the ticket is unknown or has expired.
     """
-    ticket = runtime.enrollments.get(request.enrollment_token)
+    # Taken before it is judged: a ticket leaves the store in one step, so
+    # two machines racing the same link cannot both spend it.
+    ticket = runtime.enrollments.pop(request.enrollment_token, None)
     if ticket is None or ticket["expires_at"] < time.time():
-        runtime.enrollments.pop(request.enrollment_token, None)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="that enrollment link is unknown or has expired",
         )
-    runtime.enrollments.pop(request.enrollment_token, None)
 
     registry = DeviceRegistry()
     key = ticket.get("mac_address") or _reported_key(registry, request)

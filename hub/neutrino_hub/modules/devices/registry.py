@@ -280,17 +280,18 @@ class DeviceRegistry:
         Returns:
             The stored device after the update.
         """
-        device = self.get(mac_address)
-        if "name" in annotation:
-            device.name = annotation["name"]
-        if "icon" in annotation:
-            device.icon = annotation["icon"]
-        if "is_wol_enabled" in annotation:
-            device.is_wol_enabled = bool(annotation["is_wol_enabled"])
-        if "ssh" in annotation:
-            device.ssh = annotation["ssh"]
-        self._store(device)
-        return device
+        with _WRITE_LOCK:
+            device = self._fresh(mac_address)
+            if "name" in annotation:
+                device.name = annotation["name"]
+            if "icon" in annotation:
+                device.icon = annotation["icon"]
+            if "is_wol_enabled" in annotation:
+                device.is_wol_enabled = bool(annotation["is_wol_enabled"])
+            if "ssh" in annotation:
+                device.ssh = annotation["ssh"]
+            self._store(device)
+            return device
 
     def forget(self, mac_address: str) -> None:
         """Drop a device's stored annotations, and the host key pinned to it.
@@ -349,10 +350,11 @@ class DeviceRegistry:
         Returns:
             The new token.
         """
-        device = self.get(mac_address)
-        device.client.token = secrets.token_urlsafe(AGENT_TOKEN_BYTES)
-        self._store(device)
-        return device.client.token
+        with _WRITE_LOCK:
+            device = self._fresh(mac_address)
+            device.client.token = secrets.token_urlsafe(AGENT_TOKEN_BYTES)
+            self._store(device)
+            return device.client.token
 
     def find_by_client_token(self, token: str) -> ManagedDevice | None:
         """Look up the device a heartbeat token belongs to.
@@ -377,10 +379,11 @@ class DeviceRegistry:
             version: Agent version it reported.
             seen_at: ISO timestamp of the heartbeat.
         """
-        device = self.get(mac_address)
-        device.client.version = version
-        device.client.last_seen = seen_at
-        self._store(device)
+        with _WRITE_LOCK:
+            device = self._fresh(mac_address)
+            device.client.version = version
+            device.client.last_seen = seen_at
+            self._store(device)
 
     def forget_client(self, mac_address: str) -> None:
         """Record that a device's agent has left.
@@ -393,12 +396,13 @@ class DeviceRegistry:
         Args:
             mac_address: The device's MAC.
         """
-        device = self.get(mac_address)
-        device.client.token = None
-        device.client.version = None
-        device.client.last_seen = None
-        device.client.features = {}
-        self._store(device)
+        with _WRITE_LOCK:
+            device = self._fresh(mac_address)
+            device.client.token = None
+            device.client.version = None
+            device.client.last_seen = None
+            device.client.features = {}
+            self._store(device)
 
     def set_feature(
         self,
@@ -424,19 +428,20 @@ class DeviceRegistry:
         Returns:
             The device after the change.
         """
-        device = self.get(mac_address)
-        wanted = feature_wish(device.client.features.get(feature))
-        if is_enabled is not None:
-            wanted["is_enabled"] = is_enabled
-            if not is_enabled:
-                wanted["is_activated"] = False
-        if is_activated is not None:
-            wanted["is_activated"] = is_activated
-            if is_activated:
-                wanted["is_enabled"] = True
-        device.client.features[feature] = wanted
-        self._store(device)
-        return device
+        with _WRITE_LOCK:
+            device = self._fresh(mac_address)
+            wanted = feature_wish(device.client.features.get(feature))
+            if is_enabled is not None:
+                wanted["is_enabled"] = is_enabled
+                if not is_enabled:
+                    wanted["is_activated"] = False
+            if is_activated is not None:
+                wanted["is_activated"] = is_activated
+                if is_activated:
+                    wanted["is_enabled"] = True
+            device.client.features[feature] = wanted
+            self._store(device)
+            return device
 
     def set_ai_key_id(self, mac_address: str, key_id: str | None) -> None:
         """Remember which cliproxyapi client key belongs to a device.
@@ -445,9 +450,10 @@ class DeviceRegistry:
             mac_address: The device's MAC.
             key_id: The key's id, or None to forget it.
         """
-        device = self.get(mac_address)
-        device.client.ai_key_id = key_id
-        self._store(device)
+        with _WRITE_LOCK:
+            device = self._fresh(mac_address)
+            device.client.ai_key_id = key_id
+            self._store(device)
 
     def set_target_user(self, mac_address: str, username: str) -> ManagedDevice:
         """Set the account the agent writes AI tool configs into.
@@ -459,10 +465,11 @@ class DeviceRegistry:
         Returns:
             The device after the change.
         """
-        device = self.get(mac_address)
-        device.client.target_user = username
-        self._store(device)
-        return device
+        with _WRITE_LOCK:
+            device = self._fresh(mac_address)
+            device.client.target_user = username
+            self._store(device)
+            return device
 
     def _from_stored(self, mac_address: str, entry: dict) -> ManagedDevice:
         ssh = entry.get("ssh")
@@ -475,6 +482,12 @@ class DeviceRegistry:
             ssh=ssh,
             client=DeviceClientInfo.from_dict(entry.get("client", {})),
         )
+
+    def _fresh(self, mac_address: str) -> ManagedDevice:
+        """One device read again under the write lock, so a mutation starts
+        from what is on disk and not from this instance's snapshot."""
+        self._stored = self._read_stored()
+        return self.get(mac_address)
 
     def _store(self, device: ManagedDevice) -> None:
         with _WRITE_LOCK:

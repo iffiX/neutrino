@@ -65,9 +65,9 @@ POWER_ACTIONS = ("reboot", "shutdown")
 PASSWORD_KIND = "password"
 
 ENROLLMENT_TOKEN_BYTES = 18
-# Long enough to walk to another machine and type it, short enough that a
+# Long enough to walk to another machine and paste it, short enough that a
 # forgotten link is not a standing invitation.
-ENROLLMENT_TTL_S = 30 * 60
+ENROLLMENT_TTL_S = 5 * 60
 
 
 @router.get("", response_model=DeviceListView)
@@ -345,15 +345,14 @@ def _mint_enrollment_link(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "agent_tls_missing"},
         ) from error
-    now = time.time()
-    for token, ticket in list(runtime.enrollments.items()):
-        if ticket.get("expires_at", 0) <= now:
-            del runtime.enrollments[token]
+    # One open invitation at a time: minting replaces whatever link was out,
+    # so only the machine the link was just made for can join on it.
+    runtime.enrollments.clear()
     token = secrets.token_urlsafe(ENROLLMENT_TOKEN_BYTES)
     runtime.enrollments[token] = {
         "name": name.strip(),
         "mac_address": (mac_address or "").lower() or None,
-        "expires_at": now + ENROLLMENT_TTL_S,
+        "expires_at": time.time() + ENROLLMENT_TTL_S,
     }
     # The whole payload rides base64url, whose alphabet has no character a
     # shell splits or a URL escapes — the link pastes anywhere unquoted.

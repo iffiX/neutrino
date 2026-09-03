@@ -190,6 +190,7 @@ class _PinnedHttpsConnection(http.client.HTTPSConnection):
             timeout: Socket timeout in seconds.
         """
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
         super().__init__(host, port, timeout=timeout, context=context)

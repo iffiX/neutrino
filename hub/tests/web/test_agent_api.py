@@ -216,6 +216,19 @@ def test_enrolling_with_a_ticket_issues_a_token(api):
     assert "ticket" not in runtime.enrollments
 
 
+def test_a_ticket_spent_twice_is_refused_the_second_time(api):
+    client, runtime, _ = api
+    runtime.enrollments["once"] = {
+        "name": "",
+        "mac_address": None,
+        "expires_at": time.time() + 600,
+    }
+    body = {"enrollment_token": "once", "device_id": "abc123", "hostname": "laptop"}
+
+    assert client.post("/api/agent/enroll", json=body).status_code == 200
+    assert client.post("/api/agent/enroll", json=body).status_code == 401
+
+
 def test_expired_ticket_is_refused(api):
     client, runtime, _ = api
     runtime.enrollments["old"] = {

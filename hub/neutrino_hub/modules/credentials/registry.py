@@ -10,6 +10,7 @@ holds its id and no secret material. The key never travels back to the browser
 — listings carry only whether one is stored.
 """
 
+import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -90,6 +91,11 @@ class AiProviderRecord:
         }
 
 
+# One lock for every instance: registries are built per request, and a
+# mutation re-reads the file under it so no write starts from a stale copy.
+_WRITE_LOCK = threading.RLock()
+
+
 class AiProviderRegistry:
     """Reads and edits the stored AI providers."""
 
@@ -153,8 +159,10 @@ class AiProviderRegistry:
         )
         if api_key:
             self._seal_key(record, api_key)
-        self._records.append(record)
-        self._write()
+        with _WRITE_LOCK:
+            self._records = self._read()
+            self._records.append(record)
+            self._write()
         return record
 
     def update(
@@ -189,25 +197,27 @@ class AiProviderRegistry:
             KeyError: If the id is unknown.
             ValueError: If a new kind is not one of the known kinds.
         """
-        record = self.get(provider_id)
-        if record is None:
-            raise KeyError(provider_id)
-        if kind is not None and kind not in CREDENTIALS_AI_PROVIDER_KINDS:
-            raise ValueError(f"unknown provider kind {kind!r}")
-        if name is not None and name.strip():
-            record.name = name.strip()
-        if kind is not None:
-            record.kind = kind
-        if base_url is not None:
-            record.base_url = base_url.strip()
-        if api_key:
-            self._seal_key(record, api_key)
-        if is_enabled is not None:
-            record.is_enabled = is_enabled
-        if models is not None:
-            record.models = models
-        self._write()
-        return record
+        with _WRITE_LOCK:
+            self._records = self._read()
+            record = self.get(provider_id)
+            if record is None:
+                raise KeyError(provider_id)
+            if kind is not None and kind not in CREDENTIALS_AI_PROVIDER_KINDS:
+                raise ValueError(f"unknown provider kind {kind!r}")
+            if name is not None and name.strip():
+                record.name = name.strip()
+            if kind is not None:
+                record.kind = kind
+            if base_url is not None:
+                record.base_url = base_url.strip()
+            if api_key:
+                self._seal_key(record, api_key)
+            if is_enabled is not None:
+                record.is_enabled = is_enabled
+            if models is not None:
+                record.models = models
+            self._write()
+            return record
 
     def delete(self, provider_id: str) -> None:
         """Remove a provider and the vault object holding its key.
@@ -218,17 +228,19 @@ class AiProviderRegistry:
         Raises:
             KeyError: If the id is unknown.
         """
-        record = self.get(provider_id)
-        if record is None:
-            raise KeyError(provider_id)
-        if record.secret_id:
-            try:
-                self._vault.delete(record.secret_id)
-            except VaultError:
-                # An object already gone leaves the provider deletable.
-                pass
-        self._records = [r for r in self._records if r.id != provider_id]
-        self._write()
+        with _WRITE_LOCK:
+            self._records = self._read()
+            record = self.get(provider_id)
+            if record is None:
+                raise KeyError(provider_id)
+            if record.secret_id:
+                try:
+                    self._vault.delete(record.secret_id)
+                except VaultError:
+                    # An object already gone leaves the provider deletable.
+                    pass
+            self._records = [r for r in self._records if r.id != provider_id]
+            self._write()
 
     def open_api_key(self, record: AiProviderRecord) -> str:
         """Read one provider's key material out of the vault.

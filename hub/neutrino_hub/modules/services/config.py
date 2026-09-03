@@ -10,6 +10,7 @@ Pure: this module parses, validates and stores configuration. Measuring
 whether a declared service answers is :mod:`neutrino_hub.modules.services.probe`.
 """
 
+import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -136,6 +137,11 @@ class DeclaredService:
         return entry
 
 
+# One lock for every instance: registries are built per request, and a
+# mutation re-reads the file under it so no write starts from a stale copy.
+_WRITE_LOCK = threading.RLock()
+
+
 class DeclaredServiceRegistry:
     """Reads and edits the declared services."""
 
@@ -200,8 +206,10 @@ class DeclaredServiceRegistry:
             shares=shares,
             created_at=datetime.now(timezone.utc).isoformat(),
         )
-        self._records.append(record)
-        self._write()
+        with _WRITE_LOCK:
+            self._records = self._read()
+            self._records.append(record)
+            self._write()
         return record
 
     def replace(
@@ -235,23 +243,25 @@ class DeclaredServiceRegistry:
             KeyError: If the id is unknown.
             DeclaredServiceError: If a field does not validate.
         """
-        stored = self.get(service_id)
-        if stored is None:
-            raise KeyError(service_id)
-        record = _build_record(
-            record_id=stored.id,
-            name=name,
-            kind=kind,
-            host=host,
-            port=port,
-            scheme=scheme,
-            path=path,
-            shares=shares,
-            created_at=stored.created_at,
-        )
-        self._records = [record if r.id == service_id else r for r in self._records]
-        self._write()
-        return record
+        with _WRITE_LOCK:
+            self._records = self._read()
+            stored = self.get(service_id)
+            if stored is None:
+                raise KeyError(service_id)
+            record = _build_record(
+                record_id=stored.id,
+                name=name,
+                kind=kind,
+                host=host,
+                port=port,
+                scheme=scheme,
+                path=path,
+                shares=shares,
+                created_at=stored.created_at,
+            )
+            self._records = [record if r.id == service_id else r for r in self._records]
+            self._write()
+            return record
 
     def delete(self, service_id: str) -> None:
         """Remove a declared service.
@@ -262,10 +272,12 @@ class DeclaredServiceRegistry:
         Raises:
             KeyError: If the id is unknown.
         """
-        if self.get(service_id) is None:
-            raise KeyError(service_id)
-        self._records = [r for r in self._records if r.id != service_id]
-        self._write()
+        with _WRITE_LOCK:
+            self._records = self._read()
+            if self.get(service_id) is None:
+                raise KeyError(service_id)
+            self._records = [r for r in self._records if r.id != service_id]
+            self._write()
 
     def _read(self) -> list[DeclaredService]:
         try:

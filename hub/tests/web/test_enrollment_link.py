@@ -75,6 +75,19 @@ def test_the_agent_port_defaults_beside_the_panel_port(fingerprinted):
     assert decoded(answer.json()["link"])["urls"] == ["https://192.168.8.1:8443"]
 
 
+def test_minting_again_replaces_the_outstanding_ticket(fingerprinted):
+    runtime = FakeRuntime()
+    client = client_for(runtime)
+
+    first = client.post("/api/devices/enrollment", json={"name": "one"})
+    second = client.post("/api/devices/enrollment", json={"name": "two"})
+
+    assert first.status_code == 200 and second.status_code == 200
+    assert len(runtime.enrollments) == 1
+    token = decoded(second.json()["link"])["token"]
+    assert runtime.enrollments[token]["name"] == "two"
+
+
 def test_a_hub_without_a_certificate_mints_no_ticket(monkeypatch):
     def missing():
         raise FileNotFoundError("no certificate")
