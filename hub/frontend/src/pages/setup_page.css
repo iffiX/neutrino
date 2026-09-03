@@ -306,14 +306,6 @@
   line-height: 1.5;
 }
 
-/* A label with a reading about its own field on the right of it. */
-.setup_field_head {
-  display: flex;
-  gap: var(--space-3);
-  align-items: center;
-  justify-content: space-between;
-}
-
 .setup_row {
   display: flex;
   gap: var(--space-4);

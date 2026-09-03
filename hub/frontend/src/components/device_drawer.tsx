@@ -43,8 +43,8 @@ import type {
   DeviceWolResult,
   KeyView,
   KeysResponse,
-  PasswordView,
-  PasswordsResponse,
+  LoginView,
+  LoginsResponse,
 } from "../api_types";
 
 import "./device_drawer.css";
@@ -65,9 +65,12 @@ const DEFAULT_SSH_PORT = 22;
 // one.
 const NEW_KEY_OPTION = "__new__";
 
-// The password pickers' sentinel for "store a new password" rather than
+// The password pickers' sentinel for "store a new login" rather than
 // choosing an existing one.
 const NEW_PASSWORD_OPTION = "__new__";
+
+// Where the vault's logins live; the pickers below list them.
+const LOGINS_PATH = "/credentials/logins";
 
 // Wording for the way this device becomes managed, or catches up with the hub.
 const GUIDANCE_TITLES: Record<DeviceUpgradePath, string> = {
@@ -91,9 +94,8 @@ const VERSION_MISMATCH_HINTS: Record<DeviceUpgradePath, string> = {
 // Wording for the save refusals the backend reports as codes.
 const UNKNOWN_CREDENTIAL_WORDING: Record<string, string> = {
   key_id: "The chosen SSH key is no longer stored; pick another.",
-  password_id: "The chosen password is no longer stored; pick another.",
-  sudo_password_id:
-    "The chosen sudo password is no longer stored; pick another.",
+  password_id: "The chosen login is no longer stored; pick another.",
+  sudo_password_id: "The chosen sudo login is no longer stored; pick another.",
 };
 
 interface DeviceAction {
@@ -159,9 +161,9 @@ export function DeviceDrawer({
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyMaterial, setNewKeyMaterial] = useState("");
   const [newKeyPassphrase, setNewKeyPassphrase] = useState("");
-  // Password auth references a vault password by id, the same way key auth
+  // Password auth references a vault login by id, the same way key auth
   // references a key: pick a stored one, or store a new one on save.
-  const passwords = useApiResource<PasswordsResponse>("/credentials/passwords");
+  const logins = useApiResource<LoginsResponse>(LOGINS_PATH);
   const [passwordId, setPasswordId] = useState<string>(
     device.ssh?.password_id ?? "",
   );
@@ -235,17 +237,19 @@ export function DeviceDrawer({
       }
       let resolvedPasswordId = passwordId;
       if (hasSshDraft && auth === "password" && isAddingPassword) {
-        const created = await apiPost<PasswordView>("/credentials/passwords", {
+        const created = await apiPost<LoginView>(LOGINS_PATH, {
           name: newPasswordName.trim() || `${name.trim() || host.trim()} login`,
+          username: null,
           password: newPasswordValue,
         });
         resolvedPasswordId = created.id;
       }
       let resolvedSudoPasswordId = sudoPasswordId;
       if (hasSshDraft && isAddingSudoPassword) {
-        const created = await apiPost<PasswordView>("/credentials/passwords", {
+        const created = await apiPost<LoginView>(LOGINS_PATH, {
           name:
             newSudoPasswordName.trim() || `${name.trim() || host.trim()} sudo`,
+          username: null,
           password: newSudoPasswordValue,
         });
         resolvedSudoPasswordId = created.id;
@@ -287,7 +291,7 @@ export function DeviceDrawer({
         keys.reload();
       }
       if (isAddingPassword || isAddingSudoPassword) {
-        passwords.reload();
+        logins.reload();
       }
       setNotice("Saved.");
     } catch (cause: unknown) {
@@ -613,23 +617,18 @@ export function DeviceDrawer({
                         value={passwordId}
                         onChange={(event) => setPasswordId(event.target.value)}
                       >
-                        <option value="">Select a password…</option>
-                        {(passwords.data?.passwords ?? []).map(
-                          (storedPassword) => (
-                            <option
-                              key={storedPassword.id}
-                              value={storedPassword.id}
-                            >
-                              {storedPassword.name}
-                            </option>
-                          ),
-                        )}
+                        <option value="">Select a login…</option>
+                        {(logins.data?.logins ?? []).map((storedLogin) => (
+                          <option key={storedLogin.id} value={storedLogin.id}>
+                            {loginLabel(storedLogin)}
+                          </option>
+                        ))}
                         <option value={NEW_PASSWORD_OPTION}>
                           ＋ Store a new password…
                         </option>
                       </select>
                       <span className="field_hint">
-                        Pick a stored password, or store a new one.
+                        Pick a stored login, or store a new one.
                       </span>
                     </label>
                     {isAddingPassword && (
@@ -668,9 +667,9 @@ export function DeviceDrawer({
                     onChange={(event) => setSudoPasswordId(event.target.value)}
                   >
                     <option value="">(none)</option>
-                    {(passwords.data?.passwords ?? []).map((storedPassword) => (
-                      <option key={storedPassword.id} value={storedPassword.id}>
-                        {storedPassword.name}
+                    {(logins.data?.logins ?? []).map((storedLogin) => (
+                      <option key={storedLogin.id} value={storedLogin.id}>
+                        {loginLabel(storedLogin)}
                       </option>
                     ))}
                     <option value={NEW_PASSWORD_OPTION}>
@@ -940,6 +939,13 @@ function isValidPort(value: string): boolean {
   }
   const port = Number(value);
   return port >= 1 && port <= 65535;
+}
+
+// The picker row for one login: its name, and its username when it has one.
+function loginLabel(login: LoginView): string {
+  return login.username === null
+    ? login.name
+    : `${login.name} · ${login.username}`;
 }
 
 // Enough of the fingerprint to tell two keys apart in a dropdown, without

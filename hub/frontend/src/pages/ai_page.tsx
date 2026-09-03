@@ -30,6 +30,8 @@ import "./ai_page.css";
  * effect on every connected machine at once.
  */
 
+const AI_PROVIDERS_PATH = "/ai/providers";
+
 export function AiPage() {
   const resource = useApiResource<CliproxyApiStatusView>("/cliproxyapi");
   const [view, setView] = useState<CliproxyApiStatusView | null>(null);
@@ -48,7 +50,7 @@ export function AiPage() {
 
   useEffect(() => {
     let isCancelled = false;
-    apiGet<AiProvidersResponse>("/credentials/ai_providers")
+    apiGet<AiProvidersResponse>(AI_PROVIDERS_PATH)
       .then((response) => {
         if (!isCancelled) {
           setProviders(response.providers);
@@ -109,7 +111,7 @@ export function AiPage() {
   const handleToggleProvider = (provider: AiProviderView) => {
     void run(async () => {
       const updated = await apiPut<AiProviderView>(
-        `/credentials/ai_providers/${provider.id}`,
+        `${AI_PROVIDERS_PATH}/${provider.id}`,
         { is_enabled: !provider.is_enabled },
       );
       setProviders((current) =>

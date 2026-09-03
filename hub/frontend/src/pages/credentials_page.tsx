@@ -3,7 +3,13 @@ import { useEffect, useState } from "react";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { PasswordInput } from "../components/password_input";
-import { apiDelete, apiPost, apiPut, describeError } from "../api_client";
+import {
+  ApiError,
+  apiDelete,
+  apiPost,
+  apiPut,
+  describeError,
+} from "../api_client";
 import { formatTimeAgo } from "../format_duration";
 import { PRIVATE_KEY_PLACEHOLDER } from "../private_key_placeholder";
 import { useApiResource } from "../use_api_resource";
@@ -15,22 +21,31 @@ import type {
   AiProvidersResponse,
   KeyView,
   KeysResponse,
-  PasswordView,
-  PasswordsResponse,
-  ServiceAccountView,
-  ServiceAccountsResponse,
+  LoginView,
+  LoginsResponse,
+  TokenView,
+  TokensResponse,
 } from "../api_types";
 
 import "./credentials_page.css";
 
 /**
  * Everything the gateway holds on your behalf to reach other things: the SSH
- * keys and passwords it uses to manage devices, the accounts it presents to
- * services, and the AI endpoints and tokens it wires into devices' tools.
+ * keys and logins it uses to manage devices and sign in to services, the
+ * tokens it presents to APIs, and the AI endpoints it wires into devices'
+ * tools.
  *
  * Secrets travel one way. A key, password or token is typed once and never
  * shown again; everything on this page is metadata.
  */
+
+const LOGINS_PATH = "/credentials/logins";
+const TOKENS_PATH = "/credentials/tokens";
+const AI_PROVIDERS_PATH = "/ai/providers";
+
+// The provider form's <select> sentinel for "store a new token" rather than
+// choosing an existing one.
+const NEW_TOKEN_OPTION = "__new__";
 
 const PROVIDER_KINDS: AiProviderKind[] = [
   "anthropic",
@@ -68,15 +83,16 @@ export function CredentialsPage() {
         <div>
           <h1 className="page_title">Credentials</h1>
           <p className="page_subtitle">
-            SSH keys and passwords for reaching devices, accounts for the
-            services they use, and the AI endpoints handed to their tools.
+            SSH keys and logins for reaching devices and services, tokens for
+            the APIs the box speaks to, and the AI endpoints handed to
+            devices&apos; tools.
           </p>
         </div>
       </header>
 
       <SshKeysSection />
-      <PasswordsSection />
-      <ServiceAccountsSection />
+      <LoginsSection />
+      <TokensSection />
       <AiProvidersSection />
     </div>
   );
@@ -156,41 +172,37 @@ function SshKeysSection() {
   );
 }
 
-function PasswordsSection() {
-  const resource = useApiResource<PasswordsResponse>("/credentials/passwords");
-  const [passwords, setPasswords] = useState<PasswordView[]>([]);
+function LoginsSection() {
+  const resource = useApiResource<LoginsResponse>(LOGINS_PATH);
+  const [logins, setLogins] = useState<LoginView[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (resource.data !== null) {
-      setPasswords(resource.data.passwords);
+      setLogins(resource.data.logins);
     }
   }, [resource.data]);
 
-  const handleSaved = (saved: PasswordView) => {
-    setPasswords((current) => {
-      const exists = current.some((password) => password.id === saved.id);
+  const handleSaved = (saved: LoginView) => {
+    setLogins((current) => {
+      const exists = current.some((login) => login.id === saved.id);
       return exists
-        ? current.map((password) =>
-            password.id === saved.id ? saved : password,
-          )
+        ? current.map((login) => (login.id === saved.id ? saved : login))
         : [saved, ...current];
     });
     setIsAdding(false);
     setEditingId(null);
   };
 
-  const handleDeleted = (passwordId: string) => {
-    setPasswords((current) =>
-      current.filter((password) => password.id !== passwordId),
-    );
+  const handleDeleted = (loginId: string) => {
+    setLogins((current) => current.filter((login) => login.id !== loginId));
   };
 
   return (
     <section className="settings_group">
       <div className="settings_group_title">
-        <h2>Passwords</h2>
+        <h2>Logins</h2>
         {!isAdding && (
           <button
             type="button"
@@ -198,12 +210,14 @@ function PasswordsSection() {
             onClick={() => setIsAdding(true)}
           >
             <Icon name="plus" size={14} />
-            Add password
+            Add login
           </button>
         )}
       </div>
       <p className="field_hint">
-        Used for a device&apos;s SSH login and for its sudo prompt.
+        A username and password pair, or a bare password. Used for a
+        device&apos;s SSH login and sudo prompt, and to sign in to declared
+        services.
       </p>
 
       {resource.error !== null && (
@@ -211,37 +225,34 @@ function PasswordsSection() {
       )}
 
       {isAdding && (
-        <PasswordForm
-          onSaved={handleSaved}
-          onCancel={() => setIsAdding(false)}
-        />
+        <LoginForm onSaved={handleSaved} onCancel={() => setIsAdding(false)} />
       )}
 
-      {passwords.length === 0 && !isAdding ? (
+      {logins.length === 0 && !isAdding ? (
         <div className="keys_empty">
           <Icon name="lock" size={22} />
-          <span className="keys_empty_title">No passwords yet</span>
+          <span className="keys_empty_title">No logins yet</span>
           <span className="keys_empty_hint">
-            Add a password here, then pick it when a device signs in without a
-            key.
+            Add a login here, then pick it wherever a device or service signs in
+            with a password.
           </span>
         </div>
       ) : (
         <div className="keys_list">
-          {passwords.map((password) =>
-            editingId === password.id ? (
-              <PasswordForm
-                key={password.id}
-                initial={password}
+          {logins.map((login) =>
+            editingId === login.id ? (
+              <LoginForm
+                key={login.id}
+                initial={login}
                 onSaved={handleSaved}
                 onCancel={() => setEditingId(null)}
               />
             ) : (
-              <PasswordCard
-                key={password.id}
-                value={password}
+              <LoginCard
+                key={login.id}
+                value={login}
                 onSaved={handleSaved}
-                onEdit={() => setEditingId(password.id)}
+                onEdit={() => setEditingId(login.id)}
                 onDeleted={handleDeleted}
               />
             ),
@@ -252,41 +263,37 @@ function PasswordsSection() {
   );
 }
 
-function ServiceAccountsSection() {
-  const resource = useApiResource<ServiceAccountsResponse>(
-    "/credentials/service_accounts",
-  );
-  const [accounts, setAccounts] = useState<ServiceAccountView[]>([]);
+function TokensSection() {
+  const resource = useApiResource<TokensResponse>(TOKENS_PATH);
+  const [tokens, setTokens] = useState<TokenView[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (resource.data !== null) {
-      setAccounts(resource.data.service_accounts);
+      setTokens(resource.data.tokens);
     }
   }, [resource.data]);
 
-  const handleSaved = (saved: ServiceAccountView) => {
-    setAccounts((current) => {
-      const exists = current.some((account) => account.id === saved.id);
+  const handleSaved = (saved: TokenView) => {
+    setTokens((current) => {
+      const exists = current.some((token) => token.id === saved.id);
       return exists
-        ? current.map((account) => (account.id === saved.id ? saved : account))
+        ? current.map((token) => (token.id === saved.id ? saved : token))
         : [saved, ...current];
     });
     setIsAdding(false);
     setEditingId(null);
   };
 
-  const handleDeleted = (accountId: string) => {
-    setAccounts((current) =>
-      current.filter((account) => account.id !== accountId),
-    );
+  const handleDeleted = (tokenId: string) => {
+    setTokens((current) => current.filter((token) => token.id !== tokenId));
   };
 
   return (
     <section className="settings_group">
       <div className="settings_group_title">
-        <h2>Service accounts</h2>
+        <h2>Tokens</h2>
         {!isAdding && (
           <button
             type="button"
@@ -294,13 +301,12 @@ function ServiceAccountsSection() {
             onClick={() => setIsAdding(true)}
           >
             <Icon name="plus" size={14} />
-            Add account
+            Add token
           </button>
         )}
       </div>
       <p className="field_hint">
-        Used to sign in to declared services and to the Samba shares devices
-        mount.
+        A single secret value under a name. An AI provider is keyed with one.
       </p>
 
       {resource.error !== null && (
@@ -308,37 +314,34 @@ function ServiceAccountsSection() {
       )}
 
       {isAdding && (
-        <ServiceAccountForm
-          onSaved={handleSaved}
-          onCancel={() => setIsAdding(false)}
-        />
+        <TokenForm onSaved={handleSaved} onCancel={() => setIsAdding(false)} />
       )}
 
-      {accounts.length === 0 && !isAdding ? (
+      {tokens.length === 0 && !isAdding ? (
         <div className="keys_empty">
-          <Icon name="services" size={22} />
-          <span className="keys_empty_title">No accounts yet</span>
+          <Icon name="key" size={22} />
+          <span className="keys_empty_title">No tokens yet</span>
           <span className="keys_empty_hint">
-            Add a username and password once, instead of typing them into every
-            service.
+            Store a token once, then reference it from AI providers instead of
+            pasting it again.
           </span>
         </div>
       ) : (
         <div className="keys_list">
-          {accounts.map((account) =>
-            editingId === account.id ? (
-              <ServiceAccountForm
-                key={account.id}
-                initial={account}
+          {tokens.map((token) =>
+            editingId === token.id ? (
+              <TokenForm
+                key={token.id}
+                initial={token}
                 onSaved={handleSaved}
                 onCancel={() => setEditingId(null)}
               />
             ) : (
-              <ServiceAccountCard
-                key={account.id}
-                value={account}
+              <TokenCard
+                key={token.id}
+                value={token}
                 onSaved={handleSaved}
-                onEdit={() => setEditingId(account.id)}
+                onEdit={() => setEditingId(token.id)}
                 onDeleted={handleDeleted}
               />
             ),
@@ -350,9 +353,7 @@ function ServiceAccountsSection() {
 }
 
 function AiProvidersSection() {
-  const resource = useApiResource<AiProvidersResponse>(
-    "/credentials/ai_providers",
-  );
+  const resource = useApiResource<AiProvidersResponse>(AI_PROVIDERS_PATH);
   const [providers, setProviders] = useState<AiProviderView[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -399,7 +400,7 @@ function AiProvidersSection() {
       </div>
       <p className="field_hint">
         Stored once here; Dev Setup points every machine&apos;s AI tools at
-        them.
+        them. Each provider is keyed with a stored token.
       </p>
 
       {resource.error !== null && (
@@ -454,6 +455,7 @@ interface ProviderFormProps {
 }
 
 function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
+  const tokens = useApiResource<TokensResponse>(TOKENS_PATH);
   const [name, setName] = useState(initial?.name ?? "");
   const [kind, setKind] = useState<AiProviderKind>(
     initial?.kind ?? "anthropic",
@@ -462,31 +464,46 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
   const [modelsText, setModelsText] = useState(
     serializeModels(initial?.models ?? []),
   );
-  const [apiKey, setApiKey] = useState("");
+  const [secretId, setSecretId] = useState(initial?.secret_id ?? "");
+  const [newTokenName, setNewTokenName] = useState("");
+  const [newTokenValue, setNewTokenValue] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const isEditing = initial !== undefined;
-  const isReady =
-    name.trim().length > 0 && (isEditing || apiKey.trim().length > 0);
+  const isAddingToken = secretId === NEW_TOKEN_OPTION;
+  const isSecretReady = isAddingToken
+    ? newTokenValue.trim().length > 0
+    : isEditing || secretId.length > 0;
+  const isReady = name.trim().length > 0 && isSecretReady;
 
   const handleSubmit = async () => {
     setIsSaving(true);
     setError(null);
     try {
+      // A new token is stored first, then the provider references it — the
+      // same token any other provider can then reuse.
+      let resolvedSecretId = secretId;
+      if (isAddingToken) {
+        const createdToken = await apiPost<TokenView>(TOKENS_PATH, {
+          name: newTokenName.trim() || `${name.trim()} key`,
+          value: newTokenValue,
+        });
+        resolvedSecretId = createdToken.id;
+      }
       const payload = {
         name: name.trim(),
         kind,
         base_url: baseUrl.trim(),
-        api_key: apiKey,
+        secret_id: resolvedSecretId.length > 0 ? resolvedSecretId : null,
         models: parseModels(modelsText),
       };
       const saved = isEditing
         ? await apiPut<AiProviderView>(
-            `/credentials/ai_providers/${initial.id}`,
+            `${AI_PROVIDERS_PATH}/${initial.id}`,
             payload,
           )
-        : await apiPost<AiProviderView>("/credentials/ai_providers", payload);
+        : await apiPost<AiProviderView>(AI_PROVIDERS_PATH, payload);
       onSaved(saved);
     } catch (cause: unknown) {
       setError(describeError(cause));
@@ -557,14 +574,41 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
         </span>
       </label>
       <label className="field">
-        <span className="field_label">API key</span>
-        <PasswordInput value={apiKey} onChange={setApiKey} />
-        {isEditing && (
-          <span className="field_hint">
-            Stored; type a new one to replace it.
-          </span>
-        )}
+        <span className="field_label">API token</span>
+        <select
+          className="input"
+          value={secretId}
+          onChange={(event) => setSecretId(event.target.value)}
+        >
+          <option value="">Select a token…</option>
+          {(tokens.data?.tokens ?? []).map((token) => (
+            <option key={token.id} value={token.id}>
+              {token.name}
+            </option>
+          ))}
+          <option value={NEW_TOKEN_OPTION}>＋ Store a new token…</option>
+        </select>
+        <span className="field_hint">
+          Pick a stored token, or store a new one.
+        </span>
       </label>
+      {isAddingToken && (
+        <div className="credentials_form_row">
+          <label className="field">
+            <span className="field_label">New token name</span>
+            <input
+              className="input"
+              value={newTokenName}
+              placeholder={`${name.trim() || "provider"} key`}
+              onChange={(event) => setNewTokenName(event.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span className="field_label">Value</span>
+            <PasswordInput value={newTokenValue} onChange={setNewTokenValue} />
+          </label>
+        </div>
+      )}
       {error !== null && <span className="field_error">{error}</span>}
       <div className="keys_add_actions">
         <button
@@ -602,7 +646,7 @@ function ProviderCard({ value, onEdit, onDeleted }: ProviderCardProps) {
   const handleDelete = () =>
     confirm.ask({
       title: `Delete ${value.name}`,
-      body: "The provider and the key held for it are removed from this box.",
+      body: "The provider is removed from this box; the token it was keyed with stays stored.",
       confirmLabel: "Delete",
       onConfirm: () => void deleteProvider(),
     });
@@ -611,7 +655,7 @@ function ProviderCard({ value, onEdit, onDeleted }: ProviderCardProps) {
     setIsBusy(true);
     setError(null);
     try {
-      await apiDelete(`/credentials/ai_providers/${value.id}`);
+      await apiDelete(`${AI_PROVIDERS_PATH}/${value.id}`);
       onDeleted(value.id);
     } catch (cause: unknown) {
       setError(describeError(cause));
@@ -633,11 +677,13 @@ function ProviderCard({ value, onEdit, onDeleted }: ProviderCardProps) {
       <div className="key_card_meta">
         <span
           className={`key_card_tag ${
-            value.has_api_key && value.is_enabled ? "key_card_tag--used" : ""
+            value.secret_id !== null && value.is_enabled
+              ? "key_card_tag--used"
+              : ""
           }`}
         >
           <Icon name="lock" size={11} />
-          {!value.has_api_key
+          {value.secret_id === null
             ? "no key"
             : value.is_enabled
               ? "serving"
@@ -906,14 +952,15 @@ function KeyCard({ value, onRenamed, onDeleted }: KeyCardProps) {
   );
 }
 
-interface PasswordFormProps {
-  initial?: PasswordView;
-  onSaved: (password: PasswordView) => void;
+interface LoginFormProps {
+  initial?: LoginView;
+  onSaved: (login: LoginView) => void;
   onCancel: () => void;
 }
 
-function PasswordForm({ initial, onSaved, onCancel }: PasswordFormProps) {
+function LoginForm({ initial, onSaved, onCancel }: LoginFormProps) {
   const [name, setName] = useState(initial?.name ?? "");
+  const [username, setUsername] = useState(initial?.username ?? "");
   const [password, setPassword] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -925,253 +972,14 @@ function PasswordForm({ initial, onSaved, onCancel }: PasswordFormProps) {
     setIsSaving(true);
     setError(null);
     try {
-      const payload = { name: name.trim(), password };
-      const saved = isEditing
-        ? await apiPut<PasswordView>(
-            `/credentials/passwords/${initial.id}`,
-            payload,
-          )
-        : await apiPost<PasswordView>("/credentials/passwords", payload);
-      onSaved(saved);
-    } catch (cause: unknown) {
-      setError(describeError(cause));
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  return (
-    <div className="keys_add">
-      <div className="section_label">
-        {isEditing ? `Edit ${initial.name}` : "New password"}
-      </div>
-      <label className="field">
-        <span className="field_label">Name</span>
-        <input
-          className="input"
-          value={name}
-          placeholder="lab machines"
-          autoFocus
-          onChange={(event) => setName(event.target.value)}
-        />
-      </label>
-      <label className="field">
-        <span className="field_label">Password</span>
-        <PasswordInput value={password} onChange={setPassword} />
-        <span className="field_hint">
-          {isEditing
-            ? "Stored; type a new one to replace it."
-            : "Stored sealed on the gateway, and never shown again."}
-        </span>
-      </label>
-      {error !== null && <span className="field_error">{error}</span>}
-      <div className="keys_add_actions">
-        <button
-          type="button"
-          className="button button--ghost"
-          onClick={onCancel}
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="button button--primary"
-          disabled={!isReady || isSaving}
-          onClick={() => void handleSubmit()}
-        >
-          <Icon name="check" size={14} />
-          {isSaving ? "Saving…" : "Save password"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-interface PasswordCardProps {
-  value: PasswordView;
-  onSaved: (password: PasswordView) => void;
-  onEdit: () => void;
-  onDeleted: (passwordId: string) => void;
-}
-
-function PasswordCard({
-  value,
-  onSaved,
-  onEdit,
-  onDeleted,
-}: PasswordCardProps) {
-  const [isEditingName, setIsEditingName] = useState(false);
-  const confirm = useConfirm();
-  const [draftName, setDraftName] = useState(value.name);
-  const [error, setError] = useState<string | null>(null);
-  const [isBusy, setIsBusy] = useState(false);
-
-  const handleRename = async () => {
-    if (draftName.trim().length === 0 || draftName.trim() === value.name) {
-      setIsEditingName(false);
-      setDraftName(value.name);
-      return;
-    }
-    setIsBusy(true);
-    setError(null);
-    try {
-      const updated = await apiPut<PasswordView>(
-        `/credentials/passwords/${value.id}`,
-        { name: draftName.trim() },
-      );
-      onSaved(updated);
-      setIsEditingName(false);
-    } catch (cause: unknown) {
-      setError(describeError(cause));
-    } finally {
-      setIsBusy(false);
-    }
-  };
-
-  const handleDelete = () =>
-    confirm.ask({
-      title: `Delete ${value.name}`,
-      body:
-        value.device_count > 0
-          ? `${value.device_count} device(s) sign in with this password and ` +
-            "are left without one once it is gone."
-          : "The password is deleted from this box.",
-      confirmLabel: "Delete",
-      onConfirm: () => void deletePassword(),
-    });
-
-  const deletePassword = async () => {
-    const inUse = value.device_count > 0;
-    setIsBusy(true);
-    setError(null);
-    try {
-      await apiDelete(
-        `/credentials/passwords/${value.id}${inUse ? "?force=true" : ""}`,
-      );
-      onDeleted(value.id);
-    } catch (cause: unknown) {
-      setError(describeError(cause));
-      setIsBusy(false);
-    }
-  };
-
-  return (
-    <div className="key_card">
-      <div className="key_card_head">
-        {isEditingName ? (
-          <input
-            className="input key_card_name_input"
-            value={draftName}
-            autoFocus
-            onChange={(event) => setDraftName(event.target.value)}
-            onBlur={() => void handleRename()}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                void handleRename();
-              } else if (event.key === "Escape") {
-                setIsEditingName(false);
-                setDraftName(value.name);
-              }
-            }}
-          />
-        ) : (
-          <button
-            type="button"
-            className="key_card_name"
-            onClick={() => setIsEditingName(true)}
-            title="Rename"
-          >
-            {value.name}
-            <Icon name="edit" size={12} />
-          </button>
-        )}
-      </div>
-
-      <div className="key_card_meta">
-        <span
-          className={`key_card_tag ${
-            value.device_count > 0 ? "key_card_tag--used" : ""
-          }`}
-        >
-          {value.device_count === 0
-            ? "unused"
-            : `${value.device_count} device${value.device_count === 1 ? "" : "s"}`}
-        </span>
-        {value.created_at.length > 0 && (
-          <span className="key_card_added">
-            added {formatTimeAgo(value.created_at)}
-          </span>
-        )}
-      </div>
-
-      {error !== null && <span className="field_error">{error}</span>}
-
-      <div className="key_card_actions">
-        <button
-          type="button"
-          className="button button--ghost button--small"
-          disabled={isBusy}
-          onClick={onEdit}
-        >
-          <Icon name="edit" size={13} />
-          Edit
-        </button>
-        <button
-          type="button"
-          className="button button--ghost button--small button--danger"
-          disabled={isBusy}
-          onClick={handleDelete}
-        >
-          <Icon name="trash" size={13} />
-          Delete
-        </button>
-      </div>
-      {confirm.modal}
-    </div>
-  );
-}
-
-interface ServiceAccountFormProps {
-  initial?: ServiceAccountView;
-  onSaved: (account: ServiceAccountView) => void;
-  onCancel: () => void;
-}
-
-function ServiceAccountForm({
-  initial,
-  onSaved,
-  onCancel,
-}: ServiceAccountFormProps) {
-  const [name, setName] = useState(initial?.name ?? "");
-  const [username, setUsername] = useState(initial?.username ?? "");
-  const [password, setPassword] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const isEditing = initial !== undefined;
-  const isReady =
-    name.trim().length > 0 &&
-    username.trim().length > 0 &&
-    (isEditing || password.length > 0);
-
-  const handleSubmit = async () => {
-    setIsSaving(true);
-    setError(null);
-    try {
       const payload = {
         name: name.trim(),
-        username: username.trim(),
+        username: username.trim().length > 0 ? username.trim() : null,
         password,
       };
       const saved = isEditing
-        ? await apiPut<ServiceAccountView>(
-            `/credentials/service_accounts/${initial.id}`,
-            payload,
-          )
-        : await apiPost<ServiceAccountView>(
-            "/credentials/service_accounts",
-            payload,
-          );
+        ? await apiPut<LoginView>(`${LOGINS_PATH}/${initial.id}`, payload)
+        : await apiPost<LoginView>(LOGINS_PATH, payload);
       onSaved(saved);
     } catch (cause: unknown) {
       setError(describeError(cause));
@@ -1183,7 +991,7 @@ function ServiceAccountForm({
   return (
     <div className="keys_add">
       <div className="section_label">
-        {isEditing ? `Edit ${initial.name}` : "New service account"}
+        {isEditing ? `Edit ${initial.name}` : "New login"}
       </div>
       <div className="credentials_form_row">
         <label className="field">
@@ -1191,7 +999,7 @@ function ServiceAccountForm({
           <input
             className="input"
             value={name}
-            placeholder="NAS backup"
+            placeholder="lab machines"
             autoFocus
             onChange={(event) => setName(event.target.value)}
           />
@@ -1205,6 +1013,9 @@ function ServiceAccountForm({
             spellCheck={false}
             onChange={(event) => setUsername(event.target.value)}
           />
+          <span className="field_hint">
+            Leave blank to store a bare password.
+          </span>
         </label>
       </div>
       <label className="field">
@@ -1232,26 +1043,21 @@ function ServiceAccountForm({
           onClick={() => void handleSubmit()}
         >
           <Icon name="check" size={14} />
-          {isSaving ? "Saving…" : "Save account"}
+          {isSaving ? "Saving…" : "Save login"}
         </button>
       </div>
     </div>
   );
 }
 
-interface ServiceAccountCardProps {
-  value: ServiceAccountView;
-  onSaved: (account: ServiceAccountView) => void;
+interface LoginCardProps {
+  value: LoginView;
+  onSaved: (login: LoginView) => void;
   onEdit: () => void;
-  onDeleted: (accountId: string) => void;
+  onDeleted: (loginId: string) => void;
 }
 
-function ServiceAccountCard({
-  value,
-  onSaved,
-  onEdit,
-  onDeleted,
-}: ServiceAccountCardProps) {
+function LoginCard({ value, onSaved, onEdit, onDeleted }: LoginCardProps) {
   const [isEditingName, setIsEditingName] = useState(false);
   const confirm = useConfirm();
   const [draftName, setDraftName] = useState(value.name);
@@ -1267,10 +1073,9 @@ function ServiceAccountCard({
     setIsBusy(true);
     setError(null);
     try {
-      const updated = await apiPut<ServiceAccountView>(
-        `/credentials/service_accounts/${value.id}`,
-        { name: draftName.trim() },
-      );
+      const updated = await apiPut<LoginView>(`${LOGINS_PATH}/${value.id}`, {
+        name: draftName.trim(),
+      });
       onSaved(updated);
       setIsEditingName(false);
     } catch (cause: unknown) {
@@ -1284,21 +1089,20 @@ function ServiceAccountCard({
     confirm.ask({
       title: `Delete ${value.name}`,
       body:
-        value.service_count > 0
-          ? `${value.service_count} service(s) sign in with this account and ` +
-            "are left without one once it is gone."
-          : "The account and its password are deleted from this box.",
+        value.device_count + value.service_count > 0
+          ? "Whatever signs in with this login is left without it once it is gone."
+          : "The login and its password are deleted from this box.",
       confirmLabel: "Delete",
-      onConfirm: () => void deleteAccount(),
+      onConfirm: () => void deleteLogin(),
     });
 
-  const deleteAccount = async () => {
-    const inUse = value.service_count > 0;
+  const deleteLogin = async () => {
+    const inUse = value.device_count + value.service_count > 0;
     setIsBusy(true);
     setError(null);
     try {
       await apiDelete(
-        `/credentials/service_accounts/${value.id}${inUse ? "?force=true" : ""}`,
+        `${LOGINS_PATH}/${value.id}${inUse ? "?force=true" : ""}`,
       );
       onDeleted(value.id);
     } catch (cause: unknown) {
@@ -1339,17 +1143,19 @@ function ServiceAccountCard({
         )}
       </div>
 
-      <div className="key_card_fingerprint">{value.username}</div>
+      {value.username !== null && (
+        <div className="key_card_fingerprint">{value.username}</div>
+      )}
 
       <div className="key_card_meta">
         <span
           className={`key_card_tag ${
-            value.service_count > 0 ? "key_card_tag--used" : ""
+            value.device_count + value.service_count > 0
+              ? "key_card_tag--used"
+              : ""
           }`}
         >
-          {value.service_count === 0
-            ? "unused"
-            : `${value.service_count} service${value.service_count === 1 ? "" : "s"}`}
+          {loginUsage(value)}
         </span>
         {value.created_at.length > 0 && (
           <span className="key_card_added">
@@ -1383,6 +1189,270 @@ function ServiceAccountCard({
       {confirm.modal}
     </div>
   );
+}
+
+interface TokenFormProps {
+  initial?: TokenView;
+  onSaved: (token: TokenView) => void;
+  onCancel: () => void;
+}
+
+function TokenForm({ initial, onSaved, onCancel }: TokenFormProps) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [value, setValue] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isEditing = initial !== undefined;
+  const isReady = name.trim().length > 0 && (isEditing || value.length > 0);
+
+  const handleSubmit = async () => {
+    setIsSaving(true);
+    setError(null);
+    try {
+      const payload = { name: name.trim(), value };
+      const saved = isEditing
+        ? await apiPut<TokenView>(`${TOKENS_PATH}/${initial.id}`, payload)
+        : await apiPost<TokenView>(TOKENS_PATH, payload);
+      onSaved(saved);
+    } catch (cause: unknown) {
+      setError(describeError(cause));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="keys_add">
+      <div className="section_label">
+        {isEditing ? `Edit ${initial.name}` : "New token"}
+      </div>
+      <label className="field">
+        <span className="field_label">Name</span>
+        <input
+          className="input"
+          value={name}
+          placeholder="Anthropic key"
+          autoFocus
+          onChange={(event) => setName(event.target.value)}
+        />
+      </label>
+      <label className="field">
+        <span className="field_label">Value</span>
+        <PasswordInput value={value} onChange={setValue} />
+        <span className="field_hint">
+          {isEditing
+            ? "Stored; type a new one to replace it."
+            : "Stored sealed on the gateway, and never shown again."}
+        </span>
+      </label>
+      {error !== null && <span className="field_error">{error}</span>}
+      <div className="keys_add_actions">
+        <button
+          type="button"
+          className="button button--ghost"
+          onClick={onCancel}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="button button--primary"
+          disabled={!isReady || isSaving}
+          onClick={() => void handleSubmit()}
+        >
+          <Icon name="check" size={14} />
+          {isSaving ? "Saving…" : "Save token"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+interface TokenCardProps {
+  value: TokenView;
+  onSaved: (token: TokenView) => void;
+  onEdit: () => void;
+  onDeleted: (tokenId: string) => void;
+}
+
+function TokenCard({ value, onSaved, onEdit, onDeleted }: TokenCardProps) {
+  const [isEditingName, setIsEditingName] = useState(false);
+  const confirm = useConfirm();
+  const [draftName, setDraftName] = useState(value.name);
+  const [error, setError] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
+
+  const handleRename = async () => {
+    if (draftName.trim().length === 0 || draftName.trim() === value.name) {
+      setIsEditingName(false);
+      setDraftName(value.name);
+      return;
+    }
+    setIsBusy(true);
+    setError(null);
+    try {
+      const updated = await apiPut<TokenView>(`${TOKENS_PATH}/${value.id}`, {
+        name: draftName.trim(),
+      });
+      onSaved(updated);
+      setIsEditingName(false);
+    } catch (cause: unknown) {
+      setError(describeError(cause));
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleDelete = () =>
+    confirm.ask({
+      title: `Delete ${value.name}`,
+      body:
+        value.provider_count + value.node_count > 0
+          ? "Whatever is keyed with this token is left without it once it is gone."
+          : "The token is deleted from this box.",
+      confirmLabel: "Delete",
+      onConfirm: () => void deleteToken(),
+    });
+
+  const deleteToken = async () => {
+    const inUse = value.provider_count + value.node_count > 0;
+    setIsBusy(true);
+    setError(null);
+    try {
+      await apiDelete(
+        `${TOKENS_PATH}/${value.id}${inUse ? "?force=true" : ""}`,
+      );
+      onDeleted(value.id);
+    } catch (cause: unknown) {
+      setError(describeTokenDeleteError(cause));
+      setIsBusy(false);
+    }
+  };
+
+  return (
+    <div className="key_card">
+      <div className="key_card_head">
+        {isEditingName ? (
+          <input
+            className="input key_card_name_input"
+            value={draftName}
+            autoFocus
+            onChange={(event) => setDraftName(event.target.value)}
+            onBlur={() => void handleRename()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                void handleRename();
+              } else if (event.key === "Escape") {
+                setIsEditingName(false);
+                setDraftName(value.name);
+              }
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            className="key_card_name"
+            onClick={() => setIsEditingName(true)}
+            title="Rename"
+          >
+            {value.name}
+            <Icon name="edit" size={12} />
+          </button>
+        )}
+      </div>
+
+      <div className="key_card_meta">
+        <span
+          className={`key_card_tag ${
+            value.provider_count + value.node_count > 0
+              ? "key_card_tag--used"
+              : ""
+          }`}
+        >
+          {tokenUsage(value.provider_count, value.node_count)}
+        </span>
+        {value.created_at.length > 0 && (
+          <span className="key_card_added">
+            added {formatTimeAgo(value.created_at)}
+          </span>
+        )}
+      </div>
+
+      {error !== null && <span className="field_error">{error}</span>}
+
+      <div className="key_card_actions">
+        <button
+          type="button"
+          className="button button--ghost button--small"
+          disabled={isBusy}
+          onClick={onEdit}
+        >
+          <Icon name="edit" size={13} />
+          Edit
+        </button>
+        <button
+          type="button"
+          className="button button--ghost button--small button--danger"
+          disabled={isBusy}
+          onClick={handleDelete}
+        >
+          <Icon name="trash" size={13} />
+          Delete
+        </button>
+      </div>
+      {confirm.modal}
+    </div>
+  );
+}
+
+/** The usage tag's wording: which counts are nonzero, joined. */
+function loginUsage(login: LoginView): string {
+  const parts: string[] = [];
+  if (login.device_count > 0) {
+    parts.push(
+      `${login.device_count} device${login.device_count === 1 ? "" : "s"}`,
+    );
+  }
+  if (login.service_count > 0) {
+    parts.push(
+      `${login.service_count} service${login.service_count === 1 ? "" : "s"}`,
+    );
+  }
+  return parts.length === 0 ? "unused" : parts.join(" · ");
+}
+
+/** The token usage tag's wording: which counts are nonzero, joined. */
+function tokenUsage(providerCount: number, nodeCount: number): string {
+  const parts: string[] = [];
+  if (providerCount > 0) {
+    parts.push(`${providerCount} provider${providerCount === 1 ? "" : "s"}`);
+  }
+  if (nodeCount > 0) {
+    parts.push(`${nodeCount} node${nodeCount === 1 ? "" : "s"}`);
+  }
+  return parts.length === 0 ? "unused" : parts.join(" · ");
+}
+
+/** Wording for a refused token delete, the coded refusal spelled out. */
+function describeTokenDeleteError(cause: unknown): string {
+  if (
+    cause instanceof ApiError &&
+    cause.code === "token_in_use" &&
+    typeof cause.detail === "object" &&
+    cause.detail !== null
+  ) {
+    const detail = cause.detail as Record<string, unknown>;
+    const params = (detail.params ?? {}) as Record<string, unknown>;
+    const usage = tokenUsage(
+      Number(params.provider_count) || 0,
+      Number(params.node_count) || 0,
+    );
+    return usage === "unused"
+      ? "The token is still in use."
+      : `The token is still in use: ${usage}.`;
+  }
+  return describeError(cause);
 }
 
 function serializeModels(models: AiProviderModel[]): string {

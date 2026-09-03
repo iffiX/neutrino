@@ -2,10 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import { Icon } from "../components/icon";
-import { Meter } from "../components/meter";
-import { PasswordInput } from "../components/password_input";
+import { PasswordField } from "../components/password_field";
 import { ToggleSwitch } from "../components/toggle_switch";
-import { PASSWORD_MIN_LENGTH, passwordStrength } from "../password_strength";
+import {
+  PANEL_PASSWORD_HINT,
+  PANEL_PASSWORD_RULES,
+  VAULT_PASSPHRASE_HINT,
+  VAULT_PASSPHRASE_RULES,
+  isPasswordAccepted,
+} from "../password_strength";
 import type {
   SetupAnswers,
   SetupContext,
@@ -30,13 +35,19 @@ import "./setup_page.css";
 
 /** The questions, in order. The counter and the heading both read from this. */
 const SCREENS = [
-  "A password for the panel",
+  "A password for the panel, a passphrase for the vault",
   "What is this machine for?",
   "Which ports?",
   "Going out through a proxy",
   "What else to install on this box",
   "Ready",
 ] as const;
+
+/** What the first screen says the two secrets are for. */
+const SECRETS_LEAD =
+  "The password signs you into the panel. The passphrase seals every " +
+  "credential this box will hold, and restoring a backup asks for it again — " +
+  "keep it somewhere safe.";
 
 /** How often the running screen asks how far the steps have got. */
 const POLL_INTERVAL_MS = 700;
@@ -75,6 +86,8 @@ export function SetupPage({ token, context }: SetupPageProps) {
   const [index, setIndex] = useState(-1);
   const [password, setPassword] = useState("");
   const [repeated, setRepeated] = useState("");
+  const [vaultPassphrase, setVaultPassphrase] = useState("");
+  const [vaultRepeated, setVaultRepeated] = useState("");
   const [mode, setMode] = useState(context.modes[0]?.key ?? "server");
   const [wan, setWan] = useState("");
   const [lan, setLan] = useState("");
@@ -188,7 +201,11 @@ export function SetupPage({ token, context }: SetupPageProps) {
       network.address = address;
       network.prefix_len = prefixLen;
     }
-    const document: SetupAnswers = { password, network };
+    const document: SetupAnswers = {
+      password,
+      vault_passphrase: vaultPassphrase,
+      network,
+    };
     const wanted = links.map((link) => link.value.trim()).filter(Boolean);
     if (isProxyWanted && wanted.length > 0) {
       document.proxy = {
@@ -217,6 +234,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
     prefixLen,
     upstream,
     password,
+    vaultPassphrase,
     links,
     isProxyWanted,
     isLocalProxied,
@@ -307,8 +325,9 @@ export function SetupPage({ token, context }: SetupPageProps) {
     );
   }
 
-  const strength = passwordStrength(password);
-  const isPasswordReady = strength.is_allowed && password === repeated;
+  const isPasswordReady =
+    isPasswordAccepted(password, repeated, PANEL_PASSWORD_RULES) &&
+    isPasswordAccepted(vaultPassphrase, vaultRepeated, VAULT_PASSPHRASE_RULES);
   const isPortsReady =
     isServer ||
     (lan !== "" &&
@@ -363,33 +382,26 @@ export function SetupPage({ token, context }: SetupPageProps) {
     >
       {index === 0 && (
         <div className="setup_body">
-          <p className="setup_lead">
-            At least {PASSWORD_MIN_LENGTH} characters, and better for mixing
-            letters, numbers and symbols.
-          </p>
-          <label className="field">
-            <span className="field_label setup_field_head">
-              <span>Panel password</span>
-              <Meter
-                percent={strength.percent}
-                tone={strength.tone}
-                label={strength.label}
-              />
-            </span>
-            <PasswordInput value={password} autoFocus onChange={setPassword} />
-            {password !== "" && !strength.is_allowed && (
-              <span className="field_error">
-                Too short: {PASSWORD_MIN_LENGTH} characters at the very least.
-              </span>
-            )}
-          </label>
-          <label className="field">
-            <span className="field_label">Again</span>
-            <PasswordInput value={repeated} onChange={setRepeated} />
-            {repeated !== "" && password !== repeated && (
-              <span className="field_error">They do not match.</span>
-            )}
-          </label>
+          <p className="setup_lead">{SECRETS_LEAD}</p>
+          <PasswordField
+            label="Panel password"
+            hint={PANEL_PASSWORD_HINT}
+            value={password}
+            repeated={repeated}
+            rules={PANEL_PASSWORD_RULES}
+            autoFocus
+            onChange={setPassword}
+            onRepeatedChange={setRepeated}
+          />
+          <PasswordField
+            label="Vault master passphrase"
+            hint={VAULT_PASSPHRASE_HINT}
+            value={vaultPassphrase}
+            repeated={vaultRepeated}
+            rules={VAULT_PASSPHRASE_RULES}
+            onChange={setVaultPassphrase}
+            onRepeatedChange={setVaultRepeated}
+          />
         </div>
       )}
 

@@ -432,31 +432,37 @@ export interface KeysResponse {
   keys: KeyView[];
 }
 
-/** One password the gateway holds, without its material. */
-export interface PasswordView {
+/**
+ * One login the vault holds, without its password. A null `username` is a
+ * bare password.
+ */
+export interface LoginView {
   id: string;
   name: string;
+  username: string | null;
   created_at: string;
   device_count: number;
-}
-
-/** The Credentials page's password section payload. */
-export interface PasswordsResponse {
-  passwords: PasswordView[];
-}
-
-/** One service account the gateway holds, without its password. */
-export interface ServiceAccountView {
-  id: string;
-  name: string;
-  username: string;
-  created_at: string;
   service_count: number;
 }
 
-/** The Credentials page's service account section payload. */
-export interface ServiceAccountsResponse {
-  service_accounts: ServiceAccountView[];
+/** The Credentials page's login section payload. */
+export interface LoginsResponse {
+  logins: LoginView[];
+}
+
+/** One token the vault holds, without its value. */
+export interface TokenView {
+  id: string;
+  name: string;
+  created_at: string;
+  provider_count: number;
+  /** xray nodes referencing it; share-link imports mint these. */
+  node_count: number;
+}
+
+/** The Credentials page's token section payload. */
+export interface TokensResponse {
+  tokens: TokenView[];
 }
 
 export type AiProviderKind = "anthropic" | "openai" | "gemini" | "custom";
@@ -467,13 +473,14 @@ export interface AiProviderModel {
   alias: string;
 }
 
-/** One stored AI provider, without its key. */
+/** One stored AI provider; `secret_id` names the vault token it is keyed
+ * with, null when it has none yet. */
 export interface AiProviderView {
   id: string;
   name: string;
   kind: AiProviderKind;
   base_url: string;
-  has_api_key: boolean;
+  secret_id: string | null;
   is_enabled: boolean;
   models: AiProviderModel[];
   created_at: string;
@@ -507,7 +514,7 @@ export interface AiProvidersResponse {
  * SSH credentials for a device.
  *
  * Every credential is a reference: `key_id` names a stored key, `password_id`
- * and `sudo_password_id` name vault password objects. No secret material
+ * and `sudo_password_id` name vault login objects. No secret material
  * crosses this shape; `key_name` is the resolved label for display.
  */
 export interface DeviceSshConfig {
@@ -698,7 +705,7 @@ export type DeclaredServiceKind =
 /** One share a declared Samba service exports. */
 export interface DeclaredShareView {
   name: string;
-  service_account_id: string | null;
+  login_id: string | null;
 }
 
 /** A declared service's cached health; every field null before the first probe. */
@@ -766,11 +773,6 @@ export interface PasswordChangeResult {
 
 export interface RestoreResult {
   is_restored: boolean;
-}
-
-/** What a config backup download is asked for; blank leaves it plain. */
-export interface BackupRequest {
-  passphrase: string;
 }
 
 /** The panel's own settings. */

@@ -22,7 +22,8 @@ import type {
   DeclaredServiceProbeView,
   DeclaredServiceView,
   DeclaredShareView,
-  ServiceAccountsResponse,
+  LoginView,
+  LoginsResponse,
   ServiceActionName,
   ServiceInstallPlanView,
   ServiceView,
@@ -65,9 +66,9 @@ const DECLARED_FIELD_PATH = "Path";
 const DECLARED_PORT_HINT = "Left blank, a Samba service gets 445.";
 const DECLARED_SHARES_LABEL = "Shares";
 const DECLARED_SHARES_HINT =
-  "Each share may name a service account devices sign in with.";
+  "Each share may name a login devices sign in with.";
 const DECLARED_SHARE_NAME_PLACEHOLDER = "share name";
-const DECLARED_SHARE_GUEST_OPTION = "guest (no account)";
+const DECLARED_SHARE_GUEST_OPTION = "guest (no login)";
 const DECLARED_ADD_SHARE_LABEL = "Add share";
 const DECLARED_SHARE_COUNT = "{count} share(s)";
 const DECLARED_SAVE_LABEL = "Save service";
@@ -109,7 +110,7 @@ const DECLARED_INVALID_WORDING: Record<string, string> = {
   scheme: "The scheme is http or https.",
   path: "The path starts with a slash.",
   shares: "Each share needs a name of its own.",
-  service_account_id: "A share names a service account that is gone.",
+  login_id: "A share names a login that is gone.",
 };
 const DECLARED_UNKNOWN_WORDING = "That service is already gone; reload.";
 
@@ -528,9 +529,7 @@ function DeclaredServiceForm({
   onSaved,
   onCancel,
 }: DeclaredServiceFormProps) {
-  const accounts = useApiResource<ServiceAccountsResponse>(
-    "/credentials/service_accounts",
-  );
+  const logins = useApiResource<LoginsResponse>("/credentials/logins");
   const [name, setName] = useState(initial?.name ?? "");
   const [kind, setKind] = useState<DeclaredServiceKind>(
     initial?.kind ?? "samba",
@@ -567,7 +566,7 @@ function DeclaredServiceForm({
         kind === "samba"
           ? shares.map((share) => ({
               name: share.name.trim(),
-              service_account_id: share.service_account_id,
+              login_id: share.login_id,
             }))
           : [],
     };
@@ -700,19 +699,19 @@ function DeclaredServiceForm({
               />
               <select
                 className="input"
-                value={share.service_account_id ?? ""}
+                value={share.login_id ?? ""}
                 onChange={(event) =>
                   handleShareChanged(index, {
                     ...share,
-                    service_account_id:
+                    login_id:
                       event.target.value.length > 0 ? event.target.value : null,
                   })
                 }
               >
                 <option value="">{DECLARED_SHARE_GUEST_OPTION}</option>
-                {(accounts.data?.service_accounts ?? []).map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name} ({account.username})
+                {(logins.data?.logins ?? []).map((login) => (
+                  <option key={login.id} value={login.id}>
+                    {shareLoginLabel(login)}
                   </option>
                 ))}
               </select>
@@ -732,7 +731,7 @@ function DeclaredServiceForm({
               onClick={() =>
                 setShares((current) => [
                   ...current,
-                  { name: "", service_account_id: null },
+                  { name: "", login_id: null },
                 ])
               }
             >
@@ -893,6 +892,13 @@ function fill(
     filled = filled.replace(`{${name}}`, String(value));
   }
   return filled;
+}
+
+// The share picker row for one login: its name, and its username when set.
+function shareLoginLabel(login: LoginView): string {
+  return login.username === null
+    ? login.name
+    : `${login.name} (${login.username})`;
 }
 
 function isValidPort(value: string): boolean {

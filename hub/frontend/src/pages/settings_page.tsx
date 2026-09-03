@@ -11,7 +11,13 @@ import {
   describeError,
 } from "../api_client";
 import { formatDuration } from "../format_duration";
+import { PasswordField } from "../components/password_field";
 import { PasswordInput } from "../components/password_input";
+import {
+  PANEL_PASSWORD_HINT,
+  PANEL_PASSWORD_RULES,
+  isPasswordAccepted,
+} from "../password_strength";
 import { useApiResource } from "../use_api_resource";
 import type {
   AboutInfo,
@@ -26,35 +32,41 @@ import "./settings_page.css";
  *
  * The backup is the whole of `config/`, which is the gateway's source of
  * truth, so restore is treated as the destructive operation it is: it asks for
- * confirmation and says plainly that it overwrites what is there.
+ * confirmation and says plainly that it overwrites what is there. The vault
+ * travels inside the archive sealed as it is stored, which is why the
+ * download asks nothing and the restore asks for the vault master password.
  */
 
-const MIN_PASSWORD_LENGTH = 8;
-
-const BACKUP_PASSPHRASE_NEEDED = "backup_passphrase_needed";
+const NOT_A_BACKUP_SENTENCE = "This is not a Neutrino backup.";
 
 const RESTORE_ERROR_SENTENCES: Record<string, string> = {
-  backup_passphrase_wrong: "That passphrase does not open this archive.",
-  backup_unrecognized: "This is not a Neutrino backup.",
+  vault_passphrase_needed: "The vault master password is required to restore.",
+  vault_passphrase_wrong: "That is not this vault's master password.",
+  backup_unrecognized: NOT_A_BACKUP_SENTENCE,
   backup_corrupt: "The backup is damaged; its checksum does not match.",
   backup_wrong_extension: "Backups are .tar.gz files.",
 };
 
 const WRONG_FILE_SENTENCE = "Backups are .tar.gz files; that file is not one.";
 
-// Every backup is a tar.gz whose first member is its manifest, so which
-// restore dialog to show is settled by streaming just the head of the file:
-// a tar header is 512 bytes — name in the first 100, size in octal at 124.
+// Every backup is a tar.gz whose first member is its manifest, so a file that
+// is no backup is turned away before it is uploaded by streaming just the
+// head: a tar header is 512 bytes — name in the first 100, size in octal at
+// 124.
 const BACKUP_MANIFEST_MEMBER = "neutrino_backup.json";
 const BACKUP_KIND = "neutrino_config_backup";
 
 interface BackupManifest {
   kind?: string;
-  is_sealed?: boolean;
+  version?: number;
 }
 
 function isBackupFilename(name: string): boolean {
   return /\.(tar\.gz|tgz)$/i.test(name);
+}
+
+function isManifestPeekSupported(): boolean {
+  return typeof DecompressionStream !== "undefined";
 }
 
 async function readBackupManifest(file: File): Promise<BackupManifest | null> {
@@ -116,16 +128,13 @@ export function SettingsPage() {
   const [restoreName, setRestoreName] = useState<string | null>(null);
   const [backupNotice, setBackupNotice] = useState<string | null>(null);
   const [backupError, setBackupError] = useState<string | null>(null);
-  const [backupPassphrase, setBackupPassphrase] = useState("");
   const [restorePassphrase, setRestorePassphrase] = useState("");
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
   const [restoreError, setRestoreError] = useState<string | null>(null);
-  const [isArchiveProtected, setIsArchiveProtected] = useState(false);
 
   const isPasswordValid =
     currentPassword.length > 0 &&
-    newPassword.length >= MIN_PASSWORD_LENGTH &&
-    newPassword === confirmPassword;
+    isPasswordAccepted(newPassword, confirmPassword, PANEL_PASSWORD_RULES);
 
   const handleChangePassword = async (event: FormEvent) => {
     event.preventDefault();
@@ -160,13 +169,8 @@ export function SettingsPage() {
     setBackupError(null);
     setBackupNotice(null);
     try {
-      await apiPostDownload(
-        "/settings/backup",
-        { passphrase: backupPassphrase },
-        backupFilename(),
-      );
+      await apiPostDownload("/settings/backup", undefined, backupFilename());
       setBackupNotice("Backup downloaded.");
-      setBackupPassphrase("");
     } catch (cause: unknown) {
       setBackupError(describeError(cause));
     } finally {
@@ -185,10 +189,16 @@ export function SettingsPage() {
       setBackupError(WRONG_FILE_SENTENCE);
       return;
     }
-    const manifest = await readBackupManifest(file);
+    if (isManifestPeekSupported()) {
+      const manifest = await readBackupManifest(file);
+      if (manifest === null) {
+        setBackupNotice(null);
+        setBackupError(NOT_A_BACKUP_SENTENCE);
+        return;
+      }
+    }
     setRestorePassphrase("");
     setRestoreError(null);
-    setIsArchiveProtected(manifest?.is_sealed === true);
     setRestoreFile(file);
   };
 
@@ -196,7 +206,6 @@ export function SettingsPage() {
     setRestoreFile(null);
     setRestorePassphrase("");
     setRestoreError(null);
-    setIsArchiveProtected(false);
   };
 
   const restoreArchive = async () => {
@@ -212,7 +221,7 @@ export function SettingsPage() {
       const result = await apiUpload<RestoreResult>(
         "/settings/restore",
         restoreFile,
-        { passphrase: restorePassphrase },
+        { vault_passphrase: restorePassphrase },
       );
       closeRestore();
       setBackupNotice(
@@ -223,16 +232,8 @@ export function SettingsPage() {
     } catch (cause: unknown) {
       if (
         cause instanceof ApiError &&
-        cause.code === BACKUP_PASSPHRASE_NEEDED
-      ) {
-        setIsArchiveProtected(true);
-      } else if (
-        cause instanceof ApiError &&
         RESTORE_ERROR_SENTENCES[cause.code] !== undefined
       ) {
-        if (cause.code === "backup_passphrase_wrong") {
-          setIsArchiveProtected(true);
-        }
         setRestoreError(RESTORE_ERROR_SENTENCES[cause.code] ?? null);
       } else {
         setRestoreError(describeError(cause));
@@ -270,24 +271,16 @@ export function SettingsPage() {
                 onChange={setCurrentPassword}
               />
             </label>
-            <label className="field">
-              <span className="field_label">New password</span>
-              <PasswordInput value={newPassword} onChange={setNewPassword} />
-              <span className="field_hint">
-                At least {MIN_PASSWORD_LENGTH} characters.
-              </span>
-            </label>
-            <label className="field">
-              <span className="field_label">Confirm new password</span>
-              <PasswordInput
-                value={confirmPassword}
-                onChange={setConfirmPassword}
-              />
-              {confirmPassword.length > 0 &&
-                confirmPassword !== newPassword && (
-                  <span className="field_error">The two entries differ.</span>
-                )}
-            </label>
+            <PasswordField
+              label="New password"
+              repeatLabel="Confirm new password"
+              hint={PANEL_PASSWORD_HINT}
+              value={newPassword}
+              repeated={confirmPassword}
+              rules={PANEL_PASSWORD_RULES}
+              onChange={setNewPassword}
+              onRepeatedChange={setConfirmPassword}
+            />
 
             {passwordError !== null && (
               <div className="notice notice--error">
@@ -325,20 +318,10 @@ export function SettingsPage() {
 
           <div className="settings_form">
             <p className="muted">
-              Holds all of <span className="mono">config/</span>, credentials
-              included. Keep it secret.
+              Holds all of <span className="mono">config/</span>. The
+              credentials inside travel sealed under the vault master password,
+              which restoring asks for.
             </p>
-
-            <label className="field">
-              <span className="field_label">Backup passphrase</span>
-              <PasswordInput
-                value={backupPassphrase}
-                onChange={setBackupPassphrase}
-              />
-              <span className="field_hint">
-                Protects the download; blank keeps it plain.
-              </span>
-            </label>
 
             {backupError !== null && (
               <div className="notice notice--error">
@@ -445,7 +428,6 @@ export function SettingsPage() {
           passphrase={restorePassphrase}
           onPassphrase={setRestorePassphrase}
           error={restoreError}
-          isProtected={isArchiveProtected}
           isRestoring={isRestoring}
           onCancel={closeRestore}
           onRestore={() => void restoreArchive()}
@@ -460,7 +442,6 @@ interface RestoreArchiveModalProps {
   passphrase: string;
   onPassphrase: (value: string) => void;
   error: string | null;
-  isProtected: boolean;
   isRestoring: boolean;
   onCancel: () => void;
   onRestore: () => void;
@@ -471,7 +452,6 @@ function RestoreArchiveModal({
   passphrase,
   onPassphrase,
   error,
-  isProtected,
   isRestoring,
   onCancel,
   onRestore,
@@ -507,29 +487,25 @@ function RestoreArchiveModal({
           Every file under config/ is overwritten by the archive&apos;s. Render
           and restart services afterwards for it to take effect.
         </p>
-        {(isProtected || error !== null) && (
-          <div className="settings_restore_fields">
-            {isProtected && (
-              <label className="field">
-                <span className="field_label">Archive passphrase</span>
-                <PasswordInput
-                  value={passphrase}
-                  onChange={onPassphrase}
-                  autoFocus
-                />
-                <span className="field_hint">
-                  The passphrase this archive was sealed under.
-                </span>
-              </label>
-            )}
-            {error !== null && (
-              <div className="notice notice--error">
-                <Icon name="alert" size={15} />
-                <div className="notice_body">{error}</div>
-              </div>
-            )}
-          </div>
-        )}
+        <div className="settings_restore_fields">
+          <label className="field">
+            <span className="field_label">Vault master password</span>
+            <PasswordInput
+              value={passphrase}
+              onChange={onPassphrase}
+              autoFocus
+            />
+            <span className="field_hint">
+              The master password of the vault this backup was taken from.
+            </span>
+          </label>
+          {error !== null && (
+            <div className="notice notice--error">
+              <Icon name="alert" size={15} />
+              <div className="notice_body">{error}</div>
+            </div>
+          )}
+        </div>
         <div className="confirm_foot">
           <button
             type="button"
@@ -543,7 +519,7 @@ function RestoreArchiveModal({
             type="button"
             className="button button--primary"
             onClick={onRestore}
-            disabled={isRestoring || (isProtected && passphrase.length === 0)}
+            disabled={isRestoring || passphrase.length === 0}
           >
             {isRestoring ? "Restoring…" : "Restore"}
           </button>

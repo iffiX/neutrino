@@ -10,6 +10,10 @@
 
 const API_PREFIX = "/api";
 
+/** What any endpoint answers while the credential vault is still sealed. */
+const VAULT_LOCKED_SENTENCE =
+  "The vault is locked; unlock it to use stored credentials.";
+
 type UnauthorizedHandler = () => void;
 
 let unauthorizedHandler: UnauthorizedHandler | null = null;
@@ -124,7 +128,9 @@ export function websocketUrl(path: string): string {
 /** Human-readable message for anything thrown by the API layer. */
 export function describeError(error: unknown): string {
   if (error instanceof ApiError) {
-    return error.message;
+    return error.code === "vault_locked"
+      ? VAULT_LOCKED_SENTENCE
+      : error.message;
   }
   if (error instanceof Error) {
     return error.message;

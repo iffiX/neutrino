@@ -1,17 +1,45 @@
 /**
  * How good a password is, in the terms a person can act on.
  *
- * Eight characters is the rule the hub enforces; everything above that is a
- * preference, and this is how the panel says so without turning a preference
- * into a refusal. Length and variety both count, because either alone is a
- * password somebody guesses: sixteen lowercase letters and `Aa1!` are both
- * weak for opposite reasons.
+ * Each password the hub takes is graded against its own rule set: the panel
+ * password needs length alone, the vault master passphrase needs length and
+ * every character class. Everything above a rule is a preference, and this is
+ * how the panel says so without turning a preference into a refusal. Length
+ * and variety both count, because either alone is a password somebody
+ * guesses: sixteen lowercase letters and `Aa1!` are both weak for opposite
+ * reasons.
  */
 
 import type { MeterTone } from "./components/meter";
 
-/** What the hub will not accept. */
-export const PASSWORD_MIN_LENGTH = 8;
+/** What one password field refuses. Thresholds mirror the backend's. */
+export interface PasswordRules {
+  min_length: number;
+  /** Whether every class — lowercase, uppercase, digit, symbol — is required. */
+  is_every_class_needed: boolean;
+}
+
+/** What the panel's own password must clear. */
+export const PANEL_PASSWORD_RULES: PasswordRules = {
+  min_length: 8,
+  is_every_class_needed: false,
+};
+
+/** What the vault master passphrase must clear. */
+export const VAULT_PASSPHRASE_RULES: PasswordRules = {
+  min_length: 16,
+  is_every_class_needed: true,
+};
+
+/** The panel password's requirement, said under its field. */
+export const PANEL_PASSWORD_HINT =
+  `At least ${PANEL_PASSWORD_RULES.min_length} characters, and better for ` +
+  "mixing letters, numbers and symbols.";
+
+/** The vault passphrase's requirement, said under its field. */
+export const VAULT_PASSPHRASE_HINT =
+  `At least ${VAULT_PASSPHRASE_RULES.min_length} characters, mixing ` +
+  "lowercase, uppercase, digits and symbols.";
 
 export interface PasswordStrength {
   /** How full the bar is, 0 to 100. */
@@ -23,8 +51,14 @@ export interface PasswordStrength {
   is_allowed: boolean;
 }
 
-/** The character families a password can draw on. */
-const FAMILIES = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/];
+/** The character families a password can draw on, named for the shortfall
+ * sentence. */
+const FAMILIES: { pattern: RegExp; missing: string }[] = [
+  { pattern: /[a-z]/, missing: "a lowercase letter" },
+  { pattern: /[A-Z]/, missing: "an uppercase letter" },
+  { pattern: /[0-9]/, missing: "a digit" },
+  { pattern: /[^A-Za-z0-9]/, missing: "a symbol" },
+];
 /** The most a password can score, which is what fills the bar. */
 const TOP_SCORE = 6;
 
@@ -49,11 +83,14 @@ const GRADES: PasswordGrade[] = [
   STRONGEST,
 ];
 
-export function passwordStrength(password: string): PasswordStrength {
+export function passwordStrength(
+  password: string,
+  rules: PasswordRules,
+): PasswordStrength {
   if (password.length === 0) {
     return { percent: 0, label: "", tone: "error", is_allowed: false };
   }
-  if (password.length < PASSWORD_MIN_LENGTH) {
+  if (password.length < rules.min_length) {
     return {
       // Short of the rule, so the bar shows a stub rather than nothing: an
       // empty bar beside characters that are plainly there reads as broken.
@@ -63,9 +100,19 @@ export function passwordStrength(password: string): PasswordStrength {
       is_allowed: false,
     };
   }
+  const families = FAMILIES.filter((family) =>
+    family.pattern.test(password),
+  ).length;
+  if (rules.is_every_class_needed && families < FAMILIES.length) {
+    return {
+      percent: 25,
+      label: "Too plain",
+      tone: "error",
+      is_allowed: false,
+    };
+  }
   // Long enough to be allowed at all, then a point per extra family and a
   // point at each length where guessing it gets meaningfully harder.
-  const families = FAMILIES.filter((family) => family.test(password)).length;
   let score = families;
   if (password.length >= 12) {
     score += 1;
@@ -80,4 +127,40 @@ export function passwordStrength(password: string): PasswordStrength {
     tone: grade.tone,
     is_allowed: true,
   };
+}
+
+/** The sentence naming what the password still lacks, null once it clears. */
+export function passwordShortfall(
+  password: string,
+  rules: PasswordRules,
+): string | null {
+  if (password.length < rules.min_length) {
+    return `Too short: ${rules.min_length} characters at the very least.`;
+  }
+  if (!rules.is_every_class_needed) {
+    return null;
+  }
+  const missing = FAMILIES.filter(
+    (family) => !family.pattern.test(password),
+  ).map((family) => family.missing);
+  if (missing.length === 0) {
+    return null;
+  }
+  return `Still needs ${joinNames(missing)}.`;
+}
+
+/** Whether the password clears its rule and its repeat matches it. */
+export function isPasswordAccepted(
+  password: string,
+  repeated: string,
+  rules: PasswordRules,
+): boolean {
+  return passwordStrength(password, rules).is_allowed && password === repeated;
+}
+
+function joinNames(names: string[]): string {
+  if (names.length === 1) {
+    return names[0] ?? "";
+  }
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }

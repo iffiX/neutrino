@@ -101,6 +101,7 @@ export interface SetupProxyAnswers {
 /** Everything the wizard asks for. */
 export interface SetupAnswers {
   password: string;
+  vault_passphrase: string;
   network: SetupNetworkAnswers;
   proxy?: SetupProxyAnswers;
   services?: string[];
