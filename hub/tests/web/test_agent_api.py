@@ -79,6 +79,7 @@ class FakeRuntime:
         self.client_metrics = {}
         self.client_features = {}
         self.client_platform = {}
+        self.client_hostname = {}
         self.enrollments = {}
         self.settings = {"listen_port": 80}
 

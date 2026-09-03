@@ -49,6 +49,7 @@ class FakeRuntime:
     def __init__(self):
         self.client_metrics = {}
         self.client_platform = {}
+        self.client_hostname = {}
 
     def network(self):
         return _EmptyNetwork()

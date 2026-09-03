@@ -15,6 +15,8 @@ The shape is settled in ../../docs/cli.md.
 
 import argparse
 import json
+import os
+import shlex
 import subprocess
 import sys
 import time
@@ -27,6 +29,14 @@ from neutrino_agent.mini_ui import MINI_UI_HOST, MINI_UI_PORT, MiniUiServer
 
 # --- config ---
 STATUS_UNBOUND = "this machine has joined no gateway"
+
+# The commands that change the machine, and what each one touches. Everything
+# else — status, --version — answers to any account.
+ROOT_COMMANDS = {
+    "connect": "it writes the binding and starts the service",
+    "disconnect": "it removes the binding",
+    "run": "the agent manages this machine",
+}
 STATUS_SERVICE_UNKNOWN = "unknown"
 
 
@@ -64,6 +74,11 @@ def main() -> int:
     arguments = parser.parse_args()
     if not arguments.command:
         parser.print_help()
+        return 2
+    reason = ROOT_COMMANDS.get(arguments.command)
+    if reason is not None and hasattr(os, "geteuid") and os.geteuid() != 0:
+        print(f"nagent {arguments.command} needs root — {reason}:", file=sys.stderr)
+        print(f"    sudo nagent {shlex.join(sys.argv[1:])}", file=sys.stderr)
         return 2
     if arguments.command == "connect":
         return _connect(arguments.link, is_forced=arguments.yes)

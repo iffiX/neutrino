@@ -94,6 +94,9 @@ class PanelRuntime:
         # The platform tuple an agent last reported, keyed by MAC, so the panel
         # can show only the features that platform can install.
         self.client_platform: dict[str, dict] = {}
+        # The hostname each agent last reported, keyed by MAC. Runtime only,
+        # like the metrics.
+        self.client_hostname: dict[str, str] = {}
         # Enrollment tickets a machine can join with, by token. Held in memory
         # and short-lived on purpose: a join secret that survives a restart is
         # a join secret lying around, and minting another takes one click.
@@ -398,6 +401,7 @@ class PanelRuntime:
         key = mac_address.lower()
         self._pending_commands.pop(key, None)
         self.client_metrics.pop(key, None)
+        self.client_hostname.pop(key, None)
         self.client_features.pop(key, None)
         self.client_platform.pop(key, None)
 

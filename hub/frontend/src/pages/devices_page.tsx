@@ -148,6 +148,23 @@ export function DevicesPage() {
     };
   }, [isScanning]);
 
+  // Once now for the task's own outcome, once again after the agent's first
+  // heartbeat window, so a fresh install reads as online without waiting for
+  // the next poll tick.
+  const refreshDevices = async () => {
+    try {
+      const result = await apiGet<DevicesResponse>("/devices");
+      setDevices(result.devices);
+    } catch {
+      // The poll picks it up on its next tick.
+    }
+  };
+
+  const handleTaskFinished = () => {
+    void refreshDevices();
+    window.setTimeout(() => void refreshDevices(), 2500);
+  };
+
   const handleScan = async () => {
     setIsScanning(true);
     setScanError(null);
@@ -344,6 +361,7 @@ export function DevicesPage() {
             onClose={() => setSelectedMac(null)}
             onSaved={handleSaved}
             onForgotten={handleForgotten}
+            onTaskFinished={handleTaskFinished}
           />
         </>
       )}

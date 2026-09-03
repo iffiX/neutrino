@@ -135,6 +135,7 @@ interface DeviceDrawerProps {
   onClose: () => void;
   onSaved: (device: DeviceView) => void;
   onForgotten: (macAddress: string) => void;
+  onTaskFinished?: () => void;
 }
 
 export function DeviceDrawer({
@@ -142,6 +143,7 @@ export function DeviceDrawer({
   onClose,
   onSaved,
   onForgotten,
+  onTaskFinished,
 }: DeviceDrawerProps) {
   const [name, setName] = useState(device.name ?? "");
   const [icon, setIcon] = useState<IconName>(toDeviceIconName(device.icon));
@@ -193,6 +195,20 @@ export function DeviceDrawer({
 
   const task = useTaskStream(taskId);
   const logRef = useRef<HTMLPreElement | null>(null);
+  const wasTaskRunning = useRef(false);
+
+  // An install's outcome — the agent appearing, the version catching up — is
+  // the page's to show, and it should not wait for the next poll tick.
+  useEffect(() => {
+    if (task.isRunning) {
+      wasTaskRunning.current = true;
+      return;
+    }
+    if (wasTaskRunning.current) {
+      wasTaskRunning.current = false;
+      onTaskFinished?.();
+    }
+  }, [task.isRunning, onTaskFinished]);
 
   useEffect(() => {
     const element = logRef.current;
@@ -428,7 +444,9 @@ export function DeviceDrawer({
                     ? "on the network"
                     : "offline"}
               </span>
-              <span className="badge">{device.vendor || "unknown vendor"}</span>
+              <span className="badge">
+                {device.client?.hostname ?? (device.vendor || "unknown vendor")}
+              </span>
               {device.client !== null && (
                 <span className="badge">
                   seen {formatTimeAgo(device.client.last_seen)}
@@ -441,13 +459,6 @@ export function DeviceDrawer({
             <div className="notice notice--error">
               <Icon name="alert" size={15} />
               <div className="notice_body">{error}</div>
-            </div>
-          )}
-
-          {notice !== null && (
-            <div className="notice notice--ok">
-              <Icon name="check" size={15} />
-              <div className="notice_body">{notice}</div>
             </div>
           )}
 
@@ -831,6 +842,13 @@ export function DeviceDrawer({
             </div>
           )}
         </div>
+
+        {notice !== null && (
+          <div className="notice notice--ok">
+            <Icon name="check" size={15} />
+            <div className="notice_body">{notice}</div>
+          </div>
+        )}
 
         <div className="device_drawer_footer">
           {device.is_stored && (

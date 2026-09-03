@@ -7,6 +7,8 @@ The shape is settled in [../../../../docs/cli.md](../../../../docs/cli.md).
 """
 
 import argparse
+import os
+import shlex
 import sys
 
 from neutrino_hub import HUB_VERSION
@@ -79,6 +81,23 @@ def main() -> int:
     arguments, rest = parser.parse_known_args(_without_dev(sys.argv[1:]))
     if not arguments.command:
         parser.print_help()
+        return 2
+
+    # Imported here, after --dev has moved the roots; at module level it
+    # would resolve them first and make the flag a no-op.
+    from neutrino_hub.utils.constants import is_dev_root_set
+
+    if (
+        arguments.command != "scan-secrets"
+        and not is_dev_root_set()
+        and hasattr(os, "geteuid")
+        and os.geteuid() != 0
+    ):
+        print(
+            f"nhub {arguments.command} acts on the installed hub and needs root:",
+            file=sys.stderr,
+        )
+        print(f"    sudo nhub {shlex.join(sys.argv[1:])}", file=sys.stderr)
         return 2
 
     module_name, _ = COMMANDS[arguments.command]

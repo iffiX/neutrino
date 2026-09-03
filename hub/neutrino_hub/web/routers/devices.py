@@ -131,6 +131,7 @@ def _device_view(runtime: PanelRuntime, device: ManagedDevice) -> DeviceView:
     if view.client is not None:
         view.client.platform_os = platform.get("os") or None
         view.client.platform_arch = platform.get("arch") or None
+        view.client.hostname = runtime.client_hostname.get(key) or None
     return view
 
 

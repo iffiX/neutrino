@@ -15,6 +15,7 @@ state only once everything else has.
 import hashlib
 import io
 import json
+from types import SimpleNamespace
 import stat
 import tarfile
 
@@ -129,8 +130,20 @@ def client(monkeypatch, tmp_path):
     app = FastAPI()
     app.include_router(settings_router.router)
     app.dependency_overrides[require_session] = lambda: None
+    app.dependency_overrides[settings_router.get_runtime] = lambda: _FakeRuntime()
     with TestClient(app) as opened:
         yield opened, config_dir
+
+
+class _FakeTasks:
+    def start(self, *, label, source):
+        source.aclose()
+        return SimpleNamespace(id="restore-task")
+
+
+class _FakeRuntime:
+    def __init__(self):
+        self.tasks = _FakeTasks()
 
 
 def seed_config(config_dir) -> str:
@@ -236,7 +249,7 @@ def test_a_backup_restores_the_vault_it_left_with(client):
     response = upload_restore(opened, archive_bytes, PASSPHRASE)
 
     assert response.status_code == 200
-    assert response.json() == {"is_restored": True}
+    assert response.json() == {"is_restored": True, "task_id": "restore-task"}
     assert SecretVault().open(secret_id) == {"password": SEALED_PASSWORD}
     state_key = config_dir.parent / "state" / "vault.key"
     assert stat.S_IMODE(state_key.stat().st_mode) == 0o600

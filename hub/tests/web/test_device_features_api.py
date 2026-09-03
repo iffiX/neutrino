@@ -39,6 +39,7 @@ class FakeRuntime:
     def __init__(self):
         self.client_features = {}
         self.client_platform = {}
+        self.client_hostname = {}
         self.client_metrics = {}
         self.pending = {}
         self.enrollments = {}

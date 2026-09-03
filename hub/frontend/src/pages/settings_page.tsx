@@ -5,12 +5,14 @@ import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import {
   ApiError,
+  apiGet,
   apiPostDownload,
   apiPut,
   apiUpload,
   describeError,
 } from "../api_client";
 import { formatDuration } from "../format_duration";
+import { useTaskStream } from "../use_task_stream";
 import { PasswordField } from "../components/password_field";
 import { PasswordInput } from "../components/password_input";
 import {
@@ -131,6 +133,7 @@ export function SettingsPage() {
   const [restorePassphrase, setRestorePassphrase] = useState("");
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
   const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [restoreTaskId, setRestoreTaskId] = useState<string | null>(null);
 
   const isPasswordValid =
     currentPassword.length > 0 &&
@@ -206,6 +209,8 @@ export function SettingsPage() {
     setRestoreFile(null);
     setRestorePassphrase("");
     setRestoreError(null);
+    setRestoreTaskId(null);
+    setIsRestoring(false);
   };
 
   const restoreArchive = async () => {
@@ -223,12 +228,9 @@ export function SettingsPage() {
         restoreFile,
         { vault_passphrase: restorePassphrase },
       );
-      closeRestore();
-      setBackupNotice(
-        result.is_restored
-          ? "Config restored. Re-render and restart services to apply it."
-          : "The gateway rejected the archive.",
-      );
+      // The modal stays up: the apply runs as a task whose lines it shows,
+      // and the panel restarts itself at the end.
+      setRestoreTaskId(result.task_id);
     } catch (cause: unknown) {
       if (
         cause instanceof ApiError &&
@@ -424,6 +426,7 @@ export function SettingsPage() {
       </div>
       {restoreFile !== null && (
         <RestoreArchiveModal
+          taskId={restoreTaskId}
           file={restoreFile}
           passphrase={restorePassphrase}
           onPassphrase={setRestorePassphrase}
@@ -439,6 +442,7 @@ export function SettingsPage() {
 
 interface RestoreArchiveModalProps {
   file: File;
+  taskId: string | null;
   passphrase: string;
   onPassphrase: (value: string) => void;
   error: string | null;
@@ -449,6 +453,7 @@ interface RestoreArchiveModalProps {
 
 function RestoreArchiveModal({
   file,
+  taskId,
   passphrase,
   onPassphrase,
   error,
@@ -456,15 +461,41 @@ function RestoreArchiveModal({
   onCancel,
   onRestore,
 }: RestoreArchiveModalProps) {
+  const task = useTaskStream(taskId);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const wasApplying = useRef(false);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !isRestoring) {
+      if (event.key === "Escape" && !isRestoring && taskId === null) {
         onCancel();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel, isRestoring]);
+  }, [onCancel, isRestoring, taskId]);
+
+  // Once the apply task ends the panel restarts itself; the modal waits for
+  // it to answer again and reloads onto the restored box.
+  useEffect(() => {
+    if (task.isRunning) {
+      wasApplying.current = true;
+      return;
+    }
+    if (!wasApplying.current) {
+      return;
+    }
+    wasApplying.current = false;
+    setIsReconnecting(true);
+    const handle = window.setInterval(() => {
+      apiGet("/session")
+        .then(() => window.location.reload())
+        .catch(() => {
+          // Still restarting; the next tick asks again.
+        });
+    }, 1500);
+    return () => window.clearInterval(handle);
+  }, [task.isRunning]);
 
   return (
     <div
@@ -484,46 +515,61 @@ function RestoreArchiveModal({
           <h2>Restore {file.name}</h2>
         </div>
         <p className="confirm_body">
-          Every file under config/ is overwritten by the archive&apos;s. Render
-          and restart services afterwards for it to take effect.
+          Every file under config/ is overwritten by the archive&apos;s, the
+          configuration is applied, and the panel restarts on its own.
         </p>
-        <div className="settings_restore_fields">
-          <label className="field">
-            <span className="field_label">Vault master password</span>
-            <PasswordInput
-              value={passphrase}
-              onChange={onPassphrase}
-              autoFocus
-            />
-            <span className="field_hint">
-              The master password of the vault this backup was taken from.
-            </span>
-          </label>
-          {error !== null && (
-            <div className="notice notice--error">
-              <Icon name="alert" size={15} />
-              <div className="notice_body">{error}</div>
-            </div>
-          )}
-        </div>
-        <div className="confirm_foot">
-          <button
-            type="button"
-            className="button"
-            onClick={onCancel}
-            disabled={isRestoring}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="button button--primary"
-            onClick={onRestore}
-            disabled={isRestoring || passphrase.length === 0}
-          >
-            {isRestoring ? "Restoring…" : "Restore"}
-          </button>
-        </div>
+        {taskId !== null ? (
+          <div className="settings_restore_fields">
+            <pre className="device_drawer_log_lines settings_restore_log">
+              {task.lines.join("")}
+            </pre>
+            <p className="field_hint">
+              {isReconnecting
+                ? "The panel is restarting; this page reloads by itself. Sign in with the restored password."
+                : "Applying the restored configuration…"}
+            </p>
+          </div>
+        ) : (
+          <div className="settings_restore_fields">
+            <label className="field">
+              <span className="field_label">Vault master password</span>
+              <PasswordInput
+                value={passphrase}
+                onChange={onPassphrase}
+                autoFocus
+              />
+              <span className="field_hint">
+                The master password of the vault this backup was taken from.
+              </span>
+            </label>
+            {error !== null && (
+              <div className="notice notice--error">
+                <Icon name="alert" size={15} />
+                <div className="notice_body">{error}</div>
+              </div>
+            )}
+          </div>
+        )}
+        {taskId === null && (
+          <div className="confirm_foot">
+            <button
+              type="button"
+              className="button"
+              onClick={onCancel}
+              disabled={isRestoring}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={onRestore}
+              disabled={isRestoring || passphrase.length === 0}
+            >
+              {isRestoring ? "Restoring…" : "Restore"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

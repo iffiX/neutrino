@@ -559,6 +559,7 @@ export interface DeviceClientInfo {
    * until it beats again after a panel restart, since it is never stored. */
   platform_os: string | null;
   platform_arch: string | null;
+  hostname: string | null;
   cpu_percent: number | null;
   memory_percent: number | null;
   disk_percent: number | null;
@@ -773,6 +774,7 @@ export interface PasswordChangeResult {
 
 export interface RestoreResult {
   is_restored: boolean;
+  task_id: string;
 }
 
 /** The panel's own settings. */

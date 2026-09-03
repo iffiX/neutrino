@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import platform
+import asyncio
 import tarfile
 import time
 
@@ -38,6 +39,7 @@ from neutrino_hub.utils.passwords import (
     validate,
 )
 from neutrino_hub.utils.subprocess_run import run
+from neutrino_hub.utils.constants import is_dev_root_set
 from neutrino_hub.web.auth import hash_password, verify_password
 from neutrino_hub.web.constants import (
     WEB_DEFAULT_LISTEN_PORT,
@@ -275,7 +277,11 @@ def _add_directory(archive: tarfile.TarFile, name: str) -> None:
 
 
 @router.post("/restore")
-async def restore(file: UploadFile, vault_passphrase: str = Form("")) -> dict:
+async def restore(
+    file: UploadFile,
+    vault_passphrase: str = Form(""),
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> dict:
     """Replace ``config/`` from an uploaded backup.
 
     Nothing touches disk until the file has proven itself: the name, the
@@ -331,7 +337,55 @@ async def restore(file: UploadFile, vault_passphrase: str = Form("")) -> dict:
                 detail=f"unreadable backup: {error}",
             ) from error
         write_state_key(data_key)
-    return {"is_restored": True}
+    # The restored decisions are made true without another command: apply
+    # runs as a streamed task the modal shows, and the panel restarts itself
+    # last, because the password hash and settings it holds are the old
+    # box's until it does.
+    stream = runtime.tasks.start(
+        label="apply the restored configuration", source=_restore_apply_source()
+    )
+    return {"is_restored": True, "task_id": stream.id}
+
+
+async def _restore_apply_source():
+    """Apply everything the restore brought, then hand the panel over.
+
+    Yields:
+        Progress lines for the task stream.
+    """
+    yield "applying the restored configuration\n"
+    process = await asyncio.create_subprocess_exec(
+        "nhub",
+        "apply",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    assert process.stdout is not None
+    while True:
+        line = await process.stdout.readline()
+        if not line:
+            break
+        yield line.decode("utf-8", "replace")
+    code = await process.wait()
+    if code != 0:
+        yield f"error: nhub apply exited {code}\n"
+        return
+    if is_dev_root_set():
+        yield "development root: restart the panel by hand to pick up the settings\n"
+        return
+    yield "restarting the panel; sign in with the restored password\n"
+    # Detached, two seconds out: the restart must not kill the process that
+    # is still streaming this line to the browser.
+    await asyncio.create_subprocess_exec(
+        "systemd-run",
+        "--collect",
+        "--on-active=2",
+        "systemctl",
+        "restart",
+        "neutrino_hub_web.service",
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
 
 
 def _read_archive(blob: bytes) -> dict[str, bytes]:

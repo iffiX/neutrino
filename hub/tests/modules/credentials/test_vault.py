@@ -25,7 +25,13 @@ from tests.conftest import unlock_vault
 SEALED_BY_KIND = {
     "token": {"value": "sk-test"},  # scan: allow
     "login": {"username": "backup", "password": "hunter2hunter2"},  # scan: allow
-    "ssh_key": {"private_key": "-----BEGIN FAKE KEY-----", "passphrase": "pp"},
+    # The passphrase is long on purpose: the not-in-the-file assertions hunt
+    # these strings inside base64 ciphertext, where a two-character needle
+    # lands by chance often enough to flake.
+    "ssh_key": {
+        "private_key": "-----BEGIN FAKE KEY-----",
+        "passphrase": "a-needle-passphrase",  # scan: allow
+    },
 }
 PASSPHRASE = "A-vault-passphrase-16!"  # scan: allow
 

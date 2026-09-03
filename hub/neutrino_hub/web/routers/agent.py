@@ -98,6 +98,8 @@ def heartbeat(
     runtime.client_features[device.mac_address] = dict(beat.features)
     if beat.platform:
         runtime.client_platform[device.mac_address] = dict(beat.platform)
+    if beat.hostname:
+        runtime.client_hostname[device.mac_address] = beat.hostname
     registry.record_heartbeat(
         device.mac_address,
         version=beat.client_version,
@@ -161,6 +163,8 @@ def enroll(
     token = registry.issue_client_token(key)
     if request.platform:
         runtime.client_platform[key] = dict(request.platform)
+    if request.hostname:
+        runtime.client_hostname[key] = request.hostname
     return ClientEnrollReply(token=token, mac_address=key, hub_version=HUB_VERSION)
 
 

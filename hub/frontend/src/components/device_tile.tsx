@@ -81,7 +81,8 @@ export function DeviceTile({ device, onOpen }: DeviceTileProps) {
           </span>
           <span className="device_tile_address">{device.ipv4_address}</span>
           <span className="device_tile_vendor" title={device.vendor}>
-            {device.vendor.length > 0 ? device.vendor : "unknown vendor"}
+            {device.client?.hostname ??
+              (device.vendor.length > 0 ? device.vendor : "unknown vendor")}
           </span>
         </span>
       </div>

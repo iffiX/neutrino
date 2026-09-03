@@ -648,6 +648,7 @@ class DeviceClientInfoView(BaseModel):
     # never stored: None until it beats again after a panel restart.
     platform_os: str | None = None
     platform_arch: str | None = None
+    hostname: str | None = None
     cpu_percent: float | None = None
     memory_percent: float | None = None
     disk_percent: float | None = None
