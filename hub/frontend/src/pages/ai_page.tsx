@@ -1,23 +1,13 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 
+import { AiProvidersSection } from "../components/ai_providers_section";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { StatusDot } from "../components/status_dot";
-import {
-  apiDelete,
-  apiGet,
-  apiPost,
-  apiPut,
-  describeError,
-} from "../api_client";
+import { apiDelete, apiGet, apiPost, describeError } from "../api_client";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
-import type {
-  AiProviderView,
-  AiProvidersResponse,
-  CliproxyApiStatusView,
-} from "../api_types";
+import type { CliproxyApiStatusView } from "../api_types";
 
 import "./ai_page.css";
 
@@ -30,13 +20,10 @@ import "./ai_page.css";
  * effect on every connected machine at once.
  */
 
-const AI_PROVIDERS_PATH = "/ai/providers";
-
 export function AiPage() {
   const resource = useApiResource<CliproxyApiStatusView>("/cliproxyapi");
   const [view, setView] = useState<CliproxyApiStatusView | null>(null);
   const confirm = useConfirm();
-  const [providers, setProviders] = useState<AiProviderView[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
   const [keyName, setKeyName] = useState("");
@@ -47,22 +34,6 @@ export function AiPage() {
       setView(resource.data);
     }
   }, [resource.data]);
-
-  useEffect(() => {
-    let isCancelled = false;
-    apiGet<AiProvidersResponse>(AI_PROVIDERS_PATH)
-      .then((response) => {
-        if (!isCancelled) {
-          setProviders(response.providers);
-        }
-      })
-      .catch(() => {
-        // The section shows its own hint when the list stays empty.
-      });
-    return () => {
-      isCancelled = true;
-    };
-  }, []);
 
   if (resource.error !== null && view === null) {
     return (
@@ -106,20 +77,6 @@ export function AiPage() {
     } finally {
       setIsBusy(false);
     }
-  };
-
-  const handleToggleProvider = (provider: AiProviderView) => {
-    void run(async () => {
-      const updated = await apiPut<AiProviderView>(
-        `${AI_PROVIDERS_PATH}/${provider.id}`,
-        { is_enabled: !provider.is_enabled },
-      );
-      setProviders((current) =>
-        current.map((entry) => (entry.id === updated.id ? updated : entry)),
-      );
-      await apiPost("/cliproxyapi/apply");
-      setView(await apiGet<CliproxyApiStatusView>("/cliproxyapi"));
-    });
   };
 
   const handleApply = () => {
@@ -219,40 +176,7 @@ export function AiPage() {
         </p>
       </section>
 
-      <section className="settings_group">
-        <div className="settings_group_title">
-          <h2>Providers</h2>
-        </div>
-        <p className="field_hint">
-          Click to switch a provider on or off; edits happen on the{" "}
-          <Link to="/credentials">Credentials</Link> page. Off is instant on
-          every machine.
-        </p>
-        {providers.length === 0 ? (
-          <span className="ai_service_hint">
-            No providers stored yet — add one on the Credentials page.
-          </span>
-        ) : (
-          <div className="ai_service_chips">
-            {providers.map((provider) => (
-              <button
-                key={provider.id}
-                type="button"
-                className={`ai_chip ${provider.is_enabled ? "ai_chip--on" : ""}`}
-                disabled={isBusy}
-                title={`${provider.kind} · ${
-                  provider.base_url.length > 0
-                    ? provider.base_url
-                    : "default endpoint"
-                }`}
-                onClick={() => handleToggleProvider(provider)}
-              >
-                {provider.name}
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
+      <AiProvidersSection />
 
       <section className="settings_group">
         <div className="settings_group_title">
