@@ -1,6 +1,6 @@
 {
-  "_comment": "JustMySocks (or any xray-compatible) nodes. Copy to nodes.json and fill in. Every node needs id/name/address/is_enabled/protocol plus the block matching its protocol. Disabled nodes are omitted from the rendered xray config entirely.",
-  "_comment_import": "The panel's Proxy page decodes ss:// and vless:// share links into this file.",
+  "_comment": "JustMySocks (or any xray-compatible) nodes. Copy to nodes.json. Every node needs id/name/address/is_enabled/protocol/secret_id plus the block matching its protocol. The secret itself — the Shadowsocks password or the VLESS uuid — is sealed in the credential vault as a token object; secret_id names it, and a node whose reference does not resolve is omitted from the rendered config the way a disabled one is.",
+  "_comment_import": "The panel's Proxy page decodes ss:// and vless:// share links into this file, sealing each link's secret on the way.",
   "nodes": [
     {
       "_comment": "Shadowsocks node. JustMySocks SS endpoints look like ss://<base64 of method:password>@host:port#name",
@@ -9,10 +9,10 @@
       "address": "hostname.example.com",
       "is_enabled": true,
       "protocol": "shadowsocks",
+      "secret_id": null,
       "shadowsocks": {
         "port": 5800,
-        "method": "aes-256-gcm",
-        "password": "PLACEHOLDER_PASSWORD"
+        "method": "aes-256-gcm"
       }
     },
     {
@@ -22,9 +22,9 @@
       "address": "hostname.example.com",
       "is_enabled": true,
       "protocol": "vless",
+      "secret_id": null,
       "vless": {
         "port": 443,
-        "uuid": "PLACEHOLDER-UUID-0000-0000-000000000000",
         "flow": "xtls-rprx-vision",
         "reality": {
           "public_key": "PLACEHOLDER_PUBLIC_KEY",

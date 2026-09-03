@@ -11,6 +11,7 @@ import pytest
 from neutrino_hub.cli import setup, wizard
 from neutrino_hub.modules.xray.node_config import parse_share_link
 from neutrino_hub.utils.constants import UTILS_EXAMPLES_DIR
+from tests.conftest import unlock_vault
 
 # A share link the parser accepts, made up: example.com, and the password
 # inside the base64 is the words "s3cret-password".
@@ -28,6 +29,7 @@ def config_dir(tmp_path, monkeypatch):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    unlock_vault(monkeypatch, tmp_path)
     return tmp_path
 
 
@@ -45,6 +47,13 @@ def test_the_nodes_replace_the_examples_and_keep_their_settings(config_dir):
     # provider hands out under one first label stay two nodes.
     assert [node["id"].split("_")[0] for node in nodes["nodes"]] == ["hk"]
     assert nodes["balancer"]["strategy"], "the example's strategy survived"
+    # The link's password lands sealed in the vault, never in the file.
+    stored = nodes["nodes"][0]
+    assert stored["secret_id"]
+    assert "password" not in stored["shadowsocks"]
+    from neutrino_hub.modules.credentials.vault import SecretVault
+
+    assert SecretVault().open(stored["secret_id"]) == {"value": "s3cret-password"}
 
 
 def test_every_proxy_answer_reaches_the_routing_file(config_dir):

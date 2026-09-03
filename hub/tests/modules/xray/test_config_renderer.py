@@ -19,10 +19,10 @@ NODES = {
             "address": "203.0.113.10",
             "is_enabled": True,
             "protocol": "shadowsocks",
+            "secret_id": "0" * 32,
             "shadowsocks": {
                 "port": 5800,
                 "method": "aes-256-gcm",
-                "password": "secret",
             },
         }
     ],
@@ -34,7 +34,15 @@ NODES = {
 }
 
 
-def render(**routing) -> dict:
+def resolved_nodes() -> XrayNodeList:
+    """The node list with its reference opened, as a live render sees it."""
+    node_list = XrayNodeList.from_dict(NODES)
+    for node in node_list.nodes:
+        node.password = "secret"
+    return node_list
+
+
+def render(*, is_resolved: bool = True, **routing) -> dict:
     settings = {
         "is_proxy_enabled": True,
         "socks_ports": [{"port": 1080, "is_proxied": False}],
@@ -45,8 +53,14 @@ def render(**routing) -> dict:
         "direct_dns": {"address": "223.5.5.5", "port": 53},
         **routing,
     }
+    node_list = XrayNodeList.from_dict(NODES)
+    if is_resolved:
+        # What resolve_node_secrets does on a live box: the reference opened
+        # into memory.
+        for node in node_list.nodes:
+            node.password = "secret"
     return XrayConfigRenderer(
-        node_list=XrayNodeList.from_dict(NODES),
+        node_list=node_list,
         routing=settings,
     ).render()
 
@@ -206,9 +220,7 @@ def test_a_socks_port_can_be_the_whole_proxy():
         "socks_ports": [{"port": 1081, "is_proxied": True}],
     }
 
-    config = XrayConfigRenderer(
-        node_list=XrayNodeList.from_dict(NODES), routing=routing
-    ).render()
+    config = XrayConfigRenderer(node_list=resolved_nodes(), routing=routing).render()
 
     socks = [i for i in config["inbounds"] if i["tag"] == "socks_1081_in"]
     balanced = [r for r in config["routing"]["rules"] if r.get("balancerTag")]
@@ -224,9 +236,7 @@ def test_a_proxied_port_outlives_the_lan_switch():
         "socks_ports": [{"port": 1081, "is_proxied": True}],
     }
 
-    config = XrayConfigRenderer(
-        node_list=XrayNodeList.from_dict(NODES), routing=routing
-    ).render()
+    config = XrayConfigRenderer(node_list=resolved_nodes(), routing=routing).render()
 
     balanced = next(r for r in config["routing"]["rules"] if r.get("balancerTag"))
     assert [i for i in config["inbounds"] if i["tag"] == "socks_1081_in"]
@@ -258,9 +268,7 @@ def test_the_hub_scope_stands_alone():
         "socks_ports": [],
     }
 
-    config = XrayConfigRenderer(
-        node_list=XrayNodeList.from_dict(NODES), routing=routing
-    ).render()
+    config = XrayConfigRenderer(node_list=resolved_nodes(), routing=routing).render()
 
     balanced = next(r for r in config["routing"]["rules"] if r.get("balancerTag"))
     dns = next(
@@ -280,9 +288,7 @@ def test_a_direct_port_is_published_with_the_proxy_off():
         "socks_ports": [{"port": 1080, "is_proxied": False}],
     }
 
-    config = XrayConfigRenderer(
-        node_list=XrayNodeList.from_dict(NODES), routing=routing
-    ).render()
+    config = XrayConfigRenderer(node_list=resolved_nodes(), routing=routing).render()
 
     assert [i for i in config["inbounds"] if i["tag"] == "socks_1080_in"]
 
@@ -340,9 +346,10 @@ def test_the_fallback_brings_the_observatory_with_it(strategy):
     observatory is what knows it. Only leastPing needs one for its own sake,
     so turning the fallback on under either other strategy used to render a
     config xray would not load — measured on Debian 12, xray 26.3.27."""
-    nodes = dict(NODES, balancer=dict(NODES["balancer"], strategy=strategy))
+    node_list = resolved_nodes()
+    node_list.strategy = strategy
     config = XrayConfigRenderer(
-        node_list=XrayNodeList.from_dict(nodes),
+        node_list=node_list,
         routing={"is_proxy_enabled": True, "is_direct_fallback_enabled": True},
     ).render()
 
@@ -360,4 +367,13 @@ def test_without_the_fallback_those_strategies_need_no_observatory(strategy):
         routing={"is_proxy_enabled": True},
     ).render()
 
+    assert "observatory" not in config
+
+
+def test_a_dangling_reference_excludes_the_node():
+    """A reference nothing resolves renders the node out, never a crash."""
+    config = render(is_resolved=False)
+
+    assert "node_hk1" not in tags(config, "outbounds")
+    assert "balancers" not in config["routing"]
     assert "observatory" not in config

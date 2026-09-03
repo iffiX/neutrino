@@ -15,6 +15,7 @@ from neutrino_hub.modules.xray.node_config import XrayNodeList
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import nodes as nodes_router
 from neutrino_hub.web.routers import proxy as proxy_router
+from tests.conftest import unlock_vault
 
 # One reachable-looking node, as a share link and as stored configuration.
 SHARE_LINK = "ss://YWVzLTI1Ni1nY206c2VjcmV0@203.0.113.10:5800#Tokyo"  # scan: allow
@@ -26,7 +27,8 @@ STORED = {
             "address": "203.0.113.10",
             "is_enabled": True,
             "protocol": "shadowsocks",
-            "shadowsocks": {"port": 5800, "method": "aes-256-gcm", "password": "x"},
+            "secret_id": "0" * 32,
+            "shadowsocks": {"port": 5800, "method": "aes-256-gcm"},
         }
     ],
     "balancer": {
@@ -84,7 +86,9 @@ class _NoProbes:
 
 
 @pytest.fixture
-def client(monkeypatch):
+def client(monkeypatch, tmp_path):
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    unlock_vault(monkeypatch, tmp_path)
     runtime = FakeRuntime()
     for module in (nodes_router, proxy_router):
         monkeypatch.setattr(
@@ -338,3 +342,31 @@ def test_the_hubs_own_switch_cannot_be_turned_on_with_nothing_to_go_out_through(
 
     assert response.status_code == 400
     assert "exit node" in response.json()["detail"]
+
+
+def test_an_added_link_seals_its_secret_and_stores_the_reference(client):
+    opened, runtime = client
+
+    response = opened.post(
+        "/api/proxy/nodes", json={"link": SHARE_LINK.replace("hk1", "hk2")}
+    )
+
+    assert response.status_code == 201
+    stored = runtime.files["xray/nodes.json"]["nodes"][-1]
+    assert stored["secret_id"]
+    assert "password" not in stored["shadowsocks"]
+    from neutrino_hub.modules.credentials.vault import SecretVault
+
+    assert SecretVault().open(stored["secret_id"]) == {"value": "secret"}
+
+
+def test_removing_a_node_takes_its_vault_object_with_it(client):
+    opened, runtime = client
+    opened.post("/api/proxy/nodes", json={"link": SHARE_LINK.replace("hk1", "hk2")})
+    stored = runtime.files["xray/nodes.json"]["nodes"][-1]
+
+    opened.delete(f"/api/proxy/nodes/{stored['id']}")
+
+    from neutrino_hub.modules.credentials.vault import SecretVault
+
+    assert SecretVault().get(stored["secret_id"]) is None

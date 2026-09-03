@@ -59,8 +59,14 @@ class XrayConfigRenderer:
         # the one thing that fixes it, switching the scope off, is what the
         # failure prevented anybody from applying. The panel writes the
         # switches off when the list empties, so the two agree; this is what
-        # keeps a hand-edited file from being unrenderable.
-        has_exit = bool(node_list.enabled_nodes)
+        # keeps a hand-edited file from being unrenderable. A node whose
+        # secret reference did not resolve is excluded the same way a
+        # disabled one is: the caller resolves before rendering, and a
+        # dangling reference must not take the whole apply with it.
+        self._renderable_nodes = [
+            node for node in node_list.enabled_nodes if node.has_secret_material
+        ]
+        has_exit = bool(self._renderable_nodes)
         self._is_lan_proxied = routing.get("is_proxy_enabled", True) and has_exit
         self._is_local_proxied = (
             routing.get("is_local_proxy_enabled", False) and has_exit
@@ -221,7 +227,7 @@ class XrayConfigRenderer:
 
     def _render_outbounds(self) -> list[dict]:
         outbounds = (
-            [self._render_node_outbound(node) for node in self._node_list.enabled_nodes]
+            [self._render_node_outbound(node) for node in self._renderable_nodes]
             if self._is_anything_proxied
             else []
         )

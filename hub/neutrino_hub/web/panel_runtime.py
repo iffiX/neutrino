@@ -53,6 +53,7 @@ from neutrino_hub.web.task_stream import TaskStreamRegistry
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
 from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
 from neutrino_hub.modules.xray.node_config import XrayNodeList
+from neutrino_hub.modules.xray.node_secrets import resolve_node_secrets
 from neutrino_hub.modules.xray.node_probe import XrayNodeProbe
 from neutrino_hub.modules.xray.stats_client import XrayStatsClient
 
@@ -427,6 +428,7 @@ class PanelRuntime:
         node_list = self.node_list()
         routing = self._settled_routing(node_list)
 
+        resolve_node_secrets(node_list)
         xray_config = XrayConfigRenderer(
             node_list=node_list,
             routing=routing,

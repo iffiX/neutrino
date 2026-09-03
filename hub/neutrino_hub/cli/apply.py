@@ -64,6 +64,7 @@ from neutrino_hub.modules.xray.apply import XrayConfigApplier
 from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
 from neutrino_hub.modules.xray.constants import XRAY_CONFIG_PATH
 from neutrino_hub.modules.xray.node_config import XrayNodeList
+from neutrino_hub.modules.xray.node_secrets import resolve_node_secrets
 
 # --- config ---
 DNSMASQ_SERVICE_NAME = SYSTEM_CORE_UNITS["dnsmasq"]
@@ -140,6 +141,7 @@ def _render(selected: tuple[str, ...]) -> dict:
 
     if "xray" in selected:
         node_list = XrayNodeList.from_dict(read_config("xray/nodes.json"))
+        resolve_node_secrets(node_list)
         artifacts["xray"] = XrayConfigRenderer(
             node_list=node_list,
             routing=routing,

@@ -29,6 +29,10 @@ from neutrino_hub.modules.xray.node_config import (
     XrayNodeList,
     parse_share_link,
 )
+from neutrino_hub.modules.xray.node_secrets import (
+    delete_node_secret,
+    store_node_secret,
+)
 
 router = APIRouter(
     prefix="/api/proxy", tags=["proxy"], dependencies=[Depends(require_session)]
@@ -162,6 +166,9 @@ def add_node(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"{node.id} is already in the list",
         )
+    # Sealed before the reference is written, so the file never names an
+    # object that does not exist.
+    store_node_secret(node)
     node_list.nodes.append(node)
     write_config("xray/nodes.json", node_list.to_dict())
     _follow_the_nodes(node_list, runtime)
@@ -202,6 +209,9 @@ def remove_node(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"no node {node_id!r}"
         )
+    for node in node_list.nodes:
+        if node.id == node_id:
+            delete_node_secret(node)
     node_list.nodes = remaining
     write_config("xray/nodes.json", node_list.to_dict())
     _follow_the_nodes(node_list, runtime)

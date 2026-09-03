@@ -61,6 +61,7 @@ from neutrino_hub.utils.json_file import read_config, write_config
 from neutrino_hub.system import package_manager
 from neutrino_hub.utils.subprocess_run import CommandError, run
 from neutrino_hub.modules.xray.node_config import XrayNodeList
+from neutrino_hub.modules.xray.node_secrets import store_node_secret
 from neutrino_hub.modules.xray.constants import (
     XRAY_ASSET_ARCHITECTURES,
     XRAY_BINARY,
@@ -620,6 +621,8 @@ def _write_proxy(proxy) -> None:
     # and probe settings that are the example's to state, not the wizard's.
     nodes = XrayNodeList.from_dict(read_config("xray/nodes.json"))
     nodes.nodes = list(proxy.nodes)
+    for node in nodes.nodes:
+        store_node_secret(node)
     write_config("xray/nodes.json", nodes.to_dict())
     routing = read_config("xray/routing.json")
     routing["is_proxy_enabled"] = proxy.is_enabled

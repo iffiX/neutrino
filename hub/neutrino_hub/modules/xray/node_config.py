@@ -1,8 +1,11 @@
 """The node list: typed access to ``config/xray/nodes.json`` and link import.
 
 A node is one JustMySocks (or compatible) server reachable by one protocol.
-Share links are parsed here so the installer and the panel import them the same
-way.
+Share links are parsed here so the installer and the panel import them the
+same way. The file itself holds no secret: a node's password or user id is a
+``secret_id`` reference into the credential vault, sealed at import and
+resolved only at render time. A freshly parsed link carries its material in
+memory until the importer seals it.
 """
 
 import base64
@@ -99,9 +102,12 @@ class XrayNodeConfig:
         is_enabled: Disabled nodes are left out of the rendered config.
         protocol: Either ``shadowsocks`` or ``vless``.
         port: Server port for the active protocol.
+        secret_id: The vault ``token`` object holding the node's secret —
+            the Shadowsocks password or the VLESS user id. What is stored.
         method: Shadowsocks cipher, when the protocol is Shadowsocks.
-        password: Shadowsocks password, when the protocol is Shadowsocks.
-        uuid: VLESS user id, when the protocol is VLESS.
+        password: Shadowsocks password, in memory only: set by the link
+            parser and by resolution, never serialized.
+        uuid: VLESS user id, in memory only, on the same terms.
         flow: VLESS flow control, normally ``xtls-rprx-vision``.
         reality: Reality parameters, when the VLESS node uses Reality.
     """
@@ -112,6 +118,7 @@ class XrayNodeConfig:
     is_enabled: bool
     protocol: str
     port: int
+    secret_id: str | None = None
     method: str | None = None
     password: str | None = None
     uuid: str | None = None
@@ -138,6 +145,7 @@ class XrayNodeConfig:
             "address": data["address"],
             "is_enabled": data.get("is_enabled", True),
             "protocol": protocol,
+            "secret_id": data.get("secret_id") or None,
         }
         if protocol == SHADOWSOCKS_PROTOCOL:
             block = data.get(SHADOWSOCKS_PROTOCOL)
@@ -147,7 +155,6 @@ class XrayNodeConfig:
                 **common,
                 port=block["port"],
                 method=block["method"],
-                password=block["password"],
             )
         if protocol == VLESS_PROTOCOL:
             block = data.get(VLESS_PROTOCOL)
@@ -157,7 +164,6 @@ class XrayNodeConfig:
             return cls(
                 **common,
                 port=block["port"],
-                uuid=block["uuid"],
                 flow=block.get("flow"),
                 reality=XrayRealitySettings.from_dict(reality) if reality else None,
             )
@@ -176,8 +182,20 @@ class XrayNodeConfig:
         """Whether this node negotiates Reality."""
         return self.reality is not None
 
+    @property
+    def has_secret_material(self) -> bool:
+        """Whether the node's secret is in memory, ready to render.
+
+        False for a stored node until resolution opens its reference — and
+        for one whose reference dangles, which is what excludes it from the
+        rendered config the way a disabled node is excluded.
+        """
+        if self.protocol == SHADOWSOCKS_PROTOCOL:
+            return bool(self.password)
+        return bool(self.uuid)
+
     def to_dict(self) -> dict:
-        """Serialize back to the ``config/`` shape.
+        """Serialize back to the ``config/`` shape, material left out.
 
         Returns:
             A JSON-ready object matching ``nodes.json``.
@@ -188,15 +206,15 @@ class XrayNodeConfig:
             "address": self.address,
             "is_enabled": self.is_enabled,
             "protocol": self.protocol,
+            "secret_id": self.secret_id,
         }
         if self.protocol == SHADOWSOCKS_PROTOCOL:
             data[SHADOWSOCKS_PROTOCOL] = {
                 "port": self.port,
                 "method": self.method,
-                "password": self.password,
             }
         else:
-            block: dict = {"port": self.port, "uuid": self.uuid}
+            block: dict = {"port": self.port}
             if self.flow:
                 block["flow"] = self.flow
             if self.reality:
