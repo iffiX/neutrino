@@ -240,13 +240,20 @@ def _aad(secret_id: str, kind: str) -> bytes:
 
 
 def _write_key_material(path: Path, key: bytes) -> None:
-    # Create with the final mode rather than widening then narrowing, so the
-    # key is never briefly world-readable.
+    # Created with the final mode rather than widened then narrowed, so the
+    # key is never briefly world-readable — and staged beside its target and
+    # renamed into place, so a crash mid-write leaves the old key usable.
+    staged = path.with_name(path.name + ".tmp")
     descriptor = os.open(
-        path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, stat.S_IRUSR | stat.S_IWUSR
+        staged, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, stat.S_IRUSR | stat.S_IWUSR
     )
-    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-        stream.write(key.hex() + "\n")
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(key.hex() + "\n")
+        os.replace(staged, path)
+    except BaseException:
+        staged.unlink(missing_ok=True)
+        raise
 
 
 @dataclass
