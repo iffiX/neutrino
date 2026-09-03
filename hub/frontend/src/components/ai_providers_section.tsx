@@ -64,6 +64,7 @@ export function AiProvidersSection() {
   const [providers, setProviders] = useState<AiProviderView[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [orderError, setOrderError] = useState<string | null>(null);
 
   useEffect(() => {
     if (resource.data !== null) {
@@ -84,7 +85,7 @@ export function AiProvidersSection() {
         ? current.map((provider) =>
             provider.id === saved.id ? saved : provider,
           )
-        : [saved, ...current];
+        : [...current, saved];
     });
     setIsAdding(false);
     setEditingId(null);
@@ -96,6 +97,30 @@ export function AiProvidersSection() {
       current.filter((provider) => provider.id !== providerId),
     );
     applyQuietly();
+  };
+
+  const handleMove = (providerId: string, offset: number) => {
+    const index = providers.findIndex((provider) => provider.id === providerId);
+    const target = index + offset;
+    if (index < 0 || target < 0 || target >= providers.length) {
+      return;
+    }
+    const reordered = [...providers];
+    const [moved] = reordered.splice(index, 1);
+    if (moved === undefined) {
+      return;
+    }
+    reordered.splice(target, 0, moved);
+    setProviders(reordered);
+    setOrderError(null);
+    void apiPut(`${AI_PROVIDERS_PATH}/order`, {
+      provider_ids: reordered.map((provider) => provider.id),
+    })
+      .then(() => applyQuietly())
+      .catch((cause: unknown) => {
+        setOrderError(describeError(cause));
+        resource.reload();
+      });
   };
 
   return (
@@ -115,8 +140,11 @@ export function AiProvidersSection() {
       </div>
       <p className="field_hint">
         The endpoints the gateway forwards to, each keyed with a stored token.
-        Serving switches on and off instantly, on every machine at once.
+        The list is the serving order — the first enabled provider answers first
+        — and switching takes effect on every machine at once.
       </p>
+
+      {orderError !== null && <span className="field_error">{orderError}</span>}
 
       {resource.error !== null && (
         <ErrorPanel message={resource.error} onRetry={resource.reload} />
@@ -140,7 +168,7 @@ export function AiProvidersSection() {
         </div>
       ) : (
         <div className="keys_list">
-          {providers.map((provider) =>
+          {providers.map((provider, index) =>
             editingId === provider.id ? (
               <ProviderForm
                 key={provider.id}
@@ -152,6 +180,10 @@ export function AiProvidersSection() {
               <ProviderCard
                 key={provider.id}
                 value={provider}
+                isFirst={index === 0}
+                isLast={index === providers.length - 1}
+                onMoveUp={() => handleMove(provider.id, -1)}
+                onMoveDown={() => handleMove(provider.id, 1)}
                 onEdit={() => setEditingId(provider.id)}
                 onSaved={handleSaved}
                 onDeleted={handleDeleted}
@@ -350,6 +382,10 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
 
 interface ProviderCardProps {
   value: AiProviderView;
+  isFirst: boolean;
+  isLast: boolean;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
   onEdit: () => void;
   onSaved: (provider: AiProviderView) => void;
   onDeleted: (providerId: string) => void;
@@ -357,6 +393,10 @@ interface ProviderCardProps {
 
 function ProviderCard({
   value,
+  isFirst,
+  isLast,
+  onMoveUp,
+  onMoveDown,
   onEdit,
   onSaved,
   onDeleted,
@@ -406,6 +446,26 @@ function ProviderCard({
       <div className="key_card_head">
         <span className="credentials_provider_name">{value.name}</span>
         <span className="key_card_type">{value.kind}</span>
+        <span className="ai_order_buttons">
+          <button
+            type="button"
+            className="file_modal_action"
+            title="Serve earlier"
+            disabled={isBusy || isFirst}
+            onClick={onMoveUp}
+          >
+            <Icon name="arrow_up" size={12} />
+          </button>
+          <button
+            type="button"
+            className="file_modal_action"
+            title="Serve later"
+            disabled={isBusy || isLast}
+            onClick={onMoveDown}
+          >
+            <Icon name="arrow_down" size={12} />
+          </button>
+        </span>
       </div>
 
       <div className="key_card_fingerprint">

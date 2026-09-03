@@ -105,3 +105,178 @@
 .ai_key_add .input {
   max-width: 320px;
 }
+
+.ai_chip_count {
+  margin-left: 6px;
+  color: var(--color-text-faint);
+}
+
+.ai_order_buttons {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+/* --- The provider and key activity tables --- */
+
+.usage_table_block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Wide tables scroll here; the page body never scrolls sideways. */
+.usage_table_scroll {
+  overflow-x: auto;
+}
+
+.usage_table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.usage_table th {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-faint);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.usage_table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+}
+
+.usage_table tr:last-child td {
+  border-bottom: none;
+}
+
+.usage_table .num {
+  text-align: right;
+}
+
+.usage_name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.usage_device {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.usage_split {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+  font-size: 11px;
+}
+
+.usage_ok {
+  color: var(--color-ok);
+}
+
+.usage_warn {
+  color: var(--color-warn);
+}
+
+.usage_bad {
+  color: var(--color-error);
+}
+
+.usage_health {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.usage_health_bar {
+  display: flex;
+  gap: 3px;
+  align-items: flex-end;
+  height: 18px;
+}
+
+.usage_health_slot {
+  display: inline-block;
+  width: 6px;
+  border-radius: 2px;
+  background: var(--color-border-strong);
+}
+
+.usage_health_slot--ok {
+  background: var(--color-ok);
+}
+
+.usage_health_slot--warn {
+  background: var(--color-warn);
+}
+
+.usage_health_slot--error {
+  background: var(--color-error);
+}
+
+.usage_health_text {
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.usage_health_word {
+  font-weight: 600;
+}
+
+.usage_health_word--healthy {
+  color: var(--color-ok);
+}
+
+.usage_health_word--degraded {
+  color: var(--color-warn);
+}
+
+.usage_health_word--quiet {
+  color: var(--color-text-muted);
+}
+
+.usage_seen {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.usage_table_foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.usage_table_control {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: 12px;
+}
+
+.usage_table_control .select {
+  width: auto;
+}
+
+.usage_table_pager {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+}
