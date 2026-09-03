@@ -287,7 +287,7 @@ key sealed under the vault's data key. The panel drains its per-request
 queue and accumulates what it held — requests and tokens, per client key and
 per upstream provider — under `/var/lib/neutrino/cliproxyapi/`, and a client
 key belongs to a device, so usage lands on the subscription that spent it.
-The AI page and the status strip both read that one store.
+The dashboard, the AI page and the status strip all read that one store.
 
 ## The panel heals itself; nothing ever asks for a manual refresh
 
