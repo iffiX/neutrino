@@ -789,9 +789,13 @@ export function DeviceDrawer({
             )}
           </div>
 
-          <DeviceFeatures macAddress={device.mac_address} />
+          {device.client !== null && device.client.is_managed && (
+            <DeviceFeatures macAddress={device.mac_address} />
+          )}
 
-          {device.ssh !== null && <RemoteDesktopPanel device={device} />}
+          {device.client !== null &&
+            device.client.is_managed &&
+            device.ssh !== null && <RemoteDesktopPanel device={device} />}
 
           {(taskId !== null || task.lines.length > 0) && (
             <div className="device_drawer_log">
