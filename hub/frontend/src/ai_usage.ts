@@ -68,12 +68,14 @@ export function successShareOf(counters: {
   return shareOf(counters.requests - counters.failed, counters.requests);
 }
 
-/** The fraction of prompt tokens answered from cache, null with none. */
+/**
+ * The fraction of prompt tokens answered from cache, null with none.
+ *
+ * `input_tokens` is the vendor's cache-inclusive input total, so the cache
+ * reads are a share of it, not an addition to it.
+ */
 export function cacheShareOf(counters: AiUsageCounters): number | null {
-  return shareOf(
-    counters.cache_read_tokens,
-    counters.input_tokens + counters.cache_read_tokens,
-  );
+  return shareOf(counters.cache_read_tokens, counters.input_tokens);
 }
 
 /**
