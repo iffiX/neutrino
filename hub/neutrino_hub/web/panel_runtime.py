@@ -541,8 +541,10 @@ class PanelRuntime:
             for interface in self.network().lan_interfaces
         ]
         rendered = SambaConfigRenderer(config=config, lan_subnets=subnets).render()
-        notes = SambaUserManager().converge(config.users)
+        # Configuration first: smbpasswd itself reads smb.conf, and the link
+        # to a valid one is the applier's to place.
         summary = SambaConfigApplier().apply(rendered, config=config)
+        notes = SambaUserManager().converge(config.users)
         if notes:
             summary += "; " + "; ".join(notes)
         return summary

@@ -255,9 +255,11 @@ def _apply(artifacts: dict) -> None:
         run(["systemctl", "restart", DNSMASQ_SERVICE_NAME])
     if "samba" in artifacts:
         samba_config = SambaConfig.from_dict(read_config("samba/samba.json"))
+        # Configuration first: smbpasswd itself reads smb.conf, and the link
+        # to a valid one is the applier's to place.
+        print(SambaConfigApplier().apply(artifacts["samba"], config=samba_config))
         for change in SambaUserManager().converge(samba_config.users):
             print(change)
-        print(SambaConfigApplier().apply(artifacts["samba"], config=samba_config))
     if "gitea" in artifacts:
         print(GiteaConfigApplier().apply(artifacts["gitea"]))
     if "podman" in artifacts:
