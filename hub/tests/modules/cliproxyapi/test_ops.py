@@ -7,7 +7,7 @@ import neutrino_hub.utils.json_file
 from neutrino_hub.modules.cliproxyapi import ops
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_GENERATED_NAME
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier
-from neutrino_hub.modules.credentials.registry import AiProviderRegistry
+from neutrino_hub.modules.ai.registry import AiProviderRegistry
 from tests.conftest import unlock_vault
 
 

@@ -14,9 +14,9 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from neutrino_hub.modules.credentials.constants import (
-    CREDENTIALS_AI_PROVIDERS_PATH,
-    CREDENTIALS_AI_PROVIDER_KINDS,
+from neutrino_hub.modules.ai.constants import (
+    AI_PROVIDERS_PATH,
+    AI_PROVIDER_KINDS,
 )
 from neutrino_hub.modules.credentials.vault import (
     SecretVault,
@@ -41,7 +41,7 @@ class AiProviderRecord:
     Attributes:
         id: Stable identifier other features reference.
         name: Human-chosen label.
-        kind: One of :data:`CREDENTIALS_AI_PROVIDER_KINDS`.
+        kind: One of :data:`AI_PROVIDER_KINDS`.
         base_url: API endpoint; empty means the service's default.
         secret_id: The vault object sealing the key, None when none is stored.
         is_enabled: Whether the AI gateway forwards to this provider.
@@ -142,7 +142,7 @@ class AiProviderRegistry:
 
         Args:
             name: Human-chosen label.
-            kind: One of :data:`CREDENTIALS_AI_PROVIDER_KINDS`.
+            kind: One of :data:`AI_PROVIDER_KINDS`.
             base_url: API endpoint; empty means the service's default.
             api_key: The secret, sealed in the vault when non-empty.
 
@@ -152,7 +152,7 @@ class AiProviderRegistry:
         Raises:
             ValueError: If the kind is unknown or the name is empty.
         """
-        if kind not in CREDENTIALS_AI_PROVIDER_KINDS:
+        if kind not in AI_PROVIDER_KINDS:
             raise ValueError(f"unknown provider kind {kind!r}")
         if not name.strip():
             raise ValueError("the provider needs a name")
@@ -209,7 +209,7 @@ class AiProviderRegistry:
             record = self.get(provider_id)
             if record is None:
                 raise KeyError(provider_id)
-            if kind is not None and kind not in CREDENTIALS_AI_PROVIDER_KINDS:
+            if kind is not None and kind not in AI_PROVIDER_KINDS:
                 raise ValueError(f"unknown provider kind {kind!r}")
             if name is not None and name.strip():
                 record.name = name.strip()
@@ -289,7 +289,7 @@ class AiProviderRegistry:
 
     def _read(self) -> list[AiProviderRecord]:
         try:
-            data = read_config(CREDENTIALS_AI_PROVIDERS_PATH)
+            data = read_config(AI_PROVIDERS_PATH)
         except FileNotFoundError:
             return []
         return [
@@ -298,6 +298,6 @@ class AiProviderRegistry:
 
     def _write(self) -> None:
         write_config(
-            CREDENTIALS_AI_PROVIDERS_PATH,
+            AI_PROVIDERS_PATH,
             {"providers": [record.to_dict() for record in self._records]},
         )

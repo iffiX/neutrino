@@ -16,7 +16,7 @@ import yaml
 
 from neutrino_hub.modules.cliproxyapi.config import CliproxyApiConfig
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_AUTH_DIR
-from neutrino_hub.modules.credentials.registry import AiProviderRecord
+from neutrino_hub.modules.ai.registry import AiProviderRecord
 
 KIND_TO_BLOCK = {
     "anthropic": "claude-api-key",

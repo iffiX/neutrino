@@ -13,7 +13,7 @@ from neutrino_hub.modules.cliproxyapi.ops import (
     load_config,
     save_config,
 )
-from neutrino_hub.modules.credentials.registry import AiProviderRegistry
+from neutrino_hub.modules.ai.registry import AiProviderRegistry
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.web.dependencies import require_session

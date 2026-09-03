@@ -5,8 +5,8 @@ import json
 import pytest
 
 import neutrino_hub.utils.json_file
-from neutrino_hub.modules.credentials.constants import CREDENTIALS_AI_PROVIDERS_PATH
-from neutrino_hub.modules.credentials.registry import AiProviderRegistry
+from neutrino_hub.modules.ai.constants import AI_PROVIDERS_PATH
+from neutrino_hub.modules.ai.registry import AiProviderRegistry
 from neutrino_hub.modules.credentials.vault import SecretVault
 from tests.conftest import unlock_vault
 
@@ -19,7 +19,7 @@ def config_dir(tmp_path, monkeypatch):
 
 
 def _stored_text(config_dir) -> str:
-    return (config_dir / CREDENTIALS_AI_PROVIDERS_PATH).read_text(encoding="utf-8")
+    return (config_dir / AI_PROVIDERS_PATH).read_text(encoding="utf-8")
 
 
 def test_add_and_list(config_dir):

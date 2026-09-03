@@ -20,6 +20,7 @@ from neutrino_hub.web.constants import WEB_FRONTEND_DIST_DIR
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.routers import (
     agent,
+    ai,
     auth,
     cliproxyapi,
     credentials,
@@ -48,6 +49,7 @@ API_ROUTERS = (
     devices.router,
     device_files.router,
     credentials.router,
+    ai.router,
     cliproxyapi.router,
     samba.router,
     gitea.router,

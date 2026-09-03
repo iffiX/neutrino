@@ -57,61 +57,6 @@ def write_device(tmp_path, ssh: dict) -> None:
     )
 
 
-def test_provider_roundtrip(client):
-    assert client.get("/api/credentials/ai_providers").json() == {"providers": []}
-
-    created = client.post(
-        "/api/credentials/ai_providers",
-        json={
-            "name": "Anthropic direct",
-            "kind": "anthropic",
-            "base_url": "",
-            "api_key": "sk-test",  # scan: allow
-            "models": [{"name": "claude-sonnet-4-5", "alias": "sonnet"}],
-        },
-    )
-    assert created.status_code == 200
-    view = created.json()
-    assert view["has_api_key"] is True
-    assert "api_key" not in view
-
-    listed = client.get("/api/credentials/ai_providers").json()["providers"]
-    assert [p["name"] for p in listed] == ["Anthropic direct"]
-
-    updated = client.put(
-        f"/api/credentials/ai_providers/{view['id']}",
-        json={"name": "Renamed", "api_key": ""},
-    )
-    assert updated.status_code == 200
-    assert updated.json()["name"] == "Renamed"
-    assert updated.json()["has_api_key"] is True
-
-    assert (
-        client.delete(f"/api/credentials/ai_providers/{view['id']}").status_code == 200
-    )
-    assert client.get("/api/credentials/ai_providers").json() == {"providers": []}
-
-
-def test_provider_refusals(client):
-    unknown_kind = client.post(
-        "/api/credentials/ai_providers",
-        json={"name": "x", "kind": "nonsense", "base_url": "", "api_key": "k"},
-    )
-    assert unknown_kind.status_code == 400
-    assert (
-        client.put("/api/credentials/ai_providers/absent", json={}).status_code == 404
-    )
-    assert client.delete("/api/credentials/ai_providers/absent").status_code == 404
-
-
-def test_key_listing_is_untouched_by_provider_traffic(client):
-    client.post(
-        "/api/credentials/ai_providers",
-        json={"name": "p", "kind": "openai", "base_url": "", "api_key": "k"},
-    )
-    assert client.get("/api/credentials/ssh_keys").json() == {"keys": []}
-
-
 def test_key_roundtrip(client):
     key = asyncssh.generate_private_key("ssh-ed25519")
     created = client.post(

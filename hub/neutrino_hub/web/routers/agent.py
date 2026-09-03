@@ -27,7 +27,7 @@ from neutrino_hub.modules.cliproxyapi.ops import (
     load_config,
     save_config,
 )
-from neutrino_hub.modules.credentials.registry import AiProviderRegistry
+from neutrino_hub.modules.ai.registry import AiProviderRegistry
 from neutrino_hub.modules.devices.agent_package import agent_packages
 from neutrino_hub.modules.devices.constants import DEVICE_MAC_PATTERN
 from neutrino_hub.modules.devices.registry import (

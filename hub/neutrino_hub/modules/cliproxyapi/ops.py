@@ -18,7 +18,7 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_UNIT,
 )
 from neutrino_hub.modules.cliproxyapi.renderer import CliproxyApiConfigRenderer
-from neutrino_hub.modules.credentials.registry import AiProviderRegistry
+from neutrino_hub.modules.ai.registry import AiProviderRegistry
 
 CLIPROXYAPI_CONFIG_PATH = "cliproxyapi/cliproxyapi.json"
 PROBE_TIMEOUT_S = 5

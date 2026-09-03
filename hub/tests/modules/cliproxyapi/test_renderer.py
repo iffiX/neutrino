@@ -7,7 +7,7 @@ from neutrino_hub.modules.cliproxyapi.config import (
     CliproxyApiConfig,
 )
 from neutrino_hub.modules.cliproxyapi.renderer import CliproxyApiConfigRenderer
-from neutrino_hub.modules.credentials.registry import AiProviderRecord
+from neutrino_hub.modules.ai.registry import AiProviderRecord
 
 
 def _provider(**overrides) -> AiProviderRecord:
