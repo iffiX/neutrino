@@ -67,3 +67,14 @@
   gap: var(--space-3);
   padding: 0 var(--space-5) var(--space-4);
 }
+
+/* The restore task's own output: an apply can run minutes and say a lot. */
+.settings_restore_log {
+  margin: 0;
+  max-height: 40vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.5;
+}

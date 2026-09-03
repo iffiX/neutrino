@@ -3,6 +3,7 @@ import type { ChangeEvent, FormEvent } from "react";
 
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
+import { Spinner } from "../components/spinner";
 import {
   ApiError,
   apiGet,
@@ -462,8 +463,17 @@ function RestoreArchiveModal({
   onRestore,
 }: RestoreArchiveModalProps) {
   const task = useTaskStream(taskId);
+  const isTaskFailed = task.exitCode !== null && task.exitCode !== 0;
   const [isReconnecting, setIsReconnecting] = useState(false);
   const wasApplying = useRef(false);
+  const logRef = useRef<HTMLPreElement | null>(null);
+
+  useEffect(() => {
+    const element = logRef.current;
+    if (element !== null) {
+      element.scrollTop = element.scrollHeight;
+    }
+  }, [task.lines]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -486,6 +496,11 @@ function RestoreArchiveModal({
       return;
     }
     wasApplying.current = false;
+    if (task.exitCode !== null && task.exitCode !== 0) {
+      // A failed apply restarts nothing; the lines say why, and Close is
+      // the only next step.
+      return;
+    }
     setIsReconnecting(true);
     // The restart window is too brief to catch by watching for a dead
     // socket. What cannot be missed is this page's own session: the old
@@ -503,7 +518,7 @@ function RestoreArchiveModal({
         });
     }, 1500);
     return () => window.clearInterval(handle);
-  }, [task.isRunning]);
+  }, [task.isRunning, task.exitCode]);
 
   return (
     <div
@@ -528,14 +543,34 @@ function RestoreArchiveModal({
         </p>
         {taskId !== null ? (
           <div className="settings_restore_fields">
-            <pre className="device_drawer_log_lines settings_restore_log">
+            <pre className="settings_restore_log" ref={logRef}>
               {task.lines.join("")}
             </pre>
-            <p className="field_hint">
-              {isReconnecting
-                ? "The panel is restarting; this page reloads by itself. Sign in with the restored password."
-                : "Applying the restored configuration…"}
-            </p>
+            {isTaskFailed ? (
+              <>
+                <div className="notice notice--error">
+                  <Icon name="alert" size={15} />
+                  <div className="notice_body">
+                    The apply did not finish; the lines above say why. The files
+                    were restored — fix the cause and run it again from a
+                    terminal: sudo nhub apply
+                  </div>
+                </div>
+                <div className="confirm_foot">
+                  <button type="button" className="button" onClick={onCancel}>
+                    Close
+                  </button>
+                </div>
+              </>
+            ) : (
+              <Spinner
+                label={
+                  isReconnecting
+                    ? "The panel is restarting; this page reloads by itself. Sign in with the restored password."
+                    : "Applying the restored configuration — this can take minutes when heavy services re-render."
+                }
+              />
+            )}
           </div>
         ) : (
           <div className="settings_restore_fields">

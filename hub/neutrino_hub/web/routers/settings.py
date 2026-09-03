@@ -368,8 +368,7 @@ async def _restore_apply_source():
         yield line.decode("utf-8", "replace")
     code = await process.wait()
     if code != 0:
-        yield f"error: nhub apply exited {code}\n"
-        return
+        raise RuntimeError(f"nhub apply exited {code}")
     if is_dev_root_set():
         yield "development root: restart the panel by hand to pick up the settings\n"
         return
