@@ -14,6 +14,7 @@ PACKAGE="${1:?usage: run_mode_matrix.sh <package file> [--client]}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 BEFORE=/tmp/neutrino_before.json
 PASSWORD=integration-test-pw
+VAULT_PASSPHRASE='Integration-Vault-Pw-16!'
 FAILURES=0
 
 phase() { printf '\n== %s ==\n' "$1"; }
@@ -49,12 +50,13 @@ python3 -m pytest --version >/dev/null 2>&1 || { echo "no pytest on this box"; e
 
 phase "set up as a server"
 cat > /tmp/answers.json <<JSON
-{ "password": "$PASSWORD", "network": { "mode": "server" } }
+{ "password": "$PASSWORD", "vault_passphrase": "$VAULT_PASSPHRASE", "network": { "mode": "server" } }
 JSON
 nhub setup --yes --stdin < /tmp/answers.json > /tmp/setup.log 2>&1
 ran $?
 
 export NEUTRINO_PANEL_PASSWORD="$PASSWORD"
+export NEUTRINO_VAULT_PASSPHRASE="$VAULT_PASSPHRASE"
 export NEUTRINO_BEFORE_STATE="$BEFORE"
 if [ "${2:-}" = "--client" ]; then
     export NEUTRINO_LAN_CLIENT=1

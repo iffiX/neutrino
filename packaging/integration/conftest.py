@@ -14,6 +14,7 @@ from panel_client import PanelClient
 
 PANEL_DEFAULT_URL = "http://127.0.0.1:8080"
 PANEL_PASSWORD_ENV = "NEUTRINO_PANEL_PASSWORD"
+VAULT_PASSPHRASE_ENV = "NEUTRINO_VAULT_PASSPHRASE"
 
 
 def pytest_addoption(parser) -> None:
@@ -27,6 +28,11 @@ def pytest_addoption(parser) -> None:
         "--password",
         default=os.environ.get(PANEL_PASSWORD_ENV, ""),
         help=f"its password; also read from ${PANEL_PASSWORD_ENV}",
+    )
+    parser.addoption(
+        "--vault-passphrase",
+        default=os.environ.get(VAULT_PASSPHRASE_ENV, ""),
+        help=f"the box's vault passphrase; also read from ${VAULT_PASSPHRASE_ENV}",
     )
     parser.addoption(
         "--before",
@@ -60,6 +66,23 @@ def panel(request) -> PanelClient:
     client = PanelClient(base_url=request.config.getoption("--panel"))
     client.sign_in(password)
     return client
+
+
+@pytest.fixture(scope="session")
+def vault_passphrase(request) -> str:
+    """The vault passphrase the box under test was set up with.
+
+    Returns:
+        The passphrase. Skips when none was named, so the restore checks walk
+        past a box set up by other means.
+    """
+    passphrase = request.config.getoption("--vault-passphrase")
+    if not passphrase:
+        pytest.skip(
+            "the restore checks need the box's vault passphrase: pass "
+            f"--vault-passphrase or set ${VAULT_PASSPHRASE_ENV}"
+        )
+    return passphrase
 
 
 @pytest.fixture(scope="session")

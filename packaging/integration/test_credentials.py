@@ -1,14 +1,16 @@
-"""The Credentials page against a live box: four collections over one vault.
+"""The Credentials and AI pages against a live box, and the backup roundtrip.
 
 What matters here is what no unit test can promise about the running panel:
 that secrets go in and never come back out, that a reference held by a device
-blocks a delete, and that the backup envelope proves itself — manifest,
-checksum, passphrase — before a restore puts the whole vault back.
+blocks a delete, and that a backup proves itself — manifest, every member's
+digest, the vault passphrase opening the wrapped key — before a restore puts
+the whole vault back.
 
 The backup roundtrip restores the same box's own config over itself, which is
 safe on the disposable machines these tests are for and on nothing else.
 """
 
+import hashlib
 import io
 import json
 import secrets
@@ -40,37 +42,60 @@ def _throwaway_key_text() -> str:
         return path.read_text()
 
 
-def test_password_lifecycle(panel):
+def test_login_lifecycle(panel):
     name = f"itest login {_suffix()}"
     status, created = panel.call(
         "POST",
-        "/credentials/passwords",
+        "/credentials/logins",
         {"name": name, "password": "pw-one"},  # scan: allow
     )
     assert status == 200, created
     assert "password" not in created
     assert created["device_count"] == 0
+    assert created["service_count"] == 0
 
-    listed = panel.read("/credentials/passwords")["passwords"]
+    listed = panel.read("/credentials/logins")["logins"]
     assert any(entry["id"] == created["id"] for entry in listed)
 
     status, renamed = panel.call(
-        "PUT", f"/credentials/passwords/{created['id']}", {"name": name + " renamed"}
+        "PUT", f"/credentials/logins/{created['id']}", {"name": name + " renamed"}
     )
     assert status == 200 and renamed["name"] == name + " renamed"
 
-    assert panel.status("DELETE", f"/credentials/passwords/{created['id']}") == 200
-    listed = panel.read("/credentials/passwords")["passwords"]
+    assert panel.status("DELETE", f"/credentials/logins/{created['id']}") == 200
+    listed = panel.read("/credentials/logins")["logins"]
     assert not any(entry["id"] == created["id"] for entry in listed)
 
 
-def test_password_referenced_by_a_device_blocks_delete(panel):
-    status, password = panel.call(
+def test_a_login_carries_its_username_but_never_its_password(panel):
+    status, created = panel.call(
         "POST",
-        "/credentials/passwords",
+        "/credentials/logins",
+        {
+            "name": f"itest nas {_suffix()}",
+            "username": "smbuser",
+            "password": "pw",  # scan: allow
+        },
+    )
+    assert status == 200, created
+    assert created["username"] == "smbuser"
+    assert "password" not in created
+
+    status, changed = panel.call(
+        "PUT", f"/credentials/logins/{created['id']}", {"username": "smbuser2"}
+    )
+    assert status == 200 and changed["username"] == "smbuser2"
+
+    assert panel.status("DELETE", f"/credentials/logins/{created['id']}") == 200
+
+
+def test_a_login_referenced_by_a_device_blocks_delete(panel):
+    status, login = panel.call(
+        "POST",
+        "/credentials/logins",
         {"name": f"itest sudo {_suffix()}", "password": "pw-sudo"},  # scan: allow
     )
-    assert status == 200, password
+    assert status == 200, login
 
     status, device = panel.call(
         "PUT",
@@ -82,20 +107,21 @@ def test_password_referenced_by_a_device_blocks_delete(panel):
                 "port": 22,
                 "username": "itest",
                 "auth": "password",
-                "password_id": password["id"],
-                "sudo_password_id": password["id"],
+                "password_id": login["id"],
+                "sudo_password_id": login["id"],
             },
         },
     )
     assert status == 200, device
     ssh_view = device["ssh"]
-    assert ssh_view["password_id"] == password["id"]
+    assert ssh_view["password_id"] == login["id"]
     assert "password" not in ssh_view and "sudo_password" not in ssh_view
 
-    assert panel.status("DELETE", f"/credentials/passwords/{password['id']}") == 409
+    status, refused = panel.call("DELETE", f"/credentials/logins/{login['id']}")
+    assert status == 409
+    assert refused["detail"]["code"] == "login_in_use"
     assert (
-        panel.status("DELETE", f"/credentials/passwords/{password['id']}?force=true")
-        == 200
+        panel.status("DELETE", f"/credentials/logins/{login['id']}?force=true") == 200
     )
     assert panel.status("DELETE", f"/devices/{TEST_MAC}") == 200
 
@@ -133,35 +159,10 @@ def test_ssh_key_material_never_reads_back(panel):
     assert panel.status("DELETE", f"/credentials/ssh_keys/{created['id']}") == 200
 
 
-def test_service_account_lifecycle(panel):
-    status, created = panel.call(
-        "POST",
-        "/credentials/service_accounts",
-        {
-            "name": f"itest nas {_suffix()}",
-            "username": "smbuser",
-            "password": "pw",  # scan: allow
-        },
-    )
-    assert status == 200, created
-    assert "password" not in created
-
-    status, changed = panel.call(
-        "PUT",
-        f"/credentials/service_accounts/{created['id']}",
-        {"username": "smbuser2"},
-    )
-    assert status == 200 and changed["username"] == "smbuser2"
-
-    assert (
-        panel.status("DELETE", f"/credentials/service_accounts/{created['id']}") == 200
-    )
-
-
 def test_ai_provider_key_is_write_only(panel):
     status, created = panel.call(
         "POST",
-        "/credentials/ai_providers",
+        "/ai/providers",
         {
             "name": f"itest relay {_suffix()}",
             "kind": "custom",
@@ -173,72 +174,83 @@ def test_ai_provider_key_is_write_only(panel):
     assert created["has_api_key"] is True
     assert "api_key" not in created
 
-    status, kept = panel.call(
-        "PUT", f"/credentials/ai_providers/{created['id']}", {"api_key": ""}
-    )
+    status, kept = panel.call("PUT", f"/ai/providers/{created['id']}", {"api_key": ""})
     assert status == 200 and kept["has_api_key"] is True
 
-    assert panel.status("DELETE", f"/credentials/ai_providers/{created['id']}") == 200
+    assert panel.status("DELETE", f"/ai/providers/{created['id']}") == 200
 
 
-def test_backup_wraps_the_key_and_restores_the_vault(panel):
+def _archive_contents(archive_bytes: bytes) -> dict:
+    with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:gz") as archive:
+        return {
+            member.name: archive.extractfile(member).read()
+            for member in archive.getmembers()
+            if member.isreg()
+        }
+
+
+def test_backup_is_plain_digested_and_restores_the_vault(panel, vault_passphrase):
     marker = f"itest backup {_suffix()}"
     status, secret = panel.call(
         "POST",
-        "/credentials/passwords",
+        "/credentials/logins",
         {"name": marker, "password": "pw-backup"},  # scan: allow
     )
     assert status == 200, secret
 
-    status, plain = panel.download("POST", "/settings/backup", {"passphrase": ""})
+    status, archive_bytes = panel.download("POST", "/settings/backup")
     assert status == 200
-    with tarfile.open(fileobj=io.BytesIO(plain), mode="r:gz") as envelope:
-        assert envelope.getmembers()[0].name == "neutrino_backup.json"
-        manifest = json.loads(envelope.extractfile("neutrino_backup.json").read())
-        assert manifest["kind"] == "neutrino_config_backup"
-        assert manifest["is_sealed"] is False
-        inner = envelope.extractfile("config.tar.gz").read()
-    with tarfile.open(fileobj=io.BytesIO(inner), mode="r:gz") as archive:
-        assert "config/credentials/vault.key" in archive.getnames()
+    contents = _archive_contents(archive_bytes)
+    names = list(contents)
+    assert names[0] == "neutrino_backup.json"
+    assert names[1] == "SHA256SUMS"
+    assert json.loads(contents["neutrino_backup.json"]) == {
+        "kind": "neutrino_config_backup",
+        "version": 2,
+    }
 
-    passphrase = "itest-roundtrip-pp"
-    status, wrapped = panel.download(
-        "POST", "/settings/backup", {"passphrase": passphrase}
-    )
-    assert status == 200
-    with tarfile.open(fileobj=io.BytesIO(wrapped), mode="r:gz") as envelope:
-        manifest = json.loads(envelope.extractfile("neutrino_backup.json").read())
-        assert manifest["is_sealed"] is True
-        payload = envelope.extractfile("config.sealed").read()
-    assert payload.startswith(b"NEUTRINO-SEALED-1\n")
+    listed = {}
+    for line in contents["SHA256SUMS"].decode().splitlines():
+        digest, _, member_path = line.partition("  ")
+        listed[member_path] = digest
+    for name in names[2:]:
+        assert name.startswith("config/")
+        relative = name[len("config/") :]
+        assert listed[relative] == hashlib.sha256(contents[name]).hexdigest()
+
+    # The vault travels wrapped: no key file, and the store carries the wrap.
+    assert not any(name.endswith("vault.key") for name in names)
+    store = json.loads(contents["config/credentials/vault.json"])
+    assert "wrapped_key" in store
+    assert "pw-backup" not in contents["config/credentials/vault.json"].decode()
 
     status, refused = panel.upload(
-        "/settings/restore", filename="backup.bin", content=wrapped
+        "/settings/restore", filename="backup.bin", content=archive_bytes
     )
     assert status == 400 and refused["detail"]["code"] == "backup_wrong_extension"
 
     status, refused = panel.upload(
-        "/settings/restore", filename="backup.tar.gz", content=wrapped
+        "/settings/restore", filename="backup.tar.gz", content=archive_bytes
     )
-    assert status == 400 and refused["detail"]["code"] == "backup_passphrase_needed"
+    assert status == 400 and refused["detail"]["code"] == "vault_passphrase_needed"
 
     status, refused = panel.upload(
         "/settings/restore",
         filename="backup.tar.gz",
-        content=wrapped,
-        fields={"passphrase": "not-the-passphrase"},
+        content=archive_bytes,
+        fields={"vault_passphrase": "Not-the-passphrase-1!"},
     )
-    assert status == 400 and refused["detail"]["code"] == "backup_passphrase_wrong"
+    assert status == 400 and refused["detail"]["code"] == "vault_passphrase_wrong"
 
     status, restored = panel.upload(
         "/settings/restore",
         filename="backup.tar.gz",
-        content=wrapped,
-        fields={"passphrase": passphrase},
+        content=archive_bytes,
+        fields={"vault_passphrase": vault_passphrase},
     )
     assert status == 200, restored
     assert restored["is_restored"] is True
 
-    listed = panel.read("/credentials/passwords")["passwords"]
+    listed = panel.read("/credentials/logins")["logins"]
     survivor = next(entry for entry in listed if entry["name"] == marker)
-    assert panel.status("DELETE", f"/credentials/passwords/{survivor['id']}") == 200
+    assert panel.status("DELETE", f"/credentials/logins/{survivor['id']}") == 200

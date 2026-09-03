@@ -23,6 +23,7 @@ MODE="${2:-side_gateway}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 BEFORE=/tmp/neutrino_before.json
 PASSWORD=integration-test-pw
+VAULT_PASSPHRASE='Integration-Vault-Pw-16!'
 FAILURES=0
 
 # The phase header carries whether the box can still resolve a name. Every
@@ -78,12 +79,17 @@ python3 -m pytest --version >/dev/null 2>&1 || { echo "no pytest on this box"; e
 write_answers() {
 if [ "$MODE" = server ]; then
     cat > /tmp/answers.json <<JSON
-{ "password": "$PASSWORD", "network": { "mode": "server" } }
+{
+  "password": "$PASSWORD",
+  "vault_passphrase": "$VAULT_PASSPHRASE",
+  "network": { "mode": "server" }
+}
 JSON
 elif [ "$MODE" = side_gateway ]; then
     cat > /tmp/answers.json <<JSON
 {
   "password": "$PASSWORD",
+  "vault_passphrase": "$VAULT_PASSPHRASE",
   "network": {
     "mode": "side_gateway",
     "lan": ["$INTERFACE"],
@@ -97,6 +103,7 @@ else
     cat > /tmp/answers.json <<JSON
 {
   "password": "$PASSWORD",
+  "vault_passphrase": "$VAULT_PASSPHRASE",
   "network": {
     "mode": "router",
     "wan": ["$INTERFACE"],
@@ -108,6 +115,7 @@ fi
 }
 
 export NEUTRINO_PANEL_PASSWORD="$PASSWORD"
+export NEUTRINO_VAULT_PASSPHRASE="$VAULT_PASSPHRASE"
 export NEUTRINO_BEFORE_STATE="$BEFORE"
 export NEUTRINO_SETUP_MODE="$MODE"
 

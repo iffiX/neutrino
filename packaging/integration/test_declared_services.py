@@ -103,7 +103,7 @@ def test_one_of_each_kind_declares_and_turns_healthy(panel, tcp_port, http_port)
                     "kind": "samba",
                     "host": "127.0.0.1",
                     "port": tcp_port,
-                    "shares": [{"name": "media", "service_account_id": None}],
+                    "shares": [{"name": "media", "login_id": None}],
                 },
             )
         )
@@ -220,7 +220,7 @@ def test_a_share_account_is_counted_and_blocks_its_own_delete(panel, tcp_port):
     run = _suffix()
     status, account = panel.call(
         "POST",
-        "/credentials/service_accounts",
+        "/credentials/logins",
         {
             "name": f"itest nas login {run}",
             "username": "nas",
@@ -236,21 +236,19 @@ def test_a_share_account_is_counted_and_blocks_its_own_delete(panel, tcp_port):
             "kind": "samba",
             "host": "127.0.0.1",
             "port": tcp_port,
-            "shares": [{"name": "media", "service_account_id": account["id"]}],
+            "shares": [{"name": "media", "login_id": account["id"]}],
         },
     )
     try:
-        accounts = panel.read("/credentials/service_accounts")["service_accounts"]
+        accounts = panel.read("/credentials/logins")["logins"]
         listed = next(entry for entry in accounts if entry["id"] == account["id"])
         assert listed["service_count"] == 1
 
-        status = panel.status(
-            "DELETE", f"/credentials/service_accounts/{account['id']}"
-        )
+        status = panel.status("DELETE", f"/credentials/logins/{account['id']}")
         assert status == 409
     finally:
         _delete(panel, record["id"])
-        panel.call("DELETE", f"/credentials/service_accounts/{account['id']}")
+        panel.call("DELETE", f"/credentials/logins/{account['id']}?force=true")
 
     status, answer = panel.call(
         "POST",
@@ -259,8 +257,8 @@ def test_a_share_account_is_counted_and_blocks_its_own_delete(panel, tcp_port):
             "name": f"itest nas {run} again",
             "kind": "samba",
             "host": "127.0.0.1",
-            "shares": [{"name": "media", "service_account_id": account["id"]}],
+            "shares": [{"name": "media", "login_id": account["id"]}],
         },
     )
     assert status == 400
-    assert answer["detail"]["params"] == {"field": "service_account_id"}
+    assert answer["detail"]["params"] == {"field": "login_id"}
