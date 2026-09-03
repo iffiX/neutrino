@@ -189,6 +189,7 @@ def test_a_provider_references_a_token_and_outlives_neither_way(panel):
     status, refused = panel.call("DELETE", f"/credentials/tokens/{token['id']}")
     assert status == 409, refused
     assert refused["detail"]["code"] == "token_in_use"
+    assert refused["detail"]["params"]["provider_count"] == 1
 
     assert panel.status("DELETE", f"/ai/providers/{created['id']}") == 200
     # The provider is gone; the token stays until deleted on its own page.

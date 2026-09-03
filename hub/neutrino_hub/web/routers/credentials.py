@@ -25,6 +25,8 @@ from neutrino_hub.modules.devices.key_registry import (
     KeyRegistry,
 )
 from neutrino_hub.modules.services.config import DeclaredServiceRegistry
+from neutrino_hub.modules.xray.node_config import XrayNodeList
+from neutrino_hub.utils.json_file import read_config
 from neutrino_hub.web.dependencies import require_session
 from neutrino_hub.web.models import (
     KeyCreate,
@@ -369,15 +371,16 @@ def _login_view(
 
 @router.get("/tokens", response_model=TokenListView)
 def list_tokens() -> TokenListView:
-    """Read every stored token with how many AI providers use it.
+    """Read every stored token with how many providers and nodes use it.
 
     Returns:
         The tokens, newest first, values withheld.
     """
-    counts = _provider_counts()
+    provider_counts = _provider_counts()
+    node_counts = _node_counts()
     return TokenListView(
         tokens=[
-            _token_view(record, counts)
+            _token_view(record, provider_counts, node_counts)
             for record in SecretVault().list_records(kind=TOKEN_KIND)
         ]
     )
@@ -413,7 +416,7 @@ def create_token(request: TokenCreate) -> TokenView:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
         ) from error
-    return _token_view(record, _provider_counts())
+    return _token_view(record, _provider_counts(), _node_counts())
 
 
 @router.put("/tokens/{token_id}", response_model=TokenView)
@@ -449,7 +452,7 @@ def update_token(token_id: str, request: TokenUpdate) -> TokenView:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
         ) from error
-    return _token_view(record, _provider_counts())
+    return _token_view(record, _provider_counts(), _node_counts())
 
 
 @router.delete("/tokens/{token_id}")
@@ -464,8 +467,8 @@ def delete_token(token_id: str, force: bool = False) -> dict:
         An empty object.
 
     Raises:
-        HTTPException: 409 when providers still use the token and ``force``
-            is not set, 404 when the id is unknown.
+        HTTPException: 409 when providers or nodes still use the token and
+            ``force`` is not set, 404 when the id is unknown.
     """
     vault = SecretVault()
     record = vault.get(token_id)
@@ -474,13 +477,17 @@ def delete_token(token_id: str, force: bool = False) -> dict:
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "unknown_token", "params": {}},
         )
-    count = _provider_counts().get(token_id, 0)
-    if count and not force:
+    provider_count = _provider_counts().get(token_id, 0)
+    node_count = _node_counts().get(token_id, 0)
+    if (provider_count or node_count) and not force:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": "token_in_use",
-                "params": {"provider_count": count},
+                "params": {
+                    "provider_count": provider_count,
+                    "node_count": node_count,
+                },
             },
         )
     vault.delete(token_id)
@@ -495,10 +502,27 @@ def _provider_counts() -> dict[str, int]:
     return counts
 
 
-def _token_view(record: SecretRecord, counts: dict[str, int]) -> TokenView:
+def _node_counts() -> dict[str, int]:
+    try:
+        node_list = XrayNodeList.from_dict(read_config("xray/nodes.json"))
+    except FileNotFoundError:
+        return {}
+    counts: dict[str, int] = {}
+    for node in node_list.nodes:
+        if node.secret_id:
+            counts[node.secret_id] = counts.get(node.secret_id, 0) + 1
+    return counts
+
+
+def _token_view(
+    record: SecretRecord,
+    provider_counts: dict[str, int],
+    node_counts: dict[str, int],
+) -> TokenView:
     return TokenView(
         id=record.id,
         name=record.name,
         created_at=record.created_at,
-        provider_count=counts.get(record.id, 0),
+        provider_count=provider_counts.get(record.id, 0),
+        node_count=node_counts.get(record.id, 0),
     )

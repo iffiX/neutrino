@@ -328,12 +328,73 @@ def test_a_token_referenced_by_a_provider_blocks_delete(client):
     assert refused.status_code == 409
     assert refused.json()["detail"] == {
         "code": "token_in_use",
-        "params": {"provider_count": 1},
+        "params": {"provider_count": 1, "node_count": 0},
     }
 
     forced = client.delete(f"/api/credentials/tokens/{token_id}?force=true")
     assert forced.status_code == 200
     assert client.get("/api/credentials/tokens").json() == {"tokens": []}
+
+
+def write_node(tmp_path, secret_id: str) -> None:
+    """Store one xray node whose secret reference names the token."""
+    path = tmp_path / "xray"
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "nodes.json").write_text(
+        json.dumps(
+            {
+                "nodes": [
+                    {
+                        "id": "hk1",
+                        "name": "Tokyo",
+                        "address": "203.0.113.10",
+                        "is_enabled": True,
+                        "protocol": "shadowsocks",
+                        "secret_id": secret_id,
+                        "shadowsocks": {"port": 5800, "method": "aes-256-gcm"},
+                    }
+                ]
+            }
+        )
+    )
+
+
+def test_a_token_referenced_by_a_node_blocks_delete(client, tmp_path):
+    created = client.post(
+        "/api/credentials/tokens",
+        json={"name": "node secret", "value": "sk-node"},  # scan: allow
+    )
+    token_id = created.json()["id"]
+    write_node(tmp_path, token_id)
+
+    listed = client.get("/api/credentials/tokens").json()["tokens"]
+    assert listed[0]["node_count"] == 1
+    assert listed[0]["provider_count"] == 0
+
+    refused = client.delete(f"/api/credentials/tokens/{token_id}")
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == {
+        "code": "token_in_use",
+        "params": {"provider_count": 0, "node_count": 1},
+    }
+
+    forced = client.delete(f"/api/credentials/tokens/{token_id}?force=true")
+    assert forced.status_code == 200
+    assert client.get("/api/credentials/tokens").json() == {"tokens": []}
+
+
+def test_a_token_nothing_references_deletes_without_force(client, tmp_path):
+    created = client.post(
+        "/api/credentials/tokens",
+        json={"name": "spare key", "value": "sk-spare"},  # scan: allow
+    )
+    token_id = created.json()["id"]
+    write_node(tmp_path, "0" * 32)
+
+    listed = client.get("/api/credentials/tokens").json()["tokens"]
+    assert listed[0]["node_count"] == 0
+
+    assert client.delete(f"/api/credentials/tokens/{token_id}").status_code == 200
 
 
 def test_a_token_of_another_kind_is_not_addressable(client):

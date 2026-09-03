@@ -50,8 +50,9 @@ by id, and so does a declared Samba share's `login_id`; the tab warns before
 deleting a login something still uses.
 
 **Tokens** — one bare secret string each, sealed as `token` objects. AI
-providers reference them by id, and the tab warns before deleting a token a
-provider still uses. Values never come back out through the API.
+providers reference them by id, and so does each proxy node's `secret_id`;
+the tab warns before deleting a token either still uses. Values never come
+back out through the API.
 
 **AI providers** — named API endpoints (Anthropic, OpenAI, Gemini, or a
 custom relay) in `config/ai/providers.json` (gitignored; example committed),

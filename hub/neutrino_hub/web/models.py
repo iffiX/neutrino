@@ -476,6 +476,7 @@ class TokenView(BaseModel):
     name: str
     created_at: str = ""
     provider_count: int = 0
+    node_count: int = 0
 
 
 class TokenListView(BaseModel):
