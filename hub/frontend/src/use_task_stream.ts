@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { websocketUrl } from "./api_client";
 import type { StreamServerMessage } from "./api_types";
@@ -18,6 +18,11 @@ import type { StreamServerMessage } from "./api_types";
 
 const MAX_LOG_LINES = 2000;
 const RECONNECT_LIMIT = 1;
+// A panel that is restarting accepts the TCP connection but never finishes the
+// websocket handshake, and the browser's socket has no timeout of its own: it
+// sits in CONNECTING forever. That is a task the page must be able to leave, so
+// a socket that has not opened in this long is treated as a close.
+const OPEN_TIMEOUT_MS = 8000;
 
 export interface TaskStreamState {
   lines: string[];
@@ -42,9 +47,20 @@ export function useTaskStream(taskId: string | null): TaskStreamState {
   const [isRunning, setIsRunning] = useState(false);
   const [exitCode, setExitCode] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The completed lines, and the partial last line a chunk may end mid-way
+  // through. Each output chunk already carries its own newlines, so lines are
+  // assembled from the running text rather than split per chunk — splitting a
+  // "foo\n" chunk on its own leaves a trailing empty that doubles the spacing.
+  const done = useRef<string[]>([]);
+  const pending = useRef("");
 
   useEffect(() => {
-    setLines([]);
+    const clear = () => {
+      done.current = [];
+      pending.current = "";
+      setLines([]);
+    };
+    clear();
     setExitCode(null);
     setError(null);
     if (taskId === null) {
@@ -57,31 +73,30 @@ export function useTaskStream(taskId: string | null): TaskStreamState {
     let isDisposed = false;
     let reconnectsLeft = RECONNECT_LIMIT;
     let socket: WebSocket;
+    let openTimer = 0;
+
+    const ingest = (chunk: string) => {
+      const parts = normalizeNewlines(pending.current + chunk).split("\n");
+      pending.current = parts.pop() ?? "";
+      done.current = [...done.current, ...parts].slice(-MAX_LOG_LINES);
+      const shown =
+        pending.current.length > 0
+          ? [...done.current, pending.current]
+          : done.current;
+      setLines(shown.slice(-MAX_LOG_LINES));
+    };
 
     const open = () => {
-      socket = new WebSocket(websocketUrl(`/ws/task/${taskId}`));
+      const thisSocket = new WebSocket(websocketUrl(`/ws/task/${taskId}`));
+      socket = thisSocket;
+      let isSettled = false;
 
-      socket.onmessage = (event: MessageEvent<unknown>) => {
-        if (typeof event.data !== "string") {
+      const handleClose = () => {
+        if (isSettled) {
           return;
         }
-        const message = parseStreamMessage(event.data);
-        if (message === null) {
-          return;
-        }
-        if (message.type === "output") {
-          setLines((previous) =>
-            [...previous, ...splitLines(message.data)].slice(-MAX_LOG_LINES),
-          );
-          return;
-        }
-        isFinished = true;
-        setExitCode(message.type === "done" ? message.exit_code : message.code);
-        setIsRunning(false);
-        socket.close();
-      };
-
-      socket.onclose = () => {
+        isSettled = true;
+        window.clearTimeout(openTimer);
         if (isDisposed || isFinished) {
           setIsRunning(false);
           return;
@@ -90,19 +105,49 @@ export function useTaskStream(taskId: string | null): TaskStreamState {
           reconnectsLeft -= 1;
           // The new subscription replays the job from its first line, so what
           // is on screen goes rather than being written twice.
-          setLines([]);
+          clear();
           open();
           return;
         }
         setIsRunning(false);
         setError("The task stream closed before the task reported a result");
       };
+
+      openTimer = window.setTimeout(() => {
+        thisSocket.onclose = null;
+        thisSocket.close();
+        handleClose();
+      }, OPEN_TIMEOUT_MS);
+
+      thisSocket.onopen = () => window.clearTimeout(openTimer);
+
+      thisSocket.onmessage = (event: MessageEvent<unknown>) => {
+        if (typeof event.data !== "string") {
+          return;
+        }
+        const message = parseStreamMessage(event.data);
+        if (message === null) {
+          return;
+        }
+        if (message.type === "output") {
+          ingest(message.data);
+          return;
+        }
+        isFinished = true;
+        window.clearTimeout(openTimer);
+        setExitCode(message.type === "done" ? message.exit_code : message.code);
+        setIsRunning(false);
+        thisSocket.close();
+      };
+
+      thisSocket.onclose = () => handleClose();
     };
 
     open();
 
     return () => {
       isDisposed = true;
+      window.clearTimeout(openTimer);
       socket.onclose = null;
       socket.close();
     };
@@ -134,6 +179,6 @@ function parseStreamMessage(raw: string): StreamServerMessage | null {
   return null;
 }
 
-function splitLines(chunk: string): string[] {
-  return chunk.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+function normalizeNewlines(chunk: string): string {
+  return chunk.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }

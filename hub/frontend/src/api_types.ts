@@ -47,6 +47,8 @@ export interface AuthState {
   /** Seconds until login opens again after repeated failures; 0 when open. */
   lockout_remaining_s: number;
   is_authenticated: boolean;
+  /** This panel process's start moment; a new value is a restarted panel. */
+  panel_started_at: string;
 }
 
 export interface LoginRequest {

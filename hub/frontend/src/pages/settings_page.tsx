@@ -24,6 +24,7 @@ import {
 import { useApiResource } from "../use_api_resource";
 import type {
   AboutInfo,
+  AuthState,
   PasswordChangeResult,
   RestoreResult,
 } from "../api_types";
@@ -229,8 +230,6 @@ export function SettingsPage() {
         restoreFile,
         { vault_passphrase: restorePassphrase },
       );
-      // The modal stays up: the apply runs as a task whose lines it shows,
-      // and the panel restarts itself at the end.
       setRestoreTaskId(result.task_id);
     } catch (cause: unknown) {
       if (
@@ -452,6 +451,27 @@ interface RestoreArchiveModalProps {
   onRestore: () => void;
 }
 
+type RestorePhase = "ask" | "applying" | "failed" | "restarting";
+
+const RESTORE_FAILED_APPLY =
+  "The apply did not finish; the lines above say why. The files were " +
+  "restored — fix the cause and run it again from a terminal: sudo nhub apply";
+const RESTORE_FAILED_LOST =
+  "The panel did not come back on its own. The files were restored; run " +
+  "sudo nhub apply from a terminal, then reload this page.";
+
+const RESTORE_PHASE_HINTS: Record<
+  Exclude<RestorePhase, "ask" | "failed">,
+  string
+> = {
+  applying:
+    "Applying the restored configuration — this can take minutes when " +
+    "heavy services re-render.",
+  restarting:
+    "The panel is restarting; this page reloads by itself. Sign in with " +
+    "the restored password.",
+};
+
 function RestoreArchiveModal({
   file,
   taskId,
@@ -463,10 +483,32 @@ function RestoreArchiveModal({
   onRestore,
 }: RestoreArchiveModalProps) {
   const task = useTaskStream(taskId);
-  const isTaskFailed = task.exitCode !== null && task.exitCode !== 0;
   const [isReconnecting, setIsReconnecting] = useState(false);
+  const [isLostAfterApply, setIsLostAfterApply] = useState(false);
   const wasApplying = useRef(false);
   const logRef = useRef<HTMLPreElement | null>(null);
+  const startedAt = useRef<string | null>(null);
+
+  useEffect(() => {
+    apiGet<AuthState>("/auth/session")
+      .then((state) => {
+        startedAt.current = state.panel_started_at;
+      })
+      .catch(() => {
+        startedAt.current = null;
+      });
+  }, []);
+
+  const isApplyFailed = task.exitCode !== null && task.exitCode !== 0;
+  const phase: RestorePhase =
+    taskId === null
+      ? "ask"
+      : isApplyFailed || isLostAfterApply
+        ? "failed"
+        : isReconnecting
+          ? "restarting"
+          : "applying";
+  const isDismissable = phase === "ask" && !isRestoring;
 
   useEffect(() => {
     const element = logRef.current;
@@ -477,16 +519,14 @@ function RestoreArchiveModal({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !isRestoring && taskId === null) {
+      if (event.key === "Escape" && isDismissable) {
         onCancel();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel, isRestoring, taskId]);
+  }, [onCancel, isDismissable]);
 
-  // Once the apply task ends the panel restarts itself; the modal waits for
-  // it to answer again and reloads onto the restored box.
   useEffect(() => {
     if (task.isRunning) {
       wasApplying.current = true;
@@ -497,24 +537,32 @@ function RestoreArchiveModal({
     }
     wasApplying.current = false;
     if (task.exitCode !== null && task.exitCode !== 0) {
-      // A failed apply restarts nothing; the lines say why, and Close is
-      // the only next step.
       return;
     }
+    // The task can also end by losing its socket to the restart itself, so
+    // any end that is not a reported failure moves on to watching for the
+    // new panel; its start moment is the one signal the restart cannot
+    // hide, and ninety silent seconds mean it never came.
     setIsReconnecting(true);
-    // The restart window is too brief to catch by watching for a dead
-    // socket. What cannot be missed is this page's own session: the old
-    // process honours it, the restarted one answers 401 — and either that
-    // or a socket refused mid-restart says the new panel is what answers
-    // next, so the page reloads onto it.
+    const deadline = Date.now() + 90_000;
     const handle = window.setInterval(() => {
-      apiGet("/settings")
-        .then(() => {
-          // Still the old process; keep waiting.
+      if (Date.now() > deadline) {
+        window.clearInterval(handle);
+        setIsLostAfterApply(true);
+        return;
+      }
+      apiGet<AuthState>("/auth/session")
+        .then((state) => {
+          if (
+            startedAt.current !== null &&
+            state.panel_started_at !== startedAt.current
+          ) {
+            window.clearInterval(handle);
+            window.location.reload();
+          }
         })
         .catch(() => {
-          window.setTimeout(() => window.location.reload(), 2000);
-          window.clearInterval(handle);
+          // Mid-restart; the next tick asks again.
         });
     }, 1500);
     return () => window.clearInterval(handle);
@@ -527,7 +575,7 @@ function RestoreArchiveModal({
       aria-modal="true"
       aria-label={`Restore ${file.name}`}
       onClick={(event) => {
-        if (event.target === event.currentTarget && !isRestoring) {
+        if (event.target === event.currentTarget && isDismissable) {
           onCancel();
         }
       }}
@@ -541,19 +589,65 @@ function RestoreArchiveModal({
           Every file under config/ is overwritten by the archive&apos;s, the
           configuration is applied, and the panel restarts on its own.
         </p>
-        {taskId !== null ? (
+
+        {phase === "ask" && (
+          <>
+            <div className="settings_restore_fields">
+              <label className="field">
+                <span className="field_label">Vault master password</span>
+                <PasswordInput
+                  value={passphrase}
+                  onChange={onPassphrase}
+                  autoFocus
+                />
+                <span className="field_hint">
+                  The master password of the vault this backup was taken from.
+                </span>
+              </label>
+              {error !== null && (
+                <div className="notice notice--error">
+                  <Icon name="alert" size={15} />
+                  <div className="notice_body">{error}</div>
+                </div>
+              )}
+            </div>
+            <div className="confirm_foot">
+              <button
+                type="button"
+                className="button"
+                onClick={onCancel}
+                disabled={isRestoring}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="button button--primary"
+                onClick={onRestore}
+                disabled={isRestoring || passphrase.length === 0}
+              >
+                {isRestoring ? "Restoring…" : "Restore"}
+              </button>
+            </div>
+          </>
+        )}
+
+        {phase !== "ask" && (
           <div className="settings_restore_fields">
-            <pre className="settings_restore_log" ref={logRef}>
-              {task.lines.join("")}
-            </pre>
-            {isTaskFailed ? (
+            {task.lines.length > 0 && (
+              <pre
+                className="device_drawer_log_output settings_restore_log"
+                ref={logRef}
+              >
+                {task.lines.join("\n")}
+              </pre>
+            )}
+            {phase === "failed" ? (
               <>
                 <div className="notice notice--error">
                   <Icon name="alert" size={15} />
                   <div className="notice_body">
-                    The apply did not finish; the lines above say why. The files
-                    were restored — fix the cause and run it again from a
-                    terminal: sudo nhub apply
+                    {isApplyFailed ? RESTORE_FAILED_APPLY : RESTORE_FAILED_LOST}
                   </div>
                 </div>
                 <div className="confirm_foot">
@@ -563,54 +657,8 @@ function RestoreArchiveModal({
                 </div>
               </>
             ) : (
-              <Spinner
-                label={
-                  isReconnecting
-                    ? "The panel is restarting; this page reloads by itself. Sign in with the restored password."
-                    : "Applying the restored configuration — this can take minutes when heavy services re-render."
-                }
-              />
+              <Spinner size={18} label={RESTORE_PHASE_HINTS[phase]} />
             )}
-          </div>
-        ) : (
-          <div className="settings_restore_fields">
-            <label className="field">
-              <span className="field_label">Vault master password</span>
-              <PasswordInput
-                value={passphrase}
-                onChange={onPassphrase}
-                autoFocus
-              />
-              <span className="field_hint">
-                The master password of the vault this backup was taken from.
-              </span>
-            </label>
-            {error !== null && (
-              <div className="notice notice--error">
-                <Icon name="alert" size={15} />
-                <div className="notice_body">{error}</div>
-              </div>
-            )}
-          </div>
-        )}
-        {taskId === null && (
-          <div className="confirm_foot">
-            <button
-              type="button"
-              className="button"
-              onClick={onCancel}
-              disabled={isRestoring}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="button button--primary"
-              onClick={onRestore}
-              disabled={isRestoring || passphrase.length === 0}
-            >
-              {isRestoring ? "Restoring…" : "Restore"}
-            </button>
           </div>
         )}
       </div>

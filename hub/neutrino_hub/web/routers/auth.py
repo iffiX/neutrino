@@ -1,5 +1,7 @@
 """Login, logout, and session probing."""
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Cookie, Depends, Response
 
 from neutrino_hub.web.constants import WEB_SESSION_COOKIE
@@ -8,6 +10,10 @@ from neutrino_hub.web.models import LoginRequest, SessionView
 from neutrino_hub.web.panel_runtime import PanelRuntime
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+# Fixed when this process imported it; a page that saw another value is
+# talking to a restarted panel.
+AUTH_PANEL_STARTED_AT = datetime.now(timezone.utc).isoformat()
 
 
 @router.post("/login", response_model=SessionView)
@@ -83,4 +89,5 @@ def session(
     return SessionView(
         is_authenticated=runtime.sessions.is_valid(neutrino_session),
         lockout_remaining_s=runtime.sessions.lockout_remaining_s(),
+        panel_started_at=AUTH_PANEL_STARTED_AT,
     )

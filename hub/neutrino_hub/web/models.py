@@ -22,6 +22,9 @@ class SessionView(BaseModel):
 
     is_authenticated: bool
     lockout_remaining_s: int = 0
+    # This process's start moment. A page that saw one value and now sees
+    # another is talking to a restarted panel.
+    panel_started_at: str = ""
 
 
 class DnsServerView(BaseModel):

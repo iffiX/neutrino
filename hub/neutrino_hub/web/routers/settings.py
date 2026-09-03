@@ -39,6 +39,7 @@ from neutrino_hub.utils.passwords import (
     validate,
 )
 from neutrino_hub.utils.subprocess_run import run
+from neutrino_hub.system.sandbox import outside_sandbox
 from neutrino_hub.utils.constants import is_dev_root_set
 from neutrino_hub.web.auth import hash_password, verify_password
 from neutrino_hub.web.constants import (
@@ -354,9 +355,12 @@ async def _restore_apply_source():
         Progress lines for the task stream.
     """
     yield "applying the restored configuration\n"
+    # Outside the panel's sandbox: apply touches the whole machine, and a
+    # child of this unit inherits its hardening.
+    # Unbuffered, or a piped apply says nothing until it exits and minutes
+    # of work read as a hang.
     process = await asyncio.create_subprocess_exec(
-        "nhub",
-        "apply",
+        *outside_sandbox(["env", "PYTHONUNBUFFERED=1", "nhub", "apply"]),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
     )
