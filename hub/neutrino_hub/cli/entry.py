@@ -87,8 +87,10 @@ def main() -> int:
     # would resolve them first and make the flag a no-op.
     from neutrino_hub.utils.constants import is_dev_root_set
 
+    # `run` is exempt beside scan-secrets: it is every unit's ExecStart, and
+    # systemd starts the proxy core deliberately unprivileged.
     if (
-        arguments.command != "scan-secrets"
+        arguments.command not in ("scan-secrets", "run")
         and not is_dev_root_set()
         and hasattr(os, "geteuid")
         and os.geteuid() != 0
