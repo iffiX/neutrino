@@ -193,8 +193,9 @@ def _store_ssh_secrets(ssh: DeviceSshConfig | None) -> dict | None:
     """Turn a submitted SSH form into what gets stored.
 
     Every credential is a reference: ``key_id`` into the key registry,
-    ``password_id`` and ``sudo_password_id`` into the vault's stored
-    passwords. No secret material passes through here.
+    ``password_id`` and ``sudo_password_id`` into the vault's stored logins —
+    the sudo one for its password alone. No secret material passes through
+    here.
 
     Args:
         ssh: The submitted credentials, or None to remove them.

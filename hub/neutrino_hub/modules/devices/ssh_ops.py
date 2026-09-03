@@ -72,7 +72,7 @@ def _normalise_machine(machine: str) -> str:
 
 
 def _password_material(password_id: str | None) -> str | None:
-    """Open one referenced vault password.
+    """Open one referenced login's password.
 
     Args:
         password_id: The vault object's id, or None when the device names

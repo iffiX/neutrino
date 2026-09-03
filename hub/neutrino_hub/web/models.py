@@ -559,7 +559,7 @@ class DeviceSshConfig(BaseModel):
     """SSH credentials for one device.
 
     Every credential is a reference: ``key_id`` names a stored key,
-    ``password_id`` and ``sudo_password_id`` name vault password objects. No
+    ``password_id`` and ``sudo_password_id`` name vault login objects. No
     secret material passes through this model; ``key_name`` is the resolved
     label for display.
     """
