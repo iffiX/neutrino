@@ -58,6 +58,7 @@ class WebSetupSession:
         self._lock = threading.Lock()
         self._context = context
         self._answered = threading.Event()
+        self._is_done_served = threading.Event()
         self._document: dict = {}
         self._state = WEB_SETUP_STATE_ASKING
         self._steps: list = []
@@ -79,13 +80,18 @@ class WebSetupSession:
             address once there is one.
         """
         with self._lock:
-            return {
+            reply = {
                 "state": self._state,
                 "message": self._message,
                 "panel_url": self._panel_url,
                 "steps": list(self._steps),
                 "notes": list(self._notes),
             }
+        if reply["state"] == WEB_SETUP_STATE_DONE:
+            # The page has now been told the run finished, which is what the
+            # hand-over waits for before it takes this server away.
+            self._is_done_served.set()
+        return reply
 
     # --- what the browser writes ---
 
@@ -176,6 +182,21 @@ class WebSetupSession:
             for entry in self._steps:
                 if entry["status"] == WEB_SETUP_STEP_RUNNING:
                     entry["status"] = WEB_SETUP_STEP_FAILED
+
+    def wait_done_served(self, timeout_s: float) -> bool:
+        """Block until one poll has read the finished state.
+
+        The browser's closing screen — the countdown, the hand-over
+        animation — exists only if a poll lands after :meth:`finish`;
+        stopping the server on a timer races that poll and sometimes wins.
+
+        Args:
+            timeout_s: How long to wait for a page that may be closed.
+
+        Returns:
+            Whether a poll read it in time.
+        """
+        return self._is_done_served.wait(timeout_s)
 
 
 class WebSetupServer:

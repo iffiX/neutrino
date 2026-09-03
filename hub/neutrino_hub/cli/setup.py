@@ -573,9 +573,12 @@ def _hand_over(server, panel_url: str) -> int:
         Process exit status.
     """
     server.session.finish(panel_url=panel_url)
-    # Long enough for one more poll to read that last state before the
-    # connection it reads over goes away.
-    time.sleep(WEB_SETUP_GRACE_S)
+    # The closing screen exists only if a poll reads the finished state, so
+    # the server waits for that rather than racing it on a timer; a page
+    # somebody closed stops nothing beyond the grace. The moment after is
+    # for the reply to flush before the socket goes away.
+    server.session.wait_done_served(WEB_SETUP_GRACE_S * 3)
+    time.sleep(0.3)
     server.stop()
     _start_panel()
     print()
