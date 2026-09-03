@@ -487,19 +487,19 @@ function RestoreArchiveModal({
     }
     wasApplying.current = false;
     setIsReconnecting(true);
-    // The restart lands a moment after the task ends, so an answer counts
-    // only once the panel has first been seen down — the old process still
-    // answers until then.
-    const isDownSeen = { current: false };
+    // The restart window is too brief to catch by watching for a dead
+    // socket. What cannot be missed is this page's own session: the old
+    // process honours it, the restarted one answers 401 — and either that
+    // or a socket refused mid-restart says the new panel is what answers
+    // next, so the page reloads onto it.
     const handle = window.setInterval(() => {
-      apiGet("/auth/session")
+      apiGet("/settings")
         .then(() => {
-          if (isDownSeen.current) {
-            window.location.reload();
-          }
+          // Still the old process; keep waiting.
         })
         .catch(() => {
-          isDownSeen.current = true;
+          window.setTimeout(() => window.location.reload(), 2000);
+          window.clearInterval(handle);
         });
     }, 1500);
     return () => window.clearInterval(handle);

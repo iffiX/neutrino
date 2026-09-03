@@ -63,6 +63,7 @@ from neutrino_hub.utils.json_file import read_config
 
 # --- config ---
 DEFAULT_LISTEN_HOST = "0.0.0.0"
+GRACEFUL_SHUTDOWN_S = 5
 APPLICATION_PATH = "neutrino_hub.web.app:create_app"
 AGENT_APPLICATION_PATH = "neutrino_hub.web.app:create_agent_app"
 PANEL_SETTINGS_FILE = "web/settings.json"
@@ -332,6 +333,9 @@ def _serve_panel(arguments) -> int:
             host=arguments.host,
             port=port,
             log_level="info",
+            # A browser's open websockets otherwise hold a graceful shutdown
+            # until systemd's own timeout; a stop is allowed seconds, not it.
+            timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_S,
         )
     )
     servers = [panel_server]
@@ -347,6 +351,7 @@ def _serve_panel(arguments) -> int:
                     log_level="info",
                     ssl_certfile=str(WEB_AGENT_TLS_CERT_PATH),
                     ssl_keyfile=str(agent_key_path),
+                    timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_S,
                 )
             )
         )
