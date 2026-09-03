@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { copyText } from "../copy_text";
 
 import { Icon } from "./icon";
 import { PasswordInput } from "./password_input";
@@ -159,9 +160,7 @@ function ProductCard({ status, macAddress, isBusy, onRun }: ProductCardProps) {
               <button
                 type="button"
                 className="button button--ghost button--small"
-                onClick={() =>
-                  void navigator.clipboard?.writeText(status.session_id ?? "")
-                }
+                onClick={() => void copyText(status.session_id ?? "")}
                 title="Copy ID"
               >
                 <Icon name="link" size={12} />

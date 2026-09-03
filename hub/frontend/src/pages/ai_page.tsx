@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { copyText } from "../copy_text";
 
 import { AiProvidersSection } from "../components/ai_providers_section";
 import { ErrorPanel } from "../components/error_panel";
@@ -196,7 +197,7 @@ export function AiPage() {
                 type="button"
                 className="file_modal_action"
                 title="Copy"
-                onClick={() => void navigator.clipboard.writeText(key.key)}
+                onClick={() => void copyText(key.key)}
               >
                 <Icon name="file" size={13} />
               </button>
@@ -250,7 +251,7 @@ function CopyRow({ label, value }: CopyRowProps) {
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(value);
+      await copyText(value);
       setIsCopied(true);
       window.setTimeout(() => setIsCopied(false), 1600);
     } catch {

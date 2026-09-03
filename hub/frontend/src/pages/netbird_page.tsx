@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { copyText } from "../copy_text";
 
 import { ErrorPanel } from "../components/error_panel";
 import { NetbirdTopology } from "../components/netbird_topology";
@@ -290,7 +291,7 @@ function RoutesSection({ view }: { view: NetbirdView }) {
   const [copied, setCopied] = useState<string | null>(null);
 
   const copy = (subnet: string) => {
-    void navigator.clipboard?.writeText(subnet).catch(() => undefined);
+    void copyText(subnet);
     setCopied(subnet);
     window.setTimeout(() => setCopied(null), 1600);
   };

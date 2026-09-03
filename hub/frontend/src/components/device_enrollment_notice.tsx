@@ -1,4 +1,5 @@
 import { Icon } from "./icon";
+import { copyText } from "../copy_text";
 import type { DeviceEnrollmentView } from "../api_types";
 
 import "./device_enrollment_notice.css";
@@ -45,7 +46,7 @@ export function DeviceEnrollmentNotice({
           <button
             type="button"
             className="button button--small"
-            onClick={() => void navigator.clipboard.writeText(enrollment.link)}
+            onClick={() => void copyText(enrollment.link)}
           >
             <Icon name="file" size={13} />
             Copy
