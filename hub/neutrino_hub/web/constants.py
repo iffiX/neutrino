@@ -63,7 +63,7 @@ WEB_LOGIN_LOCKOUT_STEPS_S = (30, 60, 300, 3600, 86400)
 # restart but not a reboot — and `nhub unlock` deletes the file.
 WEB_LOGIN_LOCKOUT_STATE_PATH = UTILS_RUNTIME_ROOT / "login_lockout.json"
 
-WEB_STATS_PUSH_INTERVAL_S = 2.0
+WEB_STATS_PUSH_INTERVAL_S = 1.0
 WEB_DNS_LOG_PATH = UTILS_LOG_ROOT / "dnsmasq.log"
 
 # --- the wizard in a browser ---

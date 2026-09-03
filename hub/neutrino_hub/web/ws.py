@@ -28,7 +28,7 @@ DNS_LOG_POLL_INTERVAL_S = 1.0
 
 @router.websocket("/ws/stats")
 async def stats_socket(websocket: WebSocket) -> None:
-    """Push a statistics frame every couple of seconds.
+    """Push a statistics frame every second.
 
     Args:
         websocket: The client socket.

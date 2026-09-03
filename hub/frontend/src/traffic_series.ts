@@ -12,7 +12,7 @@ import type { StatsFrame, TrafficSample } from "./api_types";
 
 const MIN_INTERVAL_S = 0.5;
 /** Matches WEB_STATS_PUSH_INTERVAL_S on the backend. */
-const NOMINAL_INTERVAL_S = 2;
+const NOMINAL_INTERVAL_S = 1;
 
 export interface TrafficPoint {
   label: string;

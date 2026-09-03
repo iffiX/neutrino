@@ -2,8 +2,8 @@
   position: fixed;
   inset: 0;
   z-index: 60;
-  display: grid;
-  place-items: center;
+  display: flex;
+  overflow-y: auto;
   padding: var(--space-5);
   background: var(--color-overlay);
   backdrop-filter: blur(4px);
@@ -14,6 +14,11 @@
   display: flex;
   flex-direction: column;
   width: min(460px, 100%);
+  max-height: calc(100vh - 2 * var(--space-5));
+  max-height: calc(100dvh - 2 * var(--space-5));
+  /* Centers on both axes; an over-tall modal pins to the padded top edge
+     instead of clipping past it. */
+  margin: auto;
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-lg);
   background: var(--color-surface);
@@ -24,6 +29,7 @@
 
 .confirm_head {
   display: flex;
+  flex-shrink: 0;
   gap: var(--space-3);
   align-items: center;
   padding: var(--space-4) var(--space-5);
@@ -31,20 +37,25 @@
 }
 
 .confirm_head h2 {
+  min-width: 0;
   margin: 0;
   font-size: 15px;
+  overflow-wrap: anywhere;
 }
 
 .confirm_body {
   margin: 0;
   padding: var(--space-5);
+  overflow-y: auto;
   color: var(--color-text-muted);
   font-size: 13px;
   line-height: 1.55;
+  overflow-wrap: anywhere;
 }
 
 .confirm_foot {
   display: flex;
+  flex-shrink: 0;
   gap: var(--space-3);
   justify-content: flex-end;
   padding: var(--space-4) var(--space-5);

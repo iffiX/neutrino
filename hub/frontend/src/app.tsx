@@ -3,6 +3,7 @@ import { BrowserRouter } from "react-router-dom";
 
 import { AuthenticatedRoutes } from "./authenticated_routes";
 import { AuthProvider } from "./auth_provider";
+import { startPanelIdentityWatch } from "./panel_identity";
 import { SetupPage, SetupTokenMissing } from "./pages/setup_page";
 import type { SetupContext } from "./setup_api";
 import { isSetupWaiting, readSetupContext, setupToken } from "./setup_api";
@@ -28,6 +29,12 @@ export function App() {
   const token = setupToken();
   const [context, setContext] = useState<SetupContext | null>(null);
   const [showing, setShowing] = useState<Showing>("checking");
+
+  // Armed at the root so every screen has it, the login card included: a
+  // restarted panel reloads whatever tab is open onto the new bundle.
+  useEffect(() => {
+    startPanelIdentityWatch();
+  }, []);
 
   useEffect(() => {
     let isCancelled = false;

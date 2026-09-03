@@ -6,7 +6,6 @@ import { Icon } from "../components/icon";
 import { Spinner } from "../components/spinner";
 import {
   ApiError,
-  apiGet,
   apiPostDownload,
   apiPut,
   apiUpload,
@@ -24,7 +23,6 @@ import {
 import { useApiResource } from "../use_api_resource";
 import type {
   AboutInfo,
-  AuthState,
   PasswordChangeResult,
   RestoreResult,
 } from "../api_types";
@@ -487,17 +485,6 @@ function RestoreArchiveModal({
   const [isLostAfterApply, setIsLostAfterApply] = useState(false);
   const wasApplying = useRef(false);
   const logRef = useRef<HTMLPreElement | null>(null);
-  const startedAt = useRef<string | null>(null);
-
-  useEffect(() => {
-    apiGet<AuthState>("/auth/session")
-      .then((state) => {
-        startedAt.current = state.panel_started_at;
-      })
-      .catch(() => {
-        startedAt.current = null;
-      });
-  }, []);
 
   const isApplyFailed = task.exitCode !== null && task.exitCode !== 0;
   const phase: RestorePhase =
@@ -540,32 +527,12 @@ function RestoreArchiveModal({
       return;
     }
     // The task can also end by losing its socket to the restart itself, so
-    // any end that is not a reported failure moves on to watching for the
-    // new panel; its start moment is the one signal the restart cannot
-    // hide, and ninety silent seconds mean it never came.
+    // any end that is not a reported failure means the restart is under way.
+    // The app-wide identity watch reloads the page when the new panel
+    // answers; ninety silent seconds mean it never came.
     setIsReconnecting(true);
-    const deadline = Date.now() + 90_000;
-    const handle = window.setInterval(() => {
-      if (Date.now() > deadline) {
-        window.clearInterval(handle);
-        setIsLostAfterApply(true);
-        return;
-      }
-      apiGet<AuthState>("/auth/session")
-        .then((state) => {
-          if (
-            startedAt.current !== null &&
-            state.panel_started_at !== startedAt.current
-          ) {
-            window.clearInterval(handle);
-            window.location.reload();
-          }
-        })
-        .catch(() => {
-          // Mid-restart; the next tick asks again.
-        });
-    }, 1500);
-    return () => window.clearInterval(handle);
+    const handle = window.setTimeout(() => setIsLostAfterApply(true), 90_000);
+    return () => window.clearTimeout(handle);
   }, [task.isRunning, task.exitCode]);
 
   return (
