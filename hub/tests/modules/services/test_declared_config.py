@@ -40,7 +40,7 @@ def test_samba_round_trips_with_its_shares_and_default_port(config_dir):
         host="192.168.100.7",
         shares=[
             DeclaredShare(name="media"),
-            DeclaredShare(name="backup", service_account_id="a" * 32),
+            DeclaredShare(name="backup", login_id="a" * 32),
         ],
     )
     assert record.port == 445
@@ -49,8 +49,8 @@ def test_samba_round_trips_with_its_shares_and_default_port(config_dir):
     assert stored is not None
     assert stored.kind == "samba"
     assert [share.name for share in stored.shares] == ["media", "backup"]
-    assert stored.shares[0].service_account_id is None
-    assert stored.shares[1].service_account_id == "a" * 32
+    assert stored.shares[0].login_id is None
+    assert stored.shares[1].login_id == "a" * 32
 
 
 def test_http_round_trips_with_scheme_and_path(config_dir):

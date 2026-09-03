@@ -62,7 +62,7 @@ def api(monkeypatch, tmp_path):
 def device_with_ssh(client):
     password_id = (
         SecretVault()
-        .add(kind="password", name="a password", secret={"password": LOGIN_PASSWORD})
+        .add(kind="login", name="a password", secret={"password": LOGIN_PASSWORD})
         .id
     )
     saved = client.put(

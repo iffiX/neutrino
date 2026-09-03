@@ -5,7 +5,7 @@ AI service, and pasting them into dotfiles on every box is how they end up
 scattered and stale. They live here instead: named entries in one file, which
 Dev Setup reads when wiring a device's tools.
 
-The key itself is sealed in the vault as an ``api_token`` object; this file
+The key itself is sealed in the vault as a ``token`` object; this file
 holds its id and no secret material. The key never travels back to the browser
 — listings carry only whether one is stored.
 """
@@ -269,12 +269,12 @@ class AiProviderRegistry:
         # served. A ciphertext that will not decrypt still raises.
         if self._vault.get(record.secret_id) is None:
             return ""
-        return self._vault.open(record.secret_id).get("api_key", "")
+        return self._vault.open(record.secret_id).get("value", "")
 
     def _seal_key(self, record: AiProviderRecord, api_key: str) -> None:
         if record.secret_id:
             try:
-                self._vault.replace(record.secret_id, secret={"api_key": api_key})
+                self._vault.replace(record.secret_id, secret={"value": api_key})
                 return
             except VaultLockedError:
                 raise
@@ -282,9 +282,9 @@ class AiProviderRegistry:
                 # The referenced object is gone; a fresh one takes its place.
                 pass
         record.secret_id = self._vault.add(
-            kind="api_token",
+            kind="token",
             name=_secret_name(record.name),
-            secret={"api_key": api_key},
+            secret={"value": api_key},
         ).id
 
     def _read(self) -> list[AiProviderRecord]:

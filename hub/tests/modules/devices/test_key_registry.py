@@ -92,7 +92,7 @@ def test_the_listing_holds_the_keys_and_nothing_else_in_the_vault(config_dir):
     text, _ = generated_key()
     key = KeyRegistry().add(name="work laptop", private_key=text)
     password = SecretVault().add(
-        kind="password", name="a login", secret={"password": "not-a-key"}
+        kind="login", name="a login", secret={"password": "not-a-key"}
     )
 
     assert [record.id for record in KeyRegistry().list_records()] == [key.id]

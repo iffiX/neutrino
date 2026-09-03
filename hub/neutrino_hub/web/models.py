@@ -436,61 +436,33 @@ class KeyRename(BaseModel):
     name: str
 
 
-class PasswordView(BaseModel):
-    """One stored password, without its material."""
-
-    id: str
-    name: str
-    created_at: str = ""
-    device_count: int = 0
-
-
-class PasswordListView(BaseModel):
-    """The Credentials page's password section."""
-
-    passwords: list[PasswordView]
-
-
-class PasswordCreate(BaseModel):
-    """A password to store under a name; the material travels one way."""
-
-    name: str
-    password: str
-
-
-class PasswordUpdate(BaseModel):
-    """Partial update to one password; a blank password keeps the stored one."""
-
-    name: str | None = None
-    password: str | None = None
-
-
-class ServiceAccountView(BaseModel):
-    """One stored service account, without its password."""
+class LoginView(BaseModel):
+    """One stored login, without its password."""
 
     id: str
     name: str
     username: str = ""
     created_at: str = ""
+    device_count: int = 0
     service_count: int = 0
 
 
-class ServiceAccountListView(BaseModel):
-    """The Credentials page's service account section."""
+class LoginListView(BaseModel):
+    """The Credentials page's login section."""
 
-    service_accounts: list[ServiceAccountView]
+    logins: list[LoginView]
 
 
-class ServiceAccountCreate(BaseModel):
-    """A service account to store; the password travels one way."""
+class LoginCreate(BaseModel):
+    """A login to store under a name; the password travels one way."""
 
     name: str
-    username: str
+    username: str = ""
     password: str
 
 
-class ServiceAccountUpdate(BaseModel):
-    """Partial update to one account; a blank password keeps the stored one."""
+class LoginUpdate(BaseModel):
+    """Partial update to one login; a blank field keeps the stored value."""
 
     name: str | None = None
     username: str | None = None
@@ -822,7 +794,7 @@ class DeclaredShareView(BaseModel):
     """One share a declared Samba service exports."""
 
     name: str
-    service_account_id: str | None = None
+    login_id: str | None = None
 
 
 class DeclaredServiceProbeView(BaseModel):

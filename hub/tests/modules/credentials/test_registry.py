@@ -51,7 +51,7 @@ def test_add_seals_the_key_as_a_named_vault_object(config_dir):
     assert record.secret_id
     sealed = SecretVault().get(record.secret_id)
     assert sealed is not None
-    assert sealed.kind == "api_token"
+    assert sealed.kind == "token"
     assert sealed.name == "relay api key"
 
 

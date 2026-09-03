@@ -94,10 +94,10 @@ def test_each_kind_declares_and_answers_its_own_fields(box):
         kind="samba",
         host="192.168.100.7",
         port=None,
-        shares=[{"name": "media", "service_account_id": None}],
+        shares=[{"name": "media", "login_id": None}],
     )
     assert samba["port"] == 445
-    assert samba["shares"] == [{"name": "media", "service_account_id": None}]
+    assert samba["shares"] == [{"name": "media", "login_id": None}]
     assert samba["probe"] == {
         "is_healthy": None,
         "checked_at": None,
@@ -207,20 +207,20 @@ def test_a_share_naming_an_unknown_account_is_refused(box):
             "name": "nas",
             "kind": "samba",
             "host": "h",
-            "shares": [{"name": "media", "service_account_id": "0" * 32}],
+            "shares": [{"name": "media", "login_id": "0" * 32}],
         },
     )
     assert response.status_code == 400
     assert response.json()["detail"] == {
         "code": "declared_service_invalid",
-        "params": {"field": "service_account_id"},
+        "params": {"field": "login_id"},
     }
 
 
 def test_a_share_naming_a_stored_account_is_accepted(box):
     client, runtime = box
     account = SecretVault().add(
-        kind="service_account",
+        kind="login",
         name="nas login",
         secret={"password": "pw"},  # scan: allow
         meta={"username": "nas"},
@@ -232,10 +232,10 @@ def test_a_share_naming_a_stored_account_is_accepted(box):
         kind="samba",
         host="h",
         port=None,
-        shares=[{"name": "media", "service_account_id": account.id}],
+        shares=[{"name": "media", "login_id": account.id}],
     )
 
-    assert record["shares"][0]["service_account_id"] == account.id
+    assert record["shares"][0]["login_id"] == account.id
 
 
 def test_probe_now_answers_fresh_and_is_a_probe_not_a_read(box):

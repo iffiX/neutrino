@@ -3,7 +3,7 @@
 A NAS's Samba, an HTTP server, a Docker engine: each is a record in
 ``config/services/declared.json`` naming where it answers, so the hub can
 watch it and later offer it to devices. The file holds no secrets — a share
-that needs an account carries a ``service_account_id`` reference into the
+that needs an account carries a ``login_id`` reference into the
 vault, never the material.
 
 Pure: this module parses, validates and stores configuration. Measuring
@@ -52,22 +52,22 @@ class DeclaredShare:
 
     Attributes:
         name: The share's name on that server.
-        service_account_id: The vault ``service_account`` object devices sign
-            in with, None for a share taken as guest.
+        login_id: The vault ``login`` object devices sign in with, None for a
+            share taken as guest.
     """
 
     name: str
-    service_account_id: str | None = None
+    login_id: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "DeclaredShare":
         return cls(
             name=data.get("name", ""),
-            service_account_id=data.get("service_account_id") or None,
+            login_id=data.get("login_id") or None,
         )
 
     def to_dict(self) -> dict:
-        return {"name": self.name, "service_account_id": self.service_account_id}
+        return {"name": self.name, "login_id": self.login_id}
 
 
 @dataclass

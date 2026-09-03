@@ -44,7 +44,7 @@ def api(monkeypatch, tmp_path):
 
 def stored_password(password: str) -> str:
     record = SecretVault().add(
-        kind="password", name="a password", secret={"password": password}
+        kind="login", name="a password", secret={"password": password}
     )
     return record.id
 

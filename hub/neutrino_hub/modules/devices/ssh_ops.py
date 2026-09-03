@@ -33,7 +33,7 @@ from neutrino_hub.modules.devices.constants import (
 from neutrino_hub.modules.devices.host_keys import DeviceHostKeyStore
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
 
-PASSWORD_KIND = "password"
+LOGIN_KIND = "login"
 
 CONNECT_TIMEOUT_S = 15
 # Room for apt to fetch python3 on a minimal image before the tiny package.
@@ -86,7 +86,7 @@ def _password_material(password_id: str | None) -> str | None:
         return None
     vault = SecretVault()
     record = vault.get(password_id)
-    if record is None or record.kind != PASSWORD_KIND:
+    if record is None or record.kind != LOGIN_KIND:
         return None
     try:
         return vault.open(password_id).get("password")

@@ -22,10 +22,9 @@ from neutrino_hub.modules.credentials.vault import (
 from tests.conftest import unlock_vault
 
 SEALED_BY_KIND = {
-    "password": {"password": "hunter2hunter2"},  # scan: allow
+    "token": {"value": "sk-test"},  # scan: allow
+    "login": {"username": "backup", "password": "hunter2hunter2"},  # scan: allow
     "ssh_key": {"private_key": "-----BEGIN FAKE KEY-----", "passphrase": "pp"},
-    "api_token": {"api_key": "sk-test"},  # scan: allow
-    "service_account": {"password": "svc-pw"},  # scan: allow
 }
 PASSPHRASE = "A-vault-passphrase-16!"  # scan: allow
 
@@ -69,10 +68,10 @@ def test_roundtrip(config_dir, kind):
 
 def test_list_filters_by_kind(config_dir):
     vault = SecretVault()
-    password = vault.add(kind="password", name="one", secret={"password": "x"})
-    token = vault.add(kind="api_token", name="two", secret={"api_key": "y"})
+    password = vault.add(kind="login", name="one", secret={"password": "x"})
+    token = vault.add(kind="token", name="two", secret={"value": "y"})
     assert {r.id for r in vault.list_records()} == {password.id, token.id}
-    assert [r.id for r in vault.list_records(kind="api_token")] == [token.id]
+    assert [r.id for r in vault.list_records(kind="token")] == [token.id]
     with pytest.raises(VaultError):
         vault.list_records(kind="acme")
 
@@ -90,16 +89,16 @@ def test_unknown_kind_is_refused(config_dir):
 def test_field_names_must_match_the_kind(config_dir):
     vault = SecretVault()
     with pytest.raises(VaultError):
-        vault.add(kind="password", name="x", secret={})
+        vault.add(kind="login", name="x", secret={})
     with pytest.raises(VaultError):
-        vault.add(kind="password", name="x", secret={"password": "p", "note": "n"})
+        vault.add(kind="login", name="x", secret={"password": "p", "note": "n"})
     record = vault.add(kind="ssh_key", name="x", secret={"private_key": "k"})
     assert SecretVault().open(record.id) == {"private_key": "k"}
 
 
 def test_rename_delete_and_get(config_dir):
     vault = SecretVault()
-    record = vault.add(kind="password", name="old", secret={"password": "p"})
+    record = vault.add(kind="login", name="old", secret={"password": "p"})
     assert vault.rename(record.id, "new").name == "new"
     assert SecretVault().get(record.id).name == "new"
     vault.delete(record.id)
@@ -109,7 +108,7 @@ def test_rename_delete_and_get(config_dir):
 
 
 def test_tampered_data_is_refused(config_dir):
-    record = SecretVault().add(kind="password", name="x", secret={"password": "p"})
+    record = SecretVault().add(kind="login", name="x", secret={"password": "p"})
     store = read_store(config_dir)
     raw = bytearray(base64.b64decode(store["secrets"][record.id]["data"]))
     raw[0] ^= 0x01
@@ -121,8 +120,8 @@ def test_tampered_data_is_refused(config_dir):
 
 def test_ciphertexts_are_bound_to_their_ids(config_dir):
     vault = SecretVault()
-    first = vault.add(kind="password", name="a", secret={"password": "pa"})
-    second = vault.add(kind="password", name="b", secret={"password": "pb"})
+    first = vault.add(kind="login", name="a", secret={"password": "pa"})
+    second = vault.add(kind="login", name="b", secret={"password": "pb"})
     store = read_store(config_dir)
     one, two = store["secrets"][first.id], store["secrets"][second.id]
     one["nonce"], two["nonce"] = two["nonce"], one["nonce"]
@@ -136,12 +135,12 @@ def test_ciphertexts_are_bound_to_their_ids(config_dir):
 
 def test_replace_changes_nonce_and_data(config_dir):
     vault = SecretVault()
-    record = vault.add(kind="password", name="x", secret={"password": "old"})
+    record = vault.add(kind="login", name="x", secret={"password": "old"})
     before = dict(read_store(config_dir)["secrets"][record.id])
     replaced = vault.replace(record.id, secret={"password": "new"})
     after = read_store(config_dir)["secrets"][record.id]
     assert replaced.id == record.id
-    assert replaced.kind == "password"
+    assert replaced.kind == "login"
     assert after["nonce"] != before["nonce"]
     assert after["data"] != before["data"]
     assert SecretVault().open(record.id) == {"password": "new"}
@@ -150,20 +149,20 @@ def test_replace_changes_nonce_and_data(config_dir):
 def test_update_meta_leaves_the_seal_alone(config_dir):
     vault = SecretVault()
     record = vault.add(
-        kind="service_account",
+        kind="login",
         name="nas",
         secret={"password": "p"},
-        meta={"username": "backup"},
+        meta={"note": "the NAS"},
     )
     before = dict(read_store(config_dir)["secrets"][record.id])
-    updated = vault.update_meta(record.id, {"username": "archive"})
+    updated = vault.update_meta(record.id, {"note": "the archive"})
     after = read_store(config_dir)["secrets"][record.id]
-    assert updated.meta == {"username": "archive"}
+    assert updated.meta == {"note": "the archive"}
     assert after["nonce"] == before["nonce"]
     assert after["data"] == before["data"]
     assert SecretVault().open(record.id) == {"password": "p"}
     with pytest.raises(VaultError):
-        vault.update_meta("0" * 32, {"username": "archive"})
+        vault.update_meta("0" * 32, {"note": "the archive"})
 
 
 def test_an_unsupported_store_version_is_refused(config_dir):
@@ -179,7 +178,7 @@ def test_a_locked_vault_refuses_what_needs_the_key(locked_dir):
     vault = SecretVault()
     assert vault.is_locked()
     with pytest.raises(VaultLockedError):
-        vault.add(kind="password", name="x", secret={"password": "p"})
+        vault.add(kind="login", name="x", secret={"password": "p"})
     with pytest.raises(VaultLockedError):
         vault.open("0" * 32)
     with pytest.raises(VaultLockedError):
@@ -260,7 +259,7 @@ def test_initialize_converges_on_a_wrapped_store(locked_dir):
 def test_initialize_never_rekeys_a_store_with_secrets(locked_dir):
     vault = SecretVault()
     vault.initialize(PASSPHRASE)
-    vault.add(kind="password", name="x", secret={"password": "p"})
+    vault.add(kind="login", name="x", secret={"password": "p"})
     with pytest.raises(VaultPassphraseError):
         vault.initialize("Not-the-passphrase-1!")
 
@@ -276,7 +275,7 @@ def test_initialize_replaces_an_empty_store_whose_passphrase_is_lost(locked_dir)
 def test_change_passphrase_rewraps_and_nothing_sealed_moves(config_dir):
     vault = SecretVault()
     vault.initialize(PASSPHRASE)
-    record = vault.add(kind="password", name="x", secret={"password": "p"})
+    record = vault.add(kind="login", name="x", secret={"password": "p"})
     sealed_before = dict(read_store(config_dir)["secrets"][record.id])
     key_before = (config_dir / "state" / "vault.key").read_text()
 

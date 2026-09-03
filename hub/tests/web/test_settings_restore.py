@@ -139,7 +139,7 @@ def seed_config(config_dir) -> str:
     (config_dir / "xray" / "nodes.json").write_text(json.dumps({"nodes": []}))
     SecretVault().initialize(PASSPHRASE)
     record = SecretVault().add(
-        kind="password", name="a password", secret={"password": SEALED_PASSWORD}
+        kind="login", name="a password", secret={"password": SEALED_PASSWORD}
     )
     return record.id
 

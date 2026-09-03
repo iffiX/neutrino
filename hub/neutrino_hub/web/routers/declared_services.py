@@ -30,7 +30,7 @@ from neutrino_hub.web.models import (
     DeclaredShareView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
-from neutrino_hub.web.routers.credentials import SERVICE_ACCOUNT_KIND
+from neutrino_hub.web.routers.credentials import LOGIN_KIND
 
 router = APIRouter(
     prefix="/api/services", tags=["services"], dependencies=[Depends(require_session)]
@@ -174,36 +174,32 @@ def probe_declared_service(
 
 
 def _require_known_accounts(request: DeclaredServiceCreate) -> None:
-    """Refuse a share naming a service account the vault does not hold.
+    """Refuse a share naming a login the vault does not hold.
 
     Args:
         request: The submitted record.
 
     Raises:
         HTTPException: 400 with ``declared_service_invalid`` naming
-            ``service_account_id``.
+            ``login_id``.
     """
-    referenced = {
-        share.service_account_id for share in request.shares if share.service_account_id
-    }
+    referenced = {share.login_id for share in request.shares if share.login_id}
     if not referenced:
         return
-    stored = {
-        record.id for record in SecretVault().list_records(kind=SERVICE_ACCOUNT_KIND)
-    }
+    stored = {record.id for record in SecretVault().list_records(kind=LOGIN_KIND)}
     if referenced - stored:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
                 "code": SERVICES_ERROR_INVALID,
-                "params": {"field": "service_account_id"},
+                "params": {"field": "login_id"},
             },
         )
 
 
 def _to_shares(request: DeclaredServiceCreate) -> list[DeclaredShare]:
     return [
-        DeclaredShare(name=share.name, service_account_id=share.service_account_id)
+        DeclaredShare(name=share.name, login_id=share.login_id)
         for share in request.shares
     ]
 
@@ -220,9 +216,7 @@ def _to_view(
         scheme=record.scheme,
         path=record.path,
         shares=[
-            DeclaredShareView(
-                name=share.name, service_account_id=share.service_account_id
-            )
+            DeclaredShareView(name=share.name, login_id=share.login_id)
             for share in record.shares
         ],
         created_at=record.created_at,

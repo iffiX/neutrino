@@ -41,7 +41,7 @@ def stored_key(passphrase: str | None = None) -> tuple[str, str]:
 def stored_password(password: str) -> str:
     """A password in the vault, as the Credentials page would have sealed it."""
     record = SecretVault().add(
-        kind="password", name="a password", secret={"password": password}
+        kind="login", name="a password", secret={"password": password}
     )
     return record.id
 

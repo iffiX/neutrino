@@ -63,7 +63,7 @@ router = APIRouter(
 
 POWER_ACTIONS = ("reboot", "shutdown")
 
-PASSWORD_KIND = "password"
+LOGIN_KIND = "login"
 
 ENROLLMENT_TOKEN_BYTES = 18
 # Long enough to walk to another machine and paste it, short enough that a
@@ -220,19 +220,19 @@ def _store_ssh_secrets(ssh: DeviceSshConfig | None) -> dict | None:
             _refuse_unknown_credential("key_id")
         stored["key_id"] = ssh.key_id
     if ssh.password_id:
-        if not _is_stored_password(ssh.password_id):
+        if not _is_stored_login(ssh.password_id):
             _refuse_unknown_credential("password_id")
         stored["password_id"] = ssh.password_id
     if ssh.sudo_password_id:
-        if not _is_stored_password(ssh.sudo_password_id):
+        if not _is_stored_login(ssh.sudo_password_id):
             _refuse_unknown_credential("sudo_password_id")
         stored["sudo_password_id"] = ssh.sudo_password_id
     return stored
 
 
-def _is_stored_password(password_id: str) -> bool:
-    record = SecretVault().get(password_id)
-    return record is not None and record.kind == PASSWORD_KIND
+def _is_stored_login(login_id: str) -> bool:
+    record = SecretVault().get(login_id)
+    return record is not None and record.kind == LOGIN_KIND
 
 
 def _refuse_unknown_credential(field: str) -> None:

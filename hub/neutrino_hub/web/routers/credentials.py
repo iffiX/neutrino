@@ -1,10 +1,11 @@
-"""The Credentials page: the SSH keys, passwords, service accounts and AI
-providers the box holds.
+"""The Credentials page: the SSH keys, logins and AI providers the box holds.
 
 All of them are secrets the gateway uses on somebody's behalf, and none comes
 back out through the API — a listing says a secret is stored, never what it
 is. Each reaches a device or a service through an id, so the material never
-sits in a device's own configuration.
+sits in a device's own configuration. A login is one account — a password
+with an optional username — and devices and declared services both reference
+the same collection.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -37,18 +38,13 @@ from neutrino_hub.web.models import (
     KeyListView,
     KeyRename,
     KeyView,
-    PasswordCreate,
-    PasswordListView,
-    PasswordUpdate,
-    PasswordView,
-    ServiceAccountCreate,
-    ServiceAccountListView,
-    ServiceAccountUpdate,
-    ServiceAccountView,
+    LoginCreate,
+    LoginListView,
+    LoginUpdate,
+    LoginView,
 )
 
-PASSWORD_KIND = "password"
-SERVICE_ACCOUNT_KIND = "service_account"
+LOGIN_KIND = "login"
 
 router = APIRouter(
     prefix="/api/credentials",
@@ -288,47 +284,50 @@ def _key_view(record: KeyRecord, counts: dict[str, int]) -> KeyView:
     )
 
 
-# --- Passwords ---
+# --- Logins ---
 
 
-@router.get("/passwords", response_model=PasswordListView)
-def list_passwords() -> PasswordListView:
-    """Read every stored password with how many devices use it.
+@router.get("/logins", response_model=LoginListView)
+def list_logins() -> LoginListView:
+    """Read every stored login with how many devices and services use it.
 
     Returns:
-        The passwords, newest first, material withheld.
+        The logins, newest first, passwords withheld.
     """
-    counts = _password_device_counts()
-    return PasswordListView(
-        passwords=[
-            _password_view(record, counts)
-            for record in SecretVault().list_records(kind=PASSWORD_KIND)
+    vault = SecretVault()
+    device_counts = _login_device_counts()
+    service_counts = _service_counts()
+    return LoginListView(
+        logins=[
+            _login_view(vault, record, device_counts, service_counts)
+            for record in vault.list_records(kind=LOGIN_KIND)
         ]
     )
 
 
-@router.post("/passwords", response_model=PasswordView)
-def create_password(request: PasswordCreate) -> PasswordView:
-    """Seal a password under a name.
+@router.post("/logins", response_model=LoginView)
+def create_login(request: LoginCreate) -> LoginView:
+    """Seal a login under a name; the username is optional.
 
     Args:
-        request: The name and the password.
+        request: The name, the optional username, and the password.
 
     Returns:
-        The stored password, without its material.
+        The stored login, without its password.
 
     Raises:
-        HTTPException: 400 when the name or the password is blank.
+        HTTPException: 400 when the password is blank or the vault refuses.
     """
     if not request.password.strip():
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="a password needs a value"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "login_password_needed", "params": {}},
         )
     try:
         record = SecretVault().add(
-            kind=PASSWORD_KIND,
+            kind=LOGIN_KIND,
             name=request.name,
-            secret={"password": request.password},
+            secret=_login_secret(request.username, request.password),
         )
     except VaultLockedError:
         raise
@@ -336,246 +335,146 @@ def create_password(request: PasswordCreate) -> PasswordView:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
         ) from error
-    return _password_view(record, _password_device_counts())
+    return _login_view(SecretVault(), record, _login_device_counts(), _service_counts())
 
 
-@router.put("/passwords/{password_id}", response_model=PasswordView)
-def update_password(password_id: str, request: PasswordUpdate) -> PasswordView:
-    """Change a password's label, its material, or both.
+@router.put("/logins/{login_id}", response_model=LoginView)
+def update_login(login_id: str, request: LoginUpdate) -> LoginView:
+    """Change a login's label, username, password, or any of them.
+
+    The username lives inside the seal, so changing either sealed field
+    re-seals both; a blank or absent field keeps what is stored.
 
     Args:
-        password_id: The password's identifier.
+        login_id: The login's identifier.
         request: The fields to change; a blank one is left alone.
 
     Returns:
-        The password after the change.
+        The login after the change.
 
     Raises:
         HTTPException: 404 when the id is unknown, 400 when the vault refuses
             the change.
     """
     vault = SecretVault()
-    record = vault.get(password_id)
-    if record is None or record.kind != PASSWORD_KIND:
+    record = vault.get(login_id)
+    if record is None or record.kind != LOGIN_KIND:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="unknown password"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "unknown_login", "params": {}},
         )
     try:
         if request.name is not None and request.name.strip():
-            record = vault.rename(password_id, request.name)
-        if request.password is not None and request.password.strip():
-            record = vault.replace(password_id, secret={"password": request.password})
+            record = vault.rename(login_id, request.name)
+        username = (request.username or "").strip()
+        password = (request.password or "").strip()
+        if username or password:
+            stored = vault.open(login_id)
+            record = vault.replace(
+                login_id,
+                secret=_login_secret(
+                    username or stored.get("username", ""),
+                    password or stored["password"],
+                ),
+            )
     except VaultLockedError:
         raise
     except VaultError as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
         ) from error
-    return _password_view(record, _password_device_counts())
+    return _login_view(vault, record, _login_device_counts(), _service_counts())
 
 
-@router.delete("/passwords/{password_id}")
-def delete_password(password_id: str, force: bool = False) -> dict:
-    """Remove a password and its material.
+@router.delete("/logins/{login_id}")
+def delete_login(login_id: str, force: bool = False) -> dict:
+    """Remove a login and its password.
 
     Args:
-        password_id: The password's identifier.
-        force: Delete even when devices still reference it.
+        login_id: The login's identifier.
+        force: Delete even when devices or services still reference it.
 
     Returns:
         An empty object.
 
     Raises:
-        HTTPException: 409 when devices still use the password and ``force`` is
-            not set, 404 when the id is unknown.
+        HTTPException: 409 when something still uses the login and ``force``
+            is not set, 404 when the id is unknown.
     """
     vault = SecretVault()
-    record = vault.get(password_id)
-    if record is None or record.kind != PASSWORD_KIND:
+    record = vault.get(login_id)
+    if record is None or record.kind != LOGIN_KIND:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="unknown password"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "unknown_login", "params": {}},
         )
-    count = _password_device_counts().get(password_id, 0)
-    if count > 0 and not force:
+    device_count = _login_device_counts().get(login_id, 0)
+    service_count = _service_counts().get(login_id, 0)
+    if (device_count or service_count) and not force:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"{count} device(s) still use this password; use force to delete",
+            detail={
+                "code": "login_in_use",
+                "params": {
+                    "device_count": device_count,
+                    "service_count": service_count,
+                },
+            },
         )
-    vault.delete(password_id)
+    vault.delete(login_id)
     return {}
 
 
-def _password_device_counts() -> dict[str, int]:
+def _login_secret(username: str, password: str) -> dict:
+    secret = {"password": password}
+    if username.strip():
+        secret["username"] = username.strip()
+    return secret
+
+
+def _login_device_counts() -> dict[str, int]:
     counts: dict[str, int] = {}
     for device in DeviceRegistry().all_stored():
         ssh = device.ssh or {}
-        # A device naming one password for both its login and its sudo counts
+        # A device naming one login for both its account and its sudo counts
         # once.
         referenced = {ssh.get("password_id"), ssh.get("sudo_password_id")}
-        for password_id in referenced:
-            if password_id:
-                counts[password_id] = counts.get(password_id, 0) + 1
+        for login_id in referenced:
+            if login_id:
+                counts[login_id] = counts.get(login_id, 0) + 1
     return counts
-
-
-def _password_view(record: SecretRecord, counts: dict[str, int]) -> PasswordView:
-    return PasswordView(
-        id=record.id,
-        name=record.name,
-        created_at=record.created_at,
-        device_count=counts.get(record.id, 0),
-    )
-
-
-# --- Service accounts ---
-
-
-@router.get("/service_accounts", response_model=ServiceAccountListView)
-def list_service_accounts() -> ServiceAccountListView:
-    """Read every stored service account with how many services use it.
-
-    Returns:
-        The accounts, newest first, passwords withheld.
-    """
-    counts = _service_counts()
-    return ServiceAccountListView(
-        service_accounts=[
-            _service_account_view(record, counts)
-            for record in SecretVault().list_records(kind=SERVICE_ACCOUNT_KIND)
-        ]
-    )
-
-
-@router.post("/service_accounts", response_model=ServiceAccountView)
-def create_service_account(request: ServiceAccountCreate) -> ServiceAccountView:
-    """Seal a service account's password under a name and a username.
-
-    Args:
-        request: The name, the username, and the password.
-
-    Returns:
-        The stored account, without its password.
-
-    Raises:
-        HTTPException: 400 when the name, the username or the password is
-            blank.
-    """
-    if not request.username.strip():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="a service account needs a username",
-        )
-    if not request.password.strip():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="a service account needs a password",
-        )
-    try:
-        record = SecretVault().add(
-            kind=SERVICE_ACCOUNT_KIND,
-            name=request.name,
-            secret={"password": request.password},
-            meta={"username": request.username.strip()},
-        )
-    except VaultLockedError:
-        raise
-    except VaultError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
-        ) from error
-    return _service_account_view(record, _service_counts())
-
-
-@router.put("/service_accounts/{account_id}", response_model=ServiceAccountView)
-def update_service_account(
-    account_id: str, request: ServiceAccountUpdate
-) -> ServiceAccountView:
-    """Change an account's label, username, password, or any of them.
-
-    Args:
-        account_id: The account's identifier.
-        request: The fields to change; a blank one is left alone.
-
-    Returns:
-        The account after the change.
-
-    Raises:
-        HTTPException: 404 when the id is unknown, 400 when the vault refuses
-            the change.
-    """
-    vault = SecretVault()
-    record = vault.get(account_id)
-    if record is None or record.kind != SERVICE_ACCOUNT_KIND:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="unknown service account"
-        )
-    try:
-        if request.name is not None and request.name.strip():
-            record = vault.rename(account_id, request.name)
-        if request.username is not None and request.username.strip():
-            record = vault.update_meta(
-                account_id, {**record.meta, "username": request.username.strip()}
-            )
-        if request.password is not None and request.password.strip():
-            record = vault.replace(account_id, secret={"password": request.password})
-    except VaultLockedError:
-        raise
-    except VaultError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
-        ) from error
-    return _service_account_view(record, _service_counts())
-
-
-@router.delete("/service_accounts/{account_id}")
-def delete_service_account(account_id: str, force: bool = False) -> dict:
-    """Remove a service account and its password.
-
-    Args:
-        account_id: The account's identifier.
-        force: Delete even when services still reference it.
-
-    Returns:
-        An empty object.
-
-    Raises:
-        HTTPException: 409 when services still use the account and ``force`` is
-            not set, 404 when the id is unknown.
-    """
-    vault = SecretVault()
-    record = vault.get(account_id)
-    if record is None or record.kind != SERVICE_ACCOUNT_KIND:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="unknown service account"
-        )
-    count = _service_counts().get(account_id, 0)
-    if count > 0 and not force:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"{count} service(s) still use this account; use force to delete",
-        )
-    vault.delete(account_id)
-    return {}
 
 
 def _service_counts() -> dict[str, int]:
     counts: dict[str, int] = {}
     for service in DeclaredServiceRegistry().list_records():
-        # A service naming one account on several shares counts once.
-        referenced = {share.service_account_id for share in service.shares}
-        for account_id in referenced:
-            if account_id:
-                counts[account_id] = counts.get(account_id, 0) + 1
+        # A service naming one login on several shares counts once.
+        referenced = {share.login_id for share in service.shares}
+        for login_id in referenced:
+            if login_id:
+                counts[login_id] = counts.get(login_id, 0) + 1
     return counts
 
 
-def _service_account_view(
-    record: SecretRecord, counts: dict[str, int]
-) -> ServiceAccountView:
-    return ServiceAccountView(
+def _login_view(
+    vault: SecretVault,
+    record: SecretRecord,
+    device_counts: dict[str, int],
+    service_counts: dict[str, int],
+) -> LoginView:
+    try:
+        username = vault.open(record.id).get("username", "")
+    except VaultLockedError:
+        raise
+    except VaultError:
+        # A ciphertext that will not open still deserves a row: the name and
+        # the counts are what say it exists and what would notice a delete.
+        username = ""
+    return LoginView(
         id=record.id,
         name=record.name,
-        username=record.meta.get("username", ""),
+        username=username,
         created_at=record.created_at,
-        service_count=counts.get(record.id, 0),
+        device_count=device_counts.get(record.id, 0),
+        service_count=service_counts.get(record.id, 0),
     )
