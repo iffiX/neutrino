@@ -12,11 +12,13 @@ safe on the disposable machines these tests are for and on nothing else.
 
 import hashlib
 import io
+import os
 import json
 import secrets
 import subprocess
 import tarfile
 import tempfile
+import time
 from pathlib import Path
 
 import pytest
@@ -284,6 +286,19 @@ def test_backup_is_plain_digested_and_restores_the_vault(panel, vault_passphrase
     )
     assert status == 200, restored
     assert restored["is_restored"] is True
+
+    # The restore applies itself and restarts the panel; every session dies
+    # with it. Wait the restart out, then sign in again on the restored box.
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline:
+        time.sleep(3)
+        try:
+            panel.sign_in(os.environ["NEUTRINO_PANEL_PASSWORD"])
+            break
+        except (RuntimeError, OSError):
+            continue
+    else:
+        raise AssertionError("the panel never came back after the restore")
 
     listed = panel.read("/credentials/logins")["logins"]
     survivor = next(entry for entry in listed if entry["name"] == marker)
