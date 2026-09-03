@@ -229,11 +229,13 @@ def update_login(login_id: str, request: LoginUpdate) -> LoginView:
     """Change a login's label, username, password, or any of them.
 
     The username lives inside the seal, so changing either sealed field
-    re-seals both; a blank or absent field keeps what is stored.
+    re-seals both. An absent field keeps what is stored; a username sent as
+    null or blank clears it — the form always says what the username should
+    be, and clearing it is a change like any other.
 
     Args:
         login_id: The login's identifier.
-        request: The fields to change; a blank one is left alone.
+        request: The fields to change.
 
     Returns:
         The login after the change.
@@ -252,14 +254,15 @@ def update_login(login_id: str, request: LoginUpdate) -> LoginView:
     try:
         if request.name is not None and request.name.strip():
             record = vault.rename(login_id, request.name)
+        is_username_sent = "username" in request.model_fields_set
         username = (request.username or "").strip()
         password = (request.password or "").strip()
-        if username or password:
+        if is_username_sent or password:
             stored = vault.open(login_id)
             record = vault.replace(
                 login_id,
                 secret=_login_secret(
-                    username or stored.get("username", ""),
+                    username if is_username_sent else stored.get("username", ""),
                     password or stored["password"],
                 ),
             )
@@ -311,9 +314,9 @@ def delete_login(login_id: str, force: bool = False) -> dict:
     return {}
 
 
-def _login_secret(username: str, password: str) -> dict:
+def _login_secret(username: "str | None", password: str) -> dict:
     secret = {"password": password}
-    if username.strip():
+    if username and username.strip():
         secret["username"] = username.strip()
     return secret
 
@@ -349,13 +352,13 @@ def _login_view(
     service_counts: dict[str, int],
 ) -> LoginView:
     try:
-        username = vault.open(record.id).get("username", "")
+        username = vault.open(record.id).get("username") or None
     except VaultLockedError:
         raise
     except VaultError:
         # A ciphertext that will not open still deserves a row: the name and
         # the counts are what say it exists and what would notice a delete.
-        username = ""
+        username = None
     return LoginView(
         id=record.id,
         name=record.name,

@@ -109,12 +109,12 @@ def test_login_roundtrip(client):
 
     created = client.post(
         "/api/credentials/logins",
-        json={"name": "lab machines", "password": STORED_PASSWORD},
+        json={"name": "lab machines", "username": None, "password": STORED_PASSWORD},
     )
     assert created.status_code == 200
     view = created.json()
     assert view["name"] == "lab machines"
-    assert view["username"] == ""
+    assert view["username"] is None
     assert view["device_count"] == 0
     assert view["service_count"] == 0
     assert "password" not in view
@@ -188,6 +188,37 @@ def test_a_login_with_a_username_seals_and_lists_it(client):
         "username": "archive",
         "password": REPLACEMENT_PASSWORD,
     }
+
+
+def test_a_username_sent_as_null_clears_the_stored_one(client):
+    created = client.post(
+        "/api/credentials/logins",
+        json={"name": "NAS", "username": "backup", "password": STORED_PASSWORD},
+    ).json()
+
+    cleared = client.put(
+        f"/api/credentials/logins/{created['id']}",
+        json={"name": "NAS", "username": None},
+    )
+
+    assert cleared.status_code == 200
+    assert cleared.json()["username"] is None
+    listed = client.get("/api/credentials/logins").json()["logins"]
+    assert listed[0]["username"] is None
+
+
+def test_an_absent_username_keeps_the_stored_one(client):
+    created = client.post(
+        "/api/credentials/logins",
+        json={"name": "NAS", "username": "backup", "password": STORED_PASSWORD},
+    ).json()
+
+    kept = client.put(
+        f"/api/credentials/logins/{created['id']}", json={"name": "NAS renamed"}
+    )
+
+    assert kept.status_code == 200
+    assert kept.json()["username"] == "backup"
 
 
 def test_login_refusals(client):

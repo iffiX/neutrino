@@ -437,11 +437,11 @@ class KeyRename(BaseModel):
 
 
 class LoginView(BaseModel):
-    """One stored login, without its password."""
+    """One stored login, without its password; None is a bare password."""
 
     id: str
     name: str
-    username: str = ""
+    username: str | None = None
     created_at: str = ""
     device_count: int = 0
     service_count: int = 0
@@ -454,10 +454,13 @@ class LoginListView(BaseModel):
 
 
 class LoginCreate(BaseModel):
-    """A login to store under a name; the password travels one way."""
+    """A login to store under a name; the password travels one way.
+
+    A null username is a bare password, which is what the form sends.
+    """
 
     name: str
-    username: str = ""
+    username: str | None = None
     password: str
 
 
