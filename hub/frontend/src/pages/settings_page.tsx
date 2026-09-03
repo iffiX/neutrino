@@ -487,11 +487,19 @@ function RestoreArchiveModal({
     }
     wasApplying.current = false;
     setIsReconnecting(true);
+    // The restart lands a moment after the task ends, so an answer counts
+    // only once the panel has first been seen down — the old process still
+    // answers until then.
+    const isDownSeen = { current: false };
     const handle = window.setInterval(() => {
-      apiGet("/session")
-        .then(() => window.location.reload())
+      apiGet("/auth/session")
+        .then(() => {
+          if (isDownSeen.current) {
+            window.location.reload();
+          }
+        })
         .catch(() => {
-          // Still restarting; the next tick asks again.
+          isDownSeen.current = true;
         });
     }, 1500);
     return () => window.clearInterval(handle);

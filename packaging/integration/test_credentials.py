@@ -287,18 +287,24 @@ def test_backup_is_plain_digested_and_restores_the_vault(panel, vault_passphrase
     assert status == 200, restored
     assert restored["is_restored"] is True
 
-    # The restore applies itself and restarts the panel; every session dies
-    # with it. Wait the restart out, then sign in again on the restored box.
-    deadline = time.monotonic() + 90
+    # The restore applies itself and restarts the panel. The upload returns
+    # before any of that happens, so waiting for a working login is not
+    # enough — the OLD panel still answers. The restart is only over once
+    # the panel has been seen down and then up again.
+    deadline = time.monotonic() + 150
+    is_down_seen = False
     while time.monotonic() < deadline:
-        time.sleep(3)
-        try:
-            panel.sign_in(os.environ["NEUTRINO_PANEL_PASSWORD"])
-            break
-        except (RuntimeError, OSError):
+        time.sleep(2)
+        # A dead socket reads as status 0 by the client's own contract.
+        code = panel.status("GET", "/auth/session")
+        if code == 0:
+            is_down_seen = True
             continue
+        if is_down_seen:
+            break
     else:
-        raise AssertionError("the panel never came back after the restore")
+        raise AssertionError("the panel never restarted after the restore")
+    panel.sign_in(os.environ["NEUTRINO_PANEL_PASSWORD"])
 
     listed = panel.read("/credentials/logins")["logins"]
     survivor = next(entry for entry in listed if entry["name"] == marker)
