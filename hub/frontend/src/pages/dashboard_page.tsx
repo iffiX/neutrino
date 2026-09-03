@@ -10,6 +10,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { AiUsageOverview } from "../components/ai_usage_overview";
 import { ChartTooltip } from "../components/chart_tooltip";
 import { DnsLogList } from "../components/dns_log_list";
 import { ErrorPanel } from "../components/error_panel";
@@ -417,6 +418,8 @@ export function DashboardPage() {
           </section>
         </div>
       </div>
+
+      <AiUsageOverview />
     </div>
   );
 }

@@ -1,0 +1,148 @@
+.usage_grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* Wide grids scroll here; the page body never scrolls sideways. */
+.usage_grid_scroll {
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.usage_grid_strip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 340px;
+}
+
+.usage_grid_row {
+  display: grid;
+  gap: 3px;
+}
+
+.usage_grid_labels {
+  display: grid;
+  gap: 3px;
+}
+
+.usage_grid_label {
+  overflow: hidden;
+  color: var(--color-text-faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.usage_grid_weeks {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.usage_grid_months {
+  display: flex;
+  gap: 3px;
+}
+
+.usage_grid_months .usage_grid_label {
+  width: 12px;
+  overflow: visible;
+}
+
+.usage_grid_matrix {
+  display: flex;
+  gap: 3px;
+}
+
+.usage_grid_week {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.usage_cell {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--color-elevated);
+}
+
+.usage_grid_row .usage_cell {
+  width: auto;
+  height: 22px;
+}
+
+.usage_cell--void {
+  background: transparent;
+}
+
+.usage_cell--heat0 {
+  background: var(--color-elevated);
+}
+
+.usage_cell--heat1 {
+  background: var(--color-accent);
+  opacity: 0.25;
+}
+
+.usage_cell--heat2 {
+  background: var(--color-accent);
+  opacity: 0.45;
+}
+
+.usage_cell--heat3 {
+  background: var(--color-accent);
+  opacity: 0.7;
+}
+
+.usage_cell--heat4 {
+  background: var(--color-accent);
+  opacity: 1;
+}
+
+.usage_cell--idle {
+  background: var(--color-elevated);
+}
+
+.usage_cell--ok {
+  background: var(--color-ok);
+  opacity: 0.85;
+}
+
+.usage_cell--warn {
+  background: var(--color-warn);
+  opacity: 0.9;
+}
+
+.usage_cell--error {
+  background: var(--color-error);
+}
+
+.usage_grid_legend {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: flex-end;
+  font-size: 11px;
+}
+
+.usage_grid_legend .usage_cell {
+  width: 10px;
+  height: 10px;
+}
+
+.usage_grid_empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5) var(--space-4);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  text-align: center;
+}
