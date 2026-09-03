@@ -18,6 +18,7 @@ from neutrino_hub.web.models import (
     AiProviderCreate,
     AiProviderListView,
     AiProviderModelView,
+    AiProviderOrderUpdate,
     AiProviderUpdate,
     AiProviderView,
 )
@@ -36,11 +37,51 @@ def list_providers() -> AiProviderListView:
     """Read every stored AI provider.
 
     Returns:
-        The providers, newest first.
+        The providers, in served order.
     """
     return AiProviderListView(
         providers=[_provider_view(r) for r in AiProviderRegistry().list_records()]
     )
+
+
+@router.put("/providers/order", response_model=AiProviderListView)
+def reorder_providers(request: AiProviderOrderUpdate) -> AiProviderListView:
+    """Store a new served order.
+
+    Declared before the member route, or ``order`` would be read as an id.
+
+    Args:
+        request: Every stored provider id exactly once, in the new order.
+
+    Returns:
+        The providers, in the order now served.
+
+    Raises:
+        HTTPException: 422 with ``provider_order_mismatch`` when the ids are
+            not a permutation of the stored ones.
+    """
+    registry = AiProviderRegistry()
+    stored_ids = [record.id for record in registry.list_records()]
+    if sorted(request.provider_ids) != sorted(stored_ids):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "code": "provider_order_mismatch",
+                "params": {
+                    "missing": sorted(set(stored_ids) - set(request.provider_ids)),
+                    "unknown": sorted(set(request.provider_ids) - set(stored_ids)),
+                    "duplicate": sorted(
+                        {
+                            provider_id
+                            for provider_id in request.provider_ids
+                            if request.provider_ids.count(provider_id) > 1
+                        }
+                    ),
+                },
+            },
+        )
+    records = registry.reorder(request.provider_ids)
+    return AiProviderListView(providers=[_provider_view(r) for r in records])
 
 
 @router.post("/providers", response_model=AiProviderView)

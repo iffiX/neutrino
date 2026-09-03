@@ -541,6 +541,12 @@ class AiProviderCreate(BaseModel):
     models: list[AiProviderModelView] = Field(default_factory=list)
 
 
+class AiProviderOrderUpdate(BaseModel):
+    """The served order being saved: every provider id, in the new order."""
+
+    provider_ids: list[str]
+
+
 class AiProviderUpdate(BaseModel):
     """Partial update to one provider; ``secret_id`` sent as null clears the
     reference, and left out keeps it."""

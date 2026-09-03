@@ -109,12 +109,16 @@ class AiProviderRegistry:
         self._vault = SecretVault()
 
     def list_records(self) -> list[AiProviderRecord]:
-        """Read every provider, newest first.
+        """Read every provider, in served order.
+
+        The record order in the file is the order the gateway serves them
+        in: the renderer, the model a device is told to ask for, and the
+        panel's list all follow it. Reordering is :meth:`reorder`.
 
         Returns:
             The stored records.
         """
-        return sorted(self._records, key=lambda r: r.created_at, reverse=True)
+        return list(self._records)
 
     def get(self, provider_id: str) -> AiProviderRecord | None:
         """Look one provider up.
@@ -222,6 +226,27 @@ class AiProviderRegistry:
                 record.models = models
             self._write()
             return record
+
+    def reorder(self, provider_ids: list[str]) -> list[AiProviderRecord]:
+        """Store a new served order.
+
+        Args:
+            provider_ids: Every stored id exactly once, in the new order.
+
+        Returns:
+            The records, reordered.
+
+        Raises:
+            ValueError: If the ids are not a permutation of what is stored.
+        """
+        with _WRITE_LOCK:
+            self._records = self._read()
+            stored = {record.id: record for record in self._records}
+            if sorted(provider_ids) != sorted(stored):
+                raise ValueError("the ids are not a permutation of the stored ones")
+            self._records = [stored[provider_id] for provider_id in provider_ids]
+            self._write()
+            return list(self._records)
 
     def delete(self, provider_id: str) -> None:
         """Remove a provider; the token it referenced stays in the vault.

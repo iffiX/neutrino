@@ -118,6 +118,55 @@ def test_a_reference_to_another_kind_is_refused(client):
     assert refused.json()["detail"]["code"] == "unknown_credential"
 
 
+def test_the_stored_order_is_the_served_order(client):
+    first = client.post(
+        "/api/ai/providers",
+        json={"name": "first", "kind": "custom", "base_url": ""},
+    ).json()
+    second = client.post(
+        "/api/ai/providers",
+        json={"name": "second", "kind": "custom", "base_url": ""},
+    ).json()
+    listed = client.get("/api/ai/providers").json()["providers"]
+    assert [p["id"] for p in listed] == [first["id"], second["id"]]
+
+    reordered = client.put(
+        "/api/ai/providers/order",
+        json={"provider_ids": [second["id"], first["id"]]},
+    )
+    assert reordered.status_code == 200
+    assert [p["id"] for p in reordered.json()["providers"]] == [
+        second["id"],
+        first["id"],
+    ]
+    listed = client.get("/api/ai/providers").json()["providers"]
+    assert [p["id"] for p in listed] == [second["id"], first["id"]]
+
+
+def test_an_order_that_is_not_a_permutation_is_refused(client):
+    stored = client.post(
+        "/api/ai/providers",
+        json={"name": "only", "kind": "custom", "base_url": ""},
+    ).json()
+
+    refused = client.put("/api/ai/providers/order", json={"provider_ids": ["absent"]})
+    assert refused.status_code == 422
+    assert refused.json()["detail"] == {
+        "code": "provider_order_mismatch",
+        "params": {"missing": [stored["id"]], "unknown": ["absent"], "duplicate": []},
+    }
+
+    doubled = client.put(
+        "/api/ai/providers/order",
+        json={"provider_ids": [stored["id"], stored["id"]]},
+    )
+    assert doubled.status_code == 422
+    assert doubled.json()["detail"]["params"]["duplicate"] == [stored["id"]]
+
+    listed = client.get("/api/ai/providers").json()["providers"]
+    assert [p["id"] for p in listed] == [stored["id"]]
+
+
 def test_provider_refusals(client):
     unknown_kind = client.post(
         "/api/ai/providers",
