@@ -837,11 +837,27 @@ function SetupRunning({
   const isFailed = state.state === "failed";
   const panelUrl = state.panel_url || fallbackUrl;
   const [remainingS, setRemainingS] = useState(HANDOVER_SECONDS);
+  // Lit one painted frame after done, never with it: a transition only runs
+  // between two rendered states, and a screen that mounts already lit has
+  // only one.
+  const [isLit, setIsLit] = useState(false);
+
+  useEffect(() => {
+    if (!isDone) {
+      return;
+    }
+    const outer = requestAnimationFrame(() => {
+      requestAnimationFrame(() => setIsLit(true));
+    });
+    return () => cancelAnimationFrame(outer);
+  }, [isDone]);
 
   // A run that finished is worth a moment to read before the page is taken
   // away from you: the steps it took are the only place several of them are
   // reported. A run that failed is never taken away — its output is what
-  // somebody is about to go and act on.
+  // somebody is about to go and act on. The countdown reaching zero is not
+  // enough on its own: the panel this page goes to is still starting, so it
+  // is asked first, and the page leaves only for a panel that answers.
   useEffect(() => {
     if (!isDone && !isLost) {
       return;
@@ -851,7 +867,13 @@ function SetupRunning({
         if (left > 1) {
           return left - 1;
         }
-        window.location.assign(panelUrl);
+        // The wizard held the panel's own port, so the panel is this page's
+        // origin: a session probe answering means it is up.
+        fetch("/api/auth/session")
+          .then(() => window.location.assign(panelUrl))
+          .catch(() => {
+            // Still starting; the next tick asks again.
+          });
         return 0;
       });
     }, 1000);
@@ -860,7 +882,7 @@ function SetupRunning({
 
   return (
     <SetupFrame
-      isLit={isDone}
+      isLit={isLit}
       title={isDone ? "This box is a gateway" : "Making it so"}
       actions={
         isDone ? (
