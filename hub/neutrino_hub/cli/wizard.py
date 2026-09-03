@@ -18,9 +18,16 @@ from pathlib import Path
 from dataclasses import dataclass, field
 
 from neutrino_hub.cli.password import (
-    PASSWORD_MIN_LENGTH,
     PasswordRefused,
     read_new_password,
+    worded_refusal,
+)
+from neutrino_hub.utils.passwords import (
+    PASSWORDS_MASTER_RULES,
+    PASSWORDS_PANEL_RULES,
+    PasswordRuleError,
+    entropy_bits,
+    validate,
 )
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
 from neutrino_hub.modules.xray.constants import XRAY_SOCKS_PORT
@@ -63,7 +70,7 @@ WIZARD_BACK = "b"
 # One per screen, in order. The wordmark repeats; the title does not, because
 # the same five words five times teach nobody where they are.
 WIZARD_TITLES = (
-    "A password for the panel",
+    "A password for the panel, and the vault passphrase",
     "What is this machine for?",
     "Which ports?",
     "Going out through a proxy",
@@ -134,6 +141,7 @@ class WizardAnswers:
 
     Attributes:
         password: The panel password, already accepted.
+        vault_passphrase: The vault master passphrase, already accepted.
         network: The interface roles the chosen mode describes.
         proxy: What the proxy screen answered.
         services: The optional modules to install, by their registry name.
@@ -145,6 +153,7 @@ class WizardAnswers:
 
     password: str
     network: object
+    vault_passphrase: str = ""
     proxy: WizardProxy = field(default_factory=WizardProxy)
     services: tuple = ()
     listen_port: int = WEB_DEFAULT_LISTEN_PORT
@@ -167,7 +176,14 @@ WIZARD_NETWORK_KEYS = {
     "upstream_gateway": "upstream_gateway",
     "lan_vlan_id": "lan_vlan_id",
 }
-WIZARD_DOCUMENT_KEYS = ("password", "network", "proxy", "services", "listen_port")
+WIZARD_DOCUMENT_KEYS = (
+    "password",
+    "vault_passphrase",
+    "network",
+    "proxy",
+    "services",
+    "listen_port",
+)
 # A document need not answer the proxy screen; skipping it is what an
 # unanswered one means, exactly as it does on the screen.
 WIZARD_PROXY_KEYS = (
@@ -199,9 +215,13 @@ def from_document(document: dict) -> WizardAnswers:
     if not isinstance(document, dict):
         raise WizardAborted("the answers must be an object")
     _reject_unknown(document, WIZARD_DOCUMENT_KEYS, "the answers")
-    for required in ("password", "network"):
+    for required in ("password", "vault_passphrase", "network"):
         if required not in document:
             raise WizardAborted(f"the answers need a {required!r}")
+    _check_secret(document["password"], PASSWORDS_PANEL_RULES, "'password'")
+    _check_secret(
+        document["vault_passphrase"], PASSWORDS_MASTER_RULES, "'vault_passphrase'"
+    )
 
     network = document["network"]
     if not isinstance(network, dict):
@@ -221,11 +241,31 @@ def from_document(document: dict) -> WizardAnswers:
         raise WizardAborted(str(error)) from error
     return WizardAnswers(
         password=document["password"],
+        vault_passphrase=document["vault_passphrase"],
         network=planned,
         proxy=_proxy_from(document.get("proxy", {}), network["mode"]),
         services=_services_from(document.get("services", [])),
         listen_port=_port_from(document.get("listen_port", WEB_DEFAULT_LISTEN_PORT)),
     )
+
+
+def _check_secret(given, rules, what: str) -> None:
+    """Judge a document's secret against its rule set.
+
+    Args:
+        given: The document's value.
+        rules: The rule set to judge by.
+        what: What to call the field, for the message.
+
+    Raises:
+        WizardAborted: When it is not a string or the rules refuse it.
+    """
+    if not isinstance(given, str):
+        raise WizardAborted(f"{what} must be a string")
+    try:
+        validate(given, rules)
+    except PasswordRuleError as error:
+        raise WizardAborted(f"{what}: {worded_refusal(error)}") from error
 
 
 def _port_from(given) -> int:
@@ -359,6 +399,7 @@ class SetupWizard:
         self._lan_vlan_id = ROUTER_MODE_DEFAULT_LAN_VLAN
         self._is_coloured = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
         self._password = ""
+        self._vault_passphrase = ""
         self._mode = ROUTER_MODE_ROUTER
         self._wan = ""
         self._lan = ""
@@ -399,6 +440,7 @@ class SetupWizard:
             raise SystemExit(WIZARD_STOPPED_STATUS) from None
         return WizardAnswers(
             password=self._password,
+            vault_passphrase=self._vault_passphrase,
             network=self._plan(),
             proxy=self._proxy,
             services=tuple(self._services),
@@ -406,20 +448,38 @@ class SetupWizard:
         )
 
     def _ask_password(self) -> bool:
-        """The one secret, asked for twice."""
+        """The two secrets, each asked for twice."""
         self._say(
-            f"At least {PASSWORD_MIN_LENGTH} characters, and better for mixing "
-            "letters, numbers"
+            f"At least {PASSWORDS_PANEL_RULES.min_length} characters, and "
+            "better for mixing letters,"
         )
-        self._say("and symbols.")
+        self._say("numbers and symbols.")
         print()
         try:
             self._password = read_new_password()
+            self._say_entropy(self._password)
+            print()
+            self._say("The vault passphrase seals every stored credential, and a")
+            self._say("backup only opens with it.")
+            self._say(
+                f"At least {PASSWORDS_MASTER_RULES.min_length} characters, with "
+                "a lowercase, an uppercase,"
+            )
+            self._say("a digit and a symbol.")
+            print()
+            self._vault_passphrase = read_new_password(
+                prompt="Vault passphrase", rules=PASSWORDS_MASTER_RULES
+            )
+            self._say_entropy(self._vault_passphrase)
         except PasswordRefused as error:
             self._say(f"  {error}")
             self._prompt("Press Enter to try again")
             return WIZARD_AGAIN
         return WIZARD_NEXT
+
+    def _say_entropy(self, secret: str) -> None:
+        """One line saying how hard what was just accepted is to guess."""
+        self._say(f"  entropy: {entropy_bits(secret):.0f} bits")
 
     def _ask_mode(self) -> int:
         """Which of the shapes this machine can be."""
@@ -1074,6 +1134,10 @@ def context() -> dict:
             }
             for name, spec in _installable()
         ],
+        "password_rules": {
+            "panel": PASSWORDS_PANEL_RULES.to_dict(),
+            "vault": PASSWORDS_MASTER_RULES.to_dict(),
+        },
         "defaults": {
             "address": ROUTER_MODE_DEFAULT_LAN_ADDRESS,
             "prefix_len": ROUTER_MODE_DEFAULT_PREFIX_LEN,

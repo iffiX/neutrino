@@ -9,11 +9,8 @@ import io
 
 import pytest
 
-from neutrino_hub.cli.password import (
-    PASSWORD_MIN_LENGTH,
-    PasswordRefused,
-    read_new_password,
-)
+from neutrino_hub.cli.password import PasswordRefused, read_new_password
+from neutrino_hub.utils.passwords import PASSWORDS_MASTER_RULES, PASSWORDS_PANEL_RULES
 
 
 def test_a_password_read_from_standard_input_is_not_asked_for_twice(monkeypatch):
@@ -26,8 +23,23 @@ def test_a_password_read_from_standard_input_is_not_asked_for_twice(monkeypatch)
 def test_a_short_password_is_refused_before_anything_is_written(monkeypatch):
     monkeypatch.setattr("sys.stdin", io.StringIO("short\n"))
 
-    with pytest.raises(PasswordRefused, match=str(PASSWORD_MIN_LENGTH)):
+    with pytest.raises(PasswordRefused, match=str(PASSWORDS_PANEL_RULES.min_length)):
         read_new_password(is_stdin=True)
+
+
+def test_a_passphrase_missing_a_class_is_refused_with_what_it_lacks(monkeypatch):
+    monkeypatch.setattr("sys.stdin", io.StringIO("all-lowercase-and-long\n"))
+
+    with pytest.raises(PasswordRefused, match="uppercase"):
+        read_new_password(is_stdin=True, rules=PASSWORDS_MASTER_RULES)
+
+
+def test_a_passphrase_meeting_the_master_rules_is_taken(monkeypatch):
+    monkeypatch.setattr("sys.stdin", io.StringIO("A-vault-passphrase-16!\n"))
+
+    accepted = read_new_password(is_stdin=True, rules=PASSWORDS_MASTER_RULES)
+
+    assert accepted == "A-vault-passphrase-16!"  # scan: allow
 
 
 def test_two_prompts_that_disagree_are_refused(monkeypatch):

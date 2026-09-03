@@ -5,9 +5,8 @@ twice, or read from standard input for an unattended run. It is never an
 argument — an argument is visible in ``ps`` to every user on the machine for as
 long as the command runs, and stays in the shell history afterwards.
 
-Eight characters is the whole of the rule. Everything else — mixing letters,
-numbers and symbols — is a preference, said out loud where it is asked for and
-never turned into a refusal.
+The rules themselves live in :mod:`neutrino_hub.utils.passwords`; this file
+prompts, words a refusal, and stores what was accepted.
 """
 
 import getpass
@@ -15,14 +14,20 @@ import secrets
 import sys
 
 from neutrino_hub.utils.json_file import read_config, write_config
+from neutrino_hub.utils.passwords import (
+    PASSWORDS_ERROR_TOO_SHORT,
+    PASSWORDS_PANEL_RULES,
+    PasswordRuleError,
+    PasswordRules,
+    validate,
+)
 from neutrino_hub.web.auth import hash_password
 
 # --- config ---
-PASSWORD_MIN_LENGTH = 8
 PASSWORD_SETTINGS_FILE = "web/settings.json"  # scan: allow
 PASSWORD_HASH_FIELD = "admin_password_hash"  # scan: allow
 PASSWORD_SECRET_FIELD = "session_secret"  # scan: allow
-# What the committed example carries in both fields until a real one lands.
+# What the committed example carries until a real hash lands.
 PASSWORD_PLACEHOLDER_PREFIX = "PLACEHOLDER"  # scan: allow
 PASSWORD_SESSION_SECRET_BYTES = 32
 
@@ -31,28 +36,49 @@ class PasswordRefused(ValueError):
     """The password given cannot be used."""
 
 
-def read_new_password(*, is_stdin: bool = False) -> str:
+def worded_refusal(error: PasswordRuleError) -> str:
+    """One sentence for a rule refusal, for the terminal askers.
+
+    Args:
+        error: What :func:`neutrino_hub.utils.passwords.validate` raised.
+
+    Returns:
+        The sentence to show.
+    """
+    if error.code == PASSWORDS_ERROR_TOO_SHORT:
+        return f"too short: use at least {error.params['min_length']} characters"
+    return "missing a " + ", a ".join(error.params.get("classes", []))
+
+
+def read_new_password(
+    *,
+    is_stdin: bool = False,
+    prompt: str = "Panel password",
+    rules: PasswordRules = PASSWORDS_PANEL_RULES,
+) -> str:
     """Ask for a password, or take one from standard input.
 
     Args:
         is_stdin: Read one line from standard input instead of prompting.
+        prompt: What to call the secret being asked for.
+        rules: The rule set to judge it by.
 
     Returns:
         The password.
 
     Raises:
-        PasswordRefused: When it is too short, or the two prompts disagree.
+        PasswordRefused: When the rules refuse it, or the two prompts
+            disagree.
     """
     try:
         if is_stdin:
             password = sys.stdin.readline().rstrip("\n")
         else:
-            password = getpass.getpass("Panel password: ")
-        if len(password) < PASSWORD_MIN_LENGTH:
-            raise PasswordRefused(
-                f"too short: use at least {PASSWORD_MIN_LENGTH} characters, "
-                "and better for mixing letters, numbers and symbols"
-            )
+            password = getpass.getpass(f"{prompt}: ")
+        try:
+            validate(password, rules)
+        except PasswordRuleError as error:
+            raise PasswordRefused(worded_refusal(error)) from error
         if not is_stdin and password != getpass.getpass("Repeat: "):
             raise PasswordRefused("the two passwords do not match")
     except EOFError as error:

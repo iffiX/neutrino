@@ -29,6 +29,11 @@ from neutrino_hub.modules.credentials.vault import (
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
 from neutrino_hub.utils.json_file import read_config, write_config
+from neutrino_hub.utils.passwords import (
+    PASSWORDS_PANEL_RULES,
+    PasswordRuleError,
+    validate,
+)
 from neutrino_hub.utils.subprocess_run import run
 from neutrino_hub.web.auth import hash_password, verify_password
 from neutrino_hub.web.constants import (
@@ -164,21 +169,24 @@ def change_password(
         Whether the change went through.
 
     Raises:
-        HTTPException: 400 when the current password is wrong or the new one is
-            too short.
+        HTTPException: 400 with ``password_wrong`` when the current password
+            does not match, or the rule code the new one was refused with.
     """
     settings = read_config(PANEL_SETTINGS_FILE)
     if not verify_password(
         request.current_password, settings.get("admin_password_hash", "")
     ):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="current password is wrong"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "password_wrong", "params": {}},
         )
-    if len(request.new_password) < 8:
+    try:
+        validate(request.new_password, PASSWORDS_PANEL_RULES)
+    except PasswordRuleError as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="the new password needs at least 8 characters",
-        )
+            detail={"code": error.code, "params": error.params},
+        ) from error
     new_hash = hash_password(request.new_password)
     settings["admin_password_hash"] = new_hash
     write_config(PANEL_SETTINGS_FILE, settings)

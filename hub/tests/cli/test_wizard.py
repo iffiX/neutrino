@@ -13,6 +13,8 @@ import pytest
 from neutrino_hub.cli import wizard
 from neutrino_hub.modules.router.link_status import LinkStatus
 
+VAULT_PASSPHRASE = "A-vault-passphrase-16!"  # scan: allow
+
 
 class StubLinks:
     """Two ports, one of them already carrying the default route."""
@@ -47,6 +49,7 @@ def test_an_answers_document_needs_no_terminal():
     answers = wizard.from_document(
         {
             "password": "a-long-enough-password",
+            "vault_passphrase": VAULT_PASSPHRASE,
             "network": {
                 "mode": "router",
                 "wan": ["enp2s0"],
@@ -68,6 +71,7 @@ def test_a_misspelled_key_is_refused_rather_than_ignored():
         wizard.from_document(
             {
                 "password": "a-long-enough-password",
+                "vault_passphrase": VAULT_PASSPHRASE,
                 "network": {
                     "mode": "side_gateway",
                     "lan": ["enp1s0"],
@@ -77,11 +81,12 @@ def test_a_misspelled_key_is_refused_rather_than_ignored():
         )
 
 
-@pytest.mark.parametrize("missing", ["password", "network"])
+@pytest.mark.parametrize("missing", ["password", "vault_passphrase", "network"])
 def test_an_incomplete_document_is_refused(missing):
     """`--json` takes a complete document; there is no half-answered install."""
     document = {
         "password": "a-long-enough-password",
+        "vault_passphrase": VAULT_PASSPHRASE,
         "network": {"mode": "server", "lan": ["enp1s0"]},
     }
     document.pop(missing)
@@ -93,7 +98,11 @@ def test_an_incomplete_document_is_refused(missing):
 def test_a_mode_nobody_has_is_refused():
     with pytest.raises(wizard.WizardAborted, match="teapot"):
         wizard.from_document(
-            {"password": "a-long-enough-password", "network": {"mode": "teapot"}}
+            {
+                "password": "a-long-enough-password",
+                "vault_passphrase": VAULT_PASSPHRASE,
+                "network": {"mode": "teapot"},
+            }
         )
 
 
@@ -448,7 +457,11 @@ def test_a_document_without_a_proxy_skips_it():
     """Leaving it out is what skipping the screen means; a hub is a hub
     without a proxy."""
     answers = wizard.from_document(
-        {"password": "a-long-enough-password", "network": {"mode": "server"}}
+        {
+            "password": "a-long-enough-password",
+            "vault_passphrase": VAULT_PASSPHRASE,
+            "network": {"mode": "server"},
+        }
     )
 
     assert not answers.proxy.is_enabled
@@ -461,6 +474,7 @@ def test_a_serving_mode_routes_its_devices_and_publishes_no_socks():
     answers = wizard.from_document(
         {
             "password": "a-long-enough-password",
+            "vault_passphrase": VAULT_PASSPHRASE,
             "network": {"mode": "router", "wan": ["a"], "lan": ["b"]},
             "proxy": {"links": [SHARE_LINK]},
         }
@@ -477,6 +491,7 @@ def test_a_server_has_a_socks_port_for_its_whole_proxy():
     answers = wizard.from_document(
         {
             "password": "a-long-enough-password",
+            "vault_passphrase": VAULT_PASSPHRASE,
             "network": {"mode": "server", "lan": ["a"], "address": "10.0.0.2"},
             "proxy": {"links": [SHARE_LINK], "socks_proxy_port": 1081},
         }
@@ -490,6 +505,7 @@ def test_this_boxs_own_traffic_is_asked_for_rather_than_assumed():
     """Both readings were defensible, which is why neither is guessed."""
     document = {
         "password": "a-long-enough-password",
+        "vault_passphrase": VAULT_PASSPHRASE,
         "network": {"mode": "server", "lan": ["a"], "address": "10.0.0.2"},
         "proxy": {"links": [SHARE_LINK]},
     }
@@ -504,6 +520,7 @@ def test_a_link_that_cannot_be_read_is_refused():
         wizard.from_document(
             {
                 "password": "a-long-enough-password",
+                "vault_passphrase": VAULT_PASSPHRASE,
                 "network": {"mode": "server", "lan": ["a"]},
                 "proxy": {"links": ["https://example.com"]},
             }
@@ -516,6 +533,7 @@ def test_both_socks_ports_are_asked_for_rather_than_fixed():
     answers = wizard.from_document(
         {
             "password": "a-long-enough-password",
+            "vault_passphrase": VAULT_PASSPHRASE,
             "network": {"mode": "router", "wan": ["a"], "lan": ["b"]},
             "proxy": {
                 "links": [SHARE_LINK],
@@ -534,6 +552,7 @@ def test_a_document_can_name_the_modules_to_install():
     answers = wizard.from_document(
         {
             "password": "a-long-enough-password",
+            "vault_passphrase": VAULT_PASSPHRASE,
             "network": {"mode": "server", "lan": ["a"], "address": "10.0.0.2"},
             "services": ["samba", "podman"],
         }
@@ -547,6 +566,7 @@ def test_a_module_nobody_has_is_refused_with_the_ones_there_are():
         wizard.from_document(
             {
                 "password": "a-long-enough-password",
+                "vault_passphrase": VAULT_PASSPHRASE,
                 "network": {"mode": "server", "lan": ["a"]},
                 "services": ["postgres"],
             }
@@ -557,6 +577,7 @@ def test_naming_no_module_installs_none():
     answers = wizard.from_document(
         {
             "password": "a-long-enough-password",
+            "vault_passphrase": VAULT_PASSPHRASE,
             "network": {"mode": "server", "lan": ["a"], "address": "10.0.0.2"},
         }
     )
