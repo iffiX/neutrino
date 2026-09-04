@@ -1,6 +1,6 @@
-"""What kind of machine this is, in the vocabulary the manifests use.
+"""What kind of machine this is, and which platform class answers for it.
 
-A feature manifest lists the platforms a package exists for; this module
+A function manifest lists the platforms a package exists for; this module
 produces the keys that listing is matched against, from most to least
 specific, so a manifest can say ``linux-debian-amd64`` when the artifact is
 that particular, or just ``linux`` when anything with the right kernel works.
@@ -12,6 +12,11 @@ from __future__ import annotations
 
 import platform
 import sys
+
+from neutrino_agent.platforms.base import AgentPlatform
+from neutrino_agent.platforms.darwin import DarwinPlatform
+from neutrino_agent.platforms.linux import LinuxPlatform
+from neutrino_agent.platforms.windows import WindowsPlatform
 
 OS_RELEASE_PATH = "/etc/os-release"
 
@@ -51,7 +56,7 @@ def platform_tuple() -> dict:
     }
 
 
-def platform_keys(info: dict) -> list[str]:
+def platform_keys(info: dict) -> "list[str]":
     """The manifest keys this machine matches, most specific first.
 
     Args:
@@ -71,6 +76,24 @@ def platform_keys(info: dict) -> list[str]:
     keys.append(f"{os_name}-{arch}")
     keys.append(os_name)
     return keys
+
+
+def detect_platform() -> AgentPlatform:
+    """The platform class that answers for this machine.
+
+    Returns:
+        A platform instance; an operating system the agent does not know
+        gets the base contract, which advertises nothing and refuses every
+        capability.
+    """
+    os_name = platform_tuple()["os"]
+    if os_name == "linux":
+        return LinuxPlatform()
+    if os_name == "darwin":
+        return DarwinPlatform()
+    if os_name == "windows":
+        return WindowsPlatform()
+    return AgentPlatform()
 
 
 def _distro_family() -> str:

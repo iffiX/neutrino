@@ -33,7 +33,7 @@ from neutrino_agent.http_channel import (
     GatewayUntrusted,
     GatewayVersionRefused,
 )
-from neutrino_agent.platform_info import platform_tuple
+from neutrino_agent.platforms.detect import platform_tuple
 
 ENROLL_PATH = "/api/agent/enroll"
 SYS_NET_DIR = "/sys/class/net"

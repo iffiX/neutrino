@@ -1,14 +1,17 @@
-"""The agent itself: connection state, the heartbeat, and the feature engine.
+"""The agent itself: connection state, the heartbeat, and the function engine.
 
 One object owns everything the machine's own page and the gateway both talk
 to. It runs whether or not the machine belongs to a gateway yet — an agent
 that has never enrolled still serves its page, waiting for a link, which is
 the whole point on a machine the gateway cannot reach first.
 
-The gateway stays the source of truth for which features should be on: a
+The gateway stays the source of truth for which functions should be on: a
 toggle on the local page is sent up with the next heartbeat and comes back as
 part of the desired state, so the panel and the page can never disagree for
 longer than one beat.
+
+Errors cross the wire as ``{"code", "params"}``, never an English sentence;
+every surface does its own wording.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -16,7 +19,6 @@ longer than one beat.
 from __future__ import annotations
 
 import threading
-import time
 
 from neutrino_agent import AGENT_VERSION, enrollment, self_update
 from neutrino_agent.constants import (
@@ -28,7 +30,7 @@ from neutrino_agent.constants import (
     AGENT_REFUSALS_BEFORE_UNBIND,
     AGENT_RESULT_PATH,
 )
-from neutrino_agent.features import FeatureManager
+from neutrino_agent.functions.engine import FunctionEngine
 from neutrino_agent.http_channel import (
     GatewayHttpChannel,
     GatewayRefused,
@@ -36,36 +38,64 @@ from neutrino_agent.http_channel import (
     GatewayUntrusted,
     GatewayVersionRefused,
 )
-from neutrino_agent.metrics import HostMetricsReader, hostname
+from neutrino_agent.metrics import HostMetrics, hostname
 from neutrino_agent.ops import DeviceOperator
+from neutrino_agent.platforms.base import PlatformUnsupportedError
+from neutrino_agent.platforms.detect import detect_platform
+from neutrino_agent.services.ai import AiServiceStore
 from neutrino_agent.version_number import parse_version
 
 # How often an unenrolled agent looks again, which is only to notice that its
 # own page has since been used to join a gateway.
 IDLE_POLL_INTERVAL_S = 2
 
-# Every self-unbind reason ends with the one action that fixes all of them.
-REJOIN_HINT = "rejoin by pasting a fresh link from the hub's Devices page"
+
+def channel_error(error: Exception) -> dict:
+    """The typed form of a channel exception.
+
+    Args:
+        error: What the channel raised.
+
+    Returns:
+        ``{"code", "params"}``.
+    """
+    if isinstance(error, GatewayUntrusted):
+        return {"code": "hub_untrusted", "params": {}}
+    if isinstance(error, GatewayVersionRefused):
+        return {
+            "code": "agent_newer_than_hub",
+            "params": {
+                "hub_version": error.hub_version,
+                "agent_version": error.agent_version,
+            },
+        }
+    if isinstance(error, GatewayRefused):
+        return {"code": "hub_refused", "params": {}}
+    return {"code": "hub_unreachable", "params": {"detail": str(error)}}
 
 
 class Agent:
     """Everything the agent is, running or waiting to be told where to run."""
 
-    def __init__(self, *, log=print):
+    def __init__(self, *, log=print, platform=None):
         """
         Args:
             log: Callable used for progress messages; defaults to printing,
                 which systemd captures into the journal.
+            platform: The machine's platform; None detects it.
         """
         self._log = log
         self._lock = threading.Lock()
-        self._metrics = HostMetricsReader()
+        self._platform = platform if platform is not None else detect_platform()
         # Set whenever there is something new to report, so the loop beats
         # then rather than at the end of its next interval.
         self._news = threading.Event()
-        self._features = FeatureManager(log=log, on_change=self._news.set)
+        self._engine = FunctionEngine(
+            platform=self._platform, log=log, on_change=self._news.set
+        )
+        self._ai_store = AiServiceStore()
         self._backoff_s = AGENT_BACKOFF_MIN_S
-        self._last_error = ""
+        self._last_error: "dict | None" = None
         self._desired: dict = {}
         self._pending: dict = {}
         self._channel = None
@@ -76,24 +106,24 @@ class Agent:
         # The hub version last acted on and how the attempt went, so a target
         # that failed is not retried every beat.
         self._update_target = ""
-        self._update_error = ""
+        self._update_error: "dict | None" = None
         self._load_connection()
 
     # --- what the local page reads ---
 
     def platform(self) -> dict:
         """This machine's platform tuple."""
-        return self._features.platform
+        return self._engine.platform_tuple
 
     def catalog(self) -> dict:
-        """The manifest catalog the gateway last sent."""
-        return self._features.catalog()
+        """The catalog the gateway last sent: ``{"functions", "services"}``."""
+        return self._engine.catalog()
 
-    def feature_states(self) -> dict:
-        """What state each feature is actually in."""
-        return self._features.report()
+    def function_states(self) -> dict:
+        """What state each function is actually in."""
+        return self._engine.report()
 
-    def desired_features(self) -> dict:
+    def desired_functions(self) -> dict:
         """What the gateway says should be true, with local toggles applied."""
         with self._lock:
             merged = {name: dict(value) for name, value in self._desired.items()}
@@ -101,8 +131,8 @@ class Agent:
                 merged.setdefault(name, {"config": {}}).update(wish)
             return merged
 
-    def last_error(self) -> str:
-        """The most recent problem worth showing on the page."""
+    def last_error(self) -> "dict | None":
+        """The most recent problem worth showing, as ``{"code", "params"}``."""
         with self._lock:
             return self._last_error or self._update_error
 
@@ -119,10 +149,10 @@ class Agent:
         """
         enrollment.enroll(link)
         with self._lock:
-            self._last_error = ""
+            self._last_error = None
             self._refusals = 0
             self._update_target = ""
-            self._update_error = ""
+            self._update_error = None
             self._backoff_s = AGENT_BACKOFF_MIN_S
         self._load_connection()
         self._log("joined the gateway")
@@ -146,33 +176,31 @@ class Agent:
         with self._lock:
             self._desired = {}
             self._pending = {}
-            self._last_error = ""
+            self._last_error = None
             self._update_target = ""
-            self._update_error = ""
+            self._update_error = None
         self._load_connection()
-        self._features.update(desired={}, catalog=None, catalog_hash="")
+        self._engine.update(desired={}, catalog=None, catalog_hash="")
         self._log("disconnected from the gateway")
 
     def beat_soon(self) -> None:
         """Cut the wait before the next heartbeat short."""
         self._news.set()
 
-    def request_feature(
+    def request_function(
         self,
         name: str,
         *,
         is_enabled: "bool | None" = None,
         is_activated: "bool | None" = None,
     ) -> None:
-        """Ask for a feature to be changed, from this machine's own page.
+        """Ask for a function to be changed, from this machine's own page.
 
         The request is sent up with the next heartbeat rather than applied
-        here, so the hub remains the one place that decides. Either wish can
-        be sent alone: having cc-switch and having it point at the hub are
-        separate things.
+        here, so the hub remains the one place that decides.
 
         Args:
-            name: The feature name.
+            name: The function name.
             is_enabled: Whether it should be installed, when that is what
                 changed.
             is_activated: Whether it should point at the hub, when that is
@@ -191,8 +219,8 @@ class Agent:
                 if is_activated:
                     wish["is_enabled"] = True
             self._pending[name] = wish
-        self._features.update(
-            desired=self.desired_features(), catalog=None, catalog_hash=""
+        self._engine.update(
+            desired=self.desired_functions(), catalog=None, catalog_hash=""
         )
         self.beat_soon()
 
@@ -201,7 +229,7 @@ class Agent:
     def run_forever(self) -> None:
         """Beat, or wait to be enrolled, until the process is stopped.
 
-        The wait between beats ends early when a feature changes state, so
+        The wait between beats ends early when a function changes state, so
         the panel sees a step start and finish rather than only its result.
         """
         self._log(f"neutrino_agent {AGENT_VERSION} starting on {hostname()}")
@@ -229,13 +257,16 @@ class Agent:
         payload = {
             "hostname": hostname(),
             "client_version": AGENT_VERSION,
-            "metrics": self._metrics.read().to_dict(),
-            "platform": self._features.platform,
+            "metrics": self._read_metrics(),
+            "platform": self._engine.platform_tuple,
+            "accounts": self._read_accounts(),
             # The gateway sends the catalog only when this differs from what
             # it serves, so a converged fleet is not shipped it every beat.
-            "catalog_hash": self._features.catalog_hash,
-            "features": self._features.report(),
-            "feature_requests": requests,
+            "catalog_hash": self._engine.catalog_hash,
+            "functions": self._engine.report(),
+            "function_requests": requests,
+            "ai_targets": self._ai_store.targets(),
+            "last_error": self.last_error(),
         }
         try:
             reply = channel.post(AGENT_HEARTBEAT_PATH, payload)
@@ -247,7 +278,7 @@ class Agent:
             # only a successful beat resets it, so an unreachable beat in the
             # middle of a run of rejections leaves the count standing.
             with self._lock:
-                self._last_error = str(error)
+                self._last_error = channel_error(error)
                 delay = self._backoff_s
                 self._backoff_s = min(self._backoff_s * 2, AGENT_BACKOFF_MAX_S)
             self._log(f"heartbeat failed: {error}; retrying in {delay}s")
@@ -255,22 +286,35 @@ class Agent:
 
         with self._lock:
             self._backoff_s = AGENT_BACKOFF_MIN_S
-            self._last_error = ""
+            self._last_error = None
             self._refusals = 0
             # Accepted requests are dropped: what comes back is now the truth.
             for name in requests:
                 self._pending.pop(name, None)
-            self._desired = reply.get("desired_features", {})
+            self._desired = reply.get("desired_functions", {})
 
-        self._features.update(
-            desired=self.desired_features(),
+        self._engine.update(
+            desired=self.desired_functions(),
             catalog=reply.get("catalog"),
             catalog_hash=reply.get("catalog_hash", ""),
         )
+        self._ai_store.take_accounts(reply.get("ai_accounts") or {})
         for command in reply.get("commands", []):
             self._execute(command)
         self._maybe_self_update(str(reply.get("hub_version", "")))
         return AGENT_HEARTBEAT_INTERVAL_S
+
+    def _read_metrics(self) -> dict:
+        try:
+            return self._platform.read_host_metrics().to_dict()
+        except PlatformUnsupportedError:
+            return HostMetrics().to_dict()
+
+    def _read_accounts(self) -> list:
+        try:
+            return self._platform.human_accounts()
+        except PlatformUnsupportedError:
+            return []
 
     def _on_rejected(self, error: Exception) -> int:
         """Take a definitive rejection for what it is, after a short grace.
@@ -287,45 +331,30 @@ class Agent:
         Returns:
             Seconds until the next loop turn.
         """
+        rejection = channel_error(error)
         with self._lock:
             self._refusals += 1
             rejections = self._refusals
-            self._last_error = str(error)
+            self._last_error = rejection
         if rejections < AGENT_REFUSALS_BEFORE_UNBIND:
             self._log(f"{error}; asking again")
             return AGENT_HEARTBEAT_INTERVAL_S
-        reason = self._unbind_reason(error)
         enrollment.disconnect()
         with self._lock:
             self._desired = {}
             self._pending = {}
             self._refusals = 0
             self._update_target = ""
-            self._update_error = ""
+            self._update_error = None
         self._load_connection()
         with self._lock:
-            self._last_error = reason
-        self._features.update(desired={}, catalog=None, catalog_hash="")
-        self._log(f"unbound: {reason}")
+            self._last_error = {
+                "code": "self_unbound",
+                "params": {"cause": rejection["code"]},
+            }
+        self._engine.update(desired={}, catalog=None, catalog_hash="")
+        self._log(f"unbound: {rejection['code']}")
         return IDLE_POLL_INTERVAL_S
-
-    @staticmethod
-    def _unbind_reason(error: Exception) -> str:
-        """The one line a self-unbind leaves behind.
-
-        Args:
-            error: The rejection that tipped the counter.
-
-        Returns:
-            The cause in plain words, ending with how to rejoin.
-        """
-        if isinstance(error, GatewayUntrusted):
-            cause = "the hub's identity changed (it was reset or reinstalled)"
-        elif isinstance(error, GatewayVersionRefused):
-            cause = "this agent is newer than the hub"
-        else:
-            cause = "the hub no longer knows this machine"
-        return f"{cause}; {REJOIN_HINT}"
 
     def _load_connection(self) -> None:
         config = enrollment.load_config()
@@ -339,7 +368,7 @@ class Agent:
                 self._channel = GatewayHttpChannel(
                     gateway_url=gateway_url, token=token, fingerprint=fingerprint
                 )
-                self._operator = DeviceOperator()
+                self._operator = DeviceOperator(platform=self._platform)
             else:
                 self._channel = None
                 self._operator = None
@@ -362,12 +391,12 @@ class Agent:
                 return
             self._desired = {}
             self._pending = {}
-            self._last_error = ""
+            self._last_error = None
             self._refusals = 0
             self._update_target = ""
-            self._update_error = ""
+            self._update_error = None
             self._backoff_s = AGENT_BACKOFF_MIN_S
-        self._features.update(desired={}, catalog=None, catalog_hash="")
+        self._engine.update(desired={}, catalog=None, catalog_hash="")
         self._log("adopted the binding written on disk")
 
     def _execute(self, command: dict) -> None:
@@ -408,7 +437,7 @@ class Agent:
             if not hub_version or hub_version == self._update_target:
                 return
             self._update_target = hub_version
-            self._update_error = ""
+            self._update_error = None
             channel = self._channel
         hub = parse_version(hub_version)
         agent = parse_version(AGENT_VERSION)
@@ -417,7 +446,7 @@ class Agent:
             return
         if agent >= hub or channel is None:
             return
-        kind = self_update.package_kind(self._features.platform)
+        kind = self_update.package_kind(self._engine.platform_tuple)
         if not kind:
             self._log(f"no self-update to {hub_version}: no package for this platform")
             return
@@ -430,9 +459,13 @@ class Agent:
             GatewayUnreachable,
             GatewayUntrusted,
         ) as error:
-            message = f"self-update to {hub_version} failed: {error}"
+            code = (
+                str(error)
+                if isinstance(error, self_update.SelfUpdateError)
+                else channel_error(error)["code"]
+            )
             with self._lock:
-                self._update_error = message
-            self._log(message)
+                self._update_error = {"code": code, "params": {"target": hub_version}}
+            self._log(f"self-update to {hub_version} failed: {error}")
             return
         self._log(f"self-update to {hub_version} launched; the service restarts")

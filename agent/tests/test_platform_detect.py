@@ -1,6 +1,6 @@
-"""platform_info produces manifest keys from most to least specific."""
+"""platforms.detect produces manifest keys from most to least specific."""
 
-from neutrino_agent.platform_info import platform_keys
+from neutrino_agent.platforms.detect import platform_keys
 
 
 def test_keys_most_specific_first_with_family():

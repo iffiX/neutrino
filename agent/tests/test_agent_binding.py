@@ -96,8 +96,10 @@ def test_repeated_refusals_unbind_the_machine(config_path, monkeypatch):
 
     assert agent._channel is None
     assert "gateway_url" not in json.loads(config_path.read_text())
-    assert "no longer knows this machine" in agent.last_error()
-    assert "fresh link" in agent.last_error()
+    assert agent.last_error() == {
+        "code": "self_unbound",
+        "params": {"cause": "hub_refused"},
+    }
     assert delays[-1] == 2
 
 
@@ -122,7 +124,7 @@ def answer_in_turn(agent, monkeypatch, answers):
         outcome = answers.pop(0)
         if outcome is not None:
             raise outcome
-        return {"desired_features": {}, "catalog_hash": ""}
+        return {"desired_functions": {}, "catalog_hash": ""}
 
     monkeypatch.setattr(agent._channel, "post", answer)
 
@@ -150,7 +152,10 @@ def test_mixed_rejection_kinds_total_to_an_unbind(config_path, monkeypatch):
     assert agent._channel is None
     assert "gateway_url" not in json.loads(config_path.read_text())
     # The reason names the rejection that tipped the counter.
-    assert "newer than the hub" in agent.last_error()
+    assert agent.last_error() == {
+        "code": "self_unbound",
+        "params": {"cause": "agent_newer_than_hub"},
+    }
 
 
 def test_an_unreachable_beat_neither_counts_nor_resets(config_path, monkeypatch):
@@ -222,3 +227,36 @@ def test_an_adopted_binding_starts_with_a_clean_count(config_path, monkeypatch):
     agent._adopt_external_binding()
 
     assert agent._refusals == 0
+
+
+def test_the_heartbeat_carries_the_wire_contract(config_path, monkeypatch):
+    """Up: accounts, functions, function_requests, ai_targets and a coded
+    last_error; the pre-rework field names never appear."""
+    bind(config_path)
+    agent = Agent(log=lambda message: None)
+    seen = {}
+
+    def record(path, payload):
+        seen.update(payload)
+        return {"desired_functions": {}, "catalog_hash": ""}
+
+    monkeypatch.setattr(agent._channel, "post", record)
+    agent.run_once()
+
+    for key in (
+        "hostname",
+        "client_version",
+        "metrics",
+        "platform",
+        "accounts",
+        "catalog_hash",
+        "functions",
+        "function_requests",
+        "ai_targets",
+        "last_error",
+    ):
+        assert key in seen
+    assert "features" not in seen and "feature_requests" not in seen
+    assert isinstance(seen["accounts"], list)
+    assert isinstance(seen["ai_targets"], dict)
+    assert seen["last_error"] is None

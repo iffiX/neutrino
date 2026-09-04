@@ -53,6 +53,13 @@ import zipfile
 from neutrino_agent.downloader import download, resolve_github_asset
 from neutrino_agent.installers import InstallError
 
+
+class NoTargetUserError(InstallError):
+    """Raised when an account action names no reported human account."""
+
+    code = "no_target_user"
+
+
 # Where the agent puts the CLI, and where its own installer puts it.
 SWITCHER_INSTALL_DIR = "/usr/local/bin"
 SWITCHER_CLI_PATHS = (
@@ -106,6 +113,36 @@ SWITCHER_ORIGINAL_DIR = ".neutrino_agent/original"
 TABLE_SEPARATOR = "\u2506"
 
 COMMAND_TIMEOUT_S = 120
+
+_PLATFORM = None
+
+
+def _platform():
+    """This machine's platform, created once on first use."""
+    global _PLATFORM
+    if _PLATFORM is None:
+        from neutrino_agent.platforms.detect import detect_platform
+
+        _PLATFORM = detect_platform()
+    return _PLATFORM
+
+
+def _require_target(run_as: str) -> None:
+    """Refuse to act on an account that is empty or not a reported person.
+
+    One symmetric guard: activation and deactivation check it alike, so a
+    cleanup can never be skipped by the same gap that let the setup
+    mis-target.
+
+    Args:
+        run_as: The account an action names.
+
+    Raises:
+        NoTargetUserError: When the account is empty or not among the
+            platform's human accounts.
+    """
+    if not run_as or run_as not in _platform().human_accounts():
+        raise NoTargetUserError(f"no target account {run_as!r} on this machine")
 
 
 def find_cli() -> "str | None":
@@ -204,8 +241,10 @@ def activate(*, base_url: str, api_key: str, run_as: str, model: str = "") -> st
         A short message naming the tools that took it.
 
     Raises:
+        NoTargetUserError: If ``run_as`` is empty or not a reported account.
         InstallError: If cc-switch refuses for every tool.
     """
+    _require_target(run_as)
     done = []
     problems = []
     for app in SWITCHER_APPS:
@@ -248,7 +287,11 @@ def deactivate(*, run_as: str, base_url: str = "") -> str:
 
     Returns:
         What happened, in the words the panel shows.
+
+    Raises:
+        NoTargetUserError: If ``run_as`` is empty or not a reported account.
     """
+    _require_target(run_as)
     notes = []
     for app in SWITCHER_APPS:
         fallback = _drop_provider(app, run_as)
@@ -598,6 +641,9 @@ def _use_provider(app: str, run_as: str) -> None:
 def _run(arguments: list, app: str, run_as: str, *, is_checked: bool = True) -> str:
     """Run the cc-switch CLI as the target account.
 
+    The store lives in the person's home, not root's, so the platform steps
+    the command down to them.
+
     Args:
         arguments: Arguments after the app selector.
         app: Which tool's configuration to act on.
@@ -614,12 +660,9 @@ def _run(arguments: list, app: str, run_as: str, *, is_checked: bool = True) -> 
     if binary is None:
         raise InstallError("the cc-switch command line is not installed")
     command = [binary, "--app", app] + arguments
-    if run_as and os.name != "nt" and os.geteuid() == 0:
-        # The store lives in the person's home, not root's.
-        command = ["sudo", "-u", run_as, "-H"] + command
     try:
-        result = subprocess.run(
-            command, capture_output=True, text=True, timeout=COMMAND_TIMEOUT_S
+        result = _platform().run_as_account(
+            run_as, command, timeout_s=COMMAND_TIMEOUT_S
         )
     except (OSError, subprocess.SubprocessError) as error:
         raise InstallError(f"cc-switch could not run: {error}")
@@ -678,22 +721,12 @@ def _file_mode(run_as: str, relative: str) -> str:
     Returns:
         Something like ``600``, or empty.
     """
-    return _in_home(
-        run_as,
-        relative,
-        "print('' if not p.exists() else oct(p.stat().st_mode & 0o777)[2:])",
-    ).strip()
+    return _platform().read_account_file_mode(account=run_as, relative=relative)
 
 
 def _read_text(run_as: str, relative: str) -> str:
     """Read a file from the target account's home, empty when absent."""
-    if not relative:
-        return ""
-    return _in_home(
-        run_as,
-        relative,
-        "sys.stdout.write(p.read_text() if p.is_file() else '')",
-    )
+    return _platform().read_account_file(account=run_as, relative=relative)
 
 
 def _read_json(run_as: str, relative: str) -> dict:
@@ -708,10 +741,9 @@ def _read_json(run_as: str, relative: str) -> dict:
 def _write_text(run_as: str, relative: str, text: str, mode: str = "") -> None:
     """Write a file into the target account's home, as that account.
 
-    The content goes in on standard input rather than inside the command:
-    these files hold things people have typed, a permission rule with a quote
-    in it is ordinary, and passing that through a shell is how it gets
-    mangled.
+    The agent runs as root and these files live in a person's home, so the
+    platform writes them as the account — otherwise a file it creates is
+    owned by root and the tool that reads it next cannot write.
 
     Args:
         run_as: The account to write as.
@@ -719,13 +751,9 @@ def _write_text(run_as: str, relative: str, text: str, mode: str = "") -> None:
         text: What to write.
         mode: Permission bits to set, as an octal string; empty leaves them.
     """
-    script = (
-        "p.parent.mkdir(parents=True, exist_ok=True)\n"
-        "p.write_text(sys.stdin.read())\n"
-        f"m = {mode!r}\n"
-        "p.chmod(int(m, 8)) if m else None"
+    _platform().write_account_file(
+        account=run_as, relative=relative, text=text, mode=mode
     )
-    _in_home(run_as, relative, script, stdin=text)
 
 
 def _write_json(run_as: str, relative: str, data: dict) -> None:
@@ -735,69 +763,4 @@ def _write_json(run_as: str, relative: str, data: dict) -> None:
 
 def _remove_file(run_as: str, relative: str) -> None:
     """Delete a file from the target account's home, absent being fine."""
-    if not relative:
-        return
-    _in_home(run_as, relative, "p.unlink() if p.is_file() else None")
-
-
-def _in_home(run_as: str, relative: str, body: str, *, stdin: str = "") -> str:
-    """Run a snippet against one path in the target account's home.
-
-    Python does the work rather than a shell: these paths are handled the same
-    way on Windows, where the agent also runs and where there is no ``sh``.
-
-    Args:
-        run_as: The account to run as; empty runs as the agent itself.
-        relative: Path below that account's home, bound to ``p``.
-        body: Statements to run, with ``pathlib``, ``sys`` and ``p`` in scope.
-        stdin: Sent to the command's standard input.
-
-    Returns:
-        Standard output, empty when the command could not run.
-    """
-    script = f"import pathlib,sys\np = pathlib.Path.home() / {relative!r}\n{body}"
-    return _as_user(run_as, [_interpreter(), "-c", script], stdin=stdin)
-
-
-def _interpreter() -> str:
-    """A Python to run these snippets with.
-
-    Not this process's own: the agent may be a frozen executable, whose
-    ``sys.executable`` is the agent rather than an interpreter. Windows
-    installs it under either name.
-
-    Returns:
-        A path or name to invoke.
-    """
-    return shutil.which("python3") or shutil.which("python") or "python3"
-
-
-def _as_user(run_as: str, command, *, stdin: str = "") -> str:
-    """Run something as the target account.
-
-    The agent runs as root and these files live in a person's home, so what
-    it reads and writes there has to be done as them — otherwise a file it
-    creates is owned by root and the tool that reads it next cannot write.
-
-    Args:
-        run_as: The account; empty runs as the agent itself.
-        command: An argument vector, or a string to hand to a shell.
-        stdin: Sent to the command's standard input.
-
-    Returns:
-        Standard output, empty when the command could not run.
-    """
-    argv = ["sh", "-c", command] if isinstance(command, str) else list(command)
-    if run_as and os.name != "nt" and os.geteuid() == 0:
-        argv = ["sudo", "-u", run_as, "-H"] + argv
-    try:
-        result = subprocess.run(
-            argv,
-            input=stdin,
-            capture_output=True,
-            text=True,
-            timeout=COMMAND_TIMEOUT_S,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return ""
-    return result.stdout or ""
+    _platform().remove_account_file(account=run_as, relative=relative)

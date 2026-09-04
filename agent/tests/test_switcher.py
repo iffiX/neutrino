@@ -2,11 +2,25 @@
 
 The desktop app is a GUI with no argument parsing, so probing it by asking
 for its version would open a window on someone's screen. What these check is
-that detection stays a matter of looking at paths, and that the copy taken at
-activation puts a person's own configuration back exactly.
+that detection stays a matter of looking at paths, that the copy taken at
+activation puts a person's own configuration back exactly, and that acting
+on an account nobody reported is refused in both directions alike.
 """
 
+import pytest
+
 from neutrino_agent import switcher
+from neutrino_agent.platforms.base import AgentPlatform
+
+
+class ReportingPlatform(AgentPlatform):
+    """Reports a fixed set of human accounts."""
+
+    def __init__(self, accounts):
+        self._accounts = accounts
+
+    def human_accounts(self):
+        return list(self._accounts)
 
 
 def test_cli_found_at_the_agent_install_path(tmp_path, monkeypatch):
@@ -101,3 +115,31 @@ def test_the_copy_is_taken_once_so_reapplying_does_not_overwrite_it(
 def test_without_a_copy_there_is_nothing_to_put_back(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     assert switcher._restore_original("claude", "") is False
+
+
+def test_the_no_target_user_guard_is_symmetric(monkeypatch):
+    """Activation and deactivation refuse alike, so a cleanup can never be
+    skipped by the same gap that let the setup mis-target."""
+    monkeypatch.setattr(switcher, "_PLATFORM", ReportingPlatform(["alice"]))
+
+    for run_as in ("", "ghost"):
+        with pytest.raises(switcher.NoTargetUserError) as caught:
+            switcher.activate(base_url="http://hub", api_key="k", run_as=run_as)
+        assert caught.value.code == "no_target_user"
+        with pytest.raises(switcher.NoTargetUserError) as caught:
+            switcher.deactivate(run_as=run_as, base_url="http://hub")
+        assert caught.value.code == "no_target_user"
+
+
+def test_a_reported_account_passes_the_guard_both_ways(monkeypatch):
+    monkeypatch.setattr(switcher, "_PLATFORM", ReportingPlatform(["alice"]))
+    monkeypatch.setattr(switcher, "_add_provider", lambda *a, **k: None)
+    monkeypatch.setattr(switcher, "_drop_provider", lambda app, run_as: "")
+    monkeypatch.setattr(switcher, "_restore_original", lambda app, run_as: True)
+    monkeypatch.setattr(switcher, "_points_at_hub", lambda app, run_as, base_url: False)
+
+    activated = switcher.activate(base_url="http://hub", api_key="k", run_as="alice")
+    deactivated = switcher.deactivate(run_as="alice", base_url="http://hub")
+
+    assert "claude" in activated
+    assert "as it was" in deactivated

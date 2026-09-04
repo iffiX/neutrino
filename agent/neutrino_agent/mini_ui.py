@@ -1,13 +1,16 @@
 """The agent's own page, for the machine it runs on.
 
 Three things, and deliberately no more: join a gateway by pasting its link,
-see and switch the features this machine can run, and leave the gateway. Every
-richer view of the fleet belongs in the gateway's own panel — this exists so a
-machine the gateway cannot reach (no SSH, or behind someone else's NAT) can
-still be set up by its owner sitting in front of it.
+see and switch the functions this machine can run, and leave the gateway.
+Every richer view of the fleet belongs in the gateway's own panel — this
+exists so a machine the gateway cannot reach (no SSH, or behind someone
+else's NAT) can still be set up by its owner sitting in front of it.
 
 Bound to the loopback address: the page has no password, so the only
 credential it accepts is being on the machine.
+
+The agent reports errors and function states as ``{"code", "params"}``; the
+page words the codes itself.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -21,7 +24,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent import enrollment
 from neutrino_agent.metrics import hostname
-from neutrino_agent.platform_info import platform_keys
+from neutrino_agent.platforms.detect import platform_keys
 
 MINI_UI_HOST = "127.0.0.1"
 MINI_UI_PORT = 8765
@@ -34,7 +37,7 @@ class MiniUiServer:
         """
         Args:
             agent: The running :class:`~neutrino_agent.agent.Agent`, which
-                owns the connection state and the feature manager.
+                owns the connection state and the function engine.
             log: Callable used for progress messages.
         """
         self._agent = agent
@@ -78,8 +81,8 @@ def _build_handler(agent):
             elif self.path.startswith("/api/disconnect"):
                 agent.disconnect()
                 self._send_json(_state(agent))
-            elif self.path.startswith("/api/feature"):
-                agent.request_feature(
+            elif self.path.startswith("/api/function"):
+                agent.request_function(
                     body.get("name", ""),
                     is_enabled=body.get("is_enabled"),
                     is_activated=body.get("is_activated"),
@@ -125,15 +128,15 @@ def _connect(agent, link: str) -> dict:
 def _state(agent) -> dict:
     """Everything the page draws, in one payload."""
     config = enrollment.load_config()
-    features = []
-    catalog = agent.catalog()
+    functions = []
+    catalog = agent.catalog().get("functions", {})
     keys = platform_keys(agent.platform())
-    reported = agent.feature_states()
-    desired = agent.desired_features()
+    reported = agent.function_states()
+    desired = agent.desired_functions()
     for name, manifest in sorted(catalog.items()):
         is_supported = any(key in manifest.get("platforms", {}) for key in keys)
         status = reported.get(name, {})
-        features.append(
+        functions.append(
             {
                 "name": name,
                 "title": manifest.get("title", name),
@@ -145,7 +148,8 @@ def _state(agent) -> dict:
                 "has_activation": manifest.get("has_activation", False),
                 "is_removable": manifest.get("is_removable", True),
                 "state": status.get("state", "unknown"),
-                "message": status.get("message", ""),
+                "code": status.get("code", ""),
+                "params": status.get("params", {}),
             }
         )
     return {
@@ -155,7 +159,7 @@ def _state(agent) -> dict:
         "is_connected": bool(config.get("gateway_url") and config.get("token")),
         "gateway_url": config.get("gateway_url", ""),
         "last_error": agent.last_error(),
-        "features": features,
+        "functions": functions,
     }
 
 
@@ -234,7 +238,7 @@ async function load() {
 // What the rows show: the machine's report, with any step just asked for
 // standing in front of it, until the machine reports having got there.
 function withAsked(state) {
-  for (const f of state.features) {
+  for (const f of state.functions) {
     const step = asked[f.name];
     if (step === undefined) continue;
     if (hasArrived(f, step)) {
@@ -262,10 +266,10 @@ async function send(path, body) {
   })).json());
 }
 
-function askFor(feature, step, body) {
-  asked[feature] = step;
+function askFor(name, step, body) {
+  asked[name] = step;
   redraw();
-  send('/api/feature', body);
+  send('/api/function', body);
 }
 
 function redraw() {
@@ -282,6 +286,7 @@ function draw(rawState) {
     ' · agent ' + state.version;
 
   const conn = document.getElementById('conn');
+  const lastError = wordError(state.last_error);
   if (state.is_connected) {
     conn.innerHTML = '';
     const row = document.createElement('div');
@@ -294,11 +299,11 @@ function draw(rawState) {
     leave.onclick = () => send('/api/disconnect');
     row.appendChild(leave);
     conn.appendChild(row);
-    if (state.last_error) {
+    if (lastError) {
       const err = document.createElement('div');
       err.className = 'err';
       err.style.marginTop = '10px';
-      err.textContent = state.last_error;
+      err.textContent = lastError;
       conn.appendChild(err);
     }
   } else {
@@ -317,11 +322,11 @@ function draw(rawState) {
     row.appendChild(input);
     row.appendChild(button);
     conn.appendChild(row);
-    if (state.error || state.last_error) {
+    if (state.error || lastError) {
       const err = document.createElement('div');
       err.className = 'err';
       err.style.marginTop = '10px';
-      err.textContent = state.error || state.last_error;
+      err.textContent = state.error || lastError;
       conn.appendChild(err);
     }
   }
@@ -329,28 +334,29 @@ function draw(rawState) {
   const feats = document.getElementById('feats');
   feats.innerHTML = '';
   if (!state.is_connected) {
-    feats.innerHTML = '<span class="muted">Modules appear once this machine ' +
+    feats.innerHTML = '<span class="muted">Functions appear once this machine ' +
       'joins a gateway.</span>';
     return;
   }
-  if (state.features.length === 0) {
+  if (state.functions.length === 0) {
     feats.innerHTML = '<span class="muted">Waiting for the gateway to send ' +
-      'its module list…</span>';
+      'its function list…</span>';
     return;
   }
-  for (const f of state.features) {
+  for (const f of state.functions) {
     const row = document.createElement('div');
     row.className = 'feat';
     const here = standing(f);
     const working = BUSY.includes(f.state);
     const tone = working ? 'bad' : here.on ? 'ok'
       : f.state === 'failed' ? 'bad' : 'off';
+    const worded = wordCode(f);
     const note = !f.is_supported ? 'Not available for this platform'
       : describeState(f.state) +
         (f.has_activation && here.on && !working
           ? (here.aimed ? ' · pointing at the hub' : ' · not pointing here')
           : '') +
-        (f.message ? ' — ' + f.message : '');
+        (worded ? ' — ' + worded : '');
     row.innerHTML = '<span class="dot ' + tone + '"></span>' +
       '<div class="body"><div class="title">' + f.title + '</div>' +
       '<div class="note">' + f.description + '</div>' +
@@ -389,6 +395,51 @@ function describeState(state) {
   if (state === 'unsupported') return 'not available here';
   if (state === 'failed') return 'failed';
   return 'waiting for the agent';
+}
+
+// Every code a function status can carry, worded here: the wire holds
+// {code, params}, never a sentence.
+function wordCode(f) {
+  const p = f.params || {};
+  if (!f.code) return '';
+  if (f.code === 'no_platform_build') return 'no build for this platform';
+  if (f.code === 'verify_unconfirmed') return 'installed; verify did not confirm';
+  if (f.code === 'remove_unconfirmed') return 'removal did not take';
+  if (f.code === 'no_download_named') return 'manifest names no download';
+  if (f.code === 'unsupported_platform') return 'not supported on this platform';
+  if (f.code === 'unknown_kind') return 'unknown kind ' + (p.kind || '');
+  if (f.code === 'no_target_user') return 'no account to switch for';
+  if (f.code === 'install_failed' || f.code === 'download_failed' ||
+      f.code === 'reconcile_failed') return p.detail || 'failed';
+  return f.code;
+}
+
+function wordError(e) {
+  if (!e) return '';
+  const p = e.params || {};
+  if (e.code === 'hub_refused') return 'the hub refused this machine\\'s token';
+  if (e.code === 'hub_untrusted')
+    return 'what answers is not the hub this machine pinned';
+  if (e.code === 'agent_newer_than_hub')
+    return 'this agent (' + p.agent_version + ') is newer than the hub (' +
+      p.hub_version + '); update the hub first';
+  if (e.code === 'hub_unreachable') return p.detail || 'the hub cannot be reached';
+  if (e.code === 'self_unbound')
+    return wordCause(p.cause) +
+      '; rejoin by pasting a fresh link from the hub\\'s Devices page';
+  if (e.code === 'agent_package_digest_mismatch')
+    return 'self-update to ' + p.target + ' failed: the package did not match its digest';
+  if (e.code === 'agent_update_launch_failed')
+    return 'self-update to ' + p.target + ' could not be launched';
+  return e.code;
+}
+
+function wordCause(cause) {
+  if (cause === 'hub_untrusted')
+    return 'the hub\\'s identity changed (it was reset or reinstalled)';
+  if (cause === 'agent_newer_than_hub')
+    return 'this agent is newer than the hub';
+  return 'the hub no longer knows this machine';
 }
 
 load();

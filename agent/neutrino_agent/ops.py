@@ -15,6 +15,7 @@ from neutrino_agent.constants import (
     AGENT_OUTPUT_LIMIT_BYTES,
     TODESK_DOWNLOAD_URL,
 )
+from neutrino_agent.platforms.base import PlatformUnsupportedError
 
 SUPPORTED_ACTIONS = (
     "reboot",
@@ -22,6 +23,8 @@ SUPPORTED_ACTIONS = (
     "deploy_todesk",
     "deploy_anydesk",
 )
+
+POWER_ACTIONS = {"reboot": "reboot", "shutdown": "poweroff"}
 
 
 @dataclass
@@ -45,6 +48,13 @@ class CommandOutcome:
 class DeviceOperator:
     """Runs the supported remote actions on this device."""
 
+    def __init__(self, *, platform):
+        """
+        Args:
+            platform: The machine's platform, behind the contract.
+        """
+        self._platform = platform
+
     def run(self, action: str, args: dict) -> CommandOutcome:
         """Run one command by name.
 
@@ -60,13 +70,26 @@ class DeviceOperator:
             return CommandOutcome(
                 exit_code=1, output=f"unsupported action {action!r}\n"
             )
-        if action == "reboot":
-            return self._shell("systemctl reboot")
-        if action == "shutdown":
-            return self._shell("systemctl poweroff")
+        if action in POWER_ACTIONS:
+            return self._power(POWER_ACTIONS[action])
         if action == "deploy_todesk":
             return self._install_package("todesk", TODESK_DOWNLOAD_URL)
         return self._install_package("anydesk", ANYDESK_DOWNLOAD_URL)
+
+    def _power(self, action: str) -> CommandOutcome:
+        try:
+            exit_code, output = self._platform.power(action)
+        except PlatformUnsupportedError as error:
+            return CommandOutcome(exit_code=1, output=f"{error.code}\n")
+        except subprocess.TimeoutExpired:
+            return CommandOutcome(
+                exit_code=124, output=f"timed out after {AGENT_COMMAND_TIMEOUT_S}s\n"
+            )
+        except OSError as error:
+            return CommandOutcome(exit_code=1, output=f"{error}\n")
+        return CommandOutcome(
+            exit_code=exit_code, output=output[-AGENT_OUTPUT_LIMIT_BYTES:]
+        )
 
     def _install_package(self, name: str, url: str) -> CommandOutcome:
         return self._shell(

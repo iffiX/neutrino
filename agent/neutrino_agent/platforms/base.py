@@ -1,0 +1,339 @@
+"""The contract every platform implements.
+
+The contract names intents, not mechanisms: enumerate human accounts; read,
+write and remove a file as an account; run a process as an account; attach,
+detach and query a share at a location; control the agent's own service;
+power actions; read host metrics; install and remove a package of a kind;
+switch on the platform's own SSH server. A new platform is a new class, and
+nothing above this seam changes.
+
+Each platform advertises the capabilities it has in ``capabilities``.
+Invoking one it does not have raises :class:`PlatformUnsupportedError`, whose
+``code`` every surface reports as ``{"code": "unsupported_platform"}``.
+
+Running a process as an account is an optional capability: Windows has no
+general way to become another user, so features prefer the file-level
+operations, which every platform can provide. The default file operations
+here ride ``run_as_account`` through a Python snippet, which is how the
+POSIX platforms share one implementation; Windows overrides them with
+direct writes into the account's profile.
+"""
+
+# PEP 604 unions below are annotations only; this keeps them lazy so the
+# agent still imports on the Python 3.9 that older Raspbian ships.
+from __future__ import annotations
+
+import shutil
+import subprocess
+
+from neutrino_agent.constants import AGENT_STEP_DOWN_TIMEOUT_S
+
+
+class PlatformUnsupportedError(RuntimeError):
+    """Raised when a capability this platform does not have is invoked."""
+
+    code = "unsupported_platform"
+
+
+def _interpreter() -> str:
+    """A Python to run account snippets with.
+
+    Not this process's own: the agent may be a frozen executable, whose
+    ``sys.executable`` is the agent rather than an interpreter.
+
+    Returns:
+        A path or name to invoke.
+    """
+    return shutil.which("python3") or shutil.which("python") or "python3"
+
+
+class AgentPlatform:
+    """What the agent asks of the operating system, behind one seam.
+
+    The base class is also the honest answer for a platform the agent does
+    not know: it advertises nothing and refuses every capability.
+    """
+
+    os_name = ""
+    capabilities: frozenset = frozenset()
+
+    def has_capability(self, name: str) -> bool:
+        """Whether this platform advertises one capability.
+
+        Args:
+            name: The capability name.
+
+        Returns:
+            True when the platform has it.
+        """
+        return name in self.capabilities
+
+    def human_accounts(self) -> list:
+        """The accounts this platform judges to be people.
+
+        Root and system accounts are never listed; the floor that separates
+        them is each platform's own.
+
+        Returns:
+            Account names, sorted.
+
+        Raises:
+            PlatformUnsupportedError: When the platform cannot enumerate.
+        """
+        raise PlatformUnsupportedError("cannot enumerate accounts here")
+
+    def read_account_file(self, *, account: str, relative: str) -> str:
+        """Read a file below an account's home, as that account.
+
+        Args:
+            account: The account; empty reads as the agent itself.
+            relative: Path below the account's home.
+
+        Returns:
+            The file's text, empty when it is absent or unreadable.
+        """
+        if not relative:
+            return ""
+        return self._run_file_snippet(
+            account,
+            relative,
+            "sys.stdout.write(p.read_text() if p.is_file() else '')",
+        )
+
+    def read_account_file_mode(self, *, account: str, relative: str) -> str:
+        """A file's permission bits as an octal string, empty when absent.
+
+        Args:
+            account: The account; empty reads as the agent itself.
+            relative: Path below the account's home.
+
+        Returns:
+            Something like ``600``, or empty.
+        """
+        if not relative:
+            return ""
+        return self._run_file_snippet(
+            account,
+            relative,
+            "print('' if not p.exists() else oct(p.stat().st_mode & 0o777)[2:])",
+        ).strip()
+
+    def write_account_file(
+        self, *, account: str, relative: str, text: str, mode: str = ""
+    ) -> None:
+        """Write a file below an account's home, owned by that account.
+
+        The content goes in on standard input rather than inside the
+        command: these files hold things people have typed, and a quote in
+        them is ordinary.
+
+        Args:
+            account: The account; empty writes as the agent itself.
+            relative: Path below the account's home.
+            text: What to write.
+            mode: Permission bits as an octal string; empty leaves them.
+        """
+        script = (
+            "p.parent.mkdir(parents=True, exist_ok=True)\n"
+            "p.write_text(sys.stdin.read())\n"
+            f"m = {mode!r}\n"
+            "p.chmod(int(m, 8)) if m else None"
+        )
+        self._run_file_snippet(account, relative, script, stdin=text)
+
+    def remove_account_file(self, *, account: str, relative: str) -> None:
+        """Delete a file below an account's home, absent being fine.
+
+        Args:
+            account: The account; empty removes as the agent itself.
+            relative: Path below the account's home.
+        """
+        if not relative:
+            return
+        self._run_file_snippet(account, relative, "p.unlink() if p.is_file() else None")
+
+    def run_as_account(
+        self,
+        account: str,
+        argv: list,
+        *,
+        stdin: str = "",
+        timeout_s: int = AGENT_STEP_DOWN_TIMEOUT_S,
+    ) -> "subprocess.CompletedProcess":
+        """Run a process as an account. An optional capability.
+
+        Args:
+            account: The account; empty runs as the agent itself.
+            argv: Argument vector.
+            stdin: Sent to the process's standard input.
+            timeout_s: How long to wait.
+
+        Returns:
+            The completed process, with text output captured.
+
+        Raises:
+            PlatformUnsupportedError: When the platform cannot step down.
+        """
+        raise PlatformUnsupportedError("cannot run as another account here")
+
+    def attach_share(
+        self,
+        *,
+        account: str,
+        share_url: str,
+        username: str,
+        password: str,
+        location: str,
+    ) -> None:
+        """Attach a published share for an account at a location.
+
+        Args:
+            account: The asking account.
+            share_url: The share to attach.
+            username: The share's own username.
+            password: The share's own password; it stays on this machine.
+            location: Where the share appears.
+
+        Raises:
+            PlatformUnsupportedError: When the platform cannot attach.
+        """
+        raise PlatformUnsupportedError("cannot attach a share here")
+
+    def detach_share(self, *, location: str) -> None:
+        """Detach a share attached at a location.
+
+        Args:
+            location: Where the share is attached.
+
+        Raises:
+            PlatformUnsupportedError: When the platform cannot detach.
+        """
+        raise PlatformUnsupportedError("cannot detach a share here")
+
+    def is_share_attached(self, *, location: str) -> bool:
+        """Whether a share is attached at a location.
+
+        Args:
+            location: The location to ask about.
+
+        Raises:
+            PlatformUnsupportedError: When the platform cannot answer.
+        """
+        raise PlatformUnsupportedError("cannot query shares here")
+
+    def read_agent_service_state(self) -> str:
+        """The state of the agent's own service.
+
+        Returns:
+            ``running``, an init-system state word, or ``unknown``.
+
+        Raises:
+            PlatformUnsupportedError: When there is no service to ask about.
+        """
+        raise PlatformUnsupportedError("no agent service to read here")
+
+    def start_agent_service(self) -> None:
+        """Enable and start the agent's own service. Best-effort.
+
+        Raises:
+            PlatformUnsupportedError: When there is no service to start.
+        """
+        raise PlatformUnsupportedError("no agent service to start here")
+
+    def power(self, action: str) -> "tuple[int, str]":
+        """Run one power action.
+
+        Args:
+            action: ``reboot`` or ``poweroff``.
+
+        Returns:
+            The exit code and combined output.
+
+        Raises:
+            PlatformUnsupportedError: When the platform has no power actions.
+        """
+        raise PlatformUnsupportedError("no power actions here")
+
+    def read_host_metrics(self):
+        """One sample of the machine's health.
+
+        Returns:
+            A :class:`~neutrino_agent.metrics.HostMetrics`.
+
+        Raises:
+            PlatformUnsupportedError: When the platform cannot be sampled.
+        """
+        raise PlatformUnsupportedError("no metrics here")
+
+    def install_package(self, path: str, *, package_kind: str, entry: dict) -> None:
+        """Install one downloaded package of a kind.
+
+        Args:
+            path: The downloaded file.
+            package_kind: ``deb`` / ``rpm`` / ``msi`` / ``exe`` / ``dmg``.
+            entry: The manifest's platform entry.
+
+        Raises:
+            PlatformUnsupportedError: When the platform installs nothing.
+        """
+        raise PlatformUnsupportedError("cannot install packages here")
+
+    def uninstall_package(self, command: str) -> None:
+        """Remove a package the way its manifest says to.
+
+        Args:
+            command: The manifest's removal command for this platform.
+
+        Raises:
+            PlatformUnsupportedError: When the platform removes nothing.
+        """
+        raise PlatformUnsupportedError("cannot remove packages here")
+
+    def enable_openssh(self, entry: dict) -> None:
+        """Install and start the platform's own SSH server.
+
+        Args:
+            entry: The manifest's platform entry.
+
+        Raises:
+            PlatformUnsupportedError: When the platform has no SSH story.
+        """
+        raise PlatformUnsupportedError("no SSH server story here")
+
+    def read_openssh_status(self, entry: dict) -> bool:
+        """Whether the platform's own SSH server is serving.
+
+        Args:
+            entry: The manifest's platform entry.
+
+        Raises:
+            PlatformUnsupportedError: When the platform has no SSH story.
+        """
+        raise PlatformUnsupportedError("no SSH server story here")
+
+    def _run_file_snippet(
+        self, account: str, relative: str, body: str, *, stdin: str = ""
+    ) -> str:
+        """Run a snippet against one path below the account's home.
+
+        Python does the work rather than a shell, so the paths behave the
+        same on every platform that has an interpreter.
+
+        Args:
+            account: The account to run as; empty runs as the agent itself.
+            relative: Path below the account's home, bound to ``p``.
+            body: Statements to run, with ``pathlib``, ``sys`` and ``p`` in
+                scope.
+            stdin: Sent to the snippet's standard input.
+
+        Returns:
+            Standard output, empty when the snippet could not run.
+        """
+        script = f"import pathlib,sys\np = pathlib.Path.home() / {relative!r}\n{body}"
+        try:
+            result = self.run_as_account(
+                account, [_interpreter(), "-c", script], stdin=stdin
+            )
+        except (OSError, subprocess.SubprocessError):
+            return ""
+        return result.stdout or ""

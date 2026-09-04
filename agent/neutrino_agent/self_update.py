@@ -35,7 +35,7 @@ def package_kind(platform: dict) -> str:
     """The hub package kind this machine installs.
 
     Args:
-        platform: The tuple from ``platform_info.platform_tuple``.
+        platform: The tuple from ``platforms.detect.platform_tuple``.
 
     Returns:
         ``deb`` or ``rpm``, or empty when the hub bakes nothing for this

@@ -39,5 +39,12 @@ AGENT_BACKOFF_MAX_S = 60
 AGENT_COMMAND_TIMEOUT_S = 900
 AGENT_OUTPUT_LIMIT_BYTES = 64 * 1024
 
+# How long a stepped-down account command may take.
+AGENT_STEP_DOWN_TIMEOUT_S = 120
+
+# Where the AI service keeps its per-account switching state. Machine state:
+# it survives a hub restore and appears in no hub backup.
+AGENT_AI_STORE_PATH = "/etc/neutrino/agent/ai_service.json"
+
 TODESK_DOWNLOAD_URL = "https://dl.todesk.com/linux/todesk-v4.7.2.0-amd64.deb"
 ANYDESK_DOWNLOAD_URL = "https://download.anydesk.com/linux/anydesk_6.3.2-1_amd64.deb"

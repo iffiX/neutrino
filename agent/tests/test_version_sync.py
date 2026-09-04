@@ -18,8 +18,8 @@ import pytest
 
 import neutrino_agent.enrollment as enrollment
 import neutrino_agent.self_update as self_update
-from neutrino_agent import cli
 from neutrino_agent.agent import Agent
+from neutrino_agent.cli import status as status_cli
 from neutrino_agent.http_channel import GatewayVersionRefused
 
 PACKAGE_BYTES = b"!<arch>agent-package"
@@ -35,7 +35,7 @@ class FakeChannel:
 
     def post(self, path, payload):
         return {
-            "desired_features": {},
+            "desired_functions": {},
             "catalog_hash": "",
             "hub_version": self.hub_version,
         }
@@ -104,8 +104,10 @@ def test_three_version_refused_beats_unbind(config_path, monkeypatch):
 
     assert agent._channel is None
     assert "gateway_url" not in json.loads(config_path.read_text())
-    assert "newer than the hub" in agent.last_error()
-    assert "fresh link" in agent.last_error()
+    assert agent.last_error() == {
+        "code": "self_unbound",
+        "params": {"cause": "agent_newer_than_hub"},
+    }
     # Counted beats wait one plain interval — no backoff, this is an answer,
     # not an outage — and the third drops to the unbound idle poll.
     assert delays == [5, 5, 2]
@@ -124,7 +126,7 @@ def test_two_version_refused_beats_keep_the_binding(config_path, monkeypatch):
 
     assert agent._channel is not None
     assert "gateway_url" in json.loads(config_path.read_text())
-    assert "newer than the hub" in agent.last_error()
+    assert agent.last_error()["code"] == "agent_newer_than_hub"
 
 
 def test_connect_refuses_a_newer_agent_visibly(config_path, monkeypatch):
@@ -153,14 +155,16 @@ def test_status_words_a_version_refusal_distinctly(config_path, monkeypatch, cap
             return 5
 
         def last_error(self):
-            return str(
-                GatewayVersionRefused(hub_version="0.1.0", agent_version="0.2.0")
-            )
+            return {
+                "code": "agent_newer_than_hub",
+                "params": {"hub_version": "0.1.0", "agent_version": "0.2.0"},
+            }
 
-    monkeypatch.setattr(cli, "Agent", StuckAgent)
-    monkeypatch.setattr(cli, "_service_state", lambda: "running")
+    monkeypatch.setattr(status_cli, "Agent", StuckAgent)
+    monkeypatch.setattr(status_cli, "service_state", lambda: "running")
+    monkeypatch.setattr(status_cli, "_local_state", lambda: None)
 
-    assert cli._status() == 1
+    assert status_cli.main() == 1
     out = capsys.readouterr().out
     assert "newer than the hub" in out
     assert "unbinds by itself" in out
@@ -192,7 +196,7 @@ def test_a_newer_hub_triggers_a_detached_install(config_path, monkeypatch, launc
             destination,
         ]
     ]
-    assert agent.last_error() == ""
+    assert agent.last_error() is None
     os.unlink(destination)
 
 
@@ -204,7 +208,10 @@ def test_a_digest_mismatch_installs_nothing(config_path, monkeypatch, launched):
     agent.run_once()
 
     assert launched == []
-    assert "agent_package_digest_mismatch" in agent.last_error()
+    assert agent.last_error() == {
+        "code": "agent_package_digest_mismatch",
+        "params": {"target": "9.9.9"},
+    }
     # The refused download is not left on disk.
     assert not os.path.exists(agent._channel.downloads[0][2])
 
@@ -228,7 +235,7 @@ def test_a_matching_version_is_left_alone(config_path, monkeypatch, launched):
 
     assert agent._channel.downloads == []
     assert launched == []
-    assert agent.last_error() == ""
+    assert agent.last_error() is None
 
 
 def test_an_older_hub_is_not_downgraded_to(config_path, monkeypatch, launched):
@@ -247,7 +254,7 @@ def test_an_unparseable_hub_version_updates_nothing(config_path, monkeypatch, la
 
     assert agent._channel.downloads == []
     assert launched == []
-    assert agent.last_error() == ""
+    assert agent.last_error() is None
 
 
 def test_a_launch_failure_is_coded_and_cleaned_up(config_path, monkeypatch):
@@ -259,7 +266,10 @@ def test_a_launch_failure_is_coded_and_cleaned_up(config_path, monkeypatch):
     monkeypatch.setattr(self_update.subprocess, "run", refuse_to_run)
     agent.run_once()
 
-    assert "agent_update_launch_failed" in agent.last_error()
+    assert agent.last_error() == {
+        "code": "agent_update_launch_failed",
+        "params": {"target": "9.9.9"},
+    }
     assert not os.path.exists(agent._channel.downloads[0][2])
 
 

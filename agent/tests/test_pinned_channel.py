@@ -172,8 +172,10 @@ def test_three_mismatched_beats_unbind_the_machine(tls_server, config_path):
 
     assert agent._channel is None
     assert "gateway_url" not in json.loads(config_path.read_text())
-    assert "identity changed" in agent.last_error()
-    assert "fresh link" in agent.last_error()
+    assert agent.last_error() == {
+        "code": "self_unbound",
+        "params": {"cause": "hub_untrusted"},
+    }
     assert RecordingHandler.requests == []
 
 
@@ -191,7 +193,7 @@ def test_two_mismatched_beats_keep_the_binding(tls_server, config_path):
 
     assert agent._channel is not None
     assert "gateway_url" in json.loads(config_path.read_text())
-    assert "fingerprint" in agent.last_error()
+    assert agent.last_error()["code"] == "hub_untrusted"
     assert RecordingHandler.requests == []
 
 
@@ -204,7 +206,7 @@ def test_the_pinned_agent_beats(tls_server, config_path):
 
     agent.run_once()
 
-    assert agent.last_error() == ""
+    assert agent.last_error() is None
     assert len(RecordingHandler.requests) == 1
 
 
