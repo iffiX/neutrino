@@ -65,6 +65,14 @@ WEB_LOGIN_LOCKOUT_STATE_PATH = UTILS_RUNTIME_ROOT / "login_lockout.json"
 
 WEB_STATS_PUSH_INTERVAL_S = 1.0
 WEB_DNS_LOG_PATH = UTILS_LOG_ROOT / "dnsmasq.log"
+# Where a name was resolved. One word per answer dnsmasq can write beside a
+# query: the proxy's own resolver, another resolver, dnsmasq's cache, or
+# dnsmasq answering from its own configuration. A query whose answer line has
+# not been read yet carries none of them.
+WEB_DNS_OUTBOUND_PROXY = "proxy"
+WEB_DNS_OUTBOUND_DIRECT = "direct"
+WEB_DNS_OUTBOUND_CACHED = "cached"
+WEB_DNS_OUTBOUND_CONFIG = "config"
 
 # How much of a unit's journal one request may ask for. Unbounded, a single
 # call reads an entire journal into memory and into one JSON body.
