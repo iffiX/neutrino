@@ -172,7 +172,7 @@ def machine_mac_addresses() -> list:
 
     The hub keys devices by MAC, so enrolling with them lets it fold this
     machine into the row a scan or an SSH setup already made instead of
-    minting a second record. Linux publishes them under ``/sys``; elsewhere
+    generating a second record. Linux publishes them under ``/sys``; elsewhere
     the list is empty and the hub falls back to the machine id.
 
     Returns:
@@ -235,7 +235,7 @@ def enroll(link: str) -> dict:
             # The gateway answered and said no: the ticket is spent or has
             # expired. The other addresses reach the same gateway.
             raise EnrollmentError(
-                "the gateway refused this link — it may have expired; mint a "
+                "the gateway refused this link — it may have expired; generate a "
                 "fresh one on the Devices page"
             ) from error
         except GatewayVersionRefused as error:
@@ -247,7 +247,7 @@ def enroll(link: str) -> dict:
             # sent nothing.
             raise EnrollmentError(
                 f"{gateway_url} presented a certificate this link does not "
-                f"pin; mint a fresh link on the hub's Devices page"
+                f"pin; generate a fresh link on the hub's Devices page"
             ) from error
         except GatewayUnreachable as error:
             refusal = str(error)

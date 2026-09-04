@@ -52,7 +52,7 @@ class QuietTlsServer(ThreadingHTTPServer):
 
 @pytest.fixture
 def tls_server(tmp_path):
-    """A live TLS server and the fingerprint of its runtime-minted certificate."""
+    """A live TLS server and the fingerprint of its runtime-generated certificate."""
     if shutil.which("openssl") is None:
         pytest.skip("openssl is not installed; the pin needs a certificate")
     certificate_path = tmp_path / "certificate.pem"

@@ -256,7 +256,7 @@ def test_expired_ticket_is_refused(api):
 
 def test_an_unbound_enrollment_lands_on_the_device_its_mac_names(api):
     """The machine reports its MACs, so an unbound link folds it into the row
-    a scan or an SSH setup already made instead of minting a second record."""
+    a scan or an SSH setup already made instead of generating a second record."""
     client, runtime, device = api
     runtime.enrollments["t1"] = {
         "name": "",

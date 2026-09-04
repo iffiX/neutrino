@@ -74,7 +74,7 @@ class DeviceClientInfo:
             ``{"is_enabled", "is_activated"}``. Installing and activating are
             separate wishes — cc-switch can be on a machine without pointing
             at this hub.
-        ai_key_id: The cliproxyapi client key minted for this device's AI tools.
+        ai_key_id: The cliproxyapi client key generated for this device's AI tools.
         target_user: The account whose home the agent writes tool configs into.
     """
 
@@ -162,7 +162,7 @@ class ManagedDevice:
     def is_managed(self) -> bool:
         """Whether an agent completed its handshake and still holds a token.
 
-        A token alone is an offer — an install that failed after minting
+        A token alone is an offer — an install that failed after generating
         leaves one dangling, invisibly — and the first authenticated
         heartbeat is what turns the offer into management. The hub lets go
         by deleting the token; the device lets go by leaving.

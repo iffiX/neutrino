@@ -2,7 +2,7 @@
 
 The agent routes left the panel with the move to pinned TLS: the panel app
 must not answer them on plain HTTP, and the agent app must answer nothing
-else. One runtime behind both is what lets a ticket minted on the panel be
+else. One runtime behind both is what lets a ticket generated on the panel be
 spent on the agent port.
 """
 

@@ -1,5 +1,5 @@
 {
-  "_comment": "The git server: how it listens and who may sign up. The Gitea page edits this; repositories and accounts are managed in Gitea's own UI. A separate gitea/secrets.json appears beside this file on first apply — machine-generated, gitignored, and safe to lose (a rebuild mints new ones and only sessions and tokens are invalidated).",
+  "_comment": "The git server: how it listens and who may sign up. The Gitea page edits this; repositories and accounts are managed in Gitea's own UI. A separate gitea/secrets.json appears beside this file on first apply — machine-generated, gitignored, and safe to lose (a rebuild generates new ones and only sessions and tokens are invalidated).",
 
   "listen_port": 3000,
 

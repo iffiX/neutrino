@@ -193,10 +193,10 @@ def _render(selected: tuple[str, ...]) -> dict:
         else:
             gitea_config = GiteaConfig.from_dict(read_config("gitea/gitea.json"))
             gitea_config.validate()
-            # Loading mints missing secrets, an effect the render phase
+            # Loading generates missing secrets, an effect the render phase
             # normally avoids — but a placeholder here would render an
-            # app.ini that must never reach the box, and minting is
-            # idempotent, so the lesser evil is to mint.
+            # app.ini that must never reach the box, and generating is
+            # idempotent, so the lesser evil is to generate.
             artifacts["gitea"] = GiteaConfigRenderer(
                 config=gitea_config,
                 lan_address=network.primary_lan_address,

@@ -637,7 +637,7 @@ class CliproxyApiJournalView(BaseModel):
 
 
 class CliproxyApiKeyCreate(BaseModel):
-    """A client key to mint under a name."""
+    """A client key to generate under a name."""
 
     name: str
 
@@ -698,7 +698,7 @@ class DeviceProcessView(BaseModel):
 class DeviceClientInfoView(BaseModel):
     """Agent state and latest metrics for one device."""
 
-    # An agent that completed its handshake and still holds a token. A minted
+    # An agent that completed its handshake and still holds a token. A generated
     # token whose install then failed never reads managed.
     is_managed: bool = False
     # Whether the agent has checked in inside the heartbeat window.

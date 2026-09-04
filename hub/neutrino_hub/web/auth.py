@@ -70,7 +70,7 @@ def verify_password(password: str, encoded_hash: str) -> bool:
 
 
 def session_secret() -> str:
-    """Read the panel's session secret, minting one when there is none.
+    """Read the panel's session secret, generating one when there is none.
 
     Returns:
         The secret's hex text.
@@ -79,7 +79,7 @@ def session_secret() -> str:
         return WEB_SESSION_SECRET_PATH.read_text(encoding="utf-8").strip()
     except OSError:
         pass
-    minted = secrets.token_hex(WEB_SESSION_SECRET_BYTES)
+    generated = secrets.token_hex(WEB_SESSION_SECRET_BYTES)
     WEB_SESSION_SECRET_PATH.parent.mkdir(parents=True, exist_ok=True)
     descriptor = os.open(
         WEB_SESSION_SECRET_PATH,
@@ -87,8 +87,8 @@ def session_secret() -> str:
         stat.S_IRUSR | stat.S_IWUSR,
     )
     with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-        stream.write(minted + "\n")
-    return minted
+        stream.write(generated + "\n")
+    return generated
 
 
 @dataclass

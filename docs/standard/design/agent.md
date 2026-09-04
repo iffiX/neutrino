@@ -17,7 +17,7 @@ attacker in each position actually gets.
 | `agent_listen_port` (default 8443) | TLS, pinned | `/api/agent/*` and nothing else | enrollment ticket, then the device token |
 
 Both are uvicorn servers in the one `nhub run --only-web` process, sharing one
-`PanelRuntime` — that shared runtime is where a ticket minted on the panel
+`PanelRuntime` — that shared runtime is where a ticket generated on the panel
 port is spent on the agent port. The panel app does not include the agent
 routes, so they cannot be reached in plaintext; there is no fallback and no
 migration path, because nothing released ever spoke the old way.
@@ -35,24 +35,24 @@ the vault's data key, unsealed into `/var/lib/neutrino/agent_tls_key.pem`
 mode 0600 for serving): EC P-256, valid ten years — the
 validity window is decoration, because verification is the fingerprint, and
 the certificate merely has to outlive the box. `nhub apply` and
-`run --only-web` also mint it when it is missing (a restored backup, an
+`run --only-web` also generate it when it is missing (a restored backup, an
 upgrade), and **an existing pair is never regenerated**: the fingerprint is
 pinned by every enrolled agent, and a new certificate is a fleet-wide
 re-enrollment. `nhub reset all` deletes the pair the way it deletes the vault
-key — the next owner mints an identity of their own.
+key — the next owner generates an identity of their own.
 
 The fingerprint is the SHA-256 of the certificate's DER encoding, 64 lowercase
 hex characters, and it travels only out-of-band: inside an enrollment link a
-signed-in person minted, never over the wire it is meant to verify.
+signed-in person generated, never over the wire it is meant to verify.
 
 ## Joining: one ticket, five minutes, spent in one step
 
-Minting happens on the panel port, behind the session: the Devices page's
+Generation happens on the panel port, behind the session: the Devices page's
 per-device link, the blank link `nhub setup` prints, and the SSH install
-action all call one minting path. A ticket is `secrets.token_urlsafe(18)`
+action all call one path. A ticket is `secrets.token_urlsafe(18)`
 (144 bits), held in panel memory only, dead after **five minutes** — long
 enough to walk to another machine and paste, short enough that a forgotten
-link is not a standing invitation. **Minting replaces whatever ticket was
+link is not a standing invitation. **Generating replaces whatever ticket was
 out**: there is exactly one open invitation at a time, so the machine the
 link was just made for is the only one that can join, and refreshing the page
 quietly retires the link before it. A hub restart forgets tickets entirely.
@@ -81,7 +81,7 @@ client context.
 The hub spends the ticket **atomically**: it is removed from the store in the
 same step that fetches it (`dict.pop`), then judged — expired or unknown reads
 identically as 401 — so two machines racing one link cannot both join. A
-ticket minted for a device carries its MAC and routes the enrollee onto that
+ticket generated for a device carries its MAC and routes the enrollee onto that
 row; a blank ticket lands on the row the reported MACs name, or a new one.
 The MAC decides **which row**, not **whether** — the ticket is the whole
 authenticator, which is why a link is treated like a password and why it
@@ -140,13 +140,13 @@ present a certificate whose DER digests to the pinned value without the
 private key, so the agent hangs up having sent nothing. Pinning an exact
 identity is stronger here than a CA chain: there is no authority to mis-issue,
 only a second preimage to find. Downgrade is closed the same way — the
-binding's URLs came out of a link the hub minted, are `https` by construction,
+binding's URLs came out of a link the hub generated, are `https` by construction,
 `http.client` follows no redirects, and https-without-a-pin refuses.
 
 **Holding a captured link**: an unspent link within its five minutes joins
-their machine as the device the link was minted for — the link *is* the
+their machine as the device the link was generated for — the link *is* the
 credential. Everything narrows that window: one outstanding ticket, five
-minutes, single atomic spend, and the SSH install path minting and spending
+minutes, single atomic spend, and the SSH install path generating and spending
 in the same action. A spent or replaced link is dead.
 
 **Impersonating an agent** without a token: enrollment needs the one live

@@ -189,7 +189,7 @@ def test_renaming_a_device_keeps_its_monitor_alive(api):
     assert answer["client"]["cpu_percent"] == 12.5
 
 
-def test_a_link_that_cannot_be_built_mints_no_ticket(api, monkeypatch):
+def test_a_link_that_cannot_be_built_generates_no_ticket(api, monkeypatch):
     """The ticket is a join secret. One nobody was ever shown is one lying
     around until the panel restarts."""
     client, runtime = api
@@ -201,7 +201,7 @@ def test_a_link_that_cannot_be_built_mints_no_ticket(api, monkeypatch):
     assert runtime.enrollments == {}
 
 
-def test_a_link_minted_for_a_device_binds_to_that_device(api, monkeypatch):
+def test_a_link_generated_for_a_device_binds_to_that_device(api, monkeypatch):
     """The per-device link on an unmanaged card. Bound to the MAC, the machine
     that pastes it joins as the device already on the page rather than as a
     second record keyed by its own machine id."""
@@ -244,7 +244,7 @@ def test_the_link_is_one_shell_safe_token(api, monkeypatch):
     assert payload["fp"] == FINGERPRINT
 
 
-def test_a_lapsed_ticket_is_swept_when_the_next_one_is_minted(api, monkeypatch):
+def test_a_lapsed_ticket_is_swept_when_the_next_one_is_generated(api, monkeypatch):
     client, runtime = api
     monkeypatch.setattr(
         devices_router, "_agent_urls", lambda runtime: ["http://192.168.8.1:8080"]

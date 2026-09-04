@@ -289,7 +289,7 @@ def wake(mac_address: str, runtime: PanelRuntime = Depends(get_runtime)) -> WolR
 def create_enrollment(
     request: DeviceEnrollmentRequest, runtime: PanelRuntime = Depends(get_runtime)
 ) -> DeviceEnrollmentView:
-    """Mint a link a machine can join the gateway with.
+    """Generate a link a machine can join the gateway with.
 
     For machines the gateway cannot reach first — a Windows laptop, anything
     behind someone else's NAT. The owner installs the agent, opens its local
@@ -306,18 +306,18 @@ def create_enrollment(
         HTTPException: 400 when no served network has an address, so there is
             nothing for a machine to reach the panel at.
     """
-    link, token = _mint_enrollment_link(
+    link, token = _generate_enrollment_link(
         runtime, name=request.name, mac_address=request.mac_address
     )
     return DeviceEnrollmentView(link=link, token=token, expires_in_s=ENROLLMENT_TTL_S)
 
 
-def _mint_enrollment_link(
+def _generate_enrollment_link(
     runtime: PanelRuntime, *, name: str, mac_address: "str | None"
 ) -> tuple[str, str]:
     """One ticket and the link that carries it, however the join begins.
 
-    The panel's link button and the SSH install mint here alike, so both
+    The panel's link button and the SSH install generate here alike, so both
     joins walk the same enrollment path. Lapsed tickets are swept on the way
     past: a ticket nobody was ever shown is a join secret lying around, and
     one that has expired is the same thing an hour later.
@@ -350,7 +350,7 @@ def _mint_enrollment_link(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "agent_tls_missing"},
         ) from error
-    # One open invitation at a time: minting replaces whatever link was out,
+    # One open invitation at a time: generating replaces whatever link was out,
     # so only the machine the link was just made for can join on it.
     runtime.enrollments.clear()
     token = secrets.token_urlsafe(ENROLLMENT_TOKEN_BYTES)
@@ -670,7 +670,7 @@ async def start_action(
     # A ticket, not a heartbeat token: the install walks the same enrollment
     # path a pasted link does, and a failed install leaves any live agent
     # beating exactly as it was.
-    link, _ = _mint_enrollment_link(
+    link, _ = _generate_enrollment_link(
         runtime, name=device.name or "", mac_address=mac_address
     )
     stream = runtime.tasks.start(

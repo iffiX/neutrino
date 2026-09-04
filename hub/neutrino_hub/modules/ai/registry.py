@@ -6,7 +6,7 @@ scattered and stale. They live here instead: named entries in one file, which
 Dev Setup reads when wiring a device's tools.
 
 A provider carries no key of its own: ``secret_id`` references a ``token``
-object in the vault, minted and managed on the Credentials page. Deleting a
+object in the vault, added and deleted on the Credentials page. Deleting a
 provider leaves the token where it is — its lifecycle belongs to that page —
 and a reference whose object is gone reads as no key.
 """

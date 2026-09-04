@@ -297,7 +297,7 @@ class SecretVault:
             passphrase: The master passphrase.
 
         Returns:
-            True when a fresh data key was minted.
+            True when a fresh data key was generated.
 
         Raises:
             VaultPassphraseError: If the store holds secrets and the

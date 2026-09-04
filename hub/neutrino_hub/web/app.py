@@ -3,7 +3,7 @@
 One process, two applications: the panel serves its API and the built
 frontend on plain HTTP, and the agent channel serves the ``/api/agent``
 routes alone on its own TLS port. Both share one runtime, which is where the
-enrollment tickets the panel mints and the reports the agents post meet.
+enrollment tickets the panel generates and the reports the agents post meet.
 
 The frontend is a single-page app: any panel path that is not an API route, a
 websocket, or a real file falls through to ``index.html``.

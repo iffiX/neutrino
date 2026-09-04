@@ -73,7 +73,7 @@ def test_a_provider_with_no_sealed_key_renders_nothing(box):
     assert "openai-compatibility" not in _rendered(box)
 
 
-def test_the_management_key_is_minted_on_first_apply(box):
+def test_the_management_key_is_generated_on_first_apply(box):
     CliproxyApiConfigApplier().apply()
     sealed = box / "cliproxyapi" / "management_key.sealed"
     working = box / "state" / "cliproxyapi" / "management.key"

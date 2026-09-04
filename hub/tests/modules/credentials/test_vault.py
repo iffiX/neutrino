@@ -265,7 +265,7 @@ def test_hostile_wrap_factors_are_refused():
         unwrap_data_key(PASSPHRASE, wrapped)
 
 
-def test_initialize_mints_wraps_and_unlocks(locked_dir):
+def test_initialize_generates_wraps_and_unlocks(locked_dir):
     vault = SecretVault()
     assert vault.initialize(PASSPHRASE) is True
     assert not vault.is_locked()

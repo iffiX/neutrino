@@ -1,18 +1,18 @@
-"""The session secret: minted on the box, kept as state, never configuration."""
+"""The session secret: generated on the box, kept as state, never configuration."""
 
 import stat
 
 from neutrino_hub.web import auth
 
 
-def test_a_missing_secret_is_minted_and_kept(tmp_path, monkeypatch):
+def test_a_missing_secret_is_generated_and_kept(tmp_path, monkeypatch):
     path = tmp_path / "state" / "session.secret"
     monkeypatch.setattr(auth, "WEB_SESSION_SECRET_PATH", path)
 
-    minted = auth.session_secret()
+    generated = auth.session_secret()
 
-    assert path.read_text().strip() == minted
-    assert len(bytes.fromhex(minted)) == 32
+    assert path.read_text().strip() == generated
+    assert len(bytes.fromhex(generated)) == 32
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 

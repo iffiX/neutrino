@@ -99,7 +99,7 @@ class PanelRuntime:
         self.client_hostname: dict[str, str] = {}
         # Enrollment tickets a machine can join with, by token. Held in memory
         # and short-lived on purpose: a join secret that survives a restart is
-        # a join secret lying around, and minting another takes one click.
+        # a join secret lying around, and generating another takes one click.
         self.enrollments: dict[str, dict] = {}
         self._apply_lock = asyncio.Lock()
         self._pending_commands: dict[str, deque] = {}

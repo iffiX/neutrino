@@ -156,7 +156,7 @@ def test_the_lifecycle_walks_every_transition(panel, stranger):
 
     # One action: the native package over SSH, then the same connect a person
     # would run. Managed means the handshake completed — a heartbeat, never a
-    # minted token.
+    # generated token.
     status, started = panel.call(
         "POST", f"/devices/{mac}/action", {"action": "install_client"}
     )
@@ -180,13 +180,13 @@ def test_the_lifecycle_walks_every_transition(panel, stranger):
     row = device_by_mac(panel, mac)
     assert row is None or row["client"] is None
 
-    # A link minted for this device brings it back through the same enroll
+    # A link generated for this device brings it back through the same enroll
     # path, onto the same MAC-keyed row.
-    status, minted = panel.call(
+    status, generated = panel.call(
         "POST", "/devices/enrollment", {"name": "lab client", "mac_address": mac}
     )
-    assert status == 200, minted
-    joined = ssh_to(host, f"sudo nagent connect --yes {minted['link']}")
+    assert status == 200, generated
+    joined = ssh_to(host, f"sudo nagent connect --yes {generated['link']}")
     assert "joined" in joined.stdout, joined.stdout + joined.stderr
     wait_for(
         "the re-enrolled agent to report",

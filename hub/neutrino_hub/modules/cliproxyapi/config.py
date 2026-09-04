@@ -28,7 +28,7 @@ class CliproxyApiClientKey:
         id: Stable identifier the panel manages it by.
         name: What the key is for — usually a device or a person.
         key: The secret itself.
-        created_at: ISO timestamp of when it was minted.
+        created_at: ISO timestamp of when it was generated.
     """
 
     id: str
@@ -37,8 +37,8 @@ class CliproxyApiClientKey:
     created_at: str = ""
 
     @classmethod
-    def minted(cls, name: str) -> "CliproxyApiClientKey":
-        """Mint a fresh key under a name.
+    def generated(cls, name: str) -> "CliproxyApiClientKey":
+        """Generate a fresh key under a name.
 
         Args:
             name: What the key is for.

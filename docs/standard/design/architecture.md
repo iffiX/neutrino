@@ -150,7 +150,7 @@ to the same place. The heartbeat carries everything, in both directions:
    subscriptions, and answers with `desired_features`: one entry per
    subscription, `{is_enabled, is_activated, settings, config}`, the config
    resolved for this device alone — the vault opened for its share password,
-   its AI key minted, its mountpoint filled in. The catalog itself rides
+   its AI key generated, its mountpoint filled in. The catalog itself rides
    along only when the agent's hash is stale.
 3. The agent reconciles the machine toward what came down, then reports the
    new state on its next beat. A state is `{code, params}`; the pages do the
@@ -165,8 +165,8 @@ loop: a subscription switched off is converged on, not commanded.
 A device becomes managed two ways — the hub installs the agent over SSH and
 hands it a token, or the owner pastes an enrollment link into the agent — and
 either way management begins at the same moment: the first heartbeat the hub
-authenticates. A minted token is an offer, not a relationship; an install
-that fails after minting leaves a dangling offer that shows nowhere and is
+authenticates. A generated token is an offer, not a relationship; an install
+that fails after generating leaves a dangling offer that shows nowhere and is
 overwritten by the next attempt.
 
 Three states, and no fourth:
@@ -274,7 +274,7 @@ disabled because it cannot serve — and the answer says how many of each.
 Three things stay out. The panel password and a device's heartbeat token are
 verifiers rather than secrets — one kept as a scrypt hash, the other as a
 SHA-256 digest, and neither ever needed back. The CLIProxyAPI client keys the
-hub mints itself, shows in full to their owner, and renders whole into the
+hub generates itself, shows in full to their owner, and renders whole into the
 gateway's own config.
 
 `nhub vault rekey` wraps the data key under a new passphrase; nothing sealed
@@ -305,7 +305,7 @@ signed-out answer cannot be told from a lockout.
 
 ## One identifier shape
 
-A stored record is keyed by a UUIDv4 hex string, minted at creation and
+A stored record is keyed by a UUIDv4 hex string, generated at creation and
 meaning nothing. The exception is a device, keyed by what the network knows it
 by: its MAC address, or the `id:`-prefixed machine id of a machine enrolled
 from behind someone else's NAT.

@@ -36,7 +36,7 @@ def tampered(link: str) -> str:
     return "neutrino://enroll/" + encoded.rstrip("=")
 
 
-def minted_payload(link: str) -> dict:
+def generated_payload(link: str) -> dict:
     payload_text = link.removeprefix("neutrino://enroll/")
     padded = payload_text + "=" * (-len(payload_text) % 4)
     return json.loads(base64.urlsafe_b64decode(padded))
@@ -106,9 +106,9 @@ def test_the_channel_is_pinned_tls_end_to_end(panel, stranger):
 
     # The link names the agent channel: TLS on every served address, and the
     # fingerprint the device will hold the socket to.
-    status, minted = panel.call("POST", "/devices/enrollment", {"name": ""})
-    assert status == 200, minted
-    payload = minted_payload(minted["link"])
+    status, generated = panel.call("POST", "/devices/enrollment", {"name": ""})
+    assert status == 200, generated
+    payload = generated_payload(generated["link"])
     assert payload["urls"], payload
     assert all(url.startswith("https://") for url in payload["urls"])
     assert len(payload["fp"]) == 64 and int(payload["fp"], 16) >= 0

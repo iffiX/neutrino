@@ -1,6 +1,6 @@
 """Making the git server's configuration true on the box.
 
-Three effects, kept apart from the pure renderer: minting the machine secrets
+Three effects, kept apart from the pure renderer: generating the machine secrets
 ``app.ini`` needs, installing a rendered file, and administering accounts
 through the gitea CLI. Everything the CLI does runs as the git user, because
 a root-owned file inside Gitea's tree is a file the server can no longer
@@ -54,7 +54,7 @@ class GiteaState:
 
 
 class GiteaSecretStore:
-    """Mints and keeps the machine secrets ``app.ini`` needs.
+    """Generates and keeps the machine secrets ``app.ini`` needs.
 
     They live in ``config/gitea/secrets.json``, gitignored: losing them on a
     rebuild invalidates sessions and tokens, never repositories, so they are
@@ -62,13 +62,13 @@ class GiteaSecretStore:
     """
 
     def load(self) -> dict:
-        """Read the secrets, minting any that are missing.
+        """Read the secrets, generating any that are missing.
 
         Returns:
             Every named secret, by name.
 
         Raises:
-            CommandError: If a secret must be minted and gitea cannot.
+            CommandError: If a secret must be generated and gitea cannot.
         """
         path = UTILS_CONFIG_DIR / "gitea/secrets.json"
         secrets = {}

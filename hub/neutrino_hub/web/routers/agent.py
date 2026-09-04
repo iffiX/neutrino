@@ -9,7 +9,7 @@ A heartbeat now carries more than metrics: the agent reports which features it
 is reconciling and in what state, and the reply tells it which features should
 be on and — when its catalog is stale — how to obtain each one. The gateway
 resolves the parts an agent cannot know for itself, chiefly the AI endpoint
-and the client key minted for that device.
+and the client key generated for that device.
 """
 
 import hashlib
@@ -130,8 +130,8 @@ def enroll(
     This is how a machine the gateway cannot reach — no SSH, or behind
     someone else's NAT — joins: its owner pastes a link into the agent's own
     page and the machine comes to the gateway rather than the other way
-    round. A ticket minted for an already-known device binds to it; one
-    minted blank creates a device keyed by the machine's own id.
+    round. A ticket generated for an already-known device binds to it; one
+    generated blank creates a device keyed by the machine's own id.
 
     Args:
         request: The ticket and what the machine says it is.
@@ -320,7 +320,7 @@ def _desired_features(
     Args:
         device: The device the heartbeat came from.
         runtime: The shared runtime, for the gateway's addresses.
-        registry: The device registry, for minting a device's AI key.
+        registry: The device registry, for generating a device's AI key.
 
     Returns:
         Feature name to ``{"is_enabled", "config"}``.
@@ -338,7 +338,7 @@ def _desired_features(
 def _ai_config(
     device: ManagedDevice, runtime: PanelRuntime, registry: DeviceRegistry
 ) -> dict:
-    """Resolve where a device's AI tools should point, minting a key if needed.
+    """Resolve where a device's AI tools should point, generating a key if needed.
 
     Args:
         device: The device.
@@ -385,7 +385,7 @@ def _served_model() -> str:
 
 
 def _device_key(device: ManagedDevice, registry: DeviceRegistry):
-    """The device's cliproxyapi client key, minting and applying one on first need.
+    """The device's cliproxyapi client key, generating and applying one on first need.
 
     Args:
         device: The device.
@@ -400,7 +400,7 @@ def _device_key(device: ManagedDevice, registry: DeviceRegistry):
         existing = next((k for k in config.client_keys if k.id == key_id), None)
         if existing is not None:
             return existing
-        key = CliproxyApiClientKey.minted(device.name or device.mac_address)
+        key = CliproxyApiClientKey.generated(device.name or device.mac_address)
         config.client_keys.append(key)
         save_config(config)
         registry.set_ai_key_id(device.mac_address, key.id)

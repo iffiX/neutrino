@@ -256,7 +256,7 @@ terminal, for machines with no desktop and for reading what went wrong.
 > `nagent connect <link>`
 
 Joins the hub the link names. The link comes from the hub's Devices page,
-which mints a one-time token:
+which generates a one-time token:
 
 ```
 neutrino://enroll?url=https://192.168.100.1&token=<token>

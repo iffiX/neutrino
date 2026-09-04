@@ -1,6 +1,6 @@
 """The key that unlocks the AI gateway's management API.
 
-Minted on the box, never typed by anybody: the panel is the management API's
+Generated on the box, never typed by anybody: the panel is the management API's
 only caller, so the key is machine state rather than a user-facing credential.
 It lives like the agent channel's private key — sealed under the vault's data
 key beside the module's config, so a backup carries it protected, with the
@@ -28,7 +28,7 @@ from neutrino_hub.utils import constants, json_file
 
 
 def ensure_management_key(*, sealed_key_path: Path | None = None) -> bool:
-    """Mint and seal the key once; an existing sealed key is left alone.
+    """Generate and seal the key once; an existing sealed key is left alone.
 
     Regenerating would invalidate the hash the running gateway holds until
     the next apply, so the key is written only when it is not there.
@@ -38,7 +38,7 @@ def ensure_management_key(*, sealed_key_path: Path | None = None) -> bool:
             this instance's config directory.
 
     Returns:
-        True when a key was minted.
+        True when a key was generated.
 
     Raises:
         VaultLockedError: If a key is needed and there is no data key to
@@ -101,7 +101,7 @@ def read_management_key(*, working_key_path: Path | None = None) -> str:
 
 
 def resolve_management_key() -> str:
-    """The key for a render, minting and unsealing on first need.
+    """The key for a render, generating and unsealing on first need.
 
     Returns:
         The key, or empty when the vault cannot open one — the render then

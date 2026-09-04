@@ -381,7 +381,7 @@ class DeviceSshOperator:
         Args:
             packages: The agent package per family, ``deb`` and ``rpm``,
                 whichever the hub carries.
-            enrollment_link: The ticket the panel minted for this device.
+            enrollment_link: The ticket the panel generated for this device.
 
         Yields:
             Progress lines and the remote tools' output. A device that is not

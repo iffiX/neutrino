@@ -44,11 +44,11 @@ RESET_COLLECTED_PATHS = (
     "devices/known_hosts",
     "devices/packages",
     # The agent channel's certificate and key go with the fleet that pinned
-    # them; the next setup mints a fresh identity for its own.
+    # them; the next setup generates a fresh identity for its own.
     "web/agent_tls",
 )
 # The secrets under /var/lib/neutrino that `all` clears for the same reason:
-# state a fresh box mints for itself, and the next owner must not inherit.
+# state a fresh box generates for itself, and the next owner must not inherit.
 # The vault's data key in particular — left behind, it opens whatever store
 # the next owner restores under the same wrap.
 RESET_STATE_PATHS = ("session.secret", "vault.key", "agent_tls_key.pem")

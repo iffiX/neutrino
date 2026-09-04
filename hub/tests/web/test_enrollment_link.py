@@ -1,4 +1,4 @@
-"""What a minted enrollment link carries: the agent channel, pinned.
+"""What a generated enrollment link carries: the agent channel, pinned.
 
 The link is the one thing that crosses to a machine before any trust exists,
 so its payload has to hold everything a first connection needs — every served
@@ -79,7 +79,9 @@ def test_the_agent_port_defaults_beside_the_panel_port(fingerprinted):
     assert decoded(answer.json()["link"])["urls"] == ["https://192.168.8.1:8443"]
 
 
-def test_a_server_mints_from_its_exposed_ports_live_address(fingerprinted, monkeypatch):
+def test_a_server_generates_from_its_exposed_ports_live_address(
+    fingerprinted, monkeypatch
+):
     runtime = FakeRuntime(addresses=())
     exposed = SimpleNamespace(is_lan=False, device_name="enp1s0", lan=None)
     runtime.network = lambda: SimpleNamespace(device_facing_interfaces=[exposed])
@@ -97,7 +99,7 @@ def test_a_server_mints_from_its_exposed_ports_live_address(fingerprinted, monke
     assert decoded(answer.json()["link"])["urls"] == ["https://192.168.100.7:8443"]
 
 
-def test_minting_again_replaces_the_outstanding_ticket(fingerprinted):
+def test_generating_again_replaces_the_outstanding_ticket(fingerprinted):
     runtime = FakeRuntime()
     client = client_for(runtime)
 
@@ -110,7 +112,7 @@ def test_minting_again_replaces_the_outstanding_ticket(fingerprinted):
     assert runtime.enrollments[token]["name"] == "two"
 
 
-def test_a_hub_without_a_certificate_mints_no_ticket(monkeypatch):
+def test_a_hub_without_a_certificate_generates_no_ticket(monkeypatch):
     def missing():
         raise FileNotFoundError("no certificate")
 

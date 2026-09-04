@@ -10,7 +10,7 @@ from neutrino_hub.utils.constants import (
 
 WEB_FRONTEND_DIST_DIR = UTILS_DATA_DIR / "frontend"
 WEB_SESSION_COOKIE = "neutrino_session"
-# The session secret is state, not configuration: it is minted on the box and
+# The session secret is state, not configuration: it is generated on the box and
 # a restore deliberately does not carry one in, so every session dies with it.
 WEB_SESSION_SECRET_PATH = UTILS_STATE_ROOT / "session.secret"
 WEB_SESSION_SECRET_BYTES = 32

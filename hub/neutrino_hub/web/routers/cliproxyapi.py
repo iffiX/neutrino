@@ -1,10 +1,10 @@
 """The AI page: the gateway's status, keys, usage, and applying changes.
 
-The upstream providers themselves are edited on the Credentials page; a
-change there takes effect when this page's apply runs, which re-renders the
-YAML and restarts the service. Usage answers come from the store the panel's
-collector fills — never from the gateway directly, whose queue hands every
-record out exactly once.
+The upstream providers themselves are edited on the same page, against
+``/api/ai``; a change there takes effect when this page's apply runs, which
+re-renders the YAML and restarts the service. Usage answers come from the
+store the panel's collector fills — never from the gateway directly, whose
+queue hands every record out exactly once.
 """
 
 from datetime import datetime, timezone
@@ -139,8 +139,8 @@ def journal(
 
 
 @router.post("/keys", response_model=CliproxyApiStatusView)
-def mint_key(request: CliproxyApiKeyCreate) -> CliproxyApiStatusView:
-    """Mint a client key and put it into service immediately.
+def generate_key(request: CliproxyApiKeyCreate) -> CliproxyApiStatusView:
+    """Generate a client key and put it into service immediately.
 
     Args:
         request: What the key is for.
@@ -150,7 +150,7 @@ def mint_key(request: CliproxyApiKeyCreate) -> CliproxyApiStatusView:
     """
     with CONFIG_WRITE_LOCK:
         config = load_config()
-        config.client_keys.append(CliproxyApiClientKey.minted(request.name))
+        config.client_keys.append(CliproxyApiClientKey.generated(request.name))
         save_config(config)
     _apply_quietly()
     return _status()

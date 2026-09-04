@@ -1,5 +1,5 @@
 {
-  "_comment": "AI providers, managed from the AI page. One entry per service or relay; Dev Setup reads these when pointing a device's AI tools (Claude Code, Codex, Gemini) at an endpoint. A provider holds no key of its own: secret_id references a token sealed in the credential vault, minted on the Credentials page.",
+  "_comment": "AI providers, managed from the AI page. One entry per service or relay; Dev Setup reads these when pointing a device's AI tools (Claude Code, Codex, Gemini) at an endpoint. A provider holds no key of its own: secret_id references a token sealed in the credential vault, added on the Credentials page.",
   "_comment_fields": "Each entry: id (panel-assigned uuid), name, kind (anthropic | openai | gemini | custom), base_url (empty means the service's default; set it for relays), secret_id (a vault token id, or null for a provider stored without a key), is_enabled, models, created_at. The list ships empty; the panel fills it.",
   "providers": []
 }

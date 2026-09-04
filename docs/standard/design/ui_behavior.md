@@ -139,7 +139,7 @@ Where a list is a configurable panel, the add is part of the draft: the row
 lights the frame and Apply is what makes it real, and a record born that way is
 born inert — a new VLAN interface is created `disabled`, so adding it changes
 nothing until somebody gives it a role. Where the list is not a draft — a
-credential, an exit node, a minted key — the add writes at once, and so does the
+credential, an exit node, a generated key — the add writes at once, and so does the
 remove.
 
 Which of the two a list is, is the panel's answer, not the form's: a list inside
@@ -195,7 +195,7 @@ A secret the hub is **given** is write-only: typed once, listed back as metadata
 again. The field for one stands empty behind `PRIVATE_KEY_PLACEHOLDER`, which is
 deliberately a template so nothing reads as stored key material.
 
-A secret the hub **mints** is shown to its owner: masked by default, with
+A secret the hub **generates** is shown to its owner: masked by default, with
 `Reveal` / `Hide` and a copy button beside it.
 
 **A credential is never edited** — not its value, not its name. It is added,

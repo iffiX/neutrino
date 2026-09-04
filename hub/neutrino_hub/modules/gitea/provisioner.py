@@ -120,7 +120,7 @@ class GiteaProvisioner:
         Args:
             is_data_kept: Keep ``/var/lib/gitea`` — every repository and
                 account. False deletes it, along with the git user and the
-                minted secrets that only that data gave meaning to.
+                generated secrets that only that data gave meaning to.
             report: Sink for progress lines, if anyone is watching.
 
         Returns:
@@ -144,7 +144,7 @@ class GiteaProvisioner:
             shutil.rmtree(GITEA_DIR, ignore_errors=True)
             run(["userdel", GITEA_USER], is_checked=False)
             # The secrets signed sessions and tokens for a database that no
-            # longer exists; a reinstall mints fresh ones.
+            # longer exists; a reinstall generates fresh ones.
             (UTILS_CONFIG_DIR / "gitea/secrets.json").unlink(missing_ok=True)
             return ProvisionResult(is_changed=True, message="removed, data deleted")
         return ProvisionResult(
