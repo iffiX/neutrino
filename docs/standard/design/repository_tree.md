@@ -104,7 +104,7 @@ and `connections.py` are the two files under `config/router/`, `modes.py` turns
 a mode into interface roles, `uplink_plan.py` decides which uplink carries
 traffic, `link_status.py` reads what the kernel says, `credentials.py` reads
 what another manager knew, and `stack.py` stops whatever was driving the
-machine before. Which engines and why: [network.md](network.md).
+machine before. Which engines and why: [network.md](modules/network.md).
 
 **Every module declares what machines it runs on.** The appliance is meant to
 land on whatever box is around — an x86 mini PC, a Raspberry Pi — so each

@@ -81,7 +81,10 @@ conventions explicit so nobody drifts.
    - [design/api.md](design/api.md) — how the panel's endpoints are named
      and organised: one module one prefix, what the bare prefix means, and
      when an operation may be a verb.
-   - [design/network.md](design/network.md) — the three engines the hub drives
+   - [design/modules/ai.md](design/modules/ai.md) — the AI gateway's behavior:
+     how a request routes, the gateway-owned model namespace, what each AI
+     panel surface owns, and how usage is metered.
+   - [design/modules/network.md](design/modules/network.md) — the three engines the hub drives
      instead of a network manager, which modes own a machine's network and
      which touch nothing at all, and what was measured on each distribution.
    - [design/visual.md](design/visual.md) — what the accent, the glow and the

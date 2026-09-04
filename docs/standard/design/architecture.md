@@ -207,7 +207,7 @@ is not multi-tenant and does not defend one enrolled machine from another.
 
 The wire gets no such trust. A "LAN" can be a campus network with a thousand
 strangers on it, so the panel answers only where an interface was deliberately
-exposed and on the overlay ([network.md](network.md), "What answers, and
+exposed and on the overlay ([network.md](modules/network.md), "What answers, and
 where"), behind a password, and the agent channel carries its secrets under
 pinned TLS. Trusting the machines and distrusting the wire is the whole
 model.

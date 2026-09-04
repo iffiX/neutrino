@@ -36,7 +36,8 @@ and leave this pointing at it.**
 | [coding_style/python_style.md](docs/standard/coding_style/python_style.md) | Writing Python: file and method order, black, Google docstrings. |
 | [coding_style/typescript_style.md](docs/standard/coding_style/typescript_style.md) | Touching `hub/frontend/`: no `any`, `import type`, API types mirror the backend models. |
 | [design/api.md](docs/standard/design/api.md) | Adding or renaming a panel endpoint: `/api/<module>`, plural sub-resources, when a verb is allowed. |
-| [design/network.md](docs/standard/design/network.md) | Touching the router layer: the three engines the hub drives, which modes own a machine's network and which touch nothing, and why it does not build on NetworkManager. |
+| [design/modules/network.md](docs/standard/design/modules/network.md) | Touching the router layer: the three engines the hub drives, which modes own a machine's network and which touch nothing, and why it does not build on NetworkManager. |
+| [design/modules/ai.md](docs/standard/design/modules/ai.md) | Touching the AI gateway: how a request routes, the gateway-owned model namespace, what each AI panel surface owns, metering. |
 | [design/agent.md](docs/standard/design/agent.md) | Touching the hub↔agent channel: the two ports, the pinned identity, tickets and tokens, the failure states, version sync. |
 | [design/visual.md](docs/standard/design/visual.md) | Touching panel CSS: what the accent and the glow may mean, button tiers, frames. |
 | [design/ui_behavior.md](docs/standard/design/ui_behavior.md) | Touching panel pages or components: which idiom a screen reuses, per-panel apply bars, effect timing, ask before inventing an interaction. |
@@ -133,7 +134,7 @@ examples in the document named beside it.
   address off anything.** `config/` is the only record of which interfaces had
   units on them, and an interface losing its address mid-reset drops the
   session that asked for it.
-  ([design/network.md](docs/standard/design/network.md))
+  ([design/modules/network.md](docs/standard/design/modules/network.md))
 - **Never commit unasked.** When work looks done, ask. A commit is a finished,
   tested feature. ([agent_work_rule/commit.md](docs/standard/agent_work_rule/commit.md))
 - **`sudo` never appears in the hub's own code.** The panel is already root, so
