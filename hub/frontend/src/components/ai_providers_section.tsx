@@ -59,7 +59,7 @@ const WORDING = {
   applyHintDrafts:
     "Saves the serving order and which providers are enabled, then reloads the gateway.",
   applyHintStale:
-    "The gateway is still serving an older set of providers; this reloads it.",
+    "The gateway is serving an older configuration; applying reloads it.",
   applyWarning: "The gateway restarts, and requests in flight fail.",
   fieldName: "Name",
   fieldKind: "Kind",

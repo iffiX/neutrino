@@ -89,6 +89,14 @@ def test_the_management_key_is_generated_on_first_apply(box):
     assert working.read_text(encoding="utf-8").strip() == key
 
 
+def test_a_dry_run_render_generates_no_key(box):
+    rendered = CliproxyApiConfigApplier().render_with_stored_key()
+    document = yaml.safe_load(rendered)
+    assert "remote-management" not in document
+    assert not (box / "cliproxyapi" / "management_key.sealed").exists()
+    assert not (box / "state" / "cliproxyapi" / "management.key").exists()
+
+
 def test_a_box_that_has_never_applied_is_stale(installed_box):
     assert CliproxyApiConfigApplier().is_serving_stale is True
 

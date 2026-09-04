@@ -24,7 +24,10 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_SERVED_FINGERPRINT_RELATIVE,
     CLIPROXYAPI_UNIT,
 )
-from neutrino_hub.modules.cliproxyapi.management_key import resolve_management_key
+from neutrino_hub.modules.cliproxyapi.management_key import (
+    read_management_key,
+    resolve_management_key,
+)
 from neutrino_hub.modules.cliproxyapi.renderer import CliproxyApiConfigRenderer
 from neutrino_hub.modules.ai.registry import AiProviderRegistry
 
@@ -195,8 +198,26 @@ class CliproxyApiConfigApplier:
             return False, "answered with something that is not JSON"
         return True, ", ".join(name for name in names if name) or "no models served"
 
-    def _render(self) -> tuple[str, int]:
-        """Render the YAML from the stored state, touching nothing.
+    def render_with_stored_key(self) -> str:
+        """Render with the key already on the box, for a dry run.
+
+        Returns:
+            The text an apply would write, given the working key as it is —
+            a dry run must not generate one.
+
+        Raises:
+            ValueError: If the stored settings do not validate, or a provider's
+                sealed key does not open.
+        """
+        rendered, _ = self._render(management_key=read_management_key())
+        return rendered
+
+    def _render(self, *, management_key: str | None = None) -> tuple[str, int]:
+        """Render the YAML from the stored state.
+
+        Args:
+            management_key: The key to render with; None resolves it, which
+                generates one on first need.
 
         Returns:
             The text an apply writes right now, and how many providers it
@@ -215,10 +236,12 @@ class CliproxyApiConfigApplier:
             for provider in providers
             if provider.is_enabled
         }
+        if management_key is None:
+            management_key = resolve_management_key()
         rendered = CliproxyApiConfigRenderer(
             config=config,
             providers=providers,
             api_keys=api_keys,
-            management_key=resolve_management_key(),
+            management_key=management_key,
         ).render()
         return rendered, sum(1 for key in api_keys.values() if key)

@@ -53,6 +53,8 @@ from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.system.units import SystemdUnitInstaller
 from neutrino_hub.utils.json_file import read_config, write_generated
+from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_GENERATED_NAME
+from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier
 from neutrino_hub.modules.cliproxyapi.management_key import (
     ensure_management_key,
     write_working_key,
@@ -72,7 +74,7 @@ from neutrino_hub.modules.xray.node_secrets import resolve_node_secrets
 
 # --- config ---
 DNSMASQ_SERVICE_NAME = SYSTEM_CORE_UNITS["dnsmasq"]
-COMPONENTS = ("router", "xray", "dnsmasq", "samba", "gitea", "podman")
+COMPONENTS = ("router", "xray", "dnsmasq", "cliproxyapi", "samba", "gitea", "podman")
 
 
 def main() -> int:
@@ -173,6 +175,12 @@ def _render(selected: tuple[str, ...]) -> dict:
         artifacts["dnsmasq"] = RouterDnsmasqRenderer(
             network=network, routing=routing
         ).render()
+    if "cliproxyapi" in selected:
+        gateway = CliproxyApiConfigApplier()
+        if not gateway.is_installed:
+            print("cliproxyapi: not installed, skipping")
+        else:
+            artifacts["cliproxyapi"] = gateway.render_with_stored_key()
     # The optional modules render only where installed: a fresh box without
     # extras still gets a clean full-render run.
     if "samba" in selected and shutil.which("smbd") is None:
@@ -233,6 +241,9 @@ def _print_artifacts(artifacts: dict) -> None:
     if "dnsmasq" in artifacts:
         print(f"\n--- {ROUTER_DNSMASQ_PATH} ---")
         print(artifacts["dnsmasq"])
+    if "cliproxyapi" in artifacts:
+        print(f"\n--- {UTILS_GENERATED_DIR / CLIPROXYAPI_GENERATED_NAME} ---")
+        print(artifacts["cliproxyapi"])
     if "samba" in artifacts:
         print(f"\n--- {SAMBA_CONF_LINK_PATH} ---")
         print(artifacts["samba"])
@@ -281,6 +292,12 @@ def _apply(artifacts: dict) -> None:
             print(change)
     if "dnsmasq" in artifacts:
         run(["systemctl", "restart", DNSMASQ_SERVICE_NAME])
+    if "cliproxyapi" in artifacts:
+        # The applier renders again with the key the belt above put in place,
+        # writes the YAML with the served fingerprint, and restarts — the same
+        # motion the panel's apply runs, so neither path leaves the gateway
+        # behind the stored configuration.
+        print(CliproxyApiConfigApplier().apply())
     if "samba" in artifacts:
         samba_config = SambaConfig.from_dict(read_config("samba/samba.json"))
         # Configuration first: smbpasswd itself reads smb.conf, and the link

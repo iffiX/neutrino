@@ -74,6 +74,14 @@ def test_the_status_carries_the_day_counters(panel):
     assert body["tokens_today"] >= 0
 
 
+def test_an_apply_leaves_nothing_stale(panel):
+    status, body = panel.call("POST", "/cliproxyapi/apply")
+    assert status == 200, body
+    status, body = panel.call("GET", "/cliproxyapi")
+    assert status == 200, body
+    assert body["is_serving_stale"] is False
+
+
 def test_the_order_roundtrip_and_its_refusal(panel):
     status, listed = panel.call("GET", "/ai/providers")
     assert status == 200, listed
@@ -87,9 +95,7 @@ def test_the_order_roundtrip_and_its_refusal(panel):
     assert body["detail"]["params"]["unknown"] == ["no-such"]
 
     reordered = list(reversed(original))
-    status, body = panel.call(
-        "PUT", "/ai/providers/order", {"provider_ids": reordered}
-    )
+    status, body = panel.call("PUT", "/ai/providers/order", {"provider_ids": reordered})
     assert status == 200, body
     assert [provider["id"] for provider in body["providers"]] == reordered
     try:
