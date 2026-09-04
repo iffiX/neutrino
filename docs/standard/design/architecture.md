@@ -296,6 +296,28 @@ per upstream provider — under `/var/lib/neutrino/cliproxyapi/`, and a client
 key belongs to a device, so usage lands on the subscription that spent it.
 The dashboard, the AI page and the status strip all read that one store.
 
+An upstream is reached two ways. A **provider** is an API key somebody typed,
+which lives in the vault and is rendered into the gateway's YAML like every
+other setting. An **account** is a subscription somebody signed into: the
+panel starts the flow through the same management API, hands the person the
+URL to open, passes the code back, and the gateway writes a token file into
+`/var/lib/neutrino/cliproxyapi/auth/` and serves with it without a restart.
+
+**Auth files are the one deliberate exception to "backing up `config/`
+reproduces the appliance."** They are live provider credentials that no render
+produces and no apply installs, so they sit in the state root and a downloaded
+backup does not carry them: a restored box signs in again. Putting them in
+`config/` would put refresh tokens for somebody's Claude and ChatGPT
+subscriptions into a file that travels — the vault protects what the hub was
+given, and nothing protects an archive once it has left the box. Signing in is
+therefore never a configuration change, and nothing about it lights an apply
+bar.
+
+Both kinds land in one pool per upstream, and the gateway rotates across it
+rather than ranking accounts above keys or below them. The panel does not
+model an order it does not control: it lists accounts beside providers and
+says what the gateway does.
+
 ## The panel heals itself; nothing ever asks for a manual refresh
 
 The panel is a single-page app, and the machine under it restarts — a
