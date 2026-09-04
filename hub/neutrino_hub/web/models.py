@@ -116,6 +116,13 @@ class StatsFrame(BaseModel):
     wan_address: str | None = None
     total_uplink_bytes: int = 0
     total_downlink_bytes: int = 0
+    # What the machine's own uplink is carrying, from its kernel counters.
+    # Not the xray totals above: those are the proxy core's traffic since it
+    # last started, and the dashboard's bandwidth reading has to be the same
+    # interface the history chart is drawn from.
+    interface_name: str = ""
+    interface_rx_bytes_per_s: int = 0
+    interface_tx_bytes_per_s: int = 0
     # Carried on the frame rather than fetched separately: the strip shows it
     # and it is only true as of the moment the frame was taken. One of the
     # WEB_PROXY_SCOPE_* answers — whose traffic the proxy is taking.
