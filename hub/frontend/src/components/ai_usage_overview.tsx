@@ -2,7 +2,6 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import { Sparkline } from "./sparkline";
-import { StatusDot } from "./status_dot";
 import { UsageGrid } from "./usage_grid";
 import {
   RANGE_BUCKET_DAYS,
@@ -24,7 +23,6 @@ import "./ai_usage_overview.css";
 
 const WORDING = {
   title: "AI usage",
-  live: "live",
   allKeys: "All keys",
   requests: "Requests",
   tokens: "Tokens",
@@ -67,9 +65,6 @@ export function AiUsageOverview() {
       <div className="card_header">
         <div className="card_title">
           <h2>{WORDING.title}</h2>
-          {data !== null && (
-            <StatusDot tone="ok" isPulsing label={WORDING.live} />
-          )}
         </div>
         <div className="ai_usage_controls">
           <div className="ai_usage_ranges">

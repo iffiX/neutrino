@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 
-import { StatusDot } from "./status_dot";
 import { usePolledResource } from "../use_polled_resource";
 import type { CliproxyApiJournalResponse } from "../api_types";
 
@@ -14,7 +13,6 @@ import "./journal_panel.css";
 
 const WORDING = {
   label: (lines: number) => `journal · last ${lines} lines`,
-  live: "live",
   empty: "(no journal output)",
   unavailable: "The journal is not readable yet.",
 } as const;
@@ -47,9 +45,6 @@ export function AiJournalPanel({ isOpen }: AiJournalPanelProps) {
     <div className="journal_panel">
       <div className="journal_panel_head">
         <span className="section_label">{WORDING.label(JOURNAL_LINES)}</span>
-        {lines !== null && (
-          <StatusDot tone="ok" isPulsing label={WORDING.live} />
-        )}
       </div>
 
       {lines === null && journal.isLoading && (

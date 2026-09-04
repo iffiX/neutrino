@@ -4,7 +4,6 @@ import type { ChangeEvent, FormEvent } from "react";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { Spinner } from "../components/spinner";
-import { StatusDot } from "../components/status_dot";
 import {
   ApiError,
   apiPostDownload,
@@ -42,8 +41,6 @@ import "./settings_page.css";
  */
 
 const NOT_A_BACKUP_SENTENCE = "This is not a Neutrino backup.";
-
-const ABOUT_LIVE = "live";
 
 const RESTORE_ERROR_SENTENCES: Record<string, string> = {
   vault_passphrase_needed: "The vault master password is required to restore.",
@@ -261,10 +258,6 @@ export function SettingsPage() {
             <div className="card_title">
               <h2>About</h2>
             </div>
-            <span className="badge">
-              <StatusDot tone="ok" isPulsing />
-              {ABOUT_LIVE}
-            </span>
           </div>
 
           {about.error !== null ? (

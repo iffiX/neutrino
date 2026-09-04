@@ -263,8 +263,11 @@ says once it is there is the same page.
 ## Nothing asks for a refresh
 
 No screen in this panel may require a manual page reload, and no panel carries a
-refresh button. A panel showing live state polls itself and says so in its
-title, with a pulsing `ok` dot labelled `live`. When the process behind the
+refresh button. A panel showing live state polls itself — and does not announce
+it: self-refresh is the whole panel's default, and a `live` dot or badge every
+panel would wear marks nothing, so none wears one. A pulsing dot belongs only
+to a state word that is really being reported (`running`, `answering`, the
+strip's own `live` / `connecting` / `offline`). When the process behind the
 panel changes, the page reloads itself
 ([architecture.md](architecture.md), "The panel heals itself").
 

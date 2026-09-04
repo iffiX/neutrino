@@ -39,7 +39,6 @@ const WORDING = {
   stopped: "stopped",
   answering: "answering",
   notAnswering: "not answering",
-  live: "live",
   journal: "Journal",
   serving: (message: string) => `Serving: ${message}`,
   waitingProbe: "Waiting for the first probe.",
@@ -235,9 +234,6 @@ export function AiPage() {
           </div>
           <span className="ai_usage_window">
             <span className="badge">{WORDING.usageWindow}</span>
-            {usage.data !== null && (
-              <StatusDot tone="ok" isPulsing label={WORDING.live} />
-            )}
           </span>
         </div>
 
