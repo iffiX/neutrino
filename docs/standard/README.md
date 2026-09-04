@@ -87,6 +87,9 @@ conventions explicit so nobody drifts.
    - [design/visual.md](design/visual.md) — what the accent, the glow and the
      colours are each allowed to mean in the panel, the three button tiers,
      frames and live sections.
+   - [design/ui_behavior.md](design/ui_behavior.md) — how each kind of panel
+     component behaves: page and panel composition, apply bars and dirty
+     frames, when an effect happens, and the ask-before-inventing rule.
    - [design/privilege.md](design/privilege.md) — why the panel runs as root, what the
      systemd unit narrows and what it deliberately does not, and the rule that
      stepping down to a service account uses `runuser` rather than `sudo`.

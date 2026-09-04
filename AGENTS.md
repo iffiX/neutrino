@@ -39,6 +39,7 @@ and leave this pointing at it.**
 | [design/network.md](docs/standard/design/network.md) | Touching the router layer: the three engines the hub drives, which modes own a machine's network and which touch nothing, and why it does not build on NetworkManager. |
 | [design/agent.md](docs/standard/design/agent.md) | Touching the hub↔agent channel: the two ports, the pinned identity, tickets and tokens, the failure states, version sync. |
 | [design/visual.md](docs/standard/design/visual.md) | Touching panel CSS: what the accent and the glow may mean, button tiers, frames. |
+| [design/ui_behavior.md](docs/standard/design/ui_behavior.md) | Touching panel pages or components: which idiom a screen reuses, per-panel apply bars, effect timing, ask before inventing an interaction. |
 | [design/class_design.md](docs/standard/design/class_design.md) | Adding a class: one concept per class, explicit `__init__` kwargs. |
 | [design/class_hierarchy.md](docs/standard/design/class_hierarchy.md) | Naming a class: the per-package `<Domain><Thing><Role>` families. |
 | [design/repository_tree.md](docs/standard/design/repository_tree.md) | Adding a directory to the source tree, or unsure what an existing one is for. |
