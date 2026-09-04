@@ -143,6 +143,12 @@
   font-weight: 600;
 }
 
+.usage_kinds {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
 .usage_device {
   color: var(--color-text-muted);
   font-family: var(--font-mono);

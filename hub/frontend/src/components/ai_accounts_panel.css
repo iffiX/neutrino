@@ -25,6 +25,20 @@
   white-space: nowrap;
 }
 
+.ai_account_counts {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-1);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.ai_account_counts--failed {
+  color: var(--color-error);
+}
+
 .ai_account_status {
   flex: none;
   white-space: nowrap;

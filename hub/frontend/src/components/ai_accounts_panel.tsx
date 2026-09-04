@@ -47,6 +47,8 @@ const WORDING = {
   serving: "serving",
   disabled: "disabled",
   unavailable: "unavailable",
+  okCount: (count: number) => `${count} ok`,
+  failedCount: (count: number) => `${count} failed`,
   delete: "Delete",
   deleteTitle: (account: string) => `Delete ${account}`,
   deleteBody:
@@ -239,6 +241,17 @@ function AccountRow({ value, isBusy, onDelete }: AccountRowProps) {
     <div className="ai_account_row">
       <span className="key_card_type">{providerLabel(value.provider)}</span>
       <span className="ai_account_label">{accountLabel(value)}</span>
+      <span className="ai_account_counts">
+        <span>{WORDING.okCount(value.success_count)}</span>
+        <span>·</span>
+        <span
+          className={
+            value.failed_count > 0 ? "ai_account_counts--failed" : undefined
+          }
+        >
+          {WORDING.failedCount(value.failed_count)}
+        </span>
+      </span>
       <span
         className="ai_account_status"
         title={hasMessage ? value.status_message : undefined}

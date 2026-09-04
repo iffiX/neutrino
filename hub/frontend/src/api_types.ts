@@ -626,11 +626,21 @@ export interface AiUsageHealthBucket {
   failed: number;
 }
 
-/** One provider's usage over the requested range. */
+/**
+ * One upstream's usage over the range.
+ *
+ * An upstream is a keyed provider or a subscription account. `provider_id` is
+ * the provider's id or the account's credential file, and `kind` the
+ * provider's `AiProviderKind` or the account's service — which, like an
+ * account's `provider`, is not a closed set.
+ */
 export interface AiUsageProvider extends AiUsageCounters {
   provider_id: string;
   name: string;
-  kind: AiProviderKind;
+  kind: string;
+  /** Whether this row is an account rather than a keyed provider; absent
+   * reads as false. */
+  is_account?: boolean;
   first_seen_at: string;
   last_seen_at: string;
   health: AiUsageHealthBucket[];

@@ -17,12 +17,15 @@ import type {
 } from "../api_types";
 
 /**
- * The provider activity table on the AI page: one row per provider, filtered
- * by kind, sorted and paged. Styles live in ai_page.css beside the page.
+ * The upstream activity table on the AI page: one row per keyed provider and
+ * per subscription account, filtered by kind, sorted and paged. An account
+ * wears a pill saying so, because its kind alone reads like a provider's.
+ * Styles live in ai_page.css beside the page.
  */
 
 const WORDING = {
   allKinds: "All",
+  account: "account",
   headerProvider: "Provider",
   headerRequests: "Requests",
   headerSuccess: "Success",
@@ -72,6 +75,9 @@ const KIND_ORDER: AiProviderKind[] = [
   "gemini",
   "custom",
 ];
+// An account's kind is its service, which is not one of the provider kinds,
+// so membership decides the chip order rather than the type.
+const PROVIDER_KINDS = new Set<string>(KIND_ORDER);
 
 // Above this share of failures a health slot turns red instead of amber.
 const FAILING_SHARE = 0.5;
@@ -84,7 +90,7 @@ interface AiUsageProvidersProps {
 }
 
 export function AiUsageProviders({ providers }: AiUsageProvidersProps) {
-  const [kind, setKind] = useState<AiProviderKind | "all">("all");
+  const [kind, setKind] = useState<string>("all");
   const [sortKey, setSortKey] = useState<SortKey>("requests");
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0] ?? 10);
   const [page, setPage] = useState(0);
@@ -123,7 +129,7 @@ export function AiUsageProviders({ providers }: AiUsageProvidersProps) {
           {WORDING.allKinds}
           <span className="ai_chip_count">{providers.length}</span>
         </button>
-        {KIND_ORDER.map((option) => {
+        {kindsOf(providers).map((option) => {
           const count = providers.filter(
             (provider) => provider.kind === option,
           ).length;
@@ -246,7 +252,12 @@ function ProviderRow({ provider }: ProviderRowProps) {
     <tr>
       <td>
         <div className="usage_name">{provider.name}</div>
-        <span className="badge">{provider.kind}</span>
+        <span className="usage_kinds">
+          <span className="badge">{provider.kind}</span>
+          {provider.is_account === true && (
+            <span className="badge">{WORDING.account}</span>
+          )}
+        </span>
       </td>
       <td className="num">
         <div className="mono">{formatCompact(provider.requests)}</div>
@@ -336,6 +347,15 @@ function HealthBar({ health }: HealthBarProps) {
       })}
     </div>
   );
+}
+
+/** The kinds present, provider kinds in their fixed order and accounts after. */
+function kindsOf(list: AiUsageProvider[]): string[] {
+  const present = new Set(list.map((entry) => entry.kind));
+  return [
+    ...KIND_ORDER.filter((option) => present.has(option)),
+    ...[...present].filter((option) => !PROVIDER_KINDS.has(option)).sort(),
+  ];
 }
 
 function sortProviders(
