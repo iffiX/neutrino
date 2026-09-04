@@ -1,8 +1,10 @@
 .ai_usage_controls {
   display: flex;
+  flex: 1;
   flex-wrap: wrap;
   gap: var(--space-3);
   align-items: center;
+  justify-content: flex-end;
 }
 
 .ai_usage_ranges {
@@ -38,9 +40,10 @@
   color: var(--color-accent);
 }
 
-.ai_usage_key_select {
+.ai_usage_controls .ai_usage_key_select {
   width: auto;
   min-width: 140px;
+  max-width: 240px;
 }
 
 .ai_usage_body {

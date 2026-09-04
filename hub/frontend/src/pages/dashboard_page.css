@@ -2,7 +2,21 @@
   display: grid;
   gap: var(--space-5);
   grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr);
-  align-items: start;
+  align-items: stretch;
+}
+
+/* The DNS card follows the charts' height instead of setting the row's own:
+   the list fills what is left and scrolls inside. */
+.dashboard_dns_card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.dashboard_dns_card .dns_log_scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: none;
 }
 
 .dashboard_column {
@@ -107,5 +121,10 @@
 @media (max-width: 1180px) {
   .dashboard_layout {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dashboard_dns_card .dns_log_scroll {
+    flex: none;
+    max-height: 420px;
   }
 }

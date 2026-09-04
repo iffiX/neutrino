@@ -61,11 +61,8 @@
 
 .usage_grid_month .usage_cell {
   width: auto;
-  height: auto;
-  min-height: 26px;
-  max-height: 54px;
+  height: 22px;
   border-radius: 4px;
-  aspect-ratio: 1;
 }
 
 .usage_grid_weeks {

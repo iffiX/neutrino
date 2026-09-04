@@ -58,7 +58,7 @@ const TILE_WORDING = {
   probed: (count: number) => `${count} probed`,
   inRecentLog: "in the recent log",
   servedToday: "served today",
-  seenOnLan: "seen on the LAN",
+  agentsReporting: "agents reporting",
   noWanAddress: "no WAN address",
   missing: "—",
 } as const;
@@ -181,11 +181,11 @@ export function DashboardPage() {
         />
         <StatTile
           label={TILE_WORDING.devices}
-          value={summary.data?.lan_device_count ?? 0}
+          value={stats?.agent_device_count ?? 0}
           format={formatCount}
           icon="devices"
           tone="secondary"
-          detail={TILE_WORDING.seenOnLan}
+          detail={TILE_WORDING.agentsReporting}
         />
         <StatTile
           label={TILE_WORDING.cpu}
@@ -441,7 +441,7 @@ export function DashboardPage() {
             )}
           </section>
 
-          <section className="card">
+          <section className="card dashboard_dns_card">
             <div className="card_header dashboard_dns_head">
               <div className="card_title">
                 <h2>DNS queries</h2>
