@@ -97,6 +97,30 @@
   font-size: 12px;
 }
 
+.declared_containers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.declared_container_row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: 12px;
+}
+
+.declared_container_name {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.declared_container_action {
+  margin-left: auto;
+}
+
 .declared_card_actions {
   display: flex;
   gap: var(--space-2);

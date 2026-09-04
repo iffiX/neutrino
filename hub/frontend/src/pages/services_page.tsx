@@ -22,6 +22,7 @@ import type {
   DeclaredServiceProbeView,
   DeclaredServiceView,
   DeclaredShareView,
+  DockerContainerView,
   LoginView,
   LoginsResponse,
   ServiceActionName,
@@ -80,6 +81,10 @@ const DECLARED_DELETE_LABEL = "Delete";
 const DECLARED_DELETE_TITLE = "Delete {name}";
 const DECLARED_DELETE_BODY =
   "The declaration is removed; the machine it points at is untouched.";
+const DECLARED_CONTAINER_START = "Start";
+const DECLARED_CONTAINER_STOP = "Stop";
+const DECLARED_CONTAINERS_EMPTY = "No containers listed.";
+const DECLARED_CONTAINER_PORTS = "ports {ports}";
 
 const DECLARED_KIND_LABELS: Record<DeclaredServiceKind, string> = {
   samba: "Samba",
@@ -99,6 +104,11 @@ const DECLARED_DETAIL_WORDING: Record<string, string> = {
   ping_rejected: "Answered, but not as a Docker engine.",
   server_error: "Answered with a server error.",
 };
+
+// A failed container start or stop, worded from the API's {code, params}.
+const DECLARED_DOCKER_UNREACHABLE_WORDING = "The engine did not answer.";
+const DECLARED_DOCKER_REFUSED_WORDING =
+  "The engine refused with status {status}.";
 
 // The API's declared_service_invalid params.field, worded.
 const DECLARED_INVALID_WORDING: Record<string, string> = {
@@ -455,6 +465,14 @@ function DeclaredSection({ declared, onChanged }: DeclaredSectionProps) {
     );
   };
 
+  const handleRefreshed = (refreshed: DeclaredServiceView) => {
+    onChanged(
+      declared.map((service) =>
+        service.id === refreshed.id ? refreshed : service,
+      ),
+    );
+  };
+
   const healthyCount = declared.filter(
     (service) => service.probe.is_healthy === true,
   ).length;
@@ -508,6 +526,7 @@ function DeclaredSection({ declared, onChanged }: DeclaredSectionProps) {
                 onEdit={() => setEditingId(service.id)}
                 onDeleted={handleDeleted}
                 onProbed={handleProbed}
+                onRefreshed={handleRefreshed}
               />
             ),
           )}
@@ -769,6 +788,7 @@ interface DeclaredServiceCardProps {
   onEdit: () => void;
   onDeleted: (serviceId: string) => void;
   onProbed: (serviceId: string, probe: DeclaredServiceProbeView) => void;
+  onRefreshed: (service: DeclaredServiceView) => void;
 }
 
 function DeclaredServiceCard({
@@ -776,10 +796,32 @@ function DeclaredServiceCard({
   onEdit,
   onDeleted,
   onProbed,
+  onRefreshed,
 }: DeclaredServiceCardProps) {
   const confirm = useConfirm();
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The container whose start or stop is in flight, so only its own button
+  // shows the wait.
+  const [busyContainerId, setBusyContainerId] = useState<string | null>(null);
+
+  const handleContainer = async (
+    container: DockerContainerView,
+    action: "start" | "stop",
+  ) => {
+    setBusyContainerId(container.id);
+    setError(null);
+    try {
+      const refreshed = await apiPost<DeclaredServiceView>(
+        `/services/declared/${service.id}/containers/${container.id}/${action}`,
+      );
+      onRefreshed(refreshed);
+    } catch (cause: unknown) {
+      setError(describeDeclaredError(cause));
+    } finally {
+      setBusyContainerId(null);
+    }
+  };
 
   const handleProbe = async () => {
     setIsBusy(true);
@@ -845,6 +887,57 @@ function DeclaredServiceCard({
           </span>
         )}
       </div>
+      {service.kind === "docker_engine" && (
+        <div className="declared_containers">
+          {service.containers.length === 0 ? (
+            <span className="field_hint faint">
+              {DECLARED_CONTAINERS_EMPTY}
+            </span>
+          ) : (
+            service.containers.map((container) => (
+              <div key={container.id} className="declared_container_row">
+                <StatusDot
+                  tone={container.is_running ? "ok" : "idle"}
+                  isPulsing={false}
+                />
+                <span
+                  className="declared_container_name"
+                  title={container.image}
+                >
+                  {container.name}
+                </span>
+                <span className="muted">{container.state}</span>
+                {container.host_ports.length > 0 && (
+                  <span className="muted">
+                    {fill(DECLARED_CONTAINER_PORTS, {
+                      ports: container.host_ports.join(", "),
+                    })}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="button button--ghost button--small declared_container_action"
+                  disabled={busyContainerId !== null}
+                  onClick={() =>
+                    void handleContainer(
+                      container,
+                      container.is_running ? "stop" : "start",
+                    )
+                  }
+                >
+                  <Icon
+                    name={container.is_running ? "power" : "bolt"}
+                    size={13}
+                  />
+                  {container.is_running
+                    ? DECLARED_CONTAINER_STOP
+                    : DECLARED_CONTAINER_START}
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
       {detail !== undefined && <span className="field_hint">{detail}</span>}
       {error !== null && <span className="field_error">{error}</span>}
       <div className="declared_card_actions">
@@ -932,6 +1025,15 @@ function describeDeclaredError(cause: unknown): string {
       if (wording !== undefined) {
         return wording;
       }
+    }
+    if (detail.code === "docker_engine_unreachable") {
+      return DECLARED_DOCKER_UNREACHABLE_WORDING;
+    }
+    if (detail.code === "docker_action_refused") {
+      const params = (detail.params ?? {}) as Record<string, unknown>;
+      return fill(DECLARED_DOCKER_REFUSED_WORDING, {
+        status: String(params.status ?? ""),
+      });
     }
   }
   return describeError(cause);

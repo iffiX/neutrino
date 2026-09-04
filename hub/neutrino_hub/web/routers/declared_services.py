@@ -20,6 +20,12 @@ from neutrino_hub.modules.services.config import (
 from neutrino_hub.modules.services.constants import (
     SERVICES_ERROR_INVALID,
     SERVICES_ERROR_UNKNOWN,
+    SERVICES_KIND_DOCKER_ENGINE,
+)
+from neutrino_hub.modules.services.docker import (
+    DockerContainer,
+    DockerContainerController,
+    DockerEngineError,
 )
 from neutrino_hub.modules.services.probe import DeclaredServiceHealth
 from neutrino_hub.web.dependencies import get_runtime, require_session
@@ -28,6 +34,7 @@ from neutrino_hub.web.models import (
     DeclaredServiceProbeView,
     DeclaredServiceView,
     DeclaredShareView,
+    DockerContainerView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.routers.credentials import LOGIN_KIND
@@ -50,7 +57,11 @@ def declared_service_views(runtime: PanelRuntime) -> list[DeclaredServiceView]:
     healths = {
         health.service_id: health for health in runtime.declared_probe.results(records)
     }
-    return [_to_view(record, healths.get(record.id)) for record in records]
+    containers = runtime.docker_containers.results(records)
+    return [
+        _to_view(record, healths.get(record.id), containers.get(record.id, []))
+        for record in records
+    ]
 
 
 @router.post(
@@ -173,6 +184,91 @@ def probe_declared_service(
     )
 
 
+@router.post(
+    "/declared/{service_id}/containers/{container_id}/start",
+    response_model=DeclaredServiceView,
+)
+def start_container(
+    service_id: str, container_id: str, runtime: PanelRuntime = Depends(get_runtime)
+) -> DeclaredServiceView:
+    """Start one container on a declared Docker engine.
+
+    Args:
+        service_id: The declared service's id.
+        container_id: The engine's container id.
+        runtime: The shared runtime.
+
+    Returns:
+        The service with its container list re-read.
+
+    Raises:
+        HTTPException: 404 for an unknown service, 400 for a kind that runs
+            no containers, 502 when the engine does not answer or refuses.
+    """
+    return _control_container(service_id, container_id, "start", runtime)
+
+
+@router.post(
+    "/declared/{service_id}/containers/{container_id}/stop",
+    response_model=DeclaredServiceView,
+)
+def stop_container(
+    service_id: str, container_id: str, runtime: PanelRuntime = Depends(get_runtime)
+) -> DeclaredServiceView:
+    """Stop one container on a declared Docker engine.
+
+    Args:
+        service_id: The declared service's id.
+        container_id: The engine's container id.
+        runtime: The shared runtime.
+
+    Returns:
+        The service with its container list re-read.
+
+    Raises:
+        HTTPException: 404 for an unknown service, 400 for a kind that runs
+            no containers, 502 when the engine does not answer or refuses.
+    """
+    return _control_container(service_id, container_id, "stop", runtime)
+
+
+def _control_container(
+    service_id: str, container_id: str, action: str, runtime: PanelRuntime
+) -> DeclaredServiceView:
+    """Drive one container and answer with the engine's fresh list.
+
+    Args:
+        service_id: The declared service's id.
+        container_id: The engine's container id.
+        action: ``start`` or ``stop``.
+        runtime: The shared runtime.
+
+    Returns:
+        The service view after the action.
+
+    Raises:
+        HTTPException: Carrying ``{code, params}``, as the endpoints above
+            document.
+    """
+    record = DeclaredServiceRegistry().get(service_id)
+    if record is None:
+        raise _unknown()
+    if record.kind != SERVICES_KIND_DOCKER_ENGINE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": SERVICES_ERROR_INVALID, "params": {"field": "kind"}},
+        )
+    try:
+        DockerContainerController().control(record, container_id, action)
+    except DockerEngineError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": error.code, "params": error.params},
+        ) from error
+    containers = runtime.docker_containers.refresh_one(record)
+    return _to_view(record, runtime.declared_probe.cached(service_id), containers)
+
+
 def _require_known_accounts(request: DeclaredServiceCreate) -> None:
     """Refuse a share naming a login the vault does not hold.
 
@@ -205,7 +301,9 @@ def _to_shares(request: DeclaredServiceCreate) -> list[DeclaredShare]:
 
 
 def _to_view(
-    record: DeclaredService, health: DeclaredServiceHealth | None
+    record: DeclaredService,
+    health: DeclaredServiceHealth | None,
+    containers: list[DockerContainer] | None = None,
 ) -> DeclaredServiceView:
     return DeclaredServiceView(
         id=record.id,
@@ -225,6 +323,17 @@ def _to_view(
             checked_at=health.checked_at if health else None,
             detail_code=health.detail_code if health else None,
         ),
+        containers=[
+            DockerContainerView(
+                id=container.id,
+                name=container.name,
+                image=container.image,
+                state=container.state,
+                is_running=container.is_running,
+                host_ports=container.host_ports,
+            )
+            for container in containers or []
+        ],
     )
 
 

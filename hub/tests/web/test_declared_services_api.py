@@ -58,10 +58,24 @@ class StubServices:
         ]
 
 
+class StubDockerCache:
+    def __init__(self):
+        self.batch = {}
+        self.refreshed: list[str] = []
+
+    def results(self, services):
+        return dict(self.batch)
+
+    def refresh_one(self, service):
+        self.refreshed.append(service.id)
+        return self.batch.get(service.id, [])
+
+
 class FakeRuntime:
     def __init__(self):
         self.services = StubServices()
         self.declared_probe = RecordingProbe()
+        self.docker_containers = StubDockerCache()
 
 
 @pytest.fixture
@@ -236,6 +250,113 @@ def test_a_share_naming_a_stored_account_is_accepted(box):
     )
 
     assert record["shares"][0]["login_id"] == account.id
+
+
+def test_a_docker_service_carries_its_container_list(box):
+    from neutrino_hub.modules.services.docker import DockerContainer
+
+    client, runtime = box
+    engine = declare(client, name="buildbox", kind="docker_engine", port=2375)
+    other = declare(client, name="db")
+    runtime.docker_containers.batch = {
+        engine["id"]: [
+            DockerContainer(
+                id="c1",
+                name="web",
+                image="nginx",
+                state="running",
+                is_running=True,
+                host_ports=[8080],
+            )
+        ]
+    }
+
+    declared = {
+        entry["id"]: entry for entry in client.get("/api/services").json()["declared"]
+    }
+
+    assert declared[engine["id"]]["containers"] == [
+        {
+            "id": "c1",
+            "name": "web",
+            "image": "nginx",
+            "state": "running",
+            "is_running": True,
+            "host_ports": [8080],
+        }
+    ]
+    assert declared[other["id"]]["containers"] == []
+
+
+def test_starting_a_container_drives_the_engine_and_answers_fresh(box, monkeypatch):
+    from neutrino_hub.modules.services.docker import DockerContainer
+
+    client, runtime = box
+    engine = declare(client, name="buildbox", kind="docker_engine", port=2375)
+    driven = []
+
+    class RecordingController:
+        def control(self, service, container_id, action):
+            driven.append((service.id, container_id, action))
+
+    monkeypatch.setattr(
+        declared_services, "DockerContainerController", RecordingController
+    )
+    runtime.docker_containers.batch = {
+        engine["id"]: [
+            DockerContainer(
+                id="c1", name="web", image="nginx", state="running", is_running=True
+            )
+        ]
+    }
+
+    response = client.post(f"/api/services/declared/{engine['id']}/containers/c1/start")
+
+    assert response.status_code == 200
+    assert driven == [(engine["id"], "c1", "start")]
+    assert runtime.docker_containers.refreshed == [engine["id"]]
+    assert response.json()["containers"][0]["id"] == "c1"
+
+
+def test_a_container_action_on_a_refusing_engine_is_a_coded_502(box, monkeypatch):
+    from neutrino_hub.modules.services.docker import DockerEngineError
+
+    client, runtime = box
+    engine = declare(client, name="buildbox", kind="docker_engine", port=2375)
+
+    class RefusingController:
+        def control(self, service, container_id, action):
+            raise DockerEngineError(
+                "docker_action_refused", {"action": action, "status": 404}
+            )
+
+    monkeypatch.setattr(
+        declared_services, "DockerContainerController", RefusingController
+    )
+
+    response = client.post(f"/api/services/declared/{engine['id']}/containers/c1/stop")
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == {
+        "code": "docker_action_refused",
+        "params": {"action": "stop", "status": 404},
+    }
+
+
+def test_a_container_action_on_the_wrong_kind_is_refused(box):
+    client, runtime = box
+    tcp = declare(client)
+
+    response = client.post(f"/api/services/declared/{tcp['id']}/containers/c1/start")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "declared_service_invalid",
+        "params": {"field": "kind"},
+    }
+    missing = client.post("/api/services/declared/missing/containers/c1/start")
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == {"code": "declared_service_unknown"}
 
 
 def test_probe_now_answers_fresh_and_is_a_probe_not_a_read(box):

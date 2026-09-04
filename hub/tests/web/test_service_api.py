@@ -53,6 +53,11 @@ class RecordingServices:
         self.performed.append((name, action))
 
 
+class StubDockerCache:
+    def results(self, services):
+        return {}
+
+
 class FakeRuntime:
     def __init__(self, services: RecordingServices):
         self.services = services
@@ -65,6 +70,7 @@ class FakeRuntime:
         from neutrino_hub.modules.services.probe import DeclaredServiceProbe
 
         self.declared_probe = DeclaredServiceProbe()
+        self.docker_containers = StubDockerCache()
 
 
 @pytest.fixture
