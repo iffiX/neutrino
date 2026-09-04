@@ -19,6 +19,7 @@ from neutrino_hub.utils.subprocess_run import run
 
 from neutrino_hub.modules.cliproxyapi.config import CliproxyApiConfig
 from neutrino_hub.modules.cliproxyapi.constants import (
+    CLIPROXYAPI_AUTH_RELATIVE,
     CLIPROXYAPI_BINARY_PATH,
     CLIPROXYAPI_GENERATED_NAME,
     CLIPROXYAPI_SERVED_FINGERPRINT_RELATIVE,
@@ -102,6 +103,25 @@ def fingerprint_of(rendered: str) -> str:
     return hashlib.sha256(rendered.encode("utf-8")).hexdigest()
 
 
+def ensure_auth_dir() -> Path:
+    """Make the directory the gateway keeps signed-in accounts in.
+
+    The token files are state, not configuration: they hold live provider
+    credentials, they are never rendered from ``config/`` and a backup does
+    not carry them.
+
+    Returns:
+        The directory, readable by root alone.
+
+    Raises:
+        OSError: If it cannot be created.
+    """
+    path = constants.UTILS_STATE_ROOT / CLIPROXYAPI_AUTH_RELATIVE
+    path.mkdir(parents=True, exist_ok=True)
+    path.chmod(0o700)
+    return path
+
+
 def _fingerprint_path() -> Path:
     # Resolved per call, against the state root as it is right now.
     return constants.UTILS_STATE_ROOT / CLIPROXYAPI_SERVED_FINGERPRINT_RELATIVE
@@ -121,6 +141,7 @@ class CliproxyApiConfigApplier:
                 or a client's sealed key does not open.
         """
         rendered, enabled = self._render()
+        ensure_auth_dir()
         write_generated(
             UTILS_GENERATED_DIR / CLIPROXYAPI_GENERATED_NAME, rendered, mode=0o600
         )

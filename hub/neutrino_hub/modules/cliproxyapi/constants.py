@@ -10,6 +10,10 @@ CLIPROXYAPI_VERSION = "7.2.146"
 # /usr/local, which belongs to whoever administers the machine.
 CLIPROXYAPI_BINARY_PATH = UTILS_STATIC_ROOT / "bin" / "cli-proxy-api"
 CLIPROXYAPI_DIR = UTILS_STATE_ROOT / "cliproxyapi"
+# Where the gateway keeps the accounts somebody signed in. State, not
+# configuration: a backup carries ``config/`` and none of this, so a restored
+# box signs in again.
+CLIPROXYAPI_AUTH_RELATIVE = "cliproxyapi/auth"
 CLIPROXYAPI_AUTH_DIR = CLIPROXYAPI_DIR / "auth"
 
 CLIPROXYAPI_UNIT = "neutrino_hub_cliproxyapi.service"
@@ -30,6 +34,21 @@ CLIPROXYAPI_CLIENT_KEY_AAD = b"cliproxyapi:client_key"
 CLIPROXYAPI_MANAGEMENT_SEALED_KEY_RELATIVE = "cliproxyapi/management_key.sealed"
 CLIPROXYAPI_MANAGEMENT_KEY_RELATIVE = "cliproxyapi/management.key"
 CLIPROXYAPI_MANAGEMENT_KEY_AAD = b"cliproxyapi:management_key"
+
+# Subscription accounts: the management API's own routes, on the gateway's
+# port. An account is a token file the gateway writes into the auth directory
+# and reloads without a restart, so nothing here goes through an apply.
+CLIPROXYAPI_MANAGEMENT_PREFIX = "/v0/management"
+CLIPROXYAPI_AUTH_FILES_PATH = f"{CLIPROXYAPI_MANAGEMENT_PREFIX}/auth-files"
+CLIPROXYAPI_OAUTH_CALLBACK_PATH = f"{CLIPROXYAPI_MANAGEMENT_PREFIX}/oauth-callback"
+CLIPROXYAPI_AUTH_STATUS_PATH = f"{CLIPROXYAPI_MANAGEMENT_PREFIX}/get-auth-status"
+CLIPROXYAPI_OAUTH_SESSION_PATH = f"{CLIPROXYAPI_MANAGEMENT_PREFIX}/oauth-session"
+CLIPROXYAPI_AUTH_URL_PATH = CLIPROXYAPI_MANAGEMENT_PREFIX + "/{kind}-auth-url"
+CLIPROXYAPI_ACCOUNT_TIMEOUT_S = 15
+# The flows 7.2.146 starts, each named after the route that starts it. Gemini
+# is absent because the binary carries no Gemini OAuth flow: a Google model is
+# reached with an API key provider instead.
+CLIPROXYAPI_LOGIN_KINDS = ("anthropic", "codex", "antigravity", "kimi", "xai")
 
 # Usage metering: the collector pops the gateway's per-request queue and
 # accumulates under the state root. Days are kept forever; hours carry the

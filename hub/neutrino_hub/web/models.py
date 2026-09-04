@@ -570,6 +570,9 @@ class CliproxyApiStatusView(BaseModel):
     # The strip's numbers: the current UTC day, tokens as input plus output.
     requests_today: int = 0
     tokens_today: int = 0
+    # Signed-in subscription accounts, which serve beside the key providers
+    # and are counted separately because nothing applies them.
+    account_count: int = 0
 
 
 class CliproxyApiUsageRates(BaseModel):
@@ -659,6 +662,72 @@ class CliproxyApiApplyResult(BaseModel):
     """Outcome of rendering and restarting the AI gateway."""
 
     message: str
+
+
+class CliproxyApiAccountView(BaseModel):
+    """One subscription account the gateway holds a token file for.
+
+    There is no expiry here because the gateway refreshes its own tokens; what
+    it reports instead is whether the account is serving.
+    """
+
+    name: str
+    provider: str
+    label: str = ""
+    email: str = ""
+    account_type: str = ""
+    status: str = ""
+    status_message: str = ""
+    is_disabled: bool = False
+    is_unavailable: bool = False
+    failed_count: int = 0
+    success_count: int = 0
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class CliproxyApiAccountsView(BaseModel):
+    """The accounts panel's payload: what is signed in, and what can sign in."""
+
+    accounts: list[CliproxyApiAccountView] = Field(default_factory=list)
+    login_kinds: list[str] = Field(default_factory=list)
+
+
+class CliproxyApiLoginStart(BaseModel):
+    """Which flow to begin."""
+
+    kind: str
+
+
+class CliproxyApiLoginView(BaseModel):
+    """A login in progress, and what the person has to do with it.
+
+    ``flow`` is ``device`` where the provider shows a code to approve and the
+    gateway finishes on its own, ``redirect`` where the browser is sent to a
+    loopback address on the gateway that it cannot reach, and the address bar
+    is what comes back through :class:`CliproxyApiLoginCode`.
+    """
+
+    state: str
+    kind: str
+    url: str
+    flow: str
+    user_code: str = ""
+    expires_in: int = 0
+
+
+class CliproxyApiLoginCode(BaseModel):
+    """The code a redirect flow came back with, or the whole address."""
+
+    code: str
+
+
+class CliproxyApiLoginStateView(BaseModel):
+    """Where a login has got to: ``pending``, ``complete`` or ``failed``."""
+
+    state: str
+    status: str
+    message: str = ""
 
 
 class DeviceSshConfig(BaseModel):

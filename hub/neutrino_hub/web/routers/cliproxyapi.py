@@ -11,7 +11,13 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from neutrino_hub.modules.cliproxyapi.accounts import (
+    CliproxyApiAccountClient,
+    CliproxyApiAccountError,
+)
 from neutrino_hub.modules.cliproxyapi.config import CliproxyApiClientKey
+from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_LOGIN_KINDS
+from neutrino_hub.modules.cliproxyapi.management_key import read_management_key
 from neutrino_hub.modules.cliproxyapi.ops import (
     CliproxyApiConfigApplier,
     load_config,
@@ -30,11 +36,17 @@ from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.web.constants import WEB_JOURNAL_LINE_LIMIT
 from neutrino_hub.web.dependencies import require_session
 from neutrino_hub.web.models import (
+    CliproxyApiAccountsView,
+    CliproxyApiAccountView,
     CliproxyApiApplyResult,
     CliproxyApiHealthBucket,
     CliproxyApiJournalView,
     CliproxyApiKeyCreate,
     CliproxyApiKeyView,
+    CliproxyApiLoginCode,
+    CliproxyApiLoginStart,
+    CliproxyApiLoginStateView,
+    CliproxyApiLoginView,
     CliproxyApiSettingsUpdate,
     CliproxyApiStatusView,
     CliproxyApiUsageBucket,
@@ -50,6 +62,14 @@ router = APIRouter(
     tags=["cliproxyapi"],
     dependencies=[Depends(require_session)],
 )
+
+# What each management API refusal answers with. Anything else is the gateway
+# failing to answer at all, which is a 502.
+ACCOUNT_ERROR_STATUS = {
+    "unknown_account": status.HTTP_404_NOT_FOUND,
+    "login_expired": status.HTTP_404_NOT_FOUND,
+    "unsupported_kind": status.HTTP_422_UNPROCESSABLE_CONTENT,
+}
 
 
 @router.get("", response_model=CliproxyApiStatusView)
@@ -236,6 +256,156 @@ def apply() -> CliproxyApiApplyResult:
     return CliproxyApiApplyResult(message=message)
 
 
+@router.get("/accounts", response_model=CliproxyApiAccountsView)
+def read_accounts() -> CliproxyApiAccountsView:
+    """List the subscription accounts the gateway is serving with.
+
+    Returns:
+        The accounts and the flows this gateway can start.
+
+    Raises:
+        HTTPException: 502 with ``gateway_unreachable`` when the gateway does
+            not answer, which includes it not running yet.
+    """
+    accounts = _account_call(lambda client: client.list_accounts())
+    return CliproxyApiAccountsView(
+        accounts=[CliproxyApiAccountView(**vars(account)) for account in accounts],
+        login_kinds=list(CLIPROXYAPI_LOGIN_KINDS),
+    )
+
+
+@router.delete("/accounts/{name}", response_model=CliproxyApiAccountsView)
+def delete_account(name: str) -> CliproxyApiAccountsView:
+    """Sign an account out; whatever it was serving stops now.
+
+    Args:
+        name: The account's token file, as the list reports it.
+
+    Returns:
+        The accounts after the change.
+
+    Raises:
+        HTTPException: 404 with ``unknown_account``, 502 with
+            ``gateway_unreachable``.
+    """
+    _account_call(lambda client: client.delete_account(name))
+    return read_accounts()
+
+
+@router.post("/account_logins", response_model=CliproxyApiLoginView)
+def start_login(request: CliproxyApiLoginStart) -> CliproxyApiLoginView:
+    """Begin a login and answer with what the person has to open.
+
+    Args:
+        request: Which flow to start.
+
+    Returns:
+        The flow, carrying the URL and the handle to poll.
+
+    Raises:
+        HTTPException: 422 with ``unsupported_kind`` for a flow this gateway
+            does not carry, 502 with ``gateway_unreachable``.
+    """
+    login = _account_call(lambda client: client.start_login(request.kind))
+    return CliproxyApiLoginView(**vars(login))
+
+
+@router.get("/account_logins/{state}", response_model=CliproxyApiLoginStateView)
+def read_login(state: str) -> CliproxyApiLoginStateView:
+    """Ask where a login has got to.
+
+    Args:
+        state: The handle the start returned.
+
+    Returns:
+        ``pending`` while it is open, then ``complete`` or ``failed``.
+
+    Raises:
+        HTTPException: 502 with ``gateway_unreachable``.
+    """
+    return CliproxyApiLoginStateView(
+        **vars(_account_call(lambda client: client.read_login(state)))
+    )
+
+
+@router.put("/account_logins/{state}/code", response_model=CliproxyApiLoginStateView)
+def submit_login_code(
+    state: str, request: CliproxyApiLoginCode
+) -> CliproxyApiLoginStateView:
+    """Hand back the code a redirect flow's browser came away with.
+
+    The gateway exchanges it behind the call, so the answer is the flow's
+    state as it stands and the outcome arrives on a later poll.
+
+    Args:
+        state: The handle the start returned.
+        request: The code, or the whole address the browser was sent to.
+
+    Returns:
+        Where the login has got to right now.
+
+    Raises:
+        HTTPException: 404 with ``login_expired`` when the gateway no longer
+            holds the flow, 502 with ``gateway_unreachable``.
+    """
+    _account_call(lambda client: client.submit_code(state, request.code))
+    return read_login(state)
+
+
+@router.delete("/account_logins/{state}", status_code=status.HTTP_204_NO_CONTENT)
+def cancel_login(state: str) -> None:
+    """Drop a login nobody finished.
+
+    Args:
+        state: The handle the start returned.
+
+    Raises:
+        HTTPException: 404 with ``login_expired`` when the gateway has already
+            forgotten it, 502 with ``gateway_unreachable``.
+    """
+    _account_call(lambda client: client.cancel_login(state))
+
+
+def _account_client() -> CliproxyApiAccountClient:
+    """A client aimed at this box's gateway, with the key it was rendered with."""
+    return CliproxyApiAccountClient(
+        port=load_config().listen_port, management_key=read_management_key()
+    )
+
+
+def _account_call(action):
+    """Run one management API call, wording its refusal as the panel's own.
+
+    Args:
+        action: What to do with the client.
+
+    Returns:
+        Whatever the action returned.
+
+    Raises:
+        HTTPException: Carrying ``{code, params}``; 404 for an account or a
+            login the gateway does not have, 422 for a flow it cannot start,
+            502 for a gateway that does not answer.
+    """
+    try:
+        return action(_account_client())
+    except CliproxyApiAccountError as error:
+        raise HTTPException(
+            status_code=ACCOUNT_ERROR_STATUS.get(
+                error.code, status.HTTP_502_BAD_GATEWAY
+            ),
+            detail={"code": error.code, "params": error.params},
+        ) from error
+
+
+def _account_count() -> int:
+    """How many accounts are signed in, 0 when the gateway cannot say."""
+    try:
+        return len(_account_client().list_accounts())
+    except CliproxyApiAccountError:
+        return 0
+
+
 def _apply_quietly() -> None:
     """Apply after a key or settings change; the status reflects failures."""
     try:
@@ -271,6 +441,7 @@ def _status() -> CliproxyApiStatusView:
         is_serving_stale=applier.is_serving_stale,
         requests_today=today["requests"],
         tokens_today=today["input_tokens"] + today["output_tokens"],
+        account_count=_account_count() if service.is_active else 0,
     )
 
 
