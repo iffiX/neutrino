@@ -81,9 +81,9 @@ def test_installing_the_agent_with_no_credentials_is_a_conflict(registered, pane
 
 
 def test_a_device_with_no_agent_has_none_online(registered, panel):
-    features = panel.read(f"/devices/{DEVICE_MAC}/features")
+    functions = panel.read(f"/devices/{DEVICE_MAC}/functions")
 
-    assert features["is_agent_online"] is False
+    assert functions["is_agent_online"] is False
 
 
 def test_a_crowd_of_devices_is_added_and_forgotten(panel):
