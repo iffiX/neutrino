@@ -28,6 +28,20 @@ def box(tmp_path, monkeypatch):
     return tmp_path
 
 
+@pytest.fixture()
+def installed_box(box, monkeypatch):
+    """The same box with the gateway declared installed and systemctl stubbed.
+
+    Staleness only means anything where there is a gateway to be behind, and a
+    real ``systemctl restart`` would bounce the one this test runs on.
+    """
+    monkeypatch.setattr(
+        CliproxyApiConfigApplier, "is_installed", property(lambda self: True)
+    )
+    monkeypatch.setattr(ops, "run", lambda *args, **kwargs: None)
+    return box
+
+
 def _rendered(box) -> dict:
     path = box / "generated" / CLIPROXYAPI_GENERATED_NAME
     return yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -73,3 +87,57 @@ def test_the_management_key_is_minted_on_first_apply(box):
     # A second apply reuses the sealed key rather than rotating it.
     CliproxyApiConfigApplier().apply()
     assert working.read_text(encoding="utf-8").strip() == key
+
+
+def test_a_box_that_has_never_applied_is_stale(installed_box):
+    assert CliproxyApiConfigApplier().is_serving_stale is True
+
+
+def test_an_apply_leaves_nothing_stale(installed_box):
+    applier = CliproxyApiConfigApplier()
+    applier.apply()
+    fingerprint = installed_box / "state" / "cliproxyapi" / "served_fingerprint.txt"
+    assert len(fingerprint.read_text(encoding="utf-8").strip()) == 64
+    assert applier.is_serving_stale is False
+
+
+def test_a_change_after_an_apply_is_stale(installed_box):
+    CliproxyApiConfigApplier().apply()
+    config = ops.load_config()
+    config.listen_port += 1
+    ops.save_config(config)
+    assert CliproxyApiConfigApplier().is_serving_stale is True
+
+
+def test_a_provider_added_after_an_apply_is_stale(installed_box):
+    CliproxyApiConfigApplier().apply()
+    token_id = (
+        SecretVault().add(kind="token", name="relay key", secret={"value": "k"}).id
+    )
+    AiProviderRegistry().add(
+        name="relay",
+        kind="custom",
+        base_url="https://relay.example/v1",
+        secret_id=token_id,
+    )
+    assert CliproxyApiConfigApplier().is_serving_stale is True
+
+
+def test_the_gateways_own_rewrite_of_the_file_leaves_nothing_stale(installed_box):
+    """The fingerprint is of what the applier wrote, not of what is there now.
+
+    The gateway replaces the management key in its copy with a bcrypt hash on
+    first read, which is not a change the panel should ask anybody to apply.
+    """
+    applier = CliproxyApiConfigApplier()
+    applier.apply()
+    path = installed_box / "generated" / CLIPROXYAPI_GENERATED_NAME
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("secret-key:", "secret-key: $2a$"),
+        encoding="utf-8",
+    )
+    assert applier.is_serving_stale is False
+
+
+def test_a_box_without_the_gateway_is_never_stale(box):
+    assert CliproxyApiConfigApplier().is_serving_stale is False

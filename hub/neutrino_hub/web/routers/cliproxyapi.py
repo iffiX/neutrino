@@ -259,6 +259,7 @@ def _status() -> CliproxyApiStatusView:
         enabled_provider_count=sum(
             1 for p in providers if p.is_enabled and p.secret_id
         ),
+        is_serving_stale=applier.is_serving_stale,
         requests_today=today["requests"],
         tokens_today=today["input_tokens"] + today["output_tokens"],
     )

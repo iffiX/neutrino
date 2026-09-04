@@ -578,6 +578,9 @@ class CliproxyApiStatusView(BaseModel):
     is_reachable: bool = False
     probe_message: str = ""
     enabled_provider_count: int = 0
+    # Whether the stored configuration differs from what the last apply handed
+    # the gateway, which is what lights the Providers panel's apply bar.
+    is_serving_stale: bool = False
     # The strip's numbers: the current UTC day, tokens as input plus output.
     requests_today: int = 0
     tokens_today: int = 0

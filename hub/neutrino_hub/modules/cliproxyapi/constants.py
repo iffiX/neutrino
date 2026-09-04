@@ -32,6 +32,10 @@ CLIPROXYAPI_MANAGEMENT_KEY_AAD = b"cliproxyapi:management_key"
 # accumulates under the state root. Days are kept forever; hours carry the
 # day series and the health bars; minutes carry the rpm/tpm window.
 CLIPROXYAPI_USAGE_RELATIVE = "cliproxyapi/usage.json"
+# The sha256 of the YAML the last apply handed the gateway, beside the usage
+# store. What the panel compares a fresh render against to know whether the
+# running gateway is behind the stored configuration.
+CLIPROXYAPI_SERVED_FINGERPRINT_RELATIVE = "cliproxyapi/served_fingerprint.txt"
 CLIPROXYAPI_USAGE_POLL_INTERVAL_S = 30
 CLIPROXYAPI_USAGE_QUEUE_COUNT = 1000
 CLIPROXYAPI_USAGE_HOURS_KEPT = 48
