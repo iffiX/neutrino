@@ -11,9 +11,25 @@ import "./dns_log_list.css";
  * scroller and keeps the markup selectable. What each row is really for is the
  * outbound tag: it shows at a glance whether the split routing sent a name
  * direct or through an exit.
+ *
+ * Every row is its own grid on fixed outer tracks, so the clock and the tag
+ * line up down the list whatever the tag says.
  */
 
-const DIRECT_TAGS = new Set(["direct", "direct-dns", "local"]);
+const WORDING = {
+  empty: "No DNS queries yet",
+  emptyHint: "Queries appear here as soon as a LAN client resolves a name.",
+  pending: "pending",
+} as const;
+
+/** Tags answered without an exit. Anything else is carried by one. */
+const DIRECT_TAGS = new Set([
+  "direct",
+  "cached",
+  "config",
+  "direct-dns",
+  "local",
+]);
 
 interface DnsLogListProps {
   entries: DnsLogEntry[];
@@ -23,10 +39,8 @@ export function DnsLogList({ entries }: DnsLogListProps) {
   if (entries.length === 0) {
     return (
       <div className="placeholder">
-        <span>No DNS queries yet</span>
-        <span className="faint">
-          Queries appear here as soon as a LAN client resolves a name.
-        </span>
+        <span>{WORDING.empty}</span>
+        <span className="faint">{WORDING.emptyHint}</span>
       </div>
     );
   }
@@ -47,7 +61,7 @@ export function DnsLogList({ entries }: DnsLogListProps) {
               <span className="dns_log_client"> · {entry.client}</span>
             </span>
             <span className={outboundClassName(entry.outbound)}>
-              {entry.outbound ?? "pending"}
+              {entry.outbound ?? WORDING.pending}
             </span>
           </div>
         ))}
