@@ -70,15 +70,21 @@ export function FileTransferModal({ device, onClose }: FileTransferModalProps) {
     void load("");
   }, [load]);
 
+  // Escape closes the topmost thing and nothing else: an open inline field
+  // takes it first and cancels itself, otherwise this window takes it before
+  // the drawer underneath can see it.
+  const isInlineEditOpen = newFolderName !== null || renameFrom !== null;
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
+      if (event.key !== "Escape" || isInlineEditOpen) {
+        return;
       }
+      event.stopPropagation();
+      onClose();
     };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [onClose]);
+    window.addEventListener("keydown", handleKey, true);
+    return () => window.removeEventListener("keydown", handleKey, true);
+  }, [onClose, isInlineEditOpen]);
 
   const path = listing?.path ?? "";
   const crumbs = toCrumbs(path);
@@ -299,6 +305,7 @@ export function FileTransferModal({ device, onClose }: FileTransferModalProps) {
                     void handleMakeFolder();
                   }
                   if (event.key === "Escape") {
+                    event.stopPropagation();
                     setNewFolderName(null);
                   }
                 }}
@@ -340,6 +347,7 @@ export function FileTransferModal({ device, onClose }: FileTransferModalProps) {
                         void handleRename(entry);
                       }
                       if (event.key === "Escape") {
+                        event.stopPropagation();
                         setRenameFrom(null);
                       }
                     }}
