@@ -4,6 +4,7 @@ import type { ChangeEvent, FormEvent } from "react";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { Spinner } from "../components/spinner";
+import { StatusDot } from "../components/status_dot";
 import {
   ApiError,
   apiPostDownload,
@@ -20,7 +21,7 @@ import {
   PANEL_PASSWORD_RULES,
   isPasswordAccepted,
 } from "../password_strength";
-import { useApiResource } from "../use_api_resource";
+import { usePolledResource } from "../use_polled_resource";
 import type {
   AboutInfo,
   PasswordChangeResult,
@@ -40,6 +41,8 @@ import "./settings_page.css";
  */
 
 const NOT_A_BACKUP_SENTENCE = "This is not a Neutrino backup.";
+
+const ABOUT_LIVE = "live";
 
 const RESTORE_ERROR_SENTENCES: Record<string, string> = {
   vault_passphrase_needed: "The vault master password is required to restore.",
@@ -115,7 +118,7 @@ async function readBackupManifest(file: File): Promise<BackupManifest | null> {
 }
 
 export function SettingsPage() {
-  const about = useApiResource<AboutInfo>("/settings/about");
+  const about = usePolledResource<AboutInfo>("/settings/about");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [currentPassword, setCurrentPassword] = useState("");
@@ -374,14 +377,10 @@ export function SettingsPage() {
             <div className="card_title">
               <h2>About</h2>
             </div>
-            <button
-              type="button"
-              className="button button--ghost button--small"
-              onClick={about.reload}
-            >
-              <Icon name="refresh" size={13} />
-              Refresh
-            </button>
+            <span className="badge">
+              <StatusDot tone="ok" isPulsing />
+              {ABOUT_LIVE}
+            </span>
           </div>
 
           {about.error !== null ? (

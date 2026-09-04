@@ -10,6 +10,9 @@ import type { ApiResource } from "./use_api_resource";
  * Sections showing live state poll quietly instead of carrying a reload
  * button. A failed tick keeps the last good value on screen and the next
  * tick tries again, so a restarting backend flickers nothing.
+ *
+ * A hidden tab stops asking and catches up when it comes back, so a panel
+ * left open in a background tab costs the gateway nothing.
  */
 
 export const DEFAULT_POLL_INTERVAL_MS = 15000;
@@ -46,10 +49,19 @@ export function usePolledResource<T>(
         // A transient failure keeps the last reading; the next tick retries.
       }
     };
-    const handle = window.setInterval(() => void tick(), intervalMs);
+    const tickWhenVisible = () => {
+      if (!document.hidden) {
+        void tick();
+      }
+    };
+    const handle = window.setInterval(tickWhenVisible, intervalMs);
+    // A tab that has been hidden is showing a stale reading; catch it up the
+    // moment it is looked at again rather than a whole interval later.
+    document.addEventListener("visibilitychange", tickWhenVisible);
     return () => {
       isCancelled = true;
       window.clearInterval(handle);
+      document.removeEventListener("visibilitychange", tickWhenVisible);
     };
   }, [path, intervalMs, setData]);
 

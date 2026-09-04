@@ -138,10 +138,11 @@ export function DevicesPage() {
         // A transient failure is ignored; the next tick tries again.
       }
     };
-    const handle = window.setInterval(
-      () => void poll(),
-      DEVICE_POLL_INTERVAL_MS,
-    );
+    const handle = window.setInterval(() => {
+      if (!document.hidden) {
+        void poll();
+      }
+    }, DEVICE_POLL_INTERVAL_MS);
     return () => {
       isCancelled = true;
       window.clearInterval(handle);

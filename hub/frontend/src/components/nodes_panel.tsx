@@ -333,7 +333,7 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
           </label>
         </div>
 
-        <div className="page_actions">
+        <div className="nodes_toolbar_actions">
           <button
             type="button"
             className="button button--primary"
@@ -350,10 +350,6 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
           >
             <Icon name="bolt" size={14} />
             {testingIds.length > 0 ? "Testing…" : "Test all"}
-          </button>
-          <button type="button" className="button" onClick={resource.reload}>
-            <Icon name="refresh" size={14} />
-            Reload
           </button>
         </div>
       </div>

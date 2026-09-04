@@ -1,6 +1,7 @@
-import { Icon } from "./icon";
-import { ErrorPanel } from "./error_panel";
-import { useApiResource } from "../use_api_resource";
+import { useEffect, useRef } from "react";
+
+import { StatusDot } from "./status_dot";
+import { usePolledResource } from "../use_polled_resource";
 import type { ServiceJournal } from "../api_types";
 
 import "./journal_panel.css";
@@ -10,8 +11,16 @@ import "./journal_panel.css";
  *
  * The fetch is gated on `isOpen` by passing a null path, so collapsed cards
  * cost nothing — a services page with eight units does not pull eight
- * journals until someone actually asks for one.
+ * journals until someone actually asks for one. While open it polls and keeps
+ * the newest line in view, the same way `ai_journal_panel` does.
  */
+
+const WORDING = {
+  label: (lines: number) => `journal · last ${lines} lines`,
+  live: "live",
+  empty: "(no journal output)",
+  unavailable: "The journal is not readable yet.",
+} as const;
 
 const JOURNAL_LINES = 200;
 
@@ -21,50 +30,41 @@ interface JournalPanelProps {
 }
 
 export function JournalPanel({ serviceName, isOpen }: JournalPanelProps) {
-  const journalPath = isOpen
-    ? `/services/${serviceName}/journal?lines=${JOURNAL_LINES}`
-    : null;
-  const journal = useApiResource<ServiceJournal>(journalPath);
+  const journal = usePolledResource<ServiceJournal>(
+    isOpen ? `/services/${serviceName}/journal?lines=${JOURNAL_LINES}` : null,
+  );
+  const outputRef = useRef<HTMLPreElement | null>(null);
+
+  useEffect(() => {
+    const node = outputRef.current;
+    if (node !== null) {
+      node.scrollTop = node.scrollHeight;
+    }
+  }, [journal.data]);
 
   if (!isOpen) {
     return null;
   }
+  const text = journal.data?.text ?? null;
 
   return (
     <div className="journal_panel">
       <div className="journal_panel_head">
-        <span className="section_label">
-          journal · last {JOURNAL_LINES} lines
-        </span>
-        <button
-          type="button"
-          className="button button--ghost button--small"
-          onClick={journal.reload}
-          disabled={journal.isLoading}
-        >
-          <Icon name="refresh" size={13} />
-          Refresh
-        </button>
+        <span className="section_label">{WORDING.label(JOURNAL_LINES)}</span>
+        {text !== null && (
+          <StatusDot tone="ok" isPulsing label={WORDING.live} />
+        )}
       </div>
 
-      {journal.error !== null && (
-        <ErrorPanel
-          title="Journal unavailable"
-          message={journal.error}
-          hint="journalctl may be unreadable for this unit, or the unit may not exist."
-          onRetry={journal.reload}
-        />
-      )}
-
-      {journal.error === null && journal.isLoading && journal.data === null && (
+      {text === null && journal.isLoading && (
         <div className="skeleton journal_panel_loading" />
       )}
-
-      {journal.error === null && journal.data !== null && (
-        <pre className="journal_panel_output">
-          {journal.data.text.trim().length > 0
-            ? journal.data.text
-            : "(no journal output)"}
+      {text === null && !journal.isLoading && (
+        <span className="field_hint">{WORDING.unavailable}</span>
+      )}
+      {text !== null && (
+        <pre ref={outputRef} className="journal_panel_output">
+          {text.trim().length > 0 ? text : WORDING.empty}
         </pre>
       )}
     </div>

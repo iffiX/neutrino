@@ -98,7 +98,11 @@ export function ZfsPage() {
       }
     };
     const handle = window.setInterval(
-      () => void poll(),
+      () => {
+        if (!document.hidden) {
+          void poll();
+        }
+      },
       isScanning ? SCAN_POLL_INTERVAL_MS : POLL_INTERVAL_MS,
     );
     return () => {

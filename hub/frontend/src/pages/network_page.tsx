@@ -23,6 +23,7 @@ import {
 import { interruptionWarning } from "../network_warnings";
 import type { InterfaceErrors, ServedNetwork } from "../network_validation";
 import { useApiResource } from "../use_api_resource";
+import { usePolledResource } from "../use_polled_resource";
 import type {
   DevicesResponse,
   InterfaceRole,
@@ -49,6 +50,10 @@ import "./network_page.css";
  * would mean a mistake in the Wi-Fi settings could take the wired LAN down
  * with it, and the wired LAN is how you get back in.
  */
+
+// The diagram's own cadence: a machine appearing on the LAN is a list that
+// changes on its own, and nobody should have to ask to see it.
+const DEVICE_POLL_INTERVAL_MS = 10000;
 
 const INTENT_OPTIONS: { value: UplinkIntent; label: string; hint: string }[] = [
   {
@@ -120,8 +125,12 @@ function newVlanSettings(parent: string, id: number): InterfaceSettings {
 export function NetworkPage() {
   const network = useApiResource<NetworkView>("/network");
   // The cheap list endpoint, no ARP sweep: the diagram only wants to draw
-  // what is already known.
-  const deviceList = useApiResource<DevicesResponse>("/devices");
+  // what is already known, and it draws what is there now rather than what
+  // was there when the page opened.
+  const deviceList = usePolledResource<DevicesResponse>(
+    "/devices",
+    DEVICE_POLL_INTERVAL_MS,
+  );
 
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [draft, setDraft] = useState<InterfaceSettings | null>(null);
@@ -340,20 +349,6 @@ export function NetworkPage() {
       <div className="page_header">
         <div className="page_title_row">
           <h1>Network</h1>
-        </div>
-        <div className="page_actions">
-          <button
-            type="button"
-            className="button button--ghost button--small"
-            onClick={() => {
-              network.reload();
-              deviceList.reload();
-            }}
-            disabled={network.isLoading}
-          >
-            <Icon name="refresh" size={13} />
-            Refresh
-          </button>
         </div>
       </div>
 

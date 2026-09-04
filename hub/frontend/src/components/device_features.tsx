@@ -109,7 +109,11 @@ export function DeviceFeatures({ macAddress }: DeviceFeaturesProps) {
   useEffect(() => {
     void load();
     const handle = window.setInterval(
-      () => void load(),
+      () => {
+        if (!document.hidden) {
+          void load();
+        }
+      },
       isAnyStepRunning ? BUSY_REFRESH_INTERVAL_MS : REFRESH_INTERVAL_MS,
     );
     return () => window.clearInterval(handle);
