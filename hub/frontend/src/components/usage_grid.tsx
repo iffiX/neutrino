@@ -1,8 +1,9 @@
 import {
   MONTH_LABELS,
+  WEEKDAY_LABELS,
   formatBucketLabel,
   toHeatLevel,
-  toWeekColumns,
+  toWeekGroups,
   tokensOf,
 } from "../ai_usage";
 import { formatCompact } from "../format_compact";
@@ -13,9 +14,14 @@ import "./usage_grid.css";
 /**
  * The activity grid under the usage tiles, in two readings of the same
  * buckets: `tokens` shades each cell by volume, `health` colours it by
- * outcome. Daily buckets lay out as weekday-aligned week columns; the day
- * range is a single row of hours. Wide grids scroll inside their own box so
- * the page never scrolls sideways.
+ * outcome.
+ *
+ * Each range gets the layout its span reads best in. Day and week are one
+ * stretched row. A month is a wall calendar after the shape every calendar
+ * uses — seven weekday columns across the card, one row per week — because
+ * thirty days as week columns leave the card mostly empty. A year keeps the
+ * columns, which is the only span with enough weeks to fill them. Wide grids
+ * scroll inside their own box so the page never scrolls sideways.
  */
 
 const WORDING = {
@@ -58,6 +64,8 @@ export function UsageGrid({ series, range, mode }: UsageGridProps) {
       <div className="usage_grid_scroll">
         {isSingleRow ? (
           <SingleRow series={series} range={range} mode={mode} />
+        ) : range === "month" ? (
+          <MonthCalendar series={series} range={range} mode={mode} />
         ) : (
           <WeekColumns series={series} range={range} mode={mode} />
         )}
@@ -114,9 +122,45 @@ function SingleRow({ series, range, mode }: RowProps) {
   );
 }
 
+function MonthCalendar({ series, range, mode }: RowProps) {
+  const highest = Math.max(...series.map(tokensOf));
+  const weeks = toWeekGroups(series);
+  return (
+    <div className="usage_grid_calendar">
+      <div className="usage_grid_weekdays">
+        {WEEKDAY_LABELS.map((weekday, index) => (
+          <span key={index} className="usage_grid_label">
+            {weekday}
+          </span>
+        ))}
+      </div>
+      <div className="usage_grid_month">
+        {weeks.map((week, weekIndex) =>
+          week.map((point, dayIndex) =>
+            point === null ? (
+              <span
+                key={`${weekIndex}-${dayIndex}`}
+                className="usage_cell usage_cell--void"
+              />
+            ) : (
+              <Cell
+                key={point.bucket}
+                point={point}
+                range={range}
+                mode={mode}
+                highest={highest}
+              />
+            ),
+          ),
+        )}
+      </div>
+    </div>
+  );
+}
+
 function WeekColumns({ series, range, mode }: RowProps) {
   const highest = Math.max(...series.map(tokensOf));
-  const columns = toWeekColumns(series);
+  const columns = toWeekGroups(series);
   return (
     <div className="usage_grid_weeks">
       <div className="usage_grid_months">

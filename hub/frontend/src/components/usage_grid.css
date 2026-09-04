@@ -36,6 +36,38 @@
   white-space: nowrap;
 }
 
+/*
+ * The month calendar: seven weekday columns across the whole card, one row
+ * per week. The cells track the card's width and stop growing at a size a
+ * month still fits on one screen at.
+ */
+.usage_grid_calendar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 238px;
+}
+
+.usage_grid_weekdays,
+.usage_grid_month {
+  display: grid;
+  gap: 4px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.usage_grid_weekdays .usage_grid_label {
+  text-align: center;
+}
+
+.usage_grid_month .usage_cell {
+  width: auto;
+  height: auto;
+  min-height: 26px;
+  max-height: 54px;
+  border-radius: 4px;
+  aspect-ratio: 1;
+}
+
 .usage_grid_weeks {
   display: inline-flex;
   flex-direction: column;

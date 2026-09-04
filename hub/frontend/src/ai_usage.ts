@@ -36,6 +36,17 @@ export const MONTH_LABELS = [
   "Dec",
 ] as const;
 
+/** Column headings for the month calendar, in the order the weeks run. */
+export const WEEKDAY_LABELS = [
+  "Su",
+  "Mo",
+  "Tu",
+  "We",
+  "Th",
+  "Fr",
+  "Sa",
+] as const;
+
 const WEEKDAY_ROWS = 7;
 const HEAT_LEVELS = 4;
 
@@ -120,36 +131,37 @@ export function toHeatLevel(value: number, highest: number): number {
 }
 
 /**
- * Lay daily buckets out as weekday-aligned columns, one column per week.
+ * Group daily buckets into weekday-aligned groups of seven.
  *
- * Rows run Sunday to Saturday; the first and last columns carry nulls where
- * the range does not cover the whole week. Hourly buckets never come here —
- * the day range renders as a single row instead.
+ * A group runs Sunday to Saturday; the first and last carry nulls where the
+ * range does not cover the whole week. The year grid draws a group as a
+ * column and the month calendar as a row, so both read the same weekdays.
+ * Hourly buckets never come here — the day range renders as a single row.
  */
-export function toWeekColumns(
+export function toWeekGroups(
   series: AiUsageBucket[],
 ): (AiUsageBucket | null)[][] {
-  const columns: (AiUsageBucket | null)[][] = [];
-  let column: (AiUsageBucket | null)[] = [];
+  const groups: (AiUsageBucket | null)[][] = [];
+  let group: (AiUsageBucket | null)[] = [];
 
   for (const point of series) {
     const weekday = parseBucket(point.bucket)?.getDay() ?? 0;
-    if (column.length === 0) {
-      column = new Array<AiUsageBucket | null>(weekday).fill(null);
+    if (group.length === 0) {
+      group = new Array<AiUsageBucket | null>(weekday).fill(null);
     }
-    column.push(point);
-    if (column.length === WEEKDAY_ROWS) {
-      columns.push(column);
-      column = [];
+    group.push(point);
+    if (group.length === WEEKDAY_ROWS) {
+      groups.push(group);
+      group = [];
     }
   }
-  if (column.length > 0) {
-    while (column.length < WEEKDAY_ROWS) {
-      column.push(null);
+  if (group.length > 0) {
+    while (group.length < WEEKDAY_ROWS) {
+      group.push(null);
     }
-    columns.push(column);
+    groups.push(group);
   }
-  return columns;
+  return groups;
 }
 
 export type AiHealthState = "healthy" | "degraded" | "quiet";
