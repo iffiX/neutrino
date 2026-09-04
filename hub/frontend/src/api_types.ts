@@ -509,6 +509,8 @@ export interface CliproxyApiStatusView {
   client_keys: CliproxyApiKeyView[];
   is_reachable: boolean;
   probe_message: string;
+  /** The model names /v1/models answered with; empty when unreachable. */
+  served_models?: string[];
   enabled_provider_count: number;
   /** How many subscription accounts the gateway holds. */
   account_count: number;

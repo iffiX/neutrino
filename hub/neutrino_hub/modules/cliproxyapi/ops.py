@@ -191,7 +191,9 @@ class CliproxyApiConfigApplier:
             return True
         return fingerprint_of(rendered) != read_served_fingerprint()
 
-    def probe(self, *, port: int, client_key: str | None) -> tuple[bool, str]:
+    def probe(
+        self, *, port: int, client_key: str | None
+    ) -> tuple[bool, str, list[str]]:
         """Ask the running gateway for its model list.
 
         Args:
@@ -199,10 +201,11 @@ class CliproxyApiConfigApplier:
             client_key: A key to authenticate with, when one exists.
 
         Returns:
-            Whether it answered, and the served model names or the failure.
+            Whether it answered, the failure or empty-list wording, and the
+            served model names.
         """
         if client_key is None:
-            return False, "no client key to probe with"
+            return False, "no client key to probe with", []
         try:
             response = httpx.get(
                 f"http://127.0.0.1:{port}/v1/models",
@@ -210,14 +213,15 @@ class CliproxyApiConfigApplier:
                 timeout=PROBE_TIMEOUT_S,
             )
         except httpx.HTTPError as error:
-            return False, str(error)
+            return False, str(error), []
         if not response.is_success:
-            return False, f"answered {response.status_code}"
+            return False, f"answered {response.status_code}", []
         try:
             names = [entry.get("id", "") for entry in response.json().get("data", [])]
         except ValueError:
-            return False, "answered with something that is not JSON"
-        return True, ", ".join(name for name in names if name) or "no models served"
+            return False, "answered with something that is not JSON", []
+        served = [name for name in names if name]
+        return True, "" if served else "no models served", served
 
     def render_with_stored_key(self) -> str:
         """Render with the key already on the box, for a dry run.

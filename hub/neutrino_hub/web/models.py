@@ -563,6 +563,7 @@ class CliproxyApiStatusView(BaseModel):
     client_keys: list[CliproxyApiKeyView] = Field(default_factory=list)
     is_reachable: bool = False
     probe_message: str = ""
+    served_models: list[str] = Field(default_factory=list)
     enabled_provider_count: int = 0
     # Whether the stored configuration differs from what the last apply handed
     # the gateway, which is what lights the Providers panel's apply bar.

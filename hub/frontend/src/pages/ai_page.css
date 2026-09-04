@@ -40,6 +40,65 @@
   font-size: 11px;
 }
 
+/* The serving line: family counts collapsed, copyable names expanded. */
+.ai_serving {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.ai_serving_groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  margin-bottom: var(--space-4);
+}
+
+.ai_serving_group {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+}
+
+.ai_serving_family {
+  flex: none;
+  min-width: 76px;
+  color: var(--color-text-faint);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ai_serving_pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.ai_model_pill {
+  padding: 2px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.ai_model_pill:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
 /* The two halves of the usage area, and the window they both read. */
 .ai_usage_switch {
   display: flex;

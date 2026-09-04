@@ -441,8 +441,9 @@ def _status() -> CliproxyApiStatusView:
     keys = [_key_view(key) for key in config.client_keys]
     is_reachable = False
     probe_message = ""
+    served_models: list[str] = []
     if service.is_active:
-        is_reachable, probe_message = applier.probe(
+        is_reachable, probe_message, served_models = applier.probe(
             port=config.listen_port,
             client_key=next((view.key for view in keys if view.key), None),
         )
@@ -455,6 +456,7 @@ def _status() -> CliproxyApiStatusView:
         client_keys=keys,
         is_reachable=is_reachable,
         probe_message=probe_message,
+        served_models=served_models,
         enabled_provider_count=sum(
             1 for p in providers if p.is_enabled and p.secret_id
         ),

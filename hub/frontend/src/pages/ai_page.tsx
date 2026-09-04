@@ -11,6 +11,7 @@ import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { StatusDot } from "../components/status_dot";
 import { apiPut, describeError } from "../api_client";
+import { copyText } from "../copy_text";
 import { formatCompact } from "../format_compact";
 import { usePolledResource } from "../use_polled_resource";
 import type { AiUsageResponse, CliproxyApiStatusView } from "../api_types";
@@ -42,6 +43,9 @@ const WORDING = {
   notAnswering: "not answering",
   journal: "Journal",
   serving: (message: string) => `Serving: ${message}`,
+  servingCount: (count: number) => `Serving ${count} models`,
+  copied: "copied",
+  copyModel: "Copy the name",
   waitingProbe: "Waiting for the first probe.",
   requestsToday: "requests today",
   tokensToday: "tokens today",
@@ -71,6 +75,25 @@ const USAGE_PATH = "/cliproxyapi/usage?range=month";
 /** Which half of the usage area the chips are showing. */
 type UsageView = "providers" | "keys";
 
+const COPIED_FLASH_MS = 1200;
+
+interface ModelFamily {
+  name: string;
+  models: string[];
+}
+
+/** Group served names by their first dash-separated word, largest first. */
+function toModelFamilies(models: string[]): ModelFamily[] {
+  const byFamily = new Map<string, string[]>();
+  for (const model of models) {
+    const family = model.split("-")[0] ?? model;
+    byFamily.set(family, [...(byFamily.get(family) ?? []), model]);
+  }
+  return [...byFamily.entries()]
+    .map(([name, names]) => ({ name, models: [...names].sort() }))
+    .sort((a, b) => b.models.length - a.models.length);
+}
+
 export function AiPage() {
   const status = usePolledResource<CliproxyApiStatusView>(STATUS_PATH);
   const view = status.data;
@@ -78,6 +101,8 @@ export function AiPage() {
   const [isBusy, setIsBusy] = useState(false);
   const [port, setPort] = useState<number | null>(null);
   const [isJournalOpen, setIsJournalOpen] = useState(false);
+  const [isServingOpen, setIsServingOpen] = useState(false);
+  const [copiedModel, setCopiedModel] = useState<string | null>(null);
   const [usageView, setUsageView] = useState<UsageView>("providers");
   const isInstalled = view !== null && view.is_installed;
   const usage = usePolledResource<AiUsageResponse>(
@@ -124,6 +149,17 @@ export function AiPage() {
   const isPortValid = port !== null && port >= PORT_MIN && port <= PORT_MAX;
   const hasToday =
     view.requests_today !== undefined || view.tokens_today !== undefined;
+  const servedModels = view.served_models ?? [];
+  const servedFamilies = toModelFamilies(servedModels);
+
+  const handleCopyModel = async (name: string) => {
+    await copyText(name);
+    setCopiedModel(name);
+    window.setTimeout(
+      () => setCopiedModel((current) => (current === name ? null : current)),
+      COPIED_FLASH_MS,
+    );
+  };
 
   const handleApplyPort = async () => {
     setIsBusy(true);
@@ -168,13 +204,37 @@ export function AiPage() {
                 }
               />
             </div>
-            <p className="field_hint ai_probe">
-              {view.is_reachable
-                ? WORDING.serving(view.probe_message)
-                : view.probe_message.length > 0
-                  ? view.probe_message
-                  : WORDING.waitingProbe}
-            </p>
+            {servedFamilies.length > 0 ? (
+              <div className="ai_serving field_hint ai_probe">
+                <span>{WORDING.servingCount(servedModels.length)}</span>
+                {servedFamilies.map((family) => (
+                  <span key={family.name} className="badge">
+                    {family.name}
+                    <span className="ai_chip_count">
+                      {family.models.length}
+                    </span>
+                  </span>
+                ))}
+                <button
+                  type="button"
+                  className="button button--ghost button--small"
+                  onClick={() => setIsServingOpen((isOpen) => !isOpen)}
+                >
+                  <Icon
+                    name={isServingOpen ? "chevron_down" : "chevron_right"}
+                    size={13}
+                  />
+                </button>
+              </div>
+            ) : (
+              <p className="field_hint ai_probe">
+                {view.is_reachable
+                  ? WORDING.serving(view.probe_message)
+                  : view.probe_message.length > 0
+                    ? view.probe_message
+                    : WORDING.waitingProbe}
+              </p>
+            )}
           </div>
           <div className="ai_activity_actions">
             {hasToday && (
@@ -208,6 +268,29 @@ export function AiPage() {
             </button>
           </div>
         </div>
+
+        {isServingOpen && servedFamilies.length > 0 && (
+          <div className="ai_serving_groups">
+            {servedFamilies.map((family) => (
+              <div key={family.name} className="ai_serving_group">
+                <span className="ai_serving_family">{family.name}</span>
+                <div className="ai_serving_pills">
+                  {family.models.map((model) => (
+                    <button
+                      key={model}
+                      type="button"
+                      className="ai_model_pill mono"
+                      title={WORDING.copyModel}
+                      onClick={() => void handleCopyModel(model)}
+                    >
+                      {copiedModel === model ? WORDING.copied : model}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="ai_usage_switch">
           <div className="ai_service_chips">
