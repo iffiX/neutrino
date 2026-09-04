@@ -8,7 +8,7 @@ way.
 
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from neutrino_hub.system.package_manager import is_version_at_least
@@ -42,6 +42,8 @@ class PodmanContainerState:
         is_running: Whether it is running.
         is_declared: Whether config/ declares it — the page separates what
             the gateway owes a restart from what a shell left behind.
+        host_ports: The published host ports, for the device catalog's port
+            offers.
     """
 
     name: str
@@ -49,6 +51,7 @@ class PodmanContainerState:
     status: str
     is_running: bool
     is_declared: bool
+    host_ports: list[int] = field(default_factory=list)
 
 
 class PodmanUnitApplier:
@@ -198,6 +201,7 @@ class PodmanStatusReader:
                     status=entry.get("Status", ""),
                     is_running=entry.get("State", "") == "running",
                     is_declared=names[0] in declared_names,
+                    host_ports=_host_ports(entry.get("Ports") or []),
                 )
             )
         # A declared container with autostart off exists only as a unit until
@@ -386,3 +390,22 @@ def container_applier() -> PodmanUnitApplier:
     if is_quadlet_supported():
         return PodmanUnitApplier(directory=PODMAN_QUADLET_DIR, suffix=".container")
     return PodmanUnitApplier(directory=PODMAN_UNIT_DIR, suffix=".service")
+
+
+def _host_ports(entries: list) -> list[int]:
+    """The published host ports of one ``podman ps`` row.
+
+    Args:
+        entries: The row's ``Ports`` list.
+
+    Returns:
+        Sorted unique host ports.
+    """
+    ports = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        port = entry.get("host_port")
+        if isinstance(port, int) and port > 0:
+            ports.add(port)
+    return sorted(ports)
