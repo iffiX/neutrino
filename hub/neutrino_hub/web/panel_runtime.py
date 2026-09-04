@@ -21,7 +21,6 @@ from neutrino_hub.modules.router.routes import (
     RouterRulesetApplier,
     lookup_xray_uid,
 )
-from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.gitea.config import GiteaConfig
 from neutrino_hub.modules.gitea.ops import GiteaConfigApplier, GiteaSecretStore
 from neutrino_hub.modules.gitea.renderer import GiteaConfigRenderer
@@ -83,7 +82,6 @@ class PanelRuntime:
         self.stats = XrayStatsClient()
         self.node_probe = XrayNodeProbe()
         self.declared_probe = DeclaredServiceProbe()
-        self.devices = DeviceRegistry()
         self.is_config_dirty = False
         # Latest agent metrics, keyed by MAC. Runtime only: these are stale the
         # moment the panel restarts, so they are never written to config/.
