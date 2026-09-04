@@ -148,6 +148,11 @@ export interface StatsFrame {
   wan_address: string | null;
   total_uplink_bytes: number;
   total_downlink_bytes: number;
+  /** The machine's own uplink, empty when it has neither WAN nor default route. */
+  interface_name: string;
+  /** What that interface is carrying, from its kernel counters — not xray's. */
+  interface_rx_bytes_per_s: number;
+  interface_tx_bytes_per_s: number;
   proxy_scope: ProxyScope;
   /** What this machine is set up as; every other chip is read by it. */
   network_mode: NetworkModeKey;
