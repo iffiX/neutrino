@@ -82,6 +82,24 @@ class AgentPlatform:
         """
         raise PlatformUnsupportedError("cannot enumerate accounts here")
 
+    def account_home(self, account: str) -> str:
+        """One account's home directory, from the account database.
+
+        Never read from ``$HOME``: the agent runs as root, so the
+        environment names root's home, not the account's.
+
+        Args:
+            account: The account.
+
+        Returns:
+            The absolute home path.
+
+        Raises:
+            PlatformUnsupportedError: When the platform cannot answer.
+            KeyError: When the account database has no such account.
+        """
+        raise PlatformUnsupportedError("cannot resolve an account home here")
+
     def read_account_file(self, *, account: str, relative: str) -> str:
         """Read a file below an account's home, as that account.
 
@@ -317,7 +335,10 @@ class AgentPlatform:
         """Run a snippet against one path below the account's home.
 
         Python does the work rather than a shell, so the paths behave the
-        same on every platform that has an interpreter.
+        same on every platform that has an interpreter. The home comes from
+        the account database, never from ``$HOME``, which under a root agent
+        names root's home; only the agent's own files (an empty account) use
+        the process's home.
 
         Args:
             account: The account to run as; empty runs as the agent itself.
@@ -329,11 +350,16 @@ class AgentPlatform:
         Returns:
             Standard output, empty when the snippet could not run.
         """
-        script = f"import pathlib,sys\np = pathlib.Path.home() / {relative!r}\n{body}"
         try:
+            if account:
+                home = self.account_home(account)
+                head = f"p = pathlib.Path({home!r}) / {relative!r}"
+            else:
+                head = f"p = pathlib.Path.home() / {relative!r}"
+            script = f"import pathlib,sys\n{head}\n{body}"
             result = self.run_as_account(
                 account, [_interpreter(), "-c", script], stdin=stdin
             )
-        except (OSError, subprocess.SubprocessError):
+        except (KeyError, OSError, subprocess.SubprocessError):
             return ""
         return result.stdout or ""

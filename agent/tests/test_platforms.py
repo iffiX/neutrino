@@ -114,3 +114,50 @@ def test_linux_runs_directly_without_root_or_account(monkeypatch):
     LinuxPlatform().run_as_account("", ["id"])
 
     assert recorded == [["id"], ["id"]]
+
+
+def test_account_file_ops_ignore_the_home_variable(monkeypatch, tmp_path):
+    """The account database, not $HOME, names the home: a root agent's
+    environment says /root, and writing there is the bug of record."""
+    home = tmp_path / "alice"
+    home.mkdir()
+    wrong = tmp_path / "wrong"
+    wrong.mkdir()
+    monkeypatch.setenv("HOME", str(wrong))
+    entry = PwdEntry("alice", 1000, "/bin/bash", str(home))
+    monkeypatch.setattr(linux_module.pwd, "getpwnam", lambda name: entry)
+    platform = LinuxPlatform()
+
+    platform.write_account_file(
+        account="alice", relative=".claude/settings.json", text='{"model": "opus"}'
+    )
+
+    assert (home / ".claude/settings.json").read_text() == '{"model": "opus"}'
+    assert not (wrong / ".claude").exists()
+    assert (
+        platform.read_account_file(account="alice", relative=".claude/settings.json")
+        == '{"model": "opus"}'
+    )
+
+
+def test_linux_step_down_env_carries_the_target_identity(monkeypatch):
+    """runuser passes the environment through, so the child's HOME, USER and
+    LOGNAME must be set to the target account's own values."""
+    entry = PwdEntry("alice", 1000, "/bin/bash", "/home/alice")
+    monkeypatch.setattr(linux_module.pwd, "getpwnam", lambda name: entry)
+    recorded = {}
+
+    def record(command, **kwargs):
+        recorded["command"] = list(command)
+        recorded["env"] = kwargs.get("env")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(linux_module.subprocess, "run", record)
+    monkeypatch.setattr(linux_module.os, "geteuid", lambda: 0)
+
+    LinuxPlatform().run_as_account("alice", ["id"])
+
+    assert recorded["command"][:4] == ["runuser", "-u", "alice", "--"]
+    assert recorded["env"]["HOME"] == "/home/alice"
+    assert recorded["env"]["USER"] == "alice"
+    assert recorded["env"]["LOGNAME"] == "alice"

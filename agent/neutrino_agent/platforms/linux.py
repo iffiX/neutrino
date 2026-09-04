@@ -132,6 +132,22 @@ class LinuxPlatform(AgentPlatform):
             accounts.append(entry.pw_name)
         return sorted(accounts)
 
+    def account_home(self, account: str) -> str:
+        """One account's home directory, from the account database.
+
+        Args:
+            account: The account.
+
+        Returns:
+            The absolute home path.
+
+        Raises:
+            KeyError: When the account database has no such account.
+        """
+        if pwd is None:
+            raise KeyError(account)
+        return pwd.getpwnam(account).pw_dir
+
     def run_as_account(
         self,
         account: str,
@@ -141,6 +157,10 @@ class LinuxPlatform(AgentPlatform):
         timeout_s: int = AGENT_STEP_DOWN_TIMEOUT_S,
     ) -> "subprocess.CompletedProcess":
         """Run a process as an account, through ``runuser`` when root.
+
+        ``runuser`` passes the environment through, so the child gets the
+        account's own ``HOME``, ``USER`` and ``LOGNAME`` set here — otherwise
+        anything resolving ``~`` under a root agent lands in root's home.
 
         Args:
             account: The account; empty runs as the agent itself.
@@ -152,10 +172,17 @@ class LinuxPlatform(AgentPlatform):
             The completed process, with text output captured.
         """
         command = list(argv)
+        env = None
         if account and os.geteuid() == 0:
             command = ["runuser", "-u", account, "--"] + command
+            env = self._account_env(account)
         return subprocess.run(
-            command, input=stdin, capture_output=True, text=True, timeout=timeout_s
+            command,
+            input=stdin,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            env=env,
         )
 
     def read_agent_service_state(self) -> str:
@@ -280,6 +307,29 @@ class LinuxPlatform(AgentPlatform):
         except (OSError, subprocess.SubprocessError):
             return False
         return result.stdout.strip() == "active"
+
+    def _account_env(self, account: str) -> "dict | None":
+        """The environment a stepped-down child runs with.
+
+        Args:
+            account: The target account.
+
+        Returns:
+            The environment with the account's own identity variables, or
+            None when the account database has no entry — ``runuser`` then
+            refuses the unknown account itself.
+        """
+        try:
+            entry = pwd.getpwnam(account) if pwd is not None else None
+        except KeyError:
+            entry = None
+        if entry is None:
+            return None
+        env = dict(os.environ)
+        env["HOME"] = entry.pw_dir
+        env["USER"] = entry.pw_name
+        env["LOGNAME"] = entry.pw_name
+        return env
 
 
 class HostMetricsReader:

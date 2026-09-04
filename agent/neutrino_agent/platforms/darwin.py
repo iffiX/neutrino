@@ -60,6 +60,22 @@ class DarwinPlatform(AgentPlatform):
             accounts.append(entry.pw_name)
         return sorted(accounts)
 
+    def account_home(self, account: str) -> str:
+        """One account's home directory, from the account database.
+
+        Args:
+            account: The account.
+
+        Returns:
+            The absolute home path.
+
+        Raises:
+            KeyError: When the account database has no such account.
+        """
+        if pwd is None:
+            raise KeyError(account)
+        return pwd.getpwnam(account).pw_dir
+
     def run_as_account(
         self,
         account: str,
@@ -69,6 +85,9 @@ class DarwinPlatform(AgentPlatform):
         timeout_s: int = AGENT_STEP_DOWN_TIMEOUT_S,
     ) -> "subprocess.CompletedProcess":
         """Run a process as an account, through ``su`` when root.
+
+        The login shell (``su -``) gives the child the account's own
+        environment, home included.
 
         Args:
             account: The account; empty runs as the agent itself.

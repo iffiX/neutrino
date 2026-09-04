@@ -29,6 +29,17 @@ class WindowsPlatform(AgentPlatform):
     os_name = "windows"
     capabilities = frozenset({"account_files", "packages", "openssh"})
 
+    def account_home(self, account: str) -> str:
+        """One account's profile directory.
+
+        Args:
+            account: The account.
+
+        Returns:
+            The absolute profile path.
+        """
+        return str(Path(WINDOWS_PROFILES_DIR) / account)
+
     def read_account_file(self, *, account: str, relative: str) -> str:
         """Read a file below an account's profile.
 
@@ -177,4 +188,4 @@ class WindowsPlatform(AgentPlatform):
         """
         if not account:
             return Path(os.path.expanduser("~")) / relative
-        return Path(WINDOWS_PROFILES_DIR) / account / relative
+        return Path(self.account_home(account)) / relative
