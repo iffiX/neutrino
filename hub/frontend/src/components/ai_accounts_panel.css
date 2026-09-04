@@ -1,0 +1,102 @@
+.ai_accounts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ai_account_row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.ai_account_label {
+  flex: 1;
+  min-width: 140px;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai_account_status {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* --- The sign-in modal, inside the shared confirm frame --- */
+
+.ai_login_body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.ai_login_kinds {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ai_login_kind {
+  justify-content: center;
+}
+
+.ai_login_hint {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.ai_login_url_row,
+.ai_login_code_row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.ai_login_url {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.ai_login_url:hover {
+  border-color: var(--color-accent);
+}
+
+/* The code is the whole of the device flow, so it is read at arm's length.
+   A hairline in the accent, no glow: nothing here is waiting to be applied. */
+.ai_login_code {
+  padding: var(--space-3);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-wash);
+  color: var(--color-accent);
+  font-size: 22px;
+  letter-spacing: 0.18em;
+  text-align: center;
+  word-break: break-all;
+}
+
+.ai_login_waiting {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ai_login_expiry {
+  color: var(--color-text-faint);
+  font-size: 12px;
+}

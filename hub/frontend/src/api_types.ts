@@ -510,12 +510,71 @@ export interface CliproxyApiStatusView {
   is_reachable: boolean;
   probe_message: string;
   enabled_provider_count: number;
+  /** How many subscription accounts the gateway holds. */
+  account_count: number;
   /** Whether the running gateway is older than the stored providers; absent
    * reads as false. */
   is_serving_stale?: boolean;
   /** Served over the current UTC day; absent until usage is collected. */
   requests_today?: number;
   tokens_today?: number;
+}
+
+/**
+ * One subscription the gateway is signed in to.
+ *
+ * `provider` and a login's `kind` name the same service differently — an
+ * account carries the name of the credential file it was written to, a login
+ * the name of the protocol it speaks — so neither is a closed set here.
+ */
+export interface CliproxyApiAccountView {
+  /** The credential file this account lives in; its identifier in every path. */
+  name: string;
+  provider: string;
+  label: string;
+  email: string;
+  account_type: string;
+  status: string;
+  status_message: string;
+  is_disabled: boolean;
+  is_unavailable: boolean;
+  failed_count: number;
+  success_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Every account, and the sign-ins this gateway build actually offers. */
+export interface CliproxyApiAccountsResponse {
+  accounts: CliproxyApiAccountView[];
+  login_kinds: string[];
+}
+
+/**
+ * How a sign-in finishes: `redirect` lands the browser on a local address the
+ * person brings back, `device` shows a code they type into the provider.
+ */
+export type CliproxyApiLoginFlow = "redirect" | "device";
+
+export type CliproxyApiLoginStatus = "pending" | "complete" | "failed";
+
+/** A sign-in as it starts: where to send the person, and how it comes back. */
+export interface CliproxyApiLoginStartView {
+  state: string;
+  kind: string;
+  url: string;
+  flow: CliproxyApiLoginFlow;
+  /** What the person types at the provider; empty on a redirect flow. */
+  user_code: string;
+  /** Seconds the code stays good; 0 where the flow sets no deadline. */
+  expires_in: number;
+}
+
+/** A sign-in in flight, polled until it is one of the other two states. */
+export interface CliproxyApiLoginStateView {
+  state: string;
+  status: CliproxyApiLoginStatus;
+  message: string;
 }
 
 /** The Credentials page's AI provider section payload. */
