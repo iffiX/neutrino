@@ -1,7 +1,51 @@
-.ai_status_row {
+/* --- The Activity panel --- */
+
+.ai_activity_actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: center;
+}
+
+.ai_today {
   display: inline-flex;
   gap: var(--space-4);
-  margin-left: auto;
+  align-items: baseline;
+}
+
+.ai_today_item {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+
+.ai_today_value {
+  color: var(--color-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.ai_today_label {
+  color: var(--color-text-faint);
+  font-size: 11px;
+}
+
+/* The two halves of the usage area, and the window they both read. */
+.ai_usage_switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: var(--space-4);
+}
+
+.ai_usage_window {
+  display: inline-flex;
+  gap: var(--space-3);
+  align-items: center;
 }
 
 .ai_service_hint {

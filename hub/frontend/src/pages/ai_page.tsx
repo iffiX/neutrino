@@ -10,7 +10,7 @@ import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { StatusDot } from "../components/status_dot";
 import { apiDelete, apiPost, apiPut, describeError } from "../api_client";
-import { useApiResource } from "../use_api_resource";
+import { formatCompact } from "../format_compact";
 import { usePolledResource } from "../use_polled_resource";
 import { useConfirm } from "../use_confirm";
 import type {
@@ -25,67 +25,95 @@ import "./ai_page.css";
  * The AI gateway: one endpoint every machine's AI tools point at, forever.
  *
  * CLIProxyAPI does the actual serving; this page manages what the panel owns
- * around it — which providers it forwards to, the keys devices use, and the
- * apply that re-renders its configuration. Switching providers here takes
- * effect on every connected machine at once. The activity tables read the
- * same usage feed the dashboard summarises.
+ * around it — what the gateway is doing right now, which providers it forwards
+ * to, the keys machines reach it with, and the port it answers on. Each of
+ * those is its own panel, and the ones that change something carry their own
+ * apply. The activity tables read the same usage feed the dashboard
+ * summarises.
  */
 
 const WORDING = {
-  journal: "Journal",
+  title: "AI",
+  subtitle:
+    "One endpoint for every machine's AI tools; which provider answers is switched here.",
+  notInstalled: "The AI gateway is not installed",
+  notInstalledHint: "Install the cliproxyapi module from Services.",
+
+  activity: "Activity",
+  running: "running",
+  stopped: "stopped",
+  answering: "answering",
+  notAnswering: "not answering",
   live: "live",
-  listenPort: "Listen port",
-  portFieldHint: "Every connected machine reaches the gateway on this port.",
-  portApplyLabel: "Apply port",
-  portApplyHint:
-    "Restarts the gateway on the new port; every machine's endpoint moves with it.",
-  portRangeHint: (low: number, high: number) => `A port is ${low} to ${high}.`,
-  providerActivity: "Provider activity",
-  keyActivity: "Key activity",
+  journal: "Journal",
+  serving: (message: string) => `Serving: ${message}`,
+  waitingProbe: "Waiting for the first probe.",
+  requestsToday: "requests today",
+  tokensToday: "tokens today",
+  viewProviders: "Providers",
+  viewKeys: "Keys",
   usageWindow: "last 30 days",
   usageUnavailable: "Usage unavailable",
   usageUnavailableHint: "The gateway is not reporting usage on this box yet.",
+
+  gatewayPort: "Gateway port",
+  gatewayPortHint: "The TCP port the gateway answers on.",
+  port: "Port",
+  reachedAt: (origin: string) => `Reached at ${origin}.`,
+  movesTo: (origin: string) => `Moves to ${origin}.`,
+  portApplyLabel: "Apply gateway port",
+  portApplyHint: "Restarts the gateway on the new port.",
+  portApplyWarning:
+    "Every machine pointed at the old port stops reaching the gateway until its endpoint is changed too.",
+  portRangeHint: (low: number, high: number) => `A port is ${low} to ${high}.`,
+
   revealKey: "Reveal",
   hideKey: "Hide",
 } as const;
 
 const PORT_MIN = 1;
 const PORT_MAX = 65535;
+const STATUS_PATH = "/cliproxyapi";
 const USAGE_PATH = "/cliproxyapi/usage?range=month";
 const MASKED_KEY = "•".repeat(24);
 
+/** Which half of the usage area the chips are showing. */
+type UsageView = "providers" | "keys";
+
 export function AiPage() {
-  const resource = useApiResource<CliproxyApiStatusView>("/cliproxyapi");
-  const [view, setView] = useState<CliproxyApiStatusView | null>(null);
+  const status = usePolledResource<CliproxyApiStatusView>(STATUS_PATH);
+  const view = status.data;
   const confirm = useConfirm();
   const [error, setError] = useState<string | null>(null);
   const [keyName, setKeyName] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [port, setPort] = useState<number | null>(null);
   const [isJournalOpen, setIsJournalOpen] = useState(false);
+  const [usageView, setUsageView] = useState<UsageView>("providers");
+  const isInstalled = view !== null && view.is_installed;
   const usage = usePolledResource<AiUsageResponse>(
-    view !== null && view.is_installed ? USAGE_PATH : null,
+    isInstalled ? USAGE_PATH : null,
   );
+  const listenPort = view?.listen_port ?? null;
 
+  // Seeded once: a poll landing while somebody is typing a port must not take
+  // the field back.
   useEffect(() => {
-    if (resource.data !== null) {
-      setView(resource.data);
-      setPort(resource.data.listen_port);
-    }
-  }, [resource.data]);
+    setPort((current) => (current === null ? listenPort : current));
+  }, [listenPort]);
 
-  if (resource.error !== null && view === null) {
+  if (status.error !== null && view === null) {
     return (
       <div className="page">
-        <h1>AI</h1>
-        <ErrorPanel message={resource.error} onRetry={resource.reload} />
+        <h1>{WORDING.title}</h1>
+        <ErrorPanel message={status.error} onRetry={status.reload} />
       </div>
     );
   }
   if (view === null) {
     return (
       <div className="page">
-        <h1>AI</h1>
+        <h1>{WORDING.title}</h1>
         <div className="skeleton" style={{ height: 240 }} />
       </div>
     );
@@ -93,20 +121,20 @@ export function AiPage() {
   if (!view.is_installed) {
     return (
       <div className="page">
-        <h1>AI</h1>
+        <h1>{WORDING.title}</h1>
         <div className="placeholder">
-          <span>The AI gateway is not installed</span>
-          <span className="faint">
-            Install the cliproxyapi module from Services.
-          </span>
+          <span>{WORDING.notInstalled}</span>
+          <span className="faint">{WORDING.notInstalledHint}</span>
         </div>
       </div>
     );
   }
 
-  const endpoint = `http://${window.location.hostname}:${view.listen_port}`;
+  const endpoint = originWith(view.listen_port);
   const isPortDirty = port !== null && port !== view.listen_port;
   const isPortValid = port !== null && port >= PORT_MIN && port <= PORT_MAX;
+  const hasToday =
+    view.requests_today !== undefined || view.tokens_today !== undefined;
 
   const run = async (work: () => Promise<void>) => {
     setIsBusy(true);
@@ -122,8 +150,8 @@ export function AiPage() {
 
   const handleApplyPort = () => {
     void run(async () => {
-      setView(
-        await apiPut<CliproxyApiStatusView>("/cliproxyapi", {
+      status.setData(
+        await apiPut<CliproxyApiStatusView>(STATUS_PATH, {
           listen_port: port,
         }),
       );
@@ -132,7 +160,7 @@ export function AiPage() {
 
   const handleMintKey = () => {
     void run(async () => {
-      setView(
+      status.setData(
         await apiPost<CliproxyApiStatusView>("/cliproxyapi/keys", {
           name: keyName.trim() || "device",
         }),
@@ -151,7 +179,7 @@ export function AiPage() {
 
   const deleteKey = (keyId: string) => {
     void run(async () => {
-      setView(
+      status.setData(
         await apiDelete<CliproxyApiStatusView>(`/cliproxyapi/keys/${keyId}`),
       );
     });
@@ -162,12 +190,9 @@ export function AiPage() {
       <header className="page_header">
         <div>
           <div className="page_title_row">
-            <h1 className="page_title">AI</h1>
+            <h1 className="page_title">{WORDING.title}</h1>
           </div>
-          <p className="page_subtitle">
-            One endpoint for every machine&apos;s AI tools; which provider
-            answers is switched here.
-          </p>
+          <p className="page_subtitle">{WORDING.subtitle}</p>
         </div>
       </header>
 
@@ -178,20 +203,40 @@ export function AiPage() {
         </div>
       )}
 
-      <section
-        className={`settings_group ${isPortDirty ? "settings_group--dirty" : ""}`}
-      >
-        <div className="settings_group_title">
-          <h2>Gateway</h2>
-          <span className="ai_status_row">
+      <section className="card">
+        <div className="card_header">
+          <div className="card_title">
+            <h2>{WORDING.activity}</h2>
             <StatusDot
               tone={view.is_active ? "ok" : "error"}
-              label={view.is_active ? "running" : "stopped"}
+              label={view.is_active ? WORDING.running : WORDING.stopped}
             />
             <StatusDot
               tone={view.is_reachable ? "ok" : "warn"}
-              label={view.is_reachable ? "answering" : "not answering"}
+              label={
+                view.is_reachable ? WORDING.answering : WORDING.notAnswering
+              }
             />
+          </div>
+          <div className="ai_activity_actions">
+            {hasToday && (
+              <span className="ai_today">
+                <span className="ai_today_item">
+                  <span className="ai_today_value mono">
+                    {formatCompact(view.requests_today ?? 0)}
+                  </span>
+                  <span className="ai_today_label">
+                    {WORDING.requestsToday}
+                  </span>
+                </span>
+                <span className="ai_today_item">
+                  <span className="ai_today_value mono">
+                    {formatCompact(view.tokens_today ?? 0)}
+                  </span>
+                  <span className="ai_today_label">{WORDING.tokensToday}</span>
+                </span>
+              </span>
+            )}
             <button
               type="button"
               className="button button--ghost button--small"
@@ -203,68 +248,72 @@ export function AiPage() {
               />
               {WORDING.journal}
             </button>
-          </span>
+          </div>
         </div>
+
         <p className="field_hint">
           {view.is_reachable
-            ? `Serving: ${view.probe_message}`
+            ? WORDING.serving(view.probe_message)
             : view.probe_message.length > 0
               ? view.probe_message
-              : "Waiting for the first probe."}
+              : WORDING.waitingProbe}
         </p>
-        <div className="field_grid">
-          <label className="field">
-            <span className="field_label">{WORDING.listenPort}</span>
-            <input
-              className="input"
-              inputMode="numeric"
-              value={port === null ? "" : String(port)}
-              onChange={(event) => setPort(Number(event.target.value) || 0)}
-            />
-            <span className="field_hint">{WORDING.portFieldHint}</span>
-          </label>
-        </div>
-        <ApplyBar
-          isDirty={isPortDirty && isPortValid}
-          isBusy={isBusy}
-          label={WORDING.portApplyLabel}
-          hint={
-            isPortValid
-              ? WORDING.portApplyHint
-              : WORDING.portRangeHint(PORT_MIN, PORT_MAX)
-          }
-          onReset={() => setPort(view.listen_port)}
-          onApply={handleApplyPort}
-        />
-        <AiJournalPanel isOpen={isJournalOpen} />
-      </section>
 
-      <AiProvidersSection
-        isServingStale={view.is_serving_stale ?? false}
-        onApplied={resource.reload}
-      />
-
-      <section className="card">
-        <div className="card_header">
-          <div className="card_title">
-            <h2>{WORDING.providerActivity}</h2>
+        <div className="ai_usage_switch">
+          <div className="ai_service_chips">
+            <button
+              type="button"
+              className={`ai_chip ${usageView === "providers" ? "ai_chip--on" : ""}`}
+              onClick={() => setUsageView("providers")}
+            >
+              {WORDING.viewProviders}
+              {usage.data !== null && (
+                <span className="ai_chip_count">
+                  {usage.data.providers.length}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              className={`ai_chip ${usageView === "keys" ? "ai_chip--on" : ""}`}
+              onClick={() => setUsageView("keys")}
+            >
+              {WORDING.viewKeys}
+              {usage.data !== null && (
+                <span className="ai_chip_count">{usage.data.keys.length}</span>
+              )}
+            </button>
+          </div>
+          <span className="ai_usage_window">
             <span className="badge">{WORDING.usageWindow}</span>
             {usage.data !== null && (
               <StatusDot tone="ok" isPulsing label={WORDING.live} />
             )}
-          </div>
+          </span>
         </div>
+
         {usage.data !== null ? (
-          <AiUsageProviders providers={usage.data.providers} />
+          usageView === "providers" ? (
+            <AiUsageProviders providers={usage.data.providers} />
+          ) : (
+            <AiUsageKeys keys={usage.data.keys} />
+          )
         ) : usage.isLoading ? (
-          <div className="skeleton" style={{ height: 160 }} />
+          <div className="skeleton" style={{ height: 180 }} />
         ) : (
           <div className="placeholder">
             <span>{WORDING.usageUnavailable}</span>
             <span className="faint">{WORDING.usageUnavailableHint}</span>
           </div>
         )}
+
+        <AiJournalPanel isOpen={isJournalOpen} />
       </section>
+
+      <AiProvidersSection
+        isServingStale={view.is_serving_stale ?? false}
+        onApplied={status.reload}
+      />
 
       <section className="settings_group">
         <div className="settings_group_title">
@@ -309,26 +358,42 @@ export function AiPage() {
         </div>
       </section>
 
-      <section className="card">
-        <div className="card_header">
-          <div className="card_title">
-            <h2>{WORDING.keyActivity}</h2>
-            <span className="badge">{WORDING.usageWindow}</span>
-            {usage.data !== null && (
-              <StatusDot tone="ok" isPulsing label={WORDING.live} />
-            )}
-          </div>
+      <section
+        className={`settings_group ${isPortDirty ? "settings_group--dirty" : ""}`}
+      >
+        <div className="settings_group_title">
+          <h2>{WORDING.gatewayPort}</h2>
         </div>
-        {usage.data !== null ? (
-          <AiUsageKeys keys={usage.data.keys} />
-        ) : usage.isLoading ? (
-          <div className="skeleton" style={{ height: 120 }} />
-        ) : (
-          <div className="placeholder">
-            <span>{WORDING.usageUnavailable}</span>
-            <span className="faint">{WORDING.usageUnavailableHint}</span>
-          </div>
-        )}
+        <p className="field_hint">{WORDING.gatewayPortHint}</p>
+        <div className="field_grid">
+          <label className="field">
+            <span className="field_label">{WORDING.port}</span>
+            <input
+              className="input"
+              inputMode="numeric"
+              value={port === null ? "" : String(port)}
+              onChange={(event) => setPort(Number(event.target.value) || 0)}
+            />
+            <span className="field_hint">
+              {isPortDirty
+                ? WORDING.movesTo(originWith(port ?? 0))
+                : WORDING.reachedAt(endpoint)}
+            </span>
+          </label>
+        </div>
+        <ApplyBar
+          isDirty={isPortDirty && isPortValid}
+          isBusy={isBusy}
+          label={WORDING.portApplyLabel}
+          hint={
+            isPortValid
+              ? WORDING.portApplyHint
+              : WORDING.portRangeHint(PORT_MIN, PORT_MAX)
+          }
+          warning={WORDING.portApplyWarning}
+          onReset={() => setPort(view.listen_port)}
+          onApply={handleApplyPort}
+        />
       </section>
       {confirm.modal}
     </div>
@@ -411,4 +476,8 @@ function CopyRow({ label, value }: CopyRowProps) {
       </button>
     </div>
   );
+}
+
+function originWith(port: number): string {
+  return `${window.location.protocol}//${window.location.hostname}:${port}`;
 }
