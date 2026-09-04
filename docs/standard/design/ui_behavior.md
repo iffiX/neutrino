@@ -185,8 +185,11 @@ output streams into the log at the bottom.
 
 A **modal** is for one interaction that must finish before anything else: a
 confirmation, a terminal session, a file transfer, an install consent. Anything
-that is merely detail is a drawer. Every modal closes on Escape, and one that
-tells the reader so must mean it.
+that is merely detail is a drawer. Every modal closes on Escape, closing only
+itself — the layer underneath stays — and one that tells the reader so must
+mean it. The exception is a modal that captures the keyboard: a terminal's
+Escape belongs to the shell, the way every established terminal works, and its
+hint names the close button instead.
 
 ## Secrets
 

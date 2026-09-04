@@ -458,7 +458,7 @@ export interface TokenView {
   name: string;
   created_at: string;
   provider_count: number;
-  /** xray nodes referencing it; share-link imports mint these. */
+  /** xray nodes referencing it; share-link imports generate these. */
   node_count: number;
 }
 
