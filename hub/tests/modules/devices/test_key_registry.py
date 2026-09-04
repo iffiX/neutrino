@@ -106,28 +106,6 @@ def test_an_unknown_id_is_not_a_key(config_dir):
     assert KeyRegistry().has_key("absent") is False
 
 
-def test_renaming_keeps_the_material(config_dir):
-    text, fingerprint = generated_key()
-    record = KeyRegistry().add(name="work laptop", private_key=text)
-
-    renamed = KeyRegistry().rename(record.id, "  home desktop  ")
-
-    assert renamed.name == "home desktop"
-    assert renamed.fingerprint == fingerprint
-    private_key, _ = KeyRegistry().material_for(record.id)
-    assert asyncssh.import_private_key(private_key).get_fingerprint() == fingerprint
-
-
-def test_renaming_refuses_a_blank_name_and_an_unknown_key(config_dir):
-    text, _ = generated_key()
-    record = KeyRegistry().add(name="work laptop", private_key=text)
-
-    with pytest.raises(KeyMaterialError, match="a key needs a name"):
-        KeyRegistry().rename(record.id, "  ")
-    with pytest.raises(KeyMaterialError, match="no key with id"):
-        KeyRegistry().rename("absent", "anything")
-
-
 def test_deleting_takes_the_material_with_it(config_dir):
     text, _ = generated_key()
     record = KeyRegistry().add(name="work laptop", private_key=text)

@@ -122,30 +122,6 @@ class KeyRegistry:
             return None
         return self._to_record(record)
 
-    def rename(self, key_id: str, name: str) -> KeyRecord:
-        """Change a key's label.
-
-        Args:
-            key_id: The key's identifier.
-            name: The new label.
-
-        Returns:
-            The updated record.
-
-        Raises:
-            KeyMaterialError: If the key is unknown or the name is blank.
-        """
-        if not name.strip():
-            raise KeyMaterialError("a key needs a name")
-        if self.get(key_id) is None:
-            raise KeyMaterialError(f"no key with id {key_id!r}")
-        try:
-            return self._to_record(SecretVault().rename(key_id, name))
-        except VaultLockedError:
-            raise
-        except VaultError as error:
-            raise KeyMaterialError(str(error)) from error
-
     def delete(self, key_id: str) -> None:
         """Remove a key and its material.
 

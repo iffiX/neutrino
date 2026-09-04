@@ -7,6 +7,10 @@ sits in a device's own configuration. A login is one account — a password
 with an optional username — and devices and declared services both reference
 the same collection; a token is one bare secret string, and AI providers
 reference those.
+
+A credential is added, referenced and deleted; nothing here edits one, not
+even its name. Replacing a credential is adding the new one, pointing its
+consumers at it, and deleting the old.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -32,15 +36,12 @@ from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.models import (
     KeyCreate,
     KeyListView,
-    KeyRename,
     KeyView,
     LoginCreate,
     LoginListView,
-    LoginUpdate,
     LoginView,
     TokenCreate,
     TokenListView,
-    TokenUpdate,
     TokenView,
 )
 
@@ -96,32 +97,6 @@ def create_key(request: KeyCreate) -> KeyView:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
         ) from error
-    return _key_view(record, _device_counts())
-
-
-@router.put("/ssh_keys/{key_id}", response_model=KeyView)
-def rename_key(key_id: str, request: KeyRename) -> KeyView:
-    """Change a key's label.
-
-    Args:
-        key_id: The key's identifier.
-        request: The new label.
-
-    Returns:
-        The updated key.
-
-    Raises:
-        HTTPException: 404 when the key is unknown, 400 when the name is blank.
-    """
-    try:
-        record = KeyRegistry().rename(key_id, request.name)
-    except KeyMaterialError as error:
-        code = (
-            status.HTTP_404_NOT_FOUND
-            if "no key" in str(error)
-            else status.HTTP_400_BAD_REQUEST
-        )
-        raise HTTPException(status_code=code, detail=str(error)) from error
     return _key_view(record, _device_counts())
 
 
@@ -226,57 +201,6 @@ def create_login(request: LoginCreate) -> LoginView:
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
         ) from error
     return _login_view(SecretVault(), record, _login_device_counts(), _service_counts())
-
-
-@router.put("/logins/{login_id}", response_model=LoginView)
-def update_login(login_id: str, request: LoginUpdate) -> LoginView:
-    """Change a login's label, username, password, or any of them.
-
-    The username lives inside the seal, so changing either sealed field
-    re-seals both. An absent field keeps what is stored; a username sent as
-    null or blank clears it — the form always says what the username should
-    be, and clearing it is a change like any other.
-
-    Args:
-        login_id: The login's identifier.
-        request: The fields to change.
-
-    Returns:
-        The login after the change.
-
-    Raises:
-        HTTPException: 404 when the id is unknown, 400 when the vault refuses
-            the change.
-    """
-    vault = SecretVault()
-    record = vault.get(login_id)
-    if record is None or record.kind != LOGIN_KIND:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "unknown_login", "params": {}},
-        )
-    try:
-        if request.name is not None and request.name.strip():
-            record = vault.rename(login_id, request.name)
-        is_username_sent = "username" in request.model_fields_set
-        username = (request.username or "").strip()
-        password = (request.password or "").strip()
-        if is_username_sent or password:
-            stored = vault.open(login_id)
-            record = vault.replace(
-                login_id,
-                secret=_login_secret(
-                    username if is_username_sent else stored.get("username", ""),
-                    password or stored["password"],
-                ),
-            )
-    except VaultLockedError:
-        raise
-    except VaultError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
-        ) from error
-    return _login_view(vault, record, _login_device_counts(), _service_counts())
 
 
 @router.delete("/logins/{login_id}")
@@ -448,42 +372,6 @@ def create_token(request: TokenCreate) -> TokenView:
             name=request.name,
             secret={"value": request.value},
         )
-    except VaultLockedError:
-        raise
-    except VaultError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
-        ) from error
-    return _token_view(record, _provider_counts(), _node_counts())
-
-
-@router.put("/tokens/{token_id}", response_model=TokenView)
-def update_token(token_id: str, request: TokenUpdate) -> TokenView:
-    """Change a token's label, its value, or both.
-
-    Args:
-        token_id: The token's identifier.
-        request: The fields to change; a blank one is left alone.
-
-    Returns:
-        The token after the change.
-
-    Raises:
-        HTTPException: 404 when the id is unknown, 400 when the vault refuses
-            the change.
-    """
-    vault = SecretVault()
-    record = vault.get(token_id)
-    if record is None or record.kind != TOKEN_KIND:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "unknown_token", "params": {}},
-        )
-    try:
-        if request.name is not None and request.name.strip():
-            record = vault.rename(token_id, request.name)
-        if request.value is not None and request.value.strip():
-            record = vault.replace(token_id, secret={"value": request.value})
     except VaultLockedError:
         raise
     except VaultError as error:

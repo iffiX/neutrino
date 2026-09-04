@@ -25,7 +25,6 @@ from tests.conftest import unlock_vault
 PUBLIC_KEY = "ssh-ed25519 AAAAC3Nz"  # scan: allow
 STORED_PASSWORD = "hunter2hunter2"  # scan: allow
 STORED_ACCOUNT_PASSWORD = "svc-pw-1"  # scan: allow
-REPLACEMENT_PASSWORD = "next-one"  # scan: allow
 
 
 @pytest.fixture
@@ -83,12 +82,6 @@ def test_key_roundtrip(client):
     listed = client.get("/api/credentials/ssh_keys").json()["keys"]
     assert [item["name"] for item in listed] == ["work laptop"]
 
-    renamed = client.put(
-        f"/api/credentials/ssh_keys/{view['id']}", json={"name": "home desktop"}
-    )
-    assert renamed.status_code == 200
-    assert renamed.json()["name"] == "home desktop"
-
     assert client.delete(f"/api/credentials/ssh_keys/{view['id']}").status_code == 200
     assert client.get("/api/credentials/ssh_keys").json() == {"keys": []}
 
@@ -122,12 +115,6 @@ def test_key_refusals(client):
     )
     assert pasted_public_key.status_code == 400
     assert "public key" in pasted_public_key.json()["detail"]
-    assert (
-        client.put(
-            "/api/credentials/ssh_keys/absent", json={"name": "anything"}
-        ).status_code
-        == 404
-    )
     assert client.delete("/api/credentials/ssh_keys/absent").status_code == 200
 
 
@@ -149,25 +136,7 @@ def test_login_roundtrip(client):
     listed = client.get("/api/credentials/logins").json()["logins"]
     assert [item["name"] for item in listed] == ["lab machines"]
 
-    renamed = client.put(
-        f"/api/credentials/logins/{view['id']}", json={"name": "workshop"}
-    )
-    assert renamed.status_code == 200
-    assert renamed.json()["name"] == "workshop"
     assert SecretVault().open(view["id"]) == {"password": STORED_PASSWORD}
-
-    blank_password = client.put(
-        f"/api/credentials/logins/{view['id']}", json={"password": ""}
-    )
-    assert blank_password.status_code == 200
-    assert SecretVault().open(view["id"]) == {"password": STORED_PASSWORD}
-
-    replaced = client.put(
-        f"/api/credentials/logins/{view['id']}",
-        json={"password": REPLACEMENT_PASSWORD},
-    )
-    assert replaced.status_code == 200
-    assert SecretVault().open(view["id"]) == {"password": REPLACEMENT_PASSWORD}
 
     assert client.delete(f"/api/credentials/logins/{view['id']}").status_code == 200
     assert client.get("/api/credentials/logins").json() == {"logins": []}
@@ -193,60 +162,6 @@ def test_a_login_with_a_username_seals_and_lists_it(client):
     listed = client.get("/api/credentials/logins").json()["logins"]
     assert listed[0]["username"] == "backup"
 
-    renamed_user = client.put(
-        f"/api/credentials/logins/{view['id']}",
-        json={"name": "NAS archive", "username": "archive"},
-    )
-    assert renamed_user.status_code == 200
-    assert renamed_user.json()["name"] == "NAS archive"
-    assert renamed_user.json()["username"] == "archive"
-    assert SecretVault().open(view["id"]) == {
-        "username": "archive",
-        "password": STORED_ACCOUNT_PASSWORD,
-    }
-
-    replaced = client.put(
-        f"/api/credentials/logins/{view['id']}",
-        json={"password": REPLACEMENT_PASSWORD},
-    )
-    assert replaced.status_code == 200
-    assert replaced.json()["username"] == "archive"
-    assert SecretVault().open(view["id"]) == {
-        "username": "archive",
-        "password": REPLACEMENT_PASSWORD,
-    }
-
-
-def test_a_username_sent_as_null_clears_the_stored_one(client):
-    created = client.post(
-        "/api/credentials/logins",
-        json={"name": "NAS", "username": "backup", "password": STORED_PASSWORD},
-    ).json()
-
-    cleared = client.put(
-        f"/api/credentials/logins/{created['id']}",
-        json={"name": "NAS", "username": None},
-    )
-
-    assert cleared.status_code == 200
-    assert cleared.json()["username"] is None
-    listed = client.get("/api/credentials/logins").json()["logins"]
-    assert listed[0]["username"] is None
-
-
-def test_an_absent_username_keeps_the_stored_one(client):
-    created = client.post(
-        "/api/credentials/logins",
-        json={"name": "NAS", "username": "backup", "password": STORED_PASSWORD},
-    ).json()
-
-    kept = client.put(
-        f"/api/credentials/logins/{created['id']}", json={"name": "NAS renamed"}
-    )
-
-    assert kept.status_code == 200
-    assert kept.json()["username"] == "backup"
-
 
 def test_login_refusals(client):
     blank_name = client.post(
@@ -258,10 +173,9 @@ def test_login_refusals(client):
     )
     assert blank_password.status_code == 400
     assert blank_password.json()["detail"]["code"] == "login_password_needed"
-    refused = client.put("/api/credentials/logins/absent", json={"name": "x"})
+    refused = client.delete("/api/credentials/logins/absent")
     assert refused.status_code == 404
     assert refused.json()["detail"]["code"] == "unknown_login"
-    assert client.delete("/api/credentials/logins/absent").status_code == 404
 
 
 def declare_samba_share(login_id: str) -> None:
@@ -341,10 +255,6 @@ def test_a_login_of_another_kind_is_not_addressable(client):
     )
     key_id = created.json()["id"]
     assert client.get("/api/credentials/logins").json() == {"logins": []}
-    assert (
-        client.put(f"/api/credentials/logins/{key_id}", json={"name": "x"}).status_code
-        == 404
-    )
     assert client.delete(f"/api/credentials/logins/{key_id}").status_code == 404
     assert len(client.get("/api/credentials/ssh_keys").json()["keys"]) == 1
 
@@ -380,24 +290,7 @@ def test_token_roundtrip(client):
     listed = client.get("/api/credentials/tokens").json()["tokens"]
     assert [item["name"] for item in listed] == ["relay key"]
 
-    renamed = client.put(
-        f"/api/credentials/tokens/{view['id']}", json={"name": "relay key 2"}
-    )
-    assert renamed.status_code == 200
-    assert renamed.json()["name"] == "relay key 2"
     assert SecretVault().open(view["id"]) == {"value": "sk-one"}
-
-    blank_value = client.put(
-        f"/api/credentials/tokens/{view['id']}", json={"value": ""}
-    )
-    assert blank_value.status_code == 200
-    assert SecretVault().open(view["id"]) == {"value": "sk-one"}
-
-    replaced = client.put(
-        f"/api/credentials/tokens/{view['id']}", json={"value": "sk-two"}  # scan: allow
-    )
-    assert replaced.status_code == 200
-    assert SecretVault().open(view["id"]) == {"value": "sk-two"}
 
     assert client.delete(f"/api/credentials/tokens/{view['id']}").status_code == 200
     assert client.get("/api/credentials/tokens").json() == {"tokens": []}
@@ -409,10 +302,9 @@ def test_token_refusals(client):
     )
     assert blank_value.status_code == 400
     assert blank_value.json()["detail"] == {"code": "token_value_needed", "params": {}}
-    refused = client.put("/api/credentials/tokens/absent", json={"name": "x"})
+    refused = client.delete("/api/credentials/tokens/absent")
     assert refused.status_code == 404
     assert refused.json()["detail"]["code"] == "unknown_token"
-    assert client.delete("/api/credentials/tokens/absent").status_code == 404
 
 
 def test_deleting_a_token_clears_provider_references(client):
@@ -505,10 +397,4 @@ def test_a_token_of_another_kind_is_not_addressable(client):
         json={"name": "not a token", "password": STORED_PASSWORD},
     ).json()
     assert client.get("/api/credentials/tokens").json() == {"tokens": []}
-    assert (
-        client.put(
-            f"/api/credentials/tokens/{login['id']}", json={"name": "x"}
-        ).status_code
-        == 404
-    )
     assert client.delete(f"/api/credentials/tokens/{login['id']}").status_code == 404

@@ -116,11 +116,10 @@ def test_field_names_must_match_the_kind(config_dir):
     assert SecretVault().open(record.id) == {"private_key": "k"}
 
 
-def test_rename_delete_and_get(config_dir):
+def test_delete_and_get(config_dir):
     vault = SecretVault()
     record = vault.add(kind="login", name="old", secret={"password": "p"})
-    assert vault.rename(record.id, "new").name == "new"
-    assert SecretVault().get(record.id).name == "new"
+    assert SecretVault().get(record.id).name == "old"
     vault.delete(record.id)
     assert SecretVault().get(record.id) is None
     with pytest.raises(VaultError):

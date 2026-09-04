@@ -59,11 +59,6 @@ def test_login_lifecycle(panel):
     listed = panel.read("/credentials/logins")["logins"]
     assert any(entry["id"] == created["id"] for entry in listed)
 
-    status, renamed = panel.call(
-        "PUT", f"/credentials/logins/{created['id']}", {"name": name + " renamed"}
-    )
-    assert status == 200 and renamed["name"] == name + " renamed"
-
     assert panel.status("DELETE", f"/credentials/logins/{created['id']}") == 200
     listed = panel.read("/credentials/logins")["logins"]
     assert not any(entry["id"] == created["id"] for entry in listed)
@@ -83,10 +78,10 @@ def test_a_login_carries_its_username_but_never_its_password(panel):
     assert created["username"] == "smbuser"
     assert "password" not in created
 
-    status, changed = panel.call(
-        "PUT", f"/credentials/logins/{created['id']}", {"username": "smbuser2"}
-    )
-    assert status == 200 and changed["username"] == "smbuser2"
+    listed = panel.read("/credentials/logins")["logins"]
+    stored = next(entry for entry in listed if entry["id"] == created["id"])
+    assert stored["username"] == "smbuser"
+    assert "password" not in stored
 
     assert panel.status("DELETE", f"/credentials/logins/{created['id']}") == 200
 

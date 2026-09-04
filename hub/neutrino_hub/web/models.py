@@ -433,12 +433,6 @@ class KeyCreate(BaseModel):
     passphrase: str | None = None
 
 
-class KeyRename(BaseModel):
-    """A new label for a stored key."""
-
-    name: str
-
-
 class LoginView(BaseModel):
     """One stored login, without its password; None is a bare password."""
 
@@ -467,14 +461,6 @@ class LoginCreate(BaseModel):
     password: str
 
 
-class LoginUpdate(BaseModel):
-    """Partial update to one login; a blank field keeps the stored value."""
-
-    name: str | None = None
-    username: str | None = None
-    password: str | None = None
-
-
 class TokenView(BaseModel):
     """One stored token, without its value."""
 
@@ -496,13 +482,6 @@ class TokenCreate(BaseModel):
 
     name: str
     value: str
-
-
-class TokenUpdate(BaseModel):
-    """Partial update to one token; a blank value keeps the sealed one."""
-
-    name: str | None = None
-    value: str | None = None
 
 
 class AiProviderModelView(BaseModel):

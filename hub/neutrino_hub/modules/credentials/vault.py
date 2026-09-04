@@ -444,30 +444,6 @@ class SecretVault:
                 raise VaultError(f"no secret with id {secret_id!r}")
             return self._unseal(key, secret_id, entry)
 
-    def rename(self, secret_id: str, name: str) -> SecretRecord:
-        """Change a secret's label.
-
-        Args:
-            secret_id: The secret's id.
-            name: The new label.
-
-        Returns:
-            The record after the change.
-
-        Raises:
-            VaultError: If the id is unknown or the name is blank.
-        """
-        if not name.strip():
-            raise VaultError("a secret needs a name")
-        with _WRITE_LOCK:
-            store = self._read_store()
-            entry = store["secrets"].get(secret_id)
-            if entry is None:
-                raise VaultError(f"no secret with id {secret_id!r}")
-            entry["name"] = name.strip()
-            self._write_store(store)
-            return self._to_record(secret_id, entry)
-
     def update_meta(self, secret_id: str, meta: dict) -> SecretRecord:
         """Replace a secret's plaintext annotations, leaving the seal alone.
 
