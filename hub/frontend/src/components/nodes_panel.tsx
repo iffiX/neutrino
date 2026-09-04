@@ -5,6 +5,7 @@ import { ApplyBar } from "./apply_bar";
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
 import { NodeCard } from "./node_card";
+import { StatusDot } from "./status_dot";
 import { apiDelete, apiPost, apiPut, describeError } from "../api_client";
 import { diffNodeDraft, isNodeChanged } from "../node_draft";
 import { formatBytes } from "../format_bytes";
@@ -317,6 +318,9 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
     >
       <div className="settings_group_title">
         <h2>Exit nodes</h2>
+        {resource.data !== null && (
+          <StatusDot tone="ok" isPulsing label="live" />
+        )}
       </div>
       <p className="field_hint">
         Where proxied traffic leaves the internet. The balancer picks between

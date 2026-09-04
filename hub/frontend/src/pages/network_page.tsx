@@ -423,6 +423,7 @@ export function NetworkPage() {
         <section className="settings_group network_topology">
           <div className="settings_group_title">
             <h2>Topology</h2>
+            <StatusDot tone="ok" isPulsing label="live" />
           </div>
           <NetworkDiagram
             network={network.data}
