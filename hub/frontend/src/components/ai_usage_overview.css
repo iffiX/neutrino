@@ -109,10 +109,11 @@
 @media (max-aspect-ratio: 1/1), (max-width: 880px) {
   .ai_usage_head {
     flex-direction: column;
-    align-items: stretch;
+    align-items: flex-start;
   }
 
   .ai_usage_head .ai_usage_controls {
+    flex: none;
     justify-content: flex-start;
   }
 }

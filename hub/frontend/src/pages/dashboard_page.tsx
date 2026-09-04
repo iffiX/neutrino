@@ -131,7 +131,7 @@ export function DashboardPage() {
 
       <DeadExitsNotice />
 
-      <div className="stat_tile_grid">
+      <div className="stat_tile_grid dashboard_tiles">
         <StatTile
           label={TILE_WORDING.download}
           value={stats?.interface_rx_bytes_per_s ?? 0}

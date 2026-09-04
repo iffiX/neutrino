@@ -131,3 +131,21 @@
     max-height: 420px;
   }
 }
+
+/* The header tiles read a fifth smaller than the shared tile sizes, so nine
+   of them sit on one 16:9 row without shouting. */
+.dashboard_tiles .stat_tile_label {
+  font-size: 9px;
+}
+
+.dashboard_tiles .stat_tile_value {
+  font-size: 21px;
+}
+
+.dashboard_tiles .stat_tile_unit {
+  font-size: 10px;
+}
+
+.dashboard_tiles .stat_tile_detail {
+  font-size: 10px;
+}
