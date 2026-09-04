@@ -58,7 +58,7 @@ CLIPROXYAPI_USAGE_RELATIVE = "cliproxyapi/usage.json"
 # store. What the panel compares a fresh render against to know whether the
 # running gateway is behind the stored configuration.
 CLIPROXYAPI_SERVED_FINGERPRINT_RELATIVE = "cliproxyapi/served_fingerprint.txt"
-CLIPROXYAPI_USAGE_POLL_INTERVAL_S = 30
+CLIPROXYAPI_USAGE_POLL_INTERVAL_S = 10
 CLIPROXYAPI_USAGE_QUEUE_COUNT = 1000
 CLIPROXYAPI_USAGE_HOURS_KEPT = 48
 CLIPROXYAPI_USAGE_MINUTES_KEPT = 90

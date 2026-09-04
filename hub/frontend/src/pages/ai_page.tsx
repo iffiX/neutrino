@@ -71,6 +71,8 @@ const PORT_MIN = 1;
 const PORT_MAX = 65535;
 const STATUS_PATH = "/cliproxyapi";
 const USAGE_PATH = "/cliproxyapi/usage?range=month";
+// Usage moves while somebody watches it; the collector feeds it every 10 s.
+const USAGE_POLL_INTERVAL_MS = 5000;
 
 /** Which half of the usage area the chips are showing. */
 type UsageView = "providers" | "keys";
@@ -107,6 +109,7 @@ export function AiPage() {
   const isInstalled = view !== null && view.is_installed;
   const usage = usePolledResource<AiUsageResponse>(
     isInstalled ? USAGE_PATH : null,
+    USAGE_POLL_INTERVAL_MS,
   );
   const listenPort = view?.listen_port ?? null;
 

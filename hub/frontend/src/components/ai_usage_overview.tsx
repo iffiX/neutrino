@@ -47,6 +47,9 @@ const WORDING = {
   unavailableHint: "The gateway is not reporting usage on this box yet.",
 } as const;
 
+// Usage moves while somebody watches it; the collector feeds it every 10 s.
+const USAGE_POLL_INTERVAL_MS = 5000;
+
 const RANGE_OPTIONS: { value: AiUsageRange; label: string }[] = [
   { value: "day", label: "Day" },
   { value: "week", label: "Week" },
@@ -57,7 +60,10 @@ const RANGE_OPTIONS: { value: AiUsageRange; label: string }[] = [
 export function AiUsageOverview() {
   const [range, setRange] = useState<AiUsageRange>("day");
   const [keyId, setKeyId] = useState("");
-  const usage = usePolledResource<AiUsageResponse>(usagePath(range, keyId));
+  const usage = usePolledResource<AiUsageResponse>(
+    usagePath(range, keyId),
+    USAGE_POLL_INTERVAL_MS,
+  );
   const data = usage.data;
 
   return (
