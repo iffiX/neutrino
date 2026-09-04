@@ -103,3 +103,16 @@
 .ai_usage_chart_head .mono {
   font-size: 12px;
 }
+
+/* Portrait: the title sits above the controls instead of squeezing beside
+   them; the controls row still wraps on its own below it. */
+@media (max-aspect-ratio: 1/1), (max-width: 880px) {
+  .ai_usage_head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ai_usage_head .ai_usage_controls {
+    justify-content: flex-start;
+  }
+}

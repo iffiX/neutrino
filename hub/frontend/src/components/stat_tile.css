@@ -110,5 +110,5 @@
 .stat_tile_grid {
   display: grid;
   gap: var(--space-4);
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
 }

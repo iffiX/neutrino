@@ -62,7 +62,7 @@ export function AiUsageOverview() {
 
   return (
     <section className="card">
-      <div className="card_header">
+      <div className="card_header ai_usage_head">
         <div className="card_title">
           <h2>{WORDING.title}</h2>
         </div>

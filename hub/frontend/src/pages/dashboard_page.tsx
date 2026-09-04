@@ -15,7 +15,6 @@ import { ChartTooltip } from "../components/chart_tooltip";
 import { DnsLogList } from "../components/dns_log_list";
 import { ErrorPanel } from "../components/error_panel";
 import { DeadExitsNotice } from "../components/dead_exits_notice";
-import { Icon } from "../components/icon";
 import { StatTile } from "../components/stat_tile";
 import { StatusDot } from "../components/status_dot";
 import { computeActiveExits } from "../active_exits";
@@ -23,7 +22,6 @@ import { formatByteRate, formatBytes } from "../format_bytes";
 import { formatCompact } from "../format_compact";
 import { formatDuration, formatLatency } from "../format_duration";
 import { toHistorySeries, toTrafficSeries } from "../traffic_series";
-import { useAnimatedNumber } from "../use_animated_number";
 import { useApiResource } from "../use_api_resource";
 import { useDnsLogSocket } from "../use_dns_log_socket";
 import { useLiveStats } from "../use_live_stats";
@@ -32,7 +30,6 @@ import type {
   CliproxyApiStatusView,
   DashboardSummary,
   TrafficHistoryResponse,
-  TrafficSample,
 } from "../api_types";
 
 import "./dashboard_page.css";
@@ -48,7 +45,8 @@ import "./dashboard_page.css";
 
 /** The stat row's own copy: traffic first, then what the hub serves, then load. */
 const TILE_WORDING = {
-  bandwidth: "Bandwidth",
+  download: "Download",
+  upload: "Upload",
   dnsQueries: "DNS queries",
   proxyExits: "Proxy exits",
   aiTokens: "AI tokens",
@@ -56,11 +54,7 @@ const TILE_WORDING = {
   cpu: "CPU",
   memory: "Memory",
   uptime: "Uptime",
-  downRate: (rate: string) => `↓ ${rate}`,
-  upRate: (rate: string) => `↑ ${rate}`,
-  todayTotals: (received: string, sent: string) =>
-    `today ${received} down / ${sent} up`,
-  onInterface: (name: string) => `Interface ${name}`,
+  todayTotal: (total: string) => `today ${total}`,
   probed: (count: number) => `${count} probed`,
   inRecentLog: "in the recent log",
   servedToday: "served today",
@@ -98,6 +92,7 @@ export function DashboardPage() {
     summary.data?.active_exit_tags ?? [],
   );
   const stats = latestFrame ?? summary.data?.stats ?? null;
+  const todaySample = history.data?.samples.at(-1) ?? null;
   const aiTokensToday = ai.data?.tokens_today ?? null;
 
   return (
@@ -137,11 +132,29 @@ export function DashboardPage() {
       <DeadExitsNotice />
 
       <div className="stat_tile_grid">
-        <BandwidthTile
-          receivedBytesPerSecond={stats?.interface_rx_bytes_per_s ?? 0}
-          sentBytesPerSecond={stats?.interface_tx_bytes_per_s ?? 0}
-          today={history.data?.samples.at(-1) ?? null}
-          interfaceName={stats?.interface_name ?? ""}
+        <StatTile
+          label={TILE_WORDING.download}
+          value={stats?.interface_rx_bytes_per_s ?? 0}
+          format={formatByteRate}
+          icon="arrow_down"
+          tone="accent"
+          detail={
+            todaySample === null
+              ? TILE_WORDING.missing
+              : TILE_WORDING.todayTotal(formatBytes(todaySample.received_bytes))
+          }
+        />
+        <StatTile
+          label={TILE_WORDING.upload}
+          value={stats?.interface_tx_bytes_per_s ?? 0}
+          format={formatByteRate}
+          icon="arrow_up"
+          tone="secondary"
+          detail={
+            todaySample === null
+              ? TILE_WORDING.missing
+              : TILE_WORDING.todayTotal(formatBytes(todaySample.sent_bytes))
+          }
         />
         <StatTile
           label={TILE_WORDING.dnsQueries}
@@ -446,62 +459,6 @@ export function DashboardPage() {
       </div>
 
       <AiUsageOverview />
-    </div>
-  );
-}
-
-interface BandwidthTileProps {
-  receivedBytesPerSecond: number;
-  sentBytesPerSecond: number;
-  today: TrafficSample | null;
-  interfaceName: string;
-}
-
-/**
- * What this machine's uplink is carrying, both ways, in one tile.
- *
- * The reading is that interface's own counters — the same interface the
- * history chart below is drawn from — and not the proxy core's totals, which
- * are one process's traffic since it last started.
- */
-function BandwidthTile({
-  receivedBytesPerSecond,
-  sentBytesPerSecond,
-  today,
-  interfaceName,
-}: BandwidthTileProps) {
-  const received = useAnimatedNumber(receivedBytesPerSecond);
-  const sent = useAnimatedNumber(sentBytesPerSecond);
-
-  return (
-    <div
-      className="stat_tile stat_tile--accent"
-      title={
-        interfaceName === ""
-          ? undefined
-          : TILE_WORDING.onInterface(interfaceName)
-      }
-    >
-      <div className="stat_tile_head">
-        <Icon name="network" size={14} className="stat_tile_icon" />
-        <span className="stat_tile_label">{TILE_WORDING.bandwidth}</span>
-      </div>
-      <div className="dashboard_bandwidth">
-        <div className="stat_tile_value dashboard_bandwidth_down">
-          <span>{TILE_WORDING.downRate(formatByteRate(received))}</span>
-        </div>
-        <div className="dashboard_bandwidth_up">
-          {TILE_WORDING.upRate(formatByteRate(sent))}
-        </div>
-      </div>
-      <div className="stat_tile_detail mono">
-        {today === null
-          ? TILE_WORDING.missing
-          : TILE_WORDING.todayTotals(
-              formatBytes(today.received_bytes),
-              formatBytes(today.sent_bytes),
-            )}
-      </div>
     </div>
   );
 }
