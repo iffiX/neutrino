@@ -9,13 +9,7 @@ import { ApplyBar } from "../components/apply_bar";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { StatusDot } from "../components/status_dot";
-import {
-  apiDelete,
-  apiGet,
-  apiPost,
-  apiPut,
-  describeError,
-} from "../api_client";
+import { apiDelete, apiPost, apiPut, describeError } from "../api_client";
 import { useApiResource } from "../use_api_resource";
 import { usePolledResource } from "../use_polled_resource";
 import { useConfirm } from "../use_confirm";
@@ -65,7 +59,6 @@ export function AiPage() {
   const [view, setView] = useState<CliproxyApiStatusView | null>(null);
   const confirm = useConfirm();
   const [error, setError] = useState<string | null>(null);
-  const [applyMessage, setApplyMessage] = useState<string | null>(null);
   const [keyName, setKeyName] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [port, setPort] = useState<number | null>(null);
@@ -127,15 +120,6 @@ export function AiPage() {
     }
   };
 
-  const handleApply = () => {
-    setApplyMessage(null);
-    void run(async () => {
-      const result = await apiPost<{ message: string }>("/cliproxyapi/apply");
-      setApplyMessage(result.message);
-      setView(await apiGet<CliproxyApiStatusView>("/cliproxyapi"));
-    });
-  };
-
   const handleApplyPort = () => {
     void run(async () => {
       setView(
@@ -185,29 +169,12 @@ export function AiPage() {
             answers is switched here.
           </p>
         </div>
-        <div className="page_actions">
-          <button
-            type="button"
-            className="button button--primary"
-            disabled={isBusy}
-            onClick={handleApply}
-          >
-            <Icon name="refresh" size={14} />
-            Apply
-          </button>
-        </div>
       </header>
 
       {error !== null && (
         <div className="notice notice--error">
           <Icon name="alert" size={15} />
           <div className="notice_body">{error}</div>
-        </div>
-      )}
-      {applyMessage !== null && (
-        <div className="notice">
-          <Icon name="check" size={15} />
-          <div className="notice_body">{applyMessage}</div>
         </div>
       )}
 
@@ -272,7 +239,10 @@ export function AiPage() {
         <AiJournalPanel isOpen={isJournalOpen} />
       </section>
 
-      <AiProvidersSection />
+      <AiProvidersSection
+        isServingStale={view.is_serving_stale ?? false}
+        onApplied={resource.reload}
+      />
 
       <section className="card">
         <div className="card_header">

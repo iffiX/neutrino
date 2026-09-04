@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 
+import { ApplyBar } from "./apply_bar";
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
 import { PasswordInput } from "./password_input";
+import { ToggleSwitch } from "./toggle_switch";
 import { apiDelete, apiPost, apiPut, describeError } from "../api_client";
 import { formatTimeAgo } from "../format_duration";
 import { useApiResource } from "../use_api_resource";
@@ -16,15 +18,72 @@ import type {
   TokensResponse,
 } from "../api_types";
 
+import "./ai_providers_section.css";
+
 /**
- * The AI providers, managed where they are used: the AI page. Each provider
- * is keyed with a stored token from the Credentials page; the gateway is
- * re-applied quietly after every change, so switching takes effect on every
- * connected machine at once.
+ * The AI providers panel: which endpoints the gateway forwards to, and in
+ * which order it tries them.
+ *
+ * The order and the enabled flags are a draft this panel stages and its apply
+ * bar commits, because reordering is several presses and each one would
+ * otherwise restart the gateway. The records themselves — adding, editing and
+ * deleting a provider — write where they are entered, the way every other
+ * record list in the panel does.
  */
+
+const WORDING = {
+  title: "Providers",
+  hint: "The endpoints the gateway forwards to, each keyed with a stored token. The list is the serving order: the first enabled provider answers first.",
+  addProvider: "Add provider",
+  newProvider: "New provider",
+  editProvider: (name: string) => `Edit ${name}`,
+  serveEarlier: "Serve earlier",
+  serveLater: "Serve later",
+  position: (index: number) => `Position ${index}`,
+  serving: "Serving",
+  notServing: "Not serving",
+  needsToken: "Needs a token before it can serve",
+  defaultEndpoint: "default endpoint",
+  noToken: "no key",
+  keyed: "keyed",
+  added: (ago: string) => `added ${ago}`,
+  edit: "Edit",
+  delete: "Delete",
+  deleteTitle: (name: string) => `Delete ${name}`,
+  deleteBody:
+    "The provider is removed from this box; the token it was keyed with stays stored.",
+  empty: "No providers yet",
+  emptyHint:
+    "Add an API endpoint and token once, instead of pasting it into every machine.",
+  applyLabel: "Apply providers",
+  applyHintDrafts:
+    "Saves the serving order and which providers are enabled, then reloads the gateway.",
+  applyHintStale:
+    "The gateway is still serving an older set of providers; this reloads it.",
+  applyWarning: "The gateway restarts, and requests in flight fail.",
+  fieldName: "Name",
+  fieldKind: "Kind",
+  fieldBaseUrl: "Base URL",
+  fieldModels: "Model aliases",
+  fieldToken: "API token",
+  fieldNewTokenName: "New token name",
+  fieldNewTokenValue: "Value",
+  baseUrlHint:
+    "Leave empty for the service's default; set it for a relay. Match the kind to the protocol the endpoint speaks, not to whose models are behind it — DeepSeek's /anthropic endpoint is Anthropic.",
+  modelsHint:
+    "One per line, real name first; add = alias when tools should see a different name. Devices are told to ask for the first one.",
+  tokenHint: "Pick a stored token, or store a new one.",
+  tokenPlaceholder: "Select a token…",
+  tokenNewOption: "＋ Store a new token…",
+  namePlaceholder: "Anthropic direct",
+  cancel: "Cancel",
+  save: "Save provider",
+  saving: "Saving…",
+} as const;
 
 const AI_PROVIDERS_PATH = "/ai/providers";
 const TOKENS_PATH = "/credentials/tokens";
+const CLIPROXYAPI_APPLY_PATH = "/cliproxyapi/apply";
 
 // The provider form's <select> sentinel for "store a new token" rather than
 // choosing an existing one.
@@ -59,74 +118,128 @@ const PROVIDER_KIND_LABELS: Record<AiProviderKind, string> = {
   custom: "OpenAI-compatible — /chat/completions",
 };
 
-export function AiProvidersSection() {
+interface AiProvidersSectionProps {
+  /** The gateway is running an older set of providers than the stored ones. */
+  isServingStale: boolean;
+  /** Called once the gateway has been reloaded from the stored providers. */
+  onApplied: () => void;
+}
+
+export function AiProvidersSection({
+  isServingStale,
+  onApplied,
+}: AiProvidersSectionProps) {
   const resource = useApiResource<AiProvidersResponse>(AI_PROVIDERS_PATH);
-  const [providers, setProviders] = useState<AiProviderView[]>([]);
+  const [saved, setSaved] = useState<AiProviderView[]>([]);
+  const [draft, setDraft] = useState<AiProviderView[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [orderError, setOrderError] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const [applyNotice, setApplyNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (resource.data !== null) {
-      setProviders(resource.data.providers);
+      setSaved(resource.data.providers);
+      setDraft(resource.data.providers);
     }
   }, [resource.data]);
 
-  const applyQuietly = () => {
-    // The gateway re-renders from what was just saved; a failure surfaces on
-    // the Gateway section's own probe rather than as a second error here.
-    void apiPost("/cliproxyapi/apply").catch(() => {});
-  };
+  const changedProviders = draft.filter(
+    (provider) =>
+      saved.find((stored) => stored.id === provider.id)?.is_enabled !==
+      provider.is_enabled,
+  );
+  const isOrderDirty =
+    draft.map((provider) => provider.id).join("\n") !==
+    saved.map((provider) => provider.id).join("\n");
+  const hasDrafts = isOrderDirty || changedProviders.length > 0;
 
-  const handleSaved = (saved: AiProviderView) => {
-    setProviders((current) => {
-      const exists = current.some((provider) => provider.id === saved.id);
-      return exists
-        ? current.map((provider) =>
-            provider.id === saved.id ? saved : provider,
+  const handleSaved = (savedProvider: AiProviderView) => {
+    const fold = (list: AiProviderView[]) =>
+      list.some((provider) => provider.id === savedProvider.id)
+        ? list.map((provider) =>
+            provider.id === savedProvider.id ? savedProvider : provider,
           )
-        : [...current, saved];
-    });
+        : [...list, savedProvider];
+    setSaved(fold);
+    setDraft(fold);
     setIsAdding(false);
     setEditingId(null);
-    applyQuietly();
   };
 
   const handleDeleted = (providerId: string) => {
-    setProviders((current) =>
-      current.filter((provider) => provider.id !== providerId),
-    );
-    applyQuietly();
+    const drop = (list: AiProviderView[]) =>
+      list.filter((provider) => provider.id !== providerId);
+    setSaved(drop);
+    setDraft(drop);
   };
 
   const handleMove = (providerId: string, offset: number) => {
-    const index = providers.findIndex((provider) => provider.id === providerId);
-    const target = index + offset;
-    if (index < 0 || target < 0 || target >= providers.length) {
-      return;
+    setDraft((current) => {
+      const index = current.findIndex((provider) => provider.id === providerId);
+      const target = index + offset;
+      if (index < 0 || target < 0 || target >= current.length) {
+        return current;
+      }
+      const reordered = [...current];
+      const [moved] = reordered.splice(index, 1);
+      if (moved === undefined) {
+        return current;
+      }
+      reordered.splice(target, 0, moved);
+      return reordered;
+    });
+  };
+
+  const handleToggle = (providerId: string, isEnabled: boolean) => {
+    setDraft((current) =>
+      current.map((provider) =>
+        provider.id === providerId
+          ? { ...provider, is_enabled: isEnabled }
+          : provider,
+      ),
+    );
+  };
+
+  const handleApply = async () => {
+    setIsBusy(true);
+    setApplyError(null);
+    setApplyNotice(null);
+    try {
+      for (const provider of changedProviders) {
+        await apiPut<AiProviderView>(`${AI_PROVIDERS_PATH}/${provider.id}`, {
+          is_enabled: provider.is_enabled,
+        });
+      }
+      if (isOrderDirty) {
+        await apiPut(`${AI_PROVIDERS_PATH}/order`, {
+          provider_ids: draft.map((provider) => provider.id),
+        });
+      }
+      const result = await apiPost<{ message: string }>(CLIPROXYAPI_APPLY_PATH);
+      setApplyNotice(result.message);
+      resource.reload();
+      onApplied();
+    } catch (cause: unknown) {
+      setApplyError(describeError(cause));
+    } finally {
+      setIsBusy(false);
     }
-    const reordered = [...providers];
-    const [moved] = reordered.splice(index, 1);
-    if (moved === undefined) {
-      return;
-    }
-    reordered.splice(target, 0, moved);
-    setProviders(reordered);
-    setOrderError(null);
-    void apiPut(`${AI_PROVIDERS_PATH}/order`, {
-      provider_ids: reordered.map((provider) => provider.id),
-    })
-      .then(() => applyQuietly())
-      .catch((cause: unknown) => {
-        setOrderError(describeError(cause));
-        resource.reload();
-      });
+  };
+
+  const handleReset = () => {
+    setDraft(saved);
+    setApplyError(null);
+    setApplyNotice(null);
   };
 
   return (
-    <section className="settings_group">
+    <section
+      className={`settings_group ${hasDrafts ? "settings_group--dirty" : ""}`}
+    >
       <div className="settings_group_title">
-        <h2>Providers</h2>
+        <h2>{WORDING.title}</h2>
         {!isAdding && (
           <button
             type="button"
@@ -134,17 +247,11 @@ export function AiProvidersSection() {
             onClick={() => setIsAdding(true)}
           >
             <Icon name="plus" size={14} />
-            Add provider
+            {WORDING.addProvider}
           </button>
         )}
       </div>
-      <p className="field_hint">
-        The endpoints the gateway forwards to, each keyed with a stored token.
-        The list is the serving order — the first enabled provider answers first
-        — and switching takes effect on every machine at once.
-      </p>
-
-      {orderError !== null && <span className="field_error">{orderError}</span>}
+      <p className="field_hint">{WORDING.hint}</p>
 
       {resource.error !== null && (
         <ErrorPanel message={resource.error} onRetry={resource.reload} />
@@ -157,18 +264,15 @@ export function AiProvidersSection() {
         />
       )}
 
-      {providers.length === 0 && !isAdding ? (
+      {draft.length === 0 && !isAdding ? (
         <div className="keys_empty">
           <Icon name="nodes" size={22} />
-          <span className="keys_empty_title">No providers yet</span>
-          <span className="keys_empty_hint">
-            Add an API endpoint and token once, instead of pasting it into every
-            machine.
-          </span>
+          <span className="keys_empty_title">{WORDING.empty}</span>
+          <span className="keys_empty_hint">{WORDING.emptyHint}</span>
         </div>
       ) : (
-        <div className="keys_list">
-          {providers.map((provider, index) =>
+        <div className="ai_providers_list">
+          {draft.map((provider, index) =>
             editingId === provider.id ? (
               <ProviderForm
                 key={provider.id}
@@ -180,18 +284,31 @@ export function AiProvidersSection() {
               <ProviderCard
                 key={provider.id}
                 value={provider}
+                position={index + 1}
                 isFirst={index === 0}
-                isLast={index === providers.length - 1}
+                isLast={index === draft.length - 1}
                 onMoveUp={() => handleMove(provider.id, -1)}
                 onMoveDown={() => handleMove(provider.id, 1)}
+                onToggle={(isEnabled) => handleToggle(provider.id, isEnabled)}
                 onEdit={() => setEditingId(provider.id)}
-                onSaved={handleSaved}
                 onDeleted={handleDeleted}
               />
             ),
           )}
         </div>
       )}
+
+      <ApplyBar
+        isDirty={hasDrafts || isServingStale}
+        isBusy={isBusy}
+        label={WORDING.applyLabel}
+        hint={hasDrafts ? WORDING.applyHintDrafts : WORDING.applyHintStale}
+        warning={WORDING.applyWarning}
+        error={applyError}
+        notice={applyNotice}
+        onReset={handleReset}
+        onApply={() => void handleApply()}
+      />
     </section>
   );
 }
@@ -263,21 +380,21 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
   return (
     <div className="keys_add">
       <div className="section_label">
-        {isEditing ? `Edit ${initial.name}` : "New provider"}
+        {isEditing ? WORDING.editProvider(initial.name) : WORDING.newProvider}
       </div>
       <div className="credentials_form_row">
         <label className="field">
-          <span className="field_label">Name</span>
+          <span className="field_label">{WORDING.fieldName}</span>
           <input
             className="input"
             value={name}
-            placeholder="Anthropic direct"
+            placeholder={WORDING.namePlaceholder}
             autoFocus
             onChange={(event) => setName(event.target.value)}
           />
         </label>
         <label className="field">
-          <span className="field_label">Kind</span>
+          <span className="field_label">{WORDING.fieldKind}</span>
           <select
             className="input"
             value={kind}
@@ -292,7 +409,7 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
         </label>
       </div>
       <label className="field">
-        <span className="field_label">Base URL</span>
+        <span className="field_label">{WORDING.fieldBaseUrl}</span>
         <input
           className="input"
           value={baseUrl}
@@ -300,14 +417,10 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
           spellCheck={false}
           onChange={(event) => setBaseUrl(event.target.value)}
         />
-        <span className="field_hint">
-          Leave empty for the service&apos;s default; set it for a relay. Match
-          the kind to the protocol the endpoint speaks, not to whose models are
-          behind it — DeepSeek&apos;s /anthropic endpoint is Anthropic.
-        </span>
+        <span className="field_hint">{WORDING.baseUrlHint}</span>
       </label>
       <label className="field">
-        <span className="field_label">Model aliases</span>
+        <span className="field_label">{WORDING.fieldModels}</span>
         <textarea
           className="input"
           rows={3}
@@ -316,34 +429,29 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
           value={modelsText}
           onChange={(event) => setModelsText(event.target.value)}
         />
-        <span className="field_hint">
-          One per line, real name first; add = alias when tools should see a
-          different name. Devices are told to ask for the first one.
-        </span>
+        <span className="field_hint">{WORDING.modelsHint}</span>
       </label>
       <label className="field">
-        <span className="field_label">API token</span>
+        <span className="field_label">{WORDING.fieldToken}</span>
         <select
           className="input"
           value={secretId}
           onChange={(event) => setSecretId(event.target.value)}
         >
-          <option value="">Select a token…</option>
+          <option value="">{WORDING.tokenPlaceholder}</option>
           {(tokens.data?.tokens ?? []).map((token) => (
             <option key={token.id} value={token.id}>
               {token.name}
             </option>
           ))}
-          <option value={NEW_TOKEN_OPTION}>＋ Store a new token…</option>
+          <option value={NEW_TOKEN_OPTION}>{WORDING.tokenNewOption}</option>
         </select>
-        <span className="field_hint">
-          Pick a stored token, or store a new one.
-        </span>
+        <span className="field_hint">{WORDING.tokenHint}</span>
       </label>
       {isAddingToken && (
         <div className="credentials_form_row">
           <label className="field">
-            <span className="field_label">New token name</span>
+            <span className="field_label">{WORDING.fieldNewTokenName}</span>
             <input
               className="input"
               value={newTokenName}
@@ -352,7 +460,7 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
             />
           </label>
           <label className="field">
-            <span className="field_label">Value</span>
+            <span className="field_label">{WORDING.fieldNewTokenValue}</span>
             <PasswordInput value={newTokenValue} onChange={setNewTokenValue} />
           </label>
         </div>
@@ -364,7 +472,7 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
           className="button button--ghost"
           onClick={onCancel}
         >
-          Cancel
+          {WORDING.cancel}
         </button>
         <button
           type="button"
@@ -373,7 +481,7 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
           onClick={() => void handleSubmit()}
         >
           <Icon name="check" size={14} />
-          {isSaving ? "Saving…" : "Save provider"}
+          {isSaving ? WORDING.saving : WORDING.save}
         </button>
       </div>
     </div>
@@ -382,50 +490,38 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
 
 interface ProviderCardProps {
   value: AiProviderView;
+  position: number;
   isFirst: boolean;
   isLast: boolean;
   onMoveUp: () => void;
   onMoveDown: () => void;
+  onToggle: (isEnabled: boolean) => void;
   onEdit: () => void;
-  onSaved: (provider: AiProviderView) => void;
   onDeleted: (providerId: string) => void;
 }
 
 function ProviderCard({
   value,
+  position,
   isFirst,
   isLast,
   onMoveUp,
   onMoveDown,
+  onToggle,
   onEdit,
-  onSaved,
   onDeleted,
 }: ProviderCardProps) {
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const confirm = useConfirm();
 
-  const handleToggle = async () => {
-    setIsBusy(true);
-    setError(null);
-    try {
-      onSaved(
-        await apiPut<AiProviderView>(`${AI_PROVIDERS_PATH}/${value.id}`, {
-          is_enabled: !value.is_enabled,
-        }),
-      );
-    } catch (cause: unknown) {
-      setError(describeError(cause));
-    } finally {
-      setIsBusy(false);
-    }
-  };
+  const hasToken = value.secret_id !== null;
 
   const handleDelete = () =>
     confirm.ask({
-      title: `Delete ${value.name}`,
-      body: "The provider is removed from this box; the token it was keyed with stays stored.",
-      confirmLabel: "Delete",
+      title: WORDING.deleteTitle(value.name),
+      body: WORDING.deleteBody,
+      confirmLabel: WORDING.delete,
       onConfirm: () => void deleteProvider(),
     });
 
@@ -442,88 +538,87 @@ function ProviderCard({
   };
 
   return (
-    <div className="key_card">
-      <div className="key_card_head">
-        <span className="credentials_provider_name">{value.name}</span>
-        <span className="key_card_type">{value.kind}</span>
-        <span className="ai_order_buttons">
-          <button
-            type="button"
-            className="file_modal_action"
-            title="Serve earlier"
-            disabled={isBusy || isFirst}
-            onClick={onMoveUp}
-          >
-            <Icon name="arrow_up" size={12} />
-          </button>
-          <button
-            type="button"
-            className="file_modal_action"
-            title="Serve later"
-            disabled={isBusy || isLast}
-            onClick={onMoveDown}
-          >
-            <Icon name="arrow_down" size={12} />
-          </button>
-        </span>
-      </div>
-
-      <div className="key_card_fingerprint">
-        {value.base_url.length > 0 ? value.base_url : "default endpoint"}
-      </div>
-
-      <div className="key_card_meta">
-        <span
-          className={`key_card_tag ${
-            value.secret_id !== null && value.is_enabled
-              ? "key_card_tag--used"
-              : ""
-          }`}
+    <div className="key_card ai_provider_card">
+      <div className="ai_provider_rank">
+        <button
+          type="button"
+          className="ai_rank_button"
+          title={WORDING.serveEarlier}
+          aria-label={WORDING.serveEarlier}
+          disabled={isFirst}
+          onClick={onMoveUp}
         >
-          <Icon name="lock" size={11} />
-          {value.secret_id === null
-            ? "no key"
-            : value.is_enabled
-              ? "serving"
-              : "unused"}
+          <Icon name="arrow_up" size={14} />
+        </button>
+        <span className="ai_rank_index mono" title={WORDING.position(position)}>
+          {position}
         </span>
-        {value.created_at.length > 0 && (
-          <span className="key_card_added">
-            added {formatTimeAgo(value.created_at)}
+        <button
+          type="button"
+          className="ai_rank_button"
+          title={WORDING.serveLater}
+          aria-label={WORDING.serveLater}
+          disabled={isLast}
+          onClick={onMoveDown}
+        >
+          <Icon name="arrow_down" size={14} />
+        </button>
+      </div>
+
+      <div className="ai_provider_body">
+        <div className="key_card_head">
+          <span className="credentials_provider_name">{value.name}</span>
+          <span className="key_card_type">{value.kind}</span>
+        </div>
+
+        <div className="key_card_fingerprint">
+          {value.base_url.length > 0 ? value.base_url : WORDING.defaultEndpoint}
+        </div>
+
+        <ToggleSwitch
+          isOn={value.is_enabled}
+          isDisabled={!hasToken}
+          label={value.is_enabled ? WORDING.serving : WORDING.notServing}
+          description={hasToken ? undefined : WORDING.needsToken}
+          onChange={onToggle}
+        />
+
+        <div className="key_card_meta">
+          <span
+            className={`key_card_tag ${hasToken ? "key_card_tag--used" : ""}`}
+          >
+            <Icon name="lock" size={11} />
+            {hasToken ? WORDING.keyed : WORDING.noToken}
           </span>
-        )}
-      </div>
+          {value.created_at.length > 0 && (
+            <span className="key_card_added">
+              {WORDING.added(formatTimeAgo(value.created_at))}
+            </span>
+          )}
+        </div>
 
-      {error !== null && <span className="field_error">{error}</span>}
+        {error !== null && <span className="field_error">{error}</span>}
 
-      <div className="key_card_actions">
-        <button
-          type="button"
-          className="button button--ghost button--small"
-          disabled={isBusy || value.secret_id === null}
-          onClick={() => void handleToggle()}
-        >
-          <Icon name={value.is_enabled ? "power" : "play"} size={13} />
-          {value.is_enabled ? "Stop serving" : "Serve"}
-        </button>
-        <button
-          type="button"
-          className="button button--ghost button--small"
-          disabled={isBusy}
-          onClick={onEdit}
-        >
-          <Icon name="edit" size={13} />
-          Edit
-        </button>
-        <button
-          type="button"
-          className="button button--ghost button--small button--danger"
-          disabled={isBusy}
-          onClick={handleDelete}
-        >
-          <Icon name="trash" size={13} />
-          Delete
-        </button>
+        <div className="key_card_actions">
+          <button
+            type="button"
+            className="button button--ghost button--small"
+            disabled={isBusy}
+            onClick={onEdit}
+          >
+            <Icon name="edit" size={13} />
+            {WORDING.edit}
+          </button>
+          <button
+            type="button"
+            className="button button--ghost button--small button--danger"
+            disabled={isBusy}
+            onClick={handleDelete}
+          >
+            <Icon name="trash" size={13} />
+            {WORDING.delete}
+          </button>
+        </div>
       </div>
       {confirm.modal}
     </div>

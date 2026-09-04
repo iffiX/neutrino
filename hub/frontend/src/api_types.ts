@@ -505,6 +505,9 @@ export interface CliproxyApiStatusView {
   is_reachable: boolean;
   probe_message: string;
   enabled_provider_count: number;
+  /** Whether the running gateway is older than the stored providers; absent
+   * reads as false. */
+  is_serving_stale?: boolean;
   /** Served over the current UTC day; absent until usage is collected. */
   requests_today?: number;
   tokens_today?: number;

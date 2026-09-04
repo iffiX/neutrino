@@ -1,0 +1,65 @@
+/* The provider list is one column: the order down the page is the order the
+   gateway tries, so the arrows have somewhere to point. */
+.ai_providers_list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ai_provider_card {
+  flex-direction: row;
+  align-items: stretch;
+  gap: var(--space-4);
+}
+
+.ai_provider_rank {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  justify-content: center;
+}
+
+.ai_rank_button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 26px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-elevated);
+  color: var(--color-text);
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.ai_rank_button:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  background: var(--color-accent-wash);
+  color: var(--color-accent);
+}
+
+.ai_rank_button:disabled {
+  border-color: transparent;
+  background: none;
+  color: var(--color-text-faint);
+  cursor: default;
+}
+
+.ai_rank_index {
+  color: var(--color-text-faint);
+  font-size: 12px;
+}
+
+.ai_provider_body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: var(--space-3);
+}
