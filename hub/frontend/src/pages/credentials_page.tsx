@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { PasswordInput } from "../components/password_input";
-import { apiDelete, apiPost, apiPut, describeError } from "../api_client";
+import { apiDelete, apiPost, describeError } from "../api_client";
 import { formatTimeAgo } from "../format_duration";
 import { PRIVATE_KEY_PLACEHOLDER } from "../private_key_placeholder";
 import { useApiResource } from "../use_api_resource";
@@ -27,6 +27,10 @@ import "./credentials_page.css";
  *
  * Secrets travel one way. A key, password or token is typed once and never
  * shown again; everything on this page is metadata.
+ *
+ * A credential is added and deleted, never edited — not its value, not its
+ * name. Replacing one is adding its successor, pointing the things that use it
+ * at the new record, and deleting the old one.
  */
 
 const LOGINS_PATH = "/credentials/logins";
@@ -66,12 +70,6 @@ function SshKeysSection() {
   const handleAdded = (created: KeyView) => {
     setKeys((current) => [created, ...current]);
     setIsAdding(false);
-  };
-
-  const handleRenamed = (updated: KeyView) => {
-    setKeys((current) =>
-      current.map((key) => (key.id === updated.id ? updated : key)),
-    );
   };
 
   const handleDeleted = (keyId: string) => {
@@ -114,12 +112,7 @@ function SshKeysSection() {
       ) : (
         <div className="keys_list">
           {keys.map((key) => (
-            <KeyCard
-              key={key.id}
-              value={key}
-              onRenamed={handleRenamed}
-              onDeleted={handleDeleted}
-            />
+            <KeyCard key={key.id} value={key} onDeleted={handleDeleted} />
           ))}
         </div>
       )}
@@ -131,7 +124,6 @@ function LoginsSection() {
   const resource = useApiResource<LoginsResponse>(LOGINS_PATH);
   const [logins, setLogins] = useState<LoginView[]>([]);
   const [isAdding, setIsAdding] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (resource.data !== null) {
@@ -139,15 +131,9 @@ function LoginsSection() {
     }
   }, [resource.data]);
 
-  const handleSaved = (saved: LoginView) => {
-    setLogins((current) => {
-      const exists = current.some((login) => login.id === saved.id);
-      return exists
-        ? current.map((login) => (login.id === saved.id ? saved : login))
-        : [saved, ...current];
-    });
+  const handleAdded = (created: LoginView) => {
+    setLogins((current) => [created, ...current]);
     setIsAdding(false);
-    setEditingId(null);
   };
 
   const handleDeleted = (loginId: string) => {
@@ -181,7 +167,7 @@ function LoginsSection() {
       )}
 
       {isAdding && (
-        <LoginForm onSaved={handleSaved} onCancel={() => setIsAdding(false)} />
+        <LoginForm onAdded={handleAdded} onCancel={() => setIsAdding(false)} />
       )}
 
       {logins.length === 0 && !isAdding ? (
@@ -195,24 +181,9 @@ function LoginsSection() {
         </div>
       ) : (
         <div className="keys_list">
-          {logins.map((login) =>
-            editingId === login.id ? (
-              <LoginForm
-                key={login.id}
-                initial={login}
-                onSaved={handleSaved}
-                onCancel={() => setEditingId(null)}
-              />
-            ) : (
-              <LoginCard
-                key={login.id}
-                value={login}
-                onSaved={handleSaved}
-                onEdit={() => setEditingId(login.id)}
-                onDeleted={handleDeleted}
-              />
-            ),
-          )}
+          {logins.map((login) => (
+            <LoginCard key={login.id} value={login} onDeleted={handleDeleted} />
+          ))}
         </div>
       )}
     </section>
@@ -223,7 +194,6 @@ function TokensSection() {
   const resource = useApiResource<TokensResponse>(TOKENS_PATH);
   const [tokens, setTokens] = useState<TokenView[]>([]);
   const [isAdding, setIsAdding] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (resource.data !== null) {
@@ -231,15 +201,9 @@ function TokensSection() {
     }
   }, [resource.data]);
 
-  const handleSaved = (saved: TokenView) => {
-    setTokens((current) => {
-      const exists = current.some((token) => token.id === saved.id);
-      return exists
-        ? current.map((token) => (token.id === saved.id ? saved : token))
-        : [saved, ...current];
-    });
+  const handleAdded = (created: TokenView) => {
+    setTokens((current) => [created, ...current]);
     setIsAdding(false);
-    setEditingId(null);
   };
 
   const handleDeleted = (tokenId: string) => {
@@ -271,7 +235,7 @@ function TokensSection() {
       )}
 
       {isAdding && (
-        <TokenForm onSaved={handleSaved} onCancel={() => setIsAdding(false)} />
+        <TokenForm onAdded={handleAdded} onCancel={() => setIsAdding(false)} />
       )}
 
       {tokens.length === 0 && !isAdding ? (
@@ -285,24 +249,9 @@ function TokensSection() {
         </div>
       ) : (
         <div className="keys_list">
-          {tokens.map((token) =>
-            editingId === token.id ? (
-              <TokenForm
-                key={token.id}
-                initial={token}
-                onSaved={handleSaved}
-                onCancel={() => setEditingId(null)}
-              />
-            ) : (
-              <TokenCard
-                key={token.id}
-                value={token}
-                onSaved={handleSaved}
-                onEdit={() => setEditingId(token.id)}
-                onDeleted={handleDeleted}
-              />
-            ),
-          )}
+          {tokens.map((token) => (
+            <TokenCard key={token.id} value={token} onDeleted={handleDeleted} />
+          ))}
         </div>
       )}
     </section>
@@ -400,40 +349,13 @@ function AddKeyForm({ onAdded, onCancel }: AddKeyFormProps) {
 
 interface KeyCardProps {
   value: KeyView;
-  onRenamed: (key: KeyView) => void;
   onDeleted: (keyId: string) => void;
 }
 
-function KeyCard({ value, onRenamed, onDeleted }: KeyCardProps) {
-  const [isEditingName, setIsEditingName] = useState(false);
+function KeyCard({ value, onDeleted }: KeyCardProps) {
   const confirm = useConfirm();
-  const [draftName, setDraftName] = useState(value.name);
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
-
-  const handleRename = async () => {
-    if (draftName.trim().length === 0 || draftName.trim() === value.name) {
-      setIsEditingName(false);
-      setDraftName(value.name);
-      return;
-    }
-    setIsBusy(true);
-    setError(null);
-    try {
-      const updated = await apiPut<KeyView>(
-        `/credentials/ssh_keys/${value.id}`,
-        {
-          name: draftName.trim(),
-        },
-      );
-      onRenamed(updated);
-      setIsEditingName(false);
-    } catch (cause: unknown) {
-      setError(describeError(cause));
-    } finally {
-      setIsBusy(false);
-    }
-  };
 
   const handleDelete = () =>
     confirm.ask({
@@ -458,33 +380,7 @@ function KeyCard({ value, onRenamed, onDeleted }: KeyCardProps) {
   return (
     <div className="key_card">
       <div className="key_card_head">
-        {isEditingName ? (
-          <input
-            className="input key_card_name_input"
-            value={draftName}
-            autoFocus
-            onChange={(event) => setDraftName(event.target.value)}
-            onBlur={() => void handleRename()}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                void handleRename();
-              } else if (event.key === "Escape") {
-                setIsEditingName(false);
-                setDraftName(value.name);
-              }
-            }}
-          />
-        ) : (
-          <button
-            type="button"
-            className="key_card_name"
-            onClick={() => setIsEditingName(true)}
-            title="Rename"
-          >
-            {value.name}
-            <Icon name="edit" size={12} />
-          </button>
-        )}
+        <span className="key_card_name">{value.name}</span>
         <span className="key_card_type">{value.key_type}</span>
       </div>
 
@@ -532,34 +428,29 @@ function KeyCard({ value, onRenamed, onDeleted }: KeyCardProps) {
 }
 
 interface LoginFormProps {
-  initial?: LoginView;
-  onSaved: (login: LoginView) => void;
+  onAdded: (login: LoginView) => void;
   onCancel: () => void;
 }
 
-function LoginForm({ initial, onSaved, onCancel }: LoginFormProps) {
-  const [name, setName] = useState(initial?.name ?? "");
-  const [username, setUsername] = useState(initial?.username ?? "");
+function LoginForm({ onAdded, onCancel }: LoginFormProps) {
+  const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isEditing = initial !== undefined;
-  const isReady = name.trim().length > 0 && (isEditing || password.length > 0);
+  const isReady = name.trim().length > 0 && password.length > 0;
 
   const handleSubmit = async () => {
     setIsSaving(true);
     setError(null);
     try {
-      const payload = {
+      const created = await apiPost<LoginView>(LOGINS_PATH, {
         name: name.trim(),
         username: username.trim().length > 0 ? username.trim() : null,
         password,
-      };
-      const saved = isEditing
-        ? await apiPut<LoginView>(`${LOGINS_PATH}/${initial.id}`, payload)
-        : await apiPost<LoginView>(LOGINS_PATH, payload);
-      onSaved(saved);
+      });
+      onAdded(created);
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -569,9 +460,7 @@ function LoginForm({ initial, onSaved, onCancel }: LoginFormProps) {
 
   return (
     <div className="keys_add">
-      <div className="section_label">
-        {isEditing ? `Edit ${initial.name}` : "New login"}
-      </div>
+      <div className="section_label">New login</div>
       <div className="credentials_form_row">
         <label className="field">
           <span className="field_label">Name</span>
@@ -601,9 +490,7 @@ function LoginForm({ initial, onSaved, onCancel }: LoginFormProps) {
         <span className="field_label">Password</span>
         <PasswordInput value={password} onChange={setPassword} />
         <span className="field_hint">
-          {isEditing
-            ? "Stored; type a new one to replace it."
-            : "Stored sealed on the gateway, and never shown again."}
+          Stored sealed on the gateway, and never shown again.
         </span>
       </label>
       {error !== null && <span className="field_error">{error}</span>}
@@ -631,38 +518,13 @@ function LoginForm({ initial, onSaved, onCancel }: LoginFormProps) {
 
 interface LoginCardProps {
   value: LoginView;
-  onSaved: (login: LoginView) => void;
-  onEdit: () => void;
   onDeleted: (loginId: string) => void;
 }
 
-function LoginCard({ value, onSaved, onEdit, onDeleted }: LoginCardProps) {
-  const [isEditingName, setIsEditingName] = useState(false);
+function LoginCard({ value, onDeleted }: LoginCardProps) {
   const confirm = useConfirm();
-  const [draftName, setDraftName] = useState(value.name);
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
-
-  const handleRename = async () => {
-    if (draftName.trim().length === 0 || draftName.trim() === value.name) {
-      setIsEditingName(false);
-      setDraftName(value.name);
-      return;
-    }
-    setIsBusy(true);
-    setError(null);
-    try {
-      const updated = await apiPut<LoginView>(`${LOGINS_PATH}/${value.id}`, {
-        name: draftName.trim(),
-      });
-      onSaved(updated);
-      setIsEditingName(false);
-    } catch (cause: unknown) {
-      setError(describeError(cause));
-    } finally {
-      setIsBusy(false);
-    }
-  };
 
   const handleDelete = () =>
     confirm.ask({
@@ -687,33 +549,7 @@ function LoginCard({ value, onSaved, onEdit, onDeleted }: LoginCardProps) {
   return (
     <div className="key_card">
       <div className="key_card_head">
-        {isEditingName ? (
-          <input
-            className="input key_card_name_input"
-            value={draftName}
-            autoFocus
-            onChange={(event) => setDraftName(event.target.value)}
-            onBlur={() => void handleRename()}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                void handleRename();
-              } else if (event.key === "Escape") {
-                setIsEditingName(false);
-                setDraftName(value.name);
-              }
-            }}
-          />
-        ) : (
-          <button
-            type="button"
-            className="key_card_name"
-            onClick={() => setIsEditingName(true)}
-            title="Rename"
-          >
-            {value.name}
-            <Icon name="edit" size={12} />
-          </button>
-        )}
+        <span className="key_card_name">{value.name}</span>
       </div>
 
       {value.username !== null && (
@@ -742,15 +578,6 @@ function LoginCard({ value, onSaved, onEdit, onDeleted }: LoginCardProps) {
       <div className="key_card_actions">
         <button
           type="button"
-          className="button button--ghost button--small"
-          disabled={isBusy}
-          onClick={onEdit}
-        >
-          <Icon name="edit" size={13} />
-          Edit
-        </button>
-        <button
-          type="button"
           className="button button--ghost button--small button--danger"
           disabled={isBusy}
           onClick={handleDelete}
@@ -765,29 +592,27 @@ function LoginCard({ value, onSaved, onEdit, onDeleted }: LoginCardProps) {
 }
 
 interface TokenFormProps {
-  initial?: TokenView;
-  onSaved: (token: TokenView) => void;
+  onAdded: (token: TokenView) => void;
   onCancel: () => void;
 }
 
-function TokenForm({ initial, onSaved, onCancel }: TokenFormProps) {
-  const [name, setName] = useState(initial?.name ?? "");
+function TokenForm({ onAdded, onCancel }: TokenFormProps) {
+  const [name, setName] = useState("");
   const [value, setValue] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isEditing = initial !== undefined;
-  const isReady = name.trim().length > 0 && (isEditing || value.length > 0);
+  const isReady = name.trim().length > 0 && value.length > 0;
 
   const handleSubmit = async () => {
     setIsSaving(true);
     setError(null);
     try {
-      const payload = { name: name.trim(), value };
-      const saved = isEditing
-        ? await apiPut<TokenView>(`${TOKENS_PATH}/${initial.id}`, payload)
-        : await apiPost<TokenView>(TOKENS_PATH, payload);
-      onSaved(saved);
+      const created = await apiPost<TokenView>(TOKENS_PATH, {
+        name: name.trim(),
+        value,
+      });
+      onAdded(created);
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -797,9 +622,7 @@ function TokenForm({ initial, onSaved, onCancel }: TokenFormProps) {
 
   return (
     <div className="keys_add">
-      <div className="section_label">
-        {isEditing ? `Edit ${initial.name}` : "New token"}
-      </div>
+      <div className="section_label">New token</div>
       <label className="field">
         <span className="field_label">Name</span>
         <input
@@ -814,9 +637,7 @@ function TokenForm({ initial, onSaved, onCancel }: TokenFormProps) {
         <span className="field_label">Value</span>
         <PasswordInput value={value} onChange={setValue} />
         <span className="field_hint">
-          {isEditing
-            ? "Stored; type a new one to replace it."
-            : "Stored sealed on the gateway, and never shown again."}
+          Stored sealed on the gateway, and never shown again.
         </span>
       </label>
       {error !== null && <span className="field_error">{error}</span>}
@@ -844,38 +665,13 @@ function TokenForm({ initial, onSaved, onCancel }: TokenFormProps) {
 
 interface TokenCardProps {
   value: TokenView;
-  onSaved: (token: TokenView) => void;
-  onEdit: () => void;
   onDeleted: (tokenId: string) => void;
 }
 
-function TokenCard({ value, onSaved, onEdit, onDeleted }: TokenCardProps) {
-  const [isEditingName, setIsEditingName] = useState(false);
+function TokenCard({ value, onDeleted }: TokenCardProps) {
   const confirm = useConfirm();
-  const [draftName, setDraftName] = useState(value.name);
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
-
-  const handleRename = async () => {
-    if (draftName.trim().length === 0 || draftName.trim() === value.name) {
-      setIsEditingName(false);
-      setDraftName(value.name);
-      return;
-    }
-    setIsBusy(true);
-    setError(null);
-    try {
-      const updated = await apiPut<TokenView>(`${TOKENS_PATH}/${value.id}`, {
-        name: draftName.trim(),
-      });
-      onSaved(updated);
-      setIsEditingName(false);
-    } catch (cause: unknown) {
-      setError(describeError(cause));
-    } finally {
-      setIsBusy(false);
-    }
-  };
 
   const handleDelete = () =>
     confirm.ask({
@@ -900,33 +696,7 @@ function TokenCard({ value, onSaved, onEdit, onDeleted }: TokenCardProps) {
   return (
     <div className="key_card">
       <div className="key_card_head">
-        {isEditingName ? (
-          <input
-            className="input key_card_name_input"
-            value={draftName}
-            autoFocus
-            onChange={(event) => setDraftName(event.target.value)}
-            onBlur={() => void handleRename()}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                void handleRename();
-              } else if (event.key === "Escape") {
-                setIsEditingName(false);
-                setDraftName(value.name);
-              }
-            }}
-          />
-        ) : (
-          <button
-            type="button"
-            className="key_card_name"
-            onClick={() => setIsEditingName(true)}
-            title="Rename"
-          >
-            {value.name}
-            <Icon name="edit" size={12} />
-          </button>
-        )}
+        <span className="key_card_name">{value.name}</span>
       </div>
 
       <div className="key_card_meta">
@@ -949,15 +719,6 @@ function TokenCard({ value, onSaved, onEdit, onDeleted }: TokenCardProps) {
       {error !== null && <span className="field_error">{error}</span>}
 
       <div className="key_card_actions">
-        <button
-          type="button"
-          className="button button--ghost button--small"
-          disabled={isBusy}
-          onClick={onEdit}
-        >
-          <Icon name="edit" size={13} />
-          Edit
-        </button>
         <button
           type="button"
           className="button button--ghost button--small button--danger"
