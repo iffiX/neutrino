@@ -102,7 +102,9 @@
   color: var(--color-error);
 }
 
-/* The key as it is generated: spelled out, at the top, until it is copied. */
+/* The key as it is generated: spelled out, at the top, until it is copied.
+   A double accent hairline, not a glow — a nested box that glows reads as
+   something waiting to be applied. */
 .ai_key_fresh {
   display: flex;
   flex-direction: column;
@@ -111,6 +113,7 @@
   border: 1px solid var(--color-accent);
   border-radius: var(--radius-md);
   background: var(--color-accent-wash);
+  box-shadow: 0 0 0 1px var(--color-accent);
 }
 
 .ai_key_fresh_head {
@@ -142,8 +145,20 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
 }
 
 .ai_key_add .input {
-  max-width: 320px;
+  flex: 1;
+  min-width: 200px;
+}
+
+.ai_key_add_actions {
+  display: inline-flex;
+  gap: var(--space-2);
 }

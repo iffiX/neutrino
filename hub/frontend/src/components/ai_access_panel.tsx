@@ -180,25 +180,27 @@ export function AiAccessPanel({
               }
             }}
           />
-          <button
-            type="button"
-            className="button button--primary"
-            disabled={isBusy}
-            onClick={() => void handleGenerate()}
-          >
-            <Icon name="check" size={14} />
-            {WORDING.generate}
-          </button>
-          <button
-            type="button"
-            className="button button--ghost"
-            onClick={() => {
-              setIsNaming(false);
-              setName("");
-            }}
-          >
-            {WORDING.cancel}
-          </button>
+          <div className="ai_key_add_actions">
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={() => {
+                setIsNaming(false);
+                setName("");
+              }}
+            >
+              {WORDING.cancel}
+            </button>
+            <button
+              type="button"
+              className="button button--primary"
+              disabled={isBusy}
+              onClick={() => void handleGenerate()}
+            >
+              <Icon name="check" size={14} />
+              {WORDING.generate}
+            </button>
+          </div>
         </div>
       )}
 

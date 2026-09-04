@@ -1,5 +1,15 @@
 /* --- The Activity panel --- */
 
+.ai_activity_head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ai_activity_head .ai_probe {
+  margin: 0;
+}
+
 .ai_activity_actions {
   display: flex;
   flex-wrap: wrap;

@@ -153,18 +153,27 @@ export function AiPage() {
 
       <section className="card">
         <div className="card_header">
-          <div className="card_title">
-            <h2>{WORDING.activity}</h2>
-            <StatusDot
-              tone={view.is_active ? "ok" : "error"}
-              label={view.is_active ? WORDING.running : WORDING.stopped}
-            />
-            <StatusDot
-              tone={view.is_reachable ? "ok" : "warn"}
-              label={
-                view.is_reachable ? WORDING.answering : WORDING.notAnswering
-              }
-            />
+          <div className="ai_activity_head">
+            <div className="card_title">
+              <h2>{WORDING.activity}</h2>
+              <StatusDot
+                tone={view.is_active ? "ok" : "error"}
+                label={view.is_active ? WORDING.running : WORDING.stopped}
+              />
+              <StatusDot
+                tone={view.is_reachable ? "ok" : "warn"}
+                label={
+                  view.is_reachable ? WORDING.answering : WORDING.notAnswering
+                }
+              />
+            </div>
+            <p className="field_hint ai_probe">
+              {view.is_reachable
+                ? WORDING.serving(view.probe_message)
+                : view.probe_message.length > 0
+                  ? view.probe_message
+                  : WORDING.waitingProbe}
+            </p>
           </div>
           <div className="ai_activity_actions">
             {hasToday && (
@@ -198,14 +207,6 @@ export function AiPage() {
             </button>
           </div>
         </div>
-
-        <p className="field_hint">
-          {view.is_reachable
-            ? WORDING.serving(view.probe_message)
-            : view.probe_message.length > 0
-              ? view.probe_message
-              : WORDING.waitingProbe}
-        </p>
 
         <div className="ai_usage_switch">
           <div className="ai_service_chips">
