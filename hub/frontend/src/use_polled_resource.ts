@@ -41,8 +41,13 @@ export function usePolledResource<T>(
   // against its own last answer, so a value the page folded in itself — a
   // mutation response — counts as held too.
   const heldPayloadRef = useRef<string | null>(null);
+  // A tick in flight races the page's own writes: a reading fetched before
+  // an apply must not land on top of the answer fetched after it. A tick's
+  // answer is dropped when anything else set the value while it was out.
+  const generationRef = useRef(0);
 
   useEffect(() => {
+    generationRef.current += 1;
     heldPayloadRef.current = data === null ? null : JSON.stringify(data);
   }, [data]);
 
@@ -53,8 +58,9 @@ export function usePolledResource<T>(
     let isCancelled = false;
     const tick = async () => {
       try {
+        const issuedAt = generationRef.current;
         const fresh = await apiGet<T>(path);
-        if (isCancelled) {
+        if (isCancelled || generationRef.current !== issuedAt) {
           return;
         }
         const payload = JSON.stringify(fresh);

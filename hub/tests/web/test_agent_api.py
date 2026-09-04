@@ -214,6 +214,20 @@ def test_a_dangling_ai_key_id_is_reissued_on_the_next_heartbeat(
         tmp_path / "cliproxyapi/cliproxyapi.json"
     ).read_text(encoding="utf-8")
 
+    # The reissue happens once: the next beat finds the key and touches nothing.
+    reissued_id = device.client.ai_key_id
+    response = client.post(
+        "/api/agent/heartbeat",
+        json={
+            "token": "device-token",
+            "hostname": "testbox",
+            "client_version": "0.3.0",
+        },
+    )
+    assert response.status_code == 200
+    assert device.client.ai_key_id == reissued_id
+    assert [key.id for key in load_cliproxyapi_config().client_keys] == [reissued_id]
+
 
 def test_unknown_token_is_refused(api):
     client, _, _ = api
