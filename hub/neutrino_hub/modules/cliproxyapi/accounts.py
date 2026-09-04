@@ -58,9 +58,17 @@ class CliproxyApiAccount:
 
     The gateway refreshes its own tokens, so there is no expiry to show: what
     it reports instead is whether the account is serving right now.
+
+    Attributes:
+        name: The token file, and the account's id everywhere in the panel.
+        auth_index: The gateway's own handle for the credential, carried by
+            every usage record it serves, and what usage is attributed by. It
+            survives a token refresh; an older gateway that lists auth files
+            off disk sends none, and then nothing is attributed.
     """
 
     name: str
+    auth_index: str
     provider: str
     label: str
     email: str
@@ -347,6 +355,7 @@ def _account(entry: dict) -> CliproxyApiAccount:
     """
     return CliproxyApiAccount(
         name=str(entry.get("name", "")),
+        auth_index=str(entry.get("auth_index", "")),
         provider=str(entry.get("provider", "")),
         label=str(entry.get("label", "")),
         email=str(entry.get("email", "")),

@@ -2,9 +2,9 @@
 
 The gateway's management API hands out per-request usage records exactly
 once — reading the queue empties it — so one collector in the panel process
-is the whole pipeline. Each poll maps the records' key and upstream-key
-values to the ids the panel knows, folds them into the store, and everything
-that shows usage reads the store rather than the gateway.
+is the whole pipeline. Each poll maps the records' client key, upstream key
+and credential handle to the ids the panel knows, folds them into the store,
+and everything that shows usage reads the store rather than the gateway.
 """
 
 import logging
@@ -13,6 +13,10 @@ import threading
 import httpx
 
 from neutrino_hub.modules.ai.registry import AiProviderRegistry
+from neutrino_hub.modules.cliproxyapi.accounts import (
+    CliproxyApiAccountClient,
+    CliproxyApiAccountError,
+)
 from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_USAGE_POLL_INTERVAL_S,
     CLIPROXYAPI_USAGE_QUEUE_COUNT,
@@ -47,8 +51,11 @@ class PanelUsageCollector:
         self._is_stopped = threading.Event()
         self._thread: threading.Thread | None = None
         # The last resolvable upstream-key map, kept across a locked vault so
-        # records keep landing on their providers instead of on nothing.
+        # records keep landing on their providers instead of on nothing. The
+        # account map is kept across an unreachable gateway for the same
+        # reason.
         self._provider_ids: dict[str, str] = {}
+        self._account_ids: dict[str, str] = {}
 
     def start(self) -> None:
         """Run the poll loop on a daemon thread; a second start is a no-op."""
@@ -97,11 +104,15 @@ class PanelUsageCollector:
         if not isinstance(records, list) or not records:
             return 0
         self._refresh_provider_ids()
+        self._refresh_account_ids(
+            port=config.listen_port, management_key=management_key
+        )
         return self._store.ingest(
             records,
             key_ids=key_ids,
             key_names={key.id: key.name for key in config.client_keys},
             provider_ids=self._provider_ids,
+            account_ids=self._account_ids,
         )
 
     def _refresh_provider_ids(self) -> None:
@@ -117,6 +128,25 @@ class PanelUsageCollector:
             if value:
                 mapping[value] = record.id
         self._provider_ids = mapping
+
+    def _refresh_account_ids(self, *, port: int, management_key: str) -> None:
+        """Map each account's credential handle to the token file naming it.
+
+        Args:
+            port: Where the gateway listens.
+            management_key: The key that unlocks the auth-file list.
+        """
+        try:
+            accounts = CliproxyApiAccountClient(
+                port=port, management_key=management_key
+            ).list_accounts()
+        except CliproxyApiAccountError:
+            return
+        self._account_ids = {
+            account.auth_index: account.name
+            for account in accounts
+            if account.auth_index and account.name
+        }
 
     def _loop(self) -> None:
         while not self._is_stopped.wait(self._poll_interval_s):

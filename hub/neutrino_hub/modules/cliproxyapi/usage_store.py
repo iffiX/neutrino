@@ -1,12 +1,13 @@
 """Accumulated AI gateway usage, persisted under the state root.
 
 One JSON file holds everything the usage answers are built from. The unit of
-storage is a cell — one client key crossed with one upstream provider — with
-per-day counters kept forever and per-hour counters kept two days; every
-total, series and filter is a sum over cells. A minute ring beside them
-carries the rpm/tpm window. The gateway's queue records arrive already
-mapped to ids; unknown keys and providers land in a cell with an empty id,
-so the totals stay honest when a key is revoked mid-flight.
+storage is a cell — one client key crossed with one upstream — with per-day
+counters kept forever and per-hour counters kept two days; every total,
+series and filter is a sum over cells. An upstream is an API-key provider or
+a subscription account, and both are named by id in the same slot. A minute
+ring beside them carries the rpm/tpm window. The gateway's queue records
+arrive already mapped to ids; unknown keys and upstreams land in a cell with
+an empty id, so the totals stay honest when a key is revoked mid-flight.
 
 Reads tolerate anything: a corrupt or hostile file is logged and replaced by
 a fresh store, never a crashed panel.
@@ -69,6 +70,7 @@ class CliproxyApiUsageStore:
         key_ids: dict[str, str],
         key_names: dict[str, str],
         provider_ids: dict[str, str],
+        account_ids: dict[str, str] | None = None,
         now: datetime | None = None,
     ) -> int:
         """Fold popped queue records into the store and persist it.
@@ -80,6 +82,9 @@ class CliproxyApiUsageStore:
                 a renamed key keeps its history under the new name.
             provider_ids: Upstream key value (the record's ``source``) to
                 provider id, resolved from the registry.
+            account_ids: Credential handle (the record's ``auth_index``) to
+                account id, resolved from the gateway's auth files; None where
+                the gateway could not be asked.
             now: The poll moment; None is the real clock.
 
         Returns:
@@ -89,7 +94,13 @@ class CliproxyApiUsageStore:
         data = self.load()
         folded = 0
         for record in records:
-            if self._fold(data, record, key_ids=key_ids, provider_ids=provider_ids):
+            if self._fold(
+                data,
+                record,
+                key_ids=key_ids,
+                provider_ids=provider_ids,
+                account_ids=account_ids or {},
+            ):
                 folded += 1
         for key_id, name in key_names.items():
             if key_id in data["keys"]:
@@ -330,6 +341,7 @@ class CliproxyApiUsageStore:
         *,
         key_ids: dict[str, str],
         provider_ids: dict[str, str],
+        account_ids: dict[str, str],
     ) -> bool:
         if not isinstance(record, dict):
             return False
@@ -337,7 +349,13 @@ class CliproxyApiUsageStore:
         if moment is None:
             return False
         key_id = key_ids.get(str(record.get("api_key", "")), "")
-        provider_id = provider_ids.get(str(record.get("source", "")), "")
+        # An API-key provider is named by the key it was served with. An
+        # account is named by the credential handle instead: its ``source`` is
+        # the account's email, which a login need not carry, and which the
+        # gateway then fills with the client's own key.
+        provider_id = provider_ids.get(
+            str(record.get("source", "")), ""
+        ) or account_ids.get(str(record.get("auth_index", "")), "")
         counters = self._record_counters(record)
 
         cell = data["cells"].setdefault(

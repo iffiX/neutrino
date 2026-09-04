@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from neutrino_hub.modules.cliproxyapi.accounts import (
+    CliproxyApiAccount,
     CliproxyApiAccountClient,
     CliproxyApiAccountError,
 )
@@ -101,7 +102,10 @@ def usage(
             options are built from it.
 
     Returns:
-        The usage view; providers come in served order.
+        The usage view. Providers come in served order, then the accounts the
+        gateway is still holding a token file for; an account it no longer
+        lists keeps its stored cells and gets no row, as a deleted provider
+        does. A gateway that cannot be asked contributes no account rows.
 
     Raises:
         HTTPException: 422 with ``invalid_range`` for an unknown range, 404
@@ -143,6 +147,12 @@ def usage(
                 record, provider_rows.get(record.id) or store.empty_provider_row()
             )
             for record in AiProviderRegistry().list_records()
+        ]
+        + [
+            _usage_account(
+                account, provider_rows.get(account.name) or store.empty_provider_row()
+            )
+            for account in _accounts_quietly()
         ],
     )
 
@@ -398,12 +408,22 @@ def _account_call(action):
         ) from error
 
 
+def _accounts_quietly() -> list[CliproxyApiAccount]:
+    """Every signed-in account, empty where the gateway cannot be asked.
+
+    Returns:
+        The accounts. A page that is mostly about something else does not fail
+        because the gateway is down, so the refusal is swallowed here.
+    """
+    try:
+        return _account_client().list_accounts()
+    except CliproxyApiAccountError:
+        return []
+
+
 def _account_count() -> int:
     """How many accounts are signed in, 0 when the gateway cannot say."""
-    try:
-        return len(_account_client().list_accounts())
-    except CliproxyApiAccountError:
-        return 0
+    return len(_accounts_quietly())
 
 
 def _apply_quietly() -> None:
@@ -485,6 +505,20 @@ def _usage_provider(record, row: dict) -> CliproxyApiUsageProvider:
         provider_id=record.id,
         name=record.name,
         kind=record.kind,
+        first_seen_at=row["first_seen_at"],
+        last_seen_at=row["last_seen_at"],
+        health=[CliproxyApiHealthBucket(**bucket) for bucket in row["health"]],
+        **{field: row[field] for field in zero_counters()},
+    )
+
+
+def _usage_account(account: CliproxyApiAccount, row: dict) -> CliproxyApiUsageProvider:
+    """One account's usage row, named the way the Accounts panel names it."""
+    return CliproxyApiUsageProvider(
+        provider_id=account.name,
+        name=account.label or account.email or account.name,
+        kind=account.provider,
+        is_account=True,
         first_seen_at=row["first_seen_at"],
         last_seen_at=row["last_seen_at"],
         health=[CliproxyApiHealthBucket(**bucket) for bucket in row["health"]],

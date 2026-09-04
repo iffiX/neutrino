@@ -618,11 +618,17 @@ class CliproxyApiHealthBucket(BaseModel):
 
 
 class CliproxyApiUsageProvider(CliproxyApiUsageTotals):
-    """One upstream provider's usage over the range."""
+    """One upstream's usage over the range.
+
+    An upstream is an API-key provider or a subscription account, and the two
+    share this shape: ``provider_id`` is the provider's id or the account's
+    token file, and ``kind`` the provider's kind or the account's service.
+    """
 
     provider_id: str
     name: str
     kind: str
+    is_account: bool = False
     first_seen_at: str = ""
     last_seen_at: str = ""
     health: list[CliproxyApiHealthBucket] = Field(default_factory=list)

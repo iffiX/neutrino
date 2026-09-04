@@ -4,6 +4,10 @@ import json
 
 import pytest
 
+from neutrino_hub.modules.cliproxyapi.accounts import (
+    CliproxyApiAccount,
+    CliproxyApiAccountError,
+)
 from neutrino_hub.modules.cliproxyapi.config import (
     CliproxyApiClientKey,
     CliproxyApiConfig,
@@ -51,6 +55,47 @@ QUEUE_ANSWER = [
 ]
 
 
+# One request served by a subscription account instead of a key, as 7.2.146
+# queues it: ``source`` is the account's email, and only ``auth_index`` names
+# the credential the gateway lists.
+ACCOUNT_ANSWER = [
+    {
+        "timestamp": "2026-09-04T06:18:11.004512+08:00",
+        "api_key": "client-key-one",
+        "source": "person@example.com",
+        "auth_index": "a14afd0dfcb7d3e3",  # scan: allow
+        "provider": "claude",
+        "auth_type": "oauth",
+        "failed": False,
+        "token_breakdown": {
+            "input": {
+                "total_tokens": 80,
+                "cache_read_tokens": 0,
+                "cache_write_tokens": 0,
+            },
+            "output": {"total_tokens": 20},
+        },
+    }
+]
+
+ACCOUNT = CliproxyApiAccount(
+    name="claude-person.json",
+    auth_index="a14afd0dfcb7d3e3",  # scan: allow
+    provider="claude",
+    label="person@example.com",
+    email="person@example.com",
+    account_type="oauth",
+    status="active",
+    status_message="",
+    is_disabled=False,
+    is_unavailable=False,
+    failed_count=0,
+    success_count=12,
+    created_at="2026-09-04T17:59:47+08:00",
+    updated_at="2026-09-04T17:59:47+08:00",
+)
+
+
 class FakeResponse:
     def __init__(self, payload, *, status_code=200):
         self._payload = payload
@@ -72,6 +117,23 @@ class FakeRegistry:
         return "sk-upstream"
 
 
+class FakeAccountClient:
+    """The gateway's auth-file list, as one signed-in account."""
+
+    def __init__(self, *, port, management_key):
+        pass
+
+    def list_accounts(self):
+        return [ACCOUNT]
+
+
+class UnreachableAccountClient:
+    """A gateway that does not answer the auth-file list."""
+
+    def __init__(self, *, port, management_key):
+        raise CliproxyApiAccountError("gateway_unreachable")
+
+
 @pytest.fixture
 def collector(monkeypatch, tmp_path):
     unlock_vault(monkeypatch, tmp_path)
@@ -88,6 +150,7 @@ def collector(monkeypatch, tmp_path):
     monkeypatch.setattr(collector_module, "load_config", lambda: config)
     monkeypatch.setattr(collector_module, "read_management_key", lambda: "mk-test")
     monkeypatch.setattr(collector_module, "AiProviderRegistry", FakeRegistry)
+    monkeypatch.setattr(collector_module, "CliproxyApiAccountClient", FakeAccountClient)
     return PanelUsageCollector(
         store=CliproxyApiUsageStore(path=tmp_path / "usage.json")
     )
@@ -115,6 +178,40 @@ def test_a_poll_pops_maps_and_folds(collector, monkeypatch, tmp_path):
     assert day["failed"] == 1
     assert day["input_tokens"] == 120
     assert data["keys"]["k1"]["name"] == "laptop"
+
+
+def test_an_account_served_record_lands_on_its_token_file(
+    collector, monkeypatch, tmp_path
+):
+    """The credential handle names the account; its email never identifies it."""
+    monkeypatch.setattr(
+        collector_module.httpx, "get", lambda *a, **k: FakeResponse(ACCOUNT_ANSWER)
+    )
+    assert collector.poll_once() == 1
+
+    data = json.loads((tmp_path / "usage.json").read_text())
+    assert list(data["cells"]) == ["k1|claude-person.json"]
+    day = data["cells"]["k1|claude-person.json"]["days"]["2026-09-03"]
+    assert day["requests"] == 1
+    assert day["input_tokens"] == 80
+    assert "claude-person.json" in data["providers"]
+
+
+def test_an_unlistable_account_leaves_the_record_unattributed(
+    collector, monkeypatch, tmp_path
+):
+    """A gateway that will not list its auth files is as quiet as a locked vault."""
+    monkeypatch.setattr(
+        collector_module.httpx, "get", lambda *a, **k: FakeResponse(ACCOUNT_ANSWER)
+    )
+    monkeypatch.setattr(
+        collector_module, "CliproxyApiAccountClient", UnreachableAccountClient
+    )
+    assert collector.poll_once() == 1
+
+    data = json.loads((tmp_path / "usage.json").read_text())
+    assert list(data["cells"]) == ["k1|"]
+    assert data["providers"] == {}
 
 
 def test_a_missing_key_or_a_dead_gateway_is_a_quiet_zero(collector, monkeypatch):
