@@ -5,6 +5,7 @@ import { Icon } from "./icon";
 import type { IconName } from "./icon";
 import { apiPut, describeError } from "../api_client";
 import { interruptionWarning } from "../network_warnings";
+import { useDraftSeeding } from "../use_draft_seeding";
 import type { InterfaceView, NetworkOptions, NetworkView } from "../api_types";
 
 import "./network_exposure_panel.css";
@@ -42,9 +43,20 @@ export function NetworkExposurePanel({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  // The page polls, and a chip turned off but not applied stays off until
+  // Apply or Reset says otherwise.
+  const isReseedable = useDraftSeeding(
+    namesPayload(chosen),
+    namesPayload(applied),
+  );
+
   useEffect(() => {
-    setChosen(exposedNames(network));
-  }, [network]);
+    const fresh = exposedNames(network);
+    if (!isReseedable(namesPayload(fresh))) {
+      return;
+    }
+    setChosen(fresh);
+  }, [network, isReseedable]);
 
   const isDirty = !sameSet(chosen, applied);
   // A trunk carries no traffic of its own; what answers is each VLAN on it.
@@ -176,6 +188,11 @@ function exposedNames(network: NetworkView): string[] {
   return network.interfaces
     .filter((entry) => entry.settings.is_exposed)
     .map((entry) => entry.settings.name);
+}
+
+/** One set of interfaces, in an order two of them can be compared in. */
+function namesPayload(names: string[]): string {
+  return JSON.stringify([...names].sort());
 }
 
 function sameSet(a: string[], b: string[]): boolean {

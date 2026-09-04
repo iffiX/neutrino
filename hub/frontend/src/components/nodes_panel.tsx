@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
 import { ApplyBar } from "./apply_bar";
@@ -9,7 +9,8 @@ import { apiDelete, apiPost, apiPut, describeError } from "../api_client";
 import { diffNodeDraft, isNodeChanged } from "../node_draft";
 import { formatBytes } from "../format_bytes";
 import { nodeIdFromTag } from "../node_tag";
-import { useApiResource } from "../use_api_resource";
+import { useDraftSeeding } from "../use_draft_seeding";
+import { usePolledResource } from "../use_polled_resource";
 import { useConfirm } from "../use_confirm";
 import { useLiveStats } from "../use_live_stats";
 import type {
@@ -39,6 +40,10 @@ import "./nodes_panel.css";
 
 const PROBE_HISTORY_LENGTH = 12;
 
+// A node dying, coming back or being added from somewhere else is a list that
+// changes on its own, so the panel asks again rather than waiting to be told.
+const NODES_POLL_INTERVAL_MS = 10000;
+
 const STRATEGY_LABELS: Record<BalancerStrategy, string> = {
   leastPing: "leastPing — lowest latency wins",
   roundRobin: "roundRobin — cycle through nodes",
@@ -56,7 +61,10 @@ interface NodesPanelProps {
 }
 
 export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
-  const resource = useApiResource<NodesResponse>("/proxy/nodes");
+  const resource = usePolledResource<NodesResponse>(
+    "/proxy/nodes",
+    NODES_POLL_INTERVAL_MS,
+  );
   const { latestFrame } = useLiveStats();
 
   const [draftNodes, setDraftNodes] = useState<NodeView[]>([]);
@@ -75,13 +83,34 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
   const [actionError, setActionError] = useState<string | null>(null);
   const confirm = useConfirm();
 
+  const isReseedable = useDraftSeeding(
+    draftBalancer === null ? null : stagedPayload(draftNodes, draftBalancer),
+    resource.data === null
+      ? null
+      : stagedPayload(resource.data.nodes, resource.data.balancer),
+  );
+  // Whether the list itself was just written. Adding and removing take effect
+  // at once, so the answer to one of them owns the draft whatever is staged
+  // beside it, or the panel would go on drawing a list the gateway has not
+  // got.
+  const isListWrittenRef = useRef(false);
+
+  // A tick brings the list, the traffic and what is alive, and it lands in the
+  // draft while there is nothing staged in it. A toggle waiting for Apply is
+  // the user's: what the gateway says meanwhile does not take it back.
   useEffect(() => {
     if (resource.data === null) {
       return;
     }
+    const isListWritten = isListWrittenRef.current;
+    isListWrittenRef.current = false;
+    const fresh = stagedPayload(resource.data.nodes, resource.data.balancer);
+    if (!isListWritten && !isReseedable(fresh)) {
+      return;
+    }
     setDraftNodes(resource.data.nodes);
     setDraftBalancer(resource.data.balancer);
-  }, [resource.data]);
+  }, [resource.data, isReseedable]);
 
   useEffect(() => {
     if (latestFrame === null) {
@@ -188,6 +217,7 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
       await apiPost<NodeView>("/proxy/nodes", { link });
       setShareLink("");
       setIsAddOpen(false);
+      isListWrittenRef.current = true;
       resource.reload();
     } catch (cause: unknown) {
       setActionError(describeError(cause));
@@ -208,6 +238,7 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
     setActionError(null);
     try {
       await apiDelete<NodesResponse>(`/proxy/nodes/${node.id}`);
+      isListWrittenRef.current = true;
       resource.reload();
       onNodesChanged();
     } catch (cause: unknown) {
@@ -450,6 +481,21 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
       {confirm.modal}
     </div>
   );
+}
+
+/**
+ * What this panel stages, and nothing else.
+ *
+ * Which nodes are on, what they are called and how the balancer picks. What a
+ * node is doing — alive, its latency, what it has moved — is the gateway's
+ * answer and lands in the draft on its own, so counting it here would read a
+ * probe coming back as somebody's edit.
+ */
+function stagedPayload(nodes: NodeView[], balancer: BalancerSettings): string {
+  return JSON.stringify([
+    nodes.map((node) => [node.id, node.name, node.is_enabled]),
+    balancer,
+  ]);
 }
 
 function applyTestResult(

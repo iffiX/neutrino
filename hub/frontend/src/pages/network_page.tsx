@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ApplyBar } from "../components/apply_bar";
 import { ErrorPanel } from "../components/error_panel";
@@ -22,7 +22,7 @@ import {
 } from "../network_validation";
 import { interruptionWarning } from "../network_warnings";
 import type { InterfaceErrors, ServedNetwork } from "../network_validation";
-import { useApiResource } from "../use_api_resource";
+import { useDraftSeeding } from "../use_draft_seeding";
 import { usePolledResource } from "../use_polled_resource";
 import type {
   DevicesResponse,
@@ -54,6 +54,10 @@ import "./network_page.css";
 // The diagram's own cadence: a machine appearing on the LAN is a list that
 // changes on its own, and nobody should have to ask to see it.
 const DEVICE_POLL_INTERVAL_MS = 10000;
+
+// The same for the ports themselves: a cable pulled out, a lease renewed or a
+// radio losing signal is something the page shows without being asked again.
+const NETWORK_POLL_INTERVAL_MS = 10000;
 
 const INTENT_OPTIONS: { value: UplinkIntent; label: string; hint: string }[] = [
   {
@@ -122,8 +126,19 @@ function newVlanSettings(parent: string, id: number): InterfaceSettings {
   };
 }
 
+/** Everything the interface form stages: the settings and the VLANs beside them. */
+function interfacePayload(
+  settings: InterfaceSettings,
+  vlanIds: number[],
+): string {
+  return JSON.stringify([settings, [...vlanIds].sort((a, b) => a - b)]);
+}
+
 export function NetworkPage() {
-  const network = useApiResource<NetworkView>("/network");
+  const network = usePolledResource<NetworkView>(
+    "/network",
+    NETWORK_POLL_INTERVAL_MS,
+  );
   // The cheap list endpoint, no ARP sweep: the diagram only wants to draw
   // what is already known, and it draws what is there now rather than what
   // was there when the page opened.
@@ -144,13 +159,6 @@ export function NetworkPage() {
   const [isSavingOptions, setIsSavingOptions] = useState(false);
   const [optionsNotice, setOptionsNotice] = useState<string | null>(null);
   const [optionsError, setOptionsError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (network.data === null) {
-      return;
-    }
-    setOptions(optionsOf(network.data));
-  }, [network.data]);
 
   // Memoised so `selected` keeps the same identity between renders while the
   // data has not changed, which is what lets the draft effect below depend on
@@ -192,15 +200,53 @@ export function NetworkPage() {
     [interfaces, selectedName],
   );
 
+  // Both forms on this page against what the box holds. The page polls, so
+  // every panel below has to answer whether a payload landing under it may
+  // take the form over, and each answers for itself.
+  const isInterfaceReseedable = useDraftSeeding(
+    draft === null ? null : interfacePayload(draft, vlanIds),
+    selected === null
+      ? null
+      : interfacePayload(selected.settings, appliedVlanIds),
+  );
+  const isOptionsReseedable = useDraftSeeding(
+    options === null ? null : JSON.stringify(options),
+    network.data === null ? null : JSON.stringify(optionsOf(network.data)),
+  );
+  // Which interface the form was last seeded for. Picking another one always
+  // reseeds: the form then belongs to a different port.
+  const seededNameRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (network.data === null) {
+      return;
+    }
+    const fresh = optionsOf(network.data);
+    if (!isOptionsReseedable(JSON.stringify(fresh))) {
+      return;
+    }
+    setOptions(fresh);
+  }, [network.data, isOptionsReseedable]);
+
+  // The form follows the box while nothing has been typed into it, and stops
+  // following the moment something has: a tick landing under a half-entered
+  // address must not take it away.
   useEffect(() => {
     if (selected === null) {
+      seededNameRef.current = null;
       setDraft(null);
       return;
     }
+    const isSameInterface = seededNameRef.current === selected.settings.name;
+    const fresh = interfacePayload(selected.settings, appliedVlanIds);
+    if (isSameInterface && !isInterfaceReseedable(fresh)) {
+      return;
+    }
+    seededNameRef.current = selected.settings.name;
     setDraft(structuredClone(selected.settings));
     setVlanIds(appliedVlanIds);
     setSaveError(null);
-  }, [selected, appliedVlanIds]);
+  }, [selected, appliedVlanIds, isInterfaceReseedable]);
 
   const otherNetworks = useMemo<ServedNetwork[]>(
     () =>
@@ -236,6 +282,14 @@ export function NetworkPage() {
       selected !== null &&
       JSON.stringify(draft) !== JSON.stringify(selected.settings)) ||
     isVlanDirty;
+
+  // Joining a network is written at once rather than staged, so the view it
+  // answers with owns the form: the interface it names is the one whose SSID
+  // just changed.
+  const handleJoined = (view: NetworkView) => {
+    seededNameRef.current = null;
+    network.setData(view);
+  };
 
   const update = (patch: (current: InterfaceSettings) => void) => {
     setNotice(null);
@@ -467,7 +521,7 @@ export function NetworkPage() {
                     errors={errors}
                     isWifi={isWifi}
                     update={update}
-                    onJoined={network.setData}
+                    onJoined={handleJoined}
                   />
                 )}
                 {draft.role === "lan" && (
@@ -476,7 +530,7 @@ export function NetworkPage() {
                     errors={errors}
                     isWifi={isWifi}
                     update={update}
-                    onJoined={network.setData}
+                    onJoined={handleJoined}
                   />
                 )}
                 {draft.role === "split" && (

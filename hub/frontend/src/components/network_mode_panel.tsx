@@ -5,6 +5,7 @@ import { Icon } from "./icon";
 import type { IconName } from "./icon";
 import { apiPut, describeError } from "../api_client";
 import { interruptionWarning } from "../network_warnings";
+import { useDraftSeeding } from "../use_draft_seeding";
 import type { NetworkMode, NetworkModeKey, NetworkView } from "../api_types";
 
 import "./network_mode_panel.css";
@@ -47,9 +48,15 @@ export function NetworkModePanel({
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // The page polls, and a mode picked but not applied stays picked.
+  const isReseedable = useDraftSeeding(chosen, network.mode);
+
   useEffect(() => {
+    if (!isReseedable(network.mode)) {
+      return;
+    }
     setChosen(network.mode);
-  }, [network]);
+  }, [network, isReseedable]);
 
   const isDirty = chosen !== network.mode;
   const becoming = network.modes.find((mode) => mode.key === chosen) ?? null;
