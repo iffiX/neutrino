@@ -19,12 +19,18 @@ import { StatTile } from "../components/stat_tile";
 import { StatusDot } from "../components/status_dot";
 import { computeActiveExits } from "../active_exits";
 import { formatByteRate, formatBytes } from "../format_bytes";
+import { formatCompact } from "../format_compact";
 import { formatDuration, formatLatency } from "../format_duration";
 import { toHistorySeries, toTrafficSeries } from "../traffic_series";
 import { useApiResource } from "../use_api_resource";
 import { useDnsLogSocket } from "../use_dns_log_socket";
 import { useLiveStats } from "../use_live_stats";
-import type { DashboardSummary, TrafficHistoryResponse } from "../api_types";
+import { usePolledResource } from "../use_polled_resource";
+import type {
+  CliproxyApiStatusView,
+  DashboardSummary,
+  TrafficHistoryResponse,
+} from "../api_types";
 
 import "./dashboard_page.css";
 
@@ -36,6 +42,26 @@ import "./dashboard_page.css";
  * the backend restarts. Each block therefore renders its own error rather than
  * one failure blanking the page.
  */
+
+/** The stat row's own copy: traffic first, then what the hub serves, then load. */
+const TILE_WORDING = {
+  downloaded: "Downloaded",
+  uploaded: "Uploaded",
+  dnsQueries: "DNS queries",
+  proxyExits: "Proxy exits",
+  aiTokens: "AI tokens",
+  devices: "Devices",
+  cpu: "CPU",
+  memory: "Memory",
+  uptime: "Uptime",
+  waitingForFrames: "waiting for frames",
+  probed: (count: number) => `${count} probed`,
+  inRecentLog: "in the recent log",
+  servedToday: "served today",
+  seenOnLan: "seen on the LAN",
+  noWanAddress: "no WAN address",
+  missing: "—",
+} as const;
 
 const HISTORY_DAYS = 30;
 const AXIS_STYLE = {
@@ -54,6 +80,9 @@ export function DashboardPage() {
     `/dashboard/history?days=${HISTORY_DAYS}`,
   );
   const dnsLog = useDnsLogSocket();
+  // The same status view the top bar reads. A gateway that is absent or has
+  // served nothing leaves the tile blank rather than reporting a failure.
+  const ai = usePolledResource<CliproxyApiStatusView>("/cliproxyapi");
 
   const trafficSeries = toTrafficSeries(frames);
   const latestPoint = trafficSeries[trafficSeries.length - 1];
@@ -63,6 +92,7 @@ export function DashboardPage() {
     summary.data?.active_exit_tags ?? [],
   );
   const stats = latestFrame ?? summary.data?.stats ?? null;
+  const aiTokensToday = ai.data?.tokens_today ?? null;
 
   return (
     <div className="page">
@@ -102,55 +132,63 @@ export function DashboardPage() {
 
       <div className="stat_tile_grid">
         <StatTile
-          label="Downloaded"
+          label={TILE_WORDING.downloaded}
           value={stats?.total_downlink_bytes ?? 0}
           format={formatBytes}
           icon="arrow_down"
           tone="accent"
           detail={
             latestPoint === undefined
-              ? "waiting for frames"
+              ? TILE_WORDING.waitingForFrames
               : formatByteRate(latestPoint.downlink_bytes_per_s)
           }
         />
         <StatTile
-          label="Uploaded"
+          label={TILE_WORDING.uploaded}
           value={stats?.total_uplink_bytes ?? 0}
           format={formatBytes}
           icon="arrow_up"
           tone="secondary"
           detail={
             latestPoint === undefined
-              ? "waiting for frames"
+              ? TILE_WORDING.waitingForFrames
               : formatByteRate(latestPoint.uplink_bytes_per_s)
           }
         />
         <StatTile
-          label="Active exits"
-          value={activeExits.length}
-          format={formatCount}
-          icon="nodes"
-          tone="ok"
-          detail={`${stats?.nodes.length ?? 0} probed`}
-        />
-        <StatTile
-          label="LAN devices"
-          value={summary.data?.lan_device_count ?? 0}
-          format={formatCount}
-          icon="devices"
-          tone="secondary"
-          detail="seen on the LAN"
-        />
-        <StatTile
-          label="DNS queries"
+          label={TILE_WORDING.dnsQueries}
           value={summary.data?.dns_query_count ?? 0}
           format={formatCount}
           icon="search"
           tone="accent"
-          detail="in the recent log"
+          detail={TILE_WORDING.inRecentLog}
         />
         <StatTile
-          label="CPU"
+          label={TILE_WORDING.proxyExits}
+          value={activeExits.length}
+          format={formatCount}
+          icon="nodes"
+          tone="ok"
+          detail={TILE_WORDING.probed(stats?.nodes.length ?? 0)}
+        />
+        <StatTile
+          label={TILE_WORDING.aiTokens}
+          value={aiTokensToday ?? 0}
+          format={aiTokensToday === null ? formatMissing : formatCompact}
+          icon="sparkles"
+          tone="secondary"
+          detail={TILE_WORDING.servedToday}
+        />
+        <StatTile
+          label={TILE_WORDING.devices}
+          value={summary.data?.lan_device_count ?? 0}
+          format={formatCount}
+          icon="devices"
+          tone="secondary"
+          detail={TILE_WORDING.seenOnLan}
+        />
+        <StatTile
+          label={TILE_WORDING.cpu}
           value={stats?.cpu_percent ?? 0}
           format={formatPercent}
           unit="%"
@@ -159,7 +197,7 @@ export function DashboardPage() {
           meterPercent={stats?.cpu_percent ?? 0}
         />
         <StatTile
-          label="Memory"
+          label={TILE_WORDING.memory}
           value={stats?.memory_percent ?? 0}
           format={formatPercent}
           unit="%"
@@ -168,12 +206,12 @@ export function DashboardPage() {
           meterPercent={stats?.memory_percent ?? 0}
         />
         <StatTile
-          label="Uptime"
+          label={TILE_WORDING.uptime}
           value={stats?.uptime_s ?? 0}
           format={formatDuration}
           icon="clock"
           tone="ok"
-          detail={stats?.wan_address ?? "no WAN address"}
+          detail={stats?.wan_address ?? TILE_WORDING.noWanAddress}
         />
       </div>
 
@@ -426,6 +464,11 @@ export function DashboardPage() {
 
 function formatCount(value: number): string {
   return Math.round(value).toLocaleString();
+}
+
+/** A reading the gateway has not reported at all, as opposed to a zero. */
+function formatMissing(): string {
+  return TILE_WORDING.missing;
 }
 
 function formatPercent(value: number): string {
