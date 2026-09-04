@@ -1,10 +1,11 @@
-"""The applier: resolving each provider's sealed key before it renders."""
+"""The applier: resolving every sealed key, provider and client, before it renders."""
 
 import pytest
 import yaml
 
 import neutrino_hub.utils.json_file
 from neutrino_hub.modules.cliproxyapi import ops
+from neutrino_hub.modules.cliproxyapi.config import CliproxyApiClientKey
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_GENERATED_NAME
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier
 from neutrino_hub.modules.ai.registry import AiProviderRegistry
@@ -63,6 +64,19 @@ def test_the_sealed_key_reaches_the_rendered_file(box):
     assert message == "rendered; the service is not installed yet"
     entries = _rendered(box)["openai-compatibility"][0]["api-key-entries"]
     assert entries == [{"api-key": "sealed-key"}]
+
+
+def test_the_client_key_is_unsealed_into_the_rendered_file(box):
+    config = ops.load_config()
+    config.client_keys.append(CliproxyApiClientKey.generated("laptop"))
+    ops.save_config(config)
+
+    CliproxyApiConfigApplier().apply()
+
+    material = ops.load_config().client_keys[0].open_key()
+    assert _rendered(box)["api-keys"] == [material]
+    stored = (box / "cliproxyapi" / "cliproxyapi.json").read_text(encoding="utf-8")
+    assert material not in stored
 
 
 def test_a_provider_with_no_sealed_key_renders_nothing(box):

@@ -346,14 +346,18 @@ def _ai_config(
         registry: The device registry.
 
     Returns:
-        ``{"base_url", "api_key", "target_user", "tools"}``.
+        ``{"base_url", "api_key", "target_user", "tools"}``, the key unsealed
+        for the device that presents it.
+
+    Raises:
+        VaultLockedError: If there is no data key to seal or open one with.
     """
     key = _device_key(device, registry)
     port = load_config().listen_port
     base_url = f"{_gateway_host(runtime, device.ipv4_address)}:{port}"
     return {
         "base_url": base_url,
-        "api_key": key.key if key else "",
+        "api_key": key.open_key() if key else "",
         "target_user": device.client.target_user
         or (device.ssh or {}).get("username", ""),
         "tools": ["claude", "codex", "gemini"],
@@ -392,7 +396,11 @@ def _device_key(device: ManagedDevice, registry: DeviceRegistry):
         registry: The device registry.
 
     Returns:
-        The client key, or None when the gateway has none to give.
+        The client key. A device whose stored id names no key on the gateway —
+        it was revoked, or the record was dropped — is issued a fresh one.
+
+    Raises:
+        VaultLockedError: If there is no data key to seal a new key under.
     """
     with CONFIG_WRITE_LOCK:
         config = load_config()

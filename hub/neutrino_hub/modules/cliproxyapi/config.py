@@ -4,9 +4,10 @@ Deliberately thin, like the git server's. The upstream providers live in the
 credentials store — this holds only what CLIProxyAPI needs beyond them: where
 to listen, and the client keys handed to devices.
 
-Pure: parsing and validation only. Rendering is
-:mod:`neutrino_hub.modules.cliproxyapi.renderer`; making it true on the box is
-:mod:`neutrino_hub.modules.cliproxyapi.ops`.
+Parsing and validation, plus the seal a client key is stored under: the
+material never sits in the file, so a backup of ``config/`` carries none.
+Rendering is :mod:`neutrino_hub.modules.cliproxyapi.renderer`; making it true
+on the box is :mod:`neutrino_hub.modules.cliproxyapi.ops`.
 """
 
 import secrets
@@ -14,10 +15,27 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from neutrino_hub.modules.cliproxyapi.constants import (
+    CLIPROXYAPI_CLIENT_KEY_AAD,
     CLIPROXYAPI_CLIENT_KEY_BYTES,
     CLIPROXYAPI_DEFAULT_PORT,
     CLIPROXYAPI_ID_BYTES,
 )
+from neutrino_hub.modules.credentials.vault import seal_bytes, unseal_bytes
+
+
+def _has_seal(entry) -> bool:
+    """Whether a stored client key record carries key material to open.
+
+    Args:
+        entry: One entry of the stored ``client_keys`` list.
+
+    Returns:
+        True when the record holds a sealed object.
+    """
+    if not isinstance(entry, dict):
+        return False
+    sealed = entry.get("key_sealed")
+    return isinstance(sealed, dict) and bool(sealed.get("nonce") and sealed.get("data"))
 
 
 @dataclass
@@ -27,29 +45,33 @@ class CliproxyApiClientKey:
     Attributes:
         id: Stable identifier the panel manages it by.
         name: What the key is for — usually a device or a person.
-        key: The secret itself.
+        key_sealed: The secret, sealed under the vault's data key.
         created_at: ISO timestamp of when it was generated.
     """
 
     id: str
     name: str
-    key: str
+    key_sealed: dict
     created_at: str = ""
 
     @classmethod
     def generated(cls, name: str) -> "CliproxyApiClientKey":
-        """Generate a fresh key under a name.
+        """Generate a fresh key under a name, sealed and ready to store.
 
         Args:
             name: What the key is for.
 
         Returns:
             The new key.
+
+        Raises:
+            VaultLockedError: If there is no data key to seal it under.
         """
+        key = secrets.token_urlsafe(CLIPROXYAPI_CLIENT_KEY_BYTES)
         return cls(
             id=secrets.token_hex(CLIPROXYAPI_ID_BYTES),
             name=name.strip() or "unnamed",
-            key=secrets.token_urlsafe(CLIPROXYAPI_CLIENT_KEY_BYTES),
+            key_sealed=seal_bytes(key.encode(), CLIPROXYAPI_CLIENT_KEY_AAD),
             created_at=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -58,7 +80,7 @@ class CliproxyApiClientKey:
         return cls(
             id=data.get("id", ""),
             name=data.get("name", ""),
-            key=data.get("key", ""),
+            key_sealed=data.get("key_sealed", {}),
             created_at=data.get("created_at", ""),
         )
 
@@ -66,9 +88,21 @@ class CliproxyApiClientKey:
         return {
             "id": self.id,
             "name": self.name,
-            "key": self.key,
+            "key_sealed": self.key_sealed,
             "created_at": self.created_at,
         }
+
+    def open_key(self) -> str:
+        """Unseal the key material.
+
+        Returns:
+            The secret the gateway authenticates callers by.
+
+        Raises:
+            VaultLockedError: If there is no data key on this box.
+            VaultError: If the seal is malformed or does not decrypt.
+        """
+        return unseal_bytes(self.key_sealed, CLIPROXYAPI_CLIENT_KEY_AAD).decode()
 
 
 @dataclass
@@ -77,7 +111,9 @@ class CliproxyApiConfig:
 
     Attributes:
         listen_port: Port the AI gateway answers on, LAN- and overlay-wide.
-        client_keys: The keys devices authenticate with.
+        client_keys: The keys devices authenticate with. A stored record
+            without a seal is dropped on load, and whatever held it is issued
+            a fresh key.
     """
 
     listen_port: int = CLIPROXYAPI_DEFAULT_PORT
@@ -90,6 +126,7 @@ class CliproxyApiConfig:
             client_keys=[
                 CliproxyApiClientKey.from_dict(entry)
                 for entry in data.get("client_keys", [])
+                if _has_seal(entry)
             ],
         )
 

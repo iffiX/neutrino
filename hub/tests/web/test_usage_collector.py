@@ -8,9 +8,12 @@ from neutrino_hub.modules.cliproxyapi.config import (
     CliproxyApiClientKey,
     CliproxyApiConfig,
 )
+from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_CLIENT_KEY_AAD
 from neutrino_hub.modules.cliproxyapi.usage_store import CliproxyApiUsageStore
+from neutrino_hub.modules.credentials.vault import seal_bytes
 from neutrino_hub.web import usage_collector as collector_module
 from neutrino_hub.web.usage_collector import PanelUsageCollector
+from tests.conftest import unlock_vault
 
 # One success and one failure, as CLIProxyAPI 7.2.146's usage-queue answers
 # them, trimmed to the fields the pipeline reads.
@@ -71,10 +74,15 @@ class FakeRegistry:
 
 @pytest.fixture
 def collector(monkeypatch, tmp_path):
+    unlock_vault(monkeypatch, tmp_path)
     config = CliproxyApiConfig(
         listen_port=18317,
         client_keys=[
-            CliproxyApiClientKey(id="k1", name="laptop", key="client-key-one")
+            CliproxyApiClientKey(
+                id="k1",
+                name="laptop",
+                key_sealed=seal_bytes(b"client-key-one", CLIPROXYAPI_CLIENT_KEY_AAD),
+            )
         ],
     )
     monkeypatch.setattr(collector_module, "load_config", lambda: config)
@@ -118,6 +126,18 @@ def test_a_missing_key_or_a_dead_gateway_is_a_quiet_zero(collector, monkeypatch)
 
     monkeypatch.setattr(collector_module, "read_management_key", lambda: "")
     assert collector.poll_once() == 0
+
+
+def test_a_locked_vault_folds_nothing(collector, monkeypatch, tmp_path):
+    """No data key means no key map, and a record folded onto no key is worse."""
+    monkeypatch.setattr(
+        collector_module.httpx, "get", lambda *a, **k: FakeResponse(QUEUE_ANSWER)
+    )
+    monkeypatch.setattr(
+        "neutrino_hub.utils.constants.UTILS_STATE_ROOT", tmp_path / "locked"
+    )
+    assert collector.poll_once() == 0
+    assert not (tmp_path / "usage.json").exists()
 
 
 def test_a_refusal_and_junk_bodies_fold_nothing(collector, monkeypatch):

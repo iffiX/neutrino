@@ -27,6 +27,7 @@ key ever reaches git history.
 | `config/web/settings.json` | `settings.example.json` | yes — password hash |
 | `config/devices/devices.json` | `devices.example.json` | yes — device SSH creds |
 | `config/ai/providers.json` | `providers.example.json` | no — keys live in the vault |
+| `config/cliproxyapi/cliproxyapi.json` | `cliproxyapi.example.json` | yes — the AI gateway's client keys, sealed |
 | `config/credentials/vault.json` | `vault.example.json` | yes — every sealed secret |
 | `config/devices/packages/*` | — | no (build artifacts, just large) |
 

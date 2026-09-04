@@ -271,11 +271,18 @@ cascades: every reference to the object is cleared in the same step — devices
 lose the key, shares and providers lose theirs, a token-keyed proxy node is
 disabled because it cannot serve — and the answer says how many of each.
 
-Three things stay out. The panel password and a device's heartbeat token are
+Two things stay out. The panel password and a device's heartbeat token are
 verifiers rather than secrets — one kept as a scrypt hash, the other as a
-SHA-256 digest, and neither ever needed back. The CLIProxyAPI client keys the
-hub generates itself, shows in full to their owner, and renders whole into the
-gateway's own config.
+SHA-256 digest, and neither ever needed back.
+
+The CLIProxyAPI client keys are not vault records either: the hub generates
+them itself and the panel shows them in full to their owner. They are still
+sealed under the data key where they are stored, so
+`config/cliproxyapi/cliproxyapi.json` carries no key material, and they unseal
+at use — rendering the gateway's config, answering the AI page, handing a
+managed device its key. A stored record without a seal is dropped when the
+file is read, and the device holding it is issued a fresh key on its next
+heartbeat.
 
 `nhub vault rekey` wraps the data key under a new passphrase; nothing sealed
 is re-encrypted.

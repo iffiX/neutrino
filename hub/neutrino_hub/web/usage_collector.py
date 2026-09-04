@@ -68,15 +68,16 @@ class PanelUsageCollector:
 
         Returns:
             How many records were folded. Zero covers every quiet failure —
-            no management key, the gateway down or refusing, nothing queued —
-            because the next poll simply tries again.
+            no management key, a locked vault, the gateway down or refusing,
+            nothing queued — because the next poll simply tries again.
         """
         management_key = read_management_key()
         if not management_key:
             return 0
         try:
             config = load_config()
-        except ValueError:
+            key_ids = {key.open_key(): key.id for key in config.client_keys}
+        except (ValueError, VaultError):
             return 0
         try:
             response = httpx.get(
@@ -98,7 +99,7 @@ class PanelUsageCollector:
         self._refresh_provider_ids()
         return self._store.ingest(
             records,
-            key_ids={key.key: key.id for key in config.client_keys},
+            key_ids=key_ids,
             key_names={key.id: key.name for key in config.client_keys},
             provider_ids=self._provider_ids,
         )

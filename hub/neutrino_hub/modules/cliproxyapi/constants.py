@@ -18,6 +18,9 @@ CLIPROXYAPI_GENERATED_NAME = "cliproxyapi.yaml"
 
 CLIPROXYAPI_CLIENT_KEY_BYTES = 24
 CLIPROXYAPI_ID_BYTES = 8
+# Client keys are sealed under the vault's data key where they are stored, so
+# config/cliproxyapi/cliproxyapi.json carries no key material.
+CLIPROXYAPI_CLIENT_KEY_AAD = b"cliproxyapi:client_key"
 
 # The management API: served by the gateway on its own port, loopback callers
 # only, unlocked by a key of the hub's own. The sealed key travels with a

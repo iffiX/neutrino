@@ -2,10 +2,7 @@
 
 import yaml
 
-from neutrino_hub.modules.cliproxyapi.config import (
-    CliproxyApiClientKey,
-    CliproxyApiConfig,
-)
+from neutrino_hub.modules.cliproxyapi.config import CliproxyApiConfig
 from neutrino_hub.modules.cliproxyapi.renderer import CliproxyApiConfigRenderer
 from neutrino_hub.modules.ai.registry import AiProviderRecord
 
@@ -26,14 +23,11 @@ def _provider(**overrides) -> AiProviderRecord:
 
 
 def _render(providers, api_keys, management_key: str = "") -> dict:
-    config = CliproxyApiConfig(
-        listen_port=8317,
-        client_keys=[CliproxyApiClientKey(id="k1", name="laptop", key="client-key-1")],
-    )
     text = CliproxyApiConfigRenderer(
-        config=config,
+        config=CliproxyApiConfig(listen_port=8317),
         providers=providers,
         api_keys=api_keys,
+        client_keys=["client-key-1"],
         management_key=management_key,
     ).render()
     return yaml.safe_load(text)

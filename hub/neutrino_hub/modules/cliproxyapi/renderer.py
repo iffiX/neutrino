@@ -34,6 +34,7 @@ class CliproxyApiConfigRenderer:
         config: CliproxyApiConfig,
         providers: list[AiProviderRecord],
         api_keys: dict[str, str],
+        client_keys: list[str],
         management_key: str,
     ):
         """
@@ -43,12 +44,14 @@ class CliproxyApiConfigRenderer:
                 are left out.
             api_keys: The resolved key per provider id; a provider with no
                 entry here, or an empty one, is left out too.
+            client_keys: The resolved client keys devices authenticate with.
             management_key: The resolved management API key; empty renders
                 with the management API and usage metering off.
         """
         self._config = config
         self._providers = providers
         self._api_keys = api_keys
+        self._client_keys = client_keys
         self._management_key = management_key
 
     def render(self) -> str:
@@ -61,7 +64,7 @@ class CliproxyApiConfigRenderer:
             "host": "",
             "port": self._config.listen_port,
             "auth-dir": str(CLIPROXYAPI_AUTH_DIR),
-            "api-keys": [key.key for key in self._config.client_keys],
+            "api-keys": list(self._client_keys),
             "logging-to-file": False,
         }
         if self._management_key:

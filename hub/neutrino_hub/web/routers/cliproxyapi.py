@@ -23,6 +23,7 @@ from neutrino_hub.modules.cliproxyapi.usage_store import (
     zero_counters,
 )
 from neutrino_hub.modules.ai.registry import AiProviderRegistry
+from neutrino_hub.modules.credentials.vault import VaultError, VaultLockedError
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
@@ -56,7 +57,11 @@ def read_status() -> CliproxyApiStatusView:
     """Read the AI gateway's state, probing it when it should be up.
 
     Returns:
-        Install state, service state, keys, and what the probe found.
+        Install state, service state, keys, and what the probe found. The
+        client keys are unsealed here, in full, for the panel that asked.
+
+    Raises:
+        VaultLockedError: If there is no data key to unseal them with.
     """
     return _status()
 
@@ -147,6 +152,9 @@ def generate_key(request: CliproxyApiKeyCreate) -> CliproxyApiStatusView:
 
     Returns:
         The state after the change.
+
+    Raises:
+        VaultLockedError: If there is no data key to seal the new key under.
     """
     with CONFIG_WRITE_LOCK:
         config = load_config()
@@ -240,12 +248,13 @@ def _status() -> CliproxyApiStatusView:
     applier = CliproxyApiConfigApplier()
     config = load_config()
     service = SystemdServiceController().status("cliproxyapi")
+    keys = [_key_view(key) for key in config.client_keys]
     is_reachable = False
     probe_message = ""
     if service.is_active:
-        first_key = config.client_keys[0].key if config.client_keys else None
         is_reachable, probe_message = applier.probe(
-            port=config.listen_port, client_key=first_key
+            port=config.listen_port,
+            client_key=next((view.key for view in keys if view.key), None),
         )
     providers = AiProviderRegistry().list_records()
     today = CliproxyApiUsageStore().today_counters()
@@ -253,7 +262,7 @@ def _status() -> CliproxyApiStatusView:
         is_installed=applier.is_installed,
         is_active=service.is_active,
         listen_port=config.listen_port,
-        client_keys=[CliproxyApiKeyView(**key.to_dict()) for key in config.client_keys],
+        client_keys=keys,
         is_reachable=is_reachable,
         probe_message=probe_message,
         enabled_provider_count=sum(
@@ -262,6 +271,30 @@ def _status() -> CliproxyApiStatusView:
         is_serving_stale=applier.is_serving_stale,
         requests_today=today["requests"],
         tokens_today=today["input_tokens"] + today["output_tokens"],
+    )
+
+
+def _key_view(key: CliproxyApiClientKey) -> CliproxyApiKeyView:
+    """One client key, unsealed for the panel that asked for it.
+
+    Args:
+        key: The stored record.
+
+    Returns:
+        The view. A record whose seal does not open still gets a row, without
+        key material, so the page can name it and revoke it.
+
+    Raises:
+        VaultLockedError: If there is no data key on this box.
+    """
+    try:
+        material = key.open_key()
+    except VaultLockedError:
+        raise
+    except VaultError:
+        material = ""
+    return CliproxyApiKeyView(
+        id=key.id, name=key.name, key=material, created_at=key.created_at
     )
 
 

@@ -311,3 +311,29 @@ def test_backup_is_plain_digested_and_restores_the_vault(panel, vault_passphrase
     listed = panel.read("/credentials/logins")["logins"]
     survivor = next(entry for entry in listed if entry["name"] == marker)
     assert panel.status("DELETE", f"/credentials/logins/{survivor['id']}") == 200
+
+
+def test_a_backup_carries_no_ai_client_key(panel):
+    """Generating a key restarts the gateway, so this runs on a spare box only."""
+    name = f"itest ai key {_suffix()}"
+    status, created = panel.call("POST", "/cliproxyapi/keys", {"name": name})
+    assert status == 200, created
+    issued = next(key for key in created["client_keys"] if key["name"] == name)
+    assert issued["key"]
+
+    try:
+        status, archive_bytes = panel.download("POST", "/settings/backup")
+        assert status == 200
+        stored = _archive_contents(archive_bytes)[
+            "config/cliproxyapi/cliproxyapi.json"
+        ].decode()
+        assert issued["key"] not in stored
+        record = next(
+            entry
+            for entry in json.loads(stored)["client_keys"]
+            if entry["id"] == issued["id"]
+        )
+        assert "key" not in record
+        assert record["key_sealed"]["nonce"] and record["key_sealed"]["data"]
+    finally:
+        assert panel.status("DELETE", f"/cliproxyapi/keys/{issued['id']}") == 200

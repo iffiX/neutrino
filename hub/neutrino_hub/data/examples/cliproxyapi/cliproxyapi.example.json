@@ -1,12 +1,6 @@
 {
   "_comment": "The AI gateway's own settings, managed from the AI page. Providers live in config/credentials/ai_providers.json; this holds only the listen port and the client keys devices authenticate with. Rendered into CLIProxyAPI's YAML by the panel — never edit the generated file.",
+  "_comment_fields": "Each client key: id (panel-assigned), name (the device or person it is for), key_sealed (the key itself, sealed under the vault's data key, so this file carries no key material), created_at. The list ships empty; the panel fills it, and a record without a seal is dropped on load.",
   "listen_port": 8317,
-  "client_keys": [
-    {
-      "id": "0123456789abcdef",
-      "name": "laptop",
-      "key": "generated-by-the-panel",
-      "created_at": "2026-01-01T00:00:00+00:00"
-    }
-  ]
+  "client_keys": []
 }

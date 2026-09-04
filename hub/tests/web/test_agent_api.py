@@ -14,9 +14,14 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.modules.cliproxyapi import ops as cliproxyapi_ops
+from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier
+from neutrino_hub.modules.cliproxyapi.ops import load_config as load_cliproxyapi_config
 from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice
+from neutrino_hub.utils.json_file import write_config
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.routers import agent as agent_router
+from tests.conftest import unlock_vault
 
 
 class FakeRegistry:
@@ -167,6 +172,47 @@ def test_heartbeat_applies_a_toggle_made_on_the_machine(api):
     assert response.status_code == 200
     assert device.client.features["anydesk"] is True
     assert response.json()["desired_features"]["anydesk"]["is_enabled"] is True
+
+
+def test_a_dangling_ai_key_id_is_reissued_on_the_next_heartbeat(
+    api, monkeypatch, tmp_path
+):
+    """A plaintext-era key is dropped on load, so the device gets a fresh one."""
+    client, _, device = api
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    unlock_vault(monkeypatch, tmp_path)
+    monkeypatch.setattr(cliproxyapi_ops, "UTILS_GENERATED_DIR", tmp_path / "generated")
+    monkeypatch.setattr(
+        CliproxyApiConfigApplier, "is_installed", property(lambda self: False)
+    )
+    write_config(
+        "cliproxyapi/cliproxyapi.json",
+        {
+            "listen_port": 8317,
+            "client_keys": [{"id": "dropped", "name": "testbox", "key": "gone"}],
+        },
+    )
+    device.client.ai_key_id = "dropped"
+    device.client.features = {"ai_tools": True}
+
+    response = client.post(
+        "/api/agent/heartbeat",
+        json={
+            "token": "device-token",
+            "hostname": "testbox",
+            "client_version": "0.3.0",
+        },
+    )
+
+    assert response.status_code == 200
+    config = response.json()["desired_features"]["ai_tools"]["config"]
+    assert device.client.ai_key_id not in ("dropped", None)
+    stored = load_cliproxyapi_config().client_keys
+    assert [key.id for key in stored] == [device.client.ai_key_id]
+    assert stored[0].open_key() == config["api_key"]
+    assert config["api_key"] not in (
+        tmp_path / "cliproxyapi/cliproxyapi.json"
+    ).read_text(encoding="utf-8")
 
 
 def test_unknown_token_is_refused(api):

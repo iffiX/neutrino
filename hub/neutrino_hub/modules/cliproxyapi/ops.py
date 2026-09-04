@@ -118,7 +118,7 @@ class CliproxyApiConfigApplier:
 
         Raises:
             ValueError: If the stored settings do not validate, or a provider's
-                sealed key does not open.
+                or a client's sealed key does not open.
         """
         rendered, enabled = self._render()
         write_generated(
@@ -207,7 +207,7 @@ class CliproxyApiConfigApplier:
 
         Raises:
             ValueError: If the stored settings do not validate, or a provider's
-                sealed key does not open.
+                or a client's sealed key does not open.
         """
         rendered, _ = self._render(management_key=read_management_key())
         return rendered
@@ -225,7 +225,7 @@ class CliproxyApiConfigApplier:
 
         Raises:
             ValueError: If the stored settings do not validate, or a provider's
-                sealed key does not open.
+                or a client's sealed key does not open.
         """
         config = load_config()
         config.validate()
@@ -242,6 +242,7 @@ class CliproxyApiConfigApplier:
             config=config,
             providers=providers,
             api_keys=api_keys,
+            client_keys=[key.open_key() for key in config.client_keys],
             management_key=management_key,
         ).render()
         return rendered, sum(1 for key in api_keys.values() if key)
