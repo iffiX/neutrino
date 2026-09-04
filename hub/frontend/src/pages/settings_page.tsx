@@ -258,6 +258,55 @@ export function SettingsPage() {
         <section className="card">
           <div className="card_header">
             <div className="card_title">
+              <h2>About</h2>
+            </div>
+            <span className="badge">
+              <StatusDot tone="ok" isPulsing />
+              {ABOUT_LIVE}
+            </span>
+          </div>
+
+          {about.error !== null ? (
+            <ErrorPanel
+              title="Version info unavailable"
+              message={about.error}
+              onRetry={about.reload}
+            />
+          ) : about.data === null ? (
+            <div className="skeleton" style={{ height: 150 }} />
+          ) : (
+            <div className="settings_about">
+              <div className="settings_about_row">
+                <span className="settings_about_key">Gateway</span>
+                <span className="settings_about_value">
+                  {about.data.gateway_version}
+                </span>
+              </div>
+              <div className="settings_about_row">
+                <span className="settings_about_key">xray</span>
+                <span className="settings_about_value">
+                  {about.data.xray_version}
+                </span>
+              </div>
+              <div className="settings_about_row">
+                <span className="settings_about_key">Kernel</span>
+                <span className="settings_about_value">
+                  {about.data.kernel}
+                </span>
+              </div>
+              <div className="settings_about_row">
+                <span className="settings_about_key">Uptime</span>
+                <span className="settings_about_value">
+                  {formatDuration(about.data.uptime_s)}
+                </span>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className="card">
+          <div className="card_header">
+            <div className="card_title">
               <h2>Panel password</h2>
             </div>
             <Icon name="lock" size={15} />
@@ -370,55 +419,6 @@ export function SettingsPage() {
               />
             </div>
           </div>
-        </section>
-
-        <section className="card">
-          <div className="card_header">
-            <div className="card_title">
-              <h2>About</h2>
-            </div>
-            <span className="badge">
-              <StatusDot tone="ok" isPulsing />
-              {ABOUT_LIVE}
-            </span>
-          </div>
-
-          {about.error !== null ? (
-            <ErrorPanel
-              title="Version info unavailable"
-              message={about.error}
-              onRetry={about.reload}
-            />
-          ) : about.data === null ? (
-            <div className="skeleton" style={{ height: 150 }} />
-          ) : (
-            <div className="settings_about">
-              <div className="settings_about_row">
-                <span className="settings_about_key">Gateway</span>
-                <span className="settings_about_value">
-                  {about.data.gateway_version}
-                </span>
-              </div>
-              <div className="settings_about_row">
-                <span className="settings_about_key">xray</span>
-                <span className="settings_about_value">
-                  {about.data.xray_version}
-                </span>
-              </div>
-              <div className="settings_about_row">
-                <span className="settings_about_key">Kernel</span>
-                <span className="settings_about_value">
-                  {about.data.kernel}
-                </span>
-              </div>
-              <div className="settings_about_row">
-                <span className="settings_about_key">Uptime</span>
-                <span className="settings_about_value">
-                  {formatDuration(about.data.uptime_s)}
-                </span>
-              </div>
-            </div>
-          )}
         </section>
       </div>
       {restoreFile !== null && (

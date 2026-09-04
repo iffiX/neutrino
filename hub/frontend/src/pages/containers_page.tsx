@@ -194,6 +194,38 @@ export function ContainersPage() {
         </div>
       )}
 
+      <section className="settings_group">
+        <div className="settings_group_title">
+          <h2>Running now</h2>
+          <span className="badge">
+            <StatusDot tone="ok" isPulsing />
+            live
+          </span>
+        </div>
+        {liveError !== null && (
+          <div className="notice notice--error">
+            <Icon name="alert" size={15} />
+            <div className="notice_body">{liveError}</div>
+          </div>
+        )}
+        {saved.running.length === 0 ? (
+          <p className="field_hint">
+            No containers exist yet. Declared ones appear here after Apply.
+          </p>
+        ) : (
+          <div className="container_rows">
+            {saved.running.map((state) => (
+              <ContainerRow
+                key={state.name}
+                state={state}
+                onAction={(action) => void controlContainer(state.name, action)}
+                onShell={() => setShellTarget(state.name)}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
       <section
         className={`settings_group ${isMirrorsDirty ? "settings_group--dirty" : ""}`}
       >
@@ -302,38 +334,6 @@ export function ContainersPage() {
           onReset={() => setContainers(saved.containers)}
           onApply={() => void applyContainers()}
         />
-      </section>
-
-      <section className="settings_group">
-        <div className="settings_group_title">
-          <h2>Running now</h2>
-          <span className="badge">
-            <StatusDot tone="ok" isPulsing />
-            live
-          </span>
-        </div>
-        {liveError !== null && (
-          <div className="notice notice--error">
-            <Icon name="alert" size={15} />
-            <div className="notice_body">{liveError}</div>
-          </div>
-        )}
-        {saved.running.length === 0 ? (
-          <p className="field_hint">
-            No containers exist yet. Declared ones appear here after Apply.
-          </p>
-        ) : (
-          <div className="container_rows">
-            {saved.running.map((state) => (
-              <ContainerRow
-                key={state.name}
-                state={state}
-                onAction={(action) => void controlContainer(state.name, action)}
-                onShell={() => setShellTarget(state.name)}
-              />
-            ))}
-          </div>
-        )}
       </section>
 
       {shellTarget !== null && (
