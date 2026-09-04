@@ -63,6 +63,9 @@ CLIPROXYAPI_USAGE_QUEUE_COUNT = 1000
 CLIPROXYAPI_USAGE_HOURS_KEPT = 48
 CLIPROXYAPI_USAGE_MINUTES_KEPT = 90
 
+# How long a probed model list answers heartbeats before it is re-asked.
+CLIPROXYAPI_SERVED_MODELS_TTL_S = 10.0
+
 CLIPROXYAPI_SUPPORTED_ARCHITECTURES = ("amd64", "arm64")
 # The vendor's release assets name arm64 the kernel way.
 CLIPROXYAPI_ASSET_ARCHITECTURES = {"amd64": "amd64", "arm64": "aarch64"}

@@ -25,8 +25,8 @@ DEVICES_CONFIG_PATH = "devices/devices.json"
 AGENT_TOKEN_BYTES = 24
 
 
-def feature_wish(stored) -> dict:
-    """Normalise what is stored for one feature into the two wishes.
+def function_wish(stored) -> dict:
+    """Normalise what is stored for one function into the two wishes.
 
     Args:
         stored: What ``devices.json`` holds — a bare bool from before
@@ -66,28 +66,19 @@ class DeviceClientInfo:
             is an offer, not management.
         version: Agent version from the last heartbeat.
         last_seen: ISO timestamp of the last heartbeat.
-        cpu_percent: Latest processor load, when reported.
-        memory_percent: Latest memory use, when reported.
-        disk_percent: Latest root filesystem use, when reported.
-        temperature_c: Latest temperature, when the device exposes one.
-        features: What the user asked of each managed feature, by name:
+        functions: What the user asked of each managed function, by name:
             ``{"is_enabled", "is_activated"}``. Installing and activating are
-            separate wishes — cc-switch can be on a machine without pointing
+            separate wishes — a package can be on a machine without pointing
             at this hub.
-        ai_key_id: The cliproxyapi client key generated for this device's AI tools.
-        target_user: The account whose home the agent writes tool configs into.
+        ai_key_ids: The cliproxyapi client key generated for each of this
+            device's activated accounts, by account name.
     """
 
     token_sha256: str | None = None
     version: str | None = None
     last_seen: str | None = None
-    cpu_percent: float | None = None
-    memory_percent: float | None = None
-    disk_percent: float | None = None
-    temperature_c: float | None = None
-    features: dict = field(default_factory=dict)
-    ai_key_id: str | None = None
-    target_user: str | None = None
+    functions: dict = field(default_factory=dict)
+    ai_key_ids: dict = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict) -> "DeviceClientInfo":
@@ -103,9 +94,8 @@ class DeviceClientInfo:
             token_sha256=data.get("token_sha256"),
             version=data.get("version"),
             last_seen=data.get("last_seen"),
-            features=data.get("features", {}),
-            ai_key_id=data.get("ai_key_id"),
-            target_user=data.get("target_user"),
+            functions=data.get("functions", {}),
+            ai_key_ids=data.get("ai_key_ids", {}),
         )
 
     def to_dict(self) -> dict:
@@ -121,9 +111,8 @@ class DeviceClientInfo:
             "token_sha256": self.token_sha256,
             "version": self.version,
             "last_seen": self.last_seen,
-            "features": self.features,
-            "ai_key_id": self.ai_key_id,
-            "target_user": self.target_user,
+            "functions": self.functions,
+            "ai_key_ids": self.ai_key_ids,
         }
 
 
@@ -426,27 +415,26 @@ class DeviceRegistry:
             device.client.token_sha256 = None
             device.client.version = None
             device.client.last_seen = None
-            device.client.features = {}
+            device.client.functions = {}
             self._store(device)
 
-    def set_feature(
+    def set_function(
         self,
         mac_address: str,
-        feature: str,
+        function: str,
         *,
         is_enabled: bool | None = None,
         is_activated: bool | None = None,
     ) -> ManagedDevice:
-        """Change what is wanted of one managed feature.
+        """Change what is wanted of one managed function.
 
-        The two wishes are independent and either can be left alone: a device
-        can have cc-switch installed without it pointing at this hub.
+        The two wishes are independent and either can be left alone.
         Uninstalling implies deactivating, since there is nothing left to
         point.
 
         Args:
             mac_address: The device's MAC.
-            feature: The feature name.
+            function: The function name.
             is_enabled: Whether the agent should keep it installed.
             is_activated: Whether it should point at this hub.
 
@@ -455,7 +443,7 @@ class DeviceRegistry:
         """
         with _WRITE_LOCK:
             device = self._fresh(mac_address)
-            wanted = feature_wish(device.client.features.get(feature))
+            wanted = function_wish(device.client.functions.get(function))
             if is_enabled is not None:
                 wanted["is_enabled"] = is_enabled
                 if not is_enabled:
@@ -464,37 +452,25 @@ class DeviceRegistry:
                 wanted["is_activated"] = is_activated
                 if is_activated:
                     wanted["is_enabled"] = True
-            device.client.features[feature] = wanted
+            device.client.functions[function] = wanted
             self._store(device)
             return device
 
-    def set_ai_key_id(self, mac_address: str, key_id: str | None) -> None:
-        """Remember which cliproxyapi client key belongs to a device.
+    def set_ai_key_id(self, mac_address: str, account: str, key_id: str | None) -> None:
+        """Remember which cliproxyapi client key one account on a device holds.
 
         Args:
             mac_address: The device's MAC.
-            key_id: The key's id, or None to forget it.
+            account: The human account on the device.
+            key_id: The key's id, or None to forget the pair.
         """
         with _WRITE_LOCK:
             device = self._fresh(mac_address)
-            device.client.ai_key_id = key_id
+            if key_id is None:
+                device.client.ai_key_ids.pop(account, None)
+            else:
+                device.client.ai_key_ids[account] = key_id
             self._store(device)
-
-    def set_target_user(self, mac_address: str, username: str) -> ManagedDevice:
-        """Set the account the agent writes AI tool configs into.
-
-        Args:
-            mac_address: The device's MAC.
-            username: The login account on the device.
-
-        Returns:
-            The device after the change.
-        """
-        with _WRITE_LOCK:
-            device = self._fresh(mac_address)
-            device.client.target_user = username
-            self._store(device)
-            return device
 
     def _from_stored(self, mac_address: str, entry: dict) -> ManagedDevice:
         ssh = entry.get("ssh")

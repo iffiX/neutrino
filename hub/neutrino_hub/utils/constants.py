@@ -49,7 +49,7 @@ def is_dev_root_set() -> bool:
 
 
 # The installed package, and the data that ships inside it: unit templates,
-# feature manifests, the built panel, the example configs and the icons.
+# function manifests, the built panel, the example configs and the icons.
 UTILS_PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 UTILS_DATA_DIR = UTILS_PACKAGE_ROOT / "data"
 

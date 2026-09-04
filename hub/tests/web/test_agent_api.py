@@ -2,9 +2,9 @@
 
 The registry is replaced with one held in memory, so what is exercised is the
 request path — that a machine can introduce itself with a ticket, that a
-heartbeat carries the desired features back, and that an agent saying goodbye
-stops the panel treating the device as managed while keeping everything its
-owner typed.
+heartbeat carries the desired functions and the per-account AI credentials
+back, and that an agent saying goodbye stops the panel treating the device as
+managed while keeping everything its owner typed.
 """
 
 import hashlib
@@ -22,6 +22,14 @@ from neutrino_hub.utils.json_file import write_config
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.routers import agent as agent_router
 from tests.conftest import unlock_vault
+
+MAC = "aa:bb:cc:dd:ee:ff"
+
+CATALOG = {
+    "functions": {"anydesk": {"name": "anydesk", "kind": "package"}},
+    "services": {"ai": {"kind": "ai", "title": "AI tools"}},
+}
+CATALOG_HASH = "hash123"
 
 
 class FakeRegistry:
@@ -52,12 +60,21 @@ class FakeRegistry:
         FakeRegistry.device.client.version = version
         FakeRegistry.device.client.last_seen = seen_at
 
-    def set_feature(self, mac_address, feature, is_enabled):
-        FakeRegistry.device.client.features[feature] = is_enabled
+    def set_function(self, mac_address, function, is_enabled=None, is_activated=None):
+        wanted = FakeRegistry.device.client.functions.setdefault(
+            function, {"is_enabled": False, "is_activated": False}
+        )
+        if is_enabled is not None:
+            wanted["is_enabled"] = is_enabled
+        if is_activated is not None:
+            wanted["is_activated"] = is_activated
         return FakeRegistry.device
 
-    def set_ai_key_id(self, mac_address, key_id):
-        FakeRegistry.device.client.ai_key_id = key_id
+    def set_ai_key_id(self, mac_address, account, key_id):
+        if key_id is None:
+            FakeRegistry.device.client.ai_key_ids.pop(account, None)
+        else:
+            FakeRegistry.device.client.ai_key_ids[account] = key_id
 
     def annotate(self, mac_address, annotation):
         FakeRegistry.device.name = annotation.get("name")
@@ -74,7 +91,17 @@ class FakeRegistry:
         client.token_sha256 = None
         client.version = None
         client.last_seen = None
-        client.features = {}
+        client.functions = {}
+
+
+class StubCatalogCache:
+    def catalog(self):
+        return CATALOG, CATALOG_HASH
+
+
+class StubServedModels:
+    def first_model(self, *, port, client_key):
+        return "claude-sonnet-4-5"
 
 
 class FakeRuntime:
@@ -82,14 +109,32 @@ class FakeRuntime:
 
     def __init__(self):
         self.client_metrics = {}
-        self.client_features = {}
+        self.client_functions = {}
         self.client_platform = {}
         self.client_hostname = {}
+        self.client_accounts = {}
+        self.client_last_error = {}
+        self.client_command_results = {}
         self.enrollments = {}
         self.settings = {"listen_port": 80}
+        self.device_catalog = StubCatalogCache()
+        self.served_models = StubServedModels()
 
     def take_client_commands(self, mac_address):
         return []
+
+    def forget_client_state(self, mac_address):
+        key = mac_address.lower()
+        for held in (
+            self.client_metrics,
+            self.client_functions,
+            self.client_platform,
+            self.client_hostname,
+            self.client_accounts,
+            self.client_last_error,
+            self.client_command_results,
+        ):
+            held.pop(key, None)
 
     def network(self):
         return _EmptyNetwork()
@@ -102,7 +147,7 @@ class _EmptyNetwork:
 @pytest.fixture()
 def api(monkeypatch):
     device = ManagedDevice(
-        mac_address="aa:bb:cc:dd:ee:ff",
+        mac_address=MAC,
         name="testbox",
         ssh={"host": "10.0.0.5", "username": "me"},
         client=DeviceClientInfo(
@@ -115,13 +160,6 @@ def api(monkeypatch):
     # Pinned so the version comparisons below are about the protocol, not
     # about what the checkout happens to be versioned.
     monkeypatch.setattr(agent_router, "HUB_VERSION", "1.2.3")
-    # The catalog is read from the repo's manifests; a small fixed one keeps
-    # the test about the protocol rather than about what ships today.
-    monkeypatch.setattr(
-        agent_router,
-        "load_catalog",
-        lambda: {"anydesk": {"name": "anydesk", "kind": "package"}},
-    )
 
     app = FastAPI()
     app.include_router(agent_router.router)
@@ -130,30 +168,59 @@ def api(monkeypatch):
     return TestClient(app), runtime, device
 
 
-def test_heartbeat_returns_desired_features_and_catalog(api):
+@pytest.fixture()
+def ai_box(api, monkeypatch, tmp_path):
+    """The api fixture plus a real config dir and an unlocked vault."""
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    unlock_vault(monkeypatch, tmp_path)
+    monkeypatch.setattr(cliproxyapi_ops, "UTILS_GENERATED_DIR", tmp_path / "generated")
+    monkeypatch.setattr(
+        CliproxyApiConfigApplier, "is_installed", property(lambda self: False)
+    )
+    write_config("cliproxyapi/cliproxyapi.json", {"listen_port": 8317})
+    return api
+
+
+def beat_body(**extra) -> dict:
+    body = {"token": "device-token", "hostname": "testbox", "client_version": "0.3.0"}
+    body.update(extra)
+    return body
+
+
+def test_heartbeat_returns_desired_functions_and_catalog(api):
     client, runtime, device = api
-    device.client.features = {"anydesk": True}
+    device.client.functions = {"anydesk": True}
 
     response = client.post(
         "/api/agent/heartbeat",
-        json={
-            "token": "device-token",
-            "hostname": "testbox",
-            "client_version": "0.3.0",
-            "metrics": {"cpu_percent": 4.0},
-            "platform": {"os": "linux", "family": "debian", "arch": "amd64"},
-            "catalog_hash": "stale",
-            "features": {},
-        },
+        json=beat_body(
+            metrics={"cpu_percent": 4.0},
+            platform={"os": "linux", "family": "debian", "arch": "amd64"},
+            catalog_hash="stale",
+            functions={"anydesk": {"state": "installed"}},
+        ),
     )
 
     assert response.status_code == 200
     body = response.json()
-    assert body["desired_features"]["anydesk"]["is_enabled"] is True
-    # A stale hash gets the catalog; a matching one would not.
-    assert body["catalog"] is not None
-    assert runtime.client_metrics["aa:bb:cc:dd:ee:ff"]["cpu_percent"] == 4.0
-    assert runtime.client_platform["aa:bb:cc:dd:ee:ff"]["arch"] == "amd64"
+    assert body["desired_functions"]["anydesk"]["is_enabled"] is True
+    # A stale hash gets both halves of the catalog; a matching one would not.
+    assert body["catalog"] == CATALOG
+    assert body["catalog_hash"] == CATALOG_HASH
+    assert runtime.client_metrics[MAC]["cpu_percent"] == 4.0
+    assert runtime.client_functions[MAC]["anydesk"]["state"] == "installed"
+    assert runtime.client_platform[MAC]["arch"] == "amd64"
+
+
+def test_a_matching_catalog_hash_is_not_reshipped(api):
+    client, _, _ = api
+
+    response = client.post(
+        "/api/agent/heartbeat", json=beat_body(catalog_hash=CATALOG_HASH)
+    )
+
+    assert response.json()["catalog"] is None
+    assert response.json()["catalog_hash"] == CATALOG_HASH
 
 
 def test_heartbeat_applies_a_toggle_made_on_the_machine(api):
@@ -161,72 +228,151 @@ def test_heartbeat_applies_a_toggle_made_on_the_machine(api):
 
     response = client.post(
         "/api/agent/heartbeat",
-        json={
-            "token": "device-token",
-            "hostname": "testbox",
-            "client_version": "0.3.0",
-            "feature_requests": {"anydesk": True},
-        },
+        json=beat_body(function_requests={"anydesk": {"is_enabled": True}}),
     )
 
     assert response.status_code == 200
-    assert device.client.features["anydesk"] is True
-    assert response.json()["desired_features"]["anydesk"]["is_enabled"] is True
+    assert device.client.functions["anydesk"]["is_enabled"] is True
+    assert response.json()["desired_functions"]["anydesk"]["is_enabled"] is True
 
 
-def test_a_dangling_ai_key_id_is_reissued_on_the_next_heartbeat(
-    api, monkeypatch, tmp_path
-):
-    """A plaintext-era key is dropped on load, so the device gets a fresh one."""
+def test_accounts_and_last_error_land_in_the_runtime(api):
+    client, runtime, _ = api
+
+    response = client.post(
+        "/api/agent/heartbeat",
+        json=beat_body(
+            accounts=["alice", "bob"],
+            last_error={"code": "mount_failed", "params": {"share": "media"}},
+        ),
+    )
+
+    assert response.status_code == 200
+    assert runtime.client_accounts[MAC] == ["alice", "bob"]
+    assert runtime.client_last_error[MAC] == {
+        "code": "mount_failed",
+        "params": {"share": "media"},
+    }
+
+
+def test_a_beat_without_an_error_clears_the_stored_one(api):
+    client, runtime, _ = api
+    runtime.client_last_error[MAC] = {"code": "mount_failed", "params": {}}
+
+    client.post("/api/agent/heartbeat", json=beat_body(last_error=None))
+
+    assert MAC not in runtime.client_last_error
+
+
+def test_turning_an_account_on_generates_its_key_and_answers_it(ai_box):
+    client, _, device = ai_box
+
+    response = client.post(
+        "/api/agent/heartbeat", json=beat_body(ai_targets={"alice": True})
+    )
+
+    assert response.status_code == 200
+    answered = response.json()["ai_accounts"]["alice"]
+    stored = load_cliproxyapi_config().client_keys
+    assert [key.name for key in stored] == ["testbox/alice"]
+    assert device.client.ai_key_ids == {"alice": stored[0].id}
+    assert answered["api_key"] == stored[0].open_key()
+    assert answered["base_url"].endswith(":8317")
+    assert answered["model"] == "claude-sonnet-4-5"
+
+
+def test_a_second_beat_reuses_the_pair_key(ai_box):
+    client, _, device = ai_box
+
+    client.post("/api/agent/heartbeat", json=beat_body(ai_targets={"alice": True}))
+    first_id = device.client.ai_key_ids["alice"]
+    client.post("/api/agent/heartbeat", json=beat_body(ai_targets={"alice": True}))
+
+    assert device.client.ai_key_ids["alice"] == first_id
+    assert [key.id for key in load_cliproxyapi_config().client_keys] == [first_id]
+
+
+def test_two_accounts_get_two_keys(ai_box):
+    client, _, device = ai_box
+
+    response = client.post(
+        "/api/agent/heartbeat",
+        json=beat_body(ai_targets={"alice": True, "bob": True}),
+    )
+
+    answered = response.json()["ai_accounts"]
+    assert set(answered) == {"alice", "bob"}
+    assert answered["alice"]["api_key"] != answered["bob"]["api_key"]
+    stored = load_cliproxyapi_config().client_keys
+    assert sorted(key.name for key in stored) == ["testbox/alice", "testbox/bob"]
+    assert set(device.client.ai_key_ids) == {"alice", "bob"}
+
+
+def test_turning_an_account_off_revokes_its_key(ai_box):
+    client, _, device = ai_box
+    client.post(
+        "/api/agent/heartbeat", json=beat_body(ai_targets={"alice": True, "bob": True})
+    )
+    bob_key_id = device.client.ai_key_ids["bob"]
+
+    response = client.post(
+        "/api/agent/heartbeat",
+        json=beat_body(ai_targets={"alice": True, "bob": False}),
+    )
+
+    answered = response.json()["ai_accounts"]
+    assert set(answered) == {"alice"}
+    assert "bob" not in device.client.ai_key_ids
+    stored_ids = [key.id for key in load_cliproxyapi_config().client_keys]
+    assert bob_key_id not in stored_ids
+    assert device.client.ai_key_ids["alice"] in stored_ids
+
+
+def test_a_dangling_ai_key_id_is_reissued_on_the_next_heartbeat(ai_box):
+    """A key revoked on the gateway leaves the mapping dangling; the device
+    gets a fresh one rather than a dead credential."""
+    client, _, device = ai_box
+    device.client.ai_key_ids = {"alice": "dropped"}
+
+    response = client.post(
+        "/api/agent/heartbeat", json=beat_body(ai_targets={"alice": True})
+    )
+
+    assert response.status_code == 200
+    reissued = device.client.ai_key_ids["alice"]
+    assert reissued != "dropped"
+    stored = load_cliproxyapi_config().client_keys
+    assert [key.id for key in stored] == [reissued]
+    assert response.json()["ai_accounts"]["alice"]["api_key"] == stored[0].open_key()
+
+
+def test_a_locked_vault_does_not_fail_the_beat(api, monkeypatch, tmp_path):
+    """The one rule of the AI path: a vault with no data key costs the beat
+    its ai_accounts, never its answer."""
     client, _, device = api
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
-    unlock_vault(monkeypatch, tmp_path)
-    monkeypatch.setattr(cliproxyapi_ops, "UTILS_GENERATED_DIR", tmp_path / "generated")
-    monkeypatch.setattr(
-        CliproxyApiConfigApplier, "is_installed", property(lambda self: False)
-    )
-    write_config(
-        "cliproxyapi/cliproxyapi.json",
-        {
-            "listen_port": 8317,
-            "client_keys": [{"id": "dropped", "name": "testbox", "key": "gone"}],
-        },
-    )
-    device.client.ai_key_id = "dropped"
-    device.client.features = {"ai_tools": True}
+    # A state root with no vault.key: sealing raises VaultLockedError.
+    state = tmp_path / "state"
+    state.mkdir()
+    monkeypatch.setattr("neutrino_hub.utils.constants.UTILS_STATE_ROOT", state)
+    write_config("cliproxyapi/cliproxyapi.json", {"listen_port": 8317})
 
     response = client.post(
-        "/api/agent/heartbeat",
-        json={
-            "token": "device-token",
-            "hostname": "testbox",
-            "client_version": "0.3.0",
-        },
+        "/api/agent/heartbeat", json=beat_body(ai_targets={"alice": True})
     )
 
     assert response.status_code == 200
-    config = response.json()["desired_features"]["ai_tools"]["config"]
-    assert device.client.ai_key_id not in ("dropped", None)
-    stored = load_cliproxyapi_config().client_keys
-    assert [key.id for key in stored] == [device.client.ai_key_id]
-    assert stored[0].open_key() == config["api_key"]
-    assert config["api_key"] not in (
-        tmp_path / "cliproxyapi/cliproxyapi.json"
-    ).read_text(encoding="utf-8")
+    assert response.json()["ai_accounts"] == {}
+    assert device.client.ai_key_ids == {}
 
-    # The reissue happens once: the next beat finds the key and touches nothing.
-    reissued_id = device.client.ai_key_id
-    response = client.post(
-        "/api/agent/heartbeat",
-        json={
-            "token": "device-token",
-            "hostname": "testbox",
-            "client_version": "0.3.0",
-        },
-    )
+
+def test_no_targets_means_no_ai_accounts_and_no_config_read(api):
+    client, _, _ = api
+
+    response = client.post("/api/agent/heartbeat", json=beat_body())
+
     assert response.status_code == 200
-    assert device.client.ai_key_id == reissued_id
-    assert [key.id for key in load_cliproxyapi_config().client_keys] == [reissued_id]
+    assert response.json()["ai_accounts"] == {}
 
 
 def test_unknown_token_is_refused(api):
@@ -238,10 +384,52 @@ def test_unknown_token_is_refused(api):
     assert response.status_code == 401
 
 
+def test_a_command_outcome_is_retained_for_the_drawer(api):
+    client, runtime, _ = api
+
+    response = client.post(
+        "/api/agent/result",
+        json={"token": "device-token", "id": "reboot", "exit_code": 0, "output": "ok"},
+    )
+
+    assert response.status_code == 200
+    outcome = runtime.client_command_results[MAC]["reboot"]
+    assert outcome["exit_code"] == 0
+    assert outcome["output"] == "ok"
+    assert outcome["finished_at"]
+
+
+def test_a_repeated_command_keeps_only_the_last_outcome(api):
+    client, runtime, _ = api
+
+    client.post(
+        "/api/agent/result",
+        json={"token": "device-token", "id": "reboot", "exit_code": 1, "output": "no"},
+    )
+    client.post(
+        "/api/agent/result",
+        json={"token": "device-token", "id": "reboot", "exit_code": 0, "output": "ok"},
+    )
+
+    assert runtime.client_command_results[MAC]["reboot"]["exit_code"] == 0
+
+
+def test_a_result_with_an_unknown_token_is_refused(api):
+    client, runtime, _ = api
+    response = client.post(
+        "/api/agent/result",
+        json={"token": "nonsense", "id": "reboot", "exit_code": 0},
+    )
+    assert response.status_code == 401
+    assert runtime.client_command_results == {}
+
+
 def test_leaving_drops_the_agent_but_keeps_the_device(api):
     client, runtime, device = api
-    runtime.client_metrics["aa:bb:cc:dd:ee:ff"] = {"cpu_percent": 4.0}
-    runtime.client_features["aa:bb:cc:dd:ee:ff"] = {"anydesk": {"state": "installed"}}
+    runtime.client_metrics[MAC] = {"cpu_percent": 4.0}
+    runtime.client_functions[MAC] = {"anydesk": {"state": "installed"}}
+    runtime.client_accounts[MAC] = ["alice"]
+    runtime.client_last_error[MAC] = {"code": "mount_failed", "params": {}}
 
     response = client.post("/api/agent/leave", json={"token": "device-token"})
 
@@ -251,7 +439,9 @@ def test_leaving_drops_the_agent_but_keeps_the_device(api):
     assert device.name == "testbox"
     assert device.ssh == {"host": "10.0.0.5", "username": "me"}
     assert runtime.client_metrics == {}
-    assert runtime.client_features == {}
+    assert runtime.client_functions == {}
+    assert runtime.client_accounts == {}
+    assert runtime.client_last_error == {}
 
 
 def test_leaving_with_an_unknown_token_is_refused(api):

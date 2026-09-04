@@ -5,11 +5,11 @@ per-device token issued when the agent was installed. They are served on the
 agent channel's own TLS port, never on the panel's, and every enrollment link
 carries the certificate fingerprint the agent pins.
 
-A heartbeat now carries more than metrics: the agent reports which features it
-is reconciling and in what state, and the reply tells it which features should
-be on and — when its catalog is stale — how to obtain each one. The gateway
-resolves the parts an agent cannot know for itself, chiefly the AI endpoint
-and the client key generated for that device.
+A heartbeat carries the machine's report — metrics, accounts, per-function
+state — and the reply carries what should be true: the desired functions,
+the catalog when the agent's copy is stale, and a gateway credential for
+each account whose AI target is on. The credential is the one per-device
+secret the reply resolves; the catalog itself carries none.
 """
 
 import hashlib
@@ -27,15 +27,14 @@ from neutrino_hub.modules.cliproxyapi.ops import (
     load_config,
     save_config,
 )
-from neutrino_hub.modules.ai.registry import AiProviderRegistry
+from neutrino_hub.modules.credentials.vault import VaultLockedError
 from neutrino_hub.modules.devices.agent_package import agent_packages
 from neutrino_hub.modules.devices.constants import DEVICE_MAC_PATTERN
 from neutrino_hub.modules.devices.registry import (
     DeviceRegistry,
     ManagedDevice,
-    feature_wish,
+    function_wish,
 )
-from neutrino_hub.modules.features.catalog import catalog_hash, load_catalog
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.utils.version_number import parse_version
 from neutrino_hub.web.dependencies import get_runtime
@@ -65,8 +64,8 @@ def heartbeat(
         runtime: The shared runtime.
 
     Returns:
-        The desired features, the catalog when the agent's is stale, and any
-        queued commands.
+        The desired functions, the catalog when the agent's is stale, the
+        per-account AI credentials, and any queued commands.
 
     Raises:
         HTTPException: 401 when the token matches no device, 409 when the
@@ -79,44 +78,53 @@ def heartbeat(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="unknown client token"
         )
     _refuse_newer_agent(beat.client_version)
-    if beat.feature_requests:
+    if beat.function_requests:
         # A request from the machine's own page carries whichever wish was
         # changed there; the rest is left as the panel has it.
-        for feature, wish in beat.feature_requests.items():
+        for function, wish in beat.function_requests.items():
             if isinstance(wish, dict):
-                device = registry.set_feature(
+                device = registry.set_function(
                     device.mac_address,
-                    feature,
+                    function,
                     is_enabled=wish.get("is_enabled"),
                     is_activated=wish.get("is_activated"),
                 )
             else:
-                device = registry.set_feature(
-                    device.mac_address, feature, is_enabled=bool(wish)
+                device = registry.set_function(
+                    device.mac_address, function, is_enabled=bool(wish)
                 )
-    runtime.client_metrics[device.mac_address] = dict(beat.metrics)
-    runtime.client_features[device.mac_address] = dict(beat.features)
+    key = device.mac_address
+    runtime.client_metrics[key] = dict(beat.metrics)
+    runtime.client_functions[key] = dict(beat.functions)
+    runtime.client_accounts[key] = list(beat.accounts)
     if beat.platform:
-        runtime.client_platform[device.mac_address] = dict(beat.platform)
+        runtime.client_platform[key] = dict(beat.platform)
     if beat.hostname:
-        runtime.client_hostname[device.mac_address] = beat.hostname
+        runtime.client_hostname[key] = beat.hostname
+    if isinstance(beat.last_error, dict) and beat.last_error.get("code"):
+        runtime.client_last_error[key] = {
+            "code": str(beat.last_error.get("code")),
+            "params": dict(beat.last_error.get("params") or {}),
+        }
+    else:
+        runtime.client_last_error.pop(key, None)
     registry.record_heartbeat(
         device.mac_address,
         version=beat.client_version,
         seen_at=datetime.now(timezone.utc).isoformat(),
     )
 
-    catalog = load_catalog()
-    served_hash = catalog_hash(catalog)
-    desired = _desired_features(device, runtime, registry)
+    ai_accounts = _ai_accounts(device, runtime, registry, beat.ai_targets)
+    catalog, served_hash = runtime.device_catalog.catalog()
     return ClientHeartbeatReply(
         commands=[
             ClientCommand(**command)
             for command in runtime.take_client_commands(device.mac_address)
         ],
-        desired_features=desired,
+        desired_functions=_desired_functions(device),
         catalog=catalog if beat.catalog_hash != served_hash else None,
         catalog_hash=served_hash,
+        ai_accounts=ai_accounts,
         hub_version=HUB_VERSION,
     )
 
@@ -222,18 +230,22 @@ def leave(report: ClientLeave, runtime: PanelRuntime = Depends(get_runtime)) -> 
             status_code=status.HTTP_401_UNAUTHORIZED, detail="unknown client token"
         )
     registry.forget_client(device.mac_address)
-    runtime.client_metrics.pop(device.mac_address, None)
-    runtime.client_features.pop(device.mac_address, None)
-    runtime.client_platform.pop(device.mac_address, None)
+    runtime.forget_client_state(device.mac_address)
     return {}
 
 
 @router.post("/result")
-def result(report: ClientCommandResult) -> dict:
+def result(
+    report: ClientCommandResult, runtime: PanelRuntime = Depends(get_runtime)
+) -> dict:
     """Accept an agent's report of how a command went.
+
+    The last outcome per command id is kept in the runtime, so the device
+    drawer can show how a reboot went after its stream has closed.
 
     Args:
         report: The command outcome.
+        runtime: The shared runtime.
 
     Returns:
         An empty acknowledgement.
@@ -246,6 +258,13 @@ def result(report: ClientCommandResult) -> dict:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="unknown client token"
         )
+    outcomes = runtime.client_command_results.setdefault(device.mac_address, {})
+    outcomes[report.id] = {
+        "id": report.id,
+        "exit_code": report.exit_code,
+        "output": report.output,
+        "finished_at": datetime.now(timezone.utc).isoformat(),
+    }
     return {}
 
 
@@ -312,111 +331,113 @@ def _refuse_newer_agent(agent_version: str) -> None:
     )
 
 
-def _desired_features(
-    device: ManagedDevice, runtime: PanelRuntime, registry: DeviceRegistry
-) -> dict:
-    """What each of a device's features should be, with configs resolved.
+def _desired_functions(device: ManagedDevice) -> dict:
+    """What each of a device's functions should be.
 
     Args:
         device: The device the heartbeat came from.
-        runtime: The shared runtime, for the gateway's addresses.
-        registry: The device registry, for generating a device's AI key.
 
     Returns:
-        Feature name to ``{"is_enabled", "config"}``.
+        Function name to ``{"is_enabled", "is_activated"}``.
     """
-    desired = {}
-    for feature, stored in device.client.features.items():
-        wanted = feature_wish(stored)
-        config = {}
-        if feature == "ai_tools" and wanted["is_enabled"]:
-            config = _ai_config(device, runtime, registry)
-        desired[feature] = {**wanted, "config": config}
-    return desired
-
-
-def _ai_config(
-    device: ManagedDevice, runtime: PanelRuntime, registry: DeviceRegistry
-) -> dict:
-    """Resolve where a device's AI tools should point, generating a key if needed.
-
-    Args:
-        device: The device.
-        runtime: The shared runtime.
-        registry: The device registry.
-
-    Returns:
-        ``{"base_url", "api_key", "target_user", "tools"}``, the key unsealed
-        for the device that presents it.
-
-    Raises:
-        VaultLockedError: If there is no data key to seal or open one with.
-    """
-    key = _device_key(device, registry)
-    port = load_config().listen_port
-    base_url = f"{_gateway_host(runtime, device.ipv4_address)}:{port}"
     return {
-        "base_url": base_url,
-        "api_key": key.open_key() if key else "",
-        "target_user": device.client.target_user
-        or (device.ssh or {}).get("username", ""),
-        "tools": ["claude", "codex", "gemini"],
-        "model": _served_model(),
+        function: function_wish(stored)
+        for function, stored in device.client.functions.items()
     }
 
 
-def _served_model() -> str:
-    """The model name a device's tools should ask the hub for.
+def _ai_accounts(
+    device: ManagedDevice,
+    runtime: PanelRuntime,
+    registry: DeviceRegistry,
+    targets: dict,
+) -> dict:
+    """Resolve the gateway credential for each account whose target is on.
 
-    A tool asks for a model by name, and the names the hub serves are the
-    ones its providers publish — a device asking for ``claude-sonnet-4-5``
-    against a DeepSeek provider gets nothing. The first model of the first
-    enabled provider is what a device is told to ask for; a provider that
-    publishes its models under Claude's own names needs none of this and is
-    left to answer for them.
-
-    Returns:
-        A model name, or empty when no provider names one.
-    """
-    for provider in AiProviderRegistry().list_records():
-        if not provider.is_enabled or not provider.secret_id:
-            continue
-        for entry in provider.models:
-            served = str(entry.get("alias") or entry.get("name") or "").strip()
-            if served:
-                return served
-    return ""
-
-
-def _device_key(device: ManagedDevice, registry: DeviceRegistry):
-    """The device's cliproxyapi client key, generating and applying one on first need.
+    A locked vault fails only this part of the beat: the reply simply omits
+    ``ai_accounts`` for the turn.
 
     Args:
-        device: The device.
+        device: The device the heartbeat came from.
+        runtime: The shared runtime.
         registry: The device registry.
+        targets: The beat's ``ai_targets``.
 
     Returns:
-        The client key. A device whose stored id names no key on the gateway —
-        it was revoked, or the record was dropped — is issued a fresh one.
+        ``{account: {"base_url", "api_key", "model"}}``.
+    """
+    try:
+        keys = _account_keys(device, registry, targets)
+        materials = {account: key.open_key() for account, key in keys.items()}
+    except VaultLockedError:
+        return {}
+    if not materials:
+        return {}
+    port = load_config().listen_port
+    base_url = f"{_gateway_host(runtime, device.ipv4_address)}:{port}"
+    model = runtime.served_models.first_model(
+        port=port, client_key=next(iter(materials.values()))
+    )
+    return {
+        account: {"base_url": base_url, "api_key": material, "model": model}
+        for account, material in materials.items()
+    }
+
+
+def _account_keys(
+    device: ManagedDevice, registry: DeviceRegistry, targets: dict
+) -> dict:
+    """The client key of each account turned on, revoking the ones turned off.
+
+    An account turned on whose stored id names no key on the gateway — it
+    was revoked, or the record was dropped — is issued a fresh one.
+
+    Args:
+        device: The device the heartbeat came from.
+        registry: The device registry.
+        targets: The beat's ``ai_targets``.
+
+    Returns:
+        Account name to its stored key.
 
     Raises:
         VaultLockedError: If there is no data key to seal a new key under.
     """
+    if not targets:
+        return {}
+    keys = {}
+    is_changed = False
     with CONFIG_WRITE_LOCK:
+        stored = DeviceRegistry().get(device.mac_address)
         config = load_config()
-        key_id = device.client.ai_key_id
-        existing = next((k for k in config.client_keys if k.id == key_id), None)
-        if existing is not None:
-            return existing
-        key = CliproxyApiClientKey.generated(device.name or device.mac_address)
-        config.client_keys.append(key)
-        save_config(config)
-        registry.set_ai_key_id(device.mac_address, key.id)
-    try:
-        CliproxyApiConfigApplier().apply()
-    except ValueError:
-        pass
-    return key
+        by_id = {key.id: key for key in config.client_keys}
+        for account in sorted(targets):
+            key_id = stored.client.ai_key_ids.get(account)
+            if targets[account]:
+                key = by_id.get(key_id)
+                if key is None:
+                    key = CliproxyApiClientKey.generated(
+                        f"{device.name or device.mac_address}/{account}"
+                    )
+                    config.client_keys.append(key)
+                    registry.set_ai_key_id(device.mac_address, account, key.id)
+                    is_changed = True
+                keys[account] = key
+                continue
+            if key_id is None:
+                continue
+            if key_id in by_id:
+                config.client_keys = [k for k in config.client_keys if k.id != key_id]
+                is_changed = True
+            registry.set_ai_key_id(device.mac_address, account, None)
+        if is_changed:
+            save_config(config)
+    if is_changed:
+        try:
+            CliproxyApiConfigApplier().apply()
+        except ValueError:
+            pass
+    return keys
 
 
 def _gateway_host(runtime: PanelRuntime, device_ip: str) -> str:

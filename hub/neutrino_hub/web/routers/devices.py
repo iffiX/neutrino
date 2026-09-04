@@ -9,15 +9,20 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from neutrino_hub.modules.cliproxyapi.ops import (
+    CliproxyApiConfigApplier,
+    load_config as load_cliproxyapi_config,
+    save_config as save_cliproxyapi_config,
+)
 from neutrino_hub.modules.devices.agent_package import agent_packages
 from neutrino_hub.modules.devices.constants import DEVICE_MAC_PATTERN
 from neutrino_hub.modules.devices.registry import (
     DeviceRegistry,
     ManagedDevice,
-    feature_wish,
+    function_wish,
 )
 from neutrino_hub.modules.credentials.vault import SecretVault
-from neutrino_hub.modules.features.catalog import load_catalog
+from neutrino_hub.modules.functions.manifests import load_function_manifests
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
 from neutrino_hub.modules.devices.lan_scan import LanScanner
 from neutrino_hub.modules.devices.remote_desktop import (
@@ -34,17 +39,20 @@ from neutrino_hub import HUB_VERSION
 from neutrino_hub.web.agent_tls import certificate_fingerprint
 from neutrino_hub.web.constants import WEB_DEFAULT_AGENT_LISTEN_PORT
 from neutrino_hub.web.dependencies import get_runtime, require_session
+from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.web.models import (
     DeviceAnnotation,
+    DeviceClientErrorView,
     DeviceClientInfoView,
+    DeviceCommandResultView,
     DeviceGpuView,
     DeviceListView,
     DeviceProcessView,
     DeviceEnrollmentRequest,
     DeviceEnrollmentView,
-    DeviceFeatureListView,
-    DeviceFeatureUpdate,
-    DeviceFeatureView,
+    DeviceFunctionListView,
+    DeviceFunctionUpdate,
+    DeviceFunctionView,
     DeviceProcessKill,
     DeviceSshConfig,
     DeviceView,
@@ -132,7 +140,25 @@ def _device_view(runtime: PanelRuntime, device: ManagedDevice) -> DeviceView:
         view.client.platform_os = platform.get("os") or None
         view.client.platform_arch = platform.get("arch") or None
         view.client.hostname = runtime.client_hostname.get(key) or None
+        error = runtime.client_last_error.get(key)
+        if error is not None:
+            view.client.last_error = DeviceClientErrorView(
+                code=error.get("code", ""), params=error.get("params", {})
+            )
+        view.client.command_results = [
+            DeviceCommandResultView(**outcome)
+            for outcome in sorted(
+                runtime.client_command_results.get(key, {}).values(),
+                key=_outcome_finished_at,
+                reverse=True,
+            )
+        ]
     return view
+
+
+def _outcome_finished_at(outcome: dict) -> str:
+    """When a stored command outcome arrived, for newest-first ordering."""
+    return outcome.get("finished_at", "")
 
 
 @router.put("/{mac_address}", response_model=DeviceView)
@@ -170,8 +196,10 @@ def annotate(
 def forget(mac_address: str, runtime: PanelRuntime = Depends(get_runtime)) -> dict:
     """Drop a device's stored annotations and everything held about it.
 
-    The key it referenced is left in the registry: keys outlive the devices
-    that use them, and the Credentials page is where they are removed.
+    The SSH key it referenced is left in the registry: keys outlive the
+    devices that use them, and the Credentials page is where they are
+    removed. The gateway client keys its accounts held are its alone, so
+    those are revoked with it.
 
     What is held in memory goes with the record. A command queued for a device
     that is forgotten would otherwise be delivered to whatever machine turns up
@@ -185,9 +213,33 @@ def forget(mac_address: str, runtime: PanelRuntime = Depends(get_runtime)) -> di
     Returns:
         An empty object.
     """
+    _revoke_device_ai_keys(mac_address)
     DeviceRegistry().forget(mac_address)
     runtime.forget_client_state(mac_address)
     return {}
+
+
+def _revoke_device_ai_keys(mac_address: str) -> None:
+    """Remove every gateway client key a device's accounts held.
+
+    Args:
+        mac_address: The device's MAC.
+    """
+    is_changed = False
+    with CONFIG_WRITE_LOCK:
+        held = set(DeviceRegistry().get(mac_address).client.ai_key_ids.values())
+        if held:
+            config = load_cliproxyapi_config()
+            remaining = [key for key in config.client_keys if key.id not in held]
+            if len(remaining) != len(config.client_keys):
+                config.client_keys = remaining
+                save_cliproxyapi_config(config)
+                is_changed = True
+    if is_changed:
+        try:
+            CliproxyApiConfigApplier().apply()
+        except ValueError:
+            return
 
 
 def _store_ssh_secrets(ssh: DeviceSshConfig | None) -> dict | None:
@@ -371,34 +423,34 @@ def _generate_enrollment_link(
     return f"neutrino://enroll/{payload}", token
 
 
-@router.get("/{mac_address}/features", response_model=DeviceFeatureListView)
-def list_features(
+@router.get("/{mac_address}/functions", response_model=DeviceFunctionListView)
+def list_functions(
     mac_address: str, runtime: PanelRuntime = Depends(get_runtime)
-) -> DeviceFeatureListView:
-    """Read every feature a device could run, and where each stands.
+) -> DeviceFunctionListView:
+    """Read every function a device could run, and where each stands.
 
     Args:
         mac_address: The device.
         runtime: The shared runtime, for what the agent last reported.
 
     Returns:
-        The features, unsupported ones included so the panel can say why.
+        The functions, unsupported ones included so the panel can say why.
     """
     device = DeviceRegistry().get(mac_address)
     # Lowercased, as everything else that keys by MAC is: the registry
     # normalises on the way in, and looking the runtime up by the raw path
     # segment finds nothing for a caller that used capitals.
     key = mac_address.lower()
-    reported = runtime.client_features.get(key, {})
+    reported = runtime.client_functions.get(key, {})
     platform = runtime.client_platform.get(key, {})
     keys = _platform_keys(platform)
-    features = []
-    for name, manifest in sorted(load_catalog().items()):
+    functions = []
+    for name, manifest in sorted(load_function_manifests().items()):
         status_ = reported.get(name, {})
         platforms = manifest.get("platforms", {})
-        wanted = feature_wish(device.client.features.get(name))
-        features.append(
-            DeviceFeatureView(
+        wanted = function_wish(device.client.functions.get(name))
+        functions.append(
+            DeviceFunctionView(
                 name=name,
                 title=manifest.get("title", name),
                 description=manifest.get("description", ""),
@@ -411,24 +463,27 @@ def list_features(
                 is_activated=wanted["is_activated"],
                 is_active=bool(status_.get("is_active")),
                 state=status_.get("state", "unknown"),
-                message=status_.get("message", ""),
+                code=str(status_.get("code") or ""),
+                params=dict(status_.get("params") or {}),
             )
         )
-    return DeviceFeatureListView(
-        features=features,
+    return DeviceFunctionListView(
+        functions=functions,
         is_agent_managed=device.is_managed,
         is_agent_online=device.is_agent_online,
     )
 
 
-@router.put("/{mac_address}/features/{feature}", response_model=DeviceFeatureListView)
-def set_feature(
+@router.put(
+    "/{mac_address}/functions/{function}", response_model=DeviceFunctionListView
+)
+def set_function(
     mac_address: str,
-    feature: str,
-    request: DeviceFeatureUpdate,
+    function: str,
+    request: DeviceFunctionUpdate,
     runtime: PanelRuntime = Depends(get_runtime),
-) -> DeviceFeatureListView:
-    """Change what is wanted of one feature on a device.
+) -> DeviceFunctionListView:
+    """Change what is wanted of one function on a device.
 
     Installing and activating are separate wishes and either can be sent on
     its own. The agent picks the change up on its next heartbeat and
@@ -436,27 +491,27 @@ def set_feature(
 
     Args:
         mac_address: The device.
-        feature: The feature name.
+        function: The function name.
         request: The wishes to change; absent ones are left alone.
         runtime: The shared runtime.
 
     Returns:
-        The features after the change.
+        The functions after the change.
 
     Raises:
-        HTTPException: 404 for a feature with no manifest.
+        HTTPException: 404 for a function with no manifest.
     """
-    if feature not in load_catalog():
+    if function not in load_function_manifests():
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="unknown feature"
+            status_code=status.HTTP_404_NOT_FOUND, detail="unknown function"
         )
-    DeviceRegistry().set_feature(
+    DeviceRegistry().set_function(
         mac_address,
-        feature,
+        function,
         is_enabled=request.is_enabled,
         is_activated=request.is_activated,
     )
-    return list_features(mac_address, runtime)
+    return list_functions(mac_address, runtime)
 
 
 def _require_mac(mac_address: str) -> None:

@@ -67,7 +67,7 @@ class StubDeviceRegistry:
             ManagedDevice(
                 mac_address="aa:bb:cc:dd:ee:01",
                 name="laptop",
-                client=DeviceClientInfo(ai_key_id="k1"),
+                client=DeviceClientInfo(ai_key_ids={"me": "k1"}),
             )
         ]
 
@@ -186,7 +186,7 @@ def test_usage_lands_on_keys_devices_and_providers(client):
     key = body["keys"][0]
     assert key["key_id"] == "k1"
     assert key["name"] == "laptop key"
-    assert key["device_name"] == "laptop"
+    assert key["device_name"] == "laptop/me"
     assert key["first_seen_at"].endswith("Z")
     providers = {entry["provider_id"]: entry for entry in body["providers"]}
     assert set(providers) == {provider_id}

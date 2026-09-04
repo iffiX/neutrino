@@ -492,12 +492,11 @@ def _key_view(key: CliproxyApiClientKey) -> CliproxyApiKeyView:
 
 
 def _device_names() -> dict[str, str]:
-    """Client key id to the name of the device holding it, as of now."""
+    """Client key id to the name of the device pair holding it, as of now."""
     names = {}
     for device in DeviceRegistry().all_stored():
-        key_id = device.client.ai_key_id
-        if key_id:
-            names[key_id] = device.name or device.mac_address
+        for account, key_id in device.client.ai_key_ids.items():
+            names[key_id] = f"{device.name or device.mac_address}/{account}"
     return names
 
 

@@ -28,9 +28,12 @@ from neutrino_hub.modules.podman import ops as podman_ops
 from neutrino_hub.modules.podman.config import PodmanConfig
 from neutrino_hub.modules.podman.ops import PodmanRegistriesApplier
 from neutrino_hub.modules.podman.renderer import PodmanRegistriesRenderer
+from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiServedModelCache
+from neutrino_hub.modules.devices.catalog import DeviceCatalogCache
 from neutrino_hub.modules.samba.config import SambaConfig
 from neutrino_hub.modules.samba.ops import SambaConfigApplier, SambaUserManager
 from neutrino_hub.modules.samba.renderer import SambaConfigRenderer
+from neutrino_hub.modules.services.docker import DockerContainerCache
 from neutrino_hub.modules.services.probe import DeclaredServiceProbe
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.system.listening_ports import ListeningPortReader
@@ -82,19 +85,30 @@ class PanelRuntime:
         self.stats = XrayStatsClient()
         self.node_probe = XrayNodeProbe()
         self.declared_probe = DeclaredServiceProbe()
+        self.docker_containers = DockerContainerCache()
+        self.device_catalog = DeviceCatalogCache(docker_cache=self.docker_containers)
+        self.served_models = CliproxyApiServedModelCache()
         self.is_config_dirty = False
         # Latest agent metrics, keyed by MAC. Runtime only: these are stale the
         # moment the panel restarts, so they are never written to config/.
         self.client_metrics: dict[str, dict] = {}
-        # Latest per-feature reconcile state an agent reported, keyed by MAC.
+        # Latest per-function reconcile state an agent reported, keyed by MAC.
         # Runtime only, for the same reason as the metrics.
-        self.client_features: dict[str, dict] = {}
+        self.client_functions: dict[str, dict] = {}
         # The platform tuple an agent last reported, keyed by MAC, so the panel
-        # can show only the features that platform can install.
+        # can show only the functions that platform can install.
         self.client_platform: dict[str, dict] = {}
         # The hostname each agent last reported, keyed by MAC. Runtime only,
         # like the metrics.
         self.client_hostname: dict[str, str] = {}
+        # The human accounts each agent last reported, keyed by MAC.
+        self.client_accounts: dict[str, list] = {}
+        # The most recent error each agent reported, keyed by MAC:
+        # ``{"code", "params"}``.
+        self.client_last_error: dict[str, dict] = {}
+        # The last outcome of each queued command, keyed by MAC then command
+        # id, so the drawer can show how a reboot went after the stream closed.
+        self.client_command_results: dict[str, dict] = {}
         # Enrollment tickets a machine can join with, by token. Held in memory
         # and short-lived on purpose: a join secret that survives a restart is
         # a join secret lying around, and generating another takes one click.
@@ -390,7 +404,7 @@ class PanelRuntime:
 
         Called when the device is forgotten. A queue that outlives its record
         is delivered to whatever machine appears on that MAC next, and the
-        metrics and features would otherwise be drawn beside a device that has
+        metrics and functions would otherwise be drawn beside a device that has
         only just been enrolled.
 
         Args:
@@ -400,8 +414,11 @@ class PanelRuntime:
         self._pending_commands.pop(key, None)
         self.client_metrics.pop(key, None)
         self.client_hostname.pop(key, None)
-        self.client_features.pop(key, None)
+        self.client_functions.pop(key, None)
         self.client_platform.pop(key, None)
+        self.client_accounts.pop(key, None)
+        self.client_last_error.pop(key, None)
+        self.client_command_results.pop(key, None)
 
     def take_client_commands(self, mac_address: str) -> list[dict]:
         """Drain the queued commands for one device.

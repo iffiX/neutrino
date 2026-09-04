@@ -778,6 +778,22 @@ class DeviceProcessView(BaseModel):
     memory_percent: float = 0.0
 
 
+class DeviceClientErrorView(BaseModel):
+    """The most recent error an agent reported; the pages do the wording."""
+
+    code: str
+    params: dict = Field(default_factory=dict)
+
+
+class DeviceCommandResultView(BaseModel):
+    """How one queued command went, as the agent reported it back."""
+
+    id: str
+    exit_code: int
+    output: str = ""
+    finished_at: str = ""
+
+
 class DeviceClientInfoView(BaseModel):
     """Agent state and latest metrics for one device."""
 
@@ -806,6 +822,9 @@ class DeviceClientInfoView(BaseModel):
     cpu_core_percents: list[float] = Field(default_factory=list)
     gpus: list[DeviceGpuView] = Field(default_factory=list)
     processes: list[DeviceProcessView] = Field(default_factory=list)
+    last_error: DeviceClientErrorView | None = None
+    # The last outcome of each queued command, newest first.
+    command_results: list[DeviceCommandResultView] = Field(default_factory=list)
 
 
 class DeviceView(BaseModel):
@@ -989,6 +1008,17 @@ class DeclaredServiceProbeView(BaseModel):
     detail_code: str | None = None
 
 
+class DockerContainerView(BaseModel):
+    """One container as a declared Docker engine reports it."""
+
+    id: str
+    name: str
+    image: str
+    state: str
+    is_running: bool
+    host_ports: list[int] = Field(default_factory=list)
+
+
 class DeclaredServiceView(BaseModel):
     """One user-declared service, with its cached health."""
 
@@ -1002,6 +1032,9 @@ class DeclaredServiceView(BaseModel):
     shares: list[DeclaredShareView] = []
     created_at: str
     probe: DeclaredServiceProbeView
+    # The containers a ``docker_engine`` kind runs; empty for every other
+    # kind, and while the engine cannot be asked.
+    containers: list[DockerContainerView] = Field(default_factory=list)
 
 
 class DeclaredServiceCreate(BaseModel):
@@ -1115,14 +1148,21 @@ class ClientHeartbeat(BaseModel):
     hostname: str
     client_version: str
     metrics: dict = Field(default_factory=dict)
-    # The agent's platform tuple, its held catalog hash, and what state each
-    # feature it is reconciling is in. Absent from older agents, hence defaults.
     platform: dict = Field(default_factory=dict)
+    # The machine's human accounts, the platform's own judgment; root is
+    # never listed.
+    accounts: list[str] = Field(default_factory=list)
     catalog_hash: str = ""
-    features: dict = Field(default_factory=dict)
+    # What state each function is in: name to
+    # ``{"state", "code", "params", "is_active"}``.
+    functions: dict = Field(default_factory=dict)
     # Toggles made on the machine's own page, applied by the gateway and
     # reflected back in the reply so both sides agree within one beat.
-    feature_requests: dict = Field(default_factory=dict)
+    function_requests: dict = Field(default_factory=dict)
+    # Which accounts want their AI tools pointed at the gateway.
+    ai_targets: dict[str, bool] = Field(default_factory=dict)
+    # The most recent error worth showing, as ``{"code", "params"}``.
+    last_error: dict | None = None
 
 
 class ClientCommand(BaseModel):
@@ -1141,9 +1181,13 @@ class ClientHeartbeatReply(BaseModel):
     """
 
     commands: list[ClientCommand] = Field(default_factory=list)
-    desired_features: dict = Field(default_factory=dict)
+    desired_functions: dict = Field(default_factory=dict)
+    # ``{"functions", "services"}`` under one hash.
     catalog: dict | None = None
     catalog_hash: str = ""
+    # ``{account: {"base_url", "api_key", "model"}}`` for the accounts whose
+    # AI target is on; the one per-device secret the reply carries.
+    ai_accounts: dict = Field(default_factory=dict)
     # The hub's own version, on every reply: an older agent updates itself
     # from it, so a hub restarted with a new release reaches its fleet within
     # one beat.
@@ -1193,8 +1237,8 @@ class ClientPackageRequest(BaseModel):
     family: str
 
 
-class DeviceFeatureView(BaseModel):
-    """One managed feature, as the panel shows it for a device."""
+class DeviceFunctionView(BaseModel):
+    """One managed function, as the panel shows it for a device."""
 
     name: str
     title: str
@@ -1204,31 +1248,32 @@ class DeviceFeatureView(BaseModel):
     # False for things that must not be taken off a managed machine, chiefly
     # the SSH server the hub reaches it through.
     is_removable: bool = True
-    # Whether installing and pointing at the hub are separate steps, as they
-    # are for cc-switch, which can be installed and aimed elsewhere.
+    # Whether installing and pointing at the hub are separate steps.
     has_activation: bool = False
     is_activated: bool = False
     is_active: bool = False
     state: str = "unknown"
-    message: str = ""
+    # Why the state is what it is, when the agent said; the pages word it.
+    code: str = ""
+    params: dict = Field(default_factory=dict)
 
 
-class DeviceFeatureListView(BaseModel):
-    """Every feature a device could run, with its state.
+class DeviceFunctionListView(BaseModel):
+    """Every function a device could run, with its state.
 
-    ``is_agent_online`` is what makes the list readable: every feature's state
-    comes from the agent, so with no agent answering they are all unknown, and
-    a page that cannot say why draws them as "not installed" beside a remote
-    desktop it can see running.
+    ``is_agent_online`` is what makes the list readable: every function's
+    state comes from the agent, so with no agent answering they are all
+    unknown, and a page that cannot say why draws them as "not installed"
+    beside a remote desktop it can see running.
     """
 
-    features: list[DeviceFeatureView] = Field(default_factory=list)
+    functions: list[DeviceFunctionView] = Field(default_factory=list)
     is_agent_managed: bool = False
     is_agent_online: bool = False
 
 
-class DeviceFeatureUpdate(BaseModel):
-    """Change what is wanted of one feature; absent fields are left alone."""
+class DeviceFunctionUpdate(BaseModel):
+    """Change what is wanted of one function; absent fields are left alone."""
 
     is_enabled: bool | None = None
     is_activated: bool | None = None

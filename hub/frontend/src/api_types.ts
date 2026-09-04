@@ -700,6 +700,20 @@ export interface DeviceProcessInfo {
   memory_percent: number;
 }
 
+/** The most recent error an agent reported; the pages do the wording. */
+export interface DeviceClientError {
+  code: string;
+  params: Record<string, unknown>;
+}
+
+/** How one queued command went, as the agent reported it back. */
+export interface DeviceCommandResult {
+  id: string;
+  exit_code: number;
+  output: string;
+  finished_at: string;
+}
+
 export interface DeviceClientInfo {
   /** An agent that completed its handshake and still holds a token; a
    * failed install never reads managed. */
@@ -723,10 +737,13 @@ export interface DeviceClientInfo {
   cpu_core_percents: number[];
   gpus: DeviceGpuInfo[];
   processes: DeviceProcessInfo[];
+  last_error: DeviceClientError | null;
+  /** The last outcome of each queued command, newest first. */
+  command_results: DeviceCommandResult[];
 }
 
-/** One managed feature on a device, as the panel shows it. */
-export interface DeviceFeatureView {
+/** One managed function on a device, as the panel shows it. */
+export interface DeviceFunctionView {
   name: string;
   title: string;
   description: string;
@@ -739,15 +756,17 @@ export interface DeviceFeatureView {
   is_activated: boolean;
   is_active: boolean;
   state: string;
-  message: string;
+  /** Why the state is what it is, when the agent said; the page words it. */
+  code: string;
+  params: Record<string, unknown>;
 }
 
-export interface DeviceFeaturesResponse {
-  features: DeviceFeatureView[];
+export interface DeviceFunctionsResponse {
+  functions: DeviceFunctionView[];
   /** Whether an agent install was ever asked for. Never cleared by itself. */
   is_agent_managed: boolean;
   /** Whether the agent has checked in inside the heartbeat window. Every
-   * feature state below comes from it, so this is what says whether they
+   * function state below comes from it, so this is what says whether they
    * mean anything. */
   is_agent_online: boolean;
 }
@@ -870,6 +889,16 @@ export interface DeclaredServiceProbeView {
   detail_code: string | null;
 }
 
+/** One container as a declared Docker engine reports it. */
+export interface DockerContainerView {
+  id: string;
+  name: string;
+  image: string;
+  state: string;
+  is_running: boolean;
+  host_ports: number[];
+}
+
 /** One user-declared service, with its cached health. */
 export interface DeclaredServiceView {
   id: string;
@@ -882,6 +911,9 @@ export interface DeclaredServiceView {
   shares: DeclaredShareView[];
   created_at: string;
   probe: DeclaredServiceProbeView;
+  /** The containers a `docker_engine` kind runs; empty for every other
+   * kind, and while the engine cannot be asked. */
+  containers: DockerContainerView[];
 }
 
 /** A declared service as the form submits it; also the full-record update body. */

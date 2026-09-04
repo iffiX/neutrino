@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { Icon } from "./icon";
 import type { IconName } from "./icon";
 import { DeviceEnrollmentNotice } from "./device_enrollment_notice";
-import { DeviceFeatures } from "./device_features";
+import { DeviceFunctions } from "./device_functions";
 import { FileTransferModal } from "./file_transfer_modal";
 import { PasswordInput } from "./password_input";
 import { StatusDot } from "./status_dot";
@@ -97,6 +97,16 @@ const UNKNOWN_CREDENTIAL_WORDING: Record<string, string> = {
   password_id: "The chosen login is no longer stored; pick another.",
   sudo_password_id: "The chosen sudo login is no longer stored; pick another.",
 };
+
+// The agent's last_error {code, params}, worded. A code without an entry
+// shows as itself, because a failure hidden entirely is worse than a bare
+// code.
+const AGENT_ERROR_WORDING: Record<string, string> = {
+  unsupported_platform: "The agent asked for something its platform cannot do.",
+  update_failed: "The agent could not update itself.",
+};
+
+const COMMAND_RESULTS_LABEL = "Agent command results";
 
 interface DeviceAction {
   action: DeviceActionName;
@@ -453,6 +463,15 @@ export function DeviceDrawer({
                 </span>
               )}
             </div>
+            {device.client?.last_error != null && (
+              <div className="notice notice--warn">
+                <Icon name="alert" size={15} />
+                <div className="notice_body">
+                  {AGENT_ERROR_WORDING[device.client.last_error.code] ??
+                    device.client.last_error.code}
+                </div>
+              </div>
+            )}
           </div>
 
           {error !== null && (
@@ -801,7 +820,7 @@ export function DeviceDrawer({
           </div>
 
           {device.client !== null && device.client.is_managed && (
-            <DeviceFeatures macAddress={device.mac_address} />
+            <DeviceFunctions macAddress={device.mac_address} />
           )}
 
           {device.client !== null &&
@@ -841,6 +860,27 @@ export function DeviceDrawer({
               )}
             </div>
           )}
+
+          {device.client != null &&
+            device.client.command_results.length > 0 && (
+              <div className="device_drawer_log">
+                <div className="device_drawer_log_head">
+                  <span className="section_label">{COMMAND_RESULTS_LABEL}</span>
+                </div>
+                {device.client.command_results.map((outcome) => (
+                  <div key={outcome.id} className="device_drawer_log_head">
+                    <StatusDot
+                      tone={outcome.exit_code === 0 ? "ok" : "error"}
+                      isPulsing={false}
+                      label={`${outcome.id} · exit ${outcome.exit_code} · ${formatTimeAgo(outcome.finished_at)}`}
+                    />
+                    {outcome.output.length > 0 && (
+                      <span className="muted">{stripAnsi(outcome.output)}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
         </div>
 
         {notice !== null && (

@@ -1,4 +1,4 @@
-"""What the Modules block on a device is told, and what it can act on.
+"""What the Functions block on a device is told, and what it can act on.
 
 The bug these came from: a device showed AnyDesk and ToDesk running in the
 remote-desktop block and "not installed, waiting for the agent" in the module
@@ -37,19 +37,23 @@ class FakeRegistry:
 
 class FakeRuntime:
     def __init__(self):
-        self.client_features = {}
+        self.client_functions = {}
         self.client_platform = {}
         self.client_hostname = {}
         self.client_metrics = {}
+        self.client_last_error = {}
+        self.client_command_results = {}
         self.pending = {}
         self.enrollments = {}
 
     def forget_client_state(self, mac_address: str) -> None:
         key = mac_address.lower()
         for held in (
-            self.client_features,
+            self.client_functions,
             self.client_platform,
             self.client_metrics,
+            self.client_last_error,
+            self.client_command_results,
             self.pending,
         ):
             held.pop(key, None)
@@ -73,7 +77,7 @@ def api(monkeypatch):
     monkeypatch.setattr(devices_router, "certificate_fingerprint", lambda: FINGERPRINT)
     monkeypatch.setattr(
         devices_router,
-        "load_catalog",
+        "load_function_manifests",
         lambda: {"anydesk": {"title": "AnyDesk", "platforms": {"debian": {}}}},
     )
     app = FastAPI()
@@ -88,7 +92,7 @@ def api(monkeypatch):
 def test_an_agent_that_has_never_beaten_is_not_online(api):
     client, _ = api
 
-    answer = client.get(f"/api/devices/{MAC}/features").json()
+    answer = client.get(f"/api/devices/{MAC}/functions").json()
 
     assert answer["is_agent_managed"]
     assert not answer["is_agent_online"]
@@ -98,7 +102,7 @@ def test_an_agent_that_beat_just_now_is_online(api):
     client, _ = api
     FakeRegistry.device.client.last_seen = beating(2)
 
-    answer = client.get(f"/api/devices/{MAC}/features").json()
+    answer = client.get(f"/api/devices/{MAC}/functions").json()
 
     assert answer["is_agent_online"]
 
@@ -110,7 +114,7 @@ def test_an_agent_that_stopped_beating_is_not_online(api):
     client, _ = api
     FakeRegistry.device.client.last_seen = beating(3600)
 
-    answer = client.get(f"/api/devices/{MAC}/features").json()
+    answer = client.get(f"/api/devices/{MAC}/functions").json()
 
     assert answer["is_agent_managed"]
     assert not answer["is_agent_online"]
@@ -122,14 +126,14 @@ def test_what_the_agent_reported_is_found_whatever_case_the_MAC_is_asked_in(api)
     waiting for an agent that is in fact answering."""
     client, runtime = api
     FakeRegistry.device.client.last_seen = beating(2)
-    runtime.client_features[MAC] = {
+    runtime.client_functions[MAC] = {
         "anydesk": {"state": "installed", "is_active": True}
     }
 
-    answer = client.get(f"/api/devices/{MAC.upper()}/features").json()
+    answer = client.get(f"/api/devices/{MAC.upper()}/functions").json()
 
-    assert answer["features"][0]["state"] == "installed"
-    assert answer["features"][0]["is_active"]
+    assert answer["functions"][0]["state"] == "installed"
+    assert answer["functions"][0]["is_active"]
 
 
 def test_forgetting_a_device_drops_what_was_queued_for_it(api, monkeypatch):
@@ -139,12 +143,12 @@ def test_forgetting_a_device_drops_what_was_queued_for_it(api, monkeypatch):
     client, runtime = api
     monkeypatch.setattr(FakeRegistry, "forget", lambda self, mac: None, raising=False)
     runtime.pending[MAC] = ["shutdown"]
-    runtime.client_features[MAC] = {"anydesk": {"state": "installed"}}
+    runtime.client_functions[MAC] = {"anydesk": {"state": "installed"}}
 
     assert client.delete(f"/api/devices/{MAC}").status_code == 200
 
     assert runtime.pending == {}
-    assert runtime.client_features == {}
+    assert runtime.client_functions == {}
 
 
 @pytest.mark.parametrize(
@@ -256,3 +260,35 @@ def test_a_lapsed_ticket_is_swept_when_the_next_one_is_generated(api, monkeypatc
     assert response.status_code == 200
     assert "stale" not in runtime.enrollments
     assert len(runtime.enrollments) == 1
+
+
+def test_forgetting_a_device_revokes_its_account_keys(api, monkeypatch, tmp_path):
+    """The cascade: every (device, account) gateway key dies with the record,
+    so a forgotten machine cannot keep spending against the gateway."""
+    from neutrino_hub.modules.cliproxyapi import ops as cliproxyapi_ops
+    from neutrino_hub.modules.cliproxyapi.config import CliproxyApiClientKey
+    from neutrino_hub.modules.cliproxyapi.ops import (
+        CliproxyApiConfigApplier,
+        load_config,
+        save_config,
+    )
+    from tests.conftest import unlock_vault
+
+    client, _ = api
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    unlock_vault(monkeypatch, tmp_path)
+    monkeypatch.setattr(cliproxyapi_ops, "UTILS_GENERATED_DIR", tmp_path / "generated")
+    monkeypatch.setattr(
+        CliproxyApiConfigApplier, "is_installed", property(lambda self: False)
+    )
+    monkeypatch.setattr(FakeRegistry, "forget", lambda self, mac: None, raising=False)
+    mine = CliproxyApiClientKey.generated("testbox/alice")
+    theirs = CliproxyApiClientKey.generated("other/bob")
+    config = load_config()
+    config.client_keys = [mine, theirs]
+    save_config(config)
+    FakeRegistry.device.client.ai_key_ids = {"alice": mine.id}
+
+    assert client.delete(f"/api/devices/{MAC}").status_code == 200
+
+    assert [key.id for key in load_config().client_keys] == [theirs.id]

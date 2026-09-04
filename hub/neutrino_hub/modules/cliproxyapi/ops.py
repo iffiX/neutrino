@@ -7,6 +7,7 @@ running service.
 import hashlib
 import os
 import tempfile
+import time
 from pathlib import Path
 
 import httpx
@@ -23,6 +24,7 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_BINARY_PATH,
     CLIPROXYAPI_GENERATED_NAME,
     CLIPROXYAPI_SERVED_FINGERPRINT_RELATIVE,
+    CLIPROXYAPI_SERVED_MODELS_TTL_S,
     CLIPROXYAPI_UNIT,
 )
 from neutrino_hub.modules.cliproxyapi.management_key import (
@@ -271,3 +273,38 @@ class CliproxyApiConfigApplier:
             management_key=management_key,
         ).render()
         return rendered, sum(1 for key in api_keys.values() if key)
+
+
+class CliproxyApiServedModelCache:
+    """The gateway's served model names, probed and kept for a short while.
+
+    Heartbeats answer with the first served name, and a fleet beats every few
+    seconds; the cache keeps that from asking the gateway on every beat.
+    """
+
+    def __init__(self):
+        self._models: list[str] = []
+        # None, not zero: `time.monotonic()` counts from boot on Linux, and a
+        # panel started early in one would read the cache as fresh.
+        self._probed_at: float | None = None
+
+    def first_model(self, *, port: int, client_key: str) -> str:
+        """The first model the gateway serves, re-probed only when stale.
+
+        Args:
+            port: Where the gateway listens.
+            client_key: A key to authenticate the probe with.
+
+        Returns:
+            The first served model name, or empty when none is served or the
+            gateway does not answer.
+        """
+        if (
+            self._probed_at is None
+            or time.monotonic() - self._probed_at > CLIPROXYAPI_SERVED_MODELS_TTL_S
+        ):
+            _, _, self._models = CliproxyApiConfigApplier().probe(
+                port=port, client_key=client_key
+            )
+            self._probed_at = time.monotonic()
+        return self._models[0] if self._models else ""

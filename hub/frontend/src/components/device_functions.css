@@ -1,10 +1,10 @@
-.device_features {
+.device_functions {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
 }
 
-.device_feature {
+.device_function {
   display: flex;
   gap: var(--space-3);
   align-items: center;
@@ -14,19 +14,19 @@
   background: var(--color-bg);
 }
 
-.device_feature_body {
+.device_function_body {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-width: 0;
 }
 
-.device_feature_title {
+.device_function_title {
   font-size: 13px;
   font-weight: 600;
 }
 
-.device_feature_note {
+.device_function_note {
   overflow: hidden;
   color: var(--color-text-faint);
   font-size: 11px;
