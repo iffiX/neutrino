@@ -1,0 +1,149 @@
+.ai_copy_row {
+  display: grid;
+  grid-template-columns: 120px 1fr auto;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.ai_copy_label {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.ai_copy_value {
+  overflow: hidden;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai_keys {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ai_key_row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.ai_key_name {
+  flex: none;
+  min-width: 110px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ai_key_value {
+  flex: 1;
+  min-width: 140px;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai_key_meta {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-end;
+  white-space: nowrap;
+}
+
+.ai_key_used {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.ai_key_device {
+  color: var(--color-text-faint);
+  font-size: 11px;
+}
+
+.ai_key_actions {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+}
+
+.ai_key_action {
+  display: inline-flex;
+  padding: 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.ai_key_action:hover:not(:disabled) {
+  background: var(--color-accent-wash);
+  color: var(--color-accent);
+}
+
+.ai_key_action--danger:hover:not(:disabled) {
+  background: rgb(255 66 82 / 12%);
+  color: var(--color-error);
+}
+
+/* The key as it is generated: spelled out, at the top, until it is copied. */
+.ai_key_fresh {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-wash);
+}
+
+.ai_key_fresh_head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ai_key_fresh_value {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.ai_key_fresh_foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ai_key_add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.ai_key_add .input {
+  max-width: 320px;
+}

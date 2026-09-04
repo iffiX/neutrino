@@ -48,11 +48,6 @@
   align-items: center;
 }
 
-.ai_service_hint {
-  color: var(--color-text-faint);
-  font-size: 12px;
-}
-
 .ai_service_chips {
   display: flex;
   flex-wrap: wrap;
@@ -83,82 +78,9 @@
   color: var(--color-accent);
 }
 
-.ai_copy_row {
-  display: grid;
-  grid-template-columns: 120px 1fr auto;
-  gap: var(--space-3);
-  align-items: center;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
-}
-
-.ai_copy_label {
-  color: var(--color-text-muted);
-  font-size: 12px;
-}
-
-.ai_copy_value {
-  overflow: hidden;
-  color: var(--color-text);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ai_keys {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.ai_key_row {
-  display: flex;
-  gap: var(--space-3);
-  align-items: center;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
-}
-
-.ai_key_name {
-  flex: none;
-  min-width: 110px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.ai_key_value {
-  flex: 1;
-  overflow: hidden;
-  color: var(--color-text-muted);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ai_key_add {
-  display: flex;
-  gap: var(--space-3);
-}
-
-.ai_key_add .input {
-  max-width: 320px;
-}
-
 .ai_chip_count {
   margin-left: 6px;
   color: var(--color-text-faint);
-}
-
-.ai_order_buttons {
-  display: inline-flex;
-  gap: 4px;
-  margin-left: auto;
 }
 
 /* --- The provider and key activity tables --- */

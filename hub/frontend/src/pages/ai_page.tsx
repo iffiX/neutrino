@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { copyText } from "../copy_text";
 
+import { AiAccessPanel } from "../components/ai_access_panel";
 import { AiJournalPanel } from "../components/ai_journal_panel";
 import { AiProvidersSection } from "../components/ai_providers_section";
 import { AiUsageKeys } from "../components/ai_usage_keys";
@@ -9,15 +9,10 @@ import { ApplyBar } from "../components/apply_bar";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { StatusDot } from "../components/status_dot";
-import { apiDelete, apiPost, apiPut, describeError } from "../api_client";
+import { apiPut, describeError } from "../api_client";
 import { formatCompact } from "../format_compact";
 import { usePolledResource } from "../use_polled_resource";
-import { useConfirm } from "../use_confirm";
-import type {
-  AiUsageResponse,
-  CliproxyApiKeyView,
-  CliproxyApiStatusView,
-} from "../api_types";
+import type { AiUsageResponse, CliproxyApiStatusView } from "../api_types";
 
 import "./ai_page.css";
 
@@ -66,16 +61,12 @@ const WORDING = {
   portApplyWarning:
     "Every machine pointed at the old port stops reaching the gateway until its endpoint is changed too.",
   portRangeHint: (low: number, high: number) => `A port is ${low} to ${high}.`,
-
-  revealKey: "Reveal",
-  hideKey: "Hide",
 } as const;
 
 const PORT_MIN = 1;
 const PORT_MAX = 65535;
 const STATUS_PATH = "/cliproxyapi";
 const USAGE_PATH = "/cliproxyapi/usage?range=month";
-const MASKED_KEY = "•".repeat(24);
 
 /** Which half of the usage area the chips are showing. */
 type UsageView = "providers" | "keys";
@@ -83,9 +74,7 @@ type UsageView = "providers" | "keys";
 export function AiPage() {
   const status = usePolledResource<CliproxyApiStatusView>(STATUS_PATH);
   const view = status.data;
-  const confirm = useConfirm();
-  const [error, setError] = useState<string | null>(null);
-  const [keyName, setKeyName] = useState("");
+  const [portError, setPortError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [port, setPort] = useState<number | null>(null);
   const [isJournalOpen, setIsJournalOpen] = useState(false);
@@ -136,53 +125,20 @@ export function AiPage() {
   const hasToday =
     view.requests_today !== undefined || view.tokens_today !== undefined;
 
-  const run = async (work: () => Promise<void>) => {
+  const handleApplyPort = async () => {
     setIsBusy(true);
-    setError(null);
+    setPortError(null);
     try {
-      await work();
-    } catch (cause: unknown) {
-      setError(describeError(cause));
-    } finally {
-      setIsBusy(false);
-    }
-  };
-
-  const handleApplyPort = () => {
-    void run(async () => {
       status.setData(
         await apiPut<CliproxyApiStatusView>(STATUS_PATH, {
           listen_port: port,
         }),
       );
-    });
-  };
-
-  const handleMintKey = () => {
-    void run(async () => {
-      status.setData(
-        await apiPost<CliproxyApiStatusView>("/cliproxyapi/keys", {
-          name: keyName.trim() || "device",
-        }),
-      );
-      setKeyName("");
-    });
-  };
-
-  const handleDeleteKey = (keyId: string, name: string) =>
-    confirm.ask({
-      title: `Revoke ${name}`,
-      body: "Whatever is using this key stops working at once.",
-      confirmLabel: "Revoke",
-      onConfirm: () => void deleteKey(keyId),
-    });
-
-  const deleteKey = (keyId: string) => {
-    void run(async () => {
-      status.setData(
-        await apiDelete<CliproxyApiStatusView>(`/cliproxyapi/keys/${keyId}`),
-      );
-    });
+    } catch (cause: unknown) {
+      setPortError(describeError(cause));
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   return (
@@ -195,13 +151,6 @@ export function AiPage() {
           <p className="page_subtitle">{WORDING.subtitle}</p>
         </div>
       </header>
-
-      {error !== null && (
-        <div className="notice notice--error">
-          <Icon name="alert" size={15} />
-          <div className="notice_body">{error}</div>
-        </div>
-      )}
 
       <section className="card">
         <div className="card_header">
@@ -315,48 +264,12 @@ export function AiPage() {
         onApplied={status.reload}
       />
 
-      <section className="settings_group">
-        <div className="settings_group_title">
-          <h2>Connect a machine</h2>
-        </div>
-        <p className="field_hint">
-          Point a tool at the endpoint with one of these keys as its API key —
-          Claude Code, Codex and Gemini CLI all speak to the same address.
-        </p>
-        <CopyRow label="Endpoint" value={endpoint} />
-        <div className="ai_keys">
-          {view.client_keys.map((key) => (
-            <KeyRow
-              key={key.id}
-              value={key}
-              isBusy={isBusy}
-              onDelete={() => handleDeleteKey(key.id, key.name)}
-            />
-          ))}
-        </div>
-        <div className="ai_key_add">
-          <input
-            className="input"
-            placeholder="key name, e.g. laptop"
-            value={keyName}
-            onChange={(event) => setKeyName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                handleMintKey();
-              }
-            }}
-          />
-          <button
-            type="button"
-            className="button"
-            disabled={isBusy}
-            onClick={handleMintKey}
-          >
-            <Icon name="plus" size={14} />
-            Mint key
-          </button>
-        </div>
-      </section>
+      <AiAccessPanel
+        endpoint={endpoint}
+        keys={view.client_keys}
+        usageKeys={usage.data?.keys ?? []}
+        onChanged={status.setData}
+      />
 
       <section
         className={`settings_group ${isPortDirty ? "settings_group--dirty" : ""}`}
@@ -391,89 +304,11 @@ export function AiPage() {
               : WORDING.portRangeHint(PORT_MIN, PORT_MAX)
           }
           warning={WORDING.portApplyWarning}
+          error={portError}
           onReset={() => setPort(view.listen_port)}
-          onApply={handleApplyPort}
+          onApply={() => void handleApplyPort()}
         />
       </section>
-      {confirm.modal}
-    </div>
-  );
-}
-
-interface KeyRowProps {
-  value: CliproxyApiKeyView;
-  isBusy: boolean;
-  onDelete: () => void;
-}
-
-function KeyRow({ value, isBusy, onDelete }: KeyRowProps) {
-  const [isRevealed, setIsRevealed] = useState(false);
-
-  return (
-    <div className="ai_key_row">
-      <span className="ai_key_name">{value.name}</span>
-      <span className="ai_key_value">
-        {isRevealed ? value.key : MASKED_KEY}
-      </span>
-      <button
-        type="button"
-        className="file_modal_action"
-        title={isRevealed ? WORDING.hideKey : WORDING.revealKey}
-        onClick={() => setIsRevealed((current) => !current)}
-      >
-        <Icon name={isRevealed ? "eye_off" : "eye"} size={13} />
-      </button>
-      <button
-        type="button"
-        className="file_modal_action"
-        title="Copy"
-        onClick={() => void copyText(value.key)}
-      >
-        <Icon name="file" size={13} />
-      </button>
-      <button
-        type="button"
-        className="file_modal_action file_modal_action--danger"
-        title="Revoke"
-        disabled={isBusy}
-        onClick={onDelete}
-      >
-        <Icon name="trash" size={13} />
-      </button>
-    </div>
-  );
-}
-
-interface CopyRowProps {
-  label: string;
-  value: string;
-}
-
-function CopyRow({ label, value }: CopyRowProps) {
-  const [isCopied, setIsCopied] = useState(false);
-
-  const handleCopy = async () => {
-    try {
-      await copyText(value);
-      setIsCopied(true);
-      window.setTimeout(() => setIsCopied(false), 1600);
-    } catch {
-      // The value is visible; copying by hand still works.
-    }
-  };
-
-  return (
-    <div className="ai_copy_row">
-      <span className="ai_copy_label">{label}</span>
-      <span className="ai_copy_value">{value}</span>
-      <button
-        type="button"
-        className="button button--small"
-        onClick={() => void handleCopy()}
-      >
-        <Icon name={isCopied ? "check" : "file"} size={13} />
-        {isCopied ? "Copied" : "Copy"}
-      </button>
     </div>
   );
 }
