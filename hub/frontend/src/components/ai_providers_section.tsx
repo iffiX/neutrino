@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 
 import { ApplyBar } from "./apply_bar";
 import { ErrorPanel } from "./error_panel";
@@ -6,7 +7,6 @@ import { Icon } from "./icon";
 import { PasswordInput } from "./password_input";
 import { ToggleSwitch } from "./toggle_switch";
 import { apiDelete, apiPost, apiPut, describeError } from "../api_client";
-import { formatTimeAgo } from "../format_duration";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
 import type {
@@ -25,10 +25,10 @@ import "./ai_providers_section.css";
  * which order it tries them.
  *
  * The order and the enabled flags are a draft this panel stages and its apply
- * bar commits, because reordering is several presses and each one would
- * otherwise restart the gateway. The records themselves — adding, editing and
- * deleting a provider — write where they are entered, the way every other
- * record list in the panel does.
+ * bar commits, because a drag is a rearrangement of the whole list and
+ * committing each step of it would restart the gateway. The records
+ * themselves — adding, editing and deleting a provider — write where they are
+ * entered, the way every other record list in the panel does.
  */
 
 const WORDING = {
@@ -37,16 +37,13 @@ const WORDING = {
   addProvider: "Add provider",
   newProvider: "New provider",
   editProvider: (name: string) => `Edit ${name}`,
-  serveEarlier: "Serve earlier",
-  serveLater: "Serve later",
-  position: (index: number) => `Position ${index}`,
+  reorder: "Drag to reorder",
   serving: "Serving",
   notServing: "Not serving",
   needsToken: "Needs a token before it can serve",
   defaultEndpoint: "default endpoint",
   noToken: "no key",
   keyed: "keyed",
-  added: (ago: string) => `added ${ago}`,
   edit: "Edit",
   delete: "Delete",
   deleteTitle: (name: string) => `Delete ${name}`,
@@ -118,6 +115,22 @@ const PROVIDER_KIND_LABELS: Record<AiProviderKind, string> = {
   custom: "OpenAI-compatible — /chat/completions",
 };
 
+/** One drag in flight, measured from the list as it stood when it started. */
+interface ProviderDragState {
+  providerId: string;
+  pointerId: number;
+  fromIndex: number;
+  toIndex: number;
+  startY: number;
+  deltaY: number;
+  /** How far a passed-over row travels: the dragged row plus the list gap. */
+  stepY: number;
+  /** Every row's centre before the drag, in viewport coordinates. */
+  centersY: number[];
+  minDeltaY: number;
+  maxDeltaY: number;
+}
+
 interface AiProvidersSectionProps {
   /** The gateway is running an older set of providers than the stored ones. */
   isServingStale: boolean;
@@ -137,6 +150,8 @@ export function AiProvidersSection({
   const [isBusy, setIsBusy] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
   const [applyNotice, setApplyNotice] = useState<string | null>(null);
+  const [drag, setDrag] = useState<ProviderDragState | null>(null);
+  const rowNodes = useRef(new Map<string, HTMLDivElement>());
 
   useEffect(() => {
     if (resource.data !== null) {
@@ -154,6 +169,10 @@ export function AiProvidersSection({
     draft.map((provider) => provider.id).join("\n") !==
     saved.map((provider) => provider.id).join("\n");
   const hasDrafts = isOrderDirty || changedProviders.length > 0;
+
+  // A row under the edit form is not a row to drag, and one provider has
+  // nowhere to go.
+  const isReorderable = draft.length > 1 && editingId === null;
 
   const handleSaved = (savedProvider: AiProviderView) => {
     const fold = (list: AiProviderView[]) =>
@@ -173,23 +192,7 @@ export function AiProvidersSection({
       list.filter((provider) => provider.id !== providerId);
     setSaved(drop);
     setDraft(drop);
-  };
-
-  const handleMove = (providerId: string, offset: number) => {
-    setDraft((current) => {
-      const index = current.findIndex((provider) => provider.id === providerId);
-      const target = index + offset;
-      if (index < 0 || target < 0 || target >= current.length) {
-        return current;
-      }
-      const reordered = [...current];
-      const [moved] = reordered.splice(index, 1);
-      if (moved === undefined) {
-        return current;
-      }
-      reordered.splice(target, 0, moved);
-      return reordered;
-    });
+    setDrag(null);
   };
 
   const handleToggle = (providerId: string, isEnabled: boolean) => {
@@ -200,6 +203,76 @@ export function AiProvidersSection({
           : provider,
       ),
     );
+  };
+
+  const handleGripDown = (
+    providerId: string,
+    event: ReactPointerEvent<HTMLSpanElement>,
+  ) => {
+    const fromIndex = draft.findIndex((provider) => provider.id === providerId);
+    if (!isReorderable || fromIndex < 0 || drag !== null) {
+      return;
+    }
+    const rects: DOMRect[] = [];
+    for (const provider of draft) {
+      const node = rowNodes.current.get(provider.id);
+      if (node === undefined) {
+        return;
+      }
+      rects.push(node.getBoundingClientRect());
+    }
+    const first = rects[0];
+    const last = rects[rects.length - 1];
+    const dragged = rects[fromIndex];
+    if (first === undefined || last === undefined || dragged === undefined) {
+      return;
+    }
+    const second = rects[1];
+    const gap = second === undefined ? 0 : second.top - first.bottom;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDrag({
+      providerId,
+      pointerId: event.pointerId,
+      fromIndex,
+      toIndex: fromIndex,
+      startY: event.clientY,
+      deltaY: 0,
+      stepY: dragged.height + gap,
+      centersY: rects.map((rect) => rect.top + rect.height / 2),
+      minDeltaY: first.top - dragged.top,
+      maxDeltaY: last.bottom - dragged.bottom,
+    });
+  };
+
+  const handleGripMove = (event: ReactPointerEvent<HTMLSpanElement>) => {
+    if (drag === null || event.pointerId !== drag.pointerId) {
+      return;
+    }
+    const deltaY = Math.min(
+      Math.max(event.clientY - drag.startY, drag.minDeltaY),
+      drag.maxDeltaY,
+    );
+    const centerY = (drag.centersY[drag.fromIndex] ?? 0) + deltaY;
+    setDrag({ ...drag, deltaY, toIndex: nearestIndex(drag.centersY, centerY) });
+  };
+
+  const handleGripUp = (event: ReactPointerEvent<HTMLSpanElement>) => {
+    if (drag === null || event.pointerId !== drag.pointerId) {
+      return;
+    }
+    if (drag.toIndex !== drag.fromIndex) {
+      setDraft((current) =>
+        moveProvider(current, drag.fromIndex, drag.toIndex),
+      );
+    }
+    setDrag(null);
+  };
+
+  const handleGripCancel = (event: ReactPointerEvent<HTMLSpanElement>) => {
+    if (drag !== null && event.pointerId === drag.pointerId) {
+      setDrag(null);
+    }
   };
 
   const handleApply = async () => {
@@ -230,6 +303,7 @@ export function AiProvidersSection({
 
   const handleReset = () => {
     setDraft(saved);
+    setDrag(null);
     setApplyError(null);
     setApplyNotice(null);
   };
@@ -281,14 +355,19 @@ export function AiProvidersSection({
                 onCancel={() => setEditingId(null)}
               />
             ) : (
-              <ProviderCard
+              <ProviderRow
                 key={provider.id}
                 value={provider}
-                position={index + 1}
-                isFirst={index === 0}
-                isLast={index === draft.length - 1}
-                onMoveUp={() => handleMove(provider.id, -1)}
-                onMoveDown={() => handleMove(provider.id, 1)}
+                rowRef={(node) => {
+                  registerRow(rowNodes.current, provider.id, node);
+                }}
+                isReorderable={isReorderable}
+                isDragging={drag?.providerId === provider.id}
+                shiftY={rowShiftY(drag, index)}
+                onGripDown={(event) => handleGripDown(provider.id, event)}
+                onGripMove={handleGripMove}
+                onGripUp={handleGripUp}
+                onGripCancel={handleGripCancel}
                 onToggle={(isEnabled) => handleToggle(provider.id, isEnabled)}
                 onEdit={() => setEditingId(provider.id)}
                 onDeleted={handleDeleted}
@@ -488,34 +567,43 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
   );
 }
 
-interface ProviderCardProps {
+interface ProviderRowProps {
   value: AiProviderView;
-  position: number;
-  isFirst: boolean;
-  isLast: boolean;
-  onMoveUp: () => void;
-  onMoveDown: () => void;
+  rowRef: (node: HTMLDivElement | null) => void;
+  isReorderable: boolean;
+  isDragging: boolean;
+  shiftY: number;
+  onGripDown: (event: ReactPointerEvent<HTMLSpanElement>) => void;
+  onGripMove: (event: ReactPointerEvent<HTMLSpanElement>) => void;
+  onGripUp: (event: ReactPointerEvent<HTMLSpanElement>) => void;
+  onGripCancel: (event: ReactPointerEvent<HTMLSpanElement>) => void;
   onToggle: (isEnabled: boolean) => void;
   onEdit: () => void;
   onDeleted: (providerId: string) => void;
 }
 
-function ProviderCard({
+function ProviderRow({
   value,
-  position,
-  isFirst,
-  isLast,
-  onMoveUp,
-  onMoveDown,
+  rowRef,
+  isReorderable,
+  isDragging,
+  shiftY,
+  onGripDown,
+  onGripMove,
+  onGripUp,
+  onGripCancel,
   onToggle,
   onEdit,
   onDeleted,
-}: ProviderCardProps) {
+}: ProviderRowProps) {
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const confirm = useConfirm();
 
   const hasToken = value.secret_id !== null;
+  const endpoint =
+    value.base_url.length > 0 ? value.base_url : WORDING.defaultEndpoint;
+  const servingLabel = value.is_enabled ? WORDING.serving : WORDING.notServing;
 
   const handleDelete = () =>
     confirm.ask({
@@ -538,68 +626,49 @@ function ProviderCard({
   };
 
   return (
-    <div className="key_card ai_provider_card">
-      <div className="ai_provider_rank">
-        <button
-          type="button"
-          className="ai_rank_button"
-          title={WORDING.serveEarlier}
-          aria-label={WORDING.serveEarlier}
-          disabled={isFirst}
-          onClick={onMoveUp}
+    <div
+      ref={rowRef}
+      className={`ai_provider_row ${isDragging ? "ai_provider_row--dragging" : ""}`}
+      style={
+        shiftY === 0 ? undefined : { transform: `translateY(${shiftY}px)` }
+      }
+    >
+      <div className="ai_provider_line">
+        <span
+          className={`ai_provider_grip ${isReorderable ? "" : "ai_provider_grip--idle"}`}
+          title={isReorderable ? WORDING.reorder : undefined}
+          onPointerDown={isReorderable ? onGripDown : undefined}
+          onPointerMove={onGripMove}
+          onPointerUp={onGripUp}
+          onPointerCancel={onGripCancel}
         >
-          <Icon name="arrow_up" size={14} />
-        </button>
-        <span className="ai_rank_index mono" title={WORDING.position(position)}>
-          {position}
+          <GripGlyph />
         </span>
-        <button
-          type="button"
-          className="ai_rank_button"
-          title={WORDING.serveLater}
-          aria-label={WORDING.serveLater}
-          disabled={isLast}
-          onClick={onMoveDown}
+
+        <span className="ai_provider_name">{value.name}</span>
+        <span className="key_card_type">{value.kind}</span>
+        <span
+          className={`key_card_tag ${hasToken ? "key_card_tag--used" : ""}`}
         >
-          <Icon name="arrow_down" size={14} />
-        </button>
-      </div>
+          <Icon name="lock" size={11} />
+          {hasToken ? WORDING.keyed : WORDING.noToken}
+        </span>
+        <span className="ai_provider_url mono" title={endpoint}>
+          {endpoint}
+        </span>
 
-      <div className="ai_provider_body">
-        <div className="key_card_head">
-          <span className="credentials_provider_name">{value.name}</span>
-          <span className="key_card_type">{value.kind}</span>
-        </div>
-
-        <div className="key_card_fingerprint">
-          {value.base_url.length > 0 ? value.base_url : WORDING.defaultEndpoint}
-        </div>
-
-        <ToggleSwitch
-          isOn={value.is_enabled}
-          isDisabled={!hasToken}
-          label={value.is_enabled ? WORDING.serving : WORDING.notServing}
-          description={hasToken ? undefined : WORDING.needsToken}
-          onChange={onToggle}
-        />
-
-        <div className="key_card_meta">
+        <div className="ai_provider_actions">
           <span
-            className={`key_card_tag ${hasToken ? "key_card_tag--used" : ""}`}
+            className="ai_provider_toggle"
+            title={hasToken ? servingLabel : WORDING.needsToken}
           >
-            <Icon name="lock" size={11} />
-            {hasToken ? WORDING.keyed : WORDING.noToken}
+            <ToggleSwitch
+              isOn={value.is_enabled}
+              isDisabled={!hasToken}
+              label={servingLabel}
+              onChange={onToggle}
+            />
           </span>
-          {value.created_at.length > 0 && (
-            <span className="key_card_added">
-              {WORDING.added(formatTimeAgo(value.created_at))}
-            </span>
-          )}
-        </div>
-
-        {error !== null && <span className="field_error">{error}</span>}
-
-        <div className="key_card_actions">
           <button
             type="button"
             className="button button--ghost button--small"
@@ -620,9 +689,105 @@ function ProviderCard({
           </button>
         </div>
       </div>
+
+      {error !== null && <span className="field_error">{error}</span>}
       {confirm.modal}
     </div>
   );
+}
+
+/** Six dots: the grip a pointer presses to carry a row up or down the list. */
+function GripGlyph() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={14}
+      height={14}
+      fill="currentColor"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <circle cx="9" cy="5" r="1.7" />
+      <circle cx="15" cy="5" r="1.7" />
+      <circle cx="9" cy="12" r="1.7" />
+      <circle cx="15" cy="12" r="1.7" />
+      <circle cx="9" cy="19" r="1.7" />
+      <circle cx="15" cy="19" r="1.7" />
+    </svg>
+  );
+}
+
+function registerRow(
+  nodes: Map<string, HTMLDivElement>,
+  providerId: string,
+  node: HTMLDivElement | null,
+): void {
+  if (node === null) {
+    nodes.delete(providerId);
+  } else {
+    nodes.set(providerId, node);
+  }
+}
+
+/**
+ * The slot the dragged row has reached: the one whose centre it is nearest,
+ * so a row trades places once it is more than half way over its neighbour.
+ */
+function nearestIndex(centersY: number[], centerY: number): number {
+  let nearest = 0;
+  let shortest = Number.POSITIVE_INFINITY;
+  centersY.forEach((slotCenterY, index) => {
+    const distance = Math.abs(centerY - slotCenterY);
+    if (distance < shortest) {
+      shortest = distance;
+      nearest = index;
+    }
+  });
+  return nearest;
+}
+
+/**
+ * Where one row sits while a drag is in flight.
+ *
+ * The dragged row follows the pointer; every row it has passed over travels
+ * one step the other way, which is what opens the slot it will land in.
+ */
+function rowShiftY(drag: ProviderDragState | null, index: number): number {
+  if (drag === null) {
+    return 0;
+  }
+  if (index === drag.fromIndex) {
+    return drag.deltaY;
+  }
+  if (
+    drag.fromIndex < drag.toIndex &&
+    index > drag.fromIndex &&
+    index <= drag.toIndex
+  ) {
+    return -drag.stepY;
+  }
+  if (
+    drag.fromIndex > drag.toIndex &&
+    index >= drag.toIndex &&
+    index < drag.fromIndex
+  ) {
+    return drag.stepY;
+  }
+  return 0;
+}
+
+function moveProvider(
+  list: AiProviderView[],
+  fromIndex: number,
+  toIndex: number,
+): AiProviderView[] {
+  const reordered = [...list];
+  const [moved] = reordered.splice(fromIndex, 1);
+  if (moved === undefined) {
+    return list;
+  }
+  reordered.splice(toIndex, 0, moved);
+  return reordered;
 }
 
 function serializeModels(models: AiProviderModel[]): string {
