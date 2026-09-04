@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { Icon } from "./icon";
@@ -17,6 +17,14 @@ import "./terminal_modal.css";
  * twice — differing only in which socket it opens.
  */
 
+const WORDING = {
+  close: "Close",
+  keystrokes:
+    "Keystrokes go straight to the device. Press Escape to close the window.",
+  lost: "Session closed. The gateway may have no SSH credentials for this device.",
+  ended: (code: number) => `Session ended with exit code ${code}.`,
+} as const;
+
 interface TerminalModalProps {
   device: DeviceView;
   onClose: () => void;
@@ -25,6 +33,20 @@ interface TerminalModalProps {
 export function TerminalModal({ device, onClose }: TerminalModalProps) {
   const [state, setState] = useState<TerminalState>("connecting");
   const [exitCode, setExitCode] = useState<number | null>(null);
+
+  // The window says Escape closes it, so Escape closes it. Capturing takes the
+  // key before the drawer underneath sees it: the topmost layer is the one
+  // that goes, and the drawer stays where it was.
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [onClose]);
 
   const target =
     device.ssh === null
@@ -58,7 +80,7 @@ export function TerminalModal({ device, onClose }: TerminalModalProps) {
               onClick={onClose}
             >
               <Icon name="close" size={13} />
-              Close
+              {WORDING.close}
             </button>
           </div>
         </div>
@@ -77,9 +99,9 @@ export function TerminalModal({ device, onClose }: TerminalModalProps) {
         <div className="terminal_modal_status">
           {state === "closed"
             ? exitCode === null
-              ? "Session closed. The gateway may have no SSH credentials for this device."
-              : `Session ended with exit code ${exitCode}.`
-            : "Keystrokes go straight to the device. Press Escape to close the window."}
+              ? WORDING.lost
+              : WORDING.ended(exitCode)
+            : WORDING.keystrokes}
         </div>
       </div>
     </div>,

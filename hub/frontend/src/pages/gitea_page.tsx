@@ -25,6 +25,8 @@ import "./gitea_page.css";
  * its first administrator.
  */
 
+const OPEN_GITEA_LABEL = "Open Gitea";
+
 export function GiteaPage() {
   const resource = useApiResource<GiteaSettings>("/gitea");
 
@@ -107,15 +109,22 @@ export function GiteaPage() {
           )}
         </div>
         <div className="page_actions">
-          <a
-            className={`button button--primary ${saved.is_active ? "" : "button--disabled"}`}
-            href={saved.is_active ? openUrl : undefined}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <Icon name="server" size={14} />
-            Open Gitea
-          </a>
+          {saved.is_active ? (
+            <a
+              className="button button--primary"
+              href={openUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Icon name="server" size={14} />
+              {OPEN_GITEA_LABEL}
+            </a>
+          ) : (
+            <button type="button" className="button button--primary" disabled>
+              <Icon name="server" size={14} />
+              {OPEN_GITEA_LABEL}
+            </button>
+          )}
         </div>
       </div>
 

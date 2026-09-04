@@ -13,6 +13,7 @@ import {
   describeError,
 } from "../api_client";
 import { formatDuration } from "../format_duration";
+import { stripAnsi } from "../strip_ansi";
 import { useTaskStream } from "../use_task_stream";
 import { PasswordField } from "../components/password_field";
 import { PasswordInput } from "../components/password_input";
@@ -605,7 +606,7 @@ function RestoreArchiveModal({
                 className="device_drawer_log_output settings_restore_log"
                 ref={logRef}
               >
-                {task.lines.join("\n")}
+                {stripAnsi(task.lines.join("\n"))}
               </pre>
             )}
             {phase === "failed" ? (

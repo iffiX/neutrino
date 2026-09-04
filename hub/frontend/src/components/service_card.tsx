@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Icon } from "./icon";
 import { JournalPanel } from "./journal_panel";
 import { StatusDot } from "./status_dot";
+import { stripAnsi } from "../strip_ansi";
 import { useTaskStream } from "../use_task_stream";
 import type { TaskStreamState } from "../use_task_stream";
 import type { ServiceActionName, ServiceView } from "../api_types";
@@ -318,7 +319,7 @@ function TaskLog({ task, onDismiss }: TaskLogProps) {
     <div className="service_card_task">
       <div className="service_card_task_lines">
         {task.lines.map((line, index) => (
-          <div key={index}>{line}</div>
+          <div key={index}>{stripAnsi(line)}</div>
         ))}
         {task.isRunning && <div className="faint">working…</div>}
       </div>

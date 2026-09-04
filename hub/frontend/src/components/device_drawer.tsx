@@ -188,7 +188,7 @@ export function DeviceDrawer({
   const [runningLabel, setRunningLabel] = useState<string | null>(null);
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
   const [isFilesOpen, setIsFilesOpen] = useState(false);
-  // A link minted for this machine alone, for the ones no installer reaches.
+  // A link generated for this machine alone, for the ones no installer reaches.
   const [enrollment, setEnrollment] = useState<DeviceEnrollmentView | null>(
     null,
   );

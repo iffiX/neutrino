@@ -17,13 +17,6 @@
   min-width: 160px;
 }
 
-/* An anchor styled as a button loses its affordance when the server is down;
-   a real disabled state needs it inert, not just grey. */
-.button--disabled {
-  opacity: 0.45;
-  pointer-events: none;
-}
-
 @media (max-width: 720px) {
   .gitea_fields {
     grid-template-columns: 1fr;

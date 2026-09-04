@@ -5,7 +5,7 @@ import type { DeviceEnrollmentView } from "../api_types";
 import "./device_enrollment_notice.css";
 
 /**
- * A minted enrollment link, with the machine it was minted for.
+ * A generated enrollment link, with the machine it was generated for.
  *
  * The same notice serves the page's "Add by link" button, which names no
  * machine, and a device's own drawer, which names it.

@@ -329,14 +329,12 @@ textarea {
    docs/standard/design/visual.md. */
 .page_actions .button--primary,
 .apply_bar .button--primary,
-.settings_group_actions .button--primary,
 .button--commit {
   box-shadow: 0 0 20px -8px var(--color-accent);
 }
 
 .page_actions .button--primary:hover:not(:disabled),
 .apply_bar .button--primary:hover:not(:disabled),
-.settings_group_actions .button--primary:hover:not(:disabled),
 .button--commit:hover:not(:disabled) {
   box-shadow: 0 0 24px -6px var(--color-accent);
 }
