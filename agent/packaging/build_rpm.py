@@ -104,7 +104,7 @@ fi
 WRAPPER = """#!/bin/sh
 # The agent is installed outside the system's Python path, so the module has
 # to be pointed at rather than found.
-PYTHONPATH={install_dir} exec /usr/bin/python3 -m neutrino_agent.cli "$@"
+PYTHONPATH={install_dir} exec /usr/bin/python3 -m neutrino_agent.cli.entry "$@"
 """
 
 
@@ -180,9 +180,14 @@ def _lay_out(payload: Path, version: str) -> None:
         WRAPPER.format(install_dir=INSTALL_DIR),
         is_executable=True,
     )
-    _write(payload / UNIT_DIR / "neutrino_agent.service", _packaged_unit())
+    _write(
+        payload / UNIT_DIR / "neutrino_agent.service",
+        (AGENT_ROOT / "neutrino_agent/data/systemd/neutrino_agent.service").read_text(
+            encoding="utf-8"
+        ),
+    )
 
-    desktop = AGENT_ROOT / "desktop"
+    desktop = AGENT_ROOT / "neutrino_agent/data/desktop"
     _write(
         payload / "usr/share/applications/neutrino_agent.desktop",
         (desktop / "neutrino_agent.desktop").read_text(encoding="utf-8"),
@@ -193,36 +198,6 @@ def _lay_out(payload: Path, version: str) -> None:
         )
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(desktop / source, destination)
-
-
-def _packaged_unit() -> str:
-    """The service file with the checkout's assumptions taken out.
-
-    The unit starts the wrapper rather than the module: installed from this
-    package the agent is not on the interpreter's path, and the wrapper is
-    what puts it there.
-
-    Returns:
-        The unit file to ship.
-    """
-    text = (AGENT_ROOT / "systemd/neutrino_agent.service").read_text(encoding="utf-8")
-    kept = [
-        line
-        for line in text.splitlines()
-        if not line.startswith(("WorkingDirectory=", "Environment=PYTHONPATH="))
-    ]
-    return (
-        "\n".join(kept)
-        .replace(
-            "Documentation=file:///opt/neutrino_agent/README.md",
-            "Documentation=https://github.com/iffiX/neutrino",
-        )
-        .replace(
-            "ExecStart=/usr/bin/python3 -m neutrino_agent.cli run",
-            "ExecStart=/usr/bin/nagent run",
-        )
-        + "\n"
-    )
 
 
 def _build(spec: Path, topdir: Path, output_dir: Path, version: str) -> Path:

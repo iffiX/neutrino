@@ -102,7 +102,7 @@ fi
 
 WRAPPER = """#!/bin/sh
 # The agent is a system-wide Python package; this only names the entry point.
-exec /usr/bin/python3 -m neutrino_agent.cli "$@"
+exec /usr/bin/python3 -m neutrino_agent.cli.entry "$@"
 """
 
 
@@ -165,10 +165,12 @@ def _lay_out(tree: Path, version: str, maintainer: str) -> None:
     _write(tree / "usr/bin/nagent", WRAPPER, is_executable=True)
     _write(
         tree / "lib/systemd/system/neutrino_agent.service",
-        _packaged_unit(),
+        (AGENT_ROOT / "neutrino_agent/data/systemd/neutrino_agent.service").read_text(
+            encoding="utf-8"
+        ),
     )
 
-    desktop = AGENT_ROOT / "desktop"
+    desktop = AGENT_ROOT / "neutrino_agent/data/desktop"
     _write(
         tree / "usr/share/applications/neutrino_agent.desktop",
         (desktop / "neutrino_agent.desktop").read_text(encoding="utf-8"),
@@ -190,31 +192,6 @@ def _lay_out(tree: Path, version: str, maintainer: str) -> None:
     _write(tree / "DEBIAN/postinst", POSTINST, is_executable=True)
     _write(tree / "DEBIAN/prerm", PRERM, is_executable=True)
     _write(tree / "DEBIAN/postrm", POSTRM, is_executable=True)
-
-
-def _packaged_unit() -> str:
-    """The service file with the checkout's assumptions taken out.
-
-    Installed from a package, the agent is on the system path already: the
-    ``PYTHONPATH`` and ``WorkingDirectory`` lines exist for a copy unpacked
-    into /opt and would point at nothing here.
-
-    Returns:
-        The unit file to ship.
-    """
-    text = (AGENT_ROOT / "systemd/neutrino_agent.service").read_text(encoding="utf-8")
-    kept = [
-        line
-        for line in text.splitlines()
-        if not line.startswith(("WorkingDirectory=", "Environment=PYTHONPATH="))
-    ]
-    return (
-        "\n".join(kept).replace(
-            "Documentation=file:///opt/neutrino_agent/README.md",
-            "Documentation=https://github.com/iffiX/neutrino",
-        )
-        + "\n"
-    )
 
 
 def _build(tree: Path, target: Path) -> None:

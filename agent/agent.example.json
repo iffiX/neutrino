@@ -1,5 +1,0 @@
-{
-  "_comment": "Written by install.sh on the managed device at /etc/neutrino_agent/agent.json. Both values are install arguments handed over by the gateway; neither belongs in git.",
-  "gateway_url": "http://192.168.100.1:8080",
-  "token": "PLACEHOLDER_PER_DEVICE_TOKEN"
-}

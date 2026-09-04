@@ -156,7 +156,7 @@ def test_the_channel_is_pinned_tls_end_to_end(panel, stranger):
         "from neutrino_agent import enrollment; "
         "from neutrino_agent.constants import AGENT_PACKAGE_PATH; "
         "from neutrino_agent.http_channel import GatewayHttpChannel; "
-        "from neutrino_agent.platform_info import platform_tuple; "
+        "from neutrino_agent.platforms.detect import platform_tuple; "
         "from neutrino_agent.self_update import package_kind; "
         "config = enrollment.load_config(); "
         'channel = GatewayHttpChannel(gateway_url=config["gateway_url"], '

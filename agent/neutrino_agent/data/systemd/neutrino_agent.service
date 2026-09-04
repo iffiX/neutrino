@@ -1,0 +1,18 @@
+[Unit]
+Description=Neutrino Hub agent
+Documentation=https://github.com/iffiX/neutrino
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Root: the agent installs packages, runs power actions, and steps down to
+# accounts.
+User=root
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/nagent run
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
