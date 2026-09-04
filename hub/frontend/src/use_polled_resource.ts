@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { apiGet } from "./api_client";
 import { useApiResource } from "./use_api_resource";
@@ -10,6 +10,10 @@ import type { ApiResource } from "./use_api_resource";
  * Sections showing live state poll quietly instead of carrying a reload
  * button. A failed tick keeps the last good value on screen and the next
  * tick tries again, so a restarting backend flickers nothing.
+ *
+ * A tick bringing back what the page already holds is dropped: the value keeps
+ * its identity, so nothing keyed on it re-runs and a form seeded from it is
+ * left alone. A box where nothing is happening therefore renders nothing.
  *
  * A hidden tab stops asking and catches up when it comes back, so a panel
  * left open in a background tab costs the gateway nothing.
@@ -32,7 +36,15 @@ export function usePolledResource<T>(
   intervalMs: number = DEFAULT_POLL_INTERVAL_MS,
 ): ApiResource<T> {
   const resource = useApiResource<T>(path);
-  const { setData } = resource;
+  const { data, setData } = resource;
+  // What is on screen, serialized. A tick compares against this rather than
+  // against its own last answer, so a value the page folded in itself — a
+  // mutation response — counts as held too.
+  const heldPayloadRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    heldPayloadRef.current = data === null ? null : JSON.stringify(data);
+  }, [data]);
 
   useEffect(() => {
     if (path === null) {
@@ -42,9 +54,15 @@ export function usePolledResource<T>(
     const tick = async () => {
       try {
         const fresh = await apiGet<T>(path);
-        if (!isCancelled) {
-          setData(fresh);
+        if (isCancelled) {
+          return;
         }
+        const payload = JSON.stringify(fresh);
+        if (payload === heldPayloadRef.current) {
+          return;
+        }
+        heldPayloadRef.current = payload;
+        setData(fresh);
       } catch {
         // A transient failure keeps the last reading; the next tick retries.
       }
