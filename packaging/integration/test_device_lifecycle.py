@@ -351,15 +351,18 @@ def test_the_lifecycle_walks_every_transition(panel, stranger):
         " && sudo systemctl restart neutrino_agent",
     )
     assert '"0.0.0"' in downgraded.stdout, downgraded.stdout + downgraded.stderr
+    # The outcome is what the hub sees: the file is restored a moment
+    # before the service carrying the new version has restarted, so the
+    # version the hub reports is what settles it.
     wait_for(
         "the version self-update to put the real agent back",
-        lambda: '"0.0.0"'
-        not in ssh_to(host, f"grep '^AGENT_VERSION' {agent_tree}/_version.py").stdout
-        and (device_by_mac(panel, mac) or {}).get("is_agent_online"),
+        lambda: (device_by_mac(panel, mac) or {"client": None}).get("client")
+        and device_by_mac(panel, mac)["client"]["version"] == real_version
+        and device_by_mac(panel, mac)["is_agent_online"],
         DRILL_TIMEOUT_S,
     )
-    healed = device_by_mac(panel, mac)
-    assert healed["client"]["version"] == real_version, healed["client"]
+    restored = ssh_to(host, f"grep '^AGENT_VERSION' {agent_tree}/_version.py")
+    assert '"0.0.0"' not in restored.stdout, restored.stdout
 
     ssh_to(
         host,
