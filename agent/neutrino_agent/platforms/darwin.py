@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import shlex
+import struct
 import subprocess
 
 try:
@@ -22,13 +23,22 @@ except ImportError:  # Windows has no account database module.
 from neutrino_agent import installers
 from neutrino_agent.constants import (
     AGENT_COMMAND_TIMEOUT_S,
+    AGENT_CONTROL_SOCKET_PATH_DARWIN,
     AGENT_STEP_DOWN_TIMEOUT_S,
 )
-from neutrino_agent.platforms.base import AgentPlatform
+from neutrino_agent.platforms.base import AgentPlatform, PlatformUnsupportedError
 
 # Accounts below this uid are the system's, not people's.
 DARWIN_HUMAN_UID_FLOOR = 501
 DARWIN_NO_LOGIN_SHELLS = ("nologin", "false")
+
+# getsockopt(SOL_LOCAL, LOCAL_PEERCRED) fills a struct xucred:
+# version, uid, then the group list.
+DARWIN_SOL_LOCAL = 0
+DARWIN_LOCAL_PEERCRED = 1
+DARWIN_XUCRED_FORMAT = "II"
+DARWIN_XUCRED_SIZE = 76
+DARWIN_XUCRED_VERSION = 0
 
 
 class DarwinPlatform(AgentPlatform):
@@ -36,7 +46,7 @@ class DarwinPlatform(AgentPlatform):
 
     os_name = "darwin"
     capabilities = frozenset(
-        {"accounts", "account_files", "run_as", "packages", "openssh"}
+        {"accounts", "account_files", "run_as", "control_socket", "packages", "openssh"}
     )
 
     def human_accounts(self) -> list:
@@ -75,6 +85,46 @@ class DarwinPlatform(AgentPlatform):
         if pwd is None:
             raise KeyError(account)
         return pwd.getpwnam(account).pw_dir
+
+    def control_socket_path(self) -> str:
+        """Where the agent's control socket lives.
+
+        Returns:
+            The absolute socket path.
+        """
+        return AGENT_CONTROL_SOCKET_PATH_DARWIN
+
+    def read_peer_identity(self, connection) -> dict:
+        """The peer's identity, from the kernel's ``LOCAL_PEERCRED``.
+
+        Args:
+            connection: The accepted socket.
+
+        Returns:
+            ``{"account", "uid", "is_privileged"}``.
+
+        Raises:
+            PlatformUnsupportedError: When the credential cannot be read.
+            KeyError: When the peer's uid names no account.
+        """
+        try:
+            data = connection.getsockopt(
+                DARWIN_SOL_LOCAL, DARWIN_LOCAL_PEERCRED, DARWIN_XUCRED_SIZE
+            )
+            version, uid = struct.unpack_from(DARWIN_XUCRED_FORMAT, data)
+        except (OSError, struct.error) as error:
+            raise PlatformUnsupportedError(str(error))
+        if version != DARWIN_XUCRED_VERSION:
+            raise PlatformUnsupportedError(f"unknown xucred version {version}")
+        if uid == 0:
+            return {"account": "root", "uid": 0, "is_privileged": True}
+        if pwd is None:
+            raise KeyError(uid)
+        return {
+            "account": pwd.getpwuid(uid).pw_name,
+            "uid": uid,
+            "is_privileged": False,
+        }
 
     def run_as_account(
         self,

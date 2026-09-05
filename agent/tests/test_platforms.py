@@ -6,6 +6,7 @@ and judges people by its own floor.
 """
 
 import collections
+import struct
 import subprocess
 
 import pytest
@@ -29,6 +30,7 @@ def test_each_platform_advertises_its_capability_set():
             "accounts",
             "account_files",
             "run_as",
+            "control_socket",
             "agent_service",
             "power",
             "metrics",
@@ -37,7 +39,14 @@ def test_each_platform_advertises_its_capability_set():
         }
     )
     assert DarwinPlatform().capabilities == frozenset(
-        {"accounts", "account_files", "run_as", "packages", "openssh"}
+        {
+            "accounts",
+            "account_files",
+            "run_as",
+            "control_socket",
+            "packages",
+            "openssh",
+        }
     )
     assert WindowsPlatform().capabilities == frozenset(
         {"account_files", "packages", "openssh"}
@@ -66,6 +75,50 @@ def test_an_absent_capability_is_refused_not_guessed():
 def test_base_file_operations_refuse_without_run_as():
     with pytest.raises(PlatformUnsupportedError):
         AgentPlatform().read_account_file(account="alice", relative="f")
+
+
+class FakePeerConnection:
+    def __init__(self, credential: bytes):
+        self._credential = credential
+
+    def getsockopt(self, level, option, length):
+        return self._credential[:length]
+
+
+def test_linux_reads_peer_identity_from_peercred(monkeypatch):
+    entry = PwdEntry("alice", 1000, "/bin/bash", "/home/alice")
+    monkeypatch.setattr(linux_module.pwd, "getpwuid", lambda uid: entry)
+    connection = FakePeerConnection(struct.pack("3i", 42, 1000, 1000))
+
+    identity = LinuxPlatform().read_peer_identity(connection)
+
+    assert identity == {"account": "alice", "uid": 1000, "is_privileged": False}
+
+
+def test_linux_peer_uid_zero_is_privileged():
+    connection = FakePeerConnection(struct.pack("3i", 1, 0, 0))
+
+    identity = LinuxPlatform().read_peer_identity(connection)
+
+    assert identity == {"account": "root", "uid": 0, "is_privileged": True}
+
+
+def test_linux_refuses_an_unresolvable_peer_uid(monkeypatch):
+    def unknown(uid):
+        raise KeyError(uid)
+
+    monkeypatch.setattr(linux_module.pwd, "getpwuid", unknown)
+    connection = FakePeerConnection(struct.pack("3i", 42, 4242, 4242))
+
+    with pytest.raises(KeyError):
+        LinuxPlatform().read_peer_identity(connection)
+
+
+def test_windows_has_no_peer_identity_yet():
+    with pytest.raises(PlatformUnsupportedError):
+        WindowsPlatform().read_peer_identity(object())
+    with pytest.raises(PlatformUnsupportedError):
+        WindowsPlatform().control_socket_path()
 
 
 def test_linux_human_accounts_apply_the_floor(monkeypatch, tmp_path):

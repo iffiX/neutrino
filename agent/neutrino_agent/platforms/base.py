@@ -170,6 +170,33 @@ class AgentPlatform:
             return
         self._run_file_snippet(account, relative, "p.unlink() if p.is_file() else None")
 
+    def control_socket_path(self) -> str:
+        """Where the agent's control socket lives on this platform.
+
+        Returns:
+            The absolute socket path.
+
+        Raises:
+            PlatformUnsupportedError: When the platform has no control socket.
+        """
+        raise PlatformUnsupportedError("no control socket here")
+
+    def read_peer_identity(self, connection) -> dict:
+        """The kernel-reported identity of a control socket peer.
+
+        Args:
+            connection: The accepted socket.
+
+        Returns:
+            ``{"account", "uid", "is_privileged"}``; ``uid`` is -1 where the
+            platform reports names, not uids.
+
+        Raises:
+            PlatformUnsupportedError: When the platform cannot read peers.
+            KeyError: When the peer's uid names no account.
+        """
+        raise PlatformUnsupportedError("cannot read a peer identity here")
+
     def run_as_account(
         self,
         account: str,

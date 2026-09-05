@@ -18,6 +18,8 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import socket
+import struct
 import subprocess
 import time
 
@@ -29,6 +31,7 @@ except ImportError:  # Windows has no account database module.
 from neutrino_agent import installers
 from neutrino_agent.constants import (
     AGENT_COMMAND_TIMEOUT_S,
+    AGENT_CONTROL_SOCKET_PATH,
     AGENT_SERVICE_NAME,
     AGENT_STEP_DOWN_TIMEOUT_S,
 )
@@ -98,6 +101,7 @@ class LinuxPlatform(AgentPlatform):
             "accounts",
             "account_files",
             "run_as",
+            "control_socket",
             "agent_service",
             "power",
             "metrics",
@@ -147,6 +151,40 @@ class LinuxPlatform(AgentPlatform):
         if pwd is None:
             raise KeyError(account)
         return pwd.getpwnam(account).pw_dir
+
+    def control_socket_path(self) -> str:
+        """Where the agent's control socket lives.
+
+        Returns:
+            The absolute socket path.
+        """
+        return AGENT_CONTROL_SOCKET_PATH
+
+    def read_peer_identity(self, connection) -> dict:
+        """The peer's identity, from the kernel's ``SO_PEERCRED``.
+
+        Args:
+            connection: The accepted socket.
+
+        Returns:
+            ``{"account", "uid", "is_privileged"}``.
+
+        Raises:
+            KeyError: When the peer's uid names no account.
+        """
+        data = connection.getsockopt(
+            socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")
+        )
+        _pid, uid, _gid = struct.unpack("3i", data)
+        if uid == 0:
+            return {"account": "root", "uid": 0, "is_privileged": True}
+        if pwd is None:
+            raise KeyError(uid)
+        return {
+            "account": pwd.getpwuid(uid).pw_name,
+            "uid": uid,
+            "is_privileged": False,
+        }
 
     def run_as_account(
         self,

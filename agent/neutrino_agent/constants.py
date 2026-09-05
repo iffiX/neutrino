@@ -42,6 +42,18 @@ AGENT_OUTPUT_LIMIT_BYTES = 64 * 1024
 # How long a stepped-down account command may take.
 AGENT_STEP_DOWN_TIMEOUT_S = 120
 
+# The local control channel: a socket any local account may connect to,
+# whose peer identity the kernel reports, and a loopback page unlocked by
+# tokens minted over that socket.
+AGENT_CONTROL_SOCKET_PATH = "/run/neutrino_agent/agent.sock"
+AGENT_CONTROL_SOCKET_PATH_DARWIN = "/var/run/neutrino_agent/agent.sock"
+AGENT_CONTROL_PAGE_HOST = "127.0.0.1"
+AGENT_CONTROL_PAGE_PORT = 8765
+AGENT_CONTROL_PAGE_ORIGIN = (
+    f"http://{AGENT_CONTROL_PAGE_HOST}:{AGENT_CONTROL_PAGE_PORT}"
+)
+AGENT_CONTROL_REQUEST_TIMEOUT_S = 5
+
 # Where the AI service keeps its per-account switching state. Machine state:
 # it survives a hub restore and appears in no hub backup.
 AGENT_AI_STORE_PATH = "/etc/neutrino/agent/ai_service.json"
