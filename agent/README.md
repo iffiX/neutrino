@@ -23,8 +23,8 @@ sudo apt install ./neutrino-agent_<version>_all.deb
 sudo nagent connect neutrino://enroll/...
 ```
 
-The package enables `neutrino_agent.service`, whose local page on
-`http://127.0.0.1:8765` accepts the same link from a browser.
+The package enables `neutrino_agent.service`; `nagent ui` opens its local
+page, which accepts the same link from a browser.
 
 ## Building the packages
 

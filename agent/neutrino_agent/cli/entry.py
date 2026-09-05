@@ -1,14 +1,15 @@
 """The ``nagent`` command.
 
-Most machines never see this: the agent installs with a desktop entry, and
-clicking it opens the agent's own page on http://127.0.0.1:8765, which is where
-the enrollment link is pasted. These commands do the same things from a
-terminal, for machines with no desktop and for reading what went wrong.
+Most machines never see this: the agent installs with a desktop entry that
+runs ``nagent ui``, which opens the agent's own page in the clicking
+account's scope. These commands do the same things from a terminal, for
+machines with no desktop and for reading what went wrong.
 
     nagent connect neutrino://enroll/...
     nagent disconnect
     nagent run
     nagent status
+    nagent ui
 
 The shape is settled in ../../../docs/cli.md.
 """
@@ -19,7 +20,7 @@ import shlex
 import sys
 
 from neutrino_agent import AGENT_VERSION
-from neutrino_agent.cli import connect, disconnect, run, status
+from neutrino_agent.cli import connect, disconnect, run, status, ui
 
 # The commands that change the machine, and what each one touches. Everything
 # else — status, --version — answers to any account.
@@ -63,6 +64,8 @@ def main() -> int:
 
     subparsers.add_parser("status", help="what this machine is bound to")
 
+    subparsers.add_parser("ui", help="open this machine's page in a browser")
+
     arguments = parser.parse_args()
     if not arguments.command:
         parser.print_help()
@@ -78,6 +81,8 @@ def main() -> int:
         return disconnect.main()
     if arguments.command == "run":
         return run.main(is_ui_served=not arguments.no_ui)
+    if arguments.command == "ui":
+        return ui.main()
     return status.main()
 
 

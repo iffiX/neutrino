@@ -83,7 +83,7 @@ if [ "$1" = 1 ]; then
     echo "  Neutrino agent installed. Start it and join a hub from its page:"
     echo ""
     echo "      systemctl enable --now neutrino_agent.service"
-    echo "      http://127.0.0.1:8765"
+    echo "      nagent ui"
     echo ""
 fi
 

@@ -11,14 +11,12 @@ The agent reports errors as ``{"code", "params"}``; the wording lives here.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
-import json
 import time
-import urllib.request
 
 from neutrino_agent import AGENT_VERSION, enrollment
 from neutrino_agent.agent import Agent
 from neutrino_agent.constants import AGENT_CONFIG_PATH, AGENT_SERVICE_NAME
-from neutrino_agent.mini_ui import MINI_UI_HOST, MINI_UI_PORT
+from neutrino_agent.control import client
 from neutrino_agent.platforms.base import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import detect_platform
 
@@ -149,20 +147,26 @@ def word_error(error: dict) -> str:
 
 
 def _local_state() -> "dict | None":
-    """What the running service says about itself.
+    """What the running service says about itself, asked over its socket.
+
+    The socket answers any local account with that account's own scope,
+    which is all this surface reads.
 
     Returns:
-        The service's own state, or None when nothing answers on the local
-        page's port.
+        The service's own state, or None when nothing answers on the
+        control socket.
     """
     try:
-        with urllib.request.urlopen(
-            f"http://{MINI_UI_HOST}:{MINI_UI_PORT}/api/state", timeout=2
-        ) as reply:
-            state = json.loads(reply.read().decode("utf-8"))
+        socket_path = detect_platform().control_socket_path()
+    except PlatformUnsupportedError:
+        return None
+    try:
+        status, state = client.request(
+            socket_path=socket_path, method="GET", path="/api/state", timeout_s=2
+        )
     except (OSError, ValueError):
         return None
-    return state if isinstance(state, dict) else None
+    return state if status == 200 else None
 
 
 def _status_from_service(state: dict) -> int:
