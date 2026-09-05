@@ -10,11 +10,15 @@ managed here.
 import base64
 import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.modules.devices.agent_module_cache import AgentModuleArtifact
+from neutrino_hub.modules.devices.agent_module_controller import AgentModuleController
+from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
@@ -45,6 +49,15 @@ class FakeRegistry:
         return FakeRegistry.device
 
 
+class StubModuleCache:
+    """A cache that answers at once and never reaches a vendor."""
+
+    def artifact(self, *, name, manifest, platform):
+        return AgentModuleArtifact(
+            key=f"{name}-key", path=Path("/nonexistent"), digest="d", package_kind="deb"
+        )
+
+
 class FakeRuntime:
     def __init__(self):
         self.client_modules = {}
@@ -55,6 +68,13 @@ class FakeRuntime:
         self.client_command_results = {}
         self.pending = {}
         self.enrollments = {}
+        self.agent_modules = StubModuleCache()
+        self.device_install_locks = DeviceInstallLocks()
+        # A short wait: no agent reports here, so a worker would otherwise
+        # hold its device's lock for the real half hour.
+        self.agent_module_orders = AgentModuleController(
+            cache=self.agent_modules, locks=self.device_install_locks, timeout_s=1.0
+        )
 
     def forget_client_state(self, mac_address: str) -> None:
         key = mac_address.lower()
@@ -67,6 +87,7 @@ class FakeRuntime:
             self.pending,
         ):
             held.pop(key, None)
+        self.agent_module_orders.forget(key)
 
 
 def beating(seconds_ago: float) -> str:

@@ -8,7 +8,9 @@ managed while keeping everything its owner typed.
 """
 
 import hashlib
+import tempfile
 import time
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
@@ -17,6 +19,10 @@ from fastapi.testclient import TestClient
 from neutrino_hub.modules.cliproxyapi import ops as cliproxyapi_ops
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier
 from neutrino_hub.modules.cliproxyapi.ops import load_config as load_cliproxyapi_config
+from neutrino_hub.modules.devices.agent_module_cache import AgentModuleArtifact
+from neutrino_hub.modules.devices.agent_module_controller import AgentModuleController
+from neutrino_hub.modules.devices.constants import AGENT_WIRE_GENERATION
+from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice
 from neutrino_hub.utils.json_file import write_config
 from neutrino_hub.web.dependencies import get_runtime
@@ -97,10 +103,25 @@ class FakeRegistry:
 class StubCatalogCache:
     def __init__(self):
         self.asked_hosts: list[str] = []
+        self.asked_platforms: list[dict] = []
 
-    def catalog(self, *, device_host):
+    def catalog(self, *, device_host, platform=None):
         self.asked_hosts.append(device_host)
+        self.asked_platforms.append(dict(platform or {}))
         return CATALOG, CATALOG_HASH
+
+
+class StubModuleCache:
+    """A cache that answers at once and never reaches a vendor."""
+
+    def __init__(self):
+        self.asked: list = []
+
+    def artifact(self, *, name, manifest, platform):
+        self.asked.append((name, dict(platform)))
+        return AgentModuleArtifact(
+            key=f"{name}-key", path=Path("/nonexistent"), digest="d", package_kind="deb"
+        )
 
 
 class StubServedModels:
@@ -123,6 +144,14 @@ class FakeRuntime:
         self.settings = {"listen_port": 80}
         self.device_catalog = StubCatalogCache()
         self.served_models = StubServedModels()
+        self.agent_modules = StubModuleCache()
+        self.device_install_locks = DeviceInstallLocks()
+        # A short wait: no agent reports in these tests, and a worker that
+        # sat on its device's lock for the real half hour would leak a
+        # thread per case.
+        self.agent_module_orders = AgentModuleController(
+            cache=self.agent_modules, locks=self.device_install_locks, timeout_s=1.0
+        )
 
     def take_client_commands(self, mac_address):
         return []
@@ -139,6 +168,7 @@ class FakeRuntime:
             self.client_command_results,
         ):
             held.pop(key, None)
+        self.agent_module_orders.forget(key)
 
     def network(self):
         return _EmptyNetwork()
@@ -189,14 +219,14 @@ def beat_body(**extra) -> dict:
     body = {
         "token": "device-token",
         "hostname": "testbox",
-        "wire": 2,
+        "wire": AGENT_WIRE_GENERATION,
         "client_version": "0.3.0",
     }
     body.update(extra)
     return body
 
 
-def test_heartbeat_returns_desired_modules_and_catalog(api):
+def test_heartbeat_reports_are_recorded_and_the_catalog_shipped(api):
     client, runtime, device = api
     device.client.modules = {"anydesk": True}
 
@@ -212,7 +242,9 @@ def test_heartbeat_returns_desired_modules_and_catalog(api):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["desired_modules"]["anydesk"]["is_enabled"] is True
+    # Nothing was asked for, so nothing is ordered: a stored wish is not a
+    # standing instruction the way the desired-state map was.
+    assert body["module_orders"] == []
     # A stale hash gets both halves of the catalog; a matching one would not.
     assert body["catalog"] == CATALOG
     assert body["catalog_hash"] == CATALOG_HASH
@@ -233,7 +265,7 @@ def test_a_matching_catalog_hash_is_not_reshipped(api):
 
 
 def test_heartbeat_applies_a_toggle_made_on_the_machine(api):
-    client, _, device = api
+    client, runtime, device = api
 
     response = client.post(
         "/api/agent/heartbeat",
@@ -242,7 +274,11 @@ def test_heartbeat_applies_a_toggle_made_on_the_machine(api):
 
     assert response.status_code == 200
     assert device.client.modules["anydesk"]["is_enabled"] is True
-    assert response.json()["desired_modules"]["anydesk"]["is_enabled"] is True
+    # The machine's own page enters by the controller's door, so a toggle
+    # there becomes an order exactly as the drawer's button would.
+    order = runtime.agent_module_orders.open_order_for(MAC, "anydesk")
+    assert order is not None
+    assert order.action == "install"
 
 
 def test_accounts_and_last_error_land_in_the_runtime(api):
@@ -391,7 +427,7 @@ def test_unknown_token_is_refused(api):
         json={
             "token": "nonsense",
             "hostname": "x",
-            "wire": 2,
+            "wire": AGENT_WIRE_GENERATION,
             "client_version": "0.3.0",
         },
     )
@@ -476,7 +512,7 @@ def test_enrolling_with_a_ticket_issues_a_token(api):
     response = client.post(
         "/api/agent/enroll",
         json={
-            "wire": 2,
+            "wire": AGENT_WIRE_GENERATION,
             "enrollment_token": "ticket",
             "device_id": "abc123",
             "hostname": "laptop",
@@ -498,7 +534,7 @@ def test_a_ticket_spent_twice_is_refused_the_second_time(api):
         "expires_at": time.time() + 600,
     }
     body = {
-        "wire": 2,
+        "wire": AGENT_WIRE_GENERATION,
         "enrollment_token": "once",
         "device_id": "abc123",
         "hostname": "laptop",
@@ -518,7 +554,11 @@ def test_expired_ticket_is_refused(api):
 
     response = client.post(
         "/api/agent/enroll",
-        json={"wire": 2, "enrollment_token": "old", "device_id": "abc123"},
+        json={
+            "wire": AGENT_WIRE_GENERATION,
+            "enrollment_token": "old",
+            "device_id": "abc123",
+        },
     )
 
     assert response.status_code == 401
@@ -537,7 +577,7 @@ def test_an_unbound_enrollment_lands_on_the_device_its_mac_names(api):
     response = client.post(
         "/api/agent/enroll",
         json={
-            "wire": 2,
+            "wire": AGENT_WIRE_GENERATION,
             "enrollment_token": "t1",
             "device_id": "abc123",
             "mac_addresses": ["11:22:33:44:55:66", "AA:BB:CC:DD:EE:FF"],
@@ -560,7 +600,7 @@ def test_an_unknown_reported_mac_still_keys_by_mac(api):
     response = client.post(
         "/api/agent/enroll",
         json={
-            "wire": 2,
+            "wire": AGENT_WIRE_GENERATION,
             "enrollment_token": "t2",
             "device_id": "abc123",
             "mac_addresses": ["11:22:33:44:55:66"],
@@ -583,17 +623,17 @@ def test_replies_carry_the_hub_version(api):
         json={
             "token": "device-token",
             "hostname": "x",
-            "wire": 2,
+            "wire": AGENT_WIRE_GENERATION,
             "client_version": "1.2.3",
         },
     )
     enrolled = client.post(
         "/api/agent/enroll",
         json={
-            "wire": 2,
+            "wire": AGENT_WIRE_GENERATION,
             "enrollment_token": "ticket",
             "device_id": "abc123",
-            "wire": 2,
+            "wire": AGENT_WIRE_GENERATION,
             "client_version": "1.2.3",
         },
     )
@@ -612,7 +652,7 @@ def test_a_newer_agent_is_turned_away_with_a_code(api):
         json={
             "token": "device-token",
             "hostname": "x",
-            "wire": 2,
+            "wire": AGENT_WIRE_GENERATION,
             "client_version": "1.3.0",
         },
     )
@@ -629,7 +669,7 @@ def test_a_newer_agent_is_turned_away_with_a_code(api):
         json={
             "token": "device-token",
             "hostname": "x",
-            "wire": 2,
+            "wire": AGENT_WIRE_GENERATION,
             "client_version": "1.2.3",
         },
     )
@@ -647,10 +687,10 @@ def test_a_newer_agent_cannot_spend_an_enrollment_ticket(api):
     refused = client.post(
         "/api/agent/enroll",
         json={
-            "wire": 2,
+            "wire": AGENT_WIRE_GENERATION,
             "enrollment_token": "ticket",
             "device_id": "abc123",
-            "wire": 2,
+            "wire": AGENT_WIRE_GENERATION,
             "client_version": "2.0.0",
         },
     )
@@ -669,7 +709,7 @@ def test_an_older_agent_still_beats(api):
         json={
             "token": "device-token",
             "hostname": "x",
-            "wire": 2,
+            "wire": AGENT_WIRE_GENERATION,
             "client_version": "1.0.0",
         },
     )
@@ -685,7 +725,7 @@ def test_an_unparseable_version_refuses_nothing(api):
         json={
             "token": "device-token",
             "hostname": "x",
-            "wire": 2,
+            "wire": AGENT_WIRE_GENERATION,
             "client_version": "wat",
         },
     )
@@ -741,9 +781,9 @@ def test_the_reply_wire_carries_the_module_names(api):
 
     body = client.post("/api/agent/heartbeat", json=beat_body()).json()
 
-    assert {"desired_modules", "catalog_hash", "ai_accounts", "hub_version"} <= set(
-        body
-    )
+    assert {"module_orders", "catalog_hash", "ai_accounts", "hub_version"} <= set(body)
+    # The shapes this generation replaced must not come back.
+    assert "desired_modules" not in body
     assert "desired_functions" not in body
 
 
@@ -766,7 +806,7 @@ def test_nothing_usable_reported_keys_by_machine_id(api):
     response = client.post(
         "/api/agent/enroll",
         json={
-            "wire": 2,
+            "wire": AGENT_WIRE_GENERATION,
             "enrollment_token": "t3",
             "device_id": "abc123",
             "mac_addresses": ["not-a-mac"],
