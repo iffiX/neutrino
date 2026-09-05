@@ -79,6 +79,15 @@ cp -a {payload}/. %{{buildroot}}/
 %license /usr/share/doc/{name}/licenses/*
 %dir /usr/share/doc/{name}/licenses
 
+%pre
+# Python writes __pycache__ into the carried tree while the hub runs; rpm
+# does not own those files, and a directory the new version no longer ships
+# would stay behind over them. Cleared before the new files land.
+if [ "$1" -ge 2 ] && [ -d /opt/neutrino ]; then
+    find /opt/neutrino -type d -name __pycache__ -prune -print0 |
+        xargs -0 -r rm -rf 2>/dev/null || true
+fi
+
 %post
 install -d -m 755 /etc/neutrino
 install -d -m 700 /etc/neutrino/hub

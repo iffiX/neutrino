@@ -54,6 +54,21 @@ Description: Neutrino Hub, a personal developer infrastructure hub
  control panel, on one box. Carries its own Python environment.
 """
 
+PREINST = """#!/bin/sh
+set -e
+
+# Python writes __pycache__ into the carried tree while the hub runs; dpkg
+# does not own those files, so a directory the new version no longer ships
+# cannot be deleted over them. Cleared before unpack, the old tree goes
+# cleanly.
+if [ "$1" = upgrade ] && [ -d /opt/neutrino ]; then
+    find /opt/neutrino -type d -name __pycache__ -prune -exec rm -rf {} + \\
+        2>/dev/null || true
+fi
+
+exit 0
+"""
+
 POSTINST = """#!/bin/sh
 set -e
 
@@ -190,6 +205,7 @@ def _lay_out(
         recommends=", ".join(recommendations("debian")),
     )
     write(tree / "DEBIAN/control", control)
+    write(tree / "DEBIAN/preinst", PREINST, is_executable=True)
     write(tree / "DEBIAN/postinst", POSTINST, is_executable=True)
     write(tree / "DEBIAN/prerm", PRERM, is_executable=True)
     write(tree / "DEBIAN/postrm", POSTRM, is_executable=True)

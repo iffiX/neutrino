@@ -57,7 +57,18 @@ package() {{
 }}
 """
 
-INSTALL_SCRIPT = """post_install() {
+INSTALL_SCRIPT = """pre_upgrade() {
+    # Python writes __pycache__ into the carried tree while the hub runs;
+    # pacman does not own those files, and a directory the new version no
+    # longer ships would stay behind over them. Cleared before the new
+    # files land.
+    if [ -d /opt/neutrino ]; then
+        find /opt/neutrino -type d -name __pycache__ -prune -print0 |
+            xargs -0 -r rm -rf 2>/dev/null || true
+    fi
+}
+
+post_install() {
     install -d -m 755 /etc/neutrino
     install -d -m 700 /etc/neutrino/hub
     install -d -m 755 /var/lib/neutrino
