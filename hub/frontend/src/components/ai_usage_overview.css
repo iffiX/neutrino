@@ -75,10 +75,13 @@
   color: var(--color-error);
 }
 
+/* The track floor gives way to the card once the card is narrower than it,
+   so a portrait window sizes the box down instead of being overflowed by it.
+   The grid inside the box scrolls on its own (`usage_grid_scroll`). */
 .ai_usage_charts {
   display: grid;
   gap: var(--space-4);
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
 }
 
 .ai_usage_chart_box {
