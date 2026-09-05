@@ -68,12 +68,18 @@ def _declared(services: list) -> list:
 
 def _declare(panel, body: dict) -> dict:
     """Create one declaration and return its published row."""
+    before = {
+        entry["record_id"] for entry in _declared(panel.read("/services")["services"])
+    }
     status, listed = panel.call("POST", "/services/declared", body)
     assert status == 201, listed
-    for entry in _declared(listed["services"]):
-        if entry["title"] == body["name"]:
-            return entry
-    raise AssertionError(f"{body['name']} not in the refreshed list: {listed}")
+    fresh = [
+        entry
+        for entry in _declared(listed["services"])
+        if entry["record_id"] not in before
+    ]
+    assert len(fresh) == 1, (body["name"], fresh)
+    return fresh[0]
 
 
 def _delete(panel, record_id: str) -> None:

@@ -32,7 +32,8 @@ Version: {version}
 Section: admin
 Priority: optional
 Architecture: all
-Depends: python3 (>= {python}), systemd, cifs-utils, openssh-server
+Depends: python3 (>= {python}), systemd
+Recommends: cifs-utils, openssh-server
 Maintainer: {maintainer}
 Description: Neutrino device agent
  Keeps a managed machine's modules in the state its Neutrino Hub asks for:

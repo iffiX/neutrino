@@ -54,7 +54,6 @@ def test_login_lifecycle(panel):
     assert status == 200, created
     assert "password" not in created
     assert created["device_count"] == 0
-    assert created["service_count"] == 0
 
     listed = panel.read("/credentials/logins")["logins"]
     assert any(entry["id"] == created["id"] for entry in listed)
@@ -116,7 +115,7 @@ def test_deleting_a_login_clears_the_device_that_referenced_it(panel):
 
     status, cleared = panel.call("DELETE", f"/credentials/logins/{login['id']}")
     assert status == 200, cleared
-    assert cleared == {"cleared": {"device_count": 1, "service_count": 0}}
+    assert cleared == {"cleared": {"device_count": 1}}
 
     stored = next(
         entry

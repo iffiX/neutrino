@@ -46,8 +46,8 @@ URL:            https://github.com/iffiX/neutrino
 BuildArch:      noarch
 Requires:       python3 >= {python}
 Requires:       systemd
-Requires:       cifs-utils
-Requires:       openssh-server
+Recommends:     cifs-utils
+Recommends:     openssh-server
 Packager:       {packager}
 
 # The agent ships as source outside site-packages, which is not a tree
