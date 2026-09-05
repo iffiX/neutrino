@@ -3,7 +3,14 @@
 Installed software is not removed just because a module was never switched
 on — "not switched on" is not "take it off this machine", and software that
 was here before the agent was must survive the agent arriving. Removal
-happens only when the hub says off and the manifest names a removal command.
+happens only when the hub says off, and it purges on Debian so a half-kept
+``rc`` state cannot read as still installed.
+
+An attempt whose verify does not confirm it latches, in both directions: an
+install that cannot be confirmed is not re-downloaded every idle re-check,
+and a removal that did not take is not re-run every minute either. Asking
+for the opposite clears the latch, so a person's next decision is a fresh
+attempt.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -23,6 +30,8 @@ from neutrino_agent.modules.downloader import (
 
 VERIFY_TIMEOUT_S = 30
 
+DEB_INSTALLED_STATUS = "install ok installed"
+
 
 class PackageModuleReconciler(ModuleReconciler):
     """Installs, verifies and removes one downloadable package."""
@@ -37,12 +46,11 @@ class PackageModuleReconciler(ModuleReconciler):
             publish: Called with ``(name, status)`` for transient states.
         """
         super().__init__(platform=platform, log=log, publish=publish)
-        # Modules whose install ran and whose verify did not confirm it.
-        # Without this the idle re-check finds them absent a minute later and
-        # installs them again, for ever: a package whose verify command names
-        # the wrong path is re-downloaded every minute until somebody notices
-        # the traffic.
-        self._unconfirmed: set = set()
+        # Modules whose install or removal ran and whose verify did not
+        # confirm it. Without these the idle re-check repeats the same
+        # attempt every minute for ever.
+        self._install_unconfirmed: set = set()
+        self._remove_unconfirmed: set = set()
 
     def reconcile(
         self, *, name: str, manifest: dict, entry: dict, wanted: "dict | None"
@@ -59,30 +67,29 @@ class PackageModuleReconciler(ModuleReconciler):
             ``{"state", "code", "params", "is_active"}``.
         """
         is_enabled = None if wanted is None else bool(wanted.get("is_enabled"))
-        is_installed = self._verify(manifest)
+        is_installed = self._verify(manifest, entry)
         if is_enabled is None:
             return clean_status("installed" if is_installed else "absent")
         if not is_enabled:
             return self._remove(name, manifest, entry, is_installed)
+        self._remove_unconfirmed.discard(name)
         if is_installed:
-            self._unconfirmed.discard(name)
+            self._install_unconfirmed.discard(name)
             return clean_status("installed")
-        if name in self._unconfirmed:
-            # Installed once already, and the verify still says otherwise.
-            # Repeating it would fetch the same package on every re-check.
-            return self._unconfirmed_status()
+        if name in self._install_unconfirmed:
+            return self._install_unconfirmed_status()
         return self._install(name, manifest, entry)
 
     def _remove(
         self, name: str, manifest: dict, entry: dict, is_installed: bool
     ) -> dict:
-        # Asking for it to go clears the note that installing it did not
-        # confirm, so asking for it again is a fresh attempt rather than
-        # the remembered answer.
-        self._unconfirmed.discard(name)
+        self._install_unconfirmed.discard(name)
         if not is_installed:
+            self._remove_unconfirmed.discard(name)
             return clean_status("absent")
-        removal = entry.get("uninstall", "")
+        if name in self._remove_unconfirmed:
+            return self._remove_unconfirmed_status()
+        removal = self._removal_command(manifest, entry)
         if not removal:
             # Nothing was ever asked of it, or it cannot be removed
             # safely; either way it stays and says so.
@@ -90,13 +97,9 @@ class PackageModuleReconciler(ModuleReconciler):
         self._publish(name, clean_status("removing"))
         self._log(f"{name}: removing")
         self._platform.uninstall_package(removal)
-        if self._verify(manifest):
-            return {
-                "state": "installed",
-                "code": "remove_unconfirmed",
-                "params": {},
-                "is_active": False,
-            }
+        if self._verify(manifest, entry):
+            self._remove_unconfirmed.add(name)
+            return self._remove_unconfirmed_status()
         return clean_status("absent")
 
     def _install(self, name: str, manifest: dict, entry: dict) -> dict:
@@ -127,13 +130,13 @@ class PackageModuleReconciler(ModuleReconciler):
             self._platform.install_package(
                 package, package_kind=package_kind, entry=entry
             )
-        if self._verify(manifest):
-            self._unconfirmed.discard(name)
+        if self._verify(manifest, entry):
+            self._install_unconfirmed.discard(name)
             return clean_status("installed")
-        self._unconfirmed.add(name)
-        return self._unconfirmed_status()
+        self._install_unconfirmed.add(name)
+        return self._install_unconfirmed_status()
 
-    def _unconfirmed_status(self) -> dict:
+    def _install_unconfirmed_status(self) -> dict:
         return {
             "state": "installed",
             "code": "verify_unconfirmed",
@@ -141,10 +144,52 @@ class PackageModuleReconciler(ModuleReconciler):
             "is_active": False,
         }
 
-    def _verify(self, manifest: dict) -> bool:
-        """Whether a module's own check says it is already installed."""
-        verify = manifest.get("verify", {})
-        command = verify.get(self._platform.os_name, "")
+    def _remove_unconfirmed_status(self) -> dict:
+        return {
+            "state": "installed",
+            "code": "remove_unconfirmed",
+            "params": {},
+            "is_active": False,
+        }
+
+    def _removal_command(self, manifest: dict, entry: dict) -> str:
+        """The command that takes this package off the machine.
+
+        A deb is purged by name: ``apt-get remove`` leaves the ``rc`` state
+        behind, whose config-files remnant is what made a removal look like
+        it never took. Other kinds keep the manifest's own command.
+
+        Args:
+            manifest: The module's manifest.
+            entry: The manifest's entry for this platform.
+
+        Returns:
+            The shell command, empty when the module names none.
+        """
+        if entry.get("package_kind") == "deb":
+            package = self._package_name(manifest, entry)
+            if package:
+                return f"apt-get purge -y {package}"
+        return entry.get("uninstall", "")
+
+    def _verify(self, manifest: dict, entry: dict) -> bool:
+        """Whether the package is actually installed.
+
+        A deb is judged by dpkg's own status database: only
+        ``install ok installed`` counts, so the ``rc`` state a plain remove
+        leaves behind reads as absent. Other kinds run the manifest's own
+        verify command.
+
+        Args:
+            manifest: The module's manifest.
+            entry: The manifest's entry for this platform.
+
+        Returns:
+            True when the package is installed.
+        """
+        if entry.get("package_kind") == "deb":
+            return self._verify_deb(self._package_name(manifest, entry))
+        command = manifest.get("verify", {}).get(self._platform.os_name, "")
         if not command:
             return False
         try:
@@ -154,3 +199,21 @@ class PackageModuleReconciler(ModuleReconciler):
         except (OSError, subprocess.SubprocessError):
             return False
         return result.returncode == 0
+
+    def _verify_deb(self, package: str) -> bool:
+        if not package:
+            return False
+        try:
+            result = subprocess.run(
+                ["dpkg-query", "-W", "-f=${Status}", package],
+                capture_output=True,
+                text=True,
+                timeout=VERIFY_TIMEOUT_S,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return result.returncode == 0 and result.stdout.strip() == DEB_INSTALLED_STATUS
+
+    @staticmethod
+    def _package_name(manifest: dict, entry: dict) -> str:
+        return str(entry.get("package", "") or manifest.get("name", ""))
