@@ -136,6 +136,14 @@ class Agent:
         with self._lock:
             return self._last_error or self._update_error
 
+    def accounts(self) -> list:
+        """The machine's human accounts, by the platform's own judgment."""
+        return self._read_accounts()
+
+    def ai_targets(self) -> dict:
+        """Which accounts are switched at the hub's gateway."""
+        return self._ai_store.targets()
+
     # --- what the local page does ---
 
     def connect(self, link: str) -> None:
