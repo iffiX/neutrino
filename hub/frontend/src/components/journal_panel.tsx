@@ -25,13 +25,16 @@ const WORDING = {
 const JOURNAL_LINES = 200;
 
 interface JournalPanelProps {
-  moduleName: string;
+  moduleName?: string;
+  /** Overrides the module path for journals living on another router. */
+  path?: string;
   isOpen: boolean;
 }
 
-export function JournalPanel({ moduleName, isOpen }: JournalPanelProps) {
+export function JournalPanel({ moduleName, path, isOpen }: JournalPanelProps) {
+  const journalPath = path ?? `/modules/${moduleName ?? ""}/journal`;
   const journal = usePolledResource<ServiceJournal>(
-    isOpen ? `/modules/${moduleName}/journal?lines=${JOURNAL_LINES}` : null,
+    isOpen ? `${journalPath}?lines=${JOURNAL_LINES}` : null,
   );
   const outputRef = useRef<HTMLPreElement | null>(null);
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { ApplyBar } from "../components/apply_bar";
+import { JournalPanel } from "../components/journal_panel";
 import { ErrorPanel } from "../components/error_panel";
 import { ModuleStateBadge } from "../components/module_state_badge";
 import { Icon } from "../components/icon";
@@ -58,6 +59,7 @@ export function ContainersPage() {
   const [error, setError] = useState<string | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
   const [shellTarget, setShellTarget] = useState<string | null>(null);
+  const [journalTarget, setJournalTarget] = useState<string | null>(null);
 
   // The live list polls every few seconds, so resource.data changes identity
   // constantly. The draft is only re-seeded when the *saved declarations*
@@ -114,7 +116,7 @@ export function ContainersPage() {
         setMirrorsError(result.message);
         return;
       }
-      setMirrorsNotice(result.message);
+      setMirrorsNotice("Applied.");
     } catch (cause: unknown) {
       setMirrorsError(describeError(cause));
     } finally {
@@ -134,7 +136,7 @@ export function ContainersPage() {
         setError(result.message);
         return;
       }
-      setNotice(result.message);
+      setNotice("Applied.");
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -215,12 +217,24 @@ export function ContainersPage() {
         ) : (
           <div className="container_rows">
             {saved.running.map((state) => (
-              <ContainerRow
-                key={state.name}
-                state={state}
-                onAction={(action) => void controlContainer(state.name, action)}
-                onShell={() => setShellTarget(state.name)}
-              />
+              <div key={state.name}>
+                <ContainerRow
+                  state={state}
+                  onAction={(action) =>
+                    void controlContainer(state.name, action)
+                  }
+                  onShell={() => setShellTarget(state.name)}
+                  onJournal={() =>
+                    setJournalTarget(
+                      journalTarget === state.name ? null : state.name,
+                    )
+                  }
+                />
+                <JournalPanel
+                  path={`/podman/containers/${state.name}/journal`}
+                  isOpen={journalTarget === state.name}
+                />
+              </div>
             ))}
           </div>
         )}
@@ -328,7 +342,7 @@ export function ContainersPage() {
           isBusy={isBusy}
           label="Apply containers"
           hint="First starts pull the image, which can take a while."
-          warning="Recreates changed containers; files outside volumes are lost."
+          warning="Edited containers will be recreated, and files outside volumes will be lost."
           error={error}
           notice={notice}
           onReset={() => setContainers(saved.containers)}
@@ -500,12 +514,18 @@ function ContainerEditor({
 }
 
 interface ContainerRowProps {
+  onJournal: () => void;
   state: PodmanContainerState;
   onAction: (action: string) => void;
   onShell: () => void;
 }
 
-function ContainerRow({ state, onAction, onShell }: ContainerRowProps) {
+function ContainerRow({
+  state,
+  onAction,
+  onShell,
+  onJournal,
+}: ContainerRowProps) {
   return (
     <div className="container_row">
       <span className="container_row_name">
@@ -523,6 +543,14 @@ function ContainerRow({ state, onAction, onShell }: ContainerRowProps) {
         <span className="badge">ad hoc</span>
       )}
       <div className="container_row_actions">
+        <button
+          type="button"
+          className="button button--small"
+          onClick={onJournal}
+        >
+          <Icon name="file" size={12} />
+          Journal
+        </button>
         {state.is_running ? (
           <>
             <button
@@ -571,6 +599,7 @@ interface ContainerShellModalProps {
 }
 
 function ContainerShellModal({ name, onClose }: ContainerShellModalProps) {
+  const [isEnded, setIsEnded] = useState(false);
   // A portal, same as the device terminal: no ancestor may capture it.
   return createPortal(
     <div className="terminal_modal_backdrop" role="dialog" aria-modal="true">
@@ -594,10 +623,14 @@ function ContainerShellModal({ name, onClose }: ContainerShellModalProps) {
         <div className="terminal_modal_surface">
           <ShellTerminal
             socketPath={`/ws/container/${name}`}
-            onExit={onClose}
+            onExit={() => setIsEnded(true)}
           />
         </div>
-        <div className="terminal_modal_status">Shell inside the container.</div>
+        <div className="terminal_modal_status">
+          {isEnded
+            ? "The shell ended — what it printed stays until you close."
+            : "Shell inside the container."}
+        </div>
       </div>
     </div>,
     document.body,

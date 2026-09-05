@@ -8,9 +8,13 @@ shell, each with start/stop/restart and a shell of its own.
 
 import shutil
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from neutrino_hub.modules.podman.config import PodmanConfig, PodmanContainer
+from neutrino_hub.modules.podman.config import (
+    CONTAINER_NAME_PATTERN,
+    PodmanConfig,
+    PodmanContainer,
+)
 from neutrino_hub.modules.podman.ops import (
     PodmanContainerController,
     PodmanStatusReader,
@@ -18,7 +22,9 @@ from neutrino_hub.modules.podman.ops import (
 )
 from neutrino_hub.utils.subprocess_run import CommandError, run
 from neutrino_hub.web.dependencies import get_runtime, require_session
+from neutrino_hub.web.constants import WEB_JOURNAL_LINE_LIMIT
 from neutrino_hub.web.models import (
+    JournalView,
     ApplyResult,
     PodmanContainerListUpdate,
     PodmanMirrorListUpdate,
@@ -157,6 +163,44 @@ def image_tags(image: str) -> PodmanTagListView:
         hub that cannot be reached — typing a tag by hand always works.
     """
     return PodmanTagListView(tags=list_image_tags(image))
+
+
+@router.get("/containers/{name}/journal", response_model=JournalView)
+def container_journal(
+    name: str,
+    lines: int = Query(default=100, ge=1, le=WEB_JOURNAL_LINE_LIMIT),
+) -> JournalView:
+    """Read the tail of one container unit's journal.
+
+    The image pull happens inside the unit's own start, so this is where
+    its progress and its failures are read.
+
+    Args:
+        name: The container's name, held to the config charset.
+        lines: How many lines to return.
+
+    Returns:
+        The journal text.
+
+    Raises:
+        HTTPException: 404 for a name outside the charset.
+    """
+    if not CONTAINER_NAME_PATTERN.match(name):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=name)
+    result = run(
+        [
+            "journalctl",
+            "-u",
+            f"{name}.service",
+            "-n",
+            str(lines),
+            "--no-pager",
+            "--output",
+            "short-iso",
+        ],
+        is_checked=False,
+    )
+    return JournalView(text=result.stdout or result.stderr)
 
 
 @router.post("/containers/{name}/{action}", response_model=PodmanSettingsView)
