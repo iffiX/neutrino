@@ -3,13 +3,21 @@ import { useEffect, useState } from "react";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { StatusDot } from "../components/status_dot";
-import { ApiError, apiDelete, apiPost, describeError } from "../api_client";
+import { StringListEditor } from "../components/string_list_editor";
+import {
+  ApiError,
+  apiDelete,
+  apiGet,
+  apiPost,
+  describeError,
+} from "../api_client";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
 import type {
   DeclaredServiceCreate,
   PublishedService,
   PublishedServiceType,
+  ServiceSharesResponse,
   ServicesResponse,
 } from "../api_types";
 
@@ -43,10 +51,26 @@ const MODULE_STATE_LABELS: Record<"ok" | "error", string> = {
   ok: "serving",
   error: "not serving",
 };
-const DECLARED_STATE_LABELS: Record<"ok" | "error" | "idle", string> = {
+const DECLARED_STATE_LABELS: Record<
+  "ok" | "error" | "idle" | "unchecked",
+  string
+> = {
   ok: "reachable",
   error: "unreachable",
   idle: "checking…",
+  unchecked: "not checked",
+};
+
+// The probe's detail_code, worded. A file service is measured against the
+// server's own list of exports, so a share that is not on it reads
+// differently from a server that never answered, and differently again from
+// a hub that has no client to ask with.
+const DECLARED_DETAIL_WORDING: Record<string, string> = {
+  connect_failed: "The host did not answer.",
+  server_error: "The server answered with an error.",
+  share_missing: "The server answers, but does not export this share.",
+  tool_missing:
+    "This hub has no smbclient to list shares with; install the Samba module.",
 };
 const SOURCE_LABELS: Record<PublishedService["source"], string> = {
   module: "module",
@@ -60,11 +84,17 @@ const FIELD_HOST = "Host";
 const FIELD_PORT = "Port";
 const FIELD_SCHEME = "Scheme";
 const FIELD_PATH = "Path";
-const FIELD_SHARE = "Share";
+const FIELD_SHARES = "Shares";
 const FIELD_DESCRIPTION = "Description";
 const HOST_HINT =
   "A loopback or hub-held host is served to each machine as the address it reaches the hub on.";
 const PORT_HINT_FILE = "Left blank, a file service gets 445.";
+const SHARES_HINT = "Each one is published as its own row.";
+const SHARES_PLACEHOLDER = "media";
+const SHARES_EMPTY = "No shares — scan the host, or type one.";
+const SCAN_LABEL = "Scan host";
+const SCANNING_LABEL = "Scanning…";
+const SCAN_EMPTY = "The host exports nothing to declare.";
 const SAVE_LABEL = "Declare";
 const SAVING_LABEL = "Declaring…";
 const CANCEL_LABEL = "Cancel";
@@ -235,10 +265,18 @@ function ServiceRow({ service, onChanged }: ServiceRowProps) {
       : service.is_healthy === false
         ? "error"
         : "idle";
+  // A declared row with no health but a code was measured and could not be
+  // judged, which is not the same as one still waiting for its first probe.
+  const declaredState =
+    tone === "idle" && service.detail_code !== null ? "unchecked" : tone;
   const stateLabel =
     service.source === "module"
       ? MODULE_STATE_LABELS[tone === "idle" ? "error" : tone]
-      : DECLARED_STATE_LABELS[tone];
+      : DECLARED_STATE_LABELS[declaredState];
+  const detail =
+    service.detail_code === null
+      ? undefined
+      : DECLARED_DETAIL_WORDING[service.detail_code];
 
   const handleProbe = async () => {
     if (service.record_id === null) {
@@ -296,6 +334,9 @@ function ServiceRow({ service, onChanged }: ServiceRowProps) {
             {service.description}
           </span>
         )}
+        {detail !== undefined && (
+          <span className="published_row_detail">{detail}</span>
+        )}
         {error !== null && <span className="field_error">{error}</span>}
       </div>
       <span className="published_row_state">{stateLabel}</span>
@@ -339,9 +380,12 @@ function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
   const [port, setPort] = useState("");
   const [scheme, setScheme] = useState("http");
   const [path, setPath] = useState("/");
-  const [share, setShare] = useState("");
+  const [shares, setShares] = useState<string[]>([]);
   const [description, setDescription] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanNotice, setScanNotice] = useState<string | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const isPortReady =
@@ -350,7 +394,29 @@ function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
     name.trim().length > 0 &&
     host.trim().length > 0 &&
     isPortReady &&
-    (kind !== "file" || share.trim().length > 0);
+    (kind !== "file" || shares.length > 0);
+
+  const handleScan = async () => {
+    setIsScanning(true);
+    setScanNotice(null);
+    setScanError(null);
+    try {
+      const found = await apiGet<ServiceSharesResponse>(
+        `/services/shares?host=${encodeURIComponent(host.trim())}`,
+      );
+      setShares((current) => [
+        ...current,
+        ...found.shares.filter((entry) => !current.includes(entry)),
+      ]);
+      if (found.shares.length === 0) {
+        setScanNotice(SCAN_EMPTY);
+      }
+    } catch (cause: unknown) {
+      setScanError(describeDeclaredError(cause));
+    } finally {
+      setIsScanning(false);
+    }
+  };
 
   const handleSubmit = async () => {
     setIsSaving(true);
@@ -362,7 +428,7 @@ function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
       port: port.trim().length > 0 ? Number(port.trim()) : null,
       scheme: kind === "web" ? scheme : null,
       path: kind === "web" ? path.trim() : null,
-      share: kind === "file" ? share.trim() : null,
+      shares: kind === "file" ? shares : null,
       description: description.trim(),
     };
     try {
@@ -461,16 +527,33 @@ function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
         </div>
       )}
       {kind === "file" && (
-        <label className="field">
-          <span className="field_label">{FIELD_SHARE}</span>
-          <input
-            className="input"
-            value={share}
-            placeholder="media"
-            spellCheck={false}
-            onChange={(event) => setShare(event.target.value)}
+        <div className="declared_shares">
+          <StringListEditor
+            label={FIELD_SHARES}
+            values={shares}
+            onChange={setShares}
+            description={SHARES_HINT}
+            placeholder={SHARES_PLACEHOLDER}
+            emptyText={SHARES_EMPTY}
           />
-        </label>
+          <div className="declared_shares_scan">
+            <button
+              type="button"
+              className="button button--ghost button--small"
+              disabled={host.trim().length === 0 || isScanning}
+              onClick={() => void handleScan()}
+            >
+              <Icon name="refresh" size={12} />
+              {isScanning ? SCANNING_LABEL : SCAN_LABEL}
+            </button>
+            {scanNotice !== null && (
+              <span className="field_hint">{scanNotice}</span>
+            )}
+            {scanError !== null && (
+              <span className="field_error">{scanError}</span>
+            )}
+          </div>
+        </div>
       )}
       <label className="field">
         <span className="field_label">{FIELD_DESCRIPTION}</span>
@@ -543,6 +626,13 @@ function describeDeclaredError(cause: unknown): string {
     if (detail.code === "declared_service_invalid") {
       const params = (detail.params ?? {}) as Record<string, unknown>;
       const wording = DECLARED_INVALID_WORDING[String(params.field)];
+      if (wording !== undefined) {
+        return wording;
+      }
+    }
+    if (detail.code === "share_scan_failed") {
+      const params = (detail.params ?? {}) as Record<string, unknown>;
+      const wording = DECLARED_DETAIL_WORDING[String(params.reason)];
       if (wording !== undefined) {
         return wording;
       }

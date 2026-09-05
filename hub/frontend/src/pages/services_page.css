@@ -47,6 +47,11 @@
   font-size: 12px;
 }
 
+.published_row_detail {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
 .published_row_state {
   color: var(--color-text-muted);
   font-size: 12px;
@@ -77,6 +82,19 @@
 .declared_form_row .field {
   flex: 1;
   min-width: 180px;
+}
+
+.declared_shares {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.declared_shares_scan {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 .declared_form_actions {

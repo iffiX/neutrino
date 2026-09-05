@@ -895,7 +895,8 @@ export interface PublishedServicePayload {
 /**
  * One entry of the typed service list. A `record_id` names the declared
  * record behind a declared entry; a module-declared entry carries null and
- * is read-only.
+ * is read-only. `detail_code` is what that record's last probe measured,
+ * null on one that answered as declared and on every module entry.
  */
 export interface PublishedService {
   id: string;
@@ -906,6 +907,7 @@ export interface PublishedService {
   source: "module" | "declared";
   description: string;
   record_id: string | null;
+  detail_code: string | null;
 }
 
 /** A declaration as the form submits it; `kind` is a service type. */
@@ -916,12 +918,17 @@ export interface DeclaredServiceCreate {
   port: number | null;
   scheme: string | null;
   path: string | null;
-  share: string | null;
+  shares: string[] | null;
   description: string;
 }
 
 export interface ServicesResponse {
   services: PublishedService[];
+}
+
+/** What one SMB server exports, administrative shares dropped. */
+export interface ServiceSharesResponse {
+  shares: string[];
 }
 
 export interface ServiceJournal {
