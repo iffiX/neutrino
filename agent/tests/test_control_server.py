@@ -26,6 +26,8 @@ class FakeControlPlatform(AgentPlatform):
     def __init__(self):
         self.peer = dict(ROOT)
         self.peer_error = None
+        self.fs_calls = []
+        self.fs_error = None
 
     def human_accounts(self) -> list:
         return ["alice", "bob"]
@@ -35,6 +37,17 @@ class FakeControlPlatform(AgentPlatform):
             raise self.peer_error
         return self.peer
 
+    def list_directories(self, *, account: str, path: str) -> list:
+        self.fs_calls.append(("list", account, path))
+        if self.fs_error is not None:
+            raise self.fs_error
+        return ["docs", "media"]
+
+    def make_directory(self, *, account: str, path: str) -> None:
+        self.fs_calls.append(("mkdir", account, path))
+        if self.fs_error is not None:
+            raise self.fs_error
+
 
 class FakeControlAgent:
     def __init__(self):
@@ -42,6 +55,11 @@ class FakeControlAgent:
         self.connected_links = []
         self.is_disconnected = False
         self.connect_error = None
+        self.ai_requests = []
+        self.mount_calls = []
+        self.mount_reply = {}
+        self.forward_requests = []
+        self.forward_reply = {}
 
     def platform(self) -> dict:
         return {"os": "linux", "family": "debian", "arch": "x86_64"}
@@ -76,6 +94,51 @@ class FakeControlAgent:
 
     def ai_targets(self) -> dict:
         return {"alice": True, "bob": False}
+
+    def ai_states(self) -> dict:
+        return {
+            "alice": {
+                "state": "installed",
+                "code": "",
+                "params": {},
+                "is_active": True,
+            },
+            "bob": {"state": "absent", "code": "", "params": {}, "is_active": False},
+        }
+
+    def account_home(self, account) -> str:
+        return "/root" if account == "root" else f"/home/{account}"
+
+    def mount_rows(self) -> list:
+        return [
+            {
+                "record_id": "r1",
+                "offer_id": "hub_share_media",
+                "path": "/home/alice/nas/media",
+                "account": "alice",
+                "is_attached": True,
+                "code": "",
+                "params": {},
+            }
+        ]
+
+    def forward_rows(self) -> dict:
+        return {"svc_tcp": {"local_port": 5432, "is_active": True}}
+
+    def request_ai(self, account, *, is_activated):
+        self.ai_requests.append((account, is_activated))
+
+    def attach_mount(self, **kwargs) -> dict:
+        self.mount_calls.append(("attach", kwargs))
+        return dict(self.mount_reply)
+
+    def detach_mount(self, **kwargs) -> dict:
+        self.mount_calls.append(("detach", kwargs))
+        return dict(self.mount_reply)
+
+    def request_forward(self, offer_id, *, is_enabled) -> dict:
+        self.forward_requests.append((offer_id, is_enabled))
+        return dict(self.forward_reply)
 
     def request_function(self, name, *, is_enabled=None, is_activated=None):
         self.requested.append((name, is_enabled, is_activated))
@@ -149,14 +212,22 @@ def test_socket_state_is_scoped_to_the_peer(control):
     platform.peer = dict(ROOT)
     status, state = over_socket(server, "GET", "/api/state")
     assert status == 200
-    assert state["caller"] == {"account": "root", "is_privileged": True}
+    assert state["caller"] == {
+        "account": "root",
+        "is_privileged": True,
+        "home": "/root",
+    }
     assert state["accounts"] == ["alice", "bob"]
     assert state["ai_targets"] == {"alice": True, "bob": False}
 
     platform.peer = dict(ALICE)
     status, state = over_socket(server, "GET", "/api/state")
     assert status == 200
-    assert state["caller"] == {"account": "alice", "is_privileged": False}
+    assert state["caller"] == {
+        "account": "alice",
+        "is_privileged": False,
+        "home": "/home/alice",
+    }
     assert state["accounts"] == ["alice"]
     assert state["ai_targets"] == {"alice": True}
     assert state["services"]["svc_wiki"]["url"] == "http://w/"
@@ -182,7 +253,11 @@ def test_a_minted_token_unlocks_the_page_in_its_own_scope(control):
     status, state = loopback_json(server, "GET", "/api/state", token=token)
 
     assert status == 200
-    assert state["caller"] == {"account": "alice", "is_privileged": False}
+    assert state["caller"] == {
+        "account": "alice",
+        "is_privileged": False,
+        "home": "/home/alice",
+    }
     assert state["accounts"] == ["alice"]
 
 
@@ -304,7 +379,11 @@ def test_minting_for_another_account_is_privileged(control):
     token = mint(server, platform, ROOT, {"account": "bob"})
     status, state = loopback_json(server, "GET", "/api/state", token=token)
     assert status == 200
-    assert state["caller"] == {"account": "bob", "is_privileged": False}
+    assert state["caller"] == {
+        "account": "bob",
+        "is_privileged": False,
+        "home": "/home/bob",
+    }
     assert state["accounts"] == ["bob"]
 
     platform.peer = dict(ROOT)
@@ -321,8 +400,8 @@ def test_tokens_are_minted_only_over_the_socket(control):
     assert (status, reply["code"]) == (404, "unknown_request")
 
 
-def test_service_actions_are_declared_with_scopes_but_not_filled(control):
-    server, _agent, platform = control
+def test_ai_switching_is_scoped_to_own_account_or_privilege(control):
+    server, agent, platform = control
 
     platform.peer = dict(ALICE)
     status, reply = over_socket(
@@ -330,20 +409,140 @@ def test_service_actions_are_declared_with_scopes_but_not_filled(control):
     )
     assert (status, reply["code"]) == (403, "control_scope_refused")
 
-    status, reply = over_socket(
+    status, _state = over_socket(
         server, "POST", "/api/services/ai", {"account": "alice", "is_activated": True}
     )
-    assert (status, reply["code"]) == (501, "not_implemented")
+    assert status == 200
 
     platform.peer = dict(ROOT)
-    status, reply = over_socket(
-        server, "POST", "/api/services/ai", {"account": "bob", "is_activated": True}
+    status, _state = over_socket(
+        server, "POST", "/api/services/ai", {"account": "bob", "is_activated": False}
     )
-    assert (status, reply["code"]) == (501, "not_implemented")
+    assert status == 200
+    assert agent.ai_requests == [("alice", True), ("bob", False)]
 
-    for path in ("/api/services/mount", "/api/services/forward"):
-        status, reply = over_socket(server, "POST", path, {})
-        assert (status, reply["code"]) == (501, "not_implemented")
+    status, reply = over_socket(
+        server, "POST", "/api/services/ai", {"account": "mallory", "is_activated": True}
+    )
+    assert (status, reply["code"]) == (400, "no_target_user")
+
+
+def test_the_state_carries_the_service_rows_in_scope(control):
+    server, _agent, platform = control
+
+    platform.peer = dict(ROOT)
+    status, state = over_socket(server, "GET", "/api/state")
+    assert status == 200
+    assert state["caller"]["home"] == "/root"
+    assert sorted(state["ai_states"]) == ["alice", "bob"]
+    assert state["mounts"][0]["record_id"] == "r1"
+    assert state["forwards"]["svc_tcp"]["local_port"] == 5432
+
+    platform.peer = dict(ALICE)
+    status, state = over_socket(server, "GET", "/api/state")
+    assert status == 200
+    assert state["caller"]["home"] == "/home/alice"
+    assert list(state["ai_states"]) == ["alice"]
+    assert state["mounts"] and state["forwards"]
+
+
+def test_mount_actions_carry_the_callers_identity(control):
+    server, agent, platform = control
+
+    platform.peer = dict(ALICE)
+    status, _state = over_socket(
+        server,
+        "POST",
+        "/api/services/mount",
+        {
+            "action": "attach",
+            "offer_id": "hub_share_media",
+            "username": "media",
+            "password": "secret",  # scan: allow
+            "path": "/home/alice/nas/media",
+        },
+    )
+    assert status == 200
+    action, kwargs = agent.mount_calls[0]
+    assert action == "attach"
+    assert kwargs["account"] == "alice" and kwargs["is_privileged"] is False
+    assert kwargs["password"] == "secret"  # scan: allow
+
+    platform.peer = dict(ROOT)
+    status, _state = over_socket(
+        server, "POST", "/api/services/mount", {"action": "detach", "record_id": "r1"}
+    )
+    assert status == 200
+    action, kwargs = agent.mount_calls[1]
+    assert action == "detach"
+    assert kwargs["is_privileged"] is True and kwargs["record_id"] == "r1"
+
+    agent.mount_reply = {"code": "mountpoint_not_empty", "params": {}}
+    status, reply = over_socket(
+        server,
+        "POST",
+        "/api/services/mount",
+        {"action": "attach", "offer_id": "x", "path": "/tmp/full"},
+    )
+    assert (status, reply["code"]) == (400, "mountpoint_not_empty")
+
+    status, reply = over_socket(server, "POST", "/api/services/mount", {})
+    assert (status, reply["code"]) == (404, "unknown_request")
+
+
+def test_forwards_toggle_for_every_scope(control):
+    server, agent, platform = control
+
+    platform.peer = dict(ALICE)
+    status, _state = over_socket(
+        server,
+        "POST",
+        "/api/services/forward",
+        {"offer_id": "svc_tcp", "is_enabled": True},
+    )
+    assert status == 200
+    assert agent.forward_requests == [("svc_tcp", True)]
+
+    agent.forward_reply = {"code": "unknown_request", "params": {}}
+    status, reply = over_socket(
+        server, "POST", "/api/services/forward", {"offer_id": "gone"}
+    )
+    assert (status, reply["code"]) == (404, "unknown_request")
+
+
+def test_the_directory_listing_runs_as_the_caller(control):
+    server, _agent, platform = control
+
+    platform.peer = dict(ALICE)
+    status, reply = over_socket(server, "GET", "/api/fs?path=/srv")
+    assert status == 200
+    assert reply == {"path": "/srv", "dirs": ["docs", "media"]}
+    assert platform.fs_calls[-1] == ("list", "alice", "/srv")
+
+    platform.peer = dict(ROOT)
+    status, reply = over_socket(server, "GET", "/api/fs?path=/srv")
+    assert status == 200
+    assert platform.fs_calls[-1] == ("list", "", "/srv")
+
+    status, reply = over_socket(server, "GET", "/api/fs")
+    assert status == 200
+    assert platform.fs_calls[-1] == ("list", "", "/root")
+
+    platform.fs_error = OSError("refused")
+    status, reply = over_socket(server, "GET", "/api/fs?path=/srv")
+    assert (status, reply["code"]) == (403, "fs_refused")
+
+
+def test_making_a_folder_follows_the_same_identity_rules(control):
+    server, _agent, platform = control
+
+    platform.peer = dict(ALICE)
+    status, reply = over_socket(server, "POST", "/api/fs", {"path": "/srv/new"})
+    assert status == 200
+    assert platform.fs_calls[-1] == ("mkdir", "alice", "/srv/new")
+
+    status, reply = over_socket(server, "POST", "/api/fs", {"path": "relative"})
+    assert (status, reply["code"]) == (403, "fs_refused")
 
 
 def test_an_unknown_route_answers_a_code(control):

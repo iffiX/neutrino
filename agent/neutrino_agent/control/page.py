@@ -58,6 +58,23 @@ CONTROL_PAGE_HTML = """<!doctype html>
   a.link:hover { text-decoration: underline; }
   .err { color: #ff4252; font-size: 12px; }
   .muted { color: #7d8590; }
+  .form { display: flex; flex-direction: column; gap: 8px; padding: 10px 0 4px 20px; }
+  .form .row input { flex: 1; }
+  .rec { display: flex; gap: 8px; align-items: center; padding: 4px 0 4px 20px;
+         font-size: 12px; color: #7d8590; font-family: ui-monospace, monospace; }
+  .rec .path { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .rec button { padding: 4px 10px; font-size: 12px; }
+  .overlay { position: fixed; inset: 0; background: rgba(4,6,10,.7);
+             display: flex; align-items: center; justify-content: center; z-index: 10; }
+  .modal { width: min(480px, calc(100vw - 40px)); max-height: 70vh;
+           display: flex; flex-direction: column; gap: 10px; }
+  .dirlist { overflow-y: auto; border: 1px solid #1f2937; border-radius: 8px;
+             min-height: 120px; max-height: 40vh; }
+  .dirlist button { display: block; width: 100%; text-align: left; border: none;
+                    border-bottom: 1px solid #1f2937; border-radius: 0;
+                    background: none; color: #e6edf3;
+                    font-family: ui-monospace, monospace; }
+  .dirlist button:last-child { border-bottom: none; }
 </style>
 </head>
 <body>
@@ -84,8 +101,21 @@ const WORDS = {
     activate: "Activate",
     deactivate: "Deactivate",
     forward: "Forward",
-    mount: "Mount",
+    stop: "Stop",
+    attach: "Attach",
+    detach: "Detach",
+    browse: "Browse…",
+    new_folder: "New folder",
+    new_folder_name: "Name of the new folder:",
+    choose: "Choose this folder",
+    cancel: "Cancel",
+    up: ".. up",
     open: "Open",
+    username_hint: "Share username",
+    password_hint: "Share password",  // scan: allow
+    path_hint: "Mount path",
+    not_attached: "not attached",
+    forwarding_to: "127.0.0.1:{port}",
     functions_wait_join: "Functions appear once this machine joins a gateway.",
     functions_wait_list: "Waiting for the gateway to send its function list…",
     services_empty: "Nothing is published for this machine yet.",
@@ -119,7 +149,10 @@ const WORDS = {
     no_target_user: "no account to switch for",
     no_endpoint: "the hub sent no endpoint for this account",
     desktop_app_remains: "the desktop app remains installed",
-    not_implemented: "not available yet",
+    mountpoint_not_empty: "that folder is not empty",
+    cifs_missing: "this machine has no CIFS mount tooling",
+    credentials_missing: "the saved login is gone — attach again",
+    fs_refused: "not allowed there for this account",
     control_scope_refused: "not allowed for this account",
     control_token_invalid: "this page's key was refused",
     unknown_request: "the agent does not know this request",
@@ -151,7 +184,9 @@ function wordCode(code, params) {
   if (!code) return '';
   const p = params || {};
   if (code === 'install_failed' || code === 'download_failed' ||
-      code === 'reconcile_failed') return p.detail || WORDS.states.failed;
+      code === 'reconcile_failed' || code === 'mount_failed' ||
+      code === 'unmount_failed' || code === 'forward_failed')
+    return p.detail || WORDS.states.failed;
   const word = WORDS.codes[code];
   return word ? fill(word, p) : code;
 }
@@ -189,6 +224,14 @@ function standing(f) {
 
 let lastState = null;
 let serviceNotes = {};
+// The AI step each chip asked for, shown until the account's row reports it.
+const askedAi = {};
+// The attach form's own values, kept across redraws; the password lives
+// only here and in the one request that sends it.
+let mountFormOffer = null;
+let mountForm = { username: '', password: '', path: '' };
+// The browse dialog: null when closed, else its current directory.
+let browser = null;
 
 function renderHint(text) {
   document.getElementById('content').innerHTML =
@@ -251,11 +294,15 @@ function askFor(name, step, body) {
 
 async function serviceAction(path, body, noteKey) {
   const reply = await api(path, body);
-  if (!reply) return;
+  if (!reply) return false;
   if (reply.code) {
     serviceNotes[noteKey] = wordCode(reply.code, reply.params);
     redraw();
+    return false;
   }
+  delete serviceNotes[noteKey];
+  draw(reply);
+  return true;
 }
 
 function redraw() {
@@ -277,6 +324,7 @@ function draw(rawState) {
   content.appendChild(drawConnection(state));
   content.appendChild(drawFunctions(state));
   content.appendChild(drawServices(state));
+  if (browser !== null) content.appendChild(drawBrowser());
 }
 
 function drawConnection(state) {
@@ -414,7 +462,7 @@ function drawServices(state) {
     if (kind === 'ai') {
       card.appendChild(drawEntry(state));
     } else {
-      for (const offer of members) card.appendChild(drawEntry(offer));
+      for (const offer of members) card.appendChild(drawEntry(offer, state));
     }
   }
   if (!hasAny) {
@@ -428,21 +476,37 @@ function drawAiGroup(state) {
   const box = document.createElement('div');
   const chips = document.createElement('div');
   chips.className = 'chips';
+  const notes = [];
   for (const account of state.accounts) {
-    const isOn = !!(state.ai_targets || {})[account];
+    const row = (state.ai_states || {})[account] || {};
+    const isOn = !!row.is_active;
+    let step = askedAi[account];
+    if (step !== undefined && (row.code || isOn === step)) {
+      delete askedAi[account];
+      step = undefined;
+    }
+    const isBusy = step !== undefined ||
+      ['installing', 'activating', 'deactivating'].includes(row.state);
     const chip = document.createElement('button');
     chip.className = isOn ? 'chip on' : 'chip';
-    chip.innerHTML = '<span class="dot ' + (isOn ? 'ok' : 'off') + '"></span>' +
-      account;
-    chip.onclick = () => serviceAction('/api/services/ai',
-      { account: account, is_activated: !isOn }, 'ai');
+    chip.disabled = isBusy;
+    chip.innerHTML = '<span class="dot ' + (isBusy ? 'bad' : isOn ? 'ok' : 'off') +
+      '"></span>' + account + (isBusy ? '…' : '');
+    chip.onclick = () => {
+      askedAi[account] = !isOn;
+      redraw();
+      serviceAction('/api/services/ai',
+        { account: account, is_activated: !isOn }, 'ai');
+    };
     chips.appendChild(chip);
+    if (row.code) notes.push(account + ': ' + wordCode(row.code, row.params));
   }
   box.appendChild(chips);
-  if (serviceNotes.ai) {
+  if (serviceNotes.ai) notes.push(serviceNotes.ai);
+  for (const text of notes) {
     const note = document.createElement('div');
     note.className = 'note muted';
-    note.textContent = serviceNotes.ai;
+    note.textContent = text;
     box.appendChild(note);
   }
   return box;
@@ -464,37 +528,247 @@ function drawLinkRow(offer) {
   return row;
 }
 
-function drawPortRow(offer) {
+function drawPortRow(offer, state) {
+  const forward = (state.forwards || {})[offer.id] || {};
+  const isOn = !!forward.is_active;
+  const noteKey = 'port_' + offer.id;
   const row = document.createElement('div');
   row.className = 'feat';
-  row.innerHTML = '<span class="dot off"></span>' +
+  const local = isOn
+    ? ' → ' + fill(WORDS.ui.forwarding_to, { port: forward.local_port }) : '';
+  const note = serviceNotes[noteKey]
+    ? ' — ' + serviceNotes[noteKey] : '';
+  row.innerHTML = '<span class="dot ' + (isOn ? 'ok' : 'off') + '"></span>' +
     '<div class="body"><div class="title">' + offer.title + '</div>' +
-    '<div class="note">' + offer.host + ':' + offer.port + '</div></div>';
+    '<div class="note">' + offer.host + ':' + offer.port + local + note +
+    '</div></div>';
   const button = document.createElement('button');
-  button.textContent = WORDS.ui.forward;
-  button.disabled = true;
+  button.className = isOn ? 'danger' : '';
+  button.textContent = isOn ? WORDS.ui.stop : WORDS.ui.forward;
+  button.onclick = () => serviceAction('/api/services/forward',
+    { offer_id: offer.id, is_enabled: !isOn }, noteKey);
   row.appendChild(button);
   return row;
 }
 
-function drawMountRow(offer) {
+function mountDefaultPath(offer, state) {
+  const home = state.caller.home || ('/home/' + state.caller.account);
+  return home + '/nas/' + offer.share;
+}
+
+function drawMountRow(offer, state) {
+  const records = (state.mounts || []).filter(
+    (record) => record.offer_id === offer.id);
+  const isAttached = records.some((record) => record.is_attached);
+  const noteKey = 'mount_' + offer.id;
+  const box = document.createElement('div');
   const row = document.createElement('div');
   row.className = 'feat';
-  row.innerHTML = '<span class="dot off"></span>' +
+  const note = serviceNotes[noteKey] ? ' — ' + serviceNotes[noteKey] : '';
+  row.innerHTML = '<span class="dot ' + (isAttached ? 'ok' : 'off') +
+    '"></span>' +
     '<div class="body"><div class="title">' + offer.title + '</div>' +
-    '<div class="note">//' + offer.host + '/' + offer.share + '</div></div>';
-  const button = document.createElement('button');
-  button.textContent = WORDS.ui.mount;
-  button.disabled = true;
-  row.appendChild(button);
-  return row;
+    '<div class="note">//' + offer.host + '/' + offer.share + note +
+    '</div></div>';
+  if (mountFormOffer !== offer.id) {
+    const button = document.createElement('button');
+    button.textContent = WORDS.ui.attach;
+    button.onclick = () => {
+      mountFormOffer = offer.id;
+      mountForm = { username: '', password: '',
+        path: mountDefaultPath(offer, state) };
+      redraw();
+    };
+    row.appendChild(button);
+  }
+  box.appendChild(row);
+  for (const record of records) box.appendChild(drawMountRecord(record, state));
+  if (mountFormOffer === offer.id) box.appendChild(drawMountForm(offer));
+  return box;
+}
+
+function drawMountRecord(record, state) {
+  const line = document.createElement('div');
+  line.className = 'rec';
+  const status = record.code ? wordCode(record.code, record.params)
+    : record.is_attached ? '' : WORDS.ui.not_attached;
+  line.innerHTML = '<span class="dot ' +
+    (record.is_attached ? 'ok' : record.code ? 'bad' : 'off') + '"></span>' +
+    '<span class="path">' + record.path + ' · ' + record.account +
+    (status ? ' — ' + status : '') + '</span>';
+  if (state.caller.is_privileged || record.account === state.caller.account) {
+    const button = document.createElement('button');
+    button.className = 'danger';
+    button.textContent = WORDS.ui.detach;
+    button.onclick = () => serviceAction('/api/services/mount',
+      { action: 'detach', record_id: record.record_id },
+      'mount_' + record.offer_id);
+    line.appendChild(button);
+  }
+  return line;
+}
+
+function drawMountForm(offer) {
+  const form = document.createElement('div');
+  form.className = 'form';
+  const fields = [
+    ['username', WORDS.ui.username_hint, 'text'],
+    ['password', WORDS.ui.password_hint, 'password'],
+  ];
+  for (const [name, hint, type] of fields) {
+    const line = document.createElement('div');
+    line.className = 'row';
+    const input = document.createElement('input');
+    input.type = type;
+    input.placeholder = hint;
+    input.value = mountForm[name];
+    input.oninput = () => { mountForm[name] = input.value; };
+    line.appendChild(input);
+    form.appendChild(line);
+  }
+  const pathLine = document.createElement('div');
+  pathLine.className = 'row';
+  const path = document.createElement('input');
+  path.placeholder = WORDS.ui.path_hint;
+  path.value = mountForm.path;
+  path.oninput = () => { mountForm.path = path.value; };
+  const browse = document.createElement('button');
+  browse.className = 'ghost';
+  browse.textContent = WORDS.ui.browse;
+  browse.onclick = () => openBrowser(mountForm.path);
+  pathLine.appendChild(path);
+  pathLine.appendChild(browse);
+  form.appendChild(pathLine);
+  const actions = document.createElement('div');
+  actions.className = 'row';
+  const attach = document.createElement('button');
+  attach.textContent = WORDS.ui.attach;
+  attach.onclick = async () => {
+    const sent = { action: 'attach', offer_id: offer.id,
+      username: mountForm.username, password: mountForm.password,
+      path: mountForm.path };
+    mountForm.password = '';
+    if (await serviceAction('/api/services/mount', sent, 'mount_' + offer.id)) {
+      mountFormOffer = null;
+      load();
+    }
+  };
+  const cancel = document.createElement('button');
+  cancel.className = 'ghost';
+  cancel.textContent = WORDS.ui.cancel;
+  cancel.onclick = () => { mountFormOffer = null; redraw(); };
+  actions.appendChild(attach);
+  actions.appendChild(cancel);
+  form.appendChild(actions);
+  return form;
+}
+
+function parentPath(path) {
+  const trimmed = path.replace(/\\/+$/, '');
+  const cut = trimmed.slice(0, trimmed.lastIndexOf('/'));
+  return cut || '/';
+}
+
+function joinPath(path, name) {
+  return (path === '/' ? '' : path) + '/' + name;
+}
+
+async function openBrowser(path) {
+  browser = { path: '/', dirs: [], note: '' };
+  await browseTo(parentPath(path || '/'));
+}
+
+async function browseTo(path) {
+  const reply = await api('/api/fs?path=' + encodeURIComponent(path));
+  if (!reply) return;
+  if (reply.code) {
+    browser.note = wordCode(reply.code, reply.params);
+  } else {
+    browser.path = reply.path;
+    browser.dirs = reply.dirs;
+    browser.note = '';
+  }
+  redraw();
+}
+
+function drawBrowser() {
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.onclick = (event) => {
+    if (event.target === overlay) { browser = null; redraw(); }
+  };
+  const modal = document.createElement('div');
+  modal.className = 'card modal';
+  const where = document.createElement('div');
+  where.className = 'sub';
+  where.textContent = browser.path;
+  modal.appendChild(where);
+  const list = document.createElement('div');
+  list.className = 'dirlist';
+  if (browser.path !== '/') {
+    const up = document.createElement('button');
+    up.textContent = WORDS.ui.up;
+    up.onclick = () => browseTo(parentPath(browser.path));
+    list.appendChild(up);
+  }
+  for (const name of browser.dirs) {
+    const entry = document.createElement('button');
+    entry.textContent = name + '/';
+    entry.onclick = () => browseTo(joinPath(browser.path, name));
+    list.appendChild(entry);
+  }
+  modal.appendChild(list);
+  if (browser.note) {
+    const note = document.createElement('div');
+    note.className = 'err';
+    note.textContent = browser.note;
+    modal.appendChild(note);
+  }
+  const actions = document.createElement('div');
+  actions.className = 'row';
+  const create = document.createElement('button');
+  create.className = 'ghost';
+  create.textContent = WORDS.ui.new_folder;
+  create.onclick = async () => {
+    const name = prompt(WORDS.ui.new_folder_name);
+    if (!name) return;
+    const reply = await api('/api/fs', { path: joinPath(browser.path, name) });
+    if (!reply) return;
+    if (reply.code) {
+      browser.note = wordCode(reply.code, reply.params);
+      redraw();
+      return;
+    }
+    browseTo(browser.path);
+  };
+  const choose = document.createElement('button');
+  choose.textContent = WORDS.ui.choose;
+  choose.onclick = () => {
+    mountForm.path = browser.path;
+    browser = null;
+    redraw();
+  };
+  const cancel = document.createElement('button');
+  cancel.className = 'ghost';
+  cancel.textContent = WORDS.ui.cancel;
+  cancel.onclick = () => { browser = null; redraw(); };
+  actions.appendChild(create);
+  actions.appendChild(choose);
+  actions.appendChild(cancel);
+  modal.appendChild(actions);
+  overlay.appendChild(modal);
+  return overlay;
 }
 
 if (!TOKEN) {
   renderHint(WORDS.ui.open_hint);
 } else {
   load();
-  setInterval(() => load(), 1500);
+  // The poll pauses while the attach form or the browse dialog is open, so
+  // a redraw cannot take what is being typed.
+  setInterval(() => {
+    if (mountFormOffer === null && browser === null) load();
+  }, 1500);
 }
 </script>
 </body>

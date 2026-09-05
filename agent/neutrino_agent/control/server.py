@@ -20,6 +20,7 @@ import os
 import socket
 import socketserver
 import threading
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from neutrino_agent import AGENT_VERSION, enrollment
@@ -53,11 +54,17 @@ def _scoped_state(agent, identity: ControlIdentity) -> dict:
     config = enrollment.load_config()
     catalog = agent.catalog()
     targets = agent.ai_targets()
+    ai_states = agent.ai_states()
     if identity.is_privileged:
         accounts = agent.accounts()
     else:
         accounts = [identity.account]
         targets = {identity.account: bool(targets.get(identity.account))}
+        ai_states = {
+            account: state
+            for account, state in ai_states.items()
+            if account == identity.account
+        }
     return {
         "version": AGENT_VERSION,
         "hostname": hostname(),
@@ -65,6 +72,7 @@ def _scoped_state(agent, identity: ControlIdentity) -> dict:
         "caller": {
             "account": identity.account,
             "is_privileged": identity.is_privileged,
+            "home": agent.account_home(identity.account),
         },
         "is_connected": bool(config.get("gateway_url") and config.get("token")),
         "gateway_url": config.get("gateway_url", ""),
@@ -73,6 +81,9 @@ def _scoped_state(agent, identity: ControlIdentity) -> dict:
         "services": catalog.get("services", {}),
         "accounts": accounts,
         "ai_targets": targets,
+        "ai_states": ai_states,
+        "mounts": agent.mount_rows(),
+        "forwards": agent.forward_rows(),
     }
 
 
@@ -244,6 +255,11 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
             if identity is None:
                 return
             self._send_json(_scoped_state(self.server.control_agent, identity))
+        elif route == "/api/fs":
+            identity = self._authenticate()
+            if identity is None:
+                return
+            self._list_directories(identity)
         elif route.startswith("/api/"):
             self._send_json({"code": "unknown_request"}, status=404)
         else:
@@ -265,8 +281,12 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
             self._request_function(identity, body)
         elif route == "/api/services/ai":
             self._switch_ai(identity, body)
-        elif route in ("/api/services/mount", "/api/services/forward"):
-            self._send_json({"code": "not_implemented"}, status=501)
+        elif route == "/api/services/mount":
+            self._mount(identity, body)
+        elif route == "/api/services/forward":
+            self._forward(identity, body)
+        elif route == "/api/fs":
+            self._make_directory(identity, body)
         else:
             self._send_json({"code": "unknown_request"}, status=404)
 
@@ -374,7 +394,87 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
         if account != identity.account and not identity.is_privileged:
             self._send_json({"code": "control_scope_refused"}, status=403)
             return
-        self._send_json({"code": "not_implemented"}, status=501)
+        agent = self.server.control_agent
+        if account not in agent.accounts():
+            self._send_json({"code": "no_target_user"}, status=400)
+            return
+        agent.request_ai(account, is_activated=bool(body.get("is_activated")))
+        self._send_json(_scoped_state(agent, identity))
+
+    def _mount(self, identity: ControlIdentity, body: dict) -> None:
+        agent = self.server.control_agent
+        action = str(body.get("action", ""))
+        if action == "attach":
+            outcome = agent.attach_mount(
+                account=identity.account,
+                is_privileged=identity.is_privileged,
+                offer_id=str(body.get("offer_id", "")),
+                username=str(body.get("username", "")),
+                password=str(body.get("password", "")),
+                path=str(body.get("path", "")),
+            )
+        elif action == "detach":
+            outcome = agent.detach_mount(
+                account=identity.account,
+                is_privileged=identity.is_privileged,
+                record_id=str(body.get("record_id", "")),
+            )
+        else:
+            self._send_json({"code": "unknown_request"}, status=404)
+            return
+        if outcome:
+            self._send_refusal(outcome)
+            return
+        self._send_json(_scoped_state(agent, identity))
+
+    def _forward(self, identity: ControlIdentity, body: dict) -> None:
+        agent = self.server.control_agent
+        outcome = agent.request_forward(
+            str(body.get("offer_id", "")), is_enabled=bool(body.get("is_enabled"))
+        )
+        if outcome:
+            self._send_refusal(outcome)
+            return
+        self._send_json(_scoped_state(agent, identity))
+
+    def _list_directories(self, identity: ControlIdentity) -> None:
+        query = urllib.parse.urlparse(self.path).query
+        values = urllib.parse.parse_qs(query).get("path", [])
+        path = values[0] if values else ""
+        if not path:
+            path = self.server.control_agent.account_home(identity.account) or "/"
+        account = "" if identity.is_privileged else identity.account
+        try:
+            names = self.server.control_platform.list_directories(
+                account=account, path=path
+            )
+        except (OSError, PlatformUnsupportedError):
+            self._send_json({"code": "fs_refused"}, status=403)
+            return
+        self._send_json({"path": path, "dirs": names})
+
+    def _make_directory(self, identity: ControlIdentity, body: dict) -> None:
+        path = str(body.get("path", ""))
+        if not path.startswith("/"):
+            self._send_json({"code": "fs_refused"}, status=403)
+            return
+        account = "" if identity.is_privileged else identity.account
+        try:
+            self.server.control_platform.make_directory(account=account, path=path)
+        except (OSError, PlatformUnsupportedError):
+            self._send_json({"code": "fs_refused"}, status=403)
+            return
+        self._send_json({"path": path})
+
+    def _send_refusal(self, outcome: dict) -> None:
+        code = outcome.get("code", "")
+        if code == "unknown_request":
+            status = 404
+        elif code in ("control_scope_refused", "fs_refused"):
+            status = 403
+        else:
+            status = 400
+        self._send_json(outcome, status=status)
 
     def _read_body(self) -> dict:
         length = int(self.headers.get("Content-Length", 0) or 0)

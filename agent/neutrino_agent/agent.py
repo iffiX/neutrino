@@ -42,7 +42,10 @@ from neutrino_agent.metrics import HostMetrics, hostname
 from neutrino_agent.ops import DeviceOperator
 from neutrino_agent.platforms.base import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import detect_platform
-from neutrino_agent.services.ai import AiServiceStore
+from neutrino_agent.services.ai import AiServiceReconciler
+from neutrino_agent.services.mounts import MountsService
+from neutrino_agent.services.ports import PortsService
+from neutrino_agent.services.store import MachineServiceStore
 from neutrino_agent.version_number import parse_version
 
 # How often an unenrolled agent looks again, which is only to notice that its
@@ -93,7 +96,16 @@ class Agent:
         self._engine = FunctionEngine(
             platform=self._platform, log=log, on_change=self._news.set
         )
-        self._ai_store = AiServiceStore()
+        self._services_store = MachineServiceStore()
+        self._ai = AiServiceReconciler(
+            store=self._services_store,
+            platform_tuple=self._engine.platform_tuple,
+            log=log,
+        )
+        self._mounts = MountsService(
+            platform=self._platform, store=self._services_store, log=log
+        )
+        self._ports = PortsService(log=log)
         self._backoff_s = AGENT_BACKOFF_MIN_S
         self._last_error: "dict | None" = None
         self._desired: dict = {}
@@ -142,7 +154,26 @@ class Agent:
 
     def ai_targets(self) -> dict:
         """Which accounts are switched at the hub's gateway."""
-        return self._ai_store.targets()
+        return self._services_store.ai_targets()
+
+    def ai_states(self) -> dict:
+        """Each account's AI service state, as the reconcile last saw it."""
+        return self._ai.report()
+
+    def account_home(self, account: str) -> str:
+        """One account's home directory, empty when it cannot be resolved."""
+        try:
+            return self._platform.account_home(account)
+        except (KeyError, PlatformUnsupportedError):
+            return ""
+
+    def mount_rows(self) -> list:
+        """This machine's mount records with where each stands."""
+        return self._mounts.rows()
+
+    def forward_rows(self) -> dict:
+        """The port forwards this machine is running."""
+        return self._ports.rows()
 
     # --- what the local page does ---
 
@@ -232,6 +263,95 @@ class Agent:
         )
         self.beat_soon()
 
+    def request_ai(self, account: str, *, is_activated: bool) -> None:
+        """Record one account's AI switching target, from this machine.
+
+        The store is updated here; the next heartbeat carries the targets
+        up, and the reply's grant is what drives the switch.
+
+        Args:
+            account: The account whose tools to switch.
+            is_activated: Whether they should point at the hub.
+        """
+        self._services_store.set_ai_target(account, is_activated=is_activated)
+        self.beat_soon()
+
+    def attach_mount(
+        self,
+        *,
+        account: str,
+        is_privileged: bool,
+        offer_id: str,
+        username: str,
+        password: str,
+        path: str,
+    ) -> dict:
+        """Attach one published share for a caller.
+
+        Args:
+            account: The asking account.
+            is_privileged: Whether the caller holds the privileged scope.
+            offer_id: The mount offer's id in the catalog.
+            username: The share's own username.
+            password: The share's own password; it stays on this machine.
+            path: The mount point.
+
+        Returns:
+            Empty on success, ``{"code", "params"}`` on a refusal.
+        """
+        offer = self.catalog().get("services", {}).get(offer_id)
+        if not isinstance(offer, dict) or offer.get("kind") != "mount":
+            return {"code": "unknown_request", "params": {}}
+        return self._mounts.attach(
+            account=account,
+            is_privileged=is_privileged,
+            offer_id=offer_id,
+            offer=offer,
+            username=username,
+            password=password,
+            path=path,
+        )
+
+    def detach_mount(
+        self, *, account: str, is_privileged: bool, record_id: str
+    ) -> dict:
+        """Detach one attachment for a caller.
+
+        Args:
+            account: The asking account.
+            is_privileged: Whether the caller holds the privileged scope.
+            record_id: The record to detach.
+
+        Returns:
+            Empty on success, ``{"code", "params"}`` on a refusal.
+        """
+        return self._mounts.detach(
+            account=account, is_privileged=is_privileged, record_id=record_id
+        )
+
+    def request_forward(self, offer_id: str, *, is_enabled: bool) -> dict:
+        """Start or stop one published port's loopback forward.
+
+        Args:
+            offer_id: The port offer's id in the catalog.
+            is_enabled: Whether the forward should run.
+
+        Returns:
+            Empty on success, ``{"code", "params"}`` on a refusal.
+        """
+        offer = self.catalog().get("services", {}).get(offer_id)
+        if not isinstance(offer, dict) or offer.get("kind") != "port":
+            return {"code": "unknown_request", "params": {}}
+        if not is_enabled:
+            return self._ports.stop(offer_id=offer_id)
+        try:
+            port = int(offer.get("port", 0))
+        except (TypeError, ValueError):
+            return {"code": "unknown_request", "params": {}}
+        return self._ports.forward(
+            offer_id=offer_id, host=str(offer.get("host", "")), port=port
+        )
+
     # --- the loop ---
 
     def run_forever(self) -> None:
@@ -239,8 +359,11 @@ class Agent:
 
         The wait between beats ends early when a function changes state, so
         the panel sees a step start and finish rather than only its result.
+        The mounts reconcile starts here: enabled records are remounted now
+        and on a timer, which is what brings mounts back after a reboot.
         """
         self._log(f"neutrino_agent {AGENT_VERSION} starting on {hostname()}")
+        self._mounts.start()
         while True:
             delay = self.run_once()
             self._news.clear()
@@ -273,7 +396,7 @@ class Agent:
             "catalog_hash": self._engine.catalog_hash,
             "functions": self._engine.report(),
             "function_requests": requests,
-            "ai_targets": self._ai_store.targets(),
+            "ai_targets": self._services_store.ai_targets(),
             "last_error": self.last_error(),
         }
         try:
@@ -306,7 +429,11 @@ class Agent:
             catalog=reply.get("catalog"),
             catalog_hash=reply.get("catalog_hash", ""),
         )
-        self._ai_store.take_accounts(reply.get("ai_accounts") or {})
+        self._ai.update(
+            offer=self._ai_offer(),
+            accounts=self._read_accounts(),
+            credentials=reply.get("ai_accounts") or {},
+        )
         for command in reply.get("commands", []):
             self._execute(command)
         self._maybe_self_update(str(reply.get("hub_version", "")))
@@ -323,6 +450,13 @@ class Agent:
             return self._platform.human_accounts()
         except PlatformUnsupportedError:
             return []
+
+    def _ai_offer(self) -> dict:
+        """The catalog's AI service offer, empty when the hub extends none."""
+        for offer in self.catalog().get("services", {}).values():
+            if isinstance(offer, dict) and offer.get("kind") == "ai":
+                return offer
+        return {}
 
     def _on_rejected(self, error: Exception) -> int:
         """Take a definitive rejection for what it is, after a short grace.
