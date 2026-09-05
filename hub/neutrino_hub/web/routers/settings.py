@@ -5,6 +5,7 @@ import io
 import json
 import platform
 import asyncio
+import sys
 import tarfile
 import time
 
@@ -57,7 +58,8 @@ from neutrino_hub.web.models import (
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub import HUB_VERSION
-from neutrino_hub.modules.xray.constants import XRAY_BINARY
+from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_VERSION
+from neutrino_hub.modules.xray.constants import XRAY_BINARY, XRAY_GEODATA
 
 router = APIRouter(
     prefix="/api/settings", tags=["settings"], dependencies=[Depends(require_session)]
@@ -575,17 +577,32 @@ def _checked_member(member: tarfile.TarInfo) -> tarfile.TarInfo:
     return member
 
 
-@router.get("/about", response_model=AboutView)
-def about() -> AboutView:
-    """Read component versions and host uptime.
+def _geodata_baseline() -> str:
+    """Name the release pinned behind each carried geodata database.
 
     Returns:
-        Version strings for the panel and xray, plus the kernel and uptime.
+        One `database release` pair per file, in name order.
+    """
+    return " · ".join(
+        f"{name.removesuffix('.dat')} {entry['url'].rsplit('/', 2)[-2]}"
+        for name, entry in sorted(XRAY_GEODATA.items())
+    )
+
+
+@router.get("/about", response_model=AboutView)
+def about() -> AboutView:
+    """Read the version of every carried component, and host uptime.
+
+    Returns:
+        A version string per carried component, plus the kernel and uptime.
     """
     xray_version = run([XRAY_BINARY, "version"], is_checked=False).stdout
     return AboutView(
         xray_version=(xray_version.splitlines() or ["not installed"])[0],
         gateway_version=GATEWAY_VERSION,
+        cliproxyapi_version=CLIPROXYAPI_VERSION,
+        python_version=sys.version.split()[0],
+        geodata_version=_geodata_baseline(),
         kernel=platform.release(),
         uptime_s=int(time.time() - psutil.boot_time()),
     )

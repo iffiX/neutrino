@@ -1,8 +1,11 @@
+/* One column, read top to bottom. The cap holds a card to a readable width on
+   a wide screen instead of stretching it across the window. */
 .settings_layout {
   display: grid;
   gap: var(--space-5);
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
+  max-width: 760px;
 }
 
 .settings_form {
@@ -35,6 +38,10 @@
 
 .settings_about_row:last-child {
   border-bottom: none;
+}
+
+.settings_about .section_label:not(:first-child) {
+  margin-top: var(--space-3);
 }
 
 .settings_about_key {

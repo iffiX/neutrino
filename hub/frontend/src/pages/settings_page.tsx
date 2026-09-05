@@ -40,6 +40,16 @@ import "./settings_page.css";
  * download asks nothing and the restore asks for the vault master password.
  */
 
+const ABOUT_CARRIED_TITLE = "Carried software";
+const ABOUT_HOST_TITLE = "This machine";
+const ABOUT_PANEL = "Panel";
+const ABOUT_XRAY = "xray";
+const ABOUT_CLIPROXYAPI = "CLIProxyAPI";
+const ABOUT_PYTHON = "Python";
+const ABOUT_GEODATA = "Geodata";
+const ABOUT_KERNEL = "Kernel";
+const ABOUT_UPTIME = "Uptime";
+
 const NOT_A_BACKUP_SENTENCE = "This is not a Neutrino backup.";
 
 const RESTORE_ERROR_SENTENCES: Record<string, string> = {
@@ -267,33 +277,33 @@ export function SettingsPage() {
               onRetry={about.reload}
             />
           ) : about.data === null ? (
-            <div className="skeleton" style={{ height: 150 }} />
+            <div className="skeleton" style={{ height: 250 }} />
           ) : (
             <div className="settings_about">
-              <div className="settings_about_row">
-                <span className="settings_about_key">Gateway</span>
-                <span className="settings_about_value">
-                  {about.data.gateway_version}
-                </span>
-              </div>
-              <div className="settings_about_row">
-                <span className="settings_about_key">xray</span>
-                <span className="settings_about_value">
-                  {about.data.xray_version}
-                </span>
-              </div>
-              <div className="settings_about_row">
-                <span className="settings_about_key">Kernel</span>
-                <span className="settings_about_value">
-                  {about.data.kernel}
-                </span>
-              </div>
-              <div className="settings_about_row">
-                <span className="settings_about_key">Uptime</span>
-                <span className="settings_about_value">
-                  {formatDuration(about.data.uptime_s)}
-                </span>
-              </div>
+              <div className="section_label">{ABOUT_CARRIED_TITLE}</div>
+              <AboutRow
+                label={ABOUT_PANEL}
+                value={about.data.gateway_version}
+              />
+              <AboutRow label={ABOUT_XRAY} value={about.data.xray_version} />
+              <AboutRow
+                label={ABOUT_CLIPROXYAPI}
+                value={about.data.cliproxyapi_version}
+              />
+              <AboutRow
+                label={ABOUT_PYTHON}
+                value={about.data.python_version}
+              />
+              <AboutRow
+                label={ABOUT_GEODATA}
+                value={about.data.geodata_version}
+              />
+              <div className="section_label">{ABOUT_HOST_TITLE}</div>
+              <AboutRow label={ABOUT_KERNEL} value={about.data.kernel} />
+              <AboutRow
+                label={ABOUT_UPTIME}
+                value={formatDuration(about.data.uptime_s)}
+              />
             </div>
           )}
         </section>
@@ -427,6 +437,23 @@ export function SettingsPage() {
           onRestore={() => void restoreArchive()}
         />
       )}
+    </div>
+  );
+}
+
+interface AboutRowProps {
+  label: string;
+  value: string;
+}
+
+/** One name and its version, the full value on hover where it is cut. */
+function AboutRow({ label, value }: AboutRowProps) {
+  return (
+    <div className="settings_about_row">
+      <span className="settings_about_key">{label}</span>
+      <span className="settings_about_value" title={value}>
+        {value}
+      </span>
     </div>
   );
 }

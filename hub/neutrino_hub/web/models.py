@@ -1126,6 +1126,9 @@ class AboutView(BaseModel):
 
     xray_version: str
     gateway_version: str
+    cliproxyapi_version: str
+    python_version: str
+    geodata_version: str
     kernel: str
     uptime_s: int
 

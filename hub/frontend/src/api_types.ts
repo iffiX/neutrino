@@ -970,6 +970,9 @@ export interface PanelSettings {
 export interface AboutInfo {
   xray_version: string;
   gateway_version: string;
+  cliproxyapi_version: string;
+  python_version: string;
+  geodata_version: string;
   kernel: string;
   uptime_s: number;
 }
