@@ -183,10 +183,6 @@ class Agent:
         """The per-tool model choices this machine keeps."""
         return self._store.ai_tool_configs()
 
-    def ai_connect_account(self) -> str:
-        """The account that joined this machine, for the preselected chip."""
-        return self._store.ai_connect_account()
-
     def account_home(self, account: str) -> str:
         """One account's home directory, empty when it cannot be resolved."""
         try:

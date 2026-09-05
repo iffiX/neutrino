@@ -619,15 +619,8 @@ function drawPortsPanel(state, entries, title) {
 function ensureAiStaged(state) {
   if (aiStaged !== null) return;
   const targets = {};
-  let hasAny = false;
   for (const account of state.accounts) {
     targets[account] = !!(state.ai_targets || {})[account];
-    if (targets[account]) hasAny = true;
-  }
-  const isVirgin = Object.keys(state.ai_targets || {}).length === 0;
-  if (!hasAny && isVirgin && state.ai_connect_account &&
-      targets[state.ai_connect_account] !== undefined) {
-    targets[state.ai_connect_account] = true;
   }
   aiStaged = {
     targets: targets,

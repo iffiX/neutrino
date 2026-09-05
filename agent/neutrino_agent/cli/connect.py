@@ -9,7 +9,6 @@ from neutrino_agent.core import enrollment
 from neutrino_agent.core.loop import Agent
 from neutrino_agent.platforms.base import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import detect_platform
-from neutrino_agent.services.store import MachineServiceStore
 
 
 def main(link: str, *, is_forced: bool) -> int:
@@ -42,11 +41,6 @@ def main(link: str, *, is_forced: bool) -> int:
     except enrollment.EnrollmentError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
-    # The invoking person's own account, remembered as the chip a
-    # single-user machine finds preselected on the AI panel.
-    invoker = os.environ.get("SUDO_USER", "")
-    if invoker:
-        MachineServiceStore().set_ai_connect_account(invoker)
     print(f"joined {enrollment.load_config().get('gateway_url', '')}")
     if service_state() != "running":
         try:

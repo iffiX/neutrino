@@ -87,22 +87,6 @@ class MachineServiceStore:
 
         self._mutate(change)
 
-    def ai_connect_account(self) -> str:
-        """The account that ran ``nagent connect``, for the preselected chip."""
-        return str(self._read().get("ai", {}).get("connect_account", ""))
-
-    def set_ai_connect_account(self, account: str) -> None:
-        """Remember which account joined this machine to the hub.
-
-        Args:
-            account: The invoking account; empty clears it.
-        """
-
-        def change(data: dict) -> None:
-            data.setdefault("ai", {})["connect_account"] = account
-
-        self._mutate(change)
-
     def ai_granted(self) -> dict:
         """Each account's last-granted endpoint, as activation recorded it.
 

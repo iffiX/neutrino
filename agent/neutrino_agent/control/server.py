@@ -90,7 +90,6 @@ def _scoped_state(agent, identity: ControlIdentity) -> dict:
         "ai_targets": targets,
         "ai_states": ai_states,
         "ai_tool_configs": agent.ai_tool_configs(),
-        "ai_connect_account": agent.ai_connect_account(),
     }
     state.update(agent.service_states())
     return state

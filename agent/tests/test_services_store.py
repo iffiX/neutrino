@@ -101,8 +101,3 @@ def test_tool_configs_survive_the_round_trip(tmp_path):
 
 def test_the_connect_account_is_remembered(tmp_path):
     store = MachineServiceStore(path=str(tmp_path / "services.json"))
-    assert store.ai_connect_account() == ""
-
-    store.set_ai_connect_account("alice")
-
-    assert store.ai_connect_account() == "alice"

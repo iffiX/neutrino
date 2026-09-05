@@ -143,7 +143,7 @@ class FakeControlAgent:
     def ai_tool_configs(self) -> dict:
         return {"claude": {"default": "m1"}}
 
-    def ai_connect_account(self) -> str:
+    def _gone_connect_account(self) -> str:
         return "alice"
 
     def account_home(self, account) -> str:
@@ -275,7 +275,6 @@ def test_the_state_carries_the_typed_service_list(control):
     assert state["forwards"]["svc_tcp"]["local_port"] == 5432
     assert state["mounts"][0]["record_id"] == "r1"
     assert state["ai_tool_configs"] == {"claude": {"default": "m1"}}
-    assert state["ai_connect_account"] == "alice"
 
 
 def test_an_unreadable_peer_is_refused_not_guessed(control):

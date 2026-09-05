@@ -165,8 +165,8 @@ revoking its pair's key. Keys per pair are what makes usage meter to the
 person; the AI page's Access panel lists them. Acting on an account that
 is empty or not among the reported ones is refused with
 `{"code": "no_target_user"}`, and the guard is symmetric — activation and
-deactivation check it alike. `nagent connect` remembers the invoking
-`SUDO_USER`, the chip a single-user machine finds preselected.
+deactivation check it alike. No chip is ever preselected: what the page
+stages is only ever what a person chose.
 
 **Files.** Config asks for the share's own username and password and a
 path — typed, or picked in the browse dialog the agent feeds, whose
