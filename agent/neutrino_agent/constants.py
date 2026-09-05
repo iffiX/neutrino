@@ -54,9 +54,16 @@ AGENT_CONTROL_PAGE_ORIGIN = (
 )
 AGENT_CONTROL_REQUEST_TIMEOUT_S = 5
 
-# Where the AI service keeps its per-account switching state. Machine state:
-# it survives a hub restore and appears in no hub backup.
-AGENT_AI_STORE_PATH = "/etc/neutrino/agent/ai_service.json"
+# Where the machine keeps its service choices — AI switching targets and
+# mount records. Machine state: it survives a hub restore and appears in no
+# hub backup. Mount passwords never enter it; each mount record has its own
+# credentials file under the directory beside it.
+AGENT_SERVICE_STORE_PATH = "/etc/neutrino/agent/services.json"
+AGENT_MOUNT_CREDENTIALS_DIR = "/etc/neutrino/agent/mount_credentials"
+
+# How often enabled mount records that are not attached are remounted, which
+# is also what brings them back after a reboot.
+AGENT_MOUNT_RECHECK_INTERVAL_S = 60
 
 TODESK_DOWNLOAD_URL = "https://dl.todesk.com/linux/todesk-v4.7.2.0-amd64.deb"
 ANYDESK_DOWNLOAD_URL = "https://download.anydesk.com/linux/anydesk_6.3.2-1_amd64.deb"
