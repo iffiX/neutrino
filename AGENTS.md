@@ -39,6 +39,7 @@ and leave this pointing at it.**
 | [design/modules/network.md](docs/standard/design/modules/network.md) | Touching the router layer: the three engines the hub drives, which modes own a machine's network and which touch nothing, and why it does not build on NetworkManager. |
 | [design/modules/ai.md](docs/standard/design/modules/ai.md) | Touching the AI gateway: how a request routes, the gateway-owned model namespace, what each AI panel surface owns, metering. |
 | [design/agent.md](docs/standard/design/agent.md) | Touching the agent or its channel: who may command it and in what scope, desired-state sync, the local control channel, the pinned TLS wire, the platform layer. |
+| [design/tests.md](docs/standard/design/tests.md) | Writing or moving any test: the three blocks (agent / hub / integration), the mirror rule, what each area pins, what a change owes. |
 | [design/visual.md](docs/standard/design/visual.md) | Touching panel CSS: what the accent and the glow may mean, button tiers, frames. |
 | [design/ui_behavior.md](docs/standard/design/ui_behavior.md) | Touching panel pages or components: which idiom a screen reuses, per-panel apply bars, effect timing, ask before inventing an interaction. |
 | [design/class_design.md](docs/standard/design/class_design.md) | Adding a class: one concept per class, explicit `__init__` kwargs. |
