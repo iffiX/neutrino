@@ -1,15 +1,16 @@
-"""Reconciling the machine toward the hub's desired functions.
+"""Reconciling the machine toward the hub's desired state.
 
-The hub does not send actions; it sends what should be true — which
-functions are on — plus the catalog saying how each is obtained on each
-platform. Every heartbeat hands that in here, a worker thread closes any gap
-it finds, and the next heartbeat reports where things stand. Idempotence
-falls out: a function already in its desired state is only ever checked.
+The hub does not send actions; it sends what should be true, and a worker
+thread closes any gap it finds. :class:`ReconcileWorker` is that pattern
+once: a thread woken by news, a signature that skips unchanged inputs, an
+idle re-check so drift is still caught, and per-name typed statuses.
+:class:`ModuleEngine` builds the modules half of the catalog on it; the AI
+service reconciler builds on it too.
 
 The catalog is the hub's answer to "what exists for this machine", in two
-halves under one hash: the function manifests, and the service offers. The
-engine reconciles the functions half; the services are visible and decided
-only on the machine.
+halves under one hash: the module manifests, and the typed service list.
+The engine reconciles the modules half; the services are visible and
+decided only on the machine.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -20,57 +21,121 @@ import json
 import threading
 import time
 
-from neutrino_agent.downloader import DownloadError
-from neutrino_agent.functions.openssh import OpensshFunctionReconciler
-from neutrino_agent.functions.package import PackageFunctionReconciler
-from neutrino_agent.installers import InstallError
+from neutrino_agent.modules.downloader import DownloadError
+from neutrino_agent.modules.installers import InstallError
+from neutrino_agent.modules.openssh import OpensshModuleReconciler
+from neutrino_agent.modules.package import PackageModuleReconciler
 from neutrino_agent.platforms.base import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import platform_keys, platform_tuple
 
-# How often to re-check a catalog that has not changed. Every heartbeat wakes
-# the worker, and running each function's verify command that often would
-# keep a Raspberry Pi busy doing nothing.
+# How often to re-check inputs that have not changed. Every heartbeat wakes
+# the worker, and running each module's verify command that often would keep
+# a Raspberry Pi busy doing nothing.
 IDLE_RECHECK_INTERVAL_S = 60
 
 
-class FunctionEngine:
-    """Keeps the machine converged on the hub's desired functions."""
+class ReconcileWorker:
+    """A background reconcile loop that skips inputs it has already seen."""
 
-    def __init__(self, *, platform, log=print, on_change=None):
+    def __init__(self, *, log=print, on_change=None):
         """
         Args:
-            platform: The machine's platform, behind the contract.
             log: Callable used for progress messages; defaults to printing,
                 which systemd captures into the journal.
-            on_change: Called whenever a function's state changes. The agent
-                uses it to beat straight away: an install that takes three
-                seconds would otherwise begin and end between two heartbeats,
-                and nobody watching would ever see it running.
+            on_change: Called whenever a name's status changes. The agent
+                uses it to beat straight away: a step that takes three
+                seconds would otherwise begin and end between two
+                heartbeats, and nobody watching would ever see it running.
         """
         self._log = log
         self._on_change = on_change
         self._lock = threading.Lock()
-        self._catalog: dict = {}
-        self._catalog_hash = ""
-        self._desired: dict = {}
         self._statuses: dict = {}
-        self._platform_tuple = platform_tuple()
-        self._reconcilers = {
-            reconciler.kind: reconciler
-            for reconciler in (
-                PackageFunctionReconciler(
-                    platform=platform, log=log, publish=self._publish
-                ),
-                OpensshFunctionReconciler(
-                    platform=platform, log=log, publish=self._publish
-                ),
-            )
-        }
         self._signature = ""
         self._checked_at = 0.0
         self._wakeup = threading.Event()
         self._worker = threading.Thread(target=self._run, daemon=True)
         self._worker.start()
+
+    def report(self) -> dict:
+        """The per-name statuses, each ``{"state", "code", "params", ...}``."""
+        with self._lock:
+            return {name: dict(value) for name, value in self._statuses.items()}
+
+    def _run(self) -> None:
+        while True:
+            self._wakeup.wait()
+            self._wakeup.clear()
+            try:
+                self._reconcile()
+            except Exception as error:  # noqa: BLE001 - the loop must survive
+                self._log(f"reconcile crashed: {error}")
+
+    def _reconcile(self) -> None:
+        raise NotImplementedError
+
+    def _is_stale(self, signature: str) -> bool:
+        """Whether these inputs need work: changed, or idle long enough.
+
+        Call under the worker's own lock.
+
+        Args:
+            signature: A stable serialization of the current inputs.
+
+        Returns:
+            True when a pass should run.
+        """
+        is_stale = (
+            signature != self._signature
+            or time.monotonic() - self._checked_at > IDLE_RECHECK_INTERVAL_S
+        )
+        self._signature = signature
+        if is_stale:
+            self._checked_at = time.monotonic()
+        return is_stale
+
+    def _publish(self, name: str, status: dict) -> None:
+        """Record one name's status, and say so if it is news."""
+        with self._lock:
+            is_news = self._statuses.get(name) != status
+            self._statuses[name] = status
+        if is_news and self._on_change is not None:
+            self._on_change()
+
+    def _keep_only(self, names) -> None:
+        """Drop statuses for names no longer in play."""
+        with self._lock:
+            self._statuses = {
+                name: value for name, value in self._statuses.items() if name in names
+            }
+
+
+class ModuleEngine(ReconcileWorker):
+    """Keeps the machine converged on the hub's desired modules."""
+
+    def __init__(self, *, platform, log=print, on_change=None):
+        """
+        Args:
+            platform: The machine's platform, behind the contract.
+            log: Callable used for progress messages.
+            on_change: Called whenever a module's state changes.
+        """
+        self._catalog: dict = {}
+        self._catalog_hash = ""
+        self._desired: dict = {}
+        self._platform_tuple = platform_tuple()
+        self._reconcilers = {
+            reconciler.kind: reconciler
+            for reconciler in (
+                PackageModuleReconciler(
+                    platform=platform, log=log, publish=self._publish
+                ),
+                OpensshModuleReconciler(
+                    platform=platform, log=log, publish=self._publish
+                ),
+            )
+        }
+        super().__init__(log=log, on_change=on_change)
 
     @property
     def catalog_hash(self) -> str:
@@ -87,7 +152,7 @@ class FunctionEngine:
         """The catalog this machine currently holds.
 
         Returns:
-            ``{"functions", "services"}``, as the hub last sent it.
+            ``{"modules", "services"}``, as the hub last sent it.
         """
         with self._lock:
             return dict(self._catalog)
@@ -96,7 +161,7 @@ class FunctionEngine:
         """Take the hub's word for what should be true.
 
         Args:
-            desired: Function name to ``{"is_enabled", "config"}``.
+            desired: Module name to ``{"is_enabled", "config"}``.
             catalog: The catalog, sent only when this machine's copy is
                 stale; None keeps the current one.
             catalog_hash: The hash of the catalog the hub is serving.
@@ -108,67 +173,30 @@ class FunctionEngine:
             self._desired = desired
         self._wakeup.set()
 
-    def report(self) -> dict:
-        """The per-function states for the next heartbeat.
-
-        Returns:
-            Function name to ``{"state", "code", "params", "is_active"}``.
-        """
-        with self._lock:
-            return {name: dict(value) for name, value in self._statuses.items()}
-
-    def _run(self) -> None:
-        while True:
-            self._wakeup.wait()
-            self._wakeup.clear()
-            try:
-                self._reconcile()
-            except Exception as error:  # noqa: BLE001 - the loop must survive
-                self._log(f"function reconcile crashed: {error}")
-
     def _reconcile(self) -> None:
         with self._lock:
             desired = dict(self._desired)
-            functions = dict(self._catalog.get("functions", {}))
+            modules = dict(self._catalog.get("modules", {}))
             signature = json.dumps(
-                [sorted(functions), desired], sort_keys=True, default=str
+                [sorted(modules), desired], sort_keys=True, default=str
             )
-            is_stale = (
-                signature != self._signature
-                or time.monotonic() - self._checked_at > IDLE_RECHECK_INTERVAL_S
-            )
-            self._signature = signature
-            if is_stale:
-                self._checked_at = time.monotonic()
+            is_stale = self._is_stale(signature)
         if not is_stale:
             return
-        for name, manifest in functions.items():
-            # A function the owner has never decided about is reported, never
+        for name, manifest in modules.items():
+            # A module the owner has never decided about is reported, never
             # acted on: "not switched on" is not the same as "take it off
             # this machine", and software that was here before the agent was
             # must survive the agent arriving.
             self._publish(name, self._reconcile_one(name, manifest, desired.get(name)))
-        # A function the hub no longer serves stops being reported.
-        with self._lock:
-            self._statuses = {
-                name: value
-                for name, value in self._statuses.items()
-                if name in functions
-            }
-
-    def _publish(self, name: str, status: dict) -> None:
-        """Record one function's state, and say so if it is news."""
-        with self._lock:
-            is_news = self._statuses.get(name) != status
-            self._statuses[name] = status
-        if is_news and self._on_change is not None:
-            self._on_change()
+        # A module the hub no longer serves stops being reported.
+        self._keep_only(modules)
 
     def _reconcile_one(self, name: str, manifest: dict, wanted: "dict | None") -> dict:
-        """Bring one function to its desired state, or just report it.
+        """Bring one module to its desired state, or just report it.
 
         Args:
-            name: The function name.
+            name: The module name.
             manifest: Its manifest.
             wanted: What the hub decided; None only inspects.
 

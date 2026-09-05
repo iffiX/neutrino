@@ -20,7 +20,7 @@ try:
 except ImportError:  # Windows has no account database module.
     pwd = None
 
-from neutrino_agent import installers
+from neutrino_agent.modules import installers
 from neutrino_agent.constants import (
     AGENT_COMMAND_TIMEOUT_S,
     AGENT_CONTROL_SOCKET_PATH_DARWIN,

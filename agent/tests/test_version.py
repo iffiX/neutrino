@@ -1,6 +1,6 @@
 """Ordering release versions: what parses, what refuses to."""
 
-from neutrino_agent.version_number import parse_version
+from neutrino_agent.core.version import parse_version
 
 
 def test_dotted_integers_parse_in_order():

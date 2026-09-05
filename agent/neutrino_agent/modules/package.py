@@ -1,6 +1,6 @@
-"""Reconciling a downloaded-package function.
+"""Reconciling a downloaded-package module.
 
-Installed software is not removed just because a function was never switched
+Installed software is not removed just because a module was never switched
 on — "not switched on" is not "take it off this machine", and software that
 was here before the agent was must survive the agent arriving. Removal
 happens only when the hub says off and the manifest names a removal command.
@@ -14,13 +14,17 @@ import os
 import subprocess
 import tempfile
 
-from neutrino_agent.downloader import download, resolve_github_asset, verify_package
-from neutrino_agent.functions.base import FunctionReconciler, clean_status
+from neutrino_agent.modules.base import ModuleReconciler, clean_status
+from neutrino_agent.modules.downloader import (
+    download,
+    resolve_github_asset,
+    verify_package,
+)
 
 VERIFY_TIMEOUT_S = 30
 
 
-class PackageFunctionReconciler(FunctionReconciler):
+class PackageModuleReconciler(ModuleReconciler):
     """Installs, verifies and removes one downloadable package."""
 
     kind = "package"
@@ -33,7 +37,7 @@ class PackageFunctionReconciler(FunctionReconciler):
             publish: Called with ``(name, status)`` for transient states.
         """
         super().__init__(platform=platform, log=log, publish=publish)
-        # Functions whose install ran and whose verify did not confirm it.
+        # Modules whose install ran and whose verify did not confirm it.
         # Without this the idle re-check finds them absent a minute later and
         # installs them again, for ever: a package whose verify command names
         # the wrong path is re-downloaded every minute until somebody notices
@@ -43,10 +47,10 @@ class PackageFunctionReconciler(FunctionReconciler):
     def reconcile(
         self, *, name: str, manifest: dict, entry: dict, wanted: "dict | None"
     ) -> dict:
-        """Bring one package function to its desired state, or just report it.
+        """Bring one package module to its desired state, or just report it.
 
         Args:
-            name: The function name.
+            name: The module name.
             manifest: Its manifest.
             entry: The manifest's entry for this platform.
             wanted: The hub's decision, or None to only inspect.
@@ -138,7 +142,7 @@ class PackageFunctionReconciler(FunctionReconciler):
         }
 
     def _verify(self, manifest: dict) -> bool:
-        """Whether a function's own check says it is already installed."""
+        """Whether a module's own check says it is already installed."""
         verify = manifest.get("verify", {})
         command = verify.get(self._platform.os_name, "")
         if not command:

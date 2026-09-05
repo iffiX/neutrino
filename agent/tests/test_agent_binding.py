@@ -9,9 +9,9 @@ import json
 
 import pytest
 
-import neutrino_agent.enrollment as enrollment
-import neutrino_agent.http_channel as http_channel
-from neutrino_agent.agent import Agent
+import neutrino_agent.core.enrollment as enrollment
+import neutrino_agent.core.channel as channel
+from neutrino_agent.core.loop import Agent
 
 
 @pytest.fixture
@@ -89,7 +89,7 @@ def test_repeated_refusals_unbind_the_machine(config_path, monkeypatch):
     agent = Agent(log=lambda message: None)
 
     def refuse(path, payload):
-        raise http_channel.GatewayRefused("gateway refused this machine's token (401)")
+        raise channel.GatewayRefused("gateway refused this machine's token (401)")
 
     monkeypatch.setattr(agent._channel, "post", refuse)
     delays = [agent.run_once() for _ in range(3)]
@@ -108,7 +108,7 @@ def test_a_single_refusal_keeps_the_binding(config_path, monkeypatch):
     agent = Agent(log=lambda message: None)
 
     def refuse(path, payload):
-        raise http_channel.GatewayRefused("gateway refused this machine's token (401)")
+        raise channel.GatewayRefused("gateway refused this machine's token (401)")
 
     monkeypatch.setattr(agent._channel, "post", refuse)
     agent.run_once()
@@ -124,7 +124,7 @@ def answer_in_turn(agent, monkeypatch, answers):
         outcome = answers.pop(0)
         if outcome is not None:
             raise outcome
-        return {"desired_functions": {}, "catalog_hash": ""}
+        return {"desired_modules": {}, "catalog_hash": ""}
 
     monkeypatch.setattr(agent._channel, "post", answer)
 
@@ -136,13 +136,11 @@ def test_mixed_rejection_kinds_total_to_an_unbind(config_path, monkeypatch):
         agent,
         monkeypatch,
         [
-            http_channel.GatewayRefused("gateway refused this machine's token (401)"),
-            http_channel.GatewayUntrusted(
+            channel.GatewayRefused("gateway refused this machine's token (401)"),
+            channel.GatewayUntrusted(
                 "the gateway's certificate does not match the pinned fingerprint"
             ),
-            http_channel.GatewayVersionRefused(
-                hub_version="0.1.0", agent_version="0.2.0"
-            ),
+            channel.GatewayVersionRefused(hub_version="0.1.0", agent_version="0.2.0"),
         ],
     )
 
@@ -168,10 +166,10 @@ def test_an_unreachable_beat_neither_counts_nor_resets(config_path, monkeypatch)
         agent,
         monkeypatch,
         [
-            http_channel.GatewayRefused(refused),
-            http_channel.GatewayRefused(refused),
-            http_channel.GatewayUnreachable("cannot reach gateway: timed out"),
-            http_channel.GatewayRefused(refused),
+            channel.GatewayRefused(refused),
+            channel.GatewayRefused(refused),
+            channel.GatewayUnreachable("cannot reach gateway: timed out"),
+            channel.GatewayRefused(refused),
         ],
     )
 
@@ -193,10 +191,10 @@ def test_a_successful_beat_resets_the_rejection_count(config_path, monkeypatch):
         agent,
         monkeypatch,
         [
-            http_channel.GatewayRefused(refused),
-            http_channel.GatewayRefused(refused),
+            channel.GatewayRefused(refused),
+            channel.GatewayRefused(refused),
             None,
-            http_channel.GatewayRefused(refused),
+            channel.GatewayRefused(refused),
         ],
     )
 
@@ -216,8 +214,8 @@ def test_an_adopted_binding_starts_with_a_clean_count(config_path, monkeypatch):
         agent,
         monkeypatch,
         [
-            http_channel.GatewayRefused(refused),
-            http_channel.GatewayRefused(refused),
+            channel.GatewayRefused(refused),
+            channel.GatewayRefused(refused),
         ],
     )
     for _ in range(2):
@@ -230,15 +228,15 @@ def test_an_adopted_binding_starts_with_a_clean_count(config_path, monkeypatch):
 
 
 def test_the_heartbeat_carries_the_wire_contract(config_path, monkeypatch):
-    """Up: accounts, functions, function_requests, ai_targets and a coded
-    last_error; the pre-rework field names never appear."""
+    """Up: accounts, modules, module_requests, ai_targets and a coded
+    last_error; the pre-rename field names never appear."""
     bind(config_path)
     agent = Agent(log=lambda message: None)
     seen = {}
 
     def record(path, payload):
         seen.update(payload)
-        return {"desired_functions": {}, "catalog_hash": ""}
+        return {"desired_modules": {}, "catalog_hash": ""}
 
     monkeypatch.setattr(agent._channel, "post", record)
     agent.run_once()
@@ -250,13 +248,13 @@ def test_the_heartbeat_carries_the_wire_contract(config_path, monkeypatch):
         "platform",
         "accounts",
         "catalog_hash",
-        "functions",
-        "function_requests",
+        "modules",
+        "module_requests",
         "ai_targets",
         "last_error",
     ):
         assert key in seen
-    assert "features" not in seen and "feature_requests" not in seen
+    assert "functions" not in seen and "function_requests" not in seen
     assert isinstance(seen["accounts"], list)
     assert isinstance(seen["ai_targets"], dict)
     assert seen["last_error"] is None

@@ -84,3 +84,25 @@ def test_an_unreadable_file_reads_as_empty(tmp_path):
     store.set_ai_target("alice", is_activated=True)
     assert store.ai_targets() == {"alice": True}
     assert isinstance(json.loads(path.read_text()), dict)
+
+
+def test_tool_configs_survive_the_round_trip(tmp_path):
+    store = MachineServiceStore(path=str(tmp_path / "services.json"))
+
+    store.set_ai_tool_configs(
+        {"claude": {"default": "m1"}, "codex": {"model_reasoning_effort": "low"}}
+    )
+
+    assert store.ai_tool_configs() == {
+        "claude": {"default": "m1"},
+        "codex": {"model_reasoning_effort": "low"},
+    }
+
+
+def test_the_connect_account_is_remembered(tmp_path):
+    store = MachineServiceStore(path=str(tmp_path / "services.json"))
+    assert store.ai_connect_account() == ""
+
+    store.set_ai_connect_account("alice")
+
+    assert store.ai_connect_account() == "alice"

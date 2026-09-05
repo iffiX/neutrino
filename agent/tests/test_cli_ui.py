@@ -8,7 +8,7 @@ import pytest
 
 import neutrino_agent.cli.entry as entry
 import neutrino_agent.cli.ui as ui
-import neutrino_agent.enrollment as enrollment
+import neutrino_agent.core.enrollment as enrollment
 from neutrino_agent.control.server import ControlServer
 from tests.test_control_server import ALICE, FakeControlAgent, FakeControlPlatform
 

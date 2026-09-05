@@ -18,9 +18,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-import neutrino_agent.enrollment as enrollment
-from neutrino_agent.agent import Agent
-from neutrino_agent.http_channel import GatewayHttpChannel, GatewayUntrusted
+import neutrino_agent.core.enrollment as enrollment
+from neutrino_agent.core.loop import Agent
+from neutrino_agent.core.channel import GatewayHttpChannel, GatewayUntrusted
 
 WRONG_FINGERPRINT = "0" * 64
 
@@ -125,7 +125,7 @@ def test_the_pinned_fingerprint_talks(tls_server):
 
 
 def test_the_pinned_connection_floors_at_tls_1_2():
-    from neutrino_agent.http_channel import _PinnedHttpsConnection
+    from neutrino_agent.core.channel import _PinnedHttpsConnection
 
     connection = _PinnedHttpsConnection(
         "127.0.0.1", 1, fingerprint="0" * 64, timeout=1.0

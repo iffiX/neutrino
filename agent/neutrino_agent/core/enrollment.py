@@ -26,7 +26,7 @@ import uuid
 
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import AGENT_CONFIG_PATH
-from neutrino_agent.http_channel import (
+from neutrino_agent.core.channel import (
     GatewayHttpChannel,
     GatewayRefused,
     GatewayUnreachable,

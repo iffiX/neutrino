@@ -16,11 +16,11 @@ import subprocess
 
 import pytest
 
-import neutrino_agent.enrollment as enrollment
-import neutrino_agent.self_update as self_update
-from neutrino_agent.agent import Agent
+import neutrino_agent.core.enrollment as enrollment
+import neutrino_agent.core.self_update as self_update
+from neutrino_agent.core.loop import Agent
 from neutrino_agent.cli import status as status_cli
-from neutrino_agent.http_channel import GatewayVersionRefused
+from neutrino_agent.core.channel import GatewayVersionRefused
 
 PACKAGE_BYTES = b"!<arch>agent-package"
 
@@ -35,7 +35,7 @@ class FakeChannel:
 
     def post(self, path, payload):
         return {
-            "desired_functions": {},
+            "desired_modules": {},
             "catalog_hash": "",
             "hub_version": self.hub_version,
         }
@@ -73,7 +73,7 @@ def bind(path, url="http://127.0.0.1:9") -> None:
 
 def bound_agent(config_path, monkeypatch, *, hub_version, named_digest=""):
     bind(config_path)
-    monkeypatch.setattr("neutrino_agent.agent.AGENT_VERSION", "1.0.0")
+    monkeypatch.setattr("neutrino_agent.core.loop.AGENT_VERSION", "1.0.0")
     monkeypatch.setattr(self_update, "package_kind", lambda platform: "deb")
     agent = Agent(log=discard)
     agent._channel = FakeChannel(hub_version, named_digest=named_digest)

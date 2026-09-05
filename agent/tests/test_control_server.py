@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-import neutrino_agent.enrollment as enrollment
+import neutrino_agent.core.enrollment as enrollment
 from neutrino_agent.constants import AGENT_CONTROL_PAGE_ORIGIN
 from neutrino_agent.control import client
 from neutrino_agent.control.server import ControlServer
@@ -18,6 +18,40 @@ from neutrino_agent.platforms.base import AgentPlatform, PlatformUnsupportedErro
 
 ROOT = {"account": "root", "uid": 0, "is_privileged": True}
 ALICE = {"account": "alice", "uid": 1000, "is_privileged": False}
+
+SERVICES = [
+    {
+        "id": "ai",
+        "type": "ai",
+        "title": "AI tools",
+        "payload": {
+            "endpoint": "http://hub:8080",
+            "protocol": "anthropic",
+            "models": ["m1"],
+        },
+        "is_healthy": True,
+        "source": "module",
+        "description": "",
+    },
+    {
+        "id": "svc_wiki",
+        "type": "web",
+        "title": "Wiki",
+        "payload": {"url": "http://w/"},
+        "is_healthy": True,
+        "source": "declared",
+        "description": "declared by hand",
+    },
+    {
+        "id": "svc_tcp",
+        "type": "port",
+        "title": "tcp",
+        "payload": {"host": "h", "port": 5432},
+        "is_healthy": True,
+        "source": "module",
+        "description": "published by container mysql:8.0",
+    },
+]
 
 
 class FakeControlPlatform(AgentPlatform):
@@ -55,36 +89,33 @@ class FakeControlAgent:
         self.connected_links = []
         self.is_disconnected = False
         self.connect_error = None
-        self.ai_requests = []
-        self.mount_calls = []
-        self.mount_reply = {}
-        self.forward_requests = []
-        self.forward_reply = {}
+        self.service_calls = []
+        self.service_reply = {}
 
     def platform(self) -> dict:
         return {"os": "linux", "family": "debian", "arch": "x86_64"}
 
     def catalog(self) -> dict:
         return {
-            "functions": {
-                "openssh": {
-                    "title": "SSH server",
+            "modules": {
+                "openssh_server": {
+                    "title": "OpenSSH server",
                     "description": "",
+                    "kind": "openssh",
                     "platforms": {"linux": {}},
                 }
             },
-            "services": {
-                "ai": {"kind": "ai", "title": "AI tools"},
-                "svc_wiki": {"kind": "link", "title": "Wiki", "url": "http://w/"},
-                "svc_tcp": {"kind": "port", "title": "tcp", "host": "h", "port": 5432},
-            },
+            "services": SERVICES,
         }
 
-    def function_states(self) -> dict:
-        return {"openssh": {"state": "installed", "is_active": True}}
+    def service_entries(self) -> list:
+        return list(SERVICES)
 
-    def desired_functions(self) -> dict:
-        return {"openssh": {"is_enabled": True}}
+    def module_states(self) -> dict:
+        return {"openssh_server": {"state": "enabled", "is_active": False}}
+
+    def desired_modules(self) -> dict:
+        return {"openssh_server": {"is_enabled": True}}
 
     def last_error(self):
         return None
@@ -106,41 +137,36 @@ class FakeControlAgent:
             "bob": {"state": "absent", "code": "", "params": {}, "is_active": False},
         }
 
+    def ai_tool_configs(self) -> dict:
+        return {"claude": {"default": "m1"}}
+
+    def ai_connect_account(self) -> str:
+        return "alice"
+
     def account_home(self, account) -> str:
         return "/root" if account == "root" else f"/home/{account}"
 
-    def mount_rows(self) -> list:
-        return [
-            {
-                "record_id": "r1",
-                "offer_id": "hub_share_media",
-                "path": "/home/alice/nas/media",
-                "account": "alice",
-                "is_attached": True,
-                "code": "",
-                "params": {},
-            }
-        ]
+    def service_states(self) -> dict:
+        return {
+            "forwards": {"svc_tcp": {"local_port": 5432, "is_active": True}},
+            "mounts": [
+                {
+                    "record_id": "r1",
+                    "entry_id": "hub_share_media",
+                    "path": "/home/alice/nas/media",
+                    "account": "alice",
+                    "is_attached": True,
+                    "code": "",
+                    "params": {},
+                }
+            ],
+        }
 
-    def forward_rows(self) -> dict:
-        return {"svc_tcp": {"local_port": 5432, "is_active": True}}
+    def service_action(self, service_type, *, account, is_privileged, body) -> dict:
+        self.service_calls.append((service_type, account, is_privileged, dict(body)))
+        return dict(self.service_reply)
 
-    def request_ai(self, account, *, is_activated):
-        self.ai_requests.append((account, is_activated))
-
-    def attach_mount(self, **kwargs) -> dict:
-        self.mount_calls.append(("attach", kwargs))
-        return dict(self.mount_reply)
-
-    def detach_mount(self, **kwargs) -> dict:
-        self.mount_calls.append(("detach", kwargs))
-        return dict(self.mount_reply)
-
-    def request_forward(self, offer_id, *, is_enabled) -> dict:
-        self.forward_requests.append((offer_id, is_enabled))
-        return dict(self.forward_reply)
-
-    def request_function(self, name, *, is_enabled=None, is_activated=None):
+    def request_module(self, name, *, is_enabled=None, is_activated=None):
         self.requested.append((name, is_enabled, is_activated))
 
     def connect(self, link):
@@ -230,8 +256,23 @@ def test_socket_state_is_scoped_to_the_peer(control):
     }
     assert state["accounts"] == ["alice"]
     assert state["ai_targets"] == {"alice": True}
-    assert state["services"]["svc_wiki"]["url"] == "http://w/"
-    assert [f["name"] for f in state["functions"]] == ["openssh"]
+    assert [m["name"] for m in state["modules"]] == ["openssh_server"]
+    assert state["modules"][0]["kind"] == "openssh"
+
+
+def test_the_state_carries_the_typed_service_list(control):
+    server, _agent, platform = control
+
+    platform.peer = dict(ROOT)
+    status, state = over_socket(server, "GET", "/api/state")
+
+    assert status == 200
+    assert [entry["type"] for entry in state["services"]] == ["ai", "web", "port"]
+    assert state["services"][1]["payload"]["url"] == "http://w/"
+    assert state["forwards"]["svc_tcp"]["local_port"] == 5432
+    assert state["mounts"][0]["record_id"] == "r1"
+    assert state["ai_tool_configs"] == {"claude": {"default": "m1"}}
+    assert state["ai_connect_account"] == "alice"
 
 
 def test_an_unreadable_peer_is_refused_not_guessed(control):
@@ -282,9 +323,9 @@ def test_a_mismatched_origin_is_refused_regardless_of_token(control):
     status, reply = loopback_json(
         server,
         "POST",
-        "/api/function",
+        "/api/module",
         token=token,
-        body={"name": "openssh"},
+        body={"name": "openssh_server"},
         headers={"Origin": "http://evil.example"},
     )
 
@@ -298,9 +339,9 @@ def test_a_loopback_post_must_be_json(control):
     status, reply = loopback_json(
         server,
         "POST",
-        "/api/function",
+        "/api/module",
         token=token,
-        body={"name": "openssh"},
+        body={"name": "openssh_server"},
         headers={"Content-Type": "text/plain"},
     )
 
@@ -314,15 +355,15 @@ def test_the_pages_own_origin_passes(control):
     status, state = loopback_json(
         server,
         "POST",
-        "/api/function",
+        "/api/module",
         token=token,
-        body={"name": "openssh", "is_enabled": False},
+        body={"name": "openssh_server", "is_enabled": False},
         headers={"Origin": AGENT_CONTROL_PAGE_ORIGIN},
     )
 
     assert status == 200
     assert state["caller"]["is_privileged"] is True
-    assert agent.requested == [("openssh", False, None)]
+    assert agent.requested == [("openssh_server", False, None)]
 
 
 def test_privileged_verbs_refuse_an_ordinary_caller(control):
@@ -332,7 +373,7 @@ def test_privileged_verbs_refuse_an_ordinary_caller(control):
     for path, body in (
         ("/api/connect", {"link": "neutrino://enroll/x"}),
         ("/api/disconnect", {}),
-        ("/api/function", {"name": "openssh", "is_enabled": False}),
+        ("/api/module", {"name": "openssh_server", "is_enabled": False}),
     ):
         status, reply = over_socket(server, "POST", path, body)
         assert (status, reply["code"]) == (403, "control_scope_refused")
@@ -400,114 +441,59 @@ def test_tokens_are_minted_only_over_the_socket(control):
     assert (status, reply["code"]) == (404, "unknown_request")
 
 
-def test_ai_switching_is_scoped_to_own_account_or_privilege(control):
-    server, agent, platform = control
-
-    platform.peer = dict(ALICE)
-    status, reply = over_socket(
-        server, "POST", "/api/services/ai", {"account": "bob", "is_activated": True}
-    )
-    assert (status, reply["code"]) == (403, "control_scope_refused")
-
-    status, _state = over_socket(
-        server, "POST", "/api/services/ai", {"account": "alice", "is_activated": True}
-    )
-    assert status == 200
-
-    platform.peer = dict(ROOT)
-    status, _state = over_socket(
-        server, "POST", "/api/services/ai", {"account": "bob", "is_activated": False}
-    )
-    assert status == 200
-    assert agent.ai_requests == [("alice", True), ("bob", False)]
-
-    status, reply = over_socket(
-        server, "POST", "/api/services/ai", {"account": "mallory", "is_activated": True}
-    )
-    assert (status, reply["code"]) == (400, "no_target_user")
-
-
-def test_the_state_carries_the_service_rows_in_scope(control):
-    server, _agent, platform = control
-
-    platform.peer = dict(ROOT)
-    status, state = over_socket(server, "GET", "/api/state")
-    assert status == 200
-    assert state["caller"]["home"] == "/root"
-    assert sorted(state["ai_states"]) == ["alice", "bob"]
-    assert state["mounts"][0]["record_id"] == "r1"
-    assert state["forwards"]["svc_tcp"]["local_port"] == 5432
-
-    platform.peer = dict(ALICE)
-    status, state = over_socket(server, "GET", "/api/state")
-    assert status == 200
-    assert state["caller"]["home"] == "/home/alice"
-    assert list(state["ai_states"]) == ["alice"]
-    assert state["mounts"] and state["forwards"]
-
-
-def test_mount_actions_carry_the_callers_identity(control):
+def test_service_actions_carry_the_callers_identity(control):
     server, agent, platform = control
 
     platform.peer = dict(ALICE)
     status, _state = over_socket(
         server,
         "POST",
-        "/api/services/mount",
-        {
-            "action": "attach",
-            "offer_id": "hub_share_media",
-            "username": "media",
-            "password": "secret",  # scan: allow
-            "path": "/home/alice/nas/media",
-        },
+        "/api/services/port",
+        {"id": "svc_tcp", "is_enabled": True},
     )
     assert status == 200
-    action, kwargs = agent.mount_calls[0]
-    assert action == "attach"
-    assert kwargs["account"] == "alice" and kwargs["is_privileged"] is False
-    assert kwargs["password"] == "secret"  # scan: allow
+    assert agent.service_calls[-1] == (
+        "port",
+        "alice",
+        False,
+        {"id": "svc_tcp", "is_enabled": True},
+    )
 
     platform.peer = dict(ROOT)
     status, _state = over_socket(
-        server, "POST", "/api/services/mount", {"action": "detach", "record_id": "r1"}
-    )
-    assert status == 200
-    action, kwargs = agent.mount_calls[1]
-    assert action == "detach"
-    assert kwargs["is_privileged"] is True and kwargs["record_id"] == "r1"
-
-    agent.mount_reply = {"code": "mountpoint_not_empty", "params": {}}
-    status, reply = over_socket(
         server,
         "POST",
-        "/api/services/mount",
-        {"action": "attach", "offer_id": "x", "path": "/tmp/full"},
+        "/api/services/file",
+        {"action": "unmount", "record_id": "r1"},
+    )
+    assert status == 200
+    assert agent.service_calls[-1] == (
+        "file",
+        "root",
+        True,
+        {"action": "unmount", "record_id": "r1"},
+    )
+
+
+def test_a_service_refusal_maps_to_its_status(control):
+    server, agent, platform = control
+    platform.peer = dict(ROOT)
+
+    agent.service_reply = {"code": "mountpoint_not_empty", "params": {}}
+    status, reply = over_socket(
+        server, "POST", "/api/services/file", {"action": "mount", "id": "x"}
     )
     assert (status, reply["code"]) == (400, "mountpoint_not_empty")
 
-    status, reply = over_socket(server, "POST", "/api/services/mount", {})
+    agent.service_reply = {"code": "unknown_request", "params": {}}
+    status, reply = over_socket(server, "POST", "/api/services/nothing", {})
     assert (status, reply["code"]) == (404, "unknown_request")
 
-
-def test_forwards_toggle_for_every_scope(control):
-    server, agent, platform = control
-
-    platform.peer = dict(ALICE)
-    status, _state = over_socket(
-        server,
-        "POST",
-        "/api/services/forward",
-        {"offer_id": "svc_tcp", "is_enabled": True},
-    )
-    assert status == 200
-    assert agent.forward_requests == [("svc_tcp", True)]
-
-    agent.forward_reply = {"code": "unknown_request", "params": {}}
+    agent.service_reply = {"code": "control_scope_refused", "params": {}}
     status, reply = over_socket(
-        server, "POST", "/api/services/forward", {"offer_id": "gone"}
+        server, "POST", "/api/services/ai", {"targets": {"bob": True}}
     )
-    assert (status, reply["code"]) == (404, "unknown_request")
+    assert (status, reply["code"]) == (403, "control_scope_refused")
 
 
 def test_the_directory_listing_runs_as_the_caller(control):

@@ -2,38 +2,27 @@
 
 cc-switch is what people already use to keep several AI providers on one
 machine and flip between them, so the agent adds the hub to it as one more
-provider rather than competing with it. Two separate things, and the panel
-offers them separately: having cc-switch on the machine, and having it point
-at the hub. Someone can keep the switcher and send it elsewhere.
-
-Detection never runs the binary. The desktop app is a GUI with no argument
-parsing, so asking it for its version opens a window; what is inspected
-instead is where the binary sits and which package owns it. The CLI fork and
-the desktop app share one store, so a provider registered through either shows
-up in both.
+provider rather than competing with it. Detection never runs the binary: the
+desktop app is a GUI with no argument parsing, so asking it for its version
+opens a window; what is inspected instead is where the binary sits and which
+package owns it. The CLI fork and the desktop app share one store, so a
+provider registered through either shows up in both.
 
 Both publish x86_64 and aarch64 only — Jetson, DGX Spark and a 64-bit
-Raspberry Pi are covered, a 32-bit Raspberry Pi is not, which is why the
-caller keeps a direct-write fallback.
+Raspberry Pi are covered, a 32-bit Raspberry Pi is not.
 
-cc-switch treats a provider as the whole of a tool's configuration, so
-switching to one replaces that file rather than editing part of it. That is
-fine for a machine where the tool has never been set up and destructive on one
-where someone has tuned it, so the hub's provider is created carrying whatever
-was already there: Claude Code's settings are read, the hub's endpoint is
-merged in, and the result is handed to cc-switch as the provider's own
-configuration. For the tools whose configuration cannot be reconstructed that
-way, an existing file is left alone and said so rather than overwritten.
-
-Activating keeps a copy of each file as it stood beforehand — permission
-rules, model choice, everything — and deactivating puts that copy back
-verbatim, deleting the file again when there was none. A machine is therefore
-left exactly as it was found, and a config that cannot be copied aside is a
-refusal to activate rather than something overwritten.
+Each tool is configured with its own knobs, drawn from the person's staged
+choices: Claude Code's four role slots, Codex's model and reasoning effort
+written into ``config.toml``, Gemini's one model. Activating keeps a copy of
+each file as it stood beforehand — permission rules, model choice,
+everything — and deactivating puts that copy back verbatim, deleting the
+file again when there was none. A machine is therefore left exactly as it
+was found, and a config that cannot be copied aside is a refusal to activate
+rather than something overwritten.
 
 The agent settles what activation means: it writes the tool's configuration
-itself and reads it back, rather than trusting cc-switch's exit code, so what
-the panel shows is what the tool would actually do.
+itself and reads it back, rather than trusting cc-switch's exit code, so
+what the page shows is what the tool would actually do.
 
 Not pure: installs a binary and runs it.
 """
@@ -50,8 +39,8 @@ import tarfile
 import tempfile
 import zipfile
 
-from neutrino_agent.downloader import download, resolve_github_asset
-from neutrino_agent.installers import InstallError
+from neutrino_agent.modules.downloader import download, resolve_github_asset
+from neutrino_agent.modules.installers import InstallError
 
 
 class NoTargetUserError(InstallError):
@@ -77,6 +66,35 @@ SWITCHER_DESKTOP_MARKERS = (
     "C:\\Program Files\\CC Switch",
 )
 
+# How each platform obtains the CLI. The typed ai entry carries endpoint and
+# models only, so the tool that applies them is the agent's own business.
+SWITCHER_RELEASES = {
+    "linux-amd64": {
+        "github_repo": "SaladDay/cc-switch-cli",
+        "asset_pattern": "linux-x64.tar.gz",
+        "package_kind": "tar_binary",
+        "binary": "cc-switch",
+    },
+    "linux-arm64": {
+        "github_repo": "SaladDay/cc-switch-cli",
+        "asset_pattern": "linux-arm64.tar.gz",
+        "package_kind": "tar_binary",
+        "binary": "cc-switch",
+    },
+    "darwin": {
+        "github_repo": "SaladDay/cc-switch-cli",
+        "asset_pattern": "darwin-universal.tar.gz",
+        "package_kind": "tar_binary",
+        "binary": "cc-switch",
+    },
+    "windows-amd64": {
+        "github_repo": "SaladDay/cc-switch-cli",
+        "asset_pattern": "windows-x64.zip",
+        "package_kind": "zip_binary",
+        "binary": "cc-switch.exe",
+    },
+}
+
 SWITCHER_PROVIDER_ID = "neutrino"
 SWITCHER_PROVIDER_NAME = "Neutrino Hub"
 
@@ -93,15 +111,20 @@ SWITCHER_APP_FILES = {
 # else in that file is the person's own and is carried across unchanged.
 CLAUDE_ENV_KEYS = ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY")
 
-# Every name Claude Code picks a model by. All are set to what the hub serves,
+# Claude Code's four role slots, each an env key of its own. All are set,
 # because a role left unset falls back to a Claude model the hub has never
 # heard of.
-CLAUDE_MODEL_KEYS = (
-    "ANTHROPIC_MODEL",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-)
+CLAUDE_SLOT_KEYS = {
+    "default": "ANTHROPIC_MODEL",
+    "opus": "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "sonnet": "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    "haiku": "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+}
+
+# Codex's own knobs, written into config.toml as top-level keys.
+CODEX_CONFIG_KEYS = ("model", "model_reasoning_effort")
+
+GEMINI_MODEL_KEY = "GEMINI_MODEL"
 
 # Where a tool's configuration is kept while the hub has replaced it, one
 # file per tool below the account's own home, holding the file's text and
@@ -145,6 +168,21 @@ def _require_target(run_as: str) -> None:
         raise NoTargetUserError(f"no target account {run_as!r} on this machine")
 
 
+def release_entry(platform_keys: list) -> dict:
+    """The CLI release this machine installs.
+
+    Args:
+        platform_keys: The machine's manifest keys, most specific first.
+
+    Returns:
+        The release block, empty when no build exists for this machine.
+    """
+    for key in platform_keys:
+        if key in SWITCHER_RELEASES:
+            return dict(SWITCHER_RELEASES[key])
+    return {}
+
+
 def find_cli() -> "str | None":
     """The cc-switch CLI, if this machine has one.
 
@@ -184,16 +222,19 @@ def install_cli(entry: dict) -> str:
     """Download and install the cc-switch CLI for this platform.
 
     Args:
-        entry: The manifest's ``switcher`` block — where to get it and what
-            the binary inside is called.
+        entry: The release block — where to get it and what the binary
+            inside is called.
 
     Returns:
         The path it was installed to.
 
     Raises:
-        InstallError: If the archive cannot be fetched or unpacked.
+        InstallError: If the archive cannot be fetched or unpacked, or no
+            build exists for this machine.
         DownloadError: If the release asset cannot be resolved.
     """
+    if not entry:
+        raise InstallError("no cc-switch build for this machine")
     url = resolve_github_asset(entry["github_repo"], entry.get("asset_pattern", ""))
     binary_name = entry.get("binary", "cc-switch")
     kind = entry.get("package_kind", "tar_binary")
@@ -223,7 +264,9 @@ def uninstall_cli() -> None:
                 raise InstallError(f"could not remove {candidate}: {error}")
 
 
-def activate(*, base_url: str, api_key: str, run_as: str, model: str = "") -> str:
+def activate(
+    *, base_url: str, api_key: str, run_as: str, tool_configs: "dict | None" = None
+) -> str:
     """Register the hub in cc-switch and switch every tool to it.
 
     Each tool's configuration is copied aside first, as it stands, and a tool
@@ -232,10 +275,12 @@ def activate(*, base_url: str, api_key: str, run_as: str, model: str = "") -> st
 
     Args:
         base_url: The hub's AI endpoint.
-        api_key: This device's client key.
+        api_key: This account's gateway key on this device.
         run_as: The account whose cc-switch store to write, since the agent
             runs as root and the store lives in a person's home.
-        model: The model name the hub serves, empty to leave it to the tool.
+        tool_configs: Each tool's staged choices — ``claude`` slot names,
+            ``codex`` model and reasoning effort, ``gemini`` model. None or
+            a missing key leaves that tool's model choices unwritten.
 
     Returns:
         A short message naming the tools that took it.
@@ -245,6 +290,7 @@ def activate(*, base_url: str, api_key: str, run_as: str, model: str = "") -> st
         InstallError: If cc-switch refuses for every tool.
     """
     _require_target(run_as)
+    configs = tool_configs or {}
     done = []
     problems = []
     for app in SWITCHER_APPS:
@@ -252,15 +298,13 @@ def activate(*, base_url: str, api_key: str, run_as: str, model: str = "") -> st
             # Making it current and settling the tool's configuration both
             # belong to the step below; switching again afterwards would hand
             # the file back to whatever cc-switch has stored.
-            _add_provider(app, base_url, api_key, run_as, model)
+            _add_provider(app, base_url, api_key, run_as, configs.get(app) or {})
             done.append(app)
         except InstallError as error:
             problems.append(f"{app}: {error}")
     if not done:
         raise InstallError("; ".join(problems)[:300])
     note = ", ".join(done)
-    # A tool that has never been run has no config directory for cc-switch to
-    # write, which is worth saying rather than hiding.
     return f"{note}" if not problems else f"{note} ({len(problems)} not set up here)"
 
 
@@ -286,7 +330,7 @@ def deactivate(*, run_as: str, base_url: str = "") -> str:
             for still naming it.
 
     Returns:
-        What happened, in the words the panel shows.
+        What happened, in the words the page shows.
 
     Raises:
         NoTargetUserError: If ``run_as`` is empty or not a reported account.
@@ -306,6 +350,56 @@ def deactivate(*, run_as: str, base_url: str = "") -> str:
         if _points_at_hub(app, run_as, base_url):
             _strip_hub_keys(app, run_as)
     return ", ".join(notes)
+
+
+def is_active(
+    *, run_as: str, base_url: str, api_key: str = "", model: str = ""
+) -> bool:
+    """Whether this machine's Claude Code actually calls the hub.
+
+    Read from the tool's own configuration rather than from cc-switch's idea
+    of which provider is selected. The two can disagree — a settings file
+    restored from a backup, an edit made by hand — and what matters is where
+    the requests go, so that is what is checked. A disagreement then heals
+    itself: the reconcile sees it is not pointed here and points it again.
+
+    Args:
+        run_as: The account whose configuration to read.
+        base_url: The hub's AI endpoint.
+        api_key: This device's current key. Checked as well when given, so a
+            key that has since been rotated counts as not pointed here and
+            gets written again.
+        model: The default-slot model to expect. Checked too, so a changed
+            choice is applied rather than left behind.
+
+    Returns:
+        True when Claude Code's settings name that endpoint, key and model.
+    """
+    if not base_url:
+        return False
+    env = _read_json(run_as, SWITCHER_APP_FILES["claude"]).get("env", {})
+    if env.get("ANTHROPIC_BASE_URL") != base_url:
+        return False
+    if api_key and env.get("ANTHROPIC_AUTH_TOKEN") != api_key:
+        return False
+    return not model or env.get("ANTHROPIC_MODEL") == model
+
+
+def is_active_for(app: str, *, run_as: str) -> bool:
+    """Whether cc-switch points one tool at the hub.
+
+    Args:
+        app: The tool, in cc-switch's vocabulary.
+        run_as: The account whose store to read.
+
+    Returns:
+        True when the hub is that tool's current provider.
+    """
+    try:
+        output = _run(["provider", "current"], app, run_as)
+    except InstallError:
+        return False
+    return SWITCHER_PROVIDER_ID in output or SWITCHER_PROVIDER_NAME in output
 
 
 def _drop_provider(app: str, run_as: str) -> str:
@@ -465,58 +559,6 @@ def _strip_hub_keys(app: str, run_as: str) -> None:
     _write_json(run_as, SWITCHER_APP_FILES["claude"], data)
 
 
-def is_active(
-    *, run_as: str, base_url: str, api_key: str = "", model: str = ""
-) -> bool:
-    """Whether this machine's Claude Code actually calls the hub.
-
-    Read from the tool's own configuration rather than from cc-switch's idea
-    of which provider is selected. The two can disagree — a settings file
-    restored from a backup, an edit made by hand — and what matters is where
-    the requests go, so that is what is checked. A disagreement then heals
-    itself: the reconcile sees it is not pointed here and points it again.
-
-    Args:
-        run_as: The account whose configuration to read.
-        base_url: The hub's AI endpoint.
-        api_key: This device's current key. Checked as well when given, so a
-            key that has since been rotated counts as not pointed here and
-            gets written again.
-        model: The model the hub says to ask for. Checked too, so a hub that
-            changes what it serves is followed rather than left behind — the
-            endpoint alone matching would hide a model name that no longer
-            exists.
-
-    Returns:
-        True when Claude Code's settings name that endpoint, key and model.
-    """
-    if not base_url:
-        return False
-    env = _read_json(run_as, SWITCHER_APP_FILES["claude"]).get("env", {})
-    if env.get("ANTHROPIC_BASE_URL") != base_url:
-        return False
-    if api_key and env.get("ANTHROPIC_AUTH_TOKEN") != api_key:
-        return False
-    return not model or env.get("ANTHROPIC_MODEL") == model
-
-
-def is_active_for(app: str, *, run_as: str) -> bool:
-    """Whether cc-switch points one tool at the hub.
-
-    Args:
-        app: The tool, in cc-switch's vocabulary.
-        run_as: The account whose store to read.
-
-    Returns:
-        True when the hub is that tool's current provider.
-    """
-    try:
-        output = _run(["provider", "current"], app, run_as)
-    except InstallError:
-        return False
-    return SWITCHER_PROVIDER_ID in output or SWITCHER_PROVIDER_NAME in output
-
-
 def _is_desktop_owned(path: str) -> bool:
     """Whether a package manager says this binary belongs to the desktop app."""
     if not shutil.which("dpkg"):
@@ -534,46 +576,37 @@ def _is_desktop_owned(path: str) -> bool:
 
 
 def _add_provider(
-    app: str, base_url: str, api_key: str, run_as: str, model: str = ""
+    app: str, base_url: str, api_key: str, run_as: str, config: dict
 ) -> None:
-    """Make the hub this tool's provider, keeping the machine's own settings.
+    """Make the hub this tool's provider, applying the staged choices.
 
-    A provider in cc-switch is the whole of a tool's configuration, so the
-    hub's is built from what is already there. The file is copied aside and
-    read first, before anything is switched or deleted, because switching to
-    any other provider replaces it — reading it afterwards would read the
-    replacement.
-
-    What the file should end up containing is known exactly, so the agent
-    writes it and reads it back. cc-switch writes a tool's configuration only
-    when the current provider changes, so switching to one that is already
-    current is a no-op and the endpoint would otherwise never land.
+    A provider in cc-switch is the whole of a tool's configuration, so
+    Claude's is built from what is already there. The file is copied aside
+    and read first, before anything is switched or deleted, because
+    switching to any other provider replaces it — reading it afterwards
+    would read the replacement. Codex and Gemini let cc-switch write the
+    endpoint, then get the chosen model settled into their own file.
 
     Args:
         app: Which tool, in cc-switch's vocabulary.
         base_url: The hub's AI endpoint.
-        api_key: This device's client key.
+        api_key: This account's gateway key.
         run_as: The account whose store and configuration to write.
-        model: The model name the hub serves, empty to leave it to the tool.
+        config: The tool's staged choices.
 
     Raises:
-        InstallError: If the existing configuration cannot be copied aside or
-            carried across, if cc-switch refuses, or if the settings file did
-            not end up naming the hub.
+        InstallError: If the existing configuration cannot be copied aside,
+            if cc-switch refuses, or if the settings file did not end up
+            naming the hub.
     """
     _capture_original(app, run_as)
     if app == "claude":
         existing = _read_json(run_as, SWITCHER_APP_FILES["claude"])
-        config = json.dumps(
-            {**existing, "env": _hub_env(existing, base_url, api_key, model)}
-        )
-    elif _has_own_config(app, run_as):
-        raise InstallError(
-            "left alone: this machine already has a configuration here that "
-            "switching would replace"
+        settings = json.dumps(
+            {**existing, "env": _hub_env(existing, base_url, api_key, config)}
         )
     else:
-        config = ""
+        settings = ""
 
     _drop_provider(app, run_as)
 
@@ -585,8 +618,8 @@ def _add_provider(
         "--name",
         SWITCHER_PROVIDER_NAME,
     ]
-    if config:
-        arguments += ["--config", config]
+    if settings:
+        arguments += ["--config", settings]
     else:
         arguments += ["--base-url", base_url, "--api-key", api_key]
     try:
@@ -595,30 +628,39 @@ def _add_provider(
         # The entry survived a replacement — it was current with nothing to
         # fall back to. cc-switch keeps its own, now stale, copy; what the
         # tool reads is settled below either way.
-        if not config:
+        if not settings:
             raise
     _use_provider(app, run_as)
 
-    if not config:
-        return
-    _write_json(run_as, SWITCHER_APP_FILES["claude"], json.loads(config))
-    if not is_active(run_as=run_as, base_url=base_url, api_key=api_key, model=model):
-        raise InstallError("the settings file did not take the hub's endpoint")
+    if app == "claude":
+        _write_json(run_as, SWITCHER_APP_FILES["claude"], json.loads(settings))
+        if not is_active(
+            run_as=run_as,
+            base_url=base_url,
+            api_key=api_key,
+            model=str(config.get("default", "")),
+        ):
+            raise InstallError("the settings file did not take the hub's endpoint")
+    elif app == "codex":
+        _settle_codex_config(run_as, config)
+    elif app == "gemini":
+        _settle_gemini_config(run_as, config)
 
 
-def _hub_env(existing: dict, base_url: str, api_key: str, model: str) -> dict:
+def _hub_env(existing: dict, base_url: str, api_key: str, config: dict) -> dict:
     """The tool's environment with the hub's endpoint in place of any other.
 
-    The model is named as well when the hub gives one: Claude Code asks for a
+    Every role slot with a chosen model is named: Claude Code asks for a
     model by name, and a hub fronting anything but Anthropic serves names of
-    its own, so leaving this out means every request asks for a model that is
+    its own, so a slot left unset means requests asking for a model that is
     not there.
 
     Args:
         existing: The tool's current environment.
         base_url: The hub's AI endpoint.
-        api_key: This device's client key.
-        model: The model name to ask for, empty to leave the choice alone.
+        api_key: This account's gateway key.
+        config: The staged slot choices — ``default``, ``opus``, ``sonnet``,
+            ``haiku``.
 
     Returns:
         The environment to write.
@@ -628,10 +670,93 @@ def _hub_env(existing: dict, base_url: str, api_key: str, model: str) -> dict:
         env.pop(key, None)
     env["ANTHROPIC_BASE_URL"] = base_url
     env["ANTHROPIC_AUTH_TOKEN"] = api_key
-    if model:
-        for key in CLAUDE_MODEL_KEYS:
+    for slot, key in CLAUDE_SLOT_KEYS.items():
+        model = str(config.get(slot, "") or "")
+        if model:
             env[key] = model
     return env
+
+
+def _settle_codex_config(run_as: str, config: dict) -> None:
+    """Write the chosen model and reasoning effort into Codex's config.toml.
+
+    Args:
+        run_as: The account whose configuration to edit.
+        config: The staged choices — ``model``, ``model_reasoning_effort``.
+    """
+    values = {}
+    for key in CODEX_CONFIG_KEYS:
+        value = str(config.get(key, "") or "")
+        if value:
+            values[key] = value
+    if not values:
+        return
+    relative = SWITCHER_APP_FILES["codex"]
+    text = _read_text(run_as, relative)
+    _write_text(run_as, relative, _merge_toml_top_level(text, values))
+
+
+def _settle_gemini_config(run_as: str, config: dict) -> None:
+    """Write the chosen model into Gemini's env file.
+
+    Args:
+        run_as: The account whose configuration to edit.
+        config: The staged choices — ``model``.
+    """
+    model = str(config.get("model", "") or "")
+    if not model:
+        return
+    relative = SWITCHER_APP_FILES["gemini"]
+    text = _read_text(run_as, relative)
+    _write_text(run_as, relative, _merge_env_line(text, GEMINI_MODEL_KEY, model))
+
+
+def _merge_toml_top_level(text: str, values: dict) -> str:
+    """A TOML text with the given top-level keys set, the rest untouched.
+
+    Existing assignments of those keys above the first section header are
+    dropped; the new ones go at the top, so they stay top-level whatever
+    sections follow.
+
+    Args:
+        text: The file as it stands.
+        values: Key to string value.
+
+    Returns:
+        The merged text.
+    """
+    kept = []
+    is_in_section = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("["):
+            is_in_section = True
+        if not is_in_section and "=" in stripped:
+            key = stripped.split("=", 1)[0].strip()
+            if key in values:
+                continue
+        kept.append(line)
+    head = [f'{key} = "{value}"' for key, value in values.items()]
+    merged = "\n".join(head + kept)
+    return merged.rstrip("\n") + "\n"
+
+
+def _merge_env_line(text: str, key: str, value: str) -> str:
+    """An env-file text with one ``KEY=value`` line set, the rest untouched.
+
+    Args:
+        text: The file as it stands.
+        key: The variable name.
+        value: Its value.
+
+    Returns:
+        The merged text.
+    """
+    kept = [
+        line for line in text.splitlines() if not line.strip().startswith(f"{key}=")
+    ]
+    kept.append(f"{key}={value}")
+    return "\n".join(kept).lstrip("\n").rstrip("\n") + "\n"
 
 
 def _use_provider(app: str, run_as: str) -> None:
@@ -703,12 +828,6 @@ def _extract_binary(archive: str, workdir: str, binary_name: str, kind: str) -> 
         if binary_name in names:
             return os.path.join(root, binary_name)
     raise InstallError(f"no {binary_name} inside the archive")
-
-
-def _has_own_config(app: str, run_as: str) -> bool:
-    """Whether a tool already has a configuration worth not replacing."""
-    text = _read_text(run_as, SWITCHER_APP_FILES.get(app, ""))
-    return bool(text and text.strip())
 
 
 def _file_mode(run_as: str, relative: str) -> str:

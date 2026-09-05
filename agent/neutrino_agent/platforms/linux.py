@@ -28,14 +28,14 @@ try:
 except ImportError:  # Windows has no account database module.
     pwd = None
 
-from neutrino_agent import installers
+from neutrino_agent.modules import installers
 from neutrino_agent.constants import (
     AGENT_COMMAND_TIMEOUT_S,
     AGENT_CONTROL_SOCKET_PATH,
     AGENT_SERVICE_NAME,
     AGENT_STEP_DOWN_TIMEOUT_S,
 )
-from neutrino_agent.metrics import GpuMetrics, HostMetrics, ProcessMetrics
+from neutrino_agent.core.metrics import GpuMetrics, HostMetrics, ProcessMetrics
 from neutrino_agent.platforms.base import AgentPlatform, ShareAttachError
 
 # Accounts below this uid are the system's, not people's.

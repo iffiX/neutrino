@@ -1,11 +1,17 @@
 """The agent's local page, served on the loopback.
 
-The page carries no state of its own: it reads the token ``nagent ui`` put
-in the URL fragment, sends it as a bearer on every request, and renders the
-scope the reply says the token owns — the connection and functions with
-controls for a privileged caller and read-only otherwise, then the services
-the catalog publishes, grouped by kind. Opened without a token it only says
+The page carries no state of its own beyond what a person has staged: it
+reads the token ``nagent ui`` put in the URL fragment, sends it as a bearer
+on every request, and renders three sections — Status, Modules, Services —
+in the scope the reply says the token owns. A control the caller's scope
+does not own is disabled, never hidden. Opened without a token it only says
 how to get one.
+
+The page redraws only when the state payload actually changed, and never
+while the person holds a text selection, a focused form field, or an open
+dialog. Its own polling is the token's pulse: the agent expires a token
+whose pulse stops, which is how a closed window ends the ``nagent ui``
+session that opened it.
 
 The agent reports errors and states as ``{"code", "params"}``; every word
 on this surface lives in the page's own table.
@@ -21,34 +27,44 @@ CONTROL_PAGE_HTML = """<!doctype html>
   :root { color-scheme: dark; }
   body { margin: 0; padding: 32px 20px; background: #0a0e14; color: #e6edf3;
          font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif; }
-  .wrap { max-width: 620px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+  .wrap { max-width: 680px; margin: 0 auto; display: flex;
+          flex-direction: column; gap: 24px; }
   h1 { margin: 0; font-size: 18px; letter-spacing: .02em; }
-  .sub { color: #7d8590; font-size: 12px; font-family: ui-monospace, monospace; }
-  .card { border: 1px solid #1f2937; border-radius: 12px; background: #111721; padding: 18px; }
+  .sect { display: flex; flex-direction: column; gap: 12px; }
+  .sect_title { margin: 0; font-size: 16px; font-weight: 600; }
+  .sub { color: #8b96a5; font-size: 12px; font-family: ui-monospace, monospace; }
+  .card { border: 1px solid #1f2937; border-radius: 12px; background: #111721;
+          padding: 18px; transition: border-color .15s, box-shadow .15s; }
+  .card.dirty { border-color: #fbbf24; box-shadow: 0 0 26px -16px #fbbf24; }
   .row { display: flex; gap: 12px; align-items: center; }
   .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
   .ok { background: #34d399; box-shadow: 0 0 10px -1px #34d399; }
-  .off { background: #7d8590; }
-  .bad { background: #ff4252; box-shadow: 0 0 10px -1px #ff4252; }
-  input { flex: 1; min-width: 0; padding: 9px 12px; border: 1px solid #1f2937;
+  .off { background: #8b96a5; }
+  .bad { background: #fb7185; box-shadow: 0 0 10px -1px #fb7185; }
+  input, select { padding: 9px 12px; border: 1px solid #1f2937;
           border-radius: 8px; background: #0a0e14; color: #e6edf3;
           font-family: ui-monospace, monospace; font-size: 13px; }
+  input { flex: 1; min-width: 0; }
+  input:disabled, select:disabled { opacity: .4; }
   button { padding: 9px 16px; border: 1px solid #22d3ee; border-radius: 8px;
-           background: rgba(34,211,238,.1); color: #22d3ee; font-size: 13px; cursor: pointer; }
-  button.ghost { border-color: #1f2937; background: none; color: #7d8590; }
-  button.danger { border-color: rgba(255,66,82,.5); background: none; color: #ff4252; }
-  button.install { border-color: rgba(52,211,153,.6); background: rgba(52,211,153,.1); color: #34d399; }
+           background: rgba(34,211,238,.1); color: #22d3ee; font-size: 13px;
+           cursor: pointer; }
+  button.ghost { border-color: #1f2937; background: none; color: #8b96a5; }
+  button.danger { border-color: rgba(251,113,133,.5); background: none;
+                  color: #fb7185; }
+  button.install { border-color: rgba(52,211,153,.6);
+                   background: rgba(52,211,153,.1); color: #34d399; }
   button:disabled { opacity: .4; cursor: not-allowed; border-color: #1f2937; }
   .feat { display: flex; gap: 12px; align-items: center; padding: 12px 0;
           border-bottom: 1px solid #1f2937; }
   .feat:last-child { border-bottom: none; }
+  .feat.greyed .body { opacity: .5; }
   .feat .body { flex: 1; min-width: 0; }
   .feat .title { font-weight: 600; }
-  .feat .note { color: #7d8590; font-size: 12px; }
-  .group { color: #7d8590; font-size: 11px; text-transform: uppercase;
+  .feat .note { color: #8b96a5; font-size: 12px; }
+  .panel_title { color: #8b96a5; font-size: 11px; text-transform: uppercase;
            letter-spacing: .08em; border-bottom: 1px solid #1f2937;
-           padding-bottom: 6px; margin: 18px 0 4px; }
-  .group:first-child { margin-top: 0; }
+           padding-bottom: 6px; margin-bottom: 4px; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 0; }
   .chip { display: inline-flex; gap: 8px; align-items: center;
           border: 1px solid #1f2937; border-radius: 999px; padding: 6px 14px;
@@ -56,18 +72,22 @@ CONTROL_PAGE_HTML = """<!doctype html>
   .chip.on { border-color: rgba(52,211,153,.6); color: #34d399; }
   a.link { color: #22d3ee; text-decoration: none; }
   a.link:hover { text-decoration: underline; }
-  .err { color: #ff4252; font-size: 12px; }
-  .muted { color: #7d8590; }
-  .form { display: flex; flex-direction: column; gap: 8px; padding: 10px 0 4px 20px; }
+  .err { color: #fb7185; font-size: 12px; }
+  .muted { color: #8b96a5; }
+  .form { display: flex; flex-direction: column; gap: 8px;
+          padding: 10px 0 4px 20px; }
   .form .row input { flex: 1; }
   .rec { display: flex; gap: 8px; align-items: center; padding: 4px 0 4px 20px;
-         font-size: 12px; color: #7d8590; font-family: ui-monospace, monospace; }
+         font-size: 12px; color: #8b96a5; font-family: ui-monospace, monospace; }
   .rec .path { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .rec button { padding: 4px 10px; font-size: 12px; }
   .overlay { position: fixed; inset: 0; background: rgba(4,6,10,.7);
-             display: flex; align-items: center; justify-content: center; z-index: 10; }
-  .modal { width: min(480px, calc(100vw - 40px)); max-height: 70vh;
-           display: flex; flex-direction: column; gap: 10px; }
+             display: flex; align-items: center; justify-content: center;
+             z-index: 10; }
+  .modal { width: min(500px, calc(100vw - 40px)); max-height: 76vh;
+           overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+  .modal label { color: #8b96a5; font-size: 12px; }
+  .modal select { width: 100%; }
   .dirlist { overflow-y: auto; border: 1px solid #1f2937; border-radius: 8px;
              min-height: 120px; max-height: 40vh; }
   .dirlist button { display: block; width: 100%; text-align: left; border: none;
@@ -91,70 +111,91 @@ const WORDS = {
   ui: {
     open_hint: "Open this page with nagent ui.",
     stale_token: "This page's key has expired — run nagent ui again.",
+    section_status: "Status",
+    section_modules: "Modules",
+    section_services: "Services",
     connected: "Connected",
     not_connected: "Not connected",
     paste_hint: "Paste the link from the gateway's Devices page",
     connect: "Connect",
     disconnect: "Disconnect",
+    privileged_only: "Sign in as an administrator to change this.",
     install: "Install",
-    uninstall: "Uninstall",
-    activate: "Activate",
-    deactivate: "Deactivate",
-    forward: "Forward",
-    stop: "Stop",
-    attach: "Attach",
-    detach: "Detach",
+    remove: "Remove",
+    enable: "Enable",
+    disable: "Disable",
+    apply: "Apply",
+    config: "Config",
+    mount: "Mount",
+    unmount: "Unmount",
+    port_connect: "Connect",
+    port_disconnect: "Disconnect",
+    open: "Open",
     browse: "Browse…",
     new_folder: "New folder",
     new_folder_name: "Name of the new folder:",
     choose: "Choose this folder",
     cancel: "Cancel",
+    save: "Save",
     up: ".. up",
-    open: "Open",
     username_hint: "Share username",
     password_hint: "Share password",  // scan: allow
     path_hint: "Mount path",
-    not_attached: "not attached",
+    not_attached: "not mounted",
     forwarding_to: "127.0.0.1:{port}",
-    functions_wait_join: "Functions appear once this machine joins a gateway.",
-    functions_wait_list: "Waiting for the gateway to send its function list…",
+    unhealthy: "not reachable now",
+    modules_wait_join: "Modules appear once this machine joins a gateway.",
+    modules_wait_list: "Waiting for the gateway to send its module list…",
     services_empty: "Nothing is published for this machine yet.",
-    group_ai: "AI",
-    group_links: "Links",
-    group_ports: "Ports",
-    group_mounts: "Mounts",
-    not_for_platform: "Not available for this platform",
-    pointing: " · pointing at the hub",
-    not_pointing: " · not pointing here",
+    panel_web: "Web",
+    panel_ports: "Ports",
+    panel_ai: "AI",
+    panel_files: "Files",
+    gateway_default: "gateway default",
+    tool_claude: "Claude Code",
+    tool_codex: "Codex",
+    tool_gemini: "Gemini",
+    slot_default: "Default model",
+    slot_opus: "Opus slot",
+    slot_sonnet: "Sonnet slot",
+    slot_haiku: "Haiku slot",
+    codex_model: "Model",
+    codex_effort: "Reasoning effort",
+    gemini_model: "Model",
+    config_title: "AI tool configuration",
+    not_for_platform: "This machine cannot run this.",
   },
   states: {
     installed: "installed",
     absent: "not installed",
+    enabled: "enabled",
+    disabled: "disabled",
     installing: "installing…",
-    uninstalling: "uninstalling…",
-    removing: "uninstalling…",
-    activating: "activating…",
-    deactivating: "deactivating…",
-    unsupported: "not available here",
+    removing: "removing…",
+    enabling: "enabling…",
+    disabling: "disabling…",
+    activating: "switching…",
+    deactivating: "switching back…",
+    unsupported: "not available on this machine",
     failed: "failed",
     unknown: "waiting for the agent",
   },
   codes: {
-    no_platform_build: "no build for this platform",
-    verify_unconfirmed: "installed; verify did not confirm",
-    remove_unconfirmed: "removal did not take",
-    no_download_named: "manifest names no download",
-    unsupported_platform: "not supported on this platform",
-    unknown_kind: "unknown kind {kind}",
-    no_target_user: "no account to switch for",
-    no_endpoint: "the hub sent no endpoint for this account",
-    desktop_app_remains: "the desktop app remains installed",
+    no_platform_build: "no version of this exists for this machine",
+    verify_unconfirmed: "the install finished, but the software cannot be found",
+    remove_unconfirmed: "the removal finished, but the software is still there",
+    no_download_named: "the catalog names no download for this machine",
+    unsupported_platform: "this machine cannot do this",
+    unknown_kind: "the agent does not know this kind of module",
+    no_target_user: "that account does not exist on this machine",
+    no_endpoint: "the hub has not granted this account a key yet",
     mountpoint_not_empty: "that folder is not empty",
-    cifs_missing: "this machine has no CIFS mount tooling",
-    credentials_missing: "the saved login is gone — attach again",
-    fs_refused: "not allowed there for this account",
-    control_scope_refused: "not allowed for this account",
+    cifs_missing: "the mount tooling is missing on this machine",
+    credentials_missing: "the saved login is gone — enter it again with Config",
+    fs_refused: "this account may not use that folder",
+    control_scope_refused: "this account is not allowed to do that",
     control_token_invalid: "this page's key was refused",
+    control_page_not_served: "the agent serves no page right now",
     unknown_request: "the agent does not know this request",
   },
   errors: {
@@ -174,6 +215,12 @@ const WORDS = {
 };
 
 const TOKEN = location.hash.slice(1);
+const POLL_INTERVAL_MS = 1500;
+
+// Claude Code's four role slots and Codex's reasoning scale, as the agent
+// stores them.
+const CLAUDE_SLOTS = ['default', 'opus', 'sonnet', 'haiku'];
+const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high'];
 
 function fill(template, params) {
   return template.replace(/\\{(\\w+)\\}/g, (whole, key) =>
@@ -206,32 +253,22 @@ function wordError(e) {
 // there. A click changes the row at once: an install can finish between two
 // heartbeats, and a button that looks unpressed is worse than a stale label.
 const asked = {};
-const BUSY = ['installing', 'uninstalling', 'removing', 'activating',
-  'deactivating'];
-
-// What a row stands at, mid-step included. A step shows the world it is
-// leaving, not the one it is heading for: uninstalling is still installed
-// until it is gone, activating is still not aimed here until it arrives.
-// Deciding this once is what keeps the buttons agreeing with each other.
-function standing(f) {
-  if (f.state === 'installing') return { on: false, aimed: false };
-  if (f.state === 'uninstalling' || f.state === 'removing')
-    return { on: true, aimed: f.is_active };
-  if (f.state === 'activating') return { on: true, aimed: false };
-  if (f.state === 'deactivating') return { on: true, aimed: true };
-  return { on: f.state === 'installed', aimed: f.is_active };
-}
+const BUSY = ['installing', 'removing', 'enabling', 'disabling',
+  'activating', 'deactivating'];
 
 let lastState = null;
+let lastSerialized = '';
+let pendingState = null;
 let serviceNotes = {};
-// The AI step each chip asked for, shown until the account's row reports it.
-const askedAi = {};
-// The attach form's own values, kept across redraws; the password lives
-// only here and in the one request that sends it.
-let mountFormOffer = null;
-let mountForm = { username: '', password: '', path: '' };
-// The browse dialog: null when closed, else its current directory.
-let browser = null;
+// The staged AI apply: which chips are on and what each tool points with.
+// Committed only by Apply; null rebuilds from the next server state.
+let aiStaged = null;
+// The staged file configs, one per entry id: {is_open, username, password,
+// path}. The password lives only here and in the one request that sends it.
+let fileStaged = {};
+// Dialogs are built outside draw() and counted here, so a poll never
+// redraws under one.
+let openDialogs = 0;
 
 function renderHint(text) {
   document.getElementById('content').innerHTML =
@@ -253,47 +290,54 @@ async function api(path, body) {
   return await reply.json();
 }
 
-async function load() {
-  const state = await api('/api/state');
-  if (state) draw(state);
+// --- redraw discipline ---
+
+function canRedraw() {
+  if (openDialogs > 0) return false;
+  const selection = window.getSelection ? window.getSelection() : null;
+  if (selection && selection.type === 'Range') return false;
+  const active = document.activeElement;
+  if (active && ['INPUT', 'TEXTAREA', 'SELECT'].indexOf(active.tagName) >= 0)
+    return false;
+  return true;
 }
 
-// What the rows show: the machine's report, with any step just asked for
-// standing in front of it, until the machine reports having got there.
-function withAsked(state) {
-  for (const f of state.functions) {
-    const step = asked[f.name];
-    if (step === undefined) continue;
-    if (hasArrived(f, step)) {
-      delete asked[f.name];
-    } else {
-      f.state = step;
-    }
+function present(state) {
+  const serialized = JSON.stringify(state);
+  if (serialized === lastSerialized) return;
+  if (!canRedraw()) { pendingState = state; return; }
+  lastSerialized = serialized;
+  pendingState = null;
+  draw(state);
+}
+
+function redraw() {
+  if (lastState !== null && canRedraw()) draw(lastState);
+}
+
+async function poll() {
+  if (pendingState !== null && canRedraw()) {
+    present(pendingState);
+    return;
   }
-  return state;
-}
-
-function hasArrived(f, step) {
-  if (f.state === 'failed' || BUSY.includes(f.state)) return true;
-  if (step === 'installing') return f.state === 'installed';
-  if (step === 'uninstalling') return f.state === 'absent';
-  if (step === 'activating') return f.is_active;
-  return !f.is_active;
+  const state = await api('/api/state');
+  if (state) present(state);
 }
 
 async function send(path, body) {
   const reply = await api(path, body || {});
-  if (reply) draw(reply);
+  if (reply && !reply.code) { lastSerialized = JSON.stringify(reply); draw(reply); }
+  return reply;
 }
 
 function askFor(name, step, body) {
   asked[name] = step;
   redraw();
-  send('/api/function', body);
+  send('/api/module', body);
 }
 
-async function serviceAction(path, body, noteKey) {
-  const reply = await api(path, body);
+async function serviceAction(type, body, noteKey) {
+  const reply = await api('/api/services/' + type, body);
   if (!reply) return false;
   if (reply.code) {
     serviceNotes[noteKey] = wordCode(reply.code, reply.params);
@@ -301,17 +345,15 @@ async function serviceAction(path, body, noteKey) {
     return false;
   }
   delete serviceNotes[noteKey];
+  lastSerialized = JSON.stringify(reply);
   draw(reply);
   return true;
 }
 
-function redraw() {
-  if (lastState !== null) draw(lastState);
-}
+// --- the three sections ---
 
-function draw(rawState) {
-  const state = withAsked(rawState);
-  lastState = rawState;
+function draw(state) {
+  lastState = state;
   document.getElementById('ident').textContent =
     state.hostname + ' · ' + state.platform.os + '/' + state.platform.arch +
     ' · agent ' + state.version + ' · ' + state.caller.account;
@@ -320,11 +362,21 @@ function draw(rawState) {
   content.innerHTML = '';
   content.style.display = 'flex';
   content.style.flexDirection = 'column';
-  content.style.gap = '20px';
-  content.appendChild(drawConnection(state));
-  content.appendChild(drawFunctions(state));
-  content.appendChild(drawServices(state));
-  if (browser !== null) content.appendChild(drawBrowser());
+  content.style.gap = '24px';
+  content.appendChild(section(WORDS.ui.section_status, [drawConnection(state)]));
+  content.appendChild(section(WORDS.ui.section_modules, [drawModules(state)]));
+  content.appendChild(section(WORDS.ui.section_services, drawServices(state)));
+}
+
+function section(title, panels) {
+  const box = document.createElement('div');
+  box.className = 'sect';
+  const heading = document.createElement('h2');
+  heading.className = 'sect_title';
+  heading.textContent = title;
+  box.appendChild(heading);
+  for (const panel of panels) box.appendChild(panel);
+  return box;
 }
 
 function drawConnection(state) {
@@ -338,16 +390,16 @@ function drawConnection(state) {
     row.innerHTML = '<span class="dot ok"></span><div style="flex:1"><div>' +
       WORDS.ui.connected + '</div><div class="sub">' + state.gateway_url +
       '</div></div>';
-    if (isPrivileged) {
-      const leave = document.createElement('button');
-      leave.className = 'danger';
-      leave.textContent = WORDS.ui.disconnect;
-      leave.onclick = () => send('/api/disconnect');
-      row.appendChild(leave);
-    }
+    const leave = document.createElement('button');
+    leave.className = 'danger';
+    leave.textContent = WORDS.ui.disconnect;
+    leave.disabled = !isPrivileged;
+    leave.title = isPrivileged ? '' : WORDS.ui.privileged_only;
+    leave.onclick = () => send('/api/disconnect');
+    row.appendChild(leave);
     conn.appendChild(row);
     if (lastError) conn.appendChild(errorLine(lastError));
-  } else if (isPrivileged) {
+  } else {
     conn.innerHTML = '<div class="row" style="margin-bottom:12px">' +
       '<span class="dot off"></span><div><div>' + WORDS.ui.not_connected +
       '</div><div class="sub">' + WORDS.ui.paste_hint + '</div></div></div>';
@@ -355,19 +407,18 @@ function drawConnection(state) {
     row.className = 'row';
     const input = document.createElement('input');
     input.placeholder = 'neutrino://enroll/...';
+    input.disabled = !isPrivileged;
     input.onkeydown = (e) => { if (e.key === 'Enter') join(); };
     const button = document.createElement('button');
     button.textContent = WORDS.ui.connect;
+    button.disabled = !isPrivileged;
+    button.title = isPrivileged ? '' : WORDS.ui.privileged_only;
     button.onclick = join;
     function join() { send('/api/connect', { link: input.value }); }
     row.appendChild(input);
     row.appendChild(button);
     conn.appendChild(row);
     if (state.error || lastError) conn.appendChild(errorLine(state.error || lastError));
-  } else {
-    conn.innerHTML = '<div class="row"><span class="dot off"></span><div>' +
-      WORDS.ui.not_connected + '</div></div>';
-    if (lastError) conn.appendChild(errorLine(lastError));
   }
   return conn;
 }
@@ -380,214 +431,446 @@ function errorLine(text) {
   return err;
 }
 
-function drawFunctions(state) {
-  const feats = document.createElement('div');
-  feats.className = 'card';
-  if (!state.is_connected) {
-    feats.innerHTML = '<span class="muted">' + WORDS.ui.functions_wait_join +
-      '</span>';
-    return feats;
+// What a module row stands at, mid-step included. A step shows the world it
+// is leaving, not the one it is heading for.
+function standing(m) {
+  if (m.state === 'installing' || m.state === 'enabling') return false;
+  if (m.state === 'removing' || m.state === 'disabling') return true;
+  return m.state === 'installed' || m.state === 'enabled';
+}
+
+function withAsked(m) {
+  const step = asked[m.name];
+  if (step === undefined) return m;
+  if (hasArrived(m, step)) {
+    delete asked[m.name];
+    return m;
   }
-  if (state.functions.length === 0) {
-    feats.innerHTML = '<span class="muted">' + WORDS.ui.functions_wait_list +
+  return Object.assign({}, m, { state: step });
+}
+
+function hasArrived(m, step) {
+  if (m.state === 'failed' || BUSY.indexOf(m.state) >= 0) return true;
+  if (step === 'installing') return m.state === 'installed';
+  if (step === 'removing') return m.state === 'absent';
+  if (step === 'enabling') return m.state === 'enabled';
+  return m.state === 'disabled';
+}
+
+function drawModules(state) {
+  const panel = document.createElement('div');
+  panel.className = 'card';
+  if (!state.is_connected) {
+    panel.innerHTML = '<span class="muted">' + WORDS.ui.modules_wait_join +
       '</span>';
-    return feats;
+    return panel;
+  }
+  if (state.modules.length === 0) {
+    panel.innerHTML = '<span class="muted">' + WORDS.ui.modules_wait_list +
+      '</span>';
+    return panel;
   }
   const isPrivileged = state.caller.is_privileged;
-  for (const f of state.functions) {
+  for (const raw of state.modules) {
+    const m = withAsked(raw);
+    const isSwitch = m.kind === 'openssh';
+    const isOn = standing(m);
+    const working = BUSY.indexOf(m.state) >= 0;
+    const tone = working ? 'bad' : isOn ? 'ok'
+      : m.state === 'failed' ? 'bad' : 'off';
+    const worded = wordCode(m.code, m.params);
+    const note = !m.is_supported ? WORDS.ui.not_for_platform
+      : (WORDS.states[m.state] || WORDS.states.unknown) +
+        (worded ? ' — ' + worded : '');
     const row = document.createElement('div');
     row.className = 'feat';
-    const here = standing(f);
-    const working = BUSY.includes(f.state);
-    const tone = working ? 'bad' : here.on ? 'ok'
-      : f.state === 'failed' ? 'bad' : 'off';
-    const worded = wordCode(f.code, f.params);
-    const note = !f.is_supported ? WORDS.ui.not_for_platform
-      : (WORDS.states[f.state] || WORDS.states.unknown) +
-        (f.has_activation && here.on && !working
-          ? (here.aimed ? WORDS.ui.pointing : WORDS.ui.not_pointing)
-          : '') +
-        (worded ? ' — ' + worded : '');
     row.innerHTML = '<span class="dot ' + tone + '"></span>' +
-      '<div class="body"><div class="title">' + f.title + '</div>' +
-      '<div class="note">' + f.description + '</div>' +
+      '<div class="body"><div class="title">' + m.title + '</div>' +
+      '<div class="note">' + m.description + '</div>' +
       '<div class="note">' + note + '</div></div>';
-    if (isPrivileged) {
-      if (f.has_activation && here.on) {
-        const aim = document.createElement('button');
-        aim.className = here.aimed ? 'danger' : 'install';
-        aim.textContent = here.aimed ? WORDS.ui.deactivate : WORDS.ui.activate;
-        aim.disabled = !f.is_supported || working;
-        aim.onclick = () => askFor(f.name,
-          here.aimed ? 'deactivating' : 'activating',
-          { name: f.name, is_activated: !here.aimed });
-        row.appendChild(aim);
-      }
-      if (f.is_removable || !here.on) {
-        const button = document.createElement('button');
-        button.className = here.on ? 'danger' : 'install';
-        button.textContent = here.on ? WORDS.ui.uninstall : WORDS.ui.install;
-        button.disabled = !f.is_supported || working;
-        button.onclick = () => askFor(f.name,
-          here.on ? 'uninstalling' : 'installing',
-          { name: f.name, is_enabled: !here.on });
-        row.appendChild(button);
-      }
+    const button = document.createElement('button');
+    if (isSwitch) {
+      button.className = isOn ? 'danger' : 'install';
+      button.textContent = isOn ? WORDS.ui.disable : WORDS.ui.enable;
+    } else {
+      button.className = isOn ? 'danger' : 'install';
+      button.textContent = isOn ? WORDS.ui.remove : WORDS.ui.install;
     }
-    feats.appendChild(row);
+    button.disabled = !isPrivileged || !m.is_supported || working;
+    button.title = isPrivileged ? '' : WORDS.ui.privileged_only;
+    button.onclick = () => askFor(m.name,
+      isSwitch ? (isOn ? 'disabling' : 'enabling')
+               : (isOn ? 'removing' : 'installing'),
+      { name: m.name, is_enabled: !isOn });
+    row.appendChild(button);
+    panel.appendChild(row);
   }
-  return feats;
+  return panel;
+}
+
+function entriesOf(state, type) {
+  return (state.services || []).filter((entry) => entry.type === type);
 }
 
 function drawServices(state) {
-  const card = document.createElement('div');
-  card.className = 'card';
-  const offers = Object.entries(state.services || {}).map(
-    ([id, offer]) => Object.assign({ id: id }, offer));
-  const groups = [
-    ['ai', WORDS.ui.group_ai, drawAiGroup],
-    ['link', WORDS.ui.group_links, drawLinkRow],
-    ['port', WORDS.ui.group_ports, drawPortRow],
-    ['mount', WORDS.ui.group_mounts, drawMountRow],
+  const panels = [];
+  const kinds = [
+    ['web', WORDS.ui.panel_web, drawWebPanel],
+    ['port', WORDS.ui.panel_ports, drawPortsPanel],
+    ['ai', WORDS.ui.panel_ai, drawAiPanel],
+    ['file', WORDS.ui.panel_files, drawFilesPanel],
   ];
-  let hasAny = false;
-  for (const [kind, title, drawEntry] of groups) {
-    const members = offers.filter((offer) => offer.kind === kind);
-    if (members.length === 0) continue;
-    hasAny = true;
-    const divider = document.createElement('div');
-    divider.className = 'group';
-    divider.textContent = title;
-    card.appendChild(divider);
-    if (kind === 'ai') {
-      card.appendChild(drawEntry(state));
-    } else {
-      for (const offer of members) card.appendChild(drawEntry(offer, state));
-    }
+  for (const [type, title, build] of kinds) {
+    const entries = entriesOf(state, type);
+    if (entries.length === 0) continue;
+    panels.push(build(state, entries, title));
   }
-  if (!hasAny) {
-    card.innerHTML = '<span class="muted">' + WORDS.ui.services_empty +
+  if (panels.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'card';
+    empty.innerHTML = '<span class="muted">' + WORDS.ui.services_empty +
       '</span>';
+    panels.push(empty);
+  }
+  return panels;
+}
+
+function panelCard(title, isDirty) {
+  const card = document.createElement('div');
+  card.className = isDirty ? 'card dirty' : 'card';
+  const heading = document.createElement('div');
+  heading.className = 'panel_title';
+  heading.textContent = title;
+  card.appendChild(heading);
+  return card;
+}
+
+function entryRow(entry, payloadText, extraNote) {
+  const row = document.createElement('div');
+  row.className = entry.is_healthy ? 'feat' : 'feat greyed';
+  const note = (entry.is_healthy ? '' : WORDS.ui.unhealthy) +
+    (extraNote ? (entry.is_healthy ? '' : ' — ') + extraNote : '');
+  row.innerHTML = '<span class="dot ' + (entry.is_healthy ? 'ok' : 'off') +
+    '"></span>' +
+    '<div class="body"><div class="title">' + entry.title + '</div>' +
+    '<div class="note">' + payloadText + (note ? ' — ' + note : '') + '</div>' +
+    (entry.description
+      ? '<div class="note muted">' + entry.description + '</div>' : '') +
+    '</div>';
+  return row;
+}
+
+function drawWebPanel(state, entries, title) {
+  const card = panelCard(title, false);
+  for (const entry of entries) {
+    const payload = entry.payload || {};
+    const row = entryRow(entry, payload.url || '', '');
+    const anchor = document.createElement('a');
+    anchor.className = 'link';
+    anchor.href = payload.url || '#';
+    anchor.target = '_blank';
+    anchor.rel = 'noopener';
+    anchor.textContent = WORDS.ui.open;
+    row.appendChild(anchor);
+    card.appendChild(row);
   }
   return card;
 }
 
-function drawAiGroup(state) {
-  const box = document.createElement('div');
+function drawPortsPanel(state, entries, title) {
+  const card = panelCard(title, false);
+  for (const entry of entries) {
+    const payload = entry.payload || {};
+    const forward = (state.forwards || {})[entry.id] || {};
+    const isOn = !!forward.is_active;
+    const noteKey = 'port_' + entry.id;
+    const local = isOn
+      ? ' → ' + fill(WORDS.ui.forwarding_to, { port: forward.local_port }) : '';
+    const note = serviceNotes[noteKey] || '';
+    const row = entryRow(
+      entry, (payload.host || '') + ':' + (payload.port || '') + local, note);
+    const button = document.createElement('button');
+    button.className = isOn ? 'danger' : '';
+    button.textContent = isOn ? WORDS.ui.port_disconnect : WORDS.ui.port_connect;
+    button.disabled = !entry.is_healthy && !isOn;
+    button.onclick = () => serviceAction('port',
+      { id: entry.id, is_enabled: !isOn }, noteKey);
+    row.appendChild(button);
+    card.appendChild(row);
+  }
+  return card;
+}
+
+// --- the AI panel: chips + Config + Apply, staged ---
+
+function ensureAiStaged(state) {
+  if (aiStaged !== null) return;
+  const targets = {};
+  let hasAny = false;
+  for (const account of state.accounts) {
+    targets[account] = !!(state.ai_targets || {})[account];
+    if (targets[account]) hasAny = true;
+  }
+  if (!hasAny && state.ai_connect_account &&
+      targets[state.ai_connect_account] !== undefined) {
+    targets[state.ai_connect_account] = true;
+  }
+  aiStaged = {
+    targets: targets,
+    tool_configs: JSON.parse(JSON.stringify(state.ai_tool_configs || {})),
+  };
+}
+
+function isAiDirty(state) {
+  for (const account of state.accounts) {
+    if (aiStaged.targets[account] !== !!(state.ai_targets || {})[account])
+      return true;
+  }
+  return JSON.stringify(aiStaged.tool_configs) !==
+    JSON.stringify(state.ai_tool_configs || {});
+}
+
+function drawAiPanel(state, entries, title) {
+  ensureAiStaged(state);
+  const entry = entries[0];
+  const isDirty = isAiDirty(state);
+  const card = panelCard(title, isDirty);
+  const payload = entry.payload || {};
+  card.appendChild(entryRow(entry, payload.endpoint || '', ''));
+
   const chips = document.createElement('div');
   chips.className = 'chips';
   const notes = [];
   for (const account of state.accounts) {
     const row = (state.ai_states || {})[account] || {};
-    const isOn = !!row.is_active;
-    let step = askedAi[account];
-    if (step !== undefined && (row.code || isOn === step)) {
-      delete askedAi[account];
-      step = undefined;
-    }
-    const isBusy = step !== undefined ||
-      ['installing', 'activating', 'deactivating'].includes(row.state);
+    const isBusy = BUSY.indexOf(row.state) >= 0;
+    const isOn = !!aiStaged.targets[account];
     const chip = document.createElement('button');
     chip.className = isOn ? 'chip on' : 'chip';
-    chip.disabled = isBusy;
-    chip.innerHTML = '<span class="dot ' + (isBusy ? 'bad' : isOn ? 'ok' : 'off') +
-      '"></span>' + account + (isBusy ? '…' : '');
+    chip.disabled = isBusy || !entry.is_healthy;
+    chip.innerHTML = '<span class="dot ' +
+      (isBusy ? 'bad' : row.is_active ? 'ok' : 'off') + '"></span>' + account +
+      (isBusy ? '…' : '');
     chip.onclick = () => {
-      askedAi[account] = !isOn;
+      aiStaged.targets[account] = !isOn;
       redraw();
-      serviceAction('/api/services/ai',
-        { account: account, is_activated: !isOn }, 'ai');
     };
     chips.appendChild(chip);
     if (row.code) notes.push(account + ': ' + wordCode(row.code, row.params));
+    else if (isBusy)
+      notes.push(account + ': ' + (WORDS.states[row.state] || row.state));
   }
-  box.appendChild(chips);
+  card.appendChild(chips);
   if (serviceNotes.ai) notes.push(serviceNotes.ai);
   for (const text of notes) {
     const note = document.createElement('div');
-    note.className = 'note muted';
+    note.className = 'feat note muted';
+    note.style.border = 'none';
+    note.style.padding = '2px 0';
     note.textContent = text;
-    box.appendChild(note);
+    card.appendChild(note);
   }
-  return box;
+
+  const actions = document.createElement('div');
+  actions.className = 'row';
+  const config = document.createElement('button');
+  config.className = 'ghost';
+  config.textContent = WORDS.ui.config;
+  config.disabled = !entry.is_healthy;
+  config.onclick = () => openConfigDialog(payload.models || []);
+  const apply = document.createElement('button');
+  apply.textContent = WORDS.ui.apply;
+  apply.disabled = !isDirty || !entry.is_healthy;
+  apply.onclick = () => {
+    serviceAction('ai', {
+      targets: aiStaged.targets,
+      tool_configs: aiStaged.tool_configs,
+    }, 'ai').then((ok) => { if (ok) { aiStaged = null; redraw(); } });
+  };
+  actions.appendChild(config);
+  actions.appendChild(apply);
+  card.appendChild(actions);
+  return card;
 }
 
-function drawLinkRow(offer) {
-  const row = document.createElement('div');
-  row.className = 'feat';
-  row.innerHTML = '<span class="dot ok"></span>' +
-    '<div class="body"><div class="title">' + offer.title + '</div>' +
-    '<div class="note">' + offer.url + '</div></div>';
-  const anchor = document.createElement('a');
-  anchor.className = 'link';
-  anchor.href = offer.url;
-  anchor.target = '_blank';
-  anchor.rel = 'noopener';
-  anchor.textContent = WORDS.ui.open;
-  row.appendChild(anchor);
-  return row;
+function modelSelect(models, chosen, onPick) {
+  const select = document.createElement('select');
+  const blank = document.createElement('option');
+  blank.value = '';
+  blank.textContent = '(' + WORDS.ui.gateway_default + ')';
+  select.appendChild(blank);
+  for (const model of models) {
+    const option = document.createElement('option');
+    option.value = model;
+    option.textContent = model;
+    select.appendChild(option);
+  }
+  select.value = models.indexOf(chosen) >= 0 ? chosen : '';
+  select.onchange = () => onPick(select.value);
+  return select;
 }
 
-function drawPortRow(offer, state) {
-  const forward = (state.forwards || {})[offer.id] || {};
-  const isOn = !!forward.is_active;
-  const noteKey = 'port_' + offer.id;
-  const row = document.createElement('div');
-  row.className = 'feat';
-  const local = isOn
-    ? ' → ' + fill(WORDS.ui.forwarding_to, { port: forward.local_port }) : '';
-  const note = serviceNotes[noteKey]
-    ? ' — ' + serviceNotes[noteKey] : '';
-  row.innerHTML = '<span class="dot ' + (isOn ? 'ok' : 'off') + '"></span>' +
-    '<div class="body"><div class="title">' + offer.title + '</div>' +
-    '<div class="note">' + offer.host + ':' + offer.port + local + note +
-    '</div></div>';
-  const button = document.createElement('button');
-  button.className = isOn ? 'danger' : '';
-  button.textContent = isOn ? WORDS.ui.stop : WORDS.ui.forward;
-  button.onclick = () => serviceAction('/api/services/forward',
-    { offer_id: offer.id, is_enabled: !isOn }, noteKey);
-  row.appendChild(button);
-  return row;
+function openConfigDialog(models) {
+  const draft = JSON.parse(JSON.stringify(aiStaged.tool_configs || {}));
+  for (const tool of ['claude', 'codex', 'gemini']) {
+    if (!draft[tool]) draft[tool] = {};
+  }
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  const modal = document.createElement('div');
+  modal.className = 'card modal';
+  const heading = document.createElement('div');
+  heading.className = 'panel_title';
+  heading.textContent = WORDS.ui.config_title;
+  modal.appendChild(heading);
+
+  function field(labelText, control) {
+    const label = document.createElement('label');
+    label.textContent = labelText;
+    modal.appendChild(label);
+    modal.appendChild(control);
+  }
+  function toolTitle(text) {
+    const title = document.createElement('div');
+    title.className = 'title';
+    title.style.marginTop = '8px';
+    title.textContent = text;
+    modal.appendChild(title);
+  }
+
+  toolTitle(WORDS.ui.tool_claude);
+  const slotLabels = {
+    default: WORDS.ui.slot_default, opus: WORDS.ui.slot_opus,
+    sonnet: WORDS.ui.slot_sonnet, haiku: WORDS.ui.slot_haiku,
+  };
+  for (const slot of CLAUDE_SLOTS) {
+    field(slotLabels[slot], modelSelect(models, draft.claude[slot] || '',
+      (value) => { draft.claude[slot] = value; }));
+  }
+
+  toolTitle(WORDS.ui.tool_codex);
+  field(WORDS.ui.codex_model, modelSelect(models, draft.codex.model || '',
+    (value) => { draft.codex.model = value; }));
+  const effort = document.createElement('select');
+  const none = document.createElement('option');
+  none.value = '';
+  none.textContent = '(' + WORDS.ui.gateway_default + ')';
+  effort.appendChild(none);
+  for (const level of REASONING_EFFORTS) {
+    const option = document.createElement('option');
+    option.value = level;
+    option.textContent = level;
+    effort.appendChild(option);
+  }
+  effort.value = REASONING_EFFORTS.indexOf(
+    draft.codex.model_reasoning_effort) >= 0
+    ? draft.codex.model_reasoning_effort : '';
+  effort.onchange = () => { draft.codex.model_reasoning_effort = effort.value; };
+  field(WORDS.ui.codex_effort, effort);
+
+  toolTitle(WORDS.ui.tool_gemini);
+  field(WORDS.ui.gemini_model, modelSelect(models, draft.gemini.model || '',
+    (value) => { draft.gemini.model = value; }));
+
+  const actions = document.createElement('div');
+  actions.className = 'row';
+  actions.style.marginTop = '8px';
+  const save = document.createElement('button');
+  save.textContent = WORDS.ui.save;
+  save.onclick = () => {
+    aiStaged.tool_configs = draft;
+    closeDialog(overlay);
+    redraw();
+  };
+  const cancel = document.createElement('button');
+  cancel.className = 'ghost';
+  cancel.textContent = WORDS.ui.cancel;
+  cancel.onclick = () => { closeDialog(overlay); redraw(); };
+  actions.appendChild(save);
+  actions.appendChild(cancel);
+  modal.appendChild(actions);
+
+  overlay.appendChild(modal);
+  overlay.onclick = (event) => {
+    if (event.target === overlay) { closeDialog(overlay); redraw(); }
+  };
+  openDialog(overlay);
 }
 
-function mountDefaultPath(offer, state) {
+function openDialog(overlay) {
+  openDialogs += 1;
+  document.body.appendChild(overlay);
+}
+
+function closeDialog(overlay) {
+  openDialogs -= 1;
+  overlay.remove();
+}
+
+// --- the Files panel: Config, then Mount / Unmount ---
+
+function mountDefaultPath(payload, state) {
   const home = state.caller.home || ('/home/' + state.caller.account);
-  return home + '/nas/' + offer.share;
+  return home + '/nas/' + (payload.share || '');
 }
 
-function drawMountRow(offer, state) {
-  const records = (state.mounts || []).filter(
-    (record) => record.offer_id === offer.id);
-  const isAttached = records.some((record) => record.is_attached);
-  const noteKey = 'mount_' + offer.id;
-  const box = document.createElement('div');
-  const row = document.createElement('div');
-  row.className = 'feat';
-  const note = serviceNotes[noteKey] ? ' — ' + serviceNotes[noteKey] : '';
-  row.innerHTML = '<span class="dot ' + (isAttached ? 'ok' : 'off') +
-    '"></span>' +
-    '<div class="body"><div class="title">' + offer.title + '</div>' +
-    '<div class="note">//' + offer.host + '/' + offer.share + note +
-    '</div></div>';
-  if (mountFormOffer !== offer.id) {
-    const button = document.createElement('button');
-    button.textContent = WORDS.ui.attach;
-    button.onclick = () => {
-      mountFormOffer = offer.id;
-      mountForm = { username: '', password: '',
-        path: mountDefaultPath(offer, state) };
+function drawFilesPanel(state, entries, title) {
+  const isDirty = Object.keys(fileStaged).some(
+    (id) => fileStaged[id] && fileStaged[id].is_open);
+  const card = panelCard(title, isDirty);
+  for (const entry of entries) {
+    const payload = entry.payload || {};
+    const records = (state.mounts || []).filter(
+      (record) => record.entry_id === entry.id);
+    const noteKey = 'file_' + entry.id;
+    const note = serviceNotes[noteKey] || '';
+    const row = entryRow(
+      entry, '//' + (payload.host || '') + '/' + (payload.share || ''), note);
+
+    const staged = fileStaged[entry.id];
+    const config = document.createElement('button');
+    config.className = 'ghost';
+    config.textContent = WORDS.ui.config;
+    config.onclick = () => {
+      if (staged && staged.is_open) {
+        delete fileStaged[entry.id];
+      } else {
+        fileStaged[entry.id] = {
+          is_open: true, username: '', password: '',
+          path: mountDefaultPath(payload, state),
+        };
+      }
       redraw();
     };
-    row.appendChild(button);
+    row.appendChild(config);
+
+    const mount = document.createElement('button');
+    mount.textContent = WORDS.ui.mount;
+    mount.disabled = !entry.is_healthy || !staged || !staged.is_open ||
+      !staged.path;
+    mount.onclick = async () => {
+      const sent = {
+        action: 'mount', id: entry.id, username: staged.username,
+        password: staged.password, path: staged.path,
+      };
+      staged.password = '';
+      if (await serviceAction('file', sent, noteKey)) {
+        delete fileStaged[entry.id];
+        redraw();
+      }
+    };
+    row.appendChild(mount);
+    card.appendChild(row);
+
+    for (const record of records)
+      card.appendChild(drawMountRecord(record, state, noteKey));
+    if (staged && staged.is_open)
+      card.appendChild(drawFileForm(entry.id, staged));
   }
-  box.appendChild(row);
-  for (const record of records) box.appendChild(drawMountRecord(record, state));
-  if (mountFormOffer === offer.id) box.appendChild(drawMountForm(offer));
-  return box;
+  return card;
 }
 
-function drawMountRecord(record, state) {
+function drawMountRecord(record, state, noteKey) {
   const line = document.createElement('div');
   line.className = 'rec';
   const status = record.code ? wordCode(record.code, record.params)
@@ -596,19 +879,20 @@ function drawMountRecord(record, state) {
     (record.is_attached ? 'ok' : record.code ? 'bad' : 'off') + '"></span>' +
     '<span class="path">' + record.path + ' · ' + record.account +
     (status ? ' — ' + status : '') + '</span>';
-  if (state.caller.is_privileged || record.account === state.caller.account) {
-    const button = document.createElement('button');
-    button.className = 'danger';
-    button.textContent = WORDS.ui.detach;
-    button.onclick = () => serviceAction('/api/services/mount',
-      { action: 'detach', record_id: record.record_id },
-      'mount_' + record.offer_id);
-    line.appendChild(button);
-  }
+  const button = document.createElement('button');
+  button.className = 'danger';
+  button.textContent = WORDS.ui.unmount;
+  const mayAct = state.caller.is_privileged ||
+    record.account === state.caller.account;
+  button.disabled = !mayAct;
+  button.title = mayAct ? '' : WORDS.ui.privileged_only;
+  button.onclick = () => serviceAction('file',
+    { action: 'unmount', record_id: record.record_id }, noteKey);
+  line.appendChild(button);
   return line;
 }
 
-function drawMountForm(offer) {
+function drawFileForm(entryId, staged) {
   const form = document.createElement('div');
   form.className = 'form';
   const fields = [
@@ -621,8 +905,8 @@ function drawMountForm(offer) {
     const input = document.createElement('input');
     input.type = type;
     input.placeholder = hint;
-    input.value = mountForm[name];
-    input.oninput = () => { mountForm[name] = input.value; };
+    input.value = staged[name];
+    input.oninput = () => { staged[name] = input.value; };
     line.appendChild(input);
     form.appendChild(line);
   }
@@ -630,38 +914,22 @@ function drawMountForm(offer) {
   pathLine.className = 'row';
   const path = document.createElement('input');
   path.placeholder = WORDS.ui.path_hint;
-  path.value = mountForm.path;
-  path.oninput = () => { mountForm.path = path.value; };
+  path.value = staged.path;
+  path.oninput = () => { staged.path = path.value; };
   const browse = document.createElement('button');
   browse.className = 'ghost';
   browse.textContent = WORDS.ui.browse;
-  browse.onclick = () => openBrowser(mountForm.path);
+  browse.onclick = () => openBrowser(staged.path, (chosen) => {
+    staged.path = chosen;
+    redraw();
+  });
   pathLine.appendChild(path);
   pathLine.appendChild(browse);
   form.appendChild(pathLine);
-  const actions = document.createElement('div');
-  actions.className = 'row';
-  const attach = document.createElement('button');
-  attach.textContent = WORDS.ui.attach;
-  attach.onclick = async () => {
-    const sent = { action: 'attach', offer_id: offer.id,
-      username: mountForm.username, password: mountForm.password,
-      path: mountForm.path };
-    mountForm.password = '';
-    if (await serviceAction('/api/services/mount', sent, 'mount_' + offer.id)) {
-      mountFormOffer = null;
-      load();
-    }
-  };
-  const cancel = document.createElement('button');
-  cancel.className = 'ghost';
-  cancel.textContent = WORDS.ui.cancel;
-  cancel.onclick = () => { mountFormOffer = null; redraw(); };
-  actions.appendChild(attach);
-  actions.appendChild(cancel);
-  form.appendChild(actions);
   return form;
 }
+
+// --- the browse dialog, fed by the agent as the caller's identity ---
 
 function parentPath(path) {
   const trimmed = path.replace(/\\/+$/, '');
@@ -673,57 +941,47 @@ function joinPath(path, name) {
   return (path === '/' ? '' : path) + '/' + name;
 }
 
-async function openBrowser(path) {
-  browser = { path: '/', dirs: [], note: '' };
-  await browseTo(parentPath(path || '/'));
-}
-
-async function browseTo(path) {
-  const reply = await api('/api/fs?path=' + encodeURIComponent(path));
-  if (!reply) return;
-  if (reply.code) {
-    browser.note = wordCode(reply.code, reply.params);
-  } else {
-    browser.path = reply.path;
-    browser.dirs = reply.dirs;
-    browser.note = '';
-  }
-  redraw();
-}
-
-function drawBrowser() {
+function openBrowser(startPath, onChoose) {
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
-  overlay.onclick = (event) => {
-    if (event.target === overlay) { browser = null; redraw(); }
-  };
   const modal = document.createElement('div');
   modal.className = 'card modal';
   const where = document.createElement('div');
   where.className = 'sub';
-  where.textContent = browser.path;
-  modal.appendChild(where);
   const list = document.createElement('div');
   list.className = 'dirlist';
-  if (browser.path !== '/') {
-    const up = document.createElement('button');
-    up.textContent = WORDS.ui.up;
-    up.onclick = () => browseTo(parentPath(browser.path));
-    list.appendChild(up);
-  }
-  for (const name of browser.dirs) {
-    const entry = document.createElement('button');
-    entry.textContent = name + '/';
-    entry.onclick = () => browseTo(joinPath(browser.path, name));
-    list.appendChild(entry);
-  }
+  const note = document.createElement('div');
+  note.className = 'err';
+  modal.appendChild(where);
   modal.appendChild(list);
-  if (browser.note) {
-    const note = document.createElement('div');
-    note.className = 'err';
-    note.textContent = browser.note;
-    modal.appendChild(note);
+  modal.appendChild(note);
+  let current = '/';
+
+  async function browseTo(path) {
+    const reply = await api('/api/fs?path=' + encodeURIComponent(path));
+    if (!reply) return;
+    if (reply.code) {
+      note.textContent = wordCode(reply.code, reply.params);
+      return;
+    }
+    current = reply.path;
+    where.textContent = current;
+    note.textContent = '';
+    list.innerHTML = '';
+    if (current !== '/') {
+      const up = document.createElement('button');
+      up.textContent = WORDS.ui.up;
+      up.onclick = () => browseTo(parentPath(current));
+      list.appendChild(up);
+    }
+    for (const name of reply.dirs) {
+      const item = document.createElement('button');
+      item.textContent = name + '/';
+      item.onclick = () => browseTo(joinPath(current, name));
+      list.appendChild(item);
+    }
   }
+
   const actions = document.createElement('div');
   actions.className = 'row';
   const create = document.createElement('button');
@@ -732,43 +990,39 @@ function drawBrowser() {
   create.onclick = async () => {
     const name = prompt(WORDS.ui.new_folder_name);
     if (!name) return;
-    const reply = await api('/api/fs', { path: joinPath(browser.path, name) });
+    const reply = await api('/api/fs', { path: joinPath(current, name) });
     if (!reply) return;
     if (reply.code) {
-      browser.note = wordCode(reply.code, reply.params);
-      redraw();
+      note.textContent = wordCode(reply.code, reply.params);
       return;
     }
-    browseTo(browser.path);
+    browseTo(current);
   };
   const choose = document.createElement('button');
   choose.textContent = WORDS.ui.choose;
-  choose.onclick = () => {
-    mountForm.path = browser.path;
-    browser = null;
-    redraw();
-  };
+  choose.onclick = () => { closeDialog(overlay); onChoose(current); };
   const cancel = document.createElement('button');
   cancel.className = 'ghost';
   cancel.textContent = WORDS.ui.cancel;
-  cancel.onclick = () => { browser = null; redraw(); };
+  cancel.onclick = () => { closeDialog(overlay); };
   actions.appendChild(create);
   actions.appendChild(choose);
   actions.appendChild(cancel);
   modal.appendChild(actions);
+
   overlay.appendChild(modal);
-  return overlay;
+  overlay.onclick = (event) => {
+    if (event.target === overlay) closeDialog(overlay);
+  };
+  openDialog(overlay);
+  browseTo(parentPath(startPath || '/'));
 }
 
 if (!TOKEN) {
   renderHint(WORDS.ui.open_hint);
 } else {
-  load();
-  // The poll pauses while the attach form or the browse dialog is open, so
-  // a redraw cannot take what is being typed.
-  setInterval(() => {
-    if (mountFormOffer === null && browser === null) load();
-  }, 1500);
+  poll();
+  setInterval(poll, POLL_INTERVAL_MS);
 }
 </script>
 </body>

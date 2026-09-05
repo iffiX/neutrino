@@ -57,6 +57,52 @@ class MachineServiceStore:
 
         self._mutate(change)
 
+    def ai_tool_configs(self) -> dict:
+        """The per-tool model choices the machine keeps.
+
+        Returns:
+            ``{"claude": {...}, "codex": {...}, "gemini": {...}}``; empty
+            tools until somebody configures them.
+        """
+        configs = self._read().get("ai", {}).get("tool_configs", {})
+        return {
+            str(tool): dict(values)
+            for tool, values in configs.items()
+            if isinstance(values, dict)
+        }
+
+    def set_ai_tool_configs(self, configs: dict) -> None:
+        """Record the per-tool model choices.
+
+        Args:
+            configs: Tool name to its choices.
+        """
+
+        def change(data: dict) -> None:
+            data.setdefault("ai", {})["tool_configs"] = {
+                str(tool): dict(values)
+                for tool, values in configs.items()
+                if isinstance(values, dict)
+            }
+
+        self._mutate(change)
+
+    def ai_connect_account(self) -> str:
+        """The account that ran ``nagent connect``, for the preselected chip."""
+        return str(self._read().get("ai", {}).get("connect_account", ""))
+
+    def set_ai_connect_account(self, account: str) -> None:
+        """Remember which account joined this machine to the hub.
+
+        Args:
+            account: The invoking account; empty clears it.
+        """
+
+        def change(data: dict) -> None:
+            data.setdefault("ai", {})["connect_account"] = account
+
+        self._mutate(change)
+
     def ai_granted(self) -> dict:
         """Each account's last-granted endpoint, as activation recorded it.
 

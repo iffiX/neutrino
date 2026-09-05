@@ -1,14 +1,15 @@
-"""The agent itself: connection state, the heartbeat, and the function engine.
+"""The agent itself: connection state, the heartbeat, and the module engine.
 
 One object owns everything the machine's own page and the gateway both talk
 to. It runs whether or not the machine belongs to a gateway yet — an agent
 that has never enrolled still serves its page, waiting for a link, which is
 the whole point on a machine the gateway cannot reach first.
 
-The gateway stays the source of truth for which functions should be on: a
+The gateway stays the source of truth for which modules should be on: a
 toggle on the local page is sent up with the next heartbeat and comes back as
 part of the desired state, so the panel and the page can never disagree for
-longer than one beat.
+longer than one beat. Services are the other way round: visible and decided
+only on the machine, one typed handler per service type.
 
 Errors cross the wire as ``{"code", "params"}``, never an English sentence;
 every surface does its own wording.
@@ -20,7 +21,7 @@ from __future__ import annotations
 
 import threading
 
-from neutrino_agent import AGENT_VERSION, enrollment, self_update
+from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import (
     AGENT_BACKOFF_MAX_S,
     AGENT_BACKOFF_MIN_S,
@@ -30,23 +31,25 @@ from neutrino_agent.constants import (
     AGENT_REFUSALS_BEFORE_UNBIND,
     AGENT_RESULT_PATH,
 )
-from neutrino_agent.functions.engine import FunctionEngine
-from neutrino_agent.http_channel import (
+from neutrino_agent.core import enrollment, self_update
+from neutrino_agent.core.channel import (
     GatewayHttpChannel,
     GatewayRefused,
     GatewayUnreachable,
     GatewayUntrusted,
     GatewayVersionRefused,
 )
-from neutrino_agent.metrics import HostMetrics, hostname
-from neutrino_agent.ops import DeviceOperator
+from neutrino_agent.core.commands import DeviceOperator
+from neutrino_agent.core.engine import ModuleEngine
+from neutrino_agent.core.metrics import HostMetrics, hostname
+from neutrino_agent.core.version import parse_version
 from neutrino_agent.platforms.base import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import detect_platform
-from neutrino_agent.services.ai import AiServiceReconciler
-from neutrino_agent.services.mounts import MountsService
-from neutrino_agent.services.ports import PortsService
+from neutrino_agent.services.ai import AiServiceHandler, AiServiceReconciler
+from neutrino_agent.services.file import FileServiceHandler
+from neutrino_agent.services.port import PortServiceHandler
 from neutrino_agent.services.store import MachineServiceStore
-from neutrino_agent.version_number import parse_version
+from neutrino_agent.services.web import WebServiceHandler
 
 # How often an unenrolled agent looks again, which is only to notice that its
 # own page has since been used to join a gateway.
@@ -93,19 +96,28 @@ class Agent:
         # Set whenever there is something new to report, so the loop beats
         # then rather than at the end of its next interval.
         self._news = threading.Event()
-        self._engine = FunctionEngine(
+        self._engine = ModuleEngine(
             platform=self._platform, log=log, on_change=self._news.set
         )
-        self._services_store = MachineServiceStore()
+        self._store = MachineServiceStore()
         self._ai = AiServiceReconciler(
-            store=self._services_store,
+            store=self._store,
             platform_tuple=self._engine.platform_tuple,
             log=log,
         )
-        self._mounts = MountsService(
-            platform=self._platform, store=self._services_store, log=log
-        )
-        self._ports = PortsService(log=log)
+        self._services = {
+            handler.service_type: handler
+            for handler in (
+                WebServiceHandler(),
+                PortServiceHandler(log=log),
+                AiServiceHandler(
+                    store=self._store,
+                    accounts=self._read_accounts,
+                    on_change=self._news.set,
+                ),
+                FileServiceHandler(platform=self._platform, store=self._store, log=log),
+            )
+        }
         self._backoff_s = AGENT_BACKOFF_MIN_S
         self._last_error: "dict | None" = None
         self._desired: dict = {}
@@ -128,14 +140,19 @@ class Agent:
         return self._engine.platform_tuple
 
     def catalog(self) -> dict:
-        """The catalog the gateway last sent: ``{"functions", "services"}``."""
+        """The catalog the gateway last sent: ``{"modules", "services"}``."""
         return self._engine.catalog()
 
-    def function_states(self) -> dict:
-        """What state each function is actually in."""
+    def service_entries(self) -> list:
+        """The typed service list, as the hub last sent it."""
+        entries = self.catalog().get("services", [])
+        return [entry for entry in entries if isinstance(entry, dict)]
+
+    def module_states(self) -> dict:
+        """What state each module is actually in."""
         return self._engine.report()
 
-    def desired_functions(self) -> dict:
+    def desired_modules(self) -> dict:
         """What the gateway says should be true, with local toggles applied."""
         with self._lock:
             merged = {name: dict(value) for name, value in self._desired.items()}
@@ -154,11 +171,19 @@ class Agent:
 
     def ai_targets(self) -> dict:
         """Which accounts are switched at the hub's gateway."""
-        return self._services_store.ai_targets()
+        return self._store.ai_targets()
 
     def ai_states(self) -> dict:
         """Each account's AI service state, as the reconcile last saw it."""
         return self._ai.report()
+
+    def ai_tool_configs(self) -> dict:
+        """The per-tool model choices this machine keeps."""
+        return self._store.ai_tool_configs()
+
+    def ai_connect_account(self) -> str:
+        """The account that joined this machine, for the preselected chip."""
+        return self._store.ai_connect_account()
 
     def account_home(self, account: str) -> str:
         """One account's home directory, empty when it cannot be resolved."""
@@ -167,13 +192,12 @@ class Agent:
         except (KeyError, PlatformUnsupportedError):
             return ""
 
-    def mount_rows(self) -> list:
-        """This machine's mount records with where each stands."""
-        return self._mounts.rows()
-
-    def forward_rows(self) -> dict:
-        """The port forwards this machine is running."""
-        return self._ports.rows()
+    def service_states(self) -> dict:
+        """Every service type's machine state, merged for the page payload."""
+        merged = {}
+        for handler in self._services.values():
+            merged.update(handler.state())
+        return merged
 
     # --- what the local page does ---
 
@@ -226,22 +250,21 @@ class Agent:
         """Cut the wait before the next heartbeat short."""
         self._news.set()
 
-    def request_function(
+    def request_module(
         self,
         name: str,
         *,
         is_enabled: "bool | None" = None,
         is_activated: "bool | None" = None,
     ) -> None:
-        """Ask for a function to be changed, from this machine's own page.
+        """Ask for a module to be changed, from this machine's own page.
 
         The request is sent up with the next heartbeat rather than applied
         here, so the hub remains the one place that decides.
 
         Args:
-            name: The function name.
-            is_enabled: Whether it should be installed, when that is what
-                changed.
+            name: The module name.
+            is_enabled: Whether it should be on, when that is what changed.
             is_activated: Whether it should point at the hub, when that is
                 what changed.
         """
@@ -259,97 +282,32 @@ class Agent:
                     wish["is_enabled"] = True
             self._pending[name] = wish
         self._engine.update(
-            desired=self.desired_functions(), catalog=None, catalog_hash=""
+            desired=self.desired_modules(), catalog=None, catalog_hash=""
         )
         self.beat_soon()
 
-    def request_ai(self, account: str, *, is_activated: bool) -> None:
-        """Record one account's AI switching target, from this machine.
-
-        The store is updated here; the next heartbeat carries the targets
-        up, and the reply's grant is what drives the switch.
-
-        Args:
-            account: The account whose tools to switch.
-            is_activated: Whether they should point at the hub.
-        """
-        self._services_store.set_ai_target(account, is_activated=is_activated)
-        self.beat_soon()
-
-    def attach_mount(
-        self,
-        *,
-        account: str,
-        is_privileged: bool,
-        offer_id: str,
-        username: str,
-        password: str,
-        path: str,
+    def service_action(
+        self, service_type: str, *, account: str, is_privileged: bool, body: dict
     ) -> dict:
-        """Attach one published share for a caller.
+        """Hand one page action to the handler for its service type.
 
         Args:
+            service_type: The type the page acted on.
             account: The asking account.
             is_privileged: Whether the caller holds the privileged scope.
-            offer_id: The mount offer's id in the catalog.
-            username: The share's own username.
-            password: The share's own password; it stays on this machine.
-            path: The mount point.
+            body: The action's own fields.
 
         Returns:
             Empty on success, ``{"code", "params"}`` on a refusal.
         """
-        offer = self.catalog().get("services", {}).get(offer_id)
-        if not isinstance(offer, dict) or offer.get("kind") != "mount":
+        handler = self._services.get(service_type)
+        if handler is None:
             return {"code": "unknown_request", "params": {}}
-        return self._mounts.attach(
+        return handler.act(
+            entries=self.service_entries(),
             account=account,
             is_privileged=is_privileged,
-            offer_id=offer_id,
-            offer=offer,
-            username=username,
-            password=password,
-            path=path,
-        )
-
-    def detach_mount(
-        self, *, account: str, is_privileged: bool, record_id: str
-    ) -> dict:
-        """Detach one attachment for a caller.
-
-        Args:
-            account: The asking account.
-            is_privileged: Whether the caller holds the privileged scope.
-            record_id: The record to detach.
-
-        Returns:
-            Empty on success, ``{"code", "params"}`` on a refusal.
-        """
-        return self._mounts.detach(
-            account=account, is_privileged=is_privileged, record_id=record_id
-        )
-
-    def request_forward(self, offer_id: str, *, is_enabled: bool) -> dict:
-        """Start or stop one published port's loopback forward.
-
-        Args:
-            offer_id: The port offer's id in the catalog.
-            is_enabled: Whether the forward should run.
-
-        Returns:
-            Empty on success, ``{"code", "params"}`` on a refusal.
-        """
-        offer = self.catalog().get("services", {}).get(offer_id)
-        if not isinstance(offer, dict) or offer.get("kind") != "port":
-            return {"code": "unknown_request", "params": {}}
-        if not is_enabled:
-            return self._ports.stop(offer_id=offer_id)
-        try:
-            port = int(offer.get("port", 0))
-        except (TypeError, ValueError):
-            return {"code": "unknown_request", "params": {}}
-        return self._ports.forward(
-            offer_id=offer_id, host=str(offer.get("host", "")), port=port
+            body=body,
         )
 
     # --- the loop ---
@@ -357,13 +315,15 @@ class Agent:
     def run_forever(self) -> None:
         """Beat, or wait to be enrolled, until the process is stopped.
 
-        The wait between beats ends early when a function changes state, so
+        The wait between beats ends early when a module changes state, so
         the panel sees a step start and finish rather than only its result.
-        The mounts reconcile starts here: enabled records are remounted now
-        and on a timer, which is what brings mounts back after a reboot.
+        The service handlers' own reconciles start here: enabled mounts are
+        remounted now and on a timer, which is what brings them back after a
+        reboot.
         """
         self._log(f"neutrino_agent {AGENT_VERSION} starting on {hostname()}")
-        self._mounts.start()
+        for handler in self._services.values():
+            handler.start()
         while True:
             delay = self.run_once()
             self._news.clear()
@@ -394,9 +354,9 @@ class Agent:
             # The gateway sends the catalog only when this differs from what
             # it serves, so a converged fleet is not shipped it every beat.
             "catalog_hash": self._engine.catalog_hash,
-            "functions": self._engine.report(),
-            "function_requests": requests,
-            "ai_targets": self._services_store.ai_targets(),
+            "modules": self._engine.report(),
+            "module_requests": requests,
+            "ai_targets": self._store.ai_targets(),
             "last_error": self.last_error(),
         }
         try:
@@ -422,15 +382,15 @@ class Agent:
             # Accepted requests are dropped: what comes back is now the truth.
             for name in requests:
                 self._pending.pop(name, None)
-            self._desired = reply.get("desired_functions", {})
+            self._desired = reply.get("desired_modules", {})
 
         self._engine.update(
-            desired=self.desired_functions(),
+            desired=self.desired_modules(),
             catalog=reply.get("catalog"),
             catalog_hash=reply.get("catalog_hash", ""),
         )
         self._ai.update(
-            offer=self._ai_offer(),
+            entry=self._ai_entry(),
             accounts=self._read_accounts(),
             credentials=reply.get("ai_accounts") or {},
         )
@@ -451,11 +411,11 @@ class Agent:
         except PlatformUnsupportedError:
             return []
 
-    def _ai_offer(self) -> dict:
-        """The catalog's AI service offer, empty when the hub extends none."""
-        for offer in self.catalog().get("services", {}).values():
-            if isinstance(offer, dict) and offer.get("kind") == "ai":
-                return offer
+    def _ai_entry(self) -> dict:
+        """The service list's ai entry, empty when the hub publishes none."""
+        for entry in self.service_entries():
+            if entry.get("type") == "ai":
+                return entry
         return {}
 
     def _on_rejected(self, error: Exception) -> int:

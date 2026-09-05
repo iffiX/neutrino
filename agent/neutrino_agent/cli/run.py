@@ -6,8 +6,8 @@ task start. The control socket always serves — it is how ``nagent`` and
 loopback page.
 """
 
-from neutrino_agent.agent import Agent
 from neutrino_agent.control.server import ControlServer
+from neutrino_agent.core.loop import Agent
 from neutrino_agent.platforms.detect import detect_platform
 
 

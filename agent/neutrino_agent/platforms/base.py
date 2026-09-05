@@ -416,7 +416,7 @@ class AgentPlatform:
         """One sample of the machine's health.
 
         Returns:
-            A :class:`~neutrino_agent.metrics.HostMetrics`.
+            A :class:`~neutrino_agent.core.metrics.HostMetrics`.
 
         Raises:
             PlatformUnsupportedError: When the platform cannot be sampled.

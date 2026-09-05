@@ -13,10 +13,11 @@ from __future__ import annotations
 
 import time
 
-from neutrino_agent import AGENT_VERSION, enrollment
-from neutrino_agent.agent import Agent
+from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import AGENT_CONFIG_PATH, AGENT_SERVICE_NAME
 from neutrino_agent.control import client
+from neutrino_agent.core import enrollment
+from neutrino_agent.core.loop import Agent
 from neutrino_agent.platforms.base import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import detect_platform
 

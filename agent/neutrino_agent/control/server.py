@@ -5,7 +5,8 @@ credentials, and is the only place tokens are minted. The loopback page
 transport authenticates only by bearer token; its POSTs must carry a JSON
 content type, and an Origin other than the page's own is refused regardless
 of the token. What a caller may do is decided by scope in the handlers:
-connect, disconnect and function toggles are privileged verbs, and state
+connect, disconnect and module toggles are privileged verbs, service
+actions carry the caller's identity into their type's handler, and state
 answers are shaped to the asking identity.
 
 Every refusal is ``{"code": ...}``; each surface does its own wording.
@@ -23,7 +24,7 @@ import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from neutrino_agent import AGENT_VERSION, enrollment
+from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import (
     AGENT_CONTROL_PAGE_HOST,
     AGENT_CONTROL_PAGE_ORIGIN,
@@ -35,7 +36,8 @@ from neutrino_agent.control.identity import (
     peer_identity,
 )
 from neutrino_agent.control.page import CONTROL_PAGE_HTML
-from neutrino_agent.metrics import hostname
+from neutrino_agent.core import enrollment
+from neutrino_agent.core.metrics import hostname
 from neutrino_agent.platforms.base import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import platform_keys
 
@@ -44,7 +46,7 @@ def _scoped_state(agent, identity: ControlIdentity) -> dict:
     """Everything the page draws, shaped to the asking identity.
 
     Args:
-        agent: The running :class:`~neutrino_agent.agent.Agent`.
+        agent: The running :class:`~neutrino_agent.core.loop.Agent`.
         identity: Who is asking.
 
     Returns:
@@ -65,7 +67,7 @@ def _scoped_state(agent, identity: ControlIdentity) -> dict:
             for account, state in ai_states.items()
             if account == identity.account
         }
-    return {
+    state = {
         "version": AGENT_VERSION,
         "hostname": hostname(),
         "platform": agent.platform(),
@@ -77,20 +79,22 @@ def _scoped_state(agent, identity: ControlIdentity) -> dict:
         "is_connected": bool(config.get("gateway_url") and config.get("token")),
         "gateway_url": config.get("gateway_url", ""),
         "last_error": agent.last_error(),
-        "functions": _function_rows(agent, catalog.get("functions", {})),
-        "services": catalog.get("services", {}),
+        "modules": _module_rows(agent, catalog.get("modules", {})),
+        "services": agent.service_entries(),
         "accounts": accounts,
         "ai_targets": targets,
         "ai_states": ai_states,
-        "mounts": agent.mount_rows(),
-        "forwards": agent.forward_rows(),
+        "ai_tool_configs": agent.ai_tool_configs(),
+        "ai_connect_account": agent.ai_connect_account(),
     }
+    state.update(agent.service_states())
+    return state
 
 
-def _function_rows(agent, manifests: dict) -> list:
+def _module_rows(agent, manifests: dict) -> list:
     keys = platform_keys(agent.platform())
-    reported = agent.function_states()
-    desired = agent.desired_functions()
+    reported = agent.module_states()
+    desired = agent.desired_modules()
     rows = []
     for name, manifest in sorted(manifests.items()):
         is_supported = any(key in manifest.get("platforms", {}) for key in keys)
@@ -100,12 +104,9 @@ def _function_rows(agent, manifests: dict) -> list:
                 "name": name,
                 "title": manifest.get("title", name),
                 "description": manifest.get("description", ""),
+                "kind": manifest.get("kind", ""),
                 "is_supported": is_supported,
                 "is_enabled": bool(desired.get(name, {}).get("is_enabled")),
-                "is_activated": bool(desired.get(name, {}).get("is_activated")),
-                "is_active": bool(status.get("is_active")),
-                "has_activation": manifest.get("has_activation", False),
-                "is_removable": manifest.get("is_removable", True),
                 "state": status.get("state", "unknown"),
                 "code": status.get("code", ""),
                 "params": status.get("params", {}),
@@ -130,7 +131,7 @@ class ControlServer:
     ):
         """
         Args:
-            agent: The running :class:`~neutrino_agent.agent.Agent`.
+            agent: The running :class:`~neutrino_agent.core.loop.Agent`.
             platform: The machine's platform, behind the contract.
             log: Callable used for progress messages.
             socket_path: The control socket path; empty asks the platform.
@@ -215,6 +216,7 @@ class ControlServer:
         server.control_agent = self._agent
         server.control_platform = self._platform
         server.control_tokens = self._tokens
+        server.control_channel = self
         server.is_socket_transport = is_socket_transport
 
 
@@ -266,25 +268,21 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
             self._send_html(CONTROL_PAGE_HTML)
 
     def do_POST(self) -> None:
+        route = self.path.split("?")[0]
         identity = self._authenticate()
         if identity is None:
             return
         body = self._read_body()
-        route = self.path.split("?")[0]
         if route == "/api/token" and self.server.is_socket_transport:
             self._mint_token(identity, body)
         elif route == "/api/connect":
             self._connect(identity, body)
         elif route == "/api/disconnect":
             self._disconnect(identity)
-        elif route == "/api/function":
-            self._request_function(identity, body)
-        elif route == "/api/services/ai":
-            self._switch_ai(identity, body)
-        elif route == "/api/services/mount":
-            self._mount(identity, body)
-        elif route == "/api/services/forward":
-            self._forward(identity, body)
+        elif route == "/api/module":
+            self._request_module(identity, body)
+        elif route.startswith("/api/services/"):
+            self._service_action(identity, route[len("/api/services/") :], body)
         elif route == "/api/fs":
             self._make_directory(identity, body)
         else:
@@ -378,59 +376,26 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
         agent.disconnect()
         self._send_json(_scoped_state(agent, identity))
 
-    def _request_function(self, identity: ControlIdentity, body: dict) -> None:
+    def _request_module(self, identity: ControlIdentity, body: dict) -> None:
         if not self._require_privilege(identity):
             return
         agent = self.server.control_agent
-        agent.request_function(
+        agent.request_module(
             str(body.get("name", "")),
             is_enabled=body.get("is_enabled"),
             is_activated=body.get("is_activated"),
         )
         self._send_json(_scoped_state(agent, identity))
 
-    def _switch_ai(self, identity: ControlIdentity, body: dict) -> None:
-        account = str(body.get("account", ""))
-        if account != identity.account and not identity.is_privileged:
-            self._send_json({"code": "control_scope_refused"}, status=403)
-            return
+    def _service_action(
+        self, identity: ControlIdentity, service_type: str, body: dict
+    ) -> None:
         agent = self.server.control_agent
-        if account not in agent.accounts():
-            self._send_json({"code": "no_target_user"}, status=400)
-            return
-        agent.request_ai(account, is_activated=bool(body.get("is_activated")))
-        self._send_json(_scoped_state(agent, identity))
-
-    def _mount(self, identity: ControlIdentity, body: dict) -> None:
-        agent = self.server.control_agent
-        action = str(body.get("action", ""))
-        if action == "attach":
-            outcome = agent.attach_mount(
-                account=identity.account,
-                is_privileged=identity.is_privileged,
-                offer_id=str(body.get("offer_id", "")),
-                username=str(body.get("username", "")),
-                password=str(body.get("password", "")),
-                path=str(body.get("path", "")),
-            )
-        elif action == "detach":
-            outcome = agent.detach_mount(
-                account=identity.account,
-                is_privileged=identity.is_privileged,
-                record_id=str(body.get("record_id", "")),
-            )
-        else:
-            self._send_json({"code": "unknown_request"}, status=404)
-            return
-        if outcome:
-            self._send_refusal(outcome)
-            return
-        self._send_json(_scoped_state(agent, identity))
-
-    def _forward(self, identity: ControlIdentity, body: dict) -> None:
-        agent = self.server.control_agent
-        outcome = agent.request_forward(
-            str(body.get("offer_id", "")), is_enabled=bool(body.get("is_enabled"))
+        outcome = agent.service_action(
+            service_type,
+            account=identity.account,
+            is_privileged=identity.is_privileged,
+            body=body,
         )
         if outcome:
             self._send_refusal(outcome)

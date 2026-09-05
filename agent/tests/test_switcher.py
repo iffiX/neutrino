@@ -9,7 +9,7 @@ on an account nobody reported is refused in both directions alike.
 
 import pytest
 
-from neutrino_agent import switcher
+from neutrino_agent.services import switcher
 from neutrino_agent.platforms.base import AgentPlatform
 
 
@@ -143,3 +143,55 @@ def test_a_reported_account_passes_the_guard_both_ways(monkeypatch):
 
     assert "claude" in activated
     assert "as it was" in deactivated
+
+
+def test_the_claude_env_names_every_chosen_slot():
+    env = switcher._hub_env(
+        {"env": {"KEEP": "1", "ANTHROPIC_API_KEY": "old"}},
+        "http://hub",
+        "key-1",
+        {"default": "m1", "opus": "m2", "sonnet": "", "haiku": "m3"},
+    )
+
+    assert env["ANTHROPIC_BASE_URL"] == "http://hub"
+    assert env["ANTHROPIC_AUTH_TOKEN"] == "key-1"
+    assert env["ANTHROPIC_MODEL"] == "m1"
+    assert env["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "m2"
+    assert env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] == "m3"
+    assert "ANTHROPIC_DEFAULT_SONNET_MODEL" not in env
+    assert env["KEEP"] == "1" and "ANTHROPIC_API_KEY" not in env
+
+
+def test_codex_toml_merge_replaces_top_level_keys_only():
+    text = (
+        'model = "old"\n'
+        "approval = true\n"
+        "[model_providers.neutrino]\n"
+        'model = "kept-in-section"\n'
+    )
+
+    merged = switcher._merge_toml_top_level(
+        text, {"model": "m2", "model_reasoning_effort": "high"}
+    )
+
+    lines = merged.splitlines()
+    assert 'model = "m2"' in lines[:2]
+    assert 'model_reasoning_effort = "high"' in lines[:2]
+    assert "approval = true" in merged
+    assert 'model = "kept-in-section"' in merged
+    assert 'model = "old"' not in merged
+
+
+def test_gemini_env_merge_sets_one_line():
+    merged = switcher._merge_env_line(
+        "GEMINI_API_KEY=k\nGEMINI_MODEL=old\n", "GEMINI_MODEL", "m3"
+    )
+
+    assert merged == "GEMINI_API_KEY=k\nGEMINI_MODEL=m3\n"
+
+
+def test_the_release_table_answers_by_platform_key():
+    entry = switcher.release_entry(["linux-debian-amd64", "linux-amd64", "linux"])
+    assert entry["binary"] == "cc-switch"
+
+    assert switcher.release_entry(["linux-armhf", "linux"]) == {}

@@ -16,7 +16,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from neutrino_agent import installers
+from neutrino_agent.modules import installers
 from neutrino_agent.constants import AGENT_COMMAND_TIMEOUT_S
 from neutrino_agent.platforms.base import AgentPlatform
 

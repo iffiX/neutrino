@@ -1,14 +1,14 @@
-"""The mounts service: path rules by identity, typed refusals, remounting."""
+"""The file service: path rules by identity, typed refusals, remounting."""
 
 import os
 
 import pytest
 
 from neutrino_agent.platforms.base import AgentPlatform, ShareAttachError
-from neutrino_agent.services.mounts import MountsService, mount_record_id
+from neutrino_agent.services.file import FileServiceHandler, mount_record_id
 from neutrino_agent.services.store import MachineServiceStore
 
-OFFER = {"kind": "mount", "title": "media", "host": "hub", "share": "media"}
+PAYLOAD = {"protocol": "smb", "host": "hub", "share": "media"}
 
 
 class FakeMountPlatform(AgentPlatform):
@@ -75,7 +75,7 @@ def discard(message: str) -> None:
 def service(tmp_path):
     platform = FakeMountPlatform()
     store = MachineServiceStore(path=str(tmp_path / "services.json"))
-    subject = MountsService(
+    subject = FileServiceHandler(
         platform=platform,
         store=store,
         credentials_dir=str(tmp_path / "creds"),
@@ -88,8 +88,8 @@ def attach(subject, *, path, account="root", is_privileged=True, password="pw"):
     return subject.attach(
         account=account,
         is_privileged=is_privileged,
-        offer_id="hub_share_media",
-        offer=OFFER,
+        entry_id="hub_share_media",
+        payload=PAYLOAD,
         username="media",
         password=password,
         path=path,
@@ -200,3 +200,50 @@ def test_a_relative_path_is_refused(service):
     subject, _platform, _store, _tmp_path = service
 
     assert attach(subject, path="nas/media") == {"code": "fs_refused", "params": {}}
+
+
+def entry_for(payload):
+    return {
+        "id": "hub_share_media",
+        "type": "file",
+        "title": "media",
+        "payload": payload,
+        "is_healthy": True,
+        "source": "module",
+        "description": "",
+    }
+
+
+def test_act_mounts_and_unmounts_by_typed_entry(service):
+    subject, platform, store, tmp_path = service
+    location = str(tmp_path / "nas" / "media")
+
+    outcome = subject.act(
+        entries=[entry_for(PAYLOAD)],
+        account="root",
+        is_privileged=True,
+        body={
+            "action": "mount",
+            "id": "hub_share_media",
+            "username": "media",
+            "password": "pw",  # scan: allow
+            "path": location,
+        },
+    )
+    assert outcome == {}
+    (record_id,) = store.mounts()
+    assert subject.state()["mounts"][0]["entry_id"] == "hub_share_media"
+
+    outcome = subject.act(
+        entries=[entry_for(PAYLOAD)],
+        account="root",
+        is_privileged=True,
+        body={"action": "unmount", "record_id": record_id},
+    )
+    assert outcome == {}
+    assert store.mounts() == {}
+
+    refused = subject.act(
+        entries=[], account="root", is_privileged=True, body={"action": "mount"}
+    )
+    assert refused == {"code": "unknown_request", "params": {}}

@@ -1,11 +1,11 @@
-"""The ports service, end to end over real loopback sockets."""
+"""The port service, end to end over real loopback sockets."""
 
 import socket
 import threading
 
 import pytest
 
-from neutrino_agent.services.ports import PortsService
+from neutrino_agent.services.port import PortServiceHandler
 
 
 def discard(message: str) -> None:
@@ -44,9 +44,9 @@ def upstream():
 
 
 def test_a_forward_relays_bytes_both_ways(upstream):
-    service = PortsService(log=discard)
-    assert service.forward(offer_id="db", host="127.0.0.1", port=upstream) == {}
-    row = service.rows()["db"]
+    service = PortServiceHandler(log=discard)
+    assert service.forward(entry_id="db", host="127.0.0.1", port=upstream) == {}
+    row = service.state()["forwards"]["db"]
     assert row["is_active"] is True
     # The published number is held by the upstream itself, so the relay
     # names a free one instead.
@@ -61,7 +61,7 @@ def test_a_forward_relays_bytes_both_ways(upstream):
             break
         received += chunk
     client.close()
-    service.stop(offer_id="db")
+    service.stop(entry_id="db")
 
     assert received == b"ping across the relay"
 
@@ -70,23 +70,23 @@ def test_the_published_number_is_used_when_free():
     probe = socket.create_server(("127.0.0.1", 0))
     port = probe.getsockname()[1]
     probe.close()
-    service = PortsService(log=discard)
+    service = PortServiceHandler(log=discard)
 
-    assert service.forward(offer_id="web", host="127.0.0.1", port=port) == {}
+    assert service.forward(entry_id="web", host="127.0.0.1", port=port) == {}
 
-    assert service.rows()["web"]["local_port"] == port
-    service.stop(offer_id="web")
+    assert service.state()["forwards"]["web"]["local_port"] == port
+    service.stop(entry_id="web")
 
 
 def test_disabling_closes_the_listener_and_open_connections(upstream):
-    service = PortsService(log=discard)
-    service.forward(offer_id="db", host="127.0.0.1", port=upstream)
-    local_port = service.rows()["db"]["local_port"]
+    service = PortServiceHandler(log=discard)
+    service.forward(entry_id="db", host="127.0.0.1", port=upstream)
+    local_port = service.state()["forwards"]["db"]["local_port"]
     client = socket.create_connection(("127.0.0.1", local_port), timeout=5)
     client.sendall(b"hello")
     assert client.recv(4096) == b"hello"
 
-    assert service.stop(offer_id="db") == {}
+    assert service.stop(entry_id="db") == {}
 
     client.settimeout(5)
     try:
@@ -95,11 +95,53 @@ def test_disabling_closes_the_listener_and_open_connections(upstream):
         leftover = b""
     assert leftover == b""
     client.close()
-    assert service.rows() == {}
+    assert service.state()["forwards"] == {}
 
 
 def test_stopping_what_is_not_running_is_nothing():
-    service = PortsService(log=discard)
+    service = PortServiceHandler(log=discard)
 
-    assert service.stop(offer_id="gone") == {}
-    assert service.rows() == {}
+    assert service.stop(entry_id="gone") == {}
+    assert service.state()["forwards"] == {}
+
+
+def test_act_resolves_the_typed_entry(upstream):
+    service = PortServiceHandler(log=discard)
+    entries = [
+        {
+            "id": "db",
+            "type": "port",
+            "title": "db",
+            "payload": {"host": "127.0.0.1", "port": upstream},
+            "is_healthy": True,
+            "source": "module",
+            "description": "",
+        }
+    ]
+
+    assert (
+        service.act(
+            entries=entries,
+            account="alice",
+            is_privileged=False,
+            body={"id": "db", "is_enabled": True},
+        )
+        == {}
+    )
+    assert service.state()["forwards"]["db"]["is_active"] is True
+
+    assert (
+        service.act(
+            entries=entries,
+            account="alice",
+            is_privileged=False,
+            body={"id": "db", "is_enabled": False},
+        )
+        == {}
+    )
+    assert service.state()["forwards"] == {}
+
+    refused = service.act(
+        entries=entries, account="alice", is_privileged=False, body={"id": "gone"}
+    )
+    assert refused == {"code": "unknown_request", "params": {}}

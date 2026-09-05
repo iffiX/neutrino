@@ -1,6 +1,6 @@
-"""What a function reconciler is.
+"""What a module reconciler is.
 
-A function is machine software the hub administers — a remote desktop, the
+A module is machine software the hub administers — a remote desktop, the
 SSH server. One reconciler owns one manifest kind, and the engine hands each
 catalog entry to the reconciler for its kind. A reconciler never applies a
 local wish on its own: what it receives as ``wanted`` already came back from
@@ -21,7 +21,7 @@ def clean_status(state: str, *, is_active: bool = False) -> dict:
 
     Args:
         state: The state word.
-        is_active: Whether the function points at the hub.
+        is_active: Whether the module points at the hub.
 
     Returns:
         The typed status.
@@ -33,8 +33,8 @@ def _ignore_status(name: str, status: dict) -> None:
     """Swallow a transient status when nobody is watching."""
 
 
-class FunctionReconciler:
-    """Brings one kind of function to its desired state on this machine."""
+class ModuleReconciler:
+    """Brings one kind of module to its desired state on this machine."""
 
     kind = ""
 
@@ -54,15 +54,15 @@ class FunctionReconciler:
     def reconcile(
         self, *, name: str, manifest: dict, entry: dict, wanted: "dict | None"
     ) -> dict:
-        """Bring one function to its desired state, or just report it.
+        """Bring one module to its desired state, or just report it.
 
         Args:
-            name: The function name.
+            name: The module name.
             manifest: Its manifest.
             entry: The manifest's entry for this platform.
             wanted: What the hub decided — ``is_enabled`` plus whatever
                 ``config`` it resolved. None when nothing has been asked, in
-                which case the function is inspected and never touched.
+                which case the module is inspected and never touched.
 
         Returns:
             ``{"state", "code", "params", "is_active"}``.

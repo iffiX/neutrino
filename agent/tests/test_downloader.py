@@ -3,7 +3,7 @@ download and an installer being handed a web page."""
 
 import pytest
 
-from neutrino_agent.downloader import DownloadError, verify_package
+from neutrino_agent.modules.downloader import DownloadError, verify_package
 
 # The real shape of what ToDesk's CDN answers a plain fetcher with: HTTP 200,
 # two kilobytes, and HTML.

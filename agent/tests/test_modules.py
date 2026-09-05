@@ -1,4 +1,4 @@
-"""Reconciling functions on a device, with typed statuses.
+"""Reconciling modules on a device, with typed statuses.
 
 The failure the package reconciler is built around: a manifest whose verify
 command names the wrong path leaves a package installed and unconfirmed, and
@@ -11,10 +11,10 @@ import threading
 
 import pytest
 
-from neutrino_agent.functions import package as package_module
-from neutrino_agent.functions.engine import FunctionEngine
-from neutrino_agent.functions.openssh import OpensshFunctionReconciler
-from neutrino_agent.functions.package import PackageFunctionReconciler
+from neutrino_agent.core.engine import ModuleEngine
+from neutrino_agent.modules import package as package_module
+from neutrino_agent.modules.openssh import OpensshModuleReconciler
+from neutrino_agent.modules.package import PackageModuleReconciler
 from neutrino_agent.platforms.base import AgentPlatform
 
 MANIFEST = {
@@ -51,10 +51,10 @@ def reconciler(monkeypatch):
     monkeypatch.setattr(package_module, "download", lambda *a, **k: None)
     monkeypatch.setattr(package_module, "verify_package", lambda *a, **k: None)
     monkeypatch.setattr(
-        PackageFunctionReconciler, "_verify", lambda self, manifest: False
+        PackageModuleReconciler, "_verify", lambda self, manifest: False
     )
     platform = RecordingPlatform()
-    subject = PackageFunctionReconciler(platform=platform, log=discard)
+    subject = PackageModuleReconciler(platform=platform, log=discard)
     return subject, platform.installs
 
 
@@ -110,7 +110,7 @@ def test_an_install_that_does_confirm_is_not_remembered_as_unconfirmed(
     subject, installs = reconciler
     answers = iter([False, True])
     monkeypatch.setattr(
-        PackageFunctionReconciler,
+        PackageModuleReconciler,
         "_verify",
         lambda self, manifest: next(answers, True),
     )
@@ -123,16 +123,16 @@ def test_an_install_that_does_confirm_is_not_remembered_as_unconfirmed(
     assert subject._unconfirmed == set()
 
 
-def bare_engine() -> FunctionEngine:
+def bare_engine() -> ModuleEngine:
     """An engine with no worker thread, for driving one reconcile directly."""
-    engine = FunctionEngine.__new__(FunctionEngine)
+    engine = ModuleEngine.__new__(ModuleEngine)
     engine._log = discard
     engine._on_change = None
     engine._lock = threading.Lock()
     engine._statuses = {}
     engine._platform_tuple = {"os": "linux", "family": "debian", "arch": "amd64"}
     engine._reconcilers = {
-        "openssh": OpensshFunctionReconciler(platform=AgentPlatform(), log=discard)
+        "openssh": OpensshModuleReconciler(platform=AgentPlatform(), log=discard)
     }
     return engine
 

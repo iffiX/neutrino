@@ -1,11 +1,11 @@
-"""The mounts service: attaching published shares where a person asks.
+"""The file service type: mounting published shares where a person asks.
 
-The form asks for the share's own username, password and a path; the
-password becomes a root-only credentials file on this machine and never
-travels to the hub. An ordinary identity may attach only where its account
-can write, judged as that account; a privileged one anywhere. A path under
-the asking account's home is ownership-mapped to that account; anywhere
-else follows the share's own permissions.
+Config asks for the share's own username, password and a path; the password
+becomes a root-only credentials file on this machine and never travels to
+the hub. Mount attaches, Unmount detaches. An ordinary identity may mount
+only where its account can write, judged as that account; a privileged one
+anywhere. A path under the asking account's home is ownership-mapped to that
+account; anywhere else follows the share's own permissions.
 
 Records are machine state in the store; the reconcile remounts enabled
 records that are not attached, which is what brings mounts back after a
@@ -27,21 +27,22 @@ from neutrino_agent.constants import (
     AGENT_MOUNT_RECHECK_INTERVAL_S,
 )
 from neutrino_agent.platforms.base import PlatformUnsupportedError, ShareAttachError
+from neutrino_agent.services.base import ServiceTypeHandler, find_entry
 
 MOUNT_RECORD_ID_LENGTH = 16
 
 
-def mount_record_id(offer_id: str, location: str) -> str:
-    """The stable id one attachment is kept under.
+def mount_record_id(entry_id: str, location: str) -> str:
+    """The stable id one mount is kept under.
 
     Args:
-        offer_id: The offer attached.
+        entry_id: The service entry mounted.
         location: The mount point.
 
     Returns:
-        A short hex id; the same offer at the same path is the same record.
+        A short hex id; the same entry at the same path is the same record.
     """
-    digest = hashlib.sha256(f"{offer_id}\n{location}".encode("utf-8"))
+    digest = hashlib.sha256(f"{entry_id}\n{location}".encode("utf-8"))
     return digest.hexdigest()[:MOUNT_RECORD_ID_LENGTH]
 
 
@@ -54,8 +55,10 @@ def _share_refusal(error: ShareAttachError) -> dict:
     return {"code": error.code, "params": params}
 
 
-class MountsService:
-    """Attaches, detaches, reports and remounts this machine's share mounts."""
+class FileServiceHandler(ServiceTypeHandler):
+    """Mounts, unmounts, reports and remounts this machine's shares."""
+
+    service_type = "file"
 
     def __init__(self, *, platform, store, credentials_dir: str = "", log=print):
         """
@@ -73,24 +76,71 @@ class MountsService:
         self._lock = threading.Lock()
         self._problems: dict = {}
 
+    def act(self, *, entries: list, account: str, is_privileged: bool, body: dict):
+        """Mount a share with the staged config, or unmount one record.
+
+        Args:
+            entries: The catalog's service list.
+            account: The asking account.
+            is_privileged: Whether the caller holds the privileged scope.
+            body: ``{"action": "mount", "id", "username", "password",
+                "path"}`` or ``{"action": "unmount", "record_id"}``.
+
+        Returns:
+            Empty on success, ``{"code", "params"}`` on a refusal.
+        """
+        action = str(body.get("action", ""))
+        if action == "mount":
+            entry = find_entry(entries, self.service_type, str(body.get("id", "")))
+            if entry is None:
+                return {"code": "unknown_request", "params": {}}
+            return self.attach(
+                account=account,
+                is_privileged=is_privileged,
+                entry_id=str(body.get("id", "")),
+                payload=entry.get("payload") or {},
+                username=str(body.get("username", "")),
+                password=str(body.get("password", "")),
+                path=str(body.get("path", "")),
+            )
+        if action == "unmount":
+            return self.detach(
+                account=account,
+                is_privileged=is_privileged,
+                record_id=str(body.get("record_id", "")),
+            )
+        return {"code": "unknown_request", "params": {}}
+
+    def state(self) -> dict:
+        """This machine's mount records with where each stands.
+
+        Returns:
+            ``{"mounts": [rows]}``; passwords appear nowhere.
+        """
+        return {"mounts": self.rows()}
+
+    def start(self) -> None:
+        """Reconcile now and keep reconciling on a timer."""
+        threading.Thread(target=self._run, daemon=True).start()
+
     def attach(
         self,
         *,
         account: str,
         is_privileged: bool,
-        offer_id: str,
-        offer: dict,
+        entry_id: str,
+        payload: dict,
         username: str,
         password: str,
         path: str,
     ) -> dict:
-        """Attach one published share at a path.
+        """Mount one published share at a path.
 
         Args:
             account: The asking account.
             is_privileged: Whether the caller holds the privileged scope.
-            offer_id: The offer's id in the catalog.
-            offer: The offer, naming the host and share.
+            entry_id: The entry's id in the service list.
+            payload: The entry's payload, naming the host and share.
             username: The share's own username.
             password: The share's own password; it stays on this machine.
             path: The mount point.
@@ -115,11 +165,11 @@ class MountsService:
             )
             if refusal is not None:
                 return refusal
-            record_id = mount_record_id(offer_id, location)
+            record_id = mount_record_id(entry_id, location)
             record = {
-                "offer_id": offer_id,
-                "host": str(offer.get("host", "")),
-                "share": str(offer.get("share", "")),
+                "entry_id": entry_id,
+                "host": str(payload.get("host", "")),
+                "share": str(payload.get("share", "")),
                 "username": username,
                 "path": location,
                 "account": account,
@@ -145,12 +195,12 @@ class MountsService:
             return {}
 
     def detach(self, *, account: str, is_privileged: bool, record_id: str) -> dict:
-        """Detach one attachment: unmount, drop the credentials, drop the record.
+        """Unmount one record: detach, drop the credentials, drop the record.
 
         Args:
             account: The asking account.
             is_privileged: Whether the caller holds the privileged scope.
-            record_id: The record to detach.
+            record_id: The record to unmount.
 
         Returns:
             Empty on success, ``{"code", "params"}`` on a refusal.
@@ -194,7 +244,7 @@ class MountsService:
             rows.append(
                 {
                     "record_id": record_id,
-                    "offer_id": record.get("offer_id", ""),
+                    "entry_id": record.get("entry_id", ""),
                     "host": record.get("host", ""),
                     "share": record.get("share", ""),
                     "username": record.get("username", ""),
@@ -215,10 +265,6 @@ class MountsService:
                 if not record.get("is_enabled"):
                     continue
                 self._remount(record_id, record)
-
-    def start(self) -> None:
-        """Reconcile now and keep reconciling on a timer."""
-        threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self) -> None:
         while True:

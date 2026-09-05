@@ -1,4 +1,4 @@
-"""The ports service: forwarding a published port to this machine.
+"""The port service type: forwarding a published port to this machine.
 
 A published port forwards to ``127.0.0.1`` on a click — a standard-library
 relay on the same number when it is free and otherwise on a free one the row
@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import socket
 import threading
+
+from neutrino_agent.services.base import ServiceTypeHandler, find_entry
 
 FORWARD_BIND_HOST = "127.0.0.1"
 FORWARD_BUFFER_BYTES = 65536
@@ -38,8 +40,10 @@ def _pump(source, destination) -> None:
         pass
 
 
-class PortsService:
+class PortServiceHandler(ServiceTypeHandler):
     """Starts, stops and lists this machine's loopback port forwards."""
+
+    service_type = "port"
 
     def __init__(self, *, log=print):
         """
@@ -50,11 +54,55 @@ class PortsService:
         self._lock = threading.Lock()
         self._relays: dict = {}
 
-    def forward(self, *, offer_id: str, host: str, port: int) -> dict:
+    def act(self, *, entries: list, account: str, is_privileged: bool, body: dict):
+        """Connect or disconnect one published port's loopback forward.
+
+        Args:
+            entries: The catalog's service list.
+            account: The asking account.
+            is_privileged: Whether the caller holds the privileged scope.
+            body: ``{"id", "is_enabled"}``.
+
+        Returns:
+            Empty on success, ``{"code", "params"}`` on a refusal.
+        """
+        entry_id = str(body.get("id", ""))
+        entry = find_entry(entries, self.service_type, entry_id)
+        if entry is None:
+            return {"code": "unknown_request", "params": {}}
+        if not body.get("is_enabled"):
+            return self.stop(entry_id=entry_id)
+        payload = entry.get("payload") or {}
+        try:
+            port = int(payload.get("port", 0))
+        except (TypeError, ValueError):
+            return {"code": "unknown_request", "params": {}}
+        return self.forward(
+            entry_id=entry_id, host=str(payload.get("host", "")), port=port
+        )
+
+    def state(self) -> dict:
+        """The forwards this machine is running, for the state payload.
+
+        Returns:
+            ``{"forwards": {entry_id: {"local_port", "is_active"}}}``.
+        """
+        with self._lock:
+            return {
+                "forwards": {
+                    entry_id: {
+                        "local_port": relay.local_port,
+                        "is_active": relay.is_active,
+                    }
+                    for entry_id, relay in self._relays.items()
+                }
+            }
+
+    def forward(self, *, entry_id: str, host: str, port: int) -> dict:
         """Start forwarding one published port to the loopback.
 
         Args:
-            offer_id: The offer's id in the catalog.
+            entry_id: The entry's id in the service list.
             host: The address the published port answers on.
             port: The published port number, preferred locally too.
 
@@ -62,7 +110,7 @@ class PortsService:
             Empty on success, ``{"code", "params"}`` when nothing can bind.
         """
         with self._lock:
-            relay = self._relays.get(offer_id)
+            relay = self._relays.get(entry_id)
             if relay is not None and relay.is_active:
                 return {}
             relay = _ForwardRelay(host=host, port=port)
@@ -73,40 +121,25 @@ class PortsService:
                     "code": "forward_failed",
                     "params": {"detail": str(error)[:200]},
                 }
-            self._relays[offer_id] = relay
+            self._relays[entry_id] = relay
         self._log(f"forwarding {FORWARD_BIND_HOST}:{local_port} to {host}:{port}")
         return {}
 
-    def stop(self, *, offer_id: str) -> dict:
+    def stop(self, *, entry_id: str) -> dict:
         """Stop one forward, closing its listener and every connection.
 
         Args:
-            offer_id: The offer whose forward to stop.
+            entry_id: The entry whose forward to stop.
 
         Returns:
             Empty; stopping what is not running is nothing.
         """
         with self._lock:
-            relay = self._relays.pop(offer_id, None)
+            relay = self._relays.pop(entry_id, None)
         if relay is not None:
             relay.close()
             self._log(f"stopped forwarding to {relay.host}:{relay.port}")
         return {}
-
-    def rows(self) -> dict:
-        """The forwards this machine is running, for the state payload.
-
-        Returns:
-            Offer id to ``{"local_port", "is_active"}``.
-        """
-        with self._lock:
-            return {
-                offer_id: {
-                    "local_port": relay.local_port,
-                    "is_active": relay.is_active,
-                }
-                for offer_id, relay in self._relays.items()
-            }
 
 
 class _ForwardRelay:

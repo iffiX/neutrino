@@ -8,10 +8,10 @@ SSH is a door locked from the inside.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
-from neutrino_agent.functions.base import FunctionReconciler, clean_status
+from neutrino_agent.modules.base import ModuleReconciler, clean_status
 
 
-class OpensshFunctionReconciler(FunctionReconciler):
+class OpensshModuleReconciler(ModuleReconciler):
     """Switches the platform's SSH server on and reports its state."""
 
     kind = "openssh"
@@ -22,7 +22,7 @@ class OpensshFunctionReconciler(FunctionReconciler):
         """Switch the SSH server on when asked, or just report it.
 
         Args:
-            name: The function name.
+            name: The module name.
             manifest: Its manifest.
             entry: The manifest's entry for this platform.
             wanted: The hub's decision, or None to only inspect.

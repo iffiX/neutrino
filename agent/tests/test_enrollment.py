@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from neutrino_agent.enrollment import EnrollmentError, parse_link
+from neutrino_agent.core.enrollment import EnrollmentError, parse_link
 
 
 def link_for(payload: dict) -> str:
@@ -97,7 +97,7 @@ def test_a_payload_missing_its_half_is_refused():
 
 
 def test_machine_macs_skip_loopback_and_the_unset(tmp_path, monkeypatch):
-    import neutrino_agent.enrollment as enrollment_module
+    import neutrino_agent.core.enrollment as enrollment_module
 
     (tmp_path / "lo").mkdir()
     (tmp_path / "lo" / "address").write_text("00:00:00:00:00:00\n")
