@@ -153,11 +153,11 @@ def test_the_channel_is_pinned_tls_end_to_end(panel, stranger):
     # code, as an update would.
     script = (
         "import hashlib; "
-        "from neutrino_agent import enrollment; "
+        "from neutrino_agent.core import enrollment; "
         "from neutrino_agent.constants import AGENT_PACKAGE_PATH; "
-        "from neutrino_agent.http_channel import GatewayHttpChannel; "
+        "from neutrino_agent.core.channel import GatewayHttpChannel; "
         "from neutrino_agent.platforms.detect import platform_tuple; "
-        "from neutrino_agent.self_update import package_kind; "
+        "from neutrino_agent.core.self_update import package_kind; "
         "config = enrollment.load_config(); "
         'channel = GatewayHttpChannel(gateway_url=config["gateway_url"], '
         'token=config["token"], fingerprint=config.get("fingerprint", "")); '
