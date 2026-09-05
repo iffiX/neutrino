@@ -91,6 +91,10 @@ SYSTEM_RUNTIME_PACKAGES = (
     "vnstat",
     # Provisioners that install from a vendor's own script fetch it with this.
     "curl",
+    # Asks a file server what it exports, which is how a declared file
+    # service is judged healthy. It is the client tool: a hub that publishes
+    # no shares of its own still points devices at somebody else's NAS.
+    "smbclient",
 )
 
 # Wanted only by a machine that serves Wi-Fi, which is why it is a
@@ -121,6 +125,7 @@ SYSTEM_PACKAGE_NAMES = {
     },
     "rhel": {
         "iproute2": "iproute",
+        "smbclient": "samba-client",
         "wpasupplicant": "wpa_supplicant",
         # RHEL builds venv into the interpreter rather than splitting it out.
         "python3-venv": None,

@@ -37,13 +37,22 @@ def test_the_families_disagree_only_where_they_were_measured_to():
     rhel = packages_for("rhel", SYSTEM_RUNTIME_PACKAGES)
     arch = packages_for("arch", SYSTEM_RUNTIME_PACKAGES)
 
-    debian_only = {"iproute2", "dnsmasq-base", "dhcpcd-base", "wpasupplicant"}
+    # smbclient is the client tool the file-service probe runs; RHEL ships
+    # it inside samba-client, measured in a fedora container.
+    debian_only = {
+        "iproute2",
+        "dnsmasq-base",
+        "dhcpcd-base",
+        "wpasupplicant",
+        "smbclient",
+    }
     assert set(debian) - set(rhel) == debian_only
     assert set(rhel) - set(debian) == {
         "iproute",
         "dnsmasq",
         "dhcpcd",
         "wpa_supplicant",
+        "samba-client",
     }
     assert set(debian) - set(arch) == {"dnsmasq-base", "dhcpcd-base", "wpasupplicant"}
 

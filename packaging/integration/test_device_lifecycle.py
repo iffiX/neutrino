@@ -341,24 +341,25 @@ def test_the_lifecycle_walks_every_transition(panel, stranger):
     healthy = device_by_mac(panel, mac)
     real_version = healthy["client"]["version"]
 
-    ssh_to(
+    # The downgrade is read off the file rather than off the hub: the agent
+    # updates itself within seconds of the first beat, and a poller watching
+    # for the moment in between loses that race by construction.
+    downgraded = ssh_to(
         host,
         "sudo sed -i 's/^AGENT_VERSION = .*/AGENT_VERSION = \"0.0.0\"/' "
-        f"{agent_tree}/_version.py && sudo systemctl restart neutrino_agent",
+        f"{agent_tree}/_version.py && grep '^AGENT_VERSION' {agent_tree}/_version.py"
+        " && sudo systemctl restart neutrino_agent",
     )
+    assert '"0.0.0"' in downgraded.stdout, downgraded.stdout + downgraded.stderr
     wait_for(
-        "the downgraded agent to report 0.0.0",
-        lambda: (device_by_mac(panel, mac) or {"client": None}).get("client")
-        and device_by_mac(panel, mac)["client"]["version"] == "0.0.0",
-        UNBIND_TIMEOUT_S,
-    )
-    wait_for(
-        "the version self-update to heal the agent",
-        lambda: (device_by_mac(panel, mac) or {"client": None}).get("client")
-        and device_by_mac(panel, mac)["client"]["version"] == real_version
-        and device_by_mac(panel, mac)["is_agent_online"],
+        "the version self-update to put the real agent back",
+        lambda: '"0.0.0"'
+        not in ssh_to(host, f"grep '^AGENT_VERSION' {agent_tree}/_version.py").stdout
+        and (device_by_mac(panel, mac) or {}).get("is_agent_online"),
         DRILL_TIMEOUT_S,
     )
+    healed = device_by_mac(panel, mac)
+    assert healed["client"]["version"] == real_version, healed["client"]
 
     ssh_to(
         host,
