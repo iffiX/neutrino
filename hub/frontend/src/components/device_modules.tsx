@@ -67,10 +67,15 @@ const STATE_WORDING: Record<string, string> = {
   failed: "failed",
 };
 
-// A builtin module is enabled and disabled, and its states say so.
+// A builtin module is enabled and disabled, and its states say so — the
+// agent reports those words as states for capability modules.
 const BUILTIN_STATE_WORDING: Record<string, string> = {
   installed: "enabled",
   absent: "disabled",
+  enabled: "enabled",
+  disabled: "disabled",
+  enabling: "enabling…",
+  disabling: "disabling…",
   installing: "enabling…",
   removing: "disabling…",
   uninstalling: "disabling…",
@@ -99,6 +104,8 @@ const BUSY_STATES: string[] = [
   "removing",
   "activating",
   "deactivating",
+  "enabling",
+  "disabling",
 ];
 
 /** One change to what is wanted; the wish left out stays as it is. */
@@ -342,7 +349,9 @@ function standing(deviceModule: DeviceModuleView): {
       return { isOnMachine: true, isAimedHere: true };
     default:
       return {
-        isOnMachine: deviceModule.state === "installed",
+        isOnMachine:
+          deviceModule.state === "installed" ||
+          deviceModule.state === "enabled",
         isAimedHere: deviceModule.is_active,
       };
   }
@@ -350,7 +359,7 @@ function standing(deviceModule: DeviceModuleView): {
 
 /** Whether the machine reports having it, ignoring any step in flight. */
 function isPresent(deviceModule: DeviceModuleView): boolean {
-  return deviceModule.state === "installed";
+  return deviceModule.state === "installed" || deviceModule.state === "enabled";
 }
 
 /** Which step a wish amounts to. */
@@ -370,10 +379,12 @@ function hasArrived(deviceModule: DeviceModuleView, step: Step): boolean {
     return true;
   }
   if (step === "installing") {
-    return deviceModule.state === "installed";
+    return (
+      deviceModule.state === "installed" || deviceModule.state === "enabled"
+    );
   }
   if (step === "uninstalling") {
-    return deviceModule.state === "absent";
+    return deviceModule.state === "absent" || deviceModule.state === "disabled";
   }
   if (step === "activating") {
     return deviceModule.is_active;
@@ -390,7 +401,7 @@ function toneFor(
   if (BUSY_STATES.includes(deviceModule.state)) {
     return "warn";
   }
-  if (deviceModule.state === "installed") {
+  if (deviceModule.state === "installed" || deviceModule.state === "enabled") {
     return "ok";
   }
   if (deviceModule.state === "failed") {
