@@ -76,7 +76,7 @@ def bare_engine(*, platform=None, fetch_artifact=None, verified=None):
     engine._lock = threading.Lock()
     engine._wakeup = threading.Event()
 
-    from neutrino_agent.modules.openssh import OpensshModuleReconciler
+    from neutrino_agent.modules.openssh import OpensshModuleRunner
     from neutrino_agent.modules.package import PackageModuleRunner
     from neutrino_agent.modules.switcher import SwitcherModuleRunner
     from neutrino_agent.modules.system_package import SystemPackageModuleRunner
@@ -92,7 +92,7 @@ def bare_engine(*, platform=None, fetch_artifact=None, verified=None):
     engine._system = SystemPackageModuleRunner(
         platform=platform, log=engine._collect, publish=engine._publish
     )
-    engine._openssh = OpensshModuleReconciler(
+    engine._openssh = OpensshModuleRunner(
         platform=platform, log=engine._collect, publish=engine._publish
     )
     answers = list(verified or [])
@@ -235,7 +235,7 @@ def test_a_removal_is_run_and_confirmed():
     engine.update(
         catalog=None,
         catalog_hash="abc",
-        orders=[{"id": "order-1", "module": "todesk", "action": "remove"}],
+        orders=[{"id": "order-1", "module": "todesk", "action": "uninstall"}],
     )
     engine._reconcile()
 
@@ -249,11 +249,11 @@ def test_a_removal_that_did_not_take_is_reported_failed():
     engine.update(
         catalog=None,
         catalog_hash="abc",
-        orders=[{"id": "order-1", "module": "todesk", "action": "remove"}],
+        orders=[{"id": "order-1", "module": "todesk", "action": "uninstall"}],
     )
     engine._reconcile()
 
-    assert engine.results()[0]["code"] == "remove_unconfirmed"
+    assert engine.results()[0]["code"] == "uninstall_unconfirmed"
 
 
 def test_no_tick_ever_reruns_a_failed_order():
@@ -457,15 +457,14 @@ def test_the_engine_holds_no_failure_memory():
     assert not hasattr(engine, "_remove_unconfirmed")
 
 
-# --- enable, disable, and the two new kinds ride the same order path ---
+# --- the by-name kinds ride the same order path ---
 
 SSH_CATALOG = {
     "modules": {
         "openssh_server": {
             "title": "SSH server",
             "kind": "openssh",
-            "is_builtin": True,
-            "entry": {"service": "ssh"},
+            "entry": {"packages": ["openssh-server"], "service": "ssh"},
             "verify": "",
             "package": "openssh_server",
         }
@@ -486,36 +485,38 @@ class SwitchingPlatform(AgentPlatform):
     def read_openssh_status(self, entry):
         return self.is_running
 
-    def enable_openssh(self, entry):
-        self.switches.append("enable")
+    def install_openssh(self, entry):
+        self.switches.append("install")
         self.is_running = True
 
-    def disable_openssh(self, entry):
-        self.switches.append("disable")
+    def uninstall_openssh(self, entry):
+        self.switches.append("uninstall")
         self.is_running = False
 
 
-def test_an_enable_order_switches_the_capability_and_reports_done():
+def test_an_openssh_install_order_fetches_nothing_and_reports_done():
     platform = SwitchingPlatform(is_running=False)
-    engine = bare_engine(platform=platform)
+    fetches: list = []
+    engine = bare_engine(platform=platform, fetch_artifact=landing_fetch(fetches))
     engine._catalog = dict(SSH_CATALOG)
 
     engine.update(
         catalog=None,
         catalog_hash="abc",
-        orders=[{"id": "order-1", "module": "openssh_server", "action": "enable"}],
+        orders=[{"id": "order-1", "module": "openssh_server", "action": "install"}],
     )
     engine._reconcile()
 
-    assert platform.switches == ["enable"]
+    assert platform.switches == ["install"]
+    assert fetches == []
     result = engine.results()[0]
     assert result["state"] == "done" and result["code"] == ""
     # Every order carries its output, success included.
-    assert "openssh_server: enable" in result["output"]
-    assert engine.report()["openssh_server"]["state"] == "enabled"
+    assert "openssh_server: install" in result["output"]
+    assert engine.report()["openssh_server"]["state"] == "installed"
 
 
-def test_a_disable_order_switches_the_capability_off_with_output():
+def test_an_openssh_uninstall_order_takes_the_server_out_with_output():
     platform = SwitchingPlatform(is_running=True)
     engine = bare_engine(platform=platform)
     engine._catalog = dict(SSH_CATALOG)
@@ -523,15 +524,15 @@ def test_a_disable_order_switches_the_capability_off_with_output():
     engine.update(
         catalog=None,
         catalog_hash="abc",
-        orders=[{"id": "order-1", "module": "openssh_server", "action": "disable"}],
+        orders=[{"id": "order-1", "module": "openssh_server", "action": "uninstall"}],
     )
     engine._reconcile()
 
-    assert platform.switches == ["disable"]
+    assert platform.switches == ["uninstall"]
     result = engine.results()[0]
     assert result["state"] == "done" and result["code"] == ""
-    assert "openssh_server: disable" in result["output"]
-    assert engine.report()["openssh_server"]["state"] == "disabled"
+    assert "openssh_server: uninstall" in result["output"]
+    assert engine.report()["openssh_server"]["state"] == "absent"
 
 
 SYSTEM_CATALOG = {
@@ -596,7 +597,7 @@ def test_a_system_package_removal_rides_the_package_manager_too():
     engine.update(
         catalog=None,
         catalog_hash="abc",
-        orders=[{"id": "order-1", "module": "samba_mount", "action": "remove"}],
+        orders=[{"id": "order-1", "module": "samba_mount", "action": "uninstall"}],
     )
     engine._reconcile()
 
@@ -604,7 +605,7 @@ def test_a_system_package_removal_rides_the_package_manager_too():
     assert engine.results()[0]["state"] == "done"
 
 
-def test_a_native_system_package_reads_enabled_with_nothing_to_run():
+def test_a_native_system_package_reads_installed_with_nothing_to_run():
     engine = bare_engine(platform=SystemPackagePlatform())
     engine._catalog = {
         "modules": {
@@ -621,7 +622,7 @@ def test_a_native_system_package_reads_enabled_with_nothing_to_run():
 
     engine._refresh(is_forced=True)
 
-    assert engine.report()["samba_mount"]["state"] == "enabled"
+    assert engine.report()["samba_mount"]["state"] == "installed"
 
 
 SWITCHER_CATALOG = {
@@ -676,7 +677,7 @@ def test_a_switcher_removal_deletes_the_cli():
     engine.update(
         catalog=None,
         catalog_hash="abc",
-        orders=[{"id": "order-1", "module": "cc_switch", "action": "remove"}],
+        orders=[{"id": "order-1", "module": "cc_switch", "action": "uninstall"}],
     )
     engine._reconcile()
 

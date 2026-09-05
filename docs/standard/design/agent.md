@@ -1,9 +1,9 @@
 # The device agent
 
 The agent is the hub's presence on a managed machine: one service with the
-platform's highest privilege that keeps the machine converged on what the hub
-says should be true, and answers to the people sitting at it — each within
-the scope their identity owns. It is pure standard library with no
+platform's highest privilege that executes the hub's orders, reports what
+is true, and answers to the people sitting at it — each within the scope
+their identity owns. It is pure standard library with no
 dependencies, which is what lets one package run on whatever Python a device
 already has. Why the system is shaped this way is
 [architecture.md](architecture.md) ("The agent channel is pinned TLS",
@@ -35,13 +35,15 @@ publishes.
   beat. **The agent never downloads a module**: the hub's cache fetches it
   and its controller hands the bytes down, one order at a time per machine
   ([architecture.md](architecture.md), "The hub installs; the agent is an
-  outpost") — and enable/disable rides the same queue, so every module
-  action is ordered, exclusive, and leaves its output behind. Two
-  semantics, decided by what the thing is: a platform capability the
-  machine already carries (the SSH server — a package dependency on Linux,
-  built into macOS and Windows) is **enabled and disabled**; a
-  third-party application (a remote desktop, cc-switch) is **installed
-  and removed**.
+  outpost") — and uninstall rides the same queue, so every module action
+  is ordered, exclusive, and leaves its output behind. One pair of verbs
+  everywhere: a module is **installed and uninstalled**, and the mechanics
+  are each platform's own. The SSH server's uninstall genuinely removes
+  the package on Linux and the capability on Windows; on macOS, whose
+  sealed system volume nothing may remove, install and uninstall drive
+  Remote Login on and off and no binary moves. A platform that carries a
+  module natively with nothing to switch (SMB mounting on Windows and
+  macOS) shows the row as **built in**, with no button.
 - **Services** are what the machine's people do with what the hub
   publishes — pointing an account's AI tools at the gateway, mounting a
   published share, opening a published link, forwarding a published port.
@@ -57,7 +59,7 @@ publishes.
 | --- | --- | --- |
 | Read binding, status, modules, the service list | yes | yes |
 | Connect to a hub / disconnect | yes | no |
-| Toggle modules | yes, as the panel does | no |
+| Install and uninstall modules | yes, as the panel does | no |
 | ai service: an account's tools | yes, any account | own account only |
 | file service: attach a share | yes, at any path | yes, where the account may write |
 | port service: forward | yes | yes — a forward is machine-wide and every scope sees it |
@@ -72,17 +74,26 @@ on Linux and macOS, an elevated Administrators token on Windows — under UAC
 the same person's non-elevated shell is an ordinary account, which is the
 distinction UAC exists to draw.
 
-## Desired state, and how it moves
+## What the beat carries
 
 The agent beats every few seconds. Up goes what the machine is: hostname,
 agent version, metrics, the platform tuple, the machine's human accounts —
 the platform's own judgment of who is a person, root and system accounts
 never listed — each module's state, the most recent error worth showing,
-and any pending requests. Down comes what should be true: the desired
-modules, the catalog when the agent's copy is stale (compared by
-`catalog_hash`, so a converged fleet is never re-shipped it), the AI
-credentials for accounts the hub has granted, queued commands, and the
-hub's version.
+and any pending requests. Down comes the catalog when the agent's copy is
+stale (compared by `catalog_hash`, so a converged fleet is never
+re-shipped it), any order the controller has open for this machine, the
+device's operation stream, the AI credentials for accounts the hub has
+granted, queued commands, and the hub's version.
+
+**A click is one order, not a standing wish.** The hub keeps no record of
+what a machine "should" have: pressing a button creates one order, the
+order runs once, and what the machine reports afterwards is simply shown.
+Software somebody installs or removes by hand is displayed, never fought.
+Orders and failures live in the controller's memory; a hub restart forgets
+them, and the person asks again — before release, machinery whose only
+purpose is surviving a restart is refused outright
+([kill_on_sight.md](../kill_on_sight.md), "Unasked survival machinery").
 
 **The catalog** is the hub's answer to "what exists for this machine", in
 two halves under one hash: the module manifests, and the service list.
@@ -131,21 +142,18 @@ implicitly, and the Operation output shows the queue working.
 own wording. The agent's `last_error` crosses the wire the same way, so a
 device that is unhappy says why on the panel, not only on its own page.
 
-**Module states are one closed table, split by kind.** A package module
-(a third-party application) and a capability module (something the
-platform already carries) live different lives, so each has its own
-tokens — a surface that meets a token outside this table shows "waiting
-for the agent", which is the word for a machine that has not reported:
+**Module states are one closed table.** Every module on every platform
+speaks the same six tokens — a surface that meets a token outside this
+table shows "waiting for the agent", which is the word for a machine that
+has not reported:
 
-| Kind | Steady | Transient | Shared |
-| --- | --- | --- | --- |
-| package | `absent`, `installed` | `installing`, `removing` | `failed`, `unsupported` |
-| capability | `disabled`, `enabled` | `enabling`, `disabling` | `failed`, `unsupported` |
+| Steady | Transient | Shared |
+| --- | --- | --- |
+| `absent`, `installed` | `installing`, `uninstalling` | `failed`, `unsupported` |
 
-Every surface knows the whole table — the drawer and the agent's page word
-a capability's tokens as enable/disable and a package's as
-install/uninstall, and `failed` is always accompanied by its
-`{code, params}`, worded from the surface's own table. Three invariants
+A row the platform carries natively is worded **built in** rather than
+installed, and `failed` is always accompanied by its `{code, params}`,
+worded from the surface's own table. Three invariants
 hold everywhere a state is drawn: every transient token is in the
 surface's busy set, or a row mid-step offers the opposite button; a
 surface's optimistic step (the state it paints the moment a person
@@ -158,17 +166,16 @@ same change, which the page's completeness test enforces.
 Three sections under outer titles set in the hub's module-page style —
 **Status**, **Modules**, **Services** — in that order on the agent as on
 the hub. Status is one panel: the connection card, its controls greyed for
-an ordinary caller. Modules is one panel of rows, enable/disable or
-install/remove per the module's semantics, greyed likewise. Services is
+an ordinary caller. Modules is one panel of rows, install/uninstall each,
+greyed likewise. Services is
 one panel per type — Web, Ports, AI, Files — and a panel with staged,
 unapplied edits lights its frame the way the hub's panels do; unhealthy
 entries render greyed with their state, never hidden.
 
 One **Operation output** panel closes the Modules section, and it is the
 same panel the hub's drawer shows: whenever an agent install, reinstall
-or uninstall, or a module install, uninstall, enable or disable is
-running or has just run, the panel is present with that operation's
-stream. The hub holds the one per-device stream and both surfaces render
+or uninstall, or a module install or uninstall, is running or has just
+run, the panel is present with that operation's stream. The hub holds the one per-device stream and both surfaces render
 it, so an operation started on either side appears on both, line for
 line — neither surface keeps a private log, and the two can no more
 disagree about what is running than the module rows can.

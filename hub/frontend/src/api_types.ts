@@ -746,17 +746,13 @@ export interface DeviceModuleView {
   name: string;
   title: string;
   description: string;
+  /** The manifest kind; the SSH server's uninstall confirmation keys on it. */
+  kind: string;
   is_supported: boolean;
-  is_enabled: boolean;
-  /** A platform capability the machine already carries, worded as
-   * enable/disable rather than install/uninstall. */
-  is_builtin: boolean;
-  /** The platform carries this natively: nothing to install and nothing to
-   * switch, so the row gets no button at all. */
+  /** The platform carries this natively: worded built in, no button. */
   is_native: boolean;
   /** Whether installing and pointing at this hub are separate steps. */
   has_activation: boolean;
-  is_activated: boolean;
   is_active: boolean;
   state: string;
   /** Why the state is what it is, when the agent said; the page words it. */

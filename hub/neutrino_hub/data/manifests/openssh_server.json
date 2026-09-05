@@ -1,5 +1,5 @@
 {
-  "_comment": "The SSH server. Every platform carries one, so nothing is downloaded and the drawer words the row enable/disable rather than install/uninstall; disabling is allowed because the agent channel, not SSH, is the management path.",
+  "_comment": "The SSH server, installed and uninstalled like every other module; the mechanics are each platform's own. Linux installs the package and starts its unit, and uninstall removes the package; Windows adds and removes the capability; macOS switches Remote Login, since its sealed system volume lets nothing be removed. Uninstalling is allowed because the agent channel, not SSH, is the management path.",
   "name": "openssh_server",
   "title": "SSH server",
   "kind": "openssh",
@@ -17,8 +17,11 @@
       ],
       "service": "sshd"
     },
-    "windows": {},
-    "darwin": {}
-  },
-  "is_builtin": true
+    "windows": {
+      "capability": "OpenSSH.Server~~~~0.0.1.0"
+    },
+    "darwin": {
+      "service": "remote_login"
+    }
+  }
 }

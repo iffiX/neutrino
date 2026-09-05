@@ -31,9 +31,7 @@ from neutrino_hub.modules.cliproxyapi.ops import (
 from neutrino_hub.modules.credentials.vault import VaultLockedError
 from neutrino_hub.modules.devices.agent_module_cache import AgentModuleFetchError
 from neutrino_hub.modules.devices.agent_module_controller import (
-    ORDER_ABSENT_STATES,
     ORDER_ACTION_INSTALL,
-    ORDER_PRESENT_STATES,
     AgentModuleOrder,
     ask_module,
 )
@@ -45,11 +43,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_MAC_PATTERN,
 )
 from neutrino_hub.modules.devices.manifests import load_module_manifests
-from neutrino_hub.modules.devices.registry import (
-    DeviceRegistry,
-    module_wish,
-    ManagedDevice,
-)
+from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.utils.version_number import parse_version
 from neutrino_hub.web.dependencies import get_runtime
@@ -74,14 +68,14 @@ router = APIRouter(prefix="/api/agent", tags=["agent"])
 def heartbeat(
     beat: ClientHeartbeat, runtime: PanelRuntime = Depends(get_runtime)
 ) -> ClientHeartbeatReply:
-    """Record an agent's report and hand back what should be true.
+    """Record an agent's report and hand back what to do now.
 
     Args:
         beat: The heartbeat payload.
         runtime: The shared runtime.
 
     Returns:
-        The desired modules, the catalog when the agent's is stale, the
+        Any open order, the catalog when the agent's is stale, the
         per-account AI credentials, and any queued commands.
 
     Raises:
@@ -114,41 +108,19 @@ def heartbeat(
                     -AGENT_MODULE_OUTPUT_LIMIT_BYTES:
                 ],
             )
-            # A refusal outlives the order it came from: the orders are the
-            # controller's and a restart may lose them, but without the
-            # refusal on disk a restarted hub cannot tell a wish nobody has
-            # attempted from one that was attempted and refused.
-            registry.set_module_failure(
-                device.mac_address,
-                str(result.get("module", "")),
-                (
-                    {
-                        "code": str(result.get("code", "") or ""),
-                        "params": dict(result.get("params") or {}),
-                    }
-                    if str(result.get("state", "")) == "failed"
-                    else None
-                ),
-            )
     # Software turning up on the machine anyway settles a standing failure.
     runtime.agent_module_orders.note_reported_states(key, dict(beat.modules))
-    _honour_standing_wishes(device, beat, runtime, registry, key)
     if beat.module_requests:
-        # A toggle on the machine's own page asks the hub rather than acts,
-        # and enters by the same door the drawer's does.
+        # A click on the machine's own page asks the hub rather than acts,
+        # and enters by the same door the drawer's does: one order each.
         manifests = load_module_manifests()
-        for module, wish in beat.module_requests.items():
+        for module, request in beat.module_requests.items():
             if module not in manifests:
                 continue
             is_enabled = (
-                bool(wish.get("is_enabled")) if isinstance(wish, dict) else bool(wish)
-            )
-            is_activated = wish.get("is_activated") if isinstance(wish, dict) else None
-            device = registry.set_module(
-                device.mac_address,
-                module,
-                is_enabled=is_enabled,
-                is_activated=is_activated,
+                bool(request.get("is_enabled"))
+                if isinstance(request, dict)
+                else bool(request)
             )
             ask_module(
                 controller=runtime.agent_module_orders,
@@ -431,64 +403,6 @@ def module_package(
         media_type="application/octet-stream",
         headers={"X-Checksum-Sha256": hashlib.sha256(data).hexdigest()},
     )
-
-
-def _honour_standing_wishes(
-    device: ManagedDevice,
-    beat: ClientHeartbeat,
-    runtime: PanelRuntime,
-    registry: DeviceRegistry,
-    key: str,
-) -> None:
-    """Carry out a decision that was taken but never acted on.
-
-    The controller's queue is memory: a hub restarted between the click and
-    the install loses the order, and nothing on either side would ever ask
-    again. What survives is the wish and — on disk beside it — the refusal
-    of the last attempt, and those two are enough to tell the difference
-    that matters. A wish with a refusal standing against it waits for a
-    person, which is the one rule this must not break; a wish with none has
-    simply never been attempted, and is. Both directions are honoured: an
-    enable wish against an absent module, and a disable wish against a
-    present one.
-
-    Args:
-        device: The device the beat came from.
-        beat: The heartbeat.
-        runtime: The shared runtime, holding the controller.
-        registry: The device registry.
-        key: The device's storage key.
-    """
-    controller = runtime.agent_module_orders
-    manifests = load_module_manifests()
-    for module, stored in (device.client.modules or {}).items():
-        wanted = module_wish(stored)
-        if wanted["failed"] or module not in manifests:
-            continue
-        reported = beat.modules.get(module)
-        state = str(reported.get("state", "")) if isinstance(reported, dict) else ""
-        if not state:
-            continue
-        is_settled = (
-            state in ORDER_PRESENT_STATES
-            if wanted["is_enabled"]
-            else state in ORDER_ABSENT_STATES
-        )
-        if is_settled:
-            continue
-        if controller.order_in_flight(key, module) or controller.failure_for(
-            key, module
-        ):
-            continue
-        ask_module(
-            controller=controller,
-            mac_address=key,
-            module=module,
-            manifest=manifests[module],
-            platform=dict(beat.platform or {}),
-            is_enabled=wanted["is_enabled"],
-            reported_state=state,
-        )
 
 
 def _device_operation(runtime: PanelRuntime, key: str) -> "dict | None":

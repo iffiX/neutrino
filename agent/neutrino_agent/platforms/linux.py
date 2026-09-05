@@ -468,34 +468,35 @@ class LinuxPlatform(AgentPlatform):
         """
         installers.uninstall_package(command)
 
-    def enable_openssh(self, entry: dict) -> None:
-        """Enable and start the SSH server's unit.
-
-        The server rides the agent package as a recommendation, so a
-        machine that skipped it gets the package installed here first.
+    def install_openssh(self, entry: dict) -> None:
+        """Install the SSH server package and start its unit.
 
         Args:
-            entry: The manifest's platform entry, naming the service.
+            entry: The manifest's platform entry, naming the packages and
+                the service.
 
         Raises:
             InstallError: If the install or systemd refuses.
         """
         if shutil.which("sshd") is None and not os.path.exists("/usr/sbin/sshd"):
-            self._install_system_package("openssh-server")
+            for package in entry.get("packages") or ["openssh-server"]:
+                self._install_system_package(package)
         service = entry.get("service", "ssh")
         installers.run_checked(["systemctl", "enable", "--now", service])
 
-    def disable_openssh(self, entry: dict) -> None:
-        """Disable and stop the SSH server's unit.
+    def uninstall_openssh(self, entry: dict) -> None:
+        """Stop the SSH server's unit and remove its package.
 
         Args:
-            entry: The manifest's platform entry, naming the service.
+            entry: The manifest's platform entry, naming the packages and
+                the service.
 
         Raises:
-            InstallError: If systemd refuses.
+            InstallError: If systemd or the package manager refuses.
         """
         service = entry.get("service", "ssh")
         installers.run_checked(["systemctl", "disable", "--now", service])
+        self.remove_system_packages(entry.get("packages") or ["openssh-server"])
 
     def read_openssh_status(self, entry: dict) -> bool:
         """Whether the SSH server is installed and running.

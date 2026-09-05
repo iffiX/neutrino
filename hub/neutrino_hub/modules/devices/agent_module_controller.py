@@ -11,7 +11,9 @@ failed order: a vendor refusing now refuses in a minute, and a machine that
 retries every minute spends the night doing it. Asking again is a new order,
 and it runs. A failure clears without being asked in exactly two cases, both
 meaning the question is settled: the software turning up on the machine
-anyway, and the wish being reversed.
+anyway, and an order for the opposite action. Orders and failures live here
+in memory and nowhere else; a hub restart forgets them and a person asks
+again.
 
 Not pure: fetches through the cache and holds the device's install lock.
 """
@@ -41,25 +43,21 @@ ORDER_FAILED = "failed"
 
 ORDER_OPEN_STATES = (ORDER_QUEUED, ORDER_FETCHING, ORDER_INSTALLING)
 
-# The actions an order can name. Only `install` needs bytes; a capability the
-# machine already carries is switched, never fetched.
+# The actions an order can name. Only an install with an artifact fetches;
+# a distro package or a platform capability installs by name.
 ORDER_ACTION_INSTALL = "install"
-ORDER_ACTION_REMOVE = "remove"
-ORDER_ACTION_ENABLE = "enable"
-ORDER_ACTION_DISABLE = "disable"
+ORDER_ACTION_UNINSTALL = "uninstall"
 
 ORDER_ACTIONS = (
     ORDER_ACTION_INSTALL,
-    ORDER_ACTION_REMOVE,
-    ORDER_ACTION_ENABLE,
-    ORDER_ACTION_DISABLE,
+    ORDER_ACTION_UNINSTALL,
 )
 
-# What the machine reporting these means: the software is there. A standing
-# failure for a module reading one of them is cleared, because somebody
-# installing it by hand settles the question the failure was asking.
-ORDER_PRESENT_STATES = ("installed", "enabled")
-ORDER_ABSENT_STATES = ("absent", "disabled")
+# What the machine reporting these means. A standing failure for a module
+# reading present is cleared, because somebody installing it by hand settles
+# the question the failure was asking.
+ORDER_PRESENT_STATES = ("installed",)
+ORDER_ABSENT_STATES = ("absent",)
 
 
 def _stamp() -> str:
@@ -194,23 +192,22 @@ class AgentModuleController:
             platform: The tuple the agent reported.
             action: One of :data:`ORDER_ACTIONS`.
             reported_state: What the machine last said about this module, so
-                a wish already true asks nothing of it.
+                an uninstall of something absent asks nothing of it.
 
         Returns:
             The queued order, or None when the machine is already the way
             the asker wants it.
 
         Raises:
-            ValueError: For an action that is not one of the four.
+            ValueError: For an action that is not one of the two.
         """
         if action not in ORDER_ACTIONS:
             raise ValueError(f"unknown order action {action!r}")
         key = (mac_address or "").lower()
-        # The wish moved, so the last attempt's verdict is no longer the
-        # answer to anything anybody is asking.
+        # The person has spoken again, so the last attempt's verdict is no
+        # longer the answer to anything anybody is asking.
         self.clear_failure(key, module)
-        is_undoing = action in (ORDER_ACTION_REMOVE, ORDER_ACTION_DISABLE)
-        if is_undoing and reported_state in ORDER_ABSENT_STATES:
+        if action == ORDER_ACTION_UNINSTALL and reported_state in ORDER_ABSENT_STATES:
             return None
         order = AgentModuleOrder(
             id=uuid4().hex,
@@ -512,11 +509,12 @@ def ask_module(
     is_enabled: bool,
     reported_state: str = "",
 ) -> "AgentModuleOrder | None":
-    """The one door both surfaces post a module wish through.
+    """The one door both surfaces post a module click through.
 
     The panel's drawer and the machine's own page reach this by different
     routes and mean the same thing, so they call the same function and there
-    is no second path to behave differently.
+    is no second path to behave differently. A click is one order and
+    nothing more: nothing records what the machine "should" have.
 
     Args:
         controller: The device's module controller.
@@ -524,12 +522,13 @@ def ask_module(
         module: The module name.
         manifest: Its manifest.
         platform: The tuple the agent reported.
-        is_enabled: What the person wants.
+        is_enabled: What the person asked for.
         reported_state: What the machine last said about this module.
 
     Returns:
         The queued order, or None when there is nothing to do — a manifest
-        with no build for this platform, or a wish already true.
+        with no build for this platform, or an uninstall of something the
+        machine reports absent.
     """
     action = order_action_for(
         manifest=manifest, platform=platform, is_enabled=is_enabled
@@ -549,15 +548,12 @@ def ask_module(
 def order_action_for(
     *, manifest: dict, platform: dict, is_enabled: bool
 ) -> "str | None":
-    """What a wish means for one module, by what the module is.
-
-    A platform capability the machine already carries is enabled and
-    disabled; a third-party application is installed and removed.
+    """What a click means for one module on one platform.
 
     Args:
         manifest: The module's manifest.
         platform: The tuple the agent reported.
-        is_enabled: What the person wants.
+        is_enabled: What the person asked for.
 
     Returns:
         The action, or None when the manifest offers this platform nothing.
@@ -565,13 +561,11 @@ def order_action_for(
     _, entry = resolve_platform_entry(manifest, platform)
     if entry is None and platform:
         return None
-    if manifest.get("is_builtin"):
-        return ORDER_ACTION_ENABLE if is_enabled else ORDER_ACTION_DISABLE
     # An empty entry means the platform carries this natively: nothing to
-    # install, nothing to remove.
+    # install, nothing to uninstall.
     if entry == {}:
         return None
-    return ORDER_ACTION_INSTALL if is_enabled else ORDER_ACTION_REMOVE
+    return ORDER_ACTION_INSTALL if is_enabled else ORDER_ACTION_UNINSTALL
 
 
 def _names_download(order: AgentModuleOrder) -> bool:

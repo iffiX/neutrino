@@ -146,12 +146,11 @@ class FakeControlAgent:
         return {
             "modules": {
                 "openssh_server": {
-                    "title": "OpenSSH server",
+                    "title": "SSH server",
                     "description": "",
                     "kind": "openssh",
-                    "is_builtin": True,
-                    "platform_key": "linux",
-                    "entry": {},
+                    "platform_key": "linux-debian",
+                    "entry": {"packages": ["openssh-server"], "service": "ssh"},
                     "verify": "",
                     "package": "openssh_server",
                 }
@@ -163,7 +162,7 @@ class FakeControlAgent:
         return list(SERVICES)
 
     def module_states(self) -> dict:
-        return {"openssh_server": {"state": "enabled", "is_active": False}}
+        return {"openssh_server": {"state": "installed", "is_active": False}}
 
     def pending_module_requests(self) -> dict:
         return {}
@@ -217,8 +216,8 @@ class FakeControlAgent:
         self.service_calls.append((service_type, account, is_privileged, dict(body)))
         return dict(self.service_reply)
 
-    def request_module(self, name, *, is_enabled=None, is_activated=None):
-        self.requested.append((name, is_enabled, is_activated))
+    def request_module(self, name, *, is_enabled=None):
+        self.requested.append((name, is_enabled))
 
     def connect(self, link):
         if self.connect_error is not None:

@@ -180,13 +180,9 @@ class Agent:
         return self._engine.report()
 
     def pending_module_requests(self) -> dict:
-        """What this machine has asked the hub for and not yet been answered.
-
-        The machine keeps no desired state of its own — the hub holds it —
-        so this is only the wishes still riding up.
-        """
+        """The clicks made here that have not ridden a heartbeat up yet."""
         with self._lock:
-            return {name: dict(wish) for name, wish in self._pending.items()}
+            return {name: dict(request) for name, request in self._pending.items()}
 
     def last_error(self) -> "dict | None":
         """The most recent problem worth showing, as ``{"code", "params"}``."""
@@ -285,38 +281,21 @@ class Agent:
         """Cut the wait before the next heartbeat short."""
         self._news.set()
 
-    def request_module(
-        self,
-        name: str,
-        *,
-        is_enabled: "bool | None" = None,
-        is_activated: "bool | None" = None,
-    ) -> None:
-        """Ask for a module to be changed, from this machine's own page.
+    def request_module(self, name: str, *, is_enabled: "bool | None" = None) -> None:
+        """Ask for one module order, from this machine's own page.
 
-        The request is sent up with the next heartbeat rather than applied
+        The click is sent up with the next heartbeat rather than applied
         here, so the hub remains the one place that decides.
 
         Args:
             name: The module name.
-            is_enabled: Whether it should be on, when that is what changed.
-            is_activated: Whether it should point at the hub, when that is
-                what changed.
+            is_enabled: True to install, False to uninstall.
         """
-        if not name:
+        if not name or is_enabled is None:
             return
         with self._lock:
-            wish = dict(self._pending.get(name, {}))
-            if is_enabled is not None:
-                wish["is_enabled"] = is_enabled
-                if not is_enabled:
-                    wish["is_activated"] = False
-            if is_activated is not None:
-                wish["is_activated"] = is_activated
-                if is_activated:
-                    wish["is_enabled"] = True
-            self._pending[name] = wish
-        # Nothing is applied here: the wish rides up, the hub decides, and
+            self._pending[name] = {"is_enabled": is_enabled}
+        # Nothing is applied here: the click rides up, the hub decides, and
         # what comes back is an order like any the panel's own button makes.
         self.beat_soon()
 

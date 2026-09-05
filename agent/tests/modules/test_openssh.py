@@ -1,10 +1,9 @@
-"""The SSH server: enabled and disabled, never installed or removed.
+"""The SSH server: one verb pair, mechanics each platform's own.
 
-A platform capability, so the tokens are the capability half of the state
-table and the machine's own words are each platform's: a systemd unit on
-Linux, ``systemsetup`` on macOS, PowerShell on Windows. The Linux server is
-a package recommendation, so a machine that skipped it gets the package
-before the unit is started.
+Install puts the server in place and serving; uninstall genuinely removes
+the package on Linux and the capability on Windows, and on macOS — whose
+sealed system volume nothing may leave — switches Remote Login off with no
+binary moved. The row reads installed while the server is serving.
 """
 
 import os
@@ -15,19 +14,18 @@ import pytest
 import neutrino_agent.platforms.linux as linux_module
 from neutrino_agent.modules import installers
 from neutrino_agent.modules.installers import InstallError
-from neutrino_agent.modules.openssh import OpensshModuleReconciler
+from neutrino_agent.modules.openssh import OpensshModuleRunner
 from neutrino_agent.platforms.base import AgentPlatform
 from neutrino_agent.platforms.darwin import DarwinPlatform
 from neutrino_agent.platforms.linux import LinuxPlatform
 from neutrino_agent.platforms.windows import WindowsPlatform
 from tests.conftest import discard
 
-CAPABILITY_STATES = {"enabled", "disabled"}
-PACKAGE_STATES = {"installed", "absent", "installing", "removing"}
+DEBIAN_ENTRY = {"packages": ["openssh-server"], "service": "ssh"}
 
 
 class SwitchPlatform(AgentPlatform):
-    """A machine whose SSH server is a switch, and which records its flips."""
+    """A machine whose SSH server is observable, recording each step."""
 
     os_name = "linux"
 
@@ -38,33 +36,17 @@ class SwitchPlatform(AgentPlatform):
     def read_openssh_status(self, entry) -> bool:
         return self.is_running
 
-    def enable_openssh(self, entry) -> None:
-        self.calls.append("enable")
+    def install_openssh(self, entry) -> None:
+        self.calls.append("install")
         self.is_running = True
 
-    def disable_openssh(self, entry) -> None:
-        self.calls.append("disable")
+    def uninstall_openssh(self, entry) -> None:
+        self.calls.append("uninstall")
         self.is_running = False
 
 
-def openssh_reconcile(platform, wish, *, entry=None):
-    """One reconcile pass against a platform.
-
-    Args:
-        platform: The machine, behind the contract.
-        wish: True to enable, False to disable, None to only report.
-        entry: The manifest's platform entry; a Debian one by default.
-
-    Returns:
-        The typed status.
-    """
-    subject = OpensshModuleReconciler(platform=platform, log=discard)
-    return subject.reconcile(
-        name="openssh_server",
-        manifest={"kind": "openssh"},
-        entry={"service": "ssh"} if entry is None else entry,
-        wanted=None if wish is None else {"is_enabled": wish},
-    )
+def runner_for(platform) -> OpensshModuleRunner:
+    return OpensshModuleRunner(platform=platform, log=discard)
 
 
 def recorded_commands(monkeypatch) -> list:
@@ -102,58 +84,27 @@ def linux_tools(monkeypatch, *, present) -> None:
     )
 
 
-# --- the switch itself ---
+# --- the runner: verify, install, uninstall ---
 
 
-def test_openssh_wanted_and_stopped_is_enabled():
+def test_openssh_verify_is_whether_the_server_serves():
+    runner = runner_for(SwitchPlatform(is_running=True))
+    assert runner.verify({"entry": DEBIAN_ENTRY}) is True
+
+    runner = runner_for(SwitchPlatform(is_running=False))
+    assert runner.verify({"entry": DEBIAN_ENTRY}) is False
+
+
+def test_openssh_install_and_uninstall_ride_the_platform():
     platform = SwitchPlatform(is_running=False)
+    runner = runner_for(platform)
 
-    status = openssh_reconcile(platform, True)
+    runner.install({"entry": DEBIAN_ENTRY})
+    assert platform.calls == ["install"] and runner.verify({"entry": DEBIAN_ENTRY})
 
-    assert platform.calls == ["enable"]
-    assert status == {"state": "enabled", "code": "", "params": {}, "is_active": False}
-
-
-def test_openssh_unwanted_and_running_is_disabled():
-    platform = SwitchPlatform(is_running=True)
-
-    status = openssh_reconcile(platform, False)
-
-    assert platform.calls == ["disable"]
-    assert status == {"state": "disabled", "code": "", "params": {}, "is_active": False}
-
-
-@pytest.mark.parametrize("is_running, state", [(True, "enabled"), (False, "disabled")])
-def test_openssh_already_converged_is_reported_untouched(is_running, state):
-    platform = SwitchPlatform(is_running=is_running)
-
-    status = openssh_reconcile(platform, is_running)
-
-    assert platform.calls == []
-    assert status == {"state": state, "code": "", "params": {}, "is_active": False}
-
-
-@pytest.mark.parametrize("is_running, state", [(True, "enabled"), (False, "disabled")])
-def test_openssh_never_asked_is_reported_untouched(is_running, state):
-    platform = SwitchPlatform(is_running=is_running)
-
-    status = openssh_reconcile(platform, None)
-
-    assert platform.calls == []
-    assert status == {"state": state, "code": "", "params": {}, "is_active": False}
-
-
-def test_openssh_states_are_the_capability_half_of_the_table():
-    reported = set()
-
-    for is_running in (True, False):
-        for wish in (None, True, False):
-            reported.add(
-                openssh_reconcile(SwitchPlatform(is_running=is_running), wish)["state"]
-            )
-
-    assert reported == CAPABILITY_STATES
-    assert not reported & PACKAGE_STATES
+    runner.remove({"entry": DEBIAN_ENTRY})
+    assert platform.calls == ["install", "uninstall"]
+    assert not runner.verify({"entry": DEBIAN_ENTRY})
 
 
 # --- what each platform actually runs ---
@@ -167,44 +118,44 @@ def test_openssh_states_are_the_capability_half_of_the_table():
         (set(), ["yum", "install", "-y", "openssh-server"]),
     ],
 )
-def test_openssh_linux_enable_installs_the_server_first(
+def test_openssh_linux_install_puts_the_package_then_starts_the_unit(
     monkeypatch, present, install_command
 ):
     linux_tools(monkeypatch, present=present)
     commands = recorded_commands(monkeypatch)
-    monkeypatch.setattr(LinuxPlatform, "read_openssh_status", lambda self, entry: False)
 
-    status = openssh_reconcile(LinuxPlatform(), True)
+    LinuxPlatform().install_openssh(DEBIAN_ENTRY)
 
     assert commands == [install_command, ["systemctl", "enable", "--now", "ssh"]]
-    assert status["state"] == "enabled"
 
 
-def test_openssh_linux_enable_with_the_server_present_only_starts_the_unit(monkeypatch):
+def test_openssh_linux_install_with_the_server_present_only_starts_the_unit(
+    monkeypatch,
+):
     linux_tools(monkeypatch, present={"sshd", "apt-get"})
     commands = recorded_commands(monkeypatch)
-    monkeypatch.setattr(LinuxPlatform, "read_openssh_status", lambda self, entry: False)
 
-    openssh_reconcile(LinuxPlatform(), True, entry={"service": "sshd"})
+    LinuxPlatform().install_openssh({"packages": ["openssh-server"], "service": "sshd"})
 
     assert commands == [["systemctl", "enable", "--now", "sshd"]]
 
 
-def test_openssh_linux_disable_stops_the_named_unit(monkeypatch):
-    linux_tools(monkeypatch, present={"sshd"})
+def test_openssh_linux_uninstall_stops_the_unit_and_removes_the_package(monkeypatch):
+    linux_tools(monkeypatch, present={"sshd", "apt-get"})
     commands = recorded_commands(monkeypatch)
-    monkeypatch.setattr(LinuxPlatform, "read_openssh_status", lambda self, entry: True)
 
-    status = openssh_reconcile(LinuxPlatform(), False, entry={"service": "sshd"})
+    LinuxPlatform().uninstall_openssh(DEBIAN_ENTRY)
 
-    assert commands == [["systemctl", "disable", "--now", "sshd"]]
-    assert status["state"] == "disabled"
+    assert commands == [
+        ["systemctl", "disable", "--now", "ssh"],
+        ["apt-get", "purge", "-y", "openssh-server"],
+    ]
 
 
 @pytest.mark.parametrize(
-    "stdout, state", [("active\n", "enabled"), ("inactive\n", "disabled")]
+    "stdout, is_serving", [("active\n", True), ("inactive\n", False)]
 )
-def test_openssh_linux_status_is_systemd_own_word(monkeypatch, stdout, state):
+def test_openssh_linux_status_is_systemd_own_word(monkeypatch, stdout, is_serving):
     commands: list = []
 
     def fake_run(command, **kwargs):
@@ -213,10 +164,8 @@ def test_openssh_linux_status_is_systemd_own_word(monkeypatch, stdout, state):
 
     monkeypatch.setattr(linux_module.subprocess, "run", fake_run)
 
-    status = openssh_reconcile(LinuxPlatform(), None)
-
+    assert LinuxPlatform().read_openssh_status({"service": "ssh"}) is is_serving
     assert commands == [["systemctl", "is-active", "ssh"]]
-    assert status["state"] == state
 
 
 def test_openssh_linux_status_survives_a_systemctl_that_cannot_run(monkeypatch):
@@ -225,54 +174,41 @@ def test_openssh_linux_status_survives_a_systemctl_that_cannot_run(monkeypatch):
 
     monkeypatch.setattr(linux_module.subprocess, "run", fake_run)
 
-    status = openssh_reconcile(LinuxPlatform(), None)
-
-    assert status["state"] == "disabled"
+    assert LinuxPlatform().read_openssh_status({"service": "ssh"}) is False
 
 
-@pytest.mark.parametrize(
-    "wish, is_running, command",
-    [
-        (True, False, ["systemsetup", "-setremotelogin", "on"]),
-        (False, True, ["systemsetup", "-f", "-setremotelogin", "off"]),
-    ],
-)
-def test_openssh_darwin_switches_remote_login(monkeypatch, wish, is_running, command):
+def test_openssh_darwin_switches_remote_login_and_moves_no_binary(monkeypatch):
     commands = recorded_commands(monkeypatch)
-    monkeypatch.setattr(
-        DarwinPlatform, "read_openssh_status", lambda self, entry: is_running
-    )
+    entry = {"service": "remote_login"}
 
-    status = openssh_reconcile(DarwinPlatform(), wish, entry={})
+    DarwinPlatform().install_openssh(entry)
+    DarwinPlatform().uninstall_openssh(entry)
 
-    assert commands == [command]
-    assert status["state"] == ("enabled" if wish else "disabled")
+    assert commands == [
+        ["systemsetup", "-setremotelogin", "on"],
+        ["systemsetup", "-f", "-setremotelogin", "off"],
+    ]
 
 
-@pytest.mark.parametrize(
-    "wish, is_running, marker",
-    [
-        (True, False, "Add-WindowsCapability"),
-        (False, True, "Set-Service -Name sshd -StartupType Disabled"),
-    ],
-)
-def test_openssh_windows_switches_the_service(monkeypatch, wish, is_running, marker):
+def test_openssh_windows_adds_and_removes_the_capability(monkeypatch):
     commands = recorded_commands(monkeypatch)
-    monkeypatch.setattr(
-        WindowsPlatform, "read_openssh_status", lambda self, entry: is_running
+    entry = {"capability": "OpenSSH.Server~~~~0.0.1.0"}
+
+    WindowsPlatform().install_openssh(entry)
+    WindowsPlatform().uninstall_openssh(entry)
+
+    assert [command[0] for command in commands] == ["powershell", "powershell"]
+    assert "Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0" in (
+        commands[0][-1]
     )
-
-    status = openssh_reconcile(WindowsPlatform(), wish, entry={})
-
-    assert len(commands) == 1
-    assert commands[0][0] == "powershell"
-    assert marker in commands[0][-1]
-    assert status["state"] == ("enabled" if wish else "disabled")
+    assert "Start-Service sshd" in commands[0][-1]
+    assert "Remove-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0" in (
+        commands[1][-1]
+    )
 
 
 def test_openssh_a_refusal_is_left_to_the_engine_to_type(monkeypatch):
     linux_tools(monkeypatch, present={"sshd"})
-    monkeypatch.setattr(LinuxPlatform, "read_openssh_status", lambda self, entry: False)
 
     def refuse(command, **kwargs):
         raise InstallError("systemctl failed: Unit ssh.service is masked")
@@ -280,6 +216,6 @@ def test_openssh_a_refusal_is_left_to_the_engine_to_type(monkeypatch):
     monkeypatch.setattr(installers, "run_checked", refuse)
 
     with pytest.raises(InstallError) as caught:
-        openssh_reconcile(LinuxPlatform(), True)
+        runner_for(LinuxPlatform()).install({"entry": DEBIAN_ENTRY})
 
     assert "masked" in str(caught.value)

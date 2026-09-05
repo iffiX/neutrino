@@ -25,27 +25,6 @@ DEVICES_CONFIG_PATH = "devices/devices.json"
 AGENT_TOKEN_BYTES = 24
 
 
-def module_wish(stored) -> dict:
-    """Normalise what is stored for one module into the two wishes.
-
-    Args:
-        stored: What ``devices.json`` holds — a bare bool, the pair, or
-            nothing.
-
-    Returns:
-        ``{"is_enabled", "is_activated", "failed"}`` — ``failed`` carrying
-        the last order's refusal, or None when nothing stands against it.
-    """
-    if isinstance(stored, dict):
-        failed = stored.get("failed")
-        return {
-            "is_enabled": bool(stored.get("is_enabled")),
-            "is_activated": bool(stored.get("is_activated")),
-            "failed": failed if isinstance(failed, dict) else None,
-        }
-    return {"is_enabled": bool(stored), "is_activated": False, "failed": None}
-
-
 def _token_digest(token: str) -> str:
     """The stored form of a heartbeat token.
 
@@ -69,10 +48,6 @@ class DeviceClientInfo:
             is an offer, not management.
         version: Agent version from the last heartbeat.
         last_seen: ISO timestamp of the last heartbeat.
-        modules: What the user asked of each managed module, by name:
-            ``{"is_enabled", "is_activated"}``. Installing and activating are
-            separate wishes — a package can be on a machine without pointing
-            at this hub.
         ai_key_ids: The cliproxyapi client key generated for each of this
             device's activated accounts, by account name.
     """
@@ -80,7 +55,6 @@ class DeviceClientInfo:
     token_sha256: str | None = None
     version: str | None = None
     last_seen: str | None = None
-    modules: dict = field(default_factory=dict)
     ai_key_ids: dict = field(default_factory=dict)
 
     @classmethod
@@ -97,7 +71,6 @@ class DeviceClientInfo:
             token_sha256=data.get("token_sha256"),
             version=data.get("version"),
             last_seen=data.get("last_seen"),
-            modules=data.get("modules", {}),
             ai_key_ids=data.get("ai_key_ids", {}),
         )
 
@@ -105,7 +78,9 @@ class DeviceClientInfo:
         """Serialize the persistent fields.
 
         Live metrics are deliberately not stored: they are runtime state that
-        would be stale the moment the panel restarts.
+        would be stale the moment the panel restarts. What each module is
+        stands in the agent's own reports; the hub keeps no record of what a
+        machine should have.
 
         Returns:
             A JSON-ready object.
@@ -114,7 +89,6 @@ class DeviceClientInfo:
             "token_sha256": self.token_sha256,
             "version": self.version,
             "last_seen": self.last_seen,
-            "modules": self.modules,
             "ai_key_ids": self.ai_key_ids,
         }
 
@@ -418,70 +392,6 @@ class DeviceRegistry:
             device.client.token_sha256 = None
             device.client.version = None
             device.client.last_seen = None
-            device.client.modules = {}
-            self._store(device)
-
-    def set_module(
-        self,
-        mac_address: str,
-        module: str,
-        *,
-        is_enabled: bool | None = None,
-        is_activated: bool | None = None,
-    ) -> ManagedDevice:
-        """Change what is wanted of one managed module.
-
-        The two wishes are independent and either can be left alone.
-        Uninstalling implies deactivating, since there is nothing left to
-        point.
-
-        Args:
-            mac_address: The device's MAC.
-            module: The module name.
-            is_enabled: Whether the agent should keep it installed.
-            is_activated: Whether it should point at this hub.
-
-        Returns:
-            The device after the change.
-        """
-        with _WRITE_LOCK:
-            device = self._fresh(mac_address)
-            wanted = module_wish(device.client.modules.get(module))
-            if is_enabled is not None:
-                wanted["is_enabled"] = is_enabled
-                if not is_enabled:
-                    wanted["is_activated"] = False
-            if is_activated is not None:
-                wanted["is_activated"] = is_activated
-                if is_activated:
-                    wanted["is_enabled"] = True
-            # Asking is what clears a failure: the person has spoken again.
-            wanted["failed"] = None
-            device.client.modules[module] = wanted
-            self._store(device)
-            return device
-
-    def set_module_failure(
-        self, mac_address: str, module: str, failure: "dict | None"
-    ) -> None:
-        """Record why one module's last order refused, or forget it.
-
-        The orders themselves are the controller's, in memory, and a hub
-        restart is entitled to lose them. A refusal is not: without it a
-        restarted hub cannot tell a wish nobody has attempted from one that
-        was attempted and refused, and would ask again on every beat — the
-        automatic retry this design exists to prevent.
-
-        Args:
-            mac_address: The device's MAC.
-            module: The module name.
-            failure: ``{"code", "params"}``, or None to clear it.
-        """
-        with _WRITE_LOCK:
-            device = self._fresh(mac_address)
-            wanted = module_wish(device.client.modules.get(module))
-            wanted["failed"] = dict(failure) if failure else None
-            device.client.modules[module] = wanted
             self._store(device)
 
     def set_ai_key_id(self, mac_address: str, account: str, key_id: str | None) -> None:

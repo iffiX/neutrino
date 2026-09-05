@@ -134,17 +134,13 @@ const ORDER_STATE_WORDING: Record<string, string> = {
 // wrong above an uninstall. The action decides the word a person sees.
 const ORDER_RUNNING_WORDING: Record<string, string> = {
   install: "installing",
-  remove: "uninstalling",
-  enable: "enabling",
-  disable: "disabling",
+  uninstall: "uninstalling",
 };
 
 // What each order was asked to do, worded for the line above its output.
 const ORDER_ACTION_WORDING: Record<string, string> = {
   install: "install",
-  remove: "uninstall",
-  enable: "enable",
-  disable: "disable",
+  uninstall: "uninstall",
 };
 
 // The {code, params} an order failed with, worded. A code with no entry
@@ -168,8 +164,8 @@ const ORDER_ERROR_WORDING: Record<string, string> = {
   install_failed: "The install failed on the machine.",
   install_unconfirmed:
     "The install finished, but the software cannot be found on the machine.",
-  remove_unconfirmed: "The removal finished, but the software is still there.",
-  switch_unconfirmed: "The switch ran, but the machine did not change.",
+  uninstall_unconfirmed:
+    "The uninstall finished, but the software is still there.",
   unsupported_platform: "This machine cannot do that.",
   unknown_action: "The machine did not understand what it was asked to do.",
   unknown_kind: "The machine does not know this kind of module.",

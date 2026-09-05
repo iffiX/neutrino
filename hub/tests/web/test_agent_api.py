@@ -2,8 +2,8 @@
 
 The registry is replaced with one held in memory, so what is exercised is the
 request path — that a machine can introduce itself with a ticket, that a
-heartbeat carries the desired modules and the per-account AI credentials
-back, and that an agent saying goodbye stops the panel treating the device as
+heartbeat carries any open order and the per-account AI credentials back,
+and that an agent saying goodbye stops the panel treating the device as
 managed while keeping everything its owner typed.
 """
 
@@ -67,23 +67,6 @@ class FakeRegistry:
         FakeRegistry.device.client.version = version
         FakeRegistry.device.client.last_seen = seen_at
 
-    def set_module(self, mac_address, module, is_enabled=None, is_activated=None):
-        wanted = FakeRegistry.device.client.modules.setdefault(
-            module, {"is_enabled": False, "is_activated": False}
-        )
-        if is_enabled is not None:
-            wanted["is_enabled"] = is_enabled
-        if is_activated is not None:
-            wanted["is_activated"] = is_activated
-        wanted["failed"] = None
-        return FakeRegistry.device
-
-    def set_module_failure(self, mac_address, module, failure):
-        wanted = FakeRegistry.device.client.modules.setdefault(
-            module, {"is_enabled": False, "is_activated": False}
-        )
-        wanted["failed"] = dict(failure) if failure else None
-
     def set_ai_key_id(self, mac_address, account, key_id):
         if key_id is None:
             FakeRegistry.device.client.ai_key_ids.pop(account, None)
@@ -105,7 +88,6 @@ class FakeRegistry:
         client.token_sha256 = None
         client.version = None
         client.last_seen = None
-        client.modules = {}
 
 
 class StubCatalogCache:
@@ -237,7 +219,6 @@ def beat_body(**extra) -> dict:
 
 def test_heartbeat_reports_are_recorded_and_the_catalog_shipped(api):
     client, runtime, device = api
-    device.client.modules = {"anydesk": True}
 
     response = client.post(
         "/api/agent/heartbeat",
@@ -251,8 +232,7 @@ def test_heartbeat_reports_are_recorded_and_the_catalog_shipped(api):
 
     assert response.status_code == 200
     body = response.json()
-    # Nothing was asked for, so nothing is ordered: a stored wish is not a
-    # standing instruction the way the desired-state map was.
+    # Nothing was asked for, so nothing is ordered.
     assert body["module_orders"] == []
     # A stale hash gets both halves of the catalog; a matching one would not.
     assert body["catalog"] == CATALOG
@@ -273,7 +253,7 @@ def test_a_matching_catalog_hash_is_not_reshipped(api):
     assert response.json()["catalog_hash"] == CATALOG_HASH
 
 
-def test_heartbeat_applies_a_toggle_made_on_the_machine(api):
+def test_a_click_on_the_machine_becomes_one_order_and_nothing_stored(api):
     client, runtime, device = api
 
     response = client.post(
@@ -282,12 +262,13 @@ def test_heartbeat_applies_a_toggle_made_on_the_machine(api):
     )
 
     assert response.status_code == 200
-    assert device.client.modules["anydesk"]["is_enabled"] is True
-    # The machine's own page enters by the controller's door, so a toggle
-    # there becomes an order exactly as the drawer's button would.
+    # The machine's own page enters by the controller's door, so a click
+    # there becomes an order exactly as the drawer's button would — and an
+    # order is the whole of what it leaves behind.
     order = runtime.agent_module_orders.open_order_for(MAC, "anydesk")
     assert order is not None
     assert order.action == "install"
+    assert not hasattr(device.client, "modules")
 
 
 def test_accounts_and_last_error_land_in_the_runtime(api):
@@ -887,54 +868,27 @@ def _beat(**fields):
     return body
 
 
-def test_a_wish_nobody_attempted_is_carried_out_after_a_restart(api):
-    """The queue is memory and a restart may lose an order; the decision it
-    came from is on disk, and a beat is where the hub notices the gap."""
+def test_a_beat_never_orders_anything_by_itself(api):
+    """A click is one order and nothing more: the hub keeps no record of
+    what a machine should have, so software installed or removed by hand is
+    displayed, never fought — and a restarted hub waits for a person."""
     client, runtime, device = api
-    FakeRegistry.device.client.modules["anydesk"] = {
-        "is_enabled": True,
-        "is_activated": False,
-        "failed": None,
-    }
 
-    reply = client.post(
-        "/api/agent/heartbeat",
-        json=_beat(modules={"anydesk": {"state": "absent"}}),
-    )
-
-    assert reply.status_code == 200
-    assert [order["module"] for order in reply.json()["module_orders"]] == ["anydesk"]
+    for reported in ("absent", "installed"):
+        reply = client.post(
+            "/api/agent/heartbeat",
+            json=_beat(modules={"anydesk": {"state": reported}}),
+        )
+        assert reply.status_code == 200
+        assert reply.json()["module_orders"] == []
+    assert runtime.agent_module_orders.orders(MAC.lower()) == []
 
 
-def test_a_wish_a_refusal_stands_against_waits_for_a_person(api):
-    """The rule this must not break: a refused order is never retried by a
-    tick, a beat, or a restart — only by somebody asking again."""
+def test_a_failed_order_waits_for_a_person_and_a_new_click_runs(api):
+    """No timer retries a failure; the next click clears it and runs."""
     client, runtime, device = api
-    FakeRegistry.device.client.modules["anydesk"] = {
-        "is_enabled": True,
-        "is_activated": False,
-        "failed": {"code": "vendor_served_a_page", "params": {}},
-    }
-
-    reply = client.post(
-        "/api/agent/heartbeat",
-        json=_beat(modules={"anydesk": {"state": "absent"}}),
-    )
-
-    assert reply.status_code == 200
-    assert reply.json()["module_orders"] == []
-
-
-def test_a_refusal_is_written_down_where_a_restart_still_finds_it(api):
-    """Orders die with the process; the refusal that closed one must not,
-    or the next beat reads an unattempted wish and asks again."""
-    client, runtime, device = api
-    FakeRegistry.device.client.modules["anydesk"] = {
-        "is_enabled": True,
-        "is_activated": False,
-        "failed": None,
-    }
-    order = runtime.agent_module_orders.ask(
+    controller = runtime.agent_module_orders
+    order = controller.ask(
         mac_address=MAC.lower(),
         module="anydesk",
         manifest={"kind": "package", "platforms": {"linux": {"url": "u"}}},
@@ -960,44 +914,18 @@ def test_a_refusal_is_written_down_where_a_restart_still_finds_it(api):
         ),
     )
 
-    stored = FakeRegistry.device.client.modules["anydesk"]
-    assert stored["failed"] == {"code": "install_failed", "params": {}}
-
-
-def test_a_disable_wish_is_honoured_with_an_order(api):
-    """Both directions ride the queue: a hub restarted between the click and
-    the removal still carries the decision out on the next beat."""
-    client, runtime, device = api
-    FakeRegistry.device.client.modules["anydesk"] = {
-        "is_enabled": False,
-        "is_activated": False,
-        "failed": None,
-    }
-
+    assert controller.failure_for(MAC.lower(), "anydesk") is not None
+    # Beats change nothing while the failure stands.
     reply = client.post(
-        "/api/agent/heartbeat",
-        json=_beat(modules={"anydesk": {"state": "installed"}}),
+        "/api/agent/heartbeat", json=_beat(modules={"anydesk": {"state": "absent"}})
     )
-
-    assert reply.status_code == 200
-    orders = reply.json()["module_orders"]
-    assert [(o["module"], o["action"]) for o in orders] == [("anydesk", "remove")]
-
-
-def test_a_disable_wish_already_true_asks_nothing(api):
-    client, runtime, device = api
-    FakeRegistry.device.client.modules["anydesk"] = {
-        "is_enabled": False,
-        "is_activated": False,
-        "failed": None,
-    }
-
-    reply = client.post(
-        "/api/agent/heartbeat",
-        json=_beat(modules={"anydesk": {"state": "absent"}}),
-    )
-
     assert reply.json()["module_orders"] == []
+    # A person asking again is a fresh start.
+    client.post(
+        "/api/agent/heartbeat",
+        json=_beat(module_requests={"anydesk": {"is_enabled": True}}),
+    )
+    assert controller.failure_for(MAC.lower(), "anydesk") is None
 
 
 def _wait_for_handed(runtime, timeout_s: float = 3.0):

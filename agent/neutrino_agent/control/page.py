@@ -131,9 +131,11 @@ const WORDS = {
     disconnect: "Disconnect",
     privileged_only: "Sign in as an administrator to change this.",
     install: "Install",
-    remove: "Remove",
-    enable: "Enable",
-    disable: "Disable",
+    uninstall: "Uninstall",
+    built_in: "built in",
+    uninstall_ssh_title: "Uninstall the SSH server?",
+    uninstall_ssh_body:
+      "SSH stops answering on this machine; the agent channel keeps managing it.",
     apply: "Apply",
     config: "Config",
     mount: "Mount",
@@ -186,12 +188,8 @@ const WORDS = {
   states: {
     installed: "installed",
     absent: "not installed",
-    enabled: "enabled",
-    disabled: "disabled",
     installing: "installing…",
-    removing: "removing…",
-    enabling: "enabling…",
-    disabling: "disabling…",
+    uninstalling: "uninstalling…",
     activating: "switching…",
     deactivating: "switching back…",
     unsupported: "not available on this machine",
@@ -210,8 +208,7 @@ const WORDS = {
     module_artifact_missing: "the hub no longer holds that download; ask again",
     module_digest_mismatch: "what arrived did not match the hub's checksum",
     agent_never_reported: "this machine never said how the install went",
-    remove_unconfirmed: "the removal finished, but the software is still there",
-    switch_unconfirmed: "the switch ran, but the machine did not change",
+    uninstall_unconfirmed: "the uninstall finished, but the software is still there",
     no_download_named: "the catalog names no download for this machine",
     unsupported_platform: "this machine cannot do this",
     unknown_kind: "the agent does not know this kind of module",
@@ -296,8 +293,7 @@ function wordError(e) {
 // there. A click changes the row at once: an install can finish between two
 // heartbeats, and a button that looks unpressed is worse than a stale label.
 const asked = {};
-const BUSY = ['installing', 'removing', 'enabling', 'disabling',
-  'activating', 'deactivating'];
+const BUSY = ['installing', 'uninstalling', 'activating', 'deactivating'];
 
 let lastState = null;
 let lastSerialized = '';
@@ -430,8 +426,8 @@ function isOperationRunning(state) {
 // has its own word.
 function operationWord(op) {
   if (op.state === 'installing') {
-    const transient = { install: 'installing', remove: 'removing',
-      enable: 'enabling', disable: 'disabling' }[op.action];
+    const transient = { install: 'installing',
+      uninstall: 'uninstalling' }[op.action];
     return WORDS.states[transient] || WORDS.operation.running;
   }
   return WORDS.operation[op.state] || op.state;
@@ -530,9 +526,9 @@ function errorLine(text) {
 // What a module row stands at, mid-step included. A step shows the world it
 // is leaving, not the one it is heading for.
 function standing(m) {
-  if (m.state === 'installing' || m.state === 'enabling') return false;
-  if (m.state === 'removing' || m.state === 'disabling') return true;
-  return m.state === 'installed' || m.state === 'enabled';
+  if (m.state === 'installing') return false;
+  if (m.state === 'uninstalling') return true;
+  return m.state === 'installed';
 }
 
 function withAsked(m) {
@@ -548,9 +544,7 @@ function withAsked(m) {
 function hasArrived(m, step) {
   if (m.state === 'failed' || BUSY.indexOf(m.state) >= 0) return true;
   if (step === 'installing') return m.state === 'installed';
-  if (step === 'removing') return m.state === 'absent';
-  if (step === 'enabling') return m.state === 'enabled';
-  return m.state === 'disabled';
+  return m.state === 'absent';
 }
 
 function drawModules(state) {
@@ -570,12 +564,12 @@ function drawModules(state) {
   const isHeld = isOperationRunning(state);
   for (const raw of state.modules) {
     const m = withAsked(raw);
-    const isSwitch = m.kind === 'openssh';
     const isOn = standing(m);
     const working = BUSY.indexOf(m.state) >= 0;
     const tone = isOn ? 'ok' : m.state === 'failed' ? 'bad' : 'off';
     const worded = wordCode(m.code, m.params);
     const note = !m.is_supported ? WORDS.ui.not_for_platform
+      : m.is_native ? WORDS.ui.built_in
       : (WORDS.states[m.state] || WORDS.states.unknown) +
         (worded ? ' — ' + worded : '');
     const row = document.createElement('div');
@@ -591,23 +585,54 @@ function drawModules(state) {
       continue;
     }
     const button = document.createElement('button');
-    if (isSwitch) {
-      button.className = isOn ? 'danger' : 'install';
-      button.textContent = isOn ? WORDS.ui.disable : WORDS.ui.enable;
-    } else {
-      button.className = isOn ? 'danger' : 'install';
-      button.textContent = isOn ? WORDS.ui.remove : WORDS.ui.install;
-    }
+    button.className = isOn ? 'danger' : 'install';
+    button.textContent = isOn ? WORDS.ui.uninstall : WORDS.ui.install;
     button.disabled = !isPrivileged || !m.is_supported || working || isHeld;
     button.title = isPrivileged ? '' : WORDS.ui.privileged_only;
-    button.onclick = () => askFor(m.name,
-      isSwitch ? (isOn ? 'disabling' : 'enabling')
-               : (isOn ? 'removing' : 'installing'),
+    const act = () => askFor(m.name, isOn ? 'uninstalling' : 'installing',
       { name: m.name, is_enabled: !isOn });
+    // Losing SSH can lock a person out, so its uninstall asks first.
+    button.onclick = (m.kind === 'openssh' && isOn)
+      ? () => confirmDialog(WORDS.ui.uninstall_ssh_title,
+          WORDS.ui.uninstall_ssh_body, WORDS.ui.uninstall, act)
+      : act;
     row.appendChild(button);
     panel.appendChild(row);
   }
   return panel;
+}
+
+function confirmDialog(title, body, confirmLabel, onConfirm) {
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  const modal = document.createElement('div');
+  modal.className = 'card modal';
+  const heading = document.createElement('div');
+  heading.className = 'title';
+  heading.textContent = title;
+  const text = document.createElement('div');
+  text.className = 'muted';
+  text.textContent = body;
+  const actions = document.createElement('div');
+  actions.className = 'row';
+  const confirm = document.createElement('button');
+  confirm.className = 'danger';
+  confirm.textContent = confirmLabel;
+  confirm.onclick = () => { closeDialog(overlay); onConfirm(); };
+  const cancel = document.createElement('button');
+  cancel.className = 'ghost';
+  cancel.textContent = WORDS.ui.cancel;
+  cancel.onclick = () => closeDialog(overlay);
+  actions.appendChild(confirm);
+  actions.appendChild(cancel);
+  modal.appendChild(heading);
+  modal.appendChild(text);
+  modal.appendChild(actions);
+  overlay.appendChild(modal);
+  overlay.onclick = (event) => {
+    if (event.target === overlay) closeDialog(overlay);
+  };
+  openDialog(overlay);
 }
 
 function entriesOf(state, type) {
@@ -661,7 +686,7 @@ function missingModules(state, entries) {
   return needed
     .filter((name) => {
       const row = byName[name];
-      return !row || ['installed', 'enabled'].indexOf(row.state) < 0;
+      return !row || row.state !== 'installed';
     })
     .map((name) => byName[name] || { name: name, title: name });
 }

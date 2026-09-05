@@ -1,6 +1,6 @@
 """Carrying out the hub's orders, and reporting what is true.
 
-The hub sends orders — install this, remove that — and this machine runs
+The hub sends orders — install this, uninstall that — and this machine runs
 them one at a time and says how each went. :class:`ReconcileWorker` is the
 shared pattern: a thread woken by news, a signature that skips unchanged
 inputs, an idle re-check so drift is still noticed, and per-name typed
@@ -26,7 +26,7 @@ import time
 
 from neutrino_agent.constants import AGENT_MODULE_OUTPUT_LIMIT_BYTES
 from neutrino_agent.modules.installers import InstallError
-from neutrino_agent.modules.openssh import OpensshModuleReconciler
+from neutrino_agent.modules.openssh import OpensshModuleRunner
 from neutrino_agent.modules.package import PackageModuleRunner
 from neutrino_agent.modules.switcher import SwitcherModuleRunner
 from neutrino_agent.modules.system_package import SystemPackageModuleRunner
@@ -38,19 +38,19 @@ from neutrino_agent.platforms.detect import platform_tuple
 # a Raspberry Pi busy doing nothing.
 IDLE_RECHECK_INTERVAL_S = 60
 
-# What the hub can order. Only `install` needs bytes.
+# What the hub can order. Only an `install` with an artifact needs bytes.
 ORDER_INSTALL = "install"
-ORDER_REMOVE = "remove"
-ORDER_ENABLE = "enable"
-ORDER_DISABLE = "disable"
+ORDER_UNINSTALL = "uninstall"
 
 # What each action shows while it runs, per the module state table.
 ORDER_TRANSIENTS = {
     ORDER_INSTALL: "installing",
-    ORDER_REMOVE: "removing",
-    ORDER_ENABLE: "enabling",
-    ORDER_DISABLE: "disabling",
+    ORDER_UNINSTALL: "uninstalling",
 }
+
+# The kinds whose install runs by name with the platform's own tooling; the
+# rest install from the artifact an order hands down.
+BY_NAME_KINDS = ("system_package", "openssh")
 
 ORDER_DONE = "done"
 ORDER_FAILED = "failed"
@@ -162,7 +162,7 @@ class ModuleEngine(ReconcileWorker):
         self._system = SystemPackageModuleRunner(
             platform=platform, log=self._collect, publish=self._publish
         )
-        self._openssh = OpensshModuleReconciler(
+        self._openssh = OpensshModuleRunner(
             platform=platform, log=self._collect, publish=self._publish
         )
         super().__init__(log=log, on_change=on_change)
@@ -288,25 +288,19 @@ class ModuleEngine(ReconcileWorker):
         if not isinstance(resolved, dict) or resolved.get("entry") is None:
             return _typed("unsupported", "no_platform_build")
         kind = resolved.get("kind", "")
+        runner = self._runner_for(kind)
+        if runner is None:
+            return _typed("unknown", "unknown_kind", kind=kind)
         try:
-            if kind in ("package", "switcher"):
-                is_present = self._runner_for(kind).verify(resolved)
-                return _typed("installed" if is_present else "absent", "")
-            if kind == "system_package":
-                if self._system.is_native(resolved):
-                    return _typed("enabled", "")
-                is_present = self._system.verify(resolved)
-                return _typed("installed" if is_present else "absent", "")
-            if kind == "openssh":
-                status = self._openssh.reconcile(
-                    name=name, manifest={}, entry=resolved["entry"], wanted=None
-                )
-                return dict(status)
+            # A module the platform carries natively is simply there.
+            if kind == "system_package" and self._system.is_native(resolved):
+                return _typed("installed", "")
+            is_present = runner.verify(resolved)
+            return _typed("installed" if is_present else "absent", "")
         except PlatformUnsupportedError:
             return _typed("failed", "unsupported_platform")
         except Exception as error:  # noqa: BLE001 - reported, never raised
             return _typed("failed", "verify_failed", detail=str(error)[:200])
-        return _typed("unknown", "unknown_kind", kind=kind)
 
     def _run_order(self, order: dict) -> None:
         """Do what one order says, and record how it went.
@@ -374,47 +368,31 @@ class ModuleEngine(ReconcileWorker):
             Empty when it took, ``{"code", "params"}`` when it did not.
         """
         kind = str(resolved.get("kind", ""))
+        runner = self._runner_for(kind)
+        if runner is None:
+            return {"code": "unknown_kind", "params": {"kind": kind}}
         if action == ORDER_INSTALL:
-            if kind == "system_package":
-                self._collect(f"{name}: installing packages")
-                self._system.install(resolved)
+            if kind in BY_NAME_KINDS:
+                runner.install(resolved)
             else:
                 refusal = self._install(name, resolved, order)
                 if refusal:
                     return refusal
             # Verify is the whole point of the step: a package manager that
             # exits zero and installs nothing is a thing that happens.
-            return (
-                {}
-                if self._runner_for(kind).verify(resolved)
-                else {"code": "install_unconfirmed"}
-            )
-        if action == ORDER_REMOVE:
-            self._runner_for(kind).remove(resolved)
-            return (
-                {}
-                if not self._runner_for(kind).verify(resolved)
-                else {"code": "remove_unconfirmed"}
-            )
-        is_enabled = action == ORDER_ENABLE
-        status = self._openssh.reconcile(
-            name=name,
-            manifest={},
-            entry=resolved["entry"],
-            wanted={"is_enabled": is_enabled},
-        )
-        wanted_state = "enabled" if is_enabled else "disabled"
-        if status.get("state") == wanted_state:
-            return {}
-        return {"code": str(status.get("code") or "switch_unconfirmed")}
+            return {} if runner.verify(resolved) else {"code": "install_unconfirmed"}
+        runner.remove(resolved)
+        return {} if not runner.verify(resolved) else {"code": "uninstall_unconfirmed"}
 
     def _runner_for(self, kind: str):
-        """The runner that owns one manifest kind's install and verify."""
-        if kind == "switcher":
-            return self._switcher
-        if kind == "system_package":
-            return self._system
-        return self._package
+        """The runner that owns one manifest kind, or None for a kind this
+        agent does not know."""
+        return {
+            "package": self._package,
+            "switcher": self._switcher,
+            "system_package": self._system,
+            "openssh": self._openssh,
+        }.get(kind)
 
     def _install(self, name: str, resolved: dict, order: dict) -> dict:
         """Get the bytes the hub holds and install them.

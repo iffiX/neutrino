@@ -21,6 +21,7 @@ from neutrino_agent.constants import AGENT_COMMAND_TIMEOUT_S
 from neutrino_agent.platforms.base import AgentPlatform
 
 WINDOWS_PROFILES_DIR = "C:\\Users"
+WINDOWS_OPENSSH_CAPABILITY = "OpenSSH.Server~~~~0.0.1.0"
 
 
 class WindowsPlatform(AgentPlatform):
@@ -130,46 +131,45 @@ class WindowsPlatform(AgentPlatform):
         """
         installers.uninstall_package(command)
 
-    def enable_openssh(self, entry: dict) -> None:
-        """Install the OpenSSH server capability and start ``sshd``.
+    def install_openssh(self, entry: dict) -> None:
+        """Install the SSH server capability and start ``sshd``.
 
         Args:
-            entry: The manifest's platform entry.
+            entry: The manifest's platform entry, naming the capability.
 
         Raises:
             InstallError: If PowerShell refuses.
         """
+        capability = entry.get("capability", WINDOWS_OPENSSH_CAPABILITY)
         installers.run_checked(
             [
                 "powershell",
                 "-NoProfile",
                 "-Command",
-                "Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0; "
+                f"Add-WindowsCapability -Online -Name {capability}; "
                 "Set-Service -Name sshd -StartupType Automatic; "
                 "Start-Service sshd",
             ],
             timeout_s=installers.INSTALL_TIMEOUT_S,
         )
 
-    def disable_openssh(self, entry: dict) -> None:
-        """Stop ``sshd`` and keep it from starting again.
-
-        The capability stays installed; disabled means the service does not
-        run.
+    def uninstall_openssh(self, entry: dict) -> None:
+        """Stop ``sshd`` and remove the SSH server capability.
 
         Args:
-            entry: The manifest's platform entry.
+            entry: The manifest's platform entry, naming the capability.
 
         Raises:
             InstallError: If PowerShell refuses.
         """
+        capability = entry.get("capability", WINDOWS_OPENSSH_CAPABILITY)
         installers.run_checked(
             [
                 "powershell",
                 "-NoProfile",
                 "-Command",
                 "Stop-Service sshd -ErrorAction SilentlyContinue; "
-                "Set-Service -Name sshd -StartupType Disabled",
+                f"Remove-WindowsCapability -Online -Name {capability}",
             ],
             timeout_s=installers.INSTALL_TIMEOUT_S,
         )

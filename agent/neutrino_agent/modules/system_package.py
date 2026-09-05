@@ -1,9 +1,9 @@
-"""Installing and removing modules the machine's own package manager carries.
+"""Installing and uninstalling modules the machine's package manager carries.
 
 A system-package module names distro packages, never a download: its orders
 skip the hub's cache and the platform installs the names with its own
 tooling. An entry with no packages means the platform carries the capability
-natively — nothing to install, and the module reads as enabled.
+natively — nothing to install, and the row reads as built in.
 
 Not pure: runs the package manager.
 """

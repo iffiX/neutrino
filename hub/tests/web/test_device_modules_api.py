@@ -38,16 +38,6 @@ class FakeRegistry:
             FakeRegistry.device.name = payload["name"]
         return FakeRegistry.device
 
-    def set_module(self, mac_address, module, is_enabled=None, is_activated=None):
-        wanted = FakeRegistry.device.client.modules.setdefault(
-            module, {"is_enabled": False, "is_activated": False}
-        )
-        if is_enabled is not None:
-            wanted["is_enabled"] = is_enabled
-        if is_activated is not None:
-            wanted["is_activated"] = is_activated
-        return FakeRegistry.device
-
 
 class StubModuleCache:
     """A cache that answers at once and never reaches a vendor."""
@@ -165,7 +155,7 @@ def test_what_the_agent_reported_is_found_whatever_case_the_MAC_is_asked_in(api)
     assert answer["modules"][0]["is_active"]
 
 
-def test_a_builtin_manifest_reads_as_a_toggle(api, monkeypatch):
+def test_the_manifest_kind_reaches_the_row_for_the_ssh_confirm(api, monkeypatch):
     client, _ = api
     monkeypatch.setattr(
         devices_router,
@@ -173,18 +163,15 @@ def test_a_builtin_manifest_reads_as_a_toggle(api, monkeypatch):
         lambda: {
             "openssh_server": {
                 "title": "SSH server",
-                "platforms": {"debian": {}},
-                "is_builtin": True,
+                "kind": "openssh",
+                "platforms": {"linux-debian": {"service": "ssh"}},
             }
         },
     )
 
     answer = client.get(f"/api/devices/{MAC}/modules").json()
 
-    assert answer["modules"][0]["is_builtin"] is True
-    # A builtin is switched, never "nothing to do": its empty entries mean
-    # the capability is there to toggle.
-    assert answer["modules"][0]["is_native"] is False
+    assert answer["modules"][0]["kind"] == "openssh"
 
 
 def test_a_native_module_offers_nothing_where_the_platform_carries_it(api, monkeypatch):
@@ -213,14 +200,16 @@ def test_a_native_module_offers_nothing_where_the_platform_carries_it(api, monke
     assert package["is_native"] is False
 
 
-def test_a_wish_is_recorded_and_answered(api):
-    client, _ = api
+def test_a_click_queues_one_order_and_the_row_shows_the_step(api):
+    client, runtime = api
 
     answer = client.put(
         f"/api/devices/{MAC}/modules/anydesk", json={"is_enabled": True}
     ).json()
 
-    assert answer["modules"][0]["is_enabled"] is True
+    assert answer["modules"][0]["state"] == "installing"
+    order = runtime.agent_module_orders.open_order_for(MAC, "anydesk")
+    assert order is not None and order.action == "install"
     unknown = client.put(
         f"/api/devices/{MAC}/modules/nonsense", json={"is_enabled": True}
     )

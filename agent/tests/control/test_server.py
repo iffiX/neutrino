@@ -490,7 +490,7 @@ def test_a_json_content_type_with_charset_passes(control):
     )
 
     assert status == 200
-    assert agent.requested == [("openssh_server", True, None)]
+    assert agent.requested == [("openssh_server", True)]
 
 
 def test_a_post_without_an_origin_header_passes(control):
@@ -520,7 +520,7 @@ def test_the_pages_own_origin_passes(control):
 
     assert status == 200
     assert state["caller"]["is_privileged"] is True
-    assert agent.requested == [("openssh_server", False, None)]
+    assert agent.requested == [("openssh_server", False)]
 
 
 def test_a_garbage_body_acts_on_nothing_and_never_crashes(control):
@@ -542,9 +542,10 @@ def test_a_garbage_body_acts_on_nothing_and_never_crashes(control):
     reply.read()
     connection.close()
 
-    # The garbage decodes to an empty object: nothing named, nothing done.
+    # The garbage decodes to an empty object: nothing named, and the agent's
+    # own guard does nothing with a nameless ask.
     assert status == 200
-    assert agent.requested == [("", None, None)]
+    assert agent.requested == [("", None)]
 
 
 # --- privileged verbs ---
@@ -597,16 +598,16 @@ def test_an_ordinary_token_may_not_use_privileged_verbs(control):
     assert agent.is_disconnected is False
 
 
-def test_a_module_activation_request_rides_through(control):
+def test_a_module_uninstall_request_rides_through(control):
     server, agent, platform = control
     platform.peer = dict(ROOT)
 
     status, _state = over_socket(
-        server, "POST", "/api/module", {"name": "openssh_server", "is_activated": True}
+        server, "POST", "/api/module", {"name": "openssh_server", "is_enabled": False}
     )
 
     assert status == 200
-    assert agent.requested == [("openssh_server", None, True)]
+    assert agent.requested == [("openssh_server", False)]
 
 
 def test_privileged_verbs_work_over_the_loopback_with_a_root_token(control):

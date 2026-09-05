@@ -179,8 +179,8 @@ class DarwinPlatform(AgentPlatform):
         """
         installers.uninstall_package(command)
 
-    def enable_openssh(self, entry: dict) -> None:
-        """Switch remote login on.
+    def install_openssh(self, entry: dict) -> None:
+        """Switch Remote Login on; the sealed system volume carries sshd.
 
         Args:
             entry: The manifest's platform entry.
@@ -190,8 +190,8 @@ class DarwinPlatform(AgentPlatform):
         """
         installers.run_checked(["systemsetup", "-setremotelogin", "on"])
 
-    def disable_openssh(self, entry: dict) -> None:
-        """Switch remote login off.
+    def uninstall_openssh(self, entry: dict) -> None:
+        """Switch Remote Login off; no binary moves.
 
         Args:
             entry: The manifest's platform entry.

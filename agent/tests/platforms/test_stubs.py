@@ -57,8 +57,8 @@ CONTRACT_CALLS = {
         {"package_kind": "deb", "entry": {}},
     ),
     "uninstall_package": ("packages", ("apt-get remove -y app",), {}),
-    "enable_openssh": ("openssh", ({},), {}),
-    "disable_openssh": ("openssh", ({},), {}),
+    "install_openssh": ("openssh", ({},), {}),
+    "uninstall_openssh": ("openssh", ({},), {}),
     "read_openssh_status": ("openssh", ({},), {}),
 }
 

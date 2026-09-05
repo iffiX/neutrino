@@ -11,18 +11,18 @@ import "./device_modules.css";
 /**
  * The modules a device runs, and their real state.
  *
- * A click changes the row at once. The gateway only records what should be
- * true and the machine reconciles on its own time, so waiting for either
- * before showing anything would leave a button that appears not to have been
- * pressed — an install can finish in the gap between two heartbeats, and then
- * the step is never seen at all. So the asked-for step is drawn immediately
- * and stands until the machine reports having got there.
+ * A click queues one order and changes the row at once. The machine runs it
+ * on its own time, so waiting for its report before showing anything would
+ * leave a button that appears not to have been pressed — an install can
+ * finish in the gap between two heartbeats, and then the step is never seen
+ * at all. So the asked-for step is drawn immediately and stands until the
+ * machine reports having got there.
  *
  * A module with no build for a platform is shown greyed rather than hidden:
  * knowing a machine cannot run something is worth more than wondering where
- * it went. A builtin module — a capability the platform already carries — is
- * worded enable/disable rather than install/uninstall, and disabling asks
- * first, because it is the door SSH management walks through.
+ * it went. A module the platform carries natively is worded built in, with
+ * no button. Uninstalling the SSH server asks first, because losing SSH can
+ * lock a person out.
  */
 
 const WORDING = {
@@ -33,19 +33,22 @@ const WORDING = {
     "What it was last told to run is shown; nothing can be changed until it " +
     "answers.",
   noBuild: "No build for this platform",
+  builtIn: "built in",
   aimedHere: "pointing at this hub",
   notAimedHere: "not pointing here",
   activate: "Activate",
   deactivate: "Deactivate",
   install: "Install",
   uninstall: "Uninstall",
-  enable: "Enable",
-  disable: "Disable",
-  disableTitle: "Disable {title}",
-  disableBody:
-    "The machine stops serving it; the agent channel keeps managing the " +
-    "machine either way.",
+  uninstallSshTitle: "Uninstall the SSH server on {title}",
+  uninstallSshBody:
+    "SSH stops answering on the machine; the agent channel keeps managing " +
+    "it either way.",
 };
+
+// The manifest kind whose uninstall asks first: losing SSH can lock a
+// person out of a machine the agent is not on yet.
+const OPENSSH_KIND = "openssh";
 
 // The agent's {code, params} beside a state, worded. A code without an entry
 // shows as itself, because a failure hidden entirely is worse than a bare code.
@@ -56,8 +59,8 @@ const MODULE_ERROR_WORDING: Record<string, string> = {
   install_failed: "The install failed. See Install output below.",
   install_unconfirmed:
     "The install finished, but the software cannot be found on the machine.",
-  remove_unconfirmed: "The removal finished, but the software is still there.",
-  switch_unconfirmed: "The switch ran, but the machine did not change.",
+  uninstall_unconfirmed:
+    "The uninstall finished, but the software is still there.",
   vendor_served_a_page:
     "The vendor served a challenge page instead of the package. Install it by hand on the machine; this row turns green by itself once it is there.",
   module_fetch_failed: "The hub could not fetch the package from the vendor.",
@@ -83,26 +86,11 @@ const STATE_WORDING: Record<string, string> = {
   installed: "installed",
   absent: "not installed",
   installing: "installing…",
-  removing: "uninstalling…",
   uninstalling: "uninstalling…",
   activating: "activating…",
   deactivating: "deactivating…",
   unsupported: "not available here",
   failed: "failed",
-};
-
-// A builtin module is enabled and disabled, and its states say so — the
-// agent reports those words as states for capability modules.
-const BUILTIN_STATE_WORDING: Record<string, string> = {
-  installed: "enabled",
-  absent: "disabled",
-  enabled: "enabled",
-  disabled: "disabled",
-  enabling: "enabling…",
-  disabling: "disabling…",
-  installing: "enabling…",
-  removing: "disabling…",
-  uninstalling: "disabling…",
 };
 const STATE_WORDING_FALLBACK = "waiting for the agent";
 
@@ -119,21 +107,17 @@ const STEP_PATIENCE_MS = 120_000;
 /** The four things that can be asked of a module. */
 type Step = "installing" | "uninstalling" | "activating" | "deactivating";
 
-// Every word that means a step is under way. The agent says "removing"
-// where a click says "uninstalling"; both belong here, or a row mid-step
-// reads as finished and offers the opposite button.
+// Every word that means a step is under way; a row mid-step must not read
+// as finished and offer the opposite button.
 const BUSY_STATES: string[] = [
   "installing",
   "uninstalling",
-  "removing",
   "activating",
   "deactivating",
-  "enabling",
-  "disabling",
 ];
 
-/** One change to what is wanted; the wish left out stays as it is. */
-interface ModuleWish {
+/** One click's ask; the hub queues one order for it and keeps nothing. */
+interface ModuleAsk {
   is_enabled?: boolean;
   is_activated?: boolean;
 }
@@ -230,16 +214,16 @@ export function DeviceModules({
     });
   }, [reported]);
 
-  const ask = async (deviceModule: DeviceModuleView, wish: ModuleWish) => {
+  const ask = async (deviceModule: DeviceModuleView, request: ModuleAsk) => {
     setAsked((current) => ({
       ...current,
-      [deviceModule.name]: { step: stepFor(wish), askedAt: Date.now() },
+      [deviceModule.name]: { step: stepFor(request), askedAt: Date.now() },
     }));
     setError(null);
     try {
       const response = await apiPut<DeviceModulesResponse>(
         `/devices/${macAddress}/modules/${deviceModule.name}`,
-        wish,
+        request,
       );
       setReported(response.modules);
       setAgent({
@@ -257,14 +241,14 @@ export function DeviceModules({
   };
 
   const askOff = (deviceModule: DeviceModuleView) => {
-    if (!deviceModule.is_builtin) {
+    if (deviceModule.kind !== OPENSSH_KIND) {
       void ask(deviceModule, { is_enabled: false });
       return;
     }
     confirm.ask({
-      title: fill(WORDING.disableTitle, { title: deviceModule.title }),
-      body: WORDING.disableBody,
-      confirmLabel: WORDING.disable,
+      title: fill(WORDING.uninstallSshTitle, { title: deviceModule.title }),
+      body: WORDING.uninstallSshBody,
+      confirmLabel: WORDING.uninstall,
       onConfirm: () => void ask(deviceModule, { is_enabled: false }),
     });
   };
@@ -335,16 +319,10 @@ export function DeviceModules({
                   }
                 >
                   <Icon
-                    name={
-                      deviceModule.is_builtin
-                        ? "power"
-                        : here.isOnMachine
-                          ? "trash"
-                          : "download"
-                    }
+                    name={here.isOnMachine ? "trash" : "download"}
                     size={13}
                   />
-                  {onOffLabel(deviceModule, here.isOnMachine)}
+                  {here.isOnMachine ? WORDING.uninstall : WORDING.install}
                 </button>
               )}
             </div>
@@ -376,7 +354,6 @@ function standing(deviceModule: DeviceModuleView): {
     case "installing":
       return { isOnMachine: false, isAimedHere: false };
     case "uninstalling":
-    case "removing":
       return { isOnMachine: true, isAimedHere: deviceModule.is_active };
     case "activating":
       return { isOnMachine: true, isAimedHere: false };
@@ -384,9 +361,7 @@ function standing(deviceModule: DeviceModuleView): {
       return { isOnMachine: true, isAimedHere: true };
     default:
       return {
-        isOnMachine:
-          deviceModule.state === "installed" ||
-          deviceModule.state === "enabled",
+        isOnMachine: deviceModule.state === "installed",
         isAimedHere: deviceModule.is_active,
       };
   }
@@ -394,15 +369,15 @@ function standing(deviceModule: DeviceModuleView): {
 
 /** Whether the machine reports having it, ignoring any step in flight. */
 function isPresent(deviceModule: DeviceModuleView): boolean {
-  return deviceModule.state === "installed" || deviceModule.state === "enabled";
+  return deviceModule.state === "installed";
 }
 
-/** Which step a wish amounts to. */
-function stepFor(wish: ModuleWish): Step {
-  if (wish.is_activated !== undefined) {
-    return wish.is_activated ? "activating" : "deactivating";
+/** Which step one ask amounts to. */
+function stepFor(request: ModuleAsk): Step {
+  if (request.is_activated !== undefined) {
+    return request.is_activated ? "activating" : "deactivating";
   }
-  return wish.is_enabled ? "installing" : "uninstalling";
+  return request.is_enabled ? "installing" : "uninstalling";
 }
 
 /** Whether the machine's report has caught up with what was asked. */
@@ -414,12 +389,10 @@ function hasArrived(deviceModule: DeviceModuleView, step: Step): boolean {
     return true;
   }
   if (step === "installing") {
-    return (
-      deviceModule.state === "installed" || deviceModule.state === "enabled"
-    );
+    return deviceModule.state === "installed";
   }
   if (step === "uninstalling") {
-    return deviceModule.state === "absent" || deviceModule.state === "disabled";
+    return deviceModule.state === "absent";
   }
   if (step === "activating") {
     return deviceModule.is_active;
@@ -436,7 +409,7 @@ function toneFor(
   if (BUSY_STATES.includes(deviceModule.state)) {
     return "warn";
   }
-  if (deviceModule.state === "installed" || deviceModule.state === "enabled") {
+  if (deviceModule.state === "installed") {
     return "ok";
   }
   if (deviceModule.state === "failed") {
@@ -445,24 +418,11 @@ function toneFor(
   return "idle";
 }
 
-/** The on/off button's verb, per the module's own semantics. */
-function onOffLabel(
-  deviceModule: DeviceModuleView,
-  isOnMachine: boolean,
-): string {
-  if (deviceModule.is_builtin) {
-    return isOnMachine ? WORDING.disable : WORDING.enable;
-  }
-  return isOnMachine ? WORDING.uninstall : WORDING.install;
-}
-
 /** What a row says under its title: where it is, and where it points. */
 function describeModule(deviceModule: DeviceModuleView): string {
-  const stateWording =
-    deviceModule.is_builtin || deviceModule.is_native
-      ? (BUILTIN_STATE_WORDING[deviceModule.state] ??
-        STATE_WORDING[deviceModule.state])
-      : STATE_WORDING[deviceModule.state];
+  const stateWording = deviceModule.is_native
+    ? WORDING.builtIn
+    : STATE_WORDING[deviceModule.state];
   const parts = [stateWording ?? STATE_WORDING_FALLBACK];
   if (
     deviceModule.has_activation &&

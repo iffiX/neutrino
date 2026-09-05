@@ -502,8 +502,11 @@ class AgentPlatform:
         """
         raise PlatformUnsupportedError("cannot remove system packages here")
 
-    def enable_openssh(self, entry: dict) -> None:
-        """Switch the platform's own SSH server on.
+    def install_openssh(self, entry: dict) -> None:
+        """Put the platform's SSH server in place and serving.
+
+        The mechanics are each platform's own: a package plus its unit on
+        Linux, a Windows capability plus ``sshd``, Remote Login on macOS.
 
         Args:
             entry: The manifest's platform entry.
@@ -513,8 +516,11 @@ class AgentPlatform:
         """
         raise PlatformUnsupportedError("no SSH server story here")
 
-    def disable_openssh(self, entry: dict) -> None:
-        """Switch the platform's own SSH server off.
+    def uninstall_openssh(self, entry: dict) -> None:
+        """Take the platform's SSH server away.
+
+        On macOS the sealed system volume keeps the binaries; uninstall
+        switches Remote Login off and nothing moves.
 
         Args:
             entry: The manifest's platform entry.

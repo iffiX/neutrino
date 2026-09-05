@@ -107,13 +107,11 @@ def _module_rows(agent, modules: dict) -> list:
         One row per module.
     """
     reported = agent.module_states()
-    pending = agent.pending_module_requests()
     rows = []
     for name, resolved in sorted(modules.items()):
         if not isinstance(resolved, dict):
             continue
         status = reported.get(name, {})
-        state = status.get("state", "unknown")
         rows.append(
             {
                 "name": name,
@@ -121,19 +119,10 @@ def _module_rows(agent, modules: dict) -> list:
                 "description": resolved.get("description", ""),
                 "kind": resolved.get("kind", ""),
                 "is_supported": resolved.get("entry") is not None,
-                # The platform carries this natively: nothing to install,
-                # so the row gets no button.
-                "is_native": (
-                    resolved.get("entry") == {} and not resolved.get("is_builtin")
-                ),
-                # What is true, unless this machine has asked for something
-                # the hub has not answered yet.
-                "is_enabled": bool(
-                    pending.get(name, {}).get(
-                        "is_enabled", state in ("installed", "enabled")
-                    )
-                ),
-                "state": state,
+                # The platform carries this natively: worded built in, no
+                # button.
+                "is_native": resolved.get("entry") == {},
+                "state": status.get("state", "unknown"),
                 "code": status.get("code", ""),
                 "params": status.get("params", {}),
             }
@@ -436,9 +425,7 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
             return
         agent = self.server.control_agent
         agent.request_module(
-            str(body.get("name", "")),
-            is_enabled=body.get("is_enabled"),
-            is_activated=body.get("is_activated"),
+            str(body.get("name", "")), is_enabled=body.get("is_enabled")
         )
         self._send_json(_scoped_state(agent, identity))
 

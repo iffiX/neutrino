@@ -1,45 +1,58 @@
-"""Reconciling the platform's own SSH server.
+"""Installing and uninstalling the platform's own SSH server.
 
-A platform capability the machine already carries, so its two states are
-enabled and disabled — the server binary is a package dependency on Linux
-and built into macOS and Windows, and nothing is ever downloaded or removed.
-Disabling is allowed: the agent channel is the management path, not SSH.
+One pair of verbs, mechanics each platform's own: Linux installs the server
+package and starts its unit, and uninstall genuinely removes the package;
+Windows adds and removes the capability; macOS switches Remote Login, since
+its sealed system volume lets nothing be removed. The row reads installed
+while the server is serving. Uninstalling is allowed: the agent channel is
+the management path, not SSH.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
-from neutrino_agent.modules.base import ModuleReconciler, clean_status
+from neutrino_agent.modules.base import ModuleRunner
 
 
-class OpensshModuleReconciler(ModuleReconciler):
-    """Switches the platform's SSH server on and off and reports its state."""
+class OpensshModuleRunner(ModuleRunner):
+    """Puts the platform's SSH server in service and takes it out."""
 
     kind = "openssh"
 
-    def reconcile(
-        self, *, name: str, manifest: dict, entry: dict, wanted: "dict | None"
-    ) -> dict:
-        """Bring the SSH server to its desired state, or just report it.
+    def verify(self, resolved: dict) -> bool:
+        """Whether the SSH server is serving.
 
         Args:
-            name: The module name.
-            manifest: Its manifest.
-            entry: The manifest's entry for this platform.
-            wanted: The hub's decision, or None to only inspect.
+            resolved: The module as the hub resolved it.
 
         Returns:
-            ``{"state", "code", "params", "is_active"}``.
+            True when the platform reports it on.
         """
-        is_enabled = None if wanted is None else bool(wanted.get("is_enabled"))
-        is_running = self._platform.read_openssh_status(entry)
-        if is_enabled is None or is_enabled == is_running:
-            return clean_status("enabled" if is_running else "disabled")
-        if is_enabled:
-            self._log("enabling the SSH server")
-            self._platform.enable_openssh(entry)
-            return clean_status("enabled")
-        self._log("disabling the SSH server")
-        self._platform.disable_openssh(entry)
-        return clean_status("disabled")
+        return self._platform.read_openssh_status(resolved.get("entry") or {})
+
+    def install(self, resolved: dict) -> None:
+        """Have the SSH server in place and serving.
+
+        Args:
+            resolved: The module as the hub resolved it.
+
+        Raises:
+            InstallError: If the platform's own step refuses.
+            PlatformUnsupportedError: If this platform has no SSH story.
+        """
+        self._log("installing the SSH server")
+        self._platform.install_openssh(resolved.get("entry") or {})
+
+    def remove(self, resolved: dict) -> None:
+        """Take the SSH server out of service.
+
+        Args:
+            resolved: The module as the hub resolved it.
+
+        Raises:
+            InstallError: If the platform's own step refuses.
+            PlatformUnsupportedError: If this platform has no SSH story.
+        """
+        self._log("uninstalling the SSH server")
+        self._platform.uninstall_openssh(resolved.get("entry") or {})

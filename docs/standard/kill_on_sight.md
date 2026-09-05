@@ -44,6 +44,12 @@ the moment you see them.
   type. See [coding_style/typescript_style.md](coding_style/typescript_style.md).
 - **black / prettier / eslint not run.** `black --check` must pass on Python;
   `prettier --check` and `eslint` must pass on the frontend.
+- **Unasked survival machinery.** Persistence, reconciliation, or migration
+  added on nobody's request so state outlives a restart, reinstall, or
+  upgrade of an unreleased version. Before release, a clean reconfigure or a
+  reinstall is the recovery path; released versions get migration design when
+  the user asks for it. Never mixed into a commit that was asked to do
+  something else.
 
 - A comment, hint, or error message that narrates reasoning instead of
   stating the fact — see coding_style/comment_style.md.

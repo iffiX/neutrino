@@ -411,9 +411,9 @@ def test_linux_mount_and_unmount_failures_carry_the_tools_own_words(
     assert recorded["command"] == ["umount", "/home/alice/nas/media"]
 
 
-def test_linux_openssh_installs_the_server_then_switches_its_unit(monkeypatch):
-    """The server is a package recommendation, so a machine that skipped it
-    gets it installed before the unit is asked to start."""
+def test_linux_openssh_installs_the_package_and_uninstall_removes_it(monkeypatch):
+    """Install puts the missing package before the unit starts; uninstall
+    stops the unit and genuinely removes the package."""
     present = {"apt-get": "/usr/bin/apt-get"}
     monkeypatch.setattr(linux_module.shutil, "which", present.get)
     real_exists = linux_module.os.path.exists
@@ -430,16 +430,17 @@ def test_linux_openssh_installs_the_server_then_switches_its_unit(monkeypatch):
     )
     platform = LinuxPlatform()
 
-    platform.enable_openssh({"service": "sshd"})
+    platform.install_openssh({"packages": ["openssh-server"], "service": "sshd"})
     present["sshd"] = "/usr/sbin/sshd"
-    platform.enable_openssh({})
-    platform.disable_openssh({})
+    platform.install_openssh({})
+    platform.uninstall_openssh({})
 
     assert commands == [
         ["apt-get", "install", "-y", "openssh-server"],
         ["systemctl", "enable", "--now", "sshd"],
         ["systemctl", "enable", "--now", "ssh"],
         ["systemctl", "disable", "--now", "ssh"],
+        ["apt-get", "purge", "-y", "openssh-server"],
     ]
 
 

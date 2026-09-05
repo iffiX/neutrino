@@ -20,19 +20,13 @@ from neutrino_hub.modules.devices.agent_module_cache import (
     resolve_platform_entry,
 )
 from neutrino_hub.modules.devices.agent_module_controller import (
-    ORDER_ACTION_DISABLE,
-    ORDER_ACTION_ENABLE,
     ORDER_ACTION_INSTALL,
-    ORDER_ACTION_REMOVE,
+    ORDER_ACTION_UNINSTALL,
     ask_module,
 )
 from neutrino_hub.modules.devices.agent_package import agent_packages
 from neutrino_hub.modules.devices.constants import DEVICE_MAC_PATTERN
-from neutrino_hub.modules.devices.registry import (
-    DeviceRegistry,
-    ManagedDevice,
-    module_wish,
-)
+from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
@@ -90,9 +84,7 @@ POWER_ACTIONS = ("reboot", "shutdown")
 # the beat that carries the order down.
 _ORDER_STEP_STATES = {
     ORDER_ACTION_INSTALL: "installing",
-    ORDER_ACTION_REMOVE: "removing",
-    ORDER_ACTION_ENABLE: "enabling",
-    ORDER_ACTION_DISABLE: "disabling",
+    ORDER_ACTION_UNINSTALL: "uninstalling",
 }
 
 LOGIN_KIND = "login"
@@ -473,7 +465,6 @@ def list_modules(
     for name, manifest in sorted(load_module_manifests().items()):
         status_ = reported.get(name, {})
         platforms = manifest.get("platforms", {})
-        wanted = module_wish(device.client.modules.get(name))
         state = status_.get("state", "unknown")
         code = str(status_.get("code") or "")
         params = dict(status_.get("params") or {})
@@ -494,14 +485,12 @@ def list_modules(
                 name=name,
                 title=manifest.get("title", name),
                 description=manifest.get("description", ""),
+                kind=manifest.get("kind", ""),
                 # With no platform reported yet, nothing is ruled out: the
                 # agent will say what it cannot do once it beats.
                 is_supported=(any(key in platforms for key in keys) if keys else True),
-                is_enabled=wanted["is_enabled"],
-                is_builtin=manifest.get("is_builtin", False),
-                is_native=(entry == {} and not manifest.get("is_builtin", False)),
+                is_native=(entry == {}),
                 has_activation=manifest.get("has_activation", False),
-                is_activated=wanted["is_activated"],
                 is_active=bool(status_.get("is_active")),
                 state=state,
                 code=code,
@@ -522,20 +511,19 @@ def set_module(
     request: DeviceModuleUpdate,
     runtime: PanelRuntime = Depends(get_runtime),
 ) -> DeviceModuleListView:
-    """Change what is wanted of one module on a device.
+    """Queue one install or uninstall order for one module on a device.
 
-    Installing and activating are separate wishes and either can be sent on
-    its own. The agent picks the change up on its next heartbeat and
-    reconciles; this only records what should be true.
+    A click is one order and nothing more: the hub records no standing
+    state, and what the machine reports afterwards is simply shown.
 
     Args:
         mac_address: The device.
         module: The module name.
-        request: The wishes to change; absent ones are left alone.
+        request: Which way the click went.
         runtime: The shared runtime.
 
     Returns:
-        The modules after the change.
+        The modules after the order was queued.
 
     Raises:
         HTTPException: 404 for a module with no manifest.
@@ -546,12 +534,6 @@ def set_module(
             status_code=status.HTTP_404_NOT_FOUND, detail="unknown module"
         )
     key = mac_address.lower()
-    device = DeviceRegistry().set_module(
-        mac_address,
-        module,
-        is_enabled=request.is_enabled,
-        is_activated=request.is_activated,
-    )
     if request.is_enabled is not None:
         reported = runtime.client_modules.get(key, {}).get(module) or {}
         ask_module(

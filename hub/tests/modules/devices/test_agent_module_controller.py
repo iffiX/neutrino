@@ -3,7 +3,8 @@
 The rule this file exists for is that **no timer retries a failed order**.
 A vendor refusing now refuses in a minute, so a failure stands until a
 person asks again — and clears on its own only when the question is settled
-another way: the software turning up anyway, or the wish being reversed.
+another way: the software turning up anyway, or an order for the opposite
+action.
 
 Also pinned: two requests for one device run in the order they were made,
 and the SSH bootstrap shares the device's lock without entering the module
@@ -38,10 +39,10 @@ MANIFEST = {
         "linux-debian-amd64": {"url": "https://x/y.deb", "package_kind": "deb"}
     },
 }
-BUILTIN = {
+OPENSSH = {
     "name": "openssh_server",
-    "is_builtin": True,
-    "platforms": {"linux-debian": {"service": "ssh"}},
+    "kind": "openssh",
+    "platforms": {"linux-debian": {"packages": ["openssh-server"], "service": "ssh"}},
 }
 SYSTEM = {
     "name": "samba_mount",
@@ -241,20 +242,20 @@ def test_the_software_turning_up_anyway_clears_the_failure(controller):
     assert orders.failure_for(MAC, "todesk") is None
 
 
-def test_reversing_the_wish_clears_the_failure_and_orders_nothing(controller):
+def test_the_opposite_action_clears_the_failure_and_orders_nothing(controller):
     orders, cache, _ = controller
     cache.error = AgentModuleFetchError("vendor_served_a_page")
     failed = ask_install(orders)
     assert wait_for(lambda: not failed.is_open)
 
-    # Turned back off, with the machine saying it was never there: the
-    # wish is answered already, so there is nothing to send.
+    # Asked to uninstall what the machine says was never there: the
+    # question is settled already, so there is nothing to send.
     undone = orders.ask(
         mac_address=MAC,
         module="todesk",
         manifest=MANIFEST,
         platform=AMD64,
-        action="remove",
+        action="uninstall",
         reported_state="absent",
     )
 
@@ -262,7 +263,7 @@ def test_reversing_the_wish_clears_the_failure_and_orders_nothing(controller):
     assert orders.failure_for(MAC, "todesk") is None
 
 
-def test_a_removal_of_something_present_is_ordered(controller):
+def test_an_uninstall_of_something_present_is_ordered(controller):
     orders, _, _ = controller
 
     order = orders.ask(
@@ -270,12 +271,12 @@ def test_a_removal_of_something_present_is_ordered(controller):
         module="todesk",
         manifest=MANIFEST,
         platform=AMD64,
-        action="remove",
+        action="uninstall",
         reported_state="installed",
     )
 
     assert order is not None
-    assert order.action == "remove"
+    assert order.action == "uninstall"
 
 
 def test_a_machine_that_never_answers_gives_its_lock_back(controller):
@@ -337,18 +338,15 @@ def test_forgetting_a_device_drops_everything_held_for_it(controller):
     "manifest, is_enabled, expected",
     [
         (MANIFEST, True, "install"),
-        (MANIFEST, False, "remove"),
-        (BUILTIN, True, "enable"),
-        (BUILTIN, False, "disable"),
+        (MANIFEST, False, "uninstall"),
+        (OPENSSH, True, "install"),
+        (OPENSSH, False, "uninstall"),
         (SYSTEM, True, "install"),
-        (SYSTEM, False, "remove"),
+        (SYSTEM, False, "uninstall"),
     ],
 )
-def test_what_a_wish_means_depends_on_what_the_module_is(
-    manifest, is_enabled, expected
-):
-    # A capability the machine already carries is switched; a third-party
-    # application is installed and removed.
+def test_every_click_means_install_or_uninstall(manifest, is_enabled, expected):
+    # One verb pair for every kind; the mechanics are each platform's own.
     assert (
         order_action_for(manifest=manifest, platform=AMD64, is_enabled=is_enabled)
         == expected
@@ -357,7 +355,7 @@ def test_what_a_wish_means_depends_on_what_the_module_is(
 
 def test_a_platform_that_carries_the_module_natively_is_asked_nothing():
     # samba_mount on windows and macOS: an empty entry means nothing to
-    # install and nothing to remove.
+    # install and nothing to uninstall.
     for is_enabled in (True, False):
         assert (
             order_action_for(

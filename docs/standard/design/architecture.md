@@ -224,9 +224,10 @@ everything agent-side reaches the hub, by riding the next heartbeat. There
 is no second path, no direct download, and no difference in behavior
 between the two surfaces.
 
-The queue is every action's, not only a download's. Enable, disable and
-uninstall have nothing to fetch, so their orders skip the cache — but
-they take the same per-device queue as an install, because they contend
+The queue is every action's, not only a download's. An uninstall, and an
+install a distro's own package manager serves, have nothing to fetch, so
+their orders skip the cache — but
+they take the same per-device queue as a download, because they contend
 for the same machine-wide package and service locks, and because one
 queue is what makes "one thing at a time, in the order asked" true for
 the machine rather than for one kind of action. The SSH bootstrap that
@@ -253,7 +254,12 @@ and a machine that retries every minute spends the night doing it. Asking
 again — pressing the button on either surface — is a new order, and it runs.
 Two things clear a failure without being asked, because both mean the
 question is settled: the software turning up on the machine anyway (somebody
-installed it by hand), and the wish being reversed.
+installed it by hand), and an order for the opposite action. An order is the
+whole of what a click leaves behind — the hub keeps no standing record of
+what a machine should have, and orders and failures live in the
+controller's memory alone: a hub restart forgets them and the person asks
+again ([kill_on_sight.md](../kill_on_sight.md), "Unasked survival
+machinery").
 
 What the agent keeps is only what it can answer for: which modules are
 present, what state each is in, and the output of the last thing it ran. The

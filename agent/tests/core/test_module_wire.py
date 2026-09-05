@@ -17,7 +17,7 @@ from tests.core.test_loop import scripted_agent
 ORDER = {
     "id": "order-1",
     "module": "openssh_server",
-    "action": "enable",
+    "action": "install",
     "artifact_key": "",
     "digest": "",
     "package_kind": "",
@@ -26,12 +26,11 @@ ORDER = {
 CATALOG = {
     "modules": {
         "openssh_server": {
-            "title": "OpenSSH server",
+            "title": "SSH server",
             "description": "",
             "kind": "openssh",
-            "is_builtin": True,
             "platform_key": "linux-debian",
-            "entry": {"service": "ssh"},
+            "entry": {"packages": ["openssh-server"], "service": "ssh"},
             "verify": "",
             "package": "openssh_server",
         }

@@ -50,9 +50,7 @@ DETAIL_FALLBACK_CODES = {
 
 MODULE_BUSY_STATES = (
     "installing",
-    "removing",
-    "enabling",
-    "disabling",
+    "uninstalling",
     "activating",
     "deactivating",
 )
@@ -155,17 +153,19 @@ def test_every_unbind_cause_has_a_word():
 
 
 def test_every_module_and_ai_state_has_a_word():
+    # One closed table: absent, installed, installing, uninstalling,
+    # failed, unsupported — plus the ai rows' switching pair.
     states = words_block("states")
     for state in (
         "installed",
         "absent",
-        "enabled",
-        "disabled",
         "unsupported",
         "failed",
         "unknown",
     ) + MODULE_BUSY_STATES:
         assert state in states, f"state {state} has no word"
+    for gone in ("enabled", "disabled", "enabling", "disabling", "removing"):
+        assert gone not in states, f"state {gone} is not in the table any more"
 
 
 # --- the three sections and the four panels ---
@@ -331,7 +331,7 @@ def test_a_sent_mount_password_is_cleared_from_the_stage():
 
 def test_the_dead_wording_is_gone():
     assert "removal did not take" not in CONTROL_PAGE_HTML
-    assert "the removal finished, but the software is still there" in (
+    assert "the uninstall finished, but the software is still there" in (
         CONTROL_PAGE_HTML
     )
     # The service layers install nothing any more, so their install words
@@ -339,6 +339,9 @@ def test_the_dead_wording_is_gone():
     assert "installing_tooling" not in CONTROL_PAGE_HTML
     assert "tooling_install_failed" not in CONTROL_PAGE_HTML
     assert "no_switcher_build" not in CONTROL_PAGE_HTML
+    # One verb pair everywhere: nothing switches any more.
+    assert "switch_unconfirmed" not in CONTROL_PAGE_HTML
+    assert "remove_unconfirmed" not in CONTROL_PAGE_HTML
 
 
 # --- the operation panel and the missing-modules gate ---
@@ -357,8 +360,8 @@ def test_every_operation_state_has_a_word():
     for state in ("queued", "fetching", "running", "done", "failed"):
         assert state in words, f"operation state {state} has no word"
     # A running order is worded by what it was asked to do.
-    for action in ("install", "remove", "enable", "disable"):
-        assert f"{action}:" in CONTROL_PAGE_HTML
+    assert "install: 'installing'" in CONTROL_PAGE_HTML
+    assert "uninstall: 'uninstalling'" in CONTROL_PAGE_HTML
 
 
 def test_the_operation_output_renders_as_a_monospace_tail():
@@ -399,5 +402,14 @@ def test_installing_missing_modules_is_ordinary_asks_in_order():
     assert "await send('/api/module', { name: name, is_enabled: true });" in body
 
 
-def test_a_native_module_row_offers_no_button():
+def test_a_native_module_row_reads_built_in_and_offers_no_button():
     assert "if (m.is_native) {" in CONTROL_PAGE_HTML
+    assert 'built_in: "built in"' in CONTROL_PAGE_HTML
+    assert "m.is_native ? WORDS.ui.built_in" in CONTROL_PAGE_HTML
+
+
+def test_uninstalling_the_ssh_server_asks_first():
+    # Losing SSH can lock a person out, so the row's uninstall confirms.
+    assert "m.kind === 'openssh' && isOn" in CONTROL_PAGE_HTML
+    assert "confirmDialog(WORDS.ui.uninstall_ssh_title" in CONTROL_PAGE_HTML
+    assert 'uninstall_ssh_title: "Uninstall the SSH server?"' in CONTROL_PAGE_HTML

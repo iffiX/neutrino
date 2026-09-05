@@ -1277,17 +1277,13 @@ class DeviceModuleView(BaseModel):
     name: str
     title: str
     description: str = ""
+    # The manifest kind; the SSH server's uninstall confirmation keys on it.
+    kind: str = ""
     is_supported: bool = True
-    is_enabled: bool = False
-    # A platform capability the machine already carries, worded as
-    # enable/disable rather than install/uninstall.
-    is_builtin: bool = False
-    # The platform carries this natively: nothing to install and nothing to
-    # switch, so the row gets no button at all.
+    # The platform carries this natively: worded built in, no button.
     is_native: bool = False
     # Whether installing and pointing at the hub are separate steps.
     has_activation: bool = False
-    is_activated: bool = False
     is_active: bool = False
     state: str = "unknown"
     # Why the state is what it is, when the agent said; the pages word it.
@@ -1310,10 +1306,9 @@ class DeviceModuleListView(BaseModel):
 
 
 class DeviceModuleUpdate(BaseModel):
-    """Change what is wanted of one module; absent fields are left alone."""
+    """One click on one module: install it, or uninstall it."""
 
     is_enabled: bool | None = None
-    is_activated: bool | None = None
 
 
 class DeviceInstallOrderView(BaseModel):
