@@ -7,7 +7,7 @@ empties the hub's record at once. Every transition of the state table in
 architecture.md, walked once.
 
 The box is wired here — a router serving the spare port — so nothing depends
-on what an earlier test left behind. It needs the lab: a client VM on the
+on what an earlier test left behind. It needs the CI/CD pipeline's client VM on the
 served wire answering SSH with the ``id_lab`` key beside this file, its
 ``lab`` account holding passwordless sudo. Without those it skips rather
 than guessing at somebody's real network.
@@ -82,7 +82,7 @@ out = {}
 try:
     with urllib.request.urlopen("http://127.0.0.1:8765/api/state", timeout=5) as r:
         body = r.read().decode()
-        out["tokenless"] = {"status": r.status, "leaks": '"functions"' in body}
+        out["tokenless"] = {"status": r.status, "leaks": '"modules"' in body}
 except urllib.error.HTTPError as e:
     out["tokenless"] = {"status": e.code, "leaks": False}
 status, minted = call("POST", "/api/token", {})
@@ -109,13 +109,13 @@ print(json.dumps({
 
 SERVICES_SCRIPT = CONTROL_COMMON + """
 status, state = call("GET", "/api/state")
-print(json.dumps(state.get("services", {})))
+print(json.dumps(state.get("services", [])))
 """
 
 FORWARD_SCRIPT = CONTROL_COMMON + """
 out = {}
 status, state = call(
-    "POST", "/api/services/forward", {"offer_id": "OFFER_ID", "is_enabled": True}
+    "POST", "/api/services/port", {"id": "OFFER_ID", "is_enabled": True}
 )
 out["enable"] = status
 row = (state.get("forwards") or {}).get("OFFER_ID") or {}
@@ -127,7 +127,7 @@ try:
 except Exception as error:
     out["fetch_status"] = str(error)
 status, state = call(
-    "POST", "/api/services/forward", {"offer_id": "OFFER_ID", "is_enabled": False}
+    "POST", "/api/services/port", {"id": "OFFER_ID", "is_enabled": False}
 )
 row = (state.get("forwards") or {}).get("OFFER_ID") or {}
 out["is_active_after"] = bool(row.get("is_active"))
@@ -172,7 +172,7 @@ def ssh_to(host, command):
 def serving(panel, before):
     """A router serving the spare wire, wired by this file itself."""
     if not ID_LAB.is_file():
-        pytest.skip("no lab key beside the tests; this walk needs the VM lab")
+        pytest.skip("no id_lab key beside the tests; this walk needs the pipeline VMs")
     physical = [
         entry["settings"]["name"]
         for entry in panel.read("/network")["interfaces"]
@@ -293,12 +293,17 @@ def test_the_lifecycle_walks_every_transition(panel, stranger):
         "/services/declared",
         {
             "name": "lifecycle panel port",
-            "kind": "generic_tcp",
+            "kind": "port",
             "host": LIFECYCLE_LAN,
             "port": panel_port,
         },
     )
     assert status == 201, declared
+    record_id = next(
+        entry["record_id"]
+        for entry in declared["services"]
+        if entry["source"] == "declared" and entry["title"] == "lifecycle panel port"
+    )
     try:
 
         def port_offer():
@@ -306,9 +311,10 @@ def test_the_lifecycle_walks_every_transition(panel, stranger):
             if listing.returncode != 0:
                 return None
             services = json.loads(listing.stdout.strip().splitlines()[-1])
-            for offer_id, entry in services.items():
-                if entry.get("kind") == "port" and entry.get("port") == panel_port:
-                    return offer_id
+            for entry in services:
+                payload = entry.get("payload") or {}
+                if entry.get("type") == "port" and payload.get("port") == panel_port:
+                    return entry["id"]
             return None
 
         offer_id = wait_for("the port offer to reach the client", port_offer, 90)
@@ -322,7 +328,7 @@ def test_the_lifecycle_walks_every_transition(panel, stranger):
         assert outcome["fetch_status"] == 200, outcome
         assert outcome["is_active_after"] is False, outcome
     finally:
-        panel.call("DELETE", f"/services/declared/{declared['id']}")
+        panel.call("DELETE", f"/services/declared/{record_id}")
 
     # The hub lets go by deleting the token. The agent is refused, and after
     # a few beats it unbinds by itself and says so on its own machine.

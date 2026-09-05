@@ -79,9 +79,7 @@ def test_a_device_login_hands_back_a_code_to_type(panel):
 
 def test_refusals_are_coded(panel):
     accounts_or_skip(panel)
-    status, body = panel.call(
-        "POST", "/cliproxyapi/account_logins", {"kind": "gemini"}
-    )
+    status, body = panel.call("POST", "/cliproxyapi/account_logins", {"kind": "gemini"})
     assert status == 422
     assert body["detail"] == {
         "code": "unsupported_kind",

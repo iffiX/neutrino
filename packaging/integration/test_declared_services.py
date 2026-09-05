@@ -1,9 +1,9 @@
-"""The Declared section against a live box, with real listeners to point at.
+"""Manual declarations against a live box, with real listeners to point at.
 
 These run on the box itself, so a listener this test opens on loopback is one
-the panel's probes can reach. One service of each kind is declared against
-those listeners, the Services view is watched until its cached health turns
-green, and the record is edited, probed against a dead port, and deleted.
+the panel's probes can reach. One declaration of each type is made against
+those listeners, the published list is watched until health turns green, and
+records are probed against a dead port and deleted.
 """
 
 import secrets
@@ -22,11 +22,9 @@ def _suffix() -> str:
     return secrets.token_hex(3)
 
 
-class _PingHandler(BaseHTTPRequestHandler):
-    """Answers /_ping the way a Docker engine does, and everything else 200."""
-
+class _OkHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        body = b"OK" if self.path == "/_ping" else b"hello"
+        body = b"hello"
         self.send_response(200)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -48,8 +46,8 @@ def tcp_port():
 
 @pytest.fixture(scope="module")
 def http_port():
-    """A loopback HTTP server answering /_ping like Docker does."""
-    server = HTTPServer(("127.0.0.1", 0), _PingHandler)
+    """A loopback HTTP server answering every GET."""
+    server = HTTPServer(("127.0.0.1", 0), _OkHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -64,34 +62,50 @@ def _closed_port() -> int:
         return server.getsockname()[1]
 
 
+def _declared(services: list) -> list:
+    return [entry for entry in services if entry["source"] == "declared"]
+
+
 def _declare(panel, body: dict) -> dict:
-    status, created = panel.call("POST", "/services/declared", body)
-    assert status == 201, created
-    return created
+    """Create one declaration and return its published row."""
+    status, listed = panel.call("POST", "/services/declared", body)
+    assert status == 201, listed
+    for entry in _declared(listed["services"]):
+        if entry["title"] == body["name"]:
+            return entry
+    raise AssertionError(f"{body['name']} not in the refreshed list: {listed}")
 
 
-def _delete(panel, service_id: str) -> None:
-    panel.call("DELETE", f"/services/declared/{service_id}")
+def _delete(panel, record_id: str) -> None:
+    panel.call("DELETE", f"/services/declared/{record_id}")
 
 
-def _wait_until_healthy(panel, service_ids: list) -> dict:
-    """Poll the Services view until every id reads healthy, or fail."""
+def _wait_until_healthy(panel, record_ids: list) -> dict:
+    """Poll the published list until every id reads healthy, or fail."""
     waited = 0.0
-    declared: dict = {}
+    rows: dict = {}
     while waited <= HEALTH_DEADLINE_S:
-        declared = {entry["id"]: entry for entry in panel.read("/services")["declared"]}
-        if all(
-            declared.get(sid, {}).get("probe", {}).get("is_healthy") is True
-            for sid in service_ids
-        ):
-            return declared
+        rows = {
+            entry["record_id"]: entry
+            for entry in _declared(panel.read("/services")["services"])
+        }
+        if all(rows.get(rid, {}).get("is_healthy") is True for rid in record_ids):
+            return rows
         time.sleep(HEALTH_POLL_S)
         waited += HEALTH_POLL_S
-    states = {sid: declared.get(sid, {}).get("probe") for sid in service_ids}
+    states = {rid: rows.get(rid, {}).get("is_healthy") for rid in record_ids}
     raise AssertionError(f"not healthy within {HEALTH_DEADLINE_S}s: {states}")
 
 
-def test_one_of_each_kind_declares_and_turns_healthy(panel, tcp_port, http_port):
+def test_the_published_list_answers_typed(panel):
+    services = panel.read("/services")["services"]
+    for entry in services:
+        assert entry["type"] in ("web", "port", "ai", "file"), entry
+        assert entry["source"] in ("module", "declared"), entry
+        assert "payload" in entry and "is_healthy" in entry, entry
+
+
+def test_one_of_each_type_declares_and_turns_healthy(panel, tcp_port, http_port):
     run = _suffix()
     created = []
     try:
@@ -100,10 +114,10 @@ def test_one_of_each_kind_declares_and_turns_healthy(panel, tcp_port, http_port)
                 panel,
                 {
                     "name": f"itest nas {run}",
-                    "kind": "samba",
+                    "kind": "file",
                     "host": "127.0.0.1",
                     "port": tcp_port,
-                    "shares": [{"name": "media", "login_id": None}],
+                    "share": "media",
                 },
             )
         )
@@ -112,7 +126,7 @@ def test_one_of_each_kind_declares_and_turns_healthy(panel, tcp_port, http_port)
                 panel,
                 {
                     "name": f"itest web {run}",
-                    "kind": "http",
+                    "kind": "web",
                     "host": "127.0.0.1",
                     "port": http_port,
                     "scheme": "http",
@@ -124,75 +138,71 @@ def test_one_of_each_kind_declares_and_turns_healthy(panel, tcp_port, http_port)
             _declare(
                 panel,
                 {
-                    "name": f"itest engine {run}",
-                    "kind": "docker_engine",
-                    "host": "127.0.0.1",
-                    "port": http_port,
-                },
-            )
-        )
-        created.append(
-            _declare(
-                panel,
-                {
                     "name": f"itest tcp {run}",
-                    "kind": "generic_tcp",
+                    "kind": "port",
                     "host": "127.0.0.1",
                     "port": tcp_port,
                 },
             )
         )
 
-        entries = _wait_until_healthy(panel, [entry["id"] for entry in created])
-        for entry in created:
-            listed = entries[entry["id"]]
-            assert listed["kind"] == entry["kind"]
-            assert listed["probe"]["detail_code"] is None
-            assert listed["probe"]["checked_at"]
+        rows = _wait_until_healthy(panel, [entry["record_id"] for entry in created])
+        by_id = {entry["record_id"]: entry for entry in created}
+        for record_id, listed in rows.items():
+            if record_id not in by_id:
+                continue
+            assert listed["type"] == by_id[record_id]["type"]
+            assert listed["is_healthy"] is True
     finally:
         for entry in created:
-            _delete(panel, entry["id"])
+            _delete(panel, entry["record_id"])
 
 
-def test_edit_probe_and_delete_walk_one_record(panel, tcp_port):
+def test_probe_and_delete_walk_one_record(panel, tcp_port):
     run = _suffix()
     record = _declare(
         panel,
         {
-            "name": f"itest edit {run}",
-            "kind": "generic_tcp",
+            "name": f"itest probe {run}",
+            "kind": "port",
             "host": "127.0.0.1",
             "port": tcp_port,
         },
     )
+    dead = _declare(
+        panel,
+        {
+            "name": f"itest dead {run}",
+            "kind": "port",
+            "host": "127.0.0.1",
+            "port": _closed_port(),
+        },
+    )
     try:
-        status, fresh = panel.call("POST", f"/services/declared/{record['id']}/probe")
-        assert status == 200 and fresh["is_healthy"] is True
-
-        status, updated = panel.call(
-            "PUT",
-            f"/services/declared/{record['id']}",
-            {
-                "name": f"itest edited {run}",
-                "kind": "generic_tcp",
-                "host": "127.0.0.1",
-                "port": _closed_port(),
-            },
+        status, listed = panel.call(
+            "POST", f"/services/declared/{record['record_id']}/probe"
         )
-        assert status == 200, updated
-        assert updated["id"] == record["id"]
-        assert updated["name"] == f"itest edited {run}"
+        assert status == 200, listed
+        rows = {e["record_id"]: e for e in _declared(listed["services"])}
+        assert rows[record["record_id"]]["is_healthy"] is True
 
-        status, fresh = panel.call("POST", f"/services/declared/{record['id']}/probe")
-        assert status == 200
-        assert fresh["is_healthy"] is False
-        assert fresh["detail_code"] == "connect_failed"
+        status, listed = panel.call(
+            "POST", f"/services/declared/{dead['record_id']}/probe"
+        )
+        assert status == 200, listed
+        rows = {e["record_id"]: e for e in _declared(listed["services"])}
+        assert rows[dead["record_id"]]["is_healthy"] is False
     finally:
-        assert panel.status("DELETE", f"/services/declared/{record['id']}") == 200
+        assert (
+            panel.status("DELETE", f"/services/declared/{record['record_id']}") == 200
+        )
+        assert panel.status("DELETE", f"/services/declared/{dead['record_id']}") == 200
 
-    listed = {entry["id"] for entry in panel.read("/services")["declared"]}
-    assert record["id"] not in listed
-    assert panel.status("DELETE", f"/services/declared/{record['id']}") == 404
+    remaining = {
+        entry["record_id"] for entry in _declared(panel.read("/services")["services"])
+    }
+    assert record["record_id"] not in remaining
+    assert panel.status("DELETE", f"/services/declared/{record['record_id']}") == 404
 
 
 def test_a_bad_record_is_refused_with_a_code(panel):
@@ -206,64 +216,3 @@ def test_a_bad_record_is_refused_with_a_code(panel):
         "code": "declared_service_invalid",
         "params": {"field": "kind"},
     }
-
-    status, answer = panel.call(
-        "PUT",
-        "/services/declared/missing",
-        {"name": "a", "kind": "generic_tcp", "host": "h", "port": 1},
-    )
-    assert status == 404
-    assert answer["detail"] == {"code": "declared_service_unknown"}
-
-
-def test_a_share_account_is_counted_and_cleared_by_its_delete(panel, tcp_port):
-    run = _suffix()
-    status, account = panel.call(
-        "POST",
-        "/credentials/logins",
-        {
-            "name": f"itest nas login {run}",
-            "username": "nas",
-            "password": "pw-nas",  # scan: allow
-        },
-    )
-    assert status == 200, account
-
-    record = _declare(
-        panel,
-        {
-            "name": f"itest nas {run}",
-            "kind": "samba",
-            "host": "127.0.0.1",
-            "port": tcp_port,
-            "shares": [{"name": "media", "login_id": account["id"]}],
-        },
-    )
-    try:
-        accounts = panel.read("/credentials/logins")["logins"]
-        listed = next(entry for entry in accounts if entry["id"] == account["id"])
-        assert listed["service_count"] == 1
-
-        status, cleared = panel.call("DELETE", f"/credentials/logins/{account['id']}")
-        assert status == 200, cleared
-        assert cleared == {"cleared": {"device_count": 0, "service_count": 1}}
-
-        declared = panel.read("/services")["declared"]
-        stored = next(entry for entry in declared if entry["id"] == record["id"])
-        assert stored["shares"] == [{"name": "media", "login_id": None}]
-    finally:
-        _delete(panel, record["id"])
-        panel.call("DELETE", f"/credentials/logins/{account['id']}")
-
-    status, answer = panel.call(
-        "POST",
-        "/services/declared",
-        {
-            "name": f"itest nas {run} again",
-            "kind": "samba",
-            "host": "127.0.0.1",
-            "shares": [{"name": "media", "login_id": account["id"]}],
-        },
-    )
-    assert status == 400
-    assert answer["detail"]["params"] == {"field": "login_id"}

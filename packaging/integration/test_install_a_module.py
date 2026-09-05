@@ -1,7 +1,7 @@
 """Installing an optional module the way the Services page does.
 
 Its own file because it is the one check here that takes minutes and changes
-the box: everything in `test_panel_api_services.py` reads the list and the
+the box: everything in `test_panel_api_modules.py` reads the list and the
 refusals around it, deliberately installing nothing.
 
 That gap is why a real failure reached a person before it reached a test. The
@@ -59,7 +59,7 @@ def installed(panel):
             f"{entry.get('unsupported_reason') or 'not offered'}"
         )
 
-    status, answer = panel.call("POST", f"/services/{MODULE}/install", {})
+    status, answer = panel.call("POST", f"/modules/{MODULE}/install", {})
     assert status == 200, answer
     task_id = answer["task_id"]
 
@@ -69,7 +69,7 @@ def installed(panel):
     deadline = time.monotonic() + INSTALL_LIMIT_S
     is_seen = False
     while time.monotonic() < deadline:
-        running = [task["id"] for task in panel.read("/services/tasks")["tasks"]]
+        running = [task["id"] for task in panel.read("/modules/tasks")["tasks"]]
         if task_id in running:
             is_seen = True
         elif is_seen:
@@ -79,7 +79,7 @@ def installed(panel):
 
 
 def _entry(panel) -> dict:
-    for entry in panel.read("/services")["services"]:
+    for entry in panel.read("/modules")["modules"]:
         if entry["name"] == MODULE:
             return entry
     raise AssertionError(f"{MODULE} is not on the Services page")
@@ -124,6 +124,6 @@ def test_the_install_ran_outside_the_panels_own_unit(installed):
 def test_the_page_offers_to_uninstall_what_is_installed(installed, panel):
     """The other half of the button, and the state the next install starts
     from."""
-    status, answer = panel.call("POST", f"/services/{MODULE}/uninstall", {})
+    status, answer = panel.call("POST", f"/modules/{MODULE}/uninstall", {})
 
     assert status == 200, json.dumps(answer)[:200]
