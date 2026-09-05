@@ -74,7 +74,14 @@ class FakeRegistry:
             wanted["is_enabled"] = is_enabled
         if is_activated is not None:
             wanted["is_activated"] = is_activated
+        wanted["failed"] = None
         return FakeRegistry.device
+
+    def set_module_failure(self, mac_address, module, failure):
+        wanted = FakeRegistry.device.client.modules.setdefault(
+            module, {"is_enabled": False, "is_activated": False}
+        )
+        wanted["failed"] = dict(failure) if failure else None
 
     def set_ai_key_id(self, mac_address, account, key_id):
         if key_id is None:
@@ -864,3 +871,92 @@ def test_an_enrollment_from_another_wire_generation_is_refused(api):
 
     assert reply.status_code == 409
     assert reply.json()["detail"]["code"] == "agent_wire_stale"
+
+
+def _beat(**fields):
+    body = {
+        "token": "device-token",
+        "hostname": "x",
+        "wire": 3,
+        "client_version": "0.1.0",
+        "platform": {"os": "linux", "family": "debian", "arch": "amd64"},
+    }
+    body.update(fields)
+    return body
+
+
+def test_a_wish_nobody_attempted_is_carried_out_after_a_restart(api):
+    """The queue is memory and a restart may lose an order; the decision it
+    came from is on disk, and a beat is where the hub notices the gap."""
+    client, runtime, device = api
+    FakeRegistry.device.client.modules["anydesk"] = {
+        "is_enabled": True,
+        "is_activated": False,
+        "failed": None,
+    }
+
+    reply = client.post(
+        "/api/agent/heartbeat",
+        json=_beat(modules={"anydesk": {"state": "absent"}}),
+    )
+
+    assert reply.status_code == 200
+    assert [order["module"] for order in reply.json()["module_orders"]] == ["anydesk"]
+
+
+def test_a_wish_a_refusal_stands_against_waits_for_a_person(api):
+    """The rule this must not break: a refused order is never retried by a
+    tick, a beat, or a restart — only by somebody asking again."""
+    client, runtime, device = api
+    FakeRegistry.device.client.modules["anydesk"] = {
+        "is_enabled": True,
+        "is_activated": False,
+        "failed": {"code": "vendor_served_a_page", "params": {}},
+    }
+
+    reply = client.post(
+        "/api/agent/heartbeat",
+        json=_beat(modules={"anydesk": {"state": "absent"}}),
+    )
+
+    assert reply.status_code == 200
+    assert reply.json()["module_orders"] == []
+
+
+def test_a_refusal_is_written_down_where_a_restart_still_finds_it(api):
+    """Orders die with the process; the refusal that closed one must not,
+    or the next beat reads an unattempted wish and asks again."""
+    client, runtime, device = api
+    FakeRegistry.device.client.modules["anydesk"] = {
+        "is_enabled": True,
+        "is_activated": False,
+        "failed": None,
+    }
+    order = runtime.agent_module_orders.ask(
+        mac_address=MAC.lower(),
+        module="anydesk",
+        manifest={"kind": "package", "platforms": {"linux": {"url": "u"}}},
+        platform={"os": "linux", "family": "debian", "arch": "amd64"},
+        action="install",
+        reported_state="absent",
+    )
+
+    client.post(
+        "/api/agent/heartbeat",
+        json=_beat(
+            modules={"anydesk": {"state": "absent"}},
+            module_results=[
+                {
+                    "id": order.id,
+                    "module": "anydesk",
+                    "state": "failed",
+                    "code": "install_failed",
+                    "params": {},
+                    "output": "dpkg: error",
+                }
+            ],
+        ),
+    )
+
+    stored = FakeRegistry.device.client.modules["anydesk"]
+    assert stored["failed"] == {"code": "install_failed", "params": {}}

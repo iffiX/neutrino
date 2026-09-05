@@ -30,7 +30,10 @@ from neutrino_hub.modules.cliproxyapi.ops import (
 )
 from neutrino_hub.modules.credentials.vault import VaultLockedError
 from neutrino_hub.modules.devices.agent_module_cache import AgentModuleFetchError
-from neutrino_hub.modules.devices.agent_module_controller import ask_module
+from neutrino_hub.modules.devices.agent_module_controller import (
+    ORDER_PRESENT_STATES,
+    ask_module,
+)
 from neutrino_hub.modules.devices.catalog import artifact_sources
 from neutrino_hub.modules.devices.agent_package import agent_packages
 from neutrino_hub.modules.devices.constants import (
@@ -39,7 +42,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_MAC_PATTERN,
 )
 from neutrino_hub.modules.devices.manifests import load_module_manifests
-from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
+from neutrino_hub.modules.devices.registry import DeviceRegistry, module_wish, ManagedDevice
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.utils.version_number import parse_version
 from neutrino_hub.web.dependencies import get_runtime
@@ -104,8 +107,25 @@ def heartbeat(
                     -AGENT_MODULE_OUTPUT_LIMIT_BYTES:
                 ],
             )
+            # A refusal outlives the order it came from: the orders are the
+            # controller's and a restart may lose them, but without the
+            # refusal on disk a restarted hub cannot tell a wish nobody has
+            # attempted from one that was attempted and refused.
+            registry.set_module_failure(
+                device.mac_address,
+                str(result.get("module", "")),
+                (
+                    {
+                        "code": str(result.get("code", "") or ""),
+                        "params": dict(result.get("params") or {}),
+                    }
+                    if str(result.get("state", "")) == "failed"
+                    else None
+                ),
+            )
     # Software turning up on the machine anyway settles a standing failure.
     runtime.agent_module_orders.note_reported_states(key, dict(beat.modules))
+    _honour_standing_wishes(device, beat, runtime, registry, key)
     if beat.module_requests:
         # A toggle on the machine's own page asks the hub rather than acts,
         # and enters by the same door the drawer's does.
@@ -403,6 +423,55 @@ def module_package(
         media_type="application/octet-stream",
         headers={"X-Checksum-Sha256": hashlib.sha256(data).hexdigest()},
     )
+
+
+def _honour_standing_wishes(
+    device: ManagedDevice,
+    beat: ClientHeartbeat,
+    runtime: PanelRuntime,
+    registry: DeviceRegistry,
+    key: str,
+) -> None:
+    """Carry out a decision that was taken but never acted on.
+
+    The controller's queue is memory: a hub restarted between the click and
+    the install loses the order, and nothing on either side would ever ask
+    again. What survives is the wish and — on disk beside it — the refusal
+    of the last attempt, and those two are enough to tell the difference
+    that matters. A wish with a refusal standing against it waits for a
+    person, which is the one rule this must not break; a wish with none has
+    simply never been attempted, and is.
+
+    Args:
+        device: The device the beat came from.
+        beat: The heartbeat.
+        runtime: The shared runtime, holding the controller.
+        registry: The device registry.
+        key: The device's storage key.
+    """
+    controller = runtime.agent_module_orders
+    manifests = load_module_manifests()
+    for module, stored in (device.client.modules or {}).items():
+        wanted = module_wish(stored)
+        if not wanted["is_enabled"] or wanted["failed"] or module not in manifests:
+            continue
+        reported = beat.modules.get(module)
+        state = str(reported.get("state", "")) if isinstance(reported, dict) else ""
+        if state in ORDER_PRESENT_STATES or not state:
+            continue
+        if controller.order_in_flight(key, module) or controller.failure_for(
+            key, module
+        ):
+            continue
+        ask_module(
+            controller=controller,
+            mac_address=key,
+            module=module,
+            manifest=manifests[module],
+            platform=dict(beat.platform or {}),
+            is_enabled=True,
+            reported_state=state,
+        )
 
 
 def _refuse_stale_wire(agent_wire: int) -> None:

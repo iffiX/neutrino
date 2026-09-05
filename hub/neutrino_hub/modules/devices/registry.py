@@ -33,14 +33,17 @@ def module_wish(stored) -> dict:
             nothing.
 
     Returns:
-        ``{"is_enabled", "is_activated"}``.
+        ``{"is_enabled", "is_activated", "failed"}`` — ``failed`` carrying
+        the last order's refusal, or None when nothing stands against it.
     """
     if isinstance(stored, dict):
+        failed = stored.get("failed")
         return {
             "is_enabled": bool(stored.get("is_enabled")),
             "is_activated": bool(stored.get("is_activated")),
+            "failed": failed if isinstance(failed, dict) else None,
         }
-    return {"is_enabled": bool(stored), "is_activated": False}
+    return {"is_enabled": bool(stored), "is_activated": False, "failed": None}
 
 
 def _token_digest(token: str) -> str:
@@ -452,9 +455,34 @@ class DeviceRegistry:
                 wanted["is_activated"] = is_activated
                 if is_activated:
                     wanted["is_enabled"] = True
+            # Asking is what clears a failure: the person has spoken again.
+            wanted["failed"] = None
             device.client.modules[module] = wanted
             self._store(device)
             return device
+
+    def set_module_failure(
+        self, mac_address: str, module: str, failure: "dict | None"
+    ) -> None:
+        """Record why one module's last order refused, or forget it.
+
+        The orders themselves are the controller's, in memory, and a hub
+        restart is entitled to lose them. A refusal is not: without it a
+        restarted hub cannot tell a wish nobody has attempted from one that
+        was attempted and refused, and would ask again on every beat — the
+        automatic retry this design exists to prevent.
+
+        Args:
+            mac_address: The device's MAC.
+            module: The module name.
+            failure: ``{"code", "params"}``, or None to clear it.
+        """
+        with _WRITE_LOCK:
+            device = self._fresh(mac_address)
+            wanted = module_wish(device.client.modules.get(module))
+            wanted["failed"] = dict(failure) if failure else None
+            device.client.modules[module] = wanted
+            self._store(device)
 
     def set_ai_key_id(self, mac_address: str, account: str, key_id: str | None) -> None:
         """Remember which cliproxyapi client key one account on a device holds.

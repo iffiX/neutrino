@@ -306,6 +306,25 @@ class AgentModuleController:
             if status.get("state") in ORDER_PRESENT_STATES:
                 self.clear_failure(key, module)
 
+    def order_in_flight(self, mac_address: str, module: str) -> bool:
+        """Whether this module already has an order that has not finished.
+
+        Args:
+            mac_address: The device.
+            module: The module name.
+
+        Returns:
+            True while one is queued or running, so nothing asks twice.
+        """
+        key = (mac_address or "").lower()
+        with self._guard:
+            return any(
+                order.mac_address == key
+                and order.module == module
+                and order.state in ORDER_OPEN_STATES
+                for order in self._orders.values()
+            )
+
     def clear_failure(self, mac_address: str, module: str) -> None:
         """Forget the failure standing against one module on one machine.
 
