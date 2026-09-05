@@ -812,7 +812,11 @@ export function DeviceDrawer({
                     onClick={() => handleAction(deviceAction)}
                   >
                     <Icon name={deviceAction.icon} size={14} />
-                    {deviceAction.label}
+                    {deviceAction.action === "install_client" &&
+                    device.client !== null &&
+                    device.client.is_managed
+                      ? "Reinstall agent"
+                      : deviceAction.label}
                   </button>
                 ))}
               </div>

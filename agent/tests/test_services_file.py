@@ -245,6 +245,18 @@ def test_detach_is_the_records_own_account_or_privileged(service):
 
     assert subject.detach(account="bob", is_privileged=False, record_id=record_id) == {}
     assert platform.detach_calls == [location]
+    kept = store.mounts()[record_id]
+    assert kept["is_enabled"] is False
+    assert os.path.isfile(platform.attach_calls[0]["credentials_path"])
+
+    assert (
+        subject.remount(account="bob", is_privileged=False, record_id=record_id) == {}
+    )
+    subject.reconcile()
+    assert subject.rows()[0]["state"] == "mounted"
+    assert platform.attach_calls[-1]["password"] == ""
+
+    assert subject.forget(account="bob", is_privileged=False, record_id=record_id) == {}
     assert store.mounts() == {}
     assert not os.path.isfile(platform.attach_calls[0]["credentials_path"])
 
@@ -292,6 +304,23 @@ def test_act_mounts_and_unmounts_by_typed_entry(service):
         account="root",
         is_privileged=True,
         body={"action": "unmount", "record_id": record_id},
+    )
+    assert outcome == {}
+    assert store.mounts()[record_id]["is_enabled"] is False
+
+    outcome = subject.act(
+        entries=[],
+        account="root",
+        is_privileged=True,
+        body={"action": "mount", "record_id": record_id},
+    )
+    assert outcome == {}
+
+    outcome = subject.act(
+        entries=[],
+        account="root",
+        is_privileged=True,
+        body={"action": "forget", "record_id": record_id},
     )
     assert outcome == {}
     assert store.mounts() == {}

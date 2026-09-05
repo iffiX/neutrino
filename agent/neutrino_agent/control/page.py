@@ -149,6 +149,7 @@ const WORDS = {
     path_hint: "Mount path",
     not_attached: "not mounted",
     unmounting: "unmounting…",
+    forget: "Forget",
     enabled_users: "Enabled users",
     mount_queued: "waiting for the agent…",
     mount_installing_tooling: "installing the mount tooling…",
@@ -844,9 +845,12 @@ function drawFilesPanel(state, entries, title) {
       if (staged && staged.is_open) {
         delete fileStaged[entry.id];
       } else {
+        const kept = records[0];
         fileStaged[entry.id] = {
-          is_open: true, username: '', password: '',
-          path: mountDefaultPath(payload, state),
+          is_open: true, username: kept ? (kept.username || '') : '',
+          password: '',
+          path: kept ? kept.path : mountDefaultPath(payload, state),
+          record_id: kept ? kept.record_id : '',
         };
       }
       redraw();
@@ -900,10 +904,18 @@ function mountButton(entry, record, staged, state, noteKey) {
     button.disabled = true;
     return button;
   }
-  button.className = 'danger';
-  button.textContent = WORDS.ui.unmount;
   const mayAct = state.caller.is_privileged ||
     record.account === state.caller.account;
+  if (record.state === 'detached') {
+    button.textContent = WORDS.ui.mount;
+    button.disabled = !mayAct;
+    button.title = mayAct ? '' : WORDS.ui.privileged_only;
+    button.onclick = () => serviceAction('file',
+      { action: 'mount', record_id: record.record_id }, noteKey);
+    return button;
+  }
+  button.className = 'danger';
+  button.textContent = WORDS.ui.unmount;
   button.disabled = !mayAct;
   button.title = mayAct ? '' : WORDS.ui.privileged_only;
   button.onclick = () => {
@@ -970,6 +982,23 @@ function drawFileForm(entryId, staged) {
   pathLine.appendChild(path);
   pathLine.appendChild(browse);
   form.appendChild(pathLine);
+  if (staged.record_id) {
+    const line = document.createElement('div');
+    line.className = 'row';
+    const forget = document.createElement('button');
+    forget.className = 'danger';
+    forget.textContent = WORDS.ui.forget;
+    forget.onclick = async () => {
+      if (await serviceAction('file',
+          { action: 'forget', record_id: staged.record_id },
+          'file_' + entryId)) {
+        delete fileStaged[entryId];
+        redraw();
+      }
+    };
+    line.appendChild(forget);
+    form.appendChild(line);
+  }
   return form;
 }
 

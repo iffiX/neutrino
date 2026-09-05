@@ -425,14 +425,19 @@ class DeviceSshOperator:
             return
 
         if family == "deb":
+            # --reinstall, because a reinstall of the same version is this
+            # action's whole meaning on a managed device — plain install
+            # answers "already newest" and changes nothing.
             install_command = (
                 "DEBIAN_FRONTEND=noninteractive apt-get install -y "
+                "--reinstall "
                 f"--allow-downgrades {shlex.quote(remote_package)}"
             )
         else:
             install_command = (
+                f"dnf reinstall -y {shlex.quote(remote_package)} || "
                 f"dnf install -y {shlex.quote(remote_package)} || "
-                f"rpm -Uvh --oldpackage {shlex.quote(remote_package)}"
+                f"rpm -Uvh --oldpackage --force {shlex.quote(remote_package)}"
             )
         yield f"[installing the {family} package]\n"
         code, output = await self.run_privileged_once(

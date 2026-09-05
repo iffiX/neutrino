@@ -87,12 +87,22 @@ class FileServiceHandler(ServiceTypeHandler):
             account: The asking account.
             is_privileged: Whether the caller holds the privileged scope.
             body: ``{"action": "mount", "id", "username", "password",
-                "path"}`` or ``{"action": "unmount", "record_id"}``.
+                "path"}`` for a fresh or reconfigured mount,
+                ``{"action": "mount", "record_id"}`` to remount with the
+                kept credentials, ``{"action": "unmount", "record_id"}``
+                (the record and its credentials stay), or
+                ``{"action": "forget", "record_id"}``.
 
         Returns:
             Empty on success, ``{"code", "params"}`` on a refusal.
         """
         action = str(body.get("action", ""))
+        if action == "mount" and body.get("record_id"):
+            return self.remount(
+                account=account,
+                is_privileged=is_privileged,
+                record_id=str(body.get("record_id", "")),
+            )
         if action == "mount":
             entry = find_entry(entries, self.service_type, str(body.get("id", "")))
             if entry is None:
@@ -105,6 +115,12 @@ class FileServiceHandler(ServiceTypeHandler):
                 username=str(body.get("username", "")),
                 password=str(body.get("password", "")),
                 path=str(body.get("path", "")),
+            )
+        if action == "forget":
+            return self.forget(
+                account=account,
+                is_privileged=is_privileged,
+                record_id=str(body.get("record_id", "")),
             )
         if action == "unmount":
             return self.detach(
@@ -168,6 +184,20 @@ class FileServiceHandler(ServiceTypeHandler):
             )
             if refusal is not None:
                 return refusal
+            for old_id, old in list(self._store.mounts().items()):
+                if old.get("entry_id") != entry_id:
+                    continue
+                try:
+                    if self._platform.is_share_attached(
+                        location=str(old.get("path", ""))
+                    ):
+                        self._platform.detach_share(location=str(old.get("path", "")))
+                except (ShareAttachError, PlatformUnsupportedError):
+                    pass
+                self._discard_credentials(old_id)
+                self._store.remove_mount(old_id)
+                self._problems.pop(old_id, None)
+                self._stages.pop(old_id, None)
             record_id = mount_record_id(entry_id, location)
             record = {
                 "entry_id": entry_id,
@@ -196,8 +226,66 @@ class FileServiceHandler(ServiceTypeHandler):
         self._wakeup.set()
         return {}
 
+    def remount(self, *, account: str, is_privileged: bool, record_id: str) -> dict:
+        """Mount a kept record again with the credentials it saved.
+
+        Args:
+            account: The asking account.
+            is_privileged: Whether the caller holds the privileged scope.
+            record_id: The record to bring back.
+
+        Returns:
+            Empty on success, ``{"code", "params"}`` on a refusal.
+        """
+        with self._lock:
+            record = self._store.mounts().get(record_id)
+            if record is None:
+                return {"code": "unknown_request", "params": {}}
+            if not is_privileged and record.get("account") != account:
+                return {"code": "control_scope_refused", "params": {}}
+            record = dict(record)
+            record["is_enabled"] = True
+            self._store.set_mount(record_id, record)
+            self._problems.pop(record_id, None)
+            self._stages[record_id] = "queued"
+            self._log(f"queued {_share_url(record)} again")
+        self._wakeup.set()
+        return {}
+
+    def forget(self, *, account: str, is_privileged: bool, record_id: str) -> dict:
+        """Unmount if attached, then drop the record and its credentials.
+
+        Args:
+            account: The asking account.
+            is_privileged: Whether the caller holds the privileged scope.
+            record_id: The record to drop.
+
+        Returns:
+            Empty on success, ``{"code", "params"}`` on a refusal.
+        """
+        with self._lock:
+            record = self._store.mounts().get(record_id)
+            if record is None:
+                return {"code": "unknown_request", "params": {}}
+            if not is_privileged and record.get("account") != account:
+                return {"code": "control_scope_refused", "params": {}}
+            location = str(record.get("path", ""))
+            try:
+                if self._platform.is_share_attached(location=location):
+                    self._platform.detach_share(location=location)
+            except ShareAttachError as error:
+                return _share_refusal(error)
+            except PlatformUnsupportedError:
+                return {"code": "unsupported_platform", "params": {}}
+            self._discard_credentials(record_id)
+            self._store.remove_mount(record_id)
+            self._problems.pop(record_id, None)
+            self._stages.pop(record_id, None)
+            self._log(f"forgot the mount at {location}")
+            return {}
+
     def detach(self, *, account: str, is_privileged: bool, record_id: str) -> dict:
-        """Unmount one record: detach, drop the credentials, drop the record.
+        """Unmount one record; the record and its credentials are kept.
 
         Args:
             account: The asking account.
@@ -221,11 +309,12 @@ class FileServiceHandler(ServiceTypeHandler):
                 return _share_refusal(error)
             except PlatformUnsupportedError:
                 return {"code": "unsupported_platform", "params": {}}
-            self._discard_credentials(record_id)
-            self._store.remove_mount(record_id)
+            record = dict(record)
+            record["is_enabled"] = False
+            self._store.set_mount(record_id, record)
             self._problems.pop(record_id, None)
             self._stages.pop(record_id, None)
-            self._log(f"unmounted {location}")
+            self._log(f"unmounted {location}; the record and login stay")
             return {}
 
     def rows(self) -> list:
