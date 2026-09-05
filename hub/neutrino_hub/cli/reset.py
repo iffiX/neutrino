@@ -52,6 +52,10 @@ RESET_COLLECTED_PATHS = (
 # The vault's data key in particular — left behind, it opens whatever store
 # the next owner restores under the same wrap.
 RESET_STATE_PATHS = ("session.secret", "vault.key", "agent_tls_key.pem")
+# Directories under the state root the hub filled itself. The module cache is
+# a cache in the strict sense, so handing the box back costs the next owner a
+# download and nothing else.
+RESET_STATE_DIRS = ("agent_modules",)
 RESET_EXAMPLE_SUFFIX = ".example.json"
 RESET_PANEL_UNIT = "web"
 RESET_TARGETS = {
@@ -192,6 +196,11 @@ def _forget_collected() -> list:
         path = UTILS_STATE_ROOT / relative_path
         if path.exists():
             path.unlink()
+            removed.append(str(path))
+    for relative_path in RESET_STATE_DIRS:
+        path = UTILS_STATE_ROOT / relative_path
+        if path.is_dir():
+            shutil.rmtree(path)
             removed.append(str(path))
     return removed
 

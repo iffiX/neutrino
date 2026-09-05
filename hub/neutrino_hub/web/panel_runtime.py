@@ -55,6 +55,9 @@ from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
 from neutrino_hub.utils.json_file import read_config, write_config, write_generated
 from neutrino_hub.utils.subprocess_run import CommandError, run
 from neutrino_hub.web.auth import SessionStore, session_secret
+from neutrino_hub.modules.devices.agent_module_cache import AgentModuleCache
+from neutrino_hub.modules.devices.agent_module_controller import AgentModuleController
+from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.web.task_stream import TaskStreamRegistry
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
 from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
@@ -96,6 +99,14 @@ class PanelRuntime:
             units=self.services,
         )
         self.device_catalog = DeviceCatalogCache(services=self.published_services)
+        # The hub is the only thing that fetches and installs a module: one
+        # cache for the bytes, one lock per device, and one controller that
+        # is the single door every install goes through.
+        self.agent_modules = AgentModuleCache()
+        self.device_install_locks = DeviceInstallLocks()
+        self.agent_module_orders = AgentModuleController(
+            cache=self.agent_modules, locks=self.device_install_locks
+        )
         self.is_config_dirty = False
         # Latest agent metrics, keyed by MAC. Runtime only: these are stale the
         # moment the panel restarts, so they are never written to config/.
@@ -427,6 +438,7 @@ class PanelRuntime:
         self.client_accounts.pop(key, None)
         self.client_last_error.pop(key, None)
         self.client_command_results.pop(key, None)
+        self.agent_module_orders.forget(key)
 
     def take_client_commands(self, mac_address: str) -> list[dict]:
         """Drain the queued commands for one device.

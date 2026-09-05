@@ -1149,11 +1149,15 @@ class ClientHeartbeat(BaseModel):
     accounts: list[str] = Field(default_factory=list)
     catalog_hash: str = ""
     # What state each module is in: name to
-    # ``{"state", "code", "params", "is_active"}``.
+    # ``{"state", "code", "params", "is_active"}``. What is true, which is
+    # the only thing about modules the machine answers for.
     modules: dict = Field(default_factory=dict)
-    # Toggles made on the machine's own page, applied by the gateway and
-    # reflected back in the reply so both sides agree within one beat.
+    # Toggles made on the machine's own page. They ask the hub rather than
+    # act, so the drawer and the page cannot disagree for longer than a beat.
     module_requests: dict = Field(default_factory=dict)
+    # How the orders this machine has finished went: one
+    # ``{"id", "state", "code", "params", "output"}`` each.
+    module_results: list[dict] = Field(default_factory=list)
     # Which accounts want their AI tools pointed at the gateway.
     ai_targets: dict[str, bool] = Field(default_factory=dict)
     # The most recent error worth showing, as ``{"code", "params"}``.
@@ -1168,6 +1172,24 @@ class ClientCommand(BaseModel):
     args: dict = Field(default_factory=dict)
 
 
+class ClientModuleOrder(BaseModel):
+    """One thing the hub is telling a machine to do to one module.
+
+    An order names the module, the action, and how to get the bytes — never
+    the bytes themselves, which the machine asks for separately so a beat
+    stays a beat.
+    """
+
+    id: str
+    module: str
+    action: str
+    # What the machine asks the hub for the bytes by, and what it checks
+    # them against. Empty for an action that downloads nothing.
+    artifact_key: str = ""
+    digest: str = ""
+    package_kind: str = ""
+
+
 class ClientHeartbeatReply(BaseModel):
     """The gateway's answer to a heartbeat.
 
@@ -1176,7 +1198,9 @@ class ClientHeartbeatReply(BaseModel):
     """
 
     commands: list[ClientCommand] = Field(default_factory=list)
-    desired_modules: dict = Field(default_factory=dict)
+    # What to do now, rather than a state to work out for itself. At most
+    # one stands at a time: a machine installs one thing at a time.
+    module_orders: list[ClientModuleOrder] = Field(default_factory=list)
     # ``{"modules", "services"}`` under one hash.
     catalog: dict | None = None
     catalog_hash: str = ""
@@ -1233,12 +1257,11 @@ class ClientPackageRequest(BaseModel):
     family: str
 
 
-class ClientVendorFetch(BaseModel):
-    """An agent asking the hub to fetch a vendor package for it."""
+class ClientModulePackage(BaseModel):
+    """An agent asking for the bytes an order named."""
 
     token: str
-    url: str
-    package_kind: str = ""
+    artifact_key: str
 
 
 class DeviceModuleView(BaseModel):
@@ -1281,6 +1304,30 @@ class DeviceModuleUpdate(BaseModel):
 
     is_enabled: bool | None = None
     is_activated: bool | None = None
+
+
+class DeviceInstallOrderView(BaseModel):
+    """One install on a device, as the drawer's install pane shows it."""
+
+    id: str
+    module: str
+    # The module's own title, so a failure is read beside the thing it was.
+    title: str = ""
+    action: str
+    state: str
+    code: str = ""
+    params: dict = Field(default_factory=dict)
+    # What the failing step printed, so a person reads the vendor's own
+    # words rather than only that something went wrong.
+    output: str = ""
+    asked_at: str = ""
+    finished_at: str = ""
+
+
+class DeviceInstallOutputView(BaseModel):
+    """Every install this device has run, newest first."""
+
+    orders: list[DeviceInstallOrderView] = Field(default_factory=list)
 
 
 class ClientLeave(BaseModel):

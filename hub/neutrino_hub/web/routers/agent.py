@@ -5,11 +5,12 @@ per-device token issued when the agent was installed. They are served on the
 agent channel's own TLS port, never on the panel's, and every enrollment link
 carries the certificate fingerprint the agent pins.
 
-A heartbeat carries the machine's report — metrics, accounts, per-module
-state — and the reply carries what should be true: the desired modules,
-the catalog when the agent's copy is stale, and a gateway credential for
-each account whose AI target is on. The credential is the one per-device
-secret the reply resolves; the catalog itself carries none.
+A heartbeat carries what is true of the machine — metrics, accounts, each
+module's state, and how the last order it ran went — and the reply carries
+what to do now: the order standing for it, the catalog when its copy is
+stale, and a gateway credential for each account whose AI target is on. The
+credential is the one per-device secret the reply resolves; the catalog
+itself carries none, and an order carries a key rather than the bytes.
 """
 
 import hashlib
@@ -28,20 +29,15 @@ from neutrino_hub.modules.cliproxyapi.ops import (
     save_config,
 )
 from neutrino_hub.modules.credentials.vault import VaultLockedError
+from neutrino_hub.modules.devices.agent_module_controller import ask_module
 from neutrino_hub.modules.devices.agent_package import agent_packages
-from neutrino_hub.modules.devices.vendor_fetch import (
-    VendorFetchError,
-    fetch_vendor_package,
-)
 from neutrino_hub.modules.devices.constants import (
+    AGENT_MODULE_OUTPUT_LIMIT_BYTES,
     AGENT_WIRE_GENERATION,
     DEVICE_MAC_PATTERN,
 )
-from neutrino_hub.modules.devices.registry import (
-    DeviceRegistry,
-    ManagedDevice,
-    module_wish,
-)
+from neutrino_hub.modules.devices.manifests import load_module_manifests
+from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.utils.version_number import parse_version
 from neutrino_hub.web.dependencies import get_runtime
@@ -53,8 +49,9 @@ from neutrino_hub.web.models import (
     ClientHeartbeat,
     ClientHeartbeatReply,
     ClientLeave,
+    ClientModuleOrder,
+    ClientModulePackage,
     ClientPackageRequest,
-    ClientVendorFetch,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 
@@ -87,22 +84,56 @@ def heartbeat(
         )
     _refuse_newer_agent(beat.client_version)
     _refuse_stale_wire(beat.wire)
-    if beat.module_requests:
-        # A request from the machine's own page carries whichever wish was
-        # changed there; the rest is left as the panel has it.
-        for module, wish in beat.module_requests.items():
-            if isinstance(wish, dict):
-                device = registry.set_module(
-                    device.mac_address,
-                    module,
-                    is_enabled=wish.get("is_enabled"),
-                    is_activated=wish.get("is_activated"),
-                )
-            else:
-                device = registry.set_module(
-                    device.mac_address, module, is_enabled=bool(wish)
-                )
     key = device.mac_address
+    platform = (
+        dict(beat.platform) if beat.platform else runtime.client_platform.get(key, {})
+    )
+    # How the last order went, before anything else: it is what frees the
+    # device's queue to start the next one.
+    for result in beat.module_results:
+        if isinstance(result, dict) and result.get("id"):
+            runtime.agent_module_orders.record_result(
+                mac_address=key,
+                order_id=str(result.get("id")),
+                state=str(result.get("state", "")),
+                code=str(result.get("code", "") or ""),
+                params=dict(result.get("params") or {}),
+                output=str(result.get("output", "") or "")[
+                    -AGENT_MODULE_OUTPUT_LIMIT_BYTES:
+                ],
+            )
+    # Software turning up on the machine anyway settles a standing failure.
+    runtime.agent_module_orders.note_reported_states(key, dict(beat.modules))
+    if beat.module_requests:
+        # A toggle on the machine's own page asks the hub rather than acts,
+        # and enters by the same door the drawer's does.
+        manifests = load_module_manifests()
+        for module, wish in beat.module_requests.items():
+            if module not in manifests:
+                continue
+            is_enabled = (
+                bool(wish.get("is_enabled")) if isinstance(wish, dict) else bool(wish)
+            )
+            is_activated = wish.get("is_activated") if isinstance(wish, dict) else None
+            device = registry.set_module(
+                device.mac_address,
+                module,
+                is_enabled=is_enabled,
+                is_activated=is_activated,
+            )
+            ask_module(
+                controller=runtime.agent_module_orders,
+                mac_address=key,
+                module=module,
+                manifest=manifests[module],
+                platform=platform,
+                is_enabled=is_enabled,
+                reported_state=str(
+                    (beat.modules.get(module) or {}).get("state", "")
+                    if isinstance(beat.modules.get(module), dict)
+                    else ""
+                ),
+            )
     runtime.client_metrics[key] = dict(beat.metrics)
     runtime.client_modules[key] = dict(beat.modules)
     runtime.client_accounts[key] = list(beat.accounts)
@@ -125,13 +156,18 @@ def heartbeat(
 
     device_host = _device_host(runtime, device.ipv4_address)
     ai_accounts = _ai_accounts(device, runtime, registry, beat.ai_targets, device_host)
-    catalog, served_hash = runtime.device_catalog.catalog(device_host=device_host)
+    catalog, served_hash = runtime.device_catalog.catalog(
+        device_host=device_host, platform=platform
+    )
+    standing = runtime.agent_module_orders.pending_order(key)
     return ClientHeartbeatReply(
         commands=[
             ClientCommand(**command)
             for command in runtime.take_client_commands(device.mac_address)
         ],
-        desired_modules=_desired_modules(device),
+        module_orders=(
+            [ClientModuleOrder(**standing.to_wire())] if standing is not None else []
+        ),
         catalog=catalog if beat.catalog_hash != served_hash else None,
         catalog_hash=served_hash,
         ai_accounts=ai_accounts,
@@ -316,42 +352,47 @@ def package(request: ClientPackageRequest) -> Response:
     )
 
 
-@router.post("/vendor_package")
-def vendor_package(request: ClientVendorFetch) -> Response:
-    """Fetch a vendor's package for a device and hand it the bytes.
+@router.post("/module_package")
+def module_package(
+    request: ClientModulePackage, runtime: PanelRuntime = Depends(get_runtime)
+) -> Response:
+    """Hand a machine the bytes an order named.
 
-    A managed machine carries no dependencies, so it cannot present the
-    browser TLS fingerprint several vendor CDNs gate on. The hub can, and
-    the channel this arrives on is the one the agent already trusts.
+    The hub fetched these once for every device of this platform; this is
+    only the handing down, over the channel the agent already trusts. The
+    bytes travel here rather than on the heartbeat so a beat stays a beat.
 
     Args:
-        request: The token, the url the manifest names, and the kind the
-            bytes should be.
+        request: The token and the artifact key the order carried.
+        runtime: The shared runtime, which holds the cache.
 
     Returns:
         The package bytes, with their SHA-256 in ``X-Checksum-Sha256``.
 
     Raises:
-        HTTPException: 401 when the token matches no device, 409 with the
-            typed reason when the fetch did not produce a package — a
-            vendor serving a challenge page included.
+        HTTPException: 401 when the token matches no device, 409 when the
+            cache no longer holds that artifact — losing the directory
+            costs a re-fetch, which the next order does.
     """
     device = DeviceRegistry().find_by_client_token(request.token)
     if device is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="unknown client token"
         )
-    try:
-        fetched = fetch_vendor_package(request.url, package_kind=request.package_kind)
-    except VendorFetchError as error:
+    path = runtime.agent_modules.held(request.artifact_key)
+    if path is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"code": error.code, "params": error.params},
-        ) from error
+            detail={
+                "code": "module_artifact_missing",
+                "params": {"artifact_key": request.artifact_key},
+            },
+        )
+    data = path.read_bytes()
     return Response(
-        content=fetched.content,
+        content=data,
         media_type="application/octet-stream",
-        headers={"X-Checksum-Sha256": hashlib.sha256(fetched.content).hexdigest()},
+        headers={"X-Checksum-Sha256": hashlib.sha256(data).hexdigest()},
     )
 
 
@@ -407,20 +448,6 @@ def _refuse_newer_agent(agent_version: str) -> None:
             "params": {"hub_version": HUB_VERSION, "agent_version": agent_version},
         },
     )
-
-
-def _desired_modules(device: ManagedDevice) -> dict:
-    """What each of a device's modules should be.
-
-    Args:
-        device: The device the heartbeat came from.
-
-    Returns:
-        Module name to ``{"is_enabled", "is_activated"}``.
-    """
-    return {
-        module: module_wish(stored) for module, stored in device.client.modules.items()
-    }
 
 
 def _ai_accounts(

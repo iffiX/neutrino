@@ -6,6 +6,7 @@ import json
 import re
 import secrets
 import time
+from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -13,6 +14,14 @@ from neutrino_hub.modules.cliproxyapi.ops import (
     CliproxyApiConfigApplier,
     load_config as load_cliproxyapi_config,
     save_config as save_cliproxyapi_config,
+)
+from neutrino_hub.modules.devices.agent_module_cache import platform_keys
+from neutrino_hub.modules.devices.agent_module_controller import (
+    ORDER_ACTION_DISABLE,
+    ORDER_ACTION_ENABLE,
+    ORDER_ACTION_INSTALL,
+    ORDER_ACTION_REMOVE,
+    ask_module,
 )
 from neutrino_hub.modules.devices.agent_package import agent_packages
 from neutrino_hub.modules.devices.constants import DEVICE_MAC_PATTERN
@@ -50,6 +59,8 @@ from neutrino_hub.web.models import (
     DeviceProcessView,
     DeviceEnrollmentRequest,
     DeviceEnrollmentView,
+    DeviceInstallOrderView,
+    DeviceInstallOutputView,
     DeviceModuleListView,
     DeviceModuleUpdate,
     DeviceModuleView,
@@ -70,6 +81,16 @@ router = APIRouter(
 )
 
 POWER_ACTIONS = ("reboot", "shutdown")
+
+# What the drawer draws while an order stands. The machine reports the same
+# words once it starts; this is what covers the moment between the click and
+# the beat that carries the order down.
+_ORDER_STEP_STATES = {
+    ORDER_ACTION_INSTALL: "installing",
+    ORDER_ACTION_REMOVE: "removing",
+    ORDER_ACTION_ENABLE: "enabling",
+    ORDER_ACTION_DISABLE: "disabling",
+}
 
 LOGIN_KIND = "login"
 
@@ -443,12 +464,27 @@ def list_modules(
     key = mac_address.lower()
     reported = runtime.client_modules.get(key, {})
     platform = runtime.client_platform.get(key, {})
-    keys = _platform_keys(platform)
+    keys = platform_keys(platform)
+    controller = runtime.agent_module_orders
     modules = []
     for name, manifest in sorted(load_module_manifests().items()):
         status_ = reported.get(name, {})
         platforms = manifest.get("platforms", {})
         wanted = module_wish(device.client.modules.get(name))
+        state = status_.get("state", "unknown")
+        code = str(status_.get("code") or "")
+        params = dict(status_.get("params") or {})
+        # The machine answers for what is true; the controller answers for
+        # how the last thing somebody asked for went. A failure the machine
+        # cannot see — the hub's own fetch refusing — is only here.
+        open_order = controller.open_order_for(key, name)
+        failure = controller.failure_for(key, name)
+        if open_order is not None:
+            state = _ORDER_STEP_STATES.get(open_order.action, state)
+        elif failure is not None:
+            state = "failed"
+            code = failure.code
+            params = dict(failure.params)
         modules.append(
             DeviceModuleView(
                 name=name,
@@ -462,9 +498,9 @@ def list_modules(
                 has_activation=manifest.get("has_activation", False),
                 is_activated=wanted["is_activated"],
                 is_active=bool(status_.get("is_active")),
-                state=status_.get("state", "unknown"),
-                code=str(status_.get("code") or ""),
-                params=dict(status_.get("params") or {}),
+                state=state,
+                code=code,
+                params=params,
             )
         )
     return DeviceModuleListView(
@@ -499,17 +535,59 @@ def set_module(
     Raises:
         HTTPException: 404 for a module with no manifest.
     """
-    if module not in load_module_manifests():
+    manifests = load_module_manifests()
+    if module not in manifests:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="unknown module"
         )
-    DeviceRegistry().set_module(
+    key = mac_address.lower()
+    device = DeviceRegistry().set_module(
         mac_address,
         module,
         is_enabled=request.is_enabled,
         is_activated=request.is_activated,
     )
+    if request.is_enabled is not None:
+        reported = runtime.client_modules.get(key, {}).get(module) or {}
+        ask_module(
+            controller=runtime.agent_module_orders,
+            mac_address=key,
+            module=module,
+            manifest=manifests[module],
+            platform=runtime.client_platform.get(key, {}),
+            is_enabled=request.is_enabled,
+            reported_state=str(reported.get("state", "")),
+        )
     return list_modules(mac_address, runtime)
+
+
+@router.get("/{mac_address}/install_output", response_model=DeviceInstallOutputView)
+def install_output(
+    mac_address: str, runtime: PanelRuntime = Depends(get_runtime)
+) -> DeviceInstallOutputView:
+    """Every install this device has run, whatever asked for it.
+
+    One pane, because a person reading why something is not on a machine
+    should not have to know which surface started it.
+
+    Args:
+        mac_address: The device.
+        runtime: The shared runtime, which holds the controller.
+
+    Returns:
+        The device's orders, newest first, each with the output its module
+        produced.
+    """
+    manifests = load_module_manifests()
+    return DeviceInstallOutputView(
+        orders=[
+            DeviceInstallOrderView(
+                title=manifests.get(order.module, {}).get("title", order.module),
+                **order.to_view(),
+            )
+            for order in runtime.agent_module_orders.orders(mac_address.lower())
+        ]
+    )
 
 
 def _require_mac(mac_address: str) -> None:
@@ -531,22 +609,6 @@ def _require_mac(mac_address: str) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"{mac_address!r} is not a MAC address",
         )
-
-
-def _platform_keys(platform: dict) -> list:
-    """The manifest keys a reported platform matches, most specific first."""
-    if not platform:
-        return []
-    os_name = platform.get("os", "")
-    family = platform.get("family", "")
-    arch = platform.get("arch", "")
-    keys = []
-    if family:
-        keys.append(f"{os_name}-{family}-{arch}")
-        keys.append(f"{os_name}-{family}")
-    keys.append(f"{os_name}-{arch}")
-    keys.append(os_name)
-    return keys
 
 
 def _agent_urls(runtime: PanelRuntime) -> list:
@@ -726,11 +788,39 @@ async def start_action(
     link, _ = _generate_enrollment_link(
         runtime, name=device.name or "", mac_address=mac_address
     )
+    # Under the device's own install lock, which the module controller takes
+    # too: putting the agent on a machine and installing a module on it are
+    # two package managers on one machine, and only one may run.
     stream = runtime.tasks.start(
         label=f"install_client {mac_address}",
-        source=operator.install_client(packages=packages, enrollment_link=link),
+        source=_locked_install(
+            runtime,
+            mac_address,
+            operator.install_client(packages=packages, enrollment_link=link),
+        ),
     )
     return TaskStarted(task_id=stream.id)
+
+
+async def _locked_install(
+    runtime: PanelRuntime, mac_address: str, source: AsyncIterator[str]
+) -> AsyncIterator[str]:
+    """Run an install stream while holding the device's install lock.
+
+    Args:
+        runtime: The shared runtime, which owns the locks.
+        mac_address: The device.
+        source: The install's own output.
+
+    Yields:
+        A line saying it is waiting when something else holds the lock, then
+        everything the install produces.
+    """
+    if runtime.device_install_locks.is_held(mac_address):
+        yield "[waiting for the install already running on this device]\n"
+    async with runtime.device_install_locks.hold_async(mac_address):
+        async for chunk in source:
+            yield chunk
 
 
 @router.get("/{mac_address}/remote_desktop", response_model=RemoteDesktopView)

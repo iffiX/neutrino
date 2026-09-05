@@ -1,3 +1,5 @@
+from neutrino_hub.utils.constants import UTILS_STATE_ROOT
+
 # What a device is addressed by, everywhere. Six hexadecimal pairs, colon or
 # hyphen separated, in any case; the registry lowercases and normalises on the
 # way in. Anything else is not an address this box can wake, pin a host key
@@ -12,7 +14,7 @@ DEVICE_AGENT_ONLINE_WINDOW_S = 30
 # The shape of what crosses the agent channel. Must match the agent's own
 # AGENT_WIRE_GENERATION; a beat carrying another number is answered with
 # agent_wire_stale so the agent reinstalls itself.
-AGENT_WIRE_GENERATION = 2
+AGENT_WIRE_GENERATION = 3
 DEVICE_WOL_PORT = 9
 # Pure Python over the network; nothing architecture-bound is installed here.
 DEVICE_SUPPORTED_ARCHITECTURES = ("*",)
@@ -29,10 +31,50 @@ SSH_UNREACHABLE_STATUS = 255
 # and from SSH_UNREACHABLE_STATUS.
 SSH_UNSUPPORTED_OS_STATUS = 95
 
-# What a hub fetching a vendor package on a device's behalf presents and
-# accepts. The ceiling is generous — remote desktop packages run past
-# 100 MB — and exists so a mirror serving something endless cannot fill
-# the panel's memory.
-DEVICE_VENDOR_FETCH_IMPERSONATE = "chrome"
-DEVICE_VENDOR_FETCH_TIMEOUT_S = 300
-DEVICE_VENDOR_FETCH_LIMIT_BYTES = 512 * 1024 * 1024
+# The agent module cache: what the hub presents when it fetches a module for
+# a managed machine, and what it accepts back. The ceiling is generous —
+# remote desktop packages run past 100 MB — and exists so a mirror serving
+# something endless cannot fill the panel's memory.
+AGENT_MODULE_CACHE_DIR = UTILS_STATE_ROOT / "agent_modules"
+AGENT_MODULE_FETCH_IMPERSONATE = "chrome"
+AGENT_MODULE_FETCH_TIMEOUT_S = 300
+AGENT_MODULE_FETCH_LIMIT_BYTES = 512 * 1024 * 1024
+# A challenge page is a couple of kilobytes; no package this hub delivers is.
+AGENT_MODULE_MINIMUM_BYTES = 100 * 1024
+AGENT_MODULE_KEY_DIGEST_CHARS = 16
+AGENT_MODULE_GITHUB_API = "https://api.github.com/repos/{repo}/releases/latest"
+
+# Browser headers cost nothing and are what several vendor CDNs check before
+# serving anything but a challenge page. A TLS fingerprint takes more than a
+# header, which is what AGENT_MODULE_FETCH_IMPERSONATE is for.
+AGENT_MODULE_BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+# What each package kind starts with, so a page served in a package's place is
+# caught before anything hands it to an installer.
+AGENT_MODULE_PACKAGE_MAGIC = {
+    "deb": (b"!<arch>",),
+    "rpm": (b"\xed\xab\xee\xdb",),
+    "msi": (b"\xd0\xcf\x11\xe0",),
+    "exe": (b"MZ",),
+    "dmg": (b"koly", b"\x78\x01\x73", b"\x42\x5a\x68"),
+    "tar_binary": (b"\x1f\x8b", b"BZh", b"\xfd7zXZ"),
+    "zip_binary": (b"PK\x03\x04",),
+}
+
+# How long one order may stand handed-down before the controller stops
+# waiting for the machine's word. An install can genuinely take minutes; an
+# agent that went away mid-order must not hold its device's lock for ever.
+AGENT_MODULE_ORDER_TIMEOUT_S = 30 * 60
+# How many finished orders a device keeps, so the drawer can still show the
+# install a person is asking about without holding every install ever run.
+AGENT_MODULE_ORDER_HISTORY = 12
+# What an agent reports back of a failed install. Enough to read the package
+# manager's own complaint, bounded so a verbose failure cannot fill a beat.
+AGENT_MODULE_OUTPUT_LIMIT_BYTES = 16 * 1024
