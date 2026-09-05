@@ -361,8 +361,15 @@ def test_the_lifecycle_walks_every_transition(panel, stranger):
         and device_by_mac(panel, mac)["is_agent_online"],
         DRILL_TIMEOUT_S,
     )
-    restored = ssh_to(host, f"grep '^AGENT_VERSION' {agent_tree}/_version.py")
-    assert '"0.0.0"' not in restored.stdout, restored.stdout
+    # The install runs in a transient unit that outlives the process it
+    # replaces, so the file lands a moment after the hub sees the new
+    # version — wait for the package to have overwritten what was edited.
+    wait_for(
+        "the reinstall to put the package's own version file back",
+        lambda: '"0.0.0"'
+        not in ssh_to(host, f"grep '^AGENT_VERSION' {agent_tree}/_version.py").stdout,
+        UNBIND_TIMEOUT_S,
+    )
 
     ssh_to(
         host,
