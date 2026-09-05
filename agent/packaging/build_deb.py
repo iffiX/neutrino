@@ -61,7 +61,13 @@ systemctl daemon-reload || true
 
 # The agent runs from install: unbound it idles waiting for a link, and its
 # control channel answers nagent ui. A service that only starts after a
-# connect is a heartbeat counter that never accumulates.
+# connect is a heartbeat counter that never accumulates. An upgrade must
+# RESTART it — enable --now on a running unit is a no-op, and the whole
+# self-update path ends here: without the restart the new code lies on
+# disk while the old process goes on beating.
+if [ "$1" = configure ] && [ -n "$2" ]; then
+    systemctl try-restart neutrino_agent.service >/dev/null 2>&1 || true
+fi
 systemctl enable --now neutrino_agent.service >/dev/null 2>&1 || true
 
 if [ -d /usr/share/icons/hicolor ]; then

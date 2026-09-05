@@ -31,6 +31,7 @@ CLIENT_TIMEOUT_S = 180
 INSTALL_TIMEOUT_S = 240
 UNBIND_TIMEOUT_S = 60
 LEAVE_TIMEOUT_S = 30
+DRILL_TIMEOUT_S = 180
 POLL_INTERVAL_S = 3
 
 
@@ -329,6 +330,50 @@ def test_the_lifecycle_walks_every_transition(panel, stranger):
         assert outcome["is_active_after"] is False, outcome
     finally:
         panel.call("DELETE", f"/services/declared/{record_id}")
+
+    # The upgrade drills: a machine running older agent code must heal
+    # itself. A lower version triggers the classic self-update; a stale
+    # wire generation triggers the forced reinstall. Both end with the
+    # real package installed, the service actually restarted, and the
+    # heartbeat green — which is exactly the chain that once shipped new
+    # code to disk while the old process went on beating.
+    agent_tree = "/usr/lib/python3/dist-packages/neutrino_agent"
+    healthy = device_by_mac(panel, mac)
+    real_version = healthy["client"]["version"]
+
+    ssh_to(
+        host,
+        f'sudo sed -i \'s/"[0-9.]*"/"0.0.0"/\' {agent_tree}/_version.py'
+        " && sudo systemctl restart neutrino_agent",
+    )
+    wait_for(
+        "the downgraded agent to report 0.0.0",
+        lambda: (device_by_mac(panel, mac) or {"client": None}).get("client")
+        and device_by_mac(panel, mac)["client"]["version"] == "0.0.0",
+        UNBIND_TIMEOUT_S,
+    )
+    wait_for(
+        "the version self-update to heal the agent",
+        lambda: (device_by_mac(panel, mac) or {"client": None}).get("client")
+        and device_by_mac(panel, mac)["client"]["version"] == real_version
+        and device_by_mac(panel, mac)["is_agent_online"],
+        DRILL_TIMEOUT_S,
+    )
+
+    ssh_to(
+        host,
+        "sudo sed -i 's/^AGENT_WIRE_GENERATION = .*/AGENT_WIRE_GENERATION = 1/' "
+        f"{agent_tree}/constants.py && sudo systemctl restart neutrino_agent",
+    )
+    wait_for(
+        "the stale-wire agent to reinstall itself",
+        lambda: "= 1"
+        not in ssh_to(
+            host, f"grep '^AGENT_WIRE_GENERATION' {agent_tree}/constants.py"
+        ).stdout
+        and (device_by_mac(panel, mac) or {}).get("is_agent_online"),
+        DRILL_TIMEOUT_S,
+    )
 
     # The hub lets go by deleting the token. The agent is refused, and after
     # a few beats it unbinds by itself and says so on its own machine.

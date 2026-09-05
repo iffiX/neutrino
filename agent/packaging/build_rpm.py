@@ -76,6 +76,11 @@ cp -a {payload}/. %{{buildroot}}/
 
 %post
 systemctl daemon-reload >/dev/null 2>&1 || true
+# An upgrade must restart the running agent: the self-update path ends
+# here, and without the restart the old process goes on beating.
+if [ "$1" -ge 2 ]; then
+    systemctl try-restart neutrino_agent.service >/dev/null 2>&1 || true
+fi
 if [ -d /usr/share/icons/hicolor ]; then
     gtk-update-icon-cache -f /usr/share/icons/hicolor >/dev/null 2>&1 || true
 fi
