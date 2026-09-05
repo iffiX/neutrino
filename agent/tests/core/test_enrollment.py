@@ -4,17 +4,10 @@ The payload rides base64url so the link holds no character a shell splits or
 a URL escapes; these prove both directions and the refusals.
 """
 
-import base64
-import json
-
 import pytest
 
 from neutrino_agent.core.enrollment import EnrollmentError, parse_link
-
-
-def link_for(payload: dict) -> str:
-    encoded = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
-    return "neutrino://enroll/" + encoded.rstrip("=")
+from tests.conftest import link_for
 
 
 def test_a_link_round_trips():

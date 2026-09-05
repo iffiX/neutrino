@@ -1,26 +1,20 @@
-"""One version between hub and agent: refusal upward, self-update downward.
+"""Self-update downward: the hub's baked package, verified, installed detached.
 
-A hub that finds an agent newer than itself turns it away with a coded 409 —
-a definitive rejection that unbinds the agent after three consecutive beats,
-its reason naming the version skew; a hub that reports a later version makes
-the agent pull the hub's baked package and install it in a transient unit
-that outlives the process. Nothing here talks to a network: the channel is
-replaced at the seam the agent uses it through.
+A hub that reports a later version makes the agent pull the hub's baked
+package and install it in a transient unit that outlives the process.
+Nothing here talks to a network: the channel is replaced at the seam the
+agent uses it through.
 """
 
-import base64
 import hashlib
-import json
 import os
 import subprocess
 
 import pytest
 
-import neutrino_agent.core.enrollment as enrollment
 import neutrino_agent.core.self_update as self_update
 from neutrino_agent.core.loop import Agent
-from neutrino_agent.cli import status as status_cli
-from neutrino_agent.core.channel import GatewayVersionRefused
+from tests.conftest import bind, discard
 
 PACKAGE_BYTES = b"!<arch>agent-package"
 
@@ -48,13 +42,6 @@ class FakeChannel:
 
 
 @pytest.fixture
-def config_path(tmp_path, monkeypatch):
-    path = tmp_path / "agent.json"
-    monkeypatch.setattr(enrollment, "AGENT_CONFIG_PATH", str(path))
-    return path
-
-
-@pytest.fixture
 def launched(monkeypatch):
     """Recorded systemd-run invocations, with the real subprocess never hit."""
     commands = []
@@ -67,10 +54,6 @@ def launched(monkeypatch):
     return commands
 
 
-def bind(path, url="http://127.0.0.1:9") -> None:
-    path.write_text(json.dumps({"gateway_url": url, "token": "tok"}))
-
-
 def bound_agent(config_path, monkeypatch, *, hub_version, named_digest=""):
     bind(config_path)
     monkeypatch.setattr("neutrino_agent.core.loop.AGENT_VERSION", "1.0.0")
@@ -78,100 +61,6 @@ def bound_agent(config_path, monkeypatch, *, hub_version, named_digest=""):
     agent = Agent(log=discard)
     agent._channel = FakeChannel(hub_version, named_digest=named_digest)
     return agent
-
-
-def link_for(payload: dict) -> str:
-    encoded = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
-    return "neutrino://enroll/" + encoded.rstrip("=")
-
-
-def discard(message: str) -> None:
-    """Swallow the agent's log lines."""
-
-
-# --- a newer agent is refused, and three refused beats unbind it ---
-
-
-def test_three_version_refused_beats_unbind(config_path, monkeypatch):
-    bind(config_path)
-    agent = Agent(log=discard)
-
-    def refuse(path, payload):
-        raise GatewayVersionRefused(hub_version="0.1.0", agent_version="0.2.0")
-
-    monkeypatch.setattr(agent._channel, "post", refuse)
-    delays = [agent.run_once() for _ in range(3)]
-
-    assert agent._channel is None
-    assert "gateway_url" not in json.loads(config_path.read_text())
-    assert agent.last_error() == {
-        "code": "self_unbound",
-        "params": {"cause": "agent_newer_than_hub"},
-    }
-    # Counted beats wait one plain interval — no backoff, this is an answer,
-    # not an outage — and the third drops to the unbound idle poll.
-    assert delays == [5, 5, 2]
-
-
-def test_two_version_refused_beats_keep_the_binding(config_path, monkeypatch):
-    bind(config_path)
-    agent = Agent(log=discard)
-
-    def refuse(path, payload):
-        raise GatewayVersionRefused(hub_version="0.1.0", agent_version="0.2.0")
-
-    monkeypatch.setattr(agent._channel, "post", refuse)
-    for _ in range(2):
-        agent.run_once()
-
-    assert agent._channel is not None
-    assert "gateway_url" in json.loads(config_path.read_text())
-    assert agent.last_error()["code"] == "agent_newer_than_hub"
-
-
-def test_connect_refuses_a_newer_agent_visibly(config_path, monkeypatch):
-    def refuse(self, path, payload):
-        raise GatewayVersionRefused(hub_version="0.1.0", agent_version="0.2.0")
-
-    monkeypatch.setattr(enrollment.GatewayHttpChannel, "post", refuse)
-    link = link_for({"urls": ["http://127.0.0.1:9"], "token": "ticket", "fp": ""})
-
-    with pytest.raises(enrollment.EnrollmentError) as refusal:
-        enrollment.enroll(link)
-
-    assert "this agent (0.2.0) is newer than the hub (0.1.0)" in str(refusal.value)
-    assert "update the hub first" in str(refusal.value)
-    assert "gateway_url" not in enrollment.load_config()
-
-
-def test_status_words_a_version_refusal_distinctly(config_path, monkeypatch, capsys):
-    bind(config_path)
-
-    class StuckAgent:
-        def __init__(self, *, log):
-            del log
-
-        def run_once(self):
-            return 5
-
-        def last_error(self):
-            return {
-                "code": "agent_newer_than_hub",
-                "params": {"hub_version": "0.1.0", "agent_version": "0.2.0"},
-            }
-
-    monkeypatch.setattr(status_cli, "Agent", StuckAgent)
-    monkeypatch.setattr(status_cli, "service_state", lambda: "running")
-    monkeypatch.setattr(status_cli, "_local_state", lambda: None)
-
-    assert status_cli.main() == 1
-    out = capsys.readouterr().out
-    assert "newer than the hub" in out
-    assert "unbinds by itself" in out
-    assert "fresh link" in out
-
-
-# --- an older agent updates itself ---
 
 
 def test_a_newer_hub_triggers_a_detached_install(config_path, monkeypatch, launched):

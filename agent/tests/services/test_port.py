@@ -6,10 +6,7 @@ import threading
 import pytest
 
 from neutrino_agent.services.port import PortServiceHandler
-
-
-def discard(message: str) -> None:
-    """Swallow the log lines."""
+from tests.conftest import discard
 
 
 def echo(connection) -> None:

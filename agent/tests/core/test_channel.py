@@ -7,7 +7,6 @@ sent, and a bound agent beating against the wrong certificate unbinds the
 way a refused token does.
 """
 
-import base64
 import hashlib
 import json
 import shutil
@@ -21,6 +20,7 @@ import pytest
 import neutrino_agent.core.enrollment as enrollment
 from neutrino_agent.core.loop import Agent
 from neutrino_agent.core.channel import GatewayHttpChannel, GatewayUntrusted
+from tests.conftest import discard, link_for
 
 WRONG_FINGERPRINT = "0" * 64
 
@@ -93,22 +93,6 @@ def tls_server(tmp_path):
     finally:
         server.shutdown()
         server.server_close()
-
-
-@pytest.fixture
-def config_path(tmp_path, monkeypatch):
-    path = tmp_path / "agent.json"
-    monkeypatch.setattr(enrollment, "AGENT_CONFIG_PATH", str(path))
-    return path
-
-
-def link_for(payload: dict) -> str:
-    encoded = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
-    return "neutrino://enroll/" + encoded.rstrip("=")
-
-
-def discard(message: str) -> None:
-    """Swallow the agent's log lines."""
 
 
 def test_the_pinned_fingerprint_talks(tls_server):

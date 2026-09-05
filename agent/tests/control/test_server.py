@@ -17,173 +17,13 @@ from neutrino_agent.constants import AGENT_CONTROL_PAGE_ORIGIN
 from neutrino_agent.control import client
 from neutrino_agent.control.identity import ControlTokenStore
 from neutrino_agent.control.server import ControlServer
-from neutrino_agent.platforms.base import AgentPlatform, PlatformUnsupportedError
+from neutrino_agent.platforms.base import PlatformUnsupportedError
+from tests.conftest import ALICE, ROOT, FakeControlAgent, FakeControlPlatform
 
-ROOT = {"account": "root", "uid": 0, "is_privileged": True}
-ALICE = {"account": "alice", "uid": 1000, "is_privileged": False}
-
-SERVICES = [
-    {
-        "id": "ai",
-        "type": "ai",
-        "title": "AI tools",
-        "payload": {
-            "endpoint": "http://hub:8080",
-            "protocol": "anthropic",
-            "models": ["m1"],
-        },
-        "is_healthy": True,
-        "source": "module",
-        "description": "",
-    },
-    {
-        "id": "svc_wiki",
-        "type": "web",
-        "title": "Wiki",
-        "payload": {"url": "http://w/"},
-        "is_healthy": True,
-        "source": "declared",
-        "description": "declared by hand",
-    },
-    {
-        "id": "svc_tcp",
-        "type": "port",
-        "title": "tcp",
-        "payload": {"host": "h", "port": 5432},
-        "is_healthy": True,
-        "source": "module",
-        "description": "published by container mysql:8.0",
-    },
-]
-
-
-class FakeControlPlatform(AgentPlatform):
-    os_name = "linux"
-
-    def __init__(self):
-        self.peer = dict(ROOT)
-        self.peer_error = None
-        self.fs_calls = []
-        self.fs_error = None
-
-    def human_accounts(self) -> list:
-        return ["alice", "bob"]
-
-    def read_peer_identity(self, connection) -> dict:
-        if self.peer_error is not None:
-            raise self.peer_error
-        return self.peer
-
-    def list_directories(self, *, account: str, path: str) -> list:
-        self.fs_calls.append(("list", account, path))
-        if self.fs_error is not None:
-            raise self.fs_error
-        return ["docs", "media"]
-
-    def make_directory(self, *, account: str, path: str) -> None:
-        self.fs_calls.append(("mkdir", account, path))
-        if self.fs_error is not None:
-            raise self.fs_error
-
-
-class FakeControlAgent:
-    def __init__(self):
-        self.requested = []
-        self.connected_links = []
-        self.is_disconnected = False
-        self.connect_error = None
-        self.service_calls = []
-        self.service_reply = {}
-
-    def platform(self) -> dict:
-        return {"os": "linux", "family": "debian", "arch": "x86_64"}
-
-    def catalog(self) -> dict:
-        return {
-            "modules": {
-                "openssh_server": {
-                    "title": "OpenSSH server",
-                    "description": "",
-                    "kind": "openssh",
-                    "platforms": {"linux": {}},
-                }
-            },
-            "services": SERVICES,
-        }
-
-    def service_entries(self) -> list:
-        return list(SERVICES)
-
-    def module_states(self) -> dict:
-        return {"openssh_server": {"state": "enabled", "is_active": False}}
-
-    def desired_modules(self) -> dict:
-        return {"openssh_server": {"is_enabled": True}}
-
-    def last_error(self):
-        return None
-
-    def accounts(self) -> list:
-        return ["alice", "bob"]
-
-    def ai_targets(self) -> dict:
-        return {"alice": True, "bob": False}
-
-    def ai_states(self) -> dict:
-        return {
-            "alice": {
-                "state": "installed",
-                "code": "",
-                "params": {},
-                "is_active": True,
-            },
-            "bob": {"state": "absent", "code": "", "params": {}, "is_active": False},
-        }
-
-    def ai_tool_configs(self) -> dict:
-        return {"claude": {"default": "m1"}}
-
-    def _gone_connect_account(self) -> str:
-        return "alice"
-
-    def account_home(self, account) -> str:
-        return "/root" if account == "root" else f"/home/{account}"
-
-    def service_states(self) -> dict:
-        return {
-            "forwards": {"svc_tcp": {"local_port": 5432, "is_active": True}},
-            "mounts": [
-                {
-                    "record_id": "r1",
-                    "entry_id": "hub_share_media",
-                    "path": "/home/alice/nas/media",
-                    "account": "alice",
-                    "is_attached": True,
-                    "code": "",
-                    "params": {},
-                }
-            ],
-        }
-
-    def service_action(self, service_type, *, account, is_privileged, body) -> dict:
-        self.service_calls.append((service_type, account, is_privileged, dict(body)))
-        return dict(self.service_reply)
-
-    def request_module(self, name, *, is_enabled=None, is_activated=None):
-        self.requested.append((name, is_enabled, is_activated))
-
-    def connect(self, link):
-        if self.connect_error is not None:
-            raise self.connect_error
-        self.connected_links.append(link)
-
-    def disconnect(self):
-        self.is_disconnected = True
 
 
 @pytest.fixture
-def control(tmp_path, monkeypatch):
-    monkeypatch.setattr(enrollment, "AGENT_CONFIG_PATH", str(tmp_path / "agent.json"))
+def control(tmp_path):
     agent = FakeControlAgent()
     platform = FakeControlPlatform()
     server = ControlServer(
@@ -443,8 +283,7 @@ def test_tokens_are_minted_only_over_the_socket(control):
     assert (status, reply["code"]) == (404, "unknown_request")
 
 
-def test_minting_refuses_while_the_page_is_not_served(tmp_path, monkeypatch):
-    monkeypatch.setattr(enrollment, "AGENT_CONFIG_PATH", str(tmp_path / "agent.json"))
+def test_minting_refuses_while_the_page_is_not_served(tmp_path):
     platform = FakeControlPlatform()
     server = ControlServer(
         agent=FakeControlAgent(),
@@ -488,8 +327,7 @@ def test_a_token_is_watched_and_revoked_over_the_socket(control):
     assert (status, reply["code"]) == (401, "control_token_invalid")
 
 
-def test_an_expired_pulse_ends_the_token(tmp_path, monkeypatch):
-    monkeypatch.setattr(enrollment, "AGENT_CONFIG_PATH", str(tmp_path / "agent.json"))
+def test_an_expired_pulse_ends_the_token(tmp_path):
     now = [0.0]
     tokens = ControlTokenStore(idle_ttl_s=10, clock=lambda: now[0])
     platform = FakeControlPlatform()

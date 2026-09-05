@@ -7,6 +7,7 @@ import pytest
 from neutrino_agent.platforms.base import AgentPlatform, ShareAttachError
 from neutrino_agent.services.file import FileServiceHandler, mount_record_id
 from neutrino_agent.services.store import MachineServiceStore
+from tests.conftest import discard
 
 PAYLOAD = {"protocol": "smb", "host": "hub", "share": "media"}
 
@@ -82,10 +83,6 @@ class FakeMountPlatform(AgentPlatform):
 
     def is_share_attached(self, *, location: str) -> bool:
         return location in self.attached
-
-
-def discard(message: str) -> None:
-    """Swallow the log lines."""
 
 
 @pytest.fixture

@@ -9,10 +9,9 @@ import pytest
 
 import neutrino_agent.cli.entry as entry
 import neutrino_agent.cli.ui as ui
-import neutrino_agent.core.enrollment as enrollment
 from neutrino_agent.control import client
 from neutrino_agent.control.server import ControlServer
-from tests.test_control_server import ALICE, FakeControlAgent, FakeControlPlatform
+from tests.conftest import ALICE, FakeControlAgent, FakeControlPlatform
 
 
 class FakeUiPlatform(FakeControlPlatform):
@@ -26,7 +25,6 @@ class FakeUiPlatform(FakeControlPlatform):
 
 @pytest.fixture
 def running_control(tmp_path, monkeypatch):
-    monkeypatch.setattr(enrollment, "AGENT_CONFIG_PATH", str(tmp_path / "agent.json"))
     platform = FakeUiPlatform(str(tmp_path / "agent.sock"))
     platform.peer = dict(ALICE)
     server = ControlServer(
@@ -135,7 +133,6 @@ def test_ctrl_c_revokes_the_token_at_once(running_control, monkeypatch, capsys):
 
 
 def test_ui_refuses_plainly_when_no_page_is_served(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(enrollment, "AGENT_CONFIG_PATH", str(tmp_path / "agent.json"))
     platform = FakeUiPlatform(str(tmp_path / "agent.sock"))
     platform.peer = dict(ALICE)
     server = ControlServer(

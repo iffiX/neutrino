@@ -7,22 +7,9 @@ adoption path directly; nothing here talks to a network.
 
 import json
 
-import pytest
-
-import neutrino_agent.core.enrollment as enrollment
 import neutrino_agent.core.channel as channel
 from neutrino_agent.core.loop import Agent
-
-
-@pytest.fixture
-def config_path(tmp_path, monkeypatch):
-    path = tmp_path / "agent.json"
-    monkeypatch.setattr(enrollment, "AGENT_CONFIG_PATH", str(path))
-    return path
-
-
-def bind(path, url="http://127.0.0.1:9") -> None:
-    path.write_text(json.dumps({"gateway_url": url, "token": "tok"}))
+from tests.conftest import bind
 
 
 def test_a_binding_written_by_another_process_is_adopted(config_path):
@@ -299,6 +286,43 @@ def test_a_stale_wire_answer_reinstalls_and_never_unbinds(config_path, monkeypat
     assert agent.last_error()["code"] == "agent_wire_stale"
     assert agent._refusals == 0
     assert agent._channel is not None
+
+
+def test_three_version_refused_beats_unbind(config_path, monkeypatch):
+    bind(config_path)
+    agent = Agent(log=lambda message: None)
+
+    def refuse(path, payload):
+        raise channel.GatewayVersionRefused(hub_version="0.1.0", agent_version="0.2.0")
+
+    monkeypatch.setattr(agent._channel, "post", refuse)
+    delays = [agent.run_once() for _ in range(3)]
+
+    assert agent._channel is None
+    assert "gateway_url" not in json.loads(config_path.read_text())
+    assert agent.last_error() == {
+        "code": "self_unbound",
+        "params": {"cause": "agent_newer_than_hub"},
+    }
+    # Counted beats wait one plain interval — no backoff, this is an answer,
+    # not an outage — and the third drops to the unbound idle poll.
+    assert delays == [5, 5, 2]
+
+
+def test_two_version_refused_beats_keep_the_binding(config_path, monkeypatch):
+    bind(config_path)
+    agent = Agent(log=lambda message: None)
+
+    def refuse(path, payload):
+        raise channel.GatewayVersionRefused(hub_version="0.1.0", agent_version="0.2.0")
+
+    monkeypatch.setattr(agent._channel, "post", refuse)
+    for _ in range(2):
+        agent.run_once()
+
+    assert agent._channel is not None
+    assert "gateway_url" in json.loads(config_path.read_text())
+    assert agent.last_error()["code"] == "agent_newer_than_hub"
 
 
 def test_a_reply_this_build_cannot_read_is_reported_not_fatal(config_path):

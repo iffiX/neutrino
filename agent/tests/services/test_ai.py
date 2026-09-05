@@ -14,6 +14,7 @@ from neutrino_agent.services.ai import (
 )
 from neutrino_agent.services.store import MachineServiceStore
 from neutrino_agent.services.switcher import NoTargetUserError
+from tests.conftest import discard
 
 PLATFORM_TUPLE = {"os": "linux", "family": "debian", "arch": "amd64"}
 ENTRY = {
@@ -68,10 +69,6 @@ class FakeSwitcher:
         self.calls.append(("deactivate", run_as, base_url))
         self.active.pop(run_as, None)
         return "claude → as it was"
-
-
-def discard(message: str) -> None:
-    """Swallow the log lines."""
 
 
 @pytest.fixture
