@@ -380,7 +380,9 @@ function KeyCard({ value, onDeleted }: KeyCardProps) {
   return (
     <div className="key_card">
       <div className="key_card_head">
-        <span className="key_card_name">{value.name}</span>
+        <span className="key_card_name" title={value.name}>
+          {value.name}
+        </span>
         <span className="key_card_type">{value.key_type}</span>
       </div>
 
@@ -549,7 +551,9 @@ function LoginCard({ value, onDeleted }: LoginCardProps) {
   return (
     <div className="key_card">
       <div className="key_card_head">
-        <span className="key_card_name">{value.name}</span>
+        <span className="key_card_name" title={value.name}>
+          {value.name}
+        </span>
       </div>
 
       {value.username !== null && (
@@ -694,7 +698,9 @@ function TokenCard({ value, onDeleted }: TokenCardProps) {
   return (
     <div className="key_card">
       <div className="key_card_head">
-        <span className="key_card_name">{value.name}</span>
+        <span className="key_card_name" title={value.name}>
+          {value.name}
+        </span>
       </div>
 
       <div className="key_card_meta">
