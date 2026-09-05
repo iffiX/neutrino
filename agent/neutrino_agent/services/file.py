@@ -75,6 +75,9 @@ class FileServiceHandler(ServiceTypeHandler):
         self._log = log
         self._lock = threading.Lock()
         self._problems: dict = {}
+        # Live step per record: queued, installing_tooling, mounting.
+        self._stages: dict = {}
+        self._wakeup = threading.Event()
 
     def act(self, *, entries: list, account: str, is_privileged: bool, body: dict):
         """Mount a share with the staged config, or unmount one record.
@@ -176,23 +179,22 @@ class FileServiceHandler(ServiceTypeHandler):
                 "is_enabled": True,
             }
             try:
-                self._platform.attach_share(
-                    account=account,
-                    share_url=_share_url(record),
+                self._platform.write_share_credentials(
+                    credentials_path=self._credentials_path(record_id),
                     username=username,
                     password=password,
-                    location=location,
-                    credentials_path=self._credentials_path(record_id),
                 )
-            except ShareAttachError as error:
-                self._discard_credentials(record_id)
-                return _share_refusal(error)
             except PlatformUnsupportedError:
                 return {"code": "unsupported_platform", "params": {}}
+            # Queued, not mounted: installing tooling and the mount itself
+            # can take a while, and the page reads the step from the rows
+            # rather than this call hanging on it.
             self._store.set_mount(record_id, record)
             self._problems.pop(record_id, None)
-            self._log(f"mounted {_share_url(record)} at {location}")
-            return {}
+            self._stages[record_id] = "queued"
+            self._log(f"queued {_share_url(record)} for {location}")
+        self._wakeup.set()
+        return {}
 
     def detach(self, *, account: str, is_privileged: bool, record_id: str) -> dict:
         """Unmount one record: detach, drop the credentials, drop the record.
@@ -222,6 +224,7 @@ class FileServiceHandler(ServiceTypeHandler):
             self._discard_credentials(record_id)
             self._store.remove_mount(record_id)
             self._problems.pop(record_id, None)
+            self._stages.pop(record_id, None)
             self._log(f"unmounted {location}")
             return {}
 
@@ -241,6 +244,17 @@ class FileServiceHandler(ServiceTypeHandler):
             problem = dict(self._problems.get(record_id, {}))
             if not os.path.isfile(self._credentials_path(record_id)):
                 problem = {"code": "credentials_missing", "params": {}}
+            stage = self._stages.get(record_id, "")
+            if problem.get("code"):
+                state = "failed"
+            elif stage:
+                state = stage
+            elif is_attached:
+                state = "mounted"
+            elif record.get("is_enabled"):
+                state = "pending"
+            else:
+                state = "detached"
             rows.append(
                 {
                     "record_id": record_id,
@@ -252,6 +266,7 @@ class FileServiceHandler(ServiceTypeHandler):
                     "account": record.get("account", ""),
                     "is_enabled": bool(record.get("is_enabled")),
                     "is_attached": is_attached,
+                    "state": state,
                     "code": problem.get("code", ""),
                     "params": problem.get("params", {}),
                 }
@@ -259,12 +274,19 @@ class FileServiceHandler(ServiceTypeHandler):
         return rows
 
     def reconcile(self) -> None:
-        """Remount every enabled record that is not attached."""
+        """Remount every enabled record that is not attached.
+
+        The snapshot is taken under the lock and the mounting done outside
+        it: installing tooling can take minutes, and the control channel
+        must go on answering while it does. A record detached mid-step is
+        re-checked by the next pass rather than raced here.
+        """
         with self._lock:
-            for record_id, record in sorted(self._store.mounts().items()):
-                if not record.get("is_enabled"):
-                    continue
-                self._remount(record_id, record)
+            pending = sorted(self._store.mounts().items())
+        for record_id, record in pending:
+            if not record.get("is_enabled"):
+                continue
+            self._remount(record_id, record)
 
     def _run(self) -> None:
         while True:
@@ -272,13 +294,15 @@ class FileServiceHandler(ServiceTypeHandler):
                 self.reconcile()
             except Exception as error:  # noqa: BLE001 - the loop must survive
                 self._log(f"mount reconcile crashed: {error}")
-            time.sleep(AGENT_MOUNT_RECHECK_INTERVAL_S)
+            self._wakeup.wait(timeout=AGENT_MOUNT_RECHECK_INTERVAL_S)
+            self._wakeup.clear()
 
     def _remount(self, record_id: str, record: dict) -> None:
         location = str(record.get("path", ""))
         try:
             if self._platform.is_share_attached(location=location):
                 self._problems.pop(record_id, None)
+                self._stages.pop(record_id, None)
                 return
         except PlatformUnsupportedError:
             return
@@ -291,7 +315,25 @@ class FileServiceHandler(ServiceTypeHandler):
         )
         if refusal is not None:
             self._problems[record_id] = refusal
+            self._stages.pop(record_id, None)
             return
+        try:
+            is_ready = self._platform.has_mount_tooling()
+        except PlatformUnsupportedError:
+            is_ready = True
+        if not is_ready:
+            self._stages[record_id] = "installing_tooling"
+            self._log("installing the mount tooling")
+            try:
+                self._platform.install_mount_tooling()
+            except Exception as error:  # noqa: BLE001 - reported, not fatal
+                self._problems[record_id] = {
+                    "code": "tooling_install_failed",
+                    "params": {"detail": str(error)[:200]},
+                }
+                self._stages.pop(record_id, None)
+                return
+        self._stages[record_id] = "mounting"
         try:
             self._platform.attach_share(
                 account=account,
@@ -303,11 +345,14 @@ class FileServiceHandler(ServiceTypeHandler):
             )
         except ShareAttachError as error:
             self._problems[record_id] = _share_refusal(error)
+            self._stages.pop(record_id, None)
             return
         except PlatformUnsupportedError:
+            self._stages.pop(record_id, None)
             return
         self._problems.pop(record_id, None)
-        self._log(f"remounted {_share_url(record)} at {location}")
+        self._stages.pop(record_id, None)
+        self._log(f"mounted {_share_url(record)} at {location}")
 
     def _prepare_mount_point(self, *, account: str, location: str) -> "dict | None":
         """Have the mount point be an empty directory, creating it as the

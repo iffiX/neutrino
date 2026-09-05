@@ -35,6 +35,7 @@ UI_NO_PAGE = (
     "the port is taken; no token was opened"
 )
 UI_WINDOW_CLOSED = "the window was closed; this session is over"
+UI_REVOKED = "the agent ended this session"
 UI_AGENT_GONE = "the agent stopped answering; this session is over"
 
 
@@ -100,7 +101,10 @@ def _wait(socket_path: str, token: str) -> int:
             print(UI_AGENT_GONE)
             return 0
         if status != 200 or not reply.get("is_alive"):
-            print(UI_WINDOW_CLOSED)
+            # A claimed pulse that stopped is a window somebody closed; a
+            # token that died unclaimed was revoked or the agent restarted —
+            # nobody ever saw a window to close.
+            print(UI_WINDOW_CLOSED if reply.get("is_claimed") else UI_REVOKED)
             return 0
 
 

@@ -68,6 +68,28 @@ class GatewayVersionRefused(RuntimeError):
         self.agent_version = agent_version
 
 
+class GatewayWireStale(RuntimeError):
+    """Raised when the hub says this agent's wire generation is not its own.
+
+    A definitive answer, not an outage — but not a rejection of the binding
+    either: the fix is reinstalling this agent from the hub's own package,
+    which the caller triggers.
+    """
+
+    def __init__(self, *, hub_wire: int, agent_wire: int):
+        """
+        Args:
+            hub_wire: The generation the hub serves.
+            agent_wire: The generation this agent was built to.
+        """
+        super().__init__(
+            f"this agent speaks wire generation {agent_wire}, the hub "
+            f"generation {hub_wire}; it reinstalls itself from the hub"
+        )
+        self.hub_wire = hub_wire
+        self.agent_wire = agent_wire
+
+
 class GatewayUntrusted(RuntimeError):
     """Raised when the peer's certificate does not match the pinned fingerprint.
 
@@ -178,6 +200,11 @@ class GatewayHttpChannel:
         if status == 409:
             detail = _error_detail(data)
             params = detail.get("params") or {}
+            if detail.get("code") == "agent_wire_stale":
+                raise GatewayWireStale(
+                    hub_wire=int(params.get("hub_wire", 0)),
+                    agent_wire=int(params.get("agent_wire", 0)),
+                )
             if detail.get("code") == "agent_newer_than_hub":
                 raise GatewayVersionRefused(
                     hub_version=str(params.get("hub_version", "")),

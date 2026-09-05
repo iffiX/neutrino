@@ -8,6 +8,11 @@ DEVICE_LAN_SCAN_TIMEOUT_S = 30
 # How long an agent's last heartbeat still counts as "reporting". It beats
 # every five seconds, so this is several missed beats rather than one.
 DEVICE_AGENT_ONLINE_WINDOW_S = 30
+
+# The shape of what crosses the agent channel. Must match the agent's own
+# AGENT_WIRE_GENERATION; a beat carrying another number is answered with
+# agent_wire_stale so the agent reinstalls itself.
+AGENT_WIRE_GENERATION = 2
 DEVICE_WOL_PORT = 9
 # Pure Python over the network; nothing architecture-bound is installed here.
 DEVICE_SUPPORTED_ARCHITECTURES = ("*",)

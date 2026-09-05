@@ -38,6 +38,10 @@ CONTROL_PAGE_HTML = """<!doctype html>
   .card.dirty { border-color: #fbbf24; box-shadow: 0 0 26px -16px #fbbf24; }
   .row { display: flex; gap: 12px; align-items: center; }
   .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .spin { width: 10px; height: 10px; flex: none; border-radius: 50%;
+          border: 2px solid #1f2937; border-top-color: #22d3ee;
+          animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .ok { background: #34d399; box-shadow: 0 0 10px -1px #34d399; }
   .off { background: #8b96a5; }
   .bad { background: #fb7185; box-shadow: 0 0 10px -1px #fb7185; }
@@ -142,6 +146,10 @@ const WORDS = {
     password_hint: "Share password",  // scan: allow
     path_hint: "Mount path",
     not_attached: "not mounted",
+    mount_queued: "waiting for the agent…",
+    mount_installing_tooling: "installing the mount tooling…",
+    mount_mounting: "mounting…",
+    mount_pending: "waiting to mount…",
     forwarding_to: "127.0.0.1:{port}",
     unhealthy: "not reachable now",
     modules_wait_join: "Modules appear once this machine joins a gateway.",
@@ -192,6 +200,7 @@ const WORDS = {
     mountpoint_not_empty: "that folder is not empty",
     cifs_missing: "the mount tooling is missing on this machine",
     credentials_missing: "the saved login is gone — enter it again with Config",
+    tooling_install_failed: "could not install the mount tooling",
     fs_refused: "this account may not use that folder",
     control_scope_refused: "this account is not allowed to do that",
     control_token_invalid: "this page's key was refused",
@@ -873,10 +882,17 @@ function drawFilesPanel(state, entries, title) {
 function drawMountRecord(record, state, noteKey) {
   const line = document.createElement('div');
   line.className = 'rec';
-  const status = record.code ? wordCode(record.code, record.params)
+  const BUSY = { queued: WORDS.ui.mount_queued,
+    installing_tooling: WORDS.ui.mount_installing_tooling,
+    mounting: WORDS.ui.mount_mounting, pending: WORDS.ui.mount_pending };
+  const busyWord = BUSY[record.state];
+  const status = busyWord ? busyWord
+    : record.code ? wordCode(record.code, record.params)
     : record.is_attached ? '' : WORDS.ui.not_attached;
-  line.innerHTML = '<span class="dot ' +
-    (record.is_attached ? 'ok' : record.code ? 'bad' : 'off') + '"></span>' +
+  const marker = busyWord ? '<span class="spin"></span>'
+    : '<span class="dot ' +
+      (record.is_attached ? 'ok' : record.code ? 'bad' : 'off') + '"></span>';
+  line.innerHTML = marker +
     '<span class="path">' + record.path + ' · ' + record.account +
     (status ? ' — ' + status : '') + '</span>';
   const button = document.createElement('button');

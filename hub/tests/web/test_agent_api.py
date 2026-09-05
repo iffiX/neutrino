@@ -186,7 +186,12 @@ def ai_box(api, monkeypatch, tmp_path):
 
 
 def beat_body(**extra) -> dict:
-    body = {"token": "device-token", "hostname": "testbox", "client_version": "0.3.0"}
+    body = {
+        "token": "device-token",
+        "hostname": "testbox",
+        "wire": 2,
+        "client_version": "0.3.0",
+    }
     body.update(extra)
     return body
 
@@ -383,7 +388,12 @@ def test_unknown_token_is_refused(api):
     client, _, _ = api
     response = client.post(
         "/api/agent/heartbeat",
-        json={"token": "nonsense", "hostname": "x", "client_version": "0.3.0"},
+        json={
+            "token": "nonsense",
+            "hostname": "x",
+            "wire": 2,
+            "client_version": "0.3.0",
+        },
     )
     assert response.status_code == 401
 
@@ -466,6 +476,7 @@ def test_enrolling_with_a_ticket_issues_a_token(api):
     response = client.post(
         "/api/agent/enroll",
         json={
+            "wire": 2,
             "enrollment_token": "ticket",
             "device_id": "abc123",
             "hostname": "laptop",
@@ -486,7 +497,12 @@ def test_a_ticket_spent_twice_is_refused_the_second_time(api):
         "mac_address": None,
         "expires_at": time.time() + 600,
     }
-    body = {"enrollment_token": "once", "device_id": "abc123", "hostname": "laptop"}
+    body = {
+        "wire": 2,
+        "enrollment_token": "once",
+        "device_id": "abc123",
+        "hostname": "laptop",
+    }
 
     assert client.post("/api/agent/enroll", json=body).status_code == 200
     assert client.post("/api/agent/enroll", json=body).status_code == 401
@@ -502,7 +518,7 @@ def test_expired_ticket_is_refused(api):
 
     response = client.post(
         "/api/agent/enroll",
-        json={"enrollment_token": "old", "device_id": "abc123"},
+        json={"wire": 2, "enrollment_token": "old", "device_id": "abc123"},
     )
 
     assert response.status_code == 401
@@ -521,6 +537,7 @@ def test_an_unbound_enrollment_lands_on_the_device_its_mac_names(api):
     response = client.post(
         "/api/agent/enroll",
         json={
+            "wire": 2,
             "enrollment_token": "t1",
             "device_id": "abc123",
             "mac_addresses": ["11:22:33:44:55:66", "AA:BB:CC:DD:EE:FF"],
@@ -543,6 +560,7 @@ def test_an_unknown_reported_mac_still_keys_by_mac(api):
     response = client.post(
         "/api/agent/enroll",
         json={
+            "wire": 2,
             "enrollment_token": "t2",
             "device_id": "abc123",
             "mac_addresses": ["11:22:33:44:55:66"],
@@ -562,13 +580,20 @@ def test_replies_carry_the_hub_version(api):
 
     beaten = client.post(
         "/api/agent/heartbeat",
-        json={"token": "device-token", "hostname": "x", "client_version": "1.2.3"},
+        json={
+            "token": "device-token",
+            "hostname": "x",
+            "wire": 2,
+            "client_version": "1.2.3",
+        },
     )
     enrolled = client.post(
         "/api/agent/enroll",
         json={
+            "wire": 2,
             "enrollment_token": "ticket",
             "device_id": "abc123",
+            "wire": 2,
             "client_version": "1.2.3",
         },
     )
@@ -584,7 +609,12 @@ def test_a_newer_agent_is_turned_away_with_a_code(api):
 
     refused = client.post(
         "/api/agent/heartbeat",
-        json={"token": "device-token", "hostname": "x", "client_version": "1.3.0"},
+        json={
+            "token": "device-token",
+            "hostname": "x",
+            "wire": 2,
+            "client_version": "1.3.0",
+        },
     )
 
     assert refused.status_code == 409
@@ -596,7 +626,12 @@ def test_a_newer_agent_is_turned_away_with_a_code(api):
     assert device.client.token_sha256 == hashlib.sha256(b"device-token").hexdigest()
     accepted = client.post(
         "/api/agent/heartbeat",
-        json={"token": "device-token", "hostname": "x", "client_version": "1.2.3"},
+        json={
+            "token": "device-token",
+            "hostname": "x",
+            "wire": 2,
+            "client_version": "1.2.3",
+        },
     )
     assert accepted.status_code == 200
 
@@ -612,8 +647,10 @@ def test_a_newer_agent_cannot_spend_an_enrollment_ticket(api):
     refused = client.post(
         "/api/agent/enroll",
         json={
+            "wire": 2,
             "enrollment_token": "ticket",
             "device_id": "abc123",
+            "wire": 2,
             "client_version": "2.0.0",
         },
     )
@@ -629,7 +666,12 @@ def test_an_older_agent_still_beats(api):
 
     response = client.post(
         "/api/agent/heartbeat",
-        json={"token": "device-token", "hostname": "x", "client_version": "1.0.0"},
+        json={
+            "token": "device-token",
+            "hostname": "x",
+            "wire": 2,
+            "client_version": "1.0.0",
+        },
     )
 
     assert response.status_code == 200
@@ -640,7 +682,12 @@ def test_an_unparseable_version_refuses_nothing(api):
 
     response = client.post(
         "/api/agent/heartbeat",
-        json={"token": "device-token", "hostname": "x", "client_version": "wat"},
+        json={
+            "token": "device-token",
+            "hostname": "x",
+            "wire": 2,
+            "client_version": "wat",
+        },
     )
 
     assert response.status_code == 200
@@ -719,6 +766,7 @@ def test_nothing_usable_reported_keys_by_machine_id(api):
     response = client.post(
         "/api/agent/enroll",
         json={
+            "wire": 2,
             "enrollment_token": "t3",
             "device_id": "abc123",
             "mac_addresses": ["not-a-mac"],
@@ -726,3 +774,53 @@ def test_nothing_usable_reported_keys_by_machine_id(api):
     )
 
     assert response.json()["mac_address"] == "id:abc123"
+
+
+def test_a_beat_from_another_wire_generation_is_told_to_reinstall(api):
+    client, runtime, device = api
+    reply = client.post(
+        "/api/agent/heartbeat",
+        json={
+            "token": "device-token",
+            "hostname": "x",
+            "wire": 1,
+            "client_version": "0.1.0",
+        },
+    )
+
+    assert reply.status_code == 409
+    detail = reply.json()["detail"]
+    assert detail["code"] == "agent_wire_stale"
+    assert detail["params"]["agent_wire"] == 1
+    assert detail["params"]["hub_wire"] >= 2
+
+
+def test_a_pre_generation_beat_reads_as_wire_zero(api):
+    client, runtime, device = api
+    reply = client.post(
+        "/api/agent/heartbeat",
+        json={
+            "token": "device-token",
+            "hostname": "x",
+            "client_version": "0.1.0",
+        },
+    )
+
+    assert reply.status_code == 409
+    assert reply.json()["detail"]["params"]["agent_wire"] == 0
+
+
+def test_an_enrollment_from_another_wire_generation_is_refused(api):
+    client, runtime, device = api
+    reply = client.post(
+        "/api/agent/enroll",
+        json={
+            "enrollment_token": "whatever",
+            "device_id": "abc",
+            "wire": 99,
+            "client_version": "0.1.0",
+        },
+    )
+
+    assert reply.status_code == 409
+    assert reply.json()["detail"]["code"] == "agent_wire_stale"

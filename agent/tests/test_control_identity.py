@@ -78,14 +78,30 @@ def test_a_tokens_pulse_keeps_it_alive_and_silence_expires_it():
     assert store.identity_of(token) is None
 
 
+def test_an_unclaimed_token_waits_forever_for_its_first_page():
+    """A person may take minutes to paste the printed URL; a token that
+    dies while they type is a session lying about a closed window."""
+    now = [0.0]
+    store = ControlTokenStore(idle_ttl_s=10, clock=lambda: now[0])
+    token = store.mint(ControlIdentity(account="alice", uid=1000, is_privileged=False))
+
+    now[0] = 3600.0
+    assert store.is_alive(token) is True
+    assert store.is_claimed(token) is False
+    assert store.identity_of(token) is not None
+    assert store.is_claimed(token) is True
+
+
 def test_watching_a_token_is_not_its_pulse():
     now = [0.0]
     store = ControlTokenStore(idle_ttl_s=10, clock=lambda: now[0])
     token = store.mint(ControlIdentity(account="alice", uid=1000, is_privileged=False))
 
+    now[0] = 1.0
+    assert store.identity_of(token) is not None
     now[0] = 8.0
     assert store.is_alive(token) is True
-    now[0] = 11.0
+    now[0] = 12.0
     assert store.is_alive(token) is False
 
 

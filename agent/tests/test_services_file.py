@@ -21,6 +21,23 @@ class FakeMountPlatform(AgentPlatform):
         self.made_directories = []
         self.writable = set()
         self.attach_error = None
+        self.has_tooling = True
+        self.tooling_installs = 0
+        self.tooling_error = None
+
+    def has_mount_tooling(self) -> bool:
+        return self.has_tooling
+
+    def install_mount_tooling(self) -> None:
+        self.tooling_installs += 1
+        if self.tooling_error is not None:
+            raise self.tooling_error
+        self.has_tooling = True
+
+    def write_share_credentials(self, *, credentials_path, username, password):
+        os.makedirs(os.path.dirname(credentials_path), exist_ok=True)
+        with open(credentials_path, "w", encoding="utf-8") as stream:
+            stream.write(f"username={username}\npassword={password}\n")
 
     def is_path_writable(self, *, account: str, path: str) -> bool:
         return path in self.writable
@@ -85,7 +102,8 @@ def service(tmp_path):
 
 
 def attach(subject, *, path, account="root", is_privileged=True, password="pw"):
-    return subject.attach(
+    """Queue a mount and, when accepted, run the worker's pass by hand."""
+    reply = subject.attach(
         account=account,
         is_privileged=is_privileged,
         entry_id="hub_share_media",
@@ -94,6 +112,9 @@ def attach(subject, *, path, account="root", is_privileged=True, password="pw"):
         password=password,
         path=path,
     )
+    if reply == {}:
+        subject.reconcile()
+    return reply
 
 
 def test_a_non_empty_mount_point_is_refused(service):
@@ -138,14 +159,46 @@ def test_an_ordinary_identity_may_attach_only_where_it_writes(service):
     assert store.mounts()
 
 
-def test_missing_tooling_is_typed_and_keeps_no_record(service):
+def test_missing_tooling_is_installed_on_the_way_to_the_mount(service):
     subject, platform, store, tmp_path = service
-    platform.attach_error = ShareAttachError("cifs_missing")
+    platform.has_tooling = False
+    location = str(tmp_path / "nas")
 
-    reply = attach(subject, path=str(tmp_path / "nas"))
+    assert attach(subject, path=location) == {}
 
-    assert reply == {"code": "cifs_missing", "params": {}}
-    assert store.mounts() == {}
+    assert platform.tooling_installs == 1
+    assert subject.rows()[0]["state"] == "mounted"
+
+
+def test_a_tooling_install_that_fails_is_typed_and_waits(service):
+    subject, platform, store, tmp_path = service
+    platform.has_tooling = False
+    platform.tooling_error = RuntimeError("no repository reachable")
+    location = str(tmp_path / "nas")
+
+    assert attach(subject, path=location) == {}
+
+    row = subject.rows()[0]
+    assert row["state"] == "failed"
+    assert row["code"] == "tooling_install_failed"
+    assert platform.attach_calls == []
+
+
+def test_a_queued_mount_reports_its_stage_before_the_worker_runs(service):
+    subject, platform, store, tmp_path = service
+    location = str(tmp_path / "nas")
+    reply = subject.attach(
+        account="root",
+        is_privileged=True,
+        entry_id="hub_share_media",
+        payload=PAYLOAD,
+        username="media",
+        password="pw",
+        path=location,
+    )
+
+    assert reply == {}
+    assert subject.rows()[0]["state"] == "queued"
 
 
 def test_a_gone_credentials_file_reports_and_waits(service):

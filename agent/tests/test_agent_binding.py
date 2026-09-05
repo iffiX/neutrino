@@ -258,3 +258,66 @@ def test_the_heartbeat_carries_the_wire_contract(config_path, monkeypatch):
     assert isinstance(seen["accounts"], list)
     assert isinstance(seen["ai_targets"], dict)
     assert seen["last_error"] is None
+
+
+class _RaisingChannel:
+    def __init__(self, error):
+        self._error = error
+
+    def post(self, path, payload):
+        raise self._error
+
+
+class _ReplyingChannel:
+    def __init__(self, reply):
+        self._reply = reply
+
+    def post(self, path, payload):
+        return self._reply
+
+
+def test_a_stale_wire_answer_reinstalls_and_never_unbinds(config_path, monkeypatch):
+    """The 409 about this build is not about the binding: no refusal is
+    counted, the error is typed, and the reinstall runs once per target."""
+    from neutrino_agent.core import loop as loop_module
+
+    bind(config_path)
+    agent = Agent(log=lambda message: None)
+    installed = []
+    monkeypatch.setattr(loop_module.self_update, "package_kind", lambda platform: "deb")
+    monkeypatch.setattr(
+        loop_module.self_update,
+        "run_update",
+        lambda posting, kind: installed.append(kind),
+    )
+    agent._channel = _RaisingChannel(channel.GatewayWireStale(hub_wire=2, agent_wire=1))
+
+    for _ in range(4):
+        agent.run_once()
+
+    assert installed == ["deb"]
+    assert agent.last_error()["code"] == "agent_wire_stale"
+    assert agent._refusals == 0
+    assert agent._channel is not None
+
+
+def test_a_reply_this_build_cannot_read_is_reported_not_fatal(config_path):
+    """A hub speaking another shape must never take the process down."""
+    bind(config_path)
+    agent = Agent(log=lambda message: None)
+    agent._channel = _ReplyingChannel(
+        {
+            "desired_modules": {},
+            # The pre-generation dict shape where a list is expected.
+            "catalog": {"modules": {}, "services": {"ai": {"kind": "ai"}}},
+            "catalog_hash": "x",
+            "ai_accounts": {},
+            "commands": [],
+            "hub_version": "0.1.0",
+        }
+    )
+
+    delay = agent.run_once()
+
+    assert delay > 0
+    assert agent._channel is not None

@@ -1126,6 +1126,9 @@ class ClientHeartbeat(BaseModel):
     token: str
     hostname: str
     client_version: str
+    # The wire generation the agent was built to; 0 marks a build from
+    # before generations existed.
+    wire: int = 0
     metrics: dict = Field(default_factory=dict)
     platform: dict = Field(default_factory=dict)
     # The machine's human accounts, the platform's own judgment; root is
@@ -1195,6 +1198,7 @@ class ClientEnroll(BaseModel):
     device_id: str
     hostname: str = ""
     client_version: str = ""
+    wire: int = 0
     platform: dict = Field(default_factory=dict)
     # Every MAC the machine's interfaces carry, so an unbound link still
     # lands on the device a scan or an SSH setup already listed.

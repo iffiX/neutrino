@@ -478,12 +478,12 @@ def test_a_token_is_watched_and_revoked_over_the_socket(control):
     token = mint(server, platform, ALICE)
 
     status, reply = over_socket(server, "POST", "/api/token/watch", {"token": token})
-    assert (status, reply) == (200, {"is_alive": True})
+    assert (status, reply) == (200, {"is_claimed": False, "is_alive": True})
 
     status, _reply = over_socket(server, "POST", "/api/token/revoke", {"token": token})
     assert status == 200
     status, reply = over_socket(server, "POST", "/api/token/watch", {"token": token})
-    assert reply == {"is_alive": False}
+    assert reply == {"is_claimed": False, "is_alive": False}
 
     status, reply = loopback_json(server, "GET", "/api/state", token=token)
     assert (status, reply["code"]) == (401, "control_token_invalid")
@@ -513,13 +513,15 @@ def test_an_expired_pulse_ends_the_token(tmp_path, monkeypatch):
         status, reply = over_socket(
             server, "POST", "/api/token/watch", {"token": token}
         )
-        assert reply == {"is_alive": True}
-        # The pulse stops; the idle TTL passes; the session is over.
+        assert reply == {"is_claimed": True, "is_alive": True}
+        # The pulse stops; the idle TTL passes; the session is over — and
+        # the watch still says a page HAD claimed it, which is what words
+        # the close as a closed window.
         now[0] = 27.0
         status, reply = over_socket(
             server, "POST", "/api/token/watch", {"token": token}
         )
-        assert reply == {"is_alive": False}
+        assert reply == {"is_claimed": True, "is_alive": False}
         status, reply = loopback_json(server, "GET", "/api/state", token=token)
         assert (status, reply["code"]) == (401, "control_token_invalid")
     finally:

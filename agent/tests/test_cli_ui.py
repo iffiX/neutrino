@@ -68,8 +68,10 @@ def test_ui_exits_when_the_windows_pulse_stops(running_control, monkeypatch, cap
     server, _opened = running_control
     revoked = []
 
-    def revoke_then_wait(socket_path, token):
-        # The window closes: the token dies out from under the wait.
+    def claim_revoke_then_wait(socket_path, token):
+        # A page claims the token, then it dies out from under the wait —
+        # the closed-window story, told through revocation for speed.
+        server._tokens.identity_of(token)
         client.request(
             socket_path=socket_path,
             method="POST",
@@ -80,12 +82,36 @@ def test_ui_exits_when_the_windows_pulse_stops(running_control, monkeypatch, cap
         return _wait(socket_path, token)
 
     _wait = ui._wait
-    monkeypatch.setattr(ui, "_wait", revoke_then_wait)
+    monkeypatch.setattr(ui, "_wait", claim_revoke_then_wait)
 
     assert ui.main() == 0
 
     assert revoked
-    assert ui.UI_WINDOW_CLOSED in capsys.readouterr().out
+    assert ui.UI_REVOKED in capsys.readouterr().out
+
+
+def test_an_unclaimed_token_keeps_the_session_waiting(running_control, monkeypatch):
+    server, _opened = running_control
+    polls = []
+
+    def wait_a_while(socket_path, token):
+        # Nobody has opened the page yet: the wait must not end by itself.
+        for _ in range(3):
+            status, reply = client.request(
+                socket_path=socket_path,
+                method="POST",
+                path="/api/token/watch",
+                body={"token": token},
+            )
+            polls.append(reply)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(ui, "_wait", wait_a_while)
+
+    assert ui.main() == 0
+
+    assert all(reply["is_alive"] for reply in polls)
+    assert all(not reply["is_claimed"] for reply in polls)
 
 
 def test_ctrl_c_revokes_the_token_at_once(running_control, monkeypatch, capsys):
@@ -105,7 +131,7 @@ def test_ctrl_c_revokes_the_token_at_once(running_control, monkeypatch, capsys):
         path="/api/token/watch",
         body={"token": token},
     )
-    assert reply == {"is_alive": False}
+    assert reply == {"is_claimed": False, "is_alive": False}
 
 
 def test_ui_refuses_plainly_when_no_page_is_served(tmp_path, monkeypatch, capsys):

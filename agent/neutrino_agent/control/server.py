@@ -285,9 +285,12 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
             body = self._read_body()
             self._send_json(
                 {
+                    "is_claimed": self.server.control_tokens.is_claimed(
+                        str(body.get("token", ""))
+                    ),
                     "is_alive": self.server.control_tokens.is_alive(
                         str(body.get("token", ""))
-                    )
+                    ),
                 }
             )
             return

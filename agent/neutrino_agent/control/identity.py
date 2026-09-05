@@ -74,7 +74,11 @@ class ControlTokenStore:
         """
         token = secrets.token_urlsafe(CONTROL_TOKEN_BYTES)
         with self._lock:
-            self._tokens[token] = [identity, self._clock()]
+            # Unclaimed: the pulse starts on the FIRST page request, not at
+            # minting — a person may take minutes to paste the URL, and a
+            # token that dies while they type is a session that lies about
+            # a closed window.
+            self._tokens[token] = [identity, self._clock(), False]
         return token
 
     def identity_of(self, presented: str) -> "ControlIdentity | None":
@@ -93,12 +97,30 @@ class ControlTokenStore:
             for token, entry in list(self._tokens.items()):
                 if not secrets.compare_digest(token, presented):
                     continue
-                if self._clock() - entry[1] > self._idle_ttl_s:
+                if entry[2] and self._clock() - entry[1] > self._idle_ttl_s:
                     del self._tokens[token]
                     return None
                 entry[1] = self._clock()
+                entry[2] = True
                 return entry[0]
         return None
+
+    def is_claimed(self, presented: str) -> bool:
+        """Whether a page has used this token at least once.
+
+        Args:
+            presented: The token to ask about.
+
+        Returns:
+            True once any page request carried it.
+        """
+        if not presented:
+            return False
+        with self._lock:
+            for token, entry in self._tokens.items():
+                if secrets.compare_digest(token, presented):
+                    return bool(entry[2])
+        return False
 
     def is_alive(self, presented: str) -> bool:
         """Whether a token still answers, without counting as its pulse.
@@ -115,7 +137,7 @@ class ControlTokenStore:
             for token, entry in list(self._tokens.items()):
                 if not secrets.compare_digest(token, presented):
                     continue
-                if self._clock() - entry[1] > self._idle_ttl_s:
+                if entry[2] and self._clock() - entry[1] > self._idle_ttl_s:
                     del self._tokens[token]
                     return False
                 return True

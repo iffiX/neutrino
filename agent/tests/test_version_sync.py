@@ -182,20 +182,17 @@ def test_a_newer_hub_triggers_a_detached_install(config_path, monkeypatch, launc
     path, payload, destination = agent._channel.downloads[0]
     assert path == "/api/agent/package"
     assert payload == {"family": "deb"}
-    assert launched == [
-        [
-            "systemd-run",
-            "--unit",
-            "neutrino_agent_update",
-            "--collect",
-            "--setenv=DEBIAN_FRONTEND=noninteractive",
-            "apt-get",
-            "install",
-            "-y",
-            "--allow-downgrades",
-            destination,
-        ]
+    launched_command = launched[0]
+    assert launched_command[:4] == [
+        "systemd-run",
+        "--unit",
+        "neutrino_agent_update",
+        "--collect",
     ]
+    assert launched_command[4] == "--setenv=DEBIAN_FRONTEND=noninteractive"
+    assert launched_command[5:7] == ["sh", "-c"]
+    assert f"dpkg -i {destination}" in launched_command[7]
+    assert "apt-get -f install -y" in launched_command[7]
     assert agent.last_error() is None
     os.unlink(destination)
 
@@ -282,13 +279,12 @@ def test_the_rpm_command_uses_the_family_manager(monkeypatch):
 
     command = self_update.install_command("rpm", "/tmp/hub.rpm")
 
-    assert command == [
+    assert command[:4] == [
         "systemd-run",
         "--unit",
         "neutrino_agent_update",
         "--collect",
-        "dnf",
-        "install",
-        "-y",
-        "/tmp/hub.rpm",
     ]
+    assert command[4:6] == ["sh", "-c"]
+    assert "dnf reinstall -y /tmp/hub.rpm" in command[6]
+    assert "dnf install -y /tmp/hub.rpm" in command[6]

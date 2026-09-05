@@ -55,17 +55,23 @@ def install_command(kind: str, path: str) -> list:
         A ``systemd-run`` argument vector for a transient unit.
     """
     if kind == "deb":
+        # dpkg installs a same-version file where apt would call it already
+        # newest, and the wire-stale path reinstalls exactly that; apt then
+        # settles anything dpkg named as missing.
+        script = f"dpkg -i {path} || (apt-get -f install -y && dpkg -i {path})"
         install = [
             "--setenv=DEBIAN_FRONTEND=noninteractive",
-            "apt-get",
-            "install",
-            "-y",
-            "--allow-downgrades",
-            path,
+            "sh",
+            "-c",
+            script,
         ]
     else:
         manager = "dnf" if shutil.which("dnf") else "yum"
-        install = [manager, "install", "-y", path]
+        install = [
+            "sh",
+            "-c",
+            f"{manager} reinstall -y {path} || {manager} install -y {path}",
+        ]
     return ["systemd-run", "--unit", AGENT_UPDATE_UNIT, "--collect"] + install
 
 

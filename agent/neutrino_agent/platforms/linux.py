@@ -235,6 +235,38 @@ class LinuxPlatform(AgentPlatform):
             env=env,
         )
 
+    def has_mount_tooling(self) -> bool:
+        """Whether ``mount.cifs`` is on this machine."""
+        return shutil.which(CIFS_HELPER) is not None
+
+    def install_mount_tooling(self) -> None:
+        """Install cifs-utils with the machine's own package manager.
+
+        Raises:
+            InstallError: If the package manager refuses — no repository
+                reachable, or the package unknown.
+        """
+        self._install_system_package("cifs-utils")
+
+    def write_share_credentials(
+        self, *, credentials_path: str, username: str, password: str
+    ) -> None:
+        """Keep a share's login as a root-only credentials file."""
+        self._write_share_credentials(credentials_path, username, password)
+
+    def _install_system_package(self, package: str) -> None:
+        if shutil.which("apt-get"):
+            installers.run_checked(
+                ["apt-get", "install", "-y", package],
+                timeout_s=installers.INSTALL_TIMEOUT_S,
+            )
+            return
+        manager = "dnf" if shutil.which("dnf") else "yum"
+        installers.run_checked(
+            [manager, "install", "-y", package],
+            timeout_s=installers.INSTALL_TIMEOUT_S,
+        )
+
     def attach_share(
         self,
         *,
@@ -412,15 +444,17 @@ class LinuxPlatform(AgentPlatform):
     def enable_openssh(self, entry: dict) -> None:
         """Enable and start the SSH server's unit.
 
-        The server binary is one of the agent package's own dependencies, so
-        nothing is downloaded here.
+        The server rides the agent package as a recommendation, so a
+        machine that skipped it gets the package installed here first.
 
         Args:
             entry: The manifest's platform entry, naming the service.
 
         Raises:
-            InstallError: If systemd refuses.
+            InstallError: If the install or systemd refuses.
         """
+        if shutil.which("sshd") is None and not os.path.exists("/usr/sbin/sshd"):
+            self._install_system_package("openssh-server")
         service = entry.get("service", "ssh")
         installers.run_checked(["systemctl", "enable", "--now", service])
 

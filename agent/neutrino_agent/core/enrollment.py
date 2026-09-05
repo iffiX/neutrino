@@ -25,8 +25,9 @@ import socket
 import uuid
 
 from neutrino_agent import AGENT_VERSION
-from neutrino_agent.constants import AGENT_CONFIG_PATH
+from neutrino_agent.constants import AGENT_CONFIG_PATH, AGENT_WIRE_GENERATION
 from neutrino_agent.core.channel import (
+    GatewayWireStale,
     GatewayHttpChannel,
     GatewayRefused,
     GatewayUnreachable,
@@ -219,6 +220,7 @@ def enroll(link: str) -> dict:
         "device_id": machine_id(),
         "hostname": socket.gethostname(),
         "client_version": AGENT_VERSION,
+        "wire": AGENT_WIRE_GENERATION,
         "platform": platform_tuple(),
         "mac_addresses": machine_mac_addresses(),
     }
@@ -231,6 +233,13 @@ def enroll(link: str) -> dict:
         try:
             reply = channel.post(ENROLL_PATH, payload)
             break
+        except GatewayWireStale as error:
+            # The link is fine; this build cannot speak this hub. Joining
+            # would only crash-loop, so the fix is named instead.
+            raise EnrollmentError(
+                "this agent build does not match the hub; reinstall it from "
+                "the hub's Devices page and connect again"
+            ) from error
         except GatewayRefused as error:
             # The gateway answered and said no: the ticket is spent or has
             # expired. The other addresses reach the same gateway.

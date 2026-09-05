@@ -29,7 +29,10 @@ from neutrino_hub.modules.cliproxyapi.ops import (
 )
 from neutrino_hub.modules.credentials.vault import VaultLockedError
 from neutrino_hub.modules.devices.agent_package import agent_packages
-from neutrino_hub.modules.devices.constants import DEVICE_MAC_PATTERN
+from neutrino_hub.modules.devices.constants import (
+    AGENT_WIRE_GENERATION,
+    DEVICE_MAC_PATTERN,
+)
 from neutrino_hub.modules.devices.registry import (
     DeviceRegistry,
     ManagedDevice,
@@ -78,6 +81,7 @@ def heartbeat(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="unknown client token"
         )
     _refuse_newer_agent(beat.client_version)
+    _refuse_stale_wire(beat.wire)
     if beat.module_requests:
         # A request from the machine's own page carries whichever wish was
         # changed there; the rest is left as the panel has it.
@@ -155,6 +159,7 @@ def enroll(
             the ticket so a refused machine has not spent the link.
     """
     _refuse_newer_agent(request.client_version)
+    _refuse_stale_wire(request.wire)
     # Taken before it is judged: a ticket leaves the store in one step, so
     # two machines racing the same link cannot both spend it.
     ticket = runtime.enrollments.pop(request.enrollment_token, None)
@@ -303,6 +308,34 @@ def package(request: ClientPackageRequest) -> Response:
         content=data,
         media_type="application/octet-stream",
         headers={"X-Checksum-Sha256": hashlib.sha256(data).hexdigest()},
+    )
+
+
+def _refuse_stale_wire(agent_wire: int) -> None:
+    """Turn away an agent built to another wire generation.
+
+    The hub and the agent share a release version, so a version compare
+    cannot see a rebuild that changed the shapes on the wire. The
+    generation can: an agent carrying another number would misread the
+    replies, and the 409 is what tells it to reinstall itself instead.
+
+    Args:
+        agent_wire: The generation the agent reported.
+
+    Raises:
+        HTTPException: 409 naming both generations.
+    """
+    if agent_wire == AGENT_WIRE_GENERATION:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "agent_wire_stale",
+            "params": {
+                "hub_wire": AGENT_WIRE_GENERATION,
+                "agent_wire": agent_wire,
+            },
+        },
     )
 
 

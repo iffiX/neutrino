@@ -266,6 +266,38 @@ class AgentPlatform:
         """
         raise PlatformUnsupportedError("cannot attach a share here")
 
+    def has_mount_tooling(self) -> bool:
+        """Whether this machine can attach a share right now.
+
+        Returns:
+            True where mounting is built in or the tooling is present.
+        """
+        return True
+
+    def install_mount_tooling(self) -> None:
+        """Install what attaching a share needs. An optional capability.
+
+        Raises:
+            PlatformUnsupportedError: Where there is nothing to install or
+                no way to install it.
+        """
+        raise PlatformUnsupportedError("cannot install mount tooling here")
+
+    def write_share_credentials(
+        self, *, credentials_path: str, username: str, password: str
+    ) -> None:
+        """Keep a share's login as a root-only credentials file.
+
+        Args:
+            credentials_path: Where the file lives.
+            username: The share's own username.
+            password: The share's own password.
+
+        Raises:
+            PlatformUnsupportedError: Where shares are not attachable.
+        """
+        raise PlatformUnsupportedError("cannot keep share credentials here")
+
     def detach_share(self, *, location: str) -> None:
         """Detach a share attached at a location.
 

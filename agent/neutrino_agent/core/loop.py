@@ -23,6 +23,7 @@ import threading
 
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import (
+    AGENT_WIRE_GENERATION,
     AGENT_BACKOFF_MAX_S,
     AGENT_BACKOFF_MIN_S,
     AGENT_HEARTBEAT_INTERVAL_S,
@@ -33,6 +34,7 @@ from neutrino_agent.constants import (
 )
 from neutrino_agent.core import enrollment, self_update
 from neutrino_agent.core.channel import (
+    GatewayWireStale,
     GatewayHttpChannel,
     GatewayRefused,
     GatewayUnreachable,
@@ -348,6 +350,7 @@ class Agent:
         payload = {
             "hostname": hostname(),
             "client_version": AGENT_VERSION,
+            "wire": AGENT_WIRE_GENERATION,
             "metrics": self._read_metrics(),
             "platform": self._engine.platform_tuple,
             "accounts": self._read_accounts(),
@@ -361,6 +364,20 @@ class Agent:
         }
         try:
             reply = channel.post(AGENT_HEARTBEAT_PATH, payload)
+        except GatewayWireStale as error:
+            # An answer about this build, not about the binding: the fix is
+            # the hub's own package, so it never counts toward an unbind.
+            with self._lock:
+                self._last_error = {
+                    "code": "agent_wire_stale",
+                    "params": {
+                        "hub_wire": error.hub_wire,
+                        "agent_wire": error.agent_wire,
+                    },
+                }
+            self._log(f"{error}")
+            self._force_self_update(f"wire-{error.hub_wire}")
+            return AGENT_HEARTBEAT_INTERVAL_S
         except (GatewayRefused, GatewayUntrusted, GatewayVersionRefused) as error:
             return self._on_rejected(error)
         except GatewayUnreachable as error:
@@ -382,20 +399,33 @@ class Agent:
             # Accepted requests are dropped: what comes back is now the truth.
             for name in requests:
                 self._pending.pop(name, None)
-            self._desired = reply.get("desired_modules", {})
 
-        self._engine.update(
-            desired=self.desired_modules(),
-            catalog=reply.get("catalog"),
-            catalog_hash=reply.get("catalog_hash", ""),
-        )
-        self._ai.update(
-            entry=self._ai_entry(),
-            accounts=self._read_accounts(),
-            credentials=reply.get("ai_accounts") or {},
-        )
-        for command in reply.get("commands", []):
-            self._execute(command)
+        # A reply this build cannot read must never take the process down:
+        # the service stays up, says so, and asks again — a crash here is a
+        # machine nobody can reach to fix.
+        try:
+            with self._lock:
+                self._desired = dict(reply.get("desired_modules") or {})
+            self._engine.update(
+                desired=self.desired_modules(),
+                catalog=reply.get("catalog"),
+                catalog_hash=str(reply.get("catalog_hash", "")),
+            )
+            self._ai.update(
+                entry=self._ai_entry(),
+                accounts=self._read_accounts(),
+                credentials=reply.get("ai_accounts") or {},
+            )
+            for command in reply.get("commands", []):
+                self._execute(command)
+        except Exception as error:  # noqa: BLE001 - reported, never fatal
+            with self._lock:
+                self._last_error = {
+                    "code": "hub_reply_unreadable",
+                    "params": {"detail": str(error)[:200]},
+                }
+            self._log(f"could not apply the hub's reply: {error}")
+            return AGENT_HEARTBEAT_INTERVAL_S
         self._maybe_self_update(str(reply.get("hub_version", "")))
         return AGENT_HEARTBEAT_INTERVAL_S
 
@@ -522,6 +552,47 @@ class Agent:
             )
         except (GatewayUnreachable, GatewayUntrusted) as error:
             self._log(f"could not report {action} result: {error}")
+
+    def _force_self_update(self, target: str) -> None:
+        """Reinstall this agent from the hub's package, version equal or not.
+
+        The wire-stale answer means this build misreads the hub however the
+        versions compare, so the version gate does not apply; the target
+        latch still does, so a failed attempt is not retried every beat.
+
+        Args:
+            target: A name for what asked, latched like a version target.
+        """
+        with self._lock:
+            if target == self._update_target:
+                return
+            self._update_target = target
+            self._update_error = None
+            channel = self._channel
+        if channel is None:
+            return
+        kind = self_update.package_kind(self._engine.platform_tuple)
+        if not kind:
+            self._log("no reinstall: no package for this platform")
+            return
+        self._log("reinstalling from the hub's package")
+        try:
+            self_update.run_update(channel, kind=kind)
+        except (
+            self_update.SelfUpdateError,
+            GatewayRefused,
+            GatewayUnreachable,
+            GatewayUntrusted,
+            GatewayWireStale,
+        ) as error:
+            code = (
+                str(error)
+                if isinstance(error, self_update.SelfUpdateError)
+                else "agent_update_fetch_failed"
+            )
+            with self._lock:
+                self._update_error = {"code": code, "params": {"target": target}}
+            self._log(f"reinstall failed: {error}")
 
     def _maybe_self_update(self, hub_version: str) -> None:
         """Update this agent when the hub runs a later release, once per target.
