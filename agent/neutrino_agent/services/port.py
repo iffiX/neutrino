@@ -187,6 +187,12 @@ class _ForwardRelay:
         """Stop listening and close every open connection."""
         self._is_closed = True
         if self._listener is not None:
+            # Closing alone leaves the kernel socket alive while a thread
+            # blocks in accept; shutting down wakes it and frees the port.
+            try:
+                self._listener.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
             try:
                 self._listener.close()
             except OSError:
@@ -205,6 +211,9 @@ class _ForwardRelay:
             try:
                 connection, _address = self._listener.accept()
             except OSError:
+                break
+            if self._is_closed:
+                connection.close()
                 break
             threading.Thread(
                 target=self._serve, args=(connection,), daemon=True

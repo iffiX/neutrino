@@ -7,8 +7,11 @@ activation puts a person's own configuration back exactly, and that acting
 on an account nobody reported is refused in both directions alike.
 """
 
+import json
+
 import pytest
 
+from neutrino_agent.modules.installers import InstallError
 from neutrino_agent.services import switcher
 from neutrino_agent.platforms.base import AgentPlatform
 
@@ -143,6 +146,131 @@ def test_a_reported_account_passes_the_guard_both_ways(monkeypatch):
 
     assert "claude" in activated
     assert "as it was" in deactivated
+
+
+def test_stripping_hub_keys_leaves_the_persons_own(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    settings = tmp_path / ".claude" / "settings.json"
+    settings.parent.mkdir()
+    settings.write_text(
+        json.dumps(
+            {
+                "model": "opus",
+                "env": {
+                    "ANTHROPIC_BASE_URL": "http://hub",
+                    "ANTHROPIC_AUTH_TOKEN": "key-1",  # scan: allow
+                    "ANTHROPIC_API_KEY": "key-2",  # scan: allow
+                    "EDITOR": "vim",
+                },
+            }
+        )
+    )
+
+    switcher._strip_hub_keys("claude", "")
+
+    assert json.loads(settings.read_text()) == {
+        "model": "opus",
+        "env": {"EDITOR": "vim"},
+    }
+
+    settings.write_text(json.dumps({"env": {"ANTHROPIC_BASE_URL": "http://hub"}}))
+    switcher._strip_hub_keys("claude", "")
+    assert json.loads(settings.read_text()) == {}
+
+
+def test_is_active_is_read_from_the_tools_own_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    settings = tmp_path / ".claude" / "settings.json"
+    settings.parent.mkdir()
+    settings.write_text(
+        json.dumps(
+            {
+                "env": {
+                    "ANTHROPIC_BASE_URL": "http://hub",
+                    "ANTHROPIC_AUTH_TOKEN": "key-1",  # scan: allow
+                    "ANTHROPIC_MODEL": "m1",
+                }
+            }
+        )
+    )
+
+    assert (
+        switcher.is_active(
+            run_as="", base_url="http://hub", api_key="key-1", model="m1"
+        )
+        is True
+    )
+    assert (
+        switcher.is_active(
+            run_as="", base_url="http://other", api_key="key-1", model="m1"
+        )
+        is False
+    )
+    assert (
+        switcher.is_active(
+            run_as="", base_url="http://hub", api_key="rotated", model="m1"
+        )
+        is False
+    )
+    assert (
+        switcher.is_active(
+            run_as="", base_url="http://hub", api_key="key-1", model="m2"
+        )
+        is False
+    )
+    assert switcher.is_active(run_as="", base_url="", api_key="", model="") is False
+
+
+def test_activation_survives_a_tool_that_refuses(monkeypatch):
+    monkeypatch.setattr(switcher, "_PLATFORM", ReportingPlatform(["alice"]))
+
+    def add_except_claude(app, base_url, api_key, run_as, config):
+        if app == "claude":
+            raise InstallError("no store")
+
+    monkeypatch.setattr(switcher, "_add_provider", add_except_claude)
+    note = switcher.activate(base_url="http://hub", api_key="k", run_as="alice")
+    assert note == "codex, gemini (1 not set up here)"
+
+    def refuse(app, base_url, api_key, run_as, config):
+        raise InstallError(f"{app} refused")
+
+    monkeypatch.setattr(switcher, "_add_provider", refuse)
+    with pytest.raises(InstallError) as caught:
+        switcher.activate(base_url="http://hub", api_key="k", run_as="alice")
+    assert "claude" in str(caught.value)
+
+
+def test_deactivation_ends_with_no_tool_calling_the_hub(monkeypatch):
+    monkeypatch.setattr(switcher, "_PLATFORM", ReportingPlatform(["alice"]))
+    monkeypatch.setattr(switcher, "_drop_provider", lambda app, run_as: "deepseek")
+    monkeypatch.setattr(switcher, "_restore_original", lambda app, run_as: True)
+    monkeypatch.setattr(
+        switcher, "_points_at_hub", lambda app, run_as, base_url: app == "claude"
+    )
+    stripped = []
+    monkeypatch.setattr(
+        switcher, "_strip_hub_keys", lambda app, run_as: stripped.append(app)
+    )
+
+    note = switcher.deactivate(run_as="alice", base_url="http://hub")
+
+    # A restored copy that itself names the hub still loses the hub's keys.
+    assert stripped == ["claude"]
+    assert note == "claude → as it was, codex → as it was, gemini → as it was"
+
+
+def test_uninstall_cli_removes_the_agents_binary(tmp_path, monkeypatch):
+    binary = tmp_path / "cc-switch"
+    binary.write_text("#!/bin/sh\n")
+    monkeypatch.setattr(
+        switcher, "SWITCHER_CLI_PATHS", (str(binary), str(tmp_path / "absent"))
+    )
+
+    switcher.uninstall_cli()
+
+    assert not binary.exists()
+    switcher.uninstall_cli()
 
 
 def test_the_claude_env_names_every_chosen_slot():

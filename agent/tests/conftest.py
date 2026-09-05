@@ -183,9 +183,6 @@ class FakeControlAgent:
     def ai_tool_configs(self) -> dict:
         return {"claude": {"default": "m1"}}
 
-    def ai_connect_account(self) -> str:
-        return "alice"
-
     def account_home(self, account) -> str:
         return "/root" if account == "root" else f"/home/{account}"
 

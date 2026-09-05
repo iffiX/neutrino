@@ -499,15 +499,15 @@ function drawModules(state) {
     const isSwitch = m.kind === 'openssh';
     const isOn = standing(m);
     const working = BUSY.indexOf(m.state) >= 0;
-    const tone = working ? 'bad' : isOn ? 'ok'
-      : m.state === 'failed' ? 'bad' : 'off';
+    const tone = isOn ? 'ok' : m.state === 'failed' ? 'bad' : 'off';
     const worded = wordCode(m.code, m.params);
     const note = !m.is_supported ? WORDS.ui.not_for_platform
       : (WORDS.states[m.state] || WORDS.states.unknown) +
         (worded ? ' — ' + worded : '');
     const row = document.createElement('div');
     row.className = 'feat';
-    row.innerHTML = '<span class="dot ' + tone + '"></span>' +
+    row.innerHTML = (working ? '<span class="spin"></span>'
+      : '<span class="dot ' + tone + '"></span>') +
       '<div class="body"><div class="title">' + m.title + '</div>' +
       '<div class="note">' + m.description + '</div>' +
       '<div class="note">' + note + '</div></div>';

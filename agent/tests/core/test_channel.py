@@ -1,15 +1,18 @@
-"""Fingerprint pinning against a real TLS socket.
+"""The channel's judgments: the certificate pin, and every status mapping.
 
-The certificate is generated at test runtime with the ``openssl`` binary —
-no key material lives in the repository. What these pin: the right
-fingerprint talks, the wrong one is refused before a single request byte is
-sent, and a bound agent beating against the wrong certificate unbinds the
-way a refused token does.
+The pin runs against a real TLS socket whose certificate is generated at
+test runtime with the ``openssl`` binary — no key material lives in the
+repository: the right fingerprint talks, the wrong one is refused before a
+single request byte is sent, and a bound agent beating against the wrong
+certificate unbinds the way a refused token does. The status mappings
+replace ``_request`` with a canned answer, so each status and body shape is
+judged in-process.
 """
 
 import hashlib
 import json
 import shutil
+import socket
 import ssl
 import subprocess
 import threading
@@ -19,7 +22,14 @@ import pytest
 
 import neutrino_agent.core.enrollment as enrollment
 from neutrino_agent.core.loop import Agent
-from neutrino_agent.core.channel import GatewayHttpChannel, GatewayUntrusted
+from neutrino_agent.core.channel import (
+    GatewayHttpChannel,
+    GatewayRefused,
+    GatewayUnreachable,
+    GatewayUntrusted,
+    GatewayVersionRefused,
+    GatewayWireStale,
+)
 from tests.conftest import discard, link_for
 
 WRONG_FINGERPRINT = "0" * 64
@@ -204,3 +214,143 @@ def test_a_wrong_fingerprint_link_is_refused_at_enrollment(tls_server, config_pa
     assert "certificate" in str(refusal.value)
     assert RecordingHandler.requests == []
     assert "gateway_url" not in enrollment.load_config()
+
+
+def canned_channel(status, data=b"", headers=None):
+    """A channel whose one answer is canned at the ``_request`` seam.
+
+    Header names are lower-cased the way ``_request`` hands them up.
+    """
+    made = GatewayHttpChannel(gateway_url="http://hub", token="tok")
+    named = {name.lower(): value for name, value in (headers or {}).items()}
+
+    def request(method, url, *, body=None, headers=None):
+        return status, data, named
+
+    made._request = request
+    return made
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_post_status_401_or_403_raises_refused(status):
+    with pytest.raises(GatewayRefused):
+        canned_channel(status).post("/api/agent/heartbeat", {})
+
+
+def test_post_409_wire_stale_raises_wire_stale_with_both_generations():
+    body = json.dumps(
+        {
+            "detail": {
+                "code": "agent_wire_stale",
+                "params": {"hub_wire": 3, "agent_wire": 2},
+            }
+        }
+    ).encode()
+
+    with pytest.raises(GatewayWireStale) as caught:
+        canned_channel(409, body).post("/api/agent/heartbeat", {})
+
+    assert caught.value.hub_wire == 3
+    assert caught.value.agent_wire == 2
+
+
+def test_post_409_wire_stale_without_params_defaults_the_generations():
+    body = json.dumps({"detail": {"code": "agent_wire_stale"}}).encode()
+
+    with pytest.raises(GatewayWireStale) as caught:
+        canned_channel(409, body).post("/api/agent/heartbeat", {})
+
+    assert caught.value.hub_wire == 0
+    assert caught.value.agent_wire == 0
+
+
+def test_post_409_agent_newer_raises_version_refused_with_both_versions():
+    body = json.dumps(
+        {
+            "detail": {
+                "code": "agent_newer_than_hub",
+                "params": {"hub_version": "0.1.0", "agent_version": "0.2.0"},
+            }
+        }
+    ).encode()
+
+    with pytest.raises(GatewayVersionRefused) as caught:
+        canned_channel(409, body).post("/api/agent/heartbeat", {})
+
+    assert caught.value.hub_version == "0.1.0"
+    assert caught.value.agent_version == "0.2.0"
+
+
+def test_post_409_with_another_code_raises_unreachable_naming_it():
+    body = json.dumps({"detail": {"code": "somebody_new"}}).encode()
+
+    with pytest.raises(GatewayUnreachable) as caught:
+        canned_channel(409, body).post("/api/agent/heartbeat", {})
+
+    assert "somebody_new" in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "body", [b"", b"not json", b'{"detail": "words"}', b'{"detail": {}}']
+)
+def test_post_409_without_a_code_raises_unreachable(body):
+    with pytest.raises(GatewayUnreachable):
+        canned_channel(409, body).post("/api/agent/heartbeat", {})
+
+
+@pytest.mark.parametrize("status", [400, 404, 418, 500, 503])
+def test_post_other_error_statuses_raise_unreachable(status):
+    with pytest.raises(GatewayUnreachable):
+        canned_channel(status).post("/api/agent/heartbeat", {})
+
+
+def test_post_invalid_json_in_a_success_raises_unreachable():
+    with pytest.raises(GatewayUnreachable):
+        canned_channel(200, b"not json").post("/api/agent/heartbeat", {})
+
+
+def test_post_an_empty_success_body_reads_as_an_empty_object():
+    assert canned_channel(200, b"  ").post("/api/agent/heartbeat", {}) == {}
+
+
+def test_post_download_writes_the_bytes_and_returns_the_checksum(tmp_path):
+    made = canned_channel(200, b"pkg", headers={"X-Checksum-Sha256": "abc123"})
+    destination = tmp_path / "update.deb"
+
+    named = made.post_download("/api/agent/package", {}, str(destination))
+
+    assert named == "abc123"
+    assert destination.read_bytes() == b"pkg"
+
+
+def test_post_download_without_a_checksum_header_returns_empty(tmp_path):
+    made = canned_channel(200, b"pkg")
+    destination = tmp_path / "update.deb"
+
+    assert made.post_download("/api/agent/package", {}, str(destination)) == ""
+
+
+def test_post_download_an_unwritable_destination_raises_unreachable(tmp_path):
+    made = canned_channel(200, b"pkg")
+    destination = tmp_path / "missing" / "update.deb"
+
+    with pytest.raises(GatewayUnreachable):
+        made.post_download("/api/agent/package", {}, str(destination))
+
+
+def test_post_download_a_refused_status_raises_refused(tmp_path):
+    with pytest.raises(GatewayRefused):
+        canned_channel(401).post_download(
+            "/api/agent/package", {}, str(tmp_path / "update.deb")
+        )
+
+
+def test_post_a_dead_port_raises_unreachable():
+    probe = socket.socket()
+    probe.bind(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+    probe.close()
+    made = GatewayHttpChannel(gateway_url=f"http://127.0.0.1:{port}", token="tok")
+
+    with pytest.raises(GatewayUnreachable):
+        made.post("/api/agent/heartbeat", {})

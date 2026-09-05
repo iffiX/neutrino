@@ -7,6 +7,7 @@ guard is symmetric, and the store never holds a key.
 
 import pytest
 
+from neutrino_agent.modules.installers import InstallError
 from neutrino_agent.services.ai import (
     AiServiceHandler,
     AiServiceReconciler,
@@ -43,6 +44,7 @@ class FakeSwitcher:
         self.has_cli = True
         self.calls = []
         self.activate_error = None
+        self.deactivate_error = None
 
     def is_installed(self):
         return self.has_cli
@@ -66,6 +68,8 @@ class FakeSwitcher:
         return "claude"
 
     def deactivate(self, *, run_as, base_url=""):
+        if self.deactivate_error is not None:
+            raise self.deactivate_error
         self.calls.append(("deactivate", run_as, base_url))
         self.active.pop(run_as, None)
         return "claude → as it was"
@@ -211,6 +215,52 @@ def test_an_already_pointed_account_is_left_alone(subject):
     assert reconciler.report()["alice"]["is_active"] is True
 
 
+def test_one_pass_activates_the_targeted_and_restores_the_untargeted(subject):
+    reconciler, store, fake = subject
+    store.set_ai_target("alice", is_activated=True)
+    store.set_ai_target("bob", is_activated=False)
+    store.set_ai_granted("bob", {"base_url": "http://hub:8080", "model": "m1"})
+
+    feed(reconciler, accounts=("alice", "bob"), credentials={"alice": CREDS})
+
+    assert ("deactivate", "bob", "http://hub:8080") in fake.calls
+    assert any(call[0] == "activate" and call[1] == "alice" for call in fake.calls)
+    assert store.ai_granted() == {
+        "alice": {"base_url": "http://hub:8080", "model": "m1"}
+    }
+    report = reconciler.report()
+    assert report["alice"]["is_active"] is True
+    assert report["bob"]["is_active"] is False and report["bob"]["code"] == ""
+
+
+def test_deactivating_an_unreported_account_fails_typed_alike(subject):
+    reconciler, store, fake = subject
+    store.set_ai_target("ghost", is_activated=False)
+    store.set_ai_granted("ghost", {"base_url": "http://hub:8080", "model": "m1"})
+    fake.deactivate_error = NoTargetUserError("no target account 'ghost'")
+
+    feed(reconciler, accounts=("alice",), credentials={})
+
+    row = reconciler.report()["ghost"]
+    assert row["state"] == "failed" and row["code"] == "no_target_user"
+    # The endpoint stays recorded: the cleanup is still owed, not skipped.
+    assert "ghost" in store.ai_granted()
+
+
+def test_a_failed_activation_is_a_typed_failed_state(subject):
+    reconciler, store, fake = subject
+    store.set_ai_target("alice", is_activated=True)
+    fake.activate_error = InstallError("cc-switch refused")
+
+    feed(reconciler, credentials={"alice": CREDS})
+
+    row = reconciler.report()["alice"]
+    assert row["state"] == "failed"
+    assert row["code"] == "install_failed"
+    assert row["params"] == {"detail": "cc-switch refused"}
+    assert store.ai_granted() == {}
+
+
 def test_a_changed_choice_re_applies(subject):
     reconciler, store, fake = subject
     store.set_ai_target("alice", is_activated=True)
@@ -293,6 +343,19 @@ def test_the_no_target_guard_covers_both_directions(tmp_path):
         )
         assert refused == {"code": "no_target_user", "params": {}}
     assert store.ai_targets() == {}
+
+
+def test_an_apply_without_targets_is_refused(tmp_path):
+    store = MachineServiceStore(path=str(tmp_path / "services.json"))
+    handler, beats = handler_for(store)
+
+    for body in ({}, {"targets": {}}, {"targets": "alice"}):
+        refused = handler.act(
+            entries=[ENTRY], account="root", is_privileged=True, body=body
+        )
+        assert refused == {"code": "unknown_request", "params": {}}
+    assert store.ai_targets() == {}
+    assert beats == []
 
 
 def test_tool_configs_are_cleaned_of_unknown_knobs():

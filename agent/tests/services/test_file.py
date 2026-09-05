@@ -1,5 +1,6 @@
 """The file service: path rules by identity, typed refusals, remounting."""
 
+import json
 import os
 
 import pytest
@@ -22,14 +23,20 @@ class FakeMountPlatform(AgentPlatform):
         self.made_directories = []
         self.writable = set()
         self.attach_error = None
+        self.detach_error = None
         self.has_tooling = True
         self.tooling_installs = 0
         self.tooling_error = None
+        # Observers a test may hang on the slow steps, to read state mid-step.
+        self.on_install = None
+        self.on_attach = None
 
     def has_mount_tooling(self) -> bool:
         return self.has_tooling
 
     def install_mount_tooling(self) -> None:
+        if self.on_install is not None:
+            self.on_install()
         self.tooling_installs += 1
         if self.tooling_error is not None:
             raise self.tooling_error
@@ -57,6 +64,8 @@ class FakeMountPlatform(AgentPlatform):
         location,
         credentials_path="",
     ) -> None:
+        if self.on_attach is not None:
+            self.on_attach()
         self.attach_calls.append(
             {
                 "account": account,
@@ -79,6 +88,8 @@ class FakeMountPlatform(AgentPlatform):
 
     def detach_share(self, *, location: str) -> None:
         self.detach_calls.append(location)
+        if self.detach_error is not None:
+            raise self.detach_error
         self.attached.discard(location)
 
     def is_share_attached(self, *, location: str) -> bool:
@@ -198,6 +209,61 @@ def test_a_queued_mount_reports_its_stage_before_the_worker_runs(service):
     assert subject.rows()[0]["state"] == "queued"
 
 
+def test_the_stage_machine_is_observable_at_each_step(service):
+    subject, platform, _store, tmp_path = service
+    platform.has_tooling = False
+    seen = []
+    platform.on_install = lambda: seen.append(subject.rows()[0]["state"])
+    platform.on_attach = lambda: seen.append(subject.rows()[0]["state"])
+    location = str(tmp_path / "nas")
+
+    reply = subject.attach(
+        account="root",
+        is_privileged=True,
+        entry_id="hub_share_media",
+        payload=PAYLOAD,
+        username="media",
+        password="pw",  # scan: allow
+        path=location,
+    )
+    assert reply == {}
+    assert subject.rows()[0]["state"] == "queued"
+
+    subject.reconcile()
+
+    assert seen == ["installing_tooling", "mounting"]
+    assert subject.rows()[0]["state"] == "mounted"
+
+
+def test_the_password_lands_only_in_the_credentials_file(service):
+    subject, platform, _store, tmp_path = service
+    location = str(tmp_path / "nas")
+
+    outcome = subject.act(
+        entries=[entry_for(PAYLOAD)],
+        account="root",
+        is_privileged=True,
+        body={
+            "action": "mount",
+            "id": "hub_share_media",
+            "username": "media",
+            "password": "pw-secret",  # scan: allow
+            "path": location,
+        },
+    )
+    assert outcome == {}
+    subject.reconcile()
+
+    credentials_path = platform.attach_calls[0]["credentials_path"]
+    assert "pw-secret" in open(credentials_path, encoding="utf-8").read()
+    # The mount itself is handed the credentials file, never the password.
+    assert all(call["password"] == "" for call in platform.attach_calls)
+    raw = (tmp_path / "services.json").read_bytes()
+    assert b"pw-secret" not in raw and b'"password"' not in raw
+    payload = json.dumps(subject.state())
+    assert "pw-secret" not in payload and '"password"' not in payload
+
+
 def test_a_gone_credentials_file_reports_and_waits(service):
     subject, platform, _store, tmp_path = service
     location = str(tmp_path / "nas")
@@ -230,6 +296,79 @@ def test_the_reconcile_remounts_an_enabled_record(service):
     assert subject.rows()[0]["is_attached"] is True
 
 
+def test_a_restarted_handler_remounts_the_stores_records(service):
+    subject, _platform, store, tmp_path = service
+    location = str(tmp_path / "nas")
+    assert attach(subject, path=location) == {}
+
+    fresh_platform = FakeMountPlatform()
+    revived = FileServiceHandler(
+        platform=fresh_platform,
+        store=store,
+        credentials_dir=str(tmp_path / "creds"),
+        log=discard,
+    )
+    revived.reconcile()
+
+    (call,) = fresh_platform.attach_calls
+    assert call["location"] == location and call["password"] == ""
+    assert revived.rows()[0]["state"] == "mounted"
+
+
+def test_the_remount_runs_as_the_records_own_account(service):
+    subject, platform, _store, tmp_path = service
+    location = str(tmp_path / "alice_nas")
+    platform.writable.add(location)
+    assert attach(subject, path=location, account="alice", is_privileged=False) == {}
+
+    platform.attached.discard(location)
+    os.rmdir(location)
+    subject.reconcile()
+
+    assert platform.made_directories[-1] == ("alice", location)
+    assert platform.attach_calls[-1]["account"] == "alice"
+    assert subject.rows()[0]["is_attached"] is True
+
+
+def test_a_mount_point_with_content_blocks_the_remount(service):
+    subject, platform, _store, tmp_path = service
+    location = str(tmp_path / "nas")
+    assert attach(subject, path=location) == {}
+
+    platform.attached.discard(location)
+    (tmp_path / "nas" / "leftover").write_text("kept")
+    subject.reconcile()
+
+    row = subject.rows()[0]
+    assert row["state"] == "failed" and row["code"] == "mountpoint_not_empty"
+    assert len(platform.attach_calls) == 1
+
+
+def test_a_failing_mount_is_a_typed_failed_row(service):
+    subject, platform, _store, tmp_path = service
+    platform.attach_error = ShareAttachError("mount_failed", "cifs refused")
+    location = str(tmp_path / "nas")
+
+    assert attach(subject, path=location) == {}
+
+    row = subject.rows()[0]
+    assert row["state"] == "failed"
+    assert row["code"] == "mount_failed"
+    assert row["params"] == {"detail": "cifs refused"}
+
+
+def test_a_mount_point_that_is_a_file_is_refused(service):
+    subject, platform, _store, tmp_path = service
+    occupied = tmp_path / "occupied"
+    occupied.write_text("data")
+
+    assert attach(subject, path=str(occupied)) == {
+        "code": "mountpoint_not_empty",
+        "params": {},
+    }
+    assert platform.attach_calls == []
+
+
 def test_detach_is_the_records_own_account_or_privileged(service):
     subject, platform, store, tmp_path = service
     location = str(tmp_path / "nas")
@@ -252,6 +391,28 @@ def test_detach_is_the_records_own_account_or_privileged(service):
     subject.reconcile()
     assert subject.rows()[0]["state"] == "mounted"
     assert platform.attach_calls[-1]["password"] == ""
+
+
+def test_unmounting_an_unknown_record_is_refused(service):
+    subject, _platform, _store, _tmp_path = service
+
+    refused = subject.detach(account="root", is_privileged=True, record_id="missing")
+
+    assert refused == {"code": "unknown_request", "params": {}}
+
+
+def test_a_refusing_unmount_keeps_the_record(service):
+    subject, platform, store, tmp_path = service
+    location = str(tmp_path / "nas")
+    assert attach(subject, path=location) == {}
+    platform.detach_error = ShareAttachError("unmount_failed", "target busy")
+    (record_id,) = store.mounts()
+
+    refused = subject.detach(account="root", is_privileged=True, record_id=record_id)
+
+    assert refused == {"code": "unmount_failed", "params": {"detail": "target busy"}}
+    assert record_id in store.mounts()
+    assert os.path.isfile(platform.attach_calls[0]["credentials_path"])
 
 
 def test_a_relative_path_is_refused(service):

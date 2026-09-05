@@ -13,6 +13,7 @@ import subprocess
 import pytest
 
 import neutrino_agent.core.self_update as self_update
+from neutrino_agent.core.channel import GatewayUnreachable
 from neutrino_agent.core.loop import Agent
 from tests.conftest import bind, discard
 
@@ -22,9 +23,10 @@ PACKAGE_BYTES = b"!<arch>agent-package"
 class FakeChannel:
     """Answers heartbeats and hands out package bytes the way the hub would."""
 
-    def __init__(self, hub_version: str, *, named_digest: str = ""):
+    def __init__(self, hub_version: str, *, named_digest: str = "", has_checksum=True):
         self.hub_version = hub_version
         self.named_digest = named_digest
+        self.has_checksum = has_checksum
         self.downloads = []
 
     def post(self, path, payload):
@@ -38,7 +40,17 @@ class FakeChannel:
         self.downloads.append((path, dict(payload), destination))
         with open(destination, "wb") as stream:
             stream.write(PACKAGE_BYTES)
+        if not self.has_checksum:
+            return ""
         return self.named_digest or hashlib.sha256(PACKAGE_BYTES).hexdigest()
+
+
+class UnreachableDownloadChannel(FakeChannel):
+    """Beats fine, but the package fetch never comes back."""
+
+    def post_download(self, path, payload, destination):
+        self.downloads.append((path, dict(payload), destination))
+        raise GatewayUnreachable("cannot reach gateway: gone")
 
 
 @pytest.fixture
@@ -157,6 +169,76 @@ def test_a_launch_failure_is_coded_and_cleaned_up(config_path, monkeypatch):
         "params": {"target": "9.9.9"},
     }
     assert not os.path.exists(agent._channel.downloads[0][2])
+
+
+def test_a_missing_checksum_header_refuses_the_install(
+    config_path, monkeypatch, launched
+):
+    agent = bound_agent(config_path, monkeypatch, hub_version="9.9.9")
+    agent._channel.has_checksum = False
+
+    agent.run_once()
+
+    assert launched == []
+    assert agent.last_error() == {
+        "code": "agent_package_digest_mismatch",
+        "params": {"target": "9.9.9"},
+    }
+    assert not os.path.exists(agent._channel.downloads[0][2])
+
+
+def test_a_new_target_version_after_a_failure_is_tried(
+    config_path, monkeypatch, launched
+):
+    agent = bound_agent(
+        config_path, monkeypatch, hub_version="9.9.9", named_digest="0" * 64
+    )
+
+    agent.run_once()
+    agent._channel.hub_version = "9.9.10"
+    agent._channel.named_digest = ""
+    agent.run_once()
+
+    assert len(agent._channel.downloads) == 2
+    assert len(launched) == 1
+    assert agent.last_error() is None
+    os.unlink(agent._channel.downloads[1][2])
+
+
+def test_a_successful_target_is_not_relaunched(config_path, monkeypatch, launched):
+    agent = bound_agent(config_path, monkeypatch, hub_version="9.9.9")
+
+    agent.run_once()
+    agent.run_once()
+
+    assert len(agent._channel.downloads) == 1
+    assert len(launched) == 1
+    os.unlink(agent._channel.downloads[0][2])
+
+
+def test_a_fetch_failure_is_coded_and_latched(config_path, monkeypatch, launched):
+    agent = bound_agent(config_path, monkeypatch, hub_version="9.9.9")
+    agent._channel = UnreachableDownloadChannel("9.9.9")
+
+    agent.run_once()
+    agent.run_once()
+
+    assert launched == []
+    assert agent.last_error() == {
+        "code": "hub_unreachable",
+        "params": {"target": "9.9.9"},
+    }
+    assert len(agent._channel.downloads) == 1
+    assert not os.path.exists(agent._channel.downloads[0][2])
+
+
+def test_the_rpm_command_falls_back_to_yum_without_dnf(monkeypatch):
+    monkeypatch.setattr(self_update.shutil, "which", lambda name: None)
+
+    command = self_update.install_command("rpm", "/tmp/hub.rpm")
+
+    assert "yum reinstall -y /tmp/hub.rpm" in command[6]
+    assert "yum install -y /tmp/hub.rpm" in command[6]
 
 
 def test_the_rpm_command_uses_the_family_manager(monkeypatch):

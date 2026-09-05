@@ -95,6 +95,56 @@ def test_disabling_closes_the_listener_and_open_connections(upstream):
     assert service.state()["forwards"] == {}
 
 
+def test_a_second_connect_reuses_the_running_relay(upstream):
+    service = PortServiceHandler(log=discard)
+    assert service.forward(entry_id="db", host="127.0.0.1", port=upstream) == {}
+    first = service.state()["forwards"]["db"]["local_port"]
+
+    assert service.forward(entry_id="db", host="127.0.0.1", port=upstream) == {}
+
+    forwards = service.state()["forwards"]
+    assert list(forwards) == ["db"]
+    assert forwards["db"]["local_port"] == first
+    service.stop(entry_id="db")
+
+
+def test_a_stopped_relay_frees_its_loopback_port(upstream):
+    service = PortServiceHandler(log=discard)
+    service.forward(entry_id="db", host="127.0.0.1", port=upstream)
+    local_port = service.state()["forwards"]["db"]["local_port"]
+
+    assert service.stop(entry_id="db") == {}
+
+    with pytest.raises(OSError):
+        socket.create_connection(("127.0.0.1", local_port), timeout=1)
+    assert service.state()["forwards"] == {}
+
+
+def test_an_unparsable_published_port_is_refused():
+    service = PortServiceHandler(log=discard)
+    entries = [
+        {
+            "id": "bad",
+            "type": "port",
+            "title": "bad",
+            "payload": {"host": "127.0.0.1", "port": "not a number"},
+            "is_healthy": True,
+            "source": "module",
+            "description": "",
+        }
+    ]
+
+    refused = service.act(
+        entries=entries,
+        account="alice",
+        is_privileged=False,
+        body={"id": "bad", "is_enabled": True},
+    )
+
+    assert refused == {"code": "unknown_request", "params": {}}
+    assert service.state()["forwards"] == {}
+
+
 def test_stopping_what_is_not_running_is_nothing():
     service = PortServiceHandler(log=discard)
 

@@ -99,5 +99,38 @@ def test_tool_configs_survive_the_round_trip(tmp_path):
     }
 
 
-def test_the_connect_account_is_remembered(tmp_path):
-    store = MachineServiceStore(path=str(tmp_path / "services.json"))
+def test_no_write_path_serializes_a_secret(store, tmp_path):
+    store.set_ai_target("alice", is_activated=True)
+    store.set_ai_tool_configs({"claude": {"default": "m1"}, "codex": {"model": "m2"}})
+    store.set_ai_granted(
+        "alice",
+        {
+            "base_url": "http://hub:8080",
+            "model": "m1",
+            "api_key": "leak-key",  # scan: allow
+        },
+    )
+    store.set_mount(
+        "r1",
+        {
+            "path": "/p",
+            "account": "alice",
+            "is_enabled": True,
+            "password": "leak-pw",  # scan: allow
+        },
+    )
+
+    raw = (tmp_path / "services.json").read_bytes()
+    assert b"leak-key" not in raw and b"leak-pw" not in raw
+
+    def keys_of(node):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                yield key
+                yield from keys_of(value)
+        elif isinstance(node, list):
+            for value in node:
+                yield from keys_of(value)
+
+    forbidden = {"password", "api_key", "key", "token", "connect_account"}
+    assert forbidden.isdisjoint(set(keys_of(json.loads(raw.decode()))))

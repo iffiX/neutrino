@@ -29,6 +29,10 @@ ERROR_WORDS = {
     "hub_refused": "the hub refused this machine's token",
     "hub_untrusted": "what answers is not the hub this machine pinned",
     "hub_unreachable": "the hub cannot be reached",
+    "agent_wire_stale": (
+        "this agent's build does not match the hub; it reinstalls itself "
+        "from the hub's package"
+    ),
 }
 ERROR_ADVICE = {
     "hub_refused": (

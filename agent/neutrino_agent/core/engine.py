@@ -173,7 +173,8 @@ class ModuleEngine(ReconcileWorker):
         """
         with self._lock:
             if catalog is not None:
-                self._catalog = catalog
+                # A non-mapping catalog raises before the held one is replaced.
+                self._catalog = dict(catalog)
                 self._catalog_hash = catalog_hash
             self._desired = desired
         self._wakeup.set()

@@ -3,9 +3,9 @@
 The page is one HTML file with its behavior inline, so what can be checked
 here is the contract's visible surface: the three sections, one panel per
 service type, controls greyed and never hidden, the redraw guards, the busy
-spinners — and the words table asserted complete: every ``{code}`` the
-agent can emit is enumerated from the source and must have a wording, so a
-new code without a word fails this suite.
+spinners — and the words table asserted complete: every ``{code}`` and
+every state token the agent can emit is enumerated from the source and must
+have a wording, so a new code or state without a word fails this suite.
 """
 
 import pathlib
@@ -58,6 +58,25 @@ MODULE_BUSY_STATES = (
 )
 MOUNT_BUSY_STATES = ("queued", "installing_tooling", "mounting", "pending")
 
+# What can carry a state token anywhere in the agent.
+STATE_PATTERNS = (
+    re.compile(r'"state":\s*"([a-z_]+)"'),
+    re.compile(r'\bstate = "([a-z_]+)"'),
+    re.compile(r'clean_status\(\s*"([a-z_]+)"'),
+    re.compile(r'_transient\("([a-z_]+)"'),
+    re.compile(r'_stages\[record_id\] = "([a-z_]+)"'),
+    re.compile(r'else\s+"([a-z_]+)"'),
+)
+
+# Strings the else-pattern catches that are not states: a code the codes
+# test covers, and the rpm family's fallback package manager.
+NON_STATES = {"agent_update_fetch_failed", "yum"}
+
+# Mount record states the page words through ``is_attached`` rather than a
+# states entry: an attached record shows the ok dot, a detached one the
+# ``not_attached`` word.
+ATTACH_RENDERED_STATES = {"mounted", "detached"}
+
 
 def emitted_codes() -> set:
     """Every code the agent's own source can emit, by static enumeration."""
@@ -70,6 +89,19 @@ def emitted_codes() -> set:
         for pattern in CODE_PATTERNS:
             codes.update(pattern.findall(text))
     return codes - NON_CODES
+
+
+def emitted_states() -> set:
+    """Every state token the agent's own source can emit."""
+    root = pathlib.Path(neutrino_agent.__file__).parent
+    states = set()
+    for path in sorted(root.rglob("*.py")):
+        if path.name == "page.py":
+            continue
+        text = path.read_text(encoding="utf-8")
+        for pattern in STATE_PATTERNS:
+            states.update(pattern.findall(text))
+    return states - NON_STATES
 
 
 def words_block(name: str) -> dict:
@@ -93,6 +125,19 @@ def test_every_code_the_agent_emits_has_a_word():
     missing = emitted_codes() - worded
 
     assert missing == set(), f"codes with no wording on the page: {sorted(missing)}"
+
+
+def test_every_state_token_the_agent_emits_has_a_word():
+    # The anchors that let the attach-rendered pair stand outside the table.
+    assert "record.is_attached" in CONTROL_PAGE_HTML
+    assert 'not_attached: "not mounted"' in CONTROL_PAGE_HTML
+    worded = (
+        set(words_block("states")) | set(MOUNT_BUSY_STATES) | ATTACH_RENDERED_STATES
+    )
+
+    missing = emitted_states() - worded
+
+    assert missing == set(), f"states with no wording on the page: {sorted(missing)}"
 
 
 def test_the_detail_fallback_names_each_of_its_codes():
@@ -209,6 +254,13 @@ def test_a_busy_chip_and_module_button_are_disabled():
         assert f"'{state}'" in CONTROL_PAGE_HTML
 
 
+def test_every_busy_surface_shows_the_spinner():
+    # Module rows, AI chips and mount records mark a transient the same way.
+    assert "(working ? '<span class=\"spin\"></span>'" in CONTROL_PAGE_HTML
+    assert "(isBusy ? '<span class=\"spin\"></span>'" in CONTROL_PAGE_HTML
+    assert "busyWord ? '<span class=\"spin\"></span>'" in CONTROL_PAGE_HTML
+
+
 # --- the redraw guards ---
 
 
@@ -251,16 +303,24 @@ def test_the_ai_panel_stages_chips_config_and_apply():
 
 
 def test_the_ai_knobs_mirror_the_agents_own():
-    assert "const CLAUDE_SLOTS = %s;" % str(list(AI_CLAUDE_SLOTS)).replace(
-        '"', "'"
-    ) in CONTROL_PAGE_HTML
-    assert "const REASONING_EFFORTS = %s;" % str(list(AI_REASONING_EFFORTS)).replace(
-        '"', "'"
-    ) in CONTROL_PAGE_HTML
+    assert (
+        "const CLAUDE_SLOTS = %s;" % str(list(AI_CLAUDE_SLOTS)).replace('"', "'")
+        in CONTROL_PAGE_HTML
+    )
+    assert (
+        "const REASONING_EFFORTS = %s;"
+        % str(list(AI_REASONING_EFFORTS)).replace('"', "'")
+        in CONTROL_PAGE_HTML
+    )
 
 
-def test_the_connect_account_preselects_the_chip():
-    assert "state.ai_connect_account" in CONTROL_PAGE_HTML
+def test_the_chip_seeding_mirrors_the_targets_exactly():
+    # An explicit false stays off, an absent account seeds off, and no
+    # account is preselected for the person.
+    assert "targets[account] = !!(state.ai_targets || {})[account];" in (
+        CONTROL_PAGE_HTML
+    )
+    assert "ai_connect_account" not in CONTROL_PAGE_HTML
 
 
 def test_a_sent_mount_password_is_cleared_from_the_stage():
