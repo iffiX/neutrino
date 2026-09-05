@@ -1,5 +1,7 @@
 """Fixed values of the services module."""
 
+from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_SWITCHER_NAME
+
 SERVICES_DECLARED_PATH = "services/declared.json"
 
 SERVICES_KIND_SAMBA = "samba"
@@ -78,6 +80,12 @@ SERVICES_HUB_SELF_HOSTS = ("127.0.0.1", "0.0.0.0", "::1", "localhost")
 
 SERVICES_FILE_PROTOCOL = "smb"
 SERVICES_AI_PROTOCOL = "openai"
+
+# The device modules an entry of each type cannot work without. Composed
+# into every entry's ``modules`` field; the machine's own page compares them
+# against its module states and gates the panel.
+SERVICES_AI_MODULES = (CLIPROXYAPI_SWITCHER_NAME,)
+SERVICES_FILE_MODULES = ("samba_mount",)
 
 SERVICES_LIST_TTL_S = 10.0
 SERVICES_ANSWER_TIMEOUT_S = 2.0

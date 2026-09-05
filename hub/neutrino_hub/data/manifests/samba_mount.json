@@ -1,0 +1,21 @@
+{
+  "_comment": "The mount tooling the file service needs. On Linux it is a distro package the machine's own package manager installs, so its orders skip the cache; Windows and macOS speak SMB natively, so their empty entries mean there is nothing to install and the module reads as enabled.",
+  "name": "samba_mount",
+  "title": "Samba mount",
+  "kind": "system_package",
+  "description": "Mounts published shares; the file service needs it",
+  "platforms": {
+    "linux-debian": {
+      "packages": [
+        "cifs-utils"
+      ]
+    },
+    "linux-rhel": {
+      "packages": [
+        "cifs-utils"
+      ]
+    },
+    "windows": {},
+    "darwin": {}
+  }
+}

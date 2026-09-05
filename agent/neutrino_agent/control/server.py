@@ -83,6 +83,7 @@ def _scoped_state(agent, identity: ControlIdentity) -> dict:
         "is_connected": bool(config.get("gateway_url") and config.get("token")),
         "gateway_url": config.get("gateway_url", ""),
         "last_error": agent.last_error(),
+        "operation": agent.operation(),
         "modules": _module_rows(agent, catalog.get("modules", {})),
         "services": agent.service_entries(),
         "accounts": accounts,
@@ -120,6 +121,11 @@ def _module_rows(agent, modules: dict) -> list:
                 "description": resolved.get("description", ""),
                 "kind": resolved.get("kind", ""),
                 "is_supported": resolved.get("entry") is not None,
+                # The platform carries this natively: nothing to install,
+                # so the row gets no button.
+                "is_native": (
+                    resolved.get("entry") == {} and not resolved.get("is_builtin")
+                ),
                 # What is true, unless this machine has asked for something
                 # the hub has not answered yet.
                 "is_enabled": bool(

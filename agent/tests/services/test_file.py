@@ -25,22 +25,11 @@ class FakeMountPlatform(AgentPlatform):
         self.attach_error = None
         self.detach_error = None
         self.has_tooling = True
-        self.tooling_installs = 0
-        self.tooling_error = None
-        # Observers a test may hang on the slow steps, to read state mid-step.
-        self.on_install = None
+        # An observer a test may hang on the slow step, to read state mid-step.
         self.on_attach = None
 
     def has_mount_tooling(self) -> bool:
         return self.has_tooling
-
-    def install_mount_tooling(self) -> None:
-        if self.on_install is not None:
-            self.on_install()
-        self.tooling_installs += 1
-        if self.tooling_error is not None:
-            raise self.tooling_error
-        self.has_tooling = True
 
     def write_share_credentials(self, *, credentials_path, username, password):
         os.makedirs(os.path.dirname(credentials_path), exist_ok=True)
@@ -167,28 +156,47 @@ def test_an_ordinary_identity_may_attach_only_where_it_writes(service):
     assert store.mounts()
 
 
-def test_missing_tooling_is_installed_on_the_way_to_the_mount(service):
+def test_a_mount_with_the_module_absent_is_refused_typed(service):
     subject, platform, store, tmp_path = service
     platform.has_tooling = False
     location = str(tmp_path / "nas")
 
-    assert attach(subject, path=location) == {}
+    # The service installs nothing: the tooling is the samba_mount module's.
+    assert attach(subject, path=location) == {
+        "code": "module_missing",
+        "params": {"module": "samba_mount"},
+    }
+    assert platform.attach_calls == []
+    assert store.mounts() == {}
 
-    assert platform.tooling_installs == 1
-    assert subject.rows()[0]["state"] == "mounted"
 
-
-def test_a_tooling_install_that_fails_is_typed_and_waits(service):
+def test_a_remount_with_the_module_absent_is_refused_typed(service):
     subject, platform, store, tmp_path = service
-    platform.has_tooling = False
-    platform.tooling_error = RuntimeError("no repository reachable")
     location = str(tmp_path / "nas")
-
     assert attach(subject, path=location) == {}
+    record_id = mount_record_id("hub_share_media", location)
+    subject.detach(account="root", is_privileged=True, record_id=record_id)
+    platform.has_tooling = False
+
+    refused = subject.remount(account="root", is_privileged=True, record_id=record_id)
+
+    assert refused == {"code": "module_missing", "params": {"module": "samba_mount"}}
+
+
+def test_the_reconcile_reports_module_missing_when_the_tooling_goes(service):
+    subject, platform, store, tmp_path = service
+    location = str(tmp_path / "nas")
+    assert attach(subject, path=location) == {}
+    platform.attached.clear()
+    platform.attach_calls.clear()
+    platform.has_tooling = False
+
+    subject.reconcile()
 
     row = subject.rows()[0]
     assert row["state"] == "failed"
-    assert row["code"] == "tooling_install_failed"
+    assert row["code"] == "module_missing"
+    assert row["params"] == {"module": "samba_mount"}
     assert platform.attach_calls == []
 
 
@@ -211,9 +219,7 @@ def test_a_queued_mount_reports_its_stage_before_the_worker_runs(service):
 
 def test_the_stage_machine_is_observable_at_each_step(service):
     subject, platform, _store, tmp_path = service
-    platform.has_tooling = False
     seen = []
-    platform.on_install = lambda: seen.append(subject.rows()[0]["state"])
     platform.on_attach = lambda: seen.append(subject.rows()[0]["state"])
     location = str(tmp_path / "nas")
 
@@ -231,7 +237,7 @@ def test_the_stage_machine_is_observable_at_each_step(service):
 
     subject.reconcile()
 
-    assert seen == ["installing_tooling", "mounting"]
+    assert seen == ["mounting"]
     assert subject.rows()[0]["state"] == "mounted"
 
 

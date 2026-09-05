@@ -172,7 +172,7 @@ def test_a_builtin_manifest_reads_as_a_toggle(api, monkeypatch):
         "load_module_manifests",
         lambda: {
             "openssh_server": {
-                "title": "OpenSSH server",
+                "title": "SSH server",
                 "platforms": {"debian": {}},
                 "is_builtin": True,
             }
@@ -182,6 +182,35 @@ def test_a_builtin_manifest_reads_as_a_toggle(api, monkeypatch):
     answer = client.get(f"/api/devices/{MAC}/modules").json()
 
     assert answer["modules"][0]["is_builtin"] is True
+    # A builtin is switched, never "nothing to do": its empty entries mean
+    # the capability is there to toggle.
+    assert answer["modules"][0]["is_native"] is False
+
+
+def test_a_native_module_offers_nothing_where_the_platform_carries_it(api, monkeypatch):
+    client, runtime = api
+    monkeypatch.setattr(
+        devices_router,
+        "load_module_manifests",
+        lambda: {
+            "samba_mount": {
+                "title": "Samba mount",
+                "kind": "system_package",
+                "platforms": {
+                    "linux-debian": {"packages": ["cifs-utils"]},
+                    "windows": {},
+                },
+            }
+        },
+    )
+
+    runtime.client_platform[MAC] = {"os": "windows", "family": "", "arch": "amd64"}
+    native = client.get(f"/api/devices/{MAC}/modules").json()["modules"][0]
+    assert native["is_native"] is True
+
+    runtime.client_platform[MAC] = {"os": "linux", "family": "debian", "arch": "amd64"}
+    package = client.get(f"/api/devices/{MAC}/modules").json()["modules"][0]
+    assert package["is_native"] is False
 
 
 def test_a_wish_is_recorded_and_answered(api):

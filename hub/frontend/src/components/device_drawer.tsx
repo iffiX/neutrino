@@ -316,6 +316,10 @@ export function DeviceDrawer({
   const isAnyOrderRunning = orders.some((order) =>
     ORDER_RUNNING_STATES.includes(order.state),
   );
+  // One operation at a time per device, whatever kind and whichever surface
+  // started it: while an SSH task or a module order is open, everything
+  // that would start another one greys.
+  const isOperationOpen = task.isRunning || isAnyOrderRunning;
 
   const loadOrders = useCallback(async () => {
     if (!isManaged) {
@@ -948,7 +952,7 @@ export function DeviceDrawer({
                     key={deviceAction.action}
                     type="button"
                     className={`button ${deviceAction.isDestructive ? "button--danger" : ""}`}
-                    disabled={task.isRunning}
+                    disabled={isOperationOpen}
                     onClick={() => handleAction(deviceAction)}
                   >
                     <Icon name={deviceAction.icon} size={14} />
@@ -964,7 +968,10 @@ export function DeviceDrawer({
           </div>
 
           {device.client !== null && device.client.is_managed && (
-            <DeviceModules macAddress={device.mac_address} />
+            <DeviceModules
+              macAddress={device.mac_address}
+              isOperationOpen={isOperationOpen}
+            />
           )}
 
           {device.client !== null &&

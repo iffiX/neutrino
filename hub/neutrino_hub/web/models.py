@@ -1009,6 +1009,8 @@ class PublishedServiceView(BaseModel):
     is_healthy: bool | None = None
     source: str
     description: str = ""
+    # The device modules this entry cannot work without.
+    modules: list[str] = Field(default_factory=list)
     record_id: str | None = None
     detail_code: str | None = None
 
@@ -1207,6 +1209,11 @@ class ClientHeartbeatReply(BaseModel):
     # ``{account: {"base_url", "api_key", "model"}}`` for the accounts whose
     # AI target is on; the one per-device secret the reply carries.
     ai_accounts: dict = Field(default_factory=dict)
+    # The device's current or last-finished operation — a module order or an
+    # SSH bootstrap — as ``{"kind", "action", "title", "state", "output"}``;
+    # None when nothing has run. The machine's own page renders the hub's
+    # copy, so both surfaces show one stream.
+    operation: dict | None = None
     # The hub's own version, on every reply: an older agent updates itself
     # from it, so a hub restarted with a new release reaches its fleet within
     # one beat.
@@ -1275,6 +1282,9 @@ class DeviceModuleView(BaseModel):
     # A platform capability the machine already carries, worded as
     # enable/disable rather than install/uninstall.
     is_builtin: bool = False
+    # The platform carries this natively: nothing to install and nothing to
+    # switch, so the row gets no button at all.
+    is_native: bool = False
     # Whether installing and pointing at the hub are separate steps.
     has_activation: bool = False
     is_activated: bool = False

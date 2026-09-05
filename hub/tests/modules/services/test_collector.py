@@ -129,6 +129,34 @@ def test_the_ai_entry_carries_the_served_models_and_the_probe_health():
     assert entry["is_healthy"] is True
 
 
+def test_every_entry_names_the_modules_it_cannot_work_without():
+    entries = collect(
+        is_gitea_served=True,
+        gitea_url=f"http://{HUB}:3000/",
+        is_gitea_healthy=True,
+        is_samba_served=True,
+        samba_share_names=["media"],
+        is_samba_healthy=True,
+        is_ai_served=True,
+        is_podman_served=True,
+        podman_containers=[container("web", ports=[8080])],
+        declared_services=[
+            declared("samba", id="n1", shares=[DeclaredShare(name="backup")])
+        ],
+        declared_healths={},
+    )
+
+    by_type = {}
+    for entry in entries:
+        by_type.setdefault(entry["type"], []).append(entry["modules"])
+    # ai needs cc-switch, every file entry needs the mount tooling, and the
+    # open-a-link types need nothing on the machine.
+    assert by_type["ai"] == [["cc_switch"]]
+    assert all(modules == ["samba_mount"] for modules in by_type["file"])
+    assert len(by_type["file"]) >= 2
+    assert all(modules == [] for modules in by_type["web"] + by_type["port"])
+
+
 def test_podman_publishes_one_port_entry_per_published_container_port():
     entries = collect(
         is_podman_served=True,
@@ -295,4 +323,5 @@ def test_the_catalog_copy_drops_the_panel_only_fields():
         "is_healthy",
         "source",
         "description",
+        "modules",
     }

@@ -8,7 +8,6 @@ on an account nobody reported is refused in both directions alike.
 """
 
 import json
-import os
 
 import pytest
 
@@ -261,19 +260,6 @@ def test_deactivation_ends_with_no_tool_calling_the_hub(monkeypatch):
     assert note == "claude → as it was, codex → as it was, gemini → as it was"
 
 
-def test_uninstall_cli_removes_the_agents_binary(tmp_path, monkeypatch):
-    binary = tmp_path / "cc-switch"
-    binary.write_text("#!/bin/sh\n")
-    monkeypatch.setattr(
-        switcher, "SWITCHER_CLI_PATHS", (str(binary), str(tmp_path / "absent"))
-    )
-
-    switcher.uninstall_cli()
-
-    assert not binary.exists()
-    switcher.uninstall_cli()
-
-
 def test_the_claude_env_names_every_chosen_slot():
     env = switcher._hub_env(
         {"env": {"KEEP": "1", "ANTHROPIC_API_KEY": "old"}},
@@ -319,39 +305,11 @@ def test_gemini_env_merge_sets_one_line():
     assert merged == "GEMINI_API_KEY=k\nGEMINI_MODEL=m3\n"
 
 
-def test_the_switcher_holds_no_release_table_and_fetches_nothing():
-    # Which build this machine takes, and getting it, are the hub's: the
-    # table lives beside the gateway that publishes the service.
+def test_the_switcher_holds_no_release_table_and_installs_nothing():
+    # Which build this machine takes, getting it and installing it are the
+    # cc_switch module's: this service only detects and activates.
     assert not hasattr(switcher, "release_entry")
     assert not hasattr(switcher, "SWITCHER_RELEASES")
     assert not hasattr(switcher, "download")
-
-
-def test_install_unpacks_an_archive_it_is_handed(monkeypatch, tmp_path):
-    entry = {"binary": "cc-switch", "package_kind": "tar_binary"}
-    archive = tmp_path / "switcher.archive"
-    archive.write_bytes(b"not really a tarball")
-    monkeypatch.setattr(switcher, "SWITCHER_INSTALL_DIR", str(tmp_path / "bin"))
-    monkeypatch.setattr(
-        switcher,
-        "_extract_binary",
-        lambda archive_path, workdir, binary_name, kind: _staged(workdir, binary_name),
-    )
-
-    destination = switcher.install_cli(entry, str(archive))
-
-    assert destination == str(tmp_path / "bin" / "cc-switch")
-    assert os.path.isfile(destination)
-
-
-def _staged(workdir: str, binary_name: str) -> str:
-    """A binary already unpacked, standing in for a real archive."""
-    staged = os.path.join(workdir, binary_name)
-    with open(staged, "wb") as stream:
-        stream.write(b"#!/bin/sh\n")
-    return staged
-
-
-def test_install_with_no_build_for_this_machine_is_refused(tmp_path):
-    with pytest.raises(InstallError):
-        switcher.install_cli({}, str(tmp_path / "archive"))
+    assert not hasattr(switcher, "install_cli")
+    assert not hasattr(switcher, "uninstall_cli")

@@ -1,7 +1,7 @@
 {
   "_comment": "The SSH server. Every platform carries one, so nothing is downloaded and the drawer words the row enable/disable rather than install/uninstall; disabling is allowed because the agent channel, not SSH, is the management path.",
   "name": "openssh_server",
-  "title": "OpenSSH server",
+  "title": "SSH server",
   "kind": "openssh",
   "description": "Lets the gateway manage this machine directly over SSH",
   "platforms": {

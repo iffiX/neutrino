@@ -18,9 +18,8 @@ key and the reply no longer names it.
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 
+from neutrino_agent.constants import AGENT_SWITCHER_MODULE_NAME
 from neutrino_agent.core.engine import ReconcileWorker
 from neutrino_agent.modules.installers import InstallError
 from neutrino_agent.services import switcher
@@ -144,7 +143,6 @@ class AiServiceReconciler(ReconcileWorker):
         platform_tuple: dict,
         log=print,
         switcher_module=None,
-        fetch_artifact=None,
     ):
         """
         Args:
@@ -152,13 +150,9 @@ class AiServiceReconciler(ReconcileWorker):
             platform_tuple: This machine's platform tuple.
             log: Callable used for progress messages.
             switcher_module: The switcher to drive; None uses the real one.
-            fetch_artifact: Called with ``(artifact_key, destination)`` to
-                have the hub hand down the cc-switch archive. This machine
-                fetches nothing itself, the AI service included.
         """
         self._store = store
         self._platform_tuple = platform_tuple
-        self._fetch_artifact = fetch_artifact
         self._switcher = switcher_module if switcher_module is not None else switcher
         self._entry: dict = {}
         self._accounts: list = []
@@ -259,17 +253,16 @@ class AiServiceReconciler(ReconcileWorker):
         if not self._switcher.is_active(
             run_as=account, base_url=base_url, api_key=api_key, model=default_model
         ):
+            # The service installs nothing: the binary is the cc_switch
+            # module's, and pointing at software that is not there is a
+            # typed refusal every surface words.
             if self._switcher.find_cli() is None:
-                self._publish(account, _transient("installing"))
-                self._log("ai service: installing the cc-switch command line")
-                refusal = self._install_switcher()
-                if refusal:
-                    return {
-                        "state": "absent",
-                        "code": refusal["code"],
-                        "params": dict(refusal.get("params") or {}),
-                        "is_active": False,
-                    }
+                return {
+                    "state": "absent",
+                    "code": "module_missing",
+                    "params": {"module": AGENT_SWITCHER_MODULE_NAME},
+                    "is_active": False,
+                }
             self._publish(account, _transient("activating"))
             self._log(f"ai service: pointing {account}'s tools at the hub")
             self._switcher.activate(
@@ -282,31 +275,6 @@ class AiServiceReconciler(ReconcileWorker):
             account, {"base_url": base_url, "model": default_model}
         )
         return {"state": "installed", "code": "", "params": {}, "is_active": True}
-
-    def _install_switcher(self) -> dict:
-        """Get the cc-switch archive from the hub and install the binary.
-
-        The hub's cache resolved which release this platform takes and
-        fetched it; this machine only receives and unpacks. Which accounts
-        are switched and what their tools are configured with stays here,
-        where a service is decided.
-
-        Returns:
-            Empty on success, ``{"code", "params"}`` on a refusal.
-        """
-        with self._lock:
-            block = dict((self._entry.get("payload") or {}).get("switcher") or {})
-        if not block.get("artifact_key"):
-            return {"code": "no_switcher_build", "params": {}}
-        if self._fetch_artifact is None:
-            return {"code": "hub_unreachable", "params": {}}
-        with tempfile.TemporaryDirectory() as workdir:
-            archive = os.path.join(workdir, "switcher.archive")
-            refusal = self._fetch_artifact(str(block["artifact_key"]), archive)
-            if refusal:
-                return refusal
-            self._switcher.install_cli(block, archive)
-        return {}
 
     @staticmethod
     def _resolved_configs(creds: dict, tool_configs: dict) -> dict:

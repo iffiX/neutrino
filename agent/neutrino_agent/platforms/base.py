@@ -274,15 +274,6 @@ class AgentPlatform:
         """
         return True
 
-    def install_mount_tooling(self) -> None:
-        """Install what attaching a share needs. An optional capability.
-
-        Raises:
-            PlatformUnsupportedError: Where there is nothing to install or
-                no way to install it.
-        """
-        raise PlatformUnsupportedError("cannot install mount tooling here")
-
     def write_share_credentials(
         self, *, credentials_path: str, username: str, password: str
     ) -> None:
@@ -478,6 +469,38 @@ class AgentPlatform:
             PlatformUnsupportedError: When the platform removes nothing.
         """
         raise PlatformUnsupportedError("cannot remove packages here")
+
+    def install_system_packages(self, names: list) -> str:
+        """Install packages by name with the machine's own package manager.
+
+        Args:
+            names: The package names.
+
+        Returns:
+            The installers' combined output.
+
+        Raises:
+            InstallError: If the package manager refuses.
+            PlatformUnsupportedError: When the platform has no package
+                manager to ask.
+        """
+        raise PlatformUnsupportedError("cannot install system packages here")
+
+    def remove_system_packages(self, names: list) -> str:
+        """Remove packages by name with the machine's own package manager.
+
+        Args:
+            names: The package names.
+
+        Returns:
+            The removal's combined output.
+
+        Raises:
+            InstallError: If the package manager refuses.
+            PlatformUnsupportedError: When the platform has no package
+                manager to ask.
+        """
+        raise PlatformUnsupportedError("cannot remove system packages here")
 
     def enable_openssh(self, entry: dict) -> None:
         """Switch the platform's own SSH server on.

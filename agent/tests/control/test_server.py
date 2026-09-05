@@ -194,6 +194,32 @@ def test_the_state_carries_the_typed_service_list(control):
     assert state["ai_tool_configs"] == {"claude": {"default": "m1"}}
 
 
+def test_the_state_carries_the_hubs_operation_for_every_scope(control):
+    server, agent, platform = control
+    operation = {
+        "kind": "order",
+        "action": "install",
+        "title": "ToDesk",
+        "state": "installing",
+        "output": "todesk: installing",
+    }
+    agent.operation_payload = operation
+
+    platform.peer = dict(ROOT)
+    status, state = over_socket(server, "GET", "/api/state")
+    assert status == 200
+    assert state["operation"] == operation
+
+    platform.peer = dict(ALICE)
+    status, state = over_socket(server, "GET", "/api/state")
+    assert status == 200
+    assert state["operation"] == operation
+
+    agent.operation_payload = None
+    status, state = over_socket(server, "GET", "/api/state")
+    assert state["operation"] is None
+
+
 def test_the_state_never_carries_the_device_token(control, config_path):
     server, _agent, platform = control
     bind(config_path)

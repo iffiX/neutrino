@@ -445,7 +445,11 @@ class AgentModuleController:
 
     def _run_one(self, order: AgentModuleOrder) -> None:
         """Fetch what an order needs, hand it down, and wait for the answer."""
-        if order.action == ORDER_ACTION_INSTALL and not self._fetch(order):
+        if (
+            order.action == ORDER_ACTION_INSTALL
+            and _names_download(order)
+            and not self._fetch(order)
+        ):
             return
         event = threading.Event()
         with self._guard:
@@ -563,4 +567,27 @@ def order_action_for(
         return None
     if manifest.get("is_builtin"):
         return ORDER_ACTION_ENABLE if is_enabled else ORDER_ACTION_DISABLE
+    # An empty entry means the platform carries this natively: nothing to
+    # install, nothing to remove.
+    if entry == {}:
+        return None
     return ORDER_ACTION_INSTALL if is_enabled else ORDER_ACTION_REMOVE
+
+
+def _names_download(order: AgentModuleOrder) -> bool:
+    """Whether this order's platform entry has bytes to fetch.
+
+    A distro package installs by name with the machine's own tooling; only
+    an entry naming a url or a release goes through the cache.
+
+    Args:
+        order: The order being run.
+
+    Returns:
+        True when the entry names a download. An unresolvable entry also
+        answers True, so the fetch fails the order with its own typed reason.
+    """
+    _, entry = resolve_platform_entry(order.manifest, order.platform)
+    if entry is None:
+        return True
+    return bool(entry.get("url") or entry.get("github_repo"))

@@ -31,13 +31,16 @@ from neutrino_hub.modules.cliproxyapi.ops import (
 from neutrino_hub.modules.credentials.vault import VaultLockedError
 from neutrino_hub.modules.devices.agent_module_cache import AgentModuleFetchError
 from neutrino_hub.modules.devices.agent_module_controller import (
+    ORDER_ABSENT_STATES,
+    ORDER_ACTION_INSTALL,
     ORDER_PRESENT_STATES,
+    AgentModuleOrder,
     ask_module,
 )
-from neutrino_hub.modules.devices.catalog import artifact_sources
 from neutrino_hub.modules.devices.agent_package import agent_packages
 from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_OUTPUT_LIMIT_BYTES,
+    AGENT_OPERATION_OUTPUT_LINES,
     AGENT_WIRE_GENERATION,
     DEVICE_MAC_PATTERN,
 )
@@ -197,6 +200,7 @@ def heartbeat(
         catalog=catalog if beat.catalog_hash != served_hash else None,
         catalog_hash=served_hash,
         ai_accounts=ai_accounts,
+        operation=_device_operation(runtime, key),
         hub_version=HUB_VERSION,
     )
 
@@ -408,7 +412,7 @@ def module_package(
     try:
         artifact = runtime.agent_modules.artifact_for_key(
             request.artifact_key,
-            sources=artifact_sources(),
+            sources=load_module_manifests(),
             platform=runtime.client_platform.get(device.mac_address, {}),
         )
         data = artifact.path.read_bytes()
@@ -444,7 +448,9 @@ def _honour_standing_wishes(
     of the last attempt, and those two are enough to tell the difference
     that matters. A wish with a refusal standing against it waits for a
     person, which is the one rule this must not break; a wish with none has
-    simply never been attempted, and is.
+    simply never been attempted, and is. Both directions are honoured: an
+    enable wish against an absent module, and a disable wish against a
+    present one.
 
     Args:
         device: The device the beat came from.
@@ -457,11 +463,18 @@ def _honour_standing_wishes(
     manifests = load_module_manifests()
     for module, stored in (device.client.modules or {}).items():
         wanted = module_wish(stored)
-        if not wanted["is_enabled"] or wanted["failed"] or module not in manifests:
+        if wanted["failed"] or module not in manifests:
             continue
         reported = beat.modules.get(module)
         state = str(reported.get("state", "")) if isinstance(reported, dict) else ""
-        if state in ORDER_PRESENT_STATES or not state:
+        if not state:
+            continue
+        is_settled = (
+            state in ORDER_PRESENT_STATES
+            if wanted["is_enabled"]
+            else state in ORDER_ABSENT_STATES
+        )
+        if is_settled:
             continue
         if controller.order_in_flight(key, module) or controller.failure_for(
             key, module
@@ -473,9 +486,89 @@ def _honour_standing_wishes(
             module=module,
             manifest=manifests[module],
             platform=dict(beat.platform or {}),
-            is_enabled=True,
+            is_enabled=wanted["is_enabled"],
             reported_state=state,
         )
+
+
+def _device_operation(runtime: PanelRuntime, key: str) -> "dict | None":
+    """The device's current or last-finished operation, for its own page.
+
+    One stream for both surfaces: the drawer reads the orders and the SSH
+    task directly, and this is the same material composed for the heartbeat
+    reply, so the two cannot tell different stories. A running operation
+    wins over a finished one; two finished ones compare by when they closed.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device's storage key.
+
+    Returns:
+        ``{"kind", "action", "title", "state", "output"}``, or None when
+        nothing has run for this device.
+    """
+    order = _operation_order(runtime, key)
+    task = None
+    label = f"install_client {key}"
+    for stream in runtime.tasks.streams():
+        if stream.label == label:
+            task = stream
+    if order is not None and order.is_open:
+        return _order_operation(order)
+    if task is not None and not task.is_finished:
+        return _task_operation(task)
+    if order is not None and task is not None:
+        if task.finished_at > order.finished_at:
+            return _task_operation(task)
+        return _order_operation(order)
+    if order is not None:
+        return _order_operation(order)
+    if task is not None:
+        return _task_operation(task)
+    return None
+
+
+def _operation_order(runtime: PanelRuntime, key: str) -> "AgentModuleOrder | None":
+    """The order the device is on: the running one, else the newest."""
+    orders = runtime.agent_module_orders.orders(key)
+    running = [order for order in orders if order.is_open]
+    if running:
+        return running[-1]
+    return orders[0] if orders else None
+
+
+def _order_operation(order: AgentModuleOrder) -> dict:
+    """One module order as the reply's operation object."""
+    manifests = load_module_manifests()
+    title = manifests.get(order.module, {}).get("title", order.module)
+    return {
+        "kind": "order",
+        "action": order.action,
+        "title": title,
+        "state": order.state,
+        "output": _output_tail(order.output),
+    }
+
+
+def _task_operation(task) -> dict:
+    """One SSH bootstrap task as the reply's operation object."""
+    if not task.is_finished:
+        state = "running"
+    else:
+        state = "done" if task.exit_code == 0 else "failed"
+    return {
+        "kind": "bootstrap",
+        "action": ORDER_ACTION_INSTALL,
+        "title": "",
+        "state": state,
+        "output": _output_tail("".join(task.buffer)),
+    }
+
+
+def _output_tail(text: str) -> str:
+    """The journal-sized tail of an operation's output."""
+    lines = text.splitlines()
+    return "\n".join(lines[-AGENT_OPERATION_OUTPUT_LINES:])
 
 
 def _refuse_stale_wire(agent_wire: int) -> None:

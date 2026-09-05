@@ -751,6 +751,9 @@ export interface DeviceModuleView {
   /** A platform capability the machine already carries, worded as
    * enable/disable rather than install/uninstall. */
   is_builtin: boolean;
+  /** The platform carries this natively: nothing to install and nothing to
+   * switch, so the row gets no button at all. */
+  is_native: boolean;
   /** Whether installing and pointing at this hub are separate steps. */
   has_activation: boolean;
   is_activated: boolean;
@@ -928,6 +931,8 @@ export interface PublishedService {
   is_healthy: boolean | null;
   source: "module" | "declared";
   description: string;
+  /** The device modules this entry cannot work without. */
+  modules: string[];
   record_id: string | null;
   detail_code: string | null;
 }

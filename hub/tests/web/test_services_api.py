@@ -125,6 +125,9 @@ def test_each_form_kind_lands_as_its_own_type(box):
     assert by_type["port"]["description"] == "the forge box"
     # Stored, probed and republished under a record id the rows can act on.
     assert all(entry["record_id"] for entry in entries)
+    # Every entry names the device modules it cannot work without.
+    assert by_type["file"]["modules"] == ["samba_mount"]
+    assert by_type["web"]["modules"] == [] and by_type["port"]["modules"] == []
 
 
 def test_the_list_folds_the_probe_health_in(box):

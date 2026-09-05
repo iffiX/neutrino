@@ -146,9 +146,15 @@ interface AskedStep {
 
 interface DeviceModulesProps {
   macAddress: string;
+  /** Whether any operation — an SSH task or a module order — is open on
+   * this device. Every row's buttons grey while one is. */
+  isOperationOpen: boolean;
 }
 
-export function DeviceModules({ macAddress }: DeviceModulesProps) {
+export function DeviceModules({
+  macAddress,
+  isOperationOpen,
+}: DeviceModulesProps) {
   const confirm = useConfirm();
   const [reported, setReported] = useState<DeviceModuleView[]>([]);
   // Whether the agent is installed, and whether it is answering. Both come
@@ -277,7 +283,10 @@ export function DeviceModules({ macAddress }: DeviceModulesProps) {
         {modules.map((deviceModule) => {
           const isBusy = BUSY_STATES.includes(deviceModule.state);
           const isActionable =
-            deviceModule.is_supported && agent.isOnline && !isBusy;
+            deviceModule.is_supported &&
+            agent.isOnline &&
+            !isBusy &&
+            !isOperationOpen;
           const here = standing(deviceModule);
           return (
             <div key={deviceModule.name} className="device_module">
@@ -312,30 +321,32 @@ export function DeviceModules({ macAddress }: DeviceModulesProps) {
                   {here.isAimedHere ? WORDING.deactivate : WORDING.activate}
                 </button>
               )}
-              <button
-                type="button"
-                className={`button button--small ${
-                  here.isOnMachine ? "button--danger" : "button--ok"
-                }`}
-                disabled={!isActionable}
-                onClick={() =>
-                  here.isOnMachine
-                    ? askOff(deviceModule)
-                    : void ask(deviceModule, { is_enabled: true })
-                }
-              >
-                <Icon
-                  name={
-                    deviceModule.is_builtin
-                      ? "power"
-                      : here.isOnMachine
-                        ? "trash"
-                        : "download"
+              {!deviceModule.is_native && (
+                <button
+                  type="button"
+                  className={`button button--small ${
+                    here.isOnMachine ? "button--danger" : "button--ok"
+                  }`}
+                  disabled={!isActionable}
+                  onClick={() =>
+                    here.isOnMachine
+                      ? askOff(deviceModule)
+                      : void ask(deviceModule, { is_enabled: true })
                   }
-                  size={13}
-                />
-                {onOffLabel(deviceModule, here.isOnMachine)}
-              </button>
+                >
+                  <Icon
+                    name={
+                      deviceModule.is_builtin
+                        ? "power"
+                        : here.isOnMachine
+                          ? "trash"
+                          : "download"
+                    }
+                    size={13}
+                  />
+                  {onOffLabel(deviceModule, here.isOnMachine)}
+                </button>
+              )}
             </div>
           );
         })}
@@ -447,10 +458,11 @@ function onOffLabel(
 
 /** What a row says under its title: where it is, and where it points. */
 function describeModule(deviceModule: DeviceModuleView): string {
-  const stateWording = deviceModule.is_builtin
-    ? (BUILTIN_STATE_WORDING[deviceModule.state] ??
-      STATE_WORDING[deviceModule.state])
-    : STATE_WORDING[deviceModule.state];
+  const stateWording =
+    deviceModule.is_builtin || deviceModule.is_native
+      ? (BUILTIN_STATE_WORDING[deviceModule.state] ??
+        STATE_WORDING[deviceModule.state])
+      : STATE_WORDING[deviceModule.state];
   const parts = [stateWording ?? STATE_WORDING_FALLBACK];
   if (
     deviceModule.has_activation &&

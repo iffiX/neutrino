@@ -134,6 +134,7 @@ class FakeControlAgent:
         self.connect_error = None
         self.service_calls = []
         self.service_reply = {}
+        self.operation_payload = None
 
     def platform(self) -> dict:
         return {"os": "linux", "family": "debian", "arch": "x86_64"}
@@ -169,6 +170,9 @@ class FakeControlAgent:
 
     def last_error(self):
         return None
+
+    def operation(self):
+        return self.operation_payload
 
     def accounts(self) -> list:
         return ["alice", "bob"]

@@ -1,4 +1,4 @@
-"""Finding, installing and pointing cc-switch at the hub.
+"""Finding cc-switch and pointing it at the hub.
 
 cc-switch is what people already use to keep several AI providers on one
 machine and flip between them, so the agent adds the hub to it as one more
@@ -6,10 +6,8 @@ provider rather than competing with it. Detection never runs the binary: the
 desktop app is a GUI with no argument parsing, so asking it for its version
 opens a window; what is inspected instead is where the binary sits and which
 package owns it. The CLI fork and the desktop app share one store, so a
-provider registered through either shows up in both.
-
-Both publish x86_64 and aarch64 only — Jetson, DGX Spark and a 64-bit
-Raspberry Pi are covered, a 32-bit Raspberry Pi is not.
+provider registered through either shows up in both. Putting the binary on
+the machine is the ``cc_switch`` module's job, in ``modules/switcher.py``.
 
 Each tool is configured with its own knobs, drawn from the person's staged
 choices: Claude Code's four role slots, Codex's model and reasoning effort
@@ -24,7 +22,7 @@ The agent settles what activation means: it writes the tool's configuration
 itself and reads it back, rather than trusting cc-switch's exit code, so
 what the page shows is what the tool would actually do.
 
-Not pure: installs a binary and runs it.
+Not pure: runs the binary and edits account configuration.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -35,11 +33,12 @@ import json
 import os
 import shutil
 import subprocess
-import tarfile
-import tempfile
-import zipfile
 
 from neutrino_agent.modules.installers import InstallError
+from neutrino_agent.modules.switcher import (
+    SWITCHER_CLI_PATHS,
+    SWITCHER_DESKTOP_MARKERS,
+)
 
 
 class NoTargetUserError(InstallError):
@@ -47,23 +46,6 @@ class NoTargetUserError(InstallError):
 
     code = "no_target_user"
 
-
-# Where the agent puts the CLI, and where its own installer puts it.
-SWITCHER_INSTALL_DIR = "/usr/local/bin"
-SWITCHER_CLI_PATHS = (
-    "/usr/local/bin/cc-switch",
-    "/usr/local/bin/cc-switch.exe",
-    os.path.expanduser("~/.local/bin/cc-switch"),
-)
-
-# What the desktop app leaves behind, per platform. Present means installed;
-# none of these is executed.
-SWITCHER_DESKTOP_MARKERS = (
-    "/usr/lib/cc-switch",
-    "/opt/cc-switch",
-    "/Applications/CC Switch.app",
-    "C:\\Program Files\\CC Switch",
-)
 
 SWITCHER_PROVIDER_ID = "neutrino"
 SWITCHER_PROVIDER_NAME = "Neutrino Hub"
@@ -171,53 +153,6 @@ def find_desktop() -> bool:
 def is_installed() -> bool:
     """Whether this machine has cc-switch at all, in either form."""
     return find_cli() is not None or find_desktop()
-
-
-def install_cli(entry: dict, archive: str) -> str:
-    """Install the cc-switch CLI from an archive the hub handed down.
-
-    Nothing is fetched here. The hub's cache resolved the release for this
-    platform and fetched it once for every machine like this one, which is
-    what leaves this package with no way to reach the internet at all.
-
-    Args:
-        entry: The release block the hub resolved — what the binary inside
-            is called, and what kind of archive it arrived in.
-        archive: The archive on local disk.
-
-    Returns:
-        The path it was installed to.
-
-    Raises:
-        InstallError: If the archive cannot be unpacked, or no build exists
-            for this machine.
-    """
-    if not entry:
-        raise InstallError("no cc-switch build for this machine")
-    binary_name = entry.get("binary", "cc-switch")
-    kind = entry.get("package_kind", "tar_binary")
-    destination = os.path.join(SWITCHER_INSTALL_DIR, binary_name)
-
-    with tempfile.TemporaryDirectory() as workdir:
-        extracted = _extract_binary(archive, workdir, binary_name, kind)
-        os.makedirs(SWITCHER_INSTALL_DIR, exist_ok=True)
-        shutil.move(extracted, destination)
-    os.chmod(destination, 0o755)
-    return destination
-
-
-def uninstall_cli() -> None:
-    """Remove the CLI the agent installed, leaving the desktop app alone.
-
-    Raises:
-        InstallError: If the file is there and cannot be removed.
-    """
-    for candidate in SWITCHER_CLI_PATHS:
-        if os.path.isfile(candidate):
-            try:
-                os.unlink(candidate)
-            except OSError as error:
-                raise InstallError(f"could not remove {candidate}: {error}")
 
 
 def activate(
@@ -751,39 +686,6 @@ def _run(arguments: list, app: str, run_as: str, *, is_checked: bool = True) -> 
         output = (result.stderr or result.stdout or "").strip()
         raise InstallError(output[-200:] or "cc-switch refused")
     return result.stdout or ""
-
-
-def _extract_binary(archive: str, workdir: str, binary_name: str, kind: str) -> str:
-    """Pull the one binary out of a release archive.
-
-    Args:
-        archive: The downloaded file.
-        workdir: Where to unpack.
-        binary_name: What the binary is called inside.
-        kind: ``tar_binary`` or ``zip_binary``.
-
-    Returns:
-        Path to the extracted binary.
-
-    Raises:
-        InstallError: If the archive has no such binary.
-    """
-    target = os.path.join(workdir, "unpacked")
-    os.makedirs(target, exist_ok=True)
-    try:
-        if kind == "zip_binary":
-            with zipfile.ZipFile(archive) as bundle:
-                bundle.extractall(target)
-        else:
-            with tarfile.open(archive) as bundle:
-                bundle.extractall(target)
-    except (OSError, tarfile.TarError, zipfile.BadZipFile) as error:
-        raise InstallError(f"could not unpack cc-switch: {error}")
-
-    for root, _, names in os.walk(target):
-        if binary_name in names:
-            return os.path.join(root, binary_name)
-    raise InstallError(f"no {binary_name} inside the archive")
 
 
 def _file_mode(run_as: str, relative: str) -> str:

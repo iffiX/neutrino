@@ -308,26 +308,24 @@ def test_linux_ownership_mapping_follows_the_database_home_not_the_environment(
     )
 
 
-def test_linux_mount_tooling_is_the_cifs_helper_installed_by_the_package_manager(
-    monkeypatch,
-):
+def test_linux_system_packages_ride_the_machines_own_package_manager(monkeypatch):
     present = {"mount.cifs": None, "apt-get": "/usr/bin/apt-get", "dnf": "/usr/bin/dnf"}
     monkeypatch.setattr(linux_module.shutil, "which", present.get)
     calls = []
 
     def record(command, **kwargs):
         calls.append((list(command), kwargs.get("timeout_s")))
-        return ""
+        return "ok"
 
     monkeypatch.setattr(linux_module.installers, "run_checked", record)
     platform = LinuxPlatform()
 
     assert not platform.has_mount_tooling()
-    platform.install_mount_tooling()
+    assert platform.install_system_packages(["cifs-utils"]) == "ok"
     present["apt-get"] = None
-    platform.install_mount_tooling()
+    platform.install_system_packages(["cifs-utils"])
     present["dnf"] = None
-    platform.install_mount_tooling()
+    platform.install_system_packages(["cifs-utils"])
     present["mount.cifs"] = "/sbin/mount.cifs"
 
     assert platform.has_mount_tooling()
@@ -344,6 +342,29 @@ def test_linux_mount_tooling_is_the_cifs_helper_installed_by_the_package_manager
             ["yum", "install", "-y", "cifs-utils"],
             linux_module.installers.INSTALL_TIMEOUT_S,
         ),
+    ]
+
+
+def test_linux_system_package_removal_purges_on_apt(monkeypatch):
+    present = {"apt-get": "/usr/bin/apt-get", "dnf": "/usr/bin/dnf"}
+    monkeypatch.setattr(linux_module.shutil, "which", present.get)
+    calls = []
+
+    def record(command, **kwargs):
+        calls.append(list(command))
+        return ""
+
+    monkeypatch.setattr(linux_module.installers, "run_checked", record)
+    platform = LinuxPlatform()
+
+    platform.remove_system_packages(["cifs-utils"])
+    present["apt-get"] = None
+    platform.remove_system_packages(["cifs-utils"])
+    assert platform.remove_system_packages([]) == ""
+
+    assert calls == [
+        ["apt-get", "purge", "-y", "cifs-utils"],
+        ["dnf", "remove", "-y", "cifs-utils"],
     ]
 
 

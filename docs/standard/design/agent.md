@@ -24,26 +24,34 @@ a module is what a machine has installed, a service is what the hub
 publishes.
 
 - **Modules** are machine software the hub administers — a remote desktop,
-  the SSH server. The panel's device drawer switches them; the agent's
-  page shows them and lets a privileged caller toggle them too. A local
-  toggle is never applied locally: it rides up with the next heartbeat,
-  the hub decides, and the answer comes back as an order, so the drawer
-  and the page cannot disagree for longer than one beat. **The agent
-  never downloads a module**: the hub's cache fetches it and its
-  controller hands the bytes down, one install at a time per machine
+  the SSH server, cc-switch, a share's mount tooling. Everything that puts
+  software on a machine or takes it off is a module: a service never
+  installs anything as a side effect, so the Modules panel is the whole
+  answer to "what has the hub put here". The panel's device drawer
+  switches them; the agent's page shows them and lets a privileged caller
+  toggle them too. A local toggle is never applied locally: it rides up
+  with the next heartbeat, the hub decides, and the answer comes back as
+  an order, so the drawer and the page cannot disagree for longer than one
+  beat. **The agent never downloads a module**: the hub's cache fetches it
+  and its controller hands the bytes down, one order at a time per machine
   ([architecture.md](architecture.md), "The hub installs; the agent is an
-  outpost"). Two semantics, decided by what the thing is: a platform
-  capability the machine already carries (the SSH server — a package
-  dependency on Linux, built into macOS and Windows) is **enabled and
-  disabled**; a third-party application (a remote desktop) is
-  **installed and removed**.
+  outpost") — and enable/disable rides the same queue, so every module
+  action is ordered, exclusive, and leaves its output behind. Two
+  semantics, decided by what the thing is: a platform capability the
+  machine already carries (the SSH server — a package dependency on Linux,
+  built into macOS and Windows) is **enabled and disabled**; a
+  third-party application (a remote desktop, cc-switch) is **installed
+  and removed**.
 - **Services** are what the machine's people do with what the hub
   publishes — pointing an account's AI tools at the gateway, mounting a
   published share, opening a published link, forwarding a published port.
   They are visible and decided **only on the machine**: the panel neither
   renders nor controls them. The hub's part is the service list and, for
   the ai type, the per-account credential; every other choice, and every
-  secret it takes, stays local.
+  secret it takes, stays local. A service that needs software on the
+  machine **declares the modules it depends on** — the dependency is
+  declared, compared and worded, never resolved by the service installing
+  something itself.
 
 | Capability | Privileged | Ordinary account |
 | --- | --- | --- |
@@ -83,8 +91,8 @@ the hub — an account's gateway key — travels only in that device's
 per-beat reply.
 
 **The service list is typed.** Every entry is
-`{id, type, title, payload, is_healthy, source, description}`, and the
-four types are closed until a fifth earns its place:
+`{id, type, title, payload, is_healthy, source, description, modules}`,
+and the four types are closed until a fifth earns its place:
 
 | type | payload | agent behavior |
 | --- | --- | --- |
@@ -104,6 +112,19 @@ declared, so the types themselves stay general. A payload host that is the
 hub's own address (loopback included) is resolved per device at heartbeat
 time to the address that device actually reaches, the way the ai endpoint
 always was.
+
+**A service names the modules it needs.** `modules` lists the module names
+the entry cannot work without — an ai entry names `cc_switch`, a file
+entry names `samba_mount`, web and port entries name nothing. The list is
+composed hub-side with the rest of the catalog, and every surface
+satisfies it the same one way: compare the names against the machine's
+reported module states. A service whose dependencies are not all on the
+machine renders **greyed but present**, its controls disabled, under a
+notice in the error color naming the missing modules and that installing
+them takes the privileged page. An ordinary caller can go no further; a
+privileged caller's notice carries one action that queues every missing
+module, in order, through the one install queue — nothing installs
+implicitly, and the Operation output shows the queue working.
 
 **Status is typed.** A module or service reports `state` plus
 `{code, params}` — never an English sentence — and every surface does its
@@ -143,6 +164,15 @@ one panel per type — Web, Ports, AI, Files — and a panel with staged,
 unapplied edits lights its frame the way the hub's panels do; unhealthy
 entries render greyed with their state, never hidden.
 
+One **Operation output** panel closes the Modules section, and it is the
+same panel the hub's drawer shows: whenever an agent install, reinstall
+or uninstall, or a module install, uninstall, enable or disable is
+running or has just run, the panel is present with that operation's
+stream. The hub holds the one per-device stream and both surfaces render
+it, so an operation started on either side appears on both, line for
+line — neither surface keeps a private log, and the two can no more
+disagree about what is running than the module rows can.
+
 The page redraws only when the payload actually changed, and never while
 the person holds a text selection, a focused form field, or an open
 dialog — a self-refresh that eats a selection is a bug, not a cadence.
@@ -154,9 +184,10 @@ number when free, otherwise a free one the row names — and Disconnect
 closes it. A forward binds the loopback the whole machine shares, so it is
 machine state every scope sees.
 
-**AI.** One chips row of the machine's human accounts — a privileged
-caller sees them all, an ordinary caller exactly their own — beside a
-Config button and an Apply button. A chip stages whether that account's
+**AI.** Depends on the `cc_switch` module, so the panel stands behind the
+missing-modules notice until that is on the machine. One chips row of the
+machine's human accounts — a privileged caller sees them all, an ordinary
+caller exactly their own — beside a Config button and an Apply button. A chip stages whether that account's
 tools point at the gateway; Config stages what they point with, per tool
 and honestly per tool's own knobs: Claude Code's four role slots
 (default, opus, sonnet, haiku), Codex's one model and its reasoning
@@ -174,10 +205,12 @@ stages is only ever what a person chose.
 **Files.** Config asks for the share's own username and password and a
 path — typed, or picked in the browse dialog the agent feeds, whose
 listing runs as the caller's identity, so an ordinary account browses only
-what it may write. Mount attaches, Unmount detaches. The password becomes
-a root-only credentials file on this machine and never travels to the hub;
-the mount tooling is a package dependency, never the person's problem. A
-path under the asking account's home is ownership-mapped to that account;
+what it may write. Mount attaches, Unmount detaches. The panel depends on
+the `samba_mount` module — the mount tooling, `cifs-utils` on Linux —
+declared like every other dependency rather than installed on the way to
+a mount. The password becomes a root-only credentials file on this
+machine and never travels to the hub. A path under the asking account's
+home is ownership-mapped to that account;
 anywhere else follows the share's own permissions. A mount point that is
 not an empty directory is refused (`{"code": "mountpoint_not_empty"}` —
 mounting over content hides it).

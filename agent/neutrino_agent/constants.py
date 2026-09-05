@@ -20,7 +20,7 @@ AGENT_SERVICE_NAME = "neutrino_agent.service"
 # The shape of what crosses the hub channel. Bumped on any wire change, so
 # a hub upgrade that changed the shapes tells a same-version agent to
 # reinstall instead of feeding it replies it cannot read.
-AGENT_WIRE_GENERATION = 3
+AGENT_WIRE_GENERATION = 4
 
 AGENT_HEARTBEAT_PATH = "/api/agent/heartbeat"
 AGENT_RESULT_PATH = "/api/agent/result"
@@ -34,6 +34,12 @@ AGENT_MODULE_PACKAGE_PATH = "/api/agent/module_package"
 # How much of a failed order's output travels up. Enough to read the package
 # manager's own complaint, bounded so a verbose failure cannot fill a beat.
 AGENT_MODULE_OUTPUT_LIMIT_BYTES = 16 * 1024
+
+# The module names the services on this machine depend on, as the hub's
+# manifests name them. What a refusal's ``module`` param carries when the
+# software a service needs is not installed.
+AGENT_SWITCHER_MODULE_NAME = "cc_switch"
+AGENT_MOUNT_MODULE_NAME = "samba_mount"
 
 # The transient unit a self-update runs in. Installing the package restarts
 # neutrino_agent.service, so the install must outlive the process that

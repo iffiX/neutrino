@@ -876,3 +876,58 @@ def test_reply_command_report_post_failure_leaves_the_beat_healthy(config_path):
     assert delay == AGENT_HEARTBEAT_INTERVAL_S
     assert agent.last_error() is None
     assert agent._channel is not None
+
+
+def test_the_replys_operation_is_the_pages_and_follows_the_hub(config_path):
+    operation = {
+        "kind": "order",
+        "action": "install",
+        "title": "ToDesk",
+        "state": "installing",
+        "output": "todesk: installing",
+    }
+    agent = scripted_agent(
+        config_path,
+        [
+            {"module_orders": [], "catalog_hash": "", "operation": operation},
+            {"module_orders": [], "catalog_hash": "", "operation": None},
+        ],
+    )
+
+    agent.run_once()
+    # The hub holds the one stream; this machine renders its copy.
+    assert agent.operation() == operation
+
+    agent.run_once()
+    assert agent.operation() is None
+
+
+def test_an_operation_that_is_not_an_object_reads_as_none(config_path):
+    agent = scripted_agent(
+        config_path,
+        [{"module_orders": [], "catalog_hash": "", "operation": "busy"}],
+    )
+
+    agent.run_once()
+
+    assert agent.operation() is None
+
+
+def test_disconnecting_forgets_the_hubs_operation(config_path):
+    operation = {
+        "kind": "bootstrap",
+        "action": "install",
+        "title": "",
+        "state": "done",
+        "output": "",
+    }
+    agent = scripted_agent(
+        config_path,
+        [{"module_orders": [], "catalog_hash": "", "operation": operation}],
+    )
+    agent.run_once()
+    assert agent.operation() is not None
+
+    agent.disconnect()
+
+    assert agent.operation() is None

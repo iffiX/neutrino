@@ -76,39 +76,7 @@ CLIPROXYAPI_DOWNLOAD_URL = (
 )
 
 # The cc-switch command line, which points a machine's AI tools at this
-# gateway. It reaches a managed machine the way every other artifact does —
-# resolved and fetched by the hub's agent module cache, handed down over the
-# pinned channel — so the agent has one way to receive software and no way to
-# reach the internet itself. Shaped like a module manifest because the cache
-# resolves it with the same code.
+# gateway. It is a device module like any other — its manifest lives in
+# data/manifests/cc_switch.json — and this is the name the AI service
+# declares as its dependency.
 CLIPROXYAPI_SWITCHER_NAME = "cc_switch"
-CLIPROXYAPI_SWITCHER_MANIFEST = {
-    "name": CLIPROXYAPI_SWITCHER_NAME,
-    "title": "cc-switch",
-    "platforms": {
-        "linux-amd64": {
-            "github_repo": "SaladDay/cc-switch-cli",
-            "asset_pattern": "linux-x64.tar.gz",
-            "package_kind": "tar_binary",
-            "binary": "cc-switch",
-        },
-        "linux-arm64": {
-            "github_repo": "SaladDay/cc-switch-cli",
-            "asset_pattern": "linux-arm64.tar.gz",
-            "package_kind": "tar_binary",
-            "binary": "cc-switch",
-        },
-        "darwin": {
-            "github_repo": "SaladDay/cc-switch-cli",
-            "asset_pattern": "darwin-universal.tar.gz",
-            "package_kind": "tar_binary",
-            "binary": "cc-switch",
-        },
-        "windows-amd64": {
-            "github_repo": "SaladDay/cc-switch-cli",
-            "asset_pattern": "windows-x64.zip",
-            "package_kind": "zip_binary",
-            "binary": "cc-switch.exe",
-        },
-    },
-}

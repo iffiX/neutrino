@@ -47,9 +47,10 @@ def test_the_wire_generation_is_the_one_this_build_speaks(config_path):
 
     _, payload = agent._channel.posts[0]
     assert payload["wire"] == AGENT_WIRE_GENERATION
-    # Bumped by this change: the reply's module half is orders now, and an
-    # agent built to the old shape must reinstall rather than misread it.
-    assert AGENT_WIRE_GENERATION == 3
+    # Bumped by this change: service entries carry their modules, the reply
+    # carries the device's operation, and an agent built to the old shape
+    # must reinstall rather than misread it.
+    assert AGENT_WIRE_GENERATION == 4
 
 
 def test_an_order_comes_down_and_its_result_goes_up(config_path):

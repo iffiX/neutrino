@@ -129,7 +129,6 @@ class Agent:
             store=self._store,
             platform_tuple=self._engine.platform_tuple,
             log=log,
-            fetch_artifact=self._fetch_artifact,
         )
         self._services = {
             handler.service_type: handler
@@ -147,6 +146,9 @@ class Agent:
         self._backoff_s = AGENT_BACKOFF_MIN_S
         self._last_error: "dict | None" = None
         self._pending: dict = {}
+        # The hub's copy of this device's current or last-finished
+        # operation, straight off the heartbeat reply.
+        self._operation: "dict | None" = None
         self._channel = None
         self._operator = None
         self._binding: tuple = ("", "", "")
@@ -190,6 +192,17 @@ class Agent:
         """The most recent problem worth showing, as ``{"code", "params"}``."""
         with self._lock:
             return self._last_error or self._update_error
+
+    def operation(self) -> "dict | None":
+        """The hub's word on this device's current or last operation.
+
+        Returns:
+            ``{"kind", "action", "title", "state", "output"}``, or None while
+            nothing has run — the hub holds the one stream and this machine
+            renders its copy, so the page and the drawer cannot disagree.
+        """
+        with self._lock:
+            return dict(self._operation) if self._operation else None
 
     def accounts(self) -> list:
         """The machine's human accounts, by the platform's own judgment."""
@@ -260,6 +273,7 @@ class Agent:
         enrollment.disconnect()
         with self._lock:
             self._pending = {}
+            self._operation = None
             self._last_error = None
             self._update_target = ""
             self._update_error = None
@@ -423,6 +437,11 @@ class Agent:
         # the service stays up, says so, and asks again — a crash here is a
         # machine nobody can reach to fix.
         try:
+            operation = reply.get("operation")
+            with self._lock:
+                self._operation = (
+                    dict(operation) if isinstance(operation, dict) else None
+                )
             self._engine.update(
                 catalog=reply.get("catalog"),
                 catalog_hash=str(reply.get("catalog_hash", "")),
@@ -530,6 +549,7 @@ class Agent:
         enrollment.disconnect()
         with self._lock:
             self._pending = {}
+            self._operation = None
             self._refusals = 0
             self._update_target = ""
             self._update_error = None
@@ -577,6 +597,7 @@ class Agent:
             if self._binding == binding:
                 return
             self._pending = {}
+            self._operation = None
             self._last_error = None
             self._refusals = 0
             self._update_target = ""

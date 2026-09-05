@@ -87,6 +87,10 @@ CONTROL_PAGE_HTML = """<!doctype html>
          font-size: 12px; color: #8b96a5; font-family: ui-monospace, monospace; }
   .rec .path { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .rec button { padding: 4px 10px; font-size: 12px; }
+  .oplog { margin: 10px 0 0; padding: 10px; border: 1px solid #1f2937;
+           border-radius: 8px; background: #0a0e14; color: #8b96a5;
+           font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap;
+           overflow-wrap: anywhere; max-height: 260px; overflow-y: auto; }
   .overlay { position: fixed; inset: 0; background: rgba(4,6,10,.7);
              display: flex; align-items: center; justify-content: center;
              z-index: 10; }
@@ -151,7 +155,6 @@ const WORDS = {
     unmounting: "unmounting…",
     enabled_users: "Enabled users",
     mount_queued: "waiting for the agent…",
-    mount_installing_tooling: "installing the mount tooling…",
     mount_mounting: "mounting…",
     mount_pending: "waiting to mount…",
     forwarding_to: "127.0.0.1:{port}",
@@ -159,6 +162,9 @@ const WORDS = {
     modules_wait_join: "Modules appear once this machine joins a gateway.",
     modules_wait_list: "Waiting for the gateway to send its module list…",
     services_empty: "Nothing is published for this machine yet.",
+    operation_title: "Operation output",
+    operation_agent: "agent",
+    service_needs_modules: "Install these modules to enable this service: {modules}",
     panel_web: "Web",
     panel_ports: "Ports",
     panel_ai: "AI",
@@ -207,7 +213,6 @@ const WORDS = {
     remove_unconfirmed: "the removal finished, but the software is still there",
     switch_unconfirmed: "the switch ran, but the machine did not change",
     no_download_named: "the catalog names no download for this machine",
-    no_switcher_build: "there is no cc-switch build for this machine",
     unsupported_platform: "this machine cannot do this",
     unknown_kind: "the agent does not know this kind of module",
     unknown_action: "the hub asked for something this agent does not know",
@@ -216,10 +221,10 @@ const WORDS = {
     install_failed: "the install failed",
     no_target_user: "that account does not exist on this machine",
     no_endpoint: "the hub has not granted this account a key yet",
+    module_missing: "install the {module} module first",
     mountpoint_not_empty: "that folder is not empty",
     cifs_missing: "the mount tooling is missing on this machine",
     credentials_missing: "the saved login is gone — enter it again with Config",
-    tooling_install_failed: "could not install the mount tooling",
     fs_refused: "this account may not use that folder",
     control_scope_refused: "this account is not allowed to do that",
     control_token_invalid: "this page's key was refused",
@@ -242,6 +247,13 @@ const WORDS = {
     hub_untrusted: "the hub's identity changed (it was reset or reinstalled)",
     agent_newer_than_hub: "this agent is newer than the hub",
     hub_refused: "the hub no longer knows this machine",
+  },
+  operation: {
+    queued: "waiting its turn",
+    fetching: "downloading…",
+    running: "running…",
+    done: "done",
+    failed: "failed",
   },
 };
 
@@ -396,9 +408,60 @@ function draw(state) {
   content.style.display = 'flex';
   content.style.flexDirection = 'column';
   content.style.gap = '24px';
+  const modulePanels = [drawModules(state)];
+  if (state.operation) modulePanels.push(drawOperation(state.operation));
   content.appendChild(section(WORDS.ui.section_status, [drawConnection(state)]));
-  content.appendChild(section(WORDS.ui.section_modules, [drawModules(state)]));
+  content.appendChild(section(WORDS.ui.section_modules, modulePanels));
   content.appendChild(section(WORDS.ui.section_services, drawServices(state)));
+}
+
+// Whether the hub is running an operation on this machine right now —
+// whichever surface started it. Every button that would start another one
+// greys while it does.
+const OPERATION_RUNNING_STATES = ['queued', 'fetching', 'installing',
+  'running'];
+
+function isOperationRunning(state) {
+  return !!state.operation &&
+    OPERATION_RUNNING_STATES.indexOf(state.operation.state) >= 0;
+}
+
+// A running order is worded by what it was asked to do; every other state
+// has its own word.
+function operationWord(op) {
+  if (op.state === 'installing') {
+    const transient = { install: 'installing', remove: 'removing',
+      enable: 'enabling', disable: 'disabling' }[op.action];
+    return WORDS.states[transient] || WORDS.operation.running;
+  }
+  return WORDS.operation[op.state] || op.state;
+}
+
+function drawOperation(op) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  const heading = document.createElement('div');
+  heading.className = 'panel_title';
+  heading.textContent = WORDS.ui.operation_title;
+  card.appendChild(heading);
+  const isRunning = OPERATION_RUNNING_STATES.indexOf(op.state) >= 0;
+  const tone = op.state === 'failed' ? 'bad' : op.state === 'done' ? 'ok'
+    : 'off';
+  const title = op.kind === 'bootstrap' ? WORDS.ui.operation_agent
+    : (op.title || '');
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML = (isRunning ? '<span class="spin"></span>'
+    : '<span class="dot ' + tone + '"></span>') +
+    '<div class="body">' + title + ' — ' + operationWord(op) + '</div>';
+  card.appendChild(row);
+  if (op.output) {
+    const log = document.createElement('pre');
+    log.className = 'oplog';
+    log.textContent = op.output;
+    card.appendChild(log);
+  }
+  return card;
 }
 
 function section(title, panels) {
@@ -504,6 +567,7 @@ function drawModules(state) {
     return panel;
   }
   const isPrivileged = state.caller.is_privileged;
+  const isHeld = isOperationRunning(state);
   for (const raw of state.modules) {
     const m = withAsked(raw);
     const isSwitch = m.kind === 'openssh';
@@ -521,6 +585,11 @@ function drawModules(state) {
       '<div class="body"><div class="title">' + m.title + '</div>' +
       '<div class="note">' + m.description + '</div>' +
       '<div class="note">' + note + '</div></div>';
+    // A module the platform carries natively offers nothing to press.
+    if (m.is_native) {
+      panel.appendChild(row);
+      continue;
+    }
     const button = document.createElement('button');
     if (isSwitch) {
       button.className = isOn ? 'danger' : 'install';
@@ -529,7 +598,7 @@ function drawModules(state) {
       button.className = isOn ? 'danger' : 'install';
       button.textContent = isOn ? WORDS.ui.remove : WORDS.ui.install;
     }
-    button.disabled = !isPrivileged || !m.is_supported || working;
+    button.disabled = !isPrivileged || !m.is_supported || working || isHeld;
     button.title = isPrivileged ? '' : WORDS.ui.privileged_only;
     button.onclick = () => askFor(m.name,
       isSwitch ? (isOn ? 'disabling' : 'enabling')
@@ -576,6 +645,55 @@ function panelCard(title, isDirty) {
   heading.textContent = title;
   card.appendChild(heading);
   return card;
+}
+
+// The modules a panel's entries depend on that this machine does not have.
+// The panel stays present with its controls disabled until they are all on.
+function missingModules(state, entries) {
+  const needed = [];
+  for (const entry of entries) {
+    for (const name of (entry.modules || [])) {
+      if (needed.indexOf(name) < 0) needed.push(name);
+    }
+  }
+  const byName = {};
+  for (const m of state.modules) byName[m.name] = m;
+  return needed
+    .filter((name) => {
+      const row = byName[name];
+      return !row || ['installed', 'enabled'].indexOf(row.state) < 0;
+    })
+    .map((name) => byName[name] || { name: name, title: name });
+}
+
+// The notice a gated panel stands behind. A privileged caller gets the one
+// action that queues every missing module through the one install queue;
+// an ordinary caller gets the words alone.
+function missingModulesNotice(state, missing) {
+  const box = document.createElement('div');
+  const note = document.createElement('div');
+  note.className = 'err';
+  note.style.margin = '6px 0';
+  note.textContent = fill(WORDS.ui.service_needs_modules,
+    { modules: missing.map((m) => m.title).join(', ') });
+  box.appendChild(note);
+  if (state.caller.is_privileged) {
+    const button = document.createElement('button');
+    button.className = 'install';
+    button.textContent = WORDS.ui.install;
+    button.disabled = isOperationRunning(state);
+    button.onclick = () => installMissing(missing.map((m) => m.name));
+    box.appendChild(button);
+  }
+  return box;
+}
+
+async function installMissing(names) {
+  for (const name of names) asked[name] = 'installing';
+  redraw();
+  for (const name of names) {
+    await send('/api/module', { name: name, is_enabled: true });
+  }
 }
 
 function entryRow(entry, payloadText, extraNote) {
@@ -658,18 +776,22 @@ function isAiDirty(state) {
 function drawAiPanel(state, entries, title) {
   ensureAiStaged(state);
   const entry = entries[0];
-  const isDirty = isAiDirty(state);
+  const missing = missingModules(state, entries);
+  const isGated = missing.length > 0;
+  const isDirty = !isGated && isAiDirty(state);
   const card = panelCard(title, isDirty);
+  if (isGated) card.appendChild(missingModulesNotice(state, missing));
   const payload = entry.payload || {};
   const head = entryRow(entry, payload.endpoint || '', '');
+  if (isGated) head.classList.add('greyed');
   const config = document.createElement('button');
   config.className = 'ghost';
   config.textContent = WORDS.ui.config;
-  config.disabled = !entry.is_healthy;
+  config.disabled = isGated || !entry.is_healthy;
   config.onclick = () => openConfigDialog(payload.models || []);
   const apply = document.createElement('button');
   apply.textContent = WORDS.ui.apply;
-  apply.disabled = !isDirty || !entry.is_healthy;
+  apply.disabled = isGated || !isDirty || !entry.is_healthy;
   apply.onclick = () => {
     serviceAction('ai', {
       targets: aiStaged.targets,
@@ -686,6 +808,7 @@ function drawAiPanel(state, entries, title) {
   card.appendChild(chipsHead);
   const chips = document.createElement('div');
   chips.className = 'chips';
+  if (isGated) chips.style.opacity = '.5';
   const notes = [];
   for (const account of state.accounts) {
     const row = (state.ai_states || {})[account] || {};
@@ -693,7 +816,7 @@ function drawAiPanel(state, entries, title) {
     const isOn = !!aiStaged.targets[account];
     const chip = document.createElement('button');
     chip.className = isOn ? 'chip on' : 'chip';
-    chip.disabled = isBusy || !entry.is_healthy;
+    chip.disabled = isGated || isBusy || !entry.is_healthy;
     chip.innerHTML = (isBusy ? '<span class="spin"></span>'
       : '<span class="dot ' + (row.is_active ? 'ok' : 'off') + '"></span>') +
       account + (isBusy ? '…' : '');
@@ -842,9 +965,12 @@ function mountDefaultPath(payload, state) {
 }
 
 function drawFilesPanel(state, entries, title) {
-  const isDirty = Object.keys(fileStaged).some(
+  const missing = missingModules(state, entries);
+  const isGated = missing.length > 0;
+  const isDirty = !isGated && Object.keys(fileStaged).some(
     (id) => fileStaged[id] && fileStaged[id].is_open);
   const card = panelCard(title, isDirty);
+  if (isGated) card.appendChild(missingModulesNotice(state, missing));
   for (const entry of entries) {
     const payload = entry.payload || {};
     const records = (state.mounts || []).filter(
@@ -853,11 +979,13 @@ function drawFilesPanel(state, entries, title) {
     const note = serviceNotes[noteKey] || '';
     const row = entryRow(
       entry, '//' + (payload.host || '') + '/' + (payload.share || ''), note);
+    if (isGated) row.classList.add('greyed');
 
     const staged = fileStaged[entry.id];
     const config = document.createElement('button');
     config.className = 'ghost';
     config.textContent = WORDS.ui.config;
+    config.disabled = isGated;
     config.onclick = () => {
       if (staged && staged.is_open) {
         delete fileStaged[entry.id];
@@ -873,7 +1001,9 @@ function drawFilesPanel(state, entries, title) {
     };
     row.appendChild(config);
 
-    row.appendChild(mountButton(entry, records[0], staged, state, noteKey));
+    const mount = mountButton(entry, records[0], staged, state, noteKey);
+    if (isGated) mount.disabled = true;
+    row.appendChild(mount);
     card.appendChild(row);
 
     for (const record of records)
@@ -886,7 +1016,6 @@ function drawFilesPanel(state, entries, title) {
 
 const MOUNT_BUSY_WORDS = () => ({
   queued: WORDS.ui.mount_queued,
-  installing_tooling: WORDS.ui.mount_installing_tooling,
   mounting: WORDS.ui.mount_mounting,
   pending: WORDS.ui.mount_pending,
 });

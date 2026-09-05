@@ -15,7 +15,10 @@ from neutrino_hub.modules.cliproxyapi.ops import (
     load_config as load_cliproxyapi_config,
     save_config as save_cliproxyapi_config,
 )
-from neutrino_hub.modules.devices.agent_module_cache import platform_keys
+from neutrino_hub.modules.devices.agent_module_cache import (
+    platform_keys,
+    resolve_platform_entry,
+)
 from neutrino_hub.modules.devices.agent_module_controller import (
     ORDER_ACTION_DISABLE,
     ORDER_ACTION_ENABLE,
@@ -485,6 +488,7 @@ def list_modules(
             state = "failed"
             code = failure.code
             params = dict(failure.params)
+        _, entry = resolve_platform_entry(manifest, platform)
         modules.append(
             DeviceModuleView(
                 name=name,
@@ -495,6 +499,7 @@ def list_modules(
                 is_supported=(any(key in platforms for key in keys) if keys else True),
                 is_enabled=wanted["is_enabled"],
                 is_builtin=manifest.get("is_builtin", False),
+                is_native=(entry == {} and not manifest.get("is_builtin", False)),
                 has_activation=manifest.get("has_activation", False),
                 is_activated=wanted["is_activated"],
                 is_active=bool(status_.get("is_active")),
@@ -792,7 +797,7 @@ async def start_action(
     # too: putting the agent on a machine and installing a module on it are
     # two package managers on one machine, and only one may run.
     stream = runtime.tasks.start(
-        label=f"install_client {mac_address}",
+        label=f"install_client {mac_address.lower()}",
         source=_locked_install(
             runtime,
             mac_address,

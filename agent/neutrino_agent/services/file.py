@@ -7,6 +7,10 @@ only where its account can write, judged as that account; a privileged one
 anywhere. A path under the asking account's home is ownership-mapped to that
 account; anywhere else follows the share's own permissions.
 
+The mount tooling is the ``samba_mount`` module's; nothing here installs it.
+A mount asked for while the module is absent is refused with
+``module_missing``, and the page's own notice says which module to install.
+
 Records are machine state in the store; the reconcile remounts enabled
 records that are not attached, which is what brings mounts back after a
 reboot. A record whose credentials file is gone reports
@@ -20,10 +24,10 @@ from __future__ import annotations
 import hashlib
 import os
 import threading
-import time
 
 from neutrino_agent.constants import (
     AGENT_MOUNT_CREDENTIALS_DIR,
+    AGENT_MOUNT_MODULE_NAME,
     AGENT_MOUNT_RECHECK_INTERVAL_S,
 )
 from neutrino_agent.platforms.base import PlatformUnsupportedError, ShareAttachError
@@ -75,7 +79,7 @@ class FileServiceHandler(ServiceTypeHandler):
         self._log = log
         self._lock = threading.Lock()
         self._problems: dict = {}
-        # Live step per record: queued, installing_tooling, mounting.
+        # Live step per record: queued, mounting.
         self._stages: dict = {}
         self._wakeup = threading.Event()
 
@@ -163,6 +167,9 @@ class FileServiceHandler(ServiceTypeHandler):
         """
         if not path or not os.path.isabs(path):
             return {"code": "fs_refused", "params": {}}
+        refusal = self._tooling_refusal()
+        if refusal is not None:
+            return refusal
         location = os.path.abspath(path)
         with self._lock:
             if not is_privileged:
@@ -210,9 +217,9 @@ class FileServiceHandler(ServiceTypeHandler):
                 )
             except PlatformUnsupportedError:
                 return {"code": "unsupported_platform", "params": {}}
-            # Queued, not mounted: installing tooling and the mount itself
-            # can take a while, and the page reads the step from the rows
-            # rather than this call hanging on it.
+            # Queued, not mounted: the mount can take a while, and the page
+            # reads the step from the rows rather than this call hanging on
+            # it.
             self._store.set_mount(record_id, record)
             self._problems.pop(record_id, None)
             self._stages[record_id] = "queued"
@@ -231,6 +238,9 @@ class FileServiceHandler(ServiceTypeHandler):
         Returns:
             Empty on success, ``{"code", "params"}`` on a refusal.
         """
+        refusal = self._tooling_refusal()
+        if refusal is not None:
+            return refusal
         with self._lock:
             record = self._store.mounts().get(record_id)
             if record is None:
@@ -328,9 +338,9 @@ class FileServiceHandler(ServiceTypeHandler):
         """Remount every enabled record that is not attached.
 
         The snapshot is taken under the lock and the mounting done outside
-        it: installing tooling can take minutes, and the control channel
-        must go on answering while it does. A record detached mid-step is
-        re-checked by the next pass rather than raced here.
+        it: a mount can take a while, and the control channel must go on
+        answering while it does. A record detached mid-step is re-checked
+        by the next pass rather than raced here.
         """
         with self._lock:
             pending = sorted(self._store.mounts().items())
@@ -368,22 +378,11 @@ class FileServiceHandler(ServiceTypeHandler):
             self._problems[record_id] = refusal
             self._stages.pop(record_id, None)
             return
-        try:
-            is_ready = self._platform.has_mount_tooling()
-        except PlatformUnsupportedError:
-            is_ready = True
-        if not is_ready:
-            self._stages[record_id] = "installing_tooling"
-            self._log("installing the mount tooling")
-            try:
-                self._platform.install_mount_tooling()
-            except Exception as error:  # noqa: BLE001 - reported, not fatal
-                self._problems[record_id] = {
-                    "code": "tooling_install_failed",
-                    "params": {"detail": str(error)[:200]},
-                }
-                self._stages.pop(record_id, None)
-                return
+        refusal = self._tooling_refusal()
+        if refusal is not None:
+            self._problems[record_id] = refusal
+            self._stages.pop(record_id, None)
+            return
         self._stages[record_id] = "mounting"
         try:
             self._platform.attach_share(
@@ -404,6 +403,23 @@ class FileServiceHandler(ServiceTypeHandler):
         self._problems.pop(record_id, None)
         self._stages.pop(record_id, None)
         self._log(f"mounted {_share_url(record)} at {location}")
+
+    def _tooling_refusal(self) -> "dict | None":
+        """Refuse when the mount tooling the samba_mount module owns is absent.
+
+        Returns:
+            None when mounting can go ahead, the typed refusal otherwise.
+        """
+        try:
+            is_ready = self._platform.has_mount_tooling()
+        except PlatformUnsupportedError:
+            is_ready = True
+        if is_ready:
+            return None
+        return {
+            "code": "module_missing",
+            "params": {"module": AGENT_MOUNT_MODULE_NAME},
+        }
 
     def _prepare_mount_point(self, *, account: str, location: str) -> "dict | None":
         """Have the mount point be an empty directory, creating it as the

@@ -78,10 +78,18 @@ def bare_engine(*, platform=None, fetch_artifact=None, verified=None):
 
     from neutrino_agent.modules.openssh import OpensshModuleReconciler
     from neutrino_agent.modules.package import PackageModuleRunner
+    from neutrino_agent.modules.switcher import SwitcherModuleRunner
+    from neutrino_agent.modules.system_package import SystemPackageModuleRunner
 
     platform = platform if platform is not None else FakePlatform()
     engine._fetch_artifact = fetch_artifact
     engine._package = PackageModuleRunner(
+        platform=platform, log=engine._collect, publish=engine._publish
+    )
+    engine._switcher = SwitcherModuleRunner(
+        platform=platform, log=engine._collect, publish=engine._publish
+    )
+    engine._system = SystemPackageModuleRunner(
         platform=platform, log=engine._collect, publish=engine._publish
     )
     engine._openssh = OpensshModuleReconciler(
@@ -447,3 +455,230 @@ def test_the_engine_holds_no_failure_memory():
     assert not hasattr(engine, "_install_failed")
     assert not hasattr(engine, "_install_unconfirmed")
     assert not hasattr(engine, "_remove_unconfirmed")
+
+
+# --- enable, disable, and the two new kinds ride the same order path ---
+
+SSH_CATALOG = {
+    "modules": {
+        "openssh_server": {
+            "title": "SSH server",
+            "kind": "openssh",
+            "is_builtin": True,
+            "entry": {"service": "ssh"},
+            "verify": "",
+            "package": "openssh_server",
+        }
+    },
+    "services": [],
+}
+
+
+class SwitchingPlatform(AgentPlatform):
+    """A platform whose SSH server can be switched and observed."""
+
+    os_name = "linux"
+
+    def __init__(self, *, is_running=False):
+        self.is_running = is_running
+        self.switches: list = []
+
+    def read_openssh_status(self, entry):
+        return self.is_running
+
+    def enable_openssh(self, entry):
+        self.switches.append("enable")
+        self.is_running = True
+
+    def disable_openssh(self, entry):
+        self.switches.append("disable")
+        self.is_running = False
+
+
+def test_an_enable_order_switches_the_capability_and_reports_done():
+    platform = SwitchingPlatform(is_running=False)
+    engine = bare_engine(platform=platform)
+    engine._catalog = dict(SSH_CATALOG)
+
+    engine.update(
+        catalog=None,
+        catalog_hash="abc",
+        orders=[{"id": "order-1", "module": "openssh_server", "action": "enable"}],
+    )
+    engine._reconcile()
+
+    assert platform.switches == ["enable"]
+    result = engine.results()[0]
+    assert result["state"] == "done" and result["code"] == ""
+    # Every order carries its output, success included.
+    assert "openssh_server: enable" in result["output"]
+    assert engine.report()["openssh_server"]["state"] == "enabled"
+
+
+def test_a_disable_order_switches_the_capability_off_with_output():
+    platform = SwitchingPlatform(is_running=True)
+    engine = bare_engine(platform=platform)
+    engine._catalog = dict(SSH_CATALOG)
+
+    engine.update(
+        catalog=None,
+        catalog_hash="abc",
+        orders=[{"id": "order-1", "module": "openssh_server", "action": "disable"}],
+    )
+    engine._reconcile()
+
+    assert platform.switches == ["disable"]
+    result = engine.results()[0]
+    assert result["state"] == "done" and result["code"] == ""
+    assert "openssh_server: disable" in result["output"]
+    assert engine.report()["openssh_server"]["state"] == "disabled"
+
+
+SYSTEM_CATALOG = {
+    "modules": {
+        "samba_mount": {
+            "title": "Samba mount",
+            "kind": "system_package",
+            "entry": {"packages": ["cifs-utils"]},
+            "verify": "",
+            "package": "samba_mount",
+        }
+    },
+    "services": [],
+}
+
+
+class SystemPackagePlatform(AgentPlatform):
+    """A platform whose own package manager is observable."""
+
+    os_name = "linux"
+
+    def __init__(self):
+        self.installed: list = []
+        self.removed: list = []
+
+    def install_system_packages(self, names):
+        self.installed.append(list(names))
+        return "Setting up cifs-utils"
+
+    def remove_system_packages(self, names):
+        self.removed.append(list(names))
+        return ""
+
+
+def test_a_system_package_order_installs_by_name_and_fetches_nothing():
+    platform = SystemPackagePlatform()
+    fetches: list = []
+    engine = bare_engine(platform=platform, fetch_artifact=landing_fetch(fetches))
+    engine._catalog = dict(SYSTEM_CATALOG)
+    engine._system.verify = lambda resolved: True
+
+    engine.update(
+        catalog=None,
+        catalog_hash="abc",
+        orders=[{"id": "order-1", "module": "samba_mount", "action": "install"}],
+    )
+    engine._reconcile()
+
+    assert platform.installed == [["cifs-utils"]]
+    assert fetches == []
+    result = engine.results()[0]
+    assert result["state"] == "done"
+    assert "Setting up cifs-utils" in result["output"]
+
+
+def test_a_system_package_removal_rides_the_package_manager_too():
+    platform = SystemPackagePlatform()
+    engine = bare_engine(platform=platform)
+    engine._catalog = dict(SYSTEM_CATALOG)
+    engine._system.verify = lambda resolved: False
+
+    engine.update(
+        catalog=None,
+        catalog_hash="abc",
+        orders=[{"id": "order-1", "module": "samba_mount", "action": "remove"}],
+    )
+    engine._reconcile()
+
+    assert platform.removed == [["cifs-utils"]]
+    assert engine.results()[0]["state"] == "done"
+
+
+def test_a_native_system_package_reads_enabled_with_nothing_to_run():
+    engine = bare_engine(platform=SystemPackagePlatform())
+    engine._catalog = {
+        "modules": {
+            "samba_mount": {
+                "title": "Samba mount",
+                "kind": "system_package",
+                "entry": {},
+                "verify": "",
+                "package": "samba_mount",
+            }
+        },
+        "services": [],
+    }
+
+    engine._refresh(is_forced=True)
+
+    assert engine.report()["samba_mount"]["state"] == "enabled"
+
+
+SWITCHER_CATALOG = {
+    "modules": {
+        "cc_switch": {
+            "title": "cc-switch",
+            "kind": "switcher",
+            "entry": {"binary": "cc-switch", "package_kind": "tar_binary"},
+            "verify": "",
+            "package": "cc_switch",
+        }
+    },
+    "services": [],
+}
+
+
+def test_a_switcher_order_unpacks_the_handed_archive():
+    fetches: list = []
+    engine = bare_engine(fetch_artifact=landing_fetch(fetches))
+    engine._catalog = dict(SWITCHER_CATALOG)
+    installs: list = []
+    engine._switcher.install = lambda resolved, path: installs.append(path)
+    engine._switcher.verify = lambda resolved: bool(installs)
+
+    engine.update(
+        catalog=None,
+        catalog_hash="abc",
+        orders=[
+            {
+                "id": "order-1",
+                "module": "cc_switch",
+                "action": "install",
+                "artifact_key": "cc_switch-linux-amd64-abcd",
+                "package_kind": "tar_binary",
+            }
+        ],
+    )
+    engine._reconcile()
+
+    assert fetches == ["cc_switch-linux-amd64-abcd"]
+    assert len(installs) == 1
+    assert engine.results()[0]["state"] == "done"
+
+
+def test_a_switcher_removal_deletes_the_cli():
+    engine = bare_engine()
+    engine._catalog = dict(SWITCHER_CATALOG)
+    removed: list = []
+    engine._switcher.remove = lambda resolved: removed.append(True)
+    engine._switcher.verify = lambda resolved: not removed
+
+    engine.update(
+        catalog=None,
+        catalog_hash="abc",
+        orders=[{"id": "order-1", "module": "cc_switch", "action": "remove"}],
+    )
+    engine._reconcile()
+
+    assert removed == [True]
+    assert engine.results()[0]["state"] == "done"

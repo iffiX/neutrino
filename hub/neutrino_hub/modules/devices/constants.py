@@ -14,7 +14,7 @@ DEVICE_AGENT_ONLINE_WINDOW_S = 30
 # The shape of what crosses the agent channel. Must match the agent's own
 # AGENT_WIRE_GENERATION; a beat carrying another number is answered with
 # agent_wire_stale so the agent reinstalls itself.
-AGENT_WIRE_GENERATION = 3
+AGENT_WIRE_GENERATION = 4
 DEVICE_WOL_PORT = 9
 # Pure Python over the network; nothing architecture-bound is installed here.
 DEVICE_SUPPORTED_ARCHITECTURES = ("*",)
@@ -78,3 +78,6 @@ AGENT_MODULE_ORDER_HISTORY = 12
 # What an agent reports back of a failed install. Enough to read the package
 # manager's own complaint, bounded so a verbose failure cannot fill a beat.
 AGENT_MODULE_OUTPUT_LIMIT_BYTES = 16 * 1024
+# How many lines of an operation's output the heartbeat reply carries, the
+# same tail the panel's journals show.
+AGENT_OPERATION_OUTPUT_LINES = 200

@@ -56,7 +56,7 @@ MODULE_BUSY_STATES = (
     "activating",
     "deactivating",
 )
-MOUNT_BUSY_STATES = ("queued", "installing_tooling", "mounting", "pending")
+MOUNT_BUSY_STATES = ("queued", "mounting", "pending")
 
 # What can carry a state token anywhere in the agent.
 STATE_PATTERNS = (
@@ -210,9 +210,9 @@ def test_the_connection_controls_grey_for_an_ordinary_caller():
     assert "button.disabled = !isPrivileged" in CONTROL_PAGE_HTML
 
 
-def test_the_module_buttons_grey_for_scope_support_and_busy():
+def test_the_module_buttons_grey_for_scope_support_busy_and_operations():
     assert (
-        "button.disabled = !isPrivileged || !m.is_supported || working"
+        "button.disabled = !isPrivileged || !m.is_supported || working || isHeld"
     ) in CONTROL_PAGE_HTML
 
 
@@ -249,7 +249,9 @@ def test_every_module_busy_state_words_as_ongoing():
 
 
 def test_a_busy_chip_and_module_button_are_disabled():
-    assert "chip.disabled = isBusy || !entry.is_healthy" in CONTROL_PAGE_HTML
+    assert "chip.disabled = isGated || isBusy || !entry.is_healthy" in (
+        CONTROL_PAGE_HTML
+    )
     for state in MODULE_BUSY_STATES:
         assert f"'{state}'" in CONTROL_PAGE_HTML
 
@@ -332,3 +334,70 @@ def test_the_dead_wording_is_gone():
     assert "the removal finished, but the software is still there" in (
         CONTROL_PAGE_HTML
     )
+    # The service layers install nothing any more, so their install words
+    # are gone with the code paths.
+    assert "installing_tooling" not in CONTROL_PAGE_HTML
+    assert "tooling_install_failed" not in CONTROL_PAGE_HTML
+    assert "no_switcher_build" not in CONTROL_PAGE_HTML
+
+
+# --- the operation panel and the missing-modules gate ---
+
+
+def test_the_operation_panel_closes_the_modules_section():
+    assert 'operation_title: "Operation output"' in CONTROL_PAGE_HTML
+    # Present only while an operation is running or has just run; the hub
+    # sends null otherwise and the panel does not render.
+    assert "if (state.operation) modulePanels.push(drawOperation" in (CONTROL_PAGE_HTML)
+    assert "section(WORDS.ui.section_modules, modulePanels)" in CONTROL_PAGE_HTML
+
+
+def test_every_operation_state_has_a_word():
+    words = words_block("operation")
+    for state in ("queued", "fetching", "running", "done", "failed"):
+        assert state in words, f"operation state {state} has no word"
+    # A running order is worded by what it was asked to do.
+    for action in ("install", "remove", "enable", "disable"):
+        assert f"{action}:" in CONTROL_PAGE_HTML
+
+
+def test_the_operation_output_renders_as_a_monospace_tail():
+    assert "log.className = 'oplog'" in CONTROL_PAGE_HTML
+    assert "ui-monospace" in CONTROL_PAGE_HTML
+
+
+def test_everything_greys_while_an_operation_runs():
+    assert "const OPERATION_RUNNING_STATES = ['queued', 'fetching', 'installing'," in (
+        CONTROL_PAGE_HTML
+    )
+    assert "const isHeld = isOperationRunning(state);" in CONTROL_PAGE_HTML
+    assert "button.disabled = isOperationRunning(state);" in CONTROL_PAGE_HTML
+
+
+def test_a_service_with_missing_modules_is_gated_but_present():
+    assert (
+        'service_needs_modules: "Install these modules to enable this service: '
+        '{modules}"'
+    ) in CONTROL_PAGE_HTML
+    # The notice is the error color, the panel stays, and its controls grey.
+    assert "note.className = 'err'" in CONTROL_PAGE_HTML
+    assert "config.disabled = isGated || !entry.is_healthy" in CONTROL_PAGE_HTML
+    assert "apply.disabled = isGated || !isDirty" in CONTROL_PAGE_HTML
+    assert "if (isGated) mount.disabled = true;" in CONTROL_PAGE_HTML
+
+
+def test_only_a_privileged_caller_gets_the_install_missing_button():
+    gate = CONTROL_PAGE_HTML.split("function missingModulesNotice")[1]
+    gate = gate.split("async function installMissing")[0]
+    assert "if (state.caller.is_privileged)" in gate
+    assert "installMissing(missing.map((m) => m.name))" in gate
+
+
+def test_installing_missing_modules_is_ordinary_asks_in_order():
+    body = CONTROL_PAGE_HTML.split("async function installMissing")[1]
+    body = body.split("\n}")[0]
+    assert "await send('/api/module', { name: name, is_enabled: true });" in body
+
+
+def test_a_native_module_row_offers_no_button():
+    assert "if (m.is_native) {" in CONTROL_PAGE_HTML

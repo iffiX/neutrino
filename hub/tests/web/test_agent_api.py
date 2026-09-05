@@ -27,6 +27,7 @@ from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevic
 from neutrino_hub.utils.json_file import write_config
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.routers import agent as agent_router
+from neutrino_hub.web.task_stream import TaskStream, TaskStreamRegistry
 from tests.conftest import unlock_vault
 
 MAC = "aa:bb:cc:dd:ee:ff"
@@ -159,6 +160,7 @@ class FakeRuntime:
         self.agent_module_orders = AgentModuleController(
             cache=self.agent_modules, locks=self.device_install_locks, timeout_s=1.0
         )
+        self.tasks = TaskStreamRegistry()
 
     def take_client_commands(self, mac_address):
         return []
@@ -877,7 +879,7 @@ def _beat(**fields):
     body = {
         "token": "device-token",
         "hostname": "x",
-        "wire": 3,
+        "wire": AGENT_WIRE_GENERATION,
         "client_version": "0.1.0",
         "platform": {"os": "linux", "family": "debian", "arch": "amd64"},
     }
@@ -960,3 +962,118 @@ def test_a_refusal_is_written_down_where_a_restart_still_finds_it(api):
 
     stored = FakeRegistry.device.client.modules["anydesk"]
     assert stored["failed"] == {"code": "install_failed", "params": {}}
+
+
+def test_a_disable_wish_is_honoured_with_an_order(api):
+    """Both directions ride the queue: a hub restarted between the click and
+    the removal still carries the decision out on the next beat."""
+    client, runtime, device = api
+    FakeRegistry.device.client.modules["anydesk"] = {
+        "is_enabled": False,
+        "is_activated": False,
+        "failed": None,
+    }
+
+    reply = client.post(
+        "/api/agent/heartbeat",
+        json=_beat(modules={"anydesk": {"state": "installed"}}),
+    )
+
+    assert reply.status_code == 200
+    orders = reply.json()["module_orders"]
+    assert [(o["module"], o["action"]) for o in orders] == [("anydesk", "remove")]
+
+
+def test_a_disable_wish_already_true_asks_nothing(api):
+    client, runtime, device = api
+    FakeRegistry.device.client.modules["anydesk"] = {
+        "is_enabled": False,
+        "is_activated": False,
+        "failed": None,
+    }
+
+    reply = client.post(
+        "/api/agent/heartbeat",
+        json=_beat(modules={"anydesk": {"state": "absent"}}),
+    )
+
+    assert reply.json()["module_orders"] == []
+
+
+def _wait_for_handed(runtime, timeout_s: float = 3.0):
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        standing = runtime.agent_module_orders.pending_order(MAC.lower())
+        if standing is not None:
+            return standing
+        time.sleep(0.01)
+    return None
+
+
+def test_the_reply_carries_the_devices_operation(api):
+    """One stream for both surfaces: the machine's own page renders what the
+    hub holds, from the running order through its finished output."""
+    client, runtime, device = api
+
+    reply = client.post("/api/agent/heartbeat", json=_beat())
+    assert reply.json()["operation"] is None
+
+    order = runtime.agent_module_orders.ask(
+        mac_address=MAC.lower(),
+        module="anydesk",
+        manifest={"kind": "package", "platforms": {"linux": {"url": "u"}}},
+        platform={"os": "linux", "family": "debian", "arch": "amd64"},
+        action="install",
+    )
+    assert _wait_for_handed(runtime) is not None
+
+    running = client.post("/api/agent/heartbeat", json=_beat()).json()["operation"]
+    assert running["kind"] == "order"
+    assert running["action"] == "install"
+    assert running["title"] == "AnyDesk"
+    assert running["state"] == "installing"
+
+    client.post(
+        "/api/agent/heartbeat",
+        json=_beat(
+            module_results=[
+                {
+                    "id": order.id,
+                    "module": "anydesk",
+                    "state": "done",
+                    "output": "Setting up anydesk",
+                }
+            ]
+        ),
+    )
+    finished = client.post("/api/agent/heartbeat", json=_beat()).json()["operation"]
+    assert finished["state"] == "done"
+    assert finished["output"] == "Setting up anydesk"
+
+
+def test_a_bootstrap_task_is_the_operation_too(api):
+    """The SSH install of the agent itself shows in the same window."""
+    client, runtime, device = api
+    stream = TaskStream(
+        id="t1",
+        label=f"install_client {MAC.lower()}",
+        started_at="2026-01-01T00:00:00+00:00",
+    )
+    stream.publish("[installing the agent]\n")
+    runtime.tasks._streams[stream.id] = stream
+
+    running = client.post("/api/agent/heartbeat", json=_beat()).json()["operation"]
+    assert running["kind"] == "bootstrap"
+    assert running["action"] == "install"
+    assert running["state"] == "running"
+    assert "[installing the agent]" in running["output"]
+
+    stream.finish(0)
+    finished = client.post("/api/agent/heartbeat", json=_beat()).json()["operation"]
+    assert finished["state"] == "done"
+
+    stream.exit_code = 1
+    assert (
+        client.post("/api/agent/heartbeat", json=_beat()).json()["operation"]["state"]
+        == "failed"
+    )

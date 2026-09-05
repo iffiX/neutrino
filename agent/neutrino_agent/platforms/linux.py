@@ -117,6 +117,7 @@ class LinuxPlatform(AgentPlatform):
             "power",
             "metrics",
             "packages",
+            "system_packages",
             "openssh",
             "shares",
         }
@@ -239,14 +240,41 @@ class LinuxPlatform(AgentPlatform):
         """Whether ``mount.cifs`` is on this machine."""
         return shutil.which(CIFS_HELPER) is not None
 
-    def install_mount_tooling(self) -> None:
-        """Install cifs-utils with the machine's own package manager.
+    def install_system_packages(self, names: list) -> str:
+        """Install packages by name with apt, dnf or yum.
+
+        Args:
+            names: The package names.
+
+        Returns:
+            The installers' combined output.
 
         Raises:
             InstallError: If the package manager refuses — no repository
-                reachable, or the package unknown.
+                reachable, or a package unknown.
         """
-        self._install_system_package("cifs-utils")
+        return "\n".join(self._install_system_package(name) for name in names)
+
+    def remove_system_packages(self, names: list) -> str:
+        """Remove packages by name, purging their configuration on apt.
+
+        Args:
+            names: The package names.
+
+        Returns:
+            The removal's combined output.
+
+        Raises:
+            InstallError: If the package manager refuses.
+        """
+        if not names:
+            return ""
+        if shutil.which("apt-get"):
+            command = ["apt-get", "purge", "-y"] + list(names)
+        else:
+            manager = "dnf" if shutil.which("dnf") else "yum"
+            command = [manager, "remove", "-y"] + list(names)
+        return installers.run_checked(command, timeout_s=installers.INSTALL_TIMEOUT_S)
 
     def write_share_credentials(
         self, *, credentials_path: str, username: str, password: str
@@ -254,15 +282,14 @@ class LinuxPlatform(AgentPlatform):
         """Keep a share's login as a root-only credentials file."""
         self._write_share_credentials(credentials_path, username, password)
 
-    def _install_system_package(self, package: str) -> None:
+    def _install_system_package(self, package: str) -> str:
         if shutil.which("apt-get"):
-            installers.run_checked(
+            return installers.run_checked(
                 ["apt-get", "install", "-y", package],
                 timeout_s=installers.INSTALL_TIMEOUT_S,
             )
-            return
         manager = "dnf" if shutil.which("dnf") else "yum"
-        installers.run_checked(
+        return installers.run_checked(
             [manager, "install", "-y", package],
             timeout_s=installers.INSTALL_TIMEOUT_S,
         )

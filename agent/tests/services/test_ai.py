@@ -26,15 +26,11 @@ ENTRY = {
         "endpoint": "http://hub:8080",
         "protocol": "anthropic",
         "models": ["m1", "m2", "m3"],
-        "switcher": {
-            "artifact_key": "cc_switch-linux-amd64-abcd",
-            "binary": "cc-switch",
-            "package_kind": "tar_binary",
-        },
     },
     "is_healthy": True,
     "source": "module",
     "description": "",
+    "modules": ["cc_switch"],
 }
 CREDS = {
     "base_url": "http://hub:8080",
@@ -56,10 +52,6 @@ class FakeSwitcher:
 
     def find_cli(self):
         return "/usr/local/bin/cc-switch" if self.has_cli else None
-
-    def install_cli(self, entry, archive):
-        self.calls.append(("install", entry, archive))
-        self.has_cli = True
 
     def is_active(self, *, run_as, base_url, api_key="", model=""):
         return self.active.get(run_as) == (base_url, api_key, model)
@@ -84,22 +76,12 @@ class FakeSwitcher:
 def subject(tmp_path):
     store = MachineServiceStore(path=str(tmp_path / "services.json"))
     fake = FakeSwitcher()
-    fetched = []
-
-    def fetch_artifact(artifact_key, destination):
-        fetched.append(artifact_key)
-        with open(destination, "wb") as stream:
-            stream.write(b"archive")
-        return {}
-
     reconciler = AiServiceReconciler(
         store=store,
         platform_tuple=PLATFORM_TUPLE,
         log=discard,
         switcher_module=fake,
-        fetch_artifact=fetch_artifact,
     )
-    fake.fetched = fetched
     return reconciler, store, fake
 
 
@@ -164,47 +146,20 @@ def test_staged_choices_beat_the_grants_model(subject):
     assert store.ai_granted()["alice"]["model"] == "m2"
 
 
-def test_a_missing_cli_is_asked_of_the_hub_not_fetched_here(subject):
+def test_a_missing_cli_is_a_module_missing_refusal_never_an_install(subject):
     reconciler, store, fake = subject
     fake.has_cli = False
     store.set_ai_target("alice", is_activated=True)
 
     feed(reconciler, credentials={"alice": CREDS})
 
-    installs = [call for call in fake.calls if call[0] == "install"]
-    assert len(installs) == 1
-    assert installs[0][1].get("binary") == "cc-switch"
-    # The bytes came from the hub's cache by the key the ai entry named:
-    # the AI service reaches no vendor either.
-    assert fake.fetched == ["cc_switch-linux-amd64-abcd"]
-    assert reconciler.report()["alice"]["is_active"] is True
-
-
-def test_a_platform_with_no_switcher_build_is_typed_not_guessed(subject):
-    reconciler, store, fake = subject
-    fake.has_cli = False
-    store.set_ai_target("alice", is_activated=True)
-    entry = {**ENTRY, "payload": {**ENTRY["payload"], "switcher": {}}}
-
-    feed(reconciler, entry=entry, credentials={"alice": CREDS})
-
-    assert reconciler.report()["alice"]["code"] == "no_switcher_build"
-    assert fake.fetched == []
-
-
-def test_a_refused_fetch_leaves_the_account_unswitched_and_says_why(subject):
-    reconciler, store, fake = subject
-    fake.has_cli = False
-    store.set_ai_target("alice", is_activated=True)
-    reconciler._fetch_artifact = lambda key, destination: {
-        "code": "module_fetch_failed",
-        "params": {},
-    }
-
-    feed(reconciler, credentials={"alice": CREDS})
-
-    assert reconciler.report()["alice"]["code"] == "module_fetch_failed"
+    # The service installs nothing: the binary is the cc_switch module's.
+    row = reconciler.report()["alice"]
+    assert row["state"] == "absent"
+    assert row["code"] == "module_missing"
+    assert row["params"] == {"module": "cc_switch"}
     assert not any(call[0] == "activate" for call in fake.calls)
+    assert store.ai_granted() == {}
 
 
 def test_deactivation_uses_the_last_granted_endpoint_and_clears_it(subject):

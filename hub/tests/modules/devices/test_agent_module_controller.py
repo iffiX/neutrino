@@ -43,6 +43,15 @@ BUILTIN = {
     "is_builtin": True,
     "platforms": {"linux-debian": {"service": "ssh"}},
 }
+SYSTEM = {
+    "name": "samba_mount",
+    "kind": "system_package",
+    "platforms": {
+        "linux-debian": {"packages": ["cifs-utils"]},
+        "windows": {},
+        "darwin": {},
+    },
+}
 
 
 class StubCache:
@@ -331,6 +340,8 @@ def test_forgetting_a_device_drops_everything_held_for_it(controller):
         (MANIFEST, False, "remove"),
         (BUILTIN, True, "enable"),
         (BUILTIN, False, "disable"),
+        (SYSTEM, True, "install"),
+        (SYSTEM, False, "remove"),
     ],
 )
 def test_what_a_wish_means_depends_on_what_the_module_is(
@@ -342,6 +353,44 @@ def test_what_a_wish_means_depends_on_what_the_module_is(
         order_action_for(manifest=manifest, platform=AMD64, is_enabled=is_enabled)
         == expected
     )
+
+
+def test_a_platform_that_carries_the_module_natively_is_asked_nothing():
+    # samba_mount on windows and macOS: an empty entry means nothing to
+    # install and nothing to remove.
+    for is_enabled in (True, False):
+        assert (
+            order_action_for(
+                manifest=SYSTEM,
+                platform={"os": "windows", "family": "", "arch": "amd64"},
+                is_enabled=is_enabled,
+            )
+            is None
+        )
+
+
+def test_a_distro_package_order_takes_the_queue_but_skips_the_cache(controller):
+    orders, cache, locks = controller
+
+    order = orders.ask(
+        mac_address=MAC,
+        module="samba_mount",
+        manifest=SYSTEM,
+        platform=AMD64,
+        action="install",
+    )
+
+    assert wait_for(lambda: orders.pending_order(MAC) is not None)
+    # The device's lock is held like any other order's; the cache was never
+    # asked, and the order carries no artifact for the agent to fetch.
+    assert locks.is_held(MAC)
+    assert cache.asked == []
+    handed = orders.pending_order(MAC)
+    assert handed.to_wire()["artifact_key"] == ""
+    orders.record_result(
+        mac_address=MAC, order_id=order.id, state="done", output="Setting up"
+    )
+    assert wait_for(lambda: not locks.is_held(MAC))
 
 
 def test_a_module_with_no_build_here_is_asked_nothing(controller):

@@ -224,6 +224,19 @@ everything agent-side reaches the hub, by riding the next heartbeat. There
 is no second path, no direct download, and no difference in behavior
 between the two surfaces.
 
+The queue is every action's, not only a download's. Enable, disable and
+uninstall have nothing to fetch, so their orders skip the cache — but
+they take the same per-device queue as an install, because they contend
+for the same machine-wide package and service locks, and because one
+queue is what makes "one thing at a time, in the order asked" true for
+the machine rather than for one kind of action. The SSH bootstrap that
+installs the agent itself takes the device's same lock. Every way
+software moves on a managed machine is therefore one serialized stream,
+and its output is one stream too: every order carries the output of what
+it ran, success included, and the drawer and the machine's own page both
+render the hub's copy of it, so the two surfaces cannot tell different
+stories about what is happening to the machine.
+
 An order therefore walks one way and never loops back:
 
 ```
@@ -244,9 +257,10 @@ installed it by hand), and the wish being reversed.
 
 What the agent keeps is only what it can answer for: which modules are
 present, what state each is in, and the output of the last thing it ran. The
-output of a failed install travels up with that state and is shown beside
-the install it came from, because a person reading "the download failed" and
-a person reading the vendor's own words are not equally able to fix it.
+output of every order travels up with its result, success included, and is
+shown beside the operation it came from, because a person reading "the
+download failed" and a person reading the vendor's own words are not equally
+able to fix it, and a person watching an install wants to see it work.
 
 ## The network the hub assumes
 

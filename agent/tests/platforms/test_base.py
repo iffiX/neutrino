@@ -68,6 +68,7 @@ def test_each_platform_advertises_its_capability_set():
             "control_socket",
             "agent_service",
             "power",
+            "system_packages",
             "metrics",
             "packages",
             "openssh",

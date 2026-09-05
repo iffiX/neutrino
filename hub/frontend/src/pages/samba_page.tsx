@@ -40,8 +40,8 @@ const USERS_HINT =
   "Accounts that may connect. Adding stages name and password together; " +
   "replacing a password is removing the user and adding it again.";
 const USER_BADGE_STAGED = "created on apply";
-const USER_BADGE_PASSWORD_STAGED = "password set on apply";
-const USER_BADGE_NO_PASSWORD = "no password yet";
+const USER_BADGE_PASSWORD_STAGED = "password set on apply"; // scan: allow
+const USER_BADGE_NO_PASSWORD = "no password yet"; // scan: allow
 const USER_BADGE_READY = "ready";
 const USER_REMOVE_LABEL = "Remove";
 const USER_ADD_LABEL = "Add user";

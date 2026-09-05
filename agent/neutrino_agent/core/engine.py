@@ -28,6 +28,8 @@ from neutrino_agent.constants import AGENT_MODULE_OUTPUT_LIMIT_BYTES
 from neutrino_agent.modules.installers import InstallError
 from neutrino_agent.modules.openssh import OpensshModuleReconciler
 from neutrino_agent.modules.package import PackageModuleRunner
+from neutrino_agent.modules.switcher import SwitcherModuleRunner
+from neutrino_agent.modules.system_package import SystemPackageModuleRunner
 from neutrino_agent.platforms.base import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import platform_tuple
 
@@ -152,6 +154,12 @@ class ModuleEngine(ReconcileWorker):
         self._results: dict = {}
         self._output: list = []
         self._package = PackageModuleRunner(
+            platform=platform, log=self._collect, publish=self._publish
+        )
+        self._switcher = SwitcherModuleRunner(
+            platform=platform, log=self._collect, publish=self._publish
+        )
+        self._system = SystemPackageModuleRunner(
             platform=platform, log=self._collect, publish=self._publish
         )
         self._openssh = OpensshModuleReconciler(
@@ -281,8 +289,13 @@ class ModuleEngine(ReconcileWorker):
             return _typed("unsupported", "no_platform_build")
         kind = resolved.get("kind", "")
         try:
-            if kind == "package":
-                is_present = self._package.verify(resolved)
+            if kind in ("package", "switcher"):
+                is_present = self._runner_for(kind).verify(resolved)
+                return _typed("installed" if is_present else "absent", "")
+            if kind == "system_package":
+                if self._system.is_native(resolved):
+                    return _typed("enabled", "")
+                is_present = self._system.verify(resolved)
                 return _typed("installed" if is_present else "absent", "")
             if kind == "openssh":
                 status = self._openssh.reconcile(
@@ -360,22 +373,27 @@ class ModuleEngine(ReconcileWorker):
         Returns:
             Empty when it took, ``{"code", "params"}`` when it did not.
         """
+        kind = str(resolved.get("kind", ""))
         if action == ORDER_INSTALL:
-            refusal = self._install(name, resolved, order)
-            if refusal:
-                return refusal
+            if kind == "system_package":
+                self._collect(f"{name}: installing packages")
+                self._system.install(resolved)
+            else:
+                refusal = self._install(name, resolved, order)
+                if refusal:
+                    return refusal
             # Verify is the whole point of the step: a package manager that
             # exits zero and installs nothing is a thing that happens.
             return (
                 {}
-                if self._package.verify(resolved)
+                if self._runner_for(kind).verify(resolved)
                 else {"code": "install_unconfirmed"}
             )
         if action == ORDER_REMOVE:
-            self._package.remove(resolved)
+            self._runner_for(kind).remove(resolved)
             return (
                 {}
-                if not self._package.verify(resolved)
+                if not self._runner_for(kind).verify(resolved)
                 else {"code": "remove_unconfirmed"}
             )
         is_enabled = action == ORDER_ENABLE
@@ -389,6 +407,14 @@ class ModuleEngine(ReconcileWorker):
         if status.get("state") == wanted_state:
             return {}
         return {"code": str(status.get("code") or "switch_unconfirmed")}
+
+    def _runner_for(self, kind: str):
+        """The runner that owns one manifest kind's install and verify."""
+        if kind == "switcher":
+            return self._switcher
+        if kind == "system_package":
+            return self._system
+        return self._package
 
     def _install(self, name: str, resolved: dict, order: dict) -> dict:
         """Get the bytes the hub holds and install them.
@@ -414,7 +440,7 @@ class ModuleEngine(ReconcileWorker):
             if refusal:
                 return refusal
             self._collect(f"{name}: installing")
-            self._package.install(resolved, package)
+            self._runner_for(str(resolved.get("kind", ""))).install(resolved, package)
         return {}
 
     def _record(

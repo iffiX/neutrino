@@ -40,7 +40,8 @@ CONTRACT_CALLS = {
     ),
     "detach_share": ("shares", (), {"location": "/mnt/media"}),
     "is_share_attached": ("shares", (), {"location": "/mnt/media"}),
-    "install_mount_tooling": ("shares", (), {}),
+    "install_system_packages": ("system_packages", (["cifs-utils"],), {}),
+    "remove_system_packages": ("system_packages", (["cifs-utils"],), {}),
     "write_share_credentials": (
         "shares",
         (),

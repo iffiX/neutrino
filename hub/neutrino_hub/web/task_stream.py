@@ -10,6 +10,7 @@ import asyncio
 import secrets
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 TASK_ID_BYTES = 8
 BUFFER_LINE_LIMIT = 2000
@@ -29,6 +30,8 @@ class TaskStream:
         buffer: Output produced so far, replayed to late subscribers.
         exit_code: Set once the job finishes.
         is_finished: Whether the job has completed.
+        started_at: When the job started, ISO.
+        finished_at: When it finished, empty while it runs.
     """
 
     id: str
@@ -36,6 +39,8 @@ class TaskStream:
     buffer: list[str] = field(default_factory=list)
     exit_code: int | None = None
     is_finished: bool = False
+    started_at: str = ""
+    finished_at: str = ""
     _subscribers: list[asyncio.Queue] = field(default_factory=list)
 
     def publish(self, chunk: str) -> None:
@@ -58,6 +63,7 @@ class TaskStream:
         """
         self.exit_code = exit_code
         self.is_finished = True
+        self.finished_at = datetime.now(timezone.utc).isoformat()
         for queue in self._subscribers:
             queue.put_nowait(None)
 
@@ -101,7 +107,11 @@ class TaskStreamRegistry:
             The stream, whose ``id`` the caller returns to the browser.
         """
         self._evict_finished()
-        stream = TaskStream(id=secrets.token_hex(TASK_ID_BYTES), label=label)
+        stream = TaskStream(
+            id=secrets.token_hex(TASK_ID_BYTES),
+            label=label,
+            started_at=datetime.now(timezone.utc).isoformat(),
+        )
         self._streams[stream.id] = stream
         asyncio.create_task(self._drain(stream, source))
         return stream

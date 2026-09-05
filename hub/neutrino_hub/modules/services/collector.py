@@ -1,9 +1,10 @@
 """Composing the typed service list the hub publishes.
 
 Every entry is ``{id, type, title, payload, is_healthy, source, description,
-record_id, detail_code}`` with four types — web, port, ai, file.
+modules, record_id, detail_code}`` with four types — web, port, ai, file.
 Module-declared entries exist only while their module serves and carry the
 module's own health; manual declarations carry their probe results.
+``modules`` names the device modules the entry cannot work without.
 ``record_id`` names the declared record an entry came from, for the panel's
 delete and probe, and ``detail_code`` is what that record's last probe
 measured; the catalog copy drops both.
@@ -18,8 +19,10 @@ from neutrino_hub.modules.services.config import DeclaredService
 from neutrino_hub.modules.services.constants import (
     SERVICES_AI_DESCRIPTION,
     SERVICES_AI_ID,
+    SERVICES_AI_MODULES,
     SERVICES_AI_PROTOCOL,
     SERVICES_AI_TITLE,
+    SERVICES_FILE_MODULES,
     SERVICES_FILE_PROTOCOL,
     SERVICES_GITEA_DESCRIPTION,
     SERVICES_GITEA_ID,
@@ -47,6 +50,7 @@ CATALOG_ENTRY_FIELDS = (
     "is_healthy",
     "source",
     "description",
+    "modules",
 )
 
 
@@ -325,9 +329,19 @@ def _entry(
         "is_healthy": is_healthy,
         "source": (SERVICES_SOURCE_DECLARED if record_id else SERVICES_SOURCE_MODULE),
         "description": description,
+        "modules": list(_type_modules(type)),
         "record_id": record_id,
         "detail_code": detail_code,
     }
+
+
+def _type_modules(type: str) -> tuple:
+    """The device modules an entry of this type depends on."""
+    if type == SERVICES_TYPE_AI:
+        return SERVICES_AI_MODULES
+    if type == SERVICES_TYPE_FILE:
+        return SERVICES_FILE_MODULES
+    return ()
 
 
 def _resolve_url(url: str, hub_addresses: set[str], target_host: str) -> str:
