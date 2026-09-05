@@ -237,6 +237,7 @@ const WORDS = {
     agent_package_digest_mismatch: "self-update to {target} failed: the package did not match its digest",
     agent_update_launch_failed: "self-update to {target} could not be launched",
     agent_update_fetch_failed: "self-update failed: the package could not be fetched from the hub",
+    agent_package_missing: "self-update to {target} failed: the hub has no agent package for this platform",
     agent_wire_stale: "this agent's build does not match the hub; it reinstalls itself from the hub's package",
     hub_reply_unreadable: "the hub sent a reply this agent could not read",
   },

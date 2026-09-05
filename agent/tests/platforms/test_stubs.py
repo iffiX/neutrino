@@ -73,13 +73,6 @@ BASE_IMPLEMENTED = {
 }
 
 
-def test_windows_has_no_peer_identity_yet():
-    with pytest.raises(PlatformUnsupportedError):
-        WindowsPlatform().read_peer_identity(object())
-    with pytest.raises(PlatformUnsupportedError):
-        WindowsPlatform().control_socket_path()
-
-
 def test_the_capability_tables_name_every_contract_method():
     contract_methods = {
         name

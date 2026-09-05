@@ -65,3 +65,4 @@ hub/neutrino_hub/data/frontend/
 # scripts/build_package. Never committed: it is a build product, and the
 # vendor software a device needs is fetched by the agent itself from the
 # manifests, on the device's own network.
+.claude/

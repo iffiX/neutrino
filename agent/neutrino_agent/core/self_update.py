@@ -25,6 +25,7 @@ from neutrino_agent.constants import (
 )
 
 FAMILY_TO_PACKAGE_KIND = {"debian": "deb", "rhel": "rpm"}
+OS_TO_PACKAGE_KIND = {"windows": "msi"}
 
 
 class SelfUpdateError(RuntimeError):
@@ -38,22 +39,34 @@ def package_kind(platform: dict) -> str:
         platform: The tuple from ``platforms.detect.platform_tuple``.
 
     Returns:
-        ``deb`` or ``rpm``, or empty when the hub bakes nothing for this
-        platform.
+        ``deb``, ``rpm`` or ``msi``, or empty when the hub bakes nothing
+        for this platform.
     """
-    return FAMILY_TO_PACKAGE_KIND.get(platform.get("family", ""), "")
+    family_kind = FAMILY_TO_PACKAGE_KIND.get(platform.get("family", ""), "")
+    if family_kind:
+        return family_kind
+    return OS_TO_PACKAGE_KIND.get(platform.get("os", ""), "")
 
 
 def install_command(kind: str, path: str) -> list:
     """The detached command that installs a downloaded package. Pure.
 
     Args:
-        kind: ``deb`` or ``rpm``.
+        kind: ``deb``, ``rpm`` or ``msi``.
         path: The downloaded package file.
 
     Returns:
-        A ``systemd-run`` argument vector for a transient unit.
+        An argument vector that outlives the agent's own restart: a
+        ``systemd-run`` transient unit, or a detached ``msiexec``.
     """
+    if kind == "msi":
+        return [
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            "Start-Process msiexec -ArgumentList "
+            f"'/i','{path}','/quiet','/norestart'",
+        ]
     if kind == "deb":
         # dpkg installs a same-version file where apt would call it already
         # newest, and the wire-stale path reinstalls exactly that; apt then

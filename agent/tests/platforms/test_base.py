@@ -90,7 +90,18 @@ def test_each_platform_advertises_its_capability_set():
         }
     )
     assert WindowsPlatform().capabilities == frozenset(
-        {"account_files", "packages", "openssh"}
+        {
+            "accounts",
+            "account_files",
+            "run_as",
+            "control_socket",
+            "agent_service",
+            "power",
+            "metrics",
+            "packages",
+            "openssh",
+            "shares",
+        }
     )
 
 
@@ -102,16 +113,14 @@ def test_system_packages_stay_linux_only():
 
 def test_an_absent_capability_is_refused_not_guessed():
     with pytest.raises(PlatformUnsupportedError) as caught:
-        WindowsPlatform().run_as_account("bob", ["id"])
+        WindowsPlatform().install_system_packages(["cifs-utils"])
     assert caught.value.code == "unsupported_platform"
     with pytest.raises(PlatformUnsupportedError):
         AgentPlatform().read_host_metrics()
     with pytest.raises(PlatformUnsupportedError):
         DarwinPlatform().install_system_packages(["cifs-utils"])
     with pytest.raises(PlatformUnsupportedError):
-        WindowsPlatform().human_accounts()
-    with pytest.raises(PlatformUnsupportedError):
-        WindowsPlatform().is_share_attached(location="/mnt/share")
+        WindowsPlatform().remove_system_packages(["cifs-utils"])
 
 
 def test_base_file_operations_refuse_without_run_as():
