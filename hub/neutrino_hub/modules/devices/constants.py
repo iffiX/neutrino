@@ -63,6 +63,7 @@ AGENT_MODULE_PACKAGE_MAGIC = {
     "rpm": (b"\xed\xab\xee\xdb",),
     "msi": (b"\xd0\xcf\x11\xe0",),
     "exe": (b"MZ",),
+    "pkg": (b"xar!",),
     "dmg": (b"koly", b"\x78\x01\x73", b"\x42\x5a\x68"),
     "tar_binary": (b"\x1f\x8b", b"BZh", b"\xfd7zXZ"),
     "zip_binary": (b"PK\x03\x04",),

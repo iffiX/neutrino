@@ -2,8 +2,8 @@
 
 One function per package kind, each doing what that platform's own tooling
 does unattended: dpkg with an apt fix-up on Debian, dnf on RHEL, msiexec
-quietly on Windows, the vendor's own silent switch for an exe, and mounting
-and copying an app out of a dmg on macOS.
+quietly on Windows, the vendor's own silent switch for an exe, and on macOS
+``installer -pkg`` for a pkg or mounting and copying an app out of a dmg.
 
 Not pure: runs installers.
 """
@@ -16,7 +16,6 @@ import os
 import re
 import shutil
 import subprocess
-import tempfile
 
 from neutrino_agent.constants import AGENT_MODULE_OUTPUT_LIMIT_BYTES
 
@@ -35,7 +34,8 @@ def install_package(path: str, *, package_kind: str, entry: dict) -> None:
 
     Args:
         path: The downloaded file.
-        package_kind: ``deb`` / ``rpm`` / ``msi`` / ``exe`` / ``dmg``.
+        package_kind: ``deb`` / ``rpm`` / ``msi`` / ``exe`` / ``dmg`` /
+            ``pkg``.
         entry: The manifest's platform entry, for per-package details like an
             exe's silent switch or the app to copy out of a dmg.
 
@@ -52,6 +52,8 @@ def install_package(path: str, *, package_kind: str, entry: dict) -> None:
         _install_exe(path, entry.get("install_args", []))
     elif package_kind == "dmg":
         _install_dmg(path, entry.get("app_name", ""))
+    elif package_kind == "pkg":
+        _install_pkg(path)
     else:
         raise InstallError(f"unknown package kind {package_kind!r}")
 
@@ -123,6 +125,13 @@ def _install_rpm(path: str) -> None:
 def _install_msi(path: str) -> None:
     run_checked(
         ["msiexec", "/i", path, "/quiet", "/norestart"], timeout_s=INSTALL_TIMEOUT_S
+    )
+
+
+def _install_pkg(path: str) -> None:
+    # macOS's own silent installer; -target / is the booted system volume.
+    run_checked(
+        ["installer", "-pkg", path, "-target", "/"], timeout_s=INSTALL_TIMEOUT_S
     )
 
 

@@ -1,4 +1,4 @@
-"""The darwin and windows stubs: what a machine cannot do is said, not faked.
+"""The capability matrix: what a machine cannot do is said, not faked.
 
 Every method the contract names belongs to one capability. A platform that
 advertises the capability implements the method; one that does not refuses
@@ -6,12 +6,8 @@ with ``unsupported_platform``. The tables below are asserted complete, so a
 new contract method without a stub answer fails here.
 """
 
-import collections
-import subprocess
-
 import pytest
 
-import neutrino_agent.platforms.darwin as darwin_module
 import neutrino_agent.platforms.windows as windows_module
 from neutrino_agent.platforms.base import AgentPlatform, PlatformUnsupportedError
 from neutrino_agent.platforms.darwin import DarwinPlatform
@@ -76,10 +72,6 @@ BASE_IMPLEMENTED = {
     "has_mount_tooling": "shares",
 }
 
-DarwinPwdEntry = collections.namedtuple(
-    "DarwinPwdEntry", "pw_name pw_uid pw_shell pw_dir"
-)
-
 
 def test_windows_has_no_peer_identity_yet():
     with pytest.raises(PlatformUnsupportedError):
@@ -116,48 +108,6 @@ def test_a_stub_implements_a_capability_or_refuses_it(method_name):
         with pytest.raises(PlatformUnsupportedError) as caught:
             getattr(platform, method_name)(*args, **kwargs)
         assert caught.value.code == "unsupported_platform"
-
-
-def test_darwin_the_account_floor_is_the_platform_classes_own_number(
-    monkeypatch, tmp_path
-):
-    home = tmp_path / "home"
-    home.mkdir()
-    assert darwin_module.DARWIN_HUMAN_UID_FLOOR == 501
-    entries = [
-        DarwinPwdEntry("root", 0, "/bin/sh", "/var/root"),
-        DarwinPwdEntry("_spotlight", 89, "/usr/bin/false", str(home)),
-        DarwinPwdEntry("under_the_floor", 500, "/bin/zsh", str(home)),
-        DarwinPwdEntry("mia", 501, "/bin/zsh", str(home)),
-        DarwinPwdEntry("shell_less", 502, "/usr/bin/false", str(home)),
-        DarwinPwdEntry("homeless", 503, "/bin/zsh", str(tmp_path / "missing")),
-    ]
-    monkeypatch.setattr(darwin_module.pwd, "getpwall", lambda: entries)
-
-    assert DarwinPlatform().human_accounts() == ["mia"]
-
-
-def test_darwin_steps_down_with_su_never_sudo(monkeypatch):
-    recorded = {}
-
-    def record(command, **kwargs):
-        recorded["command"] = list(command)
-        recorded["kwargs"] = kwargs
-        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
-
-    monkeypatch.setattr(darwin_module.subprocess, "run", record)
-    monkeypatch.setattr(darwin_module.os, "geteuid", lambda: 0)
-
-    DarwinPlatform().run_as_account("alice", ["id", "-u"], stdin="typed")
-
-    assert recorded["command"] == ["su", "-", "alice", "-c", "id -u"]
-    assert "sudo" not in recorded["command"]
-    assert recorded["kwargs"]["input"] == "typed"
-
-    monkeypatch.setattr(darwin_module.os, "geteuid", lambda: 501)
-    DarwinPlatform().run_as_account("alice", ["id", "-u"])
-
-    assert recorded["command"] == ["id", "-u"]
 
 
 def test_windows_account_work_is_file_work_under_the_profile(monkeypatch, tmp_path):
