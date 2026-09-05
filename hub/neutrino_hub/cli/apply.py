@@ -48,7 +48,11 @@ from neutrino_hub.modules.samba.constants import (
     SAMBA_GENERATED_NAME,
 )
 from neutrino_hub.modules.samba.ops import SambaConfigApplier, SambaUserManager
-from neutrino_hub.modules.samba.renderer import SambaConfigRenderer
+from neutrino_hub.modules.router.link_status import RouterLinkStatus
+from neutrino_hub.modules.samba.renderer import (
+    SambaConfigRenderer,
+    allowed_subnets,
+)
 from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.system.units import SystemdUnitInstaller
@@ -188,10 +192,14 @@ def _render(selected: tuple[str, ...]) -> dict:
     elif "samba" in selected:
         samba_config = SambaConfig.from_dict(read_config("samba/samba.json"))
         samba_config.validate()
-        subnets = [
-            str(ipaddress.ip_network(interface.lan.cidr, strict=False))
-            for interface in network.lan_interfaces
-        ]
+        links = {
+            link.name: link.ipv4_address or ""
+            for link in RouterLinkStatus().all_links()
+        }
+        subnets = allowed_subnets(
+            [interface.lan.cidr for interface in network.lan_interfaces],
+            [links.get(name, "") for name in network.exposed_device_names()],
+        )
         artifacts["samba"] = SambaConfigRenderer(
             config=samba_config, lan_subnets=subnets
         ).render()

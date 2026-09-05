@@ -32,7 +32,11 @@ from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiServedModelCache
 from neutrino_hub.modules.devices.catalog import DeviceCatalogCache
 from neutrino_hub.modules.samba.config import SambaConfig
 from neutrino_hub.modules.samba.ops import SambaConfigApplier, SambaUserManager
-from neutrino_hub.modules.samba.renderer import SambaConfigRenderer
+from neutrino_hub.modules.router.link_status import RouterLinkStatus
+from neutrino_hub.modules.samba.renderer import (
+    SambaConfigRenderer,
+    allowed_subnets,
+)
 from neutrino_hub.modules.services.probe import DeclaredServiceProbe
 from neutrino_hub.modules.services.published import PublishedServiceCache
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
@@ -562,10 +566,15 @@ class PanelRuntime:
         # The LAN subnets go into hosts allow, the second fence behind the
         # firewall's own; both change together when the LAN does. Normalised to
         # the network address — cidr is the gateway's own host form.
-        subnets = [
-            str(ipaddress.ip_network(interface.lan.cidr, strict=False))
-            for interface in self.network().lan_interfaces
-        ]
+        network = self.network()
+        links = {
+            link.name: link.ipv4_address or ""
+            for link in RouterLinkStatus().all_links()
+        }
+        subnets = allowed_subnets(
+            [interface.lan.cidr for interface in network.lan_interfaces],
+            [links.get(name, "") for name in network.exposed_device_names()],
+        )
         rendered = SambaConfigRenderer(config=config, lan_subnets=subnets).render()
         # Configuration first: smbpasswd itself reads smb.conf, and the link
         # to a valid one is the applier's to place.

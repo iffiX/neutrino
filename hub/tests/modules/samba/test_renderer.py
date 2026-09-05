@@ -112,3 +112,15 @@ def test_no_shares_still_renders_a_servable_file(tmp_path):
 
     validate_smb_conf(rendered, tmp_path)
     assert "[global]" in rendered
+
+
+def test_allowed_subnets_carries_exposed_networks_where_no_lan_has_a_role():
+    """A server-mode box has no LAN-role interface, and its shares answer
+    the networks the owner exposed — loopback-only was nobody's intent."""
+    from neutrino_hub.modules.samba.renderer import allowed_subnets
+
+    assert allowed_subnets([], ["192.168.100.1/24"]) == ["192.168.100.0/24"]
+    assert allowed_subnets(
+        ["192.168.93.1/24"], ["192.168.100.1/24", "192.168.93.1/24", "", "bad"]
+    ) == ["192.168.93.0/24", "192.168.100.0/24"]
+    assert allowed_subnets([], [None, ""]) == []

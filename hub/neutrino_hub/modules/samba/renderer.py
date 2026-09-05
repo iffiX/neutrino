@@ -9,8 +9,35 @@ Pure: text in, text out. Writing, validating and reloading is
 :mod:`neutrino_hub.modules.samba.ops`.
 """
 
+import ipaddress
+
 from neutrino_hub.modules.samba.constants import SAMBA_GROUP
 from neutrino_hub.modules.samba.config import SambaConfig, SambaShare
+
+
+def allowed_subnets(lan_cidrs: list, exposed_addresses: list) -> list:
+    """The networks the shares answer, beside the firewall's own fence.
+
+    Args:
+        lan_cidrs: The LAN-role interfaces' cidrs, host form allowed.
+        exposed_addresses: The exposed interfaces' live addresses with
+            prefix (``a.b.c.d/nn``) — what carries the shares on a box
+            whose addresses are its own, where no interface has a role.
+
+    Returns:
+        Deduplicated network addresses, order kept.
+    """
+    subnets = []
+    for value in list(lan_cidrs) + list(exposed_addresses):
+        if not value:
+            continue
+        try:
+            network = str(ipaddress.ip_network(value, strict=False))
+        except ValueError:
+            continue
+        if network not in subnets:
+            subnets.append(network)
+    return subnets
 
 
 class SambaConfigRenderer:

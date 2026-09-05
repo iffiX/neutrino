@@ -69,7 +69,9 @@ CONTROL_PAGE_HTML = """<!doctype html>
   .panel_title { color: #8b96a5; font-size: 11px; text-transform: uppercase;
            letter-spacing: .08em; border-bottom: 1px solid #1f2937;
            padding-bottom: 6px; margin-bottom: 4px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 0 10px; }
+  .subhead { color: #7d8590; font-size: 11px; letter-spacing: .06em;
+             text-transform: uppercase; margin-top: 10px; }
   .chip { display: inline-flex; gap: 8px; align-items: center;
           border: 1px solid #1f2937; border-radius: 999px; padding: 6px 14px;
           background: none; color: #e6edf3; font-size: 13px; cursor: pointer; }
@@ -146,6 +148,8 @@ const WORDS = {
     password_hint: "Share password",  // scan: allow
     path_hint: "Mount path",
     not_attached: "not mounted",
+    unmounting: "unmounting…",
+    enabled_users: "Enabled users",
     mount_queued: "waiting for the agent…",
     mount_installing_tooling: "installing the mount tooling…",
     mount_mounting: "mounting…",
@@ -272,6 +276,8 @@ let serviceNotes = {};
 // The staged AI apply: which chips are on and what each tool points with.
 // Committed only by Apply; null rebuilds from the next server state.
 let aiStaged = null;
+// Records whose unmount is in flight, so the button greys at once.
+const fileAsked = {};
 // The staged file configs, one per entry id: {is_open, username, password,
 // path}. The password lives only here and in the one request that sends it.
 let fileStaged = {};
@@ -574,13 +580,11 @@ function drawWebPanel(state, entries, title) {
   for (const entry of entries) {
     const payload = entry.payload || {};
     const row = entryRow(entry, payload.url || '', '');
-    const anchor = document.createElement('a');
-    anchor.className = 'link';
-    anchor.href = payload.url || '#';
-    anchor.target = '_blank';
-    anchor.rel = 'noopener';
-    anchor.textContent = WORDS.ui.open;
-    row.appendChild(anchor);
+    const open = document.createElement('button');
+    open.textContent = WORDS.ui.open;
+    open.disabled = !entry.is_healthy;
+    open.onclick = () => window.open(payload.url || '#', '_blank', 'noopener');
+    row.appendChild(open);
     card.appendChild(row);
   }
   return card;
@@ -620,7 +624,8 @@ function ensureAiStaged(state) {
     targets[account] = !!(state.ai_targets || {})[account];
     if (targets[account]) hasAny = true;
   }
-  if (!hasAny && state.ai_connect_account &&
+  const isVirgin = Object.keys(state.ai_targets || {}).length === 0;
+  if (!hasAny && isVirgin && state.ai_connect_account &&
       targets[state.ai_connect_account] !== undefined) {
     targets[state.ai_connect_account] = true;
   }
@@ -645,8 +650,29 @@ function drawAiPanel(state, entries, title) {
   const isDirty = isAiDirty(state);
   const card = panelCard(title, isDirty);
   const payload = entry.payload || {};
-  card.appendChild(entryRow(entry, payload.endpoint || '', ''));
+  const head = entryRow(entry, payload.endpoint || '', '');
+  const config = document.createElement('button');
+  config.className = 'ghost';
+  config.textContent = WORDS.ui.config;
+  config.disabled = !entry.is_healthy;
+  config.onclick = () => openConfigDialog(payload.models || []);
+  const apply = document.createElement('button');
+  apply.textContent = WORDS.ui.apply;
+  apply.disabled = !isDirty || !entry.is_healthy;
+  apply.onclick = () => {
+    serviceAction('ai', {
+      targets: aiStaged.targets,
+      tool_configs: aiStaged.tool_configs,
+    }, 'ai').then((ok) => { if (ok) { aiStaged = null; redraw(); } });
+  };
+  head.appendChild(config);
+  head.appendChild(apply);
+  card.appendChild(head);
 
+  const chipsHead = document.createElement('div');
+  chipsHead.className = 'subhead';
+  chipsHead.textContent = WORDS.ui.enabled_users;
+  card.appendChild(chipsHead);
   const chips = document.createElement('div');
   chips.className = 'chips';
   const notes = [];
@@ -657,9 +683,9 @@ function drawAiPanel(state, entries, title) {
     const chip = document.createElement('button');
     chip.className = isOn ? 'chip on' : 'chip';
     chip.disabled = isBusy || !entry.is_healthy;
-    chip.innerHTML = '<span class="dot ' +
-      (isBusy ? 'bad' : row.is_active ? 'ok' : 'off') + '"></span>' + account +
-      (isBusy ? '…' : '');
+    chip.innerHTML = (isBusy ? '<span class="spin"></span>'
+      : '<span class="dot ' + (row.is_active ? 'ok' : 'off') + '"></span>') +
+      account + (isBusy ? '…' : '');
     chip.onclick = () => {
       aiStaged.targets[account] = !isOn;
       redraw();
@@ -680,25 +706,6 @@ function drawAiPanel(state, entries, title) {
     card.appendChild(note);
   }
 
-  const actions = document.createElement('div');
-  actions.className = 'row';
-  const config = document.createElement('button');
-  config.className = 'ghost';
-  config.textContent = WORDS.ui.config;
-  config.disabled = !entry.is_healthy;
-  config.onclick = () => openConfigDialog(payload.models || []);
-  const apply = document.createElement('button');
-  apply.textContent = WORDS.ui.apply;
-  apply.disabled = !isDirty || !entry.is_healthy;
-  apply.onclick = () => {
-    serviceAction('ai', {
-      targets: aiStaged.targets,
-      tool_configs: aiStaged.tool_configs,
-    }, 'ai').then((ok) => { if (ok) { aiStaged = null; redraw(); } });
-  };
-  actions.appendChild(config);
-  actions.appendChild(apply);
-  card.appendChild(actions);
   return card;
 }
 
@@ -853,22 +860,24 @@ function drawFilesPanel(state, entries, title) {
     };
     row.appendChild(config);
 
-    const mount = document.createElement('button');
-    mount.textContent = WORDS.ui.mount;
-    mount.disabled = !entry.is_healthy || !staged || !staged.is_open ||
-      !staged.path;
-    mount.onclick = async () => {
-      const sent = {
-        action: 'mount', id: entry.id, username: staged.username,
-        password: staged.password, path: staged.path,
+    if (records.length === 0) {
+      const mount = document.createElement('button');
+      mount.textContent = WORDS.ui.mount;
+      mount.disabled = !entry.is_healthy || !staged || !staged.is_open ||
+        !staged.path;
+      mount.onclick = async () => {
+        const sent = {
+          action: 'mount', id: entry.id, username: staged.username,
+          password: staged.password, path: staged.path,
+        };
+        staged.password = '';
+        if (await serviceAction('file', sent, noteKey)) {
+          delete fileStaged[entry.id];
+          redraw();
+        }
       };
-      staged.password = '';
-      if (await serviceAction('file', sent, noteKey)) {
-        delete fileStaged[entry.id];
-        redraw();
-      }
-    };
-    row.appendChild(mount);
+      row.appendChild(mount);
+    }
     card.appendChild(row);
 
     for (const record of records)
@@ -885,7 +894,8 @@ function drawMountRecord(record, state, noteKey) {
   const BUSY = { queued: WORDS.ui.mount_queued,
     installing_tooling: WORDS.ui.mount_installing_tooling,
     mounting: WORDS.ui.mount_mounting, pending: WORDS.ui.mount_pending };
-  const busyWord = BUSY[record.state];
+  const askedStep = fileAsked[record.record_id];
+  const busyWord = askedStep ? WORDS.ui.unmounting : BUSY[record.state];
   const status = busyWord ? busyWord
     : record.code ? wordCode(record.code, record.params)
     : record.is_attached ? '' : WORDS.ui.not_attached;
@@ -895,15 +905,28 @@ function drawMountRecord(record, state, noteKey) {
   line.innerHTML = marker +
     '<span class="path">' + record.path + ' · ' + record.account +
     (status ? ' — ' + status : '') + '</span>';
+  // One button position: a transient greys it and says so; a settled
+  // record offers the one thing a person may do to it.
   const button = document.createElement('button');
+  if (busyWord) {
+    button.textContent = busyWord;
+    button.disabled = true;
+    line.appendChild(button);
+    return line;
+  }
   button.className = 'danger';
   button.textContent = WORDS.ui.unmount;
   const mayAct = state.caller.is_privileged ||
     record.account === state.caller.account;
   button.disabled = !mayAct;
   button.title = mayAct ? '' : WORDS.ui.privileged_only;
-  button.onclick = () => serviceAction('file',
-    { action: 'unmount', record_id: record.record_id }, noteKey);
+  button.onclick = () => {
+    fileAsked[record.record_id] = 'unmounting';
+    redraw();
+    serviceAction('file',
+      { action: 'unmount', record_id: record.record_id }, noteKey
+    ).then(() => { delete fileAsked[record.record_id]; redraw(); });
+  };
   line.appendChild(button);
   return line;
 }
