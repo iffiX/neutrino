@@ -1,7 +1,9 @@
 """Reconciling the platform's own SSH server.
 
-Never switched off from here: taking SSH off a machine the hub reaches over
-SSH is a door locked from the inside.
+A platform capability the machine already carries, so its two states are
+enabled and disabled — the server binary is a package dependency on Linux
+and built into macOS and Windows, and nothing is ever downloaded or removed.
+Disabling is allowed: the agent channel is the management path, not SSH.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -12,14 +14,14 @@ from neutrino_agent.modules.base import ModuleReconciler, clean_status
 
 
 class OpensshModuleReconciler(ModuleReconciler):
-    """Switches the platform's SSH server on and reports its state."""
+    """Switches the platform's SSH server on and off and reports its state."""
 
     kind = "openssh"
 
     def reconcile(
         self, *, name: str, manifest: dict, entry: dict, wanted: "dict | None"
     ) -> dict:
-        """Switch the SSH server on when asked, or just report it.
+        """Bring the SSH server to its desired state, or just report it.
 
         Args:
             name: The module name.
@@ -32,10 +34,12 @@ class OpensshModuleReconciler(ModuleReconciler):
         """
         is_enabled = None if wanted is None else bool(wanted.get("is_enabled"))
         is_running = self._platform.read_openssh_status(entry)
-        if not is_enabled:
-            return clean_status("installed" if is_running else "absent")
-        if is_running:
-            return clean_status("installed")
-        self._log("enabling the SSH server")
-        self._platform.enable_openssh(entry)
-        return clean_status("installed")
+        if is_enabled is None or is_enabled == is_running:
+            return clean_status("enabled" if is_running else "disabled")
+        if is_enabled:
+            self._log("enabling the SSH server")
+            self._platform.enable_openssh(entry)
+            return clean_status("enabled")
+        self._log("disabling the SSH server")
+        self._platform.disable_openssh(entry)
+        return clean_status("disabled")

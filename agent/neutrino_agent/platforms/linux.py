@@ -410,29 +410,31 @@ class LinuxPlatform(AgentPlatform):
         installers.uninstall_package(command)
 
     def enable_openssh(self, entry: dict) -> None:
-        """Install the distribution's SSH server and start it.
+        """Enable and start the SSH server's unit.
+
+        The server binary is one of the agent package's own dependencies, so
+        nothing is downloaded here.
 
         Args:
-            entry: The manifest's platform entry, naming the packages and
-                the service.
+            entry: The manifest's platform entry, naming the service.
 
         Raises:
-            InstallError: If the distribution's tooling refuses.
+            InstallError: If systemd refuses.
         """
-        packages = entry.get("packages", ["openssh-server"])
-        if shutil.which("apt-get"):
-            installers.run_checked(
-                ["apt-get", "install", "-y"] + packages,
-                timeout_s=installers.INSTALL_TIMEOUT_S,
-            )
-        else:
-            manager = "dnf" if shutil.which("dnf") else "yum"
-            installers.run_checked(
-                [manager, "install", "-y"] + packages,
-                timeout_s=installers.INSTALL_TIMEOUT_S,
-            )
         service = entry.get("service", "ssh")
         installers.run_checked(["systemctl", "enable", "--now", service])
+
+    def disable_openssh(self, entry: dict) -> None:
+        """Disable and stop the SSH server's unit.
+
+        Args:
+            entry: The manifest's platform entry, naming the service.
+
+        Raises:
+            InstallError: If systemd refuses.
+        """
+        service = entry.get("service", "ssh")
+        installers.run_checked(["systemctl", "disable", "--now", service])
 
     def read_openssh_status(self, entry: dict) -> bool:
         """Whether the SSH server is installed and running.

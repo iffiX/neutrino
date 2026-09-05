@@ -448,7 +448,18 @@ class AgentPlatform:
         raise PlatformUnsupportedError("cannot remove packages here")
 
     def enable_openssh(self, entry: dict) -> None:
-        """Install and start the platform's own SSH server.
+        """Switch the platform's own SSH server on.
+
+        Args:
+            entry: The manifest's platform entry.
+
+        Raises:
+            PlatformUnsupportedError: When the platform has no SSH story.
+        """
+        raise PlatformUnsupportedError("no SSH server story here")
+
+    def disable_openssh(self, entry: dict) -> None:
+        """Switch the platform's own SSH server off.
 
         Args:
             entry: The manifest's platform entry.

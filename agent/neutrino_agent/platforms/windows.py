@@ -151,6 +151,29 @@ class WindowsPlatform(AgentPlatform):
             timeout_s=installers.INSTALL_TIMEOUT_S,
         )
 
+    def disable_openssh(self, entry: dict) -> None:
+        """Stop ``sshd`` and keep it from starting again.
+
+        The capability stays installed; disabled means the service does not
+        run.
+
+        Args:
+            entry: The manifest's platform entry.
+
+        Raises:
+            InstallError: If PowerShell refuses.
+        """
+        installers.run_checked(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                "Stop-Service sshd -ErrorAction SilentlyContinue; "
+                "Set-Service -Name sshd -StartupType Disabled",
+            ],
+            timeout_s=installers.INSTALL_TIMEOUT_S,
+        )
+
     def read_openssh_status(self, entry: dict) -> bool:
         """Whether ``sshd`` is installed and running.
 

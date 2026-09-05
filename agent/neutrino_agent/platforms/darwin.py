@@ -190,6 +190,17 @@ class DarwinPlatform(AgentPlatform):
         """
         installers.run_checked(["systemsetup", "-setremotelogin", "on"])
 
+    def disable_openssh(self, entry: dict) -> None:
+        """Switch remote login off.
+
+        Args:
+            entry: The manifest's platform entry.
+
+        Raises:
+            InstallError: If ``systemsetup`` refuses.
+        """
+        installers.run_checked(["systemsetup", "-f", "-setremotelogin", "off"])
+
     def read_openssh_status(self, entry: dict) -> bool:
         """Whether remote login is on.
 
