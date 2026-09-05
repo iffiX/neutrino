@@ -2,9 +2,9 @@
 
 A declared service runs on a machine the hub does not manage, so the only
 thing the hub can say about it is what a connection says: a TCP connect for
-``samba`` and ``generic_tcp``, Docker's own ``/_ping`` for ``docker_engine``,
-and a GET for ``http`` — where any answer below 500 is a service that is up,
-because a 401 comes from something alive enough to refuse.
+``samba`` and ``generic_tcp``, and a GET for ``http`` — where any answer
+below 500 is a service that is up, because a 401 comes from something alive
+enough to refuse.
 
 Results are cached for a short while and never written to disk: health is
 what the service is doing now, and a stored answer would only ever be stale.
@@ -20,11 +20,9 @@ import httpx
 
 from neutrino_hub.modules.services.config import DeclaredService
 from neutrino_hub.modules.services.constants import (
-    SERVICES_KIND_DOCKER_ENGINE,
     SERVICES_KIND_HTTP,
     SERVICES_PROBE_CACHE_TTL_S,
     SERVICES_PROBE_CONNECT_FAILED,
-    SERVICES_PROBE_PING_REJECTED,
     SERVICES_PROBE_SERVER_ERROR,
     SERVICES_PROBE_TIMEOUT_S,
     SERVICES_PROBE_WORKER_LIMIT,
@@ -136,8 +134,6 @@ class DeclaredServiceProbe:
     def _measure(self, service: DeclaredService) -> DeclaredServiceHealth:
         if service.kind == SERVICES_KIND_HTTP:
             detail_code = self._http_detail(service)
-        elif service.kind == SERVICES_KIND_DOCKER_ENGINE:
-            detail_code = self._docker_detail(service)
         else:
             detail_code = self._tcp_detail(service)
         return DeclaredServiceHealth(
@@ -155,18 +151,6 @@ class DeclaredServiceProbe:
                 return None
         except OSError:
             return SERVICES_PROBE_CONNECT_FAILED
-
-    def _docker_detail(self, service: DeclaredService) -> str | None:
-        try:
-            response = httpx.get(
-                f"http://{service.host}:{service.port}/_ping",
-                timeout=self._timeout_s,
-            )
-        except httpx.HTTPError:
-            return SERVICES_PROBE_CONNECT_FAILED
-        if response.status_code == 200 and response.text.strip() == "OK":
-            return None
-        return SERVICES_PROBE_PING_REJECTED
 
     def _http_detail(self, service: DeclaredService) -> str | None:
         url = f"{service.scheme}://{service.host}:{service.port}{service.path or '/'}"

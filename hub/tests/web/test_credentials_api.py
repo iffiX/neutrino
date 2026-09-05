@@ -16,7 +16,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from neutrino_hub.modules.credentials.vault import SecretVault, VaultLockedError
-from neutrino_hub.modules.services.config import DeclaredServiceRegistry, DeclaredShare
 from neutrino_hub.web.app import _vault_locked
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import credentials as credentials_router
@@ -130,7 +129,6 @@ def test_login_roundtrip(client):
     assert view["name"] == "lab machines"
     assert view["username"] is None
     assert view["device_count"] == 0
-    assert view["service_count"] == 0
     assert "password" not in view
 
     listed = client.get("/api/credentials/logins").json()["logins"]
@@ -178,27 +176,10 @@ def test_login_refusals(client):
     assert refused.json()["detail"]["code"] == "unknown_login"
 
 
-def declare_samba_share(login_id: str) -> None:
-    """Store one declared Samba service whose share names the login."""
-    DeclaredServiceRegistry().add(
-        name="nas",
-        kind="samba",
-        host="192.168.100.7",
-        port=None,
-        shares=[DeclaredShare(name="media", login_id=login_id)],
-    )
-
-
 def read_device_ssh(tmp_path) -> dict:
     """Read the stored test device's SSH block back off disk."""
     data = json.loads((tmp_path / "devices" / "devices.json").read_text())
     return data["devices"]["aa:bb:cc:dd:ee:ff"]["ssh"]
-
-
-def read_shares(tmp_path) -> list:
-    """Read the declared Samba service's shares back off disk."""
-    data = json.loads((tmp_path / "services" / "declared.json").read_text())
-    return data["services"][0]["shares"]
 
 
 def test_deleting_a_login_clears_its_references(client, tmp_path):
@@ -208,22 +189,19 @@ def test_deleting_a_login_clears_its_references(client, tmp_path):
     )
     login_id = created.json()["id"]
     write_device(tmp_path, {"password_id": login_id, "sudo_password_id": login_id})
-    declare_samba_share(login_id)
 
     listed = client.get("/api/credentials/logins").json()["logins"]
     assert listed[0]["device_count"] == 1
-    assert listed[0]["service_count"] == 1
 
     response = client.delete(f"/api/credentials/logins/{login_id}")
     assert response.status_code == 200
-    assert response.json() == {"cleared": {"device_count": 1, "service_count": 1}}
+    assert response.json() == {"cleared": {"device_count": 1}}
 
     ssh = read_device_ssh(tmp_path)
     assert ssh["password_id"] is None
     assert ssh["sudo_password_id"] is None
     assert ssh["host"] == "192.168.100.2"
     assert ssh["username"] == "root"
-    assert read_shares(tmp_path) == [{"name": "media", "login_id": None}]
     assert client.get("/api/credentials/logins").json() == {"logins": []}
 
 
@@ -237,14 +215,12 @@ def test_deleting_an_unreferenced_login_touches_nothing(client, tmp_path):
         json={"name": "spare", "password": STORED_PASSWORD},
     ).json()
     write_device(tmp_path, {"password_id": kept["id"]})
-    declare_samba_share(kept["id"])
 
     response = client.delete(f"/api/credentials/logins/{spare['id']}")
 
     assert response.status_code == 200
-    assert response.json() == {"cleared": {"device_count": 0, "service_count": 0}}
+    assert response.json() == {"cleared": {"device_count": 0}}
     assert read_device_ssh(tmp_path)["password_id"] == kept["id"]
-    assert read_shares(tmp_path) == [{"name": "media", "login_id": kept["id"]}]
 
 
 def test_a_login_of_another_kind_is_not_addressable(client):

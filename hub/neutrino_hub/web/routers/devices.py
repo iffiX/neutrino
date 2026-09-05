@@ -19,10 +19,10 @@ from neutrino_hub.modules.devices.constants import DEVICE_MAC_PATTERN
 from neutrino_hub.modules.devices.registry import (
     DeviceRegistry,
     ManagedDevice,
-    function_wish,
+    module_wish,
 )
 from neutrino_hub.modules.credentials.vault import SecretVault
-from neutrino_hub.modules.functions.manifests import load_function_manifests
+from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
 from neutrino_hub.modules.devices.lan_scan import LanScanner
 from neutrino_hub.modules.devices.remote_desktop import (
@@ -50,9 +50,9 @@ from neutrino_hub.web.models import (
     DeviceProcessView,
     DeviceEnrollmentRequest,
     DeviceEnrollmentView,
-    DeviceFunctionListView,
-    DeviceFunctionUpdate,
-    DeviceFunctionView,
+    DeviceModuleListView,
+    DeviceModuleUpdate,
+    DeviceModuleView,
     DeviceProcessKill,
     DeviceSshConfig,
     DeviceView,
@@ -423,34 +423,34 @@ def _generate_enrollment_link(
     return f"neutrino://enroll/{payload}", token
 
 
-@router.get("/{mac_address}/functions", response_model=DeviceFunctionListView)
-def list_functions(
+@router.get("/{mac_address}/modules", response_model=DeviceModuleListView)
+def list_modules(
     mac_address: str, runtime: PanelRuntime = Depends(get_runtime)
-) -> DeviceFunctionListView:
-    """Read every function a device could run, and where each stands.
+) -> DeviceModuleListView:
+    """Read every module a device could run, and where each stands.
 
     Args:
         mac_address: The device.
         runtime: The shared runtime, for what the agent last reported.
 
     Returns:
-        The functions, unsupported ones included so the panel can say why.
+        The modules, unsupported ones included so the panel can say why.
     """
     device = DeviceRegistry().get(mac_address)
     # Lowercased, as everything else that keys by MAC is: the registry
     # normalises on the way in, and looking the runtime up by the raw path
     # segment finds nothing for a caller that used capitals.
     key = mac_address.lower()
-    reported = runtime.client_functions.get(key, {})
+    reported = runtime.client_modules.get(key, {})
     platform = runtime.client_platform.get(key, {})
     keys = _platform_keys(platform)
-    functions = []
-    for name, manifest in sorted(load_function_manifests().items()):
+    modules = []
+    for name, manifest in sorted(load_module_manifests().items()):
         status_ = reported.get(name, {})
         platforms = manifest.get("platforms", {})
-        wanted = function_wish(device.client.functions.get(name))
-        functions.append(
-            DeviceFunctionView(
+        wanted = module_wish(device.client.modules.get(name))
+        modules.append(
+            DeviceModuleView(
                 name=name,
                 title=manifest.get("title", name),
                 description=manifest.get("description", ""),
@@ -458,7 +458,7 @@ def list_functions(
                 # agent will say what it cannot do once it beats.
                 is_supported=(any(key in platforms for key in keys) if keys else True),
                 is_enabled=wanted["is_enabled"],
-                is_removable=manifest.get("is_removable", True),
+                is_builtin=manifest.get("is_builtin", False),
                 has_activation=manifest.get("has_activation", False),
                 is_activated=wanted["is_activated"],
                 is_active=bool(status_.get("is_active")),
@@ -467,23 +467,21 @@ def list_functions(
                 params=dict(status_.get("params") or {}),
             )
         )
-    return DeviceFunctionListView(
-        functions=functions,
+    return DeviceModuleListView(
+        modules=modules,
         is_agent_managed=device.is_managed,
         is_agent_online=device.is_agent_online,
     )
 
 
-@router.put(
-    "/{mac_address}/functions/{function}", response_model=DeviceFunctionListView
-)
-def set_function(
+@router.put("/{mac_address}/modules/{module}", response_model=DeviceModuleListView)
+def set_module(
     mac_address: str,
-    function: str,
-    request: DeviceFunctionUpdate,
+    module: str,
+    request: DeviceModuleUpdate,
     runtime: PanelRuntime = Depends(get_runtime),
-) -> DeviceFunctionListView:
-    """Change what is wanted of one function on a device.
+) -> DeviceModuleListView:
+    """Change what is wanted of one module on a device.
 
     Installing and activating are separate wishes and either can be sent on
     its own. The agent picks the change up on its next heartbeat and
@@ -491,27 +489,27 @@ def set_function(
 
     Args:
         mac_address: The device.
-        function: The function name.
+        module: The module name.
         request: The wishes to change; absent ones are left alone.
         runtime: The shared runtime.
 
     Returns:
-        The functions after the change.
+        The modules after the change.
 
     Raises:
-        HTTPException: 404 for a function with no manifest.
+        HTTPException: 404 for a module with no manifest.
     """
-    if function not in load_function_manifests():
+    if module not in load_module_manifests():
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="unknown function"
+            status_code=status.HTTP_404_NOT_FOUND, detail="unknown module"
         )
-    DeviceRegistry().set_function(
+    DeviceRegistry().set_module(
         mac_address,
-        function,
+        module,
         is_enabled=request.is_enabled,
         is_activated=request.is_activated,
     )
-    return list_functions(mac_address, runtime)
+    return list_modules(mac_address, runtime)
 
 
 def _require_mac(mac_address: str) -> None:

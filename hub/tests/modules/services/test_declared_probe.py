@@ -48,15 +48,11 @@ def tcp_listener():
         server.close()
 
 
-class _PingHandler(BaseHTTPRequestHandler):
-    """Answers /_ping the way a Docker engine does, and /down the way a
-    broken server does."""
+class _PageHandler(BaseHTTPRequestHandler):
+    """Answers /down the way a broken server does, /locked with a refusal."""
 
     def do_GET(self):
-        if self.path == "/_ping":
-            body = b"OK"
-            self.send_response(200)
-        elif self.path == "/down":
+        if self.path == "/down":
             body = b"no"
             self.send_response(503)
         elif self.path == "/locked":
@@ -75,33 +71,7 @@ class _PingHandler(BaseHTTPRequestHandler):
 
 @pytest.fixture()
 def http_listener():
-    server = HTTPServer(("127.0.0.1", 0), _PingHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield server.server_address[1]
-    finally:
-        server.shutdown()
-        server.server_close()
-
-
-class _PlainHandler(BaseHTTPRequestHandler):
-    """Answers everything, /_ping included, with a page that is not "OK"."""
-
-    def do_GET(self):
-        body = b"hello"
-        self.send_response(200)
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, format, *arguments):
-        return
-
-
-@pytest.fixture()
-def plain_http_listener():
-    server = HTTPServer(("127.0.0.1", 0), _PlainHandler)
+    server = HTTPServer(("127.0.0.1", 0), _PageHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -132,22 +102,6 @@ def test_a_closed_port_reads_connect_failed():
     )
     assert result.is_healthy is False
     assert result.detail_code == "connect_failed"
-
-
-def test_a_docker_engine_is_one_whose_ping_answers_ok(http_listener):
-    result = DeclaredServiceProbe(timeout_s=PROBE_TIMEOUT_S).probe(
-        declared("docker_engine", http_listener)
-    )
-    assert result.is_healthy is True
-
-
-def test_an_http_server_that_is_not_docker_reads_ping_rejected(plain_http_listener):
-    """The port answers, so `connect_failed` would be the wrong story."""
-    result = DeclaredServiceProbe(timeout_s=PROBE_TIMEOUT_S).probe(
-        declared("docker_engine", plain_http_listener)
-    )
-    assert result.is_healthy is False
-    assert result.detail_code == "ping_rejected"
 
 
 def test_an_http_answer_below_500_reads_healthy(http_listener):

@@ -16,6 +16,7 @@ from neutrino_hub.modules.services.config import (
     DeclaredShare,
 )
 from neutrino_hub.modules.services.constants import SERVICES_DECLARED_PATH
+from neutrino_hub.utils.json_file import write_config
 
 
 @pytest.fixture()
@@ -38,10 +39,8 @@ def test_samba_round_trips_with_its_shares_and_default_port(config_dir):
         name="nas",
         kind="samba",
         host="192.168.100.7",
-        shares=[
-            DeclaredShare(name="media"),
-            DeclaredShare(name="backup", login_id="a" * 32),
-        ],
+        shares=[DeclaredShare(name="media"), DeclaredShare(name="backup")],
+        description="the office NAS",
     )
     assert record.port == 445
 
@@ -49,8 +48,7 @@ def test_samba_round_trips_with_its_shares_and_default_port(config_dir):
     assert stored is not None
     assert stored.kind == "samba"
     assert [share.name for share in stored.shares] == ["media", "backup"]
-    assert stored.shares[0].login_id is None
-    assert stored.shares[1].login_id == "a" * 32
+    assert stored.description == "the office NAS"
 
 
 def test_http_round_trips_with_scheme_and_path(config_dir):
@@ -69,24 +67,50 @@ def test_http_defaults_to_plain_scheme_and_the_root_path(config_dir):
     assert (record.scheme, record.path) == ("http", "/")
 
 
-@pytest.mark.parametrize("kind", ["docker_engine", "generic_tcp"])
-def test_the_plain_tcp_kinds_round_trip(config_dir, kind):
+def test_the_plain_tcp_kind_round_trips(config_dir):
     record = DeclaredServiceRegistry().add(
-        name="engine", kind=kind, host="10.0.0.5", port=2375
+        name="forge", kind="generic_tcp", host="10.0.0.5", port=9000
     )
     stored = DeclaredServiceRegistry().get(record.id)
     assert stored is not None
-    assert (stored.kind, stored.host, stored.port) == (kind, "10.0.0.5", 2375)
+    assert (stored.kind, stored.host, stored.port) == ("generic_tcp", "10.0.0.5", 9000)
+
+
+def test_a_stored_docker_engine_record_is_dropped_on_read(config_dir):
+    """The retired kind: the loader drops it structurally, and the next write
+    heals the file."""
+    write_config(
+        SERVICES_DECLARED_PATH,
+        {
+            "services": [
+                {"id": "d1", "kind": "docker_engine", "host": "10.0.0.5", "port": 2375},
+                {
+                    "id": "t1",
+                    "name": "forge",
+                    "kind": "generic_tcp",
+                    "host": "h",
+                    "port": 1,
+                },
+            ]
+        },
+    )
+
+    registry = DeclaredServiceRegistry()
+    assert [record.id for record in registry.list_records()] == ["t1"]
+
+    registry.add(name="wiki", kind="http", host="wiki.lan", port=80)
+    kinds = {entry["kind"] for entry in _stored(config_dir)["services"]}
+    assert "docker_engine" not in kinds
 
 
 def test_the_stored_entry_carries_only_the_fields_its_kind_has(config_dir):
     registry = DeclaredServiceRegistry()
-    registry.add(name="engine", kind="docker_engine", host="10.0.0.5", port=2375)
+    registry.add(name="forge", kind="generic_tcp", host="10.0.0.5", port=9000)
     registry.add(name="wiki", kind="http", host="wiki.lan", port=80)
 
     entries = {entry["kind"]: entry for entry in _stored(config_dir)["services"]}
-    assert "shares" not in entries["docker_engine"]
-    assert "scheme" not in entries["docker_engine"]
+    assert "shares" not in entries["generic_tcp"]
+    assert "scheme" not in entries["generic_tcp"]
     assert "shares" not in entries["http"]
     assert entries["http"]["scheme"] == "http"
 
@@ -99,20 +123,6 @@ def test_every_id_is_a_fresh_uuid_hex(config_dir):
     assert len(first.id) == 32 and all(c in "0123456789abcdef" for c in first.id)
 
 
-def test_replace_keeps_the_id_and_the_declaration_time(config_dir):
-    registry = DeclaredServiceRegistry()
-    record = registry.add(name="engine", kind="docker_engine", host="old", port=2375)
-
-    replaced = DeclaredServiceRegistry().replace(
-        record.id, name="engine", kind="docker_engine", host="new", port=2376
-    )
-
-    assert replaced.id == record.id
-    assert replaced.created_at == record.created_at
-    stored = DeclaredServiceRegistry().get(record.id)
-    assert stored is not None and (stored.host, stored.port) == ("new", 2376)
-
-
 def test_delete_removes_the_record(config_dir):
     registry = DeclaredServiceRegistry()
     record = registry.add(name="a", kind="generic_tcp", host="h", port=1)
@@ -120,19 +130,15 @@ def test_delete_removes_the_record(config_dir):
     assert DeclaredServiceRegistry().list_records() == []
 
 
-@pytest.mark.parametrize("action", ["replace", "delete"])
-def test_an_unknown_id_raises_key_error(config_dir, action):
-    registry = DeclaredServiceRegistry()
+def test_an_unknown_id_raises_key_error(config_dir):
     with pytest.raises(KeyError):
-        if action == "delete":
-            registry.delete("missing")
-        else:
-            registry.replace("missing", name="a", kind="generic_tcp", host="h", port=1)
+        DeclaredServiceRegistry().delete("missing")
 
 
 @pytest.mark.parametrize(
     "fields, refused",
     [
+        ({"kind": "docker_engine"}, "kind"),
         ({"kind": "ai_endpoint"}, "kind"),
         ({"name": "  "}, "name"),
         ({"host": ""}, "host"),
@@ -159,12 +165,15 @@ def test_a_bad_scheme_and_a_relative_path_are_refused(config_dir):
     assert caught.value.params == {"field": "path"}
 
 
-def test_a_blank_or_duplicate_share_name_is_refused(config_dir):
+def test_a_blank_missing_or_duplicate_share_name_is_refused(config_dir):
     registry = DeclaredServiceRegistry()
     with pytest.raises(DeclaredServiceError) as caught:
         registry.add(
             name="nas", kind="samba", host="h", shares=[DeclaredShare(name=" ")]
         )
+    assert caught.value.params == {"field": "shares"}
+    with pytest.raises(DeclaredServiceError) as caught:
+        registry.add(name="nas", kind="samba", host="h", shares=[])
     assert caught.value.params == {"field": "shares"}
     with pytest.raises(DeclaredServiceError) as caught:
         registry.add(

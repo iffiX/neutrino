@@ -4,12 +4,10 @@ SERVICES_DECLARED_PATH = "services/declared.json"
 
 SERVICES_KIND_SAMBA = "samba"
 SERVICES_KIND_HTTP = "http"
-SERVICES_KIND_DOCKER_ENGINE = "docker_engine"
 SERVICES_KIND_GENERIC_TCP = "generic_tcp"
 SERVICES_DECLARED_KINDS = (
     SERVICES_KIND_SAMBA,
     SERVICES_KIND_HTTP,
-    SERVICES_KIND_DOCKER_ENGINE,
     SERVICES_KIND_GENERIC_TCP,
 )
 
@@ -29,65 +27,50 @@ SERVICES_PROBE_WORKER_LIMIT = 8
 
 # Why the last probe called a service unhealthy; None on a healthy one.
 SERVICES_PROBE_CONNECT_FAILED = "connect_failed"
-SERVICES_PROBE_PING_REJECTED = "ping_rejected"
 SERVICES_PROBE_SERVER_ERROR = "server_error"
 
-SERVICES_DOCKER_CACHE_TTL_S = 10.0
-SERVICES_DOCKER_TIMEOUT_S = 2.0
-
-# The container list the hub's own podman contributes is keyed by this
-# rather than by a declared service id.
-SERVICES_DOCKER_PODMAN_SOURCE = "hub_podman"
-
-# What a container start or stop answers with when it fails.
-SERVICES_ERROR_DOCKER_UNREACHABLE = "docker_engine_unreachable"
-SERVICES_ERROR_DOCKER_REFUSED = "docker_action_refused"
-
-# Offer kinds, the services half of the device catalog.
-SERVICES_OFFER_KIND_MOUNT = "mount"
-SERVICES_OFFER_KIND_LINK = "link"
-SERVICES_OFFER_KIND_PORT = "port"
-SERVICES_OFFER_KIND_AI = "ai"
-
-SERVICES_OFFER_AI_ID = "ai"
-SERVICES_OFFER_AI_TITLE = "AI tools"
-SERVICES_OFFER_AI_DESCRIPTION = (
-    "cc-switch, with this hub as a provider for Claude Code, Codex and Gemini"
+# The typed service list: four types, closed until a fifth earns its place.
+SERVICES_TYPE_WEB = "web"
+SERVICES_TYPE_PORT = "port"
+SERVICES_TYPE_AI = "ai"
+SERVICES_TYPE_FILE = "file"
+SERVICES_TYPES = (
+    SERVICES_TYPE_WEB,
+    SERVICES_TYPE_PORT,
+    SERVICES_TYPE_AI,
+    SERVICES_TYPE_FILE,
 )
-# How each platform obtains cc-switch, the tool the AI service switches
-# accounts with. The CLI shares its store with the desktop app; assets are
-# published for x86_64 and aarch64 only.
-SERVICES_OFFER_AI_PLATFORMS = {
-    "linux-amd64": {
-        "switcher": {
-            "github_repo": "SaladDay/cc-switch-cli",
-            "asset_pattern": "linux-x64.tar.gz",
-            "package_kind": "tar_binary",
-            "binary": "cc-switch",
-        }
-    },
-    "linux-arm64": {
-        "switcher": {
-            "github_repo": "SaladDay/cc-switch-cli",
-            "asset_pattern": "linux-arm64.tar.gz",
-            "package_kind": "tar_binary",
-            "binary": "cc-switch",
-        }
-    },
-    "darwin": {
-        "switcher": {
-            "github_repo": "SaladDay/cc-switch-cli",
-            "asset_pattern": "darwin-universal.tar.gz",
-            "package_kind": "tar_binary",
-            "binary": "cc-switch",
-        }
-    },
-    "windows-amd64": {
-        "switcher": {
-            "github_repo": "SaladDay/cc-switch-cli",
-            "asset_pattern": "windows-x64.zip",
-            "package_kind": "zip_binary",
-            "binary": "cc-switch.exe",
-        }
-    },
+
+# The stored kind each declarable type maps to; the ai type is never declared
+# by hand.
+SERVICES_TYPE_TO_KIND = {
+    SERVICES_TYPE_WEB: SERVICES_KIND_HTTP,
+    SERVICES_TYPE_PORT: SERVICES_KIND_GENERIC_TCP,
+    SERVICES_TYPE_FILE: SERVICES_KIND_SAMBA,
 }
+SERVICES_KIND_TO_TYPE = {kind: type_ for type_, kind in SERVICES_TYPE_TO_KIND.items()}
+
+# Where an entry comes from: a hub module, or a person's declaration.
+SERVICES_SOURCE_MODULE = "module"
+SERVICES_SOURCE_DECLARED = "declared"
+
+# Hosts that always mean the hub itself, beside the addresses it holds.
+SERVICES_HUB_SELF_HOSTS = ("127.0.0.1", "0.0.0.0", "::1", "localhost")
+
+SERVICES_FILE_PROTOCOL = "smb"
+SERVICES_AI_PROTOCOL = "openai"
+
+SERVICES_LIST_TTL_S = 10.0
+SERVICES_ANSWER_TIMEOUT_S = 2.0
+
+# The provenance line each module-declared entry carries. A description is
+# data the declarer words, so these live beside the entries they describe.
+SERVICES_GITEA_DESCRIPTION = "published by the gitea module"
+SERVICES_SAMBA_DESCRIPTION = "published by the samba module"
+SERVICES_AI_DESCRIPTION = "published by the AI gateway"
+SERVICES_PODMAN_DESCRIPTION = "published by container {name} ({image})"
+
+SERVICES_GITEA_TITLE = "Gitea"
+SERVICES_AI_TITLE = "AI gateway"
+SERVICES_AI_ID = "ai"
+SERVICES_GITEA_ID = "gitea"

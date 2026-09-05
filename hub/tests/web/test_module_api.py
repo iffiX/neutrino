@@ -1,4 +1,4 @@
-"""The Services tab's API, with systemd replaced by a recorder.
+"""The Modules tab's API, with systemd replaced by a recorder.
 
 The rule under test is the one that keeps the box reachable: a core unit can be
 started and restarted but never stopped or disabled. The panel hides those
@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from neutrino_hub.system.systemd_ctl import ServiceStatus
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.web.dependencies import get_runtime, require_session
-from neutrino_hub.web.routers import service_control
+from neutrino_hub.web.routers import modules as modules_router
 
 
 class RecordingServices:
@@ -53,11 +53,6 @@ class RecordingServices:
         self.performed.append((name, action))
 
 
-class StubDockerCache:
-    def results(self, services):
-        return {}
-
-
 class FakeRuntime:
     def __init__(self, services: RecordingServices):
         self.services = services
@@ -66,20 +61,14 @@ class FakeRuntime:
         from neutrino_hub.web.task_stream import TaskStreamRegistry
 
         self.tasks = TaskStreamRegistry()
-        # The real probe too: with nothing declared it opens no socket.
-        from neutrino_hub.modules.services.probe import DeclaredServiceProbe
-
-        self.declared_probe = DeclaredServiceProbe()
-        self.docker_containers = StubDockerCache()
 
 
 @pytest.fixture
 def box(monkeypatch, tmp_path):
-    # An empty config dir, so the view reads no declared services.
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
     services = RecordingServices()
     app = FastAPI()
-    app.include_router(service_control.router)
+    app.include_router(modules_router.router)
     app.dependency_overrides[require_session] = lambda: None
     # One runtime for the whole fixture: a fresh one per request would give
     # every call its own task registry, and nothing that spans two requests —
@@ -94,10 +83,10 @@ def test_the_view_says_which_units_are_core(box):
     """Read against the declaration, so moving a module does not move a test."""
     client, services = box
 
-    payload = client.get("/api/services").json()
+    payload = client.get("/api/modules").json()
 
-    listed = {entry["name"] for entry in payload["services"]}
-    core = {entry["name"] for entry in payload["services"] if entry["is_core"]}
+    listed = {entry["name"] for entry in payload["modules"]}
+    core = {entry["name"] for entry in payload["modules"] if entry["is_core"]}
     assert core == listed & set(SYSTEM_CORE_UNITS)
     assert "netbird" in listed and "netbird" not in core
 
@@ -107,7 +96,7 @@ def test_the_view_says_which_units_are_core(box):
 def test_a_core_unit_cannot_be_stopped_or_disabled(box, name, action):
     client, services = box
 
-    response = client.post(f"/api/services/{name}/{action}")
+    response = client.post(f"/api/modules/{name}/{action}")
 
     assert response.status_code == 400
     assert services.performed == [], "systemd was asked anyway"
@@ -118,7 +107,7 @@ def test_a_core_unit_can_still_be_started_and_restarted(box, action):
     """The refusal is about losing the gateway, not about touching it."""
     client, services = box
 
-    response = client.post(f"/api/services/xray/{action}")
+    response = client.post(f"/api/modules/xray/{action}")
 
     assert response.status_code == 200
     assert services.performed == [("xray", action)]
@@ -128,7 +117,7 @@ def test_a_core_unit_can_still_be_started_and_restarted(box, action):
 def test_an_optional_unit_takes_every_action(box, action):
     client, services = box
 
-    response = client.post(f"/api/services/samba/{action}")
+    response = client.post(f"/api/modules/samba/{action}")
 
     assert response.status_code == 200
     assert services.performed == [("samba", action)]
@@ -157,11 +146,11 @@ class FakeProvisioner:
 @pytest.fixture
 def installable_box(box, monkeypatch):
     from neutrino_hub.modules.registry import ModuleSpec
-    from neutrino_hub.web.routers import service_control
+    from neutrino_hub.web.routers import modules as modules_router
 
     FakeProvisioner.performed = []
     monkeypatch.setattr(
-        service_control,
+        modules_router,
         "MODULE_SPECS",
         {
             "gitea": ModuleSpec(
@@ -181,7 +170,7 @@ def installable_box(box, monkeypatch):
         },
     )
     # systemctl enable --now must not reach the real systemd from a test.
-    monkeypatch.setattr(service_control, "run", lambda *a, **k: None)
+    monkeypatch.setattr(modules_router, "run", lambda *a, **k: None)
     return box
 
 
@@ -198,7 +187,7 @@ def drain_task(client, task_id: str) -> list[str]:
 def test_install_streams_and_lands(installable_box):
     client, _ = installable_box
 
-    started = client.post("/api/services/gitea/install").json()
+    started = client.post("/api/modules/gitea/install").json()
 
     assert "task_id" in started
     assert ("provision",) in _wait_performed()
@@ -207,8 +196,8 @@ def test_install_streams_and_lands(installable_box):
 def test_uninstall_carries_the_data_decision(installable_box):
     client, _ = installable_box
 
-    kept = client.post("/api/services/gitea/uninstall", json={"is_data_kept": True})
-    deleted = client.post("/api/services/gitea/uninstall", json={"is_data_kept": False})
+    kept = client.post("/api/modules/gitea/uninstall", json={"is_data_kept": True})
+    deleted = client.post("/api/modules/gitea/uninstall", json={"is_data_kept": False})
 
     assert kept.status_code == 200
     assert deleted.status_code == 200
@@ -221,10 +210,10 @@ def test_a_core_service_cannot_be_installed_or_removed(installable_box):
     """Core is not in the registry, so the answer is 404 rather than a rule."""
     client, _ = installable_box
 
-    assert client.post("/api/services/xray/install").status_code == 404
+    assert client.post("/api/modules/xray/install").status_code == 404
     assert (
         client.post(
-            "/api/services/xray/uninstall", json={"is_data_kept": True}
+            "/api/modules/xray/uninstall", json={"is_data_kept": True}
         ).status_code
         == 404
     )
@@ -233,7 +222,7 @@ def test_a_core_service_cannot_be_installed_or_removed(installable_box):
 def test_an_unsupported_machine_is_refused_before_anything_lands(installable_box):
     client, _ = installable_box
 
-    response = client.post("/api/services/narrow/install")
+    response = client.post("/api/modules/narrow/install")
 
     assert response.status_code == 400
     assert "never-built" in response.json()["detail"]
@@ -259,9 +248,9 @@ def test_netbird_installs_and_uninstalls_from_the_panel(installable_box, monkeyp
     front of it.
     """
     from neutrino_hub.modules.registry import ModuleSpec
-    from neutrino_hub.web.routers import service_control
+    from neutrino_hub.web.routers import modules as modules_router
 
-    service_control.MODULE_SPECS["netbird"] = ModuleSpec(
+    modules_router.MODULE_SPECS["netbird"] = ModuleSpec(
         unit="netbird.service",
         provisioner=FakeProvisioner,
         architectures=("*",),
@@ -270,10 +259,8 @@ def test_netbird_installs_and_uninstalls_from_the_panel(installable_box, monkeyp
     )
     client, _ = installable_box
 
-    installed = client.post("/api/services/netbird/install")
-    removed = client.post(
-        "/api/services/netbird/uninstall", json={"is_data_kept": True}
-    )
+    installed = client.post("/api/modules/netbird/install")
+    removed = client.post("/api/modules/netbird/uninstall", json={"is_data_kept": True})
 
     assert installed.status_code == 200
     assert removed.status_code == 200
@@ -286,7 +273,7 @@ def test_a_module_that_is_not_installed_cannot_be_started(box):
     opened, services = box
     services.installed = False
 
-    response = opened.post("/api/services/samba/action", json={"action": "start"})
+    response = opened.post("/api/modules/samba/action", json={"action": "start"})
 
     assert response.status_code == 400
     assert "not installed" in response.json()["detail"]
@@ -296,8 +283,8 @@ def test_a_journal_longer_than_the_limit_is_refused(box):
     """Unbounded, one call reads an entire unit journal into one response."""
     opened, _ = box
 
-    assert opened.get("/api/services/samba/journal?lines=100000000").status_code == 422
-    assert opened.get("/api/services/samba/journal?lines=-5").status_code == 422
+    assert opened.get("/api/modules/samba/journal?lines=100000000").status_code == 422
+    assert opened.get("/api/modules/samba/journal?lines=-5").status_code == 422
 
 
 def test_a_second_install_joins_the_first(box, monkeypatch):
@@ -306,10 +293,10 @@ def test_a_second_install_joins_the_first(box, monkeypatch):
     the log of whichever started last. Double-clicking Install is all it takes.
     """
     opened, _ = box
-    monkeypatch.setattr(service_control, "_install_source", _never_finishes)
+    monkeypatch.setattr(modules_router, "_install_source", _never_finishes)
 
-    first = opened.post("/api/services/samba/install")
-    second = opened.post("/api/services/samba/install")
+    first = opened.post("/api/modules/samba/install")
+    second = opened.post("/api/modules/samba/install")
 
     assert first.status_code == 200
     assert first.json()["task_id"] == second.json()["task_id"]
@@ -317,10 +304,10 @@ def test_a_second_install_joins_the_first(box, monkeypatch):
 
 def test_installing_another_module_is_its_own_job(box, monkeypatch):
     opened, _ = box
-    monkeypatch.setattr(service_control, "_install_source", _never_finishes)
+    monkeypatch.setattr(modules_router, "_install_source", _never_finishes)
 
-    first = opened.post("/api/services/samba/install")
-    other = opened.post("/api/services/gitea/install")
+    first = opened.post("/api/modules/samba/install")
+    other = opened.post("/api/modules/gitea/install")
 
     assert first.json()["task_id"] != other.json()["task_id"]
 
@@ -329,10 +316,10 @@ def test_a_running_install_can_be_found_again(box, monkeypatch):
     """The task id lived in the browser and the job did not, so a reload used
     to leave a package manager running with a live Install button beside it."""
     opened, _ = box
-    monkeypatch.setattr(service_control, "_install_source", _never_finishes)
-    started = opened.post("/api/services/samba/install").json()
+    monkeypatch.setattr(modules_router, "_install_source", _never_finishes)
+    started = opened.post("/api/modules/samba/install").json()
 
-    listed = opened.get("/api/services/tasks").json()["tasks"]
+    listed = opened.get("/api/modules/tasks").json()["tasks"]
 
     assert listed == [{"id": started["task_id"], "label": "install samba"}]
 
@@ -340,18 +327,18 @@ def test_a_running_install_can_be_found_again(box, monkeypatch):
 def test_a_box_with_nothing_running_lists_nothing(box):
     opened, _ = box
 
-    assert opened.get("/api/services/tasks").json()["tasks"] == []
+    assert opened.get("/api/modules/tasks").json()["tasks"] == []
 
 
 def test_a_finished_job_is_not_offered_to_adopt(box, monkeypatch):
     """Adopting one reopens a socket on a task that is over, which the stream
     hook reads as a transport failure rather than as a finished install."""
     opened, _ = box
-    monkeypatch.setattr(service_control, "_install_source", _finishes_at_once)
-    opened.post("/api/services/samba/install")
+    monkeypatch.setattr(modules_router, "_install_source", _finishes_at_once)
+    opened.post("/api/modules/samba/install")
 
     for _ in range(20):
-        listed = opened.get("/api/services/tasks").json()["tasks"]
+        listed = opened.get("/api/modules/tasks").json()["tasks"]
         if not listed:
             break
 

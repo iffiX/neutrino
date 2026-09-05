@@ -1,10 +1,9 @@
 """The services somebody declares on machines the hub does not run.
 
-A NAS's Samba, an HTTP server, a Docker engine: each is a record in
+A NAS's Samba, an HTTP server, a plain TCP port: each is a record in
 ``config/services/declared.json`` naming where it answers, so the hub can
-watch it and later offer it to devices. The file holds no secrets — a share
-that needs an account carries a ``login_id`` reference into the
-vault, never the material.
+watch it and publish it to devices. The file holds no secrets — a share's
+login is typed on the machine that mounts it, never here.
 
 Pure: this module parses, validates and stores configuration. Measuring
 whether a declared service answers is :mod:`neutrino_hub.modules.services.probe`.
@@ -52,22 +51,16 @@ class DeclaredShare:
 
     Attributes:
         name: The share's name on that server.
-        login_id: The vault ``login`` object devices sign in with, None for a
-            share taken as guest.
     """
 
     name: str
-    login_id: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "DeclaredShare":
-        return cls(
-            name=data.get("name", ""),
-            login_id=data.get("login_id") or None,
-        )
+        return cls(name=data.get("name", ""))
 
     def to_dict(self) -> dict:
-        return {"name": self.name, "login_id": self.login_id}
+        return {"name": self.name}
 
 
 @dataclass
@@ -83,6 +76,7 @@ class DeclaredService:
         scheme: ``http`` or ``https``; only an ``http`` kind carries one.
         path: The path an ``http`` kind is probed on.
         shares: The exports of a ``samba`` kind.
+        description: The declarer's one line of provenance.
         created_at: ISO timestamp of when it was declared.
     """
 
@@ -94,6 +88,7 @@ class DeclaredService:
     scheme: str | None = None
     path: str | None = None
     shares: list[DeclaredShare] = field(default_factory=list)
+    description: str = ""
     created_at: str = ""
 
     @classmethod
@@ -115,6 +110,7 @@ class DeclaredService:
             scheme=data.get("scheme"),
             path=data.get("path"),
             shares=[DeclaredShare.from_dict(entry) for entry in data.get("shares", [])],
+            description=data.get("description", ""),
             created_at=data.get("created_at", ""),
         )
 
@@ -130,6 +126,7 @@ class DeclaredService:
             "kind": self.kind,
             "host": self.host,
             "port": self.port,
+            "description": self.description,
             "created_at": self.created_at,
         }
         if self.kind == SERVICES_KIND_HTTP:
@@ -180,6 +177,7 @@ class DeclaredServiceRegistry:
         scheme: str | None = None,
         path: str | None = None,
         shares: list[DeclaredShare] | None = None,
+        description: str = "",
     ) -> DeclaredService:
         """Store a new declared service.
 
@@ -191,6 +189,7 @@ class DeclaredServiceRegistry:
             scheme: ``http`` or ``https``, for the ``http`` kind.
             path: The probe path, for the ``http`` kind; blank means ``/``.
             shares: The exports, for the ``samba`` kind.
+            description: The declarer's one line of provenance.
 
         Returns:
             The stored record.
@@ -207,6 +206,7 @@ class DeclaredServiceRegistry:
             scheme=scheme,
             path=path,
             shares=shares,
+            description=description,
             created_at=datetime.now(timezone.utc).isoformat(),
         )
         with _WRITE_LOCK:
@@ -214,57 +214,6 @@ class DeclaredServiceRegistry:
             self._records.append(record)
             self._write()
         return record
-
-    def replace(
-        self,
-        service_id: str,
-        *,
-        name: str,
-        kind: str,
-        host: str,
-        port: int | None = None,
-        scheme: str | None = None,
-        path: str | None = None,
-        shares: list[DeclaredShare] | None = None,
-    ) -> DeclaredService:
-        """Replace one declared service whole, keeping its id.
-
-        Args:
-            service_id: The record's id.
-            name: Human-chosen label.
-            kind: One of :data:`SERVICES_DECLARED_KINDS`.
-            host: Where it answers.
-            port: The TCP port; a ``samba`` kind left blank gets 445.
-            scheme: ``http`` or ``https``, for the ``http`` kind.
-            path: The probe path, for the ``http`` kind; blank means ``/``.
-            shares: The exports, for the ``samba`` kind.
-
-        Returns:
-            The record after the change.
-
-        Raises:
-            KeyError: If the id is unknown.
-            DeclaredServiceError: If a field does not validate.
-        """
-        with _WRITE_LOCK:
-            self._records = self._read()
-            stored = self.get(service_id)
-            if stored is None:
-                raise KeyError(service_id)
-            record = _build_record(
-                record_id=stored.id,
-                name=name,
-                kind=kind,
-                host=host,
-                port=port,
-                scheme=scheme,
-                path=path,
-                shares=shares,
-                created_at=stored.created_at,
-            )
-            self._records = [record if r.id == service_id else r for r in self._records]
-            self._write()
-            return record
 
     def delete(self, service_id: str) -> None:
         """Remove a declared service.
@@ -287,7 +236,13 @@ class DeclaredServiceRegistry:
             data = read_config(SERVICES_DECLARED_PATH)
         except FileNotFoundError:
             return []
-        return [DeclaredService.from_dict(entry) for entry in data.get("services", [])]
+        # A stored kind the hub no longer knows — the retired docker_engine —
+        # is dropped on read, so the file heals on the next write.
+        return [
+            DeclaredService.from_dict(entry)
+            for entry in data.get("services", [])
+            if entry.get("kind") in SERVICES_DECLARED_KINDS
+        ]
 
     def _write(self) -> None:
         write_config(
@@ -306,6 +261,7 @@ def _build_record(
     scheme: str | None,
     path: str | None,
     shares: list[DeclaredShare] | None,
+    description: str,
     created_at: str,
 ) -> DeclaredService:
     """Validate the fields and shape them into a record.
@@ -319,6 +275,7 @@ def _build_record(
         scheme: ``http`` or ``https``, for the ``http`` kind.
         path: The probe path, for the ``http`` kind; blank means ``/``.
         shares: The exports, for the ``samba`` kind.
+        description: The declarer's one line of provenance.
         created_at: ISO timestamp the record keeps.
 
     Returns:
@@ -346,6 +303,7 @@ def _build_record(
         kind=kind,
         host=host.strip(),
         port=port,
+        description=description.strip(),
         created_at=created_at,
     )
     if kind == SERVICES_KIND_HTTP:
@@ -363,4 +321,6 @@ def _build_record(
             if not share.name or share.name in seen:
                 raise DeclaredServiceError(SERVICES_ERROR_INVALID, {"field": "shares"})
             seen.add(share.name)
+        if not record.shares:
+            raise DeclaredServiceError(SERVICES_ERROR_INVALID, {"field": "shares"})
     return record

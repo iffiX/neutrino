@@ -1,4 +1,4 @@
-"""What the Functions block on a device is told, and what it can act on.
+"""What the Modules block on a device is told, and what it can act on.
 
 The bug these came from: a device showed AnyDesk and ToDesk running in the
 remote-desktop block and "not installed, waiting for the agent" in the module
@@ -34,10 +34,20 @@ class FakeRegistry:
             FakeRegistry.device.name = payload["name"]
         return FakeRegistry.device
 
+    def set_module(self, mac_address, module, is_enabled=None, is_activated=None):
+        wanted = FakeRegistry.device.client.modules.setdefault(
+            module, {"is_enabled": False, "is_activated": False}
+        )
+        if is_enabled is not None:
+            wanted["is_enabled"] = is_enabled
+        if is_activated is not None:
+            wanted["is_activated"] = is_activated
+        return FakeRegistry.device
+
 
 class FakeRuntime:
     def __init__(self):
-        self.client_functions = {}
+        self.client_modules = {}
         self.client_platform = {}
         self.client_hostname = {}
         self.client_metrics = {}
@@ -49,7 +59,7 @@ class FakeRuntime:
     def forget_client_state(self, mac_address: str) -> None:
         key = mac_address.lower()
         for held in (
-            self.client_functions,
+            self.client_modules,
             self.client_platform,
             self.client_metrics,
             self.client_last_error,
@@ -77,7 +87,7 @@ def api(monkeypatch):
     monkeypatch.setattr(devices_router, "certificate_fingerprint", lambda: FINGERPRINT)
     monkeypatch.setattr(
         devices_router,
-        "load_function_manifests",
+        "load_module_manifests",
         lambda: {"anydesk": {"title": "AnyDesk", "platforms": {"debian": {}}}},
     )
     app = FastAPI()
@@ -92,7 +102,7 @@ def api(monkeypatch):
 def test_an_agent_that_has_never_beaten_is_not_online(api):
     client, _ = api
 
-    answer = client.get(f"/api/devices/{MAC}/functions").json()
+    answer = client.get(f"/api/devices/{MAC}/modules").json()
 
     assert answer["is_agent_managed"]
     assert not answer["is_agent_online"]
@@ -102,7 +112,7 @@ def test_an_agent_that_beat_just_now_is_online(api):
     client, _ = api
     FakeRegistry.device.client.last_seen = beating(2)
 
-    answer = client.get(f"/api/devices/{MAC}/functions").json()
+    answer = client.get(f"/api/devices/{MAC}/modules").json()
 
     assert answer["is_agent_online"]
 
@@ -114,7 +124,7 @@ def test_an_agent_that_stopped_beating_is_not_online(api):
     client, _ = api
     FakeRegistry.device.client.last_seen = beating(3600)
 
-    answer = client.get(f"/api/devices/{MAC}/functions").json()
+    answer = client.get(f"/api/devices/{MAC}/modules").json()
 
     assert answer["is_agent_managed"]
     assert not answer["is_agent_online"]
@@ -126,14 +136,45 @@ def test_what_the_agent_reported_is_found_whatever_case_the_MAC_is_asked_in(api)
     waiting for an agent that is in fact answering."""
     client, runtime = api
     FakeRegistry.device.client.last_seen = beating(2)
-    runtime.client_functions[MAC] = {
-        "anydesk": {"state": "installed", "is_active": True}
-    }
+    runtime.client_modules[MAC] = {"anydesk": {"state": "installed", "is_active": True}}
 
-    answer = client.get(f"/api/devices/{MAC.upper()}/functions").json()
+    answer = client.get(f"/api/devices/{MAC.upper()}/modules").json()
 
-    assert answer["functions"][0]["state"] == "installed"
-    assert answer["functions"][0]["is_active"]
+    assert answer["modules"][0]["state"] == "installed"
+    assert answer["modules"][0]["is_active"]
+
+
+def test_a_builtin_manifest_reads_as_a_toggle(api, monkeypatch):
+    client, _ = api
+    monkeypatch.setattr(
+        devices_router,
+        "load_module_manifests",
+        lambda: {
+            "openssh_server": {
+                "title": "OpenSSH server",
+                "platforms": {"debian": {}},
+                "is_builtin": True,
+            }
+        },
+    )
+
+    answer = client.get(f"/api/devices/{MAC}/modules").json()
+
+    assert answer["modules"][0]["is_builtin"] is True
+
+
+def test_a_wish_is_recorded_and_answered(api):
+    client, _ = api
+
+    answer = client.put(
+        f"/api/devices/{MAC}/modules/anydesk", json={"is_enabled": True}
+    ).json()
+
+    assert answer["modules"][0]["is_enabled"] is True
+    unknown = client.put(
+        f"/api/devices/{MAC}/modules/nonsense", json={"is_enabled": True}
+    )
+    assert unknown.status_code == 404
 
 
 def test_forgetting_a_device_drops_what_was_queued_for_it(api, monkeypatch):
@@ -143,12 +184,12 @@ def test_forgetting_a_device_drops_what_was_queued_for_it(api, monkeypatch):
     client, runtime = api
     monkeypatch.setattr(FakeRegistry, "forget", lambda self, mac: None, raising=False)
     runtime.pending[MAC] = ["shutdown"]
-    runtime.client_functions[MAC] = {"anydesk": {"state": "installed"}}
+    runtime.client_modules[MAC] = {"anydesk": {"state": "installed"}}
 
     assert client.delete(f"/api/devices/{MAC}").status_code == 200
 
     assert runtime.pending == {}
-    assert runtime.client_functions == {}
+    assert runtime.client_modules == {}
 
 
 @pytest.mark.parametrize(

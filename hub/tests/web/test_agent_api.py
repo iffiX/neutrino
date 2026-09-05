@@ -2,7 +2,7 @@
 
 The registry is replaced with one held in memory, so what is exercised is the
 request path — that a machine can introduce itself with a ticket, that a
-heartbeat carries the desired functions and the per-account AI credentials
+heartbeat carries the desired modules and the per-account AI credentials
 back, and that an agent saying goodbye stops the panel treating the device as
 managed while keeping everything its owner typed.
 """
@@ -26,8 +26,8 @@ from tests.conftest import unlock_vault
 MAC = "aa:bb:cc:dd:ee:ff"
 
 CATALOG = {
-    "functions": {"anydesk": {"name": "anydesk", "kind": "package"}},
-    "services": {"ai": {"kind": "ai", "title": "AI tools"}},
+    "modules": {"anydesk": {"name": "anydesk", "kind": "package"}},
+    "services": [{"id": "ai", "type": "ai", "title": "AI gateway"}],
 }
 CATALOG_HASH = "hash123"
 
@@ -60,9 +60,9 @@ class FakeRegistry:
         FakeRegistry.device.client.version = version
         FakeRegistry.device.client.last_seen = seen_at
 
-    def set_function(self, mac_address, function, is_enabled=None, is_activated=None):
-        wanted = FakeRegistry.device.client.functions.setdefault(
-            function, {"is_enabled": False, "is_activated": False}
+    def set_module(self, mac_address, module, is_enabled=None, is_activated=None):
+        wanted = FakeRegistry.device.client.modules.setdefault(
+            module, {"is_enabled": False, "is_activated": False}
         )
         if is_enabled is not None:
             wanted["is_enabled"] = is_enabled
@@ -91,11 +91,15 @@ class FakeRegistry:
         client.token_sha256 = None
         client.version = None
         client.last_seen = None
-        client.functions = {}
+        client.modules = {}
 
 
 class StubCatalogCache:
-    def catalog(self):
+    def __init__(self):
+        self.asked_hosts: list[str] = []
+
+    def catalog(self, *, device_host):
+        self.asked_hosts.append(device_host)
         return CATALOG, CATALOG_HASH
 
 
@@ -109,7 +113,7 @@ class FakeRuntime:
 
     def __init__(self):
         self.client_metrics = {}
-        self.client_functions = {}
+        self.client_modules = {}
         self.client_platform = {}
         self.client_hostname = {}
         self.client_accounts = {}
@@ -127,7 +131,7 @@ class FakeRuntime:
         key = mac_address.lower()
         for held in (
             self.client_metrics,
-            self.client_functions,
+            self.client_modules,
             self.client_platform,
             self.client_hostname,
             self.client_accounts,
@@ -187,9 +191,9 @@ def beat_body(**extra) -> dict:
     return body
 
 
-def test_heartbeat_returns_desired_functions_and_catalog(api):
+def test_heartbeat_returns_desired_modules_and_catalog(api):
     client, runtime, device = api
-    device.client.functions = {"anydesk": True}
+    device.client.modules = {"anydesk": True}
 
     response = client.post(
         "/api/agent/heartbeat",
@@ -197,18 +201,18 @@ def test_heartbeat_returns_desired_functions_and_catalog(api):
             metrics={"cpu_percent": 4.0},
             platform={"os": "linux", "family": "debian", "arch": "amd64"},
             catalog_hash="stale",
-            functions={"anydesk": {"state": "installed"}},
+            modules={"anydesk": {"state": "installed"}},
         ),
     )
 
     assert response.status_code == 200
     body = response.json()
-    assert body["desired_functions"]["anydesk"]["is_enabled"] is True
+    assert body["desired_modules"]["anydesk"]["is_enabled"] is True
     # A stale hash gets both halves of the catalog; a matching one would not.
     assert body["catalog"] == CATALOG
     assert body["catalog_hash"] == CATALOG_HASH
     assert runtime.client_metrics[MAC]["cpu_percent"] == 4.0
-    assert runtime.client_functions[MAC]["anydesk"]["state"] == "installed"
+    assert runtime.client_modules[MAC]["anydesk"]["state"] == "installed"
     assert runtime.client_platform[MAC]["arch"] == "amd64"
 
 
@@ -228,12 +232,12 @@ def test_heartbeat_applies_a_toggle_made_on_the_machine(api):
 
     response = client.post(
         "/api/agent/heartbeat",
-        json=beat_body(function_requests={"anydesk": {"is_enabled": True}}),
+        json=beat_body(module_requests={"anydesk": {"is_enabled": True}}),
     )
 
     assert response.status_code == 200
-    assert device.client.functions["anydesk"]["is_enabled"] is True
-    assert response.json()["desired_functions"]["anydesk"]["is_enabled"] is True
+    assert device.client.modules["anydesk"]["is_enabled"] is True
+    assert response.json()["desired_modules"]["anydesk"]["is_enabled"] is True
 
 
 def test_accounts_and_last_error_land_in_the_runtime(api):
@@ -427,7 +431,7 @@ def test_a_result_with_an_unknown_token_is_refused(api):
 def test_leaving_drops_the_agent_but_keeps_the_device(api):
     client, runtime, device = api
     runtime.client_metrics[MAC] = {"cpu_percent": 4.0}
-    runtime.client_functions[MAC] = {"anydesk": {"state": "installed"}}
+    runtime.client_modules[MAC] = {"anydesk": {"state": "installed"}}
     runtime.client_accounts[MAC] = ["alice"]
     runtime.client_last_error[MAC] = {"code": "mount_failed", "params": {}}
 
@@ -439,7 +443,7 @@ def test_leaving_drops_the_agent_but_keeps_the_device(api):
     assert device.name == "testbox"
     assert device.ssh == {"host": "10.0.0.5", "username": "me"}
     assert runtime.client_metrics == {}
-    assert runtime.client_functions == {}
+    assert runtime.client_modules == {}
     assert runtime.client_accounts == {}
     assert runtime.client_last_error == {}
 
@@ -683,6 +687,25 @@ def test_a_family_the_hub_has_no_package_for_is_a_coded_conflict(api, monkeypatc
 
     assert response.status_code == 409
     assert response.json()["detail"] == {"code": "agent_package_missing"}
+
+
+def test_the_reply_wire_carries_the_module_names(api):
+    client, _, _ = api
+
+    body = client.post("/api/agent/heartbeat", json=beat_body()).json()
+
+    assert {"desired_modules", "catalog_hash", "ai_accounts", "hub_version"} <= set(
+        body
+    )
+    assert "desired_functions" not in body
+
+
+def test_the_catalog_is_composed_for_the_address_the_device_reaches(api):
+    client, runtime, _ = api
+
+    client.post("/api/agent/heartbeat", json=beat_body())
+
+    assert runtime.device_catalog.asked_hosts == ["192.168.100.1"]
 
 
 def test_nothing_usable_reported_keys_by_machine_id(api):

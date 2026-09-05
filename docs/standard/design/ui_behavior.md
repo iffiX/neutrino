@@ -220,7 +220,7 @@ bottom of a drawer. Nothing in this panel is announced in a toast and dismissed;
 an install is a thing you read.
 
 A journal is a fixed tail of the last 200 lines, fetched only while it is open —
-a services page with eight units pulls no journals until somebody asks for one —
+a modules page with eight units pulls no journals until somebody asks for one —
 and while open it polls itself and scrolls to the newest line, like every other
 live panel. `ai_journal_panel.tsx` is the reference.
 

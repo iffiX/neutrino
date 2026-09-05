@@ -1,7 +1,7 @@
-"""Reading the function manifests.
+"""Reading the device module manifests.
 
-The manifests under ``manifests/`` are the functions half of the device
-catalog: one JSON per function saying, per platform, how it is obtained.
+The manifests under ``manifests/`` are the modules half of the device
+catalog: one JSON per module saying, per platform, how it is obtained.
 Comment keys are stripped the same way the rest of ``config/`` is.
 """
 
@@ -13,11 +13,11 @@ from neutrino_hub.utils.json_file import strip_comments
 MANIFESTS_DIR = UTILS_DATA_DIR / "manifests"
 
 
-def load_function_manifests() -> dict:
-    """Read every manifest, keyed by function name.
+def load_module_manifests() -> dict:
+    """Read every manifest, keyed by module name.
 
     Returns:
-        Function name to its parsed manifest, comment keys removed.
+        Module name to its parsed manifest, comment keys removed.
     """
     manifests = {}
     if not MANIFESTS_DIR.is_dir():

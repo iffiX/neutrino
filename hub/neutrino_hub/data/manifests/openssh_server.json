@@ -1,5 +1,5 @@
 {
-  "_comment": "The SSH server, which is what lets the gateway manage a machine directly rather than only through the agent. Every platform has one built in, so nothing is downloaded: each is enabled the way its own system does it.",
+  "_comment": "The SSH server. Every platform carries one, so nothing is downloaded and the drawer words the row enable/disable rather than install/uninstall; disabling is allowed because the agent channel, not SSH, is the management path.",
   "name": "openssh_server",
   "title": "OpenSSH server",
   "kind": "openssh",
@@ -20,5 +20,5 @@
     "windows": {},
     "darwin": {}
   },
-  "is_removable": false
+  "is_builtin": true
 }

@@ -25,12 +25,12 @@ DEVICES_CONFIG_PATH = "devices/devices.json"
 AGENT_TOKEN_BYTES = 24
 
 
-def function_wish(stored) -> dict:
-    """Normalise what is stored for one function into the two wishes.
+def module_wish(stored) -> dict:
+    """Normalise what is stored for one module into the two wishes.
 
     Args:
-        stored: What ``devices.json`` holds — a bare bool from before
-            activation existed, the pair, or nothing.
+        stored: What ``devices.json`` holds — a bare bool, the pair, or
+            nothing.
 
     Returns:
         ``{"is_enabled", "is_activated"}``.
@@ -66,7 +66,7 @@ class DeviceClientInfo:
             is an offer, not management.
         version: Agent version from the last heartbeat.
         last_seen: ISO timestamp of the last heartbeat.
-        functions: What the user asked of each managed function, by name:
+        modules: What the user asked of each managed module, by name:
             ``{"is_enabled", "is_activated"}``. Installing and activating are
             separate wishes — a package can be on a machine without pointing
             at this hub.
@@ -77,7 +77,7 @@ class DeviceClientInfo:
     token_sha256: str | None = None
     version: str | None = None
     last_seen: str | None = None
-    functions: dict = field(default_factory=dict)
+    modules: dict = field(default_factory=dict)
     ai_key_ids: dict = field(default_factory=dict)
 
     @classmethod
@@ -94,7 +94,7 @@ class DeviceClientInfo:
             token_sha256=data.get("token_sha256"),
             version=data.get("version"),
             last_seen=data.get("last_seen"),
-            functions=data.get("functions", {}),
+            modules=data.get("modules", {}),
             ai_key_ids=data.get("ai_key_ids", {}),
         )
 
@@ -111,7 +111,7 @@ class DeviceClientInfo:
             "token_sha256": self.token_sha256,
             "version": self.version,
             "last_seen": self.last_seen,
-            "functions": self.functions,
+            "modules": self.modules,
             "ai_key_ids": self.ai_key_ids,
         }
 
@@ -415,18 +415,18 @@ class DeviceRegistry:
             device.client.token_sha256 = None
             device.client.version = None
             device.client.last_seen = None
-            device.client.functions = {}
+            device.client.modules = {}
             self._store(device)
 
-    def set_function(
+    def set_module(
         self,
         mac_address: str,
-        function: str,
+        module: str,
         *,
         is_enabled: bool | None = None,
         is_activated: bool | None = None,
     ) -> ManagedDevice:
-        """Change what is wanted of one managed function.
+        """Change what is wanted of one managed module.
 
         The two wishes are independent and either can be left alone.
         Uninstalling implies deactivating, since there is nothing left to
@@ -434,7 +434,7 @@ class DeviceRegistry:
 
         Args:
             mac_address: The device's MAC.
-            function: The function name.
+            module: The module name.
             is_enabled: Whether the agent should keep it installed.
             is_activated: Whether it should point at this hub.
 
@@ -443,7 +443,7 @@ class DeviceRegistry:
         """
         with _WRITE_LOCK:
             device = self._fresh(mac_address)
-            wanted = function_wish(device.client.functions.get(function))
+            wanted = module_wish(device.client.modules.get(module))
             if is_enabled is not None:
                 wanted["is_enabled"] = is_enabled
                 if not is_enabled:
@@ -452,7 +452,7 @@ class DeviceRegistry:
                 wanted["is_activated"] = is_activated
                 if is_activated:
                     wanted["is_enabled"] = True
-            device.client.functions[function] = wanted
+            device.client.modules[module] = wanted
             self._store(device)
             return device
 

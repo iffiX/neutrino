@@ -110,14 +110,15 @@ Booleans are questions in all three: `is_`, `has_`
 | `/api/cliproxyapi` | The AI gateway: its keys and settings |
 | `/api/credentials` | The secrets the box holds for somebody: SSH keys, logins and tokens |
 | `/api/dashboard` | The summary, the traffic history, the DNS log |
-| `/api/devices` | Managed LAN machines, their features and their files |
+| `/api/devices` | Managed LAN machines, their modules and their files |
 | `/api/gitea` | The Gitea module |
+| `/api/modules` | Unit state, journals, install and uninstall |
 | `/api/netbird` | The overlay network |
 | `/api/network` | The mode, the interfaces and their roles, Wi-Fi, what answers where |
 | `/api/podman` | Containers and registry mirrors |
 | `/api/proxy` | Routing policy, the exit nodes, and the balancer over them |
 | `/api/samba` | Shares and their users |
-| `/api/services` | Unit state, journals, install and uninstall |
+| `/api/services` | The published service list and manual declarations |
 | `/api/settings` | The panel's own: its port, password, backup, restore, version |
 | `/api/zfs` | Pools and datasets |
 

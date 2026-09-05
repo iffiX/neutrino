@@ -448,7 +448,6 @@ class LoginView(BaseModel):
     username: str | None = None
     created_at: str = ""
     device_count: int = 0
-    service_count: int = 0
 
 
 class LoginListView(BaseModel):
@@ -969,7 +968,7 @@ class WolResult(BaseModel):
     message: str
 
 
-class ServiceView(BaseModel):
+class ModuleView(BaseModel):
     """One managed systemd unit.
 
     ``is_core`` is what decides whether the panel offers to stop it. Core units
@@ -992,57 +991,31 @@ class ServiceView(BaseModel):
     data_description: str = ""
 
 
-class DeclaredShareView(BaseModel):
-    """One share a declared Samba service exports."""
+class PublishedServiceView(BaseModel):
+    """One entry of the typed service list.
 
-    name: str
-    login_id: str | None = None
+    ``payload`` is the type's own — a url for web, host and port for port,
+    endpoint, protocol and models for ai, protocol, host and share for file.
+    ``record_id`` names the declared record behind a declared entry; a
+    module-declared entry carries None and is read-only.
+    """
 
-
-class DeclaredServiceProbeView(BaseModel):
-    """A declared service's cached health; every field None before the
-    first probe."""
-
+    id: str
+    type: str
+    title: str
+    payload: dict
     is_healthy: bool | None = None
-    checked_at: str | None = None
-    detail_code: str | None = None
-
-
-class DockerContainerView(BaseModel):
-    """One container as a declared Docker engine reports it."""
-
-    id: str
-    name: str
-    image: str
-    state: str
-    is_running: bool
-    host_ports: list[int] = Field(default_factory=list)
-
-
-class DeclaredServiceView(BaseModel):
-    """One user-declared service, with its cached health."""
-
-    id: str
-    name: str
-    kind: str
-    host: str
-    port: int
-    scheme: str | None = None
-    path: str | None = None
-    shares: list[DeclaredShareView] = []
-    created_at: str
-    probe: DeclaredServiceProbeView
-    # The containers a ``docker_engine`` kind runs; empty for every other
-    # kind, and while the engine cannot be asked.
-    containers: list[DockerContainerView] = Field(default_factory=list)
+    source: str
+    description: str = ""
+    record_id: str | None = None
 
 
 class DeclaredServiceCreate(BaseModel):
-    """A declared service as the form submits it, whole.
+    """A declaration as the form submits it.
 
-    The same body serves the create and the full-record update. A ``samba``
-    kind left without a port gets 445; the fields a kind does not have are
-    ignored.
+    ``kind`` is a service type — web, port or file — mapped onto the stored
+    probe kind; the fields a kind does not have are ignored. A ``file``
+    declaration left without a port gets 445.
     """
 
     name: str
@@ -1051,14 +1024,20 @@ class DeclaredServiceCreate(BaseModel):
     port: int | None = None
     scheme: str | None = None
     path: str | None = None
-    shares: list[DeclaredShareView] = []
+    share: str | None = None
+    description: str = ""
 
 
 class ServiceListView(BaseModel):
-    """The Services tab payload."""
+    """The Services tab payload: every published entry."""
 
-    services: list[ServiceView]
-    declared: list[DeclaredServiceView] = []
+    services: list[PublishedServiceView]
+
+
+class ModuleListView(BaseModel):
+    """The Modules tab payload."""
+
+    modules: list[ModuleView]
 
 
 class ProvisionConsentView(BaseModel):
@@ -1074,7 +1053,7 @@ class ProvisionConsentView(BaseModel):
     detail: dict
 
 
-class ServiceInstallPlanView(BaseModel):
+class ModuleInstallPlanView(BaseModel):
     """What installing a module on this machine would actually do."""
 
     name: str
@@ -1082,7 +1061,7 @@ class ServiceInstallPlanView(BaseModel):
     consents: list[ProvisionConsentView]
 
 
-class ServiceInstallRequest(BaseModel):
+class ModuleInstallRequest(BaseModel):
     """Whether the person has agreed to what the plan listed.
 
     False is the ordinary case: a module whose plan asks nothing installs on
@@ -1092,7 +1071,7 @@ class ServiceInstallRequest(BaseModel):
     is_consented: bool = False
 
 
-class ServiceUninstallRequest(BaseModel):
+class ModuleUninstallRequest(BaseModel):
     """How much of a module to take away.
 
     Data is kept unless explicitly surrendered: uninstall-then-install must be
@@ -1153,12 +1132,12 @@ class ClientHeartbeat(BaseModel):
     # never listed.
     accounts: list[str] = Field(default_factory=list)
     catalog_hash: str = ""
-    # What state each function is in: name to
+    # What state each module is in: name to
     # ``{"state", "code", "params", "is_active"}``.
-    functions: dict = Field(default_factory=dict)
+    modules: dict = Field(default_factory=dict)
     # Toggles made on the machine's own page, applied by the gateway and
     # reflected back in the reply so both sides agree within one beat.
-    function_requests: dict = Field(default_factory=dict)
+    module_requests: dict = Field(default_factory=dict)
     # Which accounts want their AI tools pointed at the gateway.
     ai_targets: dict[str, bool] = Field(default_factory=dict)
     # The most recent error worth showing, as ``{"code", "params"}``.
@@ -1181,8 +1160,8 @@ class ClientHeartbeatReply(BaseModel):
     """
 
     commands: list[ClientCommand] = Field(default_factory=list)
-    desired_functions: dict = Field(default_factory=dict)
-    # ``{"functions", "services"}`` under one hash.
+    desired_modules: dict = Field(default_factory=dict)
+    # ``{"modules", "services"}`` under one hash.
     catalog: dict | None = None
     catalog_hash: str = ""
     # ``{account: {"base_url", "api_key", "model"}}`` for the accounts whose
@@ -1237,17 +1216,17 @@ class ClientPackageRequest(BaseModel):
     family: str
 
 
-class DeviceFunctionView(BaseModel):
-    """One managed function, as the panel shows it for a device."""
+class DeviceModuleView(BaseModel):
+    """One managed module, as the panel shows it for a device."""
 
     name: str
     title: str
     description: str = ""
     is_supported: bool = True
     is_enabled: bool = False
-    # False for things that must not be taken off a managed machine, chiefly
-    # the SSH server the hub reaches it through.
-    is_removable: bool = True
+    # A platform capability the machine already carries, worded as
+    # enable/disable rather than install/uninstall.
+    is_builtin: bool = False
     # Whether installing and pointing at the hub are separate steps.
     has_activation: bool = False
     is_activated: bool = False
@@ -1258,22 +1237,22 @@ class DeviceFunctionView(BaseModel):
     params: dict = Field(default_factory=dict)
 
 
-class DeviceFunctionListView(BaseModel):
-    """Every function a device could run, with its state.
+class DeviceModuleListView(BaseModel):
+    """Every module a device could run, with its state.
 
-    ``is_agent_online`` is what makes the list readable: every function's
+    ``is_agent_online`` is what makes the list readable: every module's
     state comes from the agent, so with no agent answering they are all
     unknown, and a page that cannot say why draws them as "not installed"
     beside a remote desktop it can see running.
     """
 
-    functions: list[DeviceFunctionView] = Field(default_factory=list)
+    modules: list[DeviceModuleView] = Field(default_factory=list)
     is_agent_managed: bool = False
     is_agent_online: bool = False
 
 
-class DeviceFunctionUpdate(BaseModel):
-    """Change what is wanted of one function; absent fields are left alone."""
+class DeviceModuleUpdate(BaseModel):
+    """Change what is wanted of one module; absent fields are left alone."""
 
     is_enabled: bool | None = None
     is_activated: bool | None = None

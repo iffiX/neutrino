@@ -1,4 +1,4 @@
-"""The Services tab: status, start/stop/enable, install/uninstall, journals."""
+"""The Modules tab: status, start/stop/enable, install/uninstall, journals."""
 
 import asyncio
 from collections.abc import AsyncIterator
@@ -14,21 +14,20 @@ from neutrino_hub.web.constants import WEB_JOURNAL_LINE_LIMIT
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
     JournalView,
+    ModuleInstallPlanView,
+    ModuleInstallRequest,
+    ModuleListView,
+    ModuleUninstallRequest,
+    ModuleView,
     ProvisionConsentView,
-    ServiceInstallPlanView,
-    ServiceInstallRequest,
-    ServiceListView,
-    ServiceUninstallRequest,
-    ServiceView,
     TaskListView,
     TaskStarted,
     TaskView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
-from neutrino_hub.web.routers.declared_services import declared_service_views
 
 router = APIRouter(
-    prefix="/api/services", tags=["services"], dependencies=[Depends(require_session)]
+    prefix="/api/modules", tags=["modules"], dependencies=[Depends(require_session)]
 )
 
 # Refused outright on a core unit. Not hidden in the panel and allowed through
@@ -37,20 +36,18 @@ router = APIRouter(
 STOPPING_ACTIONS = ("stop", "disable")
 
 
-@router.get("", response_model=ServiceListView)
-def list_services(runtime: PanelRuntime = Depends(get_runtime)) -> ServiceListView:
+@router.get("", response_model=ModuleListView)
+def list_modules(runtime: PanelRuntime = Depends(get_runtime)) -> ModuleListView:
     """Read every managed unit's state.
 
     Args:
         runtime: The shared runtime.
 
     Returns:
-        One entry per managed unit, and the declared services with their
-        cached health.
+        One entry per managed unit.
     """
-    return ServiceListView(
-        services=[_to_view(entry) for entry in runtime.services.status_all()],
-        declared=declared_service_views(runtime),
+    return ModuleListView(
+        modules=[_to_view(entry) for entry in runtime.services.status_all()]
     )
 
 
@@ -105,8 +102,8 @@ def journal(
         ) from error
 
 
-@router.get("/{name}/install_plan", response_model=ServiceInstallPlanView)
-def install_plan(name: str) -> ServiceInstallPlanView:
+@router.get("/{name}/install_plan", response_model=ModuleInstallPlanView)
+def install_plan(name: str) -> ModuleInstallPlanView:
     """What installing this module on this machine would actually do.
 
     The panel asks before it offers the button, so anything a person would
@@ -126,7 +123,7 @@ def install_plan(name: str) -> ServiceInstallPlanView:
     """
     spec = _spec_or_404(name)
     plan = plan_for(spec.provisioner())
-    return ServiceInstallPlanView(
+    return ModuleInstallPlanView(
         name=name,
         is_consent_needed=plan.is_consent_needed,
         consents=[
@@ -139,7 +136,7 @@ def install_plan(name: str) -> ServiceInstallPlanView:
 @router.post("/{name}/install", response_model=TaskStarted)
 async def install(
     name: str,
-    request: ServiceInstallRequest | None = None,
+    request: ModuleInstallRequest | None = None,
     runtime: PanelRuntime = Depends(get_runtime),
 ) -> TaskStarted:
     """Install an optional module as a streamed background job.
@@ -197,7 +194,7 @@ async def install(
 @router.post("/{name}/uninstall", response_model=TaskStarted)
 async def uninstall(
     name: str,
-    request: ServiceUninstallRequest,
+    request: ModuleUninstallRequest,
     runtime: PanelRuntime = Depends(get_runtime),
 ) -> TaskStarted:
     """Remove an optional module as a streamed background job.
@@ -233,10 +230,10 @@ async def uninstall(
     return TaskStarted(task_id=stream.id)
 
 
-@router.post("/{name}/{action}", response_model=ServiceView)
+@router.post("/{name}/{action}", response_model=ModuleView)
 def control(
     name: str, action: str, runtime: PanelRuntime = Depends(get_runtime)
-) -> ServiceView:
+) -> ModuleView:
     """Start, stop, restart, enable, or disable a unit.
 
     Args:
@@ -375,10 +372,10 @@ def _spec_or_404(name: str) -> ModuleSpec:
     return spec
 
 
-def _to_view(entry) -> ServiceView:
+def _to_view(entry) -> ModuleView:
     spec = MODULE_SPECS.get(entry.name)
     if spec is None:
-        return ServiceView(
+        return ModuleView(
             name=entry.name,
             unit=entry.unit,
             is_installed=entry.is_installed,
@@ -390,7 +387,7 @@ def _to_view(entry) -> ServiceView:
         ANY_ARCHITECTURE in spec.architectures
         or machine_architecture() in spec.architectures
     )
-    return ServiceView(
+    return ModuleView(
         name=entry.name,
         unit=entry.unit,
         is_installed=entry.is_installed,

@@ -28,7 +28,6 @@ from neutrino_hub.modules.devices.key_registry import (
     KeyRecord,
     KeyRegistry,
 )
-from neutrino_hub.modules.services.config import DeclaredServiceRegistry
 from neutrino_hub.modules.xray.node_config import XrayNodeList
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK, read_config, write_config
 from neutrino_hub.web.dependencies import get_runtime, require_session
@@ -154,17 +153,16 @@ def _key_view(record: KeyRecord, counts: dict[str, int]) -> KeyView:
 
 @router.get("/logins", response_model=LoginListView)
 def list_logins() -> LoginListView:
-    """Read every stored login with how many devices and services use it.
+    """Read every stored login with how many devices use it.
 
     Returns:
         The logins, newest first, passwords withheld.
     """
     vault = SecretVault()
     device_counts = _login_device_counts()
-    service_counts = _service_counts()
     return LoginListView(
         logins=[
-            _login_view(vault, record, device_counts, service_counts)
+            _login_view(vault, record, device_counts)
             for record in vault.list_records(kind=LOGIN_KIND)
         ]
     )
@@ -200,21 +198,20 @@ def create_login(request: LoginCreate) -> LoginView:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
         ) from error
-    return _login_view(SecretVault(), record, _login_device_counts(), _service_counts())
+    return _login_view(SecretVault(), record, _login_device_counts())
 
 
 @router.delete("/logins/{login_id}")
 def delete_login(login_id: str) -> dict:
     """Remove a login and its password, clearing every reference to it.
 
-    A device naming it for its account or its sudo prompt loses that id; a
-    declared share naming it becomes a guest share.
+    A device naming it for its account or its sudo prompt loses that id.
 
     Args:
         login_id: The login's identifier.
 
     Returns:
-        Under ``cleared``, how many devices and services lost the login.
+        Under ``cleared``, how many devices lost the login.
 
     Raises:
         HTTPException: 404 when the id is unknown.
@@ -228,9 +225,8 @@ def delete_login(login_id: str) -> dict:
         )
     with CONFIG_WRITE_LOCK:
         device_count = _clear_login_on_devices(login_id)
-        service_count = _clear_login_on_shares(login_id)
         vault.delete(login_id)
-    return {"cleared": {"device_count": device_count, "service_count": service_count}}
+    return {"cleared": {"device_count": device_count}}
 
 
 def _login_secret(username: "str | None", password: str) -> dict:
@@ -247,17 +243,6 @@ def _login_device_counts() -> dict[str, int]:
         # A device naming one login for both its account and its sudo counts
         # once.
         referenced = {ssh.get("password_id"), ssh.get("sudo_password_id")}
-        for login_id in referenced:
-            if login_id:
-                counts[login_id] = counts.get(login_id, 0) + 1
-    return counts
-
-
-def _service_counts() -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for service in DeclaredServiceRegistry().list_records():
-        # A service naming one login on several shares counts once.
-        referenced = {share.login_id for share in service.shares}
         for login_id in referenced:
             if login_id:
                 counts[login_id] = counts.get(login_id, 0) + 1
@@ -281,34 +266,10 @@ def _clear_login_on_devices(login_id: str) -> int:
     return cleared
 
 
-def _clear_login_on_shares(login_id: str) -> int:
-    registry = DeclaredServiceRegistry()
-    cleared = 0
-    for service in registry.list_records():
-        if all(share.login_id != login_id for share in service.shares):
-            continue
-        for share in service.shares:
-            if share.login_id == login_id:
-                share.login_id = None
-        registry.replace(
-            service.id,
-            name=service.name,
-            kind=service.kind,
-            host=service.host,
-            port=service.port,
-            scheme=service.scheme,
-            path=service.path,
-            shares=service.shares,
-        )
-        cleared += 1
-    return cleared
-
-
 def _login_view(
     vault: SecretVault,
     record: SecretRecord,
     device_counts: dict[str, int],
-    service_counts: dict[str, int],
 ) -> LoginView:
     try:
         username = vault.open(record.id).get("username") or None
@@ -324,7 +285,6 @@ def _login_view(
         username=username,
         created_at=record.created_at,
         device_count=device_counts.get(record.id, 0),
-        service_count=service_counts.get(record.id, 0),
     )
 
 

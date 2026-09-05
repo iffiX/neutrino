@@ -5,8 +5,8 @@ per-device token issued when the agent was installed. They are served on the
 agent channel's own TLS port, never on the panel's, and every enrollment link
 carries the certificate fingerprint the agent pins.
 
-A heartbeat carries the machine's report — metrics, accounts, per-function
-state — and the reply carries what should be true: the desired functions,
+A heartbeat carries the machine's report — metrics, accounts, per-module
+state — and the reply carries what should be true: the desired modules,
 the catalog when the agent's copy is stale, and a gateway credential for
 each account whose AI target is on. The credential is the one per-device
 secret the reply resolves; the catalog itself carries none.
@@ -33,7 +33,7 @@ from neutrino_hub.modules.devices.constants import DEVICE_MAC_PATTERN
 from neutrino_hub.modules.devices.registry import (
     DeviceRegistry,
     ManagedDevice,
-    function_wish,
+    module_wish,
 )
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.utils.version_number import parse_version
@@ -64,7 +64,7 @@ def heartbeat(
         runtime: The shared runtime.
 
     Returns:
-        The desired functions, the catalog when the agent's is stale, the
+        The desired modules, the catalog when the agent's is stale, the
         per-account AI credentials, and any queued commands.
 
     Raises:
@@ -78,24 +78,24 @@ def heartbeat(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="unknown client token"
         )
     _refuse_newer_agent(beat.client_version)
-    if beat.function_requests:
+    if beat.module_requests:
         # A request from the machine's own page carries whichever wish was
         # changed there; the rest is left as the panel has it.
-        for function, wish in beat.function_requests.items():
+        for module, wish in beat.module_requests.items():
             if isinstance(wish, dict):
-                device = registry.set_function(
+                device = registry.set_module(
                     device.mac_address,
-                    function,
+                    module,
                     is_enabled=wish.get("is_enabled"),
                     is_activated=wish.get("is_activated"),
                 )
             else:
-                device = registry.set_function(
-                    device.mac_address, function, is_enabled=bool(wish)
+                device = registry.set_module(
+                    device.mac_address, module, is_enabled=bool(wish)
                 )
     key = device.mac_address
     runtime.client_metrics[key] = dict(beat.metrics)
-    runtime.client_functions[key] = dict(beat.functions)
+    runtime.client_modules[key] = dict(beat.modules)
     runtime.client_accounts[key] = list(beat.accounts)
     if beat.platform:
         runtime.client_platform[key] = dict(beat.platform)
@@ -114,14 +114,15 @@ def heartbeat(
         seen_at=datetime.now(timezone.utc).isoformat(),
     )
 
-    ai_accounts = _ai_accounts(device, runtime, registry, beat.ai_targets)
-    catalog, served_hash = runtime.device_catalog.catalog()
+    device_host = _device_host(runtime, device.ipv4_address)
+    ai_accounts = _ai_accounts(device, runtime, registry, beat.ai_targets, device_host)
+    catalog, served_hash = runtime.device_catalog.catalog(device_host=device_host)
     return ClientHeartbeatReply(
         commands=[
             ClientCommand(**command)
             for command in runtime.take_client_commands(device.mac_address)
         ],
-        desired_functions=_desired_functions(device),
+        desired_modules=_desired_modules(device),
         catalog=catalog if beat.catalog_hash != served_hash else None,
         catalog_hash=served_hash,
         ai_accounts=ai_accounts,
@@ -331,18 +332,17 @@ def _refuse_newer_agent(agent_version: str) -> None:
     )
 
 
-def _desired_functions(device: ManagedDevice) -> dict:
-    """What each of a device's functions should be.
+def _desired_modules(device: ManagedDevice) -> dict:
+    """What each of a device's modules should be.
 
     Args:
         device: The device the heartbeat came from.
 
     Returns:
-        Function name to ``{"is_enabled", "is_activated"}``.
+        Module name to ``{"is_enabled", "is_activated"}``.
     """
     return {
-        function: function_wish(stored)
-        for function, stored in device.client.functions.items()
+        module: module_wish(stored) for module, stored in device.client.modules.items()
     }
 
 
@@ -351,6 +351,7 @@ def _ai_accounts(
     runtime: PanelRuntime,
     registry: DeviceRegistry,
     targets: dict,
+    device_host: str,
 ) -> dict:
     """Resolve the gateway credential for each account whose target is on.
 
@@ -362,6 +363,7 @@ def _ai_accounts(
         runtime: The shared runtime.
         registry: The device registry.
         targets: The beat's ``ai_targets``.
+        device_host: The address the device reaches the hub on.
 
     Returns:
         ``{account: {"base_url", "api_key", "model"}}``.
@@ -374,7 +376,7 @@ def _ai_accounts(
     if not materials:
         return {}
     port = load_config().listen_port
-    base_url = f"{_gateway_host(runtime, device.ipv4_address)}:{port}"
+    base_url = f"http://{device_host}:{port}"
     model = runtime.served_models.first_model(
         port=port, client_key=next(iter(materials.values()))
     )
@@ -440,15 +442,18 @@ def _account_keys(
     return keys
 
 
-def _gateway_host(runtime: PanelRuntime, device_ip: str) -> str:
-    """The ``http://<address>`` a device should reach the gateway on.
+def _device_host(runtime: PanelRuntime, device_ip: str) -> str:
+    """The address a device reaches the hub on.
+
+    Every hub-self host in the catalog and the AI credential resolves to
+    this, so what the device stores is an address it can actually open.
 
     Args:
         runtime: The shared runtime.
         device_ip: The device's address, to pick the LAN it is on.
 
     Returns:
-        The scheme and host, without a port.
+        The bare address, without a scheme or port.
     """
     address = None
     fallback = None
@@ -462,4 +467,4 @@ def _gateway_host(runtime: PanelRuntime, device_ip: str) -> str:
                 break
         except ValueError:
             continue
-    return f"http://{address or fallback or '192.168.100.1'}"
+    return address or fallback or "192.168.100.1"

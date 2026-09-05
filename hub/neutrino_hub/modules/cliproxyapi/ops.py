@@ -284,9 +284,31 @@ class CliproxyApiServedModelCache:
 
     def __init__(self):
         self._models: list[str] = []
+        self._is_answered = False
         # None, not zero: `time.monotonic()` counts from boot on Linux, and a
         # panel started early in one would read the cache as fresh.
         self._probed_at: float | None = None
+
+    def served(self, *, port: int, client_key: str) -> tuple[bool, list[str]]:
+        """Whether the gateway answered and what it serves, re-probed when stale.
+
+        Args:
+            port: Where the gateway listens.
+            client_key: A key to authenticate the probe with.
+
+        Returns:
+            ``(is_answered, models)``; the list is empty when nothing is
+            served or the gateway does not answer.
+        """
+        if (
+            self._probed_at is None
+            or time.monotonic() - self._probed_at > CLIPROXYAPI_SERVED_MODELS_TTL_S
+        ):
+            self._is_answered, _, self._models = CliproxyApiConfigApplier().probe(
+                port=port, client_key=client_key
+            )
+            self._probed_at = time.monotonic()
+        return self._is_answered, list(self._models)
 
     def first_model(self, *, port: int, client_key: str) -> str:
         """The first model the gateway serves, re-probed only when stale.
@@ -299,12 +321,5 @@ class CliproxyApiServedModelCache:
             The first served model name, or empty when none is served or the
             gateway does not answer.
         """
-        if (
-            self._probed_at is None
-            or time.monotonic() - self._probed_at > CLIPROXYAPI_SERVED_MODELS_TTL_S
-        ):
-            _, _, self._models = CliproxyApiConfigApplier().probe(
-                port=port, client_key=client_key
-            )
-            self._probed_at = time.monotonic()
-        return self._models[0] if self._models else ""
+        _, models = self.served(port=port, client_key=client_key)
+        return models[0] if models else ""
