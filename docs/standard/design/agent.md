@@ -18,31 +18,43 @@ machine's own people over the local control channel. What each may touch is
 decided by which partition a thing belongs to and by who is asking — never
 by which door they used.
 
-**Functions and services.** Everything a managed machine offers splits in
-two:
+**Modules and services.** Everything a managed machine offers splits in
+two, and the words mean the same thing on the hub's pages and the agent's:
+a module is what a machine has installed, a service is what the hub
+publishes.
 
-- **Functions** are machine software the hub administers — a remote
-  desktop, the SSH server. The panel's device drawer switches them; the
-  agent's page shows them and lets a privileged caller toggle them too. A
-  local toggle is never applied locally: it rides up with the next
-  heartbeat, the hub decides, and the answer comes back as desired state,
-  so the drawer and the page cannot disagree for longer than one beat.
+- **Modules** are machine software the hub administers — a remote desktop,
+  the SSH server. The panel's device drawer switches them; the agent's
+  page shows them and lets a privileged caller toggle them too. A local
+  toggle is never applied locally: it rides up with the next heartbeat,
+  the hub decides, and the answer comes back as desired state, so the
+  drawer and the page cannot disagree for longer than one beat. Two
+  semantics, decided by what the thing is: a platform capability the
+  machine already carries (the SSH server — a package dependency on
+  Linux, built into macOS and Windows) is **enabled and disabled**; a
+  third-party application (a remote desktop) is **installed and
+  removed**.
 - **Services** are what the machine's people do with what the hub
   publishes — pointing an account's AI tools at the gateway, mounting a
   published share, opening a published link, forwarding a published port.
   They are visible and decided **only on the machine**: the panel neither
-  renders nor controls them. The hub's part is the catalog of what exists
-  and, for the AI service, the per-account credential; every other choice,
-  and every secret it takes, stays local.
+  renders nor controls them. The hub's part is the service list and, for
+  the ai type, the per-account credential; every other choice, and every
+  secret it takes, stays local.
 
 | Capability | Privileged | Ordinary account |
 | --- | --- | --- |
-| Read binding, status, functions, the service catalog | yes | yes |
+| Read binding, status, modules, the service list | yes | yes |
 | Connect to a hub / disconnect | yes | no |
-| Toggle functions | yes, as the panel does | no |
-| AI service: switch an account's tools | yes, any account | own account only |
-| Mounts: attach a published share | yes, at any path | yes, where the account may write |
-| Port forwards | yes | yes — a forward is machine-wide and every scope sees it |
+| Toggle modules | yes, as the panel does | no |
+| ai service: an account's tools | yes, any account | own account only |
+| file service: attach a share | yes, at any path | yes, where the account may write |
+| port service: forward | yes | yes — a forward is machine-wide and every scope sees it |
+
+A control the caller's scope does not own is **disabled, never hidden**:
+an ordinary account sees the Connect button and the module toggles greyed
+out, because a page that hides what privilege would show reads as broken
+rather than as locked.
 
 Privileged means the platform's own idea of administrative identity: uid 0
 on Linux and macOS, an elevated Administrators token on Windows — under UAC
@@ -54,66 +66,99 @@ distinction UAC exists to draw.
 The agent beats every few seconds. Up goes what the machine is: hostname,
 agent version, metrics, the platform tuple, the machine's human accounts —
 the platform's own judgment of who is a person, root and system accounts
-never listed — each function's state, the most recent error worth showing,
+never listed — each module's state, the most recent error worth showing,
 and any pending requests. Down comes what should be true: the desired
-functions, the catalog when the agent's copy is stale (compared by
+modules, the catalog when the agent's copy is stale (compared by
 `catalog_hash`, so a converged fleet is never re-shipped it), the AI
 credentials for accounts the hub has granted, queued commands, and the
 hub's version.
 
 **The catalog** is the hub's answer to "what exists for this machine", in
-two halves under one hash: the function manifests, and the service offers
-rendered from the hub's own state — a declared share, a published link, a
-container's exposed port. Offers carry no secrets, ever; the one secret a
-service takes from the hub — an account's gateway key — travels only in
-that device's per-beat reply.
+two halves under one hash: the module manifests, and the service list.
+The list carries no secrets, ever; the one secret a service takes from
+the hub — an account's gateway key — travels only in that device's
+per-beat reply.
 
-**Status is typed.** A function or service reports `state` plus
+**The service list is typed.** Every entry is
+`{id, type, title, payload, is_healthy, source, description}`, and the
+four types are closed until a fifth earns its place:
+
+| type | payload | agent behavior |
+| --- | --- | --- |
+| `web` | url | Open |
+| `port` | host, port | Connect / Disconnect (a loopback forward) |
+| `ai` | endpoint, protocol, models[] | per-account configuration, applied together |
+| `file` | protocol, host, share | Config, then Mount / Unmount |
+
+Entries come from two sources and only two: a hub module declares its own
+(Gitea a web entry, Samba a file entry per share, the AI gateway an ai
+entry, the container runtime a port entry per published container port),
+live only while the module runs — health is the module's, never a second
+opinion; or a person declares one by hand for something outside the hub,
+probed the way declared services are. `description` is the declarer's one
+line of provenance — "published by container mysql:8.0" — worded by whoever
+declared, so the types themselves stay general. A payload host that is the
+hub's own address (loopback included) is resolved per device at heartbeat
+time to the address that device actually reaches, the way the ai endpoint
+always was.
+
+**Status is typed.** A module or service reports `state` plus
 `{code, params}` — never an English sentence — and every surface does its
 own wording. The agent's `last_error` crosses the wire the same way, so a
 device that is unhappy says why on the panel, not only on its own page.
 
-## Services on the machine
+## The agent's page
 
-The agent's page lists services grouped by kind — AI, links, ports, mounts
-— each group under its own divider. Service choices are machine state: they
-live in the agent's own store, survive a hub restore untouched, and appear
-in no hub backup.
+Three sections under outer titles set in the hub's module-page style —
+**Status**, **Modules**, **Services** — in that order on the agent as on
+the hub. Status is one panel: the connection card, its controls greyed for
+an ordinary caller. Modules is one panel of rows, enable/disable or
+install/remove per the module's semantics, greyed likewise. Services is
+one panel per type — Web, Ports, AI, Files — and a panel with staged,
+unapplied edits lights its frame the way the hub's panels do; unhealthy
+entries render greyed with their state, never hidden.
 
-**AI.** One chip per account: a privileged caller sees every human account,
-each chip carrying that account's cc-switch state; an ordinary caller sees
-one chip — their own. Switching a chip on asks the hub for that
-(device, account) pair's gateway key and points the account's tools at the
-gateway; switching it off puts the account's own configuration back and
-revokes the pair's key. Keys per pair are what makes usage meter to the
-person and revocation cut exactly one account on one machine; the AI page's
-Access panel lists them. Acting on an account that is empty or not among
-the reported ones is refused with `{"code": "no_target_user"}`, and the
-guard is symmetric: activation and deactivation check it alike, so a
-cleanup can never be skipped by the same gap that let the setup mis-target.
-`nagent connect` remembers the invoking `SUDO_USER`, which is the chip a
-single-user machine finds preselected.
+The page redraws only when the payload actually changed, and never while
+the person holds a text selection, a focused form field, or an open
+dialog — a self-refresh that eats a selection is a bug, not a cadence.
 
-**Links.** Every published web service renders as a link that opens it.
-There is nothing to toggle and no state to keep.
+**Web.** One row per entry: title, url, description line, an Open button.
 
-**Ports.** A published port — a `generic_tcp` service, a container's
-exposed port — forwards to this machine on a click: a relay from
-`127.0.0.1`, on the same number when it is free and otherwise on a free one
-the row names. A forward binds the loopback the whole machine shares, so it
-is machine state every scope sees. Containers are started and stopped on
-the hub's own panel, never from here.
+**Ports.** Connect starts a relay from `127.0.0.1` — the entry's own port
+number when free, otherwise a free one the row names — and Disconnect
+closes it. A forward binds the loopback the whole machine shares, so it is
+machine state every scope sees.
 
-**Mounts.** A published share attaches where the person says. The form asks
-for the share's own username and password and a path — typed, or picked in
-the browse dialog the agent feeds, whose listing runs as the caller's
-identity, so an ordinary account browses only what it may write. The
-password becomes a root-only credentials file on this machine and never
-travels to the hub. A path under the asking account's home is
-ownership-mapped to that account; anywhere else follows the share's own
-permissions. A mount point that is not an empty directory is refused
-(`{"code": "mountpoint_not_empty"}` — mounting over content hides it), and
-a machine without CIFS tooling says so (`{"code": "cifs_missing"}`).
+**AI.** One chips row of the machine's human accounts — a privileged
+caller sees them all, an ordinary caller exactly their own — beside a
+Config button and an Apply button. A chip stages whether that account's
+tools point at the gateway; Config stages what they point with, per tool
+and honestly per tool's own knobs: Claude Code's four role slots
+(default, opus, sonnet, haiku), Codex's one model and its reasoning
+effort, Gemini's one model — every choice drawn from the ai entry's
+`models[]`. Apply commits the staged set: the agent asks the hub for each
+targeted account's (device, account) key, writes the tools' own
+configuration, and puts an untargeted account's configuration back,
+revoking its pair's key. Keys per pair are what makes usage meter to the
+person; the AI page's Access panel lists them. Acting on an account that
+is empty or not among the reported ones is refused with
+`{"code": "no_target_user"}`, and the guard is symmetric — activation and
+deactivation check it alike. `nagent connect` remembers the invoking
+`SUDO_USER`, the chip a single-user machine finds preselected.
+
+**Files.** Config asks for the share's own username and password and a
+path — typed, or picked in the browse dialog the agent feeds, whose
+listing runs as the caller's identity, so an ordinary account browses only
+what it may write. Mount attaches, Unmount detaches. The password becomes
+a root-only credentials file on this machine and never travels to the hub;
+the mount tooling is a package dependency, never the person's problem. A
+path under the asking account's home is ownership-mapped to that account;
+anywhere else follows the share's own permissions. A mount point that is
+not an empty directory is refused (`{"code": "mountpoint_not_empty"}` —
+mounting over content hides it).
+
+Service choices are machine state: they live in the agent's own store,
+survive a hub restore untouched, and appear in no hub backup.
 
 ## The local control channel
 
@@ -133,10 +178,21 @@ the operating system, not from a password:
   says how to open one, and nothing else.
 
 `nagent ui` is how a person opens the page: it fetches a token over the
-socket as whoever ran it and opens the browser on a URL carrying it.
-The desktop menu entry runs `nagent ui`, so a double-click lands in the
-clicking account's own scope; `sudo nagent ui` opens the privileged page.
-One page serves both — what it shows is the token's scope.
+socket as whoever ran it, opens the browser through the standard
+library's `webbrowser` module, prints
+`Please open <url> if the browser does not show up. Close the window or
+press Ctrl-C to stop.` — and **waits**. The command is the session: Ctrl-C
+revokes the token at once, and a closed window revokes it moments later —
+the page's own polling is the token's pulse, and a token whose pulse
+stops is expired and the waiting command told so. The desktop menu entry
+runs `nagent ui`, so a double-click lands in the clicking account's own
+scope; `sudo nagent ui` opens the privileged page. One page serves both —
+what it shows is the token's scope.
+
+The agent mints a page token only while it actually holds the loopback
+port: started with `--no-ui`, or with the port taken by something else,
+it refuses and says why — a privileged token opened into a page some
+other local process is serving would be that process's to read.
 
 ## Acting for an account
 
