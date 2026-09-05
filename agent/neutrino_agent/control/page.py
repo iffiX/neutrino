@@ -149,7 +149,6 @@ const WORDS = {
     path_hint: "Mount path",
     not_attached: "not mounted",
     unmounting: "unmounting…",
-    forget: "Forget",
     enabled_users: "Enabled users",
     mount_queued: "waiting for the agent…",
     mount_installing_tooling: "installing the mount tooling…",
@@ -850,7 +849,6 @@ function drawFilesPanel(state, entries, title) {
           is_open: true, username: kept ? (kept.username || '') : '',
           password: '',
           path: kept ? kept.path : mountDefaultPath(payload, state),
-          record_id: kept ? kept.record_id : '',
         };
       }
       redraw();
@@ -982,23 +980,6 @@ function drawFileForm(entryId, staged) {
   pathLine.appendChild(path);
   pathLine.appendChild(browse);
   form.appendChild(pathLine);
-  if (staged.record_id) {
-    const line = document.createElement('div');
-    line.className = 'row';
-    const forget = document.createElement('button');
-    forget.className = 'danger';
-    forget.textContent = WORDS.ui.forget;
-    forget.onclick = async () => {
-      if (await serviceAction('file',
-          { action: 'forget', record_id: staged.record_id },
-          'file_' + entryId)) {
-        delete fileStaged[entryId];
-        redraw();
-      }
-    };
-    line.appendChild(forget);
-    form.appendChild(line);
-  }
   return form;
 }
 

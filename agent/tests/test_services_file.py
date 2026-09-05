@@ -256,10 +256,6 @@ def test_detach_is_the_records_own_account_or_privileged(service):
     assert subject.rows()[0]["state"] == "mounted"
     assert platform.attach_calls[-1]["password"] == ""
 
-    assert subject.forget(account="bob", is_privileged=False, record_id=record_id) == {}
-    assert store.mounts() == {}
-    assert not os.path.isfile(platform.attach_calls[0]["credentials_path"])
-
 
 def test_a_relative_path_is_refused(service):
     subject, _platform, _store, _tmp_path = service
@@ -315,15 +311,6 @@ def test_act_mounts_and_unmounts_by_typed_entry(service):
         body={"action": "mount", "record_id": record_id},
     )
     assert outcome == {}
-
-    outcome = subject.act(
-        entries=[],
-        account="root",
-        is_privileged=True,
-        body={"action": "forget", "record_id": record_id},
-    )
-    assert outcome == {}
-    assert store.mounts() == {}
 
     refused = subject.act(
         entries=[], account="root", is_privileged=True, body={"action": "mount"}
