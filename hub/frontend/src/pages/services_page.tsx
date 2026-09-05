@@ -76,6 +76,12 @@ const SOURCE_LABELS: Record<PublishedService["source"], string> = {
   module: "module",
   declared: "declared",
 };
+// Who published the row: the hub's own module in the accent, the operator's
+// own entry in the secondary. Health is the dot's and the state word's.
+const SOURCE_TONES: Record<PublishedService["source"], string> = {
+  module: "badge--accent",
+  declared: "badge--secondary",
+};
 
 const FORM_TITLE = "New declared service";
 const FIELD_NAME = "Name";
@@ -340,7 +346,9 @@ function ServiceRow({ service, onChanged }: ServiceRowProps) {
         {error !== null && <span className="field_error">{error}</span>}
       </div>
       <span className="published_row_state">{stateLabel}</span>
-      <span className="badge">{SOURCE_LABELS[service.source]}</span>
+      <span className={`badge ${SOURCE_TONES[service.source]}`}>
+        {SOURCE_LABELS[service.source]}
+      </span>
       {service.record_id !== null && (
         <div className="published_row_actions">
           <button
