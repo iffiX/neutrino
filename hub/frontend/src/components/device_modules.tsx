@@ -51,17 +51,32 @@ const WORDING = {
 // shows as itself, because a failure hidden entirely is worse than a bare code.
 const MODULE_ERROR_WORDING: Record<string, string> = {
   unsupported_platform: "This platform cannot run it.",
-  download_failed: "The download failed.",
-  install_failed: "The install failed.",
+  no_platform_build: "There is no build of it for this machine.",
+  no_download_named: "The catalog names no download for this machine.",
+  install_failed: "The install failed. See Install output below.",
+  install_unconfirmed:
+    "The install finished, but the software cannot be found on the machine.",
+  remove_unconfirmed: "The removal finished, but the software is still there.",
+  switch_unconfirmed: "The switch ran, but the machine did not change.",
   vendor_served_a_page:
     "The vendor served a challenge page instead of the package. Install it by hand on the machine; this row turns green by itself once it is there.",
-  vendor_fetch_failed: "The hub could not fetch the package from the vendor.",
-  vendor_fetch_unavailable:
+  module_fetch_failed: "The hub could not fetch the package from the vendor.",
+  module_fetch_unavailable:
     "This hub cannot fetch downloads a vendor gates on a browser.",
-  vendor_fetch_too_large:
+  module_fetch_too_large:
     "The vendor's download is larger than the hub will fetch.",
-  vendor_package_digest_mismatch:
-    "What arrived did not match the hub's checksum.",
+  module_release_unreadable: "The hub could not read that project's releases.",
+  module_cache_unwritable: "The hub could not save the download.",
+  module_artifact_missing: "The hub no longer holds that download; ask again.",
+  module_artifact_unknown: "The hub does not know that download; ask again.",
+  module_digest_mismatch: "What arrived did not match the hub's checksum.",
+  unknown_action: "The machine did not understand what it was asked to do.",
+  unknown_kind: "The machine does not know this kind of module.",
+  order_failed: "The install did not finish. See Install output below.",
+  verify_failed:
+    "The machine could not tell whether the software is there afterwards.",
+  agent_never_reported: "The machine never said how it went.",
+  hub_unreachable: "The machine could not reach the hub for the download.",
 };
 
 const STATE_WORDING: Record<string, string> = {

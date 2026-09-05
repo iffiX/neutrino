@@ -172,6 +172,13 @@
   justify-content: space-between;
 }
 
+/* One install in the pane: its line, and the output it produced under it. */
+.device_drawer_order {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
 .device_drawer_footer {
   display: flex;
   flex-wrap: wrap;

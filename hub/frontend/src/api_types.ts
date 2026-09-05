@@ -771,6 +771,28 @@ export interface DeviceModulesResponse {
   is_agent_online: boolean;
 }
 
+/** What one install on a device did, whatever asked for it. */
+export interface DeviceInstallOrderView {
+  id: string;
+  module: string;
+  /** The module's own title, so a failure reads beside the thing it was. */
+  title: string;
+  action: string;
+  state: string;
+  code: string;
+  params: Record<string, unknown>;
+  /** What the failing step printed, so a person reads the vendor's own
+   * words rather than only that something went wrong. */
+  output: string;
+  asked_at: string;
+  finished_at: string;
+}
+
+/** Every install this device has run, newest first. */
+export interface DeviceInstallOutputResponse {
+  orders: DeviceInstallOrderView[];
+}
+
 /** A link a machine can join the gateway with. */
 export interface DeviceEnrollmentView {
   link: string;

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { Icon } from "./icon";
@@ -14,6 +14,7 @@ import { ToggleSwitch } from "./toggle_switch";
 import {
   ApiError,
   apiDelete,
+  apiGet,
   apiPost,
   apiPut,
   describeError,
@@ -39,6 +40,8 @@ import type {
   DeviceAnnotation,
   DeviceAuthMethod,
   DeviceEnrollmentView,
+  DeviceInstallOrderView,
+  DeviceInstallOutputResponse,
   DeviceView,
   DeviceWolResult,
   KeyView,
@@ -107,6 +110,92 @@ const AGENT_ERROR_WORDING: Record<string, string> = {
 };
 
 const COMMAND_RESULTS_LABEL = "Agent command results";
+
+// One pane for every install on this device, whatever asked for it: a person
+// reading why something is not on a machine should not have to know which
+// surface started it.
+const INSTALL_OUTPUT_LABEL = "Install output";
+const INSTALL_OUTPUT_INTERVAL_MS = 3000;
+const INSTALL_OUTPUT_BUSY_INTERVAL_MS = 1000;
+
+// The hub's own order states, worded. The transient ones are what the dot
+// pulses on, the same way a running task does.
+const ORDER_RUNNING_STATES: string[] = ["queued", "fetching", "installing"];
+const ORDER_STATE_WORDING: Record<string, string> = {
+  queued: "waiting its turn",
+  fetching: "downloading",
+  installing: "installing",
+  done: "done",
+  failed: "failed",
+};
+
+// What each order was asked to do, worded for the line above its output.
+const ORDER_ACTION_WORDING: Record<string, string> = {
+  install: "install",
+  remove: "uninstall",
+  enable: "enable",
+  disable: "disable",
+};
+
+// The {code, params} an order failed with, worded. A code with no entry
+// shows as itself, because a failure hidden entirely is worse than a bare
+// code.
+const ORDER_ERROR_WORDING: Record<string, string> = {
+  no_platform_build: "There is no build of it for this machine.",
+  no_download_named: "The catalog names no download for this machine.",
+  vendor_served_a_page:
+    "The vendor served a challenge page instead of the package. Install it by hand on the machine; this row turns green by itself once it is there.",
+  module_fetch_failed: "The hub could not fetch it from the vendor.",
+  module_fetch_unavailable:
+    "This hub cannot fetch downloads a vendor gates on a browser.",
+  module_fetch_too_large:
+    "The vendor's download is larger than the hub will fetch.",
+  module_release_unreadable: "The hub could not read that project's releases.",
+  module_cache_unwritable: "The hub could not save the download.",
+  module_artifact_missing: "The hub no longer holds that download; ask again.",
+  module_artifact_unknown: "The hub does not know that download; ask again.",
+  module_digest_mismatch: "What arrived did not match the hub's checksum.",
+  install_failed: "The install failed on the machine.",
+  install_unconfirmed:
+    "The install finished, but the software cannot be found on the machine.",
+  remove_unconfirmed: "The removal finished, but the software is still there.",
+  switch_unconfirmed: "The switch ran, but the machine did not change.",
+  unsupported_platform: "This machine cannot do that.",
+  unknown_action: "The machine did not understand what it was asked to do.",
+  unknown_kind: "The machine does not know this kind of module.",
+  order_failed: "The install did not finish.",
+  verify_failed:
+    "The machine could not tell whether the software is there afterwards.",
+  agent_never_reported: "The machine never said how it went.",
+  hub_unreachable: "The machine could not reach the hub for the download.",
+};
+
+function orderTone(state: string): "ok" | "warn" | "error" | "idle" {
+  if (ORDER_RUNNING_STATES.includes(state)) {
+    return "warn";
+  }
+  if (state === "done") {
+    return "ok";
+  }
+  if (state === "failed") {
+    return "error";
+  }
+  return "idle";
+}
+
+function describeOrder(order: DeviceInstallOrderView): string {
+  const action = ORDER_ACTION_WORDING[order.action] ?? order.action;
+  const state = ORDER_STATE_WORDING[order.state] ?? order.state;
+  const parts = [`${order.title || order.module} · ${action} · ${state}`];
+  if (order.code.length > 0) {
+    parts.push(ORDER_ERROR_WORDING[order.code] ?? order.code);
+  }
+  const stamp = order.finished_at || order.asked_at;
+  if (stamp.length > 0) {
+    parts.push(formatTimeAgo(stamp));
+  }
+  return parts.join(" · ");
+}
 
 interface DeviceAction {
   action: DeviceActionName;
@@ -203,9 +292,47 @@ export function DeviceDrawer({
     null,
   );
 
+  // Every install the controller ran for this device, whatever asked.
+  const [orders, setOrders] = useState<DeviceInstallOrderView[]>([]);
+
   const task = useTaskStream(taskId);
   const logRef = useRef<HTMLPreElement | null>(null);
   const wasTaskRunning = useRef(false);
+
+  const isManaged = device.client !== null && device.client.is_managed;
+  const isAnyOrderRunning = orders.some((order) =>
+    ORDER_RUNNING_STATES.includes(order.state),
+  );
+
+  const loadOrders = useCallback(async () => {
+    if (!isManaged) {
+      return;
+    }
+    try {
+      const response = await apiGet<DeviceInstallOutputResponse>(
+        `/devices/${device.mac_address}/install_output`,
+      );
+      setOrders(response.orders);
+    } catch {
+      // The pane is a report, not a control: a read that failed leaves the
+      // last one standing rather than replacing it with an error.
+    }
+  }, [device.mac_address, isManaged]);
+
+  useEffect(() => {
+    void loadOrders();
+    const handle = window.setInterval(
+      () => {
+        if (!document.hidden) {
+          void loadOrders();
+        }
+      },
+      isAnyOrderRunning
+        ? INSTALL_OUTPUT_BUSY_INTERVAL_MS
+        : INSTALL_OUTPUT_INTERVAL_MS,
+    );
+    return () => window.clearInterval(handle);
+  }, [loadOrders, isAnyOrderRunning]);
 
   // An install's outcome — the agent appearing, the version catching up — is
   // the page's to show, and it should not wait for the next poll tick.
@@ -831,37 +958,55 @@ export function DeviceDrawer({
             device.client.is_managed &&
             device.ssh !== null && <RemoteDesktopPanel device={device} />}
 
-          {(taskId !== null || task.lines.length > 0) && (
+          {(taskId !== null || task.lines.length > 0 || orders.length > 0) && (
             <div className="device_drawer_log">
               <div className="device_drawer_log_head">
-                <span className="section_label">
-                  {runningLabel ?? "Action"} output
-                </span>
-                <StatusDot
-                  tone={
-                    task.isRunning
-                      ? "warn"
-                      : task.exitCode === 0
-                        ? "ok"
+                <span className="section_label">{INSTALL_OUTPUT_LABEL}</span>
+                {(taskId !== null || task.lines.length > 0) && (
+                  <StatusDot
+                    tone={
+                      task.isRunning
+                        ? "warn"
+                        : task.exitCode === 0
+                          ? "ok"
+                          : task.exitCode === null
+                            ? "idle"
+                            : "error"
+                    }
+                    label={
+                      task.isRunning
+                        ? "running"
                         : task.exitCode === null
                           ? "idle"
-                          : "error"
-                  }
-                  label={
-                    task.isRunning
-                      ? "running"
-                      : task.exitCode === null
-                        ? "idle"
-                        : `exit ${task.exitCode}`
-                  }
-                />
+                          : `${runningLabel ?? "action"} · exit ${task.exitCode}`
+                    }
+                  />
+                )}
               </div>
-              <pre className="device_drawer_log_output" ref={logRef}>
-                {stripAnsi(task.lines.join("\n"))}
-              </pre>
+              {(taskId !== null || task.lines.length > 0) && (
+                <pre className="device_drawer_log_output" ref={logRef}>
+                  {stripAnsi(task.lines.join("\n"))}
+                </pre>
+              )}
               {task.error !== null && (
                 <span className="field_error">{task.error}</span>
               )}
+              {orders.map((order) => (
+                <div key={order.id} className="device_drawer_order">
+                  <div className="device_drawer_log_head">
+                    <StatusDot
+                      tone={orderTone(order.state)}
+                      isPulsing={ORDER_RUNNING_STATES.includes(order.state)}
+                      label={describeOrder(order)}
+                    />
+                  </div>
+                  {order.output.length > 0 && (
+                    <pre className="device_drawer_log_output">
+                      {stripAnsi(order.output)}
+                    </pre>
+                  )}
+                </div>
+              ))}
             </div>
           )}
 
