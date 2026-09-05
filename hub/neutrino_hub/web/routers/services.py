@@ -19,15 +19,18 @@ from neutrino_hub.modules.services.config import (
 )
 from neutrino_hub.modules.services.constants import (
     SERVICES_ERROR_INVALID,
+    SERVICES_ERROR_SHARE_SCAN,
     SERVICES_ERROR_UNKNOWN,
     SERVICES_KIND_SAMBA,
     SERVICES_TYPE_TO_KIND,
 )
+from neutrino_hub.modules.services.ops import list_shares
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
     DeclaredServiceCreate,
     PublishedServiceView,
     ServiceListView,
+    ServiceShareListView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 
@@ -51,6 +54,35 @@ def list_services(
         The typed list, module entries first.
     """
     return _list_view(request, runtime)
+
+
+@router.get("/shares", response_model=ServiceShareListView)
+def list_host_shares(host: str) -> ServiceShareListView:
+    """List what one SMB server exports, so a share is picked and not typed.
+
+    Args:
+        host: The server to ask.
+
+    Returns:
+        Its share names, administrative ones dropped.
+
+    Raises:
+        HTTPException: 400 with ``declared_service_invalid`` for a blank
+            host, or ``share_scan_failed`` whose ``reason`` says whether the
+            server did not answer or this hub has no smbclient.
+    """
+    if not host.strip():
+        raise _invalid(DeclaredServiceError(SERVICES_ERROR_INVALID, {"field": "host"}))
+    listing = list_shares(host.strip())
+    if listing.error_code is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": SERVICES_ERROR_SHARE_SCAN,
+                "params": {"reason": listing.error_code},
+            },
+        )
+    return ServiceShareListView(shares=listing.names)
 
 
 @router.post(
@@ -80,7 +112,7 @@ def add_declared_service(
         raise _invalid(DeclaredServiceError(SERVICES_ERROR_INVALID, {"field": "kind"}))
     shares = []
     if kind == SERVICES_KIND_SAMBA:
-        shares = [DeclaredShare(name=body.share or "")]
+        shares = [DeclaredShare(name=name) for name in (body.shares or [])]
     try:
         DeclaredServiceRegistry().add(
             name=body.name,

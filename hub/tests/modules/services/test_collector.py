@@ -8,6 +8,7 @@ from neutrino_hub.modules.services.collector import (
     resolve_entries,
 )
 from neutrino_hub.modules.services.config import DeclaredService, DeclaredShare
+from neutrino_hub.modules.services.probe import DeclaredServiceHealth
 
 HUB = "192.168.100.1"
 
@@ -42,6 +43,15 @@ def container(name: str, *, ports: list[int], is_running: bool = True):
         is_running=is_running,
         is_declared=True,
         host_ports=ports,
+    )
+
+
+def health(record_id: str, is_healthy: bool | None, detail_code: str | None = None):
+    return DeclaredServiceHealth(
+        service_id=record_id,
+        is_healthy=is_healthy,
+        checked_at="2026-01-01T00:00:00+00:00",
+        detail_code=detail_code,
     )
 
 
@@ -152,7 +162,10 @@ def test_declared_records_map_onto_the_types_with_their_probe_health():
     ]
     entries = collect(
         declared_services=records,
-        declared_healths={"w1": True, "p1": False},
+        declared_healths={
+            "w1": health("w1", True),
+            "p1": health("p1", False),
+        },
     )
 
     by_id = {e["id"]: e for e in entries}
@@ -167,8 +180,53 @@ def test_declared_records_map_onto_the_types_with_their_probe_health():
     assert by_id["f1_media"]["payload"]["share"] == "media"
     assert by_id["f1_media"]["record_id"] == "f1"
     assert by_id["f1_backup"]["record_id"] == "f1"
+    assert by_id["w1"]["detail_code"] is None
     # Never probed reads None, not unhealthy.
     assert by_id["f1_media"]["is_healthy"] is None
+    assert by_id["f1_media"]["detail_code"] is None
+
+
+def test_every_row_of_a_record_carries_what_its_probe_measured():
+    """A record's detail code reaches the page on each row it published."""
+    record = declared(
+        "samba",
+        id="f1",
+        port=445,
+        shares=[DeclaredShare(name="media"), DeclaredShare(name="backup")],
+    )
+    entries = collect(
+        declared_services=[record],
+        declared_healths={"f1": health("f1", False, "share_missing")},
+    )
+
+    assert [entry["detail_code"] for entry in entries] == [
+        "share_missing",
+        "share_missing",
+    ]
+    assert all(entry["is_healthy"] is False for entry in entries)
+
+
+def test_a_module_entry_never_carries_a_detail_code():
+    """Health is the module's own, and it reports no probe reason."""
+    entries = collect(
+        is_samba_served=True,
+        samba_share_names=["media"],
+        is_samba_healthy=False,
+    )
+
+    assert entries[0]["source"] == "module"
+    assert entries[0]["detail_code"] is None
+
+
+def test_the_catalog_copy_drops_the_detail_code():
+    """A device catalog carries health, not the panel's reason for it."""
+    record = declared("generic_tcp", id="p1")
+    entries = collect(
+        declared_services=[record],
+        declared_healths={"p1": health("p1", False, "connect_failed")},
+    )
+
+    assert "detail_code" not in catalog_entries(entries)[0]
 
 
 def test_resolution_substitutes_every_hub_self_host_for_the_caller_address():

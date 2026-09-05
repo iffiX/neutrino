@@ -1,11 +1,12 @@
 """Composing the typed service list the hub publishes.
 
 Every entry is ``{id, type, title, payload, is_healthy, source, description,
-record_id}`` with four types — web, port, ai, file. Module-declared entries
-exist only while their module serves and carry the module's own health;
-manual declarations carry their probe results. ``record_id`` names the
-declared record an entry came from, for the panel's delete and probe; the
-catalog copy drops it.
+record_id, detail_code}`` with four types — web, port, ai, file.
+Module-declared entries exist only while their module serves and carry the
+module's own health; manual declarations carry their probe results.
+``record_id`` names the declared record an entry came from, for the panel's
+delete and probe, and ``detail_code`` is what that record's last probe
+measured; the catalog copy drops both.
 
 Pure: everything composed comes in through the constructor. Reading the
 configs, the unit states and the probe caches is the caller's.
@@ -90,8 +91,9 @@ class ServiceListCollector:
             podman_containers: The surveyed containers, each with ``name``,
                 ``image``, ``is_running`` and ``host_ports``.
             declared_services: Every declared service.
-            declared_healths: Declared record id to its probed health; a
-                record never probed reads None.
+            declared_healths: Declared record id to its
+                :class:`neutrino_hub.modules.services.probe.DeclaredServiceHealth`;
+                a record never probed is absent.
         """
         self._hub_host = hub_host
         self._is_gitea_served = is_gitea_served
@@ -137,15 +139,17 @@ class ServiceListCollector:
             )
         for record in self._declared_of(SERVICES_KIND_HTTP):
             url = f"{record.scheme}://{record.host}:{record.port}{record.path or '/'}"
+            is_healthy, detail_code = self._declared_health(record.id)
             entries.append(
                 _entry(
                     id=record.id,
                     type=SERVICES_TYPE_WEB,
                     title=record.name,
                     payload={"url": url},
-                    is_healthy=self._declared_healths.get(record.id),
+                    is_healthy=is_healthy,
                     description=record.description,
                     record_id=record.id,
+                    detail_code=detail_code,
                 )
             )
         return entries
@@ -168,15 +172,17 @@ class ServiceListCollector:
                         )
                     )
         for record in self._declared_of(SERVICES_KIND_GENERIC_TCP):
+            is_healthy, detail_code = self._declared_health(record.id)
             entries.append(
                 _entry(
                     id=record.id,
                     type=SERVICES_TYPE_PORT,
                     title=record.name,
                     payload={"host": record.host, "port": record.port},
-                    is_healthy=self._declared_healths.get(record.id),
+                    is_healthy=is_healthy,
                     description=record.description,
                     record_id=record.id,
+                    detail_code=detail_code,
                 )
             )
         return entries
@@ -218,6 +224,7 @@ class ServiceListCollector:
                     )
                 )
         for record in self._declared_of(SERVICES_KIND_SAMBA):
+            is_healthy, detail_code = self._declared_health(record.id)
             for share in record.shares:
                 entries.append(
                     _entry(
@@ -229,15 +236,22 @@ class ServiceListCollector:
                             "host": record.host,
                             "share": share.name,
                         },
-                        is_healthy=self._declared_healths.get(record.id),
+                        is_healthy=is_healthy,
                         description=record.description,
                         record_id=record.id,
+                        detail_code=detail_code,
                     )
                 )
         return entries
 
     def _declared_of(self, kind: str) -> list[DeclaredService]:
         return [r for r in self._declared_services if r.kind == kind]
+
+    def _declared_health(self, record_id: str) -> tuple[bool | None, str | None]:
+        health = self._declared_healths.get(record_id)
+        if health is None:
+            return None, None
+        return health.is_healthy, health.detail_code
 
 
 def hub_self_addresses(hub_addresses: list[str]) -> set[str]:
@@ -301,6 +315,7 @@ def _entry(
     is_healthy: bool | None,
     description: str,
     record_id: str | None = None,
+    detail_code: str | None = None,
 ) -> dict:
     return {
         "id": id,
@@ -311,6 +326,7 @@ def _entry(
         "source": (SERVICES_SOURCE_DECLARED if record_id else SERVICES_SOURCE_MODULE),
         "description": description,
         "record_id": record_id,
+        "detail_code": detail_code,
     }
 
 

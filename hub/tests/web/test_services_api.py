@@ -10,6 +10,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.modules.services.ops import SambaShareListing
 from neutrino_hub.modules.services.probe import DeclaredServiceHealth
 from neutrino_hub.modules.services.published import PublishedServiceCache
 from neutrino_hub.system.systemd_ctl import ServiceStatus
@@ -103,7 +104,12 @@ def test_each_form_kind_lands_as_its_own_type(box):
 
     declare(client, name="wiki", kind="web", port=8080, scheme="https")
     declare(
-        client, name="nas", kind="file", host="192.168.100.7", port=None, share="media"
+        client,
+        name="nas",
+        kind="file",
+        host="192.168.100.7",
+        port=None,
+        shares=["media"],
     )
     entries = declare(client)
 
@@ -162,7 +168,7 @@ def test_a_hub_self_host_is_shown_as_the_panel_host(box):
 
 def test_delete_removes_every_entry_of_the_record(box):
     client, _ = box
-    entries = declare(client, name="nas", kind="file", port=None, share="media")
+    entries = declare(client, name="nas", kind="file", port=None, shares=["media"])
     record_id = entries[0]["record_id"]
 
     removed = client.delete(f"/api/services/declared/{record_id}")
@@ -198,7 +204,7 @@ def test_probe_now_answers_the_refreshed_list(box):
         ({"host": " "}, "host"),
         ({"port": None}, "port"),
         ({"port": 70000}, "port"),
-        ({"kind": "file", "port": None, "share": ""}, "shares"),
+        ({"kind": "file", "port": None, "shares": []}, "shares"),
     ],
 )
 def test_a_refused_field_is_named_in_the_error(box, fields, refused):
@@ -212,3 +218,76 @@ def test_a_refused_field_is_named_in_the_error(box, fields, refused):
         "code": "declared_service_invalid",
         "params": {"field": refused},
     }
+
+
+def answer(monkeypatch, listing: SambaShareListing) -> None:
+    """Make every scan answer with one listing."""
+    monkeypatch.setattr(services, "list_shares", lambda host, **options: listing)
+
+
+def test_a_scan_lists_what_the_server_exports(box, monkeypatch):
+    client, _ = box
+    answer(monkeypatch, SambaShareListing(names=["media", "backup"]))
+
+    response = client.get("/api/services/shares", params={"host": "192.168.100.7"})
+
+    assert response.status_code == 200
+    assert response.json() == {"shares": ["media", "backup"]}
+
+
+@pytest.mark.parametrize("reason", ["connect_failed", "tool_missing"])
+def test_a_scan_that_lists_nothing_says_which_reason(box, monkeypatch, reason):
+    """A server that did not answer and a hub without the client differ."""
+    client, _ = box
+    answer(monkeypatch, SambaShareListing(error_code=reason))
+
+    response = client.get("/api/services/shares", params={"host": "10.0.0.9"})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "share_scan_failed",
+        "params": {"reason": reason},
+    }
+
+
+def test_a_scan_without_a_host_is_refused_on_the_host_field(box):
+    client, _ = box
+
+    response = client.get("/api/services/shares", params={"host": " "})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "declared_service_invalid",
+        "params": {"field": "host"},
+    }
+
+
+def test_a_file_declaration_publishes_one_row_per_share(box):
+    """Taking every export a scan found declares them in one record."""
+    client, _ = box
+
+    entries = declare(
+        client,
+        name="nas",
+        kind="file",
+        host="192.168.100.7",
+        port=None,
+        shares=["media", "backup"],
+    )
+
+    assert [entry["payload"]["share"] for entry in entries] == ["media", "backup"]
+    assert len({entry["record_id"] for entry in entries}) == 1
+
+
+def test_the_list_carries_what_the_probe_measured(box):
+    """The page words the code; the API never sends a sentence."""
+    client, runtime = box
+    record_id = declare(client)[0]["record_id"]
+    runtime.declared_probe.health[record_id] = DeclaredServiceHealth(
+        record_id, False, "2026-01-01T00:00:00+00:00", "share_missing"
+    )
+    runtime.published_services.expire()
+
+    payload = client.get("/api/services").json()
+
+    assert payload["services"][0]["detail_code"] == "share_missing"

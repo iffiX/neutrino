@@ -20,14 +20,33 @@ SERVICES_SAMBA_DEFAULT_PORT = 445
 # What the API answers with when a declared service is refused or missing.
 SERVICES_ERROR_INVALID = "declared_service_invalid"
 SERVICES_ERROR_UNKNOWN = "declared_service_unknown"
+# What the API answers with when a host's exports could not be listed; its
+# params carry the reason as one of the probe detail codes below.
+SERVICES_ERROR_SHARE_SCAN = "share_scan_failed"
 
 SERVICES_PROBE_TIMEOUT_S = 2.0
 SERVICES_PROBE_CACHE_TTL_S = 10.0
 SERVICES_PROBE_WORKER_LIMIT = 8
 
-# Why the last probe called a service unhealthy; None on a healthy one.
+# What the last probe measured; None on a service that answered as declared.
 SERVICES_PROBE_CONNECT_FAILED = "connect_failed"
 SERVICES_PROBE_SERVER_ERROR = "server_error"
+SERVICES_PROBE_SHARE_MISSING = "share_missing"
+SERVICES_PROBE_TOOL_MISSING = "tool_missing"
+SERVICES_PROBE_DETAIL_CODES = (
+    SERVICES_PROBE_CONNECT_FAILED,
+    SERVICES_PROBE_SERVER_ERROR,
+    SERVICES_PROBE_SHARE_MISSING,
+    SERVICES_PROBE_TOOL_MISSING,
+)
+
+# Listing a server's exports with samba's own client: the column its table of
+# shares opens with, the rule under that header, and the suffix marking the
+# administrative exports every server carries.
+SERVICES_SMBCLIENT_BINARY = "smbclient"
+SERVICES_SHARE_TABLE_HEADER = "Sharename"
+SERVICES_SHARE_TABLE_RULE = "---"
+SERVICES_SHARE_ADMINISTRATIVE_SUFFIX = "$"
 
 # The typed service list: four types, closed until a fifth earns its place.
 SERVICES_TYPE_WEB = "web"

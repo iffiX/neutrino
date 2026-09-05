@@ -41,7 +41,7 @@ def run(
     command: list[str],
     *,
     input_text: str | None = None,
-    timeout_s: int = DEFAULT_TIMEOUT_S,
+    timeout_s: float = DEFAULT_TIMEOUT_S,
     is_checked: bool = True,
     environment: dict[str, str] | None = None,
 ) -> CommandResult:

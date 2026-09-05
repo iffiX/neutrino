@@ -96,7 +96,7 @@ class PublishedServiceCache:
         """Compose the list now, replacing the cache whole."""
         declared = DeclaredServiceRegistry().list_records()
         healths = {
-            health.service_id: health.is_healthy
+            health.service_id: health
             for health in self._declared_probe.results(declared)
         }
         lan_addresses = self._lan_addresses()

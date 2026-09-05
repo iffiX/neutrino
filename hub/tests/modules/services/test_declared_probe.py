@@ -3,6 +3,10 @@
 Three states share one shape and must not share one rendering: a service
 nobody has probed yet, a service that answered, and one that was probed and
 did not answer. Only the last is a failure, and it says why.
+
+A file service is the case where an open port is not an answer: the share
+has to be on the server's own list of exports, so those probes read a stubbed
+listing rather than reaching a real server.
 """
 
 import socket
@@ -12,7 +16,9 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from neutrino_hub.modules.services.config import DeclaredService
+from neutrino_hub.modules.services import probe as probe_module
+from neutrino_hub.modules.services.config import DeclaredService, DeclaredShare
+from neutrino_hub.modules.services.ops import SambaShareListing
 from neutrino_hub.modules.services.probe import DeclaredServiceProbe
 
 PROBE_TIMEOUT_S = 1.0
@@ -86,14 +92,101 @@ def _closed_port() -> int:
         return server.getsockname()[1]
 
 
-@pytest.mark.parametrize("kind", ["samba", "generic_tcp"])
-def test_a_listening_port_reads_healthy(tcp_listener, kind):
+def test_a_listening_port_reads_healthy(tcp_listener):
     result = DeclaredServiceProbe(timeout_s=PROBE_TIMEOUT_S).probe(
-        declared(kind, tcp_listener)
+        declared("generic_tcp", tcp_listener)
     )
     assert result.is_healthy is True
     assert result.detail_code is None
     assert result.checked_at
+
+
+class RecordingLister:
+    """Answers with one listing per host and counts what it was asked."""
+
+    def __init__(self, listings: dict[str, SambaShareListing]):
+        self._listings = listings
+        self.hosts: list[str] = []
+
+    def __call__(self, host: str, *, timeout_s: float) -> SambaShareListing:
+        self.hosts.append(host)
+        return self._listings.get(host, SambaShareListing(error_code="connect_failed"))
+
+
+def file_service(*shares: str, host: str = "192.168.100.1", record_id: str = "f1"):
+    """One declared file service naming shares on a server."""
+    return DeclaredService(
+        id=record_id,
+        name="nas",
+        kind="samba",
+        host=host,
+        port=445,
+        shares=[DeclaredShare(name=name) for name in shares],
+    )
+
+
+def listing(*names: str) -> SambaShareListing:
+    return SambaShareListing(names=list(names))
+
+
+@pytest.mark.parametrize(
+    "answer, is_healthy, detail_code",
+    [
+        (listing("share", "media"), True, None),
+        (listing("share"), False, "share_missing"),
+        (listing(), False, "share_missing"),
+        (SambaShareListing(error_code="connect_failed"), False, "connect_failed"),
+        (SambaShareListing(error_code="tool_missing"), None, "tool_missing"),
+    ],
+)
+def test_a_file_service_is_measured_against_the_servers_exports(
+    monkeypatch, answer, is_healthy, detail_code
+):
+    """An open port 445 is not an answer; the share has to be exported.
+
+    A hub without smbclient has no opinion at all, which is not the same as
+    a share that is missing.
+    """
+    monkeypatch.setattr(
+        probe_module, "list_shares", RecordingLister({"192.168.100.1": answer})
+    )
+
+    result = DeclaredServiceProbe(timeout_s=PROBE_TIMEOUT_S).probe(
+        file_service("media")
+    )
+
+    assert result.is_healthy is is_healthy
+    assert result.detail_code == detail_code
+
+
+def test_a_record_is_healthy_only_when_every_share_it_names_is_exported(monkeypatch):
+    monkeypatch.setattr(
+        probe_module,
+        "list_shares",
+        RecordingLister({"192.168.100.1": listing("media")}),
+    )
+    probe = DeclaredServiceProbe(timeout_s=PROBE_TIMEOUT_S)
+
+    assert probe.probe(file_service("media")).is_healthy is True
+    assert probe.probe(file_service("media", "backup")).detail_code == "share_missing"
+
+
+def test_one_server_is_enumerated_once_however_many_shares_name_it(monkeypatch):
+    """Enumeration is per host: four declared shares are one call."""
+    lister = RecordingLister({"192.168.100.1": listing("media", "backup", "share")})
+    monkeypatch.setattr(probe_module, "list_shares", lister)
+
+    results = DeclaredServiceProbe(timeout_s=PROBE_TIMEOUT_S).refresh(
+        [
+            file_service("media", "backup", record_id="f1"),
+            file_service("share", record_id="f2"),
+            file_service("gone", host="10.0.0.9", record_id="f3"),
+        ]
+    )
+
+    assert lister.hosts == ["10.0.0.9", "192.168.100.1"]
+    assert [result.is_healthy for result in results] == [True, True, False]
+    assert results[2].detail_code == "connect_failed"
 
 
 def test_a_closed_port_reads_connect_failed():

@@ -997,7 +997,9 @@ class PublishedServiceView(BaseModel):
     ``payload`` is the type's own — a url for web, host and port for port,
     endpoint, protocol and models for ai, protocol, host and share for file.
     ``record_id`` names the declared record behind a declared entry; a
-    module-declared entry carries None and is read-only.
+    module-declared entry carries None and is read-only. ``detail_code`` is
+    what that record's last probe measured, None on one that answered as
+    declared and on every module entry.
     """
 
     id: str
@@ -1008,6 +1010,7 @@ class PublishedServiceView(BaseModel):
     source: str
     description: str = ""
     record_id: str | None = None
+    detail_code: str | None = None
 
 
 class DeclaredServiceCreate(BaseModel):
@@ -1015,7 +1018,8 @@ class DeclaredServiceCreate(BaseModel):
 
     ``kind`` is a service type — web, port or file — mapped onto the stored
     probe kind; the fields a kind does not have are ignored. A ``file``
-    declaration left without a port gets 445.
+    declaration left without a port gets 445, and names every share it
+    declares on that server.
     """
 
     name: str
@@ -1024,8 +1028,14 @@ class DeclaredServiceCreate(BaseModel):
     port: int | None = None
     scheme: str | None = None
     path: str | None = None
-    share: str | None = None
+    shares: list[str] | None = None
     description: str = ""
+
+
+class ServiceShareListView(BaseModel):
+    """What one SMB server exports, administrative shares dropped."""
+
+    shares: list[str] = Field(default_factory=list)
 
 
 class ServiceListView(BaseModel):
