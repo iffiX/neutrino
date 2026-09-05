@@ -13,9 +13,9 @@ config/ ──render──▶ /var/lib/neutrino/generated/ ──apply──▶ 
   │
 web/ (FastAPI, root) ◀────── hub/frontend/ (browser, plain HTTP, password)
   ▲
-  │ heartbeat over pinned TLS — report up, desired state down
+  │ heartbeat over pinned TLS — report up, orders and services down
   │
-neutrino_agent (root, stdlib only) ──── reconciles features and mounts
+neutrino_agent (root, stdlib only) ──── executes orders, serves its own page
   ▲
   │ loopback only
 agent's own page (the machine's owner, no password)
@@ -36,8 +36,10 @@ Inside the hub package the layers only reach downward:
 - `cli/` — every entry point, one `nhub` subcommand each.
 
 The agent has no dependencies and opens no port toward the hub: it polls, so
-it survives restarts, sleep and NAT in between. Everything the hub "does" to
-a device is desired state the agent converges on.
+it survives restarts, sleep and NAT in between. It fetches nothing and
+decides nothing — what the hub "does" to a device is an order the agent
+executes, and what the machine's own people do with a service is the
+machine's ("The hub installs; the agent is an outpost").
 
 ## config/ is the single source of truth
 
@@ -104,61 +106,46 @@ running.
 The mechanical placement rules are in
 [../coding_style/layout_style.md](../coding_style/layout_style.md).
 
-## Services are the unit; the hub is the broker
+## Services are the machine's to take; modules are the hub's to install
 
-A service is anything a device can consume: the hub's own routing, the hub's
-Samba shares, the AI gateway, and the services somebody declares on machines
-the hub does not run — a NAS's Samba, an HTTP server, a Docker engine. A
-device never integrates with a service directly; the hub renders what a
-service offers into the device catalog, and a device subscribes.
+Two different things reach a managed machine, and confusing them is what the
+Modules/Services split exists to prevent
+([agent.md](agent.md), "Who may tell the agent what").
+
+- **A module** is software the machine has. The hub administers it: the panel
+  decides, the hub fetches and installs, the agent executes. Nothing about a
+  module is the machine's own choice.
+- **A service** is something the hub publishes for the machine's people to
+  use: a share to mount, a link to open, a port to forward, the AI gateway to
+  point an account's tools at. The hub says what exists; the machine's own
+  people decide what to do with it, on the machine, and the panel does not
+  render those choices at all.
+
+A service is anything the hub can publish: its own Samba shares, its Gitea,
+its AI gateway, a container's exposed port, and the services somebody
+declares on machines the hub does not run — a NAS's Samba, an HTTP server. A
+module declares its own services and they live only while it runs; a person
+declares the rest by hand and those are probed.
 
 ```
-service       hub-provided, or declared in config/services/declared.json
-  -> offer          pure render: one catalog entry per thing a device can take
-  -> subscription   per-device wish in devices.json:
-                    {is_enabled, is_activated, settings}
+module (gitea, samba, the AI gateway, the container runtime)
+  -> service entry   {id, type, title, payload, is_healthy, source, description}
+                     types: web | port | ai | file
+declared by hand
+  -> service entry   the same shape, probed rather than module-backed
 ```
 
-- **The catalog carries no secrets.** It is fleet-global and hashed, and every
-  agent holds a copy. A share's password or an AI key is resolved per device
-  into `desired_features[<id>].config` when that device's heartbeat is
-  answered, and travels nowhere else.
-- **Settings flow both ways through the hub.** An offer declares its settings
-  (`mountpoint`), the panel and the agent's own page both render the form from
-  that one declaration, and an edit on the agent's page travels up as a
-  `feature_requests` entry and comes back as desired state. The hub is the
-  only decider, so the two pages cannot disagree for longer than one beat.
-- **Subscriptions reconcile; nothing is executed remotely.** The agent
-  converges on desired state every beat, which is what re-mounts a share
-  after a reboot with no fstab entry and no command queue.
+**The service list carries no secrets.** It is fleet-global and hashed, and
+every agent holds a copy. The one secret a service takes from the hub — an
+account's gateway key — is resolved per device when its heartbeat is answered
+and travels nowhere else. A payload host that is the hub's own is resolved
+per device into the address that device actually reaches.
 
-Which offers exist is itself a function of `config/`: a gateway offer is
-rendered only in `router` and `side_gateway` modes, a mount offer only for a
-share that exists. There is one AI service, the hub's own gateway; an outside
-model endpoint becomes a provider behind it, never an offer of its own.
-
-### How a device subscribes
-
-Subscriptions live in `devices.json` under `client.features`, keyed by offer
-id. A toggle on the panel writes the wish there; a toggle or a setting typed
-on the agent's own page arrives as a `feature_requests` entry and is written
-to the same place. The heartbeat carries everything, in both directions:
-
-1. The agent posts its report — platform, metrics, per-feature state, the
-   hash of the catalog it holds, and any local requests.
-2. The hub stores the report, folds the requests into the stored
-   subscriptions, and answers with `desired_features`: one entry per
-   subscription, `{is_enabled, is_activated, settings, config}`, the config
-   resolved for this device alone — the vault opened for its share password,
-   its AI key generated, its mountpoint filled in. The catalog itself rides
-   along only when the agent's hash is stale.
-3. The agent reconciles the machine toward what came down, then reports the
-   new state on its next beat. A state is `{code, params}`; the pages do the
-   wording.
-
-A feature nobody has decided about is inspected and reported, never acted on;
-an offer gone from the catalog stops being reported. Removal is the same
-loop: a subscription switched off is converged on, not commanded.
+**What a machine does with a service is the machine's state.** A mount's
+credentials, which accounts point at the AI gateway, which ports are
+forwarded: all of it lives in the agent's own store, survives a hub restore
+untouched, and appears in no hub backup. The hub never learns a share's
+password.
 
 ## Managed is a completed handshake
 
@@ -211,24 +198,24 @@ to look when something goes wrong.
 
 Two hub-side things do the work, and there is exactly one of each:
 
-- **The device module cache** turns "this machine, on this platform, wants
+- **The agent module cache** turns "this machine, on this platform, wants
   this module" into bytes on the hub's own disk. It resolves the manifest's
   entry for that platform, fetches it — presenting a browser's TLS
   fingerprint where a vendor gates on one, which is the whole reason the
   fetch cannot happen on the agent — checks that what arrived opens like the
   package kind it claims to be, and keeps it under
-  `/var/lib/neutrino/device_modules/`. It is a cache in the strict sense:
+  `/var/lib/neutrino/agent_modules/`. It is a cache in the strict sense:
   losing it costs a download and nothing else. One fetch serves every device
   of that platform, and a second machine wanting the same module waits for
   the first fetch rather than starting its own.
-- **The agent controller** turns cached bytes into an install on one
+- **The agent module controller** turns cached bytes into an install on one
   machine. It holds one queue per device and runs one order at a time,
   because `dpkg` and its equivalents hold a machine-wide lock and two
-  installs racing is a failure with no useful diagnosis. It is the only
-  thing that installs on a managed machine — the SSH bootstrap that puts
-  the agent there in the first place goes through it too, so "install the
-  agent" and "install a remote desktop" cannot overlap by construction
-  rather than by a check somebody remembered to write.
+  installs racing is a failure with no useful diagnosis. That lock is the
+  device's, not the controller's: the SSH bootstrap that puts the agent on
+  a machine in the first place takes the same one, so installing the agent
+  and installing a remote desktop cannot overlap by construction rather
+  than by a check somebody remembered to write.
 
 Every request enters the same door. The panel's device drawer and the
 machine's own page (`sudo nagent ui`) both post the same thing — *this
@@ -241,8 +228,8 @@ An order therefore walks one way and never loops back:
 
 ```
 a person asks (panel, or the machine's own page)
-  → the cache resolves the platform's artifact, fetching it once
-  → the controller queues an order for that device
+  → the agent module cache resolves the platform's artifact, fetching it once
+  → the agent module controller queues an order for that device
   → the agent is handed the bytes over the pinned channel, installs, verifies
   → the agent reports the outcome; the controller closes the order
 ```
