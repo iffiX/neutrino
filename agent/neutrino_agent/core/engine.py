@@ -430,9 +430,11 @@ class ModuleEngine(ReconcileWorker):
                 "state": state,
                 "code": code,
                 "params": dict(params),
-                # Only a failure carries its output: a beat is not the place
-                # for the log of something that worked.
-                "output": output if state == ORDER_FAILED else "",
+                # Every order carries its output, success included: a result
+                # rides once and stops when the hub acknowledges it, so this
+                # is one message per operation rather than a per-beat cost,
+                # and a person watching an install wants to see it work.
+                "output": output,
             }
         if self._on_change is not None:
             self._on_change()

@@ -42,7 +42,11 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_MAC_PATTERN,
 )
 from neutrino_hub.modules.devices.manifests import load_module_manifests
-from neutrino_hub.modules.devices.registry import DeviceRegistry, module_wish, ManagedDevice
+from neutrino_hub.modules.devices.registry import (
+    DeviceRegistry,
+    module_wish,
+    ManagedDevice,
+)
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.utils.version_number import parse_version
 from neutrino_hub.web.dependencies import get_runtime

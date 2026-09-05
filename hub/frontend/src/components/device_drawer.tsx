@@ -111,10 +111,11 @@ const AGENT_ERROR_WORDING: Record<string, string> = {
 
 const COMMAND_RESULTS_LABEL = "Agent command results";
 
-// One pane for every install on this device, whatever asked for it: a person
+// One pane for everything this hub does to this device — installing the
+// agent, installing a module, removing one — whatever asked for it: a person
 // reading why something is not on a machine should not have to know which
 // surface started it.
-const INSTALL_OUTPUT_LABEL = "Install output";
+const INSTALL_OUTPUT_LABEL = "Operation output";
 const INSTALL_OUTPUT_INTERVAL_MS = 3000;
 const INSTALL_OUTPUT_BUSY_INTERVAL_MS = 1000;
 
@@ -127,6 +128,15 @@ const ORDER_STATE_WORDING: Record<string, string> = {
   installing: "installing",
   done: "done",
   failed: "failed",
+};
+
+// The hub runs every order through one `installing` state, which reads
+// wrong above an uninstall. The action decides the word a person sees.
+const ORDER_RUNNING_WORDING: Record<string, string> = {
+  install: "installing",
+  remove: "uninstalling",
+  enable: "enabling",
+  disable: "disabling",
 };
 
 // What each order was asked to do, worded for the line above its output.
@@ -185,7 +195,10 @@ function orderTone(state: string): "ok" | "warn" | "error" | "idle" {
 
 function describeOrder(order: DeviceInstallOrderView): string {
   const action = ORDER_ACTION_WORDING[order.action] ?? order.action;
-  const state = ORDER_STATE_WORDING[order.state] ?? order.state;
+  const state =
+    order.state === "installing"
+      ? (ORDER_RUNNING_WORDING[order.action] ?? "installing")
+      : (ORDER_STATE_WORDING[order.state] ?? order.state);
   const parts = [`${order.title || order.module} · ${action} · ${state}`];
   if (order.code.length > 0) {
     parts.push(ORDER_ERROR_WORDING[order.code] ?? order.code);

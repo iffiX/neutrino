@@ -137,7 +137,10 @@ def test_an_order_installs_what_it_is_given_and_reports_done():
     result = engine.results()[0]
     assert result["id"] == "order-1"
     assert result["state"] == "done"
-    assert result["output"] == ""
+    # Success carries its output too: a result rides once, so the log of
+    # something that worked costs one message and is what a person
+    # watching an install came to read.
+    assert "todesk: installing" in result["output"]
 
 
 def test_an_install_the_machine_cannot_confirm_is_failed_not_latched():
