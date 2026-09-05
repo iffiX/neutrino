@@ -68,12 +68,14 @@ class GatewayVersionRefused(RuntimeError):
         self.agent_version = agent_version
 
 
-class GatewayRefusedDetail(RuntimeError):
+class GatewayRefusedDetail(GatewayUnreachable):
     """Raised when the hub refused a request with a typed reason.
 
     Not about the binding: the hub answered about the thing that was asked
     for — a vendor that served a page rather than a package, say — and the
-    caller words it.
+    caller words it. It is a kind of :class:`GatewayUnreachable` so that a
+    caller with no interest in the code still backs off and retries rather
+    than seeing an exception nothing catches.
 
     Attributes:
         code: The hub's own code.
