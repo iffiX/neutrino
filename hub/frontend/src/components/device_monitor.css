@@ -212,3 +212,17 @@
     display: none;
   }
 }
+
+/* A window wide enough to keep the panel can still be portrait, where the
+   bottom bar is the navigation and stays clear of it, its top border included. */
+@media (max-aspect-ratio: 1 / 1) {
+  .device_monitor_wrap {
+    bottom: calc(
+      var(--bottom-nav-height) + 1px + env(safe-area-inset-bottom, 0px)
+    );
+  }
+
+  .device_monitor {
+    max-height: 100%;
+  }
+}

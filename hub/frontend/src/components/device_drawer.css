@@ -193,6 +193,19 @@
   }
 }
 
+/* Wherever the bottom bar is the navigation, the drawer stops above it: full
+   width over the whole window would leave no way off the page. The extra pixel
+   is the bar's own top border, which sits above its items. The body keeps the
+   scrolling, so it is the drawer's content that gives up the height. */
+@media (max-aspect-ratio: 1 / 1), (max-width: 880px) {
+  .device_drawer_backdrop,
+  .device_drawer {
+    bottom: calc(
+      var(--bottom-nav-height) + 1px + env(safe-area-inset-bottom, 0px)
+    );
+  }
+}
+
 .device_drawer_newkey {
   display: flex;
   flex-direction: column;
