@@ -1,237 +1,51 @@
-"""Reconciling a downloaded-package module.
+"""Installing, removing and verifying one downloaded-package module.
 
-Installed software is not removed just because a module was never switched
-on — "not switched on" is not "take it off this machine", and software that
-was here before the agent was must survive the agent arriving. Removal
-happens only when the hub says off, and it purges on Debian so a half-kept
-``rc`` state cannot read as still installed.
+Execution, and nothing else. This machine does not decide when to install,
+does not fetch anything from the internet, and holds no memory of how the
+last attempt went — the hub owns all three, and an outpost that kept its own
+policy would be a second one to disagree with it.
 
-An attempt whose verify does not confirm it latches, in both directions: an
-install that cannot be confirmed is not re-downloaded every idle re-check,
-and a removal that did not take is not re-run every minute either. Asking
-for the opposite clears the latch, so a person's next decision is a fresh
-attempt.
+What it is given is a resolved module: the hub already read the manifest and
+picked the entry for this platform, so nothing here searches a platform
+table. What it answers with is what is true on this machine now.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
-import os
 import subprocess
-import tempfile
 
-from neutrino_agent.modules.base import ModuleReconciler, clean_status
-from neutrino_agent.modules.downloader import (
-    download,
-    resolve_github_asset,
-    verify_package,
-)
+from neutrino_agent.modules.base import ModuleRunner
 
 VERIFY_TIMEOUT_S = 30
 
 DEB_INSTALLED_STATUS = "install ok installed"
 
 
-class PackageModuleReconciler(ModuleReconciler):
-    """Installs, verifies and removes one downloadable package."""
+class PackageModuleRunner(ModuleRunner):
+    """Puts one package on this machine, takes it off, and says which it is."""
 
     kind = "package"
 
-    def __init__(self, *, platform, log=print, publish=None, fetch_gated=None):
-        """
-        Args:
-            platform: The machine's platform, behind the contract.
-            log: Callable used for progress messages.
-            publish: Called with ``(name, status)`` for transient states.
-            fetch_gated: Called with ``(url, package_kind, destination)`` to
-                have the hub fetch a download this machine cannot; None
-                where there is no hub to ask.
-        """
-        super().__init__(platform=platform, log=log, publish=publish)
-        self._fetch_gated = fetch_gated
-        # Modules whose install or removal ran and whose verify did not
-        # confirm it. Without these the idle re-check repeats the same
-        # attempt every minute for ever.
-        self._install_unconfirmed: set = set()
-        self._remove_unconfirmed: set = set()
-        # Installs whose download failed, with the reason. A vendor that
-        # refuses today refuses in a minute too, and a machine that retries
-        # every recheck spends the night fetching the same page.
-        self._install_failed: dict = {}
-
-    def reconcile(
-        self, *, name: str, manifest: dict, entry: dict, wanted: "dict | None"
-    ) -> dict:
-        """Bring one package module to its desired state, or just report it.
-
-        Args:
-            name: The module name.
-            manifest: Its manifest.
-            entry: The manifest's entry for this platform.
-            wanted: The hub's decision, or None to only inspect.
-
-        Returns:
-            ``{"state", "code", "params", "is_active"}``.
-        """
-        is_enabled = None if wanted is None else bool(wanted.get("is_enabled"))
-        is_installed = self._verify(manifest, entry)
-        if is_enabled is None:
-            return clean_status("installed" if is_installed else "absent")
-        if not is_enabled:
-            return self._remove(name, manifest, entry, is_installed)
-        self._remove_unconfirmed.discard(name)
-        if is_installed:
-            # Installed by hand counts: what the machine has is the answer,
-            # and it clears whatever the last attempt left behind.
-            self._install_unconfirmed.discard(name)
-            self._install_failed.pop(name, None)
-            return clean_status("installed")
-        if name in self._install_unconfirmed:
-            return self._install_unconfirmed_status()
-        if name in self._install_failed:
-            return dict(self._install_failed[name])
-        return self._install(name, manifest, entry)
-
-    def _remove(
-        self, name: str, manifest: dict, entry: dict, is_installed: bool
-    ) -> dict:
-        self._install_unconfirmed.discard(name)
-        self._install_failed.pop(name, None)
-        if not is_installed:
-            self._remove_unconfirmed.discard(name)
-            return clean_status("absent")
-        if name in self._remove_unconfirmed:
-            return self._remove_unconfirmed_status()
-        removal = self._removal_command(manifest, entry)
-        if not removal:
-            # Nothing was ever asked of it, or it cannot be removed
-            # safely; either way it stays and says so.
-            return clean_status("installed")
-        self._publish(name, clean_status("removing"))
-        self._log(f"{name}: removing")
-        self._platform.uninstall_package(removal)
-        if self._verify(manifest, entry):
-            self._remove_unconfirmed.add(name)
-            return self._remove_unconfirmed_status()
-        return clean_status("absent")
-
-    def _install(self, name: str, manifest: dict, entry: dict) -> dict:
-        self._publish(name, clean_status("installing"))
-        url = entry.get("url", "")
-        if not url and entry.get("github_repo"):
-            url = resolve_github_asset(
-                entry["github_repo"], entry.get("asset_pattern", "")
-            )
-        if not url:
-            return self._install_failure(name, "no_download_named", {})
-
-        package_kind = entry.get("package_kind", "deb")
-        is_impersonated = bool(manifest.get("download", {}).get("impersonate"))
-        with tempfile.TemporaryDirectory() as workdir:
-            package = os.path.join(workdir, "package." + package_kind)
-            self._log(f"{name}: downloading from {url}")
-            if is_impersonated and self._fetch_gated is not None:
-                # This machine cannot present a browser's TLS fingerprint
-                # and must not grow a dependency to; the hub can, so it
-                # fetches and hands the bytes down the pinned channel.
-                refusal = self._fetch_gated(url, package_kind, package)
-                if refusal:
-                    return self._install_failure(
-                        name,
-                        refusal.get("code", "download_failed"),
-                        refusal.get("params", {}),
-                    )
-            else:
-                download(url, package, is_impersonated=is_impersonated)
-            # A CDN that blocks a fetcher answers with a page, not an error, so
-            # what arrived is checked before anything is handed to an installer.
-            verify_package(package, package_kind)
-            self._log(f"{name}: installing")
-            self._platform.install_package(
-                package, package_kind=package_kind, entry=entry
-            )
-        if self._verify(manifest, entry):
-            self._install_unconfirmed.discard(name)
-            return clean_status("installed")
-        self._install_unconfirmed.add(name)
-        return self._install_unconfirmed_status()
-
-    def _install_failure(self, name: str, code: str, params: dict) -> dict:
-        """Latch one failed install and report it.
-
-        Args:
-            name: The module.
-            code: Why it failed.
-            params: What the wording names.
-
-        Returns:
-            The typed failure, which the next recheck repeats rather than
-            re-running the attempt behind it.
-        """
-        status = {
-            "state": "failed",
-            "code": code,
-            "params": dict(params),
-            "is_active": False,
-        }
-        self._install_failed[name] = status
-        return dict(status)
-
-    def _install_unconfirmed_status(self) -> dict:
-        return {
-            "state": "installed",
-            "code": "verify_unconfirmed",
-            "params": {},
-            "is_active": False,
-        }
-
-    def _remove_unconfirmed_status(self) -> dict:
-        return {
-            "state": "installed",
-            "code": "remove_unconfirmed",
-            "params": {},
-            "is_active": False,
-        }
-
-    def _removal_command(self, manifest: dict, entry: dict) -> str:
-        """The command that takes this package off the machine.
-
-        A deb is purged by name: ``apt-get remove`` leaves the ``rc`` state
-        behind, whose config-files remnant is what made a removal look like
-        it never took. Other kinds keep the manifest's own command.
-
-        Args:
-            manifest: The module's manifest.
-            entry: The manifest's entry for this platform.
-
-        Returns:
-            The shell command, empty when the module names none.
-        """
-        if entry.get("package_kind") == "deb":
-            package = self._package_name(manifest, entry)
-            if package:
-                return f"apt-get purge -y {package}"
-        return entry.get("uninstall", "")
-
-    def _verify(self, manifest: dict, entry: dict) -> bool:
+    def verify(self, resolved: dict) -> bool:
         """Whether the package is actually installed.
 
         A deb is judged by dpkg's own status database: only
         ``install ok installed`` counts, so the ``rc`` state a plain remove
-        leaves behind reads as absent. Other kinds run the manifest's own
-        verify command.
+        leaves behind reads as absent. Other kinds run the verify command
+        the hub resolved for this platform.
 
         Args:
-            manifest: The module's manifest.
-            entry: The manifest's entry for this platform.
+            resolved: The module as the hub resolved it.
 
         Returns:
             True when the package is installed.
         """
+        entry = resolved.get("entry") or {}
         if entry.get("package_kind") == "deb":
-            return self._verify_deb(self._package_name(manifest, entry))
-        command = manifest.get("verify", {}).get(self._platform.os_name, "")
+            return self._verify_deb(str(resolved.get("package", "")))
+        command = str(resolved.get("verify", ""))
         if not command:
             return False
         try:
@@ -242,7 +56,63 @@ class PackageModuleReconciler(ModuleReconciler):
             return False
         return result.returncode == 0
 
-    def _verify_deb(self, package: str) -> bool:
+    def install(self, resolved: dict, package_path: str) -> None:
+        """Install the bytes the hub handed down.
+
+        Args:
+            resolved: The module as the hub resolved it.
+            package_path: The package on local disk.
+
+        Raises:
+            InstallError: If the platform's installer refuses.
+            PlatformUnsupportedError: If this platform installs nothing.
+        """
+        entry = resolved.get("entry") or {}
+        self._platform.install_package(
+            package_path,
+            package_kind=str(entry.get("package_kind", "")),
+            entry=entry,
+        )
+
+    def remove(self, resolved: dict) -> None:
+        """Take the package off this machine.
+
+        Args:
+            resolved: The module as the hub resolved it.
+
+        Raises:
+            InstallError: If the removal refuses.
+            PlatformUnsupportedError: If this platform removes nothing.
+        """
+        command = self._removal_command(resolved)
+        if not command:
+            # The module names no way off this platform; saying so beats
+            # guessing a command at something installed as root.
+            return
+        self._platform.uninstall_package(command)
+
+    def _removal_command(self, resolved: dict) -> str:
+        """The command that takes this package off the machine.
+
+        A deb is purged by name: ``apt-get remove`` leaves the ``rc`` state
+        behind, whose config-files remnant is what made a removal look like
+        it never took. Other kinds keep the manifest's own command.
+
+        Args:
+            resolved: The module as the hub resolved it.
+
+        Returns:
+            The shell command, empty when the module names none.
+        """
+        entry = resolved.get("entry") or {}
+        if entry.get("package_kind") == "deb":
+            package = str(resolved.get("package", ""))
+            if package:
+                return f"apt-get purge -y {package}"
+        return str(entry.get("uninstall", ""))
+
+    @staticmethod
+    def _verify_deb(package: str) -> bool:
         if not package:
             return False
         try:
@@ -255,7 +125,3 @@ class PackageModuleReconciler(ModuleReconciler):
         except (OSError, subprocess.SubprocessError):
             return False
         return result.returncode == 0 and result.stdout.strip() == DEB_INSTALLED_STATUS
-
-    @staticmethod
-    def _package_name(manifest: dict, entry: dict) -> str:
-        return str(entry.get("package", "") or manifest.get("name", ""))

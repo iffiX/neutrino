@@ -1,38 +1,23 @@
 """platforms.detect: the machine's tuple, and the class that answers for it.
 
-Manifest keys run from most to least specific; the tuple is read from the
-operating system's own facts, and an os the agent does not know gets the base
-contract rather than a guess.
+The tuple is read from the operating system's own facts, and an os the agent
+does not know gets the base contract rather than a guess. Turning a tuple
+into a manifest key is not here and must not come back: the hub resolves
+every platform table, which is what leaves this package nothing to download.
 """
 
 import neutrino_agent.platforms.detect as detect_module
 from neutrino_agent.platforms.base import AgentPlatform
 from neutrino_agent.platforms.darwin import DarwinPlatform
-from neutrino_agent.platforms.detect import detect_platform, platform_keys
+from neutrino_agent.platforms.detect import detect_platform
 from neutrino_agent.platforms.linux import LinuxPlatform
 from neutrino_agent.platforms.windows import WindowsPlatform
 
 
-def test_keys_most_specific_first_with_family():
-    info = {"os": "linux", "family": "debian", "arch": "amd64"}
-    assert platform_keys(info) == [
-        "linux-debian-amd64",
-        "linux-debian",
-        "linux-amd64",
-        "linux",
-    ]
-
-
-def test_keys_without_family():
-    info = {"os": "windows", "family": "", "arch": "amd64"}
-    assert platform_keys(info) == ["windows-amd64", "windows"]
-
-
-def test_raspberry_pi_armhf():
-    info = {"os": "linux", "family": "debian", "arch": "armhf"}
-    keys = platform_keys(info)
-    assert keys[0] == "linux-debian-armhf"
-    assert "linux" in keys
+def test_the_agent_resolves_no_platform_tables():
+    # The tuple travels up and the hub answers with conclusions; a key
+    # function here would be a second place that decides what to install.
+    assert not hasattr(detect_module, "platform_keys")
 
 
 def test_the_tuple_is_read_from_the_os_facts(monkeypatch, tmp_path):

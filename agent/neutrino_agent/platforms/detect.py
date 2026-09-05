@@ -56,28 +56,6 @@ def platform_tuple() -> dict:
     }
 
 
-def platform_keys(info: dict) -> "list[str]":
-    """The manifest keys this machine matches, most specific first.
-
-    Args:
-        info: The tuple from :func:`platform_tuple`.
-
-    Returns:
-        Candidate keys; the first one present in a manifest's platform table
-        wins.
-    """
-    os_name = info.get("os", "")
-    family = info.get("family", "")
-    arch = info.get("arch", "")
-    keys = []
-    if family:
-        keys.append(f"{os_name}-{family}-{arch}")
-        keys.append(f"{os_name}-{family}")
-    keys.append(f"{os_name}-{arch}")
-    keys.append(os_name)
-    return keys
-
-
 def detect_platform() -> AgentPlatform:
     """The platform class that answers for this machine.
 

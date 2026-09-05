@@ -42,14 +42,12 @@ def test_a_binding_written_by_another_process_is_adopted(config_path):
 def test_a_binding_removed_by_another_process_is_let_go(config_path):
     bind(config_path)
     agent = Agent(log=lambda message: None)
-    agent._desired = {"ai_tools": {"is_enabled": True}}
     agent._pending = {"ai_tools": {"is_enabled": False}}
 
     config_path.write_text(json.dumps({"device_id": "kept"}))
     agent._adopt_external_binding()
 
     assert agent._channel is None
-    assert agent._desired == {}
     assert agent._pending == {}
 
 
@@ -66,12 +64,12 @@ def test_an_untouched_file_reloads_nothing(config_path):
 def test_a_rewrite_of_the_same_binding_wipes_no_state(config_path):
     bind(config_path)
     agent = Agent(log=lambda message: None)
-    agent._desired = {"ai_tools": {"is_enabled": True}}
+    agent._pending = {"ai_tools": {"is_enabled": True}}
 
     bind(config_path)
     agent._adopt_external_binding()
 
-    assert agent._desired == {"ai_tools": {"is_enabled": True}}
+    assert agent._pending == {"ai_tools": {"is_enabled": True}}
     assert agent._channel is not None
 
 
@@ -128,7 +126,7 @@ def answer_in_turn(agent, monkeypatch, answers):
         outcome = answers.pop(0)
         if outcome is not None:
             raise outcome
-        return {"desired_modules": {}, "catalog_hash": ""}
+        return {"module_orders": [], "catalog_hash": ""}
 
     monkeypatch.setattr(agent._channel, "post", answer)
 
@@ -240,7 +238,7 @@ def test_the_heartbeat_carries_the_wire_contract(config_path, monkeypatch):
 
     def record(path, payload):
         seen.update(payload)
-        return {"desired_modules": {}, "catalog_hash": ""}
+        return {"module_orders": [], "catalog_hash": ""}
 
     monkeypatch.setattr(agent._channel, "post", record)
     agent.run_once()
@@ -350,7 +348,7 @@ def test_a_reply_this_build_cannot_read_is_reported_not_fatal(config_path):
     agent = Agent(log=lambda message: None)
     agent._channel = _ReplyingChannel(
         {
-            "desired_modules": {},
+            "module_orders": [],
             # The pre-generation dict shape where a list is expected.
             "catalog": {"modules": {}, "services": {"ai": {"kind": "ai"}}},
             "catalog_hash": "x",
@@ -376,7 +374,7 @@ class _ScriptedChannel:
     def post(self, path, payload):
         self.posts.append((path, payload))
         if not self.script:
-            return {"desired_modules": {}, "catalog_hash": ""}
+            return {"module_orders": [], "catalog_hash": ""}
         outcome = self.script.pop(0)
         if isinstance(outcome, Exception):
             raise outcome
@@ -448,6 +446,7 @@ def test_heartbeat_payload_every_field_comes_from_its_source(config_path, monkey
         "catalog_hash",
         "modules",
         "module_requests",
+        "module_results",
         "ai_targets",
         "last_error",
     }
@@ -460,6 +459,9 @@ def test_heartbeat_payload_every_field_comes_from_its_source(config_path, monkey
     assert payload["catalog_hash"] == ""
     assert payload["modules"] == agent.module_states()
     assert payload["module_requests"] == {"openssh_server": {"is_enabled": True}}
+    # What is true and what the last order produced; the machine answers
+    # for both and for nothing else about modules.
+    assert payload["module_results"] == []
     assert payload["ai_targets"] == {"alice": True}
     assert payload["last_error"] is None
 
@@ -489,7 +491,7 @@ def test_heartbeat_catalog_hash_after_a_catalog_lands_echoes_the_hubs(config_pat
         config_path,
         [
             {
-                "desired_modules": {},
+                "module_orders": [],
                 "catalog": {"modules": {}, "services": []},
                 "catalog_hash": "h1",
             }
@@ -536,8 +538,8 @@ def test_heartbeat_last_error_after_a_failed_beat_rides_the_next_payload(config_
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("desired_modules", 5),
-        ("desired_modules", ["broken"]),
+        ("module_orders", 5),
+        ("module_orders", {"broken": 1}),
         ("catalog", 5),
         ("catalog", ["broken"]),
         ("ai_accounts", 5),
@@ -550,7 +552,7 @@ def test_heartbeat_last_error_after_a_failed_beat_rides_the_next_payload(config_
 def test_reply_field_of_the_wrong_type_is_typed_and_never_fatal(
     config_path, field, value
 ):
-    reply = {"desired_modules": {}, "catalog_hash": ""}
+    reply = {"module_orders": [], "catalog_hash": ""}
     reply[field] = value
     agent = scripted_agent(config_path, [reply])
 
@@ -564,13 +566,13 @@ def test_reply_field_of_the_wrong_type_is_typed_and_never_fatal(
 
 def test_reply_with_every_field_missing_applies_as_empty_truth(config_path):
     agent = scripted_agent(config_path, [{}])
-    agent._desired = {"openssh_server": {"is_enabled": True}}
+    agent._pending = {"openssh_server": {"is_enabled": True}}
 
     delay = agent.run_once()
 
     assert delay == AGENT_HEARTBEAT_INTERVAL_S
     assert agent.last_error() is None
-    assert agent.desired_modules() == {}
+    assert agent._engine.report() == {}
 
 
 def test_reply_fields_of_none_read_as_absent(config_path):
@@ -578,7 +580,7 @@ def test_reply_fields_of_none_read_as_absent(config_path):
         config_path,
         [
             {
-                "desired_modules": None,
+                "module_orders": None,
                 "catalog": None,
                 "ai_accounts": None,
                 "hub_version": None,
@@ -590,7 +592,7 @@ def test_reply_fields_of_none_read_as_absent(config_path):
 
     assert delay == AGENT_HEARTBEAT_INTERVAL_S
     assert agent.last_error() is None
-    assert agent.desired_modules() == {}
+    assert agent._engine.report() == {}
 
 
 def test_reply_that_is_not_an_object_is_typed_and_never_fatal(config_path):
@@ -620,7 +622,7 @@ def test_reply_coercible_fields_of_the_wrong_type_are_stringified(
         config_path,
         [
             {
-                "desired_modules": {},
+                "module_orders": [],
                 "catalog": {"modules": {}, "services": []},
                 "catalog_hash": 123,
                 "hub_version": 999,
@@ -642,11 +644,11 @@ def test_reply_unreadable_keeps_the_state_a_good_beat_applied(config_path):
         config_path,
         [
             {
-                "desired_modules": {"openssh_server": {"is_enabled": True}},
+                "module_orders": [],
                 "catalog": {"modules": {}, "services": []},
                 "catalog_hash": "h1",
             },
-            {"desired_modules": ["broken"], "catalog_hash": "h2"},
+            {"module_orders": "broken", "catalog_hash": "h2"},
         ],
     )
 
@@ -655,7 +657,6 @@ def test_reply_unreadable_keeps_the_state_a_good_beat_applied(config_path):
 
     assert delay == AGENT_HEARTBEAT_INTERVAL_S
     assert agent.last_error()["code"] == "hub_reply_unreadable"
-    assert agent.desired_modules() == {"openssh_server": {"is_enabled": True}}
     assert agent.catalog() == {"modules": {}, "services": []}
     assert agent._engine.catalog_hash == "h1"
 
@@ -665,7 +666,7 @@ def test_reply_catalog_unreadable_never_claims_the_replys_hash(config_path):
     the hub ever re-sending it."""
     agent = scripted_agent(
         config_path,
-        [{"desired_modules": {}, "catalog": 5, "catalog_hash": "h9"}],
+        [{"module_orders": [], "catalog": 5, "catalog_hash": "h9"}],
     )
 
     delay = agent.run_once()
@@ -797,7 +798,6 @@ def test_wire_stale_platform_without_a_package_installs_nothing(
 def test_adopt_binding_a_changed_url_swaps_the_channel_and_clears_state(config_path):
     bind(config_path)
     agent = Agent(log=lambda message: None)
-    agent._desired = {"openssh_server": {"is_enabled": True}}
     agent._pending = {"openssh_server": {"is_enabled": False}}
     agent._update_target = "9.9.9"
     agent._update_error = {"code": "agent_update_launch_failed", "params": {}}
@@ -807,7 +807,6 @@ def test_adopt_binding_a_changed_url_swaps_the_channel_and_clears_state(config_p
 
     assert agent._binding[0] == "http://127.0.0.1:10"
     assert agent._channel is not None
-    assert agent._desired == {}
     assert agent._pending == {}
     assert agent._update_target == ""
     assert agent.last_error() is None
@@ -818,7 +817,7 @@ def test_reply_command_runs_and_its_report_is_posted_in_the_same_beat(config_pat
         config_path,
         [
             {
-                "desired_modules": {},
+                "module_orders": [],
                 "catalog_hash": "",
                 "commands": [{"id": "c1", "action": "reboot", "args": {"when": "now"}}],
             },
@@ -843,7 +842,7 @@ def test_reply_command_without_an_id_reports_under_its_action_name(config_path):
         config_path,
         [
             {
-                "desired_modules": {},
+                "module_orders": [],
                 "catalog_hash": "",
                 "commands": [{"action": "shutdown", "args": {}}],
             },
@@ -863,7 +862,7 @@ def test_reply_command_report_post_failure_leaves_the_beat_healthy(config_path):
         config_path,
         [
             {
-                "desired_modules": {},
+                "module_orders": [],
                 "catalog_hash": "",
                 "commands": [{"id": "c1", "action": "reboot", "args": {}}],
             },

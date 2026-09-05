@@ -1,16 +1,17 @@
-"""Reconciling the machine toward the hub's desired state.
+"""Carrying out the hub's orders, and reporting what is true.
 
-The hub does not send actions; it sends what should be true, and a worker
-thread closes any gap it finds. :class:`ReconcileWorker` is that pattern
-once: a thread woken by news, a signature that skips unchanged inputs, an
-idle re-check so drift is still caught, and per-name typed statuses.
-:class:`ModuleEngine` builds the modules half of the catalog on it; the AI
-service reconciler builds on it too.
+The hub sends orders — install this, remove that — and this machine runs
+them one at a time and says how each went. :class:`ReconcileWorker` is the
+shared pattern: a thread woken by news, a signature that skips unchanged
+inputs, an idle re-check so drift is still noticed, and per-name typed
+statuses. The AI service reconciler builds on it too.
 
-The catalog is the hub's answer to "what exists for this machine", in two
-halves under one hash: the module manifests, and the typed service list.
-The engine reconciles the modules half; the services are visible and
-decided only on the machine.
+:class:`ModuleEngine` is deliberately without judgment. It keeps **no retry
+policy and no memory of past failures**: an order that failed is reported
+failed and never repeated, because deciding to try again is the hub's, and
+a machine that decided for itself would be a second opinion nobody asked
+for. The catalog it works from is already resolved for this platform, so
+nothing here reads a manifest or searches a platform table either.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -18,20 +19,39 @@ decided only on the machine.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import threading
 import time
 
-from neutrino_agent.modules.downloader import DownloadError
+from neutrino_agent.constants import AGENT_MODULE_OUTPUT_LIMIT_BYTES
 from neutrino_agent.modules.installers import InstallError
 from neutrino_agent.modules.openssh import OpensshModuleReconciler
-from neutrino_agent.modules.package import PackageModuleReconciler
+from neutrino_agent.modules.package import PackageModuleRunner
 from neutrino_agent.platforms.base import PlatformUnsupportedError
-from neutrino_agent.platforms.detect import platform_keys, platform_tuple
+from neutrino_agent.platforms.detect import platform_tuple
 
 # How often to re-check inputs that have not changed. Every heartbeat wakes
 # the worker, and running each module's verify command that often would keep
 # a Raspberry Pi busy doing nothing.
 IDLE_RECHECK_INTERVAL_S = 60
+
+# What the hub can order. Only `install` needs bytes.
+ORDER_INSTALL = "install"
+ORDER_REMOVE = "remove"
+ORDER_ENABLE = "enable"
+ORDER_DISABLE = "disable"
+
+# What each action shows while it runs, per the module state table.
+ORDER_TRANSIENTS = {
+    ORDER_INSTALL: "installing",
+    ORDER_REMOVE: "removing",
+    ORDER_ENABLE: "enabling",
+    ORDER_DISABLE: "disabling",
+}
+
+ORDER_DONE = "done"
+ORDER_FAILED = "failed"
 
 
 class ReconcileWorker:
@@ -111,35 +131,32 @@ class ReconcileWorker:
 
 
 class ModuleEngine(ReconcileWorker):
-    """Keeps the machine converged on the hub's desired modules."""
+    """Runs the hub's module orders and reports what this machine has."""
 
-    def __init__(self, *, platform, log=print, on_change=None, fetch_gated=None):
+    def __init__(self, *, platform, log=print, on_change=None, fetch_artifact=None):
         """
         Args:
             platform: The machine's platform, behind the contract.
             log: Callable used for progress messages.
             on_change: Called whenever a module's state changes.
-            fetch_gated: Passed to the package reconciler, which uses it for
-                the downloads a vendor serves only to a browser.
+            fetch_artifact: Called with ``(artifact_key, destination)`` to
+                have the hub hand down the bytes an order names; None where
+                there is no hub to ask.
         """
         self._catalog: dict = {}
         self._catalog_hash = ""
-        self._desired: dict = {}
+        self._fetch_artifact = fetch_artifact
         self._platform_tuple = platform_tuple()
-        self._reconcilers = {
-            reconciler.kind: reconciler
-            for reconciler in (
-                PackageModuleReconciler(
-                    platform=platform,
-                    log=log,
-                    publish=self._publish,
-                    fetch_gated=fetch_gated,
-                ),
-                OpensshModuleReconciler(
-                    platform=platform, log=log, publish=self._publish
-                ),
-            )
-        }
+        self._queued: list = []
+        self._ran: set = set()
+        self._results: dict = {}
+        self._output: list = []
+        self._package = PackageModuleRunner(
+            platform=platform, log=self._collect, publish=self._publish
+        )
+        self._openssh = OpensshModuleReconciler(
+            platform=platform, log=self._collect, publish=self._publish
+        )
         super().__init__(log=log, on_change=on_change)
 
     @property
@@ -157,106 +174,270 @@ class ModuleEngine(ReconcileWorker):
         """The catalog this machine currently holds.
 
         Returns:
-            ``{"modules", "services"}``, as the hub last sent it.
+            ``{"modules", "services"}``, as the hub last sent it, its
+            modules already resolved for this platform.
         """
         with self._lock:
             return dict(self._catalog)
 
-    def update(self, *, desired: dict, catalog: "dict | None", catalog_hash: str):
-        """Take the hub's word for what should be true.
+    def results(self) -> list:
+        """How the orders this machine has finished went.
+
+        Returns:
+            One ``{"id", "module", "state", "code", "params", "output"}``
+            each, repeated on every beat until the hub's reply shows it
+            stopped asking — a result lost in the wire is an order the hub
+            would wait on for ever.
+        """
+        with self._lock:
+            return [dict(result) for result in self._results.values()]
+
+    def update(self, *, catalog: "dict | None", catalog_hash: str, orders) -> None:
+        """Take the hub's orders, and its catalog when this copy is stale.
 
         Args:
-            desired: Module name to ``{"is_enabled", "config"}``.
             catalog: The catalog, sent only when this machine's copy is
                 stale; None keeps the current one.
             catalog_hash: The hash of the catalog the hub is serving.
+            orders: The orders standing for this machine.
+
+        Raises:
+            TypeError: If the orders are not a list. A reply shape this
+                build cannot read becomes a typed error one level up, never
+                a beat that quietly did nothing.
         """
+        if orders is not None and not isinstance(orders, list):
+            raise TypeError(f"module_orders is {type(orders).__name__}, not a list")
         with self._lock:
             if catalog is not None:
                 # A non-mapping catalog raises before the held one is replaced.
                 self._catalog = dict(catalog)
                 self._catalog_hash = catalog_hash
-            self._desired = desired
+            standing = set()
+            for order in orders or []:
+                if not isinstance(order, dict):
+                    continue
+                order_id = str(order.get("id", ""))
+                if not order_id:
+                    continue
+                standing.add(order_id)
+                if order_id not in self._ran and not any(
+                    queued.get("id") == order_id for queued in self._queued
+                ):
+                    self._queued.append(dict(order))
+            # The hub has stopped asking about these, so it has the result.
+            for order_id in list(self._results):
+                if order_id not in standing:
+                    self._results.pop(order_id, None)
+                    self._ran.discard(order_id)
         self._wakeup.set()
 
+    def _collect(self, message: str) -> None:
+        """Log a line, keeping it for the order's report as well."""
+        self._output.append(str(message))
+        self._log(message)
+
     def _reconcile(self) -> None:
-        with self._lock:
-            desired = dict(self._desired)
-            modules = dict(self._catalog.get("modules", {}))
-            signature = json.dumps(
-                [sorted(modules), desired], sort_keys=True, default=str
-            )
-            is_stale = self._is_stale(signature)
-        if not is_stale:
+        order = self._take_order()
+        if order is not None:
+            self._run_order(order)
+            self._refresh(is_forced=True)
             return
-        for name, manifest in modules.items():
-            # A module the owner has never decided about is reported, never
-            # acted on: "not switched on" is not the same as "take it off
-            # this machine", and software that was here before the agent was
-            # must survive the agent arriving.
-            self._publish(name, self._reconcile_one(name, manifest, desired.get(name)))
+        self._refresh(is_forced=False)
+
+    def _take_order(self) -> "dict | None":
+        """The next order to run, if the hub has one standing."""
+        with self._lock:
+            if not self._queued:
+                return None
+            order = self._queued.pop(0)
+            self._ran.add(str(order.get("id", "")))
+            return order
+
+    def _refresh(self, *, is_forced: bool) -> None:
+        """Report what every module in the catalog actually is."""
+        with self._lock:
+            modules = dict(self._catalog.get("modules", {}))
+            signature = json.dumps(sorted(modules), sort_keys=True, default=str)
+            is_stale = self._is_stale(signature)
+        if not is_stale and not is_forced:
+            return
+        for name, resolved in modules.items():
+            self._publish(name, self._read_one(name, resolved))
         # A module the hub no longer serves stops being reported.
         self._keep_only(modules)
 
-    def _reconcile_one(self, name: str, manifest: dict, wanted: "dict | None") -> dict:
-        """Bring one module to its desired state, or just report it.
+    def _read_one(self, name: str, resolved: dict) -> dict:
+        """What one module actually is on this machine, acting on nothing.
 
         Args:
             name: The module name.
-            manifest: Its manifest.
-            wanted: What the hub decided; None only inspects.
+            resolved: The module as the hub resolved it for this platform.
 
         Returns:
-            ``{"state", "code", "params", "is_active"}`` for the heartbeat
-            and both pages.
+            ``{"state", "code", "params", "is_active"}``.
         """
-        entry = self._platform_entry(manifest)
-        if entry is None:
-            return {
-                "state": "unsupported",
-                "code": "no_platform_build",
-                "params": {},
-                "is_active": False,
-            }
-        kind = manifest.get("kind", "")
-        reconciler = self._reconcilers.get(kind)
-        if reconciler is None:
-            return {
-                "state": "unknown",
-                "code": "unknown_kind",
-                "params": {"kind": kind},
-                "is_active": False,
-            }
+        if not isinstance(resolved, dict) or resolved.get("entry") is None:
+            return _typed("unsupported", "no_platform_build")
+        kind = resolved.get("kind", "")
         try:
-            return reconciler.reconcile(
-                name=name, manifest=manifest, entry=entry, wanted=wanted
-            )
+            if kind == "package":
+                is_present = self._package.verify(resolved)
+                return _typed("installed" if is_present else "absent", "")
+            if kind == "openssh":
+                status = self._openssh.reconcile(
+                    name=name, manifest={}, entry=resolved["entry"], wanted=None
+                )
+                return dict(status)
         except PlatformUnsupportedError:
-            return {
-                "state": "failed",
-                "code": "unsupported_platform",
-                "params": {},
-                "is_active": False,
-            }
-        except DownloadError as error:
-            return self._failure("download_failed", error)
+            return _typed("failed", "unsupported_platform")
+        except Exception as error:  # noqa: BLE001 - reported, never raised
+            return _typed("failed", "verify_failed", detail=str(error)[:200])
+        return _typed("unknown", "unknown_kind", kind=kind)
+
+    def _run_order(self, order: dict) -> None:
+        """Do what one order says, and record how it went.
+
+        Args:
+            order: ``{"id", "module", "action", "artifact_key", "digest"}``.
+        """
+        order_id = str(order.get("id", ""))
+        name = str(order.get("module", ""))
+        action = str(order.get("action", ""))
+        self._output = []
+        with self._lock:
+            resolved = dict(self._catalog.get("modules", {})).get(name)
+        if not isinstance(resolved, dict) or resolved.get("entry") is None:
+            self._record(order_id, name, ORDER_FAILED, "no_platform_build", {})
+            return
+        transient = ORDER_TRANSIENTS.get(action)
+        if transient is None:
+            self._record(
+                order_id, name, ORDER_FAILED, "unknown_action", {"action": action}
+            )
+            return
+        self._publish(name, _typed(transient, ""))
+        self._collect(f"{name}: {action}")
+        try:
+            refusal = self._carry_out(action, name, resolved, order)
+        except PlatformUnsupportedError:
+            self._record(order_id, name, ORDER_FAILED, "unsupported_platform", {})
+            return
         except InstallError as error:
-            return self._failure("install_failed", error)
-        except Exception as error:  # noqa: BLE001 - reported, not raised
-            return self._failure("reconcile_failed", error)
+            self._collect(str(error))
+            self._record(order_id, name, ORDER_FAILED, "install_failed", {})
+            return
+        except Exception as error:  # noqa: BLE001 - reported, never raised
+            self._collect(str(error))
+            self._record(
+                order_id,
+                name,
+                ORDER_FAILED,
+                "order_failed",
+                {"detail": str(error)[:200]},
+            )
+            return
+        if refusal:
+            self._record(
+                order_id,
+                name,
+                ORDER_FAILED,
+                str(refusal.get("code", "order_failed")),
+                dict(refusal.get("params") or {}),
+            )
+            return
+        self._record(order_id, name, ORDER_DONE, "", {})
 
-    def _platform_entry(self, manifest: dict) -> "dict | None":
-        platforms = manifest.get("platforms", {})
-        for key in platform_keys(self._platform_tuple):
-            if key in platforms:
-                return platforms[key]
-        return None
+    def _carry_out(self, action: str, name: str, resolved: dict, order: dict) -> dict:
+        """Run one action and check it took.
 
-    @staticmethod
-    def _failure(code: str, error: Exception) -> dict:
-        return {
-            "state": "failed",
-            "code": code,
-            "params": {"detail": str(error)[:200]},
-            "is_active": False,
-        }
+        Args:
+            action: What the order says to do.
+            name: The module name.
+            resolved: The module as the hub resolved it.
+            order: The order itself, for the artifact it names.
+
+        Returns:
+            Empty when it took, ``{"code", "params"}`` when it did not.
+        """
+        if action == ORDER_INSTALL:
+            refusal = self._install(name, resolved, order)
+            if refusal:
+                return refusal
+            # Verify is the whole point of the step: a package manager that
+            # exits zero and installs nothing is a thing that happens.
+            return (
+                {}
+                if self._package.verify(resolved)
+                else {"code": "install_unconfirmed"}
+            )
+        if action == ORDER_REMOVE:
+            self._package.remove(resolved)
+            return (
+                {}
+                if not self._package.verify(resolved)
+                else {"code": "remove_unconfirmed"}
+            )
+        is_enabled = action == ORDER_ENABLE
+        status = self._openssh.reconcile(
+            name=name,
+            manifest={},
+            entry=resolved["entry"],
+            wanted={"is_enabled": is_enabled},
+        )
+        wanted_state = "enabled" if is_enabled else "disabled"
+        if status.get("state") == wanted_state:
+            return {}
+        return {"code": str(status.get("code") or "switch_unconfirmed")}
+
+    def _install(self, name: str, resolved: dict, order: dict) -> dict:
+        """Get the bytes the hub holds and install them.
+
+        Args:
+            name: The module name.
+            resolved: The module as the hub resolved it.
+            order: The order, which names the artifact and its digest.
+
+        Returns:
+            Empty on success, ``{"code", "params"}`` on a refusal.
+        """
+        if self._fetch_artifact is None:
+            return {"code": "hub_unreachable", "params": {}}
+        artifact_key = str(order.get("artifact_key", ""))
+        if not artifact_key:
+            return {"code": "no_download_named", "params": {}}
+        package_kind = str(order.get("package_kind", "")) or "pkg"
+        with tempfile.TemporaryDirectory() as workdir:
+            package = os.path.join(workdir, f"package.{package_kind}")
+            self._collect(f"{name}: receiving {artifact_key}")
+            refusal = self._fetch_artifact(artifact_key, package)
+            if refusal:
+                return refusal
+            self._collect(f"{name}: installing")
+            self._package.install(resolved, package)
+        return {}
+
+    def _record(
+        self, order_id: str, module: str, state: str, code: str, params: dict
+    ) -> None:
+        """Keep how one order went, for the next beat to carry up."""
+        output = "\n".join(self._output)[-AGENT_MODULE_OUTPUT_LIMIT_BYTES:]
+        self._output = []
+        with self._lock:
+            self._results[order_id] = {
+                "id": order_id,
+                "module": module,
+                "state": state,
+                "code": code,
+                "params": dict(params),
+                # Only a failure carries its output: a beat is not the place
+                # for the log of something that worked.
+                "output": output if state == ORDER_FAILED else "",
+            }
+        if self._on_change is not None:
+            self._on_change()
+
+
+def _typed(state: str, code: str, **params) -> dict:
+    """One typed status, the shape every surface words for itself."""
+    return {"state": state, "code": code, "params": params, "is_active": False}

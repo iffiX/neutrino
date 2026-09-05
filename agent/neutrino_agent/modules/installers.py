@@ -18,6 +18,8 @@ import shutil
 import subprocess
 import tempfile
 
+from neutrino_agent.constants import AGENT_MODULE_OUTPUT_LIMIT_BYTES
+
 INSTALL_TIMEOUT_S = 1800
 COMMAND_TIMEOUT_S = 120
 
@@ -75,7 +77,9 @@ def run_checked(command: list, *, timeout_s: int = COMMAND_TIMEOUT_S) -> str:
         raise InstallError(f"{command[0]} could not run: {error}")
     if result.returncode != 0:
         output = (result.stderr or result.stdout or "").strip()
-        raise InstallError(f"{command[0]} failed: {output[-300:]}")
+        raise InstallError(
+            f"{command[0]} failed: {output[-AGENT_MODULE_OUTPUT_LIMIT_BYTES:]}"
+        )
     return result.stdout or ""
 
 
@@ -106,7 +110,9 @@ def _install_deb(path: str) -> None:
         )
         if fix.returncode != 0:
             output = (result.stderr or "") + (fix.stderr or "")
-            raise InstallError(f"dpkg failed: {output.strip()[-300:]}")
+            raise InstallError(
+                f"dpkg failed: {output.strip()[-AGENT_MODULE_OUTPUT_LIMIT_BYTES:]}"
+            )
 
 
 def _install_rpm(path: str) -> None:
@@ -190,4 +196,6 @@ def uninstall_package(command: str) -> None:
         raise InstallError(f"removal could not run: {error}")
     if result.returncode != 0:
         output = (result.stderr or result.stdout or "").strip()
-        raise InstallError(f"removal failed: {output[-300:]}")
+        raise InstallError(
+            f"removal failed: {output[-AGENT_MODULE_OUTPUT_LIMIT_BYTES:]}"
+        )

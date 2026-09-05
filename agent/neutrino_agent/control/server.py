@@ -44,7 +44,6 @@ from neutrino_agent.control.page import CONTROL_PAGE_HTML
 from neutrino_agent.core import enrollment
 from neutrino_agent.core.metrics import hostname
 from neutrino_agent.platforms.base import PlatformUnsupportedError
-from neutrino_agent.platforms.detect import platform_keys
 
 
 def _scoped_state(agent, identity: ControlIdentity) -> dict:
@@ -95,23 +94,40 @@ def _scoped_state(agent, identity: ControlIdentity) -> dict:
     return state
 
 
-def _module_rows(agent, manifests: dict) -> list:
-    keys = platform_keys(agent.platform())
+def _module_rows(agent, modules: dict) -> list:
+    """The Modules section, from the catalog the hub already resolved.
+
+    Args:
+        agent: The running agent.
+        modules: The catalog's modules half, each entry resolved for this
+            platform — so nothing here searches a platform table.
+
+    Returns:
+        One row per module.
+    """
     reported = agent.module_states()
-    desired = agent.desired_modules()
+    pending = agent.pending_module_requests()
     rows = []
-    for name, manifest in sorted(manifests.items()):
-        is_supported = any(key in manifest.get("platforms", {}) for key in keys)
+    for name, resolved in sorted(modules.items()):
+        if not isinstance(resolved, dict):
+            continue
         status = reported.get(name, {})
+        state = status.get("state", "unknown")
         rows.append(
             {
                 "name": name,
-                "title": manifest.get("title", name),
-                "description": manifest.get("description", ""),
-                "kind": manifest.get("kind", ""),
-                "is_supported": is_supported,
-                "is_enabled": bool(desired.get(name, {}).get("is_enabled")),
-                "state": status.get("state", "unknown"),
+                "title": resolved.get("title", name),
+                "description": resolved.get("description", ""),
+                "kind": resolved.get("kind", ""),
+                "is_supported": resolved.get("entry") is not None,
+                # What is true, unless this machine has asked for something
+                # the hub has not answered yet.
+                "is_enabled": bool(
+                    pending.get(name, {}).get(
+                        "is_enabled", state in ("installed", "enabled")
+                    )
+                ),
+                "state": state,
                 "code": status.get("code", ""),
                 "params": status.get("params", {}),
             }

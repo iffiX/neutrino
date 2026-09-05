@@ -29,7 +29,9 @@ from neutrino_hub.modules.cliproxyapi.ops import (
     save_config,
 )
 from neutrino_hub.modules.credentials.vault import VaultLockedError
+from neutrino_hub.modules.devices.agent_module_cache import AgentModuleFetchError
 from neutrino_hub.modules.devices.agent_module_controller import ask_module
+from neutrino_hub.modules.devices.catalog import artifact_sources
 from neutrino_hub.modules.devices.agent_package import agent_packages
 from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_OUTPUT_LIMIT_BYTES,
@@ -370,25 +372,32 @@ def module_package(
         The package bytes, with their SHA-256 in ``X-Checksum-Sha256``.
 
     Raises:
-        HTTPException: 401 when the token matches no device, 409 when the
-            cache no longer holds that artifact — losing the directory
-            costs a re-fetch, which the next order does.
+        HTTPException: 401 when the token matches no device, 409 with the
+            typed reason when the artifact cannot be produced — a key no
+            manifest resolves to, or a fetch the vendor refused.
     """
     device = DeviceRegistry().find_by_client_token(request.token)
     if device is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="unknown client token"
         )
-    path = runtime.agent_modules.held(request.artifact_key)
-    if path is None:
+    try:
+        artifact = runtime.agent_modules.artifact_for_key(
+            request.artifact_key,
+            sources=artifact_sources(),
+            platform=runtime.client_platform.get(device.mac_address, {}),
+        )
+        data = artifact.path.read_bytes()
+    except AgentModuleFetchError as error:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "module_artifact_missing",
-                "params": {"artifact_key": request.artifact_key},
-            },
-        )
-    data = path.read_bytes()
+            detail={"code": error.code, "params": error.params},
+        ) from error
+    except OSError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "module_artifact_missing", "params": {}},
+        ) from error
     return Response(
         content=data,
         media_type="application/octet-stream",

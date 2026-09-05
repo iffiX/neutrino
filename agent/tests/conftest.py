@@ -139,13 +139,20 @@ class FakeControlAgent:
         return {"os": "linux", "family": "debian", "arch": "x86_64"}
 
     def catalog(self) -> dict:
+        # Modules arrive already resolved for this platform: the hub read
+        # the manifest and picked the entry, so `entry` is the machine's
+        # whole basis for knowing the module runs here at all.
         return {
             "modules": {
                 "openssh_server": {
                     "title": "OpenSSH server",
                     "description": "",
                     "kind": "openssh",
-                    "platforms": {"linux": {}},
+                    "is_builtin": True,
+                    "platform_key": "linux",
+                    "entry": {},
+                    "verify": "",
+                    "package": "openssh_server",
                 }
             },
             "services": SERVICES,
@@ -157,8 +164,8 @@ class FakeControlAgent:
     def module_states(self) -> dict:
         return {"openssh_server": {"state": "enabled", "is_active": False}}
 
-    def desired_modules(self) -> dict:
-        return {"openssh_server": {"is_enabled": True}}
+    def pending_module_requests(self) -> dict:
+        return {}
 
     def last_error(self):
         return None

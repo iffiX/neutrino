@@ -20,16 +20,20 @@ AGENT_SERVICE_NAME = "neutrino_agent.service"
 # The shape of what crosses the hub channel. Bumped on any wire change, so
 # a hub upgrade that changed the shapes tells a same-version agent to
 # reinstall instead of feeding it replies it cannot read.
-AGENT_WIRE_GENERATION = 2
+AGENT_WIRE_GENERATION = 3
 
 AGENT_HEARTBEAT_PATH = "/api/agent/heartbeat"
 AGENT_RESULT_PATH = "/api/agent/result"
 AGENT_LEAVE_PATH = "/api/agent/leave"
 AGENT_PACKAGE_PATH = "/api/agent/package"
-# Several vendors serve their downloads only to a browser's TLS
-# fingerprint, which this agent cannot present and must not grow a
-# dependency to. The hub fetches those on the machine's behalf.
-AGENT_VENDOR_PACKAGE_PATH = "/api/agent/vendor_package"
+# This machine never fetches a module from the internet: the hub's cache did
+# that once for every machine of this platform, and an order says which
+# artifact to ask it for.
+AGENT_MODULE_PACKAGE_PATH = "/api/agent/module_package"
+
+# How much of a failed order's output travels up. Enough to read the package
+# manager's own complaint, bounded so a verbose failure cannot fill a beat.
+AGENT_MODULE_OUTPUT_LIMIT_BYTES = 16 * 1024
 
 # The transient unit a self-update runs in. Installing the package restarts
 # neutrino_agent.service, so the install must outlive the process that
@@ -79,6 +83,3 @@ AGENT_MOUNT_CREDENTIALS_DIR = "/etc/neutrino/agent/mount_credentials"
 # How often enabled mount records that are not attached are remounted, which
 # is also what brings them back after a reboot.
 AGENT_MOUNT_RECHECK_INTERVAL_S = 60
-
-TODESK_DOWNLOAD_URL = "https://dl.todesk.com/linux/todesk-v4.7.2.0-amd64.deb"
-ANYDESK_DOWNLOAD_URL = "https://download.anydesk.com/linux/anydesk_6.3.2-1_amd64.deb"

@@ -8,6 +8,7 @@ on an account nobody reported is refused in both directions alike.
 """
 
 import json
+import os
 
 import pytest
 
@@ -318,8 +319,39 @@ def test_gemini_env_merge_sets_one_line():
     assert merged == "GEMINI_API_KEY=k\nGEMINI_MODEL=m3\n"
 
 
-def test_the_release_table_answers_by_platform_key():
-    entry = switcher.release_entry(["linux-debian-amd64", "linux-amd64", "linux"])
-    assert entry["binary"] == "cc-switch"
+def test_the_switcher_holds_no_release_table_and_fetches_nothing():
+    # Which build this machine takes, and getting it, are the hub's: the
+    # table lives beside the gateway that publishes the service.
+    assert not hasattr(switcher, "release_entry")
+    assert not hasattr(switcher, "SWITCHER_RELEASES")
+    assert not hasattr(switcher, "download")
 
-    assert switcher.release_entry(["linux-armhf", "linux"]) == {}
+
+def test_install_unpacks_an_archive_it_is_handed(monkeypatch, tmp_path):
+    entry = {"binary": "cc-switch", "package_kind": "tar_binary"}
+    archive = tmp_path / "switcher.archive"
+    archive.write_bytes(b"not really a tarball")
+    monkeypatch.setattr(switcher, "SWITCHER_INSTALL_DIR", str(tmp_path / "bin"))
+    monkeypatch.setattr(
+        switcher,
+        "_extract_binary",
+        lambda archive_path, workdir, binary_name, kind: _staged(workdir, binary_name),
+    )
+
+    destination = switcher.install_cli(entry, str(archive))
+
+    assert destination == str(tmp_path / "bin" / "cc-switch")
+    assert os.path.isfile(destination)
+
+
+def _staged(workdir: str, binary_name: str) -> str:
+    """A binary already unpacked, standing in for a real archive."""
+    staged = os.path.join(workdir, binary_name)
+    with open(staged, "wb") as stream:
+        stream.write(b"#!/bin/sh\n")
+    return staged
+
+
+def test_install_with_no_build_for_this_machine_is_refused(tmp_path):
+    with pytest.raises(InstallError):
+        switcher.install_cli({}, str(tmp_path / "archive"))

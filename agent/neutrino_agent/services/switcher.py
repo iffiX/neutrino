@@ -39,7 +39,6 @@ import tarfile
 import tempfile
 import zipfile
 
-from neutrino_agent.modules.downloader import download, resolve_github_asset
 from neutrino_agent.modules.installers import InstallError
 
 
@@ -65,35 +64,6 @@ SWITCHER_DESKTOP_MARKERS = (
     "/Applications/CC Switch.app",
     "C:\\Program Files\\CC Switch",
 )
-
-# How each platform obtains the CLI. The typed ai entry carries endpoint and
-# models only, so the tool that applies them is the agent's own business.
-SWITCHER_RELEASES = {
-    "linux-amd64": {
-        "github_repo": "SaladDay/cc-switch-cli",
-        "asset_pattern": "linux-x64.tar.gz",
-        "package_kind": "tar_binary",
-        "binary": "cc-switch",
-    },
-    "linux-arm64": {
-        "github_repo": "SaladDay/cc-switch-cli",
-        "asset_pattern": "linux-arm64.tar.gz",
-        "package_kind": "tar_binary",
-        "binary": "cc-switch",
-    },
-    "darwin": {
-        "github_repo": "SaladDay/cc-switch-cli",
-        "asset_pattern": "darwin-universal.tar.gz",
-        "package_kind": "tar_binary",
-        "binary": "cc-switch",
-    },
-    "windows-amd64": {
-        "github_repo": "SaladDay/cc-switch-cli",
-        "asset_pattern": "windows-x64.zip",
-        "package_kind": "zip_binary",
-        "binary": "cc-switch.exe",
-    },
-}
 
 SWITCHER_PROVIDER_ID = "neutrino"
 SWITCHER_PROVIDER_NAME = "Neutrino Hub"
@@ -168,21 +138,6 @@ def _require_target(run_as: str) -> None:
         raise NoTargetUserError(f"no target account {run_as!r} on this machine")
 
 
-def release_entry(platform_keys: list) -> dict:
-    """The CLI release this machine installs.
-
-    Args:
-        platform_keys: The machine's manifest keys, most specific first.
-
-    Returns:
-        The release block, empty when no build exists for this machine.
-    """
-    for key in platform_keys:
-        if key in SWITCHER_RELEASES:
-            return dict(SWITCHER_RELEASES[key])
-    return {}
-
-
 def find_cli() -> "str | None":
     """The cc-switch CLI, if this machine has one.
 
@@ -218,31 +173,32 @@ def is_installed() -> bool:
     return find_cli() is not None or find_desktop()
 
 
-def install_cli(entry: dict) -> str:
-    """Download and install the cc-switch CLI for this platform.
+def install_cli(entry: dict, archive: str) -> str:
+    """Install the cc-switch CLI from an archive the hub handed down.
+
+    Nothing is fetched here. The hub's cache resolved the release for this
+    platform and fetched it once for every machine like this one, which is
+    what leaves this package with no way to reach the internet at all.
 
     Args:
-        entry: The release block — where to get it and what the binary
-            inside is called.
+        entry: The release block the hub resolved — what the binary inside
+            is called, and what kind of archive it arrived in.
+        archive: The archive on local disk.
 
     Returns:
         The path it was installed to.
 
     Raises:
-        InstallError: If the archive cannot be fetched or unpacked, or no
-            build exists for this machine.
-        DownloadError: If the release asset cannot be resolved.
+        InstallError: If the archive cannot be unpacked, or no build exists
+            for this machine.
     """
     if not entry:
         raise InstallError("no cc-switch build for this machine")
-    url = resolve_github_asset(entry["github_repo"], entry.get("asset_pattern", ""))
     binary_name = entry.get("binary", "cc-switch")
     kind = entry.get("package_kind", "tar_binary")
     destination = os.path.join(SWITCHER_INSTALL_DIR, binary_name)
 
     with tempfile.TemporaryDirectory() as workdir:
-        archive = os.path.join(workdir, "switcher.archive")
-        download(url, archive, is_impersonated=True)
         extracted = _extract_binary(archive, workdir, binary_name, kind)
         os.makedirs(SWITCHER_INSTALL_DIR, exist_ok=True)
         shutil.move(extracted, destination)

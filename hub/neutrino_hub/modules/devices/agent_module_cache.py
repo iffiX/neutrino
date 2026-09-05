@@ -207,6 +207,39 @@ class AgentModuleCache:
                 package_kind=package_kind,
             )
 
+    def artifact_for_key(
+        self, key: str, *, sources: dict, platform: dict
+    ) -> AgentModuleArtifact:
+        """The artifact a key names, fetching it again if it is not held.
+
+        The key is a pure function of the name, the platform and the entry,
+        so it can be resolved back without anything having been remembered.
+        That is what makes losing the directory cost a download and nothing
+        else: an order made before a restart still finds its bytes.
+
+        Args:
+            key: The cache key an order carried.
+            sources: Name to manifest — every artifact this hub can serve.
+            platform: The tuple the asking device reported.
+
+        Returns:
+            The artifact.
+
+        Raises:
+            AgentModuleFetchError: ``module_artifact_unknown`` when no
+                manifest this hub holds resolves to that key, and the
+                fetch's own typed reasons otherwise.
+        """
+        if not self._is_safe_key(key):
+            raise AgentModuleFetchError("module_artifact_unknown")
+        for name, manifest in sources.items():
+            if (
+                self.artifact_key(name=name, manifest=manifest, platform=platform)
+                == key
+            ):
+                return self.artifact(name=name, manifest=manifest, platform=platform)
+        raise AgentModuleFetchError("module_artifact_unknown", artifact_key=key)
+
     def held(self, key: str) -> "Path | None":
         """The artifact a key names, when the cache still holds it.
 
@@ -214,13 +247,20 @@ class AgentModuleCache:
             key: The cache key.
 
         Returns:
-            Its path, or None — a directory cleared between the order and
-            the download reads as nothing held, and the next ask re-fetches.
+            Its path, or None — a directory cleared since the order reads as
+            nothing held, and the caller resolves the key again instead.
         """
-        if not key or "/" in key or "\\" in key or key.startswith("."):
+        if not self._is_safe_key(key):
             return None
         path = self._root / key
         return path if path.is_file() else None
+
+    @staticmethod
+    def _is_safe_key(key: str) -> bool:
+        """Whether a key names a file in the cache and nowhere else."""
+        return (
+            bool(key) and "/" not in key and "\\" not in key and not key.startswith(".")
+        )
 
     def _key(self, *, name: str, platform_key: str, entry: dict) -> str:
         """Address one artifact by what would actually be installed."""

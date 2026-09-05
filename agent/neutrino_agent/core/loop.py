@@ -5,11 +5,12 @@ to. It runs whether or not the machine belongs to a gateway yet — an agent
 that has never enrolled still serves its page, waiting for a link, which is
 the whole point on a machine the gateway cannot reach first.
 
-The gateway stays the source of truth for which modules should be on: a
-toggle on the local page is sent up with the next heartbeat and comes back as
-part of the desired state, so the panel and the page can never disagree for
-longer than one beat. Services are the other way round: visible and decided
-only on the machine, one typed handler per service type.
+The gateway decides everything about modules: a toggle on the local page is
+sent up with the next heartbeat and comes back as an order, so the panel and
+the page can never disagree for longer than one beat, and this machine never
+downloads anything or decides to try again. Services are the other way
+round: visible and decided only on the machine, one typed handler per
+service type.
 
 Errors cross the wire as ``{"code", "params"}``, never an English sentence;
 every surface does its own wording.
@@ -24,7 +25,7 @@ import threading
 
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import (
-    AGENT_VENDOR_PACKAGE_PATH,
+    AGENT_MODULE_PACKAGE_PATH,
     AGENT_WIRE_GENERATION,
     AGENT_BACKOFF_MAX_S,
     AGENT_BACKOFF_MIN_S,
@@ -118,7 +119,7 @@ class Agent:
         # then rather than at the end of its next interval.
         self._news = threading.Event()
         self._engine = ModuleEngine(
-            fetch_gated=self._fetch_gated,
+            fetch_artifact=self._fetch_artifact,
             platform=self._platform,
             log=log,
             on_change=self._news.set,
@@ -128,6 +129,7 @@ class Agent:
             store=self._store,
             platform_tuple=self._engine.platform_tuple,
             log=log,
+            fetch_artifact=self._fetch_artifact,
         )
         self._services = {
             handler.service_type: handler
@@ -144,7 +146,6 @@ class Agent:
         }
         self._backoff_s = AGENT_BACKOFF_MIN_S
         self._last_error: "dict | None" = None
-        self._desired: dict = {}
         self._pending: dict = {}
         self._channel = None
         self._operator = None
@@ -176,13 +177,14 @@ class Agent:
         """What state each module is actually in."""
         return self._engine.report()
 
-    def desired_modules(self) -> dict:
-        """What the gateway says should be true, with local toggles applied."""
+    def pending_module_requests(self) -> dict:
+        """What this machine has asked the hub for and not yet been answered.
+
+        The machine keeps no desired state of its own — the hub holds it —
+        so this is only the wishes still riding up.
+        """
         with self._lock:
-            merged = {name: dict(value) for name, value in self._desired.items()}
-            for name, wish in self._pending.items():
-                merged.setdefault(name, {"config": {}}).update(wish)
-            return merged
+            return {name: dict(wish) for name, wish in self._pending.items()}
 
     def last_error(self) -> "dict | None":
         """The most recent problem worth showing, as ``{"code", "params"}``."""
@@ -257,13 +259,12 @@ class Agent:
                 self._log(f"could not tell the gateway we are leaving: {error}")
         enrollment.disconnect()
         with self._lock:
-            self._desired = {}
             self._pending = {}
             self._last_error = None
             self._update_target = ""
             self._update_error = None
         self._load_connection()
-        self._engine.update(desired={}, catalog=None, catalog_hash="")
+        self._engine.update(catalog=None, catalog_hash="", orders=[])
         self._log("disconnected from the gateway")
 
     def beat_soon(self) -> None:
@@ -301,9 +302,8 @@ class Agent:
                 if is_activated:
                     wish["is_enabled"] = True
             self._pending[name] = wish
-        self._engine.update(
-            desired=self.desired_modules(), catalog=None, catalog_hash=""
-        )
+        # Nothing is applied here: the wish rides up, the hub decides, and
+        # what comes back is an order like any the panel's own button makes.
         self.beat_soon()
 
     def service_action(
@@ -377,6 +377,7 @@ class Agent:
             "catalog_hash": self._engine.catalog_hash,
             "modules": self._engine.report(),
             "module_requests": requests,
+            "module_results": self._engine.results(),
             "ai_targets": self._store.ai_targets(),
             "last_error": self.last_error(),
         }
@@ -422,12 +423,10 @@ class Agent:
         # the service stays up, says so, and asks again — a crash here is a
         # machine nobody can reach to fix.
         try:
-            with self._lock:
-                self._desired = dict(reply.get("desired_modules") or {})
             self._engine.update(
-                desired=self.desired_modules(),
                 catalog=reply.get("catalog"),
                 catalog_hash=str(reply.get("catalog_hash", "")),
+                orders=reply.get("module_orders") or [],
             )
             self._ai.update(
                 entry=self._ai_entry(),
@@ -447,18 +446,20 @@ class Agent:
         self._maybe_self_update(str(reply.get("hub_version", "")))
         return AGENT_HEARTBEAT_INTERVAL_S
 
-    def _fetch_gated(self, url: str, package_kind: str, destination: str) -> dict:
-        """Have the hub fetch a download this machine cannot, onto disk.
+    def _fetch_artifact(self, artifact_key: str, destination: str) -> dict:
+        """Take the bytes an order named from the hub, onto disk.
+
+        The hub's cache fetched these once for every machine of this
+        platform; this is only the handing down, over the channel this
+        machine already trusts. Nothing here reaches the internet.
 
         Args:
-            url: What the manifest names.
-            package_kind: What the bytes should be, so the hub can tell a
-                challenge page from a package.
+            artifact_key: What the order named the artifact by.
             destination: Where to write what comes back.
 
         Returns:
             Empty when the bytes landed, ``{"code", "params"}`` when they
-            did not — the vendor serving a page included.
+            did not.
         """
         with self._lock:
             channel = self._channel
@@ -466,8 +467,8 @@ class Agent:
             return {"code": "hub_unreachable", "params": {}}
         try:
             named = channel.post_download(
-                AGENT_VENDOR_PACKAGE_PATH,
-                {"url": url, "package_kind": package_kind},
+                AGENT_MODULE_PACKAGE_PATH,
+                {"artifact_key": artifact_key},
                 destination,
             )
         except GatewayRefusedDetail as error:
@@ -481,7 +482,7 @@ class Agent:
         ) as error:
             return channel_error(error)
         if named and named != _sha256_file(destination):
-            return {"code": "vendor_package_digest_mismatch", "params": {}}
+            return {"code": "module_digest_mismatch", "params": {}}
         return {}
 
     def _read_metrics(self) -> dict:
@@ -528,7 +529,6 @@ class Agent:
             return AGENT_HEARTBEAT_INTERVAL_S
         enrollment.disconnect()
         with self._lock:
-            self._desired = {}
             self._pending = {}
             self._refusals = 0
             self._update_target = ""
@@ -539,7 +539,7 @@ class Agent:
                 "code": "self_unbound",
                 "params": {"cause": rejection["code"]},
             }
-        self._engine.update(desired={}, catalog=None, catalog_hash="")
+        self._engine.update(catalog=None, catalog_hash="", orders=[])
         self._log(f"unbound: {rejection['code']}")
         return IDLE_POLL_INTERVAL_S
 
@@ -576,14 +576,13 @@ class Agent:
         with self._lock:
             if self._binding == binding:
                 return
-            self._desired = {}
             self._pending = {}
             self._last_error = None
             self._refusals = 0
             self._update_target = ""
             self._update_error = None
             self._backoff_s = AGENT_BACKOFF_MIN_S
-        self._engine.update(desired={}, catalog=None, catalog_hash="")
+        self._engine.update(catalog=None, catalog_hash="", orders=[])
         self._log("adopted the binding written on disk")
 
     def _execute(self, command: dict) -> None:

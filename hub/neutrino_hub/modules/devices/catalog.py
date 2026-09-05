@@ -15,12 +15,20 @@ and recomposing on each beat would be waste.
 import hashlib
 import json
 
-from neutrino_hub.modules.devices.agent_module_cache import resolve_platform_entry
+from neutrino_hub.modules.cliproxyapi.constants import (
+    CLIPROXYAPI_SWITCHER_MANIFEST,
+    CLIPROXYAPI_SWITCHER_NAME,
+)
+from neutrino_hub.modules.devices.agent_module_cache import (
+    AgentModuleCache,
+    resolve_platform_entry,
+)
 from neutrino_hub.modules.devices.manifests import (
     load_module_manifests,
     manifests_stamp,
 )
 from neutrino_hub.modules.services.collector import catalog_entries
+from neutrino_hub.modules.services.constants import SERVICES_TYPE_AI
 
 
 def resolve_module(manifest: dict, platform: dict) -> dict:
@@ -67,6 +75,60 @@ def resolved_modules(platform: dict) -> dict:
     }
 
 
+def artifact_sources() -> dict:
+    """Every artifact this hub can fetch for a machine, by name.
+
+    The modules a device can be told to install, plus the cc-switch command
+    line the AI service needs. One list, because a managed machine receives
+    software one way and this is it.
+
+    Returns:
+        Name to manifest.
+    """
+    sources = dict(load_module_manifests())
+    sources[CLIPROXYAPI_SWITCHER_NAME] = CLIPROXYAPI_SWITCHER_MANIFEST
+    return sources
+
+
+def with_switcher_artifact(entries: list, platform: dict) -> list:
+    """Name the cc-switch artifact in the ai entry, for one platform.
+
+    The machine still decides which accounts it points at the hub and what
+    their tools are configured with; only the getting of the binary is the
+    hub's, which is what leaves the agent with nothing to download.
+
+    Args:
+        entries: The composed service entries.
+        platform: The tuple the device reported.
+
+    Returns:
+        The entries, the ai one carrying the key its machine asks for the
+        binary by. A platform with no cc-switch build gets no block, which
+        is how the machine knows there is none.
+    """
+    _, entry = resolve_platform_entry(CLIPROXYAPI_SWITCHER_MANIFEST, platform)
+    if entry is None:
+        return entries
+    key = AgentModuleCache().artifact_key(
+        name=CLIPROXYAPI_SWITCHER_NAME,
+        manifest=CLIPROXYAPI_SWITCHER_MANIFEST,
+        platform=platform,
+    )
+    resolved = []
+    for service in entries:
+        if service.get("type") != SERVICES_TYPE_AI:
+            resolved.append(service)
+            continue
+        payload = dict(service.get("payload", {}))
+        payload["switcher"] = {
+            "artifact_key": key,
+            "binary": entry.get("binary", ""),
+            "package_kind": entry.get("package_kind", ""),
+        }
+        resolved.append({**service, "payload": payload})
+    return resolved
+
+
 class DeviceCatalogCache:
     """Composes and hashes the catalog, per device-reachable host and platform."""
 
@@ -107,7 +169,9 @@ class DeviceCatalogCache:
         if held is None:
             composed = {
                 "modules": resolved_modules(platform),
-                "services": catalog_entries(self._services.entries_for(device_host)),
+                "services": with_switcher_artifact(
+                    catalog_entries(self._services.entries_for(device_host)), platform
+                ),
             }
             serialized = json.dumps(composed, sort_keys=True).encode("utf-8")
             held = (composed, hashlib.sha256(serialized).hexdigest()[:16])

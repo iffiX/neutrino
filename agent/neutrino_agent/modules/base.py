@@ -1,12 +1,12 @@
-"""What a module reconciler is.
+"""What a module runner is.
 
 A module is machine software the hub administers — a remote desktop, the
-SSH server. One reconciler owns one manifest kind, and the engine hands each
-catalog entry to the reconciler for its kind. A reconciler never applies a
-local wish on its own: what it receives as ``wanted`` already came back from
-the hub as desired state.
+SSH server. One runner owns one manifest kind: it carries out an order the
+hub sent and reports what is true afterwards. It decides nothing — not when
+to act, not whether to try again — because the hub is the only thing that
+holds policy and the only thing with the memory to hold it in.
 
-Every status a reconciler returns is typed:
+Every status a runner's caller returns is typed:
 ``{"state", "code", "params", "is_active"}`` — a code and its parameters,
 never an English sentence, so every surface does its own wording.
 """
@@ -33,8 +33,8 @@ def _ignore_status(name: str, status: dict) -> None:
     """Swallow a transient status when nobody is watching."""
 
 
-class ModuleReconciler:
-    """Brings one kind of module to its desired state on this machine."""
+class ModuleRunner:
+    """Carries out orders for one kind of module on this machine."""
 
     kind = ""
 
@@ -51,6 +51,14 @@ class ModuleReconciler:
         self._log = log
         self._publish = publish if publish is not None else _ignore_status
 
+
+class ModuleReconciler(ModuleRunner):
+    """A runner whose module is switched rather than installed.
+
+    A platform capability the machine already carries has no bytes and no
+    order to fetch: it is read, turned on, and turned off.
+    """
+
     def reconcile(
         self, *, name: str, manifest: dict, entry: dict, wanted: "dict | None"
     ) -> dict:
@@ -60,9 +68,9 @@ class ModuleReconciler:
             name: The module name.
             manifest: Its manifest.
             entry: The manifest's entry for this platform.
-            wanted: What the hub decided — ``is_enabled`` plus whatever
-                ``config`` it resolved. None when nothing has been asked, in
-                which case the module is inspected and never touched.
+            wanted: What the hub's order asked for — ``is_enabled``. None
+                when nothing was ordered, in which case the module is
+                inspected and never touched.
 
         Returns:
             ``{"state", "code", "params", "is_active"}``.
