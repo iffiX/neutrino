@@ -1,14 +1,14 @@
-"""The AI service: pointing an account's AI tools at the hub's gateway.
+"""The AI service: pointing each account's AI tools at the hub's gateway.
 
 A service, not a function: the panel neither renders nor controls it. One
 chip per account — switching a chip on asks the hub for that account's
 gateway key and points the account's tools at the gateway; switching it off
-puts the account's own configuration back. The reconcile below is moved from
-the function engine and nothing calls it yet; the services flow wires it.
+puts the account's own configuration back. The store keeps only the target
+and the last-granted endpoint; the key itself arrives fresh in every
+heartbeat reply and is held in memory for the turn.
 
-The store is machine state: it survives a hub restore untouched and appears
-in no hub backup. The hub-sent per-account credentials are kept in memory
-only — they arrive fresh in every heartbeat reply.
+Deactivation uses the endpoint activation recorded, because by then the hub
+has revoked the key and the reply no longer names it.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -16,150 +16,20 @@ only — they arrive fresh in every heartbeat reply.
 from __future__ import annotations
 
 import json
+import threading
+import time
 
 from neutrino_agent import switcher
-from neutrino_agent.constants import AGENT_AI_STORE_PATH
+from neutrino_agent.downloader import DownloadError
+from neutrino_agent.installers import InstallError
+from neutrino_agent.platforms.detect import platform_keys
+
+# How often to re-check accounts whose inputs have not changed. Each check
+# reads the account's own settings file, which steps down per account.
+AI_IDLE_RECHECK_INTERVAL_S = 60
 
 
-def reconcile(
-    name: str,
-    entry: dict,
-    wanted: "dict | None",
-    config: dict,
-    *,
-    account: str,
-    publish,
-    log=print,
-) -> dict:
-    """Have cc-switch on the machine, and have it point at the hub.
-
-    Two independent wishes. Installing puts the switcher there and leaves it
-    pointing wherever it already pointed; activating registers the hub in it
-    and switches to it. Deactivating removes only the hub's entry, so the
-    other providers someone keeps stay untouched.
-
-    Args:
-        name: The service name, for the transient states.
-        entry: The catalog entry, naming where the CLI comes from.
-        wanted: ``is_enabled`` and ``is_activated``, or None when nothing
-            has been asked and this only reports.
-        config: The endpoint, key and model, resolved by the hub.
-        account: The account whose tools to switch.
-        publish: Called with ``(name, status)`` for transient states.
-        log: Callable used for progress messages.
-
-    Returns:
-        ``{"state", "code", "params", "is_active"}``.
-    """
-    switcher_entry = entry.get("switcher", {})
-    base_url = config.get("base_url", "")
-    is_present = switcher.is_installed()
-    is_active = (
-        is_present
-        and bool(account)
-        and switcher.is_active(
-            run_as=account,
-            base_url=base_url,
-            api_key=config.get("api_key", ""),
-            model=config.get("model", ""),
-        )
-    )
-
-    if wanted is None:
-        return _steady_status(is_present, is_active)
-
-    is_enabled = bool(wanted.get("is_enabled"))
-    is_activated = bool(wanted.get("is_activated"))
-
-    try:
-        if not is_enabled:
-            return _remove(name, account, base_url, is_present, is_active, log)
-        if not is_present:
-            publish(name, _transient("installing"))
-            log(f"{name}: installing the cc-switch command line")
-            switcher.install_cli(switcher_entry)
-            is_present = True
-        if is_activated and not is_active:
-            return _activate(
-                name, switcher_entry, config, account, base_url, publish, log
-            )
-        if not is_activated and is_active:
-            publish(name, _transient("deactivating", is_active=True))
-            log(f"{name}: pointing cc-switch away from the hub")
-            note = switcher.deactivate(run_as=account, base_url=base_url)
-            return {
-                "state": "installed",
-                "code": "",
-                "params": {"detail": note},
-                "is_active": False,
-            }
-    except switcher.NoTargetUserError as error:
-        return {
-            "state": "failed",
-            "code": error.code,
-            "params": {},
-            "is_active": False,
-        }
-    return _steady_status(is_present, is_active)
-
-
-def _remove(
-    name: str, account: str, base_url: str, is_present: bool, is_active: bool, log
-) -> dict:
-    if not is_present:
-        return _steady_status(False, False)
-    log(f"{name}: removing the cc-switch command line")
-    if is_active:
-        switcher.deactivate(run_as=account, base_url=base_url)
-    switcher.uninstall_cli()
-    still_there = switcher.is_installed()
-    return {
-        "state": "installed" if still_there else "absent",
-        "code": "desktop_app_remains" if still_there else "",
-        "params": {},
-        "is_active": False,
-    }
-
-
-def _activate(
-    name: str,
-    switcher_entry: dict,
-    config: dict,
-    account: str,
-    base_url: str,
-    publish,
-    log,
-) -> dict:
-    if not base_url or not config.get("api_key"):
-        return {
-            "state": "installed",
-            "code": "no_endpoint",
-            "params": {},
-            "is_active": False,
-        }
-    publish(name, _transient("activating"))
-    if switcher.find_cli() is None:
-        # Only the desktop app is here; the command line is what can be
-        # driven, and both share one store.
-        log(f"{name}: installing the cc-switch command line")
-        switcher.install_cli(switcher_entry)
-    log(f"{name}: pointing cc-switch at the hub")
-    note = switcher.activate(
-        base_url=base_url,
-        api_key=config["api_key"],
-        run_as=account,
-        model=config.get("model", ""),
-    )
-    return {
-        "state": "installed",
-        "code": "",
-        "params": {"detail": note},
-        "is_active": True,
-    }
-
-
-def _steady_status(is_present: bool, is_active: bool) -> dict:
-    """The steady-state report for the AI service."""
+def _steady(is_present: bool, is_active: bool) -> dict:
     return {
         "state": "installed" if is_present else "absent",
         "code": "",
@@ -172,49 +42,182 @@ def _transient(state: str, *, is_active: bool = False) -> dict:
     return {"state": state, "code": "", "params": {}, "is_active": is_active}
 
 
-class AiServiceStore:
-    """The per-account AI switching state this machine keeps."""
+def _failure(code: str, error: Exception) -> dict:
+    return {
+        "state": "failed",
+        "code": code,
+        "params": {"detail": str(error)[:200]},
+        "is_active": False,
+    }
 
-    def __init__(self, *, path: str = AGENT_AI_STORE_PATH):
+
+class AiServiceReconciler:
+    """Keeps every account's AI tools converged on its switching target."""
+
+    def __init__(self, *, store, platform_tuple: dict, log=print, switcher_module=None):
         """
         Args:
-            path: Where the switching state lives on disk.
+            store: The :class:`~neutrino_agent.services.store.MachineServiceStore`.
+            platform_tuple: This machine's platform tuple, to pick the
+                offer's switcher block.
+            log: Callable used for progress messages.
+            switcher_module: The switcher to drive; None uses the real one.
         """
-        self._path = path
-        self._accounts: dict = {}
+        self._store = store
+        self._platform_tuple = platform_tuple
+        self._log = log
+        self._switcher = switcher_module if switcher_module is not None else switcher
+        self._lock = threading.Lock()
+        self._offer: dict = {}
+        self._accounts: list = []
+        self._credentials: dict = {}
+        self._statuses: dict = {}
+        self._signature = ""
+        self._checked_at = 0.0
+        self._wakeup = threading.Event()
+        self._worker = threading.Thread(target=self._run, daemon=True)
+        self._worker.start()
 
-    def targets(self) -> dict:
-        """Which accounts are switched at the hub's gateway.
+    def update(self, *, offer: dict, accounts: list, credentials: dict) -> None:
+        """Take one heartbeat reply's worth of inputs.
+
+        Args:
+            offer: The catalog's AI service offer; empty when the hub
+                extends none, which reconciles nothing.
+            accounts: The machine's reported human accounts.
+            credentials: Account name to ``{"base_url", "api_key", "model"}``
+                for the accounts the hub granted this turn.
+        """
+        with self._lock:
+            self._offer = dict(offer)
+            self._accounts = list(accounts)
+            self._credentials = {
+                str(account): dict(value)
+                for account, value in credentials.items()
+                if isinstance(value, dict)
+            }
+        self._wakeup.set()
+
+    def report(self) -> dict:
+        """The per-account states for the page.
 
         Returns:
-            Account name to bool; empty until an account is switched.
+            Account name to ``{"state", "code", "params", "is_active"}``.
         """
+        with self._lock:
+            return {name: dict(value) for name, value in self._statuses.items()}
+
+    def _run(self) -> None:
+        while True:
+            self._wakeup.wait()
+            self._wakeup.clear()
+            try:
+                self._reconcile()
+            except Exception as error:  # noqa: BLE001 - the loop must survive
+                self._log(f"ai service reconcile crashed: {error}")
+
+    def _reconcile(self) -> None:
+        targets = self._store.ai_targets()
+        granted = self._store.ai_granted()
+        with self._lock:
+            offer = dict(self._offer)
+            accounts = list(self._accounts)
+            credentials = dict(self._credentials)
+            if not offer:
+                self._statuses = {}
+                return
+            signature = json.dumps(
+                [targets, granted, sorted(accounts), offer, credentials],
+                sort_keys=True,
+                default=str,
+            )
+            is_stale = (
+                signature != self._signature
+                or time.monotonic() - self._checked_at > AI_IDLE_RECHECK_INTERVAL_S
+            )
+            self._signature = signature
+            if is_stale:
+                self._checked_at = time.monotonic()
+        if not is_stale:
+            return
+        names = sorted(set(accounts) | set(targets) | set(granted))
+        for account in names:
+            self._publish(
+                account,
+                self._reconcile_account(
+                    account,
+                    entry=self._switcher_entry(offer),
+                    is_wanted=bool(targets.get(account)),
+                    creds=credentials.get(account, {}),
+                ),
+            )
+        with self._lock:
+            self._statuses = {
+                name: value for name, value in self._statuses.items() if name in names
+            }
+
+    def _reconcile_account(
+        self, account: str, *, entry: dict, is_wanted: bool, creds: dict
+    ) -> dict:
+        granted = self._store.ai_granted().get(account, {})
         try:
-            with open(self._path, "r", encoding="utf-8") as stream:
-                data = json.load(stream)
-        except (OSError, ValueError):
-            return {}
-        targets = data.get("targets", {}) if isinstance(data, dict) else {}
-        return {
-            str(account): bool(is_switched) for account, is_switched in targets.items()
-        }
+            if is_wanted:
+                return self._activate(account, entry=entry, creds=creds)
+            if granted:
+                self._publish(account, _transient("deactivating", is_active=True))
+                self._log(f"ai service: pointing {account}'s tools away from the hub")
+                self._switcher.deactivate(
+                    run_as=account, base_url=granted.get("base_url", "")
+                )
+                self._store.clear_ai_granted(account)
+        except switcher.NoTargetUserError as error:
+            return {
+                "state": "failed",
+                "code": error.code,
+                "params": {},
+                "is_active": False,
+            }
+        except DownloadError as error:
+            return _failure("download_failed", error)
+        except InstallError as error:
+            return _failure("install_failed", error)
+        except Exception as error:  # noqa: BLE001 - reported, not raised
+            return _failure("reconcile_failed", error)
+        return _steady(self._switcher.is_installed(), False)
 
-    def accounts(self) -> dict:
-        """The hub-sent per-account credentials, as the last reply carried.
+    def _activate(self, account: str, *, entry: dict, creds: dict) -> dict:
+        base_url = str(creds.get("base_url", ""))
+        api_key = str(creds.get("api_key", ""))
+        model = str(creds.get("model", ""))
+        if not base_url or not api_key:
+            return {
+                "state": "installed" if self._switcher.is_installed() else "absent",
+                "code": "no_endpoint",
+                "params": {},
+                "is_active": False,
+            }
+        if not self._switcher.is_active(
+            run_as=account, base_url=base_url, api_key=api_key, model=model
+        ):
+            if self._switcher.find_cli() is None:
+                self._publish(account, _transient("installing"))
+                self._log("ai service: installing the cc-switch command line")
+                self._switcher.install_cli(entry)
+            self._publish(account, _transient("activating"))
+            self._log(f"ai service: pointing {account}'s tools at the hub")
+            self._switcher.activate(
+                base_url=base_url, api_key=api_key, run_as=account, model=model
+            )
+        self._store.set_ai_granted(account, {"base_url": base_url, "model": model})
+        return {"state": "installed", "code": "", "params": {}, "is_active": True}
 
-        Returns:
-            Account name to ``{"base_url", "api_key", "model"}``.
-        """
-        return dict(self._accounts)
+    def _switcher_entry(self, offer: dict) -> dict:
+        platforms = offer.get("platforms", {})
+        for key in platform_keys(self._platform_tuple):
+            if key in platforms:
+                return platforms[key].get("switcher", {})
+        return {}
 
-    def take_accounts(self, accounts: dict) -> None:
-        """Keep the reply's per-account credentials, in memory only.
-
-        Args:
-            accounts: Account name to ``{"base_url", "api_key", "model"}``.
-        """
-        self._accounts = {
-            str(account): dict(value)
-            for account, value in accounts.items()
-            if isinstance(value, dict)
-        }
+    def _publish(self, account: str, status: dict) -> None:
+        with self._lock:
+            self._statuses[account] = status
