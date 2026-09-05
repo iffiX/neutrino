@@ -13,8 +13,11 @@ served wire answering SSH with the ``id_lab`` key beside this file, its
 than guessing at somebody's real network.
 """
 
+import base64
+import json
 import subprocess
 import time
+import urllib.parse
 from pathlib import Path
 
 import pytest
@@ -44,6 +47,104 @@ def wait_for(what, predicate, timeout_s):
 def device_by_mac(panel, mac):
     listed = panel.read("/devices")["devices"]
     return next((entry for entry in listed if entry["mac_address"] == mac), None)
+
+
+# Client-side probes of the control channel, run on the managed machine with
+# its own python. Each prints one JSON line; base64 dodges ssh quoting.
+CONTROL_COMMON = """
+import http.client, json, socket, urllib.error, urllib.request
+
+SOCK = "/run/neutrino_agent/agent.sock"
+
+
+class SockConn(http.client.HTTPConnection):
+    def __init__(self):
+        super().__init__("localhost")
+
+    def connect(self):
+        s = socket.socket(socket.AF_UNIX)
+        s.connect(SOCK)
+        self.sock = s
+
+
+def call(method, path, body=None, headers=None):
+    c = SockConn()
+    data = json.dumps(body) if body is not None else None
+    sent = {"Content-Type": "application/json"} if data else {}
+    sent.update(headers or {})
+    c.request(method, path, data, sent)
+    r = c.getresponse()
+    return r.status, json.loads(r.read().decode() or "{}")
+"""
+
+CONTROL_PROBE_SCRIPT = CONTROL_COMMON + """
+out = {}
+try:
+    with urllib.request.urlopen("http://127.0.0.1:8765/api/state", timeout=5) as r:
+        body = r.read().decode()
+        out["tokenless"] = {"status": r.status, "leaks": '"functions"' in body}
+except urllib.error.HTTPError as e:
+    out["tokenless"] = {"status": e.code, "leaks": False}
+status, minted = call("POST", "/api/token", {})
+out["mint"] = status
+out["is_privileged"] = minted.get("is_privileged")
+req = urllib.request.Request(
+    "http://127.0.0.1:8765/api/state",
+    headers={"Authorization": "Bearer " + minted.get("token", "")},
+)
+with urllib.request.urlopen(req, timeout=5) as r:
+    state = json.loads(r.read().decode())
+out["accounts"] = state.get("accounts")
+print(json.dumps(out))
+"""
+
+OWN_STATE_SCRIPT = CONTROL_COMMON + """
+status, state = call("GET", "/api/state")
+print(json.dumps({
+    "status": status,
+    "accounts": state.get("accounts"),
+    "caller": state.get("caller"),
+}))
+"""
+
+SERVICES_SCRIPT = CONTROL_COMMON + """
+status, state = call("GET", "/api/state")
+print(json.dumps(state.get("services", {})))
+"""
+
+FORWARD_SCRIPT = CONTROL_COMMON + """
+out = {}
+status, state = call(
+    "POST", "/api/services/forward", {"offer_id": "OFFER_ID", "is_enabled": True}
+)
+out["enable"] = status
+row = (state.get("forwards") or {}).get("OFFER_ID") or {}
+out["is_active"] = row.get("is_active")
+try:
+    target = "http://127.0.0.1:%s/" % row.get("local_port")
+    with urllib.request.urlopen(target, timeout=10) as r:
+        out["fetch_status"] = r.status
+except Exception as error:
+    out["fetch_status"] = str(error)
+status, state = call(
+    "POST", "/api/services/forward", {"offer_id": "OFFER_ID", "is_enabled": False}
+)
+row = (state.get("forwards") or {}).get("OFFER_ID") or {}
+out["is_active_after"] = bool(row.get("is_active"))
+print(json.dumps(out))
+"""
+
+
+def client_python(host, script, *, is_root):
+    """Run a probe script on the client, as root or as the lab account."""
+    encoded = base64.b64encode(script.encode()).decode()
+    runner = "sudo python3 -" if is_root else "python3 -"
+    return ssh_to(host, f"echo {encoded} | base64 -d | {runner}")
+
+
+def probe_json(result):
+    assert result.returncode == 0, result.stdout + result.stderr
+    return json.loads(result.stdout.strip().splitlines()[-1])
 
 
 def ssh_to(host, command):
@@ -168,6 +269,60 @@ def test_the_lifecycle_walks_every_transition(panel, stranger):
     )
     managed = device_by_mac(panel, mac)
     assert managed["client"]["is_managed"] is True
+
+    # While managed, the control channel answers by identity: tokenless
+    # loopback leaks nothing, a socket-minted token opens the page
+    # privileged, an ordinary caller sees only itself.
+    control = probe_json(client_python(host, CONTROL_PROBE_SCRIPT, is_root=True))
+    assert control["tokenless"]["status"] != 200 or not control["tokenless"]["leaks"]
+    assert control["mint"] == 200, control
+    assert control["is_privileged"] is True
+    assert "lab" in control["accounts"], control
+    assert "root" not in control["accounts"], control
+
+    own = probe_json(client_python(host, OWN_STATE_SCRIPT, is_root=False))
+    assert own["status"] == 200, own
+    assert own["accounts"] == ["lab"], own
+    assert own["caller"]["is_privileged"] is False, own
+
+    # A declared port reaches the client as an offer, forwards to its own
+    # loopback, and the forward carries the panel's page back through.
+    panel_port = urllib.parse.urlsplit(panel.base_url).port or 80
+    status, declared = panel.call(
+        "POST",
+        "/services/declared",
+        {
+            "name": "lifecycle panel port",
+            "kind": "generic_tcp",
+            "host": LIFECYCLE_LAN,
+            "port": panel_port,
+        },
+    )
+    assert status == 200, declared
+    try:
+
+        def port_offer():
+            listing = client_python(host, SERVICES_SCRIPT, is_root=True)
+            if listing.returncode != 0:
+                return None
+            services = json.loads(listing.stdout.strip().splitlines()[-1])
+            for offer_id, entry in services.items():
+                if entry.get("kind") == "port" and entry.get("port") == panel_port:
+                    return offer_id
+            return None
+
+        offer_id = wait_for("the port offer to reach the client", port_offer, 90)
+        outcome = probe_json(
+            client_python(
+                host, FORWARD_SCRIPT.replace("OFFER_ID", offer_id), is_root=True
+            )
+        )
+        assert outcome["enable"] == 200, outcome
+        assert outcome["is_active"] is True, outcome
+        assert outcome["fetch_status"] == 200, outcome
+        assert outcome["is_active_after"] is False, outcome
+    finally:
+        panel.call("DELETE", f"/services/declared/{declared['id']}")
 
     # The hub lets go by deleting the token. The agent is refused, and after
     # a few beats it unbinds by itself and says so on its own machine.
