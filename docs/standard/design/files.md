@@ -82,6 +82,7 @@ testable. Details of the files themselves:
                     smb.conf, xray and gateway configs
     geodata/        geoip.dat and geosite.dat
     cliproxyapi/    the AI gateway's accounts and tokens
+    device_modules/ the packages the hub fetched for managed machines
     stood_down.json which units the hub stopped so it could drive the network
 ```
 

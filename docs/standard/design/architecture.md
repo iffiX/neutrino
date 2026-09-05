@@ -199,6 +199,68 @@ into unbound and waiting for a link. Its binding lives in one file, and the
 running service adopts what another process writes there, so the CLI and the
 page need no service restart.
 
+## The hub installs; the agent is an outpost
+
+A managed machine's agent carries no dependencies and must keep none, so it
+is given the smallest job that can be done well: **execute what it is told,
+report what is true**. It does not decide when to install, does not fetch
+anything from the internet, and holds no policy about failure or retry.
+Everything that needs judgment, a network, or memory across restarts lives
+on the hub, where there is a configuration directory, a vault, and one place
+to look when something goes wrong.
+
+Two hub-side things do the work, and there is exactly one of each:
+
+- **The device module cache** turns "this machine, on this platform, wants
+  this module" into bytes on the hub's own disk. It resolves the manifest's
+  entry for that platform, fetches it — presenting a browser's TLS
+  fingerprint where a vendor gates on one, which is the whole reason the
+  fetch cannot happen on the agent — checks that what arrived opens like the
+  package kind it claims to be, and keeps it under
+  `/var/lib/neutrino/device_modules/`. It is a cache in the strict sense:
+  losing it costs a download and nothing else. One fetch serves every device
+  of that platform, and a second machine wanting the same module waits for
+  the first fetch rather than starting its own.
+- **The agent controller** turns cached bytes into an install on one
+  machine. It holds one queue per device and runs one order at a time,
+  because `dpkg` and its equivalents hold a machine-wide lock and two
+  installs racing is a failure with no useful diagnosis. It is the only
+  thing that installs on a managed machine — the SSH bootstrap that puts
+  the agent there in the first place goes through it too, so "install the
+  agent" and "install a remote desktop" cannot overlap by construction
+  rather than by a check somebody remembered to write.
+
+Every request enters the same door. The panel's device drawer and the
+machine's own page (`sudo nagent ui`) both post the same thing — *this
+device wants this module* — and the machine's own page reaches it the way
+everything agent-side reaches the hub, by riding the next heartbeat. There
+is no second path, no direct download, and no difference in behavior
+between the two surfaces.
+
+An order therefore walks one way and never loops back:
+
+```
+a person asks (panel, or the machine's own page)
+  → the cache resolves the platform's artifact, fetching it once
+  → the controller queues an order for that device
+  → the agent is handed the bytes over the pinned channel, installs, verifies
+  → the agent reports the outcome; the controller closes the order
+```
+
+**Retry is a person's word, never a timer's.** A failed order stays failed
+and is not retried on its own: a vendor refusing now refuses in a minute,
+and a machine that retries every minute spends the night doing it. Asking
+again — pressing the button on either surface — is a new order, and it runs.
+Two things clear a failure without being asked, because both mean the
+question is settled: the software turning up on the machine anyway (somebody
+installed it by hand), and the wish being reversed.
+
+What the agent keeps is only what it can answer for: which modules are
+present, what state each is in, and the output of the last thing it ran. The
+output of a failed install travels up with that state and is shown beside
+the install it came from, because a person reading "the download failed" and
+a person reading the vendor's own words are not equally able to fix it.
+
 ## The network the hub assumes
 
 Every enrolled machine — on the LAN, on NetBird, on whatever overlay comes

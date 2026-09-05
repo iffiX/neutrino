@@ -27,13 +27,16 @@ publishes.
   the SSH server. The panel's device drawer switches them; the agent's
   page shows them and lets a privileged caller toggle them too. A local
   toggle is never applied locally: it rides up with the next heartbeat,
-  the hub decides, and the answer comes back as desired state, so the
-  drawer and the page cannot disagree for longer than one beat. Two
-  semantics, decided by what the thing is: a platform capability the
-  machine already carries (the SSH server — a package dependency on
-  Linux, built into macOS and Windows) is **enabled and disabled**; a
-  third-party application (a remote desktop) is **installed and
-  removed**.
+  the hub decides, and the answer comes back as an order, so the drawer
+  and the page cannot disagree for longer than one beat. **The agent
+  never downloads a module**: the hub's cache fetches it and its
+  controller hands the bytes down, one install at a time per machine
+  ([architecture.md](architecture.md), "The hub installs; the agent is an
+  outpost"). Two semantics, decided by what the thing is: a platform
+  capability the machine already carries (the SSH server — a package
+  dependency on Linux, built into macOS and Windows) is **enabled and
+  disabled**; a third-party application (a remote desktop) is
+  **installed and removed**.
 - **Services** are what the machine's people do with what the hub
   publishes — pointing an account's AI tools at the gateway, mounting a
   published share, opening a published link, forwarding a published port.
