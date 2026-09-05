@@ -29,11 +29,25 @@ import "./samba_page.css";
  * credential store, never in config/, so a box restored from backup honestly
  * shows "no password yet" instead of pretending the tarball knew it.
  *
- * A password typed for a user that does not exist on the box yet is staged in
- * this page's memory and lands right after Apply creates the account — so
- * adding a user is one motion, not add-apply-then-come-back. Staged means
- * staged: reloading the page before applying forgets it.
+ * A user is a credential, so it is added and deleted, never edited: the add
+ * form takes the name and the password together, both staged behind Apply,
+ * and replacing a password is removing the user and adding it again. Staged
+ * means staged: reloading the page before applying forgets it.
  */
+
+const USERS_TITLE = "Users";
+const USERS_HINT =
+  "Accounts that may connect. Adding stages name and password together; " +
+  "replacing a password is removing the user and adding it again.";
+const USER_BADGE_STAGED = "created on apply";
+const USER_BADGE_PASSWORD_STAGED = "password set on apply";
+const USER_BADGE_NO_PASSWORD = "no password yet";
+const USER_BADGE_READY = "ready";
+const USER_REMOVE_LABEL = "Remove";
+const USER_ADD_LABEL = "Add user";
+const USERS_APPLY_LABEL = "Apply users";
+const USERS_APPLY_HINT =
+  "Creates accounts, sets staged passwords, revokes removed ones.";
 
 type GroupName = "shares" | "users";
 
@@ -177,10 +191,6 @@ export function SambaPage() {
     setNewPassword("");
   };
 
-  const stagePassword = (name: string, password: string) => {
-    setPendingPasswords((current) => ({ ...current, [name]: password }));
-  };
-
   if (resource.error !== null && resource.data === null) {
     return (
       <div className="page">
@@ -257,21 +267,16 @@ export function SambaPage() {
         }`}
       >
         <div className="settings_group_title">
-          <h2>Users</h2>
+          <h2>{USERS_TITLE}</h2>
         </div>
-        <p className="field_hint">
-          Accounts that may connect; passwords are set after applying, never in
-          backups.
-        </p>
+        <p className="field_hint">{USERS_HINT}</p>
         {users.map((name) => (
           <UserRow
             key={name}
             name={name}
             saved={savedUsers.find((user) => user.name === name) ?? null}
             hasPendingPassword={name in pendingPasswords}
-            onStagePassword={(password) => stagePassword(name, password)}
             onRemove={() => removeUser(name)}
-            onPasswordSet={() => resource.reload()}
           />
         ))}
         <div className="samba_add_user">
@@ -293,14 +298,14 @@ export function SambaPage() {
           />
           <button type="button" className="button" onClick={addUser}>
             <Icon name="plus" size={14} />
-            Add user
+            {USER_ADD_LABEL}
           </button>
         </div>
         <ApplyBar
           isDirty={isUsersUnapplied}
           isBusy={busyGroup === "users"}
-          label="Apply users"
-          hint="Creates accounts, sets staged passwords, revokes removed ones."
+          label={USERS_APPLY_LABEL}
+          hint={USERS_APPLY_HINT}
           error={errors.users}
           notice={notice.users}
           onReset={() => {
@@ -455,52 +460,11 @@ interface UserRowProps {
   saved: SambaUser | null;
   /** Whether a password sits staged for this user, waiting for Apply. */
   hasPendingPassword: boolean;
-  /** Called with a password for an account that does not exist yet. */
-  onStagePassword: (password: string) => void;
   onRemove: () => void;
-  onPasswordSet: () => void;
 }
 
-function UserRow({
-  name,
-  saved,
-  hasPendingPassword,
-  onStagePassword,
-  onRemove,
-  onPasswordSet,
-}: UserRowProps) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [password, setPassword] = useState("");
-  const [isBusy, setIsBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // An applied account takes its password immediately; one that does not
-  // exist yet has it staged, to land the moment Apply creates the account.
+function UserRow({ name, saved, hasPendingPassword, onRemove }: UserRowProps) {
   const isApplied = saved !== null && saved.is_present;
-
-  const submit = async () => {
-    if (password === "") {
-      return;
-    }
-    if (!isApplied) {
-      onStagePassword(password);
-      setIsEditing(false);
-      setPassword("");
-      return;
-    }
-    setIsBusy(true);
-    setError(null);
-    try {
-      await apiPost(`/samba/users/${name}/password`, { password });
-      setIsEditing(false);
-      setPassword("");
-      onPasswordSet();
-    } catch (cause: unknown) {
-      setError(describeError(cause));
-    } finally {
-      setIsBusy(false);
-    }
-  };
 
   return (
     <div className="samba_user">
@@ -512,67 +476,29 @@ function UserRow({
           {name}
         </span>
         {!isApplied ? (
-          hasPendingPassword ? (
-            <span className="badge badge--accent">created on apply</span>
-          ) : (
-            <span className="badge">no password: set one, then apply</span>
-          )
+          <span className="badge badge--accent">{USER_BADGE_STAGED}</span>
         ) : !saved.has_password ? (
           hasPendingPassword ? (
-            <span className="badge badge--accent">password set on apply</span>
+            <span className="badge badge--accent">
+              {USER_BADGE_PASSWORD_STAGED}
+            </span>
           ) : (
-            <span className="badge badge--warn">no password yet</span>
+            <span className="badge badge--warn">{USER_BADGE_NO_PASSWORD}</span>
           )
         ) : (
-          <span className="badge badge--ok">ready</span>
-        )}
-        {isEditing && (
-          <div className="samba_user_password">
-            <PasswordInput
-              value={password}
-              onChange={setPassword}
-              placeholder="new share password"
-              autoFocus
-            />
-            <button
-              type="button"
-              className="button button--primary button--small"
-              disabled={isBusy || password === ""}
-              onClick={() => void submit()}
-            >
-              <Icon name="check" size={13} />
-              {isApplied ? "Save" : "Stage for apply"}
-            </button>
-          </div>
+          <span className="badge badge--ok">{USER_BADGE_READY}</span>
         )}
         <div className="samba_user_actions">
-          <button
-            type="button"
-            className="button button--small"
-            onClick={() => {
-              setIsEditing((current) => !current);
-              setError(null);
-            }}
-          >
-            <Icon name="lock" size={12} />
-            Set password
-          </button>
           <button
             type="button"
             className="button button--ghost button--small"
             onClick={onRemove}
           >
             <Icon name="trash" size={12} />
-            Remove
+            {USER_REMOVE_LABEL}
           </button>
         </div>
       </div>
-      {error !== null && (
-        <div className="notice notice--error">
-          <Icon name="alert" size={15} />
-          <div className="notice_body">{error}</div>
-        </div>
-      )}
     </div>
   );
 }
