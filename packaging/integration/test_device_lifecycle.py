@@ -298,7 +298,7 @@ def test_the_lifecycle_walks_every_transition(panel, stranger):
             "port": panel_port,
         },
     )
-    assert status == 200, declared
+    assert status == 201, declared
     try:
 
         def port_offer():
