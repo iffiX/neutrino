@@ -33,9 +33,19 @@ const PRODUCT_LABELS: Record<string, string> = {
 
 interface RemoteDesktopPanelProps {
   device: DeviceView;
+  /**
+   * Changes whenever a module order on this device moves. Installing the
+   * software happens on the Modules rows, a path this panel starts nothing
+   * on and would otherwise never hear about — leaving it saying "not
+   * installed" beside a row that says installed.
+   */
+  moduleRevision: string;
 }
 
-export function RemoteDesktopPanel({ device }: RemoteDesktopPanelProps) {
+export function RemoteDesktopPanel({
+  device,
+  moduleRevision,
+}: RemoteDesktopPanelProps) {
   const [status, setStatus] = useState<RemoteDesktopView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
@@ -57,7 +67,7 @@ export function RemoteDesktopPanel({ device }: RemoteDesktopPanelProps) {
   useEffect(() => {
     void loadStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [device.mac_address]);
+  }, [device.mac_address, moduleRevision]);
 
   // When an install or password task finishes, re-read the status so a freshly
   // installed product shows its id without a manual refresh.

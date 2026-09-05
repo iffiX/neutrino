@@ -969,7 +969,14 @@ export function DeviceDrawer({
 
           {device.client !== null &&
             device.client.is_managed &&
-            device.ssh !== null && <RemoteDesktopPanel device={device} />}
+            device.ssh !== null && (
+              <RemoteDesktopPanel
+                device={device}
+                moduleRevision={orders
+                  .map((order) => `${order.id}:${order.state}`)
+                  .join(",")}
+              />
+            )}
 
           {(taskId !== null || task.lines.length > 0 || orders.length > 0) && (
             <div className="device_drawer_log">
