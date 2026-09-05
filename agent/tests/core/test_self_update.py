@@ -31,7 +31,7 @@ class FakeChannel:
 
     def post(self, path, payload):
         return {
-            "desired_modules": {},
+            "module_orders": [],
             "catalog_hash": "",
             "hub_version": self.hub_version,
         }
