@@ -142,6 +142,16 @@ class LocalShellSession:
         """Whether the shell is still alive."""
         return self._process is not None and self._process.returncode is None
 
+    async def exit_code(self) -> "int | None":
+        """The shell's exit status, waited for.
+
+        Returns:
+            The code, or None when nothing was ever started.
+        """
+        if self._process is None:
+            return None
+        return await self._process.wait()
+
     async def start(self) -> None:
         """Start the shell on a new pseudo-terminal.
 

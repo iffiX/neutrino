@@ -599,7 +599,7 @@ interface ContainerShellModalProps {
 }
 
 function ContainerShellModal({ name, onClose }: ContainerShellModalProps) {
-  const [isEnded, setIsEnded] = useState(false);
+  const [failedCode, setFailedCode] = useState<number | null>(null);
   // A portal, same as the device terminal: no ancestor may capture it.
   return createPortal(
     <div className="terminal_modal_backdrop" role="dialog" aria-modal="true">
@@ -623,12 +623,27 @@ function ContainerShellModal({ name, onClose }: ContainerShellModalProps) {
         <div className="terminal_modal_surface">
           <ShellTerminal
             socketPath={`/ws/container/${name}`}
-            onExit={() => setIsEnded(true)}
+            onExit={(code) => {
+              // A clean exit closes like every other terminal here; a
+              // failing shell stays, because its last words are the
+              // diagnosis.
+              if (code === 0) {
+                onClose();
+              } else {
+                setFailedCode(code ?? -1);
+              }
+            }}
           />
         </div>
-        <div className="terminal_modal_status">
-          {isEnded
-            ? "The shell ended — what it printed stays until you close."
+        <div
+          className={
+            failedCode !== null
+              ? "terminal_modal_status terminal_modal_status--warn"
+              : "terminal_modal_status"
+          }
+        >
+          {failedCode !== null
+            ? `The shell failed (exit code ${failedCode}) — what it printed stays until you close.`
             : "Shell inside the container."}
         </div>
       </div>

@@ -75,3 +75,7 @@
   font-family: var(--font-mono);
   font-size: 11px;
 }
+
+.terminal_modal_status--warn {
+  color: var(--color-warn);
+}

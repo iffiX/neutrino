@@ -214,7 +214,9 @@ async def _serve_pty_session(websocket: WebSocket, session: LocalShellSession) -
     done, _ = await asyncio.wait({reader, pump}, return_when=asyncio.FIRST_COMPLETED)
     if pump in done:
         with contextlib.suppress(RuntimeError):
-            await websocket.send_json({"type": "exit", "code": 0})
+            await websocket.send_json(
+                {"type": "exit", "code": await session.exit_code()}
+            )
 
     await session.close()
     for task in (reader, pump):
