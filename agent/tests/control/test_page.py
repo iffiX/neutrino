@@ -1,12 +1,129 @@
 """The page's contract, checked on the one string it ships.
 
 The page is one HTML file with its behavior inline, so what can be checked
-here is the contract's visible surface: the three section titles, the words
-table replacing the dead phrasing, and the redraw guards — payload
-comparison, the selection, the focused field, the open dialog.
+here is the contract's visible surface: the three sections, one panel per
+service type, controls greyed and never hidden, the redraw guards, the busy
+spinners — and the words table asserted complete: every ``{code}`` the
+agent can emit is enumerated from the source and must have a wording, so a
+new code without a word fails this suite.
 """
 
+import pathlib
+import re
+
+import neutrino_agent
 from neutrino_agent.control.page import CONTROL_PAGE_HTML
+from neutrino_agent.services.ai import AI_CLAUDE_SLOTS, AI_REASONING_EFFORTS
+
+# What can raise or return a typed code anywhere in the agent.
+CODE_PATTERNS = (
+    re.compile(r'"code":\s*"([a-z][a-z0-9_]*)"'),
+    re.compile(r'ShareAttachError\(\s*"([a-z][a-z0-9_]*)"'),
+    re.compile(r'SelfUpdateError\(\s*"([a-z][a-z0-9_]*)"'),
+    re.compile(r'_failure\(\s*"([a-z][a-z0-9_]*)"'),
+    re.compile(r'else\s+"([a-z][a-z0-9_]*)"'),
+)
+
+# Strings the else-pattern catches that are not codes: state words and the
+# rpm family's fallback package manager.
+NON_CODES = {"absent", "disabled", "yum"}
+
+# Codes only the socket transport can answer with: the page's own requests
+# always carry its Origin, a JSON content type and a kernel-free token, so
+# these never render on it.
+SOCKET_ONLY_CODES = {
+    "control_identity_unknown",
+    "control_origin_refused",
+    "control_content_type_refused",
+    "control_unknown_account",
+}
+
+# Codes the page words through their params' own detail text.
+DETAIL_FALLBACK_CODES = {
+    "install_failed",
+    "download_failed",
+    "reconcile_failed",
+    "mount_failed",
+    "unmount_failed",
+    "forward_failed",
+}
+
+MODULE_BUSY_STATES = (
+    "installing",
+    "removing",
+    "enabling",
+    "disabling",
+    "activating",
+    "deactivating",
+)
+MOUNT_BUSY_STATES = ("queued", "installing_tooling", "mounting", "pending")
+
+
+def emitted_codes() -> set:
+    """Every code the agent's own source can emit, by static enumeration."""
+    root = pathlib.Path(neutrino_agent.__file__).parent
+    codes = set()
+    for path in sorted(root.rglob("*.py")):
+        if path.name == "page.py":
+            continue
+        text = path.read_text(encoding="utf-8")
+        for pattern in CODE_PATTERNS:
+            codes.update(pattern.findall(text))
+    return codes - NON_CODES
+
+
+def words_block(name: str) -> dict:
+    """One block of the page's WORDS table, parsed key to wording."""
+    match = re.search(name + r":\s*\{(.*?)\n  \}", CONTROL_PAGE_HTML, re.DOTALL)
+    assert match is not None, f"the page has no WORDS.{name} block"
+    return dict(re.findall(r'([a-z_]+):\s*"([^"]*)"', match.group(1)))
+
+
+# --- the words table is complete ---
+
+
+def test_every_code_the_agent_emits_has_a_word():
+    worded = (
+        set(words_block("codes"))
+        | set(words_block("errors"))
+        | DETAIL_FALLBACK_CODES
+        | SOCKET_ONLY_CODES
+    )
+
+    missing = emitted_codes() - worded
+
+    assert missing == set(), f"codes with no wording on the page: {sorted(missing)}"
+
+
+def test_the_detail_fallback_names_each_of_its_codes():
+    for code in DETAIL_FALLBACK_CODES:
+        assert f"code === '{code}'" in CONTROL_PAGE_HTML
+
+
+def test_every_unbind_cause_has_a_word():
+    # The loop's rejection counter can only name these three causes.
+    assert set(words_block("causes")) == {
+        "hub_refused",
+        "hub_untrusted",
+        "agent_newer_than_hub",
+    }
+
+
+def test_every_module_and_ai_state_has_a_word():
+    states = words_block("states")
+    for state in (
+        "installed",
+        "absent",
+        "enabled",
+        "disabled",
+        "unsupported",
+        "failed",
+        "unknown",
+    ) + MODULE_BUSY_STATES:
+        assert state in states, f"state {state} has no word"
+
+
+# --- the three sections and the four panels ---
 
 
 def test_the_three_sections_are_titled():
@@ -16,6 +133,17 @@ def test_the_three_sections_are_titled():
         'section_services: "Services"',
     ):
         assert title in CONTROL_PAGE_HTML
+
+
+def test_the_sections_render_in_hub_order():
+    assert (
+        "section(WORDS.ui.section_status"
+        in CONTROL_PAGE_HTML.split("section(WORDS.ui.section_modules")[0]
+    )
+    assert (
+        "section(WORDS.ui.section_modules"
+        in CONTROL_PAGE_HTML.split("section(WORDS.ui.section_services")[0]
+    )
 
 
 def test_one_panel_per_service_type():
@@ -28,6 +156,62 @@ def test_one_panel_per_service_type():
         assert panel in CONTROL_PAGE_HTML
 
 
+# --- greyed, never hidden ---
+
+
+def test_the_connection_controls_grey_for_an_ordinary_caller():
+    assert "leave.disabled = !isPrivileged" in CONTROL_PAGE_HTML
+    assert "input.disabled = !isPrivileged" in CONTROL_PAGE_HTML
+    assert "button.disabled = !isPrivileged" in CONTROL_PAGE_HTML
+
+
+def test_the_module_buttons_grey_for_scope_support_and_busy():
+    assert (
+        "button.disabled = !isPrivileged || !m.is_supported || working"
+    ) in CONTROL_PAGE_HTML
+
+
+def test_the_unmount_button_greys_outside_the_records_scope():
+    assert "record.account === state.caller.account" in CONTROL_PAGE_HTML
+    assert "button.disabled = !mayAct" in CONTROL_PAGE_HTML
+
+
+def test_greyed_controls_say_why():
+    assert 'privileged_only: "Sign in as an administrator to change this."' in (
+        CONTROL_PAGE_HTML
+    )
+    assert CONTROL_PAGE_HTML.count("WORDS.ui.privileged_only") >= 4
+
+
+def test_an_unhealthy_entry_is_greyed_never_dropped():
+    assert "'feat' : 'feat greyed'" in CONTROL_PAGE_HTML
+    assert 'unhealthy: "not reachable now"' in CONTROL_PAGE_HTML
+
+
+# --- busy states spin ---
+
+
+def test_every_mount_busy_state_has_a_spinner_word():
+    assert '<span class="spin">' in CONTROL_PAGE_HTML
+    for state in MOUNT_BUSY_STATES:
+        assert f"{state}: WORDS.ui.mount_{state}" in CONTROL_PAGE_HTML
+
+
+def test_every_module_busy_state_words_as_ongoing():
+    states = words_block("states")
+    for state in MODULE_BUSY_STATES:
+        assert states[state].endswith("…"), state
+
+
+def test_a_busy_chip_and_module_button_are_disabled():
+    assert "chip.disabled = isBusy || !entry.is_healthy" in CONTROL_PAGE_HTML
+    for state in MODULE_BUSY_STATES:
+        assert f"'{state}'" in CONTROL_PAGE_HTML
+
+
+# --- the redraw guards ---
+
+
 def test_the_redraw_guards_are_all_present():
     # Redraw only on a changed payload…
     assert "if (serialized === lastSerialized) return;" in CONTROL_PAGE_HTML
@@ -37,16 +221,22 @@ def test_the_redraw_guards_are_all_present():
     assert "openDialogs > 0" in CONTROL_PAGE_HTML
 
 
-def test_controls_are_disabled_not_hidden():
-    assert "disabled = !isPrivileged" in CONTROL_PAGE_HTML
-    assert "privileged_only" in CONTROL_PAGE_HTML
+def test_a_deferred_payload_is_replayed_when_the_guard_lifts():
+    assert "pendingState = state; return;" in CONTROL_PAGE_HTML
+    assert "if (pendingState !== null && canRedraw())" in CONTROL_PAGE_HTML
 
 
-def test_the_dead_wording_is_gone():
-    assert "removal did not take" not in CONTROL_PAGE_HTML
-    assert "the removal finished, but the software is still there" in (
-        CONTROL_PAGE_HTML
-    )
+# --- sessions, staging, hygiene ---
+
+
+def test_a_stale_token_asks_for_a_fresh_session():
+    assert "reply.status === 401" in CONTROL_PAGE_HTML
+    assert "run nagent ui again" in CONTROL_PAGE_HTML
+
+
+def test_a_tokenless_open_only_hints():
+    assert "if (!TOKEN)" in CONTROL_PAGE_HTML
+    assert 'open_hint: "Open this page with nagent ui."' in CONTROL_PAGE_HTML
 
 
 def test_the_ai_panel_stages_chips_config_and_apply():
@@ -58,3 +248,27 @@ def test_the_ai_panel_stages_chips_config_and_apply():
         "REASONING_EFFORTS",
     ):
         assert marker in CONTROL_PAGE_HTML
+
+
+def test_the_ai_knobs_mirror_the_agents_own():
+    assert "const CLAUDE_SLOTS = %s;" % str(list(AI_CLAUDE_SLOTS)).replace(
+        '"', "'"
+    ) in CONTROL_PAGE_HTML
+    assert "const REASONING_EFFORTS = %s;" % str(list(AI_REASONING_EFFORTS)).replace(
+        '"', "'"
+    ) in CONTROL_PAGE_HTML
+
+
+def test_the_connect_account_preselects_the_chip():
+    assert "state.ai_connect_account" in CONTROL_PAGE_HTML
+
+
+def test_a_sent_mount_password_is_cleared_from_the_stage():
+    assert "staged.password = '';" in CONTROL_PAGE_HTML
+
+
+def test_the_dead_wording_is_gone():
+    assert "removal did not take" not in CONTROL_PAGE_HTML
+    assert "the removal finished, but the software is still there" in (
+        CONTROL_PAGE_HTML
+    )

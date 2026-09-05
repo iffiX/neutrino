@@ -5,6 +5,8 @@ scope; the loopback page answers only to tokens minted over the socket,
 and refuses request shapes a cross-site form can produce. Tokens are minted
 only while the page is actually served, watched and revoked only over the
 socket, and expired when their pulse stops.
+
+One server serves the whole module; every test resets the fakes it drives.
 """
 
 import http.client
@@ -18,25 +20,33 @@ from neutrino_agent.control import client
 from neutrino_agent.control.identity import ControlTokenStore
 from neutrino_agent.control.server import ControlServer
 from neutrino_agent.platforms.base import PlatformUnsupportedError
-from tests.conftest import ALICE, ROOT, FakeControlAgent, FakeControlPlatform
+from tests.conftest import ALICE, ROOT, FakeControlAgent, FakeControlPlatform, bind
 
 
-
-@pytest.fixture
-def control(tmp_path):
+@pytest.fixture(scope="module")
+def control_stack(tmp_path_factory):
+    tmp = tmp_path_factory.mktemp("control")
     agent = FakeControlAgent()
     platform = FakeControlPlatform()
     server = ControlServer(
         agent=agent,
         platform=platform,
         log=lambda message: None,
-        socket_path=str(tmp_path / "agent.sock"),
+        socket_path=str(tmp / "agent.sock"),
         page_port=0,
     )
     server.start()
     assert server.socket_path and server.page_port
     yield server, agent, platform
     server.stop()
+
+
+@pytest.fixture
+def control(control_stack):
+    server, agent, platform = control_stack
+    FakeControlAgent.__init__(agent)
+    FakeControlPlatform.__init__(platform)
+    return server, agent, platform
 
 
 def over_socket(server, method, path, body=None):
@@ -75,6 +85,9 @@ def mint(server, platform, peer, body=None):
     return reply["token"]
 
 
+# --- state over the socket, scoped to the kernel-reported peer ---
+
+
 def test_socket_state_is_scoped_to_the_peer(control):
     server, _agent, platform = control
 
@@ -103,6 +116,19 @@ def test_socket_state_is_scoped_to_the_peer(control):
     assert state["modules"][0]["kind"] == "openssh"
 
 
+def test_an_ordinary_caller_sees_only_its_own_ai_rows(control):
+    server, _agent, platform = control
+
+    platform.peer = dict(ALICE)
+    _status, state = over_socket(server, "GET", "/api/state")
+
+    assert sorted(state["ai_states"]) == ["alice"]
+
+    platform.peer = dict(ROOT)
+    _status, state = over_socket(server, "GET", "/api/state")
+    assert sorted(state["ai_states"]) == ["alice", "bob"]
+
+
 def test_the_state_carries_the_typed_service_list(control):
     server, _agent, platform = control
 
@@ -117,6 +143,19 @@ def test_the_state_carries_the_typed_service_list(control):
     assert state["ai_tool_configs"] == {"claude": {"default": "m1"}}
 
 
+def test_the_state_never_carries_the_device_token(control, config_path):
+    server, _agent, platform = control
+    bind(config_path)
+
+    platform.peer = dict(ROOT)
+    status, state = over_socket(server, "GET", "/api/state")
+
+    assert status == 200
+    assert state["is_connected"] is True
+    assert state["gateway_url"] == "http://127.0.0.1:9"
+    assert "tok" not in json.dumps(state)
+
+
 def test_an_unreadable_peer_is_refused_not_guessed(control):
     server, _agent, platform = control
 
@@ -127,6 +166,19 @@ def test_an_unreadable_peer_is_refused_not_guessed(control):
     platform.peer_error = PlatformUnsupportedError("no peers here")
     status, reply = over_socket(server, "GET", "/api/state")
     assert (status, reply["code"]) == (403, "unsupported_platform")
+
+
+def test_an_unreadable_peer_is_refused_on_posts_too(control):
+    server, agent, platform = control
+
+    platform.peer_error = KeyError(4242)
+    status, reply = over_socket(server, "POST", "/api/disconnect", {})
+
+    assert (status, reply["code"]) == (403, "control_identity_unknown")
+    assert agent.is_disconnected is False
+
+
+# --- minting: own scope free, another account privileged and downscoped ---
 
 
 def test_a_minted_token_unlocks_the_page_in_its_own_scope(control):
@@ -144,6 +196,95 @@ def test_a_minted_token_unlocks_the_page_in_its_own_scope(control):
     assert state["accounts"] == ["alice"]
 
 
+def test_the_mint_reply_names_the_scope_and_page_port(control):
+    server, _agent, platform = control
+    platform.peer = dict(ROOT)
+
+    status, reply = over_socket(server, "POST", "/api/token", {})
+
+    assert status == 200
+    assert reply["account"] == "root"
+    assert reply["is_privileged"] is True
+    assert reply["page_port"] == server.page_port
+
+
+def test_minting_for_another_account_is_privileged(control):
+    server, _agent, platform = control
+
+    platform.peer = dict(ALICE)
+    status, reply = over_socket(server, "POST", "/api/token", {"account": "bob"})
+    assert (status, reply["code"]) == (403, "control_scope_refused")
+
+    token = mint(server, platform, ROOT, {"account": "bob"})
+    status, state = loopback_json(server, "GET", "/api/state", token=token)
+    assert status == 200
+    assert state["caller"] == {
+        "account": "bob",
+        "is_privileged": False,
+        "home": "/home/bob",
+    }
+    assert state["accounts"] == ["bob"]
+
+    platform.peer = dict(ROOT)
+    status, reply = over_socket(server, "POST", "/api/token", {"account": "mallory"})
+    assert (status, reply["code"]) == (400, "control_unknown_account")
+
+
+def test_an_ordinary_caller_may_not_mint_privilege_by_naming_root(control):
+    server, _agent, platform = control
+
+    platform.peer = dict(ALICE)
+    status, reply = over_socket(server, "POST", "/api/token", {"account": "root"})
+
+    assert (status, reply["code"]) == (403, "control_scope_refused")
+
+
+def test_a_downscoped_token_may_not_use_privileged_verbs(control):
+    server, agent, platform = control
+    token = mint(server, platform, ROOT, {"account": "bob"})
+
+    for path, body in (
+        ("/api/connect", {"link": "neutrino://enroll/x"}),
+        ("/api/disconnect", {}),
+        ("/api/module", {"name": "openssh_server", "is_enabled": False}),
+    ):
+        status, reply = loopback_json(server, "POST", path, token=token, body=body)
+        assert (status, reply["code"]) == (403, "control_scope_refused")
+    assert agent.requested == []
+    assert agent.connected_links == []
+    assert agent.is_disconnected is False
+
+
+def test_tokens_are_minted_only_over_the_socket(control):
+    server, _agent, platform = control
+    token = mint(server, platform, ROOT)
+
+    status, reply = loopback_json(server, "POST", "/api/token", token=token, body={})
+
+    assert (status, reply["code"]) == (404, "unknown_request")
+
+
+def test_minting_refuses_while_the_page_is_not_served(tmp_path):
+    platform = FakeControlPlatform()
+    server = ControlServer(
+        agent=FakeControlAgent(),
+        platform=platform,
+        log=lambda message: None,
+        socket_path=str(tmp_path / "agent.sock"),
+        is_page_served=False,
+    )
+    server.start()
+    try:
+        platform.peer = dict(ROOT)
+        status, reply = over_socket(server, "POST", "/api/token", {})
+        assert (status, reply["code"]) == (409, "control_page_not_served")
+    finally:
+        server.stop()
+
+
+# --- the loopback belts: token, Origin, Content-Type ---
+
+
 def test_a_tokenless_loopback_request_gets_only_the_hint_page(control):
     server, _agent, _platform = control
 
@@ -156,6 +297,15 @@ def test_a_tokenless_loopback_request_gets_only_the_hint_page(control):
 
     status, reply = loopback_json(server, "GET", "/api/state", token="never-minted")
     assert (status, reply["code"]) == (401, "control_token_invalid")
+
+
+def test_any_non_api_path_serves_the_page_itself(control):
+    server, _agent, _platform = control
+
+    status, raw = over_loopback(server, "GET", "/anything/else")
+
+    assert status == 200
+    assert b"Neutrino agent" in raw
 
 
 def test_a_mismatched_origin_is_refused_regardless_of_token(control):
@@ -172,6 +322,51 @@ def test_a_mismatched_origin_is_refused_regardless_of_token(control):
     )
 
     assert (status, reply["code"]) == (403, "control_origin_refused")
+
+
+@pytest.mark.parametrize(
+    "path,body",
+    [
+        ("/api/connect", {"link": "x"}),
+        ("/api/disconnect", {}),
+        ("/api/services/port", {"id": "svc_tcp"}),
+        ("/api/fs", {"path": "/srv/new"}),
+    ],
+)
+def test_the_origin_belt_covers_every_state_changing_route(control, path, body):
+    server, agent, platform = control
+    token = mint(server, platform, ROOT)
+
+    status, reply = loopback_json(
+        server,
+        "POST",
+        path,
+        token=token,
+        body=body,
+        headers={"Origin": "http://evil.example"},
+    )
+
+    assert (status, reply["code"]) == (403, "control_origin_refused")
+    assert agent.connected_links == []
+    assert agent.is_disconnected is False
+    assert agent.service_calls == []
+    assert platform.fs_calls == []
+
+
+def test_a_get_carries_no_origin_belt(control):
+    server, _agent, platform = control
+    token = mint(server, platform, ROOT)
+
+    status, state = loopback_json(
+        server,
+        "GET",
+        "/api/state",
+        token=token,
+        headers={"Origin": "http://evil.example"},
+    )
+
+    assert status == 200
+    assert state["caller"]["account"] == "root"
 
 
 def test_a_loopback_post_must_be_json(control):
@@ -208,6 +403,33 @@ def test_the_pages_own_origin_passes(control):
     assert agent.requested == [("openssh_server", False, None)]
 
 
+def test_a_garbage_body_acts_on_nothing_and_never_crashes(control):
+    server, agent, platform = control
+    token = mint(server, platform, ROOT)
+
+    connection = http.client.HTTPConnection("127.0.0.1", server.page_port, timeout=5)
+    connection.request(
+        "POST",
+        "/api/module",
+        body=b"not json at all",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+    )
+    reply = connection.getresponse()
+    status = reply.status
+    reply.read()
+    connection.close()
+
+    # The garbage decodes to an empty object: nothing named, nothing done.
+    assert status == 200
+    assert agent.requested == [("", None, None)]
+
+
+# --- privileged verbs ---
+
+
 def test_privileged_verbs_refuse_an_ordinary_caller(control):
     server, agent, platform = control
     platform.peer = dict(ALICE)
@@ -239,6 +461,24 @@ def test_privileged_verbs_work_over_the_socket_as_root(control):
     assert agent.is_disconnected is True
 
 
+def test_privileged_verbs_work_over_the_loopback_with_a_root_token(control):
+    server, agent, platform = control
+    token = mint(server, platform, ROOT)
+
+    status, state = loopback_json(
+        server,
+        "POST",
+        "/api/disconnect",
+        token=token,
+        body={},
+        headers={"Origin": AGENT_CONTROL_PAGE_ORIGIN},
+    )
+
+    assert status == 200
+    assert agent.is_disconnected is True
+    assert state["caller"]["account"] == "root"
+
+
 def test_a_refused_link_reports_on_the_state(control):
     server, agent, platform = control
     platform.peer = dict(ROOT)
@@ -252,63 +492,7 @@ def test_a_refused_link_reports_on_the_state(control):
     assert state["error"] == "the link is unusable"
 
 
-def test_minting_for_another_account_is_privileged(control):
-    server, _agent, platform = control
-
-    platform.peer = dict(ALICE)
-    status, reply = over_socket(server, "POST", "/api/token", {"account": "bob"})
-    assert (status, reply["code"]) == (403, "control_scope_refused")
-
-    token = mint(server, platform, ROOT, {"account": "bob"})
-    status, state = loopback_json(server, "GET", "/api/state", token=token)
-    assert status == 200
-    assert state["caller"] == {
-        "account": "bob",
-        "is_privileged": False,
-        "home": "/home/bob",
-    }
-    assert state["accounts"] == ["bob"]
-
-    platform.peer = dict(ROOT)
-    status, reply = over_socket(server, "POST", "/api/token", {"account": "mallory"})
-    assert (status, reply["code"]) == (400, "control_unknown_account")
-
-
-def test_tokens_are_minted_only_over_the_socket(control):
-    server, _agent, platform = control
-    token = mint(server, platform, ROOT)
-
-    status, reply = loopback_json(server, "POST", "/api/token", token=token, body={})
-
-    assert (status, reply["code"]) == (404, "unknown_request")
-
-
-def test_minting_refuses_while_the_page_is_not_served(tmp_path):
-    platform = FakeControlPlatform()
-    server = ControlServer(
-        agent=FakeControlAgent(),
-        platform=platform,
-        log=lambda message: None,
-        socket_path=str(tmp_path / "agent.sock"),
-        is_page_served=False,
-    )
-    server.start()
-    try:
-        platform.peer = dict(ROOT)
-        status, reply = over_socket(server, "POST", "/api/token", {})
-        assert (status, reply["code"]) == (409, "control_page_not_served")
-    finally:
-        server.stop()
-
-
-def test_the_mint_reply_names_the_page_port(control):
-    server, _agent, platform = control
-    platform.peer = dict(ROOT)
-
-    status, reply = over_socket(server, "POST", "/api/token", {})
-
-    assert status == 200
-    assert reply["page_port"] == server.page_port
+# --- the token lifecycle ---
 
 
 def test_a_token_is_watched_and_revoked_over_the_socket(control):
@@ -325,6 +509,111 @@ def test_a_token_is_watched_and_revoked_over_the_socket(control):
 
     status, reply = loopback_json(server, "GET", "/api/state", token=token)
     assert (status, reply["code"]) == (401, "control_token_invalid")
+
+
+def test_the_first_page_request_claims_the_token(control):
+    server, _agent, platform = control
+    token = mint(server, platform, ALICE)
+
+    _status, reply = over_socket(server, "POST", "/api/token/watch", {"token": token})
+    assert reply["is_claimed"] is False
+
+    status, _state = loopback_json(server, "GET", "/api/state", token=token)
+    assert status == 200
+
+    _status, reply = over_socket(server, "POST", "/api/token/watch", {"token": token})
+    assert reply == {"is_claimed": True, "is_alive": True}
+
+
+def test_a_used_then_revoked_token_stays_dead(control):
+    server, _agent, platform = control
+    token = mint(server, platform, ALICE)
+
+    status, _state = loopback_json(server, "GET", "/api/state", token=token)
+    assert status == 200
+    over_socket(server, "POST", "/api/token/revoke", {"token": token})
+
+    status, reply = loopback_json(server, "GET", "/api/state", token=token)
+    assert (status, reply["code"]) == (401, "control_token_invalid")
+
+
+def test_two_tokens_are_independent(control):
+    server, _agent, platform = control
+    kept = mint(server, platform, ALICE)
+    dropped = mint(server, platform, ROOT)
+
+    over_socket(server, "POST", "/api/token/revoke", {"token": dropped})
+
+    status, state = loopback_json(server, "GET", "/api/state", token=kept)
+    assert status == 200
+    assert state["caller"]["account"] == "alice"
+    status, reply = loopback_json(server, "GET", "/api/state", token=dropped)
+    assert (status, reply["code"]) == (401, "control_token_invalid")
+
+
+def test_a_restart_forgets_every_token(tmp_path):
+    platform = FakeControlPlatform()
+    first = ControlServer(
+        agent=FakeControlAgent(),
+        platform=platform,
+        log=lambda message: None,
+        socket_path=str(tmp_path / "agent.sock"),
+        page_port=0,
+    )
+    first.start()
+    token = mint(first, platform, ROOT)
+    first.stop()
+
+    second = ControlServer(
+        agent=FakeControlAgent(),
+        platform=platform,
+        log=lambda message: None,
+        socket_path=str(tmp_path / "agent.sock"),
+        page_port=0,
+    )
+    second.start()
+    try:
+        status, reply = over_socket(
+            second, "POST", "/api/token/watch", {"token": token}
+        )
+        assert reply == {"is_claimed": False, "is_alive": False}
+        status, reply = loopback_json(second, "GET", "/api/state", token=token)
+        assert (status, reply["code"]) == (401, "control_token_invalid")
+    finally:
+        second.stop()
+
+
+def test_watch_and_revoke_answer_only_on_the_socket(control):
+    server, _agent, platform = control
+    token = mint(server, platform, ALICE)
+
+    for path in ("/api/token/watch", "/api/token/revoke"):
+        status, reply = loopback_json(
+            server, "POST", path, token=token, body={"token": token}
+        )
+        assert (status, reply["code"]) == (404, "unknown_request")
+    _status, reply = over_socket(server, "POST", "/api/token/watch", {"token": token})
+    assert reply["is_alive"] is True
+
+
+def test_watching_an_unknown_token_answers_dead(control):
+    server, _agent, _platform = control
+
+    _status, reply = over_socket(
+        server, "POST", "/api/token/watch", {"token": "never-minted"}
+    )
+
+    assert reply == {"is_claimed": False, "is_alive": False}
+
+
+def test_revoking_an_unknown_token_is_nothing(control):
+    server, _agent, _platform = control
+
+    status, reply = over_socket(
+        server, "POST", "/api/token/revoke", {"token": "never-minted"}
+    )
+
+    assert (status, reply) == (200, {})
 
 
 def test_an_expired_pulse_ends_the_token(tmp_path):
@@ -365,6 +654,9 @@ def test_an_expired_pulse_ends_the_token(tmp_path):
         server.stop()
 
 
+# --- service actions ---
+
+
 def test_service_actions_carry_the_callers_identity(control):
     server, agent, platform = control
 
@@ -399,6 +691,39 @@ def test_service_actions_carry_the_callers_identity(control):
     )
 
 
+def test_a_downscoped_token_acts_as_its_account(control):
+    server, agent, platform = control
+    token = mint(server, platform, ROOT, {"account": "bob"})
+
+    status, _state = loopback_json(
+        server,
+        "POST",
+        "/api/services/ai",
+        token=token,
+        body={"targets": {"bob": True}},
+        headers={"Origin": AGENT_CONTROL_PAGE_ORIGIN},
+    )
+
+    assert status == 200
+    assert agent.service_calls[-1] == (
+        "ai",
+        "bob",
+        False,
+        {"targets": {"bob": True}},
+    )
+
+
+@pytest.mark.parametrize("service_type", ["web", "port", "ai", "file"])
+def test_a_scope_refusal_maps_to_403_for_every_type(control, service_type):
+    server, agent, platform = control
+    platform.peer = dict(ALICE)
+    agent.service_reply = {"code": "control_scope_refused", "params": {}}
+
+    status, reply = over_socket(server, "POST", f"/api/services/{service_type}", {})
+
+    assert (status, reply["code"]) == (403, "control_scope_refused")
+
+
 def test_a_service_refusal_maps_to_its_status(control):
     server, agent, platform = control
     platform.peer = dict(ROOT)
@@ -418,6 +743,28 @@ def test_a_service_refusal_maps_to_its_status(control):
         server, "POST", "/api/services/ai", {"targets": {"bob": True}}
     )
     assert (status, reply["code"]) == (403, "control_scope_refused")
+
+    agent.service_reply = {"code": "fs_refused", "params": {}}
+    status, reply = over_socket(
+        server, "POST", "/api/services/file", {"action": "mount", "id": "x"}
+    )
+    assert (status, reply["code"]) == (403, "fs_refused")
+
+
+def test_a_clean_service_action_answers_fresh_state(control):
+    server, agent, platform = control
+    platform.peer = dict(ALICE)
+
+    status, state = over_socket(
+        server, "POST", "/api/services/port", {"id": "svc_tcp", "is_enabled": False}
+    )
+
+    assert status == 200
+    assert state["caller"]["account"] == "alice"
+    assert "forwards" in state
+
+
+# --- /api/fs, as the caller's identity ---
 
 
 def test_the_directory_listing_runs_as_the_caller(control):
@@ -443,6 +790,17 @@ def test_the_directory_listing_runs_as_the_caller(control):
     assert (status, reply["code"]) == (403, "fs_refused")
 
 
+def test_the_listing_defaults_to_the_callers_own_home(control):
+    server, _agent, platform = control
+
+    platform.peer = dict(ALICE)
+    status, reply = over_socket(server, "GET", "/api/fs")
+
+    assert status == 200
+    assert reply["path"] == "/home/alice"
+    assert platform.fs_calls[-1] == ("list", "alice", "/home/alice")
+
+
 def test_making_a_folder_follows_the_same_identity_rules(control):
     server, _agent, platform = control
 
@@ -455,6 +813,31 @@ def test_making_a_folder_follows_the_same_identity_rules(control):
     assert (status, reply["code"]) == (403, "fs_refused")
 
 
+def test_making_a_folder_as_root_runs_as_the_agent(control):
+    server, _agent, platform = control
+
+    platform.peer = dict(ROOT)
+    status, _reply = over_socket(server, "POST", "/api/fs", {"path": "/srv/new"})
+
+    assert status == 200
+    assert platform.fs_calls[-1] == ("mkdir", "", "/srv/new")
+
+
+def test_a_platform_without_stepping_down_refuses_fs(control):
+    server, _agent, platform = control
+    platform.fs_error = PlatformUnsupportedError("no stepping down")
+
+    platform.peer = dict(ALICE)
+    status, reply = over_socket(server, "GET", "/api/fs?path=/srv")
+    assert (status, reply["code"]) == (403, "fs_refused")
+
+    status, reply = over_socket(server, "POST", "/api/fs", {"path": "/srv/new"})
+    assert (status, reply["code"]) == (403, "fs_refused")
+
+
+# --- unknown routes ---
+
+
 def test_an_unknown_route_answers_a_code(control):
     server, _agent, platform = control
     platform.peer = dict(ROOT)
@@ -463,4 +846,15 @@ def test_an_unknown_route_answers_a_code(control):
     assert (status, reply["code"]) == (404, "unknown_request")
 
     status, reply = over_socket(server, "POST", "/api/nothing", {})
+    assert (status, reply["code"]) == (404, "unknown_request")
+
+
+def test_an_unknown_loopback_post_authenticates_before_it_404s(control):
+    server, _agent, platform = control
+
+    status, reply = loopback_json(server, "POST", "/api/nothing", body={})
+    assert (status, reply["code"]) == (401, "control_token_invalid")
+
+    token = mint(server, platform, ALICE)
+    status, reply = loopback_json(server, "POST", "/api/nothing", token=token, body={})
     assert (status, reply["code"]) == (404, "unknown_request")
