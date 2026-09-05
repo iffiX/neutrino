@@ -123,7 +123,7 @@ def test_one_of_each_type_declares_and_turns_healthy(panel, tcp_port, http_port)
                     "kind": "file",
                     "host": "127.0.0.1",
                     "port": tcp_port,
-                    "share": "media",
+                    "shares": ["media"],
                 },
             )
         )

@@ -343,8 +343,8 @@ def test_the_lifecycle_walks_every_transition(panel, stranger):
 
     ssh_to(
         host,
-        f'sudo sed -i \'s/"[0-9.]*"/"0.0.0"/\' {agent_tree}/_version.py'
-        " && sudo systemctl restart neutrino_agent",
+        "sudo sed -i 's/^AGENT_VERSION = .*/AGENT_VERSION = \"0.0.0\"/' "
+        f"{agent_tree}/_version.py && sudo systemctl restart neutrino_agent",
     )
     wait_for(
         "the downgraded agent to report 0.0.0",
