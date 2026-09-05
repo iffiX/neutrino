@@ -76,7 +76,7 @@ def test_the_runner_verifies_by_the_cli_alone(monkeypatch):
     assert runner.verify({"entry": {}}) is True
 
 
-def test_the_runner_installs_and_removes_through_the_module(monkeypatch, tmp_path):
+def test_the_runner_installs_and_uninstalls_through_the_module(monkeypatch, tmp_path):
     runner = SwitcherModuleRunner(platform=AgentPlatform(), log=discard)
     calls = []
     monkeypatch.setattr(
@@ -85,14 +85,14 @@ def test_the_runner_installs_and_removes_through_the_module(monkeypatch, tmp_pat
         lambda entry, archive: calls.append(("install", entry, archive)),
     )
     monkeypatch.setattr(
-        switcher_module, "uninstall_cli", lambda: calls.append(("remove",))
+        switcher_module, "uninstall_cli", lambda: calls.append(("uninstall",))
     )
 
     entry = {"binary": "cc-switch", "package_kind": "tar_binary"}
     runner.install({"entry": entry}, str(tmp_path / "archive"))
-    runner.remove({"entry": entry})
+    runner.uninstall({"entry": entry})
 
     assert calls == [
         ("install", entry, str(tmp_path / "archive")),
-        ("remove",),
+        ("uninstall",),
     ]

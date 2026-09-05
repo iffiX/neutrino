@@ -178,10 +178,10 @@ def uninstall_package(command: str) -> None:
     the command rather than this guessing from the package kind.
 
     Args:
-        command: The manifest's removal command for this platform.
+        command: The manifest's uninstall command for this platform.
 
     Raises:
-        InstallError: If the removal fails.
+        InstallError: If the uninstall fails.
     """
     try:
         result = subprocess.run(
@@ -193,9 +193,9 @@ def uninstall_package(command: str) -> None:
             env=_apt_env(),
         )
     except (OSError, subprocess.SubprocessError) as error:
-        raise InstallError(f"removal could not run: {error}")
+        raise InstallError(f"uninstall could not run: {error}")
     if result.returncode != 0:
         output = (result.stderr or result.stdout or "").strip()
         raise InstallError(
-            f"removal failed: {output[-AGENT_MODULE_OUTPUT_LIMIT_BYTES:]}"
+            f"uninstall failed: {output[-AGENT_MODULE_OUTPUT_LIMIT_BYTES:]}"
         )

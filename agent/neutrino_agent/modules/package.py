@@ -74,28 +74,28 @@ class PackageModuleRunner(ModuleRunner):
             entry=entry,
         )
 
-    def remove(self, resolved: dict) -> None:
+    def uninstall(self, resolved: dict) -> None:
         """Take the package off this machine.
 
         Args:
             resolved: The module as the hub resolved it.
 
         Raises:
-            InstallError: If the removal refuses.
+            InstallError: If the uninstall refuses.
             PlatformUnsupportedError: If this platform removes nothing.
         """
-        command = self._removal_command(resolved)
+        command = self._uninstall_command(resolved)
         if not command:
             # The module names no way off this platform; saying so beats
             # guessing a command at something installed as root.
             return
         self._platform.uninstall_package(command)
 
-    def _removal_command(self, resolved: dict) -> str:
+    def _uninstall_command(self, resolved: dict) -> str:
         """The command that takes this package off the machine.
 
         A deb is purged by name: ``apt-get remove`` leaves the ``rc`` state
-        behind, whose config-files remnant is what made a removal look like
+        behind, whose config-files remnant is what made an uninstall look like
         it never took. Other kinds keep the manifest's own command.
 
         Args:

@@ -381,7 +381,7 @@ class ModuleEngine(ReconcileWorker):
             # Verify is the whole point of the step: a package manager that
             # exits zero and installs nothing is a thing that happens.
             return {} if runner.verify(resolved) else {"code": "install_unconfirmed"}
-        runner.remove(resolved)
+        runner.uninstall(resolved)
         return {} if not runner.verify(resolved) else {"code": "uninstall_unconfirmed"}
 
     def _runner_for(self, kind: str):

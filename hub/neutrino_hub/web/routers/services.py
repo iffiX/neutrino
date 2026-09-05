@@ -69,7 +69,8 @@ def list_host_shares(host: str) -> ServiceShareListView:
     Raises:
         HTTPException: 400 with ``declared_service_invalid`` for a blank
             host, or ``share_scan_failed`` whose ``reason`` says whether the
-            server did not answer or this hub has no smbclient.
+            server did not answer, refused the anonymous listing, or this
+            hub has no smbclient.
     """
     if not host.strip():
         raise _invalid(DeclaredServiceError(SERVICES_ERROR_INVALID, {"field": "host"}))

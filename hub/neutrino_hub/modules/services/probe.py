@@ -4,8 +4,10 @@ A declared service runs on a machine the hub does not manage, so the only
 thing the hub can say about it is what an exchange with it says: a TCP
 connect for ``generic_tcp``, a GET for ``http`` — where any answer below 500
 is a service that is up, because a 401 comes from something alive enough to
-refuse — and for ``samba`` the server's own list of exports, because a share
-that is not on it does not exist however open port 445 is.
+refuse — and for ``samba`` the server's own list of exports. A share may be
+called missing only off a listing that actually shows shares; a server that
+refuses anonymous listing degrades to the port answering, healthy with the
+share itself marked unverified.
 
 Results are cached for a short while and never written to disk: health is
 what the service is doing now, and a stored answer would only ever be stale.
@@ -26,8 +28,10 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_KIND_SAMBA,
     SERVICES_PROBE_CACHE_TTL_S,
     SERVICES_PROBE_CONNECT_FAILED,
+    SERVICES_PROBE_LIST_REFUSED,
     SERVICES_PROBE_SERVER_ERROR,
     SERVICES_PROBE_SHARE_MISSING,
+    SERVICES_PROBE_SHARE_UNVERIFIED,
     SERVICES_PROBE_TIMEOUT_S,
     SERVICES_PROBE_TOOL_MISSING,
     SERVICES_PROBE_WORKER_LIMIT,
@@ -66,14 +70,16 @@ class DeclaredServiceHealth:
 
         Returns:
             The result, stamped now. A hub that lacks the tool to look has
-            no opinion rather than a bad one, so its health is None.
+            no opinion rather than a bad one, so its health is None; a share
+            the server hides from anonymous listing is healthy with
+            ``share_unverified`` beside it.
         """
         return cls(
             service_id=service_id,
             is_healthy=(
                 None
                 if detail_code == SERVICES_PROBE_TOOL_MISSING
-                else detail_code is None
+                else detail_code in (None, SERVICES_PROBE_SHARE_UNVERIFIED)
             ),
             checked_at=datetime.now(timezone.utc).isoformat(),
             detail_code=detail_code,
@@ -216,6 +222,12 @@ class DeclaredServiceProbe:
         listing = listings.get(service.host)
         if listing is None:
             listing = self._list_shares(service.host)
+        if listing.error_code == SERVICES_PROBE_LIST_REFUSED:
+            # The server hides its exports from an anonymous asker, so the
+            # only honest measure left is whether it answers at all.
+            if self._tcp_detail(service) is None:
+                return SERVICES_PROBE_SHARE_UNVERIFIED
+            return SERVICES_PROBE_CONNECT_FAILED
         if listing.error_code is not None:
             return listing.error_code
         if any(share.name not in listing.names for share in service.shares):

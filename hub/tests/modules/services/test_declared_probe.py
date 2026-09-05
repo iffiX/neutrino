@@ -113,14 +113,16 @@ class RecordingLister:
         return self._listings.get(host, SambaShareListing(error_code="connect_failed"))
 
 
-def file_service(*shares: str, host: str = "192.168.100.1", record_id: str = "f1"):
+def file_service(
+    *shares: str, host: str = "192.168.100.1", port: int = 445, record_id: str = "f1"
+):
     """One declared file service naming shares on a server."""
     return DeclaredService(
         id=record_id,
         name="nas",
         kind="samba",
         host=host,
-        port=445,
+        port=port,
         shares=[DeclaredShare(name=name) for name in shares],
     )
 
@@ -134,7 +136,6 @@ def listing(*names: str) -> SambaShareListing:
     [
         (listing("share", "media"), True, None),
         (listing("share"), False, "share_missing"),
-        (listing(), False, "share_missing"),
         (SambaShareListing(error_code="connect_failed"), False, "connect_failed"),
         (SambaShareListing(error_code="tool_missing"), None, "tool_missing"),
     ],
@@ -142,7 +143,8 @@ def listing(*names: str) -> SambaShareListing:
 def test_a_file_service_is_measured_against_the_servers_exports(
     monkeypatch, answer, is_healthy, detail_code
 ):
-    """An open port 445 is not an answer; the share has to be exported.
+    """share_missing is claimed only off a listing that shows shares and
+    lacks the declared name.
 
     A hub without smbclient has no opinion at all, which is not the same as
     a share that is missing.
@@ -157,6 +159,39 @@ def test_a_file_service_is_measured_against_the_servers_exports(
 
     assert result.is_healthy is is_healthy
     assert result.detail_code == detail_code
+
+
+def test_a_refused_listing_degrades_to_the_port_answering(monkeypatch, tcp_listener):
+    """A server that hides its exports from an anonymous asker is never
+    branded share_missing: the port answering reads healthy, with the share
+    itself marked unverified."""
+    monkeypatch.setattr(
+        probe_module,
+        "list_shares",
+        RecordingLister({"127.0.0.1": SambaShareListing(error_code="list_refused")}),
+    )
+
+    result = DeclaredServiceProbe(timeout_s=PROBE_TIMEOUT_S).probe(
+        file_service("media", host="127.0.0.1", port=tcp_listener)
+    )
+
+    assert result.is_healthy is True
+    assert result.detail_code == "share_unverified"
+
+
+def test_a_refused_listing_on_a_dead_port_reads_connect_failed(monkeypatch):
+    monkeypatch.setattr(
+        probe_module,
+        "list_shares",
+        RecordingLister({"127.0.0.1": SambaShareListing(error_code="list_refused")}),
+    )
+
+    result = DeclaredServiceProbe(timeout_s=PROBE_TIMEOUT_S).probe(
+        file_service("media", host="127.0.0.1", port=_closed_port())
+    )
+
+    assert result.is_healthy is False
+    assert result.detail_code == "connect_failed"
 
 
 def test_a_record_is_healthy_only_when_every_share_it_names_is_exported(monkeypatch):

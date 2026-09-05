@@ -111,10 +111,10 @@ const AGENT_ERROR_WORDING: Record<string, string> = {
 
 const COMMAND_RESULTS_LABEL = "Agent command results";
 
-// One pane for everything this hub does to this device — installing the
-// agent, installing a module, removing one — whatever asked for it: a person
-// reading why something is not on a machine should not have to know which
-// surface started it.
+// One pane, one operation — installing the agent, installing a module,
+// uninstalling one — whatever asked for it: the same operation the
+// machine's own page shows, picked by the same precedence, so the two
+// surfaces render one stream.
 const INSTALL_OUTPUT_LABEL = "Operation output";
 const INSTALL_OUTPUT_INTERVAL_MS = 3000;
 const INSTALL_OUTPUT_BUSY_INTERVAL_MS = 1000;
@@ -187,6 +187,46 @@ function orderTone(state: string): "ok" | "warn" | "error" | "idle" {
     return "error";
   }
   return "idle";
+}
+
+/** The one operation the pane shows: an SSH task, or a module order. */
+type ShownOperation =
+  { kind: "task" } | { kind: "order"; order: DeviceInstallOrderView };
+
+/**
+ * Pick the pane's one operation, by the same precedence the heartbeat's
+ * operation object uses: a running order, else a running SSH task, else
+ * whichever finished last.
+ */
+function operationToShow(
+  orders: DeviceInstallOrderView[],
+  hasTask: boolean,
+  isTaskRunning: boolean,
+  taskFinishedAt: number | null,
+): ShownOperation | null {
+  // Orders arrive newest first, so the one actually running — the queue's
+  // head — is the last open one.
+  const running = orders
+    .filter((order) => ORDER_RUNNING_STATES.includes(order.state))
+    .at(-1);
+  if (running !== undefined) {
+    return { kind: "order", order: running };
+  }
+  if (hasTask && isTaskRunning) {
+    return { kind: "task" };
+  }
+  const latest = orders.at(0) ?? null;
+  if (latest !== null && hasTask && taskFinishedAt !== null) {
+    const stamp = Date.parse(latest.finished_at || latest.asked_at);
+    if (Number.isNaN(stamp) || taskFinishedAt > stamp) {
+      return { kind: "task" };
+    }
+    return { kind: "order", order: latest };
+  }
+  if (latest !== null) {
+    return { kind: "order", order: latest };
+  }
+  return hasTask ? { kind: "task" } : null;
 }
 
 function describeOrder(order: DeviceInstallOrderView): string {
@@ -303,6 +343,9 @@ export function DeviceDrawer({
 
   // Every install the controller ran for this device, whatever asked.
   const [orders, setOrders] = useState<DeviceInstallOrderView[]>([]);
+  // When this drawer's SSH task finished, so the pane can pick the
+  // operation that finished last.
+  const [taskFinishedAt, setTaskFinishedAt] = useState<number | null>(null);
 
   const task = useTaskStream(taskId);
   const logRef = useRef<HTMLPreElement | null>(null);
@@ -316,6 +359,15 @@ export function DeviceDrawer({
   // started it: while an SSH task or a module order is open, everything
   // that would start another one greys.
   const isOperationOpen = task.isRunning || isAnyOrderRunning;
+  const hasTask = taskId !== null || task.lines.length > 0;
+  // The pane shows exactly one operation, the same one the machine's own
+  // page renders from the heartbeat's operation object.
+  const shownOperation = operationToShow(
+    orders,
+    hasTask,
+    task.isRunning,
+    taskFinishedAt,
+  );
 
   const loadOrders = useCallback(async () => {
     if (!isManaged) {
@@ -348,7 +400,9 @@ export function DeviceDrawer({
   }, [loadOrders, isAnyOrderRunning]);
 
   // An install's outcome — the agent appearing, the version catching up — is
-  // the page's to show, and it should not wait for the next poll tick.
+  // the page's to show, and it should not wait for the next poll tick. The
+  // finish moment is kept so the pane can pick the operation that finished
+  // last.
   useEffect(() => {
     if (task.isRunning) {
       wasTaskRunning.current = true;
@@ -356,6 +410,7 @@ export function DeviceDrawer({
     }
     if (wasTaskRunning.current) {
       wasTaskRunning.current = false;
+      setTaskFinishedAt(Date.now());
       onTaskFinished?.();
     }
   }, [task.isRunning, onTaskFinished]);
@@ -981,55 +1036,59 @@ export function DeviceDrawer({
               />
             )}
 
-          {(taskId !== null || task.lines.length > 0 || orders.length > 0) && (
+          {shownOperation !== null && (
             <div className="device_drawer_log">
               <div className="device_drawer_log_head">
                 <span className="section_label">{INSTALL_OUTPUT_LABEL}</span>
-                {(taskId !== null || task.lines.length > 0) && (
-                  <StatusDot
-                    tone={
-                      task.isRunning
-                        ? "warn"
-                        : task.exitCode === 0
-                          ? "ok"
-                          : task.exitCode === null
-                            ? "idle"
-                            : "error"
-                    }
-                    label={
-                      task.isRunning
-                        ? "running"
-                        : task.exitCode === null
-                          ? "idle"
-                          : `${runningLabel ?? "action"} · exit ${task.exitCode}`
-                    }
-                  />
-                )}
               </div>
-              {(taskId !== null || task.lines.length > 0) && (
-                <pre className="device_drawer_log_output" ref={logRef}>
-                  {stripAnsi(task.lines.join("\n"))}
-                </pre>
-              )}
-              {task.error !== null && (
-                <span className="field_error">{task.error}</span>
-              )}
-              {orders.map((order) => (
-                <div key={order.id} className="device_drawer_order">
-                  <div className="device_drawer_log_head">
+              {shownOperation.kind === "task" ? (
+                <>
+                  <div className="device_drawer_operation_line">
                     <StatusDot
-                      tone={orderTone(order.state)}
-                      isPulsing={ORDER_RUNNING_STATES.includes(order.state)}
-                      label={describeOrder(order)}
+                      tone={
+                        task.isRunning
+                          ? "warn"
+                          : task.exitCode === 0
+                            ? "ok"
+                            : task.exitCode === null
+                              ? "idle"
+                              : "error"
+                      }
+                      isPulsing={task.isRunning}
+                      label={
+                        task.isRunning
+                          ? `${runningLabel ?? "action"} · running`
+                          : task.exitCode === null
+                            ? (runningLabel ?? "action")
+                            : `${runningLabel ?? "action"} · exit ${task.exitCode}`
+                      }
                     />
                   </div>
-                  {order.output.length > 0 && (
+                  <pre className="device_drawer_log_output" ref={logRef}>
+                    {stripAnsi(task.lines.join("\n"))}
+                  </pre>
+                  {task.error !== null && (
+                    <span className="field_error">{task.error}</span>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="device_drawer_operation_line">
+                    <StatusDot
+                      tone={orderTone(shownOperation.order.state)}
+                      isPulsing={ORDER_RUNNING_STATES.includes(
+                        shownOperation.order.state,
+                      )}
+                      label={describeOrder(shownOperation.order)}
+                    />
+                  </div>
+                  {shownOperation.order.output.length > 0 && (
                     <pre className="device_drawer_log_output">
-                      {stripAnsi(order.output)}
+                      {stripAnsi(shownOperation.order.output)}
                     </pre>
                   )}
-                </div>
-              ))}
+                </>
+              )}
             </div>
           )}
 

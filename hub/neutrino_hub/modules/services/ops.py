@@ -1,9 +1,11 @@
 """Asking an SMB server what it exports.
 
-``smbclient -L <host> -N`` is samba's own enumeration, and its answer is what
-says whether a share exists — a connection to port 445 only says the server
-is there. The tool ships with samba, so a hub without that module installed
-may not have it, and that is its own answer rather than a missing share.
+``smbclient -L <host> -N`` is samba's own enumeration, asked anonymously. A
+secured server turns an anonymous session away — a denied login, or a login
+that succeeds against an empty table — and that answer is *listing refused*,
+never proof a share is absent: only a listing that actually shows shares can
+say one is missing. The tool ships with samba, so a hub without that module
+installed may not have it, and that too is its own answer.
 
 Not pure: this runs the client. Parsing what it printed is
 :func:`parse_share_names`, which is.
@@ -14,11 +16,13 @@ from shutil import which
 
 from neutrino_hub.modules.services.constants import (
     SERVICES_PROBE_CONNECT_FAILED,
+    SERVICES_PROBE_LIST_REFUSED,
     SERVICES_PROBE_TIMEOUT_S,
     SERVICES_PROBE_TOOL_MISSING,
     SERVICES_SHARE_ADMINISTRATIVE_SUFFIX,
     SERVICES_SHARE_TABLE_HEADER,
     SERVICES_SHARE_TABLE_RULE,
+    SERVICES_SMB_REFUSAL_MARKERS,
     SERVICES_SMBCLIENT_BINARY,
 )
 from neutrino_hub.utils.subprocess_run import CommandError, run
@@ -47,7 +51,10 @@ def list_shares(
         timeout_s: How long to wait before calling it unreachable.
 
     Returns:
-        Its share names, or the reason there are none to report.
+        Its share names, or the reason there are none to report:
+        ``list_refused`` for a server that turns the anonymous session away
+        or shows it an empty table, ``connect_failed`` for one that could
+        not be reached, ``tool_missing`` with no client to ask.
     """
     if which(SERVICES_SMBCLIENT_BINARY) is None:
         return SambaShareListing(error_code=SERVICES_PROBE_TOOL_MISSING)
@@ -60,8 +67,16 @@ def list_shares(
     except CommandError:
         return SambaShareListing(error_code=SERVICES_PROBE_CONNECT_FAILED)
     if not result.is_success:
+        output = result.stdout + result.stderr
+        if any(marker in output for marker in SERVICES_SMB_REFUSAL_MARKERS):
+            return SambaShareListing(error_code=SERVICES_PROBE_LIST_REFUSED)
         return SambaShareListing(error_code=SERVICES_PROBE_CONNECT_FAILED)
-    return SambaShareListing(names=parse_share_names(result.stdout))
+    names = parse_share_names(result.stdout)
+    if not names:
+        # An anonymous login can succeed against a server that hides every
+        # export from it; an empty table is never proof a share is absent.
+        return SambaShareListing(error_code=SERVICES_PROBE_LIST_REFUSED)
+    return SambaShareListing(names=names)
 
 
 def parse_share_names(output: str) -> list[str]:

@@ -55,6 +55,10 @@ WORKGROUP_LISTING = """Domain=[WORKGROUP] OS=[Windows 6.1] Server=[Samba 4.9.5]
 REFUSAL = """do_connect: Connection to 10.0.0.9 failed (Error NT_STATUS_HOST_UNREACHABLE)
 """
 
+# What a secured server prints when it turns the anonymous session away.
+DENIED = """session setup failed: NT_STATUS_ACCESS_DENIED
+"""
+
 
 class RecordingRun:
     """Answers with one result and remembers every command it was given."""
@@ -118,6 +122,29 @@ def test_a_server_that_answers_is_listed_by_its_own_client(monkeypatch, installe
     assert listing.names == ["share"]
     assert listing.error_code is None
     assert recorder.commands == [["smbclient", "-L", "192.168.100.1", "-N"]]
+
+
+def test_an_empty_anonymous_table_is_a_refused_listing_not_truth(
+    monkeypatch, installed
+):
+    """A secured server answers an anonymous login with an empty table, so
+    an empty table is never proof a share is absent."""
+    monkeypatch.setattr(ops, "run", RecordingRun(succeeded(EMPTY_LISTING)))
+
+    listing = list_shares("192.168.100.7")
+
+    assert listing.names == []
+    assert listing.error_code == "list_refused"
+
+
+def test_a_denied_anonymous_session_is_a_refused_listing_not_unreachable(
+    monkeypatch, installed
+):
+    monkeypatch.setattr(ops, "run", RecordingRun(failed(DENIED)))
+
+    listing = list_shares("192.168.100.7")
+
+    assert listing.error_code == "list_refused"
 
 
 def test_a_server_that_does_not_answer_is_a_connect_failure(monkeypatch, installed):

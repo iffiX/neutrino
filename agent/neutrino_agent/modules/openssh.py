@@ -44,7 +44,7 @@ class OpensshModuleRunner(ModuleRunner):
         self._log("installing the SSH server")
         self._platform.install_openssh(resolved.get("entry") or {})
 
-    def remove(self, resolved: dict) -> None:
+    def uninstall(self, resolved: dict) -> None:
         """Take the SSH server out of service.
 
         Args:

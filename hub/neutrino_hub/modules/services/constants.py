@@ -31,15 +31,21 @@ SERVICES_PROBE_CACHE_TTL_S = 10.0
 SERVICES_PROBE_WORKER_LIMIT = 8
 
 # What the last probe measured; None on a service that answered as declared.
+# ``share_unverified`` is a healthy answer: the server answers but hides its
+# exports from an anonymous asker, so the share itself cannot be checked.
 SERVICES_PROBE_CONNECT_FAILED = "connect_failed"
 SERVICES_PROBE_SERVER_ERROR = "server_error"
 SERVICES_PROBE_SHARE_MISSING = "share_missing"
 SERVICES_PROBE_TOOL_MISSING = "tool_missing"
+SERVICES_PROBE_LIST_REFUSED = "list_refused"
+SERVICES_PROBE_SHARE_UNVERIFIED = "share_unverified"
 SERVICES_PROBE_DETAIL_CODES = (
     SERVICES_PROBE_CONNECT_FAILED,
     SERVICES_PROBE_SERVER_ERROR,
     SERVICES_PROBE_SHARE_MISSING,
     SERVICES_PROBE_TOOL_MISSING,
+    SERVICES_PROBE_LIST_REFUSED,
+    SERVICES_PROBE_SHARE_UNVERIFIED,
 )
 
 # Listing a server's exports with samba's own client: the column its table of
@@ -49,6 +55,12 @@ SERVICES_SMBCLIENT_BINARY = "smbclient"
 SERVICES_SHARE_TABLE_HEADER = "Sharename"
 SERVICES_SHARE_TABLE_RULE = "---"
 SERVICES_SHARE_ADMINISTRATIVE_SUFFIX = "$"
+# What a server prints when it turns an anonymous session away rather than
+# being unreachable.
+SERVICES_SMB_REFUSAL_MARKERS = (
+    "NT_STATUS_ACCESS_DENIED",
+    "NT_STATUS_LOGON_FAILURE",
+)
 
 # The typed service list: four types, closed until a fifth earns its place.
 SERVICES_TYPE_WEB = "web"

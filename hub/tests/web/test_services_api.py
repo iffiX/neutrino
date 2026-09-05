@@ -238,9 +238,10 @@ def test_a_scan_lists_what_the_server_exports(box, monkeypatch):
     assert response.json() == {"shares": ["media", "backup"]}
 
 
-@pytest.mark.parametrize("reason", ["connect_failed", "tool_missing"])
+@pytest.mark.parametrize("reason", ["connect_failed", "tool_missing", "list_refused"])
 def test_a_scan_that_lists_nothing_says_which_reason(box, monkeypatch, reason):
-    """A server that did not answer and a hub without the client differ."""
+    """A server that did not answer, a hub without the client and a server
+    that refuses anonymous listing all differ — the page words each."""
     client, _ = box
     answer(monkeypatch, SambaShareListing(error_code=reason))
 

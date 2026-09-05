@@ -172,11 +172,11 @@
   justify-content: space-between;
 }
 
-/* One install in the pane: its line, and the output it produced under it. */
-.device_drawer_order {
+/* The pane's one operation: its own line, then the output box under it. */
+.device_drawer_operation_line {
   display: flex;
-  flex-direction: column;
   gap: var(--space-2);
+  align-items: center;
 }
 
 .device_drawer_footer {

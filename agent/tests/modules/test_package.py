@@ -33,15 +33,15 @@ COMMAND_MODULE = {
 
 
 class RecordingPlatform(AgentPlatform):
-    """Records installs and removals instead of running them."""
+    """Records installs and uninstalls instead of running them."""
 
     os_name = "linux"
 
-    def __init__(self, *, install_error=None, remove_error=None):
+    def __init__(self, *, install_error=None, uninstall_error=None):
         self.installs: list = []
-        self.removals: list = []
+        self.uninstalls: list = []
         self._install_error = install_error
-        self._remove_error = remove_error
+        self._uninstall_error = uninstall_error
 
     def install_package(self, path, *, package_kind, entry):
         self.installs.append((os.path.basename(path), package_kind, entry))
@@ -49,9 +49,9 @@ class RecordingPlatform(AgentPlatform):
             raise self._install_error
 
     def uninstall_package(self, command):
-        self.removals.append(command)
-        if self._remove_error is not None:
-            raise self._remove_error
+        self.uninstalls.append(command)
+        if self._uninstall_error is not None:
+            raise self._uninstall_error
 
 
 @pytest.fixture
@@ -88,37 +88,37 @@ def test_install_on_a_platform_that_installs_nothing_is_not_swallowed(tmp_path):
         module.install(DEB_MODULE, str(tmp_path / "package.deb"))
 
 
-def test_a_deb_removal_purges_the_resolved_package_name(runner):
+def test_a_deb_uninstall_purges_the_resolved_package_name(runner):
     module, platform = runner
 
-    module.remove(DEB_MODULE)
+    module.uninstall(DEB_MODULE)
 
     # apt-get remove leaves the `rc` state, whose remnant reads as installed.
-    assert platform.removals == ["apt-get purge -y todesk"]
+    assert platform.uninstalls == ["apt-get purge -y todesk"]
 
 
-def test_a_non_deb_removal_keeps_the_catalog_command(runner):
+def test_a_non_deb_uninstall_keeps_the_catalog_command(runner):
     module, platform = runner
 
-    module.remove(COMMAND_MODULE)
+    module.uninstall(COMMAND_MODULE)
 
-    assert platform.removals == ["rm -rf /Applications/AnyDesk.app"]
+    assert platform.uninstalls == ["rm -rf /Applications/AnyDesk.app"]
 
 
-def test_a_removal_with_no_command_named_asks_the_platform_nothing(runner):
+def test_an_uninstall_with_no_command_named_asks_the_platform_nothing(runner):
     module, platform = runner
 
-    module.remove({"entry": {"package_kind": "dmg"}, "package": "x", "verify": ""})
+    module.uninstall({"entry": {"package_kind": "dmg"}, "package": "x", "verify": ""})
 
-    assert platform.removals == []
+    assert platform.uninstalls == []
 
 
-def test_a_removal_that_refuses_is_left_to_the_engine_to_type():
-    platform = RecordingPlatform(remove_error=InstallError("removal failed: busy"))
+def test_an_uninstall_that_refuses_is_left_to_the_engine_to_type():
+    platform = RecordingPlatform(uninstall_error=InstallError("uninstall failed: busy"))
     module = PackageModuleRunner(platform=platform, log=lambda message: None)
 
     with pytest.raises(InstallError):
-        module.remove(DEB_MODULE)
+        module.uninstall(DEB_MODULE)
 
 
 @pytest.mark.parametrize(
@@ -207,7 +207,7 @@ def test_the_runner_keeps_no_memory_of_anything(runner, tmp_path):
     package.write_bytes(b"!<arch>")
 
     module.install(DEB_MODULE, str(package))
-    module.remove(DEB_MODULE)
+    module.uninstall(DEB_MODULE)
 
     # No latch, no failure map, no set of names: policy is the hub's, and a
     # runner that remembered would be a second opinion about retrying.

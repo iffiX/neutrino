@@ -154,7 +154,7 @@ class SwitcherModuleRunner(ModuleRunner):
         """
         install_cli(resolved.get("entry") or {}, package_path)
 
-    def remove(self, resolved: dict) -> None:
+    def uninstall(self, resolved: dict) -> None:
         """Take the CLI off this machine.
 
         Args:

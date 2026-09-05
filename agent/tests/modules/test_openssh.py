@@ -102,7 +102,7 @@ def test_openssh_install_and_uninstall_ride_the_platform():
     runner.install({"entry": DEBIAN_ENTRY})
     assert platform.calls == ["install"] and runner.verify({"entry": DEBIAN_ENTRY})
 
-    runner.remove({"entry": DEBIAN_ENTRY})
+    runner.uninstall({"entry": DEBIAN_ENTRY})
     assert platform.calls == ["install", "uninstall"]
     assert not runner.verify({"entry": DEBIAN_ENTRY})
 

@@ -66,14 +66,14 @@ class SystemPackageModuleRunner(ModuleRunner):
         if output.strip():
             self._log(output.strip())
 
-    def remove(self, resolved: dict) -> None:
+    def uninstall(self, resolved: dict) -> None:
         """Take the named packages off this machine.
 
         Args:
             resolved: The module as the hub resolved it.
 
         Raises:
-            InstallError: If the removal refuses.
+            InstallError: If the uninstall refuses.
             PlatformUnsupportedError: If this platform removes nothing.
         """
         output = self._platform.remove_system_packages(_entry_packages(resolved))

@@ -35,7 +35,7 @@ class FakePlatform(AgentPlatform):
 
     def __init__(self, *, install_error=None):
         self.installs: list = []
-        self.removals: list = []
+        self.uninstalls: list = []
         self._install_error = install_error
 
     def install_package(self, path, *, package_kind, entry):
@@ -44,7 +44,7 @@ class FakePlatform(AgentPlatform):
             raise self._install_error
 
     def uninstall_package(self, command):
-        self.removals.append(command)
+        self.uninstalls.append(command)
 
 
 def bare_engine(*, platform=None, fetch_artifact=None, verified=None):
@@ -228,7 +228,7 @@ def test_a_refused_fetch_is_reported_with_the_hubs_own_code():
     assert result["params"] == {"size": 2048}
 
 
-def test_a_removal_is_run_and_confirmed():
+def test_an_uninstall_is_run_and_confirmed():
     platform = FakePlatform()
     engine = bare_engine(platform=platform, verified=[False])
 
@@ -239,11 +239,11 @@ def test_a_removal_is_run_and_confirmed():
     )
     engine._reconcile()
 
-    assert platform.removals == ["apt-get purge -y todesk"]
+    assert platform.uninstalls == ["apt-get purge -y todesk"]
     assert engine.results()[0]["state"] == "done"
 
 
-def test_a_removal_that_did_not_take_is_reported_failed():
+def test_an_uninstall_that_did_not_take_is_reported_failed():
     engine = bare_engine(verified=[True])
 
     engine.update(
@@ -386,7 +386,7 @@ def test_reporting_a_module_touches_nothing():
     engine._refresh(is_forced=True)
 
     assert platform.installs == []
-    assert platform.removals == []
+    assert platform.uninstalls == []
     assert engine.report()["todesk"]["state"] == "installed"
 
 
@@ -588,7 +588,7 @@ def test_a_system_package_order_installs_by_name_and_fetches_nothing():
     assert "Setting up cifs-utils" in result["output"]
 
 
-def test_a_system_package_removal_rides_the_package_manager_too():
+def test_a_system_package_uninstall_rides_the_package_manager_too():
     platform = SystemPackagePlatform()
     engine = bare_engine(platform=platform)
     engine._catalog = dict(SYSTEM_CATALOG)
@@ -667,11 +667,11 @@ def test_a_switcher_order_unpacks_the_handed_archive():
     assert engine.results()[0]["state"] == "done"
 
 
-def test_a_switcher_removal_deletes_the_cli():
+def test_a_switcher_uninstall_deletes_the_cli():
     engine = bare_engine()
     engine._catalog = dict(SWITCHER_CATALOG)
     removed: list = []
-    engine._switcher.remove = lambda resolved: removed.append(True)
+    engine._switcher.uninstall = lambda resolved: removed.append(True)
     engine._switcher.verify = lambda resolved: not removed
 
     engine.update(

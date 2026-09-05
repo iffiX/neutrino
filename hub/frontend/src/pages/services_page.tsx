@@ -71,6 +71,10 @@ const DECLARED_DETAIL_WORDING: Record<string, string> = {
   share_missing: "The server answers, but does not export this share.",
   tool_missing:
     "This hub has no smbclient to list shares with; install the Samba module.",
+  list_refused:
+    "The server refuses anonymous listing; type the share name by hand.",
+  share_unverified:
+    "The server answers but hides its shares from anonymous listing, so the name is not verified.",
 };
 const SOURCE_LABELS: Record<PublishedService["source"], string> = {
   module: "module",
@@ -420,7 +424,13 @@ function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
         setScanNotice(SCAN_EMPTY);
       }
     } catch (cause: unknown) {
-      setScanError(describeDeclaredError(cause));
+      // A refused anonymous listing is a degradation, not a failure: the
+      // share name is simply typed by hand.
+      if (scanFailureReason(cause) === "list_refused") {
+        setScanNotice(DECLARED_DETAIL_WORDING.list_refused ?? null);
+      } else {
+        setScanError(describeDeclaredError(cause));
+      }
     } finally {
       setIsScanning(false);
     }
@@ -618,6 +628,22 @@ function fill(
     filled = filled.replace(`{${name}}`, String(value));
   }
   return filled;
+}
+
+/** The reason inside a failed share scan, or null for any other failure. */
+function scanFailureReason(cause: unknown): string | null {
+  if (
+    cause instanceof ApiError &&
+    typeof cause.detail === "object" &&
+    cause.detail !== null
+  ) {
+    const detail = cause.detail as Record<string, unknown>;
+    if (detail.code === "share_scan_failed") {
+      const params = (detail.params ?? {}) as Record<string, unknown>;
+      return String(params.reason ?? "");
+    }
+  }
+  return null;
 }
 
 /** Wording for a failed declared-service call, coded refusals spelled out. */
