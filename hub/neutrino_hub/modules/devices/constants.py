@@ -28,3 +28,11 @@ SSH_UNREACHABLE_STATUS = 255
 # something other than Linux. Distinct from the installer's own failures (1)
 # and from SSH_UNREACHABLE_STATUS.
 SSH_UNSUPPORTED_OS_STATUS = 95
+
+# What a hub fetching a vendor package on a device's behalf presents and
+# accepts. The ceiling is generous — remote desktop packages run past
+# 100 MB — and exists so a mirror serving something endless cannot fill
+# the panel's memory.
+DEVICE_VENDOR_FETCH_IMPERSONATE = "chrome"
+DEVICE_VENDOR_FETCH_TIMEOUT_S = 300
+DEVICE_VENDOR_FETCH_LIMIT_BYTES = 512 * 1024 * 1024

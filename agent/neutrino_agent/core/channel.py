@@ -68,6 +68,29 @@ class GatewayVersionRefused(RuntimeError):
         self.agent_version = agent_version
 
 
+class GatewayRefusedDetail(RuntimeError):
+    """Raised when the hub refused a request with a typed reason.
+
+    Not about the binding: the hub answered about the thing that was asked
+    for — a vendor that served a page rather than a package, say — and the
+    caller words it.
+
+    Attributes:
+        code: The hub's own code.
+        params: What its wording names.
+    """
+
+    def __init__(self, *, code: str, params: dict):
+        """
+        Args:
+            code: The hub's code.
+            params: Its parameters.
+        """
+        super().__init__(code)
+        self.code = code
+        self.params = params
+
+
 class GatewayWireStale(RuntimeError):
     """Raised when the hub says this agent's wire generation is not its own.
 
@@ -211,9 +234,7 @@ class GatewayHttpChannel:
                     agent_version=str(params.get("agent_version", "")),
                 )
             if detail.get("code"):
-                raise GatewayUnreachable(
-                    f"gateway answered 409 ({detail['code']}) for {path}"
-                )
+                raise GatewayRefusedDetail(code=str(detail["code"]), params=params)
         if status >= 400:
             raise GatewayUnreachable(f"gateway answered {status} for {path}")
         return status, data, headers

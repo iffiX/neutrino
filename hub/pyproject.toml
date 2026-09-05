@@ -16,6 +16,10 @@ dependencies = [
     "httpx>=0.27",
     # CLIProxyAPI's configuration is YAML, rendered by the panel.
     "pyyaml>=6.0",
+    # Vendor CDNs gate their downloads on a browser's TLS fingerprint, which
+    # plain urllib cannot present. The agent carries no dependencies, so the
+    # hub fetches those packages on its behalf.
+    "curl_cffi>=0.7",
     # Seals the credential vault; already present transitively via asyncssh.
     "cryptography>=43",
 ]

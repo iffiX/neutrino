@@ -19,10 +19,12 @@ every surface does its own wording.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import hashlib
 import threading
 
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import (
+    AGENT_VENDOR_PACKAGE_PATH,
     AGENT_WIRE_GENERATION,
     AGENT_BACKOFF_MAX_S,
     AGENT_BACKOFF_MIN_S,
@@ -34,6 +36,7 @@ from neutrino_agent.constants import (
 )
 from neutrino_agent.core import enrollment, self_update
 from neutrino_agent.core.channel import (
+    GatewayRefusedDetail,
     GatewayWireStale,
     GatewayHttpChannel,
     GatewayRefused,
@@ -56,6 +59,22 @@ from neutrino_agent.services.web import WebServiceHandler
 # How often an unenrolled agent looks again, which is only to notice that its
 # own page has since been used to join a gateway.
 IDLE_POLL_INTERVAL_S = 2
+
+
+def _sha256_file(path: str) -> str:
+    """The SHA-256 of a file on disk.
+
+    Args:
+        path: The file.
+
+    Returns:
+        Its digest, or empty when it cannot be read.
+    """
+    try:
+        with open(path, "rb") as stream:
+            return hashlib.sha256(stream.read()).hexdigest()
+    except OSError:
+        return ""
 
 
 def channel_error(error: Exception) -> dict:
@@ -99,7 +118,10 @@ class Agent:
         # then rather than at the end of its next interval.
         self._news = threading.Event()
         self._engine = ModuleEngine(
-            platform=self._platform, log=log, on_change=self._news.set
+            fetch_gated=self._fetch_gated,
+            platform=self._platform,
+            log=log,
+            on_change=self._news.set,
         )
         self._store = MachineServiceStore()
         self._ai = AiServiceReconciler(
@@ -424,6 +446,43 @@ class Agent:
             return AGENT_HEARTBEAT_INTERVAL_S
         self._maybe_self_update(str(reply.get("hub_version", "")))
         return AGENT_HEARTBEAT_INTERVAL_S
+
+    def _fetch_gated(self, url: str, package_kind: str, destination: str) -> dict:
+        """Have the hub fetch a download this machine cannot, onto disk.
+
+        Args:
+            url: What the manifest names.
+            package_kind: What the bytes should be, so the hub can tell a
+                challenge page from a package.
+            destination: Where to write what comes back.
+
+        Returns:
+            Empty when the bytes landed, ``{"code", "params"}`` when they
+            did not — the vendor serving a page included.
+        """
+        with self._lock:
+            channel = self._channel
+        if channel is None:
+            return {"code": "hub_unreachable", "params": {}}
+        try:
+            named = channel.post_download(
+                AGENT_VENDOR_PACKAGE_PATH,
+                {"url": url, "package_kind": package_kind},
+                destination,
+            )
+        except GatewayRefusedDetail as error:
+            return {"code": error.code, "params": error.params}
+        except (
+            GatewayRefused,
+            GatewayUnreachable,
+            GatewayUntrusted,
+            GatewayVersionRefused,
+            GatewayWireStale,
+        ) as error:
+            return channel_error(error)
+        if named and named != _sha256_file(destination):
+            return {"code": "vendor_package_digest_mismatch", "params": {}}
+        return {}
 
     def _read_metrics(self) -> dict:
         try:

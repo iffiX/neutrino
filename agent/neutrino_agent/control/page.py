@@ -195,6 +195,11 @@ const WORDS = {
   codes: {
     no_platform_build: "no version of this exists for this machine",
     verify_unconfirmed: "the install finished, but the software cannot be found",
+    vendor_served_a_page: "the vendor served a challenge page, not the package — install it by hand and this row follows",
+    vendor_fetch_failed: "the hub could not fetch this from the vendor",
+    vendor_fetch_unavailable: "the hub cannot fetch downloads gated on a browser",
+    vendor_fetch_too_large: "the vendor's download is larger than the hub will fetch",
+    vendor_package_digest_mismatch: "what arrived did not match the hub's checksum",
     remove_unconfirmed: "the removal finished, but the software is still there",
     no_download_named: "the catalog names no download for this machine",
     unsupported_platform: "this machine cannot do this",

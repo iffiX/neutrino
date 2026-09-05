@@ -26,6 +26,10 @@ AGENT_HEARTBEAT_PATH = "/api/agent/heartbeat"
 AGENT_RESULT_PATH = "/api/agent/result"
 AGENT_LEAVE_PATH = "/api/agent/leave"
 AGENT_PACKAGE_PATH = "/api/agent/package"
+# Several vendors serve their downloads only to a browser's TLS
+# fingerprint, which this agent cannot present and must not grow a
+# dependency to. The hub fetches those on the machine's behalf.
+AGENT_VENDOR_PACKAGE_PATH = "/api/agent/vendor_package"
 
 # The transient unit a self-update runs in. Installing the package restarts
 # neutrino_agent.service, so the install must outlive the process that

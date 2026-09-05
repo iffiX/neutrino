@@ -399,3 +399,101 @@ def test_a_manifest_with_no_build_here_is_reported_not_failed():
         "params": {},
         "is_active": False,
     }
+
+
+def _gated_manifest():
+    return {
+        "kind": "package",
+        "download": {"impersonate": True},
+        "verify": {"linux": "/bin/false"},
+        "platforms": {"linux": {"url": "https://vendor/x.deb", "package_kind": "deb"}},
+    }
+
+
+def test_a_gated_download_is_asked_of_the_hub_not_fetched_here(monkeypatch):
+    """This machine carries no dependency that can present a browser, so a
+    manifest flagged for impersonation goes through the hub."""
+    from neutrino_agent.modules import package as package_module
+
+    asked = []
+    subject = package_module.PackageModuleReconciler(
+        platform=RecordingPlatform(),
+        log=lambda message: None,
+        fetch_gated=lambda url, kind, destination: asked.append((url, kind)) or {},
+    )
+    monkeypatch.setattr(
+        package_module, "download", lambda *a, **k: pytest.fail("fetched here")
+    )
+    monkeypatch.setattr(package_module, "verify_package", lambda *a, **k: None)
+
+    manifest = _gated_manifest()
+    subject.reconcile(
+        name="todesk",
+        manifest=manifest,
+        entry=manifest["platforms"]["linux"],
+        wanted={"is_enabled": True},
+    )
+
+    assert asked == [("https://vendor/x.deb", "deb")]
+
+
+def test_a_vendor_page_is_reported_and_not_retried_every_recheck():
+    """A vendor refusing today refuses in a minute; the row says what
+    happened and the machine stops fetching the same page all night."""
+    from neutrino_agent.modules import package as package_module
+
+    attempts = []
+
+    def refuse(url, kind, destination):
+        attempts.append(url)
+        return {"code": "vendor_served_a_page", "params": {"content_type": "text/html"}}
+
+    subject = package_module.PackageModuleReconciler(
+        platform=RecordingPlatform(), log=lambda message: None, fetch_gated=refuse
+    )
+    manifest = _gated_manifest()
+
+    entry = manifest["platforms"]["linux"]
+    first = subject.reconcile(
+        name="todesk", manifest=manifest, entry=entry, wanted={"is_enabled": True}
+    )
+    second = subject.reconcile(
+        name="todesk", manifest=manifest, entry=entry, wanted={"is_enabled": True}
+    )
+
+    assert first["state"] == "failed"
+    assert first["code"] == "vendor_served_a_page"
+    assert second == first
+    assert len(attempts) == 1
+
+
+def test_a_module_installed_by_hand_clears_the_failure(monkeypatch):
+    """The maintainer installs it themselves; what the machine has is the
+    answer, and the row turns green without anyone clearing anything."""
+    from neutrino_agent.modules import package as package_module
+
+    subject = package_module.PackageModuleReconciler(
+        platform=RecordingPlatform(),
+        log=lambda message: None,
+        fetch_gated=lambda url, kind, destination: {
+            "code": "vendor_served_a_page",
+            "params": {},
+        },
+    )
+    manifest = _gated_manifest()
+    # A kind verified by the manifest's own command, so "somebody installed
+    # it" is expressible without a package database.
+    manifest["platforms"]["linux"]["package_kind"] = "exe"
+    entry = manifest["platforms"]["linux"]
+    failed = subject.reconcile(
+        name="todesk", manifest=manifest, entry=entry, wanted={"is_enabled": True}
+    )
+    assert failed["state"] == "failed"
+
+    manifest["verify"] = {"linux": "/bin/true"}
+    healed = subject.reconcile(
+        name="todesk", manifest=manifest, entry=entry, wanted={"is_enabled": True}
+    )
+
+    assert healed["state"] == "installed"
+    assert healed["code"] == ""

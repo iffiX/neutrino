@@ -1220,6 +1220,14 @@ class ClientPackageRequest(BaseModel):
     family: str
 
 
+class ClientVendorFetch(BaseModel):
+    """An agent asking the hub to fetch a vendor package for it."""
+
+    token: str
+    url: str
+    package_kind: str = ""
+
+
 class DeviceModuleView(BaseModel):
     """One managed module, as the panel shows it for a device."""
 

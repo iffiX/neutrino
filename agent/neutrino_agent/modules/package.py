@@ -38,19 +38,27 @@ class PackageModuleReconciler(ModuleReconciler):
 
     kind = "package"
 
-    def __init__(self, *, platform, log=print, publish=None):
+    def __init__(self, *, platform, log=print, publish=None, fetch_gated=None):
         """
         Args:
             platform: The machine's platform, behind the contract.
             log: Callable used for progress messages.
             publish: Called with ``(name, status)`` for transient states.
+            fetch_gated: Called with ``(url, package_kind, destination)`` to
+                have the hub fetch a download this machine cannot; None
+                where there is no hub to ask.
         """
         super().__init__(platform=platform, log=log, publish=publish)
+        self._fetch_gated = fetch_gated
         # Modules whose install or removal ran and whose verify did not
         # confirm it. Without these the idle re-check repeats the same
         # attempt every minute for ever.
         self._install_unconfirmed: set = set()
         self._remove_unconfirmed: set = set()
+        # Installs whose download failed, with the reason. A vendor that
+        # refuses today refuses in a minute too, and a machine that retries
+        # every recheck spends the night fetching the same page.
+        self._install_failed: dict = {}
 
     def reconcile(
         self, *, name: str, manifest: dict, entry: dict, wanted: "dict | None"
@@ -74,16 +82,22 @@ class PackageModuleReconciler(ModuleReconciler):
             return self._remove(name, manifest, entry, is_installed)
         self._remove_unconfirmed.discard(name)
         if is_installed:
+            # Installed by hand counts: what the machine has is the answer,
+            # and it clears whatever the last attempt left behind.
             self._install_unconfirmed.discard(name)
+            self._install_failed.pop(name, None)
             return clean_status("installed")
         if name in self._install_unconfirmed:
             return self._install_unconfirmed_status()
+        if name in self._install_failed:
+            return dict(self._install_failed[name])
         return self._install(name, manifest, entry)
 
     def _remove(
         self, name: str, manifest: dict, entry: dict, is_installed: bool
     ) -> dict:
         self._install_unconfirmed.discard(name)
+        self._install_failed.pop(name, None)
         if not is_installed:
             self._remove_unconfirmed.discard(name)
             return clean_status("absent")
@@ -110,19 +124,26 @@ class PackageModuleReconciler(ModuleReconciler):
                 entry["github_repo"], entry.get("asset_pattern", "")
             )
         if not url:
-            return {
-                "state": "failed",
-                "code": "no_download_named",
-                "params": {},
-                "is_active": False,
-            }
+            return self._install_failure(name, "no_download_named", {})
 
         package_kind = entry.get("package_kind", "deb")
         is_impersonated = bool(manifest.get("download", {}).get("impersonate"))
         with tempfile.TemporaryDirectory() as workdir:
             package = os.path.join(workdir, "package." + package_kind)
             self._log(f"{name}: downloading from {url}")
-            download(url, package, is_impersonated=is_impersonated)
+            if is_impersonated and self._fetch_gated is not None:
+                # This machine cannot present a browser's TLS fingerprint
+                # and must not grow a dependency to; the hub can, so it
+                # fetches and hands the bytes down the pinned channel.
+                refusal = self._fetch_gated(url, package_kind, package)
+                if refusal:
+                    return self._install_failure(
+                        name,
+                        refusal.get("code", "download_failed"),
+                        refusal.get("params", {}),
+                    )
+            else:
+                download(url, package, is_impersonated=is_impersonated)
             # A CDN that blocks a fetcher answers with a page, not an error, so
             # what arrived is checked before anything is handed to an installer.
             verify_package(package, package_kind)
@@ -135,6 +156,27 @@ class PackageModuleReconciler(ModuleReconciler):
             return clean_status("installed")
         self._install_unconfirmed.add(name)
         return self._install_unconfirmed_status()
+
+    def _install_failure(self, name: str, code: str, params: dict) -> dict:
+        """Latch one failed install and report it.
+
+        Args:
+            name: The module.
+            code: Why it failed.
+            params: What the wording names.
+
+        Returns:
+            The typed failure, which the next recheck repeats rather than
+            re-running the attempt behind it.
+        """
+        status = {
+            "state": "failed",
+            "code": code,
+            "params": dict(params),
+            "is_active": False,
+        }
+        self._install_failed[name] = status
+        return dict(status)
 
     def _install_unconfirmed_status(self) -> dict:
         return {

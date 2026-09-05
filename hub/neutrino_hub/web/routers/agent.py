@@ -29,6 +29,10 @@ from neutrino_hub.modules.cliproxyapi.ops import (
 )
 from neutrino_hub.modules.credentials.vault import VaultLockedError
 from neutrino_hub.modules.devices.agent_package import agent_packages
+from neutrino_hub.modules.devices.vendor_fetch import (
+    VendorFetchError,
+    fetch_vendor_package,
+)
 from neutrino_hub.modules.devices.constants import (
     AGENT_WIRE_GENERATION,
     DEVICE_MAC_PATTERN,
@@ -50,6 +54,7 @@ from neutrino_hub.web.models import (
     ClientHeartbeatReply,
     ClientLeave,
     ClientPackageRequest,
+    ClientVendorFetch,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 
@@ -308,6 +313,45 @@ def package(request: ClientPackageRequest) -> Response:
         content=data,
         media_type="application/octet-stream",
         headers={"X-Checksum-Sha256": hashlib.sha256(data).hexdigest()},
+    )
+
+
+@router.post("/vendor_package")
+def vendor_package(request: ClientVendorFetch) -> Response:
+    """Fetch a vendor's package for a device and hand it the bytes.
+
+    A managed machine carries no dependencies, so it cannot present the
+    browser TLS fingerprint several vendor CDNs gate on. The hub can, and
+    the channel this arrives on is the one the agent already trusts.
+
+    Args:
+        request: The token, the url the manifest names, and the kind the
+            bytes should be.
+
+    Returns:
+        The package bytes, with their SHA-256 in ``X-Checksum-Sha256``.
+
+    Raises:
+        HTTPException: 401 when the token matches no device, 409 with the
+            typed reason when the fetch did not produce a package — a
+            vendor serving a challenge page included.
+    """
+    device = DeviceRegistry().find_by_client_token(request.token)
+    if device is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="unknown client token"
+        )
+    try:
+        fetched = fetch_vendor_package(request.url, package_kind=request.package_kind)
+    except VendorFetchError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": error.code, "params": error.params},
+        ) from error
+    return Response(
+        content=fetched.content,
+        media_type="application/octet-stream",
+        headers={"X-Checksum-Sha256": hashlib.sha256(fetched.content).hexdigest()},
     )
 
 

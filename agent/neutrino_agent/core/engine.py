@@ -113,12 +113,14 @@ class ReconcileWorker:
 class ModuleEngine(ReconcileWorker):
     """Keeps the machine converged on the hub's desired modules."""
 
-    def __init__(self, *, platform, log=print, on_change=None):
+    def __init__(self, *, platform, log=print, on_change=None, fetch_gated=None):
         """
         Args:
             platform: The machine's platform, behind the contract.
             log: Callable used for progress messages.
             on_change: Called whenever a module's state changes.
+            fetch_gated: Passed to the package reconciler, which uses it for
+                the downloads a vendor serves only to a browser.
         """
         self._catalog: dict = {}
         self._catalog_hash = ""
@@ -128,7 +130,10 @@ class ModuleEngine(ReconcileWorker):
             reconciler.kind: reconciler
             for reconciler in (
                 PackageModuleReconciler(
-                    platform=platform, log=log, publish=self._publish
+                    platform=platform,
+                    log=log,
+                    publish=self._publish,
+                    fetch_gated=fetch_gated,
                 ),
                 OpensshModuleReconciler(
                     platform=platform, log=log, publish=self._publish
