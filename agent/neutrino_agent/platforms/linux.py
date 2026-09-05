@@ -36,7 +36,7 @@ from neutrino_agent.constants import (
     AGENT_STEP_DOWN_TIMEOUT_S,
 )
 from neutrino_agent.metrics import GpuMetrics, HostMetrics, ProcessMetrics
-from neutrino_agent.platforms.base import AgentPlatform
+from neutrino_agent.platforms.base import AgentPlatform, ShareAttachError
 
 # Accounts below this uid are the system's, not people's.
 LINUX_HUMAN_UID_FLOOR = 1000
@@ -62,6 +62,17 @@ NVIDIA_SMI_COMMAND = (
 )
 
 PROCESS_TOP_COUNT = 12
+
+CIFS_HELPER = "mount.cifs"
+CIFS_MOUNT_TIMEOUT_S = 60
+PROC_MOUNTS_PATH = "/proc/mounts"
+# How /proc/mounts spells the characters a mount point may not carry plainly.
+PROC_MOUNTS_ESCAPES = (
+    ("\\", "\\134"),
+    (" ", "\\040"),
+    ("\t", "\\011"),
+    ("\n", "\\012"),
+)
 
 POWER_COMMANDS = {
     "reboot": ["systemctl", "reboot"],
@@ -107,6 +118,7 @@ class LinuxPlatform(AgentPlatform):
             "metrics",
             "packages",
             "openssh",
+            "shares",
         }
     )
 
@@ -222,6 +234,102 @@ class LinuxPlatform(AgentPlatform):
             timeout=timeout_s,
             env=env,
         )
+
+    def attach_share(
+        self,
+        *,
+        account: str,
+        share_url: str,
+        username: str,
+        password: str,
+        location: str,
+        credentials_path: str = "",
+    ) -> None:
+        """Mount a CIFS share, ownership-mapped under the account's own home.
+
+        The password becomes the credentials file and never a command-line
+        argument. A location under the asking account's home carries ``uid=``
+        and ``gid=`` so what appears belongs to the account; anywhere else
+        the share's own permissions rule.
+
+        Args:
+            account: The asking account.
+            share_url: The share, as ``//host/name``.
+            username: The share's own username.
+            password: The share's own password; empty reattaches with the
+                credentials file already there.
+            location: The mount point.
+            credentials_path: Where this attachment's credentials file lives.
+
+        Raises:
+            ShareAttachError: ``cifs_missing`` without ``mount.cifs``,
+                ``credentials_missing`` without the file, ``mount_failed``
+                with the tool's own words otherwise.
+        """
+        if shutil.which(CIFS_HELPER) is None:
+            raise ShareAttachError("cifs_missing")
+        if password:
+            self._write_share_credentials(credentials_path, username, password)
+        if not os.path.isfile(credentials_path):
+            raise ShareAttachError("credentials_missing")
+        options = self._mount_options(
+            account=account, location=location, credentials_path=credentials_path
+        )
+        command = ["mount", "-t", "cifs", share_url, location, "-o", options]
+        try:
+            result = subprocess.run(
+                command, capture_output=True, text=True, timeout=CIFS_MOUNT_TIMEOUT_S
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            raise ShareAttachError("mount_failed", detail=str(error)[:200])
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()[-200:]
+            raise ShareAttachError("mount_failed", detail=detail)
+
+    def detach_share(self, *, location: str) -> None:
+        """Unmount the share at a location.
+
+        Args:
+            location: The mount point.
+
+        Raises:
+            ShareAttachError: ``unmount_failed`` with the tool's own words.
+        """
+        try:
+            result = subprocess.run(
+                ["umount", location],
+                capture_output=True,
+                text=True,
+                timeout=CIFS_MOUNT_TIMEOUT_S,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            raise ShareAttachError("unmount_failed", detail=str(error)[:200])
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()[-200:]
+            raise ShareAttachError("unmount_failed", detail=detail)
+
+    def is_share_attached(self, *, location: str) -> bool:
+        """Whether anything is mounted at a location, read from the kernel.
+
+        Args:
+            location: The mount point.
+
+        Returns:
+            True when ``/proc/mounts`` names it.
+        """
+        encoded = location
+        for character, escape in PROC_MOUNTS_ESCAPES:
+            encoded = encoded.replace(character, escape)
+        try:
+            with open(PROC_MOUNTS_PATH, "r", encoding="utf-8") as stream:
+                lines = stream.readlines()
+        except OSError:
+            return False
+        for line in lines:
+            fields = line.split()
+            if len(fields) >= 2 and fields[1] == encoded:
+                return True
+        return False
 
     def read_agent_service_state(self) -> str:
         """What systemd says about the agent's own service.
@@ -345,6 +453,48 @@ class LinuxPlatform(AgentPlatform):
         except (OSError, subprocess.SubprocessError):
             return False
         return result.stdout.strip() == "active"
+
+    def _mount_options(
+        self, *, account: str, location: str, credentials_path: str
+    ) -> str:
+        """The mount options one attachment takes.
+
+        Args:
+            account: The asking account.
+            location: The mount point.
+            credentials_path: The credentials file.
+
+        Returns:
+            The ``-o`` string: the credentials file, plus ``uid=``/``gid=``
+            when the location sits under the account's own home.
+        """
+        options = [f"credentials={credentials_path}"]
+        try:
+            entry = pwd.getpwnam(account) if pwd is not None and account else None
+        except KeyError:
+            entry = None
+        if entry is not None:
+            home = entry.pw_dir.rstrip("/")
+            if home and (location == home or location.startswith(home + "/")):
+                options.append(f"uid={entry.pw_uid}")
+                options.append(f"gid={entry.pw_gid}")
+        return ",".join(options)
+
+    def _write_share_credentials(self, path: str, username: str, password: str) -> None:
+        """Write one attachment's credentials file, root-only mode 0600.
+
+        Args:
+            path: The credentials file.
+            username: The share's own username.
+            password: The share's own password.
+        """
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+            os.chmod(directory, 0o700)
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(f"username={username}\npassword={password}\n")
 
     def _account_env(self, account: str) -> "dict | None":
         """The environment a stepped-down child runs with.

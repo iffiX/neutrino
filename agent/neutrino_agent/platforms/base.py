@@ -23,6 +23,7 @@ direct writes into the account's profile.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 
@@ -33,6 +34,21 @@ class PlatformUnsupportedError(RuntimeError):
     """Raised when a capability this platform does not have is invoked."""
 
     code = "unsupported_platform"
+
+
+class ShareAttachError(RuntimeError):
+    """Raised when a share cannot be attached or detached."""
+
+    def __init__(self, code: str, detail: str = ""):
+        """
+        Args:
+            code: The typed reason — ``cifs_missing``, ``credentials_missing``,
+                ``mount_failed`` or ``unmount_failed``.
+            detail: The tool's own words, for the failure's params.
+        """
+        super().__init__(detail or code)
+        self.code = code
+        self.detail = detail
 
 
 def _interpreter() -> str:
@@ -229,6 +245,7 @@ class AgentPlatform:
         username: str,
         password: str,
         location: str,
+        credentials_path: str = "",
     ) -> None:
         """Attach a published share for an account at a location.
 
@@ -236,11 +253,16 @@ class AgentPlatform:
             account: The asking account.
             share_url: The share to attach.
             username: The share's own username.
-            password: The share's own password; it stays on this machine.
+            password: The share's own password; it stays on this machine,
+                written into the credentials file. Empty reattaches with the
+                credentials file already there.
             location: Where the share appears.
+            credentials_path: Where this attachment's credentials file lives.
 
         Raises:
             PlatformUnsupportedError: When the platform cannot attach.
+            ShareAttachError: When the tooling is missing, the credentials
+                file is gone, or the mount refuses.
         """
         raise PlatformUnsupportedError("cannot attach a share here")
 
@@ -252,6 +274,7 @@ class AgentPlatform:
 
         Raises:
             PlatformUnsupportedError: When the platform cannot detach.
+            ShareAttachError: When the unmount refuses.
         """
         raise PlatformUnsupportedError("cannot detach a share here")
 
@@ -265,6 +288,96 @@ class AgentPlatform:
             PlatformUnsupportedError: When the platform cannot answer.
         """
         raise PlatformUnsupportedError("cannot query shares here")
+
+    def is_path_writable(self, *, account: str, path: str) -> bool:
+        """Whether an account may write at a path, judged as that account.
+
+        The nearest existing ancestor decides for a path that does not exist
+        yet, which is what lets a creatable mount point pass.
+
+        Args:
+            account: The account; empty judges as the agent itself.
+            path: The absolute path to ask about.
+
+        Returns:
+            True when the account may write there.
+
+        Raises:
+            PlatformUnsupportedError: When the platform cannot step down.
+        """
+        script = (
+            "import os,sys\n"
+            f"p = os.path.abspath({path!r})\n"
+            "while not os.path.exists(p):\n"
+            "    parent = os.path.dirname(p)\n"
+            "    if parent == p:\n"
+            "        break\n"
+            "    p = parent\n"
+            "is_writable = (\n"
+            "    os.access(p, os.W_OK | os.X_OK)\n"
+            "    if os.path.isdir(p)\n"
+            "    else os.access(p, os.W_OK)\n"
+            ")\n"
+            "sys.stdout.write('1' if is_writable else '0')"
+        )
+        try:
+            result = self.run_as_account(account, [_interpreter(), "-c", script])
+        except (KeyError, OSError, subprocess.SubprocessError):
+            return False
+        return result.returncode == 0 and (result.stdout or "").strip() == "1"
+
+    def list_directories(self, *, account: str, path: str) -> list:
+        """The subdirectory names under a directory, listed as an account.
+
+        Args:
+            account: The account; empty lists as the agent itself.
+            path: The absolute directory path.
+
+        Returns:
+            Subdirectory names, sorted, dot names left out.
+
+        Raises:
+            PlatformUnsupportedError: When the platform cannot step down.
+            OSError: When the directory cannot be listed as that account.
+        """
+        script = (
+            "import json,os,sys\n"
+            "names = sorted(\n"
+            f"    entry.name for entry in os.scandir({path!r})\n"
+            "    if entry.is_dir() and not entry.name.startswith('.')\n"
+            ")\n"
+            "sys.stdout.write(json.dumps(names))"
+        )
+        try:
+            result = self.run_as_account(account, [_interpreter(), "-c", script])
+        except (KeyError, OSError, subprocess.SubprocessError) as error:
+            raise OSError(str(error))
+        if result.returncode != 0:
+            raise OSError((result.stderr or "").strip()[-200:])
+        try:
+            names = json.loads(result.stdout or "[]")
+        except ValueError:
+            raise OSError("unreadable listing")
+        return [str(name) for name in names]
+
+    def make_directory(self, *, account: str, path: str) -> None:
+        """Create a directory as an account, parents included.
+
+        Args:
+            account: The account; empty creates as the agent itself.
+            path: The absolute directory path.
+
+        Raises:
+            PlatformUnsupportedError: When the platform cannot step down.
+            OSError: When the directory cannot be created as that account.
+        """
+        script = f"import os\nos.makedirs({path!r}, exist_ok=True)"
+        try:
+            result = self.run_as_account(account, [_interpreter(), "-c", script])
+        except (KeyError, OSError, subprocess.SubprocessError) as error:
+            raise OSError(str(error))
+        if result.returncode != 0:
+            raise OSError((result.stderr or "").strip()[-200:])
 
     def read_agent_service_state(self) -> str:
         """The state of the agent's own service.

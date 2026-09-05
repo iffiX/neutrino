@@ -12,7 +12,11 @@ import subprocess
 import pytest
 
 import neutrino_agent.platforms.linux as linux_module
-from neutrino_agent.platforms.base import AgentPlatform, PlatformUnsupportedError
+from neutrino_agent.platforms.base import (
+    AgentPlatform,
+    PlatformUnsupportedError,
+    ShareAttachError,
+)
 from neutrino_agent.platforms.darwin import DarwinPlatform
 from neutrino_agent.platforms.linux import LinuxPlatform
 from neutrino_agent.platforms.windows import WindowsPlatform
@@ -36,6 +40,7 @@ def test_each_platform_advertises_its_capability_set():
             "metrics",
             "packages",
             "openssh",
+            "shares",
         }
     )
     assert DarwinPlatform().capabilities == frozenset(
@@ -53,8 +58,9 @@ def test_each_platform_advertises_its_capability_set():
     )
 
 
-def test_no_platform_advertises_shares_yet():
-    for platform in (LinuxPlatform(), DarwinPlatform(), WindowsPlatform()):
+def test_only_linux_advertises_shares_so_far():
+    assert LinuxPlatform().has_capability("shares")
+    for platform in (DarwinPlatform(), WindowsPlatform()):
         assert not platform.has_capability("shares")
 
 
@@ -69,7 +75,7 @@ def test_an_absent_capability_is_refused_not_guessed():
     with pytest.raises(PlatformUnsupportedError):
         WindowsPlatform().human_accounts()
     with pytest.raises(PlatformUnsupportedError):
-        LinuxPlatform().is_share_attached(location="/mnt/share")
+        DarwinPlatform().is_share_attached(location="/mnt/share")
 
 
 def test_base_file_operations_refuse_without_run_as():
@@ -191,6 +197,103 @@ def test_account_file_ops_ignore_the_home_variable(monkeypatch, tmp_path):
         platform.read_account_file(account="alice", relative=".claude/settings.json")
         == '{"model": "opus"}'
     )
+
+
+MountPwdEntry = collections.namedtuple(
+    "MountPwdEntry", "pw_name pw_uid pw_gid pw_shell pw_dir"
+)
+
+
+def test_linux_attach_mounts_with_a_credentials_file_never_an_argument(
+    monkeypatch, tmp_path
+):
+    entry = MountPwdEntry("alice", 1000, 1000, "/bin/bash", "/home/alice")
+    monkeypatch.setattr(linux_module.pwd, "getpwnam", lambda name: entry)
+    monkeypatch.setattr(linux_module.shutil, "which", lambda name: "/sbin/mount.cifs")
+    recorded = {}
+
+    def record(command, **kwargs):
+        recorded["command"] = list(command)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(linux_module.subprocess, "run", record)
+    credentials = tmp_path / "creds" / "r1.credentials"
+
+    LinuxPlatform().attach_share(
+        account="alice",
+        share_url="//hub/media",
+        username="media",
+        password="s3cret",  # scan: allow
+        location="/home/alice/nas/media",
+        credentials_path=str(credentials),
+    )
+
+    assert recorded["command"] == [
+        "mount",
+        "-t",
+        "cifs",
+        "//hub/media",
+        "/home/alice/nas/media",
+        "-o",
+        f"credentials={credentials},uid=1000,gid=1000",
+    ]
+    assert "s3cret" not in " ".join(recorded["command"])  # scan: allow
+    assert credentials.read_text() == "username=media\npassword=s3cret\n"  # scan: allow
+    assert oct(credentials.stat().st_mode & 0o777) == "0o600"
+
+
+def test_linux_maps_ownership_only_under_the_asking_accounts_home(monkeypatch):
+    entry = MountPwdEntry("alice", 1000, 1000, "/bin/bash", "/home/alice")
+    monkeypatch.setattr(linux_module.pwd, "getpwnam", lambda name: entry)
+    platform = LinuxPlatform()
+
+    inside = platform._mount_options(
+        account="alice", location="/home/alice/nas", credentials_path="/c"
+    )
+    outside = platform._mount_options(
+        account="alice", location="/srv/nas", credentials_path="/c"
+    )
+
+    assert inside == "credentials=/c,uid=1000,gid=1000"
+    assert outside == "credentials=/c"
+
+
+def test_linux_attach_refusals_are_typed(monkeypatch, tmp_path):
+    monkeypatch.setattr(linux_module.shutil, "which", lambda name: None)
+    with pytest.raises(ShareAttachError) as caught:
+        LinuxPlatform().attach_share(
+            account="alice",
+            share_url="//hub/media",
+            username="media",
+            password="",
+            location="/mnt",
+            credentials_path=str(tmp_path / "gone.credentials"),
+        )
+    assert caught.value.code == "cifs_missing"
+
+    monkeypatch.setattr(linux_module.shutil, "which", lambda name: "/sbin/mount.cifs")
+    with pytest.raises(ShareAttachError) as caught:
+        LinuxPlatform().attach_share(
+            account="alice",
+            share_url="//hub/media",
+            username="media",
+            password="",
+            location="/mnt",
+            credentials_path=str(tmp_path / "gone.credentials"),
+        )
+    assert caught.value.code == "credentials_missing"
+
+
+def test_linux_reads_attachment_from_proc_mounts_with_escapes(monkeypatch, tmp_path):
+    table = tmp_path / "mounts"
+    table.write_text(
+        "//hub/media /home/alice/my\\040nas cifs rw 0 0\n" "tmpfs /tmp tmpfs rw 0 0\n"
+    )
+    monkeypatch.setattr(linux_module, "PROC_MOUNTS_PATH", str(table))
+    platform = LinuxPlatform()
+
+    assert platform.is_share_attached(location="/home/alice/my nas")
+    assert not platform.is_share_attached(location="/home/alice/other")
 
 
 def test_linux_step_down_env_carries_the_target_identity(monkeypatch):
