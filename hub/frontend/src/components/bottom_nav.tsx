@@ -3,7 +3,7 @@ import { NavLink } from "react-router-dom";
 
 import { Icon } from "./icon";
 import { visibleNavItems } from "../nav_items";
-import { ServicesContext } from "../services_context";
+import { ModulesContext } from "../modules_context";
 import "./bottom_nav.css";
 
 /**
@@ -20,12 +20,12 @@ interface BottomNavProps {
 }
 
 export function BottomNav({ onLogout }: BottomNavProps) {
-  // The same shared service list the sidebar reads, so both navs agree on
+  // The same shared module list the sidebar reads, so both navs agree on
   // which optional pages exist in the same render.
-  const services = useContext(ServicesContext);
-  const enabled = (services?.data?.services ?? [])
-    .filter((service) => service.is_enabled && !service.is_core)
-    .map((service) => service.name);
+  const modules = useContext(ModulesContext);
+  const enabled = (modules?.data?.modules ?? [])
+    .filter((module) => module.is_enabled && !module.is_core)
+    .map((module) => module.name);
   const items = visibleNavItems(enabled);
 
   return (

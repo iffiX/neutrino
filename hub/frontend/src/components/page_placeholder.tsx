@@ -31,11 +31,11 @@ export function PagePlaceholder({ title, summary }: PagePlaceholderProps) {
       <div className="placeholder">
         <span>{summary}</span>
         <span className="faint">
-          Not configurable yet; control the service from Services.
+          Not configurable yet; control the module from Modules.
         </span>
-        <Link className="button" to="/services">
+        <Link className="button" to="/modules">
           <Icon name="services" size={14} />
-          Services
+          Modules
         </Link>
       </div>
     </div>

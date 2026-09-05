@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { ApplyBar } from "../components/apply_bar";
 import { ErrorPanel } from "../components/error_panel";
-import { ServiceStateBadge } from "../components/service_state_badge";
+import { ModuleStateBadge } from "../components/module_state_badge";
 import { Icon } from "../components/icon";
 import { PasswordInput } from "../components/password_input";
 import { ToggleSwitch } from "../components/toggle_switch";
@@ -103,7 +103,7 @@ export function GiteaPage() {
       <div className="page_header">
         <div className="page_title_row">
           <h1>Gitea</h1>
-          <ServiceStateBadge name="gitea" />
+          <ModuleStateBadge name="gitea" />
           {saved.version !== "" && (
             <span className="badge">v{saved.version}</span>
           )}

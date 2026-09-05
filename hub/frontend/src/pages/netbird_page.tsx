@@ -5,7 +5,7 @@ import { ErrorPanel } from "../components/error_panel";
 import { NetbirdTopology } from "../components/netbird_topology";
 import { Icon } from "../components/icon";
 import { PasswordInput } from "../components/password_input";
-import { ServiceStateBadge } from "../components/service_state_badge";
+import { ModuleStateBadge } from "../components/module_state_badge";
 import { StatusDot } from "../components/status_dot";
 import { apiPost, describeError } from "../api_client";
 import { useApiResource } from "../use_api_resource";
@@ -60,7 +60,7 @@ export function NetbirdPage() {
       <div className="page_header">
         <div className="page_title_row">
           <h1>NetBird</h1>
-          <ServiceStateBadge name="netbird" />
+          <ModuleStateBadge name="netbird" />
           {view.is_installed &&
             (!view.is_enrolled ? (
               <span className="badge badge--warn">not joined</span>

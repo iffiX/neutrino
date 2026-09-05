@@ -4,12 +4,12 @@ import { TerminalPage } from "../pages/terminal_page";
 import { BottomNav } from "./bottom_nav";
 import { SidebarNav } from "./sidebar_nav";
 import { TopBar } from "./top_bar";
-import { ServicesContext } from "../services_context";
+import { ModulesContext } from "../modules_context";
 import { StatsContext } from "../stats_context";
 import { useApiResource } from "../use_api_resource";
 import { useAuth } from "../use_auth";
 import { useStatsSocket } from "../use_stats_socket";
-import type { ServicesResponse } from "../api_types";
+import type { ModulesResponse } from "../api_types";
 
 import "./app_shell.css";
 
@@ -36,11 +36,11 @@ export function AppShell() {
   // to find again after looking something up on another tab.
   const isTerminalOpen = useLocation().pathname === "/terminal";
   const stats = useStatsSocket();
-  // One copy of the service list for the whole shell: the sidebar reads it to
-  // decide which optional pages exist, and the Services page writes each
-  // action's result back into it, so disabling a service drops its page from
+  // One copy of the module list for the whole shell: the sidebar reads it to
+  // decide which optional pages exist, and the Modules page writes each
+  // action's result back into it, so disabling a module drops its page from
   // the rail in the same render.
-  const services = useApiResource<ServicesResponse>("/services");
+  const modules = useApiResource<ModulesResponse>("/modules");
 
   const handleLogout = () => {
     void logout();
@@ -48,7 +48,7 @@ export function AppShell() {
 
   return (
     <StatsContext.Provider value={stats}>
-      <ServicesContext.Provider value={services}>
+      <ModulesContext.Provider value={modules}>
         <div className="app_shell">
           <div className="app_shell_glow app_shell_glow--cyan" />
           <div className="app_shell_glow app_shell_glow--violet" />
@@ -70,7 +70,7 @@ export function AppShell() {
           </div>
           <BottomNav onLogout={handleLogout} />
         </div>
-      </ServicesContext.Provider>
+      </ModulesContext.Provider>
     </StatsContext.Provider>
   );
 }

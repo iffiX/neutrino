@@ -74,10 +74,17 @@ export const NAV_ITEMS: NavItem[] = [
     group: "core",
   },
   {
+    path: "/modules",
+    label: "Modules",
+    icon: "services",
+    description: "What is installed on the hub",
+    group: "core",
+  },
+  {
     path: "/services",
     label: "Services",
-    icon: "services",
-    description: "systemd units on the gateway",
+    icon: "bolt",
+    description: "What the hub publishes to devices",
     group: "core",
   },
   {

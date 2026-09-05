@@ -4,7 +4,7 @@ import { NavLink } from "react-router-dom";
 import { Icon } from "./icon";
 import { navItemsInGroup, visibleNavItems } from "../nav_items";
 import type { NavGroup, NavItem } from "../nav_items";
-import { ServicesContext } from "../services_context";
+import { ModulesContext } from "../modules_context";
 import "./sidebar_nav.css";
 
 /**
@@ -37,13 +37,13 @@ interface SidebarNavProps {
 }
 
 export function SidebarNav({ onLogout }: SidebarNavProps) {
-  // The shell's shared copy of the service list, the same one the Services
-  // page writes its actions into — which is what makes disabling a service
+  // The shell's shared copy of the module list, the same one the Modules
+  // page writes its actions into — which is what makes disabling a module
   // drop its page from here immediately rather than on the next refetch.
-  const services = useContext(ServicesContext);
-  const enabled = (services?.data?.services ?? [])
-    .filter((service) => service.is_enabled && !service.is_core)
-    .map((service) => service.name);
+  const modules = useContext(ModulesContext);
+  const enabled = (modules?.data?.modules ?? [])
+    .filter((module) => module.is_enabled && !module.is_core)
+    .map((module) => module.name);
   const items = visibleNavItems(enabled);
 
   return (

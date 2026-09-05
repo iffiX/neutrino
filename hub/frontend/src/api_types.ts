@@ -38,7 +38,7 @@ export interface RemoteDesktopView {
   todesk: RemoteDesktopStatus;
 }
 
-export type ServiceActionName =
+export type ModuleActionName =
   "start" | "stop" | "restart" | "enable" | "disable";
 
 // --- Auth ---
@@ -449,7 +449,6 @@ export interface LoginView {
   username: string | null;
   created_at: string;
   device_count: number;
-  service_count: number;
 }
 
 /** The Credentials page's login section payload. */
@@ -742,15 +741,16 @@ export interface DeviceClientInfo {
   command_results: DeviceCommandResult[];
 }
 
-/** One managed function on a device, as the panel shows it. */
-export interface DeviceFunctionView {
+/** One managed module on a device, as the panel shows it. */
+export interface DeviceModuleView {
   name: string;
   title: string;
   description: string;
   is_supported: boolean;
   is_enabled: boolean;
-  /** False for things that must not be taken off a managed machine. */
-  is_removable: boolean;
+  /** A platform capability the machine already carries, worded as
+   * enable/disable rather than install/uninstall. */
+  is_builtin: boolean;
   /** Whether installing and pointing at this hub are separate steps. */
   has_activation: boolean;
   is_activated: boolean;
@@ -761,12 +761,12 @@ export interface DeviceFunctionView {
   params: Record<string, unknown>;
 }
 
-export interface DeviceFunctionsResponse {
-  functions: DeviceFunctionView[];
+export interface DeviceModulesResponse {
+  modules: DeviceModuleView[];
   /** Whether an agent install was ever asked for. Never cleared by itself. */
   is_agent_managed: boolean;
   /** Whether the agent has checked in inside the heartbeat window. Every
-   * function state below comes from it, so this is what says whether they
+   * module state below comes from it, so this is what says whether they
    * mean anything. */
   is_agent_online: boolean;
 }
@@ -834,15 +834,15 @@ export interface DeviceActionResult {
   task_id: string;
 }
 
-// --- Services ---
+// --- Modules ---
 
-export interface ServiceView {
+export interface ModuleView {
   name: string;
   unit: string;
   is_installed: boolean;
   is_active: boolean;
   is_enabled: boolean;
-  /** Core services are what makes this a gateway; they have no off switch. */
+  /** Core modules are what makes this a gateway; they have no off switch. */
   is_core: boolean;
   /** Whether the panel can install and remove this module. */
   is_installable: boolean;
@@ -859,77 +859,69 @@ export interface ProvisionConsentView {
   detail: Record<string, unknown>;
 }
 
-export interface ServiceInstallPlanView {
+export interface ModuleInstallPlanView {
   name: string;
   is_consent_needed: boolean;
   consents: ProvisionConsentView[];
 }
 
-export interface ServiceInstallRequest {
+export interface ModuleInstallRequest {
   is_consented: boolean;
 }
 
-export interface ServiceUninstallRequest {
+export interface ModuleUninstallRequest {
   is_data_kept: boolean;
 }
 
-export type DeclaredServiceKind =
-  "samba" | "http" | "docker_engine" | "generic_tcp";
-
-/** One share a declared Samba service exports. */
-export interface DeclaredShareView {
-  name: string;
-  login_id: string | null;
+export interface ModulesResponse {
+  modules: ModuleView[];
 }
 
-/** A declared service's cached health; every field null before the first probe. */
-export interface DeclaredServiceProbeView {
+// --- Services ---
+
+export type PublishedServiceType = "web" | "port" | "ai" | "file";
+
+/** The type's own payload; each entry fills the fields its type has. */
+export interface PublishedServicePayload {
+  url?: string;
+  host?: string;
+  port?: number;
+  endpoint?: string;
+  protocol?: string;
+  models?: string[];
+  share?: string;
+}
+
+/**
+ * One entry of the typed service list. A `record_id` names the declared
+ * record behind a declared entry; a module-declared entry carries null and
+ * is read-only.
+ */
+export interface PublishedService {
+  id: string;
+  type: PublishedServiceType;
+  title: string;
+  payload: PublishedServicePayload;
   is_healthy: boolean | null;
-  checked_at: string | null;
-  detail_code: string | null;
+  source: "module" | "declared";
+  description: string;
+  record_id: string | null;
 }
 
-/** One container as a declared Docker engine reports it. */
-export interface DockerContainerView {
-  id: string;
-  name: string;
-  image: string;
-  state: string;
-  is_running: boolean;
-  host_ports: number[];
-}
-
-/** One user-declared service, with its cached health. */
-export interface DeclaredServiceView {
-  id: string;
-  name: string;
-  kind: DeclaredServiceKind;
-  host: string;
-  port: number;
-  scheme: string | null;
-  path: string | null;
-  shares: DeclaredShareView[];
-  created_at: string;
-  probe: DeclaredServiceProbeView;
-  /** The containers a `docker_engine` kind runs; empty for every other
-   * kind, and while the engine cannot be asked. */
-  containers: DockerContainerView[];
-}
-
-/** A declared service as the form submits it; also the full-record update body. */
+/** A declaration as the form submits it; `kind` is a service type. */
 export interface DeclaredServiceCreate {
   name: string;
-  kind: DeclaredServiceKind;
+  kind: "web" | "port" | "file";
   host: string;
   port: number | null;
   scheme: string | null;
   path: string | null;
-  shares: DeclaredShareView[];
+  share: string | null;
+  description: string;
 }
 
 export interface ServicesResponse {
-  services: ServiceView[];
-  declared: DeclaredServiceView[];
+  services: PublishedService[];
 }
 
 export interface ServiceJournal {

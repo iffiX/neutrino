@@ -14,6 +14,7 @@ import { NetworkPage } from "./pages/network_page";
 import { NotFoundPage } from "./pages/not_found_page";
 import { ProxyPage } from "./pages/proxy_page";
 import { SambaPage } from "./pages/samba_page";
+import { ModulesPage } from "./pages/modules_page";
 import { ServicesPage } from "./pages/services_page";
 import { SettingsPage } from "./pages/settings_page";
 import { ZfsPage } from "./pages/zfs_page";
@@ -61,6 +62,7 @@ export function AuthenticatedRoutes() {
         {/* The page's old address, kept so bookmarks from when it was called
             Keys still land somewhere sensible. */}
         <Route path="keys" element={<CredentialsPage />} />
+        <Route path="modules" element={<ModulesPage />} />
         <Route path="services" element={<ServicesPage />} />
         <Route path="settings" element={<SettingsPage />} />
         {/* The Terminal renders nothing here: the shell keeps it mounted

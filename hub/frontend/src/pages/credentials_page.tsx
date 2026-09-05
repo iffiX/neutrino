@@ -529,7 +529,7 @@ function LoginCard({ value, onDeleted }: LoginCardProps) {
   const handleDelete = () =>
     confirm.ask({
       title: `Delete ${value.name}`,
-      body: loginDeleteBody(value.device_count, value.service_count),
+      body: loginDeleteBody(value.device_count),
       confirmLabel: "Delete",
       onConfirm: () => void deleteLogin(),
     });
@@ -559,12 +559,10 @@ function LoginCard({ value, onDeleted }: LoginCardProps) {
       <div className="key_card_meta">
         <span
           className={`key_card_tag ${
-            value.device_count + value.service_count > 0
-              ? "key_card_tag--used"
-              : ""
+            value.device_count > 0 ? "key_card_tag--used" : ""
           }`}
         >
-          {loginUsage(value.device_count, value.service_count)}
+          {loginUsage(value.device_count)}
         </span>
         {value.created_at.length > 0 && (
           <span className="key_card_added">
@@ -739,16 +737,9 @@ function countNoun(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
-/** The usage tag's wording: which counts are nonzero, joined. */
-function loginUsage(deviceCount: number, serviceCount: number): string {
-  const parts: string[] = [];
-  if (deviceCount > 0) {
-    parts.push(countNoun(deviceCount, "device"));
-  }
-  if (serviceCount > 0) {
-    parts.push(countNoun(serviceCount, "service"));
-  }
-  return parts.length === 0 ? "unused" : parts.join(" · ");
+/** The usage tag's wording: unused, or how many devices hold it. */
+function loginUsage(deviceCount: number): string {
+  return deviceCount === 0 ? "unused" : countNoun(deviceCount, "device");
 }
 
 /** The token usage tag's wording: which counts are nonzero, joined. */
@@ -773,19 +764,12 @@ function keyDeleteBody(deviceCount: number): string {
 }
 
 /** The delete confirmation's body for a login: who loses it. */
-function loginDeleteBody(deviceCount: number, serviceCount: number): string {
-  const parts: string[] = [];
-  if (deviceCount > 0) {
-    parts.push(countNoun(deviceCount, "device"));
-  }
-  if (serviceCount > 0) {
-    parts.push(countNoun(serviceCount, "service"));
-  }
-  if (parts.length === 0) {
+function loginDeleteBody(deviceCount: number): string {
+  if (deviceCount === 0) {
     return "The login and its password are deleted from this box.";
   }
-  const verb = deviceCount + serviceCount === 1 ? "loses" : "lose";
-  return `${parts.join(" and ")} ${verb} this login and will need a new one.`;
+  const verb = deviceCount === 1 ? "loses" : "lose";
+  return `${countNoun(deviceCount, "device")} ${verb} this login and will need a new one.`;
 }
 
 /** The delete confirmation's body for a token: who loses it. */

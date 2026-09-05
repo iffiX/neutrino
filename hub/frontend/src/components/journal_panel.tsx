@@ -25,13 +25,13 @@ const WORDING = {
 const JOURNAL_LINES = 200;
 
 interface JournalPanelProps {
-  serviceName: string;
+  moduleName: string;
   isOpen: boolean;
 }
 
-export function JournalPanel({ serviceName, isOpen }: JournalPanelProps) {
+export function JournalPanel({ moduleName, isOpen }: JournalPanelProps) {
   const journal = usePolledResource<ServiceJournal>(
-    isOpen ? `/services/${serviceName}/journal?lines=${JOURNAL_LINES}` : null,
+    isOpen ? `/modules/${moduleName}/journal?lines=${JOURNAL_LINES}` : null,
   );
   const outputRef = useRef<HTMLPreElement | null>(null);
 

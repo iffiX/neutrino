@@ -3,12 +3,13 @@ import { useCallback, useEffect, useState } from "react";
 import { Icon } from "./icon";
 import { StatusDot } from "./status_dot";
 import { apiGet, apiPut, describeError } from "../api_client";
-import type { DeviceFunctionView, DeviceFunctionsResponse } from "../api_types";
+import { useConfirm } from "../use_confirm";
+import type { DeviceModuleView, DeviceModulesResponse } from "../api_types";
 
-import "./device_functions.css";
+import "./device_modules.css";
 
 /**
- * The functions a device runs, and their real state.
+ * The modules a device runs, and their real state.
  *
  * A click changes the row at once. The gateway only records what should be
  * true and the machine reconciles on its own time, so waiting for either
@@ -17,13 +18,15 @@ import "./device_functions.css";
  * the step is never seen at all. So the asked-for step is drawn immediately
  * and stands until the machine reports having got there.
  *
- * A function with no build for a platform is shown greyed rather than hidden:
+ * A module with no build for a platform is shown greyed rather than hidden:
  * knowing a machine cannot run something is worth more than wondering where
- * it went.
+ * it went. A builtin module — a capability the platform already carries — is
+ * worded enable/disable rather than install/uninstall, and disabling asks
+ * first, because it is the door SSH management walks through.
  */
 
 const WORDING = {
-  sectionLabel: "Functions",
+  sectionLabel: "Modules",
   noAgent: "Install the agent to have these installed and kept in place.",
   agentQuiet:
     "The agent is not checking in, so what is on this device is unknown. " +
@@ -36,11 +39,17 @@ const WORDING = {
   deactivate: "Deactivate",
   install: "Install",
   uninstall: "Uninstall",
+  enable: "Enable",
+  disable: "Disable",
+  disableTitle: "Disable {title}",
+  disableBody:
+    "The machine stops serving it; the agent channel keeps managing the " +
+    "machine either way.",
 };
 
 // The agent's {code, params} beside a state, worded. A code without an entry
 // shows as itself, because a failure hidden entirely is worse than a bare code.
-const FUNCTION_ERROR_WORDING: Record<string, string> = {
+const MODULE_ERROR_WORDING: Record<string, string> = {
   unsupported_platform: "This platform cannot run it.",
   download_failed: "The download failed.",
   install_failed: "The install failed.",
@@ -57,6 +66,15 @@ const STATE_WORDING: Record<string, string> = {
   unsupported: "not available here",
   failed: "failed",
 };
+
+// A builtin module is enabled and disabled, and its states say so.
+const BUILTIN_STATE_WORDING: Record<string, string> = {
+  installed: "enabled",
+  absent: "disabled",
+  installing: "enabling…",
+  removing: "disabling…",
+  uninstalling: "disabling…",
+};
 const STATE_WORDING_FALLBACK = "waiting for the agent";
 
 const REFRESH_INTERVAL_MS = 2000;
@@ -69,7 +87,7 @@ const BUSY_REFRESH_INTERVAL_MS = 1000;
 // frozen on "installing…" would be a lie.
 const STEP_PATIENCE_MS = 120_000;
 
-/** The four things that can be asked of a function. */
+/** The four things that can be asked of a module. */
 type Step = "installing" | "uninstalling" | "activating" | "deactivating";
 
 // Every word that means a step is under way. The agent says "removing"
@@ -84,7 +102,7 @@ const BUSY_STATES: string[] = [
 ];
 
 /** One change to what is wanted; the wish left out stays as it is. */
-interface FunctionWish {
+interface ModuleWish {
   is_enabled?: boolean;
   is_activated?: boolean;
 }
@@ -95,15 +113,16 @@ interface AskedStep {
   askedAt: number;
 }
 
-interface DeviceFunctionsProps {
+interface DeviceModulesProps {
   macAddress: string;
 }
 
-export function DeviceFunctions({ macAddress }: DeviceFunctionsProps) {
-  const [reported, setReported] = useState<DeviceFunctionView[]>([]);
+export function DeviceModules({ macAddress }: DeviceModulesProps) {
+  const confirm = useConfirm();
+  const [reported, setReported] = useState<DeviceModuleView[]>([]);
   // Whether the agent is installed, and whether it is answering. Both come
-  // from the same response the functions do, because they are what makes the
-  // functions readable: every state below is the agent's report, so with no
+  // from the same response the modules do, because they are what makes the
+  // modules readable: every state below is the agent's report, so with no
   // agent answering they are all unknown rather than all absent.
   const [agent, setAgent] = useState({ isInstalled: false, isOnline: false });
   const [asked, setAsked] = useState<Record<string, AskedStep>>({});
@@ -111,10 +130,10 @@ export function DeviceFunctions({ macAddress }: DeviceFunctionsProps) {
 
   const load = useCallback(async () => {
     try {
-      const response = await apiGet<DeviceFunctionsResponse>(
-        `/devices/${macAddress}/functions`,
+      const response = await apiGet<DeviceModulesResponse>(
+        `/devices/${macAddress}/modules`,
       );
-      setReported(response.functions);
+      setReported(response.modules);
       setAgent({
         isInstalled: response.is_agent_managed,
         isOnline: response.is_agent_online,
@@ -128,14 +147,14 @@ export function DeviceFunctions({ macAddress }: DeviceFunctionsProps) {
   // asked for standing in front of it. Because the step is written into the
   // same field the machine reports, everything below — the dot, the wording,
   // which buttons are offered — follows from it without being told twice.
-  const functions = reported.map((reportedFunction) => {
-    const pending = asked[reportedFunction.name];
+  const modules = reported.map((reportedModule) => {
+    const pending = asked[reportedModule.name];
     return pending === undefined
-      ? reportedFunction
-      : { ...reportedFunction, state: pending.step };
+      ? reportedModule
+      : { ...reportedModule, state: pending.step };
   });
-  const isAnyStepRunning = functions.some((deviceFunction) =>
-    BUSY_STATES.includes(deviceFunction.state),
+  const isAnyStepRunning = modules.some((deviceModule) =>
+    BUSY_STATES.includes(deviceModule.state),
   );
 
   useEffect(() => {
@@ -157,16 +176,16 @@ export function DeviceFunctions({ macAddress }: DeviceFunctionsProps) {
     setAsked((current) => {
       const next = { ...current };
       let isChanged = false;
-      for (const reportedFunction of reported) {
-        const pending = next[reportedFunction.name];
+      for (const reportedModule of reported) {
+        const pending = next[reportedModule.name];
         if (pending === undefined) {
           continue;
         }
         if (
-          hasArrived(reportedFunction, pending.step) ||
+          hasArrived(reportedModule, pending.step) ||
           Date.now() - pending.askedAt > STEP_PATIENCE_MS
         ) {
-          delete next[reportedFunction.name];
+          delete next[reportedModule.name];
           isChanged = true;
         }
       }
@@ -174,21 +193,18 @@ export function DeviceFunctions({ macAddress }: DeviceFunctionsProps) {
     });
   }, [reported]);
 
-  const ask = async (
-    deviceFunction: DeviceFunctionView,
-    wish: FunctionWish,
-  ) => {
+  const ask = async (deviceModule: DeviceModuleView, wish: ModuleWish) => {
     setAsked((current) => ({
       ...current,
-      [deviceFunction.name]: { step: stepFor(wish), askedAt: Date.now() },
+      [deviceModule.name]: { step: stepFor(wish), askedAt: Date.now() },
     }));
     setError(null);
     try {
-      const response = await apiPut<DeviceFunctionsResponse>(
-        `/devices/${macAddress}/functions/${deviceFunction.name}`,
+      const response = await apiPut<DeviceModulesResponse>(
+        `/devices/${macAddress}/modules/${deviceModule.name}`,
         wish,
       );
-      setReported(response.functions);
+      setReported(response.modules);
       setAgent({
         isInstalled: response.is_agent_managed,
         isOnline: response.is_agent_online,
@@ -197,10 +213,23 @@ export function DeviceFunctions({ macAddress }: DeviceFunctionsProps) {
       setError(describeError(cause));
       setAsked((current) => {
         const next = { ...current };
-        delete next[deviceFunction.name];
+        delete next[deviceModule.name];
         return next;
       });
     }
+  };
+
+  const askOff = (deviceModule: DeviceModuleView) => {
+    if (!deviceModule.is_builtin) {
+      void ask(deviceModule, { is_enabled: false });
+      return;
+    }
+    confirm.ask({
+      title: fill(WORDING.disableTitle, { title: deviceModule.title }),
+      body: WORDING.disableBody,
+      confirmLabel: WORDING.disable,
+      onConfirm: () => void ask(deviceModule, { is_enabled: false }),
+    });
   };
 
   return (
@@ -213,29 +242,29 @@ export function DeviceFunctions({ macAddress }: DeviceFunctionsProps) {
         <span className="field_hint">{WORDING.agentQuiet}</span>
       )}
       {error !== null && <span className="field_error">{error}</span>}
-      <div className="device_functions">
-        {functions.map((deviceFunction) => {
-          const isBusy = BUSY_STATES.includes(deviceFunction.state);
+      <div className="device_modules">
+        {modules.map((deviceModule) => {
+          const isBusy = BUSY_STATES.includes(deviceModule.state);
           const isActionable =
-            deviceFunction.is_supported && agent.isOnline && !isBusy;
-          const here = standing(deviceFunction);
+            deviceModule.is_supported && agent.isOnline && !isBusy;
+          const here = standing(deviceModule);
           return (
-            <div key={deviceFunction.name} className="device_function">
-              <StatusDot tone={toneFor(deviceFunction)} />
-              <div className="device_function_body">
-                <span className="device_function_title">
-                  {deviceFunction.title}
+            <div key={deviceModule.name} className="device_module">
+              <StatusDot tone={toneFor(deviceModule)} />
+              <div className="device_module_body">
+                <span className="device_module_title">
+                  {deviceModule.title}
                 </span>
                 <span
-                  className="device_function_note"
-                  title={deviceFunction.description}
+                  className="device_module_note"
+                  title={deviceModule.description}
                 >
-                  {deviceFunction.is_supported
-                    ? describeFunction(deviceFunction)
+                  {deviceModule.is_supported
+                    ? describeModule(deviceModule)
                     : WORDING.noBuild}
                 </span>
               </div>
-              {deviceFunction.has_activation && here.isOnMachine && (
+              {deviceModule.has_activation && here.isOnMachine && (
                 <button
                   type="button"
                   className={`button button--small ${
@@ -243,7 +272,7 @@ export function DeviceFunctions({ macAddress }: DeviceFunctionsProps) {
                   }`}
                   disabled={!isActionable}
                   onClick={() =>
-                    void ask(deviceFunction, {
+                    void ask(deviceModule, {
                       is_activated: !here.isAimedHere,
                     })
                   }
@@ -252,28 +281,35 @@ export function DeviceFunctions({ macAddress }: DeviceFunctionsProps) {
                   {here.isAimedHere ? WORDING.deactivate : WORDING.activate}
                 </button>
               )}
-              {(deviceFunction.is_removable || !here.isOnMachine) && (
-                <button
-                  type="button"
-                  className={`button button--small ${
-                    here.isOnMachine ? "button--danger" : "button--ok"
-                  }`}
-                  disabled={!isActionable}
-                  onClick={() =>
-                    void ask(deviceFunction, { is_enabled: !here.isOnMachine })
+              <button
+                type="button"
+                className={`button button--small ${
+                  here.isOnMachine ? "button--danger" : "button--ok"
+                }`}
+                disabled={!isActionable}
+                onClick={() =>
+                  here.isOnMachine
+                    ? askOff(deviceModule)
+                    : void ask(deviceModule, { is_enabled: true })
+                }
+              >
+                <Icon
+                  name={
+                    deviceModule.is_builtin
+                      ? "power"
+                      : here.isOnMachine
+                        ? "trash"
+                        : "download"
                   }
-                >
-                  <Icon
-                    name={here.isOnMachine ? "trash" : "download"}
-                    size={13}
-                  />
-                  {here.isOnMachine ? WORDING.uninstall : WORDING.install}
-                </button>
-              )}
+                  size={13}
+                />
+                {onOffLabel(deviceModule, here.isOnMachine)}
+              </button>
             </div>
           );
         })}
       </div>
+      {confirm.modal}
     </div>
   );
 }
@@ -284,41 +320,41 @@ export function DeviceFunctions({ macAddress }: DeviceFunctionsProps) {
  * A step in flight leaves the row between two truths, and every button has to
  * agree about which one to draw. Deciding that in one place is what keeps an
  * uninstall from offering "Install" the moment it starts, or an activation
- * from claiming the function is not there.
+ * from claiming the module is not there.
  *
  * The rule is that a step shows the world it is leaving, not the one it is
  * heading for: uninstalling is still installed until it is gone, activating
  * is still not aimed here until it arrives.
  */
-function standing(deviceFunction: DeviceFunctionView): {
+function standing(deviceModule: DeviceModuleView): {
   isOnMachine: boolean;
   isAimedHere: boolean;
 } {
-  switch (deviceFunction.state) {
+  switch (deviceModule.state) {
     case "installing":
       return { isOnMachine: false, isAimedHere: false };
     case "uninstalling":
     case "removing":
-      return { isOnMachine: true, isAimedHere: deviceFunction.is_active };
+      return { isOnMachine: true, isAimedHere: deviceModule.is_active };
     case "activating":
       return { isOnMachine: true, isAimedHere: false };
     case "deactivating":
       return { isOnMachine: true, isAimedHere: true };
     default:
       return {
-        isOnMachine: deviceFunction.state === "installed",
-        isAimedHere: deviceFunction.is_active,
+        isOnMachine: deviceModule.state === "installed",
+        isAimedHere: deviceModule.is_active,
       };
   }
 }
 
 /** Whether the machine reports having it, ignoring any step in flight. */
-function isPresent(deviceFunction: DeviceFunctionView): boolean {
-  return deviceFunction.state === "installed";
+function isPresent(deviceModule: DeviceModuleView): boolean {
+  return deviceModule.state === "installed";
 }
 
 /** Which step a wish amounts to. */
-function stepFor(wish: FunctionWish): Step {
+function stepFor(wish: ModuleWish): Step {
   if (wish.is_activated !== undefined) {
     return wish.is_activated ? "activating" : "deactivating";
   }
@@ -326,59 +362,84 @@ function stepFor(wish: FunctionWish): Step {
 }
 
 /** Whether the machine's report has caught up with what was asked. */
-function hasArrived(deviceFunction: DeviceFunctionView, step: Step): boolean {
+function hasArrived(deviceModule: DeviceModuleView, step: Step): boolean {
   if (
-    deviceFunction.state === "failed" ||
-    BUSY_STATES.includes(deviceFunction.state)
+    deviceModule.state === "failed" ||
+    BUSY_STATES.includes(deviceModule.state)
   ) {
     return true;
   }
   if (step === "installing") {
-    return deviceFunction.state === "installed";
+    return deviceModule.state === "installed";
   }
   if (step === "uninstalling") {
-    return deviceFunction.state === "absent";
+    return deviceModule.state === "absent";
   }
   if (step === "activating") {
-    return deviceFunction.is_active;
+    return deviceModule.is_active;
   }
-  return !deviceFunction.is_active;
+  return !deviceModule.is_active;
 }
 
 function toneFor(
-  deviceFunction: DeviceFunctionView,
+  deviceModule: DeviceModuleView,
 ): "ok" | "warn" | "error" | "idle" {
-  if (!deviceFunction.is_supported) {
+  if (!deviceModule.is_supported) {
     return "idle";
   }
-  if (BUSY_STATES.includes(deviceFunction.state)) {
+  if (BUSY_STATES.includes(deviceModule.state)) {
     return "warn";
   }
-  if (deviceFunction.state === "installed") {
+  if (deviceModule.state === "installed") {
     return "ok";
   }
-  if (deviceFunction.state === "failed") {
+  if (deviceModule.state === "failed") {
     return "error";
   }
   return "idle";
 }
 
+/** The on/off button's verb, per the module's own semantics. */
+function onOffLabel(
+  deviceModule: DeviceModuleView,
+  isOnMachine: boolean,
+): string {
+  if (deviceModule.is_builtin) {
+    return isOnMachine ? WORDING.disable : WORDING.enable;
+  }
+  return isOnMachine ? WORDING.uninstall : WORDING.install;
+}
+
 /** What a row says under its title: where it is, and where it points. */
-function describeFunction(deviceFunction: DeviceFunctionView): string {
-  const parts = [STATE_WORDING[deviceFunction.state] ?? STATE_WORDING_FALLBACK];
+function describeModule(deviceModule: DeviceModuleView): string {
+  const stateWording = deviceModule.is_builtin
+    ? (BUILTIN_STATE_WORDING[deviceModule.state] ??
+      STATE_WORDING[deviceModule.state])
+    : STATE_WORDING[deviceModule.state];
+  const parts = [stateWording ?? STATE_WORDING_FALLBACK];
   if (
-    deviceFunction.has_activation &&
-    isPresent(deviceFunction) &&
-    !BUSY_STATES.includes(deviceFunction.state)
+    deviceModule.has_activation &&
+    isPresent(deviceModule) &&
+    !BUSY_STATES.includes(deviceModule.state)
   ) {
     parts.push(
-      deviceFunction.is_active ? WORDING.aimedHere : WORDING.notAimedHere,
+      deviceModule.is_active ? WORDING.aimedHere : WORDING.notAimedHere,
     );
   }
-  if (deviceFunction.code && !BUSY_STATES.includes(deviceFunction.state)) {
-    parts.push(
-      FUNCTION_ERROR_WORDING[deviceFunction.code] ?? deviceFunction.code,
-    );
+  if (deviceModule.code && !BUSY_STATES.includes(deviceModule.state)) {
+    parts.push(MODULE_ERROR_WORDING[deviceModule.code] ?? deviceModule.code);
   }
   return parts.join(" · ");
+}
+
+/** Put values into a wording constant, by name. */
+function fill(
+  wording: string,
+  values: Record<string, string | number>,
+): string {
+  let filled = wording;
+  for (const [name, value] of Object.entries(values)) {
+    filled = filled.replace(`{${name}}`, String(value));
+  }
+  return filled;
 }

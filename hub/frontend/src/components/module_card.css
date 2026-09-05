@@ -1,4 +1,4 @@
-.service_card {
+.module_card {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -9,30 +9,30 @@
   transition: border-color var(--transition-base);
 }
 
-.service_card--active {
+.module_card--active {
   border-color: rgb(52 211 153 / 28%);
 }
 
-.service_card--missing {
+.module_card--missing {
   border-style: dashed;
   opacity: 0.7;
 }
 
-.service_card_head {
+.module_card_head {
   display: flex;
   gap: var(--space-3);
   align-items: flex-start;
   justify-content: space-between;
 }
 
-.service_card_identity {
+.module_card_identity {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
 
-.service_card_name {
+.module_card_name {
   display: flex;
   gap: var(--space-2);
   align-items: center;
@@ -40,7 +40,7 @@
   font-weight: 600;
 }
 
-.service_card_unit {
+.module_card_unit {
   overflow: hidden;
   color: var(--color-text-faint);
   font-family: var(--font-mono);
@@ -49,13 +49,13 @@
   white-space: nowrap;
 }
 
-.service_card_badges {
+.module_card_badges {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
 }
 
-.service_card_actions {
+.module_card_actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
@@ -63,31 +63,31 @@
   border-top: 1px solid var(--color-border);
 }
 
-.service_card_journal_toggle {
+.module_card_journal_toggle {
   margin-left: auto;
 }
 
-.service_card_install {
+.module_card_install {
   display: flex;
   gap: var(--space-3);
   align-items: center;
 }
 
-.service_card_note {
+.module_card_note {
   color: var(--color-text-faint);
   font-size: 12px;
 }
 
-.service_card_remove {
+.module_card_remove {
   color: var(--color-text-faint);
 }
 
-.service_card_remove:hover {
+.module_card_remove:hover {
   color: var(--color-error);
 }
 
 /* The step between "clicked Uninstall" and anything happening. */
-.service_card_confirm {
+.module_card_confirm {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -97,7 +97,7 @@
   background: var(--color-bg);
 }
 
-.service_card_confirm_data {
+.module_card_confirm_data {
   display: flex;
   gap: var(--space-2);
   align-items: flex-start;
@@ -106,14 +106,14 @@
   cursor: pointer;
 }
 
-.service_card_task {
+.module_card_task {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   align-items: flex-start;
 }
 
-.service_card_task_lines {
+.module_card_task_lines {
   overflow-y: auto;
   width: 100%;
   max-height: 180px;
@@ -128,7 +128,7 @@
 }
 
 /* Verdict and dismissal, centred under the log. */
-.service_card_task_footer {
+.module_card_task_footer {
   display: flex;
   gap: var(--space-3);
   align-items: center;

@@ -3,7 +3,7 @@ import { copyText } from "../copy_text";
 
 import { ApplyBar } from "../components/apply_bar";
 import { ErrorPanel } from "../components/error_panel";
-import { ServiceStateBadge } from "../components/service_state_badge";
+import { ModuleStateBadge } from "../components/module_state_badge";
 import { Icon } from "../components/icon";
 import { PasswordInput } from "../components/password_input";
 import { StatusDot } from "../components/status_dot";
@@ -204,7 +204,7 @@ export function SambaPage() {
       <div className="page_header">
         <div className="page_title_row">
           <h1>Samba</h1>
-          <ServiceStateBadge name="samba" />
+          <ModuleStateBadge name="samba" />
         </div>
       </div>
 

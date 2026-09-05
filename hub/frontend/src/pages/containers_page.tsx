@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 
 import { ApplyBar } from "../components/apply_bar";
 import { ErrorPanel } from "../components/error_panel";
-import { ServiceStateBadge } from "../components/service_state_badge";
+import { ModuleStateBadge } from "../components/module_state_badge";
 import { Icon } from "../components/icon";
 import { ShellTerminal } from "../components/shell_terminal";
 import { StatusDot } from "../components/status_dot";
@@ -177,7 +177,7 @@ export function ContainersPage() {
       <div className="page_header">
         <div className="page_title_row">
           <h1>Containers</h1>
-          <ServiceStateBadge name="podman" />
+          <ModuleStateBadge name="podman" />
           {saved.is_installed && (
             <span className="badge">podman {saved.version}</span>
           )}

@@ -6,9 +6,9 @@ import { StatusDot } from "./status_dot";
 import { stripAnsi } from "../strip_ansi";
 import { useTaskStream } from "../use_task_stream";
 import type { TaskStreamState } from "../use_task_stream";
-import type { ServiceActionName, ServiceView } from "../api_types";
+import type { ModuleActionName, ModuleView } from "../api_types";
 
-import "./service_card.css";
+import "./module_card.css";
 
 /**
  * One systemd unit the gateway manages.
@@ -27,13 +27,13 @@ import "./service_card.css";
  * a sentence someone should have to finish.
  */
 
-interface ServiceCardProps {
-  service: ServiceView;
+interface ModuleCardProps {
+  module: ModuleView;
   isBusy: boolean;
   isJournalOpen: boolean;
-  /** The task streaming for this service, or null. */
+  /** The task streaming for this module, or null. */
   taskId: string | null;
-  onAction: (action: ServiceActionName) => void;
+  onAction: (action: ModuleActionName) => void;
   onToggleJournal: () => void;
   onInstall: () => void;
   onUninstall: (isDataKept: boolean) => void;
@@ -43,8 +43,8 @@ interface ServiceCardProps {
   onDismissTask: () => void;
 }
 
-export function ServiceCard({
-  service,
+export function ModuleCard({
+  module,
   isBusy,
   isJournalOpen,
   taskId,
@@ -54,7 +54,7 @@ export function ServiceCard({
   onUninstall,
   onTaskFinished,
   onDismissTask,
-}: ServiceCardProps) {
+}: ModuleCardProps) {
   const [isConfirmingRemoval, setIsConfirmingRemoval] = useState(false);
   // The stream lives here rather than in the log component, because the
   // card's buttons follow it: while a task runs they stand back, and the
@@ -88,78 +88,78 @@ export function ServiceCard({
 
   return (
     <article
-      key={service.name}
-      className={`service_card ${
-        !service.is_installed
-          ? "service_card--missing"
-          : service.is_active
-            ? "service_card--active"
+      key={module.name}
+      className={`module_card ${
+        !module.is_installed
+          ? "module_card--missing"
+          : module.is_active
+            ? "module_card--active"
             : ""
       }`}
     >
-      <div className="service_card_head">
-        <div className="service_card_identity">
-          <span className="service_card_name">
+      <div className="module_card_head">
+        <div className="module_card_identity">
+          <span className="module_card_name">
             <StatusDot
               tone={
-                !service.is_installed
+                !module.is_installed
                   ? "idle"
-                  : service.is_active
+                  : module.is_active
                     ? "ok"
                     : "error"
               }
-              isPulsing={service.is_active}
+              isPulsing={module.is_active}
             />
-            {service.name}
+            {module.name}
           </span>
-          <span className="service_card_unit">{service.unit}</span>
+          <span className="module_card_unit">{module.unit}</span>
         </div>
-        <div className="service_card_badges">
-          {!service.is_installed ? (
+        <div className="module_card_badges">
+          {!module.is_installed ? (
             <span className="badge">not installed</span>
           ) : (
             <>
               <span
-                className={`badge ${service.is_active ? "badge--ok" : "badge--error"}`}
+                className={`badge ${module.is_active ? "badge--ok" : "badge--error"}`}
               >
-                {service.is_active ? "active" : "inactive"}
+                {module.is_active ? "active" : "inactive"}
               </span>
               <span
-                className={`badge ${service.is_enabled ? "badge--accent" : ""}`}
+                className={`badge ${module.is_enabled ? "badge--accent" : ""}`}
               >
-                {service.is_enabled ? "enabled" : "disabled"}
+                {module.is_enabled ? "enabled" : "disabled"}
               </span>
             </>
           )}
         </div>
       </div>
 
-      {!service.is_installed && service.is_installable && !isTaskRunning && (
-        <div className="service_card_install">
+      {!module.is_installed && module.is_installable && !isTaskRunning && (
+        <div className="module_card_install">
           <button
             type="button"
             className="button button--primary button--small"
-            disabled={isBusy || !service.is_machine_supported}
-            title={service.unsupported_reason ?? undefined}
+            disabled={isBusy || !module.is_machine_supported}
+            title={module.unsupported_reason ?? undefined}
             onClick={onInstall}
           >
             <Icon name="download" size={12} />
             Install
           </button>
-          <span className="service_card_note">
-            {service.is_machine_supported
-              ? service.install_note
-              : service.unsupported_reason}
+          <span className="module_card_note">
+            {module.is_machine_supported
+              ? module.install_note
+              : module.unsupported_reason}
           </span>
         </div>
       )}
 
-      {service.is_installed && (
-        <div className="service_card_actions">
+      {module.is_installed && (
+        <div className="module_card_actions">
           <button
             type="button"
             className="button button--small"
-            disabled={isBusy || service.is_active}
+            disabled={isBusy || module.is_active}
             onClick={() => void onAction("start")}
           >
             <Icon name="play" size={12} />
@@ -168,11 +168,11 @@ export function ServiceCard({
           {/* Core units have no Stop or Disable: the gateway does
                 not route without them, so offering it would only be
                 offering a way to break the box. */}
-          {!service.is_core && (
+          {!module.is_core && (
             <button
               type="button"
               className="button button--small"
-              disabled={isBusy || !service.is_active}
+              disabled={isBusy || !module.is_active}
               onClick={() => void onAction("stop")}
             >
               <Icon name="stop" size={12} />
@@ -190,23 +190,23 @@ export function ServiceCard({
           </button>
           {/* Enabling a core unit is still offered when something has left one
               disabled, because that is a way back rather than a way out. */}
-          {(!service.is_core || !service.is_enabled) && (
+          {(!module.is_core || !module.is_enabled) && (
             <button
               type="button"
               className="button button--small"
               disabled={isBusy}
               onClick={() =>
-                void onAction(service.is_enabled ? "disable" : "enable")
+                void onAction(module.is_enabled ? "disable" : "enable")
               }
             >
               <Icon name="power" size={12} />
-              {service.is_enabled ? "Disable" : "Enable"}
+              {module.is_enabled ? "Disable" : "Enable"}
             </button>
           )}
-          {!service.is_core && service.is_installable && (
+          {!module.is_core && module.is_installable && (
             <button
               type="button"
-              className="button button--ghost button--small service_card_remove"
+              className="button button--ghost button--small module_card_remove"
               disabled={isBusy || isTaskRunning}
               onClick={() => setIsConfirmingRemoval((current) => !current)}
             >
@@ -216,7 +216,7 @@ export function ServiceCard({
           )}
           <button
             type="button"
-            className="button button--ghost button--small service_card_journal_toggle"
+            className="button button--ghost button--small module_card_journal_toggle"
             onClick={() => onToggleJournal()}
           >
             <Icon
@@ -230,7 +230,7 @@ export function ServiceCard({
 
       {isConfirmingRemoval && !isTaskRunning && (
         <UninstallConfirm
-          service={service}
+          module={module}
           onCancel={() => setIsConfirmingRemoval(false)}
           onConfirm={(isDataKept) => {
             setIsConfirmingRemoval(false);
@@ -242,21 +242,21 @@ export function ServiceCard({
       {taskId !== null && <TaskLog task={task} onDismiss={onDismissTask} />}
 
       <JournalPanel
-        serviceName={service.name}
-        isOpen={service.is_installed && isJournalOpen}
+        moduleName={module.name}
+        isOpen={module.is_installed && isJournalOpen}
       />
     </article>
   );
 }
 
 interface UninstallConfirmProps {
-  service: ServiceView;
+  module: ModuleView;
   onCancel: () => void;
   onConfirm: (isDataKept: boolean) => void;
 }
 
 function UninstallConfirm({
-  service,
+  module,
   onCancel,
   onConfirm,
 }: UninstallConfirmProps) {
@@ -264,25 +264,25 @@ function UninstallConfirm({
   const [typedName, setTypedName] = useState("");
 
   // Deleting data must be typed out; merely removing the software must not.
-  const isArmed = !isDeletingData || typedName === service.name;
+  const isArmed = !isDeletingData || typedName === module.name;
 
   return (
-    <div className="service_card_confirm">
-      <p className="service_card_note">
+    <div className="module_card_confirm">
+      <p className="module_card_note">
         Removes the software; configuration is kept.
       </p>
-      <label className="service_card_confirm_data">
+      <label className="module_card_confirm_data">
         <input
           type="checkbox"
           checked={isDeletingData}
           onChange={(event) => setIsDeletingData(event.target.checked)}
         />
-        <span>Also delete {service.data_description}. Not recoverable.</span>
+        <span>Also delete {module.data_description}. Not recoverable.</span>
       </label>
       {isDeletingData && (
         <input
           className="input"
-          placeholder={`type "${service.name}" to confirm deleting its data`}
+          placeholder={`type "${module.name}" to confirm deleting its data`}
           value={typedName}
           onChange={(event) => setTypedName(event.target.value)}
         />
@@ -316,15 +316,15 @@ interface TaskLogProps {
 
 function TaskLog({ task, onDismiss }: TaskLogProps) {
   return (
-    <div className="service_card_task">
-      <div className="service_card_task_lines">
+    <div className="module_card_task">
+      <div className="module_card_task_lines">
         {task.lines.map((line, index) => (
           <div key={index}>{stripAnsi(line)}</div>
         ))}
         {task.isRunning && <div className="faint">working…</div>}
       </div>
       {!task.isRunning && (task.exitCode !== null || task.error !== null) && (
-        <div className="service_card_task_footer">
+        <div className="module_card_task_footer">
           <span
             className={`badge ${task.exitCode === 0 ? "badge--ok" : "badge--error"}`}
           >

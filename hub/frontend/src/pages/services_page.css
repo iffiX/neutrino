@@ -1,17 +1,61 @@
-.services_grid {
-  display: grid;
-  gap: var(--space-4);
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-}
-
-.services_section {
+.published_rows {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
 }
 
-.declared_section_action {
-  margin-left: auto;
+.published_row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.published_row:last-child {
+  border-bottom: none;
+}
+
+.published_row_body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.published_row_head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.published_row_title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.published_row_payload {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.published_row_description {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.published_row_state {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.published_row_actions {
+  display: flex;
+  gap: var(--space-2);
 }
 
 .declared_form {
@@ -39,90 +83,4 @@
   display: flex;
   gap: var(--space-2);
   justify-content: flex-end;
-}
-
-.declared_share_row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-
-.declared_share_row .input {
-  flex: 1;
-  min-width: 0;
-}
-
-.declared_card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
-}
-
-.declared_card_head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.declared_card_name {
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.declared_kind {
-  margin-left: auto;
-  padding: 2px 8px;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  color: var(--color-text-muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-
-.declared_card_address {
-  color: var(--color-text-muted);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-
-.declared_card_meta {
-  display: flex;
-  gap: var(--space-3);
-  font-size: 12px;
-}
-
-.declared_containers {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.declared_container_row {
-  display: flex;
-  gap: var(--space-2);
-  align-items: center;
-  font-size: 12px;
-}
-
-.declared_container_name {
-  overflow: hidden;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.declared_container_action {
-  margin-left: auto;
-}
-
-.declared_card_actions {
-  display: flex;
-  gap: var(--space-2);
-  margin-top: auto;
 }

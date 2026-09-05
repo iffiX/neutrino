@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
-import { ServiceStateBadge } from "../components/service_state_badge";
+import { ModuleStateBadge } from "../components/module_state_badge";
 import { ZfsTopology } from "../components/zfs_topology";
 import { apiDelete, apiGet, apiPost, describeError } from "../api_client";
 import { formatBytes } from "../format_bytes";
@@ -290,7 +290,7 @@ export function ZfsPage() {
       <div className="page_header">
         <div className="page_title_row">
           <h1>ZFS</h1>
-          <ServiceStateBadge name="zfs" />
+          <ModuleStateBadge name="zfs" />
         </div>
       </div>
 
