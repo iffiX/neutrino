@@ -139,3 +139,22 @@ def test_apply_reports_what_it_did(box):
 
     assert payload["is_applied"] is True
     assert runtime.applied_count == 1
+
+
+def test_a_refused_file_operation_is_a_reported_failure_not_a_500(box, monkeypatch):
+    """The bug this pins: the sandboxed unit denied the share directory its
+    setgid bit, the PermissionError escaped the route, and adding a user
+    answered 500 with nothing on the page to say why."""
+    client, runtime, _ = box
+
+    async def refused() -> str:
+        raise PermissionError("chmod: operation not permitted")
+
+    monkeypatch.setattr(runtime, "apply_samba", refused)
+
+    response = client.post("/api/samba/apply")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["is_applied"] is False
+    assert "not permitted" in payload["message"]

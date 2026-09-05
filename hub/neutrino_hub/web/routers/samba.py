@@ -112,11 +112,13 @@ async def apply(runtime: PanelRuntime = Depends(get_runtime)) -> ApplyResult:
 
     Returns:
         Whether the apply succeeded and what was done. A failure is reported
-        rather than raised, so the panel shows the reason beside the button.
+        rather than raised, so the panel shows the reason beside the button —
+        a refused file operation included, which is what a sandboxed unit
+        turns a share-directory chmod into.
     """
     try:
         message = await runtime.apply_samba()
-    except (CommandError, ValueError) as error:
+    except (CommandError, ValueError, OSError) as error:
         return ApplyResult(is_applied=False, message=str(error))
     return ApplyResult(is_applied=True, message=message)
 

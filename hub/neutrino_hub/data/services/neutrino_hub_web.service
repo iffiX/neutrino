@@ -23,7 +23,6 @@ RestartSec=5
 # sudo cannot run under NoNewPrivileges, which is why stepping down to a
 # service account uses runuser (see modules/gitea/ops.py).
 NoNewPrivileges=yes
-RestrictSUIDSGID=yes
 RestrictRealtime=yes
 LockPersonality=yes
 ProtectClock=yes
@@ -33,6 +32,8 @@ SystemCallArchitectures=native
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK AF_PACKET
 
 # Deliberately absent, each because it breaks something this panel does:
+#   RestrictSUIDSGID    — the samba applier marks share directories setgid
+#                         (2775), which this denies with EPERM
 #   ProtectSystem       — installs binaries into /usr/local/bin and writes a
 #                         dozen files under /etc
 #   ProtectHome         — config/ still lives in the checkout
