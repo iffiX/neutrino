@@ -111,22 +111,10 @@ def test_the_published_list_answers_typed(panel):
         assert "payload" in entry and "is_healthy" in entry, entry
 
 
-def test_one_of_each_type_declares_and_turns_healthy(panel, tcp_port, http_port):
+def test_web_and_port_turn_healthy_against_real_listeners(panel, tcp_port, http_port):
     run = _suffix()
     created = []
     try:
-        created.append(
-            _declare(
-                panel,
-                {
-                    "name": f"itest nas {run}",
-                    "kind": "file",
-                    "host": "127.0.0.1",
-                    "port": tcp_port,
-                    "shares": ["media"],
-                },
-            )
-        )
         created.append(
             _declare(
                 panel,
@@ -153,15 +141,52 @@ def test_one_of_each_type_declares_and_turns_healthy(panel, tcp_port, http_port)
         )
 
         rows = _wait_until_healthy(panel, [entry["record_id"] for entry in created])
-        by_id = {entry["record_id"]: entry for entry in created}
-        for record_id, listed in rows.items():
-            if record_id not in by_id:
-                continue
-            assert listed["type"] == by_id[record_id]["type"]
-            assert listed["is_healthy"] is True
+        for entry in created:
+            assert rows[entry["record_id"]]["type"] == entry["type"]
     finally:
         for entry in created:
             _delete(panel, entry["record_id"])
+
+
+def test_a_file_service_is_judged_by_the_server_not_the_port(panel, tcp_port):
+    """A share is healthy only when the server exports it. A port that
+    answers proves nothing: the old probe called this green."""
+    run = _suffix()
+    record = _declare(
+        panel,
+        {
+            "name": f"itest nas {run}",
+            "kind": "file",
+            "host": "127.0.0.1",
+            "port": tcp_port,
+            "shares": ["media"],
+        },
+    )
+    try:
+        waited = 0.0
+        row = {}
+        while waited <= HEALTH_DEADLINE_S:
+            rows = {
+                entry["record_id"]: entry
+                for entry in _declared(panel.read("/services")["services"])
+            }
+            row = rows.get(record["record_id"], {})
+            if row.get("is_healthy") is not None:
+                break
+            time.sleep(HEALTH_POLL_S)
+            waited += HEALTH_POLL_S
+
+        assert row.get("is_healthy") is False, row
+        assert row.get("detail_code") in ("connect_failed", "share_missing"), row
+    finally:
+        _delete(panel, record["record_id"])
+
+
+def test_scanning_a_host_that_answers_nothing_is_refused_with_a_code(panel):
+    status, answer = panel.call("GET", "/services/shares?host=127.0.0.1")
+
+    assert status == 400, answer
+    assert answer["detail"]["code"] == "share_scan_failed"
 
 
 def test_probe_and_delete_walk_one_record(panel, tcp_port):
