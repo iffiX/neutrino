@@ -15,6 +15,7 @@ from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.podman.config import CONTAINER_NAME_PATTERN
 from neutrino_hub.modules.podman.ops import shell_command
 from neutrino_hub.system.local_shell import LocalShellSession
+from neutrino_hub.system.sandbox import outside_sandbox_interactive
 from neutrino_hub.modules.devices.ssh_ops import DeviceSshOperator, SshCredentials
 from neutrino_hub.web.constants import WEB_SESSION_COOKIE, WEB_STATS_PUSH_INTERVAL_S
 from neutrino_hub.web.dns_log import DnsLogReader
@@ -182,7 +183,12 @@ async def container_shell_socket(websocket: WebSocket, name: str) -> None:
     if not CONTAINER_NAME_PATTERN.match(name):
         await websocket.close(code=POLICY_VIOLATION_CODE, reason="bad name")
         return
-    await _serve_pty_session(websocket, LocalShellSession(command=shell_command(name)))
+    await _serve_pty_session(
+        websocket,
+        # Outside the unit's sandbox: exec grants the container's capability
+        # set, which NoNewPrivileges forbids from in here.
+        LocalShellSession(command=outside_sandbox_interactive(shell_command(name))),
+    )
 
 
 async def _serve_pty_session(websocket: WebSocket, session: LocalShellSession) -> None:

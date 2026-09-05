@@ -55,6 +55,32 @@ def outside_sandbox(command: list) -> list:
     return [*SANDBOX_SYSTEMD_RUN, "--", *command]
 
 
+def outside_sandbox_interactive(command: list) -> list:
+    """The same command outside the sandbox, kept on the caller's terminal.
+
+    For the commands that need a tty — a shell into a container — where
+    ``--pipe`` would hand them pipes and their tty allocation would fail.
+
+    Args:
+        command: The argument vector.
+
+    Returns:
+        It wrapped in a transient unit on this terminal, or unchanged where
+        there is no sandbox to leave.
+    """
+    if not is_sandboxed():
+        return list(command)
+    return [
+        "systemd-run",
+        "--quiet",
+        "--collect",
+        "--pty",
+        "--wait",
+        "--",
+        *command,
+    ]
+
+
 def is_sandboxed() -> bool:
     """Whether this process is inside a unit whose sandbox can be left.
 
