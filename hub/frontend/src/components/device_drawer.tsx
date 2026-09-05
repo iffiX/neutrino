@@ -107,6 +107,8 @@ const UNKNOWN_CREDENTIAL_WORDING: Record<string, string> = {
 const AGENT_ERROR_WORDING: Record<string, string> = {
   unsupported_platform: "The agent asked for something its platform cannot do.",
   update_failed: "The agent could not update itself.",
+  agent_package_missing:
+    "The hub has no agent package for this machine's platform.",
 };
 
 const COMMAND_RESULTS_LABEL = "Agent command results";

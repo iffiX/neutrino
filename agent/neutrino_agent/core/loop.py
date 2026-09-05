@@ -87,6 +87,8 @@ def channel_error(error: Exception) -> dict:
     Returns:
         ``{"code", "params"}``.
     """
+    if isinstance(error, GatewayRefusedDetail):
+        return {"code": error.code, "params": dict(error.params)}
     if isinstance(error, GatewayUntrusted):
         return {"code": "hub_untrusted", "params": {}}
     if isinstance(error, GatewayVersionRefused):

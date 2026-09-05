@@ -34,6 +34,7 @@ from neutrino_agent.constants import (
     AGENT_CONTROL_PAGE_HOST,
     AGENT_CONTROL_PAGE_ORIGIN,
     AGENT_CONTROL_PAGE_PORT,
+    AGENT_CONTROL_PIPE_PREFIX,
 )
 from neutrino_agent.control.identity import (
     ControlIdentity,
@@ -208,7 +209,12 @@ class ControlServer:
                 self._log("control socket not available on this platform")
                 return
         try:
-            server = _ControlSocketHttpServer(path, _ControlRequestHandler)
+            if path.startswith(AGENT_CONTROL_PIPE_PREFIX):
+                from neutrino_agent.control.windows_pipe import ControlPipeHttpServer
+
+                server = ControlPipeHttpServer(path, _ControlRequestHandler)
+            else:
+                server = _ControlSocketHttpServer(path, _ControlRequestHandler)
         except OSError as error:
             self._log(f"control socket not available: {error}")
             return
@@ -243,7 +249,9 @@ class ControlServer:
 class _ControlSocketHttpServer(HTTPServer):
     """An HTTP server bound to a Unix socket path."""
 
-    address_family = socket.AF_UNIX
+    # AF_UNIX is absent on Windows, where the pipe transport serves instead;
+    # the fallback only keeps this module importable there.
+    address_family = getattr(socket, "AF_UNIX", socket.AF_INET)
 
     def server_bind(self) -> None:
         """Bind the path: make its directory, drop a stale socket, open wide.

@@ -1,4 +1,4 @@
-"""The darwin and windows stubs: what a machine cannot do is said, not faked.
+"""The darwin and windows gaps: what a machine cannot do is said, not faked.
 
 Every method the contract names belongs to one capability. A platform that
 advertises the capability implements the method; one that does not refuses
@@ -79,13 +79,6 @@ BASE_IMPLEMENTED = {
 DarwinPwdEntry = collections.namedtuple(
     "DarwinPwdEntry", "pw_name pw_uid pw_shell pw_dir"
 )
-
-
-def test_windows_has_no_peer_identity_yet():
-    with pytest.raises(PlatformUnsupportedError):
-        WindowsPlatform().read_peer_identity(object())
-    with pytest.raises(PlatformUnsupportedError):
-        WindowsPlatform().control_socket_path()
 
 
 def test_the_capability_tables_name_every_contract_method():

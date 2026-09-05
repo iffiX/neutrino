@@ -16,6 +16,7 @@ AGENT_CONFIG_PATH = "/etc/neutrino/agent/agent.json"
 AGENT_REFUSALS_BEFORE_UNBIND = 3
 
 AGENT_SERVICE_NAME = "neutrino_agent.service"
+AGENT_SERVICE_NAME_WINDOWS = "neutrino_agent"
 
 # The shape of what crosses the hub channel. Bumped on any wire change, so
 # a hub upgrade that changed the shapes tells a same-version agent to
@@ -63,9 +64,12 @@ AGENT_STEP_DOWN_TIMEOUT_S = 120
 
 # The local control channel: a socket any local account may connect to,
 # whose peer identity the kernel reports, and a loopback page unlocked by
-# tokens minted over that socket.
+# tokens minted over that socket. On Windows the socket is a named pipe and
+# the peer identity comes from pipe impersonation.
 AGENT_CONTROL_SOCKET_PATH = "/run/neutrino_agent/agent.sock"
 AGENT_CONTROL_SOCKET_PATH_DARWIN = "/var/run/neutrino_agent/agent.sock"
+AGENT_CONTROL_PIPE_PREFIX = "\\\\.\\pipe\\"
+AGENT_CONTROL_PIPE_NAME = AGENT_CONTROL_PIPE_PREFIX + "neutrino_agent_control"
 AGENT_CONTROL_PAGE_HOST = "127.0.0.1"
 AGENT_CONTROL_PAGE_PORT = 8765
 AGENT_CONTROL_PAGE_ORIGIN = (
