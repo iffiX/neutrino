@@ -853,24 +853,7 @@ function drawFilesPanel(state, entries, title) {
     };
     row.appendChild(config);
 
-    if (records.length === 0) {
-      const mount = document.createElement('button');
-      mount.textContent = WORDS.ui.mount;
-      mount.disabled = !entry.is_healthy || !staged || !staged.is_open ||
-        !staged.path;
-      mount.onclick = async () => {
-        const sent = {
-          action: 'mount', id: entry.id, username: staged.username,
-          password: staged.password, path: staged.path,
-        };
-        staged.password = '';
-        if (await serviceAction('file', sent, noteKey)) {
-          delete fileStaged[entry.id];
-          redraw();
-        }
-      };
-      row.appendChild(mount);
-    }
+    row.appendChild(mountButton(entry, records[0], staged, state, noteKey));
     card.appendChild(row);
 
     for (const record of records)
@@ -881,31 +864,41 @@ function drawFilesPanel(state, entries, title) {
   return card;
 }
 
-function drawMountRecord(record, state, noteKey) {
-  const line = document.createElement('div');
-  line.className = 'rec';
-  const BUSY = { queued: WORDS.ui.mount_queued,
-    installing_tooling: WORDS.ui.mount_installing_tooling,
-    mounting: WORDS.ui.mount_mounting, pending: WORDS.ui.mount_pending };
-  const askedStep = fileAsked[record.record_id];
-  const busyWord = askedStep ? WORDS.ui.unmounting : BUSY[record.state];
-  const status = busyWord ? busyWord
-    : record.code ? wordCode(record.code, record.params)
-    : record.is_attached ? '' : WORDS.ui.not_attached;
-  const marker = busyWord ? '<span class="spin"></span>'
-    : '<span class="dot ' +
-      (record.is_attached ? 'ok' : record.code ? 'bad' : 'off') + '"></span>';
-  line.innerHTML = marker +
-    '<span class="path">' + record.path + ' · ' + record.account +
-    (status ? ' — ' + status : '') + '</span>';
-  // One button position: a transient greys it and says so; a settled
-  // record offers the one thing a person may do to it.
+const MOUNT_BUSY_WORDS = () => ({
+  queued: WORDS.ui.mount_queued,
+  installing_tooling: WORDS.ui.mount_installing_tooling,
+  mounting: WORDS.ui.mount_mounting,
+  pending: WORDS.ui.mount_pending,
+});
+
+// The one button position beside Config: Mount morphs through the
+// transients and into Unmount, never a second button anywhere.
+function mountButton(entry, record, staged, state, noteKey) {
   const button = document.createElement('button');
+  if (record === undefined) {
+    button.textContent = WORDS.ui.mount;
+    button.disabled = !entry.is_healthy || !staged || !staged.is_open ||
+      !staged.path;
+    button.onclick = async () => {
+      const sent = {
+        action: 'mount', id: entry.id, username: staged.username,
+        password: staged.password, path: staged.path,
+      };
+      staged.password = '';
+      if (await serviceAction('file', sent, noteKey)) {
+        delete fileStaged[entry.id];
+        redraw();
+      }
+    };
+    return button;
+  }
+  const askedStep = fileAsked[record.record_id];
+  const busyWord = askedStep ? WORDS.ui.unmounting
+    : MOUNT_BUSY_WORDS()[record.state];
   if (busyWord) {
     button.textContent = busyWord;
     button.disabled = true;
-    line.appendChild(button);
-    return line;
+    return button;
   }
   button.className = 'danger';
   button.textContent = WORDS.ui.unmount;
@@ -920,7 +913,26 @@ function drawMountRecord(record, state, noteKey) {
       { action: 'unmount', record_id: record.record_id }, noteKey
     ).then(() => { delete fileAsked[record.record_id]; redraw(); });
   };
-  line.appendChild(button);
+  return button;
+}
+
+// A record's own line carries only where it stands — the words, never a
+// button.
+function drawMountRecord(record, state, noteKey) {
+  const line = document.createElement('div');
+  line.className = 'rec';
+  const askedStep = fileAsked[record.record_id];
+  const busyWord = askedStep ? WORDS.ui.unmounting
+    : MOUNT_BUSY_WORDS()[record.state];
+  const status = busyWord ? busyWord
+    : record.code ? wordCode(record.code, record.params)
+    : record.is_attached ? '' : WORDS.ui.not_attached;
+  const marker = busyWord ? '<span class="spin"></span>'
+    : '<span class="dot ' +
+      (record.is_attached ? 'ok' : record.code ? 'bad' : 'off') + '"></span>';
+  line.innerHTML = marker +
+    '<span class="path">' + record.path + ' · ' + record.account +
+    (status ? ' — ' + status : '') + '</span>';
   return line;
 }
 

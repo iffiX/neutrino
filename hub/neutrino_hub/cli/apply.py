@@ -196,9 +196,13 @@ def _render(selected: tuple[str, ...]) -> dict:
             link.name: link.ipv4_address or ""
             for link in RouterLinkStatus().all_links()
         }
+        if network.mode == "server":
+            reachable = [address for address in links.values() if address]
+        else:
+            reachable = [links.get(name, "") for name in network.exposed_device_names()]
         subnets = allowed_subnets(
             [interface.lan.cidr for interface in network.lan_interfaces],
-            [links.get(name, "") for name in network.exposed_device_names()],
+            reachable,
         )
         artifacts["samba"] = SambaConfigRenderer(
             config=samba_config, lan_subnets=subnets

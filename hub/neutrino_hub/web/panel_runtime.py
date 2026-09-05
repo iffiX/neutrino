@@ -571,9 +571,13 @@ class PanelRuntime:
             link.name: link.ipv4_address or ""
             for link in RouterLinkStatus().all_links()
         }
+        if network.mode == "server":
+            reachable = [address for address in links.values() if address]
+        else:
+            reachable = [links.get(name, "") for name in network.exposed_device_names()]
         subnets = allowed_subnets(
             [interface.lan.cidr for interface in network.lan_interfaces],
-            [links.get(name, "") for name in network.exposed_device_names()],
+            reachable,
         )
         rendered = SambaConfigRenderer(config=config, lan_subnets=subnets).render()
         # Configuration first: smbpasswd itself reads smb.conf, and the link
