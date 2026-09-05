@@ -1,20 +1,26 @@
-"""``nagent ui``: open this machine's page as whoever ran it.
+"""``nagent ui``: open this machine's page as whoever ran it, and stay.
 
 The command connects to the running agent's control socket, where the
 kernel reports who is asking, mints a page token bound to that identity,
-and opens the browser on a URL carrying it. Any account may run it; the
-page shows that account's own scope, and ``sudo nagent ui`` shows the
-privileged one.
+and opens the browser on a URL carrying it. The command is the session:
+Ctrl-C revokes the token at once, and a closed window revokes it moments
+later — the page's own polling is the token's pulse, and the agent expires
+a token whose pulse stopped, which this waiting command notices.
+
+Any account may run it; the page shows that account's own scope, and
+``sudo nagent ui`` shows the privileged one. The agent refuses to mint
+while it does not hold the loopback port, and this command says so.
 """
 
-import shutil
-import subprocess
 import sys
+import time
+import webbrowser
 
 from neutrino_agent.constants import (
     AGENT_CONTROL_PAGE_HOST,
     AGENT_CONTROL_PAGE_PORT,
     AGENT_SERVICE_NAME,
+    AGENT_UI_WATCH_INTERVAL_S,
 )
 from neutrino_agent.control import client
 from neutrino_agent.platforms.base import PlatformUnsupportedError
@@ -24,10 +30,16 @@ UI_NOT_RUNNING = (
     "the agent is not running, so there is nothing to open; start it: "
     f"sudo systemctl enable --now {AGENT_SERVICE_NAME}"
 )
+UI_NO_PAGE = (
+    "the agent is not serving its page — it was started with --no-ui, or "
+    "the port is taken; no token was opened"
+)
+UI_WINDOW_CLOSED = "the window was closed; this session is over"
+UI_AGENT_GONE = "the agent stopped answering; this session is over"
 
 
 def main() -> int:
-    """Mint a page token over the control socket and open the page.
+    """Mint a page token, open the page, and wait for the session to end.
 
     Returns:
         Process exit status.
@@ -46,15 +58,65 @@ def main() -> int:
         return 1
     token = str(reply.get("token", ""))
     if status != 200 or not token:
-        print(f"the agent refused a page token: {reply.get('code', status)}")
+        if reply.get("code") == "control_page_not_served":
+            print(UI_NO_PAGE, file=sys.stderr)
+        else:
+            print(f"the agent refused a page token: {reply.get('code', status)}")
         return 1
-    url = f"http://{AGENT_CONTROL_PAGE_HOST}:{AGENT_CONTROL_PAGE_PORT}/#{token}"
-    print(url)
-    opener = shutil.which("xdg-open")
-    if opener:
-        subprocess.Popen(
-            [opener, url],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+    port = int(reply.get("page_port") or AGENT_CONTROL_PAGE_PORT)
+    url = f"http://{AGENT_CONTROL_PAGE_HOST}:{port}/#{token}"
+    webbrowser.open(url)
+    print(
+        f"Please open {url} if the browser does not show up. "
+        "Close the window or press Ctrl-C to stop."
+    )
+    try:
+        return _wait(socket_path, token)
+    except KeyboardInterrupt:
+        _revoke(socket_path, token)
+        return 0
+
+
+def _wait(socket_path: str, token: str) -> int:
+    """Poll the token's aliveness until its pulse stops.
+
+    Args:
+        socket_path: The agent's control socket.
+        token: This session's token.
+
+    Returns:
+        Process exit status.
+    """
+    while True:
+        time.sleep(AGENT_UI_WATCH_INTERVAL_S)
+        try:
+            status, reply = client.request(
+                socket_path=socket_path,
+                method="POST",
+                path="/api/token/watch",
+                body={"token": token},
+            )
+        except (OSError, ValueError):
+            print(UI_AGENT_GONE)
+            return 0
+        if status != 200 or not reply.get("is_alive"):
+            print(UI_WINDOW_CLOSED)
+            return 0
+
+
+def _revoke(socket_path: str, token: str) -> None:
+    """Revoke this session's token at once. Best-effort.
+
+    Args:
+        socket_path: The agent's control socket.
+        token: The token to revoke.
+    """
+    try:
+        client.request(
+            socket_path=socket_path,
+            method="POST",
+            path="/api/token/revoke",
+            body={"token": token},
         )
-    return 0
+    except (OSError, ValueError):
+        pass

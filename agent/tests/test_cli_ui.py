@@ -1,7 +1,8 @@
-"""``nagent ui``: a token as whoever ran it, and the URL that carries it.
+"""``nagent ui``: a token as whoever ran it, and the session that waits.
 
-Any account may run it; when no agent answers on the socket it says so
-plainly instead of printing a dead URL.
+The command mints over the socket, opens the browser through the standard
+library, prints the one line, and stays: Ctrl-C revokes the token at once,
+a dead pulse ends the wait, and an agent serving no page refuses to mint.
 """
 
 import pytest
@@ -9,6 +10,7 @@ import pytest
 import neutrino_agent.cli.entry as entry
 import neutrino_agent.cli.ui as ui
 import neutrino_agent.core.enrollment as enrollment
+from neutrino_agent.control import client
 from neutrino_agent.control.server import ControlServer
 from tests.test_control_server import ALICE, FakeControlAgent, FakeControlPlatform
 
@@ -32,21 +34,98 @@ def running_control(tmp_path, monkeypatch):
         platform=platform,
         log=lambda message: None,
         socket_path=platform.control_socket_path(),
+        page_port=0,
+    )
+    server.start()
+    monkeypatch.setattr(ui, "detect_platform", lambda: platform)
+    opened = []
+    monkeypatch.setattr(ui.webbrowser, "open", lambda url: opened.append(url))
+    monkeypatch.setattr(ui.time, "sleep", lambda seconds: None)
+    yield server, opened
+    server.stop()
+
+
+def test_ui_opens_the_browser_and_prints_the_one_line(
+    running_control, monkeypatch, capsys
+):
+    server, opened = running_control
+    monkeypatch.setattr(ui, "_wait", lambda socket_path, token: 0)
+
+    assert ui.main() == 0
+
+    assert len(opened) == 1
+    url = opened[0]
+    assert url.startswith(f"http://127.0.0.1:{server.page_port}/#")
+    assert len(url.split("#", 1)[1]) > 20
+    out = capsys.readouterr().out
+    assert (
+        f"Please open {url} if the browser does not show up. "
+        "Close the window or press Ctrl-C to stop." in out
+    )
+
+
+def test_ui_exits_when_the_windows_pulse_stops(running_control, monkeypatch, capsys):
+    server, _opened = running_control
+    revoked = []
+
+    def revoke_then_wait(socket_path, token):
+        # The window closes: the token dies out from under the wait.
+        client.request(
+            socket_path=socket_path,
+            method="POST",
+            path="/api/token/revoke",
+            body={"token": token},
+        )
+        revoked.append(token)
+        return _wait(socket_path, token)
+
+    _wait = ui._wait
+    monkeypatch.setattr(ui, "_wait", revoke_then_wait)
+
+    assert ui.main() == 0
+
+    assert revoked
+    assert ui.UI_WINDOW_CLOSED in capsys.readouterr().out
+
+
+def test_ctrl_c_revokes_the_token_at_once(running_control, monkeypatch, capsys):
+    server, opened = running_control
+
+    def interrupted(socket_path, token):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(ui, "_wait", interrupted)
+
+    assert ui.main() == 0
+
+    token = opened[0].split("#", 1)[1]
+    _status, reply = client.request(
+        socket_path=server.socket_path,
+        method="POST",
+        path="/api/token/watch",
+        body={"token": token},
+    )
+    assert reply == {"is_alive": False}
+
+
+def test_ui_refuses_plainly_when_no_page_is_served(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(enrollment, "AGENT_CONFIG_PATH", str(tmp_path / "agent.json"))
+    platform = FakeUiPlatform(str(tmp_path / "agent.sock"))
+    platform.peer = dict(ALICE)
+    server = ControlServer(
+        agent=FakeControlAgent(),
+        platform=platform,
+        log=lambda message: None,
+        socket_path=platform.control_socket_path(),
         is_page_served=False,
     )
     server.start()
     monkeypatch.setattr(ui, "detect_platform", lambda: platform)
-    monkeypatch.setattr(ui.shutil, "which", lambda name: None)
-    yield server
-    server.stop()
-
-
-def test_ui_prints_the_tokened_url(running_control, capsys):
-    assert ui.main() == 0
-
-    output = capsys.readouterr().out.strip()
-    assert output.startswith("http://127.0.0.1:8765/#")
-    assert len(output.split("#", 1)[1]) > 20
+    try:
+        assert ui.main() == 1
+        assert "not serving its page" in capsys.readouterr().err
+    finally:
+        server.stop()
 
 
 def test_ui_says_plainly_when_nothing_answers(tmp_path, monkeypatch, capsys):

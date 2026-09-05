@@ -1,13 +1,18 @@
 """One control server, two transports, one handler set.
 
 The Unix socket authenticates every request by the kernel's peer
-credentials, and is the only place tokens are minted. The loopback page
-transport authenticates only by bearer token; its POSTs must carry a JSON
-content type, and an Origin other than the page's own is refused regardless
-of the token. What a caller may do is decided by scope in the handlers:
-connect, disconnect and module toggles are privileged verbs, service
-actions carry the caller's identity into their type's handler, and state
-answers are shaped to the asking identity.
+credentials, and is the only place tokens are minted, watched and revoked.
+The loopback page transport authenticates only by bearer token; its POSTs
+must carry a JSON content type, and an Origin other than the page's own is
+refused regardless of the token. What a caller may do is decided by scope in
+the handlers: connect, disconnect and module toggles are privileged verbs,
+service actions carry the caller's identity into their type's handler, and
+state answers are shaped to the asking identity.
+
+A page token is minted only while the agent actually holds the loopback
+port: started with ``--no-ui``, or with the port taken by something else, it
+refuses — a privileged token opened into a page some other local process is
+serving would be that process's to read.
 
 Every refusal is ``{"code": ...}``; each surface does its own wording.
 """
@@ -128,6 +133,7 @@ class ControlServer:
         page_host: str = AGENT_CONTROL_PAGE_HOST,
         page_port: int = AGENT_CONTROL_PAGE_PORT,
         is_page_served: bool = True,
+        tokens: "ControlTokenStore | None" = None,
     ):
         """
         Args:
@@ -138,6 +144,7 @@ class ControlServer:
             page_host: The loopback address the page binds.
             page_port: The page's port; 0 binds a free one.
             is_page_served: Serve the loopback page transport as well.
+            tokens: The token store; None creates one.
         """
         self._agent = agent
         self._platform = platform
@@ -146,7 +153,7 @@ class ControlServer:
         self._page_host = page_host
         self._page_port = page_port
         self._is_page_served = is_page_served
-        self._tokens = ControlTokenStore()
+        self._tokens = tokens if tokens is not None else ControlTokenStore()
         self._socket_server = None
         self._page_server = None
 
@@ -164,11 +171,14 @@ class ControlServer:
         """Serve both transports, logging any that could not bind.
 
         A machine that cannot bind either transport is still a working
-        agent, so this never takes the process down with it.
+        agent, so this never takes the process down with it. The page
+        transport is bound first: the socket mints page tokens, and a
+        socket answering before the page's fate is known could mint into
+        a port somebody else holds.
         """
-        self._start_socket()
         if self._is_page_served:
             self._start_page()
+        self._start_socket()
 
     def stop(self) -> None:
         """Stop whichever transports are serving."""
@@ -269,6 +279,23 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         route = self.path.split("?")[0]
+        if route == "/api/token/watch" and self.server.is_socket_transport:
+            # Holding the token is the authorization; the asker may be the
+            # waiting command of a session another account opened.
+            body = self._read_body()
+            self._send_json(
+                {
+                    "is_alive": self.server.control_tokens.is_alive(
+                        str(body.get("token", ""))
+                    )
+                }
+            )
+            return
+        if route == "/api/token/revoke" and self.server.is_socket_transport:
+            body = self._read_body()
+            self.server.control_tokens.revoke(str(body.get("token", "")))
+            self._send_json({})
+            return
         identity = self._authenticate()
         if identity is None:
             return
@@ -333,6 +360,9 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
         return False
 
     def _mint_token(self, identity: ControlIdentity, body: dict) -> None:
+        if self.server.control_channel.page_port == 0:
+            self._send_json({"code": "control_page_not_served"}, status=409)
+            return
         account = str(body.get("account", "") or identity.account)
         if account == identity.account:
             minted = identity
@@ -353,6 +383,7 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
                 "token": token,
                 "account": minted.account,
                 "is_privileged": minted.is_privileged,
+                "page_port": self.server.control_channel.page_port,
             }
         )
 

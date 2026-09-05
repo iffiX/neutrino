@@ -60,3 +60,41 @@ def test_peer_identity_keeps_privilege_for_uid_zero():
     platform = FakePeerPlatform({"account": "root", "uid": 0, "is_privileged": True})
 
     assert peer_identity(platform, object()).is_privileged is True
+
+
+def test_a_tokens_pulse_keeps_it_alive_and_silence_expires_it():
+    now = [0.0]
+    store = ControlTokenStore(idle_ttl_s=10, clock=lambda: now[0])
+    alice = ControlIdentity(account="alice", uid=1000, is_privileged=False)
+    token = store.mint(alice)
+
+    now[0] = 8.0
+    assert store.identity_of(token) is alice
+    now[0] = 17.0
+    assert store.is_alive(token) is True
+
+    now[0] = 28.0
+    assert store.is_alive(token) is False
+    assert store.identity_of(token) is None
+
+
+def test_watching_a_token_is_not_its_pulse():
+    now = [0.0]
+    store = ControlTokenStore(idle_ttl_s=10, clock=lambda: now[0])
+    token = store.mint(ControlIdentity(account="alice", uid=1000, is_privileged=False))
+
+    now[0] = 8.0
+    assert store.is_alive(token) is True
+    now[0] = 11.0
+    assert store.is_alive(token) is False
+
+
+def test_a_revoked_token_answers_as_nobody():
+    store = ControlTokenStore()
+    token = store.mint(ControlIdentity(account="alice", uid=1000, is_privileged=False))
+
+    store.revoke(token)
+
+    assert store.identity_of(token) is None
+    assert store.is_alive(token) is False
+    store.revoke("never-minted")

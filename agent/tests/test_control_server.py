@@ -2,7 +2,9 @@
 
 The socket answers each caller with the kernel-reported identity's own
 scope; the loopback page answers only to tokens minted over the socket,
-and refuses request shapes a cross-site form can produce.
+and refuses request shapes a cross-site form can produce. Tokens are minted
+only while the page is actually served, watched and revoked only over the
+socket, and expired when their pulse stops.
 """
 
 import http.client
@@ -13,6 +15,7 @@ import pytest
 import neutrino_agent.core.enrollment as enrollment
 from neutrino_agent.constants import AGENT_CONTROL_PAGE_ORIGIN
 from neutrino_agent.control import client
+from neutrino_agent.control.identity import ControlTokenStore
 from neutrino_agent.control.server import ControlServer
 from neutrino_agent.platforms.base import AgentPlatform, PlatformUnsupportedError
 
@@ -439,6 +442,88 @@ def test_tokens_are_minted_only_over_the_socket(control):
     status, reply = loopback_json(server, "POST", "/api/token", token=token, body={})
 
     assert (status, reply["code"]) == (404, "unknown_request")
+
+
+def test_minting_refuses_while_the_page_is_not_served(tmp_path, monkeypatch):
+    monkeypatch.setattr(enrollment, "AGENT_CONFIG_PATH", str(tmp_path / "agent.json"))
+    platform = FakeControlPlatform()
+    server = ControlServer(
+        agent=FakeControlAgent(),
+        platform=platform,
+        log=lambda message: None,
+        socket_path=str(tmp_path / "agent.sock"),
+        is_page_served=False,
+    )
+    server.start()
+    try:
+        platform.peer = dict(ROOT)
+        status, reply = over_socket(server, "POST", "/api/token", {})
+        assert (status, reply["code"]) == (409, "control_page_not_served")
+    finally:
+        server.stop()
+
+
+def test_the_mint_reply_names_the_page_port(control):
+    server, _agent, platform = control
+    platform.peer = dict(ROOT)
+
+    status, reply = over_socket(server, "POST", "/api/token", {})
+
+    assert status == 200
+    assert reply["page_port"] == server.page_port
+
+
+def test_a_token_is_watched_and_revoked_over_the_socket(control):
+    server, _agent, platform = control
+    token = mint(server, platform, ALICE)
+
+    status, reply = over_socket(server, "POST", "/api/token/watch", {"token": token})
+    assert (status, reply) == (200, {"is_alive": True})
+
+    status, _reply = over_socket(server, "POST", "/api/token/revoke", {"token": token})
+    assert status == 200
+    status, reply = over_socket(server, "POST", "/api/token/watch", {"token": token})
+    assert reply == {"is_alive": False}
+
+    status, reply = loopback_json(server, "GET", "/api/state", token=token)
+    assert (status, reply["code"]) == (401, "control_token_invalid")
+
+
+def test_an_expired_pulse_ends_the_token(tmp_path, monkeypatch):
+    monkeypatch.setattr(enrollment, "AGENT_CONFIG_PATH", str(tmp_path / "agent.json"))
+    now = [0.0]
+    tokens = ControlTokenStore(idle_ttl_s=10, clock=lambda: now[0])
+    platform = FakeControlPlatform()
+    server = ControlServer(
+        agent=FakeControlAgent(),
+        platform=platform,
+        log=lambda message: None,
+        socket_path=str(tmp_path / "agent.sock"),
+        page_port=0,
+        tokens=tokens,
+    )
+    server.start()
+    try:
+        token = mint(server, platform, ALICE)
+        # The page's polling keeps the pulse alive.
+        now[0] = 8.0
+        status, _state = loopback_json(server, "GET", "/api/state", token=token)
+        assert status == 200
+        now[0] = 16.0
+        status, reply = over_socket(
+            server, "POST", "/api/token/watch", {"token": token}
+        )
+        assert reply == {"is_alive": True}
+        # The pulse stops; the idle TTL passes; the session is over.
+        now[0] = 27.0
+        status, reply = over_socket(
+            server, "POST", "/api/token/watch", {"token": token}
+        )
+        assert reply == {"is_alive": False}
+        status, reply = loopback_json(server, "GET", "/api/state", token=token)
+        assert (status, reply["code"]) == (401, "control_token_invalid")
+    finally:
+        server.stop()
 
 
 def test_service_actions_carry_the_callers_identity(control):

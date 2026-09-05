@@ -54,6 +54,12 @@ AGENT_CONTROL_PAGE_ORIGIN = (
 )
 AGENT_CONTROL_REQUEST_TIMEOUT_S = 5
 
+# The page's own polling is a token's pulse. A token whose pulse has stopped
+# for this long is expired, which is how a closed window ends its session.
+AGENT_CONTROL_TOKEN_IDLE_TTL_S = 10
+# How often a waiting `nagent ui` asks whether its token is still alive.
+AGENT_UI_WATCH_INTERVAL_S = 2
+
 # Where the machine keeps its service choices — AI switching targets and
 # mount records. Machine state: it survives a hub restore and appears in no
 # hub backup. Mount passwords never enter it; each mount record has its own
