@@ -107,6 +107,28 @@ always was.
 own wording. The agent's `last_error` crosses the wire the same way, so a
 device that is unhappy says why on the panel, not only on its own page.
 
+**Module states are one closed table, split by kind.** A package module
+(a third-party application) and a capability module (something the
+platform already carries) live different lives, so each has its own
+tokens — a surface that meets a token outside this table shows "waiting
+for the agent", which is the word for a machine that has not reported:
+
+| Kind | Steady | Transient | Shared |
+| --- | --- | --- | --- |
+| package | `absent`, `installed` | `installing`, `removing` | `failed`, `unsupported` |
+| capability | `disabled`, `enabled` | `enabling`, `disabling` | `failed`, `unsupported` |
+
+Every surface knows the whole table — the drawer and the agent's page word
+a capability's tokens as enable/disable and a package's as
+install/uninstall, and `failed` is always accompanied by its
+`{code, params}`, worded from the surface's own table. Three invariants
+hold everywhere a state is drawn: every transient token is in the
+surface's busy set, or a row mid-step offers the opposite button; a
+surface's optimistic step (the state it paints the moment a person
+clicks) stands at most two minutes before the machine's own report — or
+its silence — takes over; and a new `code` lands with its wording in the
+same change, which the page's completeness test enforces.
+
 ## The agent's page
 
 Three sections under outer titles set in the hub's module-page style —
