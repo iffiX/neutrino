@@ -7,6 +7,7 @@ a root-owned file inside Gitea's tree is a file the server can no longer
 touch.
 """
 
+import pwd
 import re
 import shutil
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ from neutrino_hub.utils.subprocess_run import CommandError, run
 from neutrino_hub.modules.gitea.constants import (
     GITEA_BINARY_PATH,
     GITEA_CONF_LINK_PATH,
+    GITEA_DIR,
     GITEA_GENERATED_NAME,
     GITEA_SECRET_NAMES,
     GITEA_USER,
@@ -104,6 +106,7 @@ class GiteaConfigApplier:
         write_generated(generated_path, rendered, mode=0o640)
         shutil.chown(generated_path, group=GITEA_USER)
         self._link_config()
+        self._own_work_root()
 
         is_active = run(
             ["systemctl", "is-active", GITEA_SERVICE], is_checked=False
@@ -131,6 +134,24 @@ class GiteaConfigApplier:
         unit_path.write_text(unit_text, encoding="utf-8")
         run(["systemctl", "daemon-reload"])
         return True
+
+    def _own_work_root(self) -> None:
+        """Give the git account the work root and its ``.ssh``.
+
+        Gitea creates ``.ssh`` under its work root on start, so a root-owned
+        root is fatal on every start. Runs on every apply, which is what
+        heals a box that installed with the root owned wrong. Nothing to do
+        while the git account does not exist yet.
+        """
+        try:
+            pwd.getpwnam(GITEA_USER)
+        except KeyError:
+            return
+        GITEA_DIR.mkdir(parents=True, exist_ok=True)
+        ssh_dir = GITEA_DIR / ".ssh"
+        ssh_dir.mkdir(mode=0o700, exist_ok=True)
+        for path in (GITEA_DIR, ssh_dir):
+            shutil.chown(path, user=GITEA_USER, group=GITEA_USER)
 
     def _link_config(self) -> None:
         generated_path = UTILS_GENERATED_DIR / GITEA_GENERATED_NAME

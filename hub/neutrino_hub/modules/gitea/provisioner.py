@@ -170,14 +170,20 @@ class GiteaProvisioner:
         )
 
     def _create_directories(self) -> None:
+        # The work root itself is in the list: useradd --create-home leaves a
+        # directory that already existed owned as it was, and gitea's own
+        # `mkdir .ssh` there is fatal on every start.
         for directory in (
+            GITEA_DIR,
             GITEA_DIR / "custom",
             GITEA_DIR / "data",
             GITEA_DIR / "log",
+            GITEA_DIR / ".ssh",
             Path("/etc/gitea"),
         ):
             directory.mkdir(parents=True, exist_ok=True)
             shutil.chown(directory, user=GITEA_USER, group=GITEA_USER)
+        (GITEA_DIR / ".ssh").chmod(0o700)
         Path("/etc/gitea").chmod(0o770)
 
     def _download_binary(self) -> None:
