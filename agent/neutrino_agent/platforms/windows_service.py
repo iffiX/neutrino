@@ -60,6 +60,13 @@ SERVICE_STATE_WORDS = {
     SERVICE_PAUSED: "paused",
 }
 
+# What the manager passes each callback it invokes. Both return void, and the
+# factory that builds them from these exists only on Windows.
+# LPSERVICE_MAIN_FUNCTIONW: VOID WINAPI (DWORD, LPWSTR *).
+SERVICE_MAIN_ARGUMENT_TYPES = [ctypes.c_ulong, ctypes.POINTER(ctypes.c_wchar_p)]
+# LPHANDLER_FUNCTION: VOID WINAPI (DWORD).
+SERVICE_HANDLER_ARGUMENT_TYPES = [ctypes.c_ulong]
+
 
 class ServiceStatus(ctypes.Structure):
     """The SERVICE_STATUS the manager is told about and asked for."""
@@ -144,44 +151,62 @@ def start(name: str, *, api=None) -> None:
         return
 
 
+def service_api_prototypes(*, handler_type) -> dict:
+    """The Win32 prototype every manager call this seam binds is declared with.
+
+    Args:
+        handler_type: The built ``LPHANDLER_FUNCTION`` callback type.
+
+    Returns:
+        Each function name mapped to its ``(restype, argtypes)``. Handles are
+        pointers, so an undeclared return truncates them to an int on 64-bit;
+        ``BOOL`` is a 32-bit int.
+    """
+    return {
+        "OpenSCManagerW": (
+            ctypes.c_void_p,
+            [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_ulong],
+        ),
+        "OpenServiceW": (
+            ctypes.c_void_p,
+            [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_ulong],
+        ),
+        "CloseServiceHandle": (ctypes.c_int, [ctypes.c_void_p]),
+        "QueryServiceStatus": (
+            ctypes.c_int,
+            [ctypes.c_void_p, ctypes.POINTER(ServiceStatus)],
+        ),
+        "StartServiceW": (
+            ctypes.c_int,
+            [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_void_p],
+        ),
+        "SetServiceStatus": (
+            ctypes.c_int,
+            [ctypes.c_void_p, ctypes.POINTER(ServiceStatus)],
+        ),
+        "RegisterServiceCtrlHandlerW": (
+            ctypes.c_void_p,
+            [ctypes.c_wchar_p, handler_type],
+        ),
+        "StartServiceCtrlDispatcherW": (ctypes.c_int, [ctypes.c_void_p]),
+    }
+
+
 class Win32ServiceApi:
     """The service control manager calls, one seam the tests replace whole."""
 
     def __init__(self):
         self._advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
-        # Handles are pointers: without these prototypes a 64-bit handle
-        # comes back truncated to an int.
-        for name in (
-            "OpenSCManagerW",
-            "OpenServiceW",
-            "RegisterServiceCtrlHandlerW",
-        ):
-            getattr(self._advapi32, name).restype = ctypes.c_void_p
-        self._advapi32.OpenServiceW.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_wchar_p,
-            ctypes.c_ulong,
-        ]
-        self._advapi32.CloseServiceHandle.argtypes = [ctypes.c_void_p]
-        self._advapi32.QueryServiceStatus.argtypes = [
-            ctypes.c_void_p,
-            ctypes.POINTER(ServiceStatus),
-        ]
-        self._advapi32.StartServiceW.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_ulong,
-            ctypes.c_void_p,
-        ]
-        self._advapi32.SetServiceStatus.argtypes = [
-            ctypes.c_void_p,
-            ctypes.POINTER(ServiceStatus),
-        ]
         # The manager calls back into this process, so both callback types
         # are built here: the factory itself exists only on Windows.
-        self._main_type = ctypes.WINFUNCTYPE(
-            None, ctypes.c_ulong, ctypes.POINTER(ctypes.c_wchar_p)
-        )
-        self._handler_type = ctypes.WINFUNCTYPE(None, ctypes.c_ulong)
+        self._main_type = ctypes.WINFUNCTYPE(None, *SERVICE_MAIN_ARGUMENT_TYPES)
+        self._handler_type = ctypes.WINFUNCTYPE(None, *SERVICE_HANDLER_ARGUMENT_TYPES)
+        for name, (restype, argtypes) in service_api_prototypes(
+            handler_type=self._handler_type
+        ).items():
+            function = getattr(self._advapi32, name)
+            function.restype = restype
+            function.argtypes = argtypes
         # The manager keeps the pointers it is given; Python must keep the
         # objects behind them alive for as long as the service runs.
         self._callbacks: list = []
