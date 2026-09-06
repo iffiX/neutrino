@@ -218,7 +218,7 @@ Two hub-side things do the work, and there is exactly one of each:
   than by a check somebody remembered to write.
 
 Every request enters the same door. The panel's device drawer and the
-machine's own page (`sudo nagent ui`) both post the same thing — *this
+machine's own page (`sudo nagent gui`) both post the same thing — *this
 device wants this module* — and the machine's own page reaches it the way
 everything agent-side reaches the hub, by riding the next heartbeat. There
 is no second path, no direct download, and no difference in behavior

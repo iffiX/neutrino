@@ -33,6 +33,11 @@ HUB_ROOT = Path(__file__).resolve().parent.parent
 AGENT_ROOT = HUB_ROOT.parent / "agent"
 PACKAGE_NAME = "neutrino-hub"
 
+# The one icon source; the build copies what the wheel ships from here into
+# the package tree, which the checkout does not carry.
+ICONS_SOURCE_DIR = HUB_ROOT.parent / "images" / "icons"
+ICONS_PACKAGE_DIR = HUB_ROOT / "neutrino_hub" / "data" / "resources"
+
 
 def _runtime(module_name: str, *names):
     """What the hub itself says about the software it drives.
@@ -225,6 +230,7 @@ def build_environment(tree: Path, version: str, machine: str) -> None:
         f'HUB_VERSION = "{version}"\n',
         encoding="utf-8",
     )
+    stage_icons()
     try:
         run(
             [
@@ -244,6 +250,23 @@ def build_environment(tree: Path, version: str, machine: str) -> None:
     stage_agent_package(staged_python)
     stage_vendored(tree, machine)
     stage_licenses(tree)
+
+
+def stage_icons() -> None:
+    """Copy the shipped icons from ``images/icons`` into the package tree.
+
+    The copies land in ``neutrino_hub/data/resources``, which the wheel's
+    package data names and the checkout gitignores.
+
+    Raises:
+        SystemExit: When ``images/icons`` is not beside the hub tree.
+    """
+    sources = sorted(ICONS_SOURCE_DIR.glob("*.png"))
+    if not sources:
+        raise SystemExit(f"no icons to ship under {ICONS_SOURCE_DIR}")
+    ICONS_PACKAGE_DIR.mkdir(parents=True, exist_ok=True)
+    for source in sources:
+        shutil.copyfile(source, ICONS_PACKAGE_DIR / source.name)
 
 
 def stage_agent_package(staged_python: Path) -> None:

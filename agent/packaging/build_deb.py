@@ -17,6 +17,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from gui_assets import ICONS_DIR, stage_gui  # noqa: E402
+
 AGENT_ROOT = Path(__file__).resolve().parent.parent
 PACKAGE_NAME = "neutrino-agent"
 
@@ -38,7 +41,7 @@ Maintainer: {maintainer}
 Description: Neutrino device agent
  Keeps a managed machine's modules in the state its Neutrino Hub asks for:
  installs and removes software from the hub's catalog, reports metrics, and
- offers a small local page for joining a hub.
+ offers a small window for joining a hub.
  .
  Pure standard library, so it runs on whatever Python the machine already has.
 """
@@ -60,7 +63,7 @@ fi
 systemctl daemon-reload || true
 
 # The agent runs from install: unbound it idles waiting for a link, and its
-# control channel answers nagent ui. A service that only starts after a
+# control channel answers nagent gui. A service that only starts after a
 # connect is a heartbeat counter that never accumulates. An upgrade must
 # RESTART it — enable --now on a running unit is a no-op, and the whole
 # self-update path ends here: without the restart the new code lies on
@@ -164,6 +167,7 @@ def _lay_out(tree: Path, version: str, maintainer: str) -> None:
         f'AGENT_VERSION = "{version}"\n',
         encoding="utf-8",
     )
+    stage_gui(package_dir)
 
     # Whatever umask the build ran under does not belong in a package.
     for path in package_dir.rglob("*"):
@@ -182,12 +186,12 @@ def _lay_out(tree: Path, version: str, maintainer: str) -> None:
         tree / "usr/share/applications/neutrino_agent.desktop",
         (desktop / "neutrino_agent.desktop").read_text(encoding="utf-8"),
     )
-    for source, edge in (("neutrino_agent.png", 256), ("neutrino_agent_48.png", 48)):
+    for source, edge in (("neutrino_256.png", 256), ("neutrino_48.png", 48)):
         destination = (
             tree / f"usr/share/icons/hicolor/{edge}x{edge}/apps/neutrino_agent.png"
         )
         destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(desktop / source, destination)
+        shutil.copyfile(ICONS_DIR / source, destination)
 
     control = CONTROL.format(
         name=PACKAGE_NAME,

@@ -32,6 +32,11 @@ hub_dev_root/
 hub/neutrino_hub/data/agent_package/
 agent_dev_root/
 
+# Copied in from images/icons and agent/frontend by the packaging builds;
+# a checkout reads the sources instead.
+hub/neutrino_hub/data/resources/
+agent/neutrino_agent/data/gui/
+
 # --- Python ---
 # Stamped in by the packaging build, never committed.
 hub/neutrino_hub/_version.py

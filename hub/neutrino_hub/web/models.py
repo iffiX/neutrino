@@ -1227,7 +1227,7 @@ class DeviceEnrollmentRequest(BaseModel):
 
 
 class DeviceEnrollmentView(BaseModel):
-    """The link to paste into a machine's own agent page."""
+    """The link to paste into a machine's own agent window."""
 
     link: str
     token: str

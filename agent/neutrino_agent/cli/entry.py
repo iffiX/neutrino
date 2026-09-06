@@ -1,7 +1,7 @@
 """The ``nagent`` command.
 
 Most machines never see this: the agent installs with a desktop entry that
-runs ``nagent ui``, which opens the agent's own page in the clicking
+runs ``nagent gui``, which opens the agent's own window in the clicking
 account's scope. These commands do the same things from a terminal, for
 machines with no desktop and for reading what went wrong.
 
@@ -9,7 +9,7 @@ machines with no desktop and for reading what went wrong.
     nagent disconnect
     nagent run
     nagent status
-    nagent ui
+    nagent gui
     nagent module list | install <name> | uninstall <name>
     nagent operation [--follow]
     nagent service list | <kind> <action>
@@ -26,12 +26,12 @@ from neutrino_agent import AGENT_VERSION
 from neutrino_agent.cli import (
     connect,
     disconnect,
+    gui,
     module,
     operation,
     run,
     service,
     status,
-    ui,
 )
 from neutrino_agent.services.ai import AI_REASONING_EFFORTS
 
@@ -71,14 +71,14 @@ def main() -> int:
 
     subparsers.add_parser("disconnect", help="leave the hub")
 
-    run_parser = subparsers.add_parser("run", help="run the agent in the foreground")
-    run_parser.add_argument(
-        "--no-ui", action="store_true", help="do not serve the local page"
-    )
+    subparsers.add_parser("run", help="run the agent in the foreground")
 
     subparsers.add_parser("status", help="what this machine is bound to")
 
-    subparsers.add_parser("ui", help="open this machine's page in a browser")
+    gui_parser = subparsers.add_parser("gui", help="open this machine's window")
+    gui_parser.add_argument(
+        "--window-fd", type=int, default=None, help=argparse.SUPPRESS
+    )
 
     module_parser = _add_module_parser(subparsers)
     operation_parser = subparsers.add_parser(
@@ -103,9 +103,9 @@ def main() -> int:
     if arguments.command == "disconnect":
         return disconnect.main()
     if arguments.command == "run":
-        return run.main(is_ui_served=not arguments.no_ui)
-    if arguments.command == "ui":
-        return ui.main()
+        return run.main()
+    if arguments.command == "gui":
+        return gui.main(window_fd=arguments.window_fd)
     if arguments.command == "module":
         return _run_module(arguments, module_parser)
     if arguments.command == "operation":

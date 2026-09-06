@@ -246,10 +246,10 @@ and marked `scan: allow` on its line.
 
 ## nagent
 
-Most machines never see this. The agent installs with a desktop entry, and
-clicking it opens the agent's own page on `http://127.0.0.1:8765`, which is
-where the enrollment link is pasted. These commands do the same things from a
-terminal, for machines with no desktop and for reading what went wrong.
+Most machines never see this. The agent installs with a desktop entry that
+runs `nagent gui`, and the window it opens is where the enrollment link is
+pasted. These commands do the same things from a terminal, for machines with
+no desktop and for reading what went wrong.
 
 ### connect
 
@@ -273,7 +273,7 @@ Replaces an existing binding without asking.
 
 > `nagent disconnect`
 
-Leaves the hub. The machine keeps the agent and its local page, and can join
+Leaves the hub. The machine keeps the agent and its window, and can join
 again.
 
 ### run
@@ -283,10 +283,19 @@ again.
 Runs the agent in the foreground. This is what the systemd unit, the launchd
 job and the Windows scheduled task start.
 
-> `--no-ui`
+### gui
 
-Does not serve the local page on `http://127.0.0.1:8765`. For a machine nobody
-sits in front of.
+> `nagent gui`
+
+Opens the agent's window as whoever ran it: the command connects to the
+running agent's control socket — the kernel reads who is asking, and that
+identity is the window's whole scope — then hands the connected descriptor
+to a window process running as the desktop user, so no privileged GUI
+process exists. `sudo nagent gui` opens the privileged window; the desktop
+entry runs the plain one. The window embeds the platform's own web view —
+WebKitGTK 4.1 on Linux, WebView2 on Windows, WKWebView on macOS — and a
+machine without its web view is refused with the package to install named.
+On Windows the elevated invocation hosts the window itself.
 
 ### status
 

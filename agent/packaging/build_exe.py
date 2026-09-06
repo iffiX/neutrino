@@ -38,6 +38,9 @@ from neutrino_agent.constants import (  # noqa: E402
     AGENT_SCHEDULED_TASK_NAME_WINDOWS as TASK_NAME,
 )
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from gui_assets import stage_gui  # noqa: E402
+
 # The interpreter the installer carries. Pinned by hash: this is the one
 # third-party artifact the build fetches, and a package that installs an
 # unverified interpreter as SYSTEM is not one to ship.
@@ -173,6 +176,7 @@ def _lay_out(payload: Path, archive: Path, version: str) -> None:
         f'AGENT_VERSION = "{version}"\n',
         encoding="utf-8",
     )
+    stage_gui(package_dir)
 
     (payload / "nagent.cmd").write_text(CONSOLE_WRAPPER, encoding="utf-8")
     (payload / "nagent_service.cmd").write_text(SERVICE_WRAPPER, encoding="utf-8")

@@ -21,8 +21,12 @@ Not pure: writes a package tree and runs rpmbuild.
 import argparse
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from gui_assets import ICONS_DIR, stage_gui  # noqa: E402
 
 AGENT_ROOT = Path(__file__).resolve().parent.parent
 PACKAGE_NAME = "neutrino-agent"
@@ -58,7 +62,7 @@ Packager:       {packager}
 %description
 Keeps a managed machine's modules in the state its Neutrino Hub asks for:
 installs and removes software from the hub's catalog, reports metrics, and
-offers a small local page for joining a hub.
+offers a small window for joining a hub.
 
 Pure standard library, so it runs on whatever Python the machine already has.
 
@@ -87,10 +91,10 @@ fi
 update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
 if [ "$1" = 1 ]; then
     echo ""
-    echo "  Neutrino agent installed. Start it and join a hub from its page:"
+    echo "  Neutrino agent installed. Start it and join a hub from its window:"
     echo ""
     echo "      systemctl enable --now neutrino_agent.service"
-    echo "      nagent ui"
+    echo "      nagent gui"
     echo ""
 fi
 
@@ -177,6 +181,7 @@ def _lay_out(payload: Path, version: str) -> None:
         f'AGENT_VERSION = "{version}"\n',
         encoding="utf-8",
     )
+    stage_gui(package_dir)
 
     # Whatever umask the build ran under does not belong in a package.
     for path in package_dir.rglob("*"):
@@ -199,12 +204,12 @@ def _lay_out(payload: Path, version: str) -> None:
         payload / "usr/share/applications/neutrino_agent.desktop",
         (desktop / "neutrino_agent.desktop").read_text(encoding="utf-8"),
     )
-    for source, edge in (("neutrino_agent.png", 256), ("neutrino_agent_48.png", 48)):
+    for source, edge in (("neutrino_256.png", 256), ("neutrino_48.png", 48)):
         destination = (
             payload / f"usr/share/icons/hicolor/{edge}x{edge}/apps/neutrino_agent.png"
         )
         destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(desktop / source, destination)
+        shutil.copyfile(ICONS_DIR / source, destination)
 
 
 def _build(spec: Path, topdir: Path, output_dir: Path, version: str) -> Path:

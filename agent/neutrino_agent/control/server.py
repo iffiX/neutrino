@@ -1,18 +1,15 @@
-"""One control server, two transports, one handler set.
+"""One control server, one transport, one handler set.
 
-The Unix socket authenticates every request by the kernel's peer
-credentials, and is the only place tokens are minted, watched and revoked.
-The loopback page transport authenticates only by bearer token; its POSTs
-must carry a JSON content type, and an Origin other than the page's own is
-refused regardless of the token. What a caller may do is decided by scope in
-the handlers: connect, disconnect and module toggles are privileged verbs,
-service actions carry the caller's identity into their type's handler, and
-state answers are shaped to the asking identity.
+The control socket — a Unix socket on Linux and macOS, a named pipe on
+Windows — authenticates every request by the kernel's peer credentials. What
+a caller may do is decided by scope in the handlers: connect, disconnect and
+module toggles are privileged verbs, service actions carry the caller's
+identity into their type's handler, and state answers are shaped to the
+asking identity.
 
-A page token is minted only while the agent actually holds the loopback
-port: started with ``--no-ui``, or with the port taken by something else, it
-refuses — a privileged token opened into a page some other local process is
-serving would be that process's to read.
+Connections persist between requests, and each is served on its own thread:
+``nagent gui`` hands its connected descriptor to the window process, whose
+whole session rides that one connection in the scope its opener owned.
 
 Every refusal is ``{"code": ...}``; each surface does its own wording. A
 handler exception never drops the connection: the caller gets
@@ -31,21 +28,11 @@ import socketserver
 import threading
 import traceback
 import urllib.parse
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from neutrino_agent import AGENT_VERSION
-from neutrino_agent.constants import (
-    AGENT_CONTROL_PAGE_HOST,
-    AGENT_CONTROL_PAGE_ORIGIN,
-    AGENT_CONTROL_PAGE_PORT,
-    AGENT_CONTROL_PIPE_PREFIX,
-)
-from neutrino_agent.control.identity import (
-    ControlIdentity,
-    ControlTokenStore,
-    peer_identity,
-)
-from neutrino_agent.control.page import CONTROL_PAGE_HTML
+from neutrino_agent.constants import AGENT_CONTROL_PIPE_PREFIX
+from neutrino_agent.control.identity import ControlIdentity, peer_identity
 from neutrino_agent.core import enrollment
 from neutrino_agent.core.metrics import hostname
 from neutrino_agent.platforms.base import PlatformUnsupportedError
@@ -142,7 +129,7 @@ def _module_rows(agent, modules: dict) -> list:
 
 
 class ControlServer:
-    """Serves the control socket and the loopback page from one handler set."""
+    """Serves the control socket or pipe from one handler set."""
 
     def __init__(
         self,
@@ -151,10 +138,6 @@ class ControlServer:
         platform,
         log=print,
         socket_path: str = "",
-        page_host: str = AGENT_CONTROL_PAGE_HOST,
-        page_port: int = AGENT_CONTROL_PAGE_PORT,
-        is_page_served: bool = True,
-        tokens: "ControlTokenStore | None" = None,
     ):
         """
         Args:
@@ -162,55 +145,24 @@ class ControlServer:
             platform: The machine's platform, behind the contract.
             log: Callable used for progress messages.
             socket_path: The control socket path; empty asks the platform.
-            page_host: The loopback address the page binds.
-            page_port: The page's port; 0 binds a free one.
-            is_page_served: Serve the loopback page transport as well.
-            tokens: The token store; None creates one.
         """
         self._agent = agent
         self._platform = platform
         self._log = log
         self._socket_path = socket_path
-        self._page_host = page_host
-        self._page_port = page_port
-        self._is_page_served = is_page_served
-        self._tokens = tokens if tokens is not None else ControlTokenStore()
         self._socket_server = None
-        self._page_server = None
 
     @property
     def socket_path(self) -> str:
         """The path the socket transport serves on, empty when it is not."""
         return self._socket_path if self._socket_server is not None else ""
 
-    @property
-    def page_port(self) -> int:
-        """The port the page transport bound, 0 when it is not serving."""
-        return self._page_port if self._page_server is not None else 0
-
     def start(self) -> None:
-        """Serve both transports, logging any that could not bind.
+        """Serve the socket, logging when it could not bind.
 
-        A machine that cannot bind either transport is still a working
-        agent, so this never takes the process down with it. The page
-        transport is bound first: the socket mints page tokens, and a
-        socket answering before the page's fate is known could mint into
-        a port somebody else holds.
+        A machine that cannot bind the socket is still a working agent, so
+        this never takes the process down with it.
         """
-        if self._is_page_served:
-            self._start_page()
-        self._start_socket()
-
-    def stop(self) -> None:
-        """Stop whichever transports are serving."""
-        for server in (self._socket_server, self._page_server):
-            if server is not None:
-                server.shutdown()
-                server.server_close()
-        self._socket_server = None
-        self._page_server = None
-
-    def _start_socket(self) -> None:
         path = self._socket_path
         if not path:
             try:
@@ -228,41 +180,32 @@ class ControlServer:
         except OSError as error:
             self._log(f"control socket not available: {error}")
             return
-        self._configure(server, is_socket_transport=True)
+        server.control_agent = self._agent
+        server.control_platform = self._platform
+        server.control_log = self._log
         self._socket_path = path
         self._socket_server = server
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self._log(f"control socket on {path}")
 
-    def _start_page(self) -> None:
-        try:
-            server = HTTPServer(
-                (self._page_host, self._page_port), _ControlRequestHandler
-            )
-        except OSError as error:
-            self._log(f"local page not available: {error}")
-            return
-        self._configure(server, is_socket_transport=False)
-        self._page_port = server.server_address[1]
-        self._page_server = server
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        self._log(f"local page on http://{self._page_host}:{self._page_port}")
-
-    def _configure(self, server, *, is_socket_transport: bool) -> None:
-        server.control_agent = self._agent
-        server.control_platform = self._platform
-        server.control_tokens = self._tokens
-        server.control_channel = self
-        server.control_log = self._log
-        server.is_socket_transport = is_socket_transport
+    def stop(self) -> None:
+        """Stop the transport when it is serving."""
+        if self._socket_server is not None:
+            self._socket_server.shutdown()
+            self._socket_server.server_close()
+        self._socket_server = None
 
 
-class _ControlSocketHttpServer(HTTPServer):
-    """An HTTP server bound to a Unix socket path."""
+class _ControlSocketHttpServer(ThreadingHTTPServer):
+    """An HTTP server bound to a Unix socket path, one thread per client."""
 
     # AF_UNIX is absent on Windows, where the pipe transport serves instead;
     # the fallback only keeps this module importable there.
     address_family = getattr(socket, "AF_UNIX", socket.AF_INET)
+
+    def handle_error(self, request, client_address) -> None:
+        """A dropped client goes to the agent's log, never to stderr."""
+        self.control_log(traceback.format_exc())
 
     def server_bind(self) -> None:
         """Bind the path: make its directory, drop a stale socket, open wide.
@@ -285,8 +228,11 @@ class _ControlSocketHttpServer(HTTPServer):
 
 
 class _ControlRequestHandler(BaseHTTPRequestHandler):
-    """The one handler set both transports share."""
+    """The one handler set the socket and the pipe share."""
 
+    # Connections persist between requests, which is what lets a handed-over
+    # GUI connection keep the scope its opener owned.
+    protocol_version = "HTTP/1.1"
     timeout = 10
 
     def do_GET(self) -> None:
@@ -323,50 +269,23 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
 
     def _route_get(self) -> None:
         route = self.path.split("?")[0]
+        identity = self._authenticate()
+        if identity is None:
+            return
         if route == "/api/state":
-            identity = self._authenticate()
-            if identity is None:
-                return
             self._send_json(_scoped_state(self.server.control_agent, identity))
         elif route == "/api/fs":
-            identity = self._authenticate()
-            if identity is None:
-                return
             self._list_directories(identity)
-        elif route.startswith("/api/"):
-            self._send_json({"code": "unknown_request"}, status=404)
         else:
-            self._send_html(CONTROL_PAGE_HTML)
+            self._send_json({"code": "unknown_request"}, status=404)
 
     def _route_post(self) -> None:
         route = self.path.split("?")[0]
-        if route == "/api/token/watch" and self.server.is_socket_transport:
-            # Holding the token is the authorization; the asker may be the
-            # waiting command of a session another account opened.
-            body = self._read_body()
-            self._send_json(
-                {
-                    "is_claimed": self.server.control_tokens.is_claimed(
-                        str(body.get("token", ""))
-                    ),
-                    "is_alive": self.server.control_tokens.is_alive(
-                        str(body.get("token", ""))
-                    ),
-                }
-            )
-            return
-        if route == "/api/token/revoke" and self.server.is_socket_transport:
-            body = self._read_body()
-            self.server.control_tokens.revoke(str(body.get("token", "")))
-            self._send_json({})
-            return
         identity = self._authenticate()
         if identity is None:
             return
         body = self._read_body()
-        if route == "/api/token" and self.server.is_socket_transport:
-            self._mint_token(identity, body)
-        elif route == "/api/connect":
+        if route == "/api/connect":
             self._connect(identity, body)
         elif route == "/api/disconnect":
             self._disconnect(identity)
@@ -382,69 +301,23 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
     def _authenticate(self) -> "ControlIdentity | None":
         """The caller's identity, or None after a refusal was sent.
 
-        The socket transport asks the kernel who the peer is; the loopback
-        transport accepts only a bearer token, and its POSTs must look like
-        the page's own.
+        The kernel reports who the peer is; nothing in the request itself
+        can name a different caller.
         """
-        if self.server.is_socket_transport:
-            try:
-                return peer_identity(self.server.control_platform, self.connection)
-            except PlatformUnsupportedError:
-                self._send_json({"code": "unsupported_platform"}, status=403)
-                return None
-            except KeyError:
-                self._send_json({"code": "control_identity_unknown"}, status=403)
-                return None
-        if self.command == "POST":
-            origin = self.headers.get("Origin", "")
-            if origin and origin != AGENT_CONTROL_PAGE_ORIGIN:
-                self._send_json({"code": "control_origin_refused"}, status=403)
-                return None
-            content_type = self.headers.get("Content-Type", "")
-            if content_type.split(";")[0].strip() != "application/json":
-                self._send_json({"code": "control_content_type_refused"}, status=400)
-                return None
-        header = self.headers.get("Authorization", "")
-        token = header[len("Bearer ") :] if header.startswith("Bearer ") else ""
-        identity = self.server.control_tokens.identity_of(token)
-        if identity is None:
-            self._send_json({"code": "control_token_invalid"}, status=401)
+        try:
+            return peer_identity(self.server.control_platform, self.connection)
+        except PlatformUnsupportedError:
+            self._send_json({"code": "unsupported_platform"}, status=403)
             return None
-        return identity
+        except KeyError:
+            self._send_json({"code": "control_identity_unknown"}, status=403)
+            return None
 
     def _require_privilege(self, identity: ControlIdentity) -> bool:
         if identity.is_privileged:
             return True
         self._send_json({"code": "control_scope_refused"}, status=403)
         return False
-
-    def _mint_token(self, identity: ControlIdentity, body: dict) -> None:
-        if self.server.control_channel.page_port == 0:
-            self._send_json({"code": "control_page_not_served"}, status=409)
-            return
-        account = str(body.get("account", "") or identity.account)
-        if account == identity.account:
-            minted = identity
-        else:
-            if not self._require_privilege(identity):
-                return
-            try:
-                humans = self.server.control_platform.human_accounts()
-            except PlatformUnsupportedError:
-                humans = []
-            if account not in humans:
-                self._send_json({"code": "control_unknown_account"}, status=400)
-                return
-            minted = ControlIdentity(account=account, uid=-1, is_privileged=False)
-        token = self.server.control_tokens.mint(minted)
-        self._send_json(
-            {
-                "token": token,
-                "account": minted.account,
-                "is_privileged": minted.is_privileged,
-                "page_port": self.server.control_channel.page_port,
-            }
-        )
 
     def _connect(self, identity: ControlIdentity, body: dict) -> None:
         if not self._require_privilege(identity):
@@ -541,14 +414,6 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def _send_html(self, html: str) -> None:
-        body = html.encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

@@ -48,7 +48,7 @@ def canned_response(payload: dict) -> bytes:
 
 
 def test_a_pipe_path_dials_the_named_pipe(monkeypatch):
-    api = ScriptedPipeApi(canned_response({"is_claimed": True}))
+    api = ScriptedPipeApi(canned_response({"caller": {"account": "root"}}))
 
     def open_scripted(pipe_name, **kwargs):
         return windows_pipe.PipeConnection(
@@ -60,14 +60,14 @@ def test_a_pipe_path_dials_the_named_pipe(monkeypatch):
     status, reply = client.request(
         socket_path="\\\\.\\pipe\\neutrino_agent_control",
         method="POST",
-        path="/api/token/watch",
-        body={"token": "t"},
+        path="/api/module",
+        body={"name": "openssh_server"},
     )
 
-    assert (status, reply) == (200, {"is_claimed": True})
+    assert (status, reply) == (200, {"caller": {"account": "root"}})
     sent = bytes(api.sent)
-    assert sent.startswith(b"POST /api/token/watch HTTP/1.1\r\n")
-    assert b'{"token": "t"}' in sent
+    assert sent.startswith(b"POST /api/module HTTP/1.1\r\n")
+    assert b'{"name": "openssh_server"}' in sent
     assert api.opened == ["\\\\.\\pipe\\neutrino_agent_control"]
     assert api.closed == [31]
 

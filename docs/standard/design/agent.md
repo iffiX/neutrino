@@ -230,37 +230,40 @@ survive a hub restore untouched, and appear in no hub backup.
 
 ## The local control channel
 
-Local access rides two transports serving one API, and identity comes from
-the operating system, not from a password:
+Local access is one transport serving one API, and identity comes from the
+operating system, not from a password: **a control socket** — a Unix socket
+on Linux and macOS, a named pipe on Windows. Any local account may connect;
+the peer's identity is read from the kernel (`SO_PEERCRED`,
+`LOCAL_PEERCRED`, pipe impersonation), and the caller gets the scope that
+identity owns. Nothing a request carries can name a different caller.
+`nagent` talks here, and so does the agent's window. Connections persist
+between requests, so a handed-over connection keeps the scope its opener
+owned for its whole session.
 
-- **A control socket** — a Unix socket on Linux and macOS, a named pipe on
-  Windows. Any local account may connect; the peer's identity is read from
-  the kernel (`SO_PEERCRED`, `LOCAL_PEERCRED`, pipe impersonation), and the
-  caller gets the scope that identity owns. `nagent` talks here.
-- **The loopback page** on `127.0.0.1:8765`, for browsers, which cannot
-  speak the socket. Every API request carries a token; a token is minted
-  over the socket, is bound to the identity that asked, and dies with the
-  agent process. Requests are additionally checked for the page's own
-  `Origin` and a JSON `Content-Type`, which is what keeps a website in a
-  local browser from posting here. A tokenless request gets a page that
-  says how to open one, and nothing else.
+`nagent gui` is how a person opens the agent's window: the invoking process
+connects to the socket — fixing the session's scope as whoever ran the
+command — and hands the connected descriptor to a window process running as
+the desktop user, `SUDO_USER` under sudo and the invoker otherwise, so no
+privileged GUI process exists. The window embeds the platform's own web
+view — WebKitGTK pinned to the 4.1 API on Linux, WebView2 on Windows,
+WKWebView on macOS — loads the page from the package's own files, and
+carries the page's requests over that one inherited connection through a
+message bridge: the shell forwards method, path and body, and nothing
+else the page says reaches the agent. Nothing is printed for a person to
+copy, and no browser is ever launched for the agent's own page — `service
+web open` still opens one, because a published remote URL is not the
+agent's page. A machine without its web view refuses with a typed code
+naming the package to install.
 
-`nagent ui` is how a person opens the page: it fetches a token over the
-socket as whoever ran it, opens the browser through the standard
-library's `webbrowser` module, prints
-`Please open <url> if the browser does not show up. Close the window or
-press Ctrl-C to stop.` — and **waits**. The command is the session: Ctrl-C
-revokes the token at once, and a closed window revokes it moments later —
-the page's own polling is the token's pulse, and a token whose pulse
-stops is expired and the waiting command told so. The desktop menu entry
-runs `nagent ui`, so a double-click lands in the clicking account's own
-scope; `sudo nagent ui` opens the privileged page. One page serves both —
-what it shows is the token's scope.
+Windows is the one deviation: the elevated invocation hosts the window
+itself and opens the pipe per request, the kernel reading the same
+identity on each one — elevation there is a token on the same desktop
+session, and a hand-off to a de-elevated process buys nothing a per-request
+kernel read does not already give.
 
-The agent mints a page token only while it actually holds the loopback
-port: started with `--no-ui`, or with the port taken by something else,
-it refuses and says why — a privileged token opened into a page some
-other local process is serving would be that process's to read.
+The desktop menu entry runs `nagent gui`, so a double-click lands in the
+clicking account's own scope; `sudo nagent gui` opens the privileged
+window. One page serves both — what it shows is the connection's scope.
 
 ## Acting for an account
 
@@ -457,11 +460,11 @@ already strip TLS — who fails the fingerprint check first.
 **A local account on the managed machine**: the control socket answers them
 with their own scope and nothing more — the binding, the install verbs and
 other accounts' settings are the privileged scope's, which the kernel-read
-peer identity withholds. The loopback page gives them the same and no more,
-because its tokens are minted to an identity over that same socket. A
-website in their browser gets nothing at all: it holds no token, and the
-`Origin` and `Content-Type` checks refuse the request shapes a cross-site
-form can produce.
+peer identity withholds. The agent's window gives them the same and no
+more, because its whole session rides a connection `nagent gui` opened as
+the person who ran it. A website in their browser gets nothing at all: the
+agent listens on no local port, so there is nothing for a cross-site form
+to post to.
 
 **Rooting the hub box** is outside the model: the key, the vault and the
 panel all live there. The panel port itself is plain HTTP by

@@ -259,7 +259,7 @@ def _reported_key(registry: DeviceRegistry, request: ClientEnroll) -> str:
 def leave(report: ClientLeave, runtime: PanelRuntime = Depends(get_runtime)) -> dict:
     """Accept an agent's word that it is leaving.
 
-    Called when someone disconnects a machine from its own agent page. The
+    Called when someone disconnects a machine from its own agent window. The
     device stays in the list with everything the user gave it; only the agent
     and what it reported are dropped, so the panel stops drawing metrics that
     have stopped arriving.

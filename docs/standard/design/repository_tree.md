@@ -17,7 +17,9 @@ hub/                 The `neutrino_hub` distribution: the appliance.
 agent/               The `neutrino_agent` distribution: the device agent.
 packaging/           Building both, and driving a built one on a live box.
 docs/                This standard, the CLI reference, and nothing generated.
-images/              Source artwork and the README's screenshots.
+images/              Source artwork: icons/ the one icon source the packaging
+                     builds copy from, original/ the raw artwork, web/ the
+                     README's screenshots.
 licenses/            The upstream licences of the software the packages carry.
 .github/workflows/   Continuous integration and the release build.
 ```
@@ -40,7 +42,8 @@ hub/
     data/              What ships inside the wheel: services/ the unit
                        templates, examples/ the committed *.example.json,
                        manifests/ the device software catalog, frontend/ the
-                       built panel, resources/ the icons.
+                       built panel, resources/ the icons the build copies in
+                       from images/icons/.
   frontend/          React and TypeScript source. `npm run build` writes into
                      neutrino_hub/data/frontend/, which is not committed.
   packaging/         The .deb, .rpm and Arch builders, and the interpreter
@@ -59,11 +62,14 @@ password hash and device keys. What each file may contain is documented by the
 ```
 agent/
   neutrino_agent/    The agent: heartbeat, reconcile, feature installers, the
-                     local page a person pastes an enrolment link into.
+                     window a person pastes an enrolment link into.
+    data/            Ships inside the package: systemd/ its unit, desktop/
+                     its .desktop entry, gui/ the page and window icon the
+                     packaging builds copy in from agent/frontend/ and
+                     images/icons/.
+  frontend/          The window's page: plain HTML, CSS and JavaScript, no
+                     framework and no node toolchain.
   packaging/         Its own .deb, .rpm and Windows .exe builders.
-  systemd/           Its unit.
-  desktop/           Its .desktop entry and icons, for the machines that have
-                     a desktop to put it on.
   tests/
 ```
 

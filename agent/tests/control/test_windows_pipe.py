@@ -10,9 +10,7 @@ import io
 import json
 import threading
 import time
-import types
 
-from neutrino_agent.control.identity import ControlTokenStore
 from neutrino_agent.control.server import ControlServer, _ControlRequestHandler
 from neutrino_agent.control.windows_pipe import (
     ControlPipeHttpServer,
@@ -89,9 +87,7 @@ def serve_one_exchange(api, platform):
     server = ControlPipeHttpServer(PIPE_NAME, _ControlRequestHandler, api=api)
     server.control_agent = FakeControlAgent()
     server.control_platform = platform
-    server.control_tokens = ControlTokenStore()
-    server.control_channel = types.SimpleNamespace(page_port=0)
-    server.is_socket_transport = True
+    server.control_log = discard
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     deadline = time.monotonic() + 5
@@ -185,7 +181,6 @@ def test_the_control_server_builds_the_pipe_transport_for_a_pipe_path():
             agent=FakeControlAgent(),
             platform=PipePlatform(),
             log=discard,
-            is_page_served=False,
         )
         server.start()
         assert server.socket_path == PIPE_NAME

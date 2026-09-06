@@ -32,10 +32,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 HUB_BUILD_PLATFORMS = {"amd64": "linux/amd64", "arm64": "linux/arm64"}
 
 # Only what the hub's package build reads is copied in — the package, the
-# packaging, the agent tree it bakes native packages from, and the licences
-# of everything it carries. Taking the whole tree would carry `config/`,
-# whose real files are root-owned and unreadable, and
-# `hub/frontend/node_modules`, which the package does not contain.
+# packaging, the agent tree it bakes native packages from with the agent's
+# frontend, the shipped icons, and the licences of everything it carries.
+# Taking the whole tree would carry `config/`, whose real files are
+# root-owned and unreadable, and `hub/frontend/node_modules`, which the
+# package does not contain.
 # What builds the hub for each distribution family, and what that family needs
 # installed first. Each is run inside a container of that family, because the
 # environment the package carries has no standard library of its own and the
@@ -67,12 +68,13 @@ HUB_BUILDS = {
 }
 
 CONTAINER_BUILD = (
-    "{install} && mkdir -p /build/hub /build/agent && "
+    "{install} && mkdir -p /build/hub /build/agent /build/images && "
     "cp -r /src/hub/neutrino_hub /src/hub/packaging /src/hub/pyproject.toml "
     "/build/hub/ && "
     "cp -r /src/agent/neutrino_agent /src/agent/packaging "
-    "/src/agent/pyproject.toml "
+    "/src/agent/frontend /src/agent/pyproject.toml "
     "/build/agent/ && "
+    "cp -r /src/images/icons /build/images/ && "
     "cp -r /src/licenses /build/licenses && cd /build && "
     "python3 hub/packaging/{script} --output-dir /out "
     "--architecture {architecture} {extra}"

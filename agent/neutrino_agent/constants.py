@@ -67,25 +67,18 @@ AGENT_OUTPUT_LIMIT_BYTES = 64 * 1024
 AGENT_STEP_DOWN_TIMEOUT_S = 120
 
 # The local control channel: a socket any local account may connect to,
-# whose peer identity the kernel reports, and a loopback page unlocked by
-# tokens minted over that socket. On Windows the socket is a named pipe and
-# the peer identity comes from pipe impersonation.
+# whose peer identity the kernel reports. On Windows the socket is a named
+# pipe and the peer identity comes from pipe impersonation.
 AGENT_CONTROL_SOCKET_PATH = "/run/neutrino_agent/agent.sock"
 AGENT_CONTROL_SOCKET_PATH_DARWIN = "/var/run/neutrino_agent/agent.sock"
 AGENT_CONTROL_PIPE_PREFIX = "\\\\.\\pipe\\"
 AGENT_CONTROL_PIPE_NAME = AGENT_CONTROL_PIPE_PREFIX + "neutrino_agent_control"
-AGENT_CONTROL_PAGE_HOST = "127.0.0.1"
-AGENT_CONTROL_PAGE_PORT = 8765
-AGENT_CONTROL_PAGE_ORIGIN = (
-    f"http://{AGENT_CONTROL_PAGE_HOST}:{AGENT_CONTROL_PAGE_PORT}"
-)
 AGENT_CONTROL_REQUEST_TIMEOUT_S = 5
 
-# The page's own polling is a token's pulse. A token whose pulse has stopped
-# for this long is expired, which is how a closed window ends its session.
-AGENT_CONTROL_TOKEN_IDLE_TTL_S = 10
-# How often a waiting `nagent ui` asks whether its token is still alive.
-AGENT_UI_WATCH_INTERVAL_S = 2
+# The window `nagent gui` opens.
+AGENT_GUI_WINDOW_TITLE = "Neutrino agent"
+AGENT_GUI_WINDOW_WIDTH = 760
+AGENT_GUI_WINDOW_HEIGHT = 900
 
 # How the module and operation commands follow the hub's one operation
 # stream: how often they ask the running agent, and how long a posted ask

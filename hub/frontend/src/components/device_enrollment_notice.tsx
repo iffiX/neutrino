@@ -12,13 +12,13 @@ import "./device_enrollment_notice.css";
  */
 
 const ENROLLMENT_TITLE_ANY =
-  "Paste this link into the machine's own agent page.";
+  "Paste this link into the machine's own agent window.";
 
 const ENROLLMENT_TITLE_DEVICE =
-  "Paste this link into the agent page on {name}.";
+  "Paste this link into the agent window on {name}.";
 
 const ENROLLMENT_HINT =
-  "Install the agent there, then paste the link into http://127.0.0.1:8765 — or run `sudo nagent connect <link>` in its terminal; it pastes safely unquoted. It works for {minutes} minutes.";
+  "Install the agent there, then paste the link into its window (`nagent gui`) — or run `sudo nagent connect <link>` in its terminal; it pastes safely unquoted. It works for {minutes} minutes.";
 
 interface DeviceEnrollmentNoticeProps {
   enrollment: DeviceEnrollmentView;

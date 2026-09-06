@@ -1,24 +1,9 @@
 """Who is asking on the local control channel.
 
-An identity comes from one of two places: the control socket's kernel peer
-credentials, read through the platform contract, or a bearer token minted
-over that socket and bound to the identity that asked. Tokens live in
-memory only and die with the process — or sooner: the page's own polling is
-a token's pulse, and one whose pulse has stopped for the idle TTL is
-expired, which is how a closed window ends its session.
+An identity comes from the control connection's kernel peer credentials,
+read through the platform contract; nothing a request carries can name a
+different caller.
 """
-
-# PEP 604 unions below are annotations only; this keeps them lazy so the
-# agent still imports on the Python 3.9 that older Raspbian ships.
-from __future__ import annotations
-
-import secrets
-import threading
-import time
-
-from neutrino_agent.constants import AGENT_CONTROL_TOKEN_IDLE_TTL_S
-
-CONTROL_TOKEN_BYTES = 24
 
 
 class ControlIdentity:
@@ -47,115 +32,6 @@ class ControlIdentity:
             "uid": self.uid,
             "is_privileged": self.is_privileged,
         }
-
-
-class ControlTokenStore:
-    """The tokens minted over the socket, each bound to an identity."""
-
-    def __init__(self, *, idle_ttl_s: int = AGENT_CONTROL_TOKEN_IDLE_TTL_S, clock=None):
-        """
-        Args:
-            idle_ttl_s: How long a token outlives its last page request.
-            clock: Monotonic clock; None uses the real one.
-        """
-        self._idle_ttl_s = idle_ttl_s
-        self._clock = clock if clock is not None else time.monotonic
-        self._lock = threading.Lock()
-        self._tokens: dict = {}
-
-    def mint(self, identity: ControlIdentity) -> str:
-        """Mint a token bound to one identity, its pulse started now.
-
-        Args:
-            identity: The identity the token answers as.
-
-        Returns:
-            The token.
-        """
-        token = secrets.token_urlsafe(CONTROL_TOKEN_BYTES)
-        with self._lock:
-            # Unclaimed: the pulse starts on the FIRST page request, not at
-            # minting — a person may take minutes to paste the URL, and a
-            # token that dies while they type is a session that lies about
-            # a closed window.
-            self._tokens[token] = [identity, self._clock(), False]
-        return token
-
-    def identity_of(self, presented: str) -> "ControlIdentity | None":
-        """The identity a presented token is bound to, refreshing its pulse.
-
-        Args:
-            presented: The token a request carried.
-
-        Returns:
-            The bound identity, or None for a token never minted here or
-            whose pulse stopped longer than the idle TTL ago.
-        """
-        if not presented:
-            return None
-        with self._lock:
-            for token, entry in list(self._tokens.items()):
-                if not secrets.compare_digest(token, presented):
-                    continue
-                if entry[2] and self._clock() - entry[1] > self._idle_ttl_s:
-                    del self._tokens[token]
-                    return None
-                entry[1] = self._clock()
-                entry[2] = True
-                return entry[0]
-        return None
-
-    def is_claimed(self, presented: str) -> bool:
-        """Whether a page has used this token at least once.
-
-        Args:
-            presented: The token to ask about.
-
-        Returns:
-            True once any page request carried it.
-        """
-        if not presented:
-            return False
-        with self._lock:
-            for token, entry in self._tokens.items():
-                if secrets.compare_digest(token, presented):
-                    return bool(entry[2])
-        return False
-
-    def is_alive(self, presented: str) -> bool:
-        """Whether a token still answers, without counting as its pulse.
-
-        Args:
-            presented: The token to ask about.
-
-        Returns:
-            True while the token exists and its pulse has not stopped.
-        """
-        if not presented:
-            return False
-        with self._lock:
-            for token, entry in list(self._tokens.items()):
-                if not secrets.compare_digest(token, presented):
-                    continue
-                if entry[2] and self._clock() - entry[1] > self._idle_ttl_s:
-                    del self._tokens[token]
-                    return False
-                return True
-        return False
-
-    def revoke(self, presented: str) -> None:
-        """Drop one token at once; one never minted is nothing.
-
-        Args:
-            presented: The token to revoke.
-        """
-        if not presented:
-            return
-        with self._lock:
-            for token in list(self._tokens):
-                if secrets.compare_digest(token, presented):
-                    del self._tokens[token]
-                    return
 
 
 def peer_identity(platform, connection) -> ControlIdentity:

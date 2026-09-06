@@ -207,7 +207,6 @@ def stack(tmp_path, monkeypatch, config_path):
         platform=platform,
         log=discard,
         socket_path=platform.control_socket_path(),
-        is_page_served=False,
     )
     server.start()
     assert server.socket_path

@@ -1,4 +1,4 @@
-"""The shared voice of the module, operation and service commands.
+"""The shared voice of the module, operation, service and gui commands.
 
 The agent answers with typed ``{"code", "params"}`` refusals and state
 tokens; every surface words them itself, and this file is where the
@@ -68,8 +68,14 @@ CLI_CODE_WORDS = {
     "agent_internal": "the agent hit an unexpected error; check its log",
     "control_scope_refused": "this account is not allowed to do that; run it as root",
     "control_identity_unknown": "the agent cannot tell who is asking",
-    "control_token_invalid": "the agent refused this session",
-    "control_page_not_served": "the agent serves no page right now",
+    "control_channel_closed": "the agent stopped answering; run nagent gui again",
+    "gui_webkitgtk_missing": (
+        "the GUI needs WebKitGTK; install it: sudo apt install {packages}"
+    ),
+    "gui_webview2_missing": "the GUI needs {runtime}; install it and try again",
+    "gui_wkwebview_missing": (
+        "this install is missing its WKWebView support; reinstall the agent package"
+    ),
     "unknown_request": "the agent does not know this request",
 }
 

@@ -95,16 +95,19 @@ hub/
     data/             Ships inside the package: services/ unit templates,
                       manifests/ the device software catalog, examples/ the
                       committed *.example.json, frontend/ the built panel,
-                      resources/ the icons.
+                      resources/ the icons copied in at build time.
   frontend/           React + TypeScript source. Builds into data/frontend/.
   tests/
 agent/
   neutrino_agent/     The device agent. Pure standard library, no dependencies.
+  frontend/           The agent window's page: plain HTML/CSS/JS, no toolchain.
   tests/
 config/               Source of truth at runtime. Real files gitignored.
                       /etc/neutrino/config once installed.
 docs/standard/        This standard. The single source of truth for rules.
-images/               Source artwork and README screenshots. Ships nowhere.
+images/               Source artwork and README screenshots. Ships nowhere
+                      directly — packaging copies images/icons in at build
+                      time.
 ```
 
 Do not put `main()`, `argparse`, or wiring-config classes in a library

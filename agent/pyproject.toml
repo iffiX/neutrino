@@ -20,7 +20,7 @@ build-backend = "setuptools.build_meta"
 include = ["neutrino_agent*"]
 
 [tool.setuptools.package-data]
-neutrino_agent = ["data/systemd/*", "data/desktop/*"]
+neutrino_agent = ["data/systemd/*", "data/desktop/*", "data/gui/*"]
 
 [tool.black]
 line-length = 88
