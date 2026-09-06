@@ -221,11 +221,15 @@ def test_the_unmount_button_greys_outside_the_records_scope():
     assert "button.disabled = !mayAct" in CONTROL_PAGE_HTML
 
 
-def test_the_browse_button_greys_where_the_platform_cannot_step_down():
-    assert "(state.capabilities || []).indexOf('run_as') >= 0" in CONTROL_PAGE_HTML
+def test_the_browse_button_greys_where_mounts_are_drive_letters():
+    assert "(state.mount_location_shape || 'path') === 'path'" in CONTROL_PAGE_HTML
     assert "browse.disabled = !canBrowse" in CONTROL_PAGE_HTML
-    assert "browse.title = canBrowse ? '' : WORDS.ui.not_for_platform" in (
+    assert "browse.title = canBrowse ? '' : WORDS.ui.browse_drive_letter" in (
         CONTROL_PAGE_HTML
+    )
+    assert (
+        'browse_drive_letter: "This machine mounts at a drive letter, typed as Z:"'
+        in CONTROL_PAGE_HTML
     )
 
 

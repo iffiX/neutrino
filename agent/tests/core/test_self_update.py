@@ -259,3 +259,20 @@ def test_the_rpm_command_uses_the_family_manager(monkeypatch):
     assert command[4:6] == ["sh", "-c"]
     assert "dnf reinstall -y /tmp/hub.rpm" in command[6]
     assert "dnf install -y /tmp/hub.rpm" in command[6]
+
+
+def test_windows_names_the_msi_kind():
+    assert self_update.package_kind({"os": "windows", "family": ""}) == "msi"
+    assert self_update.package_kind({"os": "linux", "family": "debian"}) == "deb"
+    assert self_update.package_kind({"os": "linux", "family": "rhel"}) == "rpm"
+    assert self_update.package_kind({"os": "linux", "family": ""}) == ""
+    assert self_update.package_kind({"os": "darwin", "family": ""}) == ""
+
+
+def test_the_msi_command_is_a_detached_msiexec():
+    command = self_update.install_command("msi", "C:\\tmp\\hub.msi")
+
+    assert command[0] == "powershell"
+    assert "Start-Process msiexec" in command[-1]
+    assert "'/quiet'" in command[-1] and "'/norestart'" in command[-1]
+    assert "systemd-run" not in command

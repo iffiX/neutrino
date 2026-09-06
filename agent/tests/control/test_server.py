@@ -116,13 +116,13 @@ def test_socket_state_is_scoped_to_the_peer(control):
     assert state["modules"][0]["kind"] == "openssh"
 
 
-def test_the_state_carries_the_platforms_capabilities_for_every_scope(control):
+def test_the_state_carries_the_mount_location_shape_for_every_scope(control):
     server, _agent, platform = control
 
     for peer in (dict(ROOT), dict(ALICE)):
         platform.peer = peer
         _status, state = over_socket(server, "GET", "/api/state")
-        assert state["capabilities"] == ["account_files", "run_as", "shares"]
+        assert state["mount_location_shape"] == "path"
 
 
 def test_an_ordinary_caller_sees_only_its_own_ai_rows(control):

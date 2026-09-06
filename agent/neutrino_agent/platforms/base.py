@@ -73,6 +73,9 @@ class AgentPlatform:
     """
 
     os_name = ""
+    # What a mount location is on this platform: a directory path, or a
+    # drive letter on Windows. Surfaces grey the directory browser off it.
+    mount_location_shape = "path"
     capabilities: frozenset = frozenset()
 
     def has_capability(self, name: str) -> bool:
@@ -255,6 +258,38 @@ class AgentPlatform:
         """
         if not location or not os.path.isabs(location):
             return {"code": "mountpoint_invalid", "params": {}}
+        return None
+
+    def prepare_mount_location(self, *, account: str, location: str) -> "dict | None":
+        """Have a mount location ready for an attach.
+
+        The default is the POSIX rule the Linux and macOS platforms share:
+        the location is an empty directory, created as the account when it
+        is not there. Windows overrides it, because a drive letter needs no
+        preparation.
+
+        Args:
+            account: Whose identity creates a missing directory; empty
+                creates as the agent itself.
+            location: The mount location.
+
+        Returns:
+            None when the location is ready, otherwise the typed refusal
+            ``{"code", "params"}``.
+        """
+        if os.path.exists(location):
+            if not os.path.isdir(location):
+                return {"code": "mountpoint_not_empty", "params": {}}
+            try:
+                if os.listdir(location):
+                    return {"code": "mountpoint_not_empty", "params": {}}
+            except OSError:
+                return {"code": "fs_refused", "params": {}}
+            return None
+        try:
+            self.make_directory(account=account, path=location)
+        except (OSError, PlatformUnsupportedError):
+            return {"code": "fs_refused", "params": {}}
         return None
 
     def attach_share(

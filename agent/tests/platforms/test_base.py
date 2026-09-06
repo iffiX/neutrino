@@ -55,6 +55,13 @@ class RecordingPlatform(AgentPlatform):
         )
 
 
+class PreparingPlatform(AgentPlatform):
+    """A platform whose directory making is the standard library's own."""
+
+    def make_directory(self, *, account: str, path: str) -> None:
+        os.makedirs(path, exist_ok=True)
+
+
 def test_the_base_platform_advertises_nothing():
     assert AgentPlatform().capabilities == frozenset()
 
@@ -81,19 +88,34 @@ def test_each_platform_advertises_its_capability_set():
             "account_files",
             "run_as",
             "control_socket",
+            "agent_service",
+            "power",
+            "metrics",
             "packages",
             "openssh",
+            "shares",
         }
     )
     assert WindowsPlatform().capabilities == frozenset(
-        {"account_files", "packages", "openssh"}
+        {
+            "accounts",
+            "account_files",
+            "run_as",
+            "control_socket",
+            "agent_service",
+            "power",
+            "metrics",
+            "packages",
+            "openssh",
+            "shares",
+        }
     )
 
 
-def test_only_linux_advertises_shares_so_far():
-    assert LinuxPlatform().has_capability("shares")
+def test_system_packages_stay_linux_only():
+    assert LinuxPlatform().has_capability("system_packages")
     for platform in (DarwinPlatform(), WindowsPlatform()):
-        assert not platform.has_capability("shares")
+        assert not platform.has_capability("system_packages")
 
 
 def test_the_posix_mount_location_judgment_wants_an_absolute_path():
@@ -110,20 +132,45 @@ def test_the_posix_mount_location_judgment_wants_an_absolute_path():
 def test_linux_and_darwin_share_the_posix_mount_location_judgment():
     for platform in (LinuxPlatform, DarwinPlatform):
         assert platform.validate_mount_location is AgentPlatform.validate_mount_location
+        assert platform.prepare_mount_location is AgentPlatform.prepare_mount_location
+
+
+def test_mount_locations_are_paths_except_windows_drive_letters():
+    assert AgentPlatform.mount_location_shape == "path"
+    assert LinuxPlatform.mount_location_shape == "path"
+    assert DarwinPlatform.mount_location_shape == "path"
+    assert WindowsPlatform.mount_location_shape == "drive_letter"
+
+
+def test_the_posix_mount_preparation_wants_an_empty_directory(tmp_path):
+    platform = PreparingPlatform()
+    full = tmp_path / "full"
+    full.mkdir()
+    (full / "kept").write_text("content")
+    plain = tmp_path / "plain"
+    plain.write_text("content")
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    fresh = tmp_path / "fresh"
+
+    refusal = {"code": "mountpoint_not_empty", "params": {}}
+    assert platform.prepare_mount_location(account="", location=str(full)) == refusal
+    assert platform.prepare_mount_location(account="", location=str(plain)) == refusal
+    assert platform.prepare_mount_location(account="", location=str(empty)) is None
+    assert platform.prepare_mount_location(account="", location=str(fresh)) is None
+    assert fresh.is_dir()
 
 
 def test_an_absent_capability_is_refused_not_guessed():
     with pytest.raises(PlatformUnsupportedError) as caught:
-        WindowsPlatform().run_as_account("bob", ["id"])
+        WindowsPlatform().install_system_packages(["cifs-utils"])
     assert caught.value.code == "unsupported_platform"
     with pytest.raises(PlatformUnsupportedError):
         AgentPlatform().read_host_metrics()
     with pytest.raises(PlatformUnsupportedError):
-        DarwinPlatform().power("reboot")
+        DarwinPlatform().install_system_packages(["cifs-utils"])
     with pytest.raises(PlatformUnsupportedError):
-        WindowsPlatform().human_accounts()
-    with pytest.raises(PlatformUnsupportedError):
-        DarwinPlatform().is_share_attached(location="/mnt/share")
+        WindowsPlatform().remove_system_packages(["cifs-utils"])
 
 
 def test_base_file_operations_refuse_without_run_as():

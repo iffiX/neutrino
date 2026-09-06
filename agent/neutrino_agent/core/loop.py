@@ -87,6 +87,8 @@ def channel_error(error: Exception) -> dict:
     Returns:
         ``{"code", "params"}``.
     """
+    if isinstance(error, GatewayRefusedDetail):
+        return {"code": error.code, "params": dict(error.params)}
     if isinstance(error, GatewayUntrusted):
         return {"code": "hub_untrusted", "params": {}}
     if isinstance(error, GatewayVersionRefused):
@@ -166,9 +168,9 @@ class Agent:
         """This machine's platform tuple."""
         return self._engine.platform_tuple
 
-    def platform_capabilities(self) -> list:
-        """The capabilities this machine's platform advertises, sorted."""
-        return sorted(self._platform.capabilities)
+    def mount_location_shape(self) -> str:
+        """What a mount location is here: ``path`` or ``drive_letter``."""
+        return self._platform.mount_location_shape
 
     def catalog(self) -> dict:
         """The catalog the gateway last sent: ``{"modules", "services"}``."""

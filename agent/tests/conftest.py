@@ -139,8 +139,8 @@ class FakeControlAgent:
     def platform(self) -> dict:
         return {"os": "linux", "family": "debian", "arch": "x86_64"}
 
-    def platform_capabilities(self) -> list:
-        return ["account_files", "run_as", "shares"]
+    def mount_location_shape(self) -> str:
+        return "path"
 
     def catalog(self) -> dict:
         # Modules arrive already resolved for this platform: the hub read

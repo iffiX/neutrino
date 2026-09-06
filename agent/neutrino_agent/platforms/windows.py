@@ -1,35 +1,342 @@
-"""The Windows platform: the capabilities that exist, the rest refused.
+"""The Windows platform behind the contract.
 
-The SSH server rides PowerShell's ``Add-WindowsCapability``. Windows has no
-general way to become another user without their password, so account work
-is file work: the agent writes into the account's profile, where inherited
-ACLs make the files the account's own. Running a process as an account,
-enumerating accounts, metrics, power, share attach and service control
-answer ``unsupported_platform`` until the platform is filled in.
+Windows has no general way to become another user without their password, so
+account work is file work: the agent writes into the account's profile,
+where inherited ACLs make the files the account's own, and a process runs as
+an account only for the one logged on at the console. The control channel is
+a named pipe whose peer identity comes from pipe impersonation; privileged
+is an elevated Administrators token, so an unelevated admin shell is an
+ordinary account. A share is stored credentials plus a session mapping, the
+SSH server is a Windows capability, and metrics ride one WMI query through
+PowerShell. System packages stay refused: Windows has no package manager the
+hub drives.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import ctypes
+import json
 import os
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 
+try:
+    import msvcrt
+except ImportError:  # Only Windows has the C-runtime handle bridge.
+    msvcrt = None
+
 from neutrino_agent.modules import installers
-from neutrino_agent.constants import AGENT_COMMAND_TIMEOUT_S
-from neutrino_agent.platforms.base import AgentPlatform
+from neutrino_agent.constants import (
+    AGENT_COMMAND_TIMEOUT_S,
+    AGENT_CONTROL_PIPE_NAME,
+    AGENT_SERVICE_NAME_WINDOWS,
+    AGENT_STEP_DOWN_TIMEOUT_S,
+)
+from neutrino_agent.core.metrics import HostMetrics, ProcessMetrics
+from neutrino_agent.platforms.base import (
+    AgentPlatform,
+    PlatformUnsupportedError,
+    ShareAttachError,
+)
 
 WINDOWS_PROFILES_DIR = "C:\\Users"
 WINDOWS_OPENSSH_CAPABILITY = "OpenSSH.Server~~~~0.0.1.0"
+
+# A person is a local profile: a non-special profile whose SID is a real
+# user's (S-1-5-21-…) and not one of the built-in accounts.
+WINDOWS_HUMAN_SID_PREFIX = "S-1-5-21-"
+WINDOWS_BUILTIN_ACCOUNT_RIDS = frozenset({500, 501, 503, 504})
+
+WINDOWS_PROFILES_SCRIPT = (
+    "Get-CimInstance Win32_UserProfile -Filter 'Special=FALSE' | "
+    "Select-Object SID, LocalPath | ConvertTo-Json"
+)
+
+# One WMI pass: processor load per package, memory, the system drive, boot
+# time, and the busiest processes by resident memory.
+WINDOWS_METRICS_SCRIPT = """
+$ErrorActionPreference = 'SilentlyContinue'
+$os = Get-CimInstance Win32_OperatingSystem
+$cpu = @(Get-CimInstance Win32_Processor)
+$disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$env:SystemDrive'"
+$top = @(Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 12)
+@{
+  cpu_percents = @($cpu | ForEach-Object { $_.LoadPercentage });
+  memory_total_kb = $os.TotalVisibleMemorySize;
+  memory_free_kb = $os.FreePhysicalMemory;
+  disk_total_bytes = $disk.Size;
+  disk_free_bytes = $disk.FreeSpace;
+  uptime_s = [int](((Get-Date) - $os.LastBootUpTime).TotalSeconds);
+  processes = @($top | ForEach-Object {
+    @{ pid = $_.Id; name = $_.ProcessName; memory_bytes = $_.WorkingSet64 } })
+} | ConvertTo-Json -Depth 4
+"""
+
+WINDOWS_METRICS_TIMEOUT_S = 15
+WINDOWS_QUERY_TIMEOUT_S = 60
+WINDOWS_MOUNT_TIMEOUT_S = 60
+
+WINDOWS_POWER_COMMANDS = {
+    "reboot": ["shutdown", "/r", "/t", "0"],
+    "poweroff": ["shutdown", "/s", "/t", "0"],
+}
+
+# What "root-only" is here: inheritance off, SYSTEM and Administrators full.
+WINDOWS_CREDENTIALS_DIR_GRANTS = (
+    "*S-1-5-18:(OI)(CI)F",
+    "*S-1-5-32-544:(OI)(CI)F",
+)
+
+# Win32 values, by their own names.
+TOKEN_QUERY = 0x0008
+TOKEN_USER_CLASS = 1
+TOKEN_ELEVATION_CLASS = 20
+WIN_BUILTIN_ADMINISTRATORS_SID = 26
+SECURITY_MAX_SID_BYTES = 68
+WTS_USER_NAME_CLASS = 5
+CREATE_NO_WINDOW = 0x08000000
+STARTF_USESTDHANDLES = 0x00000100
+WAIT_TIMEOUT = 0x00000102
+
+
+def _human_profiles(text: str) -> list:
+    """The account names the profile listing judges to be people.
+
+    Args:
+        text: The profiles script's JSON output.
+
+    Returns:
+        Account names, sorted; unreadable output reads as none.
+    """
+    try:
+        payload = json.loads(text or "[]")
+    except ValueError:
+        return []
+    rows = payload if isinstance(payload, list) else [payload]
+    accounts = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        sid = str(row.get("SID", ""))
+        if not sid.startswith(WINDOWS_HUMAN_SID_PREFIX):
+            continue
+        rid = sid.rsplit("-", 1)[-1]
+        if not rid.isdigit() or int(rid) in WINDOWS_BUILTIN_ACCOUNT_RIDS:
+            continue
+        name = _profile_basename(str(row.get("LocalPath", "")))
+        if name:
+            accounts.add(name)
+    return sorted(accounts)
+
+
+def _windows_metrics(text: str) -> HostMetrics:
+    """One metrics sample from the metrics script's JSON output.
+
+    Args:
+        text: The script's output.
+
+    Returns:
+        The sample; any unreadable field contributes its default.
+    """
+    try:
+        payload = json.loads(text or "{}")
+    except ValueError:
+        return HostMetrics()
+    if not isinstance(payload, dict):
+        return HostMetrics()
+    cores = _number_list(payload.get("cpu_percents"))
+    memory_total_kb = _number(payload.get("memory_total_kb"))
+    memory_free_kb = _number(payload.get("memory_free_kb"))
+    memory_percent = 0.0
+    if memory_total_kb and memory_free_kb is not None:
+        memory_percent = 100.0 * (memory_total_kb - memory_free_kb) / memory_total_kb
+    disk_total = _number(payload.get("disk_total_bytes"))
+    disk_free = _number(payload.get("disk_free_bytes"))
+    disk_percent = 0.0
+    if disk_total and disk_free is not None:
+        disk_percent = 100.0 * (disk_total - disk_free) / disk_total
+    uptime = _number(payload.get("uptime_s"))
+    return HostMetrics(
+        cpu_percent=sum(cores) / len(cores) if cores else 0.0,
+        cpu_core_percents=cores,
+        memory_percent=max(0.0, min(100.0, memory_percent)),
+        disk_percent=max(0.0, min(100.0, disk_percent)),
+        uptime_s=int(uptime) if uptime and uptime > 0 else 0,
+        processes=_process_rows(payload.get("processes"), memory_total_kb),
+    )
+
+
+def _process_rows(rows, memory_total_kb) -> "list[ProcessMetrics]":
+    """The process listing, from the script's rows.
+
+    The processor share needs a previous sample to compare against, so the
+    rows carry memory shares only.
+
+    Args:
+        rows: The script's ``processes`` value.
+        memory_total_kb: The machine's memory, for the shares.
+
+    Returns:
+        One entry per readable row.
+    """
+    if isinstance(rows, dict):
+        rows = [rows]
+    if not isinstance(rows, list):
+        return []
+    processes = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        pid = _number(row.get("pid"))
+        if pid is None:
+            continue
+        memory_bytes = _number(row.get("memory_bytes")) or 0.0
+        memory_percent = 0.0
+        if memory_total_kb:
+            memory_percent = 100.0 * memory_bytes / (memory_total_kb * 1024.0)
+        processes.append(
+            ProcessMetrics(
+                pid=int(pid),
+                user="",
+                name=str(row.get("name", "")),
+                cpu_percent=0.0,
+                memory_percent=memory_percent,
+            )
+        )
+    return processes
+
+
+def _number(value) -> "float | None":
+    """One numeric field, or None for anything that is not a number."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def _number_list(value) -> "list[float]":
+    """A list of numbers; a scalar reads as one entry, junk as none."""
+    values = value if isinstance(value, list) else [value]
+    numbers = []
+    for entry in values:
+        number = _number(entry)
+        if number is not None:
+            numbers.append(number)
+    return numbers
+
+
+def _profile_basename(path: str) -> str:
+    """The last segment of a profile path, whichever slash it uses."""
+    return path.replace("/", "\\").rstrip("\\").rsplit("\\", 1)[-1]
+
+
+def _share_parts(share_url: str) -> "tuple[str, str]":
+    """The host and share a ``//host/name`` URL names.
+
+    Args:
+        share_url: The share URL.
+
+    Returns:
+        The host and the share name, either empty when unreadable.
+    """
+    trimmed = share_url.replace("\\", "/").strip("/")
+    host, _, share = trimmed.partition("/")
+    return host, share
+
+
+def _read_share_credentials(path: str) -> "tuple[str, str]":
+    """One credentials file's login.
+
+    Args:
+        path: The credentials file.
+
+    Returns:
+        The username and password, empty where unreadable.
+    """
+    values = {"username": "", "password": ""}
+    try:
+        with open(path, "r", encoding="utf-8") as stream:
+            for line in stream:
+                key, _, value = line.partition("=")
+                if key.strip() in values:
+                    values[key.strip()] = value.rstrip("\n")
+    except OSError:
+        pass
+    return values["username"], values["password"]
+
+
+def _powershell_literal(value: str) -> str:
+    """A PowerShell single-quoted literal for one value."""
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _is_under(home: str, path: str) -> bool:
+    """Whether a path sits at or below a profile directory."""
+    normalized_home = os.path.normcase(home.replace("/", "\\")).rstrip("\\")
+    normalized_path = os.path.normcase(path.replace("/", "\\")).rstrip("\\")
+    if not normalized_home:
+        return False
+    return normalized_path == normalized_home or normalized_path.startswith(
+        normalized_home + "\\"
+    )
 
 
 class WindowsPlatform(AgentPlatform):
     """Windows behind the platform contract."""
 
     os_name = "windows"
-    capabilities = frozenset({"account_files", "packages", "openssh"})
+    mount_location_shape = "drive_letter"
+    capabilities = frozenset(
+        {
+            "accounts",
+            "account_files",
+            "run_as",
+            "control_socket",
+            "agent_service",
+            "power",
+            "metrics",
+            "packages",
+            "openssh",
+            "shares",
+        }
+    )
+
+    def __init__(self, *, win32=None):
+        """
+        Args:
+            win32: The Win32 seam for identity and step-down; None builds
+                the real one on first use.
+        """
+        self._win32_api = win32
+
+    def human_accounts(self) -> list:
+        """The accounts that are people: the machine's local profiles.
+
+        Returns:
+            Account names, sorted; built-in and system accounts never
+            listed.
+        """
+        try:
+            result = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    WINDOWS_PROFILES_SCRIPT,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=WINDOWS_QUERY_TIMEOUT_S,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return []
+        if result.returncode != 0:
+            return []
+        return _human_profiles(result.stdout or "")
 
     def account_home(self, account: str) -> str:
         """One account's profile directory.
@@ -108,6 +415,161 @@ class WindowsPlatform(AgentPlatform):
         except OSError:
             return
 
+    def control_socket_path(self) -> str:
+        """Where the agent's control channel lives: the named pipe.
+
+        Returns:
+            The pipe name.
+        """
+        return AGENT_CONTROL_PIPE_NAME
+
+    def read_peer_identity(self, connection) -> dict:
+        """A pipe peer's identity, from pipe impersonation.
+
+        Privileged is an elevated Administrators token; under UAC the same
+        person's non-elevated shell is an ordinary account.
+
+        Args:
+            connection: The accepted pipe connection.
+
+        Returns:
+            ``{"account", "uid", "is_privileged"}``; ``uid`` is -1 because
+            Windows reports names.
+
+        Raises:
+            PlatformUnsupportedError: When the peer is not a pipe or the
+                token cannot be read.
+        """
+        handle = getattr(connection, "pipe_handle", None)
+        if handle is None:
+            raise PlatformUnsupportedError("not a pipe peer")
+        win32 = self._win32()
+        try:
+            win32.impersonate_named_pipe_client(handle)
+        except OSError as error:
+            raise PlatformUnsupportedError(str(error))
+        try:
+            token = win32.open_thread_token()
+            try:
+                account = win32.token_account(token)
+                is_privileged = win32.is_token_elevated(
+                    token
+                ) and win32.is_token_admin_member(token)
+            finally:
+                win32.close_handle(token)
+        except OSError as error:
+            raise PlatformUnsupportedError(str(error))
+        finally:
+            win32.revert_to_self()
+        return {"account": account, "uid": -1, "is_privileged": bool(is_privileged)}
+
+    def run_as_account(
+        self,
+        account: str,
+        argv: list,
+        *,
+        stdin: str = "",
+        timeout_s: int = AGENT_STEP_DOWN_TIMEOUT_S,
+    ) -> "subprocess.CompletedProcess":
+        """Run a process as the account logged on at the console.
+
+        Windows cannot become an arbitrary account without its password,
+        so only the console session's own account can be stepped into,
+        through its session token.
+
+        Args:
+            account: The account; empty runs as the agent itself.
+            argv: Argument vector.
+            stdin: Sent to the process's standard input.
+            timeout_s: How long to wait.
+
+        Returns:
+            The completed process, with text output captured.
+
+        Raises:
+            PlatformUnsupportedError: When the account is not the one
+                logged on at the console.
+        """
+        if not account:
+            return subprocess.run(
+                list(argv),
+                input=stdin,
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
+            )
+        win32 = self._win32()
+        try:
+            logged_on = win32.console_account()
+        except OSError:
+            logged_on = ""
+        if not logged_on or logged_on.lower() != account.lower():
+            raise PlatformUnsupportedError(
+                "only the logged-on account can run a process"
+            )
+        return win32.run_as_console_user(list(argv), stdin=stdin, timeout_s=timeout_s)
+
+    def is_path_writable(self, *, account: str, path: str) -> bool:
+        """Whether an account may write at a path, judged by its profile.
+
+        Account work here is file work in the profile, so the judgment is
+        the file-level one: inside the account's own profile is writable,
+        anywhere else is refused rather than guessed.
+
+        Args:
+            account: The account; empty judges as the agent itself.
+            path: The absolute path to ask about.
+
+        Returns:
+            True when the account may write there.
+        """
+        if not account:
+            return True
+        return _is_under(self.account_home(account), path)
+
+    def list_directories(self, *, account: str, path: str) -> list:
+        """The subdirectory names under a directory.
+
+        An ordinary account browses only its own profile; the agent itself
+        browses anywhere.
+
+        Args:
+            account: The account; empty lists as the agent itself.
+            path: The absolute directory path.
+
+        Returns:
+            Subdirectory names, sorted, dot names left out.
+
+        Raises:
+            OSError: When the directory is outside the account's profile or
+                cannot be listed.
+        """
+        if account and not _is_under(self.account_home(account), path):
+            raise OSError("outside the account's profile")
+        return sorted(
+            entry.name
+            for entry in os.scandir(path)
+            if entry.is_dir() and not entry.name.startswith(".")
+        )
+
+    def make_directory(self, *, account: str, path: str) -> None:
+        """Create a directory, parents included.
+
+        A directory made inside a profile belongs to the account through
+        the profile's inherited ACLs.
+
+        Args:
+            account: The account; empty creates as the agent itself.
+            path: The absolute directory path.
+
+        Raises:
+            OSError: When the path is outside the account's profile or
+                cannot be created.
+        """
+        if account and not _is_under(self.account_home(account), path):
+            raise OSError("outside the account's profile")
+        os.makedirs(path, exist_ok=True)
+
     def validate_mount_location(self, *, location: str) -> "dict | None":
         """Judge a proposed mount location: a single drive letter plus a colon.
 
@@ -123,6 +585,225 @@ class WindowsPlatform(AgentPlatform):
         if os.path.exists(location + "\\"):
             return {"code": "mountpoint_not_empty", "params": {}}
         return None
+
+    def prepare_mount_location(self, *, account: str, location: str) -> "dict | None":
+        """A drive letter needs no preparation.
+
+        Args:
+            account: The asking account.
+            location: The drive letter.
+
+        Returns:
+            None.
+        """
+        return None
+
+    def attach_share(
+        self,
+        *,
+        account: str,
+        share_url: str,
+        username: str,
+        password: str,
+        location: str,
+        credentials_path: str = "",
+    ) -> None:
+        """Attach a share: store its credential, then map it with ``net use``.
+
+        ``cmdkey`` keeps the login in Credential Manager for the host, and
+        the mapping rides the agent's own session. The password reaches
+        PowerShell on standard input, never this process's argument vector.
+
+        Args:
+            account: The asking account.
+            share_url: The share, as ``//host/name``.
+            username: The share's own username.
+            password: The share's own password; empty reattaches with the
+                credentials file already there.
+            location: Where the share appears — a drive letter.
+            credentials_path: Where this attachment's credentials file lives.
+
+        Raises:
+            ShareAttachError: ``credentials_missing`` without the file,
+                ``mount_failed`` with the tool's own words otherwise.
+        """
+        host, share = _share_parts(share_url)
+        if not host or not share:
+            raise ShareAttachError("mount_failed", detail="unreadable share url")
+        if password:
+            self.write_share_credentials(
+                credentials_path=credentials_path,
+                username=username,
+                password=password,
+            )
+        if not os.path.isfile(credentials_path):
+            raise ShareAttachError("credentials_missing")
+        stored_username, stored_password = _read_share_credentials(credentials_path)
+        self._store_share_credential(
+            host=host, username=stored_username, password=stored_password
+        )
+        command = ["net", "use", location, f"\\\\{host}\\{share}", "/persistent:yes"]
+        try:
+            result = subprocess.run(
+                command, capture_output=True, text=True, timeout=WINDOWS_MOUNT_TIMEOUT_S
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            raise ShareAttachError("mount_failed", detail=str(error)[:200])
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()[-200:]
+            raise ShareAttachError("mount_failed", detail=detail)
+
+    def write_share_credentials(
+        self, *, credentials_path: str, username: str, password: str
+    ) -> None:
+        """Keep a share's login in a directory only administrators read.
+
+        Args:
+            credentials_path: Where the file lives.
+            username: The share's own username.
+            password: The share's own password.
+        """
+        directory = os.path.dirname(credentials_path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+            self._restrict_directory(directory)
+        with open(credentials_path, "w", encoding="utf-8") as stream:
+            stream.write(f"username={username}\npassword={password}\n")
+
+    def detach_share(self, *, location: str) -> None:
+        """Delete the session mapping at a location.
+
+        Args:
+            location: The mapped drive letter.
+
+        Raises:
+            ShareAttachError: ``unmount_failed`` with the tool's own words.
+        """
+        try:
+            result = subprocess.run(
+                ["net", "use", location, "/delete", "/y"],
+                capture_output=True,
+                text=True,
+                timeout=WINDOWS_MOUNT_TIMEOUT_S,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            raise ShareAttachError("unmount_failed", detail=str(error)[:200])
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()[-200:]
+            raise ShareAttachError("unmount_failed", detail=detail)
+
+    def is_share_attached(self, *, location: str) -> bool:
+        """Whether a mapping stands at a location, read from ``net use``.
+
+        Args:
+            location: The mapped drive letter.
+
+        Returns:
+            True when the listing names it beside a remote path.
+        """
+        try:
+            result = subprocess.run(
+                ["net", "use"],
+                capture_output=True,
+                text=True,
+                timeout=WINDOWS_MOUNT_TIMEOUT_S,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        if result.returncode != 0:
+            return False
+        wanted = location.rstrip("\\").lower()
+        for line in (result.stdout or "").splitlines():
+            fields = line.split()
+            if not any(field.startswith("\\\\") for field in fields):
+                continue
+            if any(field.rstrip("\\").lower() == wanted for field in fields[:3]):
+                return True
+        return False
+
+    def read_agent_service_state(self) -> str:
+        """What the service manager says about the agent's own service.
+
+        Returns:
+            ``running``, the service's own state word, or ``unknown``.
+        """
+        try:
+            result = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    f"(Get-Service {AGENT_SERVICE_NAME_WINDOWS} "
+                    "-ErrorAction SilentlyContinue).Status",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return "unknown"
+        state = result.stdout.strip().lower()
+        return "running" if state == "running" else (state or "unknown")
+
+    def start_agent_service(self) -> None:
+        """Set the agent's own service automatic and start it. Best-effort."""
+        subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                f"Set-Service -Name {AGENT_SERVICE_NAME_WINDOWS} "
+                "-StartupType Automatic; "
+                f"Start-Service {AGENT_SERVICE_NAME_WINDOWS}",
+            ],
+            capture_output=True,
+            timeout=WINDOWS_QUERY_TIMEOUT_S,
+            check=False,
+        )
+
+    def power(self, action: str) -> "tuple[int, str]":
+        """Run one power action through ``shutdown``.
+
+        Args:
+            action: ``reboot`` or ``poweroff``.
+
+        Returns:
+            The exit code and combined output.
+        """
+        completed = subprocess.run(
+            WINDOWS_POWER_COMMANDS[action],
+            capture_output=True,
+            text=True,
+            timeout=AGENT_COMMAND_TIMEOUT_S,
+        )
+        output = (completed.stdout or "") + (completed.stderr or "")
+        return completed.returncode, output
+
+    def read_host_metrics(self) -> HostMetrics:
+        """One sample of the machine's health, through WMI.
+
+        Returns:
+            The current metrics; an unreadable machine contributes the
+            defaults rather than raising.
+        """
+        try:
+            result = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    WINDOWS_METRICS_SCRIPT,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=WINDOWS_METRICS_TIMEOUT_S,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return HostMetrics()
+        if result.returncode != 0:
+            return HostMetrics()
+        return _windows_metrics(result.stdout or "")
 
     def install_package(self, path: str, *, package_kind: str, entry: dict) -> None:
         """Install one downloaded package.
@@ -150,6 +831,9 @@ class WindowsPlatform(AgentPlatform):
 
     def install_openssh(self, entry: dict) -> None:
         """Install the SSH server capability and start ``sshd``.
+
+        ``Add-WindowsCapability`` pulls from Windows Update and takes
+        minutes; the timeout budget allows for that.
 
         Args:
             entry: The manifest's platform entry, naming the capability.
@@ -229,3 +913,423 @@ class WindowsPlatform(AgentPlatform):
         if not account:
             return Path(os.path.expanduser("~")) / relative
         return Path(self.account_home(account)) / relative
+
+    def _win32(self):
+        """The Win32 seam, built on first use."""
+        if self._win32_api is None:
+            self._win32_api = _Win32Api()
+        return self._win32_api
+
+    def _store_share_credential(
+        self, *, host: str, username: str, password: str
+    ) -> None:
+        """Keep one share login in Credential Manager for its host.
+
+        Args:
+            host: The share's host.
+            username: The share's own username.
+            password: The share's own password.
+
+        Raises:
+            ShareAttachError: ``mount_failed`` when ``cmdkey`` refuses.
+        """
+        script = (
+            f"$h = {_powershell_literal(host)}\n"
+            f"$u = {_powershell_literal(username)}\n"
+            f"$p = {_powershell_literal(password)}\n"
+            "cmdkey /add:$h /user:$u /pass:$p | Out-Null\n"
+            "exit $LASTEXITCODE\n"
+        )
+        try:
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", "-"],
+                input=script,
+                capture_output=True,
+                text=True,
+                timeout=WINDOWS_MOUNT_TIMEOUT_S,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            raise ShareAttachError("mount_failed", detail=str(error)[:200])
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()[-200:]
+            raise ShareAttachError("mount_failed", detail=detail)
+
+    def _restrict_directory(self, directory: str) -> None:
+        """Cut a directory's ACL to SYSTEM and Administrators.
+
+        Args:
+            directory: The directory to restrict.
+
+        Raises:
+            OSError: When ``icacls`` refuses.
+        """
+        command = [
+            "icacls",
+            directory,
+            "/inheritance:r",
+            "/grant:r",
+            *WINDOWS_CREDENTIALS_DIR_GRANTS,
+        ]
+        try:
+            result = subprocess.run(
+                command, capture_output=True, text=True, timeout=WINDOWS_QUERY_TIMEOUT_S
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            raise OSError(str(error))
+        if result.returncode != 0:
+            raise OSError((result.stderr or result.stdout or "").strip()[-200:])
+
+
+class _Win32Api:
+    """The Win32 identity and step-down calls, one seam tests replace whole."""
+
+    def __init__(self):
+        self._kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        self._advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+        self._wtsapi32 = ctypes.WinDLL("wtsapi32", use_last_error=True)
+        # Handles are pointers: without these prototypes a 64-bit handle
+        # comes back truncated to an int.
+        self._kernel32.GetCurrentThread.restype = ctypes.c_void_p
+        self._kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+        self._kernel32.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+        self._kernel32.WaitForSingleObject.restype = ctypes.c_ulong
+        self._kernel32.GetExitCodeProcess.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        self._kernel32.TerminateProcess.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        self._advapi32.ImpersonateNamedPipeClient.argtypes = [ctypes.c_void_p]
+        self._advapi32.OpenThreadToken.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_ulong,
+            ctypes.c_int,
+            ctypes.c_void_p,
+        ]
+        self._advapi32.GetTokenInformation.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            ctypes.c_ulong,
+            ctypes.c_void_p,
+        ]
+        self._advapi32.LookupAccountSidW.argtypes = [
+            ctypes.c_wchar_p,
+            ctypes.c_void_p,
+            ctypes.c_wchar_p,
+            ctypes.c_void_p,
+            ctypes.c_wchar_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
+        self._advapi32.CheckTokenMembership.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
+        self._advapi32.CreateProcessAsUserW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_wchar_p,
+            ctypes.c_wchar_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_ulong,
+            ctypes.c_void_p,
+            ctypes.c_wchar_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
+        self._wtsapi32.WTSQuerySessionInformationW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_ulong,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
+        self._wtsapi32.WTSQueryUserToken.argtypes = [ctypes.c_ulong, ctypes.c_void_p]
+        self._wtsapi32.WTSFreeMemory.argtypes = [ctypes.c_void_p]
+
+    def impersonate_named_pipe_client(self, handle: int) -> None:
+        """Impersonate the pipe's client on this thread.
+
+        Args:
+            handle: The pipe instance handle.
+
+        Raises:
+            OSError: When impersonation is refused.
+        """
+        if not self._advapi32.ImpersonateNamedPipeClient(ctypes.c_void_p(handle)):
+            raise ctypes.WinError(ctypes.get_last_error())
+
+    def revert_to_self(self) -> None:
+        """Drop the impersonation. Best-effort."""
+        self._advapi32.RevertToSelf()
+
+    def open_thread_token(self) -> int:
+        """This thread's impersonation token, for querying.
+
+        Returns:
+            The token handle.
+
+        Raises:
+            OSError: When the thread carries no token.
+        """
+        token = ctypes.c_void_p()
+        ok = self._advapi32.OpenThreadToken(
+            self._kernel32.GetCurrentThread(), TOKEN_QUERY, True, ctypes.byref(token)
+        )
+        if not ok:
+            raise ctypes.WinError(ctypes.get_last_error())
+        return token.value
+
+    def token_account(self, token: int) -> str:
+        """The account name a token belongs to.
+
+        Args:
+            token: The token handle.
+
+        Returns:
+            The account name.
+
+        Raises:
+            OSError: When the token's user cannot be read.
+        """
+        needed = ctypes.c_ulong(0)
+        self._advapi32.GetTokenInformation(
+            ctypes.c_void_p(token), TOKEN_USER_CLASS, None, 0, ctypes.byref(needed)
+        )
+        buffer = ctypes.create_string_buffer(max(needed.value, 64))
+        ok = self._advapi32.GetTokenInformation(
+            ctypes.c_void_p(token),
+            TOKEN_USER_CLASS,
+            buffer,
+            len(buffer),
+            ctypes.byref(needed),
+        )
+        if not ok:
+            raise ctypes.WinError(ctypes.get_last_error())
+        # TOKEN_USER starts with the SID pointer.
+        sid = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p)).contents.value
+        name = ctypes.create_unicode_buffer(256)
+        domain = ctypes.create_unicode_buffer(256)
+        name_size = ctypes.c_ulong(len(name))
+        domain_size = ctypes.c_ulong(len(domain))
+        use = ctypes.c_ulong(0)
+        ok = self._advapi32.LookupAccountSidW(
+            None,
+            ctypes.c_void_p(sid),
+            name,
+            ctypes.byref(name_size),
+            domain,
+            ctypes.byref(domain_size),
+            ctypes.byref(use),
+        )
+        if not ok:
+            raise ctypes.WinError(ctypes.get_last_error())
+        return name.value
+
+    def is_token_elevated(self, token: int) -> bool:
+        """Whether a token is elevated.
+
+        Args:
+            token: The token handle.
+
+        Returns:
+            True for a full administrator token.
+
+        Raises:
+            OSError: When the elevation cannot be read.
+        """
+        elevation = ctypes.c_ulong(0)
+        needed = ctypes.c_ulong(0)
+        ok = self._advapi32.GetTokenInformation(
+            ctypes.c_void_p(token),
+            TOKEN_ELEVATION_CLASS,
+            ctypes.byref(elevation),
+            ctypes.sizeof(elevation),
+            ctypes.byref(needed),
+        )
+        if not ok:
+            raise ctypes.WinError(ctypes.get_last_error())
+        return bool(elevation.value)
+
+    def is_token_admin_member(self, token: int) -> bool:
+        """Whether a token holds Administrators membership.
+
+        Args:
+            token: The token handle.
+
+        Returns:
+            True when the built-in Administrators group is in the token.
+
+        Raises:
+            OSError: When the membership cannot be checked.
+        """
+        sid = ctypes.create_string_buffer(SECURITY_MAX_SID_BYTES)
+        size = ctypes.c_ulong(len(sid))
+        ok = self._advapi32.CreateWellKnownSid(
+            WIN_BUILTIN_ADMINISTRATORS_SID, None, sid, ctypes.byref(size)
+        )
+        if not ok:
+            raise ctypes.WinError(ctypes.get_last_error())
+        member = ctypes.c_int(0)
+        ok = self._advapi32.CheckTokenMembership(
+            ctypes.c_void_p(token), sid, ctypes.byref(member)
+        )
+        if not ok:
+            raise ctypes.WinError(ctypes.get_last_error())
+        return bool(member.value)
+
+    def close_handle(self, handle: int) -> None:
+        """Close a handle. Best-effort."""
+        self._kernel32.CloseHandle(ctypes.c_void_p(handle))
+
+    def console_account(self) -> str:
+        """The account logged on at the console, empty when nobody is.
+
+        Returns:
+            The account name.
+        """
+        session = self._kernel32.WTSGetActiveConsoleSessionId()
+        if session == 0xFFFFFFFF:
+            return ""
+        buffer = ctypes.c_void_p()
+        length = ctypes.c_ulong(0)
+        ok = self._wtsapi32.WTSQuerySessionInformationW(
+            None,
+            session,
+            WTS_USER_NAME_CLASS,
+            ctypes.byref(buffer),
+            ctypes.byref(length),
+        )
+        if not ok:
+            return ""
+        try:
+            return ctypes.wstring_at(buffer.value) if buffer.value else ""
+        finally:
+            self._wtsapi32.WTSFreeMemory(buffer)
+
+    def run_as_console_user(
+        self, argv: list, *, stdin: str, timeout_s: int
+    ) -> "subprocess.CompletedProcess":
+        """Run a process in the console session, as its own account.
+
+        Args:
+            argv: Argument vector.
+            stdin: Sent to the process's standard input.
+            timeout_s: How long to wait.
+
+        Returns:
+            The completed process, with text output captured.
+
+        Raises:
+            OSError: When the session token or the spawn is refused.
+            subprocess.TimeoutExpired: When the process outlives the wait.
+        """
+        session = self._kernel32.WTSGetActiveConsoleSessionId()
+        token = ctypes.c_void_p()
+        if not self._wtsapi32.WTSQueryUserToken(session, ctypes.byref(token)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            return self._spawn_with_token(
+                token.value, argv, stdin=stdin, timeout_s=timeout_s
+            )
+        finally:
+            self._kernel32.CloseHandle(token)
+
+    def _spawn_with_token(
+        self, token: int, argv: list, *, stdin: str, timeout_s: int
+    ) -> "subprocess.CompletedProcess":
+        """Spawn under a token with the standard streams on temporary files."""
+        with tempfile.TemporaryDirectory(prefix="neutrino_agent_run_") as workdir:
+            stdin_path = os.path.join(workdir, "stdin")
+            stdout_path = os.path.join(workdir, "stdout")
+            stderr_path = os.path.join(workdir, "stderr")
+            with open(stdin_path, "w", encoding="utf-8") as stream:
+                stream.write(stdin)
+            descriptors = [
+                os.open(stdin_path, os.O_RDONLY),
+                os.open(stdout_path, os.O_WRONLY | os.O_CREAT),
+                os.open(stderr_path, os.O_WRONLY | os.O_CREAT),
+            ]
+            try:
+                handles = [
+                    msvcrt.get_osfhandle(descriptor) for descriptor in descriptors
+                ]
+                for handle in handles:
+                    os.set_handle_inheritable(handle, True)
+                startup = _StartupInfo()
+                startup.cb = ctypes.sizeof(startup)
+                startup.dwFlags = STARTF_USESTDHANDLES
+                startup.hStdInput = handles[0]
+                startup.hStdOutput = handles[1]
+                startup.hStdError = handles[2]
+                info = _ProcessInformation()
+                ok = self._advapi32.CreateProcessAsUserW(
+                    ctypes.c_void_p(token),
+                    None,
+                    subprocess.list2cmdline(argv),
+                    None,
+                    None,
+                    True,
+                    CREATE_NO_WINDOW,
+                    None,
+                    None,
+                    ctypes.byref(startup),
+                    ctypes.byref(info),
+                )
+                if not ok:
+                    raise ctypes.WinError(ctypes.get_last_error())
+            finally:
+                for descriptor in descriptors:
+                    os.close(descriptor)
+            try:
+                waited = self._kernel32.WaitForSingleObject(
+                    info.hProcess, int(timeout_s * 1000)
+                )
+                if waited == WAIT_TIMEOUT:
+                    self._kernel32.TerminateProcess(info.hProcess, 1)
+                    raise subprocess.TimeoutExpired(list(argv), timeout_s)
+                code = ctypes.c_ulong(0)
+                self._kernel32.GetExitCodeProcess(info.hProcess, ctypes.byref(code))
+            finally:
+                self._kernel32.CloseHandle(info.hProcess)
+                self._kernel32.CloseHandle(info.hThread)
+            with open(stdout_path, "r", encoding="utf-8", errors="replace") as stream:
+                stdout = stream.read()
+            with open(stderr_path, "r", encoding="utf-8", errors="replace") as stream:
+                stderr = stream.read()
+        return subprocess.CompletedProcess(list(argv), int(code.value), stdout, stderr)
+
+
+class _StartupInfo(ctypes.Structure):
+    """STARTUPINFOW, for the redirected standard streams."""
+
+    _fields_ = [
+        ("cb", ctypes.c_ulong),
+        ("lpReserved", ctypes.c_wchar_p),
+        ("lpDesktop", ctypes.c_wchar_p),
+        ("lpTitle", ctypes.c_wchar_p),
+        ("dwX", ctypes.c_ulong),
+        ("dwY", ctypes.c_ulong),
+        ("dwXSize", ctypes.c_ulong),
+        ("dwYSize", ctypes.c_ulong),
+        ("dwXCountChars", ctypes.c_ulong),
+        ("dwYCountChars", ctypes.c_ulong),
+        ("dwFillAttribute", ctypes.c_ulong),
+        ("dwFlags", ctypes.c_ulong),
+        ("wShowWindow", ctypes.c_ushort),
+        ("cbReserved2", ctypes.c_ushort),
+        ("lpReserved2", ctypes.c_void_p),
+        ("hStdInput", ctypes.c_void_p),
+        ("hStdOutput", ctypes.c_void_p),
+        ("hStdError", ctypes.c_void_p),
+    ]
+
+
+class _ProcessInformation(ctypes.Structure):
+    """PROCESS_INFORMATION, for the spawned process's handles."""
+
+    _fields_ = [
+        ("hProcess", ctypes.c_void_p),
+        ("hThread", ctypes.c_void_p),
+        ("dwProcessId", ctypes.c_ulong),
+        ("dwThreadId", ctypes.c_ulong),
+    ]

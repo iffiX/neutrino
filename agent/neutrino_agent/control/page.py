@@ -154,6 +154,7 @@ const WORDS = {
     password_hint: "Share password",  // scan: allow
     path_hint: "Mount path",
     not_attached: "not mounted",
+    browse_drive_letter: "This machine mounts at a drive letter, typed as Z:",
     unmounting: "unmounting…",
     enabled_users: "Enabled users",
     mount_queued: "waiting for the agent…",
@@ -238,6 +239,7 @@ const WORDS = {
     agent_package_digest_mismatch: "self-update to {target} failed: the package did not match its digest",
     agent_update_launch_failed: "self-update to {target} could not be launched",
     agent_update_fetch_failed: "self-update failed: the package could not be fetched from the hub",
+    agent_package_missing: "self-update to {target} failed: the hub has no agent package for this platform",
     agent_wire_stale: "this agent's build does not match the hub; it reinstalls itself from the hub's package",
     hub_reply_unreadable: "the hub sent a reply this agent could not read",
   },
@@ -1146,10 +1148,10 @@ function drawFileForm(entryId, staged, state) {
   const browse = document.createElement('button');
   browse.className = 'ghost';
   browse.textContent = WORDS.ui.browse;
-  // The listing runs as the caller, so browsing needs the run_as capability.
-  const canBrowse = (state.capabilities || []).indexOf('run_as') >= 0;
+  // Where a mount location is a drive letter there is no directory to pick.
+  const canBrowse = (state.mount_location_shape || 'path') === 'path';
   browse.disabled = !canBrowse;
-  browse.title = canBrowse ? '' : WORDS.ui.not_for_platform;
+  browse.title = canBrowse ? '' : WORDS.ui.browse_drive_letter;
   browse.onclick = () => openBrowser(staged.path, (chosen) => {
     staged.path = chosen;
     redraw();

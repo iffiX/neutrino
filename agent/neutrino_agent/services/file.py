@@ -181,7 +181,7 @@ class FileServiceHandler(ServiceTypeHandler):
                         return {"code": "fs_refused", "params": {}}
                 except PlatformUnsupportedError:
                     return {"code": "unsupported_platform", "params": {}}
-            refusal = self._prepare_mount_point(
+            refusal = self._platform.prepare_mount_location(
                 account="" if is_privileged else account, location=location
             )
             if refusal is not None:
@@ -372,7 +372,7 @@ class FileServiceHandler(ServiceTypeHandler):
             self._problems[record_id] = {"code": "credentials_missing", "params": {}}
             return
         account = str(record.get("account", ""))
-        refusal = self._prepare_mount_point(
+        refusal = self._platform.prepare_mount_location(
             account="" if account == "root" else account, location=location
         )
         if refusal is not None:
@@ -421,33 +421,6 @@ class FileServiceHandler(ServiceTypeHandler):
             "code": "module_missing",
             "params": {"module": AGENT_MOUNT_MODULE_NAME},
         }
-
-    def _prepare_mount_point(self, *, account: str, location: str) -> "dict | None":
-        """Have the mount point be an empty directory, creating it as the
-        account when it is not there.
-
-        Args:
-            account: Whose identity creates a missing directory; empty
-                creates as the agent itself.
-            location: The mount point.
-
-        Returns:
-            None when the point is ready, a refusal otherwise.
-        """
-        if os.path.exists(location):
-            if not os.path.isdir(location):
-                return {"code": "mountpoint_not_empty", "params": {}}
-            try:
-                if os.listdir(location):
-                    return {"code": "mountpoint_not_empty", "params": {}}
-            except OSError:
-                return {"code": "fs_refused", "params": {}}
-            return None
-        try:
-            self._platform.make_directory(account=account, path=location)
-        except (OSError, PlatformUnsupportedError):
-            return {"code": "fs_refused", "params": {}}
-        return None
 
     def _credentials_path(self, record_id: str) -> str:
         return os.path.join(self._credentials_dir, f"{record_id}.credentials")
