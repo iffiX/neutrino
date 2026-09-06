@@ -155,7 +155,12 @@ def test_the_state_carries_the_typed_service_list(control):
     status, state = over_socket(server, "GET", "/api/state")
 
     assert status == 200
-    assert [entry["type"] for entry in state["services"]] == ["ai", "web", "port"]
+    assert [entry["type"] for entry in state["services"]] == [
+        "ai",
+        "web",
+        "port",
+        "rdp",
+    ]
     assert state["services"][1]["payload"]["url"] == "http://w/"
     assert state["forwards"]["svc_tcp"]["local_port"] == 5432
     assert state["mounts"][0]["record_id"] == "r1"
@@ -522,3 +527,18 @@ def test_no_route_serves_a_page_any_more(control):
     status, reply = over_socket(server, "GET", "/")
 
     assert (status, reply["code"]) == (404, "unknown_request")
+
+
+# --- the rdp share's access password is the privileged scope's ---
+
+
+def test_the_access_password_reaches_only_a_privileged_caller(control):
+    server, _agent, platform = control
+
+    platform.peer = dict(ROOT)
+    _, privileged = over_socket(server, "GET", "/api/state")
+    platform.peer = dict(ALICE)
+    _, ordinary = over_socket(server, "GET", "/api/state")
+
+    assert privileged["rdp"]["password"] == "hunter2"
+    assert ordinary["rdp"]["password"] == ""

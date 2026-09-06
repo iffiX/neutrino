@@ -460,6 +460,7 @@ def test_heartbeat_payload_every_field_comes_from_its_source(config_path, monkey
         "module_requests",
         "module_results",
         "ai_targets",
+        "rdp_share",
         "last_error",
     }
     assert payload["hostname"] == "census-box"

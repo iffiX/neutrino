@@ -26,6 +26,7 @@ SERVICE_KIND_TITLES = (
     ("port", "Ports"),
     ("ai", "AI"),
     ("file", "Files"),
+    ("rdp", "Remote desktops"),
 )
 
 SERVICES_EMPTY = "nothing is published for this machine yet"
@@ -33,6 +34,9 @@ SERVICE_UNHEALTHY = "not reachable now"
 SERVICE_NO_AI = "no AI service is published for this machine"
 SERVICE_NO_RECORD = "no saved login for this share; set one: nagent service file config"
 SERVICE_CONVERGES = "the tools follow on the machine's next report"
+SERVICE_RDP_NOT_SHARED = "this machine's desktop is not shared"
+SERVICE_RDP_ID = "RustDesk ID"
+SERVICE_RDP_MODULE = "rustdesk"
 
 FORWARD_HOST = "127.0.0.1"
 
@@ -240,6 +244,128 @@ def main_file_unmount(ref: str) -> int:
     fresh = _record_at(reply, entry, str(record.get("path", "")))
     print(_record_line(fresh) if fresh else f"{record.get('path', '')} — unmounted")
     return 0
+
+
+def main_rdp_share() -> int:
+    """Share this machine's desktop behind an access password.
+
+    The password is asked on the terminal, the way the page's form asks,
+    and appears on no command line. It stays on this machine: RustDesk
+    keeps it salted and the agent keeps a copy only root can read, and the
+    hub is never told it.
+
+    Returns:
+        Process exit status.
+    """
+    state = wording.read_state()
+    if state is None:
+        return 1
+    missing = _missing_rdp_module(state)
+    if missing:
+        print(_needs_line(missing), file=sys.stderr)
+        return 1
+    password = getpass.getpass("Access password: ")
+    if not password:
+        print(wording.word_code("rdp_password_missing", {}), file=sys.stderr)
+        return 2
+    reply = _act("rdp", {"action": "share", "password": password})
+    if reply is None:
+        return 1
+    print(_rdp_share_line(reply))
+    return 0
+
+
+def main_rdp_unshare() -> int:
+    """Stop sharing this machine's desktop.
+
+    Returns:
+        Process exit status.
+    """
+    state = wording.read_state()
+    if state is None:
+        return 1
+    if not (state.get("rdp") or {}).get("is_shared"):
+        print(SERVICE_RDP_NOT_SHARED)
+        return 0
+    reply = _act("rdp", {"action": "unshare"})
+    if reply is None:
+        return 1
+    print(SERVICE_RDP_NOT_SHARED)
+    return 0
+
+
+def main_rdp_connect(ref: str) -> int:
+    """Open the local RustDesk client at one shared desktop.
+
+    Args:
+        ref: The entry's per-kind number or id.
+
+    Returns:
+        Process exit status.
+    """
+    state = wording.read_state()
+    if state is None:
+        return 1
+    entry = _resolve(state, "rdp", ref)
+    if entry is None:
+        return 2
+    missing = _missing_rdp_module(state)
+    if missing:
+        print(_needs_line(missing), file=sys.stderr)
+        return 1
+    reply = _act("rdp", {"action": "connect", "id": entry.get("id")})
+    if reply is None:
+        return 1
+    payload = entry.get("payload") or {}
+    print(f"opening {payload.get('host', '')}:{payload.get('port', '')}")
+    return 0
+
+
+def main_rdp_show() -> int:
+    """Print where this machine's own share stands.
+
+    Returns:
+        Process exit status.
+    """
+    state = wording.read_state()
+    if state is None:
+        return 1
+    print(_rdp_share_line(state))
+    missing = _missing_rdp_module(state)
+    if missing:
+        print(_needs_line(missing))
+    return 0
+
+
+def _missing_rdp_module(state: dict) -> list:
+    """The rustdesk module when this machine does not have it.
+
+    Args:
+        state: The state payload.
+
+    Returns:
+        ``(name, title)`` pairs, empty when the module is installed.
+    """
+    return _missing_modules(state, {"modules": [SERVICE_RDP_MODULE]})
+
+
+def _rdp_share_line(state: dict) -> str:
+    """This machine's own share, as one line.
+
+    Args:
+        state: The state payload.
+
+    Returns:
+        The line to print.
+    """
+    share = state.get("rdp") or {}
+    standing = wording.word_state(str(share.get("state", "unknown")))
+    if not share.get("is_shared"):
+        return standing
+    where = f"{state.get('hostname', '')}:{share.get('port', '')}"
+    identifier = str(share.get("rustdesk_id", ""))
+    tail = f"  {SERVICE_RDP_ID} {identifier}" if identifier else ""
+    return f"{where} — {standing}{tail}"
 
 
 def main_ai_show() -> int:
@@ -450,6 +576,8 @@ def _entry_line(state: dict, kind: str, entry: dict, title_width: int) -> str:
             essence += f" -> {FORWARD_HOST}:{forward.get('local_port')}"
     elif kind == "ai":
         essence = str(payload.get("endpoint", ""))
+    elif kind == "rdp":
+        essence = f"{payload.get('host', '')}:{payload.get('port', '')}"
     else:
         essence = f"//{payload.get('host', '')}/{payload.get('share', '')}"
     notes = []

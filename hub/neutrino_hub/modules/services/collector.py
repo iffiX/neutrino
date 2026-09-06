@@ -1,9 +1,11 @@
 """Composing the typed service list the hub publishes.
 
 Every entry is ``{id, type, title, payload, is_healthy, source, description,
-modules, record_id, detail_code}`` with four types — web, port, ai, file.
-Module-declared entries exist only while their module serves and carry the
-module's own health; manual declarations carry their probe results.
+modules, record_id, detail_code}`` with five types — web, port, ai, file,
+rdp. Module-declared entries exist only while their module serves and carry
+the module's own health; manual declarations carry their probe results; an
+rdp entry is a managed machine's own word that it is sharing its desktop,
+and lives only while that machine keeps saying so.
 ``modules`` names the device modules the entry cannot work without.
 ``record_id`` names the declared record an entry came from, for the panel's
 delete and probe, and ``detail_code`` is what that record's last probe
@@ -32,12 +34,17 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_KIND_HTTP,
     SERVICES_KIND_SAMBA,
     SERVICES_PODMAN_DESCRIPTION,
+    SERVICES_RDP_DESCRIPTION,
+    SERVICES_RDP_MODULES,
+    SERVICES_RDP_PROTOCOL,
     SERVICES_SAMBA_DESCRIPTION,
     SERVICES_SOURCE_DECLARED,
+    SERVICES_SOURCE_DEVICE,
     SERVICES_SOURCE_MODULE,
     SERVICES_TYPE_AI,
     SERVICES_TYPE_FILE,
     SERVICES_TYPE_PORT,
+    SERVICES_TYPE_RDP,
     SERVICES_TYPE_WEB,
 )
 
@@ -75,6 +82,7 @@ class ServiceListCollector:
         podman_containers: list,
         declared_services: list[DeclaredService],
         declared_healths: dict,
+        device_shares: list | None = None,
     ):
         """
         Args:
@@ -98,6 +106,10 @@ class ServiceListCollector:
             declared_healths: Declared record id to its
                 :class:`neutrino_hub.modules.services.probe.DeclaredServiceHealth`;
                 a record never probed is absent.
+            device_shares: The live
+                :class:`neutrino_hub.modules.services.device_shares.DeviceShare`
+                declarations; a machine sharing its desktop is the only
+                thing that puts one here.
         """
         self._hub_host = hub_host
         self._is_gitea_served = is_gitea_served
@@ -114,6 +126,7 @@ class ServiceListCollector:
         self._podman_containers = podman_containers
         self._declared_services = declared_services
         self._declared_healths = declared_healths
+        self._device_shares = device_shares or []
 
     def render(self) -> list[dict]:
         """Every published entry, module entries first, in type order.
@@ -126,7 +139,34 @@ class ServiceListCollector:
         entries += self._port_entries()
         entries += self._ai_entries()
         entries += self._file_entries()
+        entries += self._rdp_entries()
         return entries
+
+    def _rdp_entries(self) -> list[dict]:
+        """One entry per machine that says it is sharing its desktop.
+
+        The declaring machine is the only judge of health: it is answering
+        beats and it says the share is up, which is the whole of what the
+        hub knows and more than a probe of a port could tell it.
+        """
+        return [
+            _entry(
+                id=f"rdp_{share.share_id}",
+                type=SERVICES_TYPE_RDP,
+                title=share.hostname or share.host,
+                payload={
+                    "protocol": SERVICES_RDP_PROTOCOL,
+                    "host": share.host,
+                    "port": share.port,
+                },
+                is_healthy=True,
+                description=SERVICES_RDP_DESCRIPTION.format(
+                    hostname=share.hostname or share.host
+                ),
+                source=SERVICES_SOURCE_DEVICE,
+            )
+            for share in self._device_shares
+        ]
 
     def _web_entries(self) -> list[dict]:
         entries = []
@@ -333,6 +373,7 @@ def _entry(
     description: str,
     record_id: str | None = None,
     detail_code: str | None = None,
+    source: str = "",
 ) -> dict:
     return {
         "id": id,
@@ -340,7 +381,8 @@ def _entry(
         "title": title,
         "payload": payload,
         "is_healthy": is_healthy,
-        "source": (SERVICES_SOURCE_DECLARED if record_id else SERVICES_SOURCE_MODULE),
+        "source": source
+        or (SERVICES_SOURCE_DECLARED if record_id else SERVICES_SOURCE_MODULE),
         "description": description,
         "modules": list(_type_modules(type)),
         "record_id": record_id,
@@ -354,6 +396,8 @@ def _type_modules(type: str) -> tuple:
         return SERVICES_AI_MODULES
     if type == SERVICES_TYPE_FILE:
         return SERVICES_FILE_MODULES
+    if type == SERVICES_TYPE_RDP:
+        return SERVICES_RDP_MODULES
     return ()
 
 

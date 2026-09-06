@@ -35,6 +35,8 @@ export interface RemoteDesktopStatus {
 /** The remote-desktop product's state on a device. */
 export interface RemoteDesktopView {
   anydesk: RemoteDesktopStatus;
+  /** The id a peer connects to RustDesk by, off the module's own report. */
+  rustdesk_id: string;
 }
 
 export type ModuleActionName =
@@ -754,6 +756,10 @@ export interface DeviceModuleView {
   is_supported: boolean;
   /** The platform carries this natively: worded built in, no button. */
   is_native: boolean;
+  /** What the hub conveys this under, and where its exact source is. Empty
+   * for software the hub does not hand on itself. */
+  license: string;
+  corresponding_source: string;
   state: string;
   /** Why the state is what it is, when the agent said; the page words it. */
   code: string;
@@ -990,6 +996,19 @@ export interface PanelSettings {
   listen_port: number;
 }
 
+/**
+ * One carried component, credited with its license and exact source.
+ *
+ * Only software whose bytes pass through the hub's hands is listed: what
+ * the hub fetches and hands to a machine, it conveys.
+ */
+export interface Acknowledgement {
+  name: string;
+  version: string;
+  license: string;
+  corresponding_source: string;
+}
+
 export interface AboutInfo {
   xray_version: string;
   gateway_version: string;
@@ -998,6 +1017,7 @@ export interface AboutInfo {
   geodata_version: string;
   kernel: string;
   uptime_s: number;
+  acknowledgements: Acknowledgement[];
 }
 
 // --- Samba ---

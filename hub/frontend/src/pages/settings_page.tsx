@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { ChangeEvent, FormEvent } from "react";
+import type { ChangeEvent, FormEvent, ReactNode } from "react";
 
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
@@ -49,6 +49,10 @@ const ABOUT_PYTHON = "Python";
 const ABOUT_GEODATA = "Geodata";
 const ABOUT_KERNEL = "Kernel";
 const ABOUT_UPTIME = "Uptime";
+const ABOUT_CREDITS_TITLE = "Acknowledgements";
+const ABOUT_CREDITS_HINT =
+  "Open-source software this hub downloads and hands to managed machines.";
+const ABOUT_CREDITS_SOURCE = "source";
 
 const NOT_A_BACKUP_SENTENCE = "This is not a Neutrino backup.";
 
@@ -304,6 +308,38 @@ export function SettingsPage() {
                 label={ABOUT_UPTIME}
                 value={formatDuration(about.data.uptime_s)}
               />
+              {about.data.acknowledgements.length > 0 && (
+                <>
+                  <div className="section_label">{ABOUT_CREDITS_TITLE}</div>
+                  <span className="field_hint">{ABOUT_CREDITS_HINT}</span>
+                  {about.data.acknowledgements.map((credit) => (
+                    <AboutRow
+                      key={credit.name}
+                      label={
+                        credit.version === ""
+                          ? credit.name
+                          : `${credit.name} ${credit.version}`
+                      }
+                      value={
+                        credit.corresponding_source === "" ? (
+                          credit.license
+                        ) : (
+                          <>
+                            {`${credit.license} — `}
+                            <a
+                              href={credit.corresponding_source}
+                              target="_blank"
+                              rel="noreferrer noopener"
+                            >
+                              {ABOUT_CREDITS_SOURCE}
+                            </a>
+                          </>
+                        )
+                      }
+                    />
+                  ))}
+                </>
+              )}
             </div>
           )}
         </section>
@@ -443,7 +479,7 @@ export function SettingsPage() {
 
 interface AboutRowProps {
   label: string;
-  value: string;
+  value: ReactNode;
 }
 
 /** One name and its version, the full value on hover where it is cut. */
@@ -451,7 +487,10 @@ function AboutRow({ label, value }: AboutRowProps) {
   return (
     <div className="settings_about_row">
       <span className="settings_about_key">{label}</span>
-      <span className="settings_about_value" title={value}>
+      <span
+        className="settings_about_value"
+        title={typeof value === "string" ? value : undefined}
+      >
         {value}
       </span>
     </div>

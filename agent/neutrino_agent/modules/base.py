@@ -37,3 +37,17 @@ class ModuleRunner:
         self._platform = platform
         self._log = log
         self._publish = publish if publish is not None else _ignore_status
+
+    def details(self, resolved: dict) -> dict:
+        """What the surfaces show beside this module's row.
+
+        Facts a person reads — a remote desktop's id — rather than anything
+        a wording table words. Empty for a module with nothing to add.
+
+        Args:
+            resolved: The module as the hub resolved it.
+
+        Returns:
+            The details, empty by default.
+        """
+        return {}

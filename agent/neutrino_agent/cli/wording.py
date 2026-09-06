@@ -43,6 +43,13 @@ CLI_CODE_WORDS = {
     "module_cache_unwritable": "the hub could not save the download",
     "module_artifact_missing": "the hub no longer holds that download; ask again",
     "module_digest_mismatch": "what arrived did not match the hub's checksum",
+    "module_sha256_mismatch": (
+        "the download did not match the checksum this hub pins for it"
+    ),
+    "rdp_password_missing": "set an access password to share this desktop",  # scan: allow
+    "rdp_configure_failed": "RustDesk could not be configured: {detail}",
+    "rdp_launch_failed": "the RustDesk client could not be started: {detail}",
+    "rdp_no_address": "that machine published no address to connect to",
     "agent_never_reported": "this machine never said how the install went",
     "uninstall_unconfirmed": "the uninstall finished, but the software is still there",
     "no_download_named": "the catalog names no download for this machine",
@@ -101,6 +108,11 @@ CLI_STATE_WORDS = {
     "unsupported": "not available on this machine",
     "failed": "failed",
     "unknown": "waiting for the agent",
+    # Where a shared desktop stands, the page's own four words.
+    "not_shared": "not shared",
+    "sharing": "shared",
+    "starting": "starting",
+    "waiting_for_approval": "waiting for permission on this machine",
 }
 
 CLI_OPERATION_WORDS = {

@@ -44,6 +44,7 @@ from neutrino_hub.modules.devices.constants import (
 )
 from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
+from neutrino_hub.modules.services.constants import SERVICES_RDP_PORT
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.utils.version_number import parse_version
 from neutrino_hub.web.dependencies import get_runtime
@@ -144,6 +145,7 @@ def heartbeat(
         runtime.client_platform[key] = dict(beat.platform)
     if beat.hostname:
         runtime.client_hostname[key] = beat.hostname
+    _record_rdp_share(runtime, device, beat.rdp_share)
     if isinstance(beat.last_error, dict) and beat.last_error.get("code"):
         runtime.client_last_error[key] = {
             "code": str(beat.last_error.get("code")),
@@ -225,6 +227,40 @@ def enroll(
     if request.hostname:
         runtime.client_hostname[key] = request.hostname
     return ClientEnrollReply(token=token, mac_address=key, hub_version=HUB_VERSION)
+
+
+def _record_rdp_share(runtime: PanelRuntime, device, share: dict) -> None:
+    """Take one machine's word on whether its desktop is shared.
+
+    Only a machine's own agent declares this, and only for itself: the
+    device the token resolved to is the one the share is recorded against,
+    so nothing a beat carries can declare on another machine's behalf. The
+    address is the hub's own record of where that machine is, not one the
+    beat names.
+
+    Args:
+        runtime: The shared runtime.
+        device: The device the token resolved to.
+        share: The beat's ``rdp_share``.
+    """
+    key = device.mac_address
+    was_sharing = any(held.mac_address == key for held in runtime.device_shares.live())
+    is_shared = bool(share.get("is_shared")) if isinstance(share, dict) else False
+    share_id = str(share.get("share_id", "") or "") if is_shared else ""
+    if is_shared and share_id and device.ipv4_address:
+        runtime.device_shares.declare(
+            mac_address=key,
+            share_id=share_id,
+            hostname=runtime.client_hostname.get(key, "") or device.name,
+            host=device.ipv4_address,
+            port=int(share.get("port") or SERVICES_RDP_PORT),
+        )
+    else:
+        runtime.device_shares.withdraw(key)
+    if was_sharing != (is_shared and bool(share_id) and bool(device.ipv4_address)):
+        # The published list is cached for a few seconds; a share appearing
+        # or ending is what a person is watching for, so it recomposes now.
+        runtime.published_services.expire()
 
 
 def _reported_key(registry: DeviceRegistry, request: ClientEnroll) -> str:

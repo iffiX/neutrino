@@ -28,6 +28,7 @@ from neutrino_agent.constants import AGENT_MODULE_OUTPUT_LIMIT_BYTES
 from neutrino_agent.modules.installers import InstallError
 from neutrino_agent.modules.openssh import OpensshModuleRunner
 from neutrino_agent.modules.package import PackageModuleRunner
+from neutrino_agent.modules.rustdesk import RustdeskModuleRunner
 from neutrino_agent.modules.switcher import SwitcherModuleRunner
 from neutrino_agent.modules.system_package import SystemPackageModuleRunner
 from neutrino_agent.platforms.base import PlatformUnsupportedError
@@ -165,6 +166,9 @@ class ModuleEngine(ReconcileWorker):
         self._openssh = OpensshModuleRunner(
             platform=platform, log=self._collect, publish=self._publish
         )
+        self._rustdesk = RustdeskModuleRunner(
+            platform=platform, log=self._collect, publish=self._publish
+        )
         super().__init__(log=log, on_change=on_change)
 
     @property
@@ -283,7 +287,7 @@ class ModuleEngine(ReconcileWorker):
             resolved: The module as the hub resolved it for this platform.
 
         Returns:
-            ``{"state", "code", "params"}``.
+            ``{"state", "code", "params", "details"}``.
         """
         if not isinstance(resolved, dict) or resolved.get("entry") is None:
             return _typed("unsupported", "no_platform_build")
@@ -296,7 +300,10 @@ class ModuleEngine(ReconcileWorker):
             if kind == "system_package" and self._system.is_native(resolved):
                 return _typed("installed", "")
             is_present = runner.verify(resolved)
-            return _typed("installed" if is_present else "absent", "")
+            status = _typed("installed" if is_present else "absent", "")
+            if is_present:
+                status["details"] = runner.details(resolved)
+            return status
         except PlatformUnsupportedError:
             return _typed("failed", "unsupported_platform")
         except Exception as error:  # noqa: BLE001 - reported, never raised
@@ -392,6 +399,7 @@ class ModuleEngine(ReconcileWorker):
             "switcher": self._switcher,
             "system_package": self._system,
             "openssh": self._openssh,
+            "rustdesk": self._rustdesk,
         }.get(kind)
 
     def _install(self, name: str, resolved: dict, order: dict) -> dict:
@@ -445,5 +453,9 @@ class ModuleEngine(ReconcileWorker):
 
 
 def _typed(state: str, code: str, **params) -> dict:
-    """One typed status, the shape every surface words for itself."""
-    return {"state": state, "code": code, "params": params}
+    """One typed status, the shape every surface words for itself.
+
+    ``details`` carries facts a surface prints as they are — a remote
+    desktop's id — beside the code every surface words for itself.
+    """
+    return {"state": state, "code": code, "params": params, "details": {}}

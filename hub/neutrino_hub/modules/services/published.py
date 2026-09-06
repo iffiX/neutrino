@@ -40,7 +40,7 @@ from neutrino_hub.utils import json_file
 class PublishedServiceCache:
     """Composes the published service list and keeps it for a short while."""
 
-    def __init__(self, *, declared_probe, served_models, units):
+    def __init__(self, *, declared_probe, served_models, units, device_shares=None):
         """
         Args:
             declared_probe: The shared
@@ -49,10 +49,14 @@ class PublishedServiceCache:
                 :class:`neutrino_hub.modules.cliproxyapi.ops.CliproxyApiServedModelCache`.
             units: The shared
                 :class:`neutrino_hub.system.systemd_ctl.SystemdServiceController`.
+            device_shares: The shared
+                :class:`neutrino_hub.modules.services.device_shares.DeviceShareRegistry`;
+                None publishes no desktop shares.
         """
         self._declared_probe = declared_probe
         self._served_models = served_models
         self._units = units
+        self._device_shares = device_shares
         self._entries: list[dict] = []
         self._fingerprint = ""
         self._hub_addresses: set[str] = set()
@@ -132,6 +136,9 @@ class PublishedServiceCache:
             ),
             declared_services=declared,
             declared_healths=healths,
+            device_shares=(
+                self._device_shares.live() if self._device_shares is not None else []
+            ),
         ).render()
 
         self._entries = entries

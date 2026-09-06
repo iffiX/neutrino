@@ -32,9 +32,11 @@ def resolve_module(manifest: dict, platform: dict) -> dict:
 
     Returns:
         The module's title, kind and installer tier, plus the entry, verify
-        command and package name for this platform. ``entry`` is None where
-        the manifest offers this platform nothing, which is the machine's
-        whole basis for reporting the module unsupported.
+        command and package name for this platform, and the license and
+        exact-tag source pointer the surfaces render beside the row.
+        ``entry`` is None where the manifest offers this platform nothing,
+        which is the machine's whole basis for reporting the module
+        unsupported.
     """
     platform_key, entry = resolve_platform_entry(manifest, platform)
     resolved = entry if entry is not None else {}
@@ -43,6 +45,9 @@ def resolve_module(manifest: dict, platform: dict) -> dict:
         "description": manifest.get("description", ""),
         "kind": manifest.get("kind", ""),
         "installer": str(manifest.get("installer", "")),
+        "version": str(manifest.get("version", "") or ""),
+        "license": str(manifest.get("license", "") or ""),
+        "corresponding_source": str(manifest.get("corresponding_source", "") or ""),
         "platform_key": platform_key,
         "entry": entry,
         "verify": str(resolved.get("verify", "") or ""),

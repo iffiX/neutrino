@@ -103,7 +103,7 @@ per-beat reply.
 
 **The service list is typed.** Every entry is
 `{id, type, title, payload, is_healthy, source, description, modules}`,
-and the four types are closed until a fifth earns its place:
+and the five types are closed until a sixth earns its place:
 
 | type | payload | agent behavior |
 | --- | --- | --- |
@@ -111,22 +111,37 @@ and the four types are closed until a fifth earns its place:
 | `port` | host, port | Connect / Disconnect (a loopback forward) |
 | `ai` | endpoint, protocol, models[] | per-account configuration, applied together |
 | `file` | protocol, host, share | Config, then Mount / Unmount |
+| `rdp` | protocol, host, port | Connect (the local client, at that address) |
 
-Entries come from two sources and only two: a hub module declares its own
-(Gitea a web entry, Samba a file entry per share, the AI gateway an ai
+Entries come from three sources and only three: a hub module declares its
+own (Gitea a web entry, Samba a file entry per share, the AI gateway an ai
 entry, the container runtime a port entry per published container port),
 live only while the module runs — health is the module's, never a second
-opinion; or a person declares one by hand for something outside the hub,
-probed the way declared services are. `description` is the declarer's one
-line of provenance — "published by container mysql:8.0" — worded by whoever
-declared, so the types themselves stay general. A payload host that is the
-hub's own address (loopback included) is resolved per device at heartbeat
-time to the address that device actually reaches, the way the ai endpoint
-always was.
+opinion; a person declares one by hand for something outside the hub,
+probed the way declared services are; or **a managed machine declares one
+for itself**, which only the `rdp` type is. `description` is the declarer's
+one line of provenance — "published by container mysql:8.0" — worded by
+whoever declared, so the types themselves stay general. A payload host that
+is the hub's own address (loopback included) is resolved per device at
+heartbeat time to the address that device actually reaches, the way the ai
+endpoint always was; a device-declared host is another machine's and is
+never rewritten.
+
+**The `device` source is the machine's own word, and it expires.** Only an
+agent can declare an rdp entry: the panel's form offers no such type and no
+hub module publishes one. The declaration rides the heartbeat as
+`{is_shared, share_id, port}`, the hub pairs it with the address it holds
+for that device — never one the beat names — and the entry lives in the
+panel's memory alone. It dies when the machine stops sharing, when the
+machine stops beating, and when the hub restarts; each time, the next beat
+from a machine that is still sharing puts it back. The access password a
+share is set up with is the machine's: it is never in the declaration,
+never in a backup, and the hub is never told it.
 
 **A service names the modules it needs.** `modules` lists the module names
 the entry cannot work without — an ai entry names `cc_switch`, a file
-entry names `samba_mount`, web and port entries name nothing. The list is
+entry names `samba_mount`, an rdp entry names `rustdesk`, web and port
+entries name nothing. The list is
 composed hub-side with the rest of the catalog, and every surface
 satisfies it the same one way: compare the names against the machine's
 reported module states. A service whose dependencies are not all on the
@@ -167,10 +182,15 @@ Three sections under outer titles set in the hub's module-page style —
 **Status**, **Modules**, **Services** — in that order on the agent as on
 the hub. Status is one panel: the connection card, its controls greyed for
 an ordinary caller. Modules is one panel of rows, install/uninstall each,
-greyed likewise. Services is
-one panel per type — Web, Ports, AI, Files — and a panel with staged,
+greyed likewise; a row whose software the hub conveys under a copyleft
+license carries its license and a link to the exact source beside it. Services is
+one panel per type — Web, Ports, AI, Files, Remote desktop, Remote
+desktops — and a panel with staged,
 unapplied edits lights its frame the way the hub's panels do; unhealthy
-entries render greyed with their state, never hidden.
+entries render greyed with their state, never hidden. Remote desktop is
+the one panel that stands with no entry behind it: sharing is decided on
+the machine, so the panel is there whether or not the fleet publishes
+anything.
 
 One **Operation output** panel closes the Modules section, and it is the
 same panel the hub's drawer shows: whenever an agent install, reinstall
@@ -225,8 +245,29 @@ is refused (`{"code": "mountpoint_invalid"}`). A mount point that is
 not an empty directory is refused (`{"code": "mountpoint_not_empty"}` —
 mounting over content hides it).
 
+**Remote desktop.** Share asks for an access password, checks the
+`rustdesk` module the way every dependency is checked, writes RustDesk's
+direct-connection configuration to every path the service and the desktop
+session read, and sets the password. Direct mode only: no rendezvous
+server and no relay, `direct-server` on port 21118, and reachability is the
+LAN's or the overlay's job. Sharing takes the privileged scope — it opens
+the whole machine, not one account's files — and the share is declared
+upward only once the direct port answers, so the fleet is never offered a
+desktop that cannot be reached. macOS says **waiting for approval** until
+then rather than claiming otherwise: screen recording there is one
+person's allowance in System Settings, and no configuration substitutes
+for it. Unshare closes the direct server in every file sharing opened and
+withdraws the declaration.
+
+**Remote desktops.** One row per machine the fleet says is sharing, its
+own excluded, and Connect launches the local RustDesk client at that
+address. The password is not the hub's to pass on: whoever shared the
+machine tells whoever connects.
+
 Service choices are machine state: they live in the agent's own store,
-survive a hub restore untouched, and appear in no hub backup.
+survive a hub restore untouched, and appear in no hub backup. The one
+secret a service on the machine keeps — a mount's login, a share's access
+password — lives in a root-only file beside the store, never in it.
 
 ## The local control channel
 

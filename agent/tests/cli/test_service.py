@@ -80,6 +80,18 @@ SERVICE_ENTRIES = [
     },
 ]
 
+RDP_ENTRY = {
+    "id": "rdp_s9",
+    "type": "rdp",
+    "title": "studio",
+    "payload": {"protocol": "rustdesk", "host": "192.168.100.6", "port": 21118},
+    "is_healthy": True,
+    "source": "device",
+    "description": "shared from studio",
+    "modules": ["rustdesk"],
+}
+SERVICE_ENTRIES.append(RDP_ENTRY)
+
 SERVICE_MODULES = {
     "cc_switch": {
         "title": "cc-switch",
@@ -93,6 +105,15 @@ SERVICE_MODULES = {
         "kind": "mount",
         "entry": {"packages": ["cifs-utils"]},
     },
+    "rustdesk": {
+        "title": "RustDesk",
+        "description": "",
+        "kind": "rustdesk",
+        "installer": "hub",
+        "license": "AGPL-3.0",
+        "corresponding_source": "https://example/tree/1.4.9",
+        "entry": {"url": "https://hub/rustdesk.deb"},
+    },
 }
 
 
@@ -104,9 +125,18 @@ class FakeServiceAgent(FakeControlAgent):
         self.module_state_map = {
             "cc_switch": {"state": "installed"},
             "samba_mount": {"state": "installed"},
+            "rustdesk": {"state": "absent"},
         }
         self.forwards_map = {}
         self.mount_rows = []
+        self.rdp_state = {
+            "is_shared": False,
+            "share_id": "",
+            "port": 21118,
+            "state": "not_shared",
+            "rustdesk_id": "123456789",
+            "has_password": False,
+        }
 
     def catalog(self) -> dict:
         return {"modules": SERVICE_MODULES, "services": SERVICE_ENTRIES}
@@ -118,7 +148,11 @@ class FakeServiceAgent(FakeControlAgent):
         return self.module_state_map
 
     def service_states(self) -> dict:
-        return {"forwards": dict(self.forwards_map), "mounts": list(self.mount_rows)}
+        return {
+            "forwards": dict(self.forwards_map),
+            "mounts": list(self.mount_rows),
+            "rdp": dict(self.rdp_state),
+        }
 
     def service_action(self, service_type, *, account, is_privileged, body) -> dict:
         outcome = super().service_action(
@@ -561,3 +595,132 @@ def test_ai_apply_stands_behind_the_missing_modules(stack, capsys):
     assert code == 1
     assert agent.service_calls == []
     assert "nagent module install cc_switch" in capsys.readouterr().err
+
+
+# --- nagent service rdp: share here, connect there ---
+
+
+def test_the_listing_nests_remote_desktops_under_their_own_heading(stack, capsys):
+    assert service_cli.main_list() == 0
+
+    out = capsys.readouterr().out
+    assert "Remote desktops" in out
+    assert "studio" in out
+    assert "192.168.100.6:21118" in out
+
+
+def test_share_asks_the_password_on_the_terminal_and_never_argv(
+    stack, monkeypatch, capsys
+):
+    agent, _ = stack
+    agent.module_state_map["rustdesk"] = {"state": "installed"}
+    monkeypatch.setattr(service_cli.getpass, "getpass", lambda prompt: "hunter2")
+
+    assert service_cli.main_rdp_share() == 0
+
+    kind, _account, _is_privileged, body = agent.service_calls[-1]
+    assert kind == "rdp"
+    assert body == {"action": "share", "password": "hunter2"}
+    # It was read from the terminal, so it is on no command line at all.
+    assert "hunter2" not in " ".join(sys.argv)
+
+
+def test_sharing_without_the_module_names_the_command_that_installs_it(stack, capsys):
+    agent, _ = stack
+    agent.module_state_map["rustdesk"] = {"state": "absent", "title": "RustDesk"}
+
+    assert service_cli.main_rdp_share() == 1
+
+    assert agent.service_calls == []
+    assert "nagent module install rustdesk" in capsys.readouterr().err
+
+
+def test_share_with_an_empty_password_asks_the_agent_nothing(
+    stack, monkeypatch, capsys
+):
+    agent, _ = stack
+    agent.module_state_map["rustdesk"] = {"state": "installed"}
+    monkeypatch.setattr(service_cli.getpass, "getpass", lambda prompt: "")
+
+    assert service_cli.main_rdp_share() == 2
+
+    assert agent.service_calls == []
+    assert "access password" in capsys.readouterr().err
+
+
+def test_unshare_posts_the_pages_own_ask(stack, capsys):
+    agent, _ = stack
+    agent.rdp_state["is_shared"] = True
+    agent.rdp_state["state"] = "sharing"
+
+    assert service_cli.main_rdp_unshare() == 0
+
+    kind, _account, _is_privileged, body = agent.service_calls[-1]
+    assert (kind, body) == ("rdp", {"action": "unshare"})
+    assert "not shared" in capsys.readouterr().out
+
+
+def test_unsharing_what_is_not_shared_asks_the_agent_nothing(stack, capsys):
+    agent, _ = stack
+
+    assert service_cli.main_rdp_unshare() == 0
+
+    assert agent.service_calls == []
+
+
+def test_connect_addresses_an_entry_by_its_number(stack, capsys):
+    agent, _ = stack
+    agent.module_state_map["rustdesk"] = {"state": "installed"}
+
+    assert service_cli.main_rdp_connect("1") == 0
+
+    kind, _account, _is_privileged, body = agent.service_calls[-1]
+    assert kind == "rdp"
+    assert body == {"action": "connect", "id": "rdp_s9"}
+    assert "192.168.100.6:21118" in capsys.readouterr().out
+
+
+def test_connect_addresses_an_entry_by_its_id(stack, capsys):
+    agent, _ = stack
+    agent.module_state_map["rustdesk"] = {"state": "installed"}
+
+    assert service_cli.main_rdp_connect("rdp_s9") == 0
+
+    assert agent.service_calls[-1][3]["id"] == "rdp_s9"
+
+
+def test_connecting_to_an_entry_nobody_published_is_refused(stack, capsys):
+    agent, _ = stack
+
+    assert service_cli.main_rdp_connect("9") == 2
+
+    assert agent.service_calls == []
+    assert "no rdp entry 9" in capsys.readouterr().err
+
+
+def test_show_prints_where_this_machines_own_share_stands(stack, capsys):
+    agent, _ = stack
+    agent.rdp_state.update({"is_shared": True, "state": "sharing"})
+
+    assert service_cli.main_rdp_show() == 0
+
+    out = capsys.readouterr().out
+    assert "shared" in out
+    assert "123456789" in out
+
+
+def test_show_says_plainly_when_nothing_is_shared(stack, capsys):
+    assert service_cli.main_rdp_show() == 0
+
+    assert "not shared" in capsys.readouterr().out
+
+
+def test_a_refused_share_is_worded_from_the_agents_code(stack, monkeypatch, capsys):
+    agent, _ = stack
+    agent.module_state_map["rustdesk"] = {"state": "installed"}
+    monkeypatch.setattr(service_cli.getpass, "getpass", lambda prompt: "hunter2")
+    agent.service_reply = {"code": "rdp_configure_failed", "params": {"detail": "no"}}
+
+    assert service_cli.main_rdp_share() == 1
+
+    assert "RustDesk could not be configured" in capsys.readouterr().err

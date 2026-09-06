@@ -52,6 +52,7 @@ from neutrino_hub.web.constants import (
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
     AboutView,
+    AcknowledgementView,
     PanelSettings,
     PasswordChange,
     PasswordChangeResult,
@@ -59,6 +60,7 @@ from neutrino_hub.web.models import (
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub import HUB_VERSION
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_VERSION
+from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.xray.constants import XRAY_BINARY, XRAY_GEODATA
 
 router = APIRouter(
@@ -594,7 +596,8 @@ def about() -> AboutView:
     """Read the version of every carried component, and host uptime.
 
     Returns:
-        A version string per carried component, plus the kernel and uptime.
+        A version string per carried component, the acknowledgements the
+        licenses of what this hub conveys oblige, plus kernel and uptime.
     """
     xray_version = run([XRAY_BINARY, "version"], is_checked=False).stdout
     return AboutView(
@@ -605,4 +608,34 @@ def about() -> AboutView:
         geodata_version=_geodata_baseline(),
         kernel=platform.release(),
         uptime_s=int(time.time() - psutil.boot_time()),
+        acknowledgements=_acknowledgements(),
     )
+
+
+def _acknowledgements() -> list[AcknowledgementView]:
+    """Every module this hub conveys that names a license.
+
+    A manifest naming a ``license`` is software whose bytes this hub
+    fetches and hands on, so it is credited here with the exact source its
+    license obliges. A module the person installs themselves names none and
+    is credited in its own row and nowhere else.
+
+    Returns:
+        The acknowledgements, by module title.
+    """
+    credited = []
+    for name, manifest in sorted(load_module_manifests().items()):
+        license_name = str(manifest.get("license", "") or "")
+        if not license_name:
+            continue
+        credited.append(
+            AcknowledgementView(
+                name=str(manifest.get("title", name)),
+                version=str(manifest.get("version", "") or ""),
+                license=license_name,
+                corresponding_source=str(
+                    manifest.get("corresponding_source", "") or ""
+                ),
+            )
+        )
+    return credited

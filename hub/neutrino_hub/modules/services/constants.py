@@ -62,20 +62,23 @@ SERVICES_SMB_REFUSAL_MARKERS = (
     "NT_STATUS_LOGON_FAILURE",
 )
 
-# The typed service list: four types, closed until a fifth earns its place.
+# The typed service list: five types, closed until a sixth earns its place.
 SERVICES_TYPE_WEB = "web"
 SERVICES_TYPE_PORT = "port"
 SERVICES_TYPE_AI = "ai"
 SERVICES_TYPE_FILE = "file"
+SERVICES_TYPE_RDP = "rdp"
 SERVICES_TYPES = (
     SERVICES_TYPE_WEB,
     SERVICES_TYPE_PORT,
     SERVICES_TYPE_AI,
     SERVICES_TYPE_FILE,
+    SERVICES_TYPE_RDP,
 )
 
 # The stored kind each declarable type maps to; the ai type is never declared
-# by hand.
+# by hand, and neither is the rdp type — only a machine's own agent declares
+# that it is sharing its desktop.
 SERVICES_TYPE_TO_KIND = {
     SERVICES_TYPE_WEB: SERVICES_KIND_HTTP,
     SERVICES_TYPE_PORT: SERVICES_KIND_GENERIC_TCP,
@@ -83,21 +86,29 @@ SERVICES_TYPE_TO_KIND = {
 }
 SERVICES_KIND_TO_TYPE = {kind: type_ for type_, kind in SERVICES_TYPE_TO_KIND.items()}
 
-# Where an entry comes from: a hub module, or a person's declaration.
+# Where an entry comes from: a hub module, a person's declaration, or a
+# managed machine saying it is sharing its desktop.
 SERVICES_SOURCE_MODULE = "module"
 SERVICES_SOURCE_DECLARED = "declared"
+SERVICES_SOURCE_DEVICE = "device"
 
 # Hosts that always mean the hub itself, beside the addresses it holds.
 SERVICES_HUB_SELF_HOSTS = ("127.0.0.1", "0.0.0.0", "::1", "localhost")
 
 SERVICES_FILE_PROTOCOL = "smb"
 SERVICES_AI_PROTOCOL = "openai"
+SERVICES_RDP_PROTOCOL = "rustdesk"
+# The port a shared desktop answers on. RustDesk dials a bare address at
+# this port without a rendezvous server, and the agent writes it into
+# direct-access-port; the agent's own constant is the same number.
+SERVICES_RDP_PORT = 21118
 
 # The device modules an entry of each type cannot work without. Composed
 # into every entry's ``modules`` field; the machine's own page compares them
 # against its module states and gates the panel.
 SERVICES_AI_MODULES = (CLIPROXYAPI_SWITCHER_NAME,)
 SERVICES_FILE_MODULES = ("samba_mount",)
+SERVICES_RDP_MODULES = ("rustdesk",)
 
 SERVICES_LIST_TTL_S = 10.0
 SERVICES_ANSWER_TIMEOUT_S = 2.0
@@ -108,6 +119,7 @@ SERVICES_GITEA_DESCRIPTION = "published by the gitea module"
 SERVICES_SAMBA_DESCRIPTION = "published by the samba module"
 SERVICES_AI_DESCRIPTION = "published by the AI gateway"
 SERVICES_PODMAN_DESCRIPTION = "published by container {name} ({image})"
+SERVICES_RDP_DESCRIPTION = "shared from {hostname}"
 
 SERVICES_GITEA_TITLE = "Gitea"
 SERVICES_AI_TITLE = "AI gateway"

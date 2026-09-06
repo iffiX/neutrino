@@ -1,0 +1,72 @@
+{
+  "_comment": "Remote desktop, hub-tier: the cache fetches the pinned release asset and the agent installs it. Upstream publishes no checksums, so every sha256 here is the hub's own, taken once from the 1.4.9 assets. Flutter builds only — the *-sciter assets carry a proprietary engine the AGPL does not admit. AGPL-3.0 obliges the source beside the binary: corresponding_source names the exact tag and source_archive is fetched into the cache next to the artifact.",
+  "name": "rustdesk",
+  "title": "RustDesk",
+  "kind": "rustdesk",
+  "installer": "hub",
+  "version": "1.4.9",
+  "description": "Remote desktop, direct connect on the LAN; the Remote desktop service needs it",
+  "license": "AGPL-3.0",
+  "corresponding_source": "https://github.com/rustdesk/rustdesk/tree/1.4.9",
+  "source_archive": "https://github.com/rustdesk/rustdesk/archive/refs/tags/1.4.9.tar.gz",
+  "platforms": {
+    "linux-debian-amd64": {
+      "url": "https://github.com/rustdesk/rustdesk/releases/download/1.4.9/rustdesk-1.4.9-x86_64.deb",
+      "sha256": "7244ba47c40e804172044bfbe659467c54ce46554c98e78c8c0406f1d612fda3", "_sha256_scan": "scan: allow",
+      "package_kind": "deb",
+      "package": "rustdesk",
+      "verify": "which rustdesk",
+      "uninstall": "apt-get purge -y rustdesk"
+    },
+    "linux-debian-arm64": {
+      "url": "https://github.com/rustdesk/rustdesk/releases/download/1.4.9/rustdesk-1.4.9-aarch64.deb",
+      "sha256": "ce62c996f14d33f3bbe3a330e953644a44bace7f05885a7953f7395d69fb49c0", "_sha256_scan": "scan: allow",
+      "package_kind": "deb",
+      "package": "rustdesk",
+      "verify": "which rustdesk",
+      "uninstall": "apt-get purge -y rustdesk"
+    },
+    "linux-rhel-amd64": {
+      "url": "https://github.com/rustdesk/rustdesk/releases/download/1.4.9/rustdesk-1.4.9-0.x86_64.rpm",
+      "sha256": "eb1b053ac5b2f774f2271f7fbbfd2ea475899f7a55135c5e172bc54b9388f108", "_sha256_scan": "scan: allow",
+      "package_kind": "rpm",
+      "package": "rustdesk",
+      "verify": "which rustdesk",
+      "uninstall": "if command -v dnf >/dev/null 2>&1; then dnf remove -y rustdesk; else yum remove -y rustdesk; fi"
+    },
+    "windows-amd64": {
+      "url": "https://github.com/rustdesk/rustdesk/releases/download/1.4.9/rustdesk-1.4.9-x86_64.msi",
+      "sha256": "c87d2f4cef2a5acd6003b6507dcfbf5d5168a256db082cd90b54d35193224aaa", "_sha256_scan": "scan: allow",
+      "package_kind": "msi",
+      "package": "rustdesk",
+      "verify": "powershell -NoProfile -Command \"if (Test-Path 'C:\\Program Files\\RustDesk\\rustdesk.exe') { exit 0 } else { exit 1 }\"",
+      "uninstall": "\"C:\\Program Files\\RustDesk\\rustdesk.exe\" --uninstall"
+    },
+    "windows-arm64": {
+      "url": "https://github.com/rustdesk/rustdesk/releases/download/1.4.9/rustdesk-1.4.9-aarch64.msi",
+      "sha256": "30bc8925e62c7ade52371758c2b944036ed2386f6c554e9e59f3bcfef06c7cd9", "_sha256_scan": "scan: allow",
+      "package_kind": "msi",
+      "package": "rustdesk",
+      "verify": "powershell -NoProfile -Command \"if (Test-Path 'C:\\Program Files\\RustDesk\\rustdesk.exe') { exit 0 } else { exit 1 }\"",
+      "uninstall": "\"C:\\Program Files\\RustDesk\\rustdesk.exe\" --uninstall"
+    },
+    "darwin-amd64": {
+      "url": "https://github.com/rustdesk/rustdesk/releases/download/1.4.9/rustdesk-1.4.9-x86_64.dmg",
+      "sha256": "fa1129a0635019f9c5841937942cc2b08be028a192f47c009edde7e53812904e", "_sha256_scan": "scan: allow",
+      "package_kind": "dmg",
+      "package": "rustdesk",
+      "app_name": "RustDesk.app",
+      "verify": "test -d /Applications/RustDesk.app",
+      "uninstall": "rm -rf /Applications/RustDesk.app"
+    },
+    "darwin-arm64": {
+      "url": "https://github.com/rustdesk/rustdesk/releases/download/1.4.9/rustdesk-1.4.9-aarch64.dmg",
+      "sha256": "f7935597b247d42c8f2a2ed71176a9f5868018cd9e1a33b8096418a668c8caf0", "_sha256_scan": "scan: allow",
+      "package_kind": "dmg",
+      "package": "rustdesk",
+      "app_name": "RustDesk.app",
+      "verify": "test -d /Applications/RustDesk.app",
+      "uninstall": "rm -rf /Applications/RustDesk.app"
+    }
+  }
+}

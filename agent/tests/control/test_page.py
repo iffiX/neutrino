@@ -109,7 +109,10 @@ def words_block(name: str) -> dict:
     """One block of the page's WORDS table, parsed key to wording."""
     match = re.search(name + r":\s*\{(.*?)\n  \}", PAGE_JS, re.DOTALL)
     assert match is not None, f"the page has no WORDS.{name} block"
-    return dict(re.findall(r'([a-z_]+):\s*\n?\s*"([^"]*)"', match.group(1)))
+    # Digits belong in a key the same way they do in an emitted code, which
+    # CODE_PATTERNS has always allowed; a narrower key pattern here reads the
+    # tail of one as a key of its own.
+    return dict(re.findall(r'\b([a-z][a-z0-9_]*):\s*\n?\s*"([^"]*)"', match.group(1)))
 
 
 # --- the shipped files and the assembled document ---
@@ -467,3 +470,64 @@ def test_uninstalling_the_ssh_server_asks_first():
     assert "m.kind === 'openssh' && isOn" in PAGE_JS
     assert "confirmDialog(WORDS.ui.uninstall_ssh_title" in PAGE_JS
     assert 'uninstall_ssh_title: "Uninstall the SSH server?"' in PAGE_JS
+
+
+# --- the remote desktop panels ---
+
+
+def test_the_two_remote_desktop_panels_are_titled():
+    for panel in (
+        'panel_rdp_share: "Remote desktop"',
+        'panel_rdp_peers: "Remote desktops"',
+    ):
+        assert panel in PAGE_JS
+
+
+def test_every_share_state_has_a_word():
+    # The four the handler can report; a fifth without a word would render
+    # as the raw token beside a button a person is about to press.
+    states = words_block("states")
+
+    for state in ("not_shared", "sharing", "starting", "waiting_for_approval"):
+        assert state in states, f"share state {state} has no word"
+
+
+def test_the_share_panel_stands_whether_or_not_the_fleet_publishes_anything():
+    # Sharing is decided on the machine, so its panel is pushed
+    # unconditionally rather than only when an entry exists.
+    assert "panels.push(drawRdpSharePanel(state, WORDS.ui.panel_rdp_share))" in PAGE_JS
+
+
+def test_the_share_panel_gates_on_the_rustdesk_module():
+    assert "missingNamed(state, ['rustdesk'])" in PAGE_JS
+    assert "missingModulesNotice(state, missing)" in PAGE_JS
+
+
+def test_the_share_button_greys_for_an_ordinary_caller():
+    assert "button.disabled = isGated || !isPrivileged" in PAGE_JS
+    assert "button.title = isPrivileged ? '' : WORDS.ui.privileged_only" in PAGE_JS
+
+
+def test_the_typed_password_is_cleared_from_the_stage_when_it_is_sent():
+    # The access password lives in the stage and in the one request that
+    # carries it, exactly as a share's password does.
+    share = PAGE_JS.split("function drawRdpSharePanel")[1].split("\nfunction ")[0]
+
+    assert "password: rdpStaged.password" in share
+    assert "rdpStaged.password = ''" in share
+
+
+def test_the_machines_own_share_is_never_offered_back_to_it():
+    # An entry a machine declared itself is not a desktop for it to connect
+    # to, so the peers panel drops the one carrying its own share id.
+    assert "function peerRdpEntries" in PAGE_JS
+    assert "entry.id !== own" in PAGE_JS
+
+
+def test_waiting_for_approval_says_what_a_person_must_do():
+    assert "rdp_approval_hint" in PAGE_JS
+    assert "System Settings" in PAGE_JS
+
+
+def test_the_page_says_the_password_never_reaches_the_hub():
+    assert "the hub is never told it" in PAGE_JS

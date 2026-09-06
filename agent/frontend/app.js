@@ -14,6 +14,7 @@ const WORDS = {
     uninstall: "Uninstall",
     built_in: "built in",
     user_tier: "Install it on the machine yourself; the hub only manages it",
+    module_source: "source",
     uninstall_ssh_title: "Uninstall the SSH server?",
     uninstall_ssh_body:
       "SSH stops answering on this machine; the agent channel keeps managing it.",
@@ -53,6 +54,22 @@ const WORDS = {
     panel_ports: "Ports",
     panel_ai: "AI",
     panel_files: "Files",
+    panel_rdp_share: "Remote desktop",
+    panel_rdp_peers: "Remote desktops",
+    rdp_share: "Share",
+    rdp_unshare: "Stop sharing",
+    rdp_connect: "Connect",
+    rdp_password_hint: "Access password",  // scan: allow
+    rdp_password_label: "Access password",  // scan: allow
+    rdp_this_machine: "This machine",
+    rdp_id_label: "RustDesk ID",
+    rdp_reach: "reached at {host}:{port}",
+    rdp_not_shared: "This machine's desktop is not shared.",
+    rdp_password_kept:
+      "The password stays on this machine; the hub is never told it.",
+    rdp_approval_hint:
+      "Allow RustDesk to record the screen in System Settings on this " +
+      "machine; the share is published once it answers.",
     gateway_default: "gateway default",
     tool_claude: "Claude Code",
     tool_codex: "Codex",
@@ -77,6 +94,10 @@ const WORDS = {
     unsupported: "not available on this machine",
     failed: "failed",
     unknown: "waiting for the agent",
+    not_shared: "not shared",
+    sharing: "shared",
+    starting: "starting…",
+    waiting_for_approval: "waiting for permission on this machine",
   },
   codes: {
     no_platform_build: "no version of this exists for this machine",
@@ -87,6 +108,12 @@ const WORDS = {
     module_cache_unwritable: "the hub could not save the download",
     module_artifact_missing: "the hub no longer holds that download; ask again",
     module_digest_mismatch: "what arrived did not match the hub's checksum",
+    module_sha256_mismatch:
+      "the download did not match the checksum this hub pins for it",
+    rdp_password_missing: "set an access password to share this desktop",  // scan: allow
+    rdp_configure_failed: "RustDesk could not be configured: {detail}",
+    rdp_launch_failed: "the RustDesk client could not be started: {detail}",
+    rdp_no_address: "that machine published no address to connect to",
     agent_never_reported: "this machine never said how the install went",
     uninstall_unconfirmed: "the uninstall finished, but the software is still there",
     no_download_named: "the catalog names no download for this machine",
@@ -191,6 +218,9 @@ const fileAsked = {};
 // The staged file configs, one per entry id: {is_open, username, password,
 // path}. The password lives only here and in the one request that sends it.
 let fileStaged = {};
+// The access password typed into the share form, cleared the moment it is
+// sent — it lives here and in that one request and nowhere else.
+const rdpStaged = { password: '' };
 // Dialogs are built outside draw() and counted here, so a poll never
 // redraws under one.
 let openDialogs = 0;
@@ -455,6 +485,17 @@ function hasArrived(m, step) {
   return m.state === 'absent';
 }
 
+// The license and the exact source of software the hub conveys, beside the
+// row it conveys it on. A module naming no license renders nothing.
+function licenseLine(m) {
+  if (!m.license) return '';
+  const source = m.corresponding_source
+    ? ' — <a href="' + m.corresponding_source + '" target="_blank" ' +
+      'rel="noreferrer noopener">' + WORDS.ui.module_source + '</a>'
+    : '';
+  return '<div class="note muted">' + m.license + source + '</div>';
+}
+
 function drawModules(state) {
   const panel = document.createElement('div');
   panel.className = 'card';
@@ -488,7 +529,8 @@ function drawModules(state) {
       : '<span class="dot ' + tone + '"></span>') +
       '<div class="body"><div class="title">' + m.title + '</div>' +
       '<div class="note">' + m.description + '</div>' +
-      '<div class="note">' + note + '</div></div>';
+      '<div class="note">' + note + '</div>' +
+      licenseLine(m) + '</div>';
     // A module the platform carries natively, or one the person installs
     // themselves, offers nothing to press.
     if (m.is_native || m.installer === 'user') {
@@ -550,6 +592,14 @@ function entriesOf(state, type) {
   return (state.services || []).filter((entry) => entry.type === type);
 }
 
+// Every rdp entry the fleet publishes except this machine's own: a share
+// is offered to other machines, and connecting to yourself is not an
+// offer.
+function peerRdpEntries(state) {
+  const own = 'rdp_' + ((state.rdp || {}).share_id || '');
+  return entriesOf(state, 'rdp').filter((entry) => entry.id !== own);
+}
+
 function drawServices(state) {
   const panels = [];
   const kinds = [
@@ -563,6 +613,12 @@ function drawServices(state) {
     if (entries.length === 0) continue;
     panels.push(build(state, entries, title));
   }
+  // Sharing this desktop is decided here and nowhere else, so its panel
+  // stands whether or not the hub publishes anything at all.
+  panels.push(drawRdpSharePanel(state, WORDS.ui.panel_rdp_share));
+  const peers = peerRdpEntries(state);
+  if (peers.length > 0)
+    panels.push(drawRdpPeersPanel(state, peers, WORDS.ui.panel_rdp_peers));
   if (panels.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'card';
@@ -592,6 +648,13 @@ function missingModules(state, entries) {
       if (needed.indexOf(name) < 0) needed.push(name);
     }
   }
+  return missingNamed(state, needed);
+}
+
+// The same judgment for a panel that names its modules itself rather than
+// reading them off entries: sharing this desktop is a local decision, so
+// its panel stands whether or not the fleet publishes anything.
+function missingNamed(state, needed) {
   const byName = {};
   for (const m of state.modules) byName[m.name] = m;
   return needed
@@ -681,6 +744,117 @@ function drawPortsPanel(state, entries, title) {
     button.onclick = () => serviceAction('port',
       { id: entry.id, is_enabled: !isOn }, noteKey);
     row.appendChild(button);
+    card.appendChild(row);
+  }
+  return card;
+}
+
+// --- the remote desktop panels: share here, connect there ---
+
+function drawRdpSharePanel(state, title) {
+  const share = state.rdp || {};
+  const missing = missingNamed(state, ['rustdesk']);
+  const isGated = missing.length > 0;
+  const isPrivileged = state.caller.is_privileged;
+  const card = panelCard(title, false);
+  if (isGated) card.appendChild(missingModulesNotice(state, missing));
+
+  const isShared = !!share.is_shared;
+  const standing = WORDS.states[share.state] || WORDS.states.unknown;
+  const row = document.createElement('div');
+  row.className = isShared ? 'feat' : 'feat greyed';
+  const reach = isShared
+    ? fill(WORDS.ui.rdp_reach,
+        { host: state.hostname, port: share.port }) + ' — ' + standing
+    : WORDS.ui.rdp_not_shared;
+  row.innerHTML = '<span class="dot ' + (share.state === 'sharing' ? 'ok' : 'off') +
+    '"></span>' +
+    '<div class="body"><div class="title">' + WORDS.ui.rdp_this_machine +
+    '</div><div class="note">' + reach + '</div>' +
+    (share.rustdesk_id
+      ? '<div class="note muted">' + WORDS.ui.rdp_id_label + ' ' +
+        share.rustdesk_id + '</div>'
+      : '') +
+    '</div>';
+
+  const button = document.createElement('button');
+  button.className = isShared ? 'danger' : '';
+  button.textContent = isShared ? WORDS.ui.rdp_unshare : WORDS.ui.rdp_share;
+  button.disabled = isGated || !isPrivileged;
+  button.title = isPrivileged ? '' : WORDS.ui.privileged_only;
+  button.onclick = () => {
+    if (isShared) {
+      serviceAction('rdp', { action: 'unshare' }, 'rdp');
+      return;
+    }
+    const sent = { action: 'share', password: rdpStaged.password };
+    rdpStaged.password = '';
+    serviceAction('rdp', sent, 'rdp').then(() => redraw());
+  };
+  row.appendChild(button);
+  card.appendChild(row);
+
+  if (share.state === 'waiting_for_approval') {
+    const hint = document.createElement('div');
+    hint.className = 'err';
+    hint.textContent = WORDS.ui.rdp_approval_hint;
+    card.appendChild(hint);
+  }
+  const note = serviceNotes.rdp || '';
+  if (note) card.appendChild(errorLine(note));
+
+  if (!isShared) {
+    card.appendChild(rdpPasswordForm(state, isGated || !isPrivileged, button));
+  } else if (isPrivileged && share.password) {
+    const kept = document.createElement('div');
+    kept.className = 'rec';
+    kept.textContent = WORDS.ui.rdp_password_label + ': ' + share.password;
+    card.appendChild(kept);
+  }
+  const kept = document.createElement('div');
+  kept.className = 'note muted';
+  kept.textContent = WORDS.ui.rdp_password_kept;
+  card.appendChild(kept);
+  return card;
+}
+
+// The password the person sets lives here and in the one request that
+// sends it, exactly the way a share's password does.
+function rdpPasswordForm(state, isDisabled, button) {
+  const form = document.createElement('div');
+  form.className = 'form';
+  const input = document.createElement('input');
+  input.type = 'password';
+  input.placeholder = WORDS.ui.rdp_password_hint;
+  input.value = rdpStaged.password;
+  input.disabled = isDisabled;
+  input.oninput = () => {
+    rdpStaged.password = input.value;
+    button.disabled = isDisabled || !input.value;
+  };
+  button.disabled = isDisabled || !rdpStaged.password;
+  form.appendChild(input);
+  return form;
+}
+
+function drawRdpPeersPanel(state, entries, title) {
+  const card = panelCard(title, false);
+  const missing = missingNamed(state, ['rustdesk']);
+  const isGated = missing.length > 0;
+  if (isGated) card.appendChild(missingModulesNotice(state, missing));
+  for (const entry of entries) {
+    const payload = entry.payload || {};
+    const noteKey = 'rdp_' + entry.id;
+    const row = entryRow(
+      entry, (payload.host || '') + ':' + (payload.port || ''),
+      serviceNotes[noteKey] || '');
+    if (isGated) row.classList.add('greyed');
+    const connect = document.createElement('button');
+    connect.textContent = WORDS.ui.rdp_connect;
+    connect.disabled = isGated || !entry.is_healthy;
+    connect.onclick = () => serviceAction('rdp',
+      { action: 'connect', id: entry.id }, noteKey);
+    row.appendChild(connect);
     card.appendChild(row);
   }
   return card;

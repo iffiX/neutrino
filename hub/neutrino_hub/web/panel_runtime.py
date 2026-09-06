@@ -38,6 +38,7 @@ from neutrino_hub.modules.samba.renderer import (
     allowed_subnets,
 )
 from neutrino_hub.modules.services.probe import DeclaredServiceProbe
+from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.modules.services.published import PublishedServiceCache
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.system.listening_ports import ListeningPortReader
@@ -93,10 +94,15 @@ class PanelRuntime:
         self.node_probe = XrayNodeProbe()
         self.declared_probe = DeclaredServiceProbe()
         self.served_models = CliproxyApiServedModelCache()
+        # What each managed machine last said about sharing its desktop.
+        # Runtime only: a share is the machine's own word, refreshed every
+        # beat, and a hub restart simply waits for the next one.
+        self.device_shares = DeviceShareRegistry()
         self.published_services = PublishedServiceCache(
             declared_probe=self.declared_probe,
             served_models=self.served_models,
             units=self.services,
+            device_shares=self.device_shares,
         )
         self.device_catalog = DeviceCatalogCache(services=self.published_services)
         # The hub is the only thing that fetches and installs a module: one
@@ -438,6 +444,7 @@ class PanelRuntime:
         self.client_accounts.pop(key, None)
         self.client_last_error.pop(key, None)
         self.client_command_results.pop(key, None)
+        self.device_shares.withdraw(key)
         self.agent_module_orders.forget(key)
 
     def take_client_commands(self, mac_address: str) -> list[dict]:

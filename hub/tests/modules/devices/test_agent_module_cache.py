@@ -6,6 +6,7 @@ askers share one fetch, that a manifest edit is never served the old file,
 and that losing the directory costs a download and nothing else.
 """
 
+import hashlib
 import threading
 
 import pytest
@@ -13,11 +14,14 @@ import pytest
 from neutrino_hub.modules.devices.agent_module_cache import (
     AgentModuleCache,
     AgentModuleFetchError,
+    looks_like_package,
     platform_keys,
     resolve_platform_entry,
 )
 
 DEB = b"!<arch>debian-package-bytes"
+SOURCE = b"\x1f\x8bcorresponding-source-bytes"
+AMD64_KEY = "linux-debian-amd64"
 
 MANIFEST = {
     "name": "fakedesk",
@@ -253,3 +257,101 @@ def test_a_key_no_manifest_resolves_to_is_refused(cache):
 @pytest.mark.parametrize("key", ["", "../escape", "a/b", ".hidden"])
 def test_a_key_that_is_not_one_names_no_file(cache, key):
     assert cache.held(key) is None
+
+
+# --- the pinned checksum, and the source a copyleft license obliges ---
+
+
+def test_a_pinned_sha256_that_matches_is_fetched_and_kept(cache, monkeypatch):
+    monkeypatch.setattr(AgentModuleCache, "_fetch_plain", staticmethod(_serve_deb))
+    manifest = _pinned_manifest(hashlib.sha256(DEB).hexdigest())
+
+    artifact = cache.artifact(name="rustdesk", manifest=manifest, platform=AMD64)
+
+    assert artifact.path.read_bytes() == DEB
+    assert artifact.digest == hashlib.sha256(DEB).hexdigest()
+
+
+def test_a_download_that_misses_its_pin_is_refused_and_never_cached(cache, monkeypatch):
+    monkeypatch.setattr(AgentModuleCache, "_fetch_plain", staticmethod(_serve_deb))
+    manifest = _pinned_manifest("0" * 64)
+
+    with pytest.raises(AgentModuleFetchError) as refusal:
+        cache.artifact(name="rustdesk", manifest=manifest, platform=AMD64)
+
+    assert refusal.value.code == "module_sha256_mismatch"
+    assert refusal.value.params["expected"] == "0" * 64
+    assert refusal.value.params["received"] == hashlib.sha256(DEB).hexdigest()
+    # Nothing a pin refused is left behind for the next asker to be served.
+    assert list(cache._root.glob("*")) == []
+
+
+def test_the_corresponding_source_is_kept_beside_the_binary(cache, monkeypatch):
+    served = {}
+
+    def fetch(url):
+        served[url] = served.get(url, 0) + 1
+        return SOURCE if url.endswith(".tar.gz") else DEB
+
+    monkeypatch.setattr(AgentModuleCache, "_fetch_plain", staticmethod(fetch))
+    manifest = _pinned_manifest(hashlib.sha256(DEB).hexdigest())
+    manifest["source_archive"] = "https://vendor.example/rustdesk-source.tar.gz"
+
+    artifact = cache.artifact(name="rustdesk", manifest=manifest, platform=AMD64)
+
+    assert artifact.source_path is not None
+    assert artifact.source_path.read_bytes() == SOURCE
+    assert artifact.source_path.parent == artifact.path.parent
+    assert cache.source_path(artifact.key) == artifact.source_path
+
+    # Asking again fetches neither the binary nor the source a second time.
+    cache.artifact(name="rustdesk", manifest=manifest, platform=AMD64)
+    assert sorted(served.values()) == [1, 1]
+
+
+def test_a_module_naming_no_source_keeps_none(cache, monkeypatch):
+    monkeypatch.setattr(AgentModuleCache, "_fetch_plain", staticmethod(_serve_deb))
+
+    artifact = cache.artifact(
+        name="rustdesk", manifest=_pinned_manifest(""), platform=AMD64
+    )
+
+    assert artifact.source_path is None
+    assert cache.source_path(artifact.key) is None
+
+
+def test_a_source_that_cannot_be_fetched_fails_the_module(cache, monkeypatch):
+    def fetch(url):
+        if url.endswith(".tar.gz"):
+            raise AgentModuleFetchError("module_fetch_failed", detail="gone")
+        return DEB
+
+    monkeypatch.setattr(AgentModuleCache, "_fetch_plain", staticmethod(fetch))
+    manifest = _pinned_manifest("")
+    manifest["source_archive"] = "https://vendor.example/rustdesk-source.tar.gz"
+
+    with pytest.raises(AgentModuleFetchError) as refusal:
+        cache.artifact(name="rustdesk", manifest=manifest, platform=AMD64)
+
+    assert refusal.value.code == "module_fetch_failed"
+
+
+def test_a_real_disk_image_opens_like_one():
+    # RustDesk's dmg assets are zlib at best compression; a magic table that
+    # knows only one zlib level reads a genuine image as an error page.
+    for opening in (b"\x78\x01", b"\x78\x9c", b"\x78\xda", b"koly", b"BZh"):
+        assert looks_like_package(opening + b"rest-of-the-image", "dmg")
+
+
+def _serve_deb(url):
+    return DEB
+
+
+def _pinned_manifest(digest):
+    entry = {
+        "url": "https://vendor.example/rustdesk-amd64.deb",
+        "package_kind": "deb",
+    }
+    if digest:
+        entry["sha256"] = digest
+    return {"name": "rustdesk", "installer": "hub", "platforms": {AMD64_KEY: entry}}

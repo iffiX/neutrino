@@ -159,6 +159,8 @@ const ORDER_ERROR_WORDING: Record<string, string> = {
   module_artifact_missing: "The hub no longer holds that download; ask again.",
   module_artifact_unknown: "The hub does not know that download; ask again.",
   module_digest_mismatch: "What arrived did not match the hub's checksum.",
+  module_sha256_mismatch:
+    "The download did not match the checksum this hub pins for it.",
   install_failed: "The install failed on the machine.",
   install_unconfirmed:
     "The install finished, but the software cannot be found on the machine.",

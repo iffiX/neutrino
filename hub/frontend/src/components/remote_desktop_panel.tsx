@@ -95,6 +95,7 @@ export function RemoteDesktopPanel({
         <span className="field_hint">Reading status…</span>
       ) : (
         <div className="remote_desktop_grid">
+          <RustdeskCard sessionId={status.rustdesk_id} />
           <ProductCard
             status={status.anydesk}
             macAddress={device.mac_address}
@@ -108,6 +109,51 @@ export function RemoteDesktopPanel({
         <pre className="remote_desktop_log">
           {stripAnsi(task.lines.join("\n"))}
         </pre>
+      )}
+    </div>
+  );
+}
+
+interface RustdeskCardProps {
+  sessionId: string;
+}
+
+/**
+ * RustDesk's id, as the machine's own module report carries it.
+ *
+ * Installing and removing it happens on the Modules rows like any other
+ * hub-tier module, and the machine's own page is where a person shares the
+ * desktop — this card only shows what to connect to.
+ */
+function RustdeskCard({ sessionId }: RustdeskCardProps) {
+  const isReported = sessionId !== "";
+  return (
+    <div className="remote_desktop_card">
+      <div className="remote_desktop_card_head">
+        <span className="remote_desktop_card_name">RustDesk</span>
+        <StatusDot
+          tone={isReported ? "ok" : "idle"}
+          label={isReported ? "installed" : "not installed"}
+        />
+      </div>
+      {isReported ? (
+        <div className="remote_desktop_id_row">
+          <span className="remote_desktop_id_label">ID</span>
+          <span className="remote_desktop_id">{sessionId}</span>
+          <button
+            type="button"
+            className="button button--ghost button--small"
+            onClick={() => void copyText(sessionId)}
+            title="Copy ID"
+          >
+            <Icon name="link" size={12} />
+          </button>
+        </div>
+      ) : (
+        <span className="field_hint">
+          Not reported by this machine. Install it from Modules above; sharing
+          the desktop is done on the machine itself.
+        </span>
       )}
     </div>
   );

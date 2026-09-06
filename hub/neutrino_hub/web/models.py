@@ -930,9 +930,18 @@ class RemoteDesktopStatusView(BaseModel):
 
 
 class RemoteDesktopView(BaseModel):
-    """The remote-desktop product's state on a device."""
+    """The remote-desktop products' state on a device.
+
+    AnyDesk is read over SSH, because a user-tier product is whatever the
+    person put there. RustDesk is a module the hub installs, so its id
+    arrives on the heartbeat with the rest of that module's report and
+    needs no credentials at all.
+    """
 
     anydesk: RemoteDesktopStatusView
+    # The id a peer connects to RustDesk by, empty until the module is
+    # installed and the machine has reported one.
+    rustdesk_id: str = ""
 
 
 class RemoteDesktopPassword(BaseModel):
@@ -1122,6 +1131,21 @@ class PanelSettings(BaseModel):
     listen_port: int
 
 
+class AcknowledgementView(BaseModel):
+    """One carried component, credited with its license and source.
+
+    Only software whose bytes pass through this hub's hands is listed: a
+    module the hub fetches and hands to a machine is conveyed by this hub,
+    and a copyleft license obliges naming the license and where the exact
+    source is.
+    """
+
+    name: str
+    version: str
+    license: str
+    corresponding_source: str
+
+
 class AboutView(BaseModel):
     """Versions and uptime for the Settings tab."""
 
@@ -1132,6 +1156,7 @@ class AboutView(BaseModel):
     geodata_version: str
     kernel: str
     uptime_s: int
+    acknowledgements: list[AcknowledgementView] = Field(default_factory=list)
 
 
 class ClientHeartbeat(BaseModel):
@@ -1161,6 +1186,11 @@ class ClientHeartbeat(BaseModel):
     module_results: list[dict] = Field(default_factory=list)
     # Which accounts want their AI tools pointed at the gateway.
     ai_targets: dict[str, bool] = Field(default_factory=dict)
+    # Whether this machine is sharing its desktop, as
+    # ``{"is_shared", "share_id", "port"}``. The declaration is the
+    # machine's alone — the panel's form cannot make one — and the access
+    # password it was set up with never leaves the machine.
+    rdp_share: dict = Field(default_factory=dict)
     # The most recent error worth showing, as ``{"code", "params"}``.
     last_error: dict | None = None
 
@@ -1285,6 +1315,10 @@ class DeviceModuleView(BaseModel):
     is_supported: bool = True
     # The platform carries this natively: worded built in, no button.
     is_native: bool = False
+    # What the hub conveys this under, and where its exact source is. Empty
+    # for software the hub does not hand on itself.
+    license: str = ""
+    corresponding_source: str = ""
     state: str = "unknown"
     # Why the state is what it is, when the agent said; the pages word it.
     code: str = ""

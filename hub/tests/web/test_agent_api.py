@@ -24,6 +24,7 @@ from neutrino_hub.modules.devices.agent_module_controller import AgentModuleCont
 from neutrino_hub.modules.devices.constants import AGENT_WIRE_GENERATION
 from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice
+from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.utils.json_file import write_config
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.routers import agent as agent_router
@@ -119,6 +120,16 @@ class StubServedModels:
         return "claude-sonnet-4-5"
 
 
+class StubPublishedServices:
+    """Counts the recomposes a share appearing or ending asks for."""
+
+    def __init__(self):
+        self.expiries = 0
+
+    def expire(self):
+        self.expiries += 1
+
+
 class FakeRuntime:
     """Only the parts of the runtime these routes touch."""
 
@@ -143,6 +154,8 @@ class FakeRuntime:
             cache=self.agent_modules, locks=self.device_install_locks, timeout_s=1.0
         )
         self.tasks = TaskStreamRegistry()
+        self.device_shares = DeviceShareRegistry()
+        self.published_services = StubPublishedServices()
 
     def take_client_commands(self, mac_address):
         return []
@@ -160,6 +173,7 @@ class FakeRuntime:
         ):
             held.pop(key, None)
         self.agent_module_orders.forget(key)
+        self.device_shares.withdraw(key)
 
     def network(self):
         return _EmptyNetwork()
@@ -1011,3 +1025,95 @@ def test_a_bootstrap_task_is_the_operation_too(api):
         client.post("/api/agent/heartbeat", json=_beat()).json()["operation"]["state"]
         == "failed"
     )
+
+
+# --- the rdp share a machine declares for itself ---
+
+SHARE_IP = "192.168.100.5"
+
+
+def sharing(client, device, **share):
+    """One beat carrying an rdp declaration, from a device with an address."""
+    device.ipv4_address = SHARE_IP
+    return client.post("/api/agent/heartbeat", json=_beat(rdp_share=share))
+
+
+def test_a_beat_declaring_a_share_records_it_against_that_device(api):
+    client, runtime, device = api
+
+    sharing(client, device, is_shared=True, share_id="s1", port=21118)
+
+    live = runtime.device_shares.live()
+    assert [share.share_id for share in live] == ["s1"]
+    assert live[0].mac_address == MAC
+    # The address is the hub's own record of the device, never one the beat
+    # named: nothing a machine sends can point a share somewhere else.
+    assert live[0].host == SHARE_IP
+    assert live[0].port == 21118
+
+
+def test_a_beat_that_stops_sharing_withdraws_the_share(api):
+    client, runtime, device = api
+    sharing(client, device, is_shared=True, share_id="s1", port=21118)
+
+    sharing(client, device, is_shared=False)
+
+    assert runtime.device_shares.live() == []
+
+
+def test_a_beat_carrying_no_share_declares_nothing(api):
+    client, runtime, _ = api
+
+    client.post("/api/agent/heartbeat", json=_beat())
+
+    assert runtime.device_shares.live() == []
+
+
+def test_a_device_with_no_address_declares_nothing(api):
+    client, runtime, device = api
+    device.ipv4_address = ""
+
+    client.post(
+        "/api/agent/heartbeat",
+        json=_beat(rdp_share={"is_shared": True, "share_id": "s1", "port": 21118}),
+    )
+
+    assert runtime.device_shares.live() == []
+
+
+def test_a_share_appearing_or_ending_recomposes_the_published_list(api):
+    client, runtime, device = api
+    before = runtime.published_services.expiries
+
+    sharing(client, device, is_shared=True, share_id="s1", port=21118)
+    assert runtime.published_services.expiries == before + 1
+
+    # A beat saying the same thing again is not news and recomposes nothing.
+    sharing(client, device, is_shared=True, share_id="s1", port=21118)
+    assert runtime.published_services.expiries == before + 1
+
+    sharing(client, device, is_shared=False)
+    assert runtime.published_services.expiries == before + 2
+
+
+def test_forgetting_a_device_forgets_its_share(api):
+    client, runtime, device = api
+    sharing(client, device, is_shared=True, share_id="s1", port=21118)
+
+    runtime.forget_client_state(MAC)
+
+    assert runtime.device_shares.live() == []
+
+
+def test_the_beat_never_carries_the_access_password(api):
+    # The password is the machine's alone; a declaration is three fields and
+    # the model drops anything else a beat tried to attach to it.
+    client, runtime, device = api
+
+    sharing(
+        client, device, is_shared=True, share_id="s1", port=21118, password="hunter2"
+    )
+
+    live = runtime.device_shares.live()
+    assert not hasattr(live[0], "password")
+    assert "hunter2" not in repr(live[0])

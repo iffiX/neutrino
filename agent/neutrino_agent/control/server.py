@@ -87,6 +87,12 @@ def _scoped_state(agent, identity: ControlIdentity) -> dict:
         "ai_tool_configs": agent.ai_tool_configs(),
     }
     state.update(agent.service_states())
+    # The access password a share was set up with, for the scope that set
+    # it. It is read from this machine's own file and goes nowhere else.
+    if isinstance(state.get("rdp"), dict):
+        state["rdp"]["password"] = agent.rdp_password(  # scan: allow
+            is_privileged=identity.is_privileged
+        )
     return state
 
 
@@ -120,9 +126,14 @@ def _module_rows(agent, modules: dict) -> list:
                 # The platform carries this natively: worded built in, no
                 # button.
                 "is_native": resolved.get("entry") == {},
+                # What the hub conveys under a copyleft license, and where
+                # its corresponding source is.
+                "license": resolved.get("license", ""),
+                "corresponding_source": resolved.get("corresponding_source", ""),
                 "state": status.get("state", "unknown"),
                 "code": status.get("code", ""),
                 "params": status.get("params", {}),
+                "details": status.get("details", {}),
             }
         )
     return rows

@@ -255,11 +255,26 @@ def _add_service_parser(subparsers):
             + "; omit to keep, pass '' for the gateway default"
         ),
     )
+    rdp_parser = kinds.add_parser("rdp", help="this machine's desktop, and shared ones")
+    rdp_actions = rdp_parser.add_subparsers(dest="rdp_action", metavar="<action>")
+    rdp_actions.add_parser("show", help="where this machine's own share stands")
+    rdp_actions.add_parser(
+        "share", help="share this desktop; the password is asked, never an argument"
+    )
+    rdp_actions.add_parser("unshare", help="stop sharing this desktop")
+    rdp_connect = rdp_actions.add_parser(
+        "connect", help="open the local client at one shared desktop"
+    )
+    rdp_connect.add_argument(
+        "ref", help="the entry's number in service list, or its id"
+    )
+
     kind_parsers = {
         "web": web_parser,
         "port": port_parser,
         "file": file_parser,
         "ai": ai_parser,
+        "rdp": rdp_parser,
     }
     return service_parser, kind_parsers
 
@@ -328,6 +343,14 @@ def _run_service(arguments, service_parser, kind_parsers) -> int:
             codex_effort=arguments.codex_effort,
             gemini_model=arguments.gemini_model,
         )
+    if kind == "rdp" and arguments.rdp_action == "show":
+        return service.main_rdp_show()
+    if kind == "rdp" and arguments.rdp_action == "share":
+        return service.main_rdp_share()
+    if kind == "rdp" and arguments.rdp_action == "unshare":
+        return service.main_rdp_unshare()
+    if kind == "rdp" and arguments.rdp_action == "connect":
+        return service.main_rdp_connect(arguments.ref)
     if kind in kind_parsers:
         kind_parsers[kind].print_help()
         return 2

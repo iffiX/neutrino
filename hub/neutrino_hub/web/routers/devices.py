@@ -491,6 +491,8 @@ def list_modules(
                 # agent will say what it cannot do once it beats.
                 is_supported=(any(key in platforms for key in keys) if keys else True),
                 is_native=(entry == {}),
+                license=manifest.get("license", ""),
+                corresponding_source=manifest.get("corresponding_source", ""),
                 state=state,
                 code=code,
                 params=params,
@@ -810,24 +812,37 @@ async def _locked_install(
 
 
 @router.get("/{mac_address}/remote_desktop", response_model=RemoteDesktopView)
-async def remote_desktop_status(mac_address: str) -> RemoteDesktopView:
+async def remote_desktop_status(
+    mac_address: str, runtime: PanelRuntime = Depends(get_runtime)
+) -> RemoteDesktopView:
     """Report what remote-desktop software is on a device.
+
+    The two halves are read differently on purpose. AnyDesk is user-tier,
+    so only SSH can say what is there; RustDesk is a module this hub
+    installs, and its id rides the heartbeat with that module's report — so
+    a device with no SSH credentials still shows it rather than refusing
+    the whole panel.
 
     Args:
         mac_address: The device's MAC.
+        runtime: The shared runtime.
 
     Returns:
-        AnyDesk state, showing whether it is installed and running and, when
-        it can be read, its session id to connect to.
-
-    Raises:
-        HTTPException: 409 when the device has no SSH credentials to probe with.
+        AnyDesk state, and RustDesk's id when the machine has reported one.
     """
     device = DeviceRegistry().get(mac_address)
+    rustdesk_id = _reported_rustdesk_id(runtime, device.mac_address)
     if not device.has_ssh:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="reading remote-desktop status needs SSH credentials",
+        return RemoteDesktopView(
+            anydesk=RemoteDesktopStatusView(
+                product="anydesk",
+                is_installed=False,
+                is_running=False,
+                unreachable=REMOTE_DESKTOP_NEEDS_SSH,
+                session_id=None,
+                can_set_password=False,
+            ),
+            rustdesk_id=rustdesk_id,
         )
     manager = RemoteDesktopManager(
         operator=DeviceSshOperator(
@@ -836,7 +851,27 @@ async def remote_desktop_status(mac_address: str) -> RemoteDesktopView:
     )
     return RemoteDesktopView(
         anydesk=_remote_desktop_view(await manager.status("anydesk")),
+        rustdesk_id=rustdesk_id,
     )
+
+
+def _reported_rustdesk_id(runtime: PanelRuntime, mac_address: str) -> str:
+    """The RustDesk id one machine's module report carries.
+
+    Args:
+        runtime: The shared runtime.
+        mac_address: The device's MAC.
+
+    Returns:
+        The id, empty when the machine has not reported one.
+    """
+    status_ = (runtime.client_modules.get(mac_address) or {}).get("rustdesk")
+    if not isinstance(status_, dict):
+        return ""
+    details = status_.get("details")
+    if not isinstance(details, dict):
+        return ""
+    return str(details.get("rustdesk_id", "") or "")
 
 
 @router.post(
@@ -903,6 +938,11 @@ def _remote_desktop_view(status_: RemoteDesktopStatus) -> RemoteDesktopStatusVie
         session_id=status_.session_id,
         can_set_password=status_.can_set_password,
     )
+
+
+# What the AnyDesk half says when there are no credentials to ask with.
+# The RustDesk half needs none, so the panel still renders.
+REMOTE_DESKTOP_NEEDS_SSH = "reading this needs SSH credentials for the device"
 
 
 async def _queued_message(action: str):

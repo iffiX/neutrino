@@ -57,6 +57,7 @@ from neutrino_agent.platforms.detect import detect_platform
 from neutrino_agent.services.ai import AiServiceHandler, AiServiceReconciler
 from neutrino_agent.services.file import FileServiceHandler
 from neutrino_agent.services.port import PortServiceHandler
+from neutrino_agent.services.rdp import RdpServiceHandler
 from neutrino_agent.services.store import MachineServiceStore
 from neutrino_agent.services.web import WebServiceHandler
 
@@ -158,8 +159,19 @@ class Agent:
                     ),
                     log=log,
                 ),
+                RdpServiceHandler(
+                    platform=self._platform,
+                    store=self._store,
+                    credentials_dir=os.path.join(
+                        data_dir, AGENT_MOUNT_CREDENTIALS_DIR_NAME
+                    ),
+                    log=log,
+                ),
             )
         }
+        # The share flow refuses before it configures anything when RustDesk
+        # is not on the machine, which is what the engine's report answers.
+        self._services[RdpServiceHandler.service_type].bind_modules(self._engine.report)
         self._backoff_s = AGENT_BACKOFF_MIN_S
         self._last_error: "dict | None" = None
         self._pending: dict = {}
@@ -250,6 +262,30 @@ class Agent:
         for handler in self._services.values():
             merged.update(handler.state())
         return merged
+
+    def rdp_declaration(self) -> dict:
+        """What this machine says upward about sharing its desktop.
+
+        Returns:
+            ``{"is_shared", "share_id", "port"}``; empty when this build
+            carries no rdp handler.
+        """
+        handler = self._services.get(RdpServiceHandler.service_type)
+        return handler.declaration() if handler is not None else {}
+
+    def rdp_password(self, *, is_privileged: bool) -> str:
+        """The access password this machine shares with, for its owner.
+
+        Args:
+            is_privileged: Whether the caller holds the privileged scope.
+
+        Returns:
+            The password, empty for an ordinary caller or when none is set.
+        """
+        handler = self._services.get(RdpServiceHandler.service_type)
+        if handler is None:
+            return ""
+        return handler.reveal_password(is_privileged=is_privileged)
 
     # --- what the local page does ---
 
@@ -393,6 +429,9 @@ class Agent:
             "module_requests": requests,
             "module_results": self._engine.results(),
             "ai_targets": self._store.ai_targets(),
+            # Whether this machine's desktop is reachable. The access
+            # password it was set up with stays on the machine.
+            "rdp_share": self.rdp_declaration(),
             "last_error": self.last_error(),
         }
         try:

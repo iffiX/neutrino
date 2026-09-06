@@ -53,6 +53,15 @@ SERVICES = [
         "source": "module",
         "description": "published by container mysql:8.0",
     },
+    {
+        "id": "rdp_s9",
+        "type": "rdp",
+        "title": "studio",
+        "payload": {"protocol": "rustdesk", "host": "192.168.100.6", "port": 21118},
+        "is_healthy": True,
+        "source": "device",
+        "description": "shared from studio",
+    },
 ]
 
 
@@ -217,8 +226,19 @@ class FakeControlAgent:
     def account_home(self, account) -> str:
         return "/root" if account == "root" else f"/home/{account}"
 
+    def rdp_password(self, *, is_privileged: bool) -> str:
+        return "hunter2" if is_privileged else ""
+
     def service_states(self) -> dict:
         return {
+            "rdp": {
+                "is_shared": False,
+                "share_id": "",
+                "port": 21118,
+                "state": "not_shared",
+                "rustdesk_id": "123456789",
+                "has_password": False,
+            },
             "forwards": {"svc_tcp": {"local_port": 5432, "is_active": True}},
             "mounts": [
                 {

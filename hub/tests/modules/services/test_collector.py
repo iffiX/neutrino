@@ -8,6 +8,7 @@ from neutrino_hub.modules.services.collector import (
     resolve_entries,
 )
 from neutrino_hub.modules.services.config import DeclaredService, DeclaredShare
+from neutrino_hub.modules.services.device_shares import DeviceShare
 from neutrino_hub.modules.services.probe import DeclaredServiceHealth
 
 HUB = "192.168.100.1"
@@ -30,6 +31,7 @@ def collect(**overrides) -> list[dict]:
         "podman_containers": [],
         "declared_services": [],
         "declared_healths": {},
+        "device_shares": [],
     }
     fields.update(overrides)
     return ServiceListCollector(**fields).render()
@@ -354,3 +356,83 @@ def test_the_catalog_copy_drops_the_panel_only_fields():
         "description",
         "modules",
     }
+
+
+# --- the device source: a machine's own word that it is sharing ---
+
+
+def share(share_id="s1", host="192.168.100.5", hostname="workshop", port=21118):
+    return DeviceShare(
+        share_id=share_id,
+        mac_address="aa:bb:cc:dd:ee:ff",
+        hostname=hostname,
+        host=host,
+        port=port,
+        declared_at=0.0,
+    )
+
+
+def test_a_declaring_machine_publishes_one_rdp_entry():
+    entries = collect(device_shares=[share()])
+
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["type"] == "rdp"
+    assert entry["id"] == "rdp_s1"
+    assert entry["title"] == "workshop"
+    assert entry["payload"] == {
+        "protocol": "rustdesk",
+        "host": "192.168.100.5",
+        "port": 21118,
+    }
+
+
+def test_an_rdp_entry_says_it_came_from_a_device():
+    entry = collect(device_shares=[share()])[0]
+
+    assert entry["source"] == "device"
+    assert entry["description"] == "shared from workshop"
+
+
+def test_an_rdp_entry_names_the_module_it_cannot_work_without():
+    entry = collect(device_shares=[share()])[0]
+
+    assert entry["modules"] == ["rustdesk"]
+
+
+def test_no_declaration_publishes_no_rdp_entry():
+    assert collect(device_shares=[]) == []
+    assert collect() == []
+
+
+def test_a_device_host_is_never_rewritten_to_the_hubs_own_address():
+    # The address is another machine's, so resolving hub-own hosts for one
+    # caller must leave it exactly as the sharing machine was reached at.
+    entries = collect(device_shares=[share(host="192.168.100.5")])
+
+    resolved = resolve_entries(
+        entries, hub_addresses=hub_self_addresses([HUB]), target_host="10.0.0.9"
+    )
+
+    assert resolved[0]["payload"]["host"] == "192.168.100.5"
+
+
+def test_the_catalog_carries_an_rdp_entry_whole():
+    entries = catalog_entries(collect(device_shares=[share()]))
+
+    assert entries[0]["source"] == "device"
+    assert entries[0]["type"] == "rdp"
+    assert entries[0]["modules"] == ["rustdesk"]
+    # The panel-only fields are dropped here as they are for every type.
+    assert "record_id" not in entries[0]
+
+
+def test_two_machines_sharing_publish_one_entry_each():
+    entries = collect(
+        device_shares=[
+            share(share_id="s1", hostname="workshop"),
+            share(share_id="s2", hostname="studio", host="192.168.100.6"),
+        ]
+    )
+
+    assert [entry["id"] for entry in entries] == ["rdp_s1", "rdp_s2"]

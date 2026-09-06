@@ -168,6 +168,39 @@ class MachineServiceStore:
 
         self._mutate(change)
 
+    def rdp_share(self) -> dict:
+        """What this machine last decided about sharing its desktop.
+
+        Returns:
+            ``{"share_id", "is_shared", "port"}``, empty until somebody
+            shares. The access password is not here: it lives in its own
+            root-only file, the way a mount's does.
+        """
+        record = self._read().get("rdp", {})
+        return dict(record) if isinstance(record, dict) else {}
+
+    def set_rdp_share(self, record: dict) -> None:
+        """Record that this machine shares its desktop.
+
+        Args:
+            record: ``{"share_id", "is_shared", "port"}``; any ``password``
+                field is dropped, because secrets never enter this file.
+        """
+        kept = {key: value for key, value in record.items() if key != "password"}
+
+        def change(data: dict) -> None:
+            data["rdp"] = kept
+
+        self._mutate(change)
+
+    def clear_rdp_share(self) -> None:
+        """Forget the share record, after the machine stopped sharing."""
+
+        def change(data: dict) -> None:
+            data.pop("rdp", None)
+
+        self._mutate(change)
+
     def _read(self) -> dict:
         try:
             with open(self._path, "r", encoding="utf-8") as stream:

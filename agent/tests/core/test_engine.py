@@ -78,6 +78,7 @@ def bare_engine(*, platform=None, fetch_artifact=None, verified=None):
 
     from neutrino_agent.modules.openssh import OpensshModuleRunner
     from neutrino_agent.modules.package import PackageModuleRunner
+    from neutrino_agent.modules.rustdesk import RustdeskModuleRunner
     from neutrino_agent.modules.switcher import SwitcherModuleRunner
     from neutrino_agent.modules.system_package import SystemPackageModuleRunner
 
@@ -93,6 +94,9 @@ def bare_engine(*, platform=None, fetch_artifact=None, verified=None):
         platform=platform, log=engine._collect, publish=engine._publish
     )
     engine._openssh = OpensshModuleRunner(
+        platform=platform, log=engine._collect, publish=engine._publish
+    )
+    engine._rustdesk = RustdeskModuleRunner(
         platform=platform, log=engine._collect, publish=engine._publish
     )
     answers = list(verified or [])
@@ -400,6 +404,7 @@ def test_a_module_with_no_build_here_is_reported_unsupported_not_failed():
         "state": "unsupported",
         "code": "no_platform_build",
         "params": {},
+        "details": {},
     }
 
 
@@ -413,6 +418,7 @@ def test_a_kind_the_engine_does_not_run_is_reported_as_unknown():
         "state": "unknown",
         "code": "unknown_kind",
         "params": {"kind": "ai_tools"},
+        "details": {},
     }
 
 
@@ -426,6 +432,7 @@ def test_an_absent_capability_reports_unsupported_platform():
         "state": "failed",
         "code": "unsupported_platform",
         "params": {},
+        "details": {},
     }
 
 

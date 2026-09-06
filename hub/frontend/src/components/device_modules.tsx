@@ -35,6 +35,7 @@ const WORDING = {
     "What it was last told to run is shown; nothing can be changed until it " +
     "answers.",
   noBuild: "No build for this platform",
+  moduleSource: "source",
   builtIn: "built in",
   userTier: "Install it on the machine yourself; the hub only manages it",
   install: "Install",
@@ -72,6 +73,8 @@ const MODULE_ERROR_WORDING: Record<string, string> = {
   module_artifact_missing: "The hub no longer holds that download; ask again.",
   module_artifact_unknown: "The hub does not know that download; ask again.",
   module_digest_mismatch: "What arrived did not match the hub's checksum.",
+  module_sha256_mismatch:
+    "The download did not match the checksum this hub pins for it.",
   unknown_action: "The machine did not understand what it was asked to do.",
   unknown_kind: "The machine does not know this kind of module.",
   order_failed: "The install did not finish. See Install output below.",
@@ -278,6 +281,24 @@ export function DeviceModules({
                     ? describeModule(deviceModule)
                     : WORDING.noBuild}
                 </span>
+                {deviceModule.license !== "" && (
+                  <span className="device_module_note">
+                    {deviceModule.corresponding_source === "" ? (
+                      deviceModule.license
+                    ) : (
+                      <>
+                        {`${deviceModule.license} — `}
+                        <a
+                          href={deviceModule.corresponding_source}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                        >
+                          {WORDING.moduleSource}
+                        </a>
+                      </>
+                    )}
+                  </span>
+                )}
               </div>
               {!deviceModule.is_native &&
                 deviceModule.installer !== USER_INSTALLER && (

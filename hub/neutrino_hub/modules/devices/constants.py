@@ -48,6 +48,12 @@ AGENT_MODULE_FETCH_LIMIT_BYTES = 512 * 1024 * 1024
 AGENT_MODULE_KEY_DIGEST_CHARS = 16
 AGENT_MODULE_GITHUB_API = "https://api.github.com/repos/{repo}/releases/latest"
 
+# What the copyleft licenses oblige beside a binary the hub conveys: the
+# corresponding source, kept next to the artifact under this suffix. A
+# manifest naming ``source_archive`` is fetched with its binary and neither
+# is served without the other.
+AGENT_MODULE_SOURCE_SUFFIX = ".source"
+
 # Browser headers cost nothing; GitHub's API refuses a request that carries
 # no User-Agent at all.
 AGENT_MODULE_BROWSER_HEADERS = {
@@ -67,7 +73,15 @@ AGENT_MODULE_PACKAGE_MAGIC = {
     "msi": (b"\xd0\xcf\x11\xe0",),
     "exe": (b"MZ",),
     "pkg": (b"xar!",),
-    "dmg": (b"koly", b"\x78\x01\x73", b"\x42\x5a\x68"),
+    # A UDIF image opens with its compressor: zlib at any level, bzip2, or
+    # the koly trailer when the image is uncompressed.
+    "dmg": (
+        b"koly",
+        b"\x78\x01",
+        b"\x78\x9c",
+        b"\x78\xda",
+        b"\x42\x5a\x68",
+    ),
     "tar_binary": (b"\x1f\x8b", b"BZh", b"\xfd7zXZ"),
     "zip_binary": (b"PK\x03\x04",),
 }

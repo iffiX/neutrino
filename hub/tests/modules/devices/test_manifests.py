@@ -71,6 +71,7 @@ def test_every_shipped_manifest_names_its_installer_tier():
         "openssh_server": "platform",
         "samba_mount": "platform",
         "cc_switch": "hub",
+        "rustdesk": "hub",
         "anydesk": "user",
         "teamviewer": "user",
     }
