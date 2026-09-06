@@ -1,4 +1,4 @@
-from neutrino_hub.utils.constants import UTILS_STATE_ROOT
+from neutrino_hub.utils.constants import UTILS_DATA_DIR, UTILS_STATE_ROOT
 
 # What a device is addressed by, everywhere. Six hexadecimal pairs, colon or
 # hyphen separated, in any case; the registry lowercases and normalises on the
@@ -42,7 +42,7 @@ AGENT_MODULE_INSTALLER_USER = "user"
 # a managed machine, and what it accepts back. The ceiling is generous —
 # remote desktop packages run past 100 MB — and exists so a mirror serving
 # something endless cannot fill the panel's memory.
-AGENT_MODULE_CACHE_DIR = UTILS_STATE_ROOT / "agent_modules"
+AGENT_MODULE_CACHE_DIR = UTILS_STATE_ROOT / "agent_module_cache"
 AGENT_MODULE_FETCH_TIMEOUT_S = 300
 AGENT_MODULE_FETCH_LIMIT_BYTES = 512 * 1024 * 1024
 AGENT_MODULE_KEY_DIGEST_CHARS = 16
@@ -53,6 +53,28 @@ AGENT_MODULE_GITHUB_API = "https://api.github.com/repos/{repo}/releases/latest"
 # manifest naming ``source_archive`` is fetched with its binary and neither
 # is served without the other.
 AGENT_MODULE_SOURCE_SUFFIX = ".source"
+
+# The hub's own agent packages, which are not third-party modules: the hub's
+# package lands the builds it was made with here, and a platform it carries
+# none for is fetched from the release the manifest names. Keyed the way the
+# module cache keys an artifact — by what would actually be installed — so a
+# lost directory costs a download and a changed build cannot be served under
+# an old name.
+AGENT_PACKAGE_CACHE_DIR = UTILS_STATE_ROOT / "agent_cache"
+AGENT_PACKAGE_NAME = "neutrino_agent"
+
+# Per platform key, ``{url, sha256, size}``. Stamped by the build that seeded
+# the cache: a release stamps the URL its assets are published at, and a local
+# build stamps none, which is what makes a platform it did not seed refuse
+# rather than reach for a file nobody published.
+AGENT_PACKAGE_MANIFEST_NAME = "agent_packages.json"
+AGENT_PACKAGE_MANIFEST_PATH = UTILS_DATA_DIR / AGENT_PACKAGE_MANIFEST_NAME
+
+# Our own release asset over plain HTTP, pinned by the manifest's hash. The
+# ceiling is what one agent package can weigh many times over; it exists so a
+# mirror serving something endless cannot fill the panel's memory.
+AGENT_PACKAGE_FETCH_TIMEOUT_S = 300
+AGENT_PACKAGE_FETCH_LIMIT_BYTES = 256 * 1024 * 1024
 
 # Browser headers cost nothing; GitHub's API refuses a request that carries
 # no User-Agent at all.

@@ -525,8 +525,9 @@ carries the hub's.
 
 - **Agent older**: the reply's newer number is the update request — a polling
   agent hears about a hub upgrade on its first beat after the restart. It
-  downloads the hub's baked native package for its family over the pinned,
-  token-authed channel, verifies the SHA-256 the hub states, and installs it
+  downloads the hub's native package for its family and machine over the
+  pinned, token-authed channel, verifies the SHA-256 the hub states, and
+  installs it
   **detached** (a transient systemd unit), because the install restarts the
   agent service that started it. A failed attempt is not retried for the same
   target version and lands in `last_error`.

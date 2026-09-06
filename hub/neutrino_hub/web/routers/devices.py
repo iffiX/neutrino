@@ -24,7 +24,6 @@ from neutrino_hub.modules.devices.agent_module_controller import (
     ORDER_ACTION_UNINSTALL,
     ask_module,
 )
-from neutrino_hub.modules.devices.agent_package import agent_packages
 from neutrino_hub.modules.devices.constants import DEVICE_MAC_PATTERN
 from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
 from neutrino_hub.modules.credentials.vault import SecretVault
@@ -764,8 +763,8 @@ async def start_action(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "unsupported_remote_install", "os": kernel},
         )
-    packages = agent_packages()
-    if not packages:
+    packages = runtime.agent_packages
+    if not packages.has_packages():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "agent_package_missing"},

@@ -54,8 +54,9 @@ RESET_COLLECTED_PATHS = (
 RESET_STATE_PATHS = ("session.secret", "vault.key", "agent_tls_key.pem")
 # Directories under the state root the hub filled itself. The module cache is
 # a cache in the strict sense, so handing the box back costs the next owner a
-# download and nothing else.
-RESET_STATE_DIRS = ("agent_modules",)
+# download and nothing else. `agent_cache` is not here: what the hub's own
+# package laid there is the package manager's to remove.
+RESET_STATE_DIRS = ("agent_module_cache",)
 RESET_EXAMPLE_SUFFIX = ".example.json"
 RESET_PANEL_UNIT = "web"
 RESET_TARGETS = {

@@ -52,13 +52,18 @@ PYTHON_DIR = INSTALL_PREFIX / "python"
 # packaging container against that container's glibc.
 PYTHON_VERSION = "3.13.15"
 PYTHON_BUILD = "20260825"
+#
+# The stripped flavor of the same build. The bindings compiled beside it link
+# the platform's C libraries over their own ABI, so the symbols the flavor
+# drops are read by nothing the package installs.
 PYTHON_URL = (
     "https://github.com/astral-sh/python-build-standalone/releases/download/"
-    "{build}/cpython-{version}+{build}-{machine}-unknown-linux-gnu-install_only.tar.gz"
+    "{build}/cpython-{version}+{build}-{machine}"
+    "-unknown-linux-gnu-install_only_stripped.tar.gz"
 )
 PYTHON_SHA256 = {
-    "x86_64": "8a70011ae25276a9925f89304cdc086466cd269ee6cfe68a9506694ca5ff4f9c",  # scan: allow
-    "aarch64": "b298e34164582305be9629a0da50701358195ce30b639f5ed4bbc50c4768f048",  # scan: allow
+    "x86_64": "8af9a8214c71b2dd698005e39fab87aad02a994330508857da4e6d1ba7e6ddb6",  # scan: allow
+    "aarch64": "e5d0df1a6070a8614d808496e5ea28c727480e40ffcce1a94697a067f1690aa8",  # scan: allow
 }
 
 # What each packaging format calls the machine, mapped to what the interpreter

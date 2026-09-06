@@ -58,6 +58,7 @@ from neutrino_hub.utils.subprocess_run import CommandError, run
 from neutrino_hub.web.auth import SessionStore, session_secret
 from neutrino_hub.modules.devices.agent_module_cache import AgentModuleCache
 from neutrino_hub.modules.devices.agent_module_controller import AgentModuleController
+from neutrino_hub.modules.devices.agent_package import AgentPackageCache
 from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.web.task_stream import TaskStreamRegistry
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
@@ -109,6 +110,9 @@ class PanelRuntime:
         # cache for the bytes, one lock per device, and one controller that
         # is the single door every install goes through.
         self.agent_modules = AgentModuleCache()
+        # The hub's own agent packages, seeded by its package and topped up
+        # from the release for a platform it was not built for.
+        self.agent_packages = AgentPackageCache()
         self.device_install_locks = DeviceInstallLocks()
         self.agent_module_orders = AgentModuleController(
             cache=self.agent_modules, locks=self.device_install_locks

@@ -29,7 +29,7 @@ docs/memory.md
 hub_dev_root/
 
 # Built into the hub package in the container; never committed.
-hub/neutrino_hub/data/agent_package/
+hub/neutrino_hub/data/agent_packages.json
 agent_dev_root/
 
 # Copied in from images/icons and agent/frontend by the packaging builds;

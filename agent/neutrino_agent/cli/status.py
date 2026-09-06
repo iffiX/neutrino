@@ -40,6 +40,15 @@ ERROR_WORDS = {
     "agent_package_missing": (
         "the hub has no agent package for this machine's platform"
     ),
+    "agent_package_fetch_failed": (
+        "the hub could not fetch the agent package for this platform"
+    ),
+    "agent_package_sha256_mismatch": (
+        "what the hub fetched is not the package its manifest pins"
+    ),
+    "agent_package_cache_unwritable": (
+        "the hub could not write the agent package to its own disk"
+    ),
 }
 ERROR_ADVICE = {
     "hub_refused": (

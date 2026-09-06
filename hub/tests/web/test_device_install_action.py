@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from neutrino_hub.modules.credentials.vault import SecretVault
+from neutrino_hub.modules.devices.agent_package import AgentPackageCache
 from neutrino_hub.modules.devices.constants import SSH_UNREACHABLE_STATUS
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
@@ -27,12 +28,17 @@ LOGIN_PASSWORD = "a-password"  # scan: allow
 class FakeRuntime:
     instance = None
 
-    def __init__(self):
+    def __init__(self, packages_dir):
         self.settings = {}
         self.tasks = TaskStreamRegistry()
         self.client_metrics = {}
         self.client_platform = {}
         self.enrollments = {}
+        self.agent_packages = AgentPackageCache(
+            root=packages_dir / "agent_cache",
+            manifest_path=packages_dir / "agent_packages.json",
+            pinned_dir=packages_dir / "devices" / "packages",
+        )
 
     def network(self):
         return SimpleNamespace(lan_interfaces=[], primary_lan_address="192.168.100.1")
@@ -42,17 +48,10 @@ class FakeRuntime:
 def api(monkeypatch, tmp_path):
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
     unlock_vault(monkeypatch, tmp_path)
-    monkeypatch.setattr(
-        "neutrino_hub.modules.devices.agent_package.UTILS_CONFIG_DIR", tmp_path
-    )
-    monkeypatch.setattr(
-        "neutrino_hub.modules.devices.agent_package.UTILS_DATA_DIR",
-        tmp_path / "no_data",
-    )
     app = FastAPI()
     app.include_router(devices_router.router)
     app.dependency_overrides[require_session] = lambda: None
-    runtime = FakeRuntime()
+    runtime = FakeRuntime(tmp_path)
     FakeRuntime.instance = runtime
     app.dependency_overrides[get_runtime] = lambda: runtime
     with TestClient(app) as client:

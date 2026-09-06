@@ -109,6 +109,12 @@ const AGENT_ERROR_WORDING: Record<string, string> = {
   update_failed: "The agent could not update itself.",
   agent_package_missing:
     "The hub has no agent package for this machine's platform.",
+  agent_package_fetch_failed:
+    "The hub could not fetch the agent package for this platform.",
+  agent_package_sha256_mismatch:
+    "What the hub fetched is not the agent package its manifest pins.",
+  agent_package_cache_unwritable:
+    "The hub could not write the agent package to its own disk.",
 };
 
 const COMMAND_RESULTS_LABEL = "Agent command results";
@@ -1204,7 +1210,7 @@ function describeActionError(cause: unknown): string {
     return `This machine reports ${os || "another OS"}; the SSH installer is for Linux — use Get link instead.`;
   }
   if (cause instanceof ApiError && cause.code === "agent_package_missing") {
-    return "This hub carries no agent package. An installed hub ships one; a checkout builds one into config/devices/packages with agent/packaging/build_deb.py.";
+    return "This hub carries no agent package. An installed hub ships the Linux builds it was made with; a checkout drops one into config/devices/packages with agent/packaging/build_deb.py.";
   }
   return describeError(cause);
 }

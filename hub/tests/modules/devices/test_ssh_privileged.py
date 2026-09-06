@@ -14,6 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from neutrino_hub.modules.devices.agent_package import AgentPackageCache
 from neutrino_hub.modules.devices.constants import SSH_UNSUPPORTED_OS_STATUS
 from neutrino_hub.modules.devices.ssh_ops import DeviceSshOperator, SshCredentials
 
@@ -219,33 +220,27 @@ def test_a_refused_stream_reports_and_runs_nothing():
 
 
 @pytest.fixture
-def packages(tmp_path) -> dict:
+def packages(tmp_path) -> AgentPackageCache:
     """One package per family and machine, the way the hub carries them."""
-    built = {}
-    for family, names in (
-        (
-            "deb",
-            {
-                "amd64": "neutrino-agent_0.1.0_amd64.deb",
-                "arm64": "neutrino-agent_0.1.0_arm64.deb",
-            },
-        ),
-        (
-            "rpm",
-            {
-                "amd64": "neutrino-agent-0.1.0-1.x86_64.rpm",
-                "arm64": "neutrino-agent-0.1.0-1.aarch64.rpm",
-            },
-        ),
+    pinned = tmp_path / "packages"
+    pinned.mkdir()
+    for name in (
+        "neutrino-agent_0.1.0_amd64.deb",
+        "neutrino-agent_0.1.0_arm64.deb",
+        "neutrino-agent-0.1.0-1.x86_64.rpm",
+        "neutrino-agent-0.1.0-1.aarch64.rpm",
     ):
-        for architecture, name in names.items():
-            path = tmp_path / name
-            path.write_bytes(family.encode())
-            built.setdefault(family, {})[architecture] = path
-    return built
+        (pinned / name).write_bytes(name.encode())
+    return AgentPackageCache(
+        root=tmp_path / "agent_cache",
+        manifest_path=tmp_path / "agent_packages.json",
+        pinned_dir=pinned,
+    )
 
 
-async def install_lines(op: DeviceSshOperator, packages: dict) -> list[str]:
+async def install_lines(
+    op: DeviceSshOperator, packages: AgentPackageCache
+) -> list[str]:
     lines = []
     async for chunk in op.install_client(packages=packages, enrollment_link=LINK):
         lines.append(chunk)

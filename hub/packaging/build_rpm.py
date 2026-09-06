@@ -76,6 +76,7 @@ cp -a {payload}/. %{{buildroot}}/
 /{unit_dir}/neutrino_hub_web.service
 %dir /var/lib/neutrino
 /var/lib/neutrino/geodata
+/var/lib/neutrino/agent_cache
 %license /usr/share/doc/{name}/licenses/*
 %dir /usr/share/doc/{name}/licenses
 

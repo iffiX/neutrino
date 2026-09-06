@@ -112,6 +112,13 @@ CONTAINER_BUILD = (
     "--architecture {architecture} {extra}"
 )
 
+# What the hub's build reads to learn where a release publishes the agent
+# packages it seeds its cache with. Passed into the container only when it is
+# given: without it the hub package carries the entries it seeded and no URL,
+# which is what makes a local build refuse a platform it did not make rather
+# than reach for a file nobody published.
+AGENT_PACKAGE_URL_BASE_ENV = "NEUTRINO_AGENT_PACKAGE_URL_BASE"
+
 # The name each family gives the same machine.
 ARCHITECTURE_NAMES = {
     "amd64": {"debian": "amd64", "rhel": "x86_64", "arch": "x86_64"},
@@ -142,6 +149,11 @@ def main() -> int:
         "--families",
         default=",".join(HUB_BUILDS),
         help="which distribution families to build for",
+    )
+    parser.add_argument(
+        "--agent-package-url-base",
+        default="",
+        help="where a release publishes the agent packages the hub seeds",
     )
     arguments = parser.parse_args()
 
@@ -177,6 +189,7 @@ def main() -> int:
                 output_dir,
                 arguments.architecture,
                 family,
+                agent_package_url_base=arguments.agent_package_url_base,
             )
 
     if arguments.only in ("all", "checksums"):
@@ -207,7 +220,13 @@ def _families(requested: str) -> list:
 
 
 def _build_in_container(
-    build: dict, script: str, output_dir: Path, architecture: str, family: str
+    build: dict,
+    script: str,
+    output_dir: Path,
+    architecture: str,
+    family: str,
+    *,
+    agent_package_url_base: str = "",
 ) -> None:
     """Run one packaging build inside a container of its own family.
 
@@ -218,6 +237,9 @@ def _build_in_container(
         output_dir: Where the package should land.
         architecture: The architecture to build for, named the Debian way.
         family: Which family is being built, which names the architecture.
+        agent_package_url_base: Where a release publishes the agent packages
+            the hub's build seeds its cache with; nothing is stamped without
+            it.
 
     Raises:
         SystemExit: If the architecture is not one the packages are published
@@ -237,6 +259,11 @@ def _build_in_container(
             "and compiled extensions, so both are built on their baseline "
             "distribution"
         )
+    stamp = (
+        ["-e", f"{AGENT_PACKAGE_URL_BASE_ENV}={agent_package_url_base}"]
+        if agent_package_url_base
+        else []
+    )
     # --network=host because this machine's own nftables rules are what a
     # container network would otherwise have to negotiate with.
     _run(
@@ -251,6 +278,9 @@ def _build_in_container(
             f"{REPO_ROOT}:/src:ro",
             "-v",
             f"{output_dir}:/out",
+        ]
+        + stamp
+        + [
             build["image"],
             "sh",
             "-c",

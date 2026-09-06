@@ -204,7 +204,7 @@ Two hub-side things do the work, and there is exactly one of each:
   fingerprint where a vendor gates on one, which is the whole reason the
   fetch cannot happen on the agent — checks that what arrived opens like the
   package kind it claims to be, and keeps it under
-  `/var/lib/neutrino/agent_modules/`. It is a cache in the strict sense:
+  `/var/lib/neutrino/agent_module_cache/`. It is a cache in the strict sense:
   losing it costs a download and nothing else. One fetch serves every device
   of that platform, and a second machine wanting the same module waits for
   the first fetch rather than starting its own.

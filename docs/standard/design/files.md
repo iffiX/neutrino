@@ -88,17 +88,32 @@ testable. Details of the files themselves:
 
 ```
 /var/lib/neutrino/
-    generated/      rendered nftables, dnsmasq, hostapd, wpa_supplicant, dhcpcd,
-                    smb.conf, xray and gateway configs
-    geodata/        geoip.dat and geosite.dat
-    cliproxyapi/    the AI gateway's accounts and tokens
-    agent_modules/  the packages the hub fetched for managed machines
-    stood_down.json which units the hub stopped so it could drive the network
+    generated/          rendered nftables, dnsmasq, hostapd, wpa_supplicant,
+                        dhcpcd, smb.conf, xray and gateway configs
+    geodata/            geoip.dat and geosite.dat
+    cliproxyapi/        the AI gateway's accounts and tokens
+    agent_module_cache/ the third-party packages the hub fetched for managed
+                        machines
+    agent_cache/        the agent packages this hub hands out
+    stood_down.json     which units the hub stopped so it could drive the
+                        network
 ```
 
 State, not configuration: everything here is either derived from
 `/etc/neutrino/` and rebuilt by the next render, or accumulated by a service
 while it runs. Losing it costs a render or a re-login, never a decision.
+
+`agent_cache/` is the one thing here the package writes. The hub's own package
+lays the agent builds it was made from straight into it, so enrolling a Linux
+device and letting a Linux agent update itself need no network at all; an
+upgrade replaces those files the way it replaces `/opt/neutrino`, because the
+package manager owns them. A platform the package seeded none for is fetched
+once from the release its manifest names, checked against the hash pinned
+there, and kept beside them. Both halves are addressed by the same key — the
+package name, the platform, and a digest of the file — so a build that changed
+cannot be served under an old name. This is why `nhub reset all` clears
+`agent_module_cache/` and leaves `agent_cache/` alone: one is a cache the hub
+filled, the other is largely what dpkg put there.
 
 `stood_down.json` is a note of what the hub did, not a copy of what anybody
 else had: router mode stops the manager that was running and writes down

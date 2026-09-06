@@ -192,10 +192,14 @@ splits the work across runners. `--families` chooses which; the agent has no
 Arch package and says so rather than failing.
 
 The agent packages a hub package carries are built inside the hub's own build
-container, for the hub's own machine. A hub serving devices of a second
-architecture is given those packages by hand, under
-`config/devices/packages`, where they win over the baked ones; the hub picks
-by the machine each device reports.
+container, for the hub's own machine, and land under
+`/var/lib/neutrino/agent_cache/` rather than inside the hub's Python tree.
+Beside them the build stamps `agent_packages.json`, which names every platform
+this release publishes an agent for and the hash of each. A hub serving devices
+of a second architecture fetches that platform's package once from the release
+the manifest names; `--agent-package-url-base` is what stamps those URLs, and a
+build given none carries the entries it seeded and refuses the rest by name. A
+package dropped under `config/devices/packages` still wins over both.
 
 Two things bind a hub package to the machine that built it, and both are why
 the container is not optional:

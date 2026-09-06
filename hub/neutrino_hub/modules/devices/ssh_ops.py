@@ -26,6 +26,10 @@ from pathlib import Path
 import asyncssh
 
 from neutrino_hub.modules.credentials.vault import SecretVault, VaultError
+from neutrino_hub.modules.devices.agent_package import (
+    AgentPackageCache,
+    AgentPackageFetchError,
+)
 from neutrino_hub.modules.devices.constants import (
     SSH_UNREACHABLE_STATUS,
     SSH_UNSUPPORTED_OS_STATUS,
@@ -367,7 +371,7 @@ class DeviceSshOperator:
     async def install_client(
         self,
         *,
-        packages: "dict[str, dict]",
+        packages: AgentPackageCache,
         enrollment_link: str,
     ) -> AsyncIterator[str]:
         """Deliver the agent as a native package and join it to this hub.
@@ -381,8 +385,8 @@ class DeviceSshOperator:
         so nothing else may need lines counted behind it.
 
         Args:
-            packages: The agent package per family, ``deb`` and ``rpm``, and
-                per machine under each, whichever the hub carries.
+            packages: The agent packages this hub can deliver, asked once the
+                machine and its package manager are known.
             enrollment_link: The ticket the panel generated for this device.
 
         Yields:
@@ -409,13 +413,20 @@ class DeviceSshOperator:
                 machine = (result.stdout or "").strip()
                 architecture = _normalise_machine(machine)
                 for candidate, tool in (("deb", "dpkg"), ("rpm", "rpm")):
-                    if architecture not in packages.get(candidate, {}):
+                    if not packages.serves(family=candidate, architecture=architecture):
                         continue
                     probe = await connection.run(f"command -v {tool}", check=False)
-                    if (probe.exit_status or 0) == 0:
-                        family = candidate
-                        package_path = packages[candidate][architecture]
-                        break
+                    if (probe.exit_status or 0) != 0:
+                        continue
+                    # The bytes may still have to be fetched, which is a
+                    # download and not something to hold the loop for.
+                    package_path = await asyncio.to_thread(
+                        packages.package,
+                        family=candidate,
+                        architecture=architecture,
+                    )
+                    family = candidate
+                    break
                 if package_path is None:
                     yield (
                         "[the hub carries no agent package this machine can "
@@ -428,6 +439,12 @@ class DeviceSshOperator:
                 yield f"[uploading {package_path.name}]\n"
                 async with connection.start_sftp_client() as sftp:
                     await sftp.put(str(package_path), remote_package)
+        except AgentPackageFetchError as error:
+            platform = error.params.get("platform", "this machine")
+            yield f"\n[the agent package for {platform} could not be produced: "
+            yield f"{error.code}]\n"
+            yield f"\n[exit {SSH_UNSUPPORTED_OS_STATUS}]\n"
+            return
         except (OSError, asyncssh.Error) as error:
             yield f"\n[upload failed: {error}]\n"
             return

@@ -166,6 +166,16 @@ machine has none; on macOS, WKWebView, which is the system.
 
 The cost is size: an agent package is tens of megabytes where it was tens of
 kilobytes, and one per platform and machine where it was one for all of them.
-A checkout pays none of it — `pip install -e agent` still installs nothing but
-the agent, and `nagent gui` from a checkout uses whatever interpreter can
-import `gi`.
+Both packages carry the stripped build of the interpreter for that reason —
+the debug symbols an appliance never reads weighed more than everything else
+put together. A checkout pays none of it — `pip install -e agent` still
+installs nothing but the agent, and `nagent gui` from a checkout uses whatever
+interpreter can import `gi`.
+
+The hub's package carries the Linux agent builds it was made with, in
+`/var/lib/neutrino/agent_cache/`, which is what lets it enroll a Linux device
+and answer a Linux self-update with no network of its own. A platform it
+carries none for is fetched from the release its manifest names, and a
+platform with neither is refused by name rather than served another machine's
+build. Where those files live and what an upgrade does to them is in
+[files.md](files.md).

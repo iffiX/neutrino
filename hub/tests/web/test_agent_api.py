@@ -21,6 +21,7 @@ from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier
 from neutrino_hub.modules.cliproxyapi.ops import load_config as load_cliproxyapi_config
 from neutrino_hub.modules.devices.agent_module_cache import AgentModuleArtifact
 from neutrino_hub.modules.devices.agent_module_controller import AgentModuleController
+from neutrino_hub.modules.devices.agent_package import AgentPackageCache
 from neutrino_hub.modules.devices.constants import AGENT_WIRE_GENERATION
 from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice
@@ -38,6 +39,23 @@ CATALOG = {
     "services": [{"id": "ai", "type": "ai", "title": "AI gateway"}],
 }
 CATALOG_HASH = "hash123"
+
+
+def package_cache(root: Path) -> AgentPackageCache:
+    """A cache over one directory, holding whatever was written into it.
+
+    Args:
+        root: The directory; a package dropped there is served the way a
+            hand-pinned build is, with no manifest and nothing to fetch.
+
+    Returns:
+        The cache the runtime would hold.
+    """
+    return AgentPackageCache(
+        root=root / "agent_cache",
+        manifest_path=root / "agent_packages.json",
+        pinned_dir=root,
+    )
 
 
 class FakeRegistry:
@@ -146,6 +164,9 @@ class FakeRuntime:
         self.device_catalog = StubCatalogCache()
         self.served_models = StubServedModels()
         self.agent_modules = StubModuleCache()
+        # A hub carrying nothing, which is what a case that does not seed one
+        # wants; the cases that do replace it with :func:`package_cache`.
+        self.agent_packages = package_cache(Path("/nonexistent"))
         self.device_install_locks = DeviceInstallLocks()
         # A short wait: no agent reports in these tests, and a worker that
         # sat on its device's lock for the real half hour would leak a
@@ -737,15 +758,10 @@ def test_an_unparseable_version_refuses_nothing(api):
     assert response.status_code == 200
 
 
-def test_the_package_endpoint_serves_the_bytes_and_their_digest(
-    api, monkeypatch, tmp_path
-):
-    client, _, _ = api
-    baked = tmp_path / "neutrino-agent_9.9.9_amd64.deb"
-    baked.write_bytes(b"!<arch>agent-bytes")
-    monkeypatch.setattr(
-        agent_router, "agent_packages", lambda: {"deb": {"amd64": baked}}
-    )
+def test_the_package_endpoint_serves_the_bytes_and_their_digest(api, tmp_path):
+    client, runtime, _ = api
+    (tmp_path / "neutrino-agent_9.9.9_amd64.deb").write_bytes(b"!<arch>agent-bytes")
+    runtime.agent_packages = package_cache(tmp_path)
 
     response = client.post(
         "/api/agent/package",
@@ -758,13 +774,10 @@ def test_the_package_endpoint_serves_the_bytes_and_their_digest(
     assert response.headers["x-checksum-sha256"] == expected
 
 
-def test_the_package_endpoint_refuses_an_unknown_token(api, monkeypatch, tmp_path):
-    client, _, _ = api
-    baked = tmp_path / "neutrino-agent_9.9.9_amd64.deb"
-    baked.write_bytes(b"!<arch>agent-bytes")
-    monkeypatch.setattr(
-        agent_router, "agent_packages", lambda: {"deb": {"amd64": baked}}
-    )
+def test_the_package_endpoint_refuses_an_unknown_token(api, tmp_path):
+    client, runtime, _ = api
+    (tmp_path / "neutrino-agent_9.9.9_amd64.deb").write_bytes(b"!<arch>agent-bytes")
+    runtime.agent_packages = package_cache(tmp_path)
 
     response = client.post(
         "/api/agent/package",
@@ -774,29 +787,29 @@ def test_the_package_endpoint_refuses_an_unknown_token(api, monkeypatch, tmp_pat
     assert response.status_code == 401
 
 
-def test_a_family_the_hub_has_no_package_for_is_a_coded_conflict(api, monkeypatch):
-    client, _, _ = api
-    monkeypatch.setattr(agent_router, "agent_packages", lambda: {})
+def test_a_family_the_hub_has_no_package_for_is_a_coded_conflict(api, tmp_path):
+    client, runtime, _ = api
+    (tmp_path / "neutrino-agent_9.9.9_amd64.deb").write_bytes(b"!<arch>agent-bytes")
+    runtime.agent_packages = package_cache(tmp_path)
 
     response = client.post(
-        "/api/agent/package", json={"token": "device-token", "family": "rpm"}
+        "/api/agent/package",
+        json={"token": "device-token", "family": "rpm", "architecture": "amd64"},
     )
 
     assert response.status_code == 409
-    assert response.json()["detail"] == {"code": "agent_package_missing"}
+    assert response.json()["detail"] == {
+        "code": "agent_package_missing",
+        "params": {"platform": "rpm-amd64"},
+    }
 
 
-def test_a_machine_the_hub_has_no_package_for_is_a_coded_conflict(
-    api, monkeypatch, tmp_path
-):
-    """The hub bakes for the machine it was built on; a device of another one
-    is refused with the same code, not handed the wrong build."""
-    client, _, _ = api
-    baked = tmp_path / "neutrino-agent_9.9.9_amd64.deb"
-    baked.write_bytes(b"!<arch>agent-bytes")
-    monkeypatch.setattr(
-        agent_router, "agent_packages", lambda: {"deb": {"amd64": baked}}
-    )
+def test_a_machine_the_hub_has_no_package_for_is_a_coded_conflict(api, tmp_path):
+    """The hub carries the machine it was built for; a device of another one
+    is refused by name, not handed the wrong build."""
+    client, runtime, _ = api
+    (tmp_path / "neutrino-agent_9.9.9_amd64.deb").write_bytes(b"!<arch>agent-bytes")
+    runtime.agent_packages = package_cache(tmp_path)
 
     response = client.post(
         "/api/agent/package",
@@ -804,20 +817,18 @@ def test_a_machine_the_hub_has_no_package_for_is_a_coded_conflict(
     )
 
     assert response.status_code == 409
-    assert response.json()["detail"] == {"code": "agent_package_missing"}
+    assert response.json()["detail"] == {
+        "code": "agent_package_missing",
+        "params": {"platform": "deb-arm64"},
+    }
 
 
-def test_a_build_that_names_no_machine_is_answered_from_its_heartbeat(
-    api, monkeypatch, tmp_path
-):
+def test_a_build_that_names_no_machine_is_answered_from_its_heartbeat(api, tmp_path):
     """The field is new and the generation did not move, so a build without it
     is served from the platform its last beat reported."""
-    client, _, _ = api
-    baked = tmp_path / "neutrino-agent_9.9.9_arm64.deb"
-    baked.write_bytes(b"!<arch>agent-bytes")
-    monkeypatch.setattr(
-        agent_router, "agent_packages", lambda: {"deb": {"arm64": baked}}
-    )
+    client, runtime, _ = api
+    (tmp_path / "neutrino-agent_9.9.9_arm64.deb").write_bytes(b"!<arch>agent-bytes")
+    runtime.agent_packages = package_cache(tmp_path)
     client.post("/api/agent/heartbeat", json=beat_body(platform={"arch": "arm64"}))
 
     response = client.post(

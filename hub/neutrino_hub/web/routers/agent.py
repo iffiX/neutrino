@@ -35,7 +35,7 @@ from neutrino_hub.modules.devices.agent_module_controller import (
     AgentModuleOrder,
     ask_module,
 )
-from neutrino_hub.modules.devices.agent_package import agent_packages
+from neutrino_hub.modules.devices.agent_package import AgentPackageFetchError
 from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_OUTPUT_LIMIT_BYTES,
     AGENT_OPERATION_OUTPUT_LINES,
@@ -359,7 +359,7 @@ def result(
 def package(
     request: ClientPackageRequest, runtime: PanelRuntime = Depends(get_runtime)
 ) -> Response:
-    """Hand an agent the hub's baked package for its family and machine.
+    """Hand an agent the package for its family and machine.
 
     This is how an older agent updates itself: the reply's ``hub_version``
     tells it to move, and this hands it the same build an SSH install would
@@ -377,8 +377,9 @@ def package(
         The package bytes, with their SHA-256 in ``X-Checksum-Sha256``.
 
     Raises:
-        HTTPException: 401 when the token matches no device, 409 when the
-            hub holds no package for that family and machine.
+        HTTPException: 401 when the token matches no device, 409 with the
+            typed reason when the package cannot be produced — no build for
+            that platform, or a release that did not serve what it pinned.
     """
     device = DeviceRegistry().find_by_client_token(request.token)
     if device is None:
@@ -388,12 +389,15 @@ def package(
     architecture = request.architecture or runtime.client_platform.get(
         device.mac_address, {}
     ).get("arch", "")
-    path = agent_packages().get(request.family, {}).get(architecture)
-    if path is None:
+    try:
+        path = runtime.agent_packages.package(
+            family=request.family, architecture=architecture
+        )
+    except AgentPackageFetchError as error:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "agent_package_missing"},
-        )
+            detail={"code": error.code, "params": error.params},
+        ) from error
     data = path.read_bytes()
     return Response(
         content=data,

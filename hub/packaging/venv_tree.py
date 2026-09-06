@@ -20,6 +20,8 @@ Not pure: downloads an interpreter, installs into it.
 """
 
 import hashlib
+import json
+import os
 import shutil
 import subprocess
 import sys
@@ -74,13 +76,18 @@ PYTHON_DIR = INSTALL_PREFIX / "python"
 # is where support starts and why Debian 11 is not on the list.
 PYTHON_VERSION = "3.13.15"
 PYTHON_BUILD = "20260825"
+#
+# The stripped flavor of the same build. What it drops is the debug symbols,
+# which nothing on an appliance reads and which weighed more than everything
+# else the package carries put together.
 PYTHON_URL = (
     "https://github.com/astral-sh/python-build-standalone/releases/download/"
-    "{build}/cpython-{version}+{build}-{machine}-unknown-linux-gnu-install_only.tar.gz"
+    "{build}/cpython-{version}+{build}-{machine}"
+    "-unknown-linux-gnu-install_only_stripped.tar.gz"
 )
 PYTHON_SHA256 = {
-    "x86_64": "8a70011ae25276a9925f89304cdc086466cd269ee6cfe68a9506694ca5ff4f9c",  # scan: allow
-    "aarch64": "b298e34164582305be9629a0da50701358195ce30b639f5ed4bbc50c4768f048",  # scan: allow
+    "x86_64": "8af9a8214c71b2dd698005e39fab87aad02a994330508857da4e6d1ba7e6ddb6",  # scan: allow
+    "aarch64": "e5d0df1a6070a8614d808496e5ea28c727480e40ffcce1a94697a067f1690aa8",  # scan: allow
 }
 
 # What the hub's own modules call the machine, keyed by what the interpreter
@@ -145,6 +152,27 @@ CLIPROXYAPI_SHA256 = {
 # running machine fetches the fuller Loyalsoldier set for its own use; that one
 # is GPL-3.0, and a package carrying it would be distributing it.
 GEODATA = _runtime("neutrino_hub.modules.xray.constants", "XRAY_GEODATA")
+
+# Where the agent packages the hub hands out live once installed, and how they
+# are addressed there. The runtime module states both: packaging seeds the
+# directory the panel then reads, and a key spelled two ways would be a cache
+# that never hits.
+AGENT_PACKAGE_CACHE_DIR, AGENT_PACKAGE_MANIFEST_NAME = _runtime(
+    "neutrino_hub.modules.devices.constants",
+    "AGENT_PACKAGE_CACHE_DIR",
+    "AGENT_PACKAGE_MANIFEST_NAME",
+)
+_AGENT_PACKAGE_MODULE = "neutrino_hub.modules.devices.agent_package"
+AGENT_PACKAGE_KEY = _runtime(_AGENT_PACKAGE_MODULE, "package_key")
+AGENT_PLATFORM_KEY = _runtime(_AGENT_PACKAGE_MODULE, "platform_key")
+AGENT_PACKAGE_FAMILY = _runtime(_AGENT_PACKAGE_MODULE, "package_family")
+AGENT_PACKAGE_MACHINE = _runtime(_AGENT_PACKAGE_MODULE, "package_architecture")
+
+# Where a release publishes the agent packages this build seeds, so an
+# installed hub can serve a platform this build did not make. A build that is
+# not a release names none, and the manifest then carries the seeded entries
+# alone.
+AGENT_PACKAGE_URL_BASE_ENV = "NEUTRINO_AGENT_PACKAGE_URL_BASE"
 
 # What every package declares it needs, read from the hub's own constants so a
 # dependency field and what a checkout installs cannot say different things.
@@ -247,7 +275,7 @@ def build_environment(tree: Path, version: str, machine: str) -> None:
         stamp.unlink(missing_ok=True)
 
     strip_build_paths(staged_python, tree)
-    stage_agent_package(staged_python, machine)
+    stage_agent_cache(tree, staged_python, machine)
     stage_vendored(tree, machine)
     stage_licenses(tree)
 
@@ -269,40 +297,111 @@ def stage_icons() -> None:
         shutil.copyfile(source, ICONS_PACKAGE_DIR / source.name)
 
 
-def stage_agent_package(staged_python: Path, machine: str) -> None:
-    """Bake the agent's native packages into the hub's own data.
+def stage_agent_cache(tree: Path, staged_python: Path, machine: str) -> None:
+    """Seed the agent package cache and stamp the manifest that reads it.
 
     Built from the same checkout, so the hub and the agent it hands out
-    cannot drift. The panel installs these over SSH, falling back here when
-    ``config/devices/packages`` holds no deliberately pinned build.
+    cannot drift. The files land where an installed hub looks for them, so a
+    Linux enrollment and a Linux self-update need no network at all.
 
-    The agent carries an interpreter and compiled bindings of its own now, so
-    what is baked is for this container's machine and no other. A hub serving
-    devices of a second architecture is given those packages by hand, under
-    ``config/devices/packages``, where they win over these.
+    The agent carries an interpreter and compiled bindings of its own, so what
+    is seeded is for this container's machine and no other. A hub serving
+    devices of a second architecture fetches those from the release the
+    manifest names, or is given them by hand under
+    ``config/devices/packages``.
 
     The build container carries ``dpkg-dev``, ``rpm`` and the headers the
     agent's bindings compile against.
 
     Args:
+        tree: The staging directory.
         staged_python: The interpreter tree the hub was installed into.
         machine: The architecture, named however the packaging format names
             it.
+
+    Raises:
+        SystemExit: When a build writes a file whose platform cannot be read
+            from its name, which would seed the cache under a key nothing
+            asks for.
     """
+    cache = tree / str(AGENT_PACKAGE_CACHE_DIR).lstrip("/")
+    cache.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as workdir:
+        built = Path(workdir)
+        for script in ("build_deb.py", "build_rpm.py"):
+            run(
+                [
+                    str(staged_python / "bin" / "python3"),
+                    str(AGENT_ROOT / "packaging" / script),
+                    "--output-dir",
+                    str(built),
+                    "--architecture",
+                    machine,
+                ],
+                cwd=AGENT_ROOT,
+            )
+        manifest = agent_cache_entries(sorted(built.iterdir()), _agent_url_base())
+        for path in sorted(built.iterdir()):
+            key = AGENT_PLATFORM_KEY(*_agent_platform(path.name))
+            target = cache / AGENT_PACKAGE_KEY(key=key, digest=manifest[key]["sha256"])
+            shutil.copyfile(path, target)
+            target.chmod(0o644)
+
     site_packages = next((staged_python / "lib").glob("python*/site-packages"))
-    output = site_packages / "neutrino_hub" / "data" / "agent_package"
-    for script in ("build_deb.py", "build_rpm.py"):
-        run(
-            [
-                str(staged_python / "bin" / "python3"),
-                str(AGENT_ROOT / "packaging" / script),
-                "--output-dir",
-                str(output),
-                "--architecture",
-                machine,
-            ],
-            cwd=AGENT_ROOT,
-        )
+    write(
+        site_packages / "neutrino_hub" / "data" / AGENT_PACKAGE_MANIFEST_NAME,
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+    )
+
+
+def agent_cache_entries(paths: list, url_base: str) -> dict:
+    """What the manifest says about the packages a build seeded.
+
+    Args:
+        paths: The files the agent's builds wrote.
+        url_base: Where a release publishes them, empty for a build that
+            publishes nothing.
+
+    Returns:
+        Platform key to ``{url, sha256, size}``.
+
+    Raises:
+        SystemExit: When a file's name says no family or no machine.
+    """
+    entries = {}
+    for path in paths:
+        family, architecture = _agent_platform(path.name)
+        payload = path.read_bytes()
+        entries[AGENT_PLATFORM_KEY(family, architecture)] = {
+            "url": f"{url_base.rstrip('/')}/{path.name}" if url_base else "",
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "size": len(payload),
+        }
+    return entries
+
+
+def _agent_platform(name: str) -> tuple:
+    """The family and machine one agent package file is for.
+
+    Args:
+        name: The file name, as either format writes it.
+
+    Returns:
+        ``(family, architecture)``.
+
+    Raises:
+        SystemExit: When the name says either of them not at all.
+    """
+    family = AGENT_PACKAGE_FAMILY(name)
+    architecture = AGENT_PACKAGE_MACHINE(name)
+    if not family or not architecture:
+        raise SystemExit(f"{name} names no family and machine to serve it for")
+    return family, architecture
+
+
+def _agent_url_base() -> str:
+    """Where a release publishes the agent packages, empty for any other build."""
+    return os.environ.get(AGENT_PACKAGE_URL_BASE_ENV, "").strip()
 
 
 def stage_vendored(tree: Path, machine: str) -> None:

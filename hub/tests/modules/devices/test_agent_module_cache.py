@@ -47,7 +47,7 @@ UNKNOWN = {"os": "windows", "family": "", "arch": "amd64"}
 @pytest.fixture
 def cache(tmp_path):
     """A cache rooted in a temporary directory."""
-    return AgentModuleCache(root=tmp_path / "agent_modules")
+    return AgentModuleCache(root=tmp_path / "agent_module_cache")
 
 
 def serving(content=DEB, fetches=None):
