@@ -31,22 +31,25 @@ SSH_UNREACHABLE_STATUS = 255
 # and from SSH_UNREACHABLE_STATUS.
 SSH_UNSUPPORTED_OS_STATUS = 95
 
+# Who puts a module on a machine. platform: the OS carries it and the hub
+# switches it. hub: the hub fetches an artifact and the agent installs it.
+# user: the person installs it themselves and the hub only detects and
+# manages it — no order ever installs or uninstalls a user-tier module.
+AGENT_MODULE_INSTALLER_TIERS = ("platform", "hub", "user")
+AGENT_MODULE_INSTALLER_USER = "user"
+
 # The agent module cache: what the hub presents when it fetches a module for
 # a managed machine, and what it accepts back. The ceiling is generous —
 # remote desktop packages run past 100 MB — and exists so a mirror serving
 # something endless cannot fill the panel's memory.
 AGENT_MODULE_CACHE_DIR = UTILS_STATE_ROOT / "agent_modules"
-AGENT_MODULE_FETCH_IMPERSONATE = "chrome"
 AGENT_MODULE_FETCH_TIMEOUT_S = 300
 AGENT_MODULE_FETCH_LIMIT_BYTES = 512 * 1024 * 1024
-# A challenge page is a couple of kilobytes; no package this hub delivers is.
-AGENT_MODULE_MINIMUM_BYTES = 100 * 1024
 AGENT_MODULE_KEY_DIGEST_CHARS = 16
 AGENT_MODULE_GITHUB_API = "https://api.github.com/repos/{repo}/releases/latest"
 
-# Browser headers cost nothing and are what several vendor CDNs check before
-# serving anything but a challenge page. A TLS fingerprint takes more than a
-# header, which is what AGENT_MODULE_FETCH_IMPERSONATE is for.
+# Browser headers cost nothing; GitHub's API refuses a request that carries
+# no User-Agent at all.
 AGENT_MODULE_BROWSER_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "

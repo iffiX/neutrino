@@ -1,6 +1,6 @@
 """What the Modules block on a device is told, and what it can act on.
 
-The bug these came from: a device showed AnyDesk and ToDesk running in the
+The bug these came from: a device showed its remote desktop running in the
 remote-desktop block and "not installed, waiting for the agent" in the module
 list above it. Management is a completed handshake — a token the agent has
 authenticated with — so a failed install or a forgotten device never reads
@@ -99,7 +99,13 @@ def api(monkeypatch):
     monkeypatch.setattr(
         devices_router,
         "load_module_manifests",
-        lambda: {"anydesk": {"title": "AnyDesk", "platforms": {"debian": {}}}},
+        lambda: {
+            "fakedesk": {
+                "title": "FakeDesk",
+                "installer": "hub",
+                "platforms": {"debian": {}},
+            }
+        },
     )
     app = FastAPI()
     app.include_router(devices_router.router)
@@ -147,7 +153,7 @@ def test_what_the_agent_reported_is_found_whatever_case_the_MAC_is_asked_in(api)
     waiting for an agent that is in fact answering."""
     client, runtime = api
     FakeRegistry.device.client.last_seen = beating(2)
-    runtime.client_modules[MAC] = {"anydesk": {"state": "installed"}}
+    runtime.client_modules[MAC] = {"fakedesk": {"state": "installed"}}
 
     answer = client.get(f"/api/devices/{MAC.upper()}/modules").json()
 
@@ -199,15 +205,50 @@ def test_a_native_module_offers_nothing_where_the_platform_carries_it(api, monke
     assert package["is_native"] is False
 
 
+def test_the_installer_tier_reaches_the_row(api):
+    client, _ = api
+
+    answer = client.get(f"/api/devices/{MAC}/modules").json()
+
+    assert answer["modules"][0]["installer"] == "hub"
+
+
+def test_a_user_tier_click_queues_nothing_and_the_row_keeps_its_state(api, monkeypatch):
+    """user-tier rows never offer install or uninstall; a request arriving
+    anyway — an old page, a hand-built call — must order nothing."""
+    client, runtime = api
+    monkeypatch.setattr(
+        devices_router,
+        "load_module_manifests",
+        lambda: {
+            "teamviewer": {
+                "title": "TeamViewer",
+                "kind": "package",
+                "installer": "user",
+                "platforms": {"linux": {"verify": "command -v teamviewer"}},
+            }
+        },
+    )
+    runtime.client_modules[MAC] = {"teamviewer": {"state": "absent"}}
+
+    answer = client.put(
+        f"/api/devices/{MAC}/modules/teamviewer", json={"is_enabled": True}
+    ).json()
+
+    assert answer["modules"][0]["installer"] == "user"
+    assert answer["modules"][0]["state"] == "absent"
+    assert runtime.agent_module_orders.open_order_for(MAC, "teamviewer") is None
+
+
 def test_a_click_queues_one_order_and_the_row_shows_the_step(api):
     client, runtime = api
 
     answer = client.put(
-        f"/api/devices/{MAC}/modules/anydesk", json={"is_enabled": True}
+        f"/api/devices/{MAC}/modules/fakedesk", json={"is_enabled": True}
     ).json()
 
     assert answer["modules"][0]["state"] == "installing"
-    order = runtime.agent_module_orders.open_order_for(MAC, "anydesk")
+    order = runtime.agent_module_orders.open_order_for(MAC, "fakedesk")
     assert order is not None and order.action == "install"
     unknown = client.put(
         f"/api/devices/{MAC}/modules/nonsense", json={"is_enabled": True}
@@ -222,7 +263,7 @@ def test_forgetting_a_device_drops_what_was_queued_for_it(api, monkeypatch):
     client, runtime = api
     monkeypatch.setattr(FakeRegistry, "forget", lambda self, mac: None, raising=False)
     runtime.pending[MAC] = ["shutdown"]
-    runtime.client_modules[MAC] = {"anydesk": {"state": "installed"}}
+    runtime.client_modules[MAC] = {"fakedesk": {"state": "installed"}}
 
     assert client.delete(f"/api/devices/{MAC}").status_code == 200
 

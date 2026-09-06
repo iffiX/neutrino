@@ -258,14 +258,14 @@ def test_a_click_on_the_machine_becomes_one_order_and_nothing_stored(api):
 
     response = client.post(
         "/api/agent/heartbeat",
-        json=beat_body(module_requests={"anydesk": {"is_enabled": True}}),
+        json=beat_body(module_requests={"cc_switch": {"is_enabled": True}}),
     )
 
     assert response.status_code == 200
     # The machine's own page enters by the controller's door, so a click
     # there becomes an order exactly as the drawer's button would — and an
     # order is the whole of what it leaves behind.
-    order = runtime.agent_module_orders.open_order_for(MAC, "anydesk")
+    order = runtime.agent_module_orders.open_order_for(MAC, "cc_switch")
     assert order is not None
     assert order.action == "install"
     assert not hasattr(device.client, "modules")
@@ -896,7 +896,7 @@ def test_a_failed_order_waits_for_a_person_and_a_new_click_runs(api):
     controller = runtime.agent_module_orders
     order = controller.ask(
         mac_address=MAC.lower(),
-        module="anydesk",
+        module="cc_switch",
         manifest={"kind": "package", "platforms": {"linux": {"url": "u"}}},
         platform={"os": "linux", "family": "debian", "arch": "amd64"},
         action="install",
@@ -906,11 +906,11 @@ def test_a_failed_order_waits_for_a_person_and_a_new_click_runs(api):
     client.post(
         "/api/agent/heartbeat",
         json=_beat(
-            modules={"anydesk": {"state": "absent"}},
+            modules={"cc_switch": {"state": "absent"}},
             module_results=[
                 {
                     "id": order.id,
-                    "module": "anydesk",
+                    "module": "cc_switch",
                     "state": "failed",
                     "code": "install_failed",
                     "params": {},
@@ -920,18 +920,18 @@ def test_a_failed_order_waits_for_a_person_and_a_new_click_runs(api):
         ),
     )
 
-    assert controller.failure_for(MAC.lower(), "anydesk") is not None
+    assert controller.failure_for(MAC.lower(), "cc_switch") is not None
     # Beats change nothing while the failure stands.
     reply = client.post(
-        "/api/agent/heartbeat", json=_beat(modules={"anydesk": {"state": "absent"}})
+        "/api/agent/heartbeat", json=_beat(modules={"cc_switch": {"state": "absent"}})
     )
     assert reply.json()["module_orders"] == []
     # A person asking again is a fresh start.
     client.post(
         "/api/agent/heartbeat",
-        json=_beat(module_requests={"anydesk": {"is_enabled": True}}),
+        json=_beat(module_requests={"cc_switch": {"is_enabled": True}}),
     )
-    assert controller.failure_for(MAC.lower(), "anydesk") is None
+    assert controller.failure_for(MAC.lower(), "cc_switch") is None
 
 
 def _wait_for_handed(runtime, timeout_s: float = 3.0):

@@ -3,6 +3,7 @@
   "name": "cc_switch",
   "title": "cc-switch",
   "kind": "switcher",
+  "installer": "hub",
   "description": "Switches a machine's AI tools between providers; the AI service needs it",
   "platforms": {
     "linux-amd64": {

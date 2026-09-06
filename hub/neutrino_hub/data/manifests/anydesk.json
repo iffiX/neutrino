@@ -1,46 +1,19 @@
 {
-  "_comment": "Remote desktop. Linux builds come from AnyDesk's apt pool, which carries every architecture under one naming scheme; the Windows and macOS downloads are the vendor's evergreen links. No RHEL entry until one is verified — an unsupported platform is offered nothing rather than a guess.",
+  "_comment": "Remote desktop, user-installed: the vendor's terms do not allow redistribution or automated downloads, so the hub never fetches it — it only detects what the person put there and manages it. PowerShell's Test-Path prints False but exits 0, so the Windows check turns the result into the exit status.",
   "name": "anydesk",
   "title": "AnyDesk",
   "kind": "package",
+  "installer": "user",
   "description": "Remote desktop, reachable by AnyDesk address",
   "platforms": {
-    "linux-debian-amd64": {
-      "url": "https://deb.anydesk.com/pool/main/a/anydesk/anydesk_8.0.4_amd64.deb",
-      "package_kind": "deb",
-      "uninstall": "apt-get remove -y anydesk"
+    "linux": {
+      "verify": "which anydesk"
     },
-    "linux-debian-arm64": {
-      "url": "https://deb.anydesk.com/pool/main/a/anydesk/anydesk_8.0.4_arm64.deb",
-      "package_kind": "deb",
-      "uninstall": "apt-get remove -y anydesk"
-    },
-    "linux-debian-armhf": {
-      "url": "https://deb.anydesk.com/pool/main/a/anydesk/anydesk_6.3.0_armhf.deb",
-      "package_kind": "deb",
-      "uninstall": "apt-get remove -y anydesk"
-    },
-    "windows-amd64": {
-      "url": "https://download.anydesk.com/AnyDesk.exe",
-      "package_kind": "exe",
-      "install_args": [
-        "--install",
-        "C:\\Program Files (x86)\\AnyDesk",
-        "--start-with-win",
-        "--silent"
-      ],
-      "uninstall": "\"C:\\\\Program Files (x86)\\\\AnyDesk\\\\AnyDesk.exe\" --remove --silent"
+    "windows": {
+      "verify": "powershell -NoProfile -Command \"if (Test-Path 'C:\\Program Files (x86)\\AnyDesk\\AnyDesk.exe') { exit 0 } else { exit 1 }\""
     },
     "darwin": {
-      "url": "https://download.anydesk.com/anydesk.dmg",
-      "package_kind": "dmg",
-      "app_name": "AnyDesk.app",
-      "uninstall": "rm -rf /Applications/AnyDesk.app"
+      "verify": "test -d /Applications/AnyDesk.app"
     }
-  },
-  "verify": {
-    "linux": "which anydesk",
-    "windows": "powershell -NoProfile -Command \"if (Test-Path 'C:\\Program Files (x86)\\AnyDesk\\AnyDesk.exe') { exit 0 } else { exit 1 }\"",
-    "darwin": "test -d /Applications/AnyDesk.app"
   }
 }

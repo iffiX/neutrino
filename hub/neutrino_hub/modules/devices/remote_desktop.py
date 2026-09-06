@@ -1,12 +1,10 @@
 """Reading remote-desktop software on a device over SSH.
 
-Two products are covered, AnyDesk and ToDesk, because the hub lives in one
-country and its owner is often in another — remote desktop is the way back to
-a work machine. What this reads is the part only the running product knows:
-whether its service is up, the session id someone connects to, and — for
-AnyDesk — the unattended password. Putting either product on a machine, or
-taking it off, is a module the agent reconciles from ``manifests/``; a second
-installer here would be a second answer to the same question.
+AnyDesk is the one product covered. What this reads is the part only the
+running product knows: whether its service is up, the session id someone
+connects to, and the unattended password. AnyDesk is a user-tier module —
+the person puts it on the machine, and the hub only detects and manages
+what is already there.
 
 Commands run with a forced UTF-8 locale: AnyDesk refuses to start without one,
 and an SSH session carries none by default.
@@ -19,23 +17,15 @@ from dataclasses import dataclass
 from neutrino_hub.modules.devices.constants import SSH_UNREACHABLE_STATUS
 from neutrino_hub.modules.devices.ssh_ops import DeviceSshOperator
 
-SUPPORTED_PRODUCTS = ("anydesk", "todesk")
+SUPPORTED_PRODUCTS = ("anydesk",)
 
-# How each product identifies itself on a device. ToDesk here is the Host
-# build — the unattended one a gateway needs — whose package, service, and
-# install path all differ from the regular ToDesk desktop app.
+# How the product identifies itself on a device.
 _PRODUCT_UNITS = {
     "anydesk": {
         "binary": "anydesk",
         "service": "anydesk",
         "package": "anydesk",
         "paths": ("/usr/bin/anydesk",),
-    },
-    "todesk": {
-        "binary": "todesk",
-        "service": "todeskd",
-        "package": "todesk",
-        "paths": ("/opt/todesk/bin/ToDesk",),
     },
 }
 
@@ -45,7 +35,7 @@ class RemoteDesktopStatus:
     """What a device's remote-desktop software is doing.
 
     Attributes:
-        product: Either ``anydesk`` or ``todesk``.
+        product: One of :data:`SUPPORTED_PRODUCTS`.
         is_installed: Whether the product is on the device.
         is_running: Whether its background service is active.
         session_id: The id to connect to, when it can be read.
@@ -86,7 +76,7 @@ class RemoteDesktopManager:
         installed" rather than erroring the whole page.
 
         Args:
-            product: Either ``anydesk`` or ``todesk``.
+            product: One of :data:`SUPPORTED_PRODUCTS`.
 
         Returns:
             The product's status: whether it is there, whether it is running,
@@ -99,9 +89,8 @@ class RemoteDesktopManager:
         units = _PRODUCT_UNITS[product]
         service = units["service"]
 
-        # ToDesk installs outside PATH, so `command -v` alone misses it and the
-        # panel wrongly reads "not installed". Its install path and package
-        # database entry are both checked as well.
+        # The binary, its install path and the package database are all
+        # checked, so a build outside PATH still reads installed.
         checks = [f"command -v {units['binary']}"]
         checks += [f"ls {path} 2>/dev/null" for path in units["paths"]]
         checks += [
@@ -115,7 +104,7 @@ class RemoteDesktopManager:
                 is_installed=False,
                 is_running=False,
                 session_id=None,
-                can_set_password=product == "anydesk",
+                can_set_password=True,
                 unreachable=output.strip() or "the device could not be reached",
             )
         if code != 0:
@@ -124,7 +113,7 @@ class RemoteDesktopManager:
                 is_installed=False,
                 is_running=False,
                 session_id=None,
-                can_set_password=product == "anydesk",
+                can_set_password=True,
             )
 
         _, running = await self._operator.run_once(f"systemctl is-active {service}")
@@ -138,8 +127,8 @@ class RemoteDesktopManager:
             product=product,
             is_installed=True,
             is_running=running.strip() == "active",
-            session_id=await self._session_id(product),
-            can_set_password=product == "anydesk",
+            session_id=await self._session_id(),
+            can_set_password=True,
         )
 
     async def set_password_stream(
@@ -149,7 +138,7 @@ class RemoteDesktopManager:
         access so a connection needs no one to click Accept on the device.
 
         Args:
-            product: Either ``anydesk`` or ``todesk``.
+            product: One of :data:`SUPPORTED_PRODUCTS`.
             password: The unattended password to set.
 
         Yields:
@@ -159,12 +148,6 @@ class RemoteDesktopManager:
             ValueError: If the product is unknown.
         """
         self._require_product(product)
-        if product != "anydesk":
-            yield (
-                "[ToDesk has no headless password command; set it once in the "
-                "ToDesk app on the device, then its id shows here]\n"
-            )
-            return
         # Set it as the login user, not through sudo. AnyDesk keeps two separate
         # configs — the system service under /etc/anydesk, and the desktop
         # session under the user's ~/.anydesk. A person connecting back to their
@@ -181,22 +164,8 @@ class RemoteDesktopManager:
             yield chunk
         yield "\n[done — connect with the AnyDesk id above and this password]\n"
 
-    async def _session_id(self, product: str) -> str | None:
-        if product == "anydesk":
-            code, output = await self._operator.run_once("anydesk --get-id")
-            if code == 0 and output.strip().isdigit():
-                return output.strip()
-            return None
-        # ToDesk has no id-query command — its binaries are daemons, and running
-        # one directly starts a second server rather than answering. The id its
-        # servers assign lands in config_slave.ini once someone signs in on the
-        # device, so that one file is read. config.ini is deliberately excluded:
-        # it holds unrelated long numbers (a download timestamp among them) that
-        # a looser search mistakes for an id.
-        code, output = await self._operator.run_privileged_once(
-            "grep -oE '[0-9]{6,12}' /opt/todesk/config/config_slave.ini "
-            "2>/dev/null | head -1"
-        )
+    async def _session_id(self) -> str | None:
+        code, output = await self._operator.run_once("anydesk --get-id")
         if code == 0 and output.strip().isdigit():
             return output.strip()
         return None

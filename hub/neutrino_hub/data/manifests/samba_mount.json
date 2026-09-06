@@ -3,6 +3,7 @@
   "name": "samba_mount",
   "title": "Samba mount",
   "kind": "system_package",
+  "installer": "platform",
   "description": "Mounts published shares; the file service needs it",
   "platforms": {
     "linux-debian": {

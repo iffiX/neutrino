@@ -16,11 +16,11 @@ from neutrino_agent.modules.package import PackageModuleRunner
 from neutrino_agent.platforms.base import AgentPlatform, PlatformUnsupportedError
 
 DEB_MODULE = {
-    "title": "ToDesk",
+    "title": "FakeDesk",
     "kind": "package",
-    "entry": {"package_kind": "deb", "uninstall": "apt-get remove -y todesk"},
+    "entry": {"package_kind": "deb", "uninstall": "apt-get remove -y fakedesk"},
     "verify": "",
-    "package": "todesk",
+    "package": "fakedesk",
 }
 
 COMMAND_MODULE = {
@@ -94,7 +94,7 @@ def test_a_deb_uninstall_purges_the_resolved_package_name(runner):
     module.uninstall(DEB_MODULE)
 
     # apt-get remove leaves the `rc` state, whose remnant reads as installed.
-    assert platform.uninstalls == ["apt-get purge -y todesk"]
+    assert platform.uninstalls == ["apt-get purge -y fakedesk"]
 
 
 def test_a_non_deb_uninstall_keeps_the_catalog_command(runner):
@@ -142,7 +142,7 @@ def test_deb_verify_reads_dpkgs_own_status_word(
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     assert module.verify(DEB_MODULE) is is_installed
-    assert seen["command"] == ["dpkg-query", "-W", "-f=${Status}", "todesk"]
+    assert seen["command"] == ["dpkg-query", "-W", "-f=${Status}", "fakedesk"]
 
 
 def test_deb_verify_an_unknown_package_is_absent(runner, monkeypatch):

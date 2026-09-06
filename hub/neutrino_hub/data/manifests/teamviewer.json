@@ -1,0 +1,19 @@
+{
+  "_comment": "Remote desktop, user-installed: the vendor's terms do not allow redistribution or automated downloads, so the hub never fetches it — it only detects what the person put there and manages it. The Windows check reads the registry keys both installer widths write, turned into an honest exit status because Test-Path itself always exits 0.",
+  "name": "teamviewer",
+  "title": "TeamViewer",
+  "kind": "package",
+  "installer": "user",
+  "description": "Remote desktop, reachable by TeamViewer ID",
+  "platforms": {
+    "linux": {
+      "verify": "command -v teamviewer"
+    },
+    "windows": {
+      "verify": "powershell -NoProfile -Command \"if ((Test-Path 'HKLM:\\SOFTWARE\\TeamViewer') -or (Test-Path 'HKLM:\\SOFTWARE\\WOW6432Node\\TeamViewer')) { exit 0 } else { exit 1 }\""
+    },
+    "darwin": {
+      "verify": "test -d /Applications/TeamViewer.app"
+    }
+  }
+}

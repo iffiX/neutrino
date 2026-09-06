@@ -19,16 +19,14 @@ import "./remote_desktop_panel.css";
 /**
  * Remote-desktop status and management for one device.
  *
- * A device that already runs AnyDesk or ToDesk shows the id someone connects
- * to, whether or not this hub put it there, and — where the product allows it
- * headless — takes an unattended password. Putting either product on a machine
- * is a module the agent reconciles from the manifests, so this panel does not
- * offer a second way to do the same thing.
+ * A device that already runs AnyDesk shows the id someone connects to,
+ * whether or not this hub put it there, and takes an unattended password.
+ * AnyDesk is a user-tier module the person installs themselves, so this
+ * panel only reads and manages what is already on the machine.
  */
 
 const PRODUCT_LABELS: Record<string, string> = {
   anydesk: "AnyDesk",
-  todesk: "ToDesk",
 };
 
 interface RemoteDesktopPanelProps {
@@ -103,12 +101,6 @@ export function RemoteDesktopPanel({
             isBusy={task.isRunning}
             onRun={runTask}
           />
-          <ProductCard
-            status={status.todesk}
-            macAddress={device.mac_address}
-            isBusy={task.isRunning}
-            onRun={runTask}
-          />
         </div>
       )}
 
@@ -179,9 +171,7 @@ function ProductCard({ status, macAddress, isBusy, onRun }: ProductCardProps) {
           </div>
           {status.session_id === null && (
             <span className="field_hint">
-              {status.product === "todesk"
-                ? "No id yet; sign in to ToDesk on the device."
-                : `No id yet; assigned once the device connects to ${label}.`}
+              {`No id yet; assigned once the device connects to ${label}.`}
             </span>
           )}
           {status.can_set_password ? (

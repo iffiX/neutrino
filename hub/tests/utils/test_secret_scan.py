@@ -153,7 +153,7 @@ def test_findings_do_not_republish_what_they_found():
 
 def test_a_four_part_version_number_is_not_an_address():
     assert rules('"version": "4.8.6.2"') == []
-    assert rules("todesk release 4.8.5.1 for arm64") == []
+    assert rules("fakedesk release 4.8.5.1 for arm64") == []
     assert rules("v1.2.3.4") == []
 
 
@@ -165,7 +165,7 @@ def test_a_real_address_beside_a_version_is_still_reported():
 
 def test_small_parts_all_the_way_down_read_as_a_version():
     assert rules("installing 4.8.6.2 on the device") == []
-    assert rules('"todesk": "4.8.6.2"') == []
+    assert rules('"fakedesk": "4.8.6.2"') == []
     assert rules("bumped to 10.15.3.1") == []
 
 

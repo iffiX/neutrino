@@ -29,6 +29,7 @@ from neutrino_hub.modules.devices.agent_module_cache import (
     resolve_platform_entry,
 )
 from neutrino_hub.modules.devices.constants import (
+    AGENT_MODULE_INSTALLER_USER,
     AGENT_MODULE_ORDER_HISTORY,
     AGENT_MODULE_ORDER_TIMEOUT_S,
 )
@@ -199,10 +200,13 @@ class AgentModuleController:
             the asker wants it.
 
         Raises:
-            ValueError: For an action that is not one of the two.
+            ValueError: For an action that is not one of the two, or for a
+                user-tier module, which the person installs themselves.
         """
         if action not in ORDER_ACTIONS:
             raise ValueError(f"unknown order action {action!r}")
+        if str(manifest.get("installer", "")) == AGENT_MODULE_INSTALLER_USER:
+            raise ValueError(f"module {module!r} is user-tier; it takes no order")
         key = (mac_address or "").lower()
         # The person has spoken again, so the last attempt's verdict is no
         # longer the answer to anything anybody is asking.
@@ -556,8 +560,12 @@ def order_action_for(
         is_enabled: What the person asked for.
 
     Returns:
-        The action, or None when the manifest offers this platform nothing.
+        The action, or None when the manifest offers this platform nothing
+        or the module is user-tier — the person installs those themselves,
+        and the hub only detects and manages them.
     """
+    if str(manifest.get("installer", "")) == AGENT_MODULE_INSTALLER_USER:
+        return None
     _, entry = resolve_platform_entry(manifest, platform)
     if entry is None and platform:
         return None

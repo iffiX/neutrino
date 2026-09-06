@@ -3,6 +3,7 @@
   "name": "openssh_server",
   "title": "SSH server",
   "kind": "openssh",
+  "installer": "platform",
   "description": "Lets the gateway manage this machine directly over SSH",
   "platforms": {
     "linux-debian": {

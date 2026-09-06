@@ -31,21 +31,21 @@ def resolve_module(manifest: dict, platform: dict) -> dict:
         platform: The tuple the agent reported.
 
     Returns:
-        The module's title and kind, plus the entry, verify command and
-        package name for this platform. ``entry`` is None where the manifest
-        offers this platform nothing, which is the machine's whole basis for
-        reporting the module unsupported.
+        The module's title, kind and installer tier, plus the entry, verify
+        command and package name for this platform. ``entry`` is None where
+        the manifest offers this platform nothing, which is the machine's
+        whole basis for reporting the module unsupported.
     """
     platform_key, entry = resolve_platform_entry(manifest, platform)
-    os_name = str(platform.get("os", "")) if platform else ""
     resolved = entry if entry is not None else {}
     return {
         "title": manifest.get("title", manifest.get("name", "")),
         "description": manifest.get("description", ""),
         "kind": manifest.get("kind", ""),
+        "installer": str(manifest.get("installer", "")),
         "platform_key": platform_key,
         "entry": entry,
-        "verify": str(manifest.get("verify", {}).get(os_name, "") or ""),
+        "verify": str(resolved.get("verify", "") or ""),
         "package": str(resolved.get("package", "") or manifest.get("name", "")),
     }
 

@@ -48,8 +48,8 @@ Mirrored the same way under `hub/tests/`, summarized by area:
 
 | Area | What its tests pin |
 | --- | --- |
-| `modules/<name>/` | Renderers and collectors stay pure and are tested as functions: config in, files or lists out. The service-list collector (module entries live only while the module serves, manual entries keep their probes, no credential in any entry), the catalog cache and its stamps, the vault, each module's applier where it fixes the machine (gitea owning its work root). |
-| `web/` | Routers through a test client: the agent wire (both version gates and the generation gate, per-account key grant and revocation, a locked vault degrading instead of failing a beat), that a click is one order and a beat orders nothing by itself, the Origin belt on state-changing panel routes, session auth, every `{code, params}` refusal shape, and the models the frontend mirrors. |
+| `modules/<name>/` | Renderers and collectors stay pure and are tested as functions: config in, files or lists out. The service-list collector (module entries live only while the module serves, manual entries keep their probes, no credential in any entry), the catalog cache and its stamps, the manifest loader's installer-tier gate (every manifest names platform, hub or user, or is refused), the vault, each module's applier where it fixes the machine (gitea owning its work root). |
+| `web/` | Routers through a test client: the agent wire (both version gates and the generation gate, per-account key grant and revocation, a locked vault degrading instead of failing a beat), that a click is one order and a beat orders nothing by itself (a user-tier module takes no order at all), the Origin belt on state-changing panel routes, session auth, every `{code, params}` refusal shape, and the models the frontend mirrors. |
 | `cli/` | Setup's screens by their document form, root gates, apply's component list — the apply-path symmetry that has bitten twice is pinned here. |
 
 ## The integration block

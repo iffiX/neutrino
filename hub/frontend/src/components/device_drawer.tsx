@@ -151,11 +151,7 @@ const ORDER_ACTION_WORDING: Record<string, string> = {
 const ORDER_ERROR_WORDING: Record<string, string> = {
   no_platform_build: "There is no build of it for this machine.",
   no_download_named: "The catalog names no download for this machine.",
-  vendor_served_a_page:
-    "The vendor served a challenge page instead of the package. Install it by hand on the machine; this row turns green by itself once it is there.",
   module_fetch_failed: "The hub could not fetch it from the vendor.",
-  module_fetch_unavailable:
-    "This hub cannot fetch downloads a vendor gates on a browser.",
   module_fetch_too_large:
     "The vendor's download is larger than the hub will fetch.",
   module_release_unreadable: "The hub could not read that project's releases.",

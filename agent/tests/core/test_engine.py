@@ -12,16 +12,16 @@ from neutrino_agent.core.engine import ModuleEngine
 from neutrino_agent.modules.installers import InstallError
 from neutrino_agent.platforms.base import AgentPlatform, PlatformUnsupportedError
 
-DEB_ENTRY = {"package_kind": "deb", "uninstall": "apt-get remove -y todesk"}
+DEB_ENTRY = {"package_kind": "deb", "uninstall": "apt-get remove -y fakedesk"}
 
 CATALOG = {
     "modules": {
-        "todesk": {
-            "title": "ToDesk",
+        "fakedesk": {
+            "title": "FakeDesk",
             "kind": "package",
             "entry": DEB_ENTRY,
             "verify": "",
-            "package": "todesk",
+            "package": "fakedesk",
         }
     },
     "services": [],
@@ -131,16 +131,16 @@ def test_an_order_installs_what_it_is_given_and_reports_done():
         orders=[
             {
                 "id": "order-1",
-                "module": "todesk",
+                "module": "fakedesk",
                 "action": "install",
-                "artifact_key": "todesk-linux-debian-amd64-aaaa",
+                "artifact_key": "fakedesk-linux-debian-amd64-aaaa",
                 "package_kind": "deb",
             }
         ],
     )
     engine._reconcile()
 
-    assert fetches == ["todesk-linux-debian-amd64-aaaa"]
+    assert fetches == ["fakedesk-linux-debian-amd64-aaaa"]
     assert platform.installs == [("deb", DEB_ENTRY)]
     result = engine.results()[0]
     assert result["id"] == "order-1"
@@ -148,7 +148,7 @@ def test_an_order_installs_what_it_is_given_and_reports_done():
     # Success carries its output too: a result rides once, so the log of
     # something that worked costs one message and is what a person
     # watching an install came to read.
-    assert "todesk: installing" in result["output"]
+    assert "fakedesk: installing" in result["output"]
 
 
 def test_an_install_the_machine_cannot_confirm_is_failed_not_latched():
@@ -160,7 +160,7 @@ def test_an_install_the_machine_cannot_confirm_is_failed_not_latched():
         orders=[
             {
                 "id": "order-1",
-                "module": "todesk",
+                "module": "fakedesk",
                 "action": "install",
                 "artifact_key": "key",
                 "package_kind": "deb",
@@ -186,7 +186,7 @@ def test_a_failed_install_reports_the_output_it_produced():
         orders=[
             {
                 "id": "order-1",
-                "module": "todesk",
+                "module": "fakedesk",
                 "action": "install",
                 "artifact_key": "key",
                 "package_kind": "deb",
@@ -204,7 +204,7 @@ def test_a_failed_install_reports_the_output_it_produced():
 
 def test_a_refused_fetch_is_reported_with_the_hubs_own_code():
     def refuse(artifact_key, destination):
-        return {"code": "vendor_served_a_page", "params": {"size": 2048}}
+        return {"code": "module_fetch_failed", "params": {"detail": "refused"}}
 
     engine = bare_engine(fetch_artifact=refuse, verified=[False])
 
@@ -214,7 +214,7 @@ def test_a_refused_fetch_is_reported_with_the_hubs_own_code():
         orders=[
             {
                 "id": "order-1",
-                "module": "todesk",
+                "module": "fakedesk",
                 "action": "install",
                 "artifact_key": "key",
                 "package_kind": "deb",
@@ -224,8 +224,8 @@ def test_a_refused_fetch_is_reported_with_the_hubs_own_code():
     engine._reconcile()
 
     result = engine.results()[0]
-    assert result["code"] == "vendor_served_a_page"
-    assert result["params"] == {"size": 2048}
+    assert result["code"] == "module_fetch_failed"
+    assert result["params"] == {"detail": "refused"}
 
 
 def test_an_uninstall_is_run_and_confirmed():
@@ -235,11 +235,11 @@ def test_an_uninstall_is_run_and_confirmed():
     engine.update(
         catalog=None,
         catalog_hash="abc",
-        orders=[{"id": "order-1", "module": "todesk", "action": "uninstall"}],
+        orders=[{"id": "order-1", "module": "fakedesk", "action": "uninstall"}],
     )
     engine._reconcile()
 
-    assert platform.uninstalls == ["apt-get purge -y todesk"]
+    assert platform.uninstalls == ["apt-get purge -y fakedesk"]
     assert engine.results()[0]["state"] == "done"
 
 
@@ -249,7 +249,7 @@ def test_an_uninstall_that_did_not_take_is_reported_failed():
     engine.update(
         catalog=None,
         catalog_hash="abc",
-        orders=[{"id": "order-1", "module": "todesk", "action": "uninstall"}],
+        orders=[{"id": "order-1", "module": "fakedesk", "action": "uninstall"}],
     )
     engine._reconcile()
 
@@ -261,7 +261,7 @@ def test_no_tick_ever_reruns_a_failed_order():
     engine = bare_engine(fetch_artifact=landing_fetch(fetches), verified=[False])
     order = {
         "id": "order-1",
-        "module": "todesk",
+        "module": "fakedesk",
         "action": "install",
         "artifact_key": "key",
         "package_kind": "deb",
@@ -284,7 +284,7 @@ def test_asking_again_is_a_new_order_and_runs():
     engine = bare_engine(fetch_artifact=landing_fetch(fetches), verified=[False])
     first = {
         "id": "order-1",
-        "module": "todesk",
+        "module": "fakedesk",
         "action": "install",
         "artifact_key": "key",
         "package_kind": "deb",
@@ -303,7 +303,7 @@ def test_a_result_the_hub_has_stopped_asking_about_is_dropped():
     engine = bare_engine(fetch_artifact=landing_fetch([]), verified=[True])
     order = {
         "id": "order-1",
-        "module": "todesk",
+        "module": "fakedesk",
         "action": "install",
         "artifact_key": "key",
         "package_kind": "deb",
@@ -321,7 +321,7 @@ def test_a_result_the_hub_has_stopped_asking_about_is_dropped():
 def test_an_order_for_a_module_with_no_build_here_is_refused_not_attempted():
     fetches: list = []
     engine = bare_engine(fetch_artifact=landing_fetch(fetches))
-    engine._catalog = {"modules": {"todesk": {"kind": "package", "entry": None}}}
+    engine._catalog = {"modules": {"fakedesk": {"kind": "package", "entry": None}}}
 
     engine.update(
         catalog=None,
@@ -329,7 +329,7 @@ def test_an_order_for_a_module_with_no_build_here_is_refused_not_attempted():
         orders=[
             {
                 "id": "order-1",
-                "module": "todesk",
+                "module": "fakedesk",
                 "action": "install",
                 "artifact_key": "key",
             }
@@ -347,7 +347,7 @@ def test_an_action_this_agent_does_not_know_is_typed_not_guessed():
     engine.update(
         catalog=None,
         catalog_hash="abc",
-        orders=[{"id": "order-1", "module": "todesk", "action": "reticulate"}],
+        orders=[{"id": "order-1", "module": "fakedesk", "action": "reticulate"}],
     )
     engine._reconcile()
 
@@ -367,7 +367,7 @@ def test_a_platform_that_installs_nothing_is_reported_not_raised():
         orders=[
             {
                 "id": "order-1",
-                "module": "todesk",
+                "module": "fakedesk",
                 "action": "install",
                 "artifact_key": "key",
                 "package_kind": "deb",
@@ -387,16 +387,16 @@ def test_reporting_a_module_touches_nothing():
 
     assert platform.installs == []
     assert platform.uninstalls == []
-    assert engine.report()["todesk"]["state"] == "installed"
+    assert engine.report()["fakedesk"]["state"] == "installed"
 
 
 def test_a_module_with_no_build_here_is_reported_unsupported_not_failed():
     engine = bare_engine()
-    engine._catalog = {"modules": {"todesk": {"kind": "package", "entry": None}}}
+    engine._catalog = {"modules": {"fakedesk": {"kind": "package", "entry": None}}}
 
     engine._refresh(is_forced=True)
 
-    assert engine.report()["todesk"] == {
+    assert engine.report()["fakedesk"] == {
         "state": "unsupported",
         "code": "no_platform_build",
         "params": {},
@@ -438,7 +438,7 @@ def test_the_engine_holds_no_failure_memory():
         orders=[
             {
                 "id": "order-1",
-                "module": "todesk",
+                "module": "fakedesk",
                 "action": "install",
                 "artifact_key": "key",
                 "package_kind": "deb",

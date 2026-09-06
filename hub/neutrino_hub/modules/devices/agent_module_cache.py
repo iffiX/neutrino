@@ -1,9 +1,8 @@
 """Turning "this machine, on this platform, wants this module" into bytes.
 
 The hub is the only thing that fetches a module, so everything a fetch needs
-— the manifest's platform table, a browser's TLS fingerprint, GitHub's
-release API, and the judgment of whether what arrived is a package at all —
-lives here rather than on a machine that carries no dependencies.
+— the manifest's platform table and GitHub's release API — lives here rather
+than on a machine that carries no dependencies.
 
 **The cache key is the module name, the platform key it resolved, and a
 digest of the resolved entry itself.** A manifest carries no version number,
@@ -25,15 +24,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from neutrino_hub.modules.devices.constants import (
+    AGENT_MODULE_PACKAGE_MAGIC,
     AGENT_MODULE_BROWSER_HEADERS,
     AGENT_MODULE_CACHE_DIR,
-    AGENT_MODULE_FETCH_IMPERSONATE,
     AGENT_MODULE_FETCH_LIMIT_BYTES,
     AGENT_MODULE_FETCH_TIMEOUT_S,
     AGENT_MODULE_GITHUB_API,
     AGENT_MODULE_KEY_DIGEST_CHARS,
-    AGENT_MODULE_MINIMUM_BYTES,
-    AGENT_MODULE_PACKAGE_MAGIC,
 )
 
 
@@ -116,18 +113,18 @@ def resolve_platform_entry(manifest: dict, platform: dict) -> tuple:
 
 
 def looks_like_package(content: bytes, package_kind: str) -> bool:
-    """Whether these bytes open like the package kind they claim to be.
+    """Whether a payload opens like its claimed package kind.
 
     Args:
-        content: What arrived.
+        content: The downloaded bytes.
         package_kind: The kind the manifest names.
 
     Returns:
-        True when the magic matches, or when the kind is one this does not
-        know — an unknown kind is not evidence of a page.
+        True when the payload starts with one of the kind's magic prefixes,
+        or when the kind names no magic to check.
     """
     magic = AGENT_MODULE_PACKAGE_MAGIC.get(package_kind)
-    if magic is None:
+    if not magic:
         return True
     return any(content.startswith(prefix) for prefix in magic)
 
@@ -198,7 +195,7 @@ class AgentModuleCache:
                 return AgentModuleArtifact(
                     key=key, path=path, digest=held, package_kind=package_kind
                 )
-            content = self._fetch(entry, manifest=manifest, package_kind=package_kind)
+            content = self._fetch(entry)
             self._write(path, content)
             return AgentModuleArtifact(
                 key=key,
@@ -312,20 +309,20 @@ class AgentModuleCache:
                 "module_cache_unwritable", detail=str(error)[:200]
             ) from error
 
-    def _fetch(self, entry: dict, *, manifest: dict, package_kind: str) -> bytes:
-        """Get one module's bytes, as a browser would where the vendor insists.
+    def _fetch(self, entry: dict) -> bytes:
+        """Get one module's bytes.
 
         Args:
             entry: The manifest's entry for this platform.
-            manifest: The module's manifest, which says whether the vendor
-                gates on a TLS fingerprint.
-            package_kind: The kind the bytes should be.
 
         Returns:
             The package.
 
         Raises:
-            AgentModuleFetchError: With the typed reason.
+            AgentModuleFetchError: With the typed reason; a payload that does
+                not open like the entry's package kind is
+                ``module_fetch_failed``, so an error page never gets cached
+                as a package.
         """
         url = str(entry.get("url", "") or "")
         if not url and entry.get("github_repo"):
@@ -334,61 +331,23 @@ class AgentModuleCache:
             )
         if not url:
             raise AgentModuleFetchError("no_download_named")
-        is_impersonated = bool(manifest.get("download", {}).get("impersonate"))
-        content = (
-            self._fetch_impersonated(url) if is_impersonated else self._fetch_plain(url)
-        )
+        content = self._fetch_plain(url)
         if len(content) > AGENT_MODULE_FETCH_LIMIT_BYTES:
             raise AgentModuleFetchError(
                 "module_fetch_too_large",
                 limit_mb=AGENT_MODULE_FETCH_LIMIT_BYTES // (1024 * 1024),
             )
-        # A CDN refusing a fetcher does not answer with an error: it serves a
-        # challenge page under HTTP 200, and installing that fails in a way
-        # that reads like a broken package rather than a blocked download.
-        if len(content) < AGENT_MODULE_MINIMUM_BYTES or not looks_like_package(
-            content, package_kind
-        ):
+        package_kind = str(entry.get("package_kind", "") or "")
+        if not looks_like_package(content, package_kind):
             raise AgentModuleFetchError(
-                "vendor_served_a_page", size=len(content), package_kind=package_kind
+                "module_fetch_failed",
+                detail=f"the download does not open like a {package_kind} package",
             )
         return content
 
     @staticmethod
-    def _fetch_impersonated(url: str) -> bytes:
-        """Fetch presenting a browser's TLS fingerprint.
-
-        Args:
-            url: What the manifest names.
-
-        Returns:
-            The body.
-
-        Raises:
-            AgentModuleFetchError: ``module_fetch_unavailable`` with no
-                impersonating fetcher installed, ``module_fetch_failed``
-                when the request itself failed.
-        """
-        try:
-            from curl_cffi import requests
-        except ImportError as error:
-            raise AgentModuleFetchError("module_fetch_unavailable") from error
-        try:
-            response = requests.get(
-                url,
-                impersonate=AGENT_MODULE_FETCH_IMPERSONATE,
-                timeout=AGENT_MODULE_FETCH_TIMEOUT_S,
-            )
-            response.raise_for_status()
-        except Exception as error:  # noqa: BLE001 - any failure is one answer
-            raise AgentModuleFetchError(
-                "module_fetch_failed", detail=str(error)[:200]
-            ) from error
-        return response.content
-
-    @staticmethod
     def _fetch_plain(url: str) -> bytes:
-        """Fetch with a browser's headers, which cost nothing and pass most gates.
+        """Fetch directly, with ordinary browser headers.
 
         Args:
             url: What the manifest names.

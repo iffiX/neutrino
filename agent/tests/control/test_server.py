@@ -114,6 +114,9 @@ def test_socket_state_is_scoped_to_the_peer(control):
     assert state["ai_targets"] == {"alice": True}
     assert [m["name"] for m in state["modules"]] == ["openssh_server"]
     assert state["modules"][0]["kind"] == "openssh"
+    # The tier rides the row, so the page can withhold the buttons a
+    # user-tier module never offers.
+    assert state["modules"][0]["installer"] == "platform"
 
 
 def test_the_state_carries_the_mount_location_shape_for_every_scope(control):
@@ -208,9 +211,9 @@ def test_the_state_carries_the_hubs_operation_for_every_scope(control):
     operation = {
         "kind": "order",
         "action": "install",
-        "title": "ToDesk",
+        "title": "FakeDesk",
         "state": "installing",
-        "output": "todesk: installing",
+        "output": "fakedesk: installing",
     }
     agent.operation_payload = operation
 

@@ -17,7 +17,7 @@ ip addr show; ip route; resolvectl status | grep -A2 'DNS Servers'
 curl -s https://ifconfig.me; echo
 
 # 3. Does the direct path work? This should show your local WAN address —
-#    it is the path ToDesk and anything else that must look local uses.
+#    the path remote desktop and anything else that must look local uses.
 curl -s --proxy socks5h://192.168.100.1:1080 https://ifconfig.me; echo
 
 # 4. Is GeoIP split routing working? With it on, a Chinese destination

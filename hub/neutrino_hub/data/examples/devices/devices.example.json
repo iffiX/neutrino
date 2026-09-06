@@ -13,7 +13,7 @@
         "auth": "key",
         "key_id": "d9d20c004ab4b212",
         "password_id": null,
-        "_comment_sudo": "sudo_password_id names the sealed password piped to sudo for one-click installs (ToDesk, AnyDesk, neutrino_client). Leave null if the account has passwordless sudo.",
+        "_comment_sudo": "sudo_password_id names the sealed password piped to sudo for privileged SSH work, chiefly the one-click agent install. Leave null if the account has passwordless sudo.",
         "sudo_password_id": null
       },
       "_comment_client": "Filled in automatically once neutrino_client is installed on the device.",

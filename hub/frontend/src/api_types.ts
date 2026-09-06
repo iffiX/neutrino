@@ -22,7 +22,7 @@ export type DeviceActionName = "install_client" | "reboot" | "shutdown";
 
 /** One remote-desktop product's state on a device. */
 export interface RemoteDesktopStatus {
-  product: "anydesk" | "todesk";
+  product: "anydesk";
   is_installed: boolean;
   is_running: boolean;
   /** Why the device could not be asked, empty when it was. A machine that is
@@ -32,10 +32,9 @@ export interface RemoteDesktopStatus {
   can_set_password: boolean;
 }
 
-/** Both remote-desktop products' state on a device. */
+/** The remote-desktop product's state on a device. */
 export interface RemoteDesktopView {
   anydesk: RemoteDesktopStatus;
-  todesk: RemoteDesktopStatus;
 }
 
 export type ModuleActionName =
@@ -748,6 +747,10 @@ export interface DeviceModuleView {
   description: string;
   /** The manifest kind; the SSH server's uninstall confirmation keys on it. */
   kind: string;
+  /** Who installs it: platform (the OS carries it), hub (the hub fetches
+   * it), or user (the person installs it; the hub only detects and
+   * manages). A user-tier row offers no install or uninstall button. */
+  installer: string;
   is_supported: boolean;
   /** The platform carries this natively: worded built in, no button. */
   is_native: boolean;

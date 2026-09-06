@@ -894,9 +894,9 @@ def test_the_replys_operation_is_the_pages_and_follows_the_hub(config_path):
     operation = {
         "kind": "order",
         "action": "install",
-        "title": "ToDesk",
+        "title": "FakeDesk",
         "state": "installing",
-        "output": "todesk: installing",
+        "output": "fakedesk: installing",
     }
     agent = scripted_agent(
         config_path,

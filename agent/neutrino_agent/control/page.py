@@ -133,6 +133,7 @@ const WORDS = {
     install: "Install",
     uninstall: "Uninstall",
     built_in: "built in",
+    user_tier: "Install it on the machine yourself; the hub only manages it",
     uninstall_ssh_title: "Uninstall the SSH server?",
     uninstall_ssh_body:
       "SSH stops answering on this machine; the agent channel keeps managing it.",
@@ -200,9 +201,7 @@ const WORDS = {
   codes: {
     no_platform_build: "no version of this exists for this machine",
     install_unconfirmed: "the install finished, but the software cannot be found",
-    vendor_served_a_page: "the vendor served a challenge page, not the package — install it by hand and this row follows",
     module_fetch_failed: "the hub could not fetch this from the vendor",
-    module_fetch_unavailable: "the hub cannot fetch downloads gated on a browser",
     module_fetch_too_large: "the vendor's download is larger than the hub will fetch",
     module_release_unreadable: "the hub could not read that project's releases",
     module_cache_unwritable: "the hub could not save the download",
@@ -575,6 +574,8 @@ function drawModules(state) {
     const worded = wordCode(m.code, m.params);
     const note = !m.is_supported ? WORDS.ui.not_for_platform
       : m.is_native ? WORDS.ui.built_in
+      : m.installer === 'user' && m.state === 'absent'
+        ? WORDS.states.absent + ' — ' + WORDS.ui.user_tier
       : (WORDS.states[m.state] || WORDS.states.unknown) +
         (worded ? ' — ' + worded : '');
     const row = document.createElement('div');
@@ -584,8 +585,9 @@ function drawModules(state) {
       '<div class="body"><div class="title">' + m.title + '</div>' +
       '<div class="note">' + m.description + '</div>' +
       '<div class="note">' + note + '</div></div>';
-    // A module the platform carries natively offers nothing to press.
-    if (m.is_native) {
+    // A module the platform carries natively, or one the person installs
+    // themselves, offers nothing to press.
+    if (m.is_native || m.installer === 'user') {
       panel.appendChild(row);
       continue;
     }

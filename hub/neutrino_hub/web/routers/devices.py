@@ -486,6 +486,7 @@ def list_modules(
                 title=manifest.get("title", name),
                 description=manifest.get("description", ""),
                 kind=manifest.get("kind", ""),
+                installer=manifest.get("installer", ""),
                 # With no platform reported yet, nothing is ruled out: the
                 # agent will say what it cannot do once it beats.
                 is_supported=(any(key in platforms for key in keys) if keys else True),
@@ -816,8 +817,8 @@ async def remote_desktop_status(mac_address: str) -> RemoteDesktopView:
         mac_address: The device's MAC.
 
     Returns:
-        AnyDesk and ToDesk state, each showing whether it is installed and
-        running and, when it can be read, its session id to connect to.
+        AnyDesk state, showing whether it is installed and running and, when
+        it can be read, its session id to connect to.
 
     Raises:
         HTTPException: 409 when the device has no SSH credentials to probe with.
@@ -835,7 +836,6 @@ async def remote_desktop_status(mac_address: str) -> RemoteDesktopView:
     )
     return RemoteDesktopView(
         anydesk=_remote_desktop_view(await manager.status("anydesk")),
-        todesk=_remote_desktop_view(await manager.status("todesk")),
     )
 
 
@@ -852,7 +852,7 @@ async def set_remote_desktop_password(
 
     Args:
         mac_address: The device's MAC.
-        product: Either ``anydesk`` or ``todesk``.
+        product: One of ``SUPPORTED_PRODUCTS``.
         request: The password to set.
         runtime: The shared runtime.
 

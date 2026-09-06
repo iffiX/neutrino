@@ -6,9 +6,5 @@
   "admin_password_hash": "PLACEHOLDER_ARGON2ID_HASH",
   "session_ttl_hours": 168,
 
-  "_comment_client": "Path to the neutrino_client tarball offered to LAN devices for one-click install. Build it in the neutrino_client repo and drop it in config/devices/packages/.",
-
-  "_comment_remote_desktop": "Where the Devices tab downloads AnyDesk/ToDesk from. These vendor URLs change with each release; update them here if an install reports the download is not a Debian package. Omit the block to use the built-in defaults.",
-  "remote_desktop": {
-  }
+  "_comment_client": "Path to the neutrino_client tarball offered to LAN devices for one-click install. Build it in the neutrino_client repo and drop it in config/devices/packages/."
 }

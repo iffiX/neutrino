@@ -3,12 +3,29 @@
 What the panel offers, what the catalog resolves and what an agent installs
 all read these files, so the modules the design names are pinned here as
 shipped — cc-switch as a real module, the mount tooling as a distro package,
-and the SSH server under its plain title.
+the SSH server under its plain title, and the remote desktops as user-tier
+detection with nothing to download. Every manifest names its installer tier;
+the loader refuses one that does not, so a wrong file fails here instead of
+shipping.
 """
+
+import json
+
+import pytest
 
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_SWITCHER_NAME
 from neutrino_hub.modules.devices.catalog import resolve_module
+from neutrino_hub.modules.devices import manifests as manifests_module
 from neutrino_hub.modules.devices.manifests import load_module_manifests
+
+# The fields that mean the hub downloads something. A user-tier manifest
+# carrying any of them is one the hub would fetch for after all.
+DOWNLOAD_FIELDS = ("url", "github_repo", "asset_pattern", "download")
+
+
+def write_manifest(directory, name: str, manifest: dict) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{name}.json").write_text(json.dumps(manifest), encoding="utf-8")
 
 
 def test_cc_switch_is_a_shipped_module_not_an_injection():
@@ -44,15 +61,90 @@ def test_the_ssh_server_wears_its_plain_title():
     assert load_module_manifests()["openssh_server"]["title"] == "SSH server"
 
 
+def test_every_shipped_manifest_names_its_installer_tier():
+    tiers = {
+        name: manifest["installer"]
+        for name, manifest in load_module_manifests().items()
+    }
+
+    assert tiers == {
+        "openssh_server": "platform",
+        "samba_mount": "platform",
+        "cc_switch": "hub",
+        "anydesk": "user",
+        "teamviewer": "user",
+    }
+
+
+def test_todesk_is_not_shipped_any_more():
+    assert "todesk" not in load_module_manifests()
+
+
+@pytest.mark.parametrize("tier", ["platform", "hub", "user"])
+def test_the_loader_accepts_each_tier(tier, tmp_path, monkeypatch):
+    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
+    write_manifest(tmp_path, "sample", {"name": "sample", "installer": tier})
+
+    assert load_module_manifests()["sample"]["installer"] == tier
+
+
+@pytest.mark.parametrize(
+    "manifest", [{"name": "sample"}, {"name": "sample", "installer": "vendor"}]
+)
+def test_the_loader_refuses_a_manifest_without_a_real_tier(
+    manifest, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
+    write_manifest(tmp_path, "sample", manifest)
+
+    with pytest.raises(ValueError) as refusal:
+        load_module_manifests()
+
+    assert "sample.json" in str(refusal.value)
+    assert "installer" in str(refusal.value)
+
+
+def test_user_tier_manifests_carry_nothing_to_download():
+    for name, manifest in load_module_manifests().items():
+        if manifest["installer"] != "user":
+            continue
+        assert not any(field in manifest for field in DOWNLOAD_FIELDS), name
+        for entry in manifest["platforms"].values():
+            assert not any(field in entry for field in DOWNLOAD_FIELDS), name
+
+
 def test_windows_verify_commands_fail_when_the_software_is_absent():
     # PowerShell Test-Path prints False but exits 0, so a bare Test-Path
     # reads absent software as installed. A windows verify built on it must
     # turn the result into a nonzero exit.
     verified = []
     for name, manifest in load_module_manifests().items():
-        command = manifest.get("verify", {}).get("windows", "")
+        command = manifest.get("platforms", {}).get("windows", {}).get("verify", "")
         if "Test-Path" not in command:
             continue
         assert "exit 1" in command, f"{name} reads absent software as installed"
         verified.append(name)
-    assert set(verified) == {"anydesk", "todesk"}
+    assert set(verified) == {"anydesk", "teamviewer"}
+
+
+def test_a_user_tier_module_resolves_to_its_verify_on_each_platform():
+    manifest = load_module_manifests()["teamviewer"]
+
+    for os_name in ("linux", "windows", "darwin"):
+        resolved = resolve_module(
+            manifest, {"os": os_name, "family": "", "arch": "amd64"}
+        )
+        assert resolved["installer"] == "user"
+        assert resolved["verify"]
+        # A non-empty entry: supported, and never worded built in.
+        assert resolved["entry"] not in (None, {})
+
+
+def test_the_resolved_module_carries_the_installer_tier():
+    manifest = load_module_manifests()["cc_switch"]
+
+    resolved = resolve_module(
+        manifest, {"os": "linux", "family": "debian", "arch": "amd64"}
+    )
+
+    assert resolved["installer"] == "hub"

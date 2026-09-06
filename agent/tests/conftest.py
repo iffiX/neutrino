@@ -169,6 +169,7 @@ class FakeControlAgent:
                     "title": "SSH server",
                     "description": "",
                     "kind": "openssh",
+                    "installer": "platform",
                     "platform_key": "linux-debian",
                     "entry": {"packages": ["openssh-server"], "service": "ssh"},
                     "verify": "",

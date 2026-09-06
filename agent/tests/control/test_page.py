@@ -417,9 +417,22 @@ def test_installing_missing_modules_is_ordinary_asks_in_order():
 
 
 def test_a_native_module_row_reads_built_in_and_offers_no_button():
-    assert "if (m.is_native) {" in CONTROL_PAGE_HTML
+    assert "if (m.is_native || m.installer === 'user') {" in CONTROL_PAGE_HTML
     assert 'built_in: "built in"' in CONTROL_PAGE_HTML
     assert "m.is_native ? WORDS.ui.built_in" in CONTROL_PAGE_HTML
+
+
+def test_an_absent_user_tier_row_words_the_tier_and_offers_no_button():
+    # The person installs the software; the row only shows what is detected.
+    assert (
+        'user_tier: "Install it on the machine yourself; ' 'the hub only manages it"'
+    ) in CONTROL_PAGE_HTML
+    assert "m.installer === 'user' && m.state === 'absent'" in CONTROL_PAGE_HTML
+    assert ("WORDS.states.absent + ' — ' + WORDS.ui.user_tier") in CONTROL_PAGE_HTML
+
+
+def test_the_impersonation_wording_is_gone_with_its_code():
+    assert "module_fetch_unavailable" not in CONTROL_PAGE_HTML
 
 
 def test_uninstalling_the_ssh_server_asks_first():

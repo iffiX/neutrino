@@ -123,13 +123,13 @@ def test_the_bytes_are_asked_for_on_their_own_endpoint(config_path):
 
     agent._channel.post_download = fake_download
 
-    refusal = agent._fetch_artifact("todesk-linux-debian-amd64-abcd", "/dev/null")
+    refusal = agent._fetch_artifact("fakedesk-linux-debian-amd64-abcd", "/dev/null")
 
     assert refusal == {}
     # A beat stays a beat: the order names a key, and the bytes come over
     # the download endpoint the self-update already uses the shape of.
     assert asked[0][0] == AGENT_MODULE_PACKAGE_PATH
-    assert asked[0][1] == {"artifact_key": "todesk-linux-debian-amd64-abcd"}
+    assert asked[0][1] == {"artifact_key": "fakedesk-linux-debian-amd64-abcd"}
 
 
 def test_bytes_that_do_not_match_the_hubs_digest_are_refused(config_path, tmp_path):

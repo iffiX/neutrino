@@ -930,10 +930,9 @@ class RemoteDesktopStatusView(BaseModel):
 
 
 class RemoteDesktopView(BaseModel):
-    """Both remote-desktop products' state on a device."""
+    """The remote-desktop product's state on a device."""
 
     anydesk: RemoteDesktopStatusView
-    todesk: RemoteDesktopStatusView
 
 
 class RemoteDesktopPassword(BaseModel):
@@ -1279,6 +1278,10 @@ class DeviceModuleView(BaseModel):
     description: str = ""
     # The manifest kind; the SSH server's uninstall confirmation keys on it.
     kind: str = ""
+    # Who installs it: platform (the OS carries it), hub (the hub fetches
+    # it), or user (the person installs it; the hub only detects and
+    # manages). A user-tier row offers no install or uninstall button.
+    installer: str = ""
     is_supported: bool = True
     # The platform carries this natively: worded built in, no button.
     is_native: bool = False

@@ -21,8 +21,10 @@ import "./device_modules.css";
  * A module with no build for a platform is shown greyed rather than hidden:
  * knowing a machine cannot run something is worth more than wondering where
  * it went. A module the platform carries natively is worded built in, with
- * no button. Uninstalling the SSH server asks first, because losing SSH can
- * lock a person out.
+ * no button. A user-tier module offers no button either: the person installs
+ * it themselves, and the row only shows what the machine detects.
+ * Uninstalling the SSH server asks first, because losing SSH can lock a
+ * person out.
  */
 
 const WORDING = {
@@ -34,6 +36,7 @@ const WORDING = {
     "answers.",
   noBuild: "No build for this platform",
   builtIn: "built in",
+  userTier: "Install it on the machine yourself; the hub only manages it",
   install: "Install",
   uninstall: "Uninstall",
   uninstallSshTitle: "Uninstall the SSH server on {title}",
@@ -46,6 +49,10 @@ const WORDING = {
 // person out of a machine the agent is not on yet.
 const OPENSSH_KIND = "openssh";
 
+// The installer tier whose rows never offer install or uninstall: the
+// person puts the software there, and the hub only detects and manages it.
+const USER_INSTALLER = "user";
+
 // The agent's {code, params} beside a state, worded. A code without an entry
 // shows as itself, because a failure hidden entirely is worse than a bare code.
 const MODULE_ERROR_WORDING: Record<string, string> = {
@@ -57,11 +64,7 @@ const MODULE_ERROR_WORDING: Record<string, string> = {
     "The install finished, but the software cannot be found on the machine.",
   uninstall_unconfirmed:
     "The uninstall finished, but the software is still there.",
-  vendor_served_a_page:
-    "The vendor served a challenge page instead of the package. Install it by hand on the machine; this row turns green by itself once it is there.",
   module_fetch_failed: "The hub could not fetch the package from the vendor.",
-  module_fetch_unavailable:
-    "This hub cannot fetch downloads a vendor gates on a browser.",
   module_fetch_too_large:
     "The vendor's download is larger than the hub will fetch.",
   module_release_unreadable: "The hub could not read that project's releases.",
@@ -276,23 +279,24 @@ export function DeviceModules({
                     : WORDING.noBuild}
                 </span>
               </div>
-              {!deviceModule.is_native && (
-                <button
-                  type="button"
-                  className={`button button--small ${
-                    isHere ? "button--danger" : "button--ok"
-                  }`}
-                  disabled={!isActionable}
-                  onClick={() =>
-                    isHere
-                      ? askOff(deviceModule)
-                      : void ask(deviceModule, { is_enabled: true })
-                  }
-                >
-                  <Icon name={isHere ? "trash" : "download"} size={13} />
-                  {isHere ? WORDING.uninstall : WORDING.install}
-                </button>
-              )}
+              {!deviceModule.is_native &&
+                deviceModule.installer !== USER_INSTALLER && (
+                  <button
+                    type="button"
+                    className={`button button--small ${
+                      isHere ? "button--danger" : "button--ok"
+                    }`}
+                    disabled={!isActionable}
+                    onClick={() =>
+                      isHere
+                        ? askOff(deviceModule)
+                        : void ask(deviceModule, { is_enabled: true })
+                    }
+                  >
+                    <Icon name={isHere ? "trash" : "download"} size={13} />
+                    {isHere ? WORDING.uninstall : WORDING.install}
+                  </button>
+                )}
             </div>
           );
         })}
@@ -366,6 +370,12 @@ function describeModule(deviceModule: DeviceModuleView): string {
     ? WORDING.builtIn
     : STATE_WORDING[deviceModule.state];
   const parts = [stateWording ?? STATE_WORDING_FALLBACK];
+  if (
+    deviceModule.installer === USER_INSTALLER &&
+    deviceModule.state === "absent"
+  ) {
+    parts.push(WORDING.userTier);
+  }
   if (deviceModule.code && !BUSY_STATES.includes(deviceModule.state)) {
     parts.push(MODULE_ERROR_WORDING[deviceModule.code] ?? deviceModule.code);
   }

@@ -126,6 +126,9 @@ def _module_rows(agent, modules: dict) -> list:
                 "title": resolved.get("title", name),
                 "description": resolved.get("description", ""),
                 "kind": resolved.get("kind", ""),
+                # user-tier rows offer no button: the person installs the
+                # software, and the row only shows what is detected.
+                "installer": resolved.get("installer", ""),
                 "is_supported": resolved.get("entry") is not None,
                 # The platform carries this natively: worded built in, no
                 # button.

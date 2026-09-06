@@ -34,7 +34,8 @@ OTHER_MAC = "11:22:33:44:55:66"
 AMD64 = {"os": "linux", "family": "debian", "arch": "amd64"}
 
 MANIFEST = {
-    "name": "todesk",
+    "name": "fakedesk",
+    "installer": "hub",
     "platforms": {
         "linux-debian-amd64": {"url": "https://x/y.deb", "package_kind": "deb"}
     },
@@ -42,16 +43,24 @@ MANIFEST = {
 OPENSSH = {
     "name": "openssh_server",
     "kind": "openssh",
+    "installer": "platform",
     "platforms": {"linux-debian": {"packages": ["openssh-server"], "service": "ssh"}},
 }
 SYSTEM = {
     "name": "samba_mount",
     "kind": "system_package",
+    "installer": "platform",
     "platforms": {
         "linux-debian": {"packages": ["cifs-utils"]},
         "windows": {},
         "darwin": {},
     },
+}
+USER = {
+    "name": "teamviewer",
+    "kind": "package",
+    "installer": "user",
+    "platforms": {"linux": {"verify": "command -v teamviewer"}},
 }
 
 
@@ -96,7 +105,7 @@ def wait_for(predicate, timeout_s: float = 3.0) -> bool:
     return False
 
 
-def ask_install(controller, *, mac=MAC, module="todesk", manifest=MANIFEST):
+def ask_install(controller, *, mac=MAC, module="fakedesk", manifest=MANIFEST):
     return controller.ask(
         mac_address=mac,
         module=module,
@@ -114,8 +123,8 @@ def test_an_order_is_handed_down_once_it_has_its_bytes(controller):
     assert wait_for(lambda: orders.pending_order(MAC) is not None)
     standing = orders.pending_order(MAC)
     assert standing.id == order.id
-    assert standing.artifact_key == "todesk-key"
-    assert cache.asked == ["todesk"]
+    assert standing.artifact_key == "fakedesk-key"
+    assert cache.asked == ["fakedesk"]
 
 
 def test_the_same_order_is_handed_down_until_the_machine_answers(controller):
@@ -135,19 +144,19 @@ def test_two_requests_for_one_device_run_in_turn(controller):
     cache.gate = threading.Event()
 
     first = ask_install(orders)
-    second = ask_install(orders, module="anydesk")
+    second = ask_install(orders, module="otherdesk")
 
-    assert wait_for(lambda: cache.asked == ["todesk"])
+    assert wait_for(lambda: cache.asked == ["fakedesk"])
     # The second is queued behind the first, not started beside it: two
     # package managers on one machine is the failure this prevents.
-    assert cache.asked == ["todesk"]
+    assert cache.asked == ["fakedesk"]
     assert orders.pending_order(MAC) is None
     cache.gate.set()
     assert wait_for(lambda: orders.pending_order(MAC) is not None)
     assert orders.pending_order(MAC).id == first.id
 
     orders.record_result(mac_address=MAC, order_id=first.id, state="done")
-    assert wait_for(lambda: cache.asked == ["todesk", "anydesk"])
+    assert wait_for(lambda: cache.asked == ["fakedesk", "otherdesk"])
     assert wait_for(lambda: (orders.pending_order(MAC) or first).id == second.id)
 
 
@@ -173,7 +182,7 @@ def test_the_ssh_bootstrap_shares_the_device_lock_without_a_module_order(control
     # same lock the device owns.
     assert locks.is_held(MAC) is True
     assert locks.is_held(OTHER_MAC) is False
-    assert [order.module for order in orders.orders(MAC)] == ["todesk"]
+    assert [order.module for order in orders.orders(MAC)] == ["fakedesk"]
 
     took_it = threading.Event()
 
@@ -194,27 +203,27 @@ def test_the_ssh_bootstrap_shares_the_device_lock_without_a_module_order(control
 
 def test_a_failure_is_recorded_and_no_tick_ever_retries_it(controller):
     orders, cache, _ = controller
-    cache.error = AgentModuleFetchError("vendor_served_a_page", size=2048)
+    cache.error = AgentModuleFetchError("module_fetch_failed", detail="refused")
 
     order = ask_install(orders)
     assert wait_for(lambda: not order.is_open)
 
     assert order.state == ORDER_FAILED
-    assert order.code == "vendor_served_a_page"
-    assert order.params == {"size": 2048}
+    assert order.code == "module_fetch_failed"
+    assert order.params == {"detail": "refused"}
     # Nothing is queued behind it and nothing re-runs: the only fetch was
     # the one attempt.
     for _ in range(5):
         orders.pending_order(MAC)
-        orders.note_reported_states(MAC, {"todesk": {"state": "absent"}})
+        orders.note_reported_states(MAC, {"fakedesk": {"state": "absent"}})
     time.sleep(0.2)
-    assert cache.asked == ["todesk"]
-    assert orders.failure_for(MAC, "todesk").id == order.id
+    assert cache.asked == ["fakedesk"]
+    assert orders.failure_for(MAC, "fakedesk").id == order.id
 
 
 def test_asking_again_is_a_new_order_and_runs(controller):
     orders, cache, _ = controller
-    cache.error = AgentModuleFetchError("vendor_served_a_page")
+    cache.error = AgentModuleFetchError("module_fetch_failed")
     first = ask_install(orders)
     assert wait_for(lambda: not first.is_open)
 
@@ -223,28 +232,28 @@ def test_asking_again_is_a_new_order_and_runs(controller):
 
     assert second.id != first.id
     assert wait_for(lambda: orders.pending_order(MAC) is not None)
-    assert cache.asked == ["todesk", "todesk"]
+    assert cache.asked == ["fakedesk", "fakedesk"]
     # A person asking is a fresh start, so the old verdict is gone.
-    assert orders.failure_for(MAC, "todesk") is None
+    assert orders.failure_for(MAC, "fakedesk") is None
 
 
 def test_the_software_turning_up_anyway_clears_the_failure(controller):
     orders, cache, _ = controller
-    cache.error = AgentModuleFetchError("vendor_served_a_page")
+    cache.error = AgentModuleFetchError("module_fetch_failed")
     order = ask_install(orders)
     assert wait_for(lambda: not order.is_open)
-    assert orders.failure_for(MAC, "todesk") is not None
+    assert orders.failure_for(MAC, "fakedesk") is not None
 
     # Somebody installed it by hand; the question the failure asked is
     # settled, so it goes without anyone clearing it.
-    orders.note_reported_states(MAC, {"todesk": {"state": "installed"}})
+    orders.note_reported_states(MAC, {"fakedesk": {"state": "installed"}})
 
-    assert orders.failure_for(MAC, "todesk") is None
+    assert orders.failure_for(MAC, "fakedesk") is None
 
 
 def test_the_opposite_action_clears_the_failure_and_orders_nothing(controller):
     orders, cache, _ = controller
-    cache.error = AgentModuleFetchError("vendor_served_a_page")
+    cache.error = AgentModuleFetchError("module_fetch_failed")
     failed = ask_install(orders)
     assert wait_for(lambda: not failed.is_open)
 
@@ -252,7 +261,7 @@ def test_the_opposite_action_clears_the_failure_and_orders_nothing(controller):
     # question is settled already, so there is nothing to send.
     undone = orders.ask(
         mac_address=MAC,
-        module="todesk",
+        module="fakedesk",
         manifest=MANIFEST,
         platform=AMD64,
         action="uninstall",
@@ -260,7 +269,7 @@ def test_the_opposite_action_clears_the_failure_and_orders_nothing(controller):
     )
 
     assert undone is None
-    assert orders.failure_for(MAC, "todesk") is None
+    assert orders.failure_for(MAC, "fakedesk") is None
 
 
 def test_an_uninstall_of_something_present_is_ordered(controller):
@@ -268,7 +277,7 @@ def test_an_uninstall_of_something_present_is_ordered(controller):
 
     order = orders.ask(
         mac_address=MAC,
-        module="todesk",
+        module="fakedesk",
         manifest=MANIFEST,
         platform=AMD64,
         action="uninstall",
@@ -314,7 +323,7 @@ def test_the_history_is_what_the_install_pane_reads(controller):
 
     view = orders.orders(MAC)[0].to_view()
 
-    assert view["module"] == "todesk"
+    assert view["module"] == "fakedesk"
     assert view["state"] == "failed"
     assert view["output"] == "dpkg: held broken packages"
     # The manifest it was resolved from is not the panel's business.
@@ -331,7 +340,7 @@ def test_forgetting_a_device_drops_everything_held_for_it(controller):
     orders.forget(MAC)
 
     assert orders.orders(MAC) == []
-    assert orders.failure_for(MAC, "todesk") is None
+    assert orders.failure_for(MAC, "fakedesk") is None
 
 
 @pytest.mark.parametrize(
@@ -367,6 +376,44 @@ def test_a_platform_that_carries_the_module_natively_is_asked_nothing():
         )
 
 
+def test_a_user_tier_module_is_asked_nothing_either_way():
+    # The person installs it themselves; the hub only detects and manages.
+    for is_enabled in (True, False):
+        assert (
+            order_action_for(manifest=USER, platform=AMD64, is_enabled=is_enabled)
+            is None
+        )
+
+
+def test_a_user_tier_click_queues_no_order(controller):
+    orders, cache, _ = controller
+
+    order = ask_module(
+        controller=orders,
+        mac_address=MAC,
+        module="teamviewer",
+        manifest=USER,
+        platform=AMD64,
+        is_enabled=True,
+    )
+
+    assert order is None
+    assert cache.asked == []
+
+
+def test_the_controller_refuses_a_user_tier_order_outright(controller):
+    orders, _, _ = controller
+
+    with pytest.raises(ValueError):
+        orders.ask(
+            mac_address=MAC,
+            module="teamviewer",
+            manifest=USER,
+            platform=AMD64,
+            action="install",
+        )
+
+
 def test_a_distro_package_order_takes_the_queue_but_skips_the_cache(controller):
     orders, cache, locks = controller
 
@@ -397,7 +444,7 @@ def test_a_module_with_no_build_here_is_asked_nothing(controller):
     order = ask_module(
         controller=orders,
         mac_address=MAC,
-        module="todesk",
+        module="fakedesk",
         manifest=MANIFEST,
         platform={"os": "windows", "family": "", "arch": "amd64"},
         is_enabled=True,
@@ -413,7 +460,7 @@ def test_an_action_that_is_not_one_of_the_four_is_refused(controller):
     with pytest.raises(ValueError):
         orders.ask(
             mac_address=MAC,
-            module="todesk",
+            module="fakedesk",
             manifest=MANIFEST,
             platform=AMD64,
             action="reticulate",
