@@ -77,8 +77,11 @@
   font-size: 12px;
 }
 
+/* A running container carries four buttons. The row wraps, so the group has
+   to wrap with it rather than run one unbreakable line past the card. */
 .container_row_actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
   margin-left: auto;
 }

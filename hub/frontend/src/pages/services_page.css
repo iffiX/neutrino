@@ -3,8 +3,12 @@
   flex-direction: column;
 }
 
+/* A declared row carries Test and Delete where a module row carries nothing,
+   and that pair neither shrinks nor breaks. In portrait it wraps to a line of
+   its own rather than leaving the card. */
 .published_row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-3) 0;
@@ -15,12 +19,14 @@
   border-bottom: none;
 }
 
+/* Wide enough that the payload keeps a readable measure; past that the row
+   wraps instead of squeezing the address to nothing. */
 .published_row_body {
   display: flex;
   flex: 1;
   flex-direction: column;
   gap: 2px;
-  min-width: 0;
+  min-width: 180px;
 }
 
 .published_row_head {
@@ -33,6 +39,7 @@
 .published_row_title {
   font-size: 14px;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .published_row_payload {

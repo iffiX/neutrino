@@ -1,15 +1,21 @@
 .app_shell {
   min-height: 100vh;
+  min-height: 100dvh;
   padding-left: var(--sidebar-width);
 }
 
 /* The window's height, exactly — not at least. A page can then ask to fill what
    is left of it (the Terminal does), which needs a height to divide up rather
-   than one that grows to fit whatever it is given. */
+   than one that grows to fit whatever it is given.
+   The dynamic unit is what a phone browser's retracting address bar leaves
+   visible; 100vh there is the taller measure, and the difference is a window
+   scroll that carries the top bar off the screen and puts the end of the page
+   under the bottom bar. */
 .app_shell_main {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
 }
 
 /* So scrolling happens here rather than on the window, which also keeps the
@@ -52,11 +58,15 @@
   animation: drift 34s ease-in-out infinite reverse;
 }
 
+/* A flex item of the scrolling body, so it would otherwise be squeezed back to
+   the visible height and let the page overflow it — and content that overflows
+   the box the padding belongs to is content the bottom bar covers. */
 .app_shell_content {
   position: relative;
   z-index: 1;
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   min-height: 100%;
 }
 
