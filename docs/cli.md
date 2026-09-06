@@ -307,6 +307,88 @@ Three things break independently, and a device missing from the hub's panel
 looks the same for all three: the machine never joined, the service is not
 running, or the hub cannot be reached from here. This says which.
 
+### module
+
+> `nagent module list`
+
+One row per module, as the agent's page shows them: name, title, and the
+state table's word — with `built in` where the platform carries the module
+natively and the failure's wording where a row has one.
+
+> `nagent module install <name>`
+> `nagent module uninstall <name>`
+
+Posts the page's own ask to the running agent — the click rides up with the
+next heartbeat and the hub decides — then follows the operation stream,
+printing its output until it closes: exit 0 on done, nonzero on failed. The
+SSH server's uninstall asks for confirmation first.
+
+> `--no-wait`
+
+Posts the ask and returns.
+
+> `--yes`
+
+Skips the SSH server's confirmation (uninstall only).
+
+These commands talk to the running agent over its control socket, in the
+scope the kernel says the caller owns: an ordinary account hears the
+channel's own refusal, the same one that greys the page's buttons.
+
+### operation
+
+> `nagent operation`
+
+The current or last operation on this machine — the same stream the hub's
+drawer and the agent's page render — as one standing line plus its output.
+
+> `--follow`
+
+Keeps polling until the operation closes.
+
+### service
+
+> `nagent service list`
+
+Every published entry, nested the way the page nests them: a kind heading
+(Web, Ports, AI, Files), then numbered entries in the state's own order.
+An entry whose modules are missing lists them, with the install command.
+Actions address an entry by its per-kind number or by its id.
+
+> `nagent service web open <n|id>`
+
+Opens the default browser on the entry's published URL.
+
+> `nagent service port forward <n|id>`
+> `nagent service port unforward <n|id>`
+
+Starts or stops the entry's loopback relay and prints the `127.0.0.1`
+endpoint. A forward binds the loopback the whole machine shares.
+
+> `nagent service file config <n|id> --path <path> [--username <name>]`
+
+Saves the share's login and mounts it at the path. The password is asked on
+the terminal and never appears on a command line.
+
+> `nagent service file mount <n|id>`
+> `nagent service file unmount <n|id>`
+
+Mounts the share again with its saved login, or unmounts it; the saved
+login stays for the next mount.
+
+> `nagent service ai show`
+
+The AI entry and each account's standing at the gateway — the page's chips.
+
+> `nagent service ai apply --account <name> [--account <name> ...]`
+
+Commits one whole target set, exactly the page's Apply: the named accounts
+become the entire enabled set and every other account is put back the way
+activation found it. No `--account` disables everyone. The model knobs —
+`--claude-default`, `--claude-opus`, `--claude-sonnet`, `--claude-haiku`,
+`--codex-model`, `--codex-effort`, `--gemini-model` — keep the machine's
+choice when omitted; an empty value returns one to the gateway default.
+
 ## Both
 
 > `--dev`

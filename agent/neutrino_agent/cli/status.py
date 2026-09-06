@@ -33,6 +33,13 @@ ERROR_WORDS = {
         "this agent's build does not match the hub; it reinstalls itself "
         "from the hub's package"
     ),
+    "agent_update_fetch_failed": (
+        "self-update failed: the package could not be fetched from the hub"
+    ),
+    "hub_reply_unreadable": "the hub sent a reply this agent could not read",
+    "agent_package_missing": (
+        "the hub has no agent package for this machine's platform"
+    ),
 }
 ERROR_ADVICE = {
     "hub_refused": (

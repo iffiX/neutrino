@@ -131,6 +131,17 @@ class FakeControlPlatform(AgentPlatform):
             raise self.fs_error
 
 
+class FakeSocketPlatform(FakeControlPlatform):
+    """The control platform plus the socket path the CLI commands ask for."""
+
+    def __init__(self, socket_path: str):
+        super().__init__()
+        self._socket_path = socket_path
+
+    def control_socket_path(self) -> str:
+        return self._socket_path
+
+
 class FakeControlAgent:
     def __init__(self):
         self.requested = []

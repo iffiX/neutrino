@@ -24,9 +24,10 @@ CODE_PATTERNS = (
     re.compile(r'else\s+"([a-z][a-z0-9_]*)"'),
 )
 
-# Strings the else-pattern catches that are not codes: state words and the
-# rpm family's fallback package manager.
-NON_CODES = {"absent", "disabled", "yum"}
+# Strings the else-pattern catches that are not codes: state words, the
+# rpm family's fallback package manager, and the CLI surface's own verb
+# and switch words.
+NON_CODES = {"absent", "disabled", "yum", "off", "uninstall"}
 
 # Codes only the socket transport can answer with: the page's own requests
 # always carry its Origin, a JSON content type and a kernel-free token, so
@@ -67,8 +68,9 @@ STATE_PATTERNS = (
 )
 
 # Strings the else-pattern catches that are not states: a code the codes
-# test covers, and the rpm family's fallback package manager.
-NON_STATES = {"agent_update_fetch_failed", "yum"}
+# test covers, the rpm family's fallback package manager, and the CLI
+# surface's own verb and switch words.
+NON_STATES = {"agent_update_fetch_failed", "yum", "off", "uninstall"}
 
 # Mount record states the page words through ``is_attached`` rather than a
 # states entry: an attached record shows the ok dot, a detached one the

@@ -87,6 +87,13 @@ AGENT_CONTROL_TOKEN_IDLE_TTL_S = 10
 # How often a waiting `nagent ui` asks whether its token is still alive.
 AGENT_UI_WATCH_INTERVAL_S = 2
 
+# How the module and operation commands follow the hub's one operation
+# stream: how often they ask the running agent, and how long a posted ask
+# may wait for the hub to open an order — the same two minutes a surface's
+# optimistic step may stand.
+AGENT_CLI_FOLLOW_INTERVAL_S = 2
+AGENT_CLI_FOLLOW_PATIENCE_S = 120
+
 # Where the machine keeps its service choices — AI switching targets and
 # mount records. Machine state: it survives a hub restore and appears in no
 # hub backup. Mount passwords never enter it; each mount record has its own
