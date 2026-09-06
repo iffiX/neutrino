@@ -37,6 +37,7 @@ def main() -> int:
     Returns:
         The subcommand's exit status.
     """
+    _use_utf8_console()
     parser = argparse.ArgumentParser(prog="nagent", description=__doc__.splitlines()[0])
     parser.add_argument("--version", action="version", version=AGENT_VERSION)
     subparsers = parser.add_subparsers(dest="command", metavar="<command>")
@@ -84,6 +85,23 @@ def main() -> int:
     if arguments.command == "ui":
         return ui.main()
     return status.main()
+
+
+def _use_utf8_console() -> None:
+    """Print UTF-8 on Windows, where the console default mangles em-dashes.
+
+    A redirected stream, or one that cannot be reconfigured, is left as is.
+    """
+    if os.name != "nt":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (OSError, ValueError):
+            pass
 
 
 if __name__ == "__main__":

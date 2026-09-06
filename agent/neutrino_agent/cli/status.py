@@ -14,7 +14,7 @@ from __future__ import annotations
 import time
 
 from neutrino_agent import AGENT_VERSION
-from neutrino_agent.constants import AGENT_CONFIG_PATH, AGENT_SERVICE_NAME
+from neutrino_agent.constants import AGENT_CONFIG_PATH
 from neutrino_agent.control import client
 from neutrino_agent.core import enrollment
 from neutrino_agent.core.loop import Agent
@@ -86,10 +86,10 @@ def main() -> int:
     if current == "running":
         print(f"service    {current}")
     else:
+        hint = _start_hint()
+        tail = f"; start it: {hint}" if hint else ""
         print(
-            f"service    {current} — the machine beats only while "
-            "status runs; start it: sudo systemctl enable --now "
-            f"{AGENT_SERVICE_NAME}"
+            f"service    {current} — the machine beats only while " f"status runs{tail}"
         )
 
     agent = Agent(log=_discard)
@@ -149,6 +149,18 @@ def word_error(error: dict) -> str:
         target = params.get("target", "")
         return f"self-update to {target} could not be launched"
     return ERROR_WORDS.get(code, code)
+
+
+def _start_hint() -> str:
+    """The command this platform starts the agent's own service with.
+
+    Returns:
+        The platform's start command, empty where it has no service.
+    """
+    try:
+        return detect_platform().agent_service_start_hint()
+    except PlatformUnsupportedError:
+        return ""
 
 
 def _local_state() -> "dict | None":

@@ -246,6 +246,12 @@ class PipeConnection:
         self._api = api
         self._is_server_end = is_server_end
         self._is_closed = False
+        # http.client closes the connection on an HTTP/1.0 reply before the
+        # body is read; each makefile wrapper is counted here so the handle
+        # outlives that close until the last reader closes, the way
+        # socket.socket's _io_refs keep a SocketIO readable past close.
+        self._io_refs = 0
+        self._is_handle_closed = False
 
     def settimeout(self, value) -> None:
         """Accepted for socket shape; a blocking pipe carries no deadline."""
@@ -260,7 +266,8 @@ class PipeConnection:
         Returns:
             The buffered stream.
         """
-        stream = _PipeStream(api=self._api, handle=self.pipe_handle)
+        self._io_refs += 1
+        stream = _PipeStream(connection=self, api=self._api, handle=self.pipe_handle)
         size = buffering if buffering and buffering > 0 else io.DEFAULT_BUFFER_SIZE
         return io.BufferedReader(stream, size)
 
@@ -276,10 +283,25 @@ class PipeConnection:
         """Accepted for socket shape; the close does the disconnecting."""
 
     def close(self) -> None:
-        """Disconnect a served client and close the handle."""
+        """Close the handle once the last makefile wrapper is also closed."""
         if self._is_closed:
             return
         self._is_closed = True
+        if self._io_refs <= 0:
+            self._close_handle()
+
+    def decref(self) -> None:
+        """Drop one makefile wrapper; close the handle when both are gone."""
+        if self._io_refs > 0:
+            self._io_refs -= 1
+        if self._is_closed and self._io_refs <= 0:
+            self._close_handle()
+
+    def _close_handle(self) -> None:
+        """Disconnect a served client and close the handle, at most once."""
+        if self._is_handle_closed:
+            return
+        self._is_handle_closed = True
         if self._is_server_end:
             self._api.disconnect(self.pipe_handle)
         self._api.close(self.pipe_handle)
@@ -375,15 +397,17 @@ class _SecurityAttributes(ctypes.Structure):
 
 
 class _PipeStream(io.RawIOBase):
-    """A raw stream over a pipe handle that does not own the handle."""
+    """A raw stream over a pipe handle; the connection owns the handle."""
 
-    def __init__(self, *, api, handle: int):
+    def __init__(self, *, connection, api, handle: int):
         """
         Args:
+            connection: The pipe connection whose reference count this holds.
             api: The Win32 seam.
             handle: The pipe handle to read.
         """
         super().__init__()
+        self._connection = connection
         self._api = api
         self._handle = handle
 
@@ -394,3 +418,13 @@ class _PipeStream(io.RawIOBase):
         data = self._api.read(self._handle, len(buffer))
         buffer[: len(data)] = data
         return len(data)
+
+    def close(self) -> None:
+        """Release the connection's reference before closing the stream."""
+        if self.closed:
+            return
+        super().close()
+        connection = self._connection
+        self._connection = None
+        if connection is not None:
+            connection.decref()

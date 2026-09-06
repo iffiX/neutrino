@@ -210,10 +210,29 @@ def test_a_pipe_connection_is_shaped_like_a_socket():
     assert bytes(api.written[5]) == b"back"
 
     connection.shutdown(1)
+    stream.close()
     connection.close()
     connection.close()
     assert api.disconnected == [5]
     assert api.closed == [5]
+
+
+def test_a_body_survives_a_connection_close_until_the_reader_closes():
+    # http.client closes the connection on an HTTP/1.0 reply before the body
+    # is read; the reader must outlive that close, the way socket.makefile
+    # keeps a SocketIO readable past the socket's own close.
+    api = FakePipeApi([])
+    api.readers[7] = io.BytesIO(b"the body")
+    connection = PipeConnection(api=api, handle=7, is_server_end=False)
+
+    reader = connection.makefile("rb", -1)
+    connection.close()
+
+    assert api.closed == []
+    assert reader.read() == b"the body"
+
+    reader.close()
+    assert api.closed == [7]
 
 
 def test_a_client_end_close_does_not_disconnect_the_instance():

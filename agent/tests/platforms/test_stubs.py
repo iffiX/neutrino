@@ -72,6 +72,7 @@ BASE_IMPLEMENTED = {
     "has_mount_tooling": "shares",
     "validate_mount_location": "shares",
     "prepare_mount_location": "shares",
+    "agent_service_start_hint": "agent_service",
 }
 
 

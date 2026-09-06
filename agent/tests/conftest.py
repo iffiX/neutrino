@@ -109,6 +109,9 @@ class FakeControlPlatform(AgentPlatform):
     def human_accounts(self) -> list:
         return ["alice", "bob"]
 
+    def agent_service_start_hint(self) -> str:
+        return "sudo systemctl enable --now neutrino_agent.service"
+
     def read_peer_identity(self, connection) -> dict:
         if self.peer_error is not None:
             raise self.peer_error

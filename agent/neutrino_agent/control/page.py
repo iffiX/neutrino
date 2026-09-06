@@ -224,6 +224,7 @@ const WORDS = {
     mountpoint_invalid: "that is not a mount location this machine can use",
     cifs_missing: "the mount tooling is missing on this machine",
     credentials_missing: "the saved login is gone — enter it again with Config",
+    no_logged_on_session: "sign in on this machine, then attach the share again",
     fs_refused: "this account may not use that folder",
     control_scope_refused: "this account is not allowed to do that",
     control_token_invalid: "this page's key was refused",

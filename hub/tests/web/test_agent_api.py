@@ -780,9 +780,15 @@ def test_the_reply_wire_carries_the_module_names(api):
 def test_the_catalog_is_composed_for_the_address_the_device_reaches(api):
     client, runtime, _ = api
 
-    client.post("/api/agent/heartbeat", json=beat_body())
+    # Server mode: no served LAN answers, so the address the device actually
+    # connected to is the truth, never the configured default.
+    client.post(
+        "/api/agent/heartbeat",
+        json=beat_body(),
+        headers={"host": "192.168.122.92:8443"},
+    )
 
-    assert runtime.device_catalog.asked_hosts == ["192.168.100.1"]
+    assert runtime.device_catalog.asked_hosts == ["192.168.122.92"]
 
 
 def test_nothing_usable_reported_keys_by_machine_id(api):

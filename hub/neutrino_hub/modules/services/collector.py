@@ -280,19 +280,32 @@ def resolve_entries(
         hub_addresses: Every host that means the hub itself.
         target_host: The address the caller reaches the hub on.
 
+    A module-declared entry is the hub's own by construction, so its host is
+    resolved even when the composed address is not one the caller would
+    recognize; a declared entry names any host and keeps the address-set
+    guard, so a NAS a person declared is never rewritten. A ``web`` entry
+    keeps the guard either way, so a Gitea reached through a custom URL is
+    left as the administrator set it.
+
+    Args:
+        entries: The composed entries.
+        hub_addresses: Every host that means the hub itself.
+        target_host: The address the caller reaches the hub on.
+
     Returns:
         A new list; a payload host outside the hub's own set is untouched.
     """
     resolved = []
     for entry in entries:
         payload = dict(entry["payload"])
+        is_hub_own = entry.get("source") == SERVICES_SOURCE_MODULE
         if entry["type"] == SERVICES_TYPE_WEB:
             payload["url"] = _resolve_url(payload["url"], hub_addresses, target_host)
         elif entry["type"] == SERVICES_TYPE_AI:
             payload["endpoint"] = _resolve_url(
-                payload["endpoint"], hub_addresses, target_host
+                payload["endpoint"], hub_addresses, target_host, force=is_hub_own
             )
-        elif payload.get("host") in hub_addresses:
+        elif is_hub_own or payload.get("host") in hub_addresses:
             payload["host"] = target_host
         resolved.append({**entry, "payload": payload})
     return resolved
@@ -344,10 +357,14 @@ def _type_modules(type: str) -> tuple:
     return ()
 
 
-def _resolve_url(url: str, hub_addresses: set[str], target_host: str) -> str:
+def _resolve_url(
+    url: str, hub_addresses: set[str], target_host: str, force: bool = False
+) -> str:
     parts = urlsplit(url)
     hostname = parts.hostname
-    if hostname is None or hostname not in hub_addresses:
+    if hostname is None:
+        return url
+    if not force and hostname not in hub_addresses:
         return url
     netloc = target_host if parts.port is None else f"{target_host}:{parts.port}"
     return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))

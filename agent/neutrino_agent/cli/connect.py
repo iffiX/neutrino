@@ -4,7 +4,6 @@ import os
 import sys
 
 from neutrino_agent.cli.status import service_state
-from neutrino_agent.constants import AGENT_SERVICE_NAME
 from neutrino_agent.core import enrollment
 from neutrino_agent.core.loop import Agent
 from neutrino_agent.platforms.base import PlatformUnsupportedError
@@ -43,16 +42,15 @@ def main(link: str, *, is_forced: bool) -> int:
         return 1
     print(f"joined {enrollment.load_config().get('gateway_url', '')}")
     if service_state() != "running":
+        platform = detect_platform()
         try:
-            detect_platform().start_agent_service()
+            platform.start_agent_service()
         except PlatformUnsupportedError:
             pass
         state = service_state()
         print(f"service    {state}")
         if state != "running":
-            print(
-                "start it for heartbeats: "
-                f"sudo systemctl enable --now {AGENT_SERVICE_NAME}",
-                file=sys.stderr,
-            )
+            hint = platform.agent_service_start_hint()
+            if hint:
+                print(f"start it for heartbeats: {hint}", file=sys.stderr)
     return 0

@@ -31,6 +31,13 @@ AGENT_ROOT = Path(__file__).resolve().parent.parent
 REPO_ROOT = AGENT_ROOT.parent
 PACKAGE_NAME = "neutrino-agent"
 
+# The task name the runtime reads and starts is the one this installer
+# registers, kept in the package so the two never drift.
+sys.path.insert(0, str(AGENT_ROOT))
+from neutrino_agent.constants import (  # noqa: E402
+    AGENT_SCHEDULED_TASK_NAME_WINDOWS as TASK_NAME,
+)
+
 # The interpreter the installer carries. Pinned by hash: this is the one
 # third-party artifact the build fetches, and a package that installs an
 # unverified interpreter as SYSTEM is not one to ship.
@@ -42,9 +49,6 @@ PYTHON_URL = (
 PYTHON_SHA256 = (
     "f6cca216a359be84797cabb54149ce5e062afb16cc7567eb7fc51cacb2d86b65"  # scan: allow
 )
-
-# What the scheduled task is called, and what the uninstaller looks for.
-TASK_NAME = "Neutrino Agent"
 
 # Where ISCC lives when it is not on the path.
 ISCC_CANDIDATES = (

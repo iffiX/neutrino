@@ -417,6 +417,10 @@ class LinuxPlatform(AgentPlatform):
             check=False,
         )
 
+    def agent_service_start_hint(self) -> str:
+        """The systemctl command that starts the agent's own service."""
+        return f"sudo systemctl enable --now {AGENT_SERVICE_NAME}"
+
     def power(self, action: str) -> "tuple[int, str]":
         """Run one power action through systemd.
 

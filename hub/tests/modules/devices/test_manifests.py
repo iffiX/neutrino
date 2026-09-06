@@ -42,3 +42,17 @@ def test_samba_mount_resolves_per_platform():
 
 def test_the_ssh_server_wears_its_plain_title():
     assert load_module_manifests()["openssh_server"]["title"] == "SSH server"
+
+
+def test_windows_verify_commands_fail_when_the_software_is_absent():
+    # PowerShell Test-Path prints False but exits 0, so a bare Test-Path
+    # reads absent software as installed. A windows verify built on it must
+    # turn the result into a nonzero exit.
+    verified = []
+    for name, manifest in load_module_manifests().items():
+        command = manifest.get("verify", {}).get("windows", "")
+        if "Test-Path" not in command:
+            continue
+        assert "exit 1" in command, f"{name} reads absent software as installed"
+        verified.append(name)
+    assert set(verified) == {"anydesk", "todesk"}

@@ -51,6 +51,26 @@ def test_install_with_no_build_for_this_machine_is_refused(tmp_path):
         install_cli({}, str(tmp_path / "archive"))
 
 
+def test_switcher_install_dir_is_windows_native_on_windows(monkeypatch):
+    import importlib
+
+    monkeypatch.setattr(os, "name", "nt")
+    monkeypatch.setenv("ProgramData", "C:\\ProgramData")
+    try:
+        reloaded = importlib.reload(switcher_module)
+        # Never the POSIX bin, which lands off any search path on Windows.
+        assert reloaded.SWITCHER_INSTALL_DIR != "/usr/local/bin"
+        assert reloaded.SWITCHER_INSTALL_DIR == os.path.join(
+            "C:\\ProgramData", "Neutrino", "bin"
+        )
+        # The detection paths follow the install dir, so both sides agree.
+        assert reloaded.SWITCHER_CLI_PATHS[1].startswith(reloaded.SWITCHER_INSTALL_DIR)
+        assert reloaded.SWITCHER_CLI_PATHS[1].endswith("cc-switch.exe")
+    finally:
+        monkeypatch.undo()
+        importlib.reload(switcher_module)
+
+
 def test_uninstall_cli_removes_the_agents_binary(tmp_path, monkeypatch):
     binary = tmp_path / "cc-switch"
     binary.write_text("#!/bin/sh\n")

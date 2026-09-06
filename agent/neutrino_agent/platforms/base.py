@@ -45,7 +45,8 @@ class ShareAttachError(RuntimeError):
         """
         Args:
             code: The typed reason — ``cifs_missing``, ``credentials_missing``,
-                ``mount_failed`` or ``unmount_failed``.
+                ``no_logged_on_session``, ``mount_failed`` or
+                ``unmount_failed``.
             detail: The tool's own words, for the failure's params.
         """
         super().__init__(detail or code)
@@ -475,6 +476,17 @@ class AgentPlatform:
             PlatformUnsupportedError: When there is no service to start.
         """
         raise PlatformUnsupportedError("no agent service to start here")
+
+    def agent_service_start_hint(self) -> str:
+        """The command a person runs to start the agent's own service.
+
+        Each platform words its own mechanism; the CLI wraps this in the
+        advice sentence, so no surface prints another platform's command.
+
+        Returns:
+            A one-line command, empty where the platform has no service.
+        """
+        return ""
 
     def power(self, action: str) -> "tuple[int, str]":
         """Run one power action.

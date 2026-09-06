@@ -50,7 +50,7 @@
   },
   "verify": {
     "linux": "command -v todesk || ls /opt/todesk/bin/ToDesk 2>/dev/null || dpkg -s todesk 2>/dev/null || rpm -q todesk 2>/dev/null",
-    "windows": "powershell -NoProfile -Command \"Test-Path 'C:\\Program Files\\ToDesk\\ToDesk.exe'\"",
+    "windows": "powershell -NoProfile -Command \"if (Test-Path 'C:\\Program Files\\ToDesk\\ToDesk.exe') { exit 0 } else { exit 1 }\"",
     "darwin": "test -d /Applications/ToDesk.app"
   }
 }

@@ -23,11 +23,21 @@ import zipfile
 from neutrino_agent.modules.base import ModuleRunner
 from neutrino_agent.modules.installers import InstallError
 
-# Where the agent puts the CLI, and where its own installer puts it.
-SWITCHER_INSTALL_DIR = "/usr/local/bin"
+# Where the agent puts the CLI, per platform: a real directory on PATH's
+# reach, never the POSIX ``/usr/local/bin`` on Windows, which lands off any
+# search path there.
+if os.name == "nt":
+    SWITCHER_INSTALL_DIR = os.path.join(
+        os.environ.get("ProgramData", "C:\\ProgramData"), "Neutrino", "bin"
+    )
+else:
+    SWITCHER_INSTALL_DIR = "/usr/local/bin"
+
+# Where a usable CLI may sit: the agent's own install directory for either
+# name, then the vendor's user-local install.
 SWITCHER_CLI_PATHS = (
-    "/usr/local/bin/cc-switch",
-    "/usr/local/bin/cc-switch.exe",
+    os.path.join(SWITCHER_INSTALL_DIR, "cc-switch"),
+    os.path.join(SWITCHER_INSTALL_DIR, "cc-switch.exe"),
     os.path.expanduser("~/.local/bin/cc-switch"),
 )
 

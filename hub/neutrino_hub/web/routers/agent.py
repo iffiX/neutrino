@@ -19,7 +19,7 @@ import re
 import time
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from neutrino_hub import HUB_VERSION
 from neutrino_hub.modules.cliproxyapi.config import CliproxyApiClientKey
@@ -66,7 +66,9 @@ router = APIRouter(prefix="/api/agent", tags=["agent"])
 
 @router.post("/heartbeat", response_model=ClientHeartbeatReply)
 def heartbeat(
-    beat: ClientHeartbeat, runtime: PanelRuntime = Depends(get_runtime)
+    beat: ClientHeartbeat,
+    request: Request,
+    runtime: PanelRuntime = Depends(get_runtime),
 ) -> ClientHeartbeatReply:
     """Record an agent's report and hand back what to do now.
 
@@ -114,13 +116,13 @@ def heartbeat(
         # A click on the machine's own page asks the hub rather than acts,
         # and enters by the same door the drawer's does: one order each.
         manifests = load_module_manifests()
-        for module, request in beat.module_requests.items():
+        for module, module_request in beat.module_requests.items():
             if module not in manifests:
                 continue
             is_enabled = (
-                bool(request.get("is_enabled"))
-                if isinstance(request, dict)
-                else bool(request)
+                bool(module_request.get("is_enabled"))
+                if isinstance(module_request, dict)
+                else bool(module_request)
             )
             ask_module(
                 controller=runtime.agent_module_orders,
@@ -155,7 +157,7 @@ def heartbeat(
         seen_at=datetime.now(timezone.utc).isoformat(),
     )
 
-    device_host = _device_host(runtime, device.ipv4_address)
+    device_host = _device_host(runtime, device.ipv4_address, _reached_host(request))
     ai_accounts = _ai_accounts(device, runtime, registry, beat.ai_targets, device_host)
     catalog, served_hash = runtime.device_catalog.catalog(
         device_host=device_host, platform=platform
@@ -635,15 +637,35 @@ def _account_keys(
     return keys
 
 
-def _device_host(runtime: PanelRuntime, device_ip: str) -> str:
+def _reached_host(request: Request) -> str:
+    """The bare address the device reached the hub on, from the request.
+
+    The agent dials a URL the enrollment link carried, so the host it
+    connected to is one it can open — the truth for a device on a network the
+    hub does not route, whose own address names no served LAN.
+
+    Args:
+        request: The heartbeat request.
+
+    Returns:
+        The host without a port, empty when there is none to read.
+    """
+    return request.url.hostname or ""
+
+
+def _device_host(runtime: PanelRuntime, device_ip: str, reached_host: str = "") -> str:
     """The address a device reaches the hub on.
 
     Every hub-self host in the catalog and the AI credential resolves to
-    this, so what the device stores is an address it can actually open.
+    this, so what the device stores is an address it can actually open. A
+    served LAN that holds the device's own address answers first; otherwise
+    the address the device actually connected to is the truth, and a served
+    LAN address or the default only stand in when the request names none.
 
     Args:
         runtime: The shared runtime.
         device_ip: The device's address, to pick the LAN it is on.
+        reached_host: The address the device connected to, from the request.
 
     Returns:
         The bare address, without a scheme or port.
@@ -660,4 +682,4 @@ def _device_host(runtime: PanelRuntime, device_ip: str) -> str:
                 break
         except ValueError:
             continue
-    return address or fallback or "192.168.100.1"
+    return address or reached_host or fallback or "192.168.100.1"

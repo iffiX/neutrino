@@ -6,10 +6,11 @@ where inherited ACLs make the files the account's own, and a process runs as
 an account only for the one logged on at the console. The control channel is
 a named pipe whose peer identity comes from pipe impersonation; privileged
 is an elevated Administrators token, so an unelevated admin shell is an
-ordinary account. A share is stored credentials plus a session mapping, the
-SSH server is a Windows capability, and metrics ride one WMI query through
-PowerShell. System packages stay refused: Windows has no package manager the
-hub drives.
+ordinary account. A share is stored credentials plus a mapping made inside
+the logged-on account's own session, the SSH server is a Windows capability,
+the agent runs from a scheduled task, and metrics come from native Win32
+calls. System packages stay refused: Windows has no package manager the hub
+drives.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -33,10 +34,10 @@ from neutrino_agent.modules import installers
 from neutrino_agent.constants import (
     AGENT_COMMAND_TIMEOUT_S,
     AGENT_CONTROL_PIPE_NAME,
-    AGENT_SERVICE_NAME_WINDOWS,
+    AGENT_SCHEDULED_TASK_NAME_WINDOWS,
     AGENT_STEP_DOWN_TIMEOUT_S,
 )
-from neutrino_agent.core.metrics import HostMetrics, ProcessMetrics
+from neutrino_agent.core.metrics import HostMetrics
 from neutrino_agent.platforms.base import (
     AgentPlatform,
     PlatformUnsupportedError,
@@ -56,27 +57,6 @@ WINDOWS_PROFILES_SCRIPT = (
     "Select-Object SID, LocalPath | ConvertTo-Json"
 )
 
-# One WMI pass: processor load per package, memory, the system drive, boot
-# time, and the busiest processes by resident memory.
-WINDOWS_METRICS_SCRIPT = """
-$ErrorActionPreference = 'SilentlyContinue'
-$os = Get-CimInstance Win32_OperatingSystem
-$cpu = @(Get-CimInstance Win32_Processor)
-$disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$env:SystemDrive'"
-$top = @(Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 12)
-@{
-  cpu_percents = @($cpu | ForEach-Object { $_.LoadPercentage });
-  memory_total_kb = $os.TotalVisibleMemorySize;
-  memory_free_kb = $os.FreePhysicalMemory;
-  disk_total_bytes = $disk.Size;
-  disk_free_bytes = $disk.FreeSpace;
-  uptime_s = [int](((Get-Date) - $os.LastBootUpTime).TotalSeconds);
-  processes = @($top | ForEach-Object {
-    @{ pid = $_.Id; name = $_.ProcessName; memory_bytes = $_.WorkingSet64 } })
-} | ConvertTo-Json -Depth 4
-"""
-
-WINDOWS_METRICS_TIMEOUT_S = 15
 WINDOWS_QUERY_TIMEOUT_S = 60
 WINDOWS_MOUNT_TIMEOUT_S = 60
 
@@ -133,99 +113,35 @@ def _human_profiles(text: str) -> list:
     return sorted(accounts)
 
 
-def _windows_metrics(text: str) -> HostMetrics:
-    """One metrics sample from the metrics script's JSON output.
+def _cpu_percent_from_deltas(
+    previous: "tuple[int, int, int] | None", current: "tuple[int, int, int]"
+) -> float:
+    """Aggregate processor load between two GetSystemTimes samples.
+
+    Windows counts idle time inside kernel time, so the busy share is the
+    non-idle part of kernel plus user across the interval. The first sample
+    has nothing to compare against and reads as zero.
 
     Args:
-        text: The script's output.
+        previous: The prior ``(idle, kernel, user)`` sample, or None.
+        current: The current ``(idle, kernel, user)`` sample.
 
     Returns:
-        The sample; any unreadable field contributes its default.
+        The load as a percentage, clamped to 0-100.
     """
-    try:
-        payload = json.loads(text or "{}")
-    except ValueError:
-        return HostMetrics()
-    if not isinstance(payload, dict):
-        return HostMetrics()
-    cores = _number_list(payload.get("cpu_percents"))
-    memory_total_kb = _number(payload.get("memory_total_kb"))
-    memory_free_kb = _number(payload.get("memory_free_kb"))
-    memory_percent = 0.0
-    if memory_total_kb and memory_free_kb is not None:
-        memory_percent = 100.0 * (memory_total_kb - memory_free_kb) / memory_total_kb
-    disk_total = _number(payload.get("disk_total_bytes"))
-    disk_free = _number(payload.get("disk_free_bytes"))
-    disk_percent = 0.0
-    if disk_total and disk_free is not None:
-        disk_percent = 100.0 * (disk_total - disk_free) / disk_total
-    uptime = _number(payload.get("uptime_s"))
-    return HostMetrics(
-        cpu_percent=sum(cores) / len(cores) if cores else 0.0,
-        cpu_core_percents=cores,
-        memory_percent=max(0.0, min(100.0, memory_percent)),
-        disk_percent=max(0.0, min(100.0, disk_percent)),
-        uptime_s=int(uptime) if uptime and uptime > 0 else 0,
-        processes=_process_rows(payload.get("processes"), memory_total_kb),
-    )
+    if previous is None:
+        return 0.0
+    idle_delta = current[0] - previous[0]
+    total_delta = (current[1] - previous[1]) + (current[2] - previous[2])
+    if total_delta <= 0:
+        return 0.0
+    busy = total_delta - idle_delta
+    return max(0.0, min(100.0, 100.0 * busy / total_delta))
 
 
-def _process_rows(rows, memory_total_kb) -> "list[ProcessMetrics]":
-    """The process listing, from the script's rows.
-
-    The processor share needs a previous sample to compare against, so the
-    rows carry memory shares only.
-
-    Args:
-        rows: The script's ``processes`` value.
-        memory_total_kb: The machine's memory, for the shares.
-
-    Returns:
-        One entry per readable row.
-    """
-    if isinstance(rows, dict):
-        rows = [rows]
-    if not isinstance(rows, list):
-        return []
-    processes = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        pid = _number(row.get("pid"))
-        if pid is None:
-            continue
-        memory_bytes = _number(row.get("memory_bytes")) or 0.0
-        memory_percent = 0.0
-        if memory_total_kb:
-            memory_percent = 100.0 * memory_bytes / (memory_total_kb * 1024.0)
-        processes.append(
-            ProcessMetrics(
-                pid=int(pid),
-                user="",
-                name=str(row.get("name", "")),
-                cpu_percent=0.0,
-                memory_percent=memory_percent,
-            )
-        )
-    return processes
-
-
-def _number(value) -> "float | None":
-    """One numeric field, or None for anything that is not a number."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return None
-    return float(value)
-
-
-def _number_list(value) -> "list[float]":
-    """A list of numbers; a scalar reads as one entry, junk as none."""
-    values = value if isinstance(value, list) else [value]
-    numbers = []
-    for entry in values:
-        number = _number(entry)
-        if number is not None:
-            numbers.append(number)
-    return numbers
+def _filetime_ticks(value) -> int:
+    """The 64-bit tick count a FILETIME's two halves make."""
+    return (value.dwHighDateTime << 32) | value.dwLowDateTime
 
 
 def _profile_basename(path: str) -> str:
@@ -273,6 +189,47 @@ def _powershell_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
+def _mapping_script(
+    *, host: str, share: str, location: str, username: str, password: str
+) -> str:
+    """The PowerShell that stores the login and maps the share in a session.
+
+    Fed on standard input, so the login is on no argument vector. ``cmdkey``
+    keeps the login for the host so a persistent mapping reconnects at logon,
+    and ``New-SmbMapping`` makes the mapping in the session the script runs
+    in — the account's own, which is what makes it visible to that person.
+
+    Args:
+        host: The share's host.
+        share: The share name.
+        location: The drive letter the share appears at.
+        username: The share's own username.
+        password: The share's own password.
+
+    Returns:
+        The script text.
+    """
+    remote = f"\\\\{host}\\{share}"
+    return (
+        f"$h = {_powershell_literal(host)}\n"
+        f"$u = {_powershell_literal(username)}\n"
+        f"$p = {_powershell_literal(password)}\n"
+        f"$remote = {_powershell_literal(remote)}\n"
+        f"$local = {_powershell_literal(location)}\n"
+        "try {\n"
+        "  cmdkey /add:$h /user:$u /pass:$p | Out-Null\n"
+        "  Remove-SmbMapping -LocalPath $local -Force "
+        "-ErrorAction SilentlyContinue | Out-Null\n"
+        "  New-SmbMapping -LocalPath $local -RemotePath $remote "
+        "-UserName $u -Password $p -Persistent $true -ErrorAction Stop | Out-Null\n"
+        "  exit 0\n"
+        "} catch {\n"
+        "  Write-Error $_\n"
+        "  exit 1\n"
+        "}\n"
+    )
+
+
 def _is_under(home: str, path: str) -> bool:
     """Whether a path sits at or below a profile directory."""
     normalized_home = os.path.normcase(home.replace("/", "\\")).rstrip("\\")
@@ -307,10 +264,15 @@ class WindowsPlatform(AgentPlatform):
     def __init__(self, *, win32=None):
         """
         Args:
-            win32: The Win32 seam for identity and step-down; None builds
-                the real one on first use.
+            win32: The Win32 seam for identity, step-down and metrics; None
+                builds the real one on first use.
         """
         self._win32_api = win32
+        # The previous GetSystemTimes sample, for the load between two beats.
+        self._previous_cpu_times: "tuple[int, int, int] | None" = None
+        # Account name to its resolved profile directory, so the database is
+        # asked once per account rather than per file operation.
+        self._home_cache: "dict[str, str]" = {}
 
     def human_accounts(self) -> list:
         """The accounts that are people: the machine's local profiles.
@@ -339,7 +301,13 @@ class WindowsPlatform(AgentPlatform):
         return _human_profiles(result.stdout or "")
 
     def account_home(self, account: str) -> str:
-        """One account's profile directory.
+        """One account's profile directory, from the profile database.
+
+        The database is where a service account such as SYSTEM points at its
+        systemprofile rather than a ``C:\\Users`` child, so a name is never
+        just joined to the profiles directory. A name the database cannot
+        place — off Windows, or a profile not yet written — falls back to that
+        join.
 
         Args:
             account: The account.
@@ -347,7 +315,16 @@ class WindowsPlatform(AgentPlatform):
         Returns:
             The absolute profile path.
         """
-        return str(Path(WINDOWS_PROFILES_DIR) / account)
+        if not account:
+            return str(Path(WINDOWS_PROFILES_DIR) / account)
+        cached = self._home_cache.get(account)
+        if cached is not None:
+            return cached
+        home = self._resolve_profile_dir(account) or str(
+            Path(WINDOWS_PROFILES_DIR) / account
+        )
+        self._home_cache[account] = home
+        return home
 
     def read_account_file(self, *, account: str, relative: str) -> str:
         """Read a file below an account's profile.
@@ -514,7 +491,10 @@ class WindowsPlatform(AgentPlatform):
 
         Account work here is file work in the profile, so the judgment is
         the file-level one: inside the account's own profile is writable,
-        anywhere else is refused rather than guessed.
+        anywhere else is refused rather than guessed. A drive letter is not a
+        profile path but a mount location an ordinary logged-on account may
+        claim, so a free one — already the only kind validation lets through —
+        is writable.
 
         Args:
             account: The account; empty judges as the agent itself.
@@ -524,6 +504,8 @@ class WindowsPlatform(AgentPlatform):
             True when the account may write there.
         """
         if not account:
+            return True
+        if re.fullmatch(r"[A-Za-z]:\\?", path):
             return True
         return _is_under(self.account_home(account), path)
 
@@ -608,14 +590,18 @@ class WindowsPlatform(AgentPlatform):
         location: str,
         credentials_path: str = "",
     ) -> None:
-        """Attach a share: store its credential, then map it with ``net use``.
+        """Attach a share inside the asking account's own logged-on session.
 
-        ``cmdkey`` keeps the login in Credential Manager for the host, and
-        the mapping rides the agent's own session. The password reaches
-        PowerShell on standard input, never this process's argument vector.
+        Drive mappings are per-session, so one made in the agent's SYSTEM
+        session is invisible to the person's Explorer; the mapping is made in
+        the account's session through the run-as seam instead. ``cmdkey`` and
+        ``New-SmbMapping`` both take the login from a script fed on standard
+        input, so the password is on no argument vector. Only the account
+        logged on at the console can be stepped into: any other asker is
+        refused.
 
         Args:
-            account: The asking account.
+            account: The asking account, whose session the mapping lands in.
             share_url: The share, as ``//host/name``.
             username: The share's own username.
             password: The share's own password; empty reattaches with the
@@ -625,7 +611,8 @@ class WindowsPlatform(AgentPlatform):
 
         Raises:
             ShareAttachError: ``credentials_missing`` without the file,
-                ``mount_failed`` with the tool's own words otherwise.
+                ``no_logged_on_session`` when the account is not at the
+                console, ``mount_failed`` with the tool's own words otherwise.
         """
         host, share = _share_parts(share_url)
         if not host or not share:
@@ -639,14 +626,22 @@ class WindowsPlatform(AgentPlatform):
         if not os.path.isfile(credentials_path):
             raise ShareAttachError("credentials_missing")
         stored_username, stored_password = _read_share_credentials(credentials_path)
-        self._store_share_credential(
-            host=host, username=stored_username, password=stored_password
+        script = _mapping_script(
+            host=host,
+            share=share,
+            location=location,
+            username=stored_username,
+            password=stored_password,
         )
-        command = ["net", "use", location, f"\\\\{host}\\{share}", "/persistent:yes"]
         try:
-            result = subprocess.run(
-                command, capture_output=True, text=True, timeout=WINDOWS_MOUNT_TIMEOUT_S
+            result = self.run_as_account(
+                account,
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", "-"],
+                stdin=script,
+                timeout_s=WINDOWS_MOUNT_TIMEOUT_S,
             )
+        except PlatformUnsupportedError:
+            raise ShareAttachError("no_logged_on_session")
         except (OSError, subprocess.SubprocessError) as error:
             raise ShareAttachError("mount_failed", detail=str(error)[:200])
         if result.returncode != 0:
@@ -671,21 +666,30 @@ class WindowsPlatform(AgentPlatform):
             stream.write(f"username={username}\npassword={password}\n")
 
     def detach_share(self, *, location: str) -> None:
-        """Delete the session mapping at a location.
+        """Delete the mapping at a location, inside the logged-on session.
+
+        The mapping lives in the console account's session, so the delete
+        runs there too; a machine with nobody signed in has no mapping to
+        remove and is refused.
 
         Args:
             location: The mapped drive letter.
 
         Raises:
-            ShareAttachError: ``unmount_failed`` with the tool's own words.
+            ShareAttachError: ``no_logged_on_session`` with nobody at the
+                console, ``unmount_failed`` with the tool's own words.
         """
+        console = self._console_account()
+        if not console:
+            raise ShareAttachError("no_logged_on_session")
         try:
-            result = subprocess.run(
+            result = self.run_as_account(
+                console,
                 ["net", "use", location, "/delete", "/y"],
-                capture_output=True,
-                text=True,
-                timeout=WINDOWS_MOUNT_TIMEOUT_S,
+                timeout_s=WINDOWS_MOUNT_TIMEOUT_S,
             )
+        except PlatformUnsupportedError:
+            raise ShareAttachError("no_logged_on_session")
         except (OSError, subprocess.SubprocessError) as error:
             raise ShareAttachError("unmount_failed", detail=str(error)[:200])
         if result.returncode != 0:
@@ -693,52 +697,55 @@ class WindowsPlatform(AgentPlatform):
             raise ShareAttachError("unmount_failed", detail=detail)
 
     def is_share_attached(self, *, location: str) -> bool:
-        """Whether a mapping stands at a location, read from ``net use``.
+        """Whether a mapping stands at a location in the logged-on session.
+
+        The mapping is per-session, so the question is answered inside the
+        console account's session, where ``net use <drive>`` exits zero for a
+        live mapping. Nobody signed in means nothing is attached.
 
         Args:
             location: The mapped drive letter.
 
         Returns:
-            True when the listing names it beside a remote path.
+            True when the account's session names the drive as mapped.
         """
+        console = self._console_account()
+        if not console:
+            return False
         try:
-            result = subprocess.run(
-                ["net", "use"],
-                capture_output=True,
-                text=True,
-                timeout=WINDOWS_MOUNT_TIMEOUT_S,
+            result = self.run_as_account(
+                console,
+                ["net", "use", location],
+                timeout_s=WINDOWS_MOUNT_TIMEOUT_S,
             )
-        except (OSError, subprocess.SubprocessError):
+        except (PlatformUnsupportedError, OSError, subprocess.SubprocessError):
             return False
-        if result.returncode != 0:
-            return False
-        wanted = location.rstrip("\\").lower()
-        for line in (result.stdout or "").splitlines():
-            fields = line.split()
-            if not any(field.startswith("\\\\") for field in fields):
-                continue
-            if any(field.rstrip("\\").lower() == wanted for field in fields[:3]):
-                return True
-        return False
+        return result.returncode == 0 and "\\\\" in (result.stdout or "")
 
     def read_agent_service_state(self) -> str:
-        """What the service manager says about the agent's own service.
+        """What the task scheduler says about the agent's own task.
+
+        The agent runs from a scheduled task, not a Windows service; the task
+        reads ``Running`` while its action process is alive and ``Ready``
+        while it is not.
 
         Returns:
-            ``running``, the service's own state word, or ``unknown``.
+            ``running``, the task's own state word, or ``unknown``.
         """
         try:
             result = subprocess.run(
                 [
                     "powershell",
                     "-NoProfile",
+                    "-NonInteractive",
                     "-Command",
-                    f"(Get-Service {AGENT_SERVICE_NAME_WINDOWS} "
-                    "-ErrorAction SilentlyContinue).Status",
+                    "(Get-ScheduledTask -TaskName "
+                    f"'{AGENT_SCHEDULED_TASK_NAME_WINDOWS}' "
+                    "-ErrorAction SilentlyContinue).State",
                 ],
                 capture_output=True,
                 text=True,
-                timeout=10,
+                timeout=WINDOWS_QUERY_TIMEOUT_S,
             )
         except (OSError, subprocess.SubprocessError):
             return "unknown"
@@ -746,20 +753,26 @@ class WindowsPlatform(AgentPlatform):
         return "running" if state == "running" else (state or "unknown")
 
     def start_agent_service(self) -> None:
-        """Set the agent's own service automatic and start it. Best-effort."""
+        """Enable and start the agent's own scheduled task. Best-effort."""
         subprocess.run(
             [
                 "powershell",
                 "-NoProfile",
                 "-Command",
-                f"Set-Service -Name {AGENT_SERVICE_NAME_WINDOWS} "
-                "-StartupType Automatic; "
-                f"Start-Service {AGENT_SERVICE_NAME_WINDOWS}",
+                "Enable-ScheduledTask -TaskName "
+                f"'{AGENT_SCHEDULED_TASK_NAME_WINDOWS}' "
+                "-ErrorAction SilentlyContinue; "
+                "Start-ScheduledTask -TaskName "
+                f"'{AGENT_SCHEDULED_TASK_NAME_WINDOWS}'",
             ],
             capture_output=True,
             timeout=WINDOWS_QUERY_TIMEOUT_S,
             check=False,
         )
+
+    def agent_service_start_hint(self) -> str:
+        """The command that starts the agent's own scheduled task."""
+        return f'schtasks /run /tn "{AGENT_SCHEDULED_TASK_NAME_WINDOWS}"'
 
     def power(self, action: str) -> "tuple[int, str]":
         """Run one power action through ``shutdown``.
@@ -780,30 +793,43 @@ class WindowsPlatform(AgentPlatform):
         return completed.returncode, output
 
     def read_host_metrics(self) -> HostMetrics:
-        """One sample of the machine's health, through WMI.
+        """One sample of the machine's health, from native Win32 calls.
+
+        ``GetSystemTimes`` gives the aggregate processor load between two
+        beats, ``GlobalMemoryStatusEx`` the memory, ``GetDiskFreeSpaceExW``
+        the system drive and ``GetTickCount64`` the uptime — no subprocess per
+        beat. Per-core numbers and the process list are not sampled: they cost
+        a second interface the panel's Windows tile does not read.
 
         Returns:
             The current metrics; an unreadable machine contributes the
             defaults rather than raising.
         """
         try:
-            result = subprocess.run(
-                [
-                    "powershell",
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-Command",
-                    WINDOWS_METRICS_SCRIPT,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=WINDOWS_METRICS_TIMEOUT_S,
-            )
-        except (OSError, subprocess.SubprocessError):
+            win32 = self._win32()
+            current = win32.system_times()
+            memory_total, memory_available = win32.memory_status()
+            drive = os.environ.get("SystemDrive", "C:") + "\\"
+            disk_total, disk_free = win32.disk_space(drive)
+            uptime_ms = win32.uptime_ms()
+        except OSError:
             return HostMetrics()
-        if result.returncode != 0:
-            return HostMetrics()
-        return _windows_metrics(result.stdout or "")
+        cpu_percent = _cpu_percent_from_deltas(self._previous_cpu_times, current)
+        self._previous_cpu_times = current
+        memory_percent = 0.0
+        if memory_total:
+            memory_percent = 100.0 * (memory_total - memory_available) / memory_total
+        disk_percent = 0.0
+        if disk_total:
+            disk_percent = 100.0 * (disk_total - disk_free) / disk_total
+        return HostMetrics(
+            cpu_percent=cpu_percent,
+            cpu_core_percents=[],
+            memory_percent=max(0.0, min(100.0, memory_percent)),
+            disk_percent=max(0.0, min(100.0, disk_percent)),
+            uptime_s=max(0, uptime_ms // 1000),
+            processes=[],
+        )
 
     def install_package(self, path: str, *, package_kind: str, entry: dict) -> None:
         """Install one downloaded package.
@@ -920,39 +946,38 @@ class WindowsPlatform(AgentPlatform):
             self._win32_api = _Win32Api()
         return self._win32_api
 
-    def _store_share_credential(
-        self, *, host: str, username: str, password: str
-    ) -> None:
-        """Keep one share login in Credential Manager for its host.
+    def _maybe_win32(self):
+        """The Win32 seam only where one is available.
 
-        Args:
-            host: The share's host.
-            username: The share's own username.
-            password: The share's own password.
+        An injected seam is used as given; otherwise the real one is built on
+        Windows and withheld off it, so pure account-home logic still runs in
+        a test without a Windows API to load.
 
-        Raises:
-            ShareAttachError: ``mount_failed`` when ``cmdkey`` refuses.
+        Returns:
+            The seam, or None off Windows with none injected.
         """
-        script = (
-            f"$h = {_powershell_literal(host)}\n"
-            f"$u = {_powershell_literal(username)}\n"
-            f"$p = {_powershell_literal(password)}\n"
-            "cmdkey /add:$h /user:$u /pass:$p | Out-Null\n"
-            "exit $LASTEXITCODE\n"
-        )
+        if self._win32_api is not None:
+            return self._win32_api
+        if os.name == "nt":
+            return self._win32()
+        return None
+
+    def _resolve_profile_dir(self, account: str) -> str:
+        """The account's profile directory from the database, empty if none."""
+        win32 = self._maybe_win32()
+        if win32 is None:
+            return ""
         try:
-            result = subprocess.run(
-                ["powershell", "-NoProfile", "-NonInteractive", "-Command", "-"],
-                input=script,
-                capture_output=True,
-                text=True,
-                timeout=WINDOWS_MOUNT_TIMEOUT_S,
-            )
-        except (OSError, subprocess.SubprocessError) as error:
-            raise ShareAttachError("mount_failed", detail=str(error)[:200])
-        if result.returncode != 0:
-            detail = (result.stderr or result.stdout or "").strip()[-200:]
-            raise ShareAttachError("mount_failed", detail=detail)
+            return win32.profile_directory(account)
+        except OSError:
+            return ""
+
+    def _console_account(self) -> str:
+        """The account logged on at the console, empty when nobody is."""
+        try:
+            return self._win32().console_account()
+        except OSError:
+            return ""
 
     def _restrict_directory(self, directory: str) -> None:
         """Cut a directory's ACL to SYSTEM and Administrators.
@@ -1045,6 +1070,162 @@ class _Win32Api:
         ]
         self._wtsapi32.WTSQueryUserToken.argtypes = [ctypes.c_ulong, ctypes.c_void_p]
         self._wtsapi32.WTSFreeMemory.argtypes = [ctypes.c_void_p]
+        self._kernel32.GetSystemTimes.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
+        self._kernel32.GlobalMemoryStatusEx.argtypes = [ctypes.c_void_p]
+        self._kernel32.GetDiskFreeSpaceExW.argtypes = [
+            ctypes.c_wchar_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
+        self._kernel32.GetTickCount64.restype = ctypes.c_ulonglong
+        self._kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+        self._advapi32.LookupAccountNameW.argtypes = [
+            ctypes.c_wchar_p,
+            ctypes.c_wchar_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_wchar_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
+        self._advapi32.ConvertSidToStringSidW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
+
+    def system_times(self) -> "tuple[int, int, int]":
+        """Idle, kernel and user times in 100ns units, from GetSystemTimes.
+
+        Returns:
+            The three cumulative counters; kernel already contains idle.
+
+        Raises:
+            OSError: When the call is refused.
+        """
+        idle = _FileTime()
+        kernel = _FileTime()
+        user = _FileTime()
+        ok = self._kernel32.GetSystemTimes(
+            ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user)
+        )
+        if not ok:
+            raise ctypes.WinError(ctypes.get_last_error())
+        return _filetime_ticks(idle), _filetime_ticks(kernel), _filetime_ticks(user)
+
+    def memory_status(self) -> "tuple[int, int]":
+        """Total and available physical memory in bytes.
+
+        Returns:
+            ``(total, available)`` from GlobalMemoryStatusEx.
+
+        Raises:
+            OSError: When the call is refused.
+        """
+        status = _MemoryStatusEx()
+        status.dwLength = ctypes.sizeof(status)
+        if not self._kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return int(status.ullTotalPhys), int(status.ullAvailPhys)
+
+    def disk_space(self, path: str) -> "tuple[int, int]":
+        """Total and free bytes on the volume holding a path.
+
+        Args:
+            path: A path on the volume, such as ``C:\\``.
+
+        Returns:
+            ``(total, free)`` from GetDiskFreeSpaceExW.
+
+        Raises:
+            OSError: When the call is refused.
+        """
+        free = ctypes.c_ulonglong(0)
+        total = ctypes.c_ulonglong(0)
+        ok = self._kernel32.GetDiskFreeSpaceExW(
+            ctypes.c_wchar_p(path),
+            ctypes.byref(free),
+            ctypes.byref(total),
+            None,
+        )
+        if not ok:
+            raise ctypes.WinError(ctypes.get_last_error())
+        return int(total.value), int(free.value)
+
+    def uptime_ms(self) -> int:
+        """Milliseconds since boot, from GetTickCount64."""
+        return int(self._kernel32.GetTickCount64())
+
+    def profile_directory(self, account: str) -> str:
+        """The account's profile directory from the profile database.
+
+        The account name resolves to a SID, and the SID's ProfileList entry
+        names the directory — where SYSTEM points at its systemprofile, not a
+        ``C:\\Users`` child.
+
+        Args:
+            account: The account name.
+
+        Returns:
+            The absolute profile path, empty when the account has no profile.
+        """
+        sid = self._account_sid(account)
+        if not sid:
+            return ""
+        try:
+            import winreg
+        except ImportError:
+            return ""
+        key_path = (
+            "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\" + sid
+        )
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path) as key:
+                value, _ = winreg.QueryValueEx(key, "ProfileImagePath")
+        except OSError:
+            return ""
+        return os.path.expandvars(str(value))
+
+    def _account_sid(self, account: str) -> str:
+        """The string SID for an account name, empty when unresolvable."""
+        size = ctypes.c_ulong(0)
+        domain_size = ctypes.c_ulong(0)
+        use = ctypes.c_ulong(0)
+        self._advapi32.LookupAccountNameW(
+            None,
+            ctypes.c_wchar_p(account),
+            None,
+            ctypes.byref(size),
+            None,
+            ctypes.byref(domain_size),
+            ctypes.byref(use),
+        )
+        if size.value == 0:
+            return ""
+        sid = ctypes.create_string_buffer(size.value)
+        domain = ctypes.create_unicode_buffer(max(domain_size.value, 1))
+        ok = self._advapi32.LookupAccountNameW(
+            None,
+            ctypes.c_wchar_p(account),
+            sid,
+            ctypes.byref(size),
+            domain,
+            ctypes.byref(domain_size),
+            ctypes.byref(use),
+        )
+        if not ok:
+            return ""
+        string_sid = ctypes.c_wchar_p()
+        if not self._advapi32.ConvertSidToStringSidW(sid, ctypes.byref(string_sid)):
+            return ""
+        try:
+            return string_sid.value or ""
+        finally:
+            self._kernel32.LocalFree(string_sid)
 
     def impersonate_named_pipe_client(self, handle: int) -> None:
         """Impersonate the pipe's client on this thread.
@@ -1297,6 +1478,31 @@ class _Win32Api:
             with open(stderr_path, "r", encoding="utf-8", errors="replace") as stream:
                 stderr = stream.read()
         return subprocess.CompletedProcess(list(argv), int(code.value), stdout, stderr)
+
+
+class _FileTime(ctypes.Structure):
+    """FILETIME, a 64-bit tick count split across two 32-bit halves."""
+
+    _fields_ = [
+        ("dwLowDateTime", ctypes.c_ulong),
+        ("dwHighDateTime", ctypes.c_ulong),
+    ]
+
+
+class _MemoryStatusEx(ctypes.Structure):
+    """MEMORYSTATUSEX, for GlobalMemoryStatusEx."""
+
+    _fields_ = [
+        ("dwLength", ctypes.c_ulong),
+        ("dwMemoryLoad", ctypes.c_ulong),
+        ("ullTotalPhys", ctypes.c_ulonglong),
+        ("ullAvailPhys", ctypes.c_ulonglong),
+        ("ullTotalPageFile", ctypes.c_ulonglong),
+        ("ullAvailPageFile", ctypes.c_ulonglong),
+        ("ullTotalVirtual", ctypes.c_ulonglong),
+        ("ullAvailVirtual", ctypes.c_ulonglong),
+        ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+    ]
 
 
 class _StartupInfo(ctypes.Structure):

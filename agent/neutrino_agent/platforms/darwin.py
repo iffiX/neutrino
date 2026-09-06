@@ -440,6 +440,10 @@ class DarwinPlatform(AgentPlatform):
             check=False,
         )
 
+    def agent_service_start_hint(self) -> str:
+        """The launchctl command that loads the agent's LaunchDaemon."""
+        return f"sudo launchctl bootstrap system {DARWIN_AGENT_PLIST}"
+
     def power(self, action: str) -> "tuple[int, str]":
         """Run one power action through ``shutdown``.
 

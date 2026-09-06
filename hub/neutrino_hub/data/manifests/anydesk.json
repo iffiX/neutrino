@@ -40,7 +40,7 @@
   },
   "verify": {
     "linux": "which anydesk",
-    "windows": "powershell -NoProfile -Command \"Test-Path 'C:\\Program Files (x86)\\AnyDesk\\AnyDesk.exe'\"",
+    "windows": "powershell -NoProfile -Command \"if (Test-Path 'C:\\Program Files (x86)\\AnyDesk\\AnyDesk.exe') { exit 0 } else { exit 1 }\"",
     "darwin": "test -d /Applications/AnyDesk.app"
   }
 }

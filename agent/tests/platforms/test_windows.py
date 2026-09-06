@@ -19,8 +19,8 @@ from neutrino_agent.modules import installers
 from neutrino_agent.platforms.base import PlatformUnsupportedError, ShareAttachError
 from neutrino_agent.platforms.windows import (
     WindowsPlatform,
+    _cpu_percent_from_deltas,
     _human_profiles,
-    _windows_metrics,
 )
 
 
@@ -42,7 +42,11 @@ class FakeWin32:
         self.calls = []
         self.impersonate_error = None
         self.token_error = None
+        self.profile_dirs = {}
         self.run_result = subprocess.CompletedProcess(["x"], 0, stdout="ran", stderr="")
+
+    def profile_directory(self, account):
+        return self.profile_dirs.get(account, "")
 
     def impersonate_named_pipe_client(self, handle):
         self.calls.append(("impersonate", handle))
@@ -213,15 +217,21 @@ def test_windows_an_unreadable_profile_listing_reads_as_nobody(monkeypatch):
     assert _human_profiles("") == []
 
 
-# --- shares: stored credential plus session mapping ---
+# --- shares: stored credential plus a mapping in the account's session ---
 
 
-def test_windows_attach_stores_the_credential_then_maps(monkeypatch, tmp_path):
+def _run_call(win32):
+    """The one run-as-console call the platform made."""
+    return [call for call in win32.calls if call[0] == "run"][0]
+
+
+def test_windows_attach_maps_in_the_accounts_session(monkeypatch, tmp_path):
     recorder = CommandRecorder()
     monkeypatch.setattr(windows_module.subprocess, "run", recorder)
+    win32 = FakeWin32(console="alice")
     credentials_path = tmp_path / "mounts" / "r1.credentials"
 
-    WindowsPlatform().attach_share(
+    WindowsPlatform(win32=win32).attach_share(
         account="alice",
         share_url="//hub/media",
         username="media",
@@ -230,22 +240,28 @@ def test_windows_attach_stores_the_credential_then_maps(monkeypatch, tmp_path):
         credentials_path=str(credentials_path),
     )
 
-    icacls, cmdkey, net_use = recorder.commands
-    assert icacls[0] == "icacls" and "/inheritance:r" in icacls
+    # The only subprocess is icacls locking the credentials directory down.
+    assert [command[0] for command in recorder.commands] == ["icacls"]
+    icacls = recorder.commands[0]
+    assert "/inheritance:r" in icacls
     assert "*S-1-5-18:(OI)(CI)F" in icacls and "*S-1-5-32-544:(OI)(CI)F" in icacls
-    assert cmdkey[:2] == ["powershell", "-NoProfile"] and cmdkey[-1] == "-"
-    script = recorder.inputs[1]
-    assert "cmdkey /add:$h /user:$u /pass:$p" in script
-    assert "'hub'" in script and "'media'" in script and "'s3cret'" in script
-    assert net_use == ["net", "use", "Z:", "\\\\hub\\media", "/persistent:yes"]
     assert credentials_path.read_text() == "username=media\npassword=s3cret\n"
+
+    # The mapping ran in alice's own session, from a script fed on stdin.
+    _, argv, stdin, _ = _run_call(win32)
+    assert argv == ("powershell", "-NoProfile", "-NonInteractive", "-Command", "-")
+    assert "New-SmbMapping -LocalPath $local -RemotePath $remote" in stdin
+    assert "cmdkey /add:$h /user:$u /pass:$p" in stdin
+    assert "'hub'" in stdin and "'media'" in stdin and "'s3cret'" in stdin
+    assert "'Z:'" in stdin
 
 
 def test_windows_the_password_is_on_no_argument_vector(monkeypatch, tmp_path):
     recorder = CommandRecorder()
     monkeypatch.setattr(windows_module.subprocess, "run", recorder)
+    win32 = FakeWin32(console="alice")
 
-    WindowsPlatform().attach_share(
+    WindowsPlatform(win32=win32).attach_share(
         account="alice",
         share_url="//hub/media",
         username="media",
@@ -256,7 +272,9 @@ def test_windows_the_password_is_on_no_argument_vector(monkeypatch, tmp_path):
 
     for command in recorder.commands:
         assert all("secret" not in part for part in command)
-    assert "'it''s secret'" in recorder.inputs[1]
+    _, argv, stdin, _ = _run_call(win32)
+    assert all("secret" not in part for part in argv)
+    assert "'it''s secret'" in stdin
 
 
 def test_windows_reattach_uses_the_kept_credentials(monkeypatch, tmp_path):
@@ -264,8 +282,9 @@ def test_windows_reattach_uses_the_kept_credentials(monkeypatch, tmp_path):
     credentials_path.write_text("username=media\npassword=kept\n")
     recorder = CommandRecorder()
     monkeypatch.setattr(windows_module.subprocess, "run", recorder)
+    win32 = FakeWin32(console="alice")
 
-    WindowsPlatform().attach_share(
+    WindowsPlatform(win32=win32).attach_share(
         account="alice",
         share_url="//hub/media",
         username="",
@@ -274,16 +293,37 @@ def test_windows_reattach_uses_the_kept_credentials(monkeypatch, tmp_path):
         credentials_path=str(credentials_path),
     )
 
-    assert [command[0] for command in recorder.commands] == ["powershell", "net"]
-    assert "'kept'" in recorder.inputs[0]
+    # No password given, so nothing is rewritten and no icacls runs; the kept
+    # login rides the session script.
+    assert recorder.commands == []
+    assert "'kept'" in _run_call(win32)[2]
+
+
+def test_windows_attach_without_the_console_is_refused(monkeypatch, tmp_path):
+    recorder = CommandRecorder()
+    monkeypatch.setattr(windows_module.subprocess, "run", recorder)
+    credentials_path = tmp_path / "r1.credentials"
+    credentials_path.write_text("username=media\npassword=kept\n")
+
+    with pytest.raises(ShareAttachError) as caught:
+        WindowsPlatform(win32=FakeWin32(console="alice")).attach_share(
+            account="bob",
+            share_url="//hub/media",
+            username="",
+            password="",
+            location="Z:",
+            credentials_path=str(credentials_path),
+        )
+    assert caught.value.code == "no_logged_on_session"
 
 
 def test_windows_attach_refusals_are_typed(monkeypatch, tmp_path):
     recorder = CommandRecorder()
     monkeypatch.setattr(windows_module.subprocess, "run", recorder)
+    win32 = FakeWin32(console="alice")
 
     with pytest.raises(ShareAttachError) as caught:
-        WindowsPlatform().attach_share(
+        WindowsPlatform(win32=win32).attach_share(
             account="alice",
             share_url="//hub/media",
             username="media",
@@ -294,7 +334,7 @@ def test_windows_attach_refusals_are_typed(monkeypatch, tmp_path):
     assert caught.value.code == "credentials_missing"
 
     with pytest.raises(ShareAttachError) as caught:
-        WindowsPlatform().attach_share(
+        WindowsPlatform(win32=win32).attach_share(
             account="alice",
             share_url="//only_a_host",
             username="media",
@@ -308,16 +348,13 @@ def test_windows_attach_refusals_are_typed(monkeypatch, tmp_path):
 def test_windows_mapping_failures_carry_the_tools_own_words(monkeypatch, tmp_path):
     credentials_path = tmp_path / "r1.credentials"
     credentials_path.write_text("username=media\npassword=kept\n")
-    recorder = CommandRecorder(
-        results=[
-            completed(),
-            completed(returncode=2, stderr="System error 86 has occurred."),
-        ]
-    )
+    recorder = CommandRecorder()
     monkeypatch.setattr(windows_module.subprocess, "run", recorder)
+    win32 = FakeWin32(console="alice")
+    win32.run_result = completed(returncode=1, stderr="System error 86 has occurred.")
 
     with pytest.raises(ShareAttachError) as caught:
-        WindowsPlatform().attach_share(
+        WindowsPlatform(win32=win32).attach_share(
             account="alice",
             share_url="//hub/media",
             username="",
@@ -329,37 +366,39 @@ def test_windows_mapping_failures_carry_the_tools_own_words(monkeypatch, tmp_pat
     assert "System error 86" in caught.value.detail
 
 
-def test_windows_detach_deletes_the_mapping(monkeypatch):
-    recorder = CommandRecorder()
-    monkeypatch.setattr(windows_module.subprocess, "run", recorder)
+def test_windows_detach_deletes_the_mapping_in_the_session():
+    win32 = FakeWin32(console="alice")
 
-    WindowsPlatform().detach_share(location="Z:")
+    WindowsPlatform(win32=win32).detach_share(location="Z:")
 
-    assert recorder.commands == [["net", "use", "Z:", "/delete", "/y"]]
+    assert _run_call(win32)[1] == ("net", "use", "Z:", "/delete", "/y")
 
-    recorder.results = [completed(returncode=2, stderr="not found")]
+    win32.run_result = completed(returncode=2, stderr="not found")
     with pytest.raises(ShareAttachError) as caught:
-        WindowsPlatform().detach_share(location="Z:")
+        WindowsPlatform(win32=win32).detach_share(location="Z:")
     assert caught.value.code == "unmount_failed"
 
 
-def test_windows_attachment_is_read_from_net_use(monkeypatch):
-    listing = (
-        "New connections will be remembered.\n\n"
-        "Status       Local     Remote                    Network\n"
-        "---------------------------------------------------------\n"
-        "OK           Z:        \\\\hub\\media            Microsoft Windows Network\n"
-    )
-    recorder = CommandRecorder(
-        results=[completed(stdout=listing), completed(stdout=listing)]
-    )
-    monkeypatch.setattr(windows_module.subprocess, "run", recorder)
-    platform = WindowsPlatform()
+def test_windows_detach_without_a_session_is_refused():
+    with pytest.raises(ShareAttachError) as caught:
+        WindowsPlatform(win32=FakeWin32(console="")).detach_share(location="Z:")
+    assert caught.value.code == "no_logged_on_session"
 
-    assert platform.is_share_attached(location="z:") is True
-    assert platform.is_share_attached(location="Y:") is False
 
-    recorder.results = [completed(returncode=1)]
+def test_windows_attachment_is_read_in_the_session():
+    win32 = FakeWin32(console="alice")
+    win32.run_result = completed(returncode=0, stdout="Remote name  \\\\hub\\media\n")
+    platform = WindowsPlatform(win32=win32)
+
+    assert platform.is_share_attached(location="Z:") is True
+    assert _run_call(win32)[1] == ("net", "use", "Z:")
+
+    win32.run_result = completed(returncode=2)
+    assert platform.is_share_attached(location="Z:") is False
+
+
+def test_windows_nothing_is_attached_without_a_session():
+    platform = WindowsPlatform(win32=FakeWin32(console=""))
     assert platform.is_share_attached(location="Z:") is False
 
 
@@ -489,17 +528,38 @@ def test_windows_package_removal_runs_the_manifests_command(monkeypatch):
 # --- the agent's own service, power, metrics ---
 
 
-def test_windows_agent_service_state_reads_the_service_manager(monkeypatch):
+def test_windows_agent_state_reads_the_scheduled_task(monkeypatch):
     recorder = CommandRecorder(results=[completed(stdout="Running\n")])
     monkeypatch.setattr(windows_module.subprocess, "run", recorder)
     assert WindowsPlatform().read_agent_service_state() == "running"
-    assert "Get-Service neutrino_agent" in recorder.commands[0][-1]
+    script = recorder.commands[0][-1]
+    assert "Get-ScheduledTask" in script
+    assert "'Neutrino Agent'" in script
+    assert "Get-Service" not in script
 
-    recorder.results = [completed(stdout="Stopped\n")]
-    assert WindowsPlatform().read_agent_service_state() == "stopped"
+    recorder.results = [completed(stdout="Ready\n")]
+    assert WindowsPlatform().read_agent_service_state() == "ready"
 
     recorder.results = [completed(stdout="")]
     assert WindowsPlatform().read_agent_service_state() == "unknown"
+
+
+def test_windows_start_runs_the_scheduled_task(monkeypatch):
+    recorder = CommandRecorder()
+    monkeypatch.setattr(windows_module.subprocess, "run", recorder)
+
+    WindowsPlatform().start_agent_service()
+
+    script = recorder.commands[0][-1]
+    assert "Enable-ScheduledTask" in script and "Start-ScheduledTask" in script
+    assert "'Neutrino Agent'" in script
+    assert "Set-Service" not in script and "systemctl" not in script
+
+
+def test_windows_start_hint_names_the_task_not_systemctl():
+    hint = WindowsPlatform().agent_service_start_hint()
+    assert hint == 'schtasks /run /tn "Neutrino Agent"'
+    assert "systemctl" not in hint and "sudo" not in hint
 
 
 def test_windows_power_actions_ride_shutdown(monkeypatch):
@@ -515,52 +575,84 @@ def test_windows_power_actions_ride_shutdown(monkeypatch):
     assert recorder.commands[-1] == ["shutdown", "/s", "/t", "0"]
 
 
-def test_windows_metrics_parse_the_wmi_json():
-    payload = json.dumps(
-        {
-            "cpu_percents": [10, 30],
-            "memory_total_kb": 16 * 1024 * 1024,
-            "memory_free_kb": 4 * 1024 * 1024,
-            "disk_total_bytes": 1000,
-            "disk_free_bytes": 250,
-            "uptime_s": 3600,
-            "processes": [
-                {"pid": 4242, "name": "xrayr", "memory_bytes": 16 * 1024 * 1024 * 512},
-                {"pid": None, "name": "junk"},
-                "junk",
-            ],
-        }
+class FakeMetricsWin32:
+    """The metrics seam, scripted, so no real Win32 call is made."""
+
+    def __init__(self, *, times, memory, disk, uptime_ms, error=None):
+        self._times = list(times)
+        self._memory = memory
+        self._disk = disk
+        self._uptime_ms = uptime_ms
+        self._error = error
+        self.disk_paths = []
+
+    def system_times(self):
+        if self._error is not None:
+            raise self._error
+        return self._times.pop(0)
+
+    def memory_status(self):
+        return self._memory
+
+    def disk_space(self, path):
+        self.disk_paths.append(path)
+        return self._disk
+
+    def uptime_ms(self):
+        return self._uptime_ms
+
+
+def test_windows_cpu_percent_is_the_busy_share_between_two_samples():
+    assert _cpu_percent_from_deltas(None, (100, 200, 100)) == 0.0
+    # kernel delta 200, user delta 200 -> total 400; idle delta 50 -> busy 350.
+    assert _cpu_percent_from_deltas((100, 200, 100), (150, 400, 300)) == 87.5
+    # A total of zero cannot divide; it reads as idle.
+    assert _cpu_percent_from_deltas((100, 200, 100), (100, 200, 100)) == 0.0
+
+
+def test_windows_metrics_come_from_native_calls(monkeypatch):
+    win32 = FakeMetricsWin32(
+        times=[(100, 200, 100), (150, 400, 300)],
+        memory=(16 * 1024**3, 4 * 1024**3),
+        disk=(1000, 250),
+        uptime_ms=3_600_000,
     )
+    platform = WindowsPlatform(win32=win32)
 
-    metrics = _windows_metrics(payload)
-
-    assert metrics.cpu_percent == 20.0
-    assert metrics.cpu_core_percents == [10.0, 30.0]
-    assert metrics.memory_percent == 75.0
-    assert metrics.disk_percent == 75.0
-    assert metrics.uptime_s == 3600
-    assert len(metrics.processes) == 1
-    assert metrics.processes[0].pid == 4242
-    assert metrics.processes[0].name == "xrayr"
-    assert metrics.processes[0].memory_percent == 50.0
-    assert metrics.processes[0].cpu_percent == 0.0
-
-
-def test_windows_metrics_take_a_single_processor_as_a_scalar():
-    metrics = _windows_metrics(json.dumps({"cpu_percents": 40}))
-    assert metrics.cpu_percent == 40.0
-    assert metrics.cpu_core_percents == [40.0]
-
-
-def test_windows_unreadable_metrics_read_as_defaults(monkeypatch):
-    assert _windows_metrics("not json") == HostMetrics()
-    assert _windows_metrics(json.dumps([1, 2])) == HostMetrics()
-
-    def refuse(command, **kwargs):
-        raise OSError("no powershell")
+    # No subprocess is ever spawned for a beat.
+    def refuse(*args, **kwargs):
+        raise AssertionError("metrics must not spawn a subprocess")
 
     monkeypatch.setattr(windows_module.subprocess, "run", refuse)
-    assert WindowsPlatform().read_host_metrics() == HostMetrics()
+
+    first = platform.read_host_metrics()
+    assert first.cpu_percent == 0.0
+    assert first.cpu_core_percents == []
+    assert first.processes == []
+    assert first.memory_percent == 75.0
+    assert first.disk_percent == 75.0
+    assert first.uptime_s == 3600
+
+    second = platform.read_host_metrics()
+    assert second.cpu_percent == 87.5
+
+
+def test_windows_metrics_read_the_system_drive(monkeypatch):
+    monkeypatch.setenv("SystemDrive", "D:")
+    win32 = FakeMetricsWin32(
+        times=[(0, 0, 0)], memory=(8, 4), disk=(100, 50), uptime_ms=0
+    )
+
+    WindowsPlatform(win32=win32).read_host_metrics()
+
+    assert win32.disk_paths == ["D:\\"]
+
+
+def test_windows_unreadable_metrics_read_as_defaults():
+    win32 = FakeMetricsWin32(
+        times=[], memory=(0, 0), disk=(0, 0), uptime_ms=0, error=OSError("no api")
+    )
+    assert WindowsPlatform(win32=win32).read_host_metrics() == HostMetrics()
 
 
 # --- run-as is the logged-on account only ---
@@ -602,6 +694,24 @@ def test_windows_an_empty_account_runs_directly(monkeypatch):
 # --- file work stays inside the profile ---
 
 
+def test_windows_account_home_comes_from_the_profile_database():
+    win32 = FakeWin32()
+    win32.profile_dirs = {
+        "SYSTEM": "C:\\Windows\\system32\\config\\systemprofile",
+        "alice": "C:\\Users\\alice",
+    }
+    platform = WindowsPlatform(win32=win32)
+
+    # SYSTEM's home is its systemprofile, never a C:\Users child.
+    assert (
+        platform.account_home("SYSTEM")
+        == "C:\\Windows\\system32\\config\\systemprofile"
+    )
+    assert platform.account_home("alice") == "C:\\Users\\alice"
+    # A name the database cannot place falls back to the profiles directory.
+    assert platform.account_home("ghost") == WindowsPlatform().account_home("ghost")
+
+
 def test_windows_path_judgment_is_the_profile():
     platform = WindowsPlatform()
     home = platform.account_home("bob")
@@ -612,6 +722,9 @@ def test_windows_path_judgment_is_the_profile():
     assert platform.is_path_writable(account="bob", path="C:\\Users\\bobby") is False
     assert platform.is_path_writable(account="bob", path="D:\\data") is False
     assert platform.is_path_writable(account="", path="D:\\data") is True
+    # A free drive letter is a mount location an ordinary account may claim.
+    assert platform.is_path_writable(account="bob", path="Z:") is True
+    assert platform.is_path_writable(account="bob", path="Z:\\") is True
 
 
 def test_windows_directory_ops_stay_inside_the_profile(monkeypatch, tmp_path):

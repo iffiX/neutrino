@@ -310,6 +310,35 @@ def test_resolution_leaves_a_foreign_host_alone():
     assert resolved["w1"]["payload"]["url"] == "http://wiki.lan:9000/"
 
 
+def test_a_module_entry_resolves_even_when_its_host_is_not_recognized():
+    # Server mode can compose a hub host the address set does not name; a
+    # module entry is the hub's own regardless and still resolves per device,
+    # the way the ai credential does — a foreign declared host would not.
+    entries = collect(
+        is_samba_served=True,
+        samba_share_names=["media"],
+        is_samba_healthy=True,
+        is_ai_served=True,
+        is_podman_served=True,
+        podman_containers=[container("web", ports=[8080])],
+        declared_services=[declared("generic_tcp", id="p1", host="10.0.0.5")],
+        declared_healths={},
+    )
+
+    resolved = {
+        e["id"]: e
+        for e in resolve_entries(
+            entries, hub_addresses=set(), target_host="192.168.122.92"
+        )
+    }
+
+    assert resolved["samba_media"]["payload"]["host"] == "192.168.122.92"
+    assert resolved["ai"]["payload"]["endpoint"] == "http://192.168.122.92:8317"
+    assert resolved["podman_web_8080"]["payload"]["host"] == "192.168.122.92"
+    # A declared foreign host is never rewritten, recognized or not.
+    assert resolved["p1"]["payload"]["host"] == "10.0.0.5"
+
+
 def test_the_catalog_copy_drops_the_panel_only_fields():
     entries = collect(declared_services=[declared("generic_tcp")], declared_healths={})
 
