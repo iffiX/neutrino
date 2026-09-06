@@ -283,7 +283,7 @@ class ModuleEngine(ReconcileWorker):
             resolved: The module as the hub resolved it for this platform.
 
         Returns:
-            ``{"state", "code", "params", "is_active"}``.
+            ``{"state", "code", "params"}``.
         """
         if not isinstance(resolved, dict) or resolved.get("entry") is None:
             return _typed("unsupported", "no_platform_build")
@@ -446,4 +446,4 @@ class ModuleEngine(ReconcileWorker):
 
 def _typed(state: str, code: str, **params) -> dict:
     """One typed status, the shape every surface words for itself."""
-    return {"state": state, "code": code, "params": params, "is_active": False}
+    return {"state": state, "code": code, "params": params}

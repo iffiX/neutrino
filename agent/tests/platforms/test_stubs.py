@@ -74,6 +74,7 @@ BASE_IMPLEMENTED = {
     "list_directories": "run_as",
     "make_directory": "run_as",
     "has_mount_tooling": "shares",
+    "validate_mount_location": "shares",
 }
 
 DarwinPwdEntry = collections.namedtuple(
@@ -158,6 +159,26 @@ def test_darwin_steps_down_with_su_never_sudo(monkeypatch):
     DarwinPlatform().run_as_account("alice", ["id", "-u"])
 
     assert recorded["command"] == ["id", "-u"]
+
+
+def test_windows_mount_locations_are_unused_drive_letters(monkeypatch):
+    platform = WindowsPlatform()
+
+    for bad in ("", "Z", "Z:\\media", "/mnt/media", "ZZ:"):
+        assert platform.validate_mount_location(location=bad) == {
+            "code": "mountpoint_invalid",
+            "params": {},
+        }
+
+    monkeypatch.setattr(windows_module.os.path, "exists", lambda path: False)
+    assert platform.validate_mount_location(location="Z:") is None
+    assert platform.validate_mount_location(location="z:") is None
+
+    monkeypatch.setattr(windows_module.os.path, "exists", lambda path: True)
+    assert platform.validate_mount_location(location="Z:") == {
+        "code": "mountpoint_not_empty",
+        "params": {},
+    }
 
 
 def test_windows_account_work_is_file_work_under_the_profile(monkeypatch, tmp_path):

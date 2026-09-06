@@ -25,11 +25,17 @@ class FakeMountPlatform(AgentPlatform):
         self.attach_error = None
         self.detach_error = None
         self.has_tooling = True
+        self.location_refusal = None
         # An observer a test may hang on the slow step, to read state mid-step.
         self.on_attach = None
 
     def has_mount_tooling(self) -> bool:
         return self.has_tooling
+
+    def validate_mount_location(self, *, location: str):
+        if self.location_refusal is not None:
+            return self.location_refusal
+        return super().validate_mount_location(location=location)
 
     def write_share_credentials(self, *, credentials_path, username, password):
         os.makedirs(os.path.dirname(credentials_path), exist_ok=True)
@@ -424,7 +430,21 @@ def test_a_refusing_unmount_keeps_the_record(service):
 def test_a_relative_path_is_refused(service):
     subject, _platform, _store, _tmp_path = service
 
-    assert attach(subject, path="nas/media") == {"code": "fs_refused", "params": {}}
+    assert attach(subject, path="nas/media") == {
+        "code": "mountpoint_invalid",
+        "params": {},
+    }
+
+
+def test_the_mount_location_is_judged_by_the_platform(service):
+    subject, platform, _store, tmp_path = service
+    platform.location_refusal = {"code": "mountpoint_invalid", "params": {}}
+
+    assert attach(subject, path=str(tmp_path / "point")) == {
+        "code": "mountpoint_invalid",
+        "params": {},
+    }
+    assert platform.attach_calls == []
 
 
 def entry_for(payload):

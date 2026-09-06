@@ -7,8 +7,8 @@ to act, not whether to try again — because the hub is the only thing that
 holds policy and the only thing with the memory to hold it in.
 
 Every status a runner's caller returns is typed:
-``{"state", "code", "params", "is_active"}`` — a code and its parameters,
-never an English sentence, so every surface does its own wording.
+``{"state", "code", "params"}`` — a code and its parameters, never an
+English sentence, so every surface does its own wording.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the

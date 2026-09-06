@@ -221,6 +221,14 @@ def test_the_unmount_button_greys_outside_the_records_scope():
     assert "button.disabled = !mayAct" in CONTROL_PAGE_HTML
 
 
+def test_the_browse_button_greys_where_the_platform_cannot_step_down():
+    assert "(state.capabilities || []).indexOf('run_as') >= 0" in CONTROL_PAGE_HTML
+    assert "browse.disabled = !canBrowse" in CONTROL_PAGE_HTML
+    assert "browse.title = canBrowse ? '' : WORDS.ui.not_for_platform" in (
+        CONTROL_PAGE_HTML
+    )
+
+
 def test_greyed_controls_say_why():
     assert 'privileged_only: "Sign in as an administrator to change this."' in (
         CONTROL_PAGE_HTML

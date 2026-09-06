@@ -166,6 +166,10 @@ class Agent:
         """This machine's platform tuple."""
         return self._engine.platform_tuple
 
+    def platform_capabilities(self) -> list:
+        """The capabilities this machine's platform advertises, sorted."""
+        return sorted(self._platform.capabilities)
+
     def catalog(self) -> dict:
         """The catalog the gateway last sent: ``{"modules", "services"}``."""
         return self._engine.catalog()

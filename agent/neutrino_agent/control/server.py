@@ -75,6 +75,9 @@ def _scoped_state(agent, identity: ControlIdentity) -> dict:
         "version": AGENT_VERSION,
         "hostname": hostname(),
         "platform": agent.platform(),
+        # What this machine can do, so the page greys controls the platform
+        # cannot serve.
+        "capabilities": agent.platform_capabilities(),
         "caller": {
             "account": identity.account,
             "is_privileged": identity.is_privileged,

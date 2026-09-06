@@ -400,7 +400,6 @@ def test_a_module_with_no_build_here_is_reported_unsupported_not_failed():
         "state": "unsupported",
         "code": "no_platform_build",
         "params": {},
-        "is_active": False,
     }
 
 
@@ -414,7 +413,6 @@ def test_a_kind_the_engine_does_not_run_is_reported_as_unknown():
         "state": "unknown",
         "code": "unknown_kind",
         "params": {"kind": "ai_tools"},
-        "is_active": False,
     }
 
 
@@ -428,7 +426,6 @@ def test_an_absent_capability_reports_unsupported_platform():
         "state": "failed",
         "code": "unsupported_platform",
         "params": {},
-        "is_active": False,
     }
 
 

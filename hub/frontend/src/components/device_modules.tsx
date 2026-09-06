@@ -34,10 +34,6 @@ const WORDING = {
     "answers.",
   noBuild: "No build for this platform",
   builtIn: "built in",
-  aimedHere: "pointing at this hub",
-  notAimedHere: "not pointing here",
-  activate: "Activate",
-  deactivate: "Deactivate",
   install: "Install",
   uninstall: "Uninstall",
   uninstallSshTitle: "Uninstall the SSH server on {title}",
@@ -87,8 +83,6 @@ const STATE_WORDING: Record<string, string> = {
   absent: "not installed",
   installing: "installing…",
   uninstalling: "uninstalling…",
-  activating: "activating…",
-  deactivating: "deactivating…",
   unsupported: "not available here",
   failed: "failed",
 };
@@ -104,22 +98,16 @@ const BUSY_REFRESH_INTERVAL_MS = 1000;
 // frozen on "installing…" would be a lie.
 const STEP_PATIENCE_MS = 120_000;
 
-/** The four things that can be asked of a module. */
-type Step = "installing" | "uninstalling" | "activating" | "deactivating";
+/** The two things that can be asked of a module. */
+type Step = "installing" | "uninstalling";
 
 // Every word that means a step is under way; a row mid-step must not read
 // as finished and offer the opposite button.
-const BUSY_STATES: string[] = [
-  "installing",
-  "uninstalling",
-  "activating",
-  "deactivating",
-];
+const BUSY_STATES: string[] = ["installing", "uninstalling"];
 
 /** One click's ask; the hub queues one order for it and keeps nothing. */
 interface ModuleAsk {
-  is_enabled?: boolean;
-  is_activated?: boolean;
+  is_enabled: boolean;
 }
 
 /** A step someone asked for, and when, so it cannot be shown forever. */
@@ -271,7 +259,7 @@ export function DeviceModules({
             agent.isOnline &&
             !isBusy &&
             !isOperationOpen;
-          const here = standing(deviceModule);
+          const isHere = isOnMachine(deviceModule);
           return (
             <div key={deviceModule.name} className="device_module">
               <StatusDot tone={toneFor(deviceModule)} />
@@ -288,41 +276,21 @@ export function DeviceModules({
                     : WORDING.noBuild}
                 </span>
               </div>
-              {deviceModule.has_activation && here.isOnMachine && (
-                <button
-                  type="button"
-                  className={`button button--small ${
-                    here.isAimedHere ? "button--danger" : "button--primary"
-                  }`}
-                  disabled={!isActionable}
-                  onClick={() =>
-                    void ask(deviceModule, {
-                      is_activated: !here.isAimedHere,
-                    })
-                  }
-                >
-                  <Icon name={here.isAimedHere ? "close" : "bolt"} size={13} />
-                  {here.isAimedHere ? WORDING.deactivate : WORDING.activate}
-                </button>
-              )}
               {!deviceModule.is_native && (
                 <button
                   type="button"
                   className={`button button--small ${
-                    here.isOnMachine ? "button--danger" : "button--ok"
+                    isHere ? "button--danger" : "button--ok"
                   }`}
                   disabled={!isActionable}
                   onClick={() =>
-                    here.isOnMachine
+                    isHere
                       ? askOff(deviceModule)
                       : void ask(deviceModule, { is_enabled: true })
                   }
                 >
-                  <Icon
-                    name={here.isOnMachine ? "trash" : "download"}
-                    size={13}
-                  />
-                  {here.isOnMachine ? WORDING.uninstall : WORDING.install}
+                  <Icon name={isHere ? "trash" : "download"} size={13} />
+                  {isHere ? WORDING.uninstall : WORDING.install}
                 </button>
               )}
             </div>
@@ -335,48 +303,28 @@ export function DeviceModules({
 }
 
 /**
- * What a row stands at, mid-step included.
+ * Whether a row's module is on the machine, mid-step included.
  *
  * A step in flight leaves the row between two truths, and every button has to
  * agree about which one to draw. Deciding that in one place is what keeps an
- * uninstall from offering "Install" the moment it starts, or an activation
- * from claiming the module is not there.
+ * uninstall from offering "Install" the moment it starts.
  *
  * The rule is that a step shows the world it is leaving, not the one it is
- * heading for: uninstalling is still installed until it is gone, activating
- * is still not aimed here until it arrives.
+ * heading for: uninstalling is still installed until it is gone.
  */
-function standing(deviceModule: DeviceModuleView): {
-  isOnMachine: boolean;
-  isAimedHere: boolean;
-} {
+function isOnMachine(deviceModule: DeviceModuleView): boolean {
   switch (deviceModule.state) {
     case "installing":
-      return { isOnMachine: false, isAimedHere: false };
+      return false;
     case "uninstalling":
-      return { isOnMachine: true, isAimedHere: deviceModule.is_active };
-    case "activating":
-      return { isOnMachine: true, isAimedHere: false };
-    case "deactivating":
-      return { isOnMachine: true, isAimedHere: true };
+      return true;
     default:
-      return {
-        isOnMachine: deviceModule.state === "installed",
-        isAimedHere: deviceModule.is_active,
-      };
+      return deviceModule.state === "installed";
   }
-}
-
-/** Whether the machine reports having it, ignoring any step in flight. */
-function isPresent(deviceModule: DeviceModuleView): boolean {
-  return deviceModule.state === "installed";
 }
 
 /** Which step one ask amounts to. */
 function stepFor(request: ModuleAsk): Step {
-  if (request.is_activated !== undefined) {
-    return request.is_activated ? "activating" : "deactivating";
-  }
   return request.is_enabled ? "installing" : "uninstalling";
 }
 
@@ -391,13 +339,7 @@ function hasArrived(deviceModule: DeviceModuleView, step: Step): boolean {
   if (step === "installing") {
     return deviceModule.state === "installed";
   }
-  if (step === "uninstalling") {
-    return deviceModule.state === "absent";
-  }
-  if (step === "activating") {
-    return deviceModule.is_active;
-  }
-  return !deviceModule.is_active;
+  return deviceModule.state === "absent";
 }
 
 function toneFor(
@@ -418,21 +360,12 @@ function toneFor(
   return "idle";
 }
 
-/** What a row says under its title: where it is, and where it points. */
+/** What a row says under its title: where it stands. */
 function describeModule(deviceModule: DeviceModuleView): string {
   const stateWording = deviceModule.is_native
     ? WORDING.builtIn
     : STATE_WORDING[deviceModule.state];
   const parts = [stateWording ?? STATE_WORDING_FALLBACK];
-  if (
-    deviceModule.has_activation &&
-    isPresent(deviceModule) &&
-    !BUSY_STATES.includes(deviceModule.state)
-  ) {
-    parts.push(
-      deviceModule.is_active ? WORDING.aimedHere : WORDING.notAimedHere,
-    );
-  }
   if (deviceModule.code && !BUSY_STATES.includes(deviceModule.state)) {
     parts.push(MODULE_ERROR_WORDING[deviceModule.code] ?? deviceModule.code);
   }

@@ -1,8 +1,9 @@
 """The contract every platform implements.
 
 The contract names intents, not mechanisms: enumerate human accounts; read,
-write and remove a file as an account; run a process as an account; attach,
-detach and query a share at a location; control the agent's own service;
+write and remove a file as an account; run a process as an account; judge a
+proposed mount location; attach, detach and query a share at a location;
+control the agent's own service;
 power actions; read host metrics; install and remove a package of a kind;
 switch on the platform's own SSH server. A new platform is a new class, and
 nothing above this seam changes.
@@ -24,6 +25,7 @@ direct writes into the account's profile.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 
@@ -236,6 +238,24 @@ class AgentPlatform:
             PlatformUnsupportedError: When the platform cannot step down.
         """
         raise PlatformUnsupportedError("cannot run as another account here")
+
+    def validate_mount_location(self, *, location: str) -> "dict | None":
+        """Judge a proposed mount location by this platform's own rules.
+
+        The default is the POSIX judgment the Linux and macOS platforms
+        share: a location is an absolute path. Windows overrides it with
+        the drive letter rules.
+
+        Args:
+            location: The proposed location, as typed.
+
+        Returns:
+            None when the location is acceptable, otherwise the typed
+            refusal ``{"code", "params"}``.
+        """
+        if not location or not os.path.isabs(location):
+            return {"code": "mountpoint_invalid", "params": {}}
+        return None
 
     def attach_share(
         self,

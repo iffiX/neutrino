@@ -96,6 +96,22 @@ def test_only_linux_advertises_shares_so_far():
         assert not platform.has_capability("shares")
 
 
+def test_the_posix_mount_location_judgment_wants_an_absolute_path():
+    platform = AgentPlatform()
+
+    assert platform.validate_mount_location(location="/mnt/media") is None
+    for bad in ("", "nas/media", "Z:"):
+        assert platform.validate_mount_location(location=bad) == {
+            "code": "mountpoint_invalid",
+            "params": {},
+        }
+
+
+def test_linux_and_darwin_share_the_posix_mount_location_judgment():
+    for platform in (LinuxPlatform, DarwinPlatform):
+        assert platform.validate_mount_location is AgentPlatform.validate_mount_location
+
+
 def test_an_absent_capability_is_refused_not_guessed():
     with pytest.raises(PlatformUnsupportedError) as caught:
         WindowsPlatform().run_as_account("bob", ["id"])

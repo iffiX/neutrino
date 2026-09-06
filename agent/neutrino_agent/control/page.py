@@ -220,6 +220,7 @@ const WORDS = {
     no_endpoint: "the hub has not granted this account a key yet",
     module_missing: "install the {module} module first",
     mountpoint_not_empty: "that folder is not empty",
+    mountpoint_invalid: "that is not a mount location this machine can use",
     cifs_missing: "the mount tooling is missing on this machine",
     credentials_missing: "the saved login is gone — enter it again with Config",
     fs_refused: "this account may not use that folder",
@@ -1034,7 +1035,7 @@ function drawFilesPanel(state, entries, title) {
     for (const record of records)
       card.appendChild(drawMountRecord(record, state, noteKey));
     if (staged && staged.is_open)
-      card.appendChild(drawFileForm(entry.id, staged));
+      card.appendChild(drawFileForm(entry.id, staged, state));
   }
   return card;
 }
@@ -1118,7 +1119,7 @@ function drawMountRecord(record, state, noteKey) {
   return line;
 }
 
-function drawFileForm(entryId, staged) {
+function drawFileForm(entryId, staged, state) {
   const form = document.createElement('div');
   form.className = 'form';
   const fields = [
@@ -1145,6 +1146,10 @@ function drawFileForm(entryId, staged) {
   const browse = document.createElement('button');
   browse.className = 'ghost';
   browse.textContent = WORDS.ui.browse;
+  // The listing runs as the caller, so browsing needs the run_as capability.
+  const canBrowse = (state.capabilities || []).indexOf('run_as') >= 0;
+  browse.disabled = !canBrowse;
+  browse.title = canBrowse ? '' : WORDS.ui.not_for_platform;
   browse.onclick = () => openBrowser(staged.path, (chosen) => {
     staged.path = chosen;
     redraw();

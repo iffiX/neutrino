@@ -165,12 +165,13 @@ class FileServiceHandler(ServiceTypeHandler):
         Returns:
             Empty on success, ``{"code", "params"}`` on a refusal.
         """
-        if not path or not os.path.isabs(path):
-            return {"code": "fs_refused", "params": {}}
+        refusal = self._platform.validate_mount_location(location=path)
+        if refusal is not None:
+            return refusal
         refusal = self._tooling_refusal()
         if refusal is not None:
             return refusal
-        location = os.path.abspath(path)
+        location = os.path.normpath(path)
         with self._lock:
             if not is_privileged:
                 try:

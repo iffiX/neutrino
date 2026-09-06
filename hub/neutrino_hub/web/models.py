@@ -1151,7 +1151,7 @@ class ClientHeartbeat(BaseModel):
     accounts: list[str] = Field(default_factory=list)
     catalog_hash: str = ""
     # What state each module is in: name to
-    # ``{"state", "code", "params", "is_active"}``. What is true, which is
+    # ``{"state", "code", "params"}``. What is true, which is
     # the only thing about modules the machine answers for.
     modules: dict = Field(default_factory=dict)
     # Toggles made on the machine's own page. They ask the hub rather than
@@ -1282,9 +1282,6 @@ class DeviceModuleView(BaseModel):
     is_supported: bool = True
     # The platform carries this natively: worded built in, no button.
     is_native: bool = False
-    # Whether installing and pointing at the hub are separate steps.
-    has_activation: bool = False
-    is_active: bool = False
     state: str = "unknown"
     # Why the state is what it is, when the agent said; the pages word it.
     code: str = ""

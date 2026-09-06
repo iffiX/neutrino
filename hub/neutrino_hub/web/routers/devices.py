@@ -490,8 +490,6 @@ def list_modules(
                 # agent will say what it cannot do once it beats.
                 is_supported=(any(key in platforms for key in keys) if keys else True),
                 is_native=(entry == {}),
-                has_activation=manifest.get("has_activation", False),
-                is_active=bool(status_.get("is_active")),
                 state=state,
                 code=code,
                 params=params,

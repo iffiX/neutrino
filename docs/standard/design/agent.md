@@ -218,7 +218,10 @@ declared like every other dependency rather than installed on the way to
 a mount. The password becomes a root-only credentials file on this
 machine and never travels to the hub. A path under the asking account's
 home is ownership-mapped to that account;
-anywhere else follows the share's own permissions. A mount point that is
+anywhere else follows the share's own permissions. What shape a location
+takes is the platform's own judgment — an absolute path on Linux and
+macOS, an unused drive letter on Windows — and a location off that shape
+is refused (`{"code": "mountpoint_invalid"}`). A mount point that is
 not an empty directory is refused (`{"code": "mountpoint_not_empty"}` —
 mounting over content hides it).
 
@@ -283,7 +286,8 @@ changes. The contract names intents, not mechanisms:
 
 - enumerate human accounts; read a local caller's identity
 - read, write, remove a file as an account; run a process as an account
-- attach a share for an account at a location, detach it, ask if attached
+- judge a proposed mount location; attach a share for an account at a
+  location, detach it, ask if attached
 - control the agent's own service; power actions; read metrics
 - install and remove a package of a given kind
 

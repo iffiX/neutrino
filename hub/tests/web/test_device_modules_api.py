@@ -147,12 +147,11 @@ def test_what_the_agent_reported_is_found_whatever_case_the_MAC_is_asked_in(api)
     waiting for an agent that is in fact answering."""
     client, runtime = api
     FakeRegistry.device.client.last_seen = beating(2)
-    runtime.client_modules[MAC] = {"anydesk": {"state": "installed", "is_active": True}}
+    runtime.client_modules[MAC] = {"anydesk": {"state": "installed"}}
 
     answer = client.get(f"/api/devices/{MAC.upper()}/modules").json()
 
     assert answer["modules"][0]["state"] == "installed"
-    assert answer["modules"][0]["is_active"]
 
 
 def test_the_manifest_kind_reaches_the_row_for_the_ssh_confirm(api, monkeypatch):

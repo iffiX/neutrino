@@ -751,9 +751,6 @@ export interface DeviceModuleView {
   is_supported: boolean;
   /** The platform carries this natively: worded built in, no button. */
   is_native: boolean;
-  /** Whether installing and pointing at this hub are separate steps. */
-  has_activation: boolean;
-  is_active: boolean;
   state: string;
   /** Why the state is what it is, when the agent said; the page words it. */
   code: string;

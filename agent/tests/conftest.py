@@ -139,6 +139,9 @@ class FakeControlAgent:
     def platform(self) -> dict:
         return {"os": "linux", "family": "debian", "arch": "x86_64"}
 
+    def platform_capabilities(self) -> list:
+        return ["account_files", "run_as", "shares"]
+
     def catalog(self) -> dict:
         # Modules arrive already resolved for this platform: the hub read
         # the manifest and picked the entry, so `entry` is the machine's
@@ -162,7 +165,7 @@ class FakeControlAgent:
         return list(SERVICES)
 
     def module_states(self) -> dict:
-        return {"openssh_server": {"state": "installed", "is_active": False}}
+        return {"openssh_server": {"state": "installed"}}
 
     def pending_module_requests(self) -> dict:
         return {}

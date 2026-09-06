@@ -43,7 +43,6 @@ def resolve_module(manifest: dict, platform: dict) -> dict:
         "title": manifest.get("title", manifest.get("name", "")),
         "description": manifest.get("description", ""),
         "kind": manifest.get("kind", ""),
-        "has_activation": bool(manifest.get("has_activation")),
         "platform_key": platform_key,
         "entry": entry,
         "verify": str(manifest.get("verify", {}).get(os_name, "") or ""),

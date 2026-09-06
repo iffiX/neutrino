@@ -13,6 +13,7 @@ answer ``unsupported_platform`` until the platform is filled in.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -106,6 +107,22 @@ class WindowsPlatform(AgentPlatform):
                 path.unlink()
         except OSError:
             return
+
+    def validate_mount_location(self, *, location: str) -> "dict | None":
+        """Judge a proposed mount location: a single drive letter plus a colon.
+
+        Args:
+            location: The proposed location, as typed.
+
+        Returns:
+            None for an unused drive letter such as ``Z:``, otherwise the
+            typed refusal ``{"code", "params"}``.
+        """
+        if re.fullmatch(r"[A-Za-z]:", location) is None:
+            return {"code": "mountpoint_invalid", "params": {}}
+        if os.path.exists(location + "\\"):
+            return {"code": "mountpoint_not_empty", "params": {}}
+        return None
 
     def install_package(self, path: str, *, package_kind: str, entry: dict) -> None:
         """Install one downloaded package.
