@@ -345,11 +345,12 @@ class LinuxPlatform(AgentPlatform):
             detail = (result.stderr or result.stdout or "").strip()[-200:]
             raise ShareAttachError("mount_failed", detail=detail)
 
-    def detach_share(self, *, location: str) -> None:
+    def detach_share(self, *, location: str, account: str = "") -> None:
         """Unmount the share at a location.
 
         Args:
             location: The mount point.
+            account: Ignored; a mount here is machine-wide.
 
         Raises:
             ShareAttachError: ``unmount_failed`` with the tool's own words.
@@ -367,11 +368,12 @@ class LinuxPlatform(AgentPlatform):
             detail = (result.stderr or result.stdout or "").strip()[-200:]
             raise ShareAttachError("unmount_failed", detail=detail)
 
-    def is_share_attached(self, *, location: str) -> bool:
+    def is_share_attached(self, *, location: str, account: str = "") -> bool:
         """Whether anything is mounted at a location, read from the kernel.
 
         Args:
             location: The mount point.
+            account: Ignored; a mount here is machine-wide.
 
         Returns:
             True when ``/proc/mounts`` names it.

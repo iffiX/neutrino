@@ -13,6 +13,7 @@ import json
 import pytest
 
 import neutrino_agent.core.enrollment as enrollment
+import neutrino_agent.platforms.base as platforms_base_module
 import neutrino_agent.services.file as file_module
 import neutrino_agent.services.store as store_module
 from neutrino_agent.platforms.base import AgentPlatform
@@ -66,6 +67,7 @@ def _isolated_machine_paths(tmp_path, monkeypatch):
         "AGENT_MOUNT_CREDENTIALS_DIR",
         str(tmp_path / "mount_credentials"),
     )
+    monkeypatch.setattr(platforms_base_module, "AGENT_DATA_DIR_POSIX", str(tmp_path))
 
 
 @pytest.fixture
@@ -137,6 +139,7 @@ class FakeControlAgent:
         self.connect_error = None
         self.service_calls = []
         self.service_reply = {}
+        self.service_error = None
         self.operation_payload = None
 
     def platform(self) -> dict:
@@ -220,6 +223,8 @@ class FakeControlAgent:
 
     def service_action(self, service_type, *, account, is_privileged, body) -> dict:
         self.service_calls.append((service_type, account, is_privileged, dict(body)))
+        if self.service_error is not None:
+            raise self.service_error
         return dict(self.service_reply)
 
     def request_module(self, name, *, is_enabled=None):

@@ -9,6 +9,7 @@ CLI; and the commands a reply queues. Nothing here talks to a network.
 """
 
 import json
+import os
 
 import pytest
 
@@ -421,6 +422,17 @@ def scripted_agent(config_path, script=None, *, platform=None):
     agent = Agent(log=lambda message: None, platform=platform)
     agent._channel = _ScriptedChannel(script)
     return agent
+
+
+def test_the_stores_live_under_the_platforms_data_root():
+    platform = _FakePlatform(metrics=HostMetrics(), accounts=[])
+    agent = Agent(log=lambda message: None, platform=platform)
+
+    root = platform.agent_data_dir()
+    assert agent._store._path == os.path.join(root, "services.json")
+    assert agent._services["file"]._credentials_dir == os.path.join(
+        root, "mount_credentials"
+    )
 
 
 def test_heartbeat_payload_every_field_comes_from_its_source(config_path, monkeypatch):

@@ -189,11 +189,15 @@ class FileServiceHandler(ServiceTypeHandler):
             for old_id, old in list(self._store.mounts().items()):
                 if old.get("entry_id") != entry_id:
                     continue
+                old_location = str(old.get("path", ""))
+                old_account = str(old.get("account", ""))
                 try:
                     if self._platform.is_share_attached(
-                        location=str(old.get("path", ""))
+                        location=old_location, account=old_account
                     ):
-                        self._platform.detach_share(location=str(old.get("path", "")))
+                        self._platform.detach_share(
+                            location=old_location, account=old_account
+                        )
                 except (ShareAttachError, PlatformUnsupportedError):
                     pass
                 self._discard_credentials(old_id)
@@ -275,9 +279,10 @@ class FileServiceHandler(ServiceTypeHandler):
             if not is_privileged and record.get("account") != account:
                 return {"code": "control_scope_refused", "params": {}}
             location = str(record.get("path", ""))
+            owner = str(record.get("account", ""))
             try:
-                if self._platform.is_share_attached(location=location):
-                    self._platform.detach_share(location=location)
+                if self._platform.is_share_attached(location=location, account=owner):
+                    self._platform.detach_share(location=location, account=owner)
             except ShareAttachError as error:
                 return _share_refusal(error)
             except PlatformUnsupportedError:
@@ -300,7 +305,9 @@ class FileServiceHandler(ServiceTypeHandler):
         for record_id, record in sorted(self._store.mounts().items()):
             location = str(record.get("path", ""))
             try:
-                is_attached = self._platform.is_share_attached(location=location)
+                is_attached = self._platform.is_share_attached(
+                    location=location, account=str(record.get("account", ""))
+                )
             except PlatformUnsupportedError:
                 is_attached = False
             problem = dict(self._problems.get(record_id, {}))
@@ -362,7 +369,9 @@ class FileServiceHandler(ServiceTypeHandler):
     def _remount(self, record_id: str, record: dict) -> None:
         location = str(record.get("path", ""))
         try:
-            if self._platform.is_share_attached(location=location):
+            if self._platform.is_share_attached(
+                location=location, account=str(record.get("account", ""))
+            ):
                 self._problems.pop(record_id, None)
                 self._stages.pop(record_id, None)
                 return

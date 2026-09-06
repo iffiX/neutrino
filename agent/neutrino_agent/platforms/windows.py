@@ -3,11 +3,12 @@
 Windows has no general way to become another user without their password, so
 account work is file work: the agent writes into the account's profile,
 where inherited ACLs make the files the account's own, and a process runs as
-an account only for the one logged on at the console. The control channel is
+an account only when that account has a logged-on session — console or RDP,
+found by enumerating the sessions. The control channel is
 a named pipe whose peer identity comes from pipe impersonation; privileged
 is an elevated Administrators token, so an unelevated admin shell is an
 ordinary account. A share is stored credentials plus a mapping made inside
-the logged-on account's own session, the SSH server is a Windows capability,
+the target account's own session, the SSH server is a Windows capability,
 the agent runs from a scheduled task, and metrics come from native Win32
 calls. System packages stay refused: Windows has no package manager the hub
 drives.
@@ -19,6 +20,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import ntpath
 import os
 import re
 import subprocess
@@ -45,7 +47,13 @@ from neutrino_agent.platforms.base import (
 )
 
 WINDOWS_PROFILES_DIR = "C:\\Users"
+WINDOWS_AGENT_DATA_DIR = "C:\\ProgramData\\Neutrino\\agent"
 WINDOWS_OPENSSH_CAPABILITY = "OpenSSH.Server~~~~0.0.1.0"
+
+# The last line a fully-run mapping script prints. PowerShell fed a script on
+# standard input can discard it silently and still exit zero, so a zero exit
+# without this marker is a failure, never a success.
+WINDOWS_MOUNT_SUCCESS_MARKER = "NEUTRINO_MOUNT_OK"
 
 # A person is a local profile: a non-special profile whose SID is a real
 # user's (S-1-5-21-…) and not one of the built-in accounts.
@@ -78,6 +86,9 @@ TOKEN_ELEVATION_CLASS = 20
 WIN_BUILTIN_ADMINISTRATORS_SID = 26
 SECURITY_MAX_SID_BYTES = 68
 WTS_USER_NAME_CLASS = 5
+WTS_CONNECTSTATE_CLASS = 8
+WTS_CONNECTSTATE_ACTIVE = 0
+WTS_CONNECTSTATE_DISCONNECTED = 4
 CREATE_NO_WINDOW = 0x08000000
 STARTF_USESTDHANDLES = 0x00000100
 WAIT_TIMEOUT = 0x00000102
@@ -199,6 +210,12 @@ def _mapping_script(
     and ``New-SmbMapping`` makes the mapping in the session the script runs
     in — the account's own, which is what makes it visible to that person.
 
+    PowerShell reading ``-Command -`` buffers a multi-line block like an
+    interactive prompt and runs it only once a blank line closes it, so the
+    script ends with one; without it the block is discarded at end of input
+    with exit code zero. The success marker is the proof the script ran:
+    the caller requires it on standard output.
+
     Args:
         host: The share's host.
         share: The share name.
@@ -207,7 +224,7 @@ def _mapping_script(
         password: The share's own password.
 
     Returns:
-        The script text.
+        The script text, closed by a trailing blank line.
     """
     remote = f"\\\\{host}\\{share}"
     return (
@@ -222,11 +239,13 @@ def _mapping_script(
         "-ErrorAction SilentlyContinue | Out-Null\n"
         "  New-SmbMapping -LocalPath $local -RemotePath $remote "
         "-UserName $u -Password $p -Persistent $true -ErrorAction Stop | Out-Null\n"
+        f"  Write-Output '{WINDOWS_MOUNT_SUCCESS_MARKER}'\n"
         "  exit 0\n"
         "} catch {\n"
         "  Write-Error $_\n"
         "  exit 1\n"
         "}\n"
+        "\n"
     )
 
 
@@ -273,6 +292,14 @@ class WindowsPlatform(AgentPlatform):
         # Account name to its resolved profile directory, so the database is
         # asked once per account rather than per file operation.
         self._home_cache: "dict[str, str]" = {}
+
+    def agent_data_dir(self) -> str:
+        """Where the agent keeps its own state: under ProgramData.
+
+        Returns:
+            The absolute directory path.
+        """
+        return WINDOWS_AGENT_DATA_DIR
 
     def human_accounts(self) -> list:
         """The accounts that are people: the machine's local profiles.
@@ -448,11 +475,12 @@ class WindowsPlatform(AgentPlatform):
         stdin: str = "",
         timeout_s: int = AGENT_STEP_DOWN_TIMEOUT_S,
     ) -> "subprocess.CompletedProcess":
-        """Run a process as the account logged on at the console.
+        """Run a process in the account's own logged-on session.
 
-        Windows cannot become an arbitrary account without its password,
-        so only the console session's own account can be stepped into,
-        through its session token.
+        Windows cannot become an arbitrary account without its password, so
+        the step-down goes through a session token: the sessions are
+        enumerated and the account's Active session — console or RDP — is
+        picked, or failing that a Disconnected one it left behind.
 
         Args:
             account: The account; empty runs as the agent itself.
@@ -464,8 +492,8 @@ class WindowsPlatform(AgentPlatform):
             The completed process, with text output captured.
 
         Raises:
-            PlatformUnsupportedError: When the account is not the one
-                logged on at the console.
+            PlatformUnsupportedError: When the account has no logged-on
+                session.
         """
         if not account:
             return subprocess.run(
@@ -476,15 +504,12 @@ class WindowsPlatform(AgentPlatform):
                 timeout=timeout_s,
             )
         win32 = self._win32()
-        try:
-            logged_on = win32.console_account()
-        except OSError:
-            logged_on = ""
-        if not logged_on or logged_on.lower() != account.lower():
-            raise PlatformUnsupportedError(
-                "only the logged-on account can run a process"
-            )
-        return win32.run_as_console_user(list(argv), stdin=stdin, timeout_s=timeout_s)
+        session_id = self._account_session_id(account)
+        if session_id is None:
+            raise PlatformUnsupportedError("the account has no logged-on session")
+        return win32.run_in_session(
+            session_id, list(argv), stdin=stdin, timeout_s=timeout_s
+        )
 
     def is_path_writable(self, *, account: str, path: str) -> bool:
         """Whether an account may write at a path, judged by its profile.
@@ -596,9 +621,10 @@ class WindowsPlatform(AgentPlatform):
         session is invisible to the person's Explorer; the mapping is made in
         the account's session through the run-as seam instead. ``cmdkey`` and
         ``New-SmbMapping`` both take the login from a script fed on standard
-        input, so the password is on no argument vector. Only the account
-        logged on at the console can be stepped into: any other asker is
-        refused.
+        input, so the password is on no argument vector. The script's
+        success marker must come back on standard output: a zero exit
+        without it means PowerShell discarded the script, and reads as a
+        failure carrying whatever the run printed.
 
         Args:
             account: The asking account, whose session the mapping lands in.
@@ -611,8 +637,8 @@ class WindowsPlatform(AgentPlatform):
 
         Raises:
             ShareAttachError: ``credentials_missing`` without the file,
-                ``no_logged_on_session`` when the account is not at the
-                console, ``mount_failed`` with the tool's own words otherwise.
+                ``no_logged_on_session`` when the account has no session,
+                ``mount_failed`` with the tool's own words otherwise.
         """
         host, share = _share_parts(share_url)
         if not host or not share:
@@ -647,6 +673,9 @@ class WindowsPlatform(AgentPlatform):
         if result.returncode != 0:
             detail = (result.stderr or result.stdout or "").strip()[-200:]
             raise ShareAttachError("mount_failed", detail=detail)
+        if WINDOWS_MOUNT_SUCCESS_MARKER not in (result.stdout or ""):
+            detail = ((result.stdout or "") + (result.stderr or "")).strip()[-200:]
+            raise ShareAttachError("mount_failed", detail=detail)
 
     def write_share_credentials(
         self, *, credentials_path: str, username: str, password: str
@@ -658,33 +687,33 @@ class WindowsPlatform(AgentPlatform):
             username: The share's own username.
             password: The share's own password.
         """
-        directory = os.path.dirname(credentials_path)
+        directory = ntpath.dirname(credentials_path)
         if directory:
             os.makedirs(directory, exist_ok=True)
             self._restrict_directory(directory)
         with open(credentials_path, "w", encoding="utf-8") as stream:
             stream.write(f"username={username}\npassword={password}\n")
 
-    def detach_share(self, *, location: str) -> None:
-        """Delete the mapping at a location, inside the logged-on session.
+    def detach_share(self, *, location: str, account: str = "") -> None:
+        """Delete the mapping at a location, inside the account's session.
 
-        The mapping lives in the console account's session, so the delete
-        runs there too; a machine with nobody signed in has no mapping to
+        The mapping lives in the target account's own session, so the
+        delete runs there too; an account with no session has no mapping to
         remove and is refused.
 
         Args:
             location: The mapped drive letter.
+            account: The account whose session holds the mapping.
 
         Raises:
-            ShareAttachError: ``no_logged_on_session`` with nobody at the
-                console, ``unmount_failed`` with the tool's own words.
+            ShareAttachError: ``no_logged_on_session`` when the account has
+                no session, ``unmount_failed`` with the tool's own words.
         """
-        console = self._console_account()
-        if not console:
+        if not account:
             raise ShareAttachError("no_logged_on_session")
         try:
             result = self.run_as_account(
-                console,
+                account,
                 ["net", "use", location, "/delete", "/y"],
                 timeout_s=WINDOWS_MOUNT_TIMEOUT_S,
             )
@@ -696,25 +725,25 @@ class WindowsPlatform(AgentPlatform):
             detail = (result.stderr or result.stdout or "").strip()[-200:]
             raise ShareAttachError("unmount_failed", detail=detail)
 
-    def is_share_attached(self, *, location: str) -> bool:
-        """Whether a mapping stands at a location in the logged-on session.
+    def is_share_attached(self, *, location: str, account: str = "") -> bool:
+        """Whether a mapping stands at a location in the account's session.
 
         The mapping is per-session, so the question is answered inside the
-        console account's session, where ``net use <drive>`` exits zero for a
-        live mapping. Nobody signed in means nothing is attached.
+        target account's own session, where ``net use <drive>`` exits zero
+        for a live mapping. An account with no session has nothing attached.
 
         Args:
             location: The mapped drive letter.
+            account: The account whose session would hold the mapping.
 
         Returns:
             True when the account's session names the drive as mapped.
         """
-        console = self._console_account()
-        if not console:
+        if not account:
             return False
         try:
             result = self.run_as_account(
-                console,
+                account,
                 ["net", "use", location],
                 timeout_s=WINDOWS_MOUNT_TIMEOUT_S,
             )
@@ -972,12 +1001,36 @@ class WindowsPlatform(AgentPlatform):
         except OSError:
             return ""
 
-    def _console_account(self) -> str:
-        """The account logged on at the console, empty when nobody is."""
+    def _account_session_id(self, account: str) -> "int | None":
+        """The session the target account is logged on in, None without one.
+
+        An Active session of the account wins — console or RDP alike, which
+        is what finds a person whose logon migrated off the console; failing
+        that, a Disconnected session the account left behind still holds its
+        mappings and is picked. Account names compare case-insensitively.
+
+        Args:
+            account: The target account.
+
+        Returns:
+            The session id, or None when the account has no session.
+        """
         try:
-            return self._win32().console_account()
+            sessions = self._win32().sessions()
         except OSError:
-            return ""
+            return None
+        disconnected = None
+        for session in sessions:
+            if str(session.get("account", "")).lower() != account.lower():
+                continue
+            if session.get("state") == WTS_CONNECTSTATE_ACTIVE:
+                return int(session["session_id"])
+            if (
+                disconnected is None
+                and session.get("state") == WTS_CONNECTSTATE_DISCONNECTED
+            ):
+                disconnected = int(session["session_id"])
+        return disconnected
 
     def _restrict_directory(self, directory: str) -> None:
         """Cut a directory's ACL to SYSTEM and Administrators.
@@ -1065,6 +1118,13 @@ class _Win32Api:
             ctypes.c_void_p,
             ctypes.c_ulong,
             ctypes.c_int,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
+        self._wtsapi32.WTSEnumerateSessionsW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_ulong,
+            ctypes.c_ulong,
             ctypes.c_void_p,
             ctypes.c_void_p,
         ]
@@ -1362,37 +1422,46 @@ class _Win32Api:
         """Close a handle. Best-effort."""
         self._kernel32.CloseHandle(ctypes.c_void_p(handle))
 
-    def console_account(self) -> str:
-        """The account logged on at the console, empty when nobody is.
+    def sessions(self) -> list:
+        """Every logon session with its account name and connect state.
 
         Returns:
-            The account name.
+            ``[{"session_id", "account", "state"}]``; a session with no
+            account carries an empty name.
+
+        Raises:
+            OSError: When the enumeration is refused.
         """
-        session = self._kernel32.WTSGetActiveConsoleSessionId()
-        if session == 0xFFFFFFFF:
-            return ""
-        buffer = ctypes.c_void_p()
-        length = ctypes.c_ulong(0)
-        ok = self._wtsapi32.WTSQuerySessionInformationW(
-            None,
-            session,
-            WTS_USER_NAME_CLASS,
-            ctypes.byref(buffer),
-            ctypes.byref(length),
+        array = ctypes.c_void_p()
+        count = ctypes.c_ulong(0)
+        ok = self._wtsapi32.WTSEnumerateSessionsW(
+            None, 0, 1, ctypes.byref(array), ctypes.byref(count)
         )
         if not ok:
-            return ""
+            raise ctypes.WinError(ctypes.get_last_error())
         try:
-            return ctypes.wstring_at(buffer.value) if buffer.value else ""
+            rows = ctypes.cast(array, ctypes.POINTER(_WtsSessionInfo))
+            listed = []
+            for index in range(count.value):
+                session_id = int(rows[index].SessionId)
+                listed.append(
+                    {
+                        "session_id": session_id,
+                        "account": self._session_account(session_id),
+                        "state": self._session_state(session_id),
+                    }
+                )
+            return listed
         finally:
-            self._wtsapi32.WTSFreeMemory(buffer)
+            self._wtsapi32.WTSFreeMemory(array)
 
-    def run_as_console_user(
-        self, argv: list, *, stdin: str, timeout_s: int
+    def run_in_session(
+        self, session_id: int, argv: list, *, stdin: str, timeout_s: int
     ) -> "subprocess.CompletedProcess":
-        """Run a process in the console session, as its own account.
+        """Run a process in one session, as that session's own account.
 
         Args:
+            session_id: The session whose token spawns the process.
             argv: Argument vector.
             stdin: Sent to the process's standard input.
             timeout_s: How long to wait.
@@ -1404,9 +1473,8 @@ class _Win32Api:
             OSError: When the session token or the spawn is refused.
             subprocess.TimeoutExpired: When the process outlives the wait.
         """
-        session = self._kernel32.WTSGetActiveConsoleSessionId()
         token = ctypes.c_void_p()
-        if not self._wtsapi32.WTSQueryUserToken(session, ctypes.byref(token)):
+        if not self._wtsapi32.WTSQueryUserToken(session_id, ctypes.byref(token)):
             raise ctypes.WinError(ctypes.get_last_error())
         try:
             return self._spawn_with_token(
@@ -1414,6 +1482,44 @@ class _Win32Api:
             )
         finally:
             self._kernel32.CloseHandle(token)
+
+    def _session_account(self, session_id: int) -> str:
+        """One session's account name, empty for a session nobody owns."""
+        buffer = ctypes.c_void_p()
+        length = ctypes.c_ulong(0)
+        ok = self._wtsapi32.WTSQuerySessionInformationW(
+            None,
+            session_id,
+            WTS_USER_NAME_CLASS,
+            ctypes.byref(buffer),
+            ctypes.byref(length),
+        )
+        if not ok:
+            return ""
+        try:
+            return ctypes.wstring_at(buffer.value) if buffer.value else ""
+        finally:
+            self._wtsapi32.WTSFreeMemory(buffer)
+
+    def _session_state(self, session_id: int) -> int:
+        """One session's WTS connect state, -1 where it cannot be read."""
+        buffer = ctypes.c_void_p()
+        length = ctypes.c_ulong(0)
+        ok = self._wtsapi32.WTSQuerySessionInformationW(
+            None,
+            session_id,
+            WTS_CONNECTSTATE_CLASS,
+            ctypes.byref(buffer),
+            ctypes.byref(length),
+        )
+        if not ok:
+            return -1
+        try:
+            if not buffer.value:
+                return -1
+            return int(ctypes.cast(buffer, ctypes.POINTER(ctypes.c_int)).contents.value)
+        finally:
+            self._wtsapi32.WTSFreeMemory(buffer)
 
     def _spawn_with_token(
         self, token: int, argv: list, *, stdin: str, timeout_s: int
@@ -1478,6 +1584,16 @@ class _Win32Api:
             with open(stderr_path, "r", encoding="utf-8", errors="replace") as stream:
                 stderr = stream.read()
         return subprocess.CompletedProcess(list(argv), int(code.value), stdout, stderr)
+
+
+class _WtsSessionInfo(ctypes.Structure):
+    """WTS_SESSION_INFOW, one enumerated logon session."""
+
+    _fields_ = [
+        ("SessionId", ctypes.c_ulong),
+        ("pWinStationName", ctypes.c_wchar_p),
+        ("State", ctypes.c_int),
+    ]
 
 
 class _FileTime(ctypes.Structure):

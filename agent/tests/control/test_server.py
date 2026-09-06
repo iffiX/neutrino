@@ -557,6 +557,38 @@ def test_a_garbage_body_acts_on_nothing_and_never_crashes(control):
     assert agent.requested == [("", None)]
 
 
+def test_a_handler_exception_answers_typed_and_keeps_the_connection(control):
+    server, agent, platform = control
+    platform.peer = dict(ROOT)
+    agent.service_error = OSError("a secret-bearing message")
+
+    status, reply = over_socket(
+        server, "POST", "/api/services/file", {"action": "mount"}
+    )
+
+    # The wire carries the class name only, never the message's own words.
+    assert status == 500
+    assert reply == {"code": "agent_internal", "params": {"error": "OSError"}}
+    assert "secret-bearing" not in json.dumps(reply)
+
+    # Both transports share the guard, and the server keeps answering.
+    token = mint(server, platform, ROOT)
+    status, reply = loopback_json(
+        server,
+        "POST",
+        "/api/services/file",
+        token=token,
+        body={"action": "mount"},
+    )
+    assert status == 500
+    assert reply == {"code": "agent_internal", "params": {"error": "OSError"}}
+
+    agent.service_error = None
+    status, state = over_socket(server, "GET", "/api/state")
+    assert status == 200
+    assert state["caller"]["account"] == "root"
+
+
 # --- privileged verbs ---
 
 

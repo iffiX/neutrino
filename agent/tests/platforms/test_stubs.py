@@ -62,6 +62,7 @@ CONTRACT_CALLS = {
 # operations riding the step-down seam, and the capability question itself.
 BASE_IMPLEMENTED = {
     "has_capability": "",
+    "agent_data_dir": "",
     "read_account_file": "account_files",
     "read_account_file_mode": "account_files",
     "write_account_file": "account_files",

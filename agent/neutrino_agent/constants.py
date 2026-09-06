@@ -90,9 +90,16 @@ AGENT_UI_WATCH_INTERVAL_S = 2
 # Where the machine keeps its service choices — AI switching targets and
 # mount records. Machine state: it survives a hub restore and appears in no
 # hub backup. Mount passwords never enter it; each mount record has its own
-# credentials file under the directory beside it.
-AGENT_SERVICE_STORE_PATH = "/etc/neutrino/agent/services.json"
-AGENT_MOUNT_CREDENTIALS_DIR = "/etc/neutrino/agent/mount_credentials"
+# credentials file under the directory beside it. The directory both live in
+# is the platform contract's ``agent_data_dir``; these are the POSIX paths,
+# which double as the defaults where nothing wires a root in.
+AGENT_DATA_DIR_POSIX = "/etc/neutrino/agent"
+AGENT_SERVICE_STORE_NAME = "services.json"
+AGENT_MOUNT_CREDENTIALS_DIR_NAME = "mount_credentials"
+AGENT_SERVICE_STORE_PATH = AGENT_DATA_DIR_POSIX + "/" + AGENT_SERVICE_STORE_NAME
+AGENT_MOUNT_CREDENTIALS_DIR = (
+    AGENT_DATA_DIR_POSIX + "/" + AGENT_MOUNT_CREDENTIALS_DIR_NAME
+)
 
 # How often enabled mount records that are not attached are remounted, which
 # is also what brings them back after a reboot.

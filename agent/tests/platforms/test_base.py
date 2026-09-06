@@ -10,7 +10,12 @@ import subprocess
 
 import pytest
 
-from neutrino_agent.constants import AGENT_STEP_DOWN_TIMEOUT_S
+import neutrino_agent.platforms.base as base_module
+from neutrino_agent.constants import (
+    AGENT_MOUNT_CREDENTIALS_DIR,
+    AGENT_SERVICE_STORE_PATH,
+    AGENT_STEP_DOWN_TIMEOUT_S,
+)
 from neutrino_agent.platforms.base import AgentPlatform, PlatformUnsupportedError
 from neutrino_agent.platforms.darwin import DarwinPlatform
 from neutrino_agent.platforms.linux import LinuxPlatform
@@ -64,6 +69,16 @@ class PreparingPlatform(AgentPlatform):
 
 def test_the_base_platform_advertises_nothing():
     assert AgentPlatform().capabilities == frozenset()
+
+
+def test_the_agent_data_root_defaults_to_the_posix_directory(monkeypatch):
+    # The suite-wide fixture redirects the root off the machine; the real
+    # value is put back here to pin it with the paths that hang off it.
+    monkeypatch.setattr(base_module, "AGENT_DATA_DIR_POSIX", "/etc/neutrino/agent")
+
+    assert AgentPlatform().agent_data_dir() == "/etc/neutrino/agent"
+    assert AGENT_SERVICE_STORE_PATH == "/etc/neutrino/agent/services.json"
+    assert AGENT_MOUNT_CREDENTIALS_DIR == "/etc/neutrino/agent/mount_credentials"
 
 
 def test_each_platform_advertises_its_capability_set():

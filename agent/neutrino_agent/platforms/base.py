@@ -29,7 +29,7 @@ import os
 import shutil
 import subprocess
 
-from neutrino_agent.constants import AGENT_STEP_DOWN_TIMEOUT_S
+from neutrino_agent.constants import AGENT_DATA_DIR_POSIX, AGENT_STEP_DOWN_TIMEOUT_S
 
 
 class PlatformUnsupportedError(RuntimeError):
@@ -89,6 +89,17 @@ class AgentPlatform:
             True when the platform has it.
         """
         return name in self.capabilities
+
+    def agent_data_dir(self) -> str:
+        """Where the agent keeps its own state on this platform.
+
+        The service store and the mount credentials directory both live
+        under this root.
+
+        Returns:
+            The absolute directory path.
+        """
+        return AGENT_DATA_DIR_POSIX
 
     def human_accounts(self) -> list:
         """The accounts this platform judges to be people.
@@ -345,11 +356,13 @@ class AgentPlatform:
         """
         raise PlatformUnsupportedError("cannot keep share credentials here")
 
-    def detach_share(self, *, location: str) -> None:
+    def detach_share(self, *, location: str, account: str = "") -> None:
         """Detach a share attached at a location.
 
         Args:
             location: Where the share is attached.
+            account: The account whose attachment it is; platforms where a
+                mount is machine-wide ignore it.
 
         Raises:
             PlatformUnsupportedError: When the platform cannot detach.
@@ -357,11 +370,13 @@ class AgentPlatform:
         """
         raise PlatformUnsupportedError("cannot detach a share here")
 
-    def is_share_attached(self, *, location: str) -> bool:
+    def is_share_attached(self, *, location: str, account: str = "") -> bool:
         """Whether a share is attached at a location.
 
         Args:
             location: The location to ask about.
+            account: The account whose attachment it would be; platforms
+                where a mount is machine-wide ignore it.
 
         Raises:
             PlatformUnsupportedError: When the platform cannot answer.

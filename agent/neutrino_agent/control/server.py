@@ -14,7 +14,10 @@ port: started with ``--no-ui``, or with the port taken by something else, it
 refuses — a privileged token opened into a page some other local process is
 serving would be that process's to read.
 
-Every refusal is ``{"code": ...}``; each surface does its own wording.
+Every refusal is ``{"code": ...}``; each surface does its own wording. A
+handler exception never drops the connection: the caller gets
+``agent_internal`` carrying only the exception's class name, and the
+traceback goes to the agent's own log.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -26,6 +29,7 @@ import os
 import socket
 import socketserver
 import threading
+import traceback
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -246,6 +250,7 @@ class ControlServer:
         server.control_platform = self._platform
         server.control_tokens = self._tokens
         server.control_channel = self
+        server.control_log = self._log
         server.is_socket_transport = is_socket_transport
 
 
@@ -282,6 +287,38 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
     timeout = 10
 
     def do_GET(self) -> None:
+        self._dispatch(self._route_get)
+
+    def do_POST(self) -> None:
+        self._dispatch(self._route_post)
+
+    def log_message(self, *args) -> None:
+        # The journal already has the agent's own lines; access logs for a
+        # single-machine channel would only bury them.
+        return
+
+    def _dispatch(self, route) -> None:
+        """Run one route; an unexpected exception answers a typed refusal.
+
+        Args:
+            route: The bound route handler for this request method.
+        """
+        try:
+            route()
+        except Exception as error:  # noqa: BLE001 - answered, never a dropped wire
+            self.server.control_log(traceback.format_exc())
+            try:
+                self._send_json(
+                    {
+                        "code": "agent_internal",
+                        "params": {"error": type(error).__name__},
+                    },
+                    status=500,
+                )
+            except OSError:
+                return
+
+    def _route_get(self) -> None:
         route = self.path.split("?")[0]
         if route == "/api/state":
             identity = self._authenticate()
@@ -298,7 +335,7 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
         else:
             self._send_html(CONTROL_PAGE_HTML)
 
-    def do_POST(self) -> None:
+    def _route_post(self) -> None:
         route = self.path.split("?")[0]
         if route == "/api/token/watch" and self.server.is_socket_transport:
             # Holding the token is the authorization; the asker may be the
@@ -338,11 +375,6 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
             self._make_directory(identity, body)
         else:
             self._send_json({"code": "unknown_request"}, status=404)
-
-    def log_message(self, *args) -> None:
-        # The journal already has the agent's own lines; access logs for a
-        # single-machine channel would only bury them.
-        return
 
     def _authenticate(self) -> "ControlIdentity | None":
         """The caller's identity, or None after a refusal was sent.

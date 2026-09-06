@@ -21,11 +21,14 @@ every surface does its own wording.
 from __future__ import annotations
 
 import hashlib
+import os
 import threading
 
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import (
     AGENT_MODULE_PACKAGE_PATH,
+    AGENT_MOUNT_CREDENTIALS_DIR_NAME,
+    AGENT_SERVICE_STORE_NAME,
     AGENT_WIRE_GENERATION,
     AGENT_BACKOFF_MAX_S,
     AGENT_BACKOFF_MIN_S,
@@ -126,7 +129,12 @@ class Agent:
             log=log,
             on_change=self._news.set,
         )
-        self._store = MachineServiceStore()
+        # The service store and the mount credentials live under the
+        # platform's own data root.
+        data_dir = self._platform.agent_data_dir()
+        self._store = MachineServiceStore(
+            path=os.path.join(data_dir, AGENT_SERVICE_STORE_NAME)
+        )
         self._ai = AiServiceReconciler(
             store=self._store,
             platform_tuple=self._engine.platform_tuple,
@@ -142,7 +150,14 @@ class Agent:
                     accounts=self._read_accounts,
                     on_change=self._news.set,
                 ),
-                FileServiceHandler(platform=self._platform, store=self._store, log=log),
+                FileServiceHandler(
+                    platform=self._platform,
+                    store=self._store,
+                    credentials_dir=os.path.join(
+                        data_dir, AGENT_MOUNT_CREDENTIALS_DIR_NAME
+                    ),
+                    log=log,
+                ),
             )
         }
         self._backoff_s = AGENT_BACKOFF_MIN_S

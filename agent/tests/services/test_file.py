@@ -20,6 +20,8 @@ class FakeMountPlatform(AgentPlatform):
         self.attached = set()
         self.attach_calls = []
         self.detach_calls = []
+        self.detach_accounts = []
+        self.query_accounts = []
         self.made_directories = []
         self.writable = set()
         self.attach_error = None
@@ -81,13 +83,15 @@ class FakeMountPlatform(AgentPlatform):
             raise ShareAttachError("credentials_missing")
         self.attached.add(location)
 
-    def detach_share(self, *, location: str) -> None:
+    def detach_share(self, *, location: str, account: str = "") -> None:
         self.detach_calls.append(location)
+        self.detach_accounts.append(account)
         if self.detach_error is not None:
             raise self.detach_error
         self.attached.discard(location)
 
-    def is_share_attached(self, *, location: str) -> bool:
+    def is_share_attached(self, *, location: str, account: str = "") -> bool:
+        self.query_accounts.append(account)
         return location in self.attached
 
 
@@ -403,6 +407,21 @@ def test_detach_is_the_records_own_account_or_privileged(service):
     subject.reconcile()
     assert subject.rows()[0]["state"] == "mounted"
     assert platform.attach_calls[-1]["password"] == ""
+
+
+def test_the_platform_is_asked_with_the_records_own_account(service):
+    subject, platform, store, tmp_path = service
+    location = str(tmp_path / "nas")
+    platform.writable.add(location)
+    assert attach(subject, path=location, account="bob", is_privileged=False) == {}
+    (record_id,) = store.mounts()
+
+    platform.query_accounts.clear()
+    subject.rows()
+    assert platform.query_accounts == ["bob"]
+
+    assert subject.detach(account="bob", is_privileged=False, record_id=record_id) == {}
+    assert platform.detach_accounts == ["bob"]
 
 
 def test_unmounting_an_unknown_record_is_refused(service):
