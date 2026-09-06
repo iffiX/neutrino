@@ -26,6 +26,10 @@ from neutrino_agent.platforms.windows_service import (
 STATUS_HANDLE = 4321
 SERVICE_CONTROL_INTERROGATE = 4
 
+# The marker the fake writes into its log where the control handler returned
+# to it, which on a real manager is where ``ControlService`` completes.
+HANDLER_RETURNED = "handler returned"
+
 
 class FakeServiceApi:
     """The manager, scripted: it dispatches, then sends its controls."""
@@ -39,6 +43,10 @@ class FakeServiceApi:
         self.states: list = []
         self.handles: list = []
         self.started: list = []
+        # Every state report and every return from the handler, in the order
+        # they happened: what the manager's own control call is refused over
+        # is an ordering, and only an ordering shows it.
+        self.happened: list = []
         self.handler = None
         self._controls = controls
         self._running = threading.Event()
@@ -50,6 +58,7 @@ class FakeServiceApi:
         assert self._running.wait(timeout=5), "the service never reported running"
         for control in self._controls:
             self.handler(control)
+            self.happened.append(HANDLER_RETURNED)
         entry.join(timeout=5)
         assert not entry.is_alive(), "the service entry never returned"
 
@@ -60,6 +69,7 @@ class FakeServiceApi:
     def set_status(self, handle, state: int) -> None:
         self.handles.append(handle)
         self.states.append(state)
+        self.happened.append(state)
         if state == SERVICE_RUNNING:
             self._running.set()
 
@@ -108,6 +118,23 @@ def test_the_loop_runs_beside_the_entry_rather_than_inside_it():
 
     assert reported == [[SERVICE_START_PENDING]]
     assert api.states[-1] == SERVICE_STOPPED
+
+
+def test_the_handler_returns_before_the_stop_is_reported():
+    """``sc stop`` answers 1061 on a stop that worked when STOPPED lands while
+    the manager's own control call is still in flight. The handler's report is
+    STOP_PENDING and nothing else; STOPPED comes after it has returned."""
+    api = FakeServiceApi()
+
+    windows_service.host_service(name="NeutrinoAgent", run=lambda: None, api=api)
+
+    assert api.happened == [
+        SERVICE_START_PENDING,
+        SERVICE_RUNNING,
+        SERVICE_STOP_PENDING,
+        HANDLER_RETURNED,
+        SERVICE_STOPPED,
+    ]
 
 
 def test_a_shutdown_stops_the_service_the_same_way():

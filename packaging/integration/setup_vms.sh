@@ -160,9 +160,12 @@ boot() {
     rm -f "$LAB/disks/$name.qcow2"
     qemu-img create -q -f qcow2 -F qcow2 -b "$BASE" "$LAB/disks/$name.qcow2" 20G
     seed_for "$name" "$is_provisioned"
+    # The seed rides virtio, not a CD-ROM. A cdrom on q35 lands on the SATA
+    # controller, and a cloud kernel with no ahci module never sees the drive:
+    # cloud-init finds no datasource and disables itself without a word.
     virt-install --name "$name" --memory "$MEMORY_MB" --vcpus "$CPUS" \
         --disk "$LAB/disks/$name.qcow2",device=disk,bus=virtio \
-        --disk "$LAB/seeds/$name.iso",device=cdrom \
+        --disk "$LAB/seeds/$name.iso",device=disk,bus=virtio \
         --os-variant linux2022 "$@" \
         --channel unix,target.type=virtio,target.name=org.qemu.guest_agent.0 \
         --graphics none --noautoconsole --import >/dev/null
@@ -182,12 +185,14 @@ boot "$HUB" yes \
 echo "booting $CLIENT ($DISTRO $VERSION): one port on the served wire"
 boot "$CLIENT" no --network network=neutrino-served,model=virtio
 
+IS_PROVISIONED=no
 printf 'waiting for %s' "$HUB"
 for _ in $(seq 300); do
     if python3 "$HERE/vm_exec.py" "$HUB" 'command -v cloud-init >/dev/null' >/dev/null 2>&1; then
         # The agent answers before cloud-init has installed everything; ready
         # means the package list has been worked through.
         if python3 "$HERE/vm_exec.py" "$HUB" 'cloud-init status --wait >/dev/null 2>&1; command -v python3 >/dev/null' >/dev/null 2>&1; then
+            IS_PROVISIONED=yes
             break
         fi
     fi
@@ -196,6 +201,14 @@ for _ in $(seq 300); do
 done
 echo
 
+if [ "$IS_PROVISIONED" != yes ]; then
+    echo "$HUB never finished provisioning: no guest agent, or cloud-init did" >&2
+    echo "not run. Check that the seed disk arrived:" >&2
+    echo "  virsh domblklist $HUB" >&2
+    echo "  python3 $HERE/vm_exec.py $HUB 'cloud-init status --long'" >&2
+    exit 1
+fi
+
 echo "the mini network:"
 echo "  $HUB      hub under test; drive it with: python3 $HERE/vm_exec.py $HUB '<command>'"
 echo "  $CLIENT   client on the served wire, asking DHCP until the hub answers"
@@ -203,5 +216,9 @@ echo
 echo "next:"
 echo "  python3 $HERE/vm_exec.py $HUB 'mkdir -p /opt/integration'"
 echo "  for f in $HERE/*.py $HERE/*.sh $HERE/pytest.ini; do python3 $HERE/vm_exec.py $HUB push \$f /opt/integration/\$(basename \$f); done"
+# The lifecycle walks reach the client over SSH with this key, and they fail
+# without it rather than passing by skipping.
+echo "  python3 $HERE/vm_exec.py $HUB push $KEY /opt/integration/id_lab"
+echo "  python3 $HERE/vm_exec.py $HUB 'chmod 600 /opt/integration/id_lab'"
 echo "  python3 $HERE/vm_exec.py $HUB push <package.deb> /tmp/<package.deb>"
 echo "  python3 $HERE/vm_exec.py $HUB 'bash /opt/integration/run_mode_matrix.sh /tmp/<package.deb> --client'"

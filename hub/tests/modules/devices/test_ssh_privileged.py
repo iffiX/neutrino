@@ -252,7 +252,7 @@ async def install_lines(op: DeviceSshOperator, packages: dict) -> list[str]:
     return lines
 
 
-def capture_privileged_once(op: DeviceSshOperator, codes=(0, 0)) -> list:
+def capture_privileged_once(op: DeviceSshOperator, codes=(0, 0, 0)) -> list:
     calls: list = []
     remaining = list(codes)
 
@@ -289,9 +289,9 @@ def test_install_picks_deb_and_joins_with_the_link_on_argv(packages):
     lines = asyncio.run(install_lines(op, packages))
 
     assert connection.uploads[0][1].endswith(".deb")
-    assert "apt-get install" in calls[0]["command"]
-    assert calls[1]["command"] == f"nagent connect --yes {LINK}"
-    assert calls[1]["input_text"] is None
+    assert "apt-get install" in calls[1]["command"]
+    assert calls[2]["command"] == f"nagent connect --yes {LINK}"
+    assert calls[2]["input_text"] is None
     assert lines[-1] == "\n[exit 0]\n"
 
 
@@ -352,9 +352,50 @@ def test_install_stops_where_no_package_manager_answers(packages):
 def test_a_failed_install_never_reaches_the_join(packages):
     op = operator()
     op._connect = fake_connect(FakeConnection(tools=("dpkg",)))
-    calls = capture_privileged_once(op, codes=(1,))
+    calls = capture_privileged_once(op, codes=(0, 1))
 
     lines = asyncio.run(install_lines(op, packages))
 
-    assert len(calls) == 1
+    assert len(calls) == 2
     assert lines[-1] == "\n[exit 1]\n"
+
+
+def test_the_deb_install_refreshes_the_package_lists_before_it_installs(packages):
+    """The agent deb depends on packages apt resolves from the device's own
+    lists; an image whose lists are empty answers "not installable" until
+    they are fetched."""
+    op = operator()
+    op._connect = fake_connect(FakeConnection(tools=("dpkg",)))
+    calls = capture_privileged_once(op)
+
+    asyncio.run(install_lines(op, packages))
+
+    assert calls[0]["command"].endswith("apt-get update")
+    assert "apt-get install" in calls[1]["command"]
+    assert calls[2]["command"].startswith("nagent connect")
+
+
+def test_a_refresh_the_device_refuses_is_said_and_the_install_still_runs(packages):
+    """A device with lists that are stale rather than empty can still carry
+    every dependency, so the refusal is reported and the install decides."""
+    op = operator()
+    op._connect = fake_connect(FakeConnection(tools=("dpkg",)))
+    calls = capture_privileged_once(op, codes=(1, 0, 0))
+
+    lines = asyncio.run(install_lines(op, packages))
+
+    assert any("could not be refreshed" in line for line in lines)
+    assert "apt-get install" in calls[1]["command"]
+    assert lines[-1] == "\n[exit 0]\n"
+
+
+def test_the_rpm_install_asks_for_no_refresh(packages):
+    """dnf fetches the metadata it needs itself; only apt has to be told."""
+    op = operator()
+    op._connect = fake_connect(FakeConnection(tools=("rpm",)))
+    calls = capture_privileged_once(op)
+
+    asyncio.run(install_lines(op, packages))
+
+    assert len(calls) == 2
+    assert "dnf" in calls[0]["command"]

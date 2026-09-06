@@ -11,6 +11,10 @@ which stores it salted, and kept in a root-only file beside the mount
 credentials so a person can read back what they set — it enters neither the
 service store nor any heartbeat, and the hub is never told it.
 
+**A machine with no desktop is refused before anything is configured.**
+RustDesk on a box with no graphical session answers nothing, and the share
+says so rather than passing the connection refusal on raw.
+
 **A share is declared only once it answers.** Configuring is not sharing:
 the handler probes the direct port and says ``starting`` until it opens.
 macOS says ``waiting_for_approval`` instead, because screen recording there
@@ -60,6 +64,11 @@ RDP_PROBE_TTL_S = 3.0
 RDP_PROBE_TIMEOUT_S = 1.0
 
 RDP_PROBE_HOST = "127.0.0.1"
+
+# What a session's type has to be for there to be a desktop to share, and how
+# long the machine's own session list is waited for.
+RDP_GRAPHICAL_SESSION_TYPES = ("x11", "wayland", "mir")
+RDP_SESSION_TIMEOUT_S = 5
 
 
 class RdpServiceHandler(ServiceTypeHandler):
@@ -177,6 +186,8 @@ class RdpServiceHandler(ServiceTypeHandler):
         status = self._module_states().get(RDP_MODULE) or {}
         if status.get("state") != "installed":
             return {"code": "module_missing", "params": {"module": RDP_MODULE}}
+        if not has_desktop_session():
+            return {"code": "rdp_no_desktop", "params": {}}
         record = self._store.rdp_share()
         share_id = str(record.get("share_id", "")) or uuid.uuid4().hex
         try:
@@ -345,6 +356,47 @@ def connect_peer(host: str, port: int) -> str:
     if port == rustdesk.RUSTDESK_DIRECT_PORT:
         return host
     return f"{host}:{port}"
+
+
+def has_desktop_session() -> bool:
+    """Whether this machine has a desktop for RustDesk to share.
+
+    Returns:
+        True on any machine that cannot be asked, so only one that positively
+        has no graphical session is refused.
+    """
+    if os.name == "nt" or _is_darwin():
+        return True
+    if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+        return True
+    listed = _loginctl(["list-sessions", "--no-legend"])
+    if listed is None:
+        return True
+    sessions = [line.split()[0] for line in listed.splitlines() if line.split()]
+    if not sessions:
+        return False
+    shown = _loginctl(["show-session", "--property=Type"] + sessions)
+    if shown is None:
+        return True
+    return any(
+        line.strip()[len("Type=") :] in RDP_GRAPHICAL_SESSION_TYPES
+        for line in shown.splitlines()
+        if line.strip().startswith("Type=")
+    )
+
+
+def _loginctl(arguments: list):
+    """What ``loginctl`` printed, or None when this machine cannot be asked."""
+    try:
+        result = subprocess.run(
+            ["loginctl"] + arguments,
+            capture_output=True,
+            text=True,
+            timeout=RDP_SESSION_TIMEOUT_S,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout if result.returncode == 0 else None
 
 
 def _is_darwin() -> bool:

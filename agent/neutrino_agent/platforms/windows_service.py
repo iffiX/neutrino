@@ -8,7 +8,9 @@ when it is asked to. This module is that handshake, in ctypes, so the agent
 needs no wrapper binary and no dependency to be one.
 
 The agent loop runs on a daemon thread while ``service_main`` waits for a
-control; a stop reports the state and returns, and the loop dies with the
+control. A stop is answered in two parts: the handler reports ``stop_pending``
+and returns, so that is the state the manager's own control call reads, and
+the entry reports ``stopped`` afterwards and returns, which is what ends the
 process. Every Win32 call rides one seam class, so nothing here needs Windows
 to import or to test.
 """
@@ -19,6 +21,7 @@ from __future__ import annotations
 
 import ctypes
 import threading
+import time
 from contextlib import contextmanager
 
 SERVICE_WIN32_OWN_PROCESS = 0x00000010
@@ -41,6 +44,12 @@ SERVICE_START = 0x0010
 
 # How long the manager is told to wait for a state that is still settling.
 SERVICE_WAIT_HINT_MS = 10000
+
+# How long the final report waits for the control handler to have returned.
+# The manager refuses a control whose service is already stopped — 1061, on a
+# stop that worked — so the STOP_PENDING the handler reports has to be the
+# state its own call sees.
+SERVICE_STOP_SETTLE_S = 0.2
 
 # The state words this platform reports, keyed by what the manager returns.
 SERVICE_STATE_WORDS = {
@@ -83,6 +92,8 @@ def host_service(*, name: str, run, api=None) -> None:
     reported: dict = {}
 
     def on_control(control: int) -> None:
+        # STOP_PENDING with its wait hint, and then out: reporting the stop
+        # itself from here is what the manager's own call is refused for.
         if control in (SERVICE_CONTROL_STOP, SERVICE_CONTROL_SHUTDOWN):
             service_api.set_status(reported.get("handle"), SERVICE_STOP_PENDING)
             stopping.set()
@@ -94,6 +105,7 @@ def host_service(*, name: str, run, api=None) -> None:
         worker.start()
         service_api.set_status(reported["handle"], SERVICE_RUNNING)
         stopping.wait()
+        time.sleep(SERVICE_STOP_SETTLE_S)
         service_api.set_status(reported["handle"], SERVICE_STOPPED)
 
     service_api.start_dispatcher(name, service_main)

@@ -7,7 +7,8 @@ beats; a tampered one is refused on the device before anything is sent.
 
 It needs the lab: a client VM on the served wire answering SSH with the
 ``id_lab`` key beside this file, its ``lab`` account holding passwordless
-sudo. Without those it skips rather than guessing at somebody's real network.
+sudo. A missing key fails the walk and names itself: a lifecycle phase that
+passes by skipping tested nothing.
 """
 
 import base64
@@ -46,7 +47,12 @@ def generated_payload(link: str) -> dict:
 def serving(panel, before):
     """A router serving the spare wire, and the wire left unexposed."""
     if not lifecycle.ID_LAB.is_file():
-        pytest.skip("no lab key beside the tests; this walk needs the VM lab")
+        pytest.fail(
+            f"no lab key at {lifecycle.ID_LAB}: push it beside these tests "
+            "(vm_exec.py <hub> push <lab>/id_lab /opt/integration/id_lab, "
+            "then chmod 600). This walk enrolls a second machine over SSH and "
+            "cannot pass without one."
+        )
     physical = [
         entry["settings"]["name"]
         for entry in panel.read("/network")["interfaces"]

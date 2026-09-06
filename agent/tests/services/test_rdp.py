@@ -61,6 +61,7 @@ def handler(tmp_path, monkeypatch):
     monkeypatch.setattr(rustdesk, "read_id", lambda: "123456789")
     monkeypatch.setattr(rustdesk, "binary_path", lambda: "/usr/bin/rustdesk")
     monkeypatch.setattr(RdpServiceHandler, "_answers", lambda self: True)
+    monkeypatch.setattr(rdp_module, "has_desktop_session", lambda: True)
     return made
 
 
@@ -98,6 +99,125 @@ def test_sharing_without_a_password_is_refused(handler):
 
     assert refusal == {"code": "rdp_password_missing", "params": {}}
     assert handler.written == {}
+
+
+def test_a_machine_with_no_desktop_is_refused_before_rustdesk_is_touched(
+    handler, monkeypatch
+):
+    """RustDesk on a machine with no graphical session refuses the connection
+    its own configuration goes over, and the raw errno says nothing a person
+    can act on."""
+    monkeypatch.setattr(rdp_module, "has_desktop_session", lambda: False)
+
+    refusal = share(handler)
+
+    assert refusal == {"code": "rdp_no_desktop", "params": {}}
+    assert handler.written == {}
+    assert handler.services == []
+    assert handler.passwords == []
+
+
+# --- what counts as a desktop to share ---
+
+
+def _loginctl_answering(monkeypatch, listed: str, types: str):
+    """A loginctl that lists those sessions and reports those types."""
+
+    def loginctl(arguments):
+        return listed if arguments[0] == "list-sessions" else types
+
+    monkeypatch.setattr(rdp_module, "_loginctl", loginctl)
+
+
+def test_a_graphical_session_is_a_desktop(monkeypatch):
+    monkeypatch.setattr(rdp_module.os, "name", "posix")
+    monkeypatch.setattr(rdp_module, "_is_darwin", lambda: False)
+    monkeypatch.setattr(rdp_module.os, "environ", {})
+    _loginctl_answering(monkeypatch, "3 1000 pat seat0\n", "Type=wayland\n")
+
+    assert rdp_module.has_desktop_session() is True
+
+
+def test_only_tty_sessions_are_no_desktop(monkeypatch):
+    """The headless box: it has sessions, all of them terminals."""
+    monkeypatch.setattr(rdp_module.os, "name", "posix")
+    monkeypatch.setattr(rdp_module, "_is_darwin", lambda: False)
+    monkeypatch.setattr(rdp_module.os, "environ", {})
+    _loginctl_answering(monkeypatch, "5 0 root\n7 1000 pat\n", "Type=tty\n\nType=tty\n")
+
+    assert rdp_module.has_desktop_session() is False
+
+
+def test_no_sessions_at_all_is_no_desktop(monkeypatch):
+    monkeypatch.setattr(rdp_module.os, "name", "posix")
+    monkeypatch.setattr(rdp_module, "_is_darwin", lambda: False)
+    monkeypatch.setattr(rdp_module.os, "environ", {})
+    _loginctl_answering(monkeypatch, "\n", "")
+
+    assert rdp_module.has_desktop_session() is False
+
+
+def test_a_machine_that_cannot_be_asked_is_not_refused(monkeypatch):
+    """A machine without loginctl is one this cannot tell about, and a guess
+    that refuses is worse than the raw refusal it replaced."""
+    monkeypatch.setattr(rdp_module.os, "name", "posix")
+    monkeypatch.setattr(rdp_module, "_is_darwin", lambda: False)
+    monkeypatch.setattr(rdp_module.os, "environ", {})
+    monkeypatch.setattr(rdp_module, "_loginctl", lambda arguments: None)
+
+    assert rdp_module.has_desktop_session() is True
+
+
+def test_a_session_this_process_can_see_is_a_desktop(monkeypatch):
+    monkeypatch.setattr(rdp_module.os, "name", "posix")
+    monkeypatch.setattr(rdp_module, "_is_darwin", lambda: False)
+    monkeypatch.setattr(rdp_module.os, "environ", {"DISPLAY": ":0"})
+
+    assert rdp_module.has_desktop_session() is True
+
+
+def test_windows_and_macos_are_never_refused_for_this(monkeypatch):
+    monkeypatch.setattr(rdp_module.os, "name", "nt")
+
+    assert rdp_module.has_desktop_session() is True
+
+    monkeypatch.setattr(rdp_module.os, "name", "posix")
+    monkeypatch.setattr(rdp_module, "_is_darwin", lambda: True)
+
+    assert rdp_module.has_desktop_session() is True
+
+
+def test_the_loginctl_probe_asks_for_the_session_types(monkeypatch):
+    asked = []
+
+    def run(command, **kwargs):
+        asked.append(command)
+
+        class _Result:
+            returncode = 0
+            stdout = "3 1000 pat seat0\n"
+
+        return _Result()
+
+    monkeypatch.setattr(rdp_module.subprocess, "run", run)
+
+    assert rdp_module._loginctl(["list-sessions", "--no-legend"]) == (
+        "3 1000 pat seat0\n"
+    )
+    assert asked == [["loginctl", "list-sessions", "--no-legend"]]
+
+
+def test_a_loginctl_that_exits_nonzero_answers_nothing(monkeypatch):
+    def run(command, **kwargs):
+        class _Result:
+            returncode = 1
+            stdout = "everything is fine"
+
+        return _Result()
+
+    monkeypatch.setattr(rdp_module.subprocess, "run", run)
+
+    assert rdp_module._loginctl(["list-sessions"]) is None
 
 
 # --- what sharing actually does ---

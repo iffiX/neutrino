@@ -63,9 +63,16 @@ The matrix wants a machine with three ports and a neighbour to serve, and
 ./setup_vms.sh debian 12          # or: ubuntu 24.04, alma 9, arch rolling …
 python3 vm_exec.py nmxhub 'mkdir -p /opt/integration'
 for f in *.py *.sh pytest.ini; do python3 vm_exec.py nmxhub push "$PWD/$f" "/opt/integration/$f"; done
+python3 vm_exec.py nmxhub push ~/.local/share/neutrino_vm_lab/id_lab /opt/integration/id_lab
+python3 vm_exec.py nmxhub 'chmod 600 /opt/integration/id_lab'
 python3 vm_exec.py nmxhub push neutrino-hub_0.1.0_amd64.deb /tmp/hub.deb
 python3 vm_exec.py nmxhub 'bash /opt/integration/run_mode_matrix.sh /tmp/hub.deb --client'
 ```
+
+`id_lab` is the key `setup_vms.sh` generated for the `lab` account on both
+VMs, and it is what the lifecycle walks in `run_on_box.sh` reach the client
+with. They fail naming it when it is not beside them: a walk that passed by
+skipping is a walk that tested nothing.
 
 The distro and version name the exact cloud image, so a behaviour seen on
 `debian 12` is pinned to that release rather than to whatever the lab had

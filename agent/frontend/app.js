@@ -111,6 +111,7 @@ const WORDS = {
     module_sha256_mismatch:
       "the download did not match the checksum this hub pins for it",
     rdp_password_missing: "set an access password to share this desktop",  // scan: allow
+    rdp_no_desktop: "this machine has no desktop session to share",
     rdp_configure_failed: "RustDesk could not be configured: {detail}",
     rdp_launch_failed: "the RustDesk client could not be started: {detail}",
     rdp_no_address: "that machine published no address to connect to",

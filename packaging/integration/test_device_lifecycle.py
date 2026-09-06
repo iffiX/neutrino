@@ -9,8 +9,8 @@ architecture.md, walked once.
 The box is wired here — a router serving the spare port — so nothing depends
 on what an earlier test left behind. It needs the CI/CD pipeline's client VM on the
 served wire answering SSH with the ``id_lab`` key beside this file, its
-``lab`` account holding passwordless sudo. Without those it skips rather
-than guessing at somebody's real network.
+``lab`` account holding passwordless sudo. A missing key fails the walk and
+names itself: a lifecycle phase that passes by skipping tested nothing.
 """
 
 import base64
@@ -173,7 +173,12 @@ def ssh_to(host, command):
 def serving(panel, before):
     """A router serving the spare wire, wired by this file itself."""
     if not ID_LAB.is_file():
-        pytest.skip("no id_lab key beside the tests; this walk needs the pipeline VMs")
+        pytest.fail(
+            f"no lab key at {ID_LAB}: push it beside these tests "
+            "(vm_exec.py <hub> push <lab>/id_lab /opt/integration/id_lab, "
+            "then chmod 600). This walk drives a second machine over SSH and "
+            "cannot pass without one."
+        )
     physical = [
         entry["settings"]["name"]
         for entry in panel.read("/network")["interfaces"]

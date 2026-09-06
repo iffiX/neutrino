@@ -240,6 +240,34 @@ def test_the_id_is_read_with_the_binarys_own_verb(monkeypatch):
     assert calls == [["/usr/bin/rustdesk", "--get-id"]]
 
 
+@pytest.mark.parametrize(
+    "printed, identifier",
+    [
+        # The two machines this has run on, verbatim: RustDesk issues eight
+        # digits, and a pattern that waits for nine reads them as no id.
+        ("10779585\n", "10779585"),
+        ("15889145\r\n", "15889145"),
+        ("123456789\n", "123456789"),
+    ],
+)
+def test_the_ids_rustdesk_actually_issues_are_read(monkeypatch, printed, identifier):
+    monkeypatch.setattr(rustdesk, "binary_path", lambda: "/usr/bin/rustdesk")
+    monkeypatch.setattr(rustdesk.subprocess, "run", _recording([], stdout=printed))
+
+    assert rustdesk.read_id() == identifier
+
+
+def test_a_longer_run_of_digits_is_not_taken_for_an_id(monkeypatch):
+    """The bound keeps a banner's own numbers out: only what is short enough
+    to be an id may be read as one."""
+    monkeypatch.setattr(rustdesk, "binary_path", lambda: "/usr/bin/rustdesk")
+    monkeypatch.setattr(
+        rustdesk.subprocess, "run", _recording([], stdout="1234567890123\n")
+    )
+
+    assert rustdesk.read_id() == ""
+
+
 def test_an_unreadable_id_is_empty_rather_than_guessed(monkeypatch):
     monkeypatch.setattr(rustdesk, "binary_path", lambda: "/usr/bin/rustdesk")
     monkeypatch.setattr(rustdesk.subprocess, "run", _recording([], stdout="no id here"))
@@ -303,6 +331,39 @@ def test_install_hands_the_package_to_the_platform(monkeypatch, tmp_path):
     assert platform.installed == [(package, "deb")]
 
 
+def test_registering_the_service_hands_it_no_pipe(monkeypatch, tmp_path):
+    """``--install-service`` leaves a service running behind it. A service
+    that inherited a captured pipe holds it open, and the read outlives the
+    timeout that was supposed to bound the call."""
+    monkeypatch.setattr(rustdesk.os, "name", "nt")
+    monkeypatch.setattr(
+        rustdesk, "binary_path", lambda: "C:\\Program Files\\RustDesk\\RustDesk.exe"
+    )
+    calls = _RunRecorder()
+    monkeypatch.setattr(rustdesk.subprocess, "run", calls.run)
+
+    runner().install({"entry": {"package_kind": "msi"}}, str(tmp_path / "rustdesk.msi"))
+
+    assert calls.entries[0]["command"][-1] == "--install-service"
+    assert calls.entries[0]["kwargs"]["stdout"] is rustdesk.subprocess.DEVNULL
+    assert calls.entries[0]["kwargs"]["stderr"] is rustdesk.subprocess.DEVNULL
+    assert "capture_output" not in calls.entries[0]["kwargs"]
+    assert calls.entries[0]["kwargs"]["timeout"] == rustdesk.RUSTDESK_SERVICE_TIMEOUT_S
+
+
+def test_a_registration_that_exits_nonzero_is_logged_and_not_raised(monkeypatch):
+    logged = []
+    monkeypatch.setattr(rustdesk.os, "name", "posix")
+    monkeypatch.setattr(rustdesk, "_is_darwin", lambda: False)
+    monkeypatch.setattr(rustdesk, "binary_path", lambda: "/usr/bin/rustdesk")
+    monkeypatch.setattr(rustdesk.subprocess, "run", _recording([], returncode=1))
+    module = RustdeskModuleRunner(platform=_Platform(), log=logged.append)
+
+    module.install({"entry": {"package_kind": "deb"}}, "/tmp/rustdesk.deb")
+
+    assert logged == ["rustdesk: systemctl exited 1"]
+
+
 def test_uninstall_runs_the_manifests_own_command(monkeypatch):
     platform = _Platform()
 
@@ -317,6 +378,18 @@ def test_a_platform_naming_no_uninstall_is_left_alone():
     runner(platform).uninstall({"entry": {}})
 
     assert platform.removed == []
+
+
+class _RunRecorder:
+    """A subprocess.run that records how each call was made, not only what."""
+
+    def __init__(self, returncode=0):
+        self.entries: list = []
+        self.returncode = returncode
+
+    def run(self, command, **kwargs):
+        self.entries.append({"command": command, "kwargs": kwargs})
+        return self
 
 
 def _recording(calls, *, stdout="", returncode=0, is_shell=False):

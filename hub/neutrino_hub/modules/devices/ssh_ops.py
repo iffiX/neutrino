@@ -38,6 +38,8 @@ LOGIN_KIND = "login"
 CONNECT_TIMEOUT_S = 15
 # Room for apt to fetch python3 on a minimal image before the tiny package.
 INSTALL_TIMEOUT_S = 300
+# Room for a full package list on a slow mirror.
+REFRESH_TIMEOUT_S = 300
 
 # Shown when a device answers with a key other than the recorded one. It says
 # what to do because the honest answer — reinstalled, or something else is on
@@ -370,12 +372,12 @@ class DeviceSshOperator:
     ) -> AsyncIterator[str]:
         """Deliver the agent as a native package and join it to this hub.
 
-        The same two acts a person performs by hand — install the package,
-        run ``nagent connect`` — so there is one install story and one
-        enrollment path. The link goes on the command line, which it was
-        shaped for: a single-use ticket bound to this device's record, no
-        different from a person pasting it into a terminal. Stdin stays the
-        sudo password's alone — sudo reads it only when it actually prompts,
+        The same acts a person performs by hand — refresh the package lists,
+        install the package, run ``nagent connect`` — so there is one install
+        story and one enrollment path. The link goes on the command line,
+        which it was shaped for: a single-use ticket bound to this device's
+        record, no different from a person pasting it into a terminal. Stdin
+        stays the sudo password's alone — sudo reads it only when it prompts,
         so nothing else may need lines counted behind it.
 
         Args:
@@ -431,6 +433,21 @@ class DeviceSshOperator:
             return
 
         if family == "deb":
+            # The package names dependencies apt resolves from the device's
+            # lists, and an image's lists are empty until they are fetched.
+            # dnf refreshes its own metadata, so only apt is asked to.
+            yield "[refreshing the package lists]\n"
+            code, output = await self.run_privileged_once(
+                "DEBIAN_FRONTEND=noninteractive apt-get update",
+                timeout_s=REFRESH_TIMEOUT_S,
+            )
+            if output:
+                yield output + "\n"
+            if code != 0:
+                yield (
+                    "[the package lists could not be refreshed; the install "
+                    "continues with the lists this device already has]\n"
+                )
             # --reinstall, because a reinstall of the same version is this
             # action's whole meaning on a managed device — plain install
             # answers "already newest" and changes nothing.

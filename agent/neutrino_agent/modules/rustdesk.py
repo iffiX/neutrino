@@ -91,8 +91,9 @@ RUSTDESK_SHARE_OPTIONS = (
     ("enable-audio", "N"),
 )
 
-# An id is nine or more digits; anything else the binary prints is not one.
-RUSTDESK_ID_PATTERN = re.compile(r"\b(\d{9,})\b")
+# An id is six to twelve digits: the machines this has run on were issued
+# eight, and the bound keeps a longer run of digits from reading as one.
+RUSTDESK_ID_PATTERN = re.compile(r"\b(\d{6,12})\b")
 
 # A key = 'value' line of the options table, as RustDesk itself writes it.
 RUSTDESK_OPTION_PATTERN = re.compile(r"^\s*([A-Za-z0-9_\-]+)\s*=")
@@ -389,6 +390,11 @@ class RustdeskModuleRunner(ModuleRunner):
         A registration that does not take is logged and not raised: the
         software is installed either way, and the module's verify is what
         reports the truth.
+
+        No pipe is handed to it. Registering leaves a service behind that
+        outlives the call, and a service that inherited a captured pipe holds
+        it open for as long as it runs — the read never ends and the timeout
+        never bounds it. The exit status is the whole answer here.
         """
         binary = binary_path()
         if not binary:
@@ -408,12 +414,12 @@ class RustdeskModuleRunner(ModuleRunner):
         try:
             result = subprocess.run(
                 command,
-                capture_output=True,
-                text=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
                 timeout=RUSTDESK_SERVICE_TIMEOUT_S,
             )
         except (OSError, subprocess.SubprocessError) as error:
             self._log(f"rustdesk: {command[0]} could not run: {error}")
             return
         if result.returncode != 0:
-            self._log(f"rustdesk: {command[0]}: {(result.stderr or '').strip()}")
+            self._log(f"rustdesk: {command[0]} exited {result.returncode}")
