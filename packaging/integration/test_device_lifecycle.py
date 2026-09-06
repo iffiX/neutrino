@@ -337,7 +337,9 @@ def test_the_lifecycle_walks_every_transition(panel, stranger):
     # real package installed, the service actually restarted, and the
     # heartbeat green — which is exactly the chain that once shipped new
     # code to disk while the old process went on beating.
-    agent_tree = "/usr/lib/python3/dist-packages/neutrino_agent"
+    # The agent lives inside the interpreter its package carries; the glob
+    # is the shell's, so the series in the path is never spelled here.
+    agent_tree = "/opt/neutrino_agent/python/lib/python3*/site-packages/neutrino_agent"
     healthy = device_by_mac(panel, mac)
     real_version = healthy["client"]["version"]
 

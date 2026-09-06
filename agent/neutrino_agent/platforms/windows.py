@@ -9,9 +9,9 @@ a named pipe whose peer identity comes from pipe impersonation; privileged
 is an elevated Administrators token, so an unelevated admin shell is an
 ordinary account. A share is stored credentials plus a mapping made inside
 the target account's own session, the SSH server is a Windows capability,
-the agent runs from a scheduled task, and metrics come from native Win32
-calls. System packages stay refused: Windows has no package manager the hub
-drives.
+the agent runs as a service of the service control manager's own, and
+metrics come from native Win32 calls. System packages stay refused: Windows
+has no package manager the hub drives.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -36,10 +36,11 @@ from neutrino_agent.modules import installers
 from neutrino_agent.constants import (
     AGENT_COMMAND_TIMEOUT_S,
     AGENT_CONTROL_PIPE_NAME,
-    AGENT_SCHEDULED_TASK_NAME_WINDOWS,
+    AGENT_SERVICE_NAME_WINDOWS,
     AGENT_STEP_DOWN_TIMEOUT_S,
 )
 from neutrino_agent.core.metrics import HostMetrics
+from neutrino_agent.platforms import windows_service
 from neutrino_agent.platforms.base import (
     AgentPlatform,
     PlatformUnsupportedError,
@@ -752,56 +753,21 @@ class WindowsPlatform(AgentPlatform):
         return result.returncode == 0 and "\\\\" in (result.stdout or "")
 
     def read_agent_service_state(self) -> str:
-        """What the task scheduler says about the agent's own task.
-
-        The agent runs from a scheduled task, not a Windows service; the task
-        reads ``Running`` while its action process is alive and ``Ready``
-        while it is not.
+        """What the service control manager says about the agent's service.
 
         Returns:
-            ``running``, the task's own state word, or ``unknown``.
+            The manager's own state word, or ``unknown`` when it does not
+            answer — which includes the service not being installed.
         """
-        try:
-            result = subprocess.run(
-                [
-                    "powershell",
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-Command",
-                    "(Get-ScheduledTask -TaskName "
-                    f"'{AGENT_SCHEDULED_TASK_NAME_WINDOWS}' "
-                    "-ErrorAction SilentlyContinue).State",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=WINDOWS_QUERY_TIMEOUT_S,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return "unknown"
-        state = result.stdout.strip().lower()
-        return "running" if state == "running" else (state or "unknown")
+        return windows_service.read_state(AGENT_SERVICE_NAME_WINDOWS)
 
     def start_agent_service(self) -> None:
-        """Enable and start the agent's own scheduled task. Best-effort."""
-        subprocess.run(
-            [
-                "powershell",
-                "-NoProfile",
-                "-Command",
-                "Enable-ScheduledTask -TaskName "
-                f"'{AGENT_SCHEDULED_TASK_NAME_WINDOWS}' "
-                "-ErrorAction SilentlyContinue; "
-                "Start-ScheduledTask -TaskName "
-                f"'{AGENT_SCHEDULED_TASK_NAME_WINDOWS}'",
-            ],
-            capture_output=True,
-            timeout=WINDOWS_QUERY_TIMEOUT_S,
-            check=False,
-        )
+        """Ask the manager to start the agent's service. Best-effort."""
+        windows_service.start(AGENT_SERVICE_NAME_WINDOWS)
 
     def agent_service_start_hint(self) -> str:
-        """The command that starts the agent's own scheduled task."""
-        return f'schtasks /run /tn "{AGENT_SCHEDULED_TASK_NAME_WINDOWS}"'
+        """The command that starts the agent's service."""
+        return f"sc start {AGENT_SERVICE_NAME_WINDOWS}"
 
     def power(self, action: str) -> "tuple[int, str]":
         """Run one power action through ``shutdown``.

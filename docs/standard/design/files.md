@@ -9,17 +9,24 @@ answers rather than to add a directory.
 
 | Root | Holds | Question it answers |
 | --- | --- | --- |
-| `/opt/neutrino/` | The interpreter, `xray`, `cli-proxy-api` | What did the package put here? |
+| `/opt/neutrino/` | The interpreter, `xray`, `cli-proxy-api` | What did the hub's package put here? |
 | `/etc/neutrino/` | `hub/`, `agent/` | What has somebody decided? |
 | `/var/lib/neutrino/` | `generated/`, `geodata/`, `cliproxyapi/`, the working vault key, the session secret, statistics | What has this machine accumulated? |
 | `/var/log/neutrino/` | The panel's and dnsmasq's logs | What happened? |
 | `/run/neutrino/` | The login lockout | What is true only until the next boot? |
 
+The agent is a second package, and a machine may carry both, so it answers
+the first question from `/opt/neutrino_agent/` — its own interpreter and the
+bindings its window draws through. Not a directory under the hub's: removing
+the hub deletes `/opt/neutrino` whole. It decides in `/etc/neutrino/agent`
+alongside the hub, and accumulates nothing of its own.
+
 Three more locations are the operating system's rather than this project's,
-and are where they are because nothing else works: `/usr/bin/nhub` because a
-command has to be on the path, `/lib/systemd/system/` because systemd reads
-units from there and nowhere else, and `/usr/share/doc/neutrino-hub/licenses/`
-because that is where a package's licences are looked for.
+and are where they are because nothing else works: `/usr/bin/nhub` and
+`/usr/bin/nagent` because a command has to be on the path,
+`/lib/systemd/system/` because systemd reads units from there and nowhere
+else, and `/usr/share/doc/neutrino-hub/licenses/` because that is where a
+package's licences are looked for.
 
 ## What each operation leaves behind
 
@@ -48,6 +55,9 @@ purge untouched.
 /opt/neutrino/
     python/     the interpreter and the hub installed into it
     bin/        xray, cli-proxy-api
+
+/opt/neutrino_agent/
+    python/     the interpreter, the agent, and the window's bindings
 ```
 
 Static. Nothing writes here after the install, and an upgrade replaces the

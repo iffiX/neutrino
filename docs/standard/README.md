@@ -11,8 +11,7 @@ Read this file first, then open the pillar relevant to your change.
 `neutrino` is a personal developer infrastructure hub, worked on by its owner
 and by several AI agents. The code spans a few distinct worlds — xray config
 generation, nftables/routing, a FastAPI backend, a React frontend, systemd
-deployment, and a device agent that has to run on whatever Python a machine
-happens to have — and it has to stay calm, consistent, and reviewer-legible no
+deployment, and a device agent that lands on a machine nobody has prepared — and it has to stay calm, consistent, and reviewer-legible no
 matter which part or which agent touched it. This document makes the
 conventions explicit so nobody drifts.
 

@@ -174,7 +174,7 @@ def test_a_missing_shell_prints_the_wording_that_names_the_package(
 
     def refuse(**kwargs):
         raise GuiShellUnavailableError(
-            "gui_webkitgtk_missing", {"packages": "gir1.2-webkit2-4.1 python3-gi"}
+            "gui_webkitgtk_missing", {"packages": "gir1.2-webkit2-4.1"}
         )
 
     monkeypatch.setattr(gui_cli, "open_shell_window", refuse)
@@ -184,9 +184,9 @@ def test_a_missing_shell_prints_the_wording_that_names_the_package(
     assert gui_cli.main(window_fd=sock.detach()) == 1
 
     err = capsys.readouterr().err
-    assert "gir1.2-webkit2-4.1 python3-gi" in err
+    assert "gir1.2-webkit2-4.1" in err
     assert err.strip() == wording.word_code(
-        "gui_webkitgtk_missing", {"packages": "gir1.2-webkit2-4.1 python3-gi"}
+        "gui_webkitgtk_missing", {"packages": "gir1.2-webkit2-4.1"}
     )
 
 

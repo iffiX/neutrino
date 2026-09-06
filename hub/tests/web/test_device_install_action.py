@@ -91,7 +91,7 @@ def probe_answers(monkeypatch, code: int, output: str):
 def hub_carries_a_package(tmp_path, monkeypatch):
     packages = tmp_path / "devices" / "packages"
     packages.mkdir(parents=True, exist_ok=True)
-    (packages / "neutrino-agent_0.1.0_all.deb").write_bytes(b"deb")
+    (packages / "neutrino-agent_0.1.0_amd64.deb").write_bytes(b"deb")
     monkeypatch.setattr(
         devices_router, "_agent_urls", lambda runtime: ["https://192.168.100.1:8443"]
     )

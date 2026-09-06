@@ -161,14 +161,19 @@ def test_the_channel_is_pinned_tls_end_to_end(panel, stranger):
         "config = enrollment.load_config(); "
         'channel = GatewayHttpChannel(gateway_url=config["gateway_url"], '
         'token=config["token"], fingerprint=config.get("fingerprint", "")); '
-        "kind = package_kind(platform_tuple()); "
+        "machine = platform_tuple(); "
+        "kind = package_kind(machine); "
         "named = channel.post_download(AGENT_PACKAGE_PATH, "
-        '{"family": kind}, "/tmp/hub_agent_package"); '
+        '{"family": kind, "architecture": machine["arch"]}, '
+        '"/tmp/hub_agent_package"); '
         'data = open("/tmp/hub_agent_package", "rb").read(); '
         "matched = named == hashlib.sha256(data).hexdigest(); "
         'print(kind, "digest-ok" if matched else "digest-bad", len(data))'
     )
-    fetched = lifecycle.ssh_to(host, f"sudo python3 -c '{script}'")
+    # The interpreter the package carries, which is the only one the agent
+    # is importable from.
+    agent_python = "/opt/neutrino_agent/python/bin/python3"
+    fetched = lifecycle.ssh_to(host, f"sudo {agent_python} -c '{script}'")
     assert fetched.returncode == 0, fetched.stdout + fetched.stderr
     kind, verdict, size = fetched.stdout.split()
     assert kind in ("deb", "rpm")

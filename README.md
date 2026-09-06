@@ -58,7 +58,7 @@ sudo nhub setup
 **4. Install the Agent** on a computer you want to connect.
 
 ```bash
-sudo apt install ./neutrino-agent_<version>_all.deb
+sudo apt install ./neutrino-agent_<version>_amd64.deb
 sudo nagent connect <enrollment link from the panel>
 ```
 
@@ -152,7 +152,7 @@ your own LAN and overlay, without putting any of it on the public Internet.
 | | Runs on | Carries |
 | --- | --- | --- |
 | **Hub** | Debian family — x86-64 and ARM64 | Its own Python environment; your system packages are untouched |
-| **Agent** | Linux, Windows, macOS | Nothing. Pure standard library, and one 63 KB package covers every Linux architecture |
+| **Agent** | Linux, Windows, macOS — 64-bit | Its own Python and the bindings its window draws through; a Linux machine supplies only the WebKitGTK C stack |
 
 There is only one Hub. You do not need a controller on every machine.
 

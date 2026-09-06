@@ -54,23 +54,30 @@ jobs:
           if-no-files-found: error
 
   agent:
-    name: agent .deb and .rpm
+    name: agent .deb and .rpm (${{ matrix.architecture }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [amd64, arm64]
     steps:
       - uses: actions/checkout@v7
 
-      # rpmbuild is not on the runner image. Debian family calls the package
-      # `rpm`; without it the build writes the .deb and says it skipped the
-      # .rpm, which would pass silently.
-      - run: sudo apt-get install -y --no-install-recommends rpm
+      # The agent's packages carry an interpreter and compile the window's
+      # bindings, so each is built in a container of its family — and for
+      # arm64 that container runs under emulation on an x86-64 runner.
+      - uses: docker/setup-qemu-action@v4
+        if: matrix.architecture != 'amd64'
 
-      # Both packages are architecture-independent and need no interpreter to
-      # match, so the runner's own python3 is the whole toolchain.
-      - run: python3 packaging/build_release.py --only agent --output-dir dist
+      - run: >
+          python3 packaging/build_release.py
+          --only agent
+          --architecture ${{ matrix.architecture }}
+          --output-dir dist
 
       - uses: actions/upload-artifact@v7
         with:
-          name: agent_packages
+          name: agent_packages_${{ matrix.architecture }}
           path: |
             dist/*.deb
             dist/*.rpm
@@ -82,12 +89,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Inno Setup and a Python to run the build with are both on the image.
-      - run: python agent/packaging/build_exe.py --output-dir dist
+      # WiX is a dotnet tool rather than part of the image.
+      - run: dotnet tool install --global wix
+
+      - run: python agent/packaging/build_msi.py --output-dir dist --architecture x64
+
+      # Built here too, and only built: nothing on an x86-64 runner can
+      # install it.
+      - run: python agent/packaging/build_msi.py --output-dir dist --architecture arm64
 
       # The installer is what ships, so it is run here rather than only
-      # compiled: whether the task registers, whether the bundled interpreter
-      # finds the agent beside it, and whether uninstalling cleans up.
+      # compiled: whether the service registers and starts, whether the
+      # bundled interpreter finds the agent beside it, and whether
+      # uninstalling cleans up.
       - name: Install it, use it, remove it
         shell: pwsh
         run: |
@@ -96,39 +110,31 @@ jobs:
           $ErrorActionPreference = 'Continue'
           $PSNativeCommandUseErrorActionPreference = $false
 
-          $setup = (Get-ChildItem dist\*-setup.exe)[0].FullName
-          Start-Process -FilePath $setup -Wait `
-            -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'
+          $msi = (Get-ChildItem dist\*-amd64.msi)[0].FullName
+          Start-Process msiexec -Wait -ArgumentList '/i',$msi,'/quiet','/norestart'
 
-          # What the task ended up storing is the one thing the quoting in the
-          # Inno script can get wrong without anything else noticing.
-          $task = Get-ScheduledTask -TaskName 'Neutrino Agent'
-          $task.Actions | Format-List
-          if ($task.Actions[0].Execute -notlike '*nagent_service.cmd*') {
-            throw "the task runs $($task.Actions[0].Execute)"
+          # A service that registers but cannot answer its manager reads as
+          # start-pending and then dies, so the state is the assertion.
+          $service = Get-CimInstance Win32_Service -Filter "Name='NeutrinoAgent'"
+          $service | Format-List Name, State, StartMode, PathName
+          if ($service.State -ne 'Running') {
+            throw "the service is $($service.State)"
+          }
+          if ($service.PathName -notlike '*run --windows-service*') {
+            throw "the service runs $($service.PathName)"
           }
 
-          # Unenrolled, the agent says so and exits 1. Reaching that message
-          # means the bundled interpreter imported it.
-          & "$env:ProgramFiles\Neutrino Agent\nagent.cmd" --once
+          # Unenrolled, status says so and exits 1. Reaching that message
+          # means the bundled interpreter imported the agent beside it.
+          & "$env:ProgramFiles\Neutrino Agent\nagent.cmd" status
           if ($LASTEXITCODE -ne 1) {
-            throw "nagent --once exited $LASTEXITCODE, expected 1"
+            throw "nagent status exited $LASTEXITCODE, expected 1"
           }
 
-          Start-Process -FilePath "$env:ProgramFiles\Neutrino Agent\unins000.exe" `
-            -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'
+          Start-Process msiexec -Wait -ArgumentList '/x',$msi,'/quiet','/norestart'
 
-          # Inno's uninstaller re-runs itself from a copy and the first process
-          # returns at once, so the task going away is what says it finished.
-          $deadline = (Get-Date).AddSeconds(90)
-          while ((Get-Date) -lt $deadline) {
-            if (-not (Get-ScheduledTask -TaskName 'Neutrino Agent' `
-                        -ErrorAction SilentlyContinue)) { break }
-            Start-Sleep -Seconds 3
-          }
-          if (Get-ScheduledTask -TaskName 'Neutrino Agent' `
-                -ErrorAction SilentlyContinue) {
-            throw 'the task outlived the uninstaller'
+          if (Get-Service -Name 'NeutrinoAgent' -ErrorAction SilentlyContinue) {
+            throw 'the service outlived the uninstaller'
           }
 
           exit 0
@@ -136,7 +142,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: agent_windows
-          path: dist/*.exe
+          path: dist/*.msi
           if-no-files-found: error
 
   draft:

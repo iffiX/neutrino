@@ -691,7 +691,11 @@ class Agent:
             return
         self._log("reinstalling from the hub's package")
         try:
-            self_update.run_update(channel, kind=kind)
+            self_update.run_update(
+                channel,
+                kind=kind,
+                architecture=self._engine.platform_tuple.get("arch", ""),
+            )
         except (
             self_update.SelfUpdateError,
             GatewayRefused,
@@ -739,7 +743,11 @@ class Agent:
             return
         self._log(f"updating to {hub_version}")
         try:
-            self_update.run_update(channel, kind=kind)
+            self_update.run_update(
+                channel,
+                kind=kind,
+                architecture=self._engine.platform_tuple.get("arch", ""),
+            )
         except (
             self_update.SelfUpdateError,
             GatewayRefused,

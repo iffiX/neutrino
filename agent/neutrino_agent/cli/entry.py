@@ -71,7 +71,10 @@ def main() -> int:
 
     subparsers.add_parser("disconnect", help="leave the hub")
 
-    subparsers.add_parser("run", help="run the agent in the foreground")
+    run_parser = subparsers.add_parser("run", help="run the agent in the foreground")
+    run_parser.add_argument(
+        "--windows-service", action="store_true", help=argparse.SUPPRESS
+    )
 
     subparsers.add_parser("status", help="what this machine is bound to")
 
@@ -103,7 +106,7 @@ def main() -> int:
     if arguments.command == "disconnect":
         return disconnect.main()
     if arguments.command == "run":
-        return run.main()
+        return run.main(is_windows_service=arguments.windows_service)
     if arguments.command == "gui":
         return gui.main(window_fd=arguments.window_fd)
     if arguments.command == "module":

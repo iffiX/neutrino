@@ -1,19 +1,14 @@
 """Build the agent's .rpm.
 
-    python3 agent/packaging/build_rpm.py --output-dir dist/
+    python3 agent/packaging/build_rpm.py --output-dir dist/ --architecture x86_64
 
-`BuildArch: noarch`: the agent is pure standard library, so one file covers
-every architecture Fedora and RHEL run on. Python itself comes from
-`Requires: python3`.
-
-The package installs under /usr/share rather than into site-packages. A noarch
-package cannot name site-packages, because that path carries the Python
-version — /usr/lib/python3.9 on RHEL 9, /usr/lib/python3.13 on a current
-Fedora — and a file list fixed at build time would miss it on every release
-but one. /usr/bin/nagent and the unit put the directory on the path instead.
+The same payload the .deb carries, under /opt/neutrino_agent: its own
+interpreter and the window's bindings built beside it. That fixes the package
+to one architecture, so it is built in a container of the machine it is for.
 
 Needs `rpmbuild`, from the `rpm` package on Debian family and `rpm-build` on
-RHEL family.
+RHEL family, and the development headers the window's bindings compile
+against.
 
 Not pure: writes a package tree and runs rpmbuild.
 """
@@ -26,20 +21,20 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from gui_assets import ICONS_DIR, stage_gui  # noqa: E402
+import payload  # noqa: E402
+from gui_assets import ICONS_DIR  # noqa: E402
 
-AGENT_ROOT = Path(__file__).resolve().parent.parent
-PACKAGE_NAME = "neutrino-agent"
-
-# Where the package puts the agent, and what /usr/bin/nagent adds to the path.
-INSTALL_DIR = "/usr/share/neutrino_agent"
-
-# The oldest Python the agent is written against; RHEL 9 ships 3.9.
-MINIMUM_PYTHON = "3.9"
+AGENT_ROOT = payload.AGENT_ROOT
+PACKAGE_NAME = payload.PACKAGE_NAME
 
 # RHEL family keeps units here. Debian's /lib/systemd/system is a symlink to
 # this, so the two packages disagree in spelling only.
 UNIT_DIR = "usr/lib/systemd/system"
+
+# The C stack the window loads through its own bindings. This family ships
+# each library's typelib in the library's own package, so naming the web view
+# names the whole chain.
+RUNTIME_REQUIRES = ("webkit2gtk4.1", "gobject-introspection", "systemd")
 
 SPEC = """Name:           {name}
 Version:        {version}
@@ -47,36 +42,48 @@ Release:        1
 Summary:        Neutrino device agent
 License:        MIT
 URL:            https://github.com/iffiX/neutrino
-BuildArch:      noarch
-Requires:       python3 >= {python}
-Requires:       systemd
+BuildArch:      {architecture}
+{requires}
 Recommends:     cifs-utils
 Recommends:     openssh-server
 Packager:       {packager}
 
-# The agent ships as source outside site-packages, which is not a tree
-# rpmbuild should be byte-compiling or scanning for provides.
+# The payload is prebuilt and carries its own interpreter, so none of
+# rpmbuild's opinions about Python belong to it: its shebangs name a path that
+# exists only once installed, and its .so files are not ours to strip.
 %global __brp_python_bytecompile %{{nil}}
 %global __brp_mangle_shebangs %{{nil}}
+%global __brp_strip %{{nil}}
+%global __brp_strip_static_archive %{{nil}}
+%global debug_package %{{nil}}
 
 %description
 Keeps a managed machine's modules in the state its Neutrino Hub asks for:
 installs and removes software from the hub's catalog, reports metrics, and
-offers a small window for joining a hub.
+offers a window for joining a hub and choosing what this machine runs.
 
-Pure standard library, so it runs on whatever Python the machine already has.
+Carries its own interpreter and the window's bindings, so it installs on a
+machine with no Python and touches none the machine already has.
 
 %install
 mkdir -p %{{buildroot}}
-cp -a {payload}/. %{{buildroot}}/
+cp -a {staged}/. %{{buildroot}}/
 
 %files
-{install_dir}
+{prefix}
 /usr/bin/nagent
 /{unit_dir}/neutrino_agent.service
 /usr/share/applications/neutrino_agent.desktop
 /usr/share/icons/hicolor/256x256/apps/neutrino_agent.png
 /usr/share/icons/hicolor/48x48/apps/neutrino_agent.png
+
+%pre
+# Python writes __pycache__ into the carried tree while the agent runs; rpm
+# does not own those files, and they would stay behind over the new ones.
+if [ "$1" -ge 2 ] && [ -d {prefix} ]; then
+    find {prefix} -type d -name __pycache__ -prune -print0 |
+        xargs -0 -r rm -rf 2>/dev/null || true
+fi
 
 %post
 systemctl daemon-reload >/dev/null 2>&1 || true
@@ -107,15 +114,16 @@ fi
 %postun
 systemctl daemon-reload >/dev/null 2>&1 || true
 if [ "$1" = 0 ]; then
-    echo "  Leaving /etc/neutrino_agent in place; remove it by hand if this"
+    rm -rf {prefix}
+    echo "  Leaving /etc/neutrino/agent in place; remove it by hand if this"
     echo "  machine is not going to rejoin a hub."
 fi
 """
 
 WRAPPER = """#!/bin/sh
-# The agent is installed outside the system's Python path, so the module has
-# to be pointed at rather than found.
-PYTHONPATH={install_dir} exec /usr/bin/python3 -m neutrino_agent.cli.entry "$@"
+# The agent runs from the interpreter the package carries, never the system
+# one; the window process it starts inherits the same one.
+exec {python}/bin/python3 -m neutrino_agent.cli.entry "$@"
 """
 
 
@@ -128,91 +136,91 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--output-dir", default="dist", help="where to write the .rpm")
     parser.add_argument(
+        "--architecture",
+        default=_host_architecture(),
+        help="the architecture to build for",
+    )
+    parser.add_argument(
         "--packager",
         default="iffiX <muhanli2022@u.northwestern.edu>",
         help="the Packager tag",
     )
     arguments = parser.parse_args()
 
-    version = _version()
+    version = payload.version()
+    architecture = payload.RPM_ARCHITECTURES[
+        payload.machine_name(arguments.architecture)
+    ]
     output_dir = Path(arguments.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory() as workdir:
         root = Path(workdir)
-        payload = root / "payload"
-        _lay_out(payload, version)
+        staged = root / "staged"
+        _lay_out(staged, version, architecture)
         spec = root / f"{PACKAGE_NAME}.spec"
         spec.write_text(
             SPEC.format(
                 name=PACKAGE_NAME,
                 version=version,
-                python=MINIMUM_PYTHON,
+                architecture=architecture,
+                requires="\n".join(f"Requires:       {n}" for n in RUNTIME_REQUIRES),
                 packager=arguments.packager,
-                payload=payload,
-                install_dir=INSTALL_DIR,
+                staged=staged,
+                prefix=payload.INSTALL_PREFIX,
                 unit_dir=UNIT_DIR,
             ),
             encoding="utf-8",
         )
-        target = _build(spec, root, output_dir, version)
+        target = _build(spec, root, output_dir, version, architecture)
 
-    print(f"wrote {target} ({target.stat().st_size // 1024} KiB)")
+    print(f"wrote {target} ({target.stat().st_size // 1024 // 1024} MiB)")
     return 0
 
 
-def _lay_out(payload: Path, version: str) -> None:
+def _lay_out(staged: Path, version: str, architecture: str) -> None:
     """Write everything the package installs.
 
     Args:
-        payload: The directory standing in for the filesystem root.
+        staged: The directory standing in for the filesystem root.
         version: The version being packaged.
+        architecture: The rpm architecture name.
     """
-    package_dir = payload / INSTALL_DIR.lstrip("/") / "neutrino_agent"
-    shutil.copytree(
-        AGENT_ROOT / "neutrino_agent",
-        package_dir,
-        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "build_package.py"),
-    )
-    # rpm installs no .dist-info either, so the version is stamped in the way
-    # the .deb's build does it and the hub compares it against its own.
-    (package_dir / "_version.py").write_text(
-        f'"""Written by the packaging build. Do not edit."""\n\n'
-        f'AGENT_VERSION = "{version}"\n',
-        encoding="utf-8",
-    )
-    stage_gui(package_dir)
+    staged_python = staged / str(payload.PYTHON_DIR).lstrip("/")
+    payload.stage_linux_interpreter(staged_python, architecture)
+    payload.stage_agent_tree(payload.site_packages_of(staged_python), version)
+    payload.stage_linux_gui_bindings(staged_python)
+    payload.strip_build_paths(staged_python, staged)
 
-    # Whatever umask the build ran under does not belong in a package.
-    for path in package_dir.rglob("*"):
-        path.chmod(0o755 if path.is_dir() else 0o644)
-
-    _write(
-        payload / "usr/bin/nagent",
-        WRAPPER.format(install_dir=INSTALL_DIR),
+    payload.write(
+        staged / "usr/bin/nagent",
+        WRAPPER.format(python=payload.PYTHON_DIR),
         is_executable=True,
     )
-    _write(
-        payload / UNIT_DIR / "neutrino_agent.service",
+    payload.write(
+        staged / UNIT_DIR / "neutrino_agent.service",
         (AGENT_ROOT / "neutrino_agent/data/systemd/neutrino_agent.service").read_text(
             encoding="utf-8"
         ),
     )
 
     desktop = AGENT_ROOT / "neutrino_agent/data/desktop"
-    _write(
-        payload / "usr/share/applications/neutrino_agent.desktop",
+    payload.write(
+        staged / "usr/share/applications/neutrino_agent.desktop",
         (desktop / "neutrino_agent.desktop").read_text(encoding="utf-8"),
     )
     for source, edge in (("neutrino_256.png", 256), ("neutrino_48.png", 48)):
         destination = (
-            payload / f"usr/share/icons/hicolor/{edge}x{edge}/apps/neutrino_agent.png"
+            staged / f"usr/share/icons/hicolor/{edge}x{edge}/apps/neutrino_agent.png"
         )
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ICONS_DIR / source, destination)
+        destination.chmod(0o644)
 
 
-def _build(spec: Path, topdir: Path, output_dir: Path, version: str) -> Path:
+def _build(
+    spec: Path, topdir: Path, output_dir: Path, version: str, architecture: str
+) -> Path:
     """Run rpmbuild over the spec and move the result where it was asked for.
 
     Args:
@@ -220,6 +228,7 @@ def _build(spec: Path, topdir: Path, output_dir: Path, version: str) -> Path:
         topdir: The directory rpmbuild may use for its own trees.
         output_dir: Where the .rpm should land.
         version: The version being packaged, which names the file.
+        architecture: The rpm architecture name, which names it too.
 
     Returns:
         The path written.
@@ -228,14 +237,27 @@ def _build(spec: Path, topdir: Path, output_dir: Path, version: str) -> Path:
         SystemExit: If rpmbuild refuses, or writes nothing.
     """
     result = subprocess.run(
-        ["rpmbuild", "-bb", "--define", f"_topdir {topdir}", str(spec)],
+        [
+            "rpmbuild",
+            "-bb",
+            "--define",
+            f"_topdir {topdir}",
+            "--target",
+            architecture,
+            str(spec),
+        ],
         capture_output=True,
         text=True,
     )
     if result.returncode != 0:
         raise SystemExit((result.stderr or result.stdout).strip())
 
-    built = topdir / "RPMS" / "noarch" / f"{PACKAGE_NAME}-{version}-1.noarch.rpm"
+    built = (
+        topdir
+        / "RPMS"
+        / architecture
+        / f"{PACKAGE_NAME}-{version}-1.{architecture}.rpm"
+    )
     if not built.is_file():
         raise SystemExit(f"rpmbuild wrote no {built.name}")
     target = output_dir / built.name
@@ -243,27 +265,10 @@ def _build(spec: Path, topdir: Path, output_dir: Path, version: str) -> Path:
     return target
 
 
-def _version() -> str:
-    """The version declared in the agent's pyproject."""
-    for line in (
-        (AGENT_ROOT / "pyproject.toml").read_text(encoding="utf-8").splitlines()
-    ):
-        if line.startswith("version = "):
-            return line.split('"')[1]
-    raise SystemExit("no version in agent/pyproject.toml")
-
-
-def _write(path: Path, text: str, *, is_executable: bool = False) -> None:
-    """Write one file into the tree, creating its parents.
-
-    Args:
-        path: Where to write.
-        text: What to write.
-        is_executable: Whether to mark it 0755.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
-    path.chmod(0o755 if is_executable else 0o644)
+def _host_architecture() -> str:
+    """The rpm architecture name for the machine this runs on."""
+    result = subprocess.run(["uname", "-m"], capture_output=True, text=True)
+    return result.stdout.strip() or "x86_64"
 
 
 if __name__ == "__main__":

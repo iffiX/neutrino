@@ -281,7 +281,9 @@ again.
 > `nagent run`
 
 Runs the agent in the foreground. This is what the systemd unit, the launchd
-job and the Windows scheduled task start.
+job and the Windows service start; on Windows the service control manager
+adds one flag of its own, which wraps the same loop in the handshake a
+service process owes its manager.
 
 ### gui
 

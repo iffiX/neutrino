@@ -139,7 +139,7 @@ def test_a_missing_webkitgtk_refuses_naming_the_packages(monkeypatch):
         webkitgtk.open_window(title="t", html="<html>", bridge=None)
 
     assert caught.value.code == "gui_webkitgtk_missing"
-    assert caught.value.params == {"packages": "gir1.2-webkit2-4.1 python3-gi"}
+    assert caught.value.params == {"packages": "gir1.2-webkit2-4.1"}
 
 
 def test_the_linux_shell_pins_the_41_api(monkeypatch):

@@ -12,6 +12,7 @@ import json
 
 import pytest
 
+import neutrino_agent.cli.status as status_module
 import neutrino_agent.core.enrollment as enrollment
 import neutrino_agent.platforms.base as platforms_base_module
 import neutrino_agent.services.file as file_module
@@ -67,7 +68,12 @@ SERVICES = [
 
 @pytest.fixture(autouse=True)
 def _isolated_machine_paths(tmp_path, monkeypatch):
-    monkeypatch.setattr(enrollment, "AGENT_CONFIG_PATH", str(tmp_path / "agent.json"))
+    binding = str(tmp_path / "agent.json")
+    monkeypatch.setattr(enrollment, "AGENT_CONFIG_PATH", binding)
+    # status reads the file itself, to tell a binding it may not read from no
+    # binding at all. On a machine with a real agent installed, the real one
+    # is root's, and every status case would read that refusal instead.
+    monkeypatch.setattr(status_module, "AGENT_CONFIG_PATH", binding)
     monkeypatch.setattr(
         store_module, "AGENT_SERVICE_STORE_PATH", str(tmp_path / "services.json")
     )

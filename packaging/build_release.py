@@ -2,18 +2,17 @@
 
     python3 packaging/build_release.py --output-dir dist/
 
-The agent's package is architecture-independent and builds anywhere. The hub's
-is not: it must be built on the distribution it targets, because its virtual
-environment carries no standard library and its compiled wheels fix the
-architecture. This runs that build in a container so the result does not
-depend on whatever this machine happens to be.
+Neither package builds anywhere any more: both carry their own interpreter and
+compiled extensions, so both are built in a container of the family and the
+machine they are for. This runs those builds so the result does not depend on
+whatever this machine happens to be.
 
-The agent's `.rpm` is built too, when `rpmbuild` is installed. Its `.pkg` and
-`.exe` are not built anywhere yet; they need the platforms they are for.
+The agent's `.msi` and `.pkg` are not built here; they need the platforms they
+are for, and their own scripts run there.
 
 ``--only`` builds one part of the release. The tag workflow uses it to put the
-hub's architectures on separate runners and to write the checksums once, after
-every part has been collected.
+architectures on separate runners and to write the checksums once, after every
+part has been collected.
 
 Not pure: runs container and packaging tools.
 """
@@ -26,10 +25,11 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# The container platform for each architecture the hub is published for.
-# Building for anything but the host's own needs QEMU registered with
+# The container platform for each architecture the packages are published
+# for. Building for anything but the host's own needs QEMU registered with
 # binfmt_misc, which is what the tag workflow does before it calls this.
-HUB_BUILD_PLATFORMS = {"amd64": "linux/amd64", "arm64": "linux/arm64"}
+# 32-bit ARM is not on the list: nothing carried is published for it.
+BUILD_PLATFORMS = {"amd64": "linux/amd64", "arm64": "linux/arm64"}
 
 # Only what the hub's package build reads is copied in — the package, the
 # packaging, the agent tree it bakes native packages from with the agent's
@@ -46,26 +46,58 @@ HUB_BUILDS = {
         "image": "debian:12",
         "install": "apt-get -qq update >/dev/null 2>&1 && "
         "apt-get -qq install -y python3 python3-venv python3-pip dpkg-dev rpm "
-        ">/dev/null 2>&1",
+        "pkg-config build-essential libgirepository1.0-dev libcairo2-dev "
+        "ca-certificates >/dev/null 2>&1",
         "script": "build_deb.py",
         "architecture": "{arch}",
     },
     "rhel": {
         "image": "fedora:41",
-        "install": "dnf -q -y install python3 python3-pip rpm-build dpkg "
-        ">/dev/null 2>&1",
+        "install": "dnf -q -y install python3 python3-pip rpm-build dpkg gcc "
+        "pkgconf-pkg-config gobject-introspection-devel cairo-devel "
+        "cairo-gobject-devel libffi-devel >/dev/null 2>&1",
         "script": "build_rpm.py",
         "architecture": "{rpm_arch}",
     },
     "arch": {
         "image": "archlinux:latest",
         "install": "pacman -Sy --noconfirm --needed python python-pip base-devel "
-        "dpkg rpm-tools >/dev/null 2>&1 && useradd -m builder 2>/dev/null || true",
+        "dpkg rpm-tools gobject-introspection cairo libffi >/dev/null 2>&1 && "
+        "useradd -m builder 2>/dev/null || true",
         "script": "build_pkg.py",
         "architecture": "{pkg_arch}",
         "extra": "--build-user builder",
     },
 }
+
+# What builds the agent for each family, and what that family needs installed
+# first. The window's bindings are compiled here against the family's own C
+# libraries, so each package is built where it is going.
+AGENT_BUILDS = {
+    "debian": {
+        "image": "debian:12",
+        "install": "apt-get -qq update >/dev/null 2>&1 && "
+        "apt-get -qq install -y python3 dpkg-dev pkg-config build-essential "
+        "libgirepository1.0-dev libcairo2-dev ca-certificates >/dev/null 2>&1",
+        "script": "build_deb.py",
+    },
+    "rhel": {
+        "image": "fedora:41",
+        "install": "dnf -q -y install python3 rpm-build pkgconf-pkg-config gcc "
+        "gobject-introspection-devel cairo-devel cairo-gobject-devel "
+        "libffi-devel >/dev/null 2>&1",
+        "script": "build_rpm.py",
+    },
+}
+
+AGENT_CONTAINER_BUILD = (
+    "{install} && mkdir -p /build/agent /build/images && "
+    "cp -r /src/agent/neutrino_agent /src/agent/packaging /src/agent/frontend "
+    "/src/agent/pyproject.toml /build/agent/ && "
+    "cp -r /src/images/icons /build/images/ && cd /build && "
+    "python3 agent/packaging/{script} --output-dir /out "
+    "--architecture {architecture}"
+)
 
 CONTAINER_BUILD = (
     "{install} && mkdir -p /build/hub /build/agent /build/images && "
@@ -98,7 +130,7 @@ def main() -> int:
     parser.add_argument(
         "--architecture",
         default=_host_architecture(),
-        help="the architecture to build the hub for",
+        help="the architecture to build for",
     )
     parser.add_argument(
         "--only",
@@ -109,7 +141,7 @@ def main() -> int:
     parser.add_argument(
         "--families",
         default=",".join(HUB_BUILDS),
-        help="which distribution families to build the hub for",
+        help="which distribution families to build for",
     )
     arguments = parser.parse_args()
 
@@ -117,72 +149,93 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if arguments.only in ("all", "agent"):
-        print("building the agent's deb")
-        _run(
-            [
-                sys.executable,
-                str(REPO_ROOT / "agent/packaging/build_deb.py"),
-                "--output-dir",
-                str(output_dir),
-            ]
-        )
-        if _has_tool("rpmbuild"):
-            print("building the agent's rpm")
-            _run(
-                [
-                    sys.executable,
-                    str(REPO_ROOT / "agent/packaging/build_rpm.py"),
-                    "--output-dir",
-                    str(output_dir),
-                ]
+        for family in _families(arguments.families):
+            if family not in AGENT_BUILDS:
+                print(f"  no agent package for {family}")
+                continue
+            print(
+                f"building the agent package for {family} "
+                f"{arguments.architecture} in {AGENT_BUILDS[family]['image']}"
             )
-        else:
-            print("  no rpmbuild here, so no rpm")
+            _build_in_container(
+                AGENT_BUILDS[family],
+                AGENT_CONTAINER_BUILD,
+                output_dir,
+                arguments.architecture,
+                family,
+            )
 
     if arguments.only in ("all", "hub"):
-        for family in arguments.families.split(","):
-            family = family.strip()
-            if family not in HUB_BUILDS:
-                raise SystemExit(
-                    f"no hub build for {family}; there is one for: "
-                    f"{', '.join(HUB_BUILDS)}"
-                )
+        for family in _families(arguments.families):
             print(
                 f"building the hub package for {family} "
                 f"{arguments.architecture} in {HUB_BUILDS[family]['image']}"
             )
-            _build_hub(output_dir, arguments.architecture, family)
+            _build_in_container(
+                HUB_BUILDS[family],
+                CONTAINER_BUILD,
+                output_dir,
+                arguments.architecture,
+                family,
+            )
 
     if arguments.only in ("all", "checksums"):
         _write_checksums(output_dir)
     return 0
 
 
-def _build_hub(output_dir: Path, architecture: str, family: str) -> None:
-    """Build the hub package for one distribution family, in a container.
+def _families(requested: str) -> list:
+    """The families to build, checked against the ones this project has.
 
     Args:
-        output_dir: Where the package should land.
-        architecture: The architecture to build for, named the Debian way.
-        family: Which of :data:`HUB_BUILDS` to run.
+        requested: The comma-separated list from the command line.
+
+    Returns:
+        The family names, in the order asked for.
 
     Raises:
-        SystemExit: If the architecture is not one the hub is published for,
-            no container tool is available, or the build fails.
+        SystemExit: When one of them is not a family at all. A family with no
+            agent package is not that: the agent loop says so and moves on.
     """
-    build = HUB_BUILDS[family]
+    names = [name.strip() for name in requested.split(",") if name.strip()]
+    for name in names:
+        if name not in HUB_BUILDS:
+            raise SystemExit(
+                f"no build for {name}; there is one for: {', '.join(HUB_BUILDS)}"
+            )
+    return names
+
+
+def _build_in_container(
+    build: dict, script: str, output_dir: Path, architecture: str, family: str
+) -> None:
+    """Run one packaging build inside a container of its own family.
+
+    Args:
+        build: The family's entry in :data:`HUB_BUILDS` or
+            :data:`AGENT_BUILDS`.
+        script: The shell command template to run inside it.
+        output_dir: Where the package should land.
+        architecture: The architecture to build for, named the Debian way.
+        family: Which family is being built, which names the architecture.
+
+    Raises:
+        SystemExit: If the architecture is not one the packages are published
+            for, no container tool is available, or the build fails.
+    """
     names = ARCHITECTURE_NAMES.get(architecture, {})
-    platform = HUB_BUILD_PLATFORMS.get(architecture)
+    platform = BUILD_PLATFORMS.get(architecture)
     if platform is None:
         raise SystemExit(
-            f"the hub is published for {', '.join(HUB_BUILD_PLATFORMS)}, "
+            f"the packages are published for {', '.join(BUILD_PLATFORMS)}, "
             f"not {architecture}"
         )
     engine = _container_engine()
     if engine is None:
         raise SystemExit(
-            "podman or docker is needed to build the hub package on its "
-            "baseline distribution; pass --only agent to skip it"
+            "podman or docker is needed: both packages carry an interpreter "
+            "and compiled extensions, so both are built on their baseline "
+            "distribution"
         )
     # --network=host because this machine's own nftables rules are what a
     # container network would otherwise have to negotiate with.
@@ -201,7 +254,7 @@ def _build_hub(output_dir: Path, architecture: str, family: str) -> None:
             build["image"],
             "sh",
             "-c",
-            CONTAINER_BUILD.format(
+            script.format(
                 install=build["install"],
                 script=build["script"],
                 architecture=names.get(family, architecture),

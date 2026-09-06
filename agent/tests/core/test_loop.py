@@ -290,7 +290,7 @@ def test_a_stale_wire_answer_reinstalls_and_never_unbinds(config_path, monkeypat
     monkeypatch.setattr(
         loop_module.self_update,
         "run_update",
-        lambda posting, kind: installed.append(kind),
+        lambda posting, kind, architecture: installed.append(kind),
     )
     agent._channel = _RaisingChannel(channel.GatewayWireStale(hub_wire=2, agent_wire=1))
 
@@ -629,7 +629,7 @@ def test_reply_coercible_fields_of_the_wrong_type_are_stringified(
     monkeypatch.setattr(
         loop_module.self_update,
         "run_update",
-        lambda posting, kind: installed.append(kind),
+        lambda posting, kind, architecture: installed.append(kind),
     )
     agent = scripted_agent(
         config_path,
@@ -730,7 +730,7 @@ def test_wire_stale_a_new_generation_target_relaunches_the_reinstall(
     monkeypatch.setattr(
         loop_module.self_update,
         "run_update",
-        lambda posting, kind: installed.append(kind),
+        lambda posting, kind, architecture: installed.append(kind),
     )
 
     for _ in range(3):
@@ -764,7 +764,7 @@ def test_wire_stale_a_failed_reinstall_is_coded_and_not_retried(
     )
     attempts = []
 
-    def fail(posting, kind):
+    def fail(posting, kind, architecture):
         attempts.append(kind)
         raise error
 
@@ -794,7 +794,7 @@ def test_wire_stale_platform_without_a_package_installs_nothing(
     monkeypatch.setattr(
         loop_module.self_update,
         "run_update",
-        lambda posting, kind: installed.append(kind),
+        lambda posting, kind, architecture: installed.append(kind),
     )
 
     delays = [agent.run_once() for _ in range(2)]

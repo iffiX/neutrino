@@ -247,7 +247,7 @@ def build_environment(tree: Path, version: str, machine: str) -> None:
         stamp.unlink(missing_ok=True)
 
     strip_build_paths(staged_python, tree)
-    stage_agent_package(staged_python)
+    stage_agent_package(staged_python, machine)
     stage_vendored(tree, machine)
     stage_licenses(tree)
 
@@ -269,16 +269,25 @@ def stage_icons() -> None:
         shutil.copyfile(source, ICONS_PACKAGE_DIR / source.name)
 
 
-def stage_agent_package(staged_python: Path) -> None:
+def stage_agent_package(staged_python: Path, machine: str) -> None:
     """Bake the agent's native packages into the hub's own data.
 
     Built from the same checkout, so the hub and the agent it hands out
     cannot drift. The panel installs these over SSH, falling back here when
-    ``config/devices/packages`` holds no deliberately pinned build. The
-    build container carries ``dpkg-dev`` and ``rpm`` for these.
+    ``config/devices/packages`` holds no deliberately pinned build.
+
+    The agent carries an interpreter and compiled bindings of its own now, so
+    what is baked is for this container's machine and no other. A hub serving
+    devices of a second architecture is given those packages by hand, under
+    ``config/devices/packages``, where they win over these.
+
+    The build container carries ``dpkg-dev``, ``rpm`` and the headers the
+    agent's bindings compile against.
 
     Args:
         staged_python: The interpreter tree the hub was installed into.
+        machine: The architecture, named however the packaging format names
+            it.
     """
     site_packages = next((staged_python / "lib").glob("python*/site-packages"))
     output = site_packages / "neutrino_hub" / "data" / "agent_package"
@@ -289,6 +298,8 @@ def stage_agent_package(staged_python: Path) -> None:
                 str(AGENT_ROOT / "packaging" / script),
                 "--output-dir",
                 str(output),
+                "--architecture",
+                machine,
             ],
             cwd=AGENT_ROOT,
         )

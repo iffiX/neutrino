@@ -16,7 +16,10 @@ import subprocess
 import pytest
 
 import neutrino_agent.platforms.windows as windows_module
-from neutrino_agent.constants import AGENT_CONTROL_PIPE_NAME
+from neutrino_agent.constants import (
+    AGENT_CONTROL_PIPE_NAME,
+    AGENT_SERVICE_NAME_WINDOWS,
+)
 from neutrino_agent.core.metrics import HostMetrics
 from neutrino_agent.modules import installers
 from neutrino_agent.platforms.base import PlatformUnsupportedError, ShareAttachError
@@ -675,37 +678,36 @@ def test_windows_package_removal_runs_the_manifests_command(monkeypatch):
 # --- the agent's own service, power, metrics ---
 
 
-def test_windows_agent_state_reads_the_scheduled_task(monkeypatch):
-    recorder = CommandRecorder(results=[completed(stdout="Running\n")])
-    monkeypatch.setattr(windows_module.subprocess, "run", recorder)
+def test_windows_agent_state_asks_the_service_control_manager(monkeypatch):
+    """The agent is a service here, not a task the scheduler runs: the state
+    is the manager's own number, which no language translates."""
+    asked = []
+
+    def read_state(name, **kwargs):
+        asked.append(name)
+        return "running"
+
+    monkeypatch.setattr(windows_module.windows_service, "read_state", read_state)
+
     assert WindowsPlatform().read_agent_service_state() == "running"
-    script = recorder.commands[0][-1]
-    assert "Get-ScheduledTask" in script
-    assert "'Neutrino Agent'" in script
-    assert "Get-Service" not in script
-
-    recorder.results = [completed(stdout="Ready\n")]
-    assert WindowsPlatform().read_agent_service_state() == "ready"
-
-    recorder.results = [completed(stdout="")]
-    assert WindowsPlatform().read_agent_service_state() == "unknown"
+    assert asked == [AGENT_SERVICE_NAME_WINDOWS]
 
 
-def test_windows_start_runs_the_scheduled_task(monkeypatch):
-    recorder = CommandRecorder()
-    monkeypatch.setattr(windows_module.subprocess, "run", recorder)
+def test_windows_start_asks_the_service_control_manager(monkeypatch):
+    started = []
+    monkeypatch.setattr(
+        windows_module.windows_service, "start", lambda name: started.append(name)
+    )
 
     WindowsPlatform().start_agent_service()
 
-    script = recorder.commands[0][-1]
-    assert "Enable-ScheduledTask" in script and "Start-ScheduledTask" in script
-    assert "'Neutrino Agent'" in script
-    assert "Set-Service" not in script and "systemctl" not in script
+    assert started == [AGENT_SERVICE_NAME_WINDOWS]
 
 
-def test_windows_start_hint_names_the_task_not_systemctl():
+def test_windows_start_hint_names_the_service_not_a_task():
     hint = WindowsPlatform().agent_service_start_hint()
-    assert hint == 'schtasks /run /tn "Neutrino Agent"'
+    assert hint == f"sc start {AGENT_SERVICE_NAME_WINDOWS}"
+    assert "schtasks" not in hint
     assert "systemctl" not in hint and "sudo" not in hint
 
 

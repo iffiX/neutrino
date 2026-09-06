@@ -3,9 +3,13 @@
 The agent is the hub's presence on a managed machine: one service with the
 platform's highest privilege that executes the hub's orders, reports what
 is true, and answers to the people sitting at it — each within the scope
-their identity owns. It is pure standard library with no
-dependencies, which is what lets one package run on whatever Python a device
-already has. Why the system is shaped this way is
+their identity owns. Its own code is pure standard library; the package
+carries the interpreter that runs it and the bindings its window draws
+through, so it installs on a machine with no Python and touches none the
+machine already has. Running on whatever Python a device happened to have was
+a property this project had and gave up: a window needs bindings, and a
+machine's own interpreter is not a place to install them.
+Why the system is shaped this way is
 [architecture.md](architecture.md) ("The agent channel is pinned TLS",
 "Managed is a completed handshake"); this page is the agent's own design:
 who may command it, how state moves, how local people reach it, and where

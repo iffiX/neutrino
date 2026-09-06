@@ -69,7 +69,9 @@ agent/
                      images/icons/.
   frontend/          The window's page: plain HTML, CSS and JavaScript, no
                      framework and no node toolchain.
-  packaging/         Its own .deb, .rpm and Windows .exe builders.
+  packaging/         Its own .deb, .rpm, .msi and .pkg builders, the payload
+                     every one of them stages, and the icon containers two
+                     of them need.
   tests/
 ```
 

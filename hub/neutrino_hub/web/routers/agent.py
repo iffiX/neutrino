@@ -356,29 +356,39 @@ def result(
 
 
 @router.post("/package")
-def package(request: ClientPackageRequest) -> Response:
-    """Hand an agent the hub's baked package for its family.
+def package(
+    request: ClientPackageRequest, runtime: PanelRuntime = Depends(get_runtime)
+) -> Response:
+    """Hand an agent the hub's baked package for its family and machine.
 
     This is how an older agent updates itself: the reply's ``hub_version``
     tells it to move, and this hands it the same build an SSH install would
     deliver, over the same pinned channel its heartbeats use.
 
+    The package carries an interpreter, so it is for one architecture. The
+    agent names its own; a build that predates the field is answered from the
+    platform its last heartbeat reported.
+
     Args:
-        request: The token and the package family.
+        request: The token, the package family, and the machine.
+        runtime: The shared runtime, which holds what each device reported.
 
     Returns:
         The package bytes, with their SHA-256 in ``X-Checksum-Sha256``.
 
     Raises:
         HTTPException: 401 when the token matches no device, 409 when the
-            hub holds no package for the family.
+            hub holds no package for that family and machine.
     """
     device = DeviceRegistry().find_by_client_token(request.token)
     if device is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="unknown client token"
         )
-    path = agent_packages().get(request.family)
+    architecture = request.architecture or runtime.client_platform.get(
+        device.mac_address, {}
+    ).get("arch", "")
+    path = agent_packages().get(request.family, {}).get(architecture)
     if path is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

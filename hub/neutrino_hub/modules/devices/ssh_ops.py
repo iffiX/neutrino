@@ -365,7 +365,7 @@ class DeviceSshOperator:
     async def install_client(
         self,
         *,
-        packages: "dict[str, Path]",
+        packages: "dict[str, dict]",
         enrollment_link: str,
     ) -> AsyncIterator[str]:
         """Deliver the agent as a native package and join it to this hub.
@@ -379,16 +379,17 @@ class DeviceSshOperator:
         so nothing else may need lines counted behind it.
 
         Args:
-            packages: The agent package per family, ``deb`` and ``rpm``,
-                whichever the hub carries.
+            packages: The agent package per family, ``deb`` and ``rpm``, and
+                per machine under each, whichever the hub carries.
             enrollment_link: The ticket the panel generated for this device.
 
         Yields:
             Progress lines and the remote tools' output. A device that is not
-            Linux, or whose package manager the hub carries no package for,
-            ends the task before anything lands on it.
+            Linux, or whose package manager or machine the hub carries no
+            package for, ends the task before anything lands on it.
         """
         family = None
+        package_path = None
         try:
             async with self._connect() as connection:
                 result = await connection.run("uname -s", check=False)
@@ -400,22 +401,27 @@ class DeviceSshOperator:
                     )
                     yield f"\n[exit {SSH_UNSUPPORTED_OS_STATUS}]\n"
                     return
+                # The package carries an interpreter, so the machine decides
+                # which file as much as the package manager does.
+                result = await connection.run("uname -m", check=False)
+                machine = (result.stdout or "").strip()
+                architecture = _normalise_machine(machine)
                 for candidate, tool in (("deb", "dpkg"), ("rpm", "rpm")):
-                    if candidate not in packages:
+                    if architecture not in packages.get(candidate, {}):
                         continue
                     probe = await connection.run(f"command -v {tool}", check=False)
                     if (probe.exit_status or 0) == 0:
                         family = candidate
+                        package_path = packages[candidate][architecture]
                         break
-                if family is None:
+                if package_path is None:
                     yield (
-                        "[no package manager the hub carries a package for "
-                        "(dpkg or rpm); join this machine with an enrollment "
-                        "link instead]\n"
+                        "[the hub carries no agent package this machine can "
+                        f"install (dpkg or rpm, {machine or 'unknown machine'}); "
+                        "join this machine with an enrollment link instead]\n"
                     )
                     yield f"\n[exit {SSH_UNSUPPORTED_OS_STATUS}]\n"
                     return
-                package_path = packages[family]
                 remote_package = f"/tmp/{package_path.name}"
                 yield f"[uploading {package_path.name}]\n"
                 async with connection.start_sftp_client() as sftp:

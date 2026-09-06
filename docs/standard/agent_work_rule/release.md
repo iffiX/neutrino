@@ -115,38 +115,44 @@ is its own line, and only on RHEL rebuilds. Fedora carries all three itself.
 
 ### Agent
 
-The agent runs on the machines the hub manages. The Linux packages are
-architecture-independent — one file covers x86-64, ARM64 and 32-bit ARM —
-because the agent is pure Python with no dependencies beyond the standard
-library.
+The agent runs on the machines the hub manages. Every package carries its own
+interpreter and the Python bindings its window draws through, so there is one
+per platform and machine and none of them asks for a Python.
 
 | File | For |
 | --- | --- |
-| `neutrino-agent_<version>_all.deb` | Debian, Ubuntu, Raspberry Pi OS. Needs `python3`, which apt pulls in |
-| `neutrino-agent-<version>-1.noarch.rpm` | Fedora, RHEL, CentOS |
-| `neutrino-agent-<version>.pkg` | macOS 12 or newer, Intel and Apple Silicon. Carries its own Python |
-| `neutrino-agent-<version>-setup.exe` | Windows 10 or newer, x86-64. Carries its own Python |
+| `neutrino-agent_<version>_amd64.deb` | Debian, Ubuntu, Raspberry Pi OS on x86-64 |
+| `neutrino-agent_<version>_arm64.deb` | The same on ARM64 |
+| `neutrino-agent-<version>-1.x86_64.rpm` | Fedora, RHEL, CentOS on x86-64 |
+| `neutrino-agent-<version>-1.aarch64.rpm` | The same on ARM64 |
+| `neutrino-agent-<version>-amd64.msi` | Windows 10 or newer, x86-64 |
+| `neutrino-agent-<version>-arm64.msi` | The same on ARM64 |
+| `neutrino-agent-<version>.pkg` | macOS 12 or newer, one universal build for Intel and Apple Silicon |
 
-The `.pkg` is not built yet.
+32-bit ARM is not published: no interpreter build is, and neither are the
+bindings. The `.pkg` is not built yet.
+
+The Linux packages install under `/opt/neutrino_agent`, not into
+site-packages: what is there is an interpreter of the agent's own, and
+`/usr/bin/nagent` and the unit run it. They depend on C libraries only —
+`gir1.2-webkit2-4.1` on the Debian family and `webkit2gtk4.1` on the RHEL
+family, each pulling the rest of the stack — and on no distribution package
+named `python`. A headless machine carries the web view too, deliberately: one
+package, one dependency field, no second build to choose between.
 
 The Windows installer carries python.org's embeddable interpreter, pinned by
-hash, because Windows ships no Python. It starts the agent from a scheduled
-task rather than a service: a service has to answer the service control
-manager within seconds of starting, which a plain Python process cannot do
-without a wrapper binary, and the agent carries no dependencies anywhere.
+hash, and registers a real service: the agent's own entry answers the service
+control manager over a ctypes handshake, so nothing needs a wrapper binary.
+It also carries Microsoft's WebView2 bootstrapper and runs it when the
+machine's registry says the Evergreen runtime is absent, which is LTSC and
+Server editions.
 
-What neither the `.exe` nor a future `.pkg` fixes is that the agent's metrics
-read `/proc` and its actions run `systemctl` and `apt-get`. Installed on
-Windows or macOS it joins a hub and heartbeats; it reports no metrics and
-performs no actions until that layer knows where it is.
-
-The `.rpm` installs under `/usr/share/neutrino_agent` rather than into
-site-packages, whose path carries the Python version and so cannot be named by
-a package meant to be `noarch`. `/usr/bin/nagent` and the unit put it on the
-path.
+Each package is tens of megabytes where the old architecture-independent one
+was tens of kilobytes. That is what a window costs, and it is paid once per
+machine.
 
 ```bash
-sudo dpkg -i neutrino-agent_<version>_all.deb
+sudo apt install ./neutrino-agent_<version>_amd64.deb
 nagent connect https://<hub-address>
 ```
 
@@ -173,17 +179,23 @@ loudly rather than half-installing.
 python3 packaging/build_release.py --output-dir dist/
 ```
 
-One command, and it writes `SHA256SUMS` beside what it built. The agent's
-`.deb` builds anywhere; its `.rpm` needs `rpmbuild`, from `rpm` on Debian
-family and `rpm-build` on RHEL family, and is skipped with a note when that is
-missing. The hub's is built inside `debian:12` — that needs podman or docker,
-and `--only agent` skips it.
+One command, and it writes `SHA256SUMS` beside what it built. Both packages
+are built in containers now — the agent's as well, since it compiles the
+window's bindings against the family's own C libraries — so podman or docker
+is not optional for either.
 
-`--architecture arm64` builds the hub for the other architecture by running
-that container under emulation; the host needs QEMU registered with
-binfmt_misc first. `--only` builds one part at a time — `hub`, `agent`, or
-`checksums` over a directory the parts were collected into — which is how the
-tag workflow splits the work across runners.
+`--architecture arm64` builds for the other architecture by running those
+containers under emulation; the host needs QEMU registered with binfmt_misc
+first. `--only` builds one part at a time — `hub`, `agent`, or `checksums`
+over a directory the parts were collected into — which is how the tag workflow
+splits the work across runners. `--families` chooses which; the agent has no
+Arch package and says so rather than failing.
+
+The agent packages a hub package carries are built inside the hub's own build
+container, for the hub's own machine. A hub serving devices of a second
+architecture is given those packages by hand, under
+`config/devices/packages`, where they win over the baked ones; the hub picks
+by the machine each device reports.
 
 Two things bind a hub package to the machine that built it, and both are why
 the container is not optional:
@@ -200,8 +212,11 @@ the container is not optional:
 Building the hub on a developer's own machine produces a package that installs
 only on machines like it. That is the mistake this container exists to stop.
 
-macOS and Windows agent packages need those platforms, and nothing builds
-them yet.
+The Windows `.msi` needs Windows and WiX (`dotnet tool install --global
+wix`); `agent/packaging/build_msi.py` builds it, and `--stage-only` writes and
+checks the whole payload without one. The macOS `.pkg` needs macOS:
+`agent/packaging/build_pkg.py` expands python.org's universal2 framework,
+moves its install names off `/Library/Frameworks` and signs what it moved.
 
 ## The release itself
 
@@ -212,11 +227,11 @@ git tag -a v0.4.0 -m "v0.4.0"
 git push origin v0.4.0
 ```
 
-`.github/workflows/release.yml` builds the hub for both architectures, the
-agent's `.deb` and `.rpm`, and the Windows installer, generates `SHA256SUMS`,
-and opens a draft release. The Windows job installs what it built, runs the
-agent from it and uninstalls again, so a broken installer fails the build
-rather than the person who downloads it. Fill in the
+`.github/workflows/release.yml` builds the hub and the agent for both
+architectures, and the Windows installer, generates `SHA256SUMS`, and opens a
+draft release. The Windows job installs what it built, runs the agent from it
+and uninstalls again, so a broken installer fails the build rather than the
+person who downloads it. Fill in the
 changelog, check the section headings still match what shipped, and publish.
 
 Running the same workflow from the Actions tab builds the packages and attaches

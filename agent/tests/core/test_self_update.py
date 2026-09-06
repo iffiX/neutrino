@@ -82,7 +82,7 @@ def test_a_newer_hub_triggers_a_detached_install(config_path, monkeypatch, launc
 
     path, payload, destination = agent._channel.downloads[0]
     assert path == "/api/agent/package"
-    assert payload == {"family": "deb"}
+    assert payload == {"family": "deb", "architecture": agent.platform()["arch"]}
     launched_command = launched[0]
     assert launched_command[:4] == [
         "systemd-run",

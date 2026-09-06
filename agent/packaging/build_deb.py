@@ -1,11 +1,14 @@
 """Build the agent's .deb.
 
-    python3 agent/packaging/build_deb.py --output-dir dist/
+    python3 agent/packaging/build_deb.py --output-dir dist/ --architecture amd64
 
-The package is `Architecture: all`: the agent is pure standard library, so one
-file covers x86-64, ARM64 and 32-bit ARM. Python itself comes from
-`Depends: python3`, which is how apt is told to provide the runtime rather
-than the package carrying one.
+The package carries its own interpreter under /opt/neutrino_agent and the
+window's bindings built beside it, so it names no Python at all. That fixes it
+to one architecture: build it in a container of the machine it is for, the way
+the hub's package is built.
+
+Needs the development headers the window's bindings compile against; the build
+refuses by name when the container has none.
 
 Not pure: writes a package tree and runs dpkg-deb.
 """
@@ -18,47 +21,37 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from gui_assets import ICONS_DIR, stage_gui  # noqa: E402
+import payload  # noqa: E402
+from gui_assets import ICONS_DIR  # noqa: E402
 
-AGENT_ROOT = Path(__file__).resolve().parent.parent
-PACKAGE_NAME = "neutrino-agent"
+AGENT_ROOT = payload.AGENT_ROOT
+PACKAGE_NAME = payload.PACKAGE_NAME
 
-# Debian's own location for a system-wide Python package, so
-# `python3 -m neutrino_agent.cli` resolves with no PYTHONPATH.
-SITE_DIR = "usr/lib/python3/dist-packages"
-
-# The oldest Python the agent is written against; older Raspbian ships 3.9.
-MINIMUM_PYTHON = "3.9"
+# The C stack the window loads through its own bindings, and nothing else.
+# `gir1.2-webkit2-4.1` pulls the GTK and WebKit typelibs with it; the
+# introspection library is named as well, because which package pulls that one
+# has moved between releases.
+RUNTIME_DEPENDENCIES = ("gir1.2-webkit2-4.1", "libgirepository-1.0-1", "systemd")
 
 CONTROL = """Package: {name}
 Version: {version}
 Section: admin
 Priority: optional
-Architecture: all
-Depends: python3 (>= {python}), systemd
+Architecture: {architecture}
+Depends: {depends}
 Recommends: cifs-utils, openssh-server
 Maintainer: {maintainer}
 Description: Neutrino device agent
  Keeps a managed machine's modules in the state its Neutrino Hub asks for:
  installs and removes software from the hub's catalog, reports metrics, and
- offers a small window for joining a hub.
+ offers a window for joining a hub and choosing what this machine runs.
  .
- Pure standard library, so it runs on whatever Python the machine already has.
+ Carries its own interpreter and the window's bindings, so it installs on a
+ machine with no Python and touches none the machine already has.
 """
 
 POSTINST = """#!/bin/sh
 set -e
-
-# An agent installed by the old shell script leaves a unit in
-# /etc/systemd/system, which takes precedence over this package's. Left in
-# place it would keep starting the copy under /opt, and the hub would go on
-# seeing the version that copy reports.
-if [ -f /etc/systemd/system/neutrino_agent.service ] || [ -d /opt/neutrino_agent ]; then
-    echo "  Removing the tarball-era agent, which this package replaces."
-    systemctl stop neutrino_agent.service >/dev/null 2>&1 || true
-    rm -f /etc/systemd/system/neutrino_agent.service
-    rm -rf /opt/neutrino_agent /etc/neutrino_agent
-fi
 
 systemctl daemon-reload || true
 
@@ -105,14 +98,22 @@ set -e
 
 systemctl daemon-reload >/dev/null 2>&1 || true
 
+# What dpkg leaves once its own files are gone: the bytecode the interpreter
+# wrote beside them.
+if [ "$1" = remove ] || [ "$1" = purge ]; then
+    rm -rf {prefix}
+fi
+
 if [ "$1" = purge ]; then
-    rm -rf /etc/neutrino_agent
+    rm -rf /etc/neutrino/agent
+    rmdir /etc/neutrino 2>/dev/null || true
 fi
 """
 
 WRAPPER = """#!/bin/sh
-# The agent is a system-wide Python package; this only names the entry point.
-exec /usr/bin/python3 -m neutrino_agent.cli.entry "$@"
+# The agent runs from the interpreter the package carries, never the system
+# one; the window process it starts inherits the same one.
+exec {python}/bin/python3 -m neutrino_agent.cli.entry "$@"
 """
 
 
@@ -125,56 +126,55 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--output-dir", default="dist", help="where to write the .deb")
     parser.add_argument(
+        "--architecture",
+        default=_host_architecture(),
+        help="the architecture to build for",
+    )
+    parser.add_argument(
         "--maintainer",
         default="iffiX <muhanli2022@u.northwestern.edu>",
         help="the Maintainer field",
     )
     arguments = parser.parse_args()
 
-    version = _version()
+    version = payload.version()
+    architecture = payload.DEBIAN_ARCHITECTURES[
+        payload.machine_name(arguments.architecture)
+    ]
     output_dir = Path(arguments.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory() as workdir:
-        tree = Path(workdir) / f"{PACKAGE_NAME}_{version}_all"
-        _lay_out(tree, version, arguments.maintainer)
-        target = output_dir / f"{PACKAGE_NAME}_{version}_all.deb"
+        tree = Path(workdir) / f"{PACKAGE_NAME}_{version}_{architecture}"
+        _lay_out(tree, version, architecture, arguments.maintainer)
+        target = output_dir / f"{PACKAGE_NAME}_{version}_{architecture}.deb"
         _build(tree, target)
 
-    print(f"wrote {target} ({target.stat().st_size // 1024} KiB)")
+    print(f"wrote {target} ({target.stat().st_size // 1024 // 1024} MiB)")
     return 0
 
 
-def _lay_out(tree: Path, version: str, maintainer: str) -> None:
+def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> None:
     """Write the whole package tree.
 
     Args:
         tree: The directory to build under.
         version: The version being packaged.
+        architecture: The Debian architecture name.
         maintainer: The Maintainer field's value.
     """
-    package_dir = tree / SITE_DIR / "neutrino_agent"
-    shutil.copytree(
-        AGENT_ROOT / "neutrino_agent",
-        package_dir,
-        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
-    )
-    # dpkg installs no .dist-info, so importlib.metadata cannot answer for a
-    # packaged agent. The version is stamped into the tree instead, and the
-    # hub compares it against its own.
-    (package_dir / "_version.py").write_text(
-        f'"""Written by the packaging build. Do not edit."""\n\n'
-        f'AGENT_VERSION = "{version}"\n',
-        encoding="utf-8",
-    )
-    stage_gui(package_dir)
+    staged_python = tree / str(payload.PYTHON_DIR).lstrip("/")
+    payload.stage_linux_interpreter(staged_python, architecture)
+    payload.stage_agent_tree(payload.site_packages_of(staged_python), version)
+    payload.stage_linux_gui_bindings(staged_python)
+    payload.strip_build_paths(staged_python, tree)
 
-    # Whatever umask the build ran under does not belong in a package.
-    for path in package_dir.rglob("*"):
-        path.chmod(0o755 if path.is_dir() else 0o644)
-
-    _write(tree / "usr/bin/nagent", WRAPPER, is_executable=True)
-    _write(
+    payload.write(
+        tree / "usr/bin/nagent",
+        WRAPPER.format(python=payload.PYTHON_DIR),
+        is_executable=True,
+    )
+    payload.write(
         tree / "lib/systemd/system/neutrino_agent.service",
         (AGENT_ROOT / "neutrino_agent/data/systemd/neutrino_agent.service").read_text(
             encoding="utf-8"
@@ -182,7 +182,7 @@ def _lay_out(tree: Path, version: str, maintainer: str) -> None:
     )
 
     desktop = AGENT_ROOT / "neutrino_agent/data/desktop"
-    _write(
+    payload.write(
         tree / "usr/share/applications/neutrino_agent.desktop",
         (desktop / "neutrino_agent.desktop").read_text(encoding="utf-8"),
     )
@@ -192,17 +192,23 @@ def _lay_out(tree: Path, version: str, maintainer: str) -> None:
         )
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ICONS_DIR / source, destination)
+        destination.chmod(0o644)
 
     control = CONTROL.format(
         name=PACKAGE_NAME,
         version=version,
-        python=MINIMUM_PYTHON,
+        architecture=architecture,
+        depends=", ".join(RUNTIME_DEPENDENCIES),
         maintainer=maintainer,
     )
-    _write(tree / "DEBIAN/control", control)
-    _write(tree / "DEBIAN/postinst", POSTINST, is_executable=True)
-    _write(tree / "DEBIAN/prerm", PRERM, is_executable=True)
-    _write(tree / "DEBIAN/postrm", POSTRM, is_executable=True)
+    payload.write(tree / "DEBIAN/control", control)
+    payload.write(tree / "DEBIAN/postinst", POSTINST, is_executable=True)
+    payload.write(tree / "DEBIAN/prerm", PRERM, is_executable=True)
+    payload.write(
+        tree / "DEBIAN/postrm",
+        POSTRM.format(prefix=payload.INSTALL_PREFIX),
+        is_executable=True,
+    )
 
 
 def _build(tree: Path, target: Path) -> None:
@@ -226,27 +232,12 @@ def _build(tree: Path, target: Path) -> None:
         raise SystemExit((result.stderr or result.stdout).strip())
 
 
-def _version() -> str:
-    """The version declared in the agent's pyproject."""
-    for line in (
-        (AGENT_ROOT / "pyproject.toml").read_text(encoding="utf-8").splitlines()
-    ):
-        if line.startswith("version = "):
-            return line.split('"')[1]
-    raise SystemExit("no version in agent/pyproject.toml")
-
-
-def _write(path: Path, text: str, *, is_executable: bool = False) -> None:
-    """Write one file into the tree, creating its parents.
-
-    Args:
-        path: Where to write.
-        text: What to write.
-        is_executable: Whether to mark it 0755.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
-    path.chmod(0o755 if is_executable else 0o644)
+def _host_architecture() -> str:
+    """The Debian architecture name for the machine this runs on."""
+    result = subprocess.run(
+        ["dpkg", "--print-architecture"], capture_output=True, text=True
+    )
+    return result.stdout.strip() or "amd64"
 
 
 if __name__ == "__main__":

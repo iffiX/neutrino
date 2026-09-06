@@ -5,6 +5,10 @@ request to the ``neutrino`` script message handler, and the reply is
 delivered back by evaluating ``window.neutrinoReply``. The channel round
 trip runs off the GTK main thread, so a slow agent never freezes the
 window.
+
+The bindings are the package's own, built for the interpreter it carries. A
+machine still needs the C libraries under them, which is the one thing this
+can refuse for.
 """
 
 import json
@@ -12,8 +16,9 @@ import threading
 
 from neutrino_agent.constants import AGENT_GUI_WINDOW_HEIGHT, AGENT_GUI_WINDOW_WIDTH
 
-# The distro packages the import guard names when the toolkit is absent.
-WEBKITGTK_PACKAGES = "gir1.2-webkit2-4.1 python3-gi"
+# The distribution packages the import guard names when the C stack is
+# absent. Not the distribution's bindings: the agent never runs its Python.
+WEBKITGTK_PACKAGES = "gir1.2-webkit2-4.1"
 
 
 def open_window(*, title: str, html: str, bridge, icon_path: str = "") -> None:

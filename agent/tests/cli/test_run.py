@@ -1,15 +1,18 @@
 """``nagent run`` and the root gate over every machine-changing command.
 
-Run serves the control socket and then the agent's own loop; the gate over
-the machine-changing commands is asserted as a whole list.
+Run serves the control socket and then the agent's own loop; on Windows the
+service control manager starts the same command behind its handshake. The
+gate over the machine-changing commands is asserted as a whole list.
 """
 
 import pytest
 
 import neutrino_agent.cli.entry as entry
 import neutrino_agent.cli.run as run_cli
+from neutrino_agent.constants import AGENT_SERVICE_NAME_WINDOWS
 from neutrino_agent.control import client
 from neutrino_agent.control.server import ControlServer
+from neutrino_agent.platforms import windows_service
 from tests.conftest import FakeControlAgent, FakeControlPlatform
 
 
@@ -85,6 +88,41 @@ def test_run_serves_the_control_socket_before_the_loop(run_stack, monkeypatch):
     assert status == 200
     assert state["caller"]["account"] == "root"
     assert servers[0].socket_path == platform.control_socket_path()
+
+
+def test_the_windows_service_hosts_the_same_loop_behind_the_handshake(
+    run_stack, monkeypatch
+):
+    """What the service control manager starts is this command with one flag:
+    the same socket, the same loop, wrapped in the handshake a service owes."""
+    platform, agents, servers = run_stack
+    record_servers(monkeypatch, servers)
+    hosted = {}
+
+    def host_service(*, name, run):
+        hosted["name"] = name
+        run()
+
+    monkeypatch.setattr(windows_service, "host_service", host_service)
+
+    assert run_cli.main(is_windows_service=True) == 0
+
+    assert hosted["name"] == AGENT_SERVICE_NAME_WINDOWS
+    status, state = agents[0].answered
+    assert status == 200
+    assert servers[0].socket_path == platform.control_socket_path()
+
+
+def test_the_handshake_is_the_manager_s_alone(monkeypatch):
+    """Typed by a person, run is the foreground loop: nothing answers a
+    manager that did not start this process."""
+    passed = {}
+    monkeypatch.setattr(entry.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(entry.sys, "argv", ["nagent", "run"])
+    monkeypatch.setattr(entry.run, "main", lambda **kwargs: passed.update(kwargs) or 0)
+
+    assert entry.main() == 0
+    assert passed == {"is_windows_service": False}
 
 
 def test_an_unprivileged_run_is_refused_with_the_command(monkeypatch, capsys):

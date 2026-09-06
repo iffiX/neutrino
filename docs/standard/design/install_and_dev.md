@@ -138,3 +138,34 @@ that installs it.
 The interpreter is the same story upside down. A package carries its own, so
 it needs no system Python at all, while a checkout builds a virtual
 environment because there is nobody else to do it.
+
+## The agent's package carries the same two things
+
+The agent is installed by the same three stages, one package down: its
+package lays the payload, `nagent connect` joins a hub, and the machine's own
+people choose services from its window. What it carries is the hub's own
+answer — an interpreter under `/opt/neutrino_agent`, the agent installed
+beside it, and the Python bindings its window draws through, all built for one
+machine.
+
+**The system's Python is not part of the story on any platform.** It was
+once: the agent is standard library only, so one architecture-independent
+package used to run on whatever Python a device already had. A window ended
+that. Drawing one means bindings, bindings for a machine's own interpreter are
+that machine's distribution to install and version, and a project that
+installs into somebody's system Python is the thing `EXTERNALLY-MANAGED`
+exists to stop. Carrying the interpreter is what makes the bindings ours to
+build, so they are built in the packaging container against the same C
+libraries the package depends on.
+
+What a machine still supplies is C libraries. On Linux that is
+`gir1.2-webkit2-4.1` and what it pulls, a plain dependency of the one agent
+package — a headless box carries it too. On Windows it is the WebView2
+runtime, which the installer chains Microsoft's bootstrapper for when the
+machine has none; on macOS, WKWebView, which is the system.
+
+The cost is size: an agent package is tens of megabytes where it was tens of
+kilobytes, and one per platform and machine where it was one for all of them.
+A checkout pays none of it — `pip install -e agent` still installs nothing but
+the agent, and `nagent gui` from a checkout uses whatever interpreter can
+import `gi`.

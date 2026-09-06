@@ -16,11 +16,11 @@ AGENT_CONFIG_PATH = "/etc/neutrino/agent/agent.json"
 AGENT_REFUSALS_BEFORE_UNBIND = 3
 
 AGENT_SERVICE_NAME = "neutrino_agent.service"
-# The agent runs from a scheduled task on Windows, not a service: a plain
-# Python process cannot answer the service control manager in time without a
-# wrapper binary, and the agent carries none. The installer registers this
-# task; the platform reads and starts it by the same name.
-AGENT_SCHEDULED_TASK_NAME_WINDOWS = "Neutrino Agent"
+# What the agent is called on Windows, where it is a service of the service
+# control manager's own: the key the installer registers and the platform
+# reads and starts, and the name a person sees beside it.
+AGENT_SERVICE_NAME_WINDOWS = "NeutrinoAgent"
+AGENT_SERVICE_DISPLAY_NAME_WINDOWS = "Neutrino Agent"
 
 # The shape of what crosses the hub channel. Bumped on any wire change, so
 # a hub upgrade that changed the shapes tells a same-version agent to

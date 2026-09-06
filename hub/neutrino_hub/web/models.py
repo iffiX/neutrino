@@ -1291,6 +1291,10 @@ class ClientPackageRequest(BaseModel):
 
     token: str
     family: str
+    # The machine it is for. The package carries an interpreter, so one
+    # family is no longer one file. Empty from a build that predates the
+    # field, which the hub answers from the platform it last reported.
+    architecture: str = ""
 
 
 class ClientModulePackage(BaseModel):

@@ -40,11 +40,18 @@ class FakeSftp:
 
 
 class FakeConnection:
-    """Answers ``uname -s`` and ``command -v`` and records everything."""
+    """Answers ``uname -s``, ``uname -m`` and ``command -v``, and records
+    everything."""
 
-    def __init__(self, kernel: str = "Linux", tools: tuple = ("dpkg",)):
+    def __init__(
+        self,
+        kernel: str = "Linux",
+        tools: tuple = ("dpkg",),
+        machine: str = "x86_64",
+    ):
         self.kernel = kernel
         self.tools = tools
+        self.machine = machine
         self.commands: list[str] = []
         self.uploads: list = []
 
@@ -54,6 +61,8 @@ class FakeConnection:
         exit_status = 0
         if "uname -s" in command:
             stdout = f"{self.kernel}\n"
+        elif "uname -m" in command:
+            stdout = f"{self.machine}\n"
         elif command.startswith("command -v "):
             tool = command.split()[-1]
             exit_status = 0 if tool in self.tools else 1
@@ -211,11 +220,29 @@ def test_a_refused_stream_reports_and_runs_nothing():
 
 @pytest.fixture
 def packages(tmp_path) -> dict:
-    deb = tmp_path / "neutrino-agent_0.1.0_all.deb"
-    deb.write_bytes(b"deb")
-    rpm = tmp_path / "neutrino-agent-0.1.0.noarch.rpm"
-    rpm.write_bytes(b"rpm")
-    return {"deb": deb, "rpm": rpm}
+    """One package per family and machine, the way the hub carries them."""
+    built = {}
+    for family, names in (
+        (
+            "deb",
+            {
+                "amd64": "neutrino-agent_0.1.0_amd64.deb",
+                "arm64": "neutrino-agent_0.1.0_arm64.deb",
+            },
+        ),
+        (
+            "rpm",
+            {
+                "amd64": "neutrino-agent-0.1.0-1.x86_64.rpm",
+                "arm64": "neutrino-agent-0.1.0-1.aarch64.rpm",
+            },
+        ),
+    ):
+        for architecture, name in names.items():
+            path = tmp_path / name
+            path.write_bytes(family.encode())
+            built.setdefault(family, {})[architecture] = path
+    return built
 
 
 async def install_lines(op: DeviceSshOperator, packages: dict) -> list[str]:
@@ -278,6 +305,35 @@ def test_install_picks_rpm_where_dpkg_is_absent(packages):
 
     assert connection.uploads[0][1].endswith(".rpm")
     assert "dnf install" in calls[0]["command"]
+
+
+def test_install_uploads_the_package_for_the_machine_that_answers(packages):
+    """The package carries an interpreter, so the device's machine picks the
+    file as much as its package manager does."""
+    op = operator()
+    connection = FakeConnection(tools=("dpkg",), machine="aarch64")
+    op._connect = fake_connect(connection)
+    capture_privileged_once(op)
+
+    asyncio.run(install_lines(op, packages))
+
+    assert connection.uploads[0][1].endswith("_arm64.deb")
+
+
+def test_install_stops_where_the_hub_has_nothing_for_the_machine(packages):
+    """A machine the hub carries no build for is refused before anything is
+    uploaded, and the refusal names what answered."""
+    op = operator()
+    connection = FakeConnection(tools=("dpkg",), machine="riscv64")
+    op._connect = fake_connect(connection)
+    calls = capture_privileged_once(op)
+
+    lines = asyncio.run(install_lines(op, packages))
+
+    assert any("riscv64" in line for line in lines)
+    assert any("enrollment link instead" in line for line in lines)
+    assert connection.uploads == []
+    assert calls == []
 
 
 def test_install_stops_where_no_package_manager_answers(packages):

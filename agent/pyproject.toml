@@ -3,10 +3,11 @@ name = "neutrino-agent"
 version = "0.1.0"
 description = "The Neutrino device agent: keeps a managed machine's modules in the state its hub asks for"
 requires-python = ">=3.9"
-# Deliberately empty, and it stays that way. The agent installs on whatever
-# Python a device already has — a stock Raspberry Pi OS, a minimal Ubuntu —
-# so a dependency here would mean asking an operator to pip-install onto every
-# machine they manage. See neutrino_agent/metrics.py.
+# Deliberately empty, and it stays that way. The agent's own code is standard
+# library: what its window draws through is imported by the shells alone, at
+# the moment a window opens, and the packaging build vendors those per
+# platform. A dependency here would be one every checkout and every package
+# carried whether or not anything opened a window.
 dependencies = []
 
 [project.scripts]

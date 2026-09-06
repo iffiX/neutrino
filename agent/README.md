@@ -8,9 +8,14 @@ seconds, reconciles the hub-controlled functions (a remote desktop, the SSH
 server), runs the small set of commands the hub sends back, and updates
 itself when the hub runs a later release.
 
-It is standard library only and runs on Python 3.9 or newer, so it installs
-on a stock Raspberry Pi or a minimal Ubuntu with nothing but `python3`
-present.
+Its own code is standard library only. The package carries the interpreter
+that runs it and the bindings its window draws through, so it installs on a
+machine with no Python at all and touches none the machine already has. What a
+Linux package still asks for is the C stack under WebKitGTK; Windows and macOS
+ask for nothing.
+
+One package per platform and machine: `amd64` and `arm64` on Linux, `x64` and
+`arm64` on Windows, one universal build on macOS. 32-bit ARM is not published.
 
 ## Installing
 
@@ -19,7 +24,7 @@ agent over SSH, or hands out an enrollment link for machines the hub cannot
 reach first. On such a machine, install the native package and paste the link:
 
 ```bash
-sudo apt install ./neutrino-agent_<version>_all.deb
+sudo apt install ./neutrino-agent_<version>_amd64.deb
 sudo nagent connect neutrino://enroll/...
 ```
 
@@ -29,13 +34,19 @@ which accepts the same link.
 ## Building the packages
 
 ```bash
-python3 packaging/build_deb.py --output-dir dist/    # Debian family
-python3 packaging/build_rpm.py --output-dir dist/    # RHEL family
-python3 packaging/build_exe.py --output-dir dist/    # Windows installer
+python3 packaging/build_deb.py --output-dir dist/ --architecture amd64
+python3 packaging/build_rpm.py --output-dir dist/ --architecture x86_64
+python3 packaging/build_msi.py --output-dir dist/ --architecture x64
+python3 packaging/build_pkg.py --output-dir dist/
 ```
 
-The hub's own package build bakes these in, so the hub and the agent it hands
-out cannot drift.
+The two Linux builds compile the window's bindings, so each runs in a
+container of the family and the machine it is for —
+`packaging/build_release.py` drives that matrix. The `.msi` needs Windows and
+WiX; the `.pkg` needs macOS.
+
+The hub's own package build bakes the Linux pair in for its own machine, so
+the hub and the agent it hands out cannot drift.
 
 ## Checking an install
 

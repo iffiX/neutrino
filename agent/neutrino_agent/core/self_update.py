@@ -88,12 +88,14 @@ def install_command(kind: str, path: str) -> list:
     return ["systemd-run", "--unit", AGENT_UPDATE_UNIT, "--collect"] + install
 
 
-def run_update(channel, *, kind: str) -> None:
+def run_update(channel, *, kind: str, architecture: str) -> None:
     """Fetch the hub's package over the pinned channel and install it detached.
 
     Args:
         channel: The gateway channel the heartbeats use.
         kind: ``deb`` or ``rpm``.
+        architecture: This machine's, from the platform tuple. The package
+            carries an interpreter, so the hub has one per machine.
 
     Raises:
         SelfUpdateError: When the digest does not match or the install cannot
@@ -105,7 +107,9 @@ def run_update(channel, *, kind: str) -> None:
     handle, path = tempfile.mkstemp(prefix="neutrino_agent_update_", suffix=f".{kind}")
     os.close(handle)
     try:
-        named = channel.post_download(AGENT_PACKAGE_PATH, {"family": kind}, path)
+        named = channel.post_download(
+            AGENT_PACKAGE_PATH, {"family": kind, "architecture": architecture}, path
+        )
         if not named or named != _sha256(path):
             raise SelfUpdateError("agent_package_digest_mismatch")
     except Exception:

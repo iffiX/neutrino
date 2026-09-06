@@ -741,12 +741,15 @@ def test_the_package_endpoint_serves_the_bytes_and_their_digest(
     api, monkeypatch, tmp_path
 ):
     client, _, _ = api
-    baked = tmp_path / "neutrino-agent_9.9.9_all.deb"
+    baked = tmp_path / "neutrino-agent_9.9.9_amd64.deb"
     baked.write_bytes(b"!<arch>agent-bytes")
-    monkeypatch.setattr(agent_router, "agent_packages", lambda: {"deb": baked})
+    monkeypatch.setattr(
+        agent_router, "agent_packages", lambda: {"deb": {"amd64": baked}}
+    )
 
     response = client.post(
-        "/api/agent/package", json={"token": "device-token", "family": "deb"}
+        "/api/agent/package",
+        json={"token": "device-token", "family": "deb", "architecture": "amd64"},
     )
 
     assert response.status_code == 200
@@ -757,12 +760,15 @@ def test_the_package_endpoint_serves_the_bytes_and_their_digest(
 
 def test_the_package_endpoint_refuses_an_unknown_token(api, monkeypatch, tmp_path):
     client, _, _ = api
-    baked = tmp_path / "neutrino-agent_9.9.9_all.deb"
+    baked = tmp_path / "neutrino-agent_9.9.9_amd64.deb"
     baked.write_bytes(b"!<arch>agent-bytes")
-    monkeypatch.setattr(agent_router, "agent_packages", lambda: {"deb": baked})
+    monkeypatch.setattr(
+        agent_router, "agent_packages", lambda: {"deb": {"amd64": baked}}
+    )
 
     response = client.post(
-        "/api/agent/package", json={"token": "nonsense", "family": "deb"}
+        "/api/agent/package",
+        json={"token": "nonsense", "family": "deb", "architecture": "amd64"},
     )
 
     assert response.status_code == 401
@@ -778,6 +784,48 @@ def test_a_family_the_hub_has_no_package_for_is_a_coded_conflict(api, monkeypatc
 
     assert response.status_code == 409
     assert response.json()["detail"] == {"code": "agent_package_missing"}
+
+
+def test_a_machine_the_hub_has_no_package_for_is_a_coded_conflict(
+    api, monkeypatch, tmp_path
+):
+    """The hub bakes for the machine it was built on; a device of another one
+    is refused with the same code, not handed the wrong build."""
+    client, _, _ = api
+    baked = tmp_path / "neutrino-agent_9.9.9_amd64.deb"
+    baked.write_bytes(b"!<arch>agent-bytes")
+    monkeypatch.setattr(
+        agent_router, "agent_packages", lambda: {"deb": {"amd64": baked}}
+    )
+
+    response = client.post(
+        "/api/agent/package",
+        json={"token": "device-token", "family": "deb", "architecture": "arm64"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {"code": "agent_package_missing"}
+
+
+def test_a_build_that_names_no_machine_is_answered_from_its_heartbeat(
+    api, monkeypatch, tmp_path
+):
+    """The field is new and the generation did not move, so a build without it
+    is served from the platform its last beat reported."""
+    client, _, _ = api
+    baked = tmp_path / "neutrino-agent_9.9.9_arm64.deb"
+    baked.write_bytes(b"!<arch>agent-bytes")
+    monkeypatch.setattr(
+        agent_router, "agent_packages", lambda: {"deb": {"arm64": baked}}
+    )
+    client.post("/api/agent/heartbeat", json=beat_body(platform={"arch": "arm64"}))
+
+    response = client.post(
+        "/api/agent/package", json={"token": "device-token", "family": "deb"}
+    )
+
+    assert response.status_code == 200
+    assert response.content == b"!<arch>agent-bytes"
 
 
 def test_the_reply_wire_carries_the_module_names(api):
