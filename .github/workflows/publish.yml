@@ -1,0 +1,32 @@
+name: publish
+
+# Turns the draft the release workflow opened for a tag into the published
+# release, with the notes a person wrote.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "the tag whose draft to publish"
+        required: true
+        type: string
+      notes:
+        description: "the release notes, Markdown"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: publish the draft
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          printf '%s\n' "$NOTES" > notes.md
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --notes-file notes.md
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,url --jq '"draft="+(.isDraft|tostring)+" "+.url'
