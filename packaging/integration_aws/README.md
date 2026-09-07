@@ -76,4 +76,16 @@ saves nothing, so a Mac session should do everything it came for.
 `ssh -i state/id_aws_rsa Administrator@$(cat state/win_ip)` for Windows,
 which lands in PowerShell. The security group admits only the address
 `up.sh` was run from; RDP and the panel port are open to it as well, for the
-parts a script cannot look at.
+parts a script cannot look at. The Administrator password for RDP is EC2's,
+decrypted with the RSA key in PEM form:
+
+```bash
+ssh-keygen -p -m PEM -N "" -f state/id_aws_rsa.pem   # once, on a copy of the key
+aws ec2 get-password-data --instance-id $(cat state/win_id) \
+    --priv-launch-key state/id_aws_rsa.pem --query PasswordData --output text
+```
+
+A box reached only over SSH has no logged-on session, and two things need
+one: mapping a share to a drive letter, which Windows does inside the
+account's own session, and sharing the desktop. The CLI walk asserts the
+typed refusal for each and skips the rest; an RDP login makes both real.

@@ -70,3 +70,47 @@ def test_a_code_outside_the_table_prints_as_itself():
 
 def test_a_state_outside_the_table_reads_as_unknown():
     assert wording.word_state("some_future_state") == wording.CLI_STATE_WORDS["unknown"]
+
+
+# --- a password the person gives, never the command line ---
+
+
+class _Piped:
+    """A stdin that is a pipe: one line, no terminal."""
+
+    def __init__(self, text: str):
+        self.text = text
+
+    def isatty(self) -> bool:
+        return False
+
+    def readline(self) -> str:
+        return self.text
+
+
+class _Terminal:
+    def isatty(self) -> bool:
+        return True
+
+    def readline(self) -> str:
+        raise AssertionError("a terminal is asked without echo, never read")
+
+
+def test_a_piped_secret_is_one_line_of_stdin(monkeypatch):
+    """A script has a pipe and nothing else. On Windows the terminal path
+    reads the console rather than stdin, and a pipe would wait forever."""
+    monkeypatch.setattr(wording.sys, "stdin", _Piped("hunter2\r\n"))
+    monkeypatch.setattr(wording.getpass, "getpass", lambda prompt: "never")
+
+    assert wording.ask_secret("Share password: ") == "hunter2"
+
+
+def test_a_terminal_is_asked_without_echo(monkeypatch):
+    prompts = []
+    monkeypatch.setattr(wording.sys, "stdin", _Terminal())
+    monkeypatch.setattr(
+        wording.getpass, "getpass", lambda prompt: prompts.append(prompt) or "typed"
+    )
+
+    assert wording.ask_secret("Access password: ") == "typed"
+    assert prompts == ["Access password: "]

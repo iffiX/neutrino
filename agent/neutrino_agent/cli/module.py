@@ -22,6 +22,7 @@ from neutrino_agent.cli import wording
 from neutrino_agent.constants import (
     AGENT_CLI_FOLLOW_INTERVAL_S,
     AGENT_CLI_FOLLOW_PATIENCE_S,
+    AGENT_MODULE_INSTALLER_USER,
 )
 
 MODULE_BUILT_IN = "built in"
@@ -30,7 +31,9 @@ MODULE_OPERATION_HELD = (
     "an operation is already running on this machine; watch it: "
     "nagent operation --follow"
 )
-MODULE_ASKED = "asked; the hub decides on the machine's next report"
+# The page's own words for a vendor-installed row, so both surfaces refuse
+# the same way.
+MODULE_USER_TIER = "install it on this machine yourself; the hub only manages it"
 MODULE_NEVER_STARTED = (
     "the hub has not started the operation; is it reachable? nagent status"
 )
@@ -102,6 +105,12 @@ def main_switch(name: str, *, is_enabled: bool, is_waited: bool, is_confirmed: b
     if not row.get("is_supported"):
         print(f"{name} is {wording.word_state('unsupported')}", file=sys.stderr)
         return 1
+    # Refused here rather than posted: the hub takes no order for one of
+    # these, and an ask it drops would read as accepted and then never
+    # happen.
+    if row.get("installer") == AGENT_MODULE_INSTALLER_USER:
+        print(f"{name}: {MODULE_USER_TIER}", file=sys.stderr)
+        return 1
     if row.get("state") in ("installing", "uninstalling"):
         print(
             f"{name} is mid-step ({wording.word_state(str(row.get('state')))}); "
@@ -132,7 +141,7 @@ def main_switch(name: str, *, is_enabled: bool, is_waited: bool, is_confirmed: b
         )
         return 1
     if not is_waited:
-        print(f"{verb} {name}: {MODULE_ASKED}")
+        print(f"{name}: {wording.CLI_OPERATION_ACTION_WORDS[verb]}")
         return 0
     return _follow(name, initial_operation=reply.get("operation"))
 

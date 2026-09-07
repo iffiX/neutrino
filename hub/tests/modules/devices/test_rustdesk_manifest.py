@@ -134,3 +134,20 @@ def test_the_pins_and_the_assets_are_one_table():
     # to one and not the other must fail rather than silently go unpinned.
     assert len(EXPECTED_DIGEST_ORDER) == len(EXPECTED_ASSETS)
     assert len(set(EXPECTED_DIGEST_ORDER)) == len(EXPECTED_ASSETS)
+
+
+def test_windows_uninstalls_the_msi_quietly_by_its_product_code():
+    """`rustdesk.exe --uninstall` waits on a window nobody in session 0 can
+    see; measured hung for ten minutes on a rented Windows Server 2025. The
+    msi's own product code, removed quietly, is what leaves no process
+    behind, and it is looked up rather than pinned so a version bump does
+    not carry a stale code."""
+    for key in ("windows-amd64", "windows-arm64"):
+        command = manifest()["platforms"][key]["uninstall"]
+        assert "msiexec" in command, key
+        assert "/quiet" in command, key
+        assert "--uninstall" not in command, key
+        assert "DisplayName -eq 'RustDesk'" in command, key
+        # RustDesk also registers an entry named after itself whose key is
+        # not a product code; msiexec answers 1619 to that one.
+        assert "PSChildName -like '{*}'" in command, key

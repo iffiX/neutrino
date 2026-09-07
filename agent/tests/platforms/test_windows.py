@@ -213,7 +213,11 @@ def test_windows_human_accounts_are_local_profiles(monkeypatch):
 
     accounts = WindowsPlatform().human_accounts()
 
-    assert accounts == ["alice", "bob"]
+    # The built-in Administrator counts when it has a profile: on a server
+    # it is the person, and a rented Windows Server reached as it had nobody
+    # to mount for or switch at the gateway. Guest, DefaultAccount and the
+    # Defender sandbox account never do, profile or not.
+    assert accounts == ["Administrator", "alice", "bob"]
     assert recorder.commands[0][0] == "powershell"
     assert "Win32_UserProfile" in recorder.commands[0][-1]
     assert "Special=FALSE" in recorder.commands[0][-1]

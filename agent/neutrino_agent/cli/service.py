@@ -15,7 +15,6 @@ only in the one request that sends it — never on argv.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
-import getpass
 import sys
 import webbrowser
 
@@ -163,7 +162,7 @@ def main_file_config(ref: str, *, path: str, username: str, user: str = "") -> i
     if not entry.get("is_healthy"):
         print(f"{entry.get('title', '')} — {SERVICE_UNHEALTHY}", file=sys.stderr)
         return 1
-    password = getpass.getpass("Share password: ")
+    password = wording.ask_secret("Share password: ")
     body = {
         "action": "mount",
         "id": entry.get("id"),
@@ -268,7 +267,7 @@ def main_rdp_share(*, user: str = "") -> int:
     if missing:
         print(_needs_line(missing), file=sys.stderr)
         return 1
-    password = getpass.getpass("Access password: ")
+    password = wording.ask_secret("Access password: ")
     if not password:
         print(wording.word_code("rdp_password_missing", {}), file=sys.stderr)
         return 2

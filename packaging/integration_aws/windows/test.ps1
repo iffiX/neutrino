@@ -16,12 +16,23 @@ $ProgressPreference = 'SilentlyContinue'
 function Step($name) { Write-Host ""; Write-Host "== $name" }
 function Fail($why) { Write-Host "FAILED: $why"; exit 1 }
 
-if (Get-Service -Name 'NeutrinoAgent' -ErrorAction SilentlyContinue) {
-    Step "remove the previous install"
-    $remove = Start-Process msiexec -Wait -PassThru -ArgumentList '/x', $Msi, '/quiet', '/norestart', '/l*v', 'C:\neutrino\uninstall.log'
+# A console `nagent` left waiting by an earlier walk holds the interpreter
+# open, and the uninstaller's restart manager cannot close a process in
+# another session: it answers 1601 and removes nothing.
+Get-Process python -ErrorAction SilentlyContinue |
+    Where-Object { $_.Path -like "$env:ProgramFiles\Neutrino Agent\*" } |
+    Stop-Process -Force -ErrorAction SilentlyContinue
+
+# Every build carries its own product code, so the previous install is
+# removed by the code the registry holds for it, never by the new file.
+$installed = Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' |
+    Where-Object { (Get-ItemProperty $_.PSPath).DisplayName -eq 'Neutrino Agent' }
+foreach ($product in $installed) {
+    Step "remove the previous install $($product.PSChildName)"
+    $remove = Start-Process msiexec -Wait -PassThru -ArgumentList '/x', $product.PSChildName, '/quiet', '/norestart', '/l*v', 'C:\neutrino\uninstall.log'
     if ($remove.ExitCode -ne 0) { Fail "msiexec /x exited $($remove.ExitCode); see C:\neutrino\uninstall.log" }
-    if (Get-Service -Name 'NeutrinoAgent' -ErrorAction SilentlyContinue) { Fail "the service outlived the uninstaller" }
 }
+if (Get-Service -Name 'NeutrinoAgent' -ErrorAction SilentlyContinue) { Fail "the service outlived the uninstaller" }
 
 Step "install $Msi"
 $install = Start-Process msiexec -Wait -PassThru -ArgumentList '/i', $Msi, '/quiet', '/norestart', '/l*v', 'C:\neutrino\install.log'

@@ -49,6 +49,13 @@ MODULES = {
         "kind": "mount",
         "entry": {},
     },
+    "teamviewer": {
+        "title": "TeamViewer",
+        "description": "",
+        "kind": "download",
+        "installer": "user",
+        "entry": {"verify": "command -v teamviewer"},
+    },
     "rustdesk": {
         "title": "RustDesk",
         "description": "",
@@ -169,7 +176,8 @@ def test_install_posts_the_pages_ask_and_returns_with_no_wait(
 
     assert code == 0
     assert agent.requested == [("cc_switch", True)]
-    assert module_cli.MODULE_ASKED in capsys.readouterr().out
+    # The page's optimistic word, not a sentence about heartbeats.
+    assert capsys.readouterr().out.strip() == "cc_switch: installing"
 
 
 def test_an_ordinary_caller_hears_the_channels_own_refusal(stack, config_path, capsys):
@@ -341,6 +349,23 @@ def test_a_native_row_offers_nothing_to_press(stack, config_path, capsys):
     assert agent.requested == []
     out = capsys.readouterr().out
     assert out.count(module_cli.MODULE_BUILT_IN) == 2
+
+
+def test_a_vendor_installed_row_is_refused_before_any_ask(stack, config_path, capsys):
+    """The hub takes no order for one and drops the ask on the floor, so a
+    posted ask would read as accepted and then never happen. Found on a
+    rented Windows Server: `install anydesk` answered "asked" and nothing
+    ever followed."""
+    agent, _ = stack
+    bind(config_path)
+
+    code = module_cli.main_switch(
+        "teamviewer", is_enabled=True, is_waited=False, is_confirmed=False
+    )
+
+    assert code == 1
+    assert agent.requested == []
+    assert module_cli.MODULE_USER_TIER in capsys.readouterr().err
 
 
 def test_an_unsupported_row_refuses_honestly(stack, config_path, capsys):

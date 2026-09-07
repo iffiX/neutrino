@@ -40,7 +40,7 @@
       "package_kind": "msi",
       "package": "rustdesk",
       "verify": "powershell -NoProfile -Command \"if (Test-Path 'C:\\Program Files\\RustDesk\\rustdesk.exe') { exit 0 } else { exit 1 }\"",
-      "uninstall": "\"C:\\Program Files\\RustDesk\\rustdesk.exe\" --uninstall"
+      "uninstall": "powershell -NoProfile -Command \"$k = Get-ChildItem HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall | Where-Object { $_.PSChildName -like '{*}' -and (Get-ItemProperty $_.PSPath).DisplayName -eq 'RustDesk' } | Select-Object -First 1; if (-not $k) { exit 0 }; exit (Start-Process msiexec -Wait -PassThru -ArgumentList '/x', $k.PSChildName, '/quiet', '/norestart').ExitCode\""
     },
     "windows-arm64": {
       "url": "https://github.com/rustdesk/rustdesk/releases/download/1.4.9/rustdesk-1.4.9-aarch64.msi",
@@ -48,7 +48,7 @@
       "package_kind": "msi",
       "package": "rustdesk",
       "verify": "powershell -NoProfile -Command \"if (Test-Path 'C:\\Program Files\\RustDesk\\rustdesk.exe') { exit 0 } else { exit 1 }\"",
-      "uninstall": "\"C:\\Program Files\\RustDesk\\rustdesk.exe\" --uninstall"
+      "uninstall": "powershell -NoProfile -Command \"$k = Get-ChildItem HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall | Where-Object { $_.PSChildName -like '{*}' -and (Get-ItemProperty $_.PSPath).DisplayName -eq 'RustDesk' } | Select-Object -First 1; if (-not $k) { exit 0 }; exit (Start-Process msiexec -Wait -PassThru -ArgumentList '/x', $k.PSChildName, '/quiet', '/norestart').ExitCode\""
     },
     "darwin-amd64": {
       "url": "https://github.com/rustdesk/rustdesk/releases/download/1.4.9/rustdesk-1.4.9-x86_64.dmg",

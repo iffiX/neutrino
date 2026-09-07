@@ -13,6 +13,7 @@ answers.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import getpass
 import re
 import sys
 
@@ -298,3 +299,22 @@ def _fill(template: str, params: dict) -> str:
         return str(params.get(match.group(1), ""))
 
     return re.sub(r"\{(\w+)\}", _value, template)
+
+
+def ask_secret(prompt: str) -> str:
+    """A password from the person, never from the command line.
+
+    At a terminal it is asked without echo. From a pipe it is one line of
+    stdin: that is what a script has, and on Windows the terminal path reads
+    the console rather than stdin and would wait forever for a pipe.
+
+    Args:
+        prompt: What to ask at a terminal.
+
+    Returns:
+        The secret, without its line ending.
+    """
+    stream = sys.stdin
+    if stream is None or not stream.isatty():
+        return (stream.readline() if stream is not None else "").rstrip("\r\n")
+    return getpass.getpass(prompt)

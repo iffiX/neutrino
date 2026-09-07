@@ -20,6 +20,11 @@ AGENT_SERVICE_NAME = "neutrino_agent.service"
 # control manager's own: the key the installer registers and the platform
 # reads and starts, and the name a person sees beside it.
 AGENT_SERVICE_NAME_WINDOWS = "NeutrinoAgent"
+
+# The hub's installer tier for a module the person puts on the machine
+# themselves. The hub takes no order for one, so the CLI refuses the ask
+# before posting it rather than letting it read as accepted.
+AGENT_MODULE_INSTALLER_USER = "user"
 AGENT_SERVICE_DISPLAY_NAME_WINDOWS = "Neutrino Agent"
 
 # The shape of what crosses the hub channel. Bumped on any wire change, so

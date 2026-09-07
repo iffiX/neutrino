@@ -381,7 +381,7 @@ def test_a_typed_refusal_is_worded_by_the_cli_table(stack, capsys):
 def test_file_config_asks_the_terminal_and_never_argv(stack, monkeypatch, capsys):
     agent, _ = stack
     asked = FakeGetpass("s3cret")  # scan: allow
-    monkeypatch.setattr(service_cli, "getpass", asked)
+    monkeypatch.setattr(service_cli.wording, "ask_secret", asked.getpass)
 
     code = service_cli.main_file_config(
         "1", path="/home/alice/nas/media", username="alice"
@@ -408,7 +408,7 @@ def test_file_config_stands_behind_the_missing_modules(stack, monkeypatch, capsy
     agent, _ = stack
     agent.module_state_map["samba_mount"] = {"state": "absent"}
     asked = FakeGetpass("never")
-    monkeypatch.setattr(service_cli, "getpass", asked)
+    monkeypatch.setattr(service_cli.wording, "ask_secret", asked.getpass)
 
     code = service_cli.main_file_config("1", path="/mnt/media", username="alice")
 
@@ -614,7 +614,7 @@ def test_share_asks_the_password_on_the_terminal_and_never_argv(
 ):
     agent, _ = stack
     agent.module_state_map["rustdesk"] = {"state": "installed"}
-    monkeypatch.setattr(service_cli.getpass, "getpass", lambda prompt: "hunter2")
+    monkeypatch.setattr(service_cli.wording, "ask_secret", lambda prompt: "hunter2")
 
     assert service_cli.main_rdp_share() == 0
 
@@ -640,7 +640,7 @@ def test_share_with_an_empty_password_asks_the_agent_nothing(
 ):
     agent, _ = stack
     agent.module_state_map["rustdesk"] = {"state": "installed"}
-    monkeypatch.setattr(service_cli.getpass, "getpass", lambda prompt: "")
+    monkeypatch.setattr(service_cli.wording, "ask_secret", lambda prompt: "")
 
     assert service_cli.main_rdp_share() == 2
 
@@ -718,7 +718,7 @@ def test_show_says_plainly_when_nothing_is_shared(stack, capsys):
 def test_a_refused_share_is_worded_from_the_agents_code(stack, monkeypatch, capsys):
     agent, _ = stack
     agent.module_state_map["rustdesk"] = {"state": "installed"}
-    monkeypatch.setattr(service_cli.getpass, "getpass", lambda prompt: "hunter2")
+    monkeypatch.setattr(service_cli.wording, "ask_secret", lambda prompt: "hunter2")
     agent.service_reply = {"code": "rdp_configure_failed", "params": {"detail": "no"}}
 
     assert service_cli.main_rdp_share() == 1
@@ -731,7 +731,7 @@ def test_share_names_the_desktop_it_is_for_when_told_whose(stack, monkeypatch, c
     itself falls back to the one account at the screen."""
     agent, _ = stack
     agent.module_state_map["rustdesk"] = {"state": "installed"}
-    monkeypatch.setattr(service_cli.getpass, "getpass", lambda prompt: "hunter2")
+    monkeypatch.setattr(service_cli.wording, "ask_secret", lambda prompt: "hunter2")
 
     assert service_cli.main_rdp_share(user="pat") == 0
 
@@ -743,7 +743,7 @@ def test_share_names_the_desktop_it_is_for_when_told_whose(stack, monkeypatch, c
 def test_file_config_names_the_account_the_mount_is_for(stack, monkeypatch):
     agent, _ = stack
     asked = FakeGetpass("s3cret")  # scan: allow
-    monkeypatch.setattr(service_cli, "getpass", asked)
+    monkeypatch.setattr(service_cli.wording, "ask_secret", asked.getpass)
 
     code = service_cli.main_file_config(
         "1", path="/home/pat/nas/media", username="alice", user="pat"

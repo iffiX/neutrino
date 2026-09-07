@@ -57,9 +57,13 @@ WINDOWS_OPENSSH_CAPABILITY = "OpenSSH.Server~~~~0.0.1.0"
 WINDOWS_MOUNT_SUCCESS_MARKER = "NEUTRINO_MOUNT_OK"
 
 # A person is a local profile: a non-special profile whose SID is a real
-# user's (S-1-5-21-…) and not one of the built-in accounts.
+# user's (S-1-5-21-…) and not Guest, DefaultAccount or the Defender sandbox
+# account. The built-in Administrator (RID 500) is not on that list: on a
+# workstation it is disabled and has no profile, so it never shows; on a
+# server it is the person, and a machine reached as it had nobody to mount
+# for, switch at the gateway, or share a desktop as.
 WINDOWS_HUMAN_SID_PREFIX = "S-1-5-21-"
-WINDOWS_BUILTIN_ACCOUNT_RIDS = frozenset({500, 501, 503, 504})
+WINDOWS_BUILTIN_ACCOUNT_RIDS = frozenset({501, 503, 504})
 
 WINDOWS_PROFILES_SCRIPT = (
     "Get-CimInstance Win32_UserProfile -Filter 'Special=FALSE' | "
