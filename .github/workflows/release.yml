@@ -46,11 +46,16 @@ jobs:
       - uses: docker/setup-qemu-action@v4
         if: matrix.architecture != 'amd64'
 
+      # A tag stamps the hub's agent manifest with where the release
+      # publishes each package; a dispatch build carries no URL.
       - run: >
           python3 packaging/build_release.py
           --only hub
           --architecture ${{ matrix.architecture }}
           --output-dir dist
+          ${{ startsWith(github.ref, 'refs/tags/')
+              && format('--agent-package-url-base https://github.com/{0}/releases/download/{1}', github.repository, github.ref_name)
+              || '' }}
 
       - uses: actions/upload-artifact@v7
         with:
