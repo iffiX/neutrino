@@ -29,7 +29,7 @@ def source(machine: str = "amd64") -> str:
         .replace("@PUBLISHER@", "somebody")
         .replace("@UPGRADE_CODE@", build_msi.UPGRADE_CODE)
         .replace("@PAYLOAD@", r"C:\stage\payload")
-        .replace("@SERVICE_HOST@", r"C:\stage\neutrino_agent_service.exe")
+        .replace("@SERVICE_HOST@", r"C:\stage\pythonw.exe")
         .replace("@BOOTSTRAPPER@", r"C:\stage\MicrosoftEdgeWebview2Setup.exe")
         .replace("@BOOTSTRAPPER_NAME@", build_msi.WEBVIEW2_BOOTSTRAPPER_NAME)
         .replace("@ICON@", r"C:\stage\neutrino_agent.ico")
@@ -179,3 +179,13 @@ def test_the_service_host_lives_beside_the_interpreter_it_is():
     written = source()
 
     assert 'Id="ServiceHost" Guid="*" Subdirectory="python"' in written
+
+
+def test_the_service_host_is_the_interpreter_under_its_own_name():
+    """Not a renamed copy. An interpreter under another name, registered as
+    a service, is the shape of a Python trojan; 360 flagged the first build
+    on sight, and it would have on any machine."""
+    written = source()
+
+    assert 'Name="pythonw.exe"' in written
+    assert "neutrino_agent_service" not in written

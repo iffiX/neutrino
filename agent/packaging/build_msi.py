@@ -206,14 +206,14 @@ WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
 
     <ComponentGroup Id="Payload" Directory="INSTALLFOLDER">
       <Files Include="@PAYLOAD@\**" />
-      <!-- Beside the interpreter's DLL and its ._pth, not at the root: a
-           copy of pythonw.exe resolves both from its own directory, and one
-           placed anywhere else exits before it can reach the service
-           control manager, which reads as a start timeout. -->
+      <!-- The interpreter itself is the service host, under its own name
+           and beside its DLL and ._pth. Not a renamed copy: an interpreter
+           under another name is what a Python trojan looks like, and the
+           antivirus engines say so. -->
       <Component Id="ServiceHost" Guid="*" Subdirectory="python">
         <File Id="ServiceHostExe"
               Source="@SERVICE_HOST@"
-              Name="neutrino_agent_service.exe"
+              Name="pythonw.exe"
               KeyPath="yes" />
         <ServiceInstall Id="AgentService"
                         Name="@SERVICE_NAME@"
@@ -376,8 +376,10 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
 
     # Named files the installer's source points at directly, kept out of the
     # payload directory so the file glob does not claim them twice.
-    service_host = root / "neutrino_agent_service.exe"
-    shutil.copyfile(python_dir / "pythonw.exe", service_host)
+    # pythonw.exe leaves the payload tree to be placed by the service's own
+    # component, back where it came from; the glob must not claim it too.
+    service_host = root / "pythonw.exe"
+    shutil.move(str(python_dir / "pythonw.exe"), str(service_host))
     bootstrapper = root / WEBVIEW2_BOOTSTRAPPER_NAME
     bootstrapper.write_bytes(_fetch_bootstrapper())
     icon = icons.write_ico(root / "neutrino_agent.ico")
