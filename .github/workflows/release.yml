@@ -62,7 +62,7 @@ jobs:
           if-no-files-found: error
 
   agent:
-    name: agent .deb, .rpm and Arch (${{ matrix.architecture }})
+    name: agent .deb and .rpm (${{ matrix.architecture }})
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
