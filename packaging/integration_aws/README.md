@@ -24,7 +24,12 @@ drive it from here.
 | `windows/build.ps1` | Windows | The build. |
 | `windows/test.sh` | here | Mints a link this minute, installs the msi, joins the hub, checks both ends: the agent's own status and the hub's device list. |
 | `windows/test.ps1` | Windows | What `test.sh` runs there: remove a previous install, install, leave any earlier binding, join, heartbeat. |
-| `macos/` | | The same pair of scripts for the pkg, on a dedicated host. |
+| `macos/up.sh` | here | Allocates a dedicated host and boots macOS on it. Its own script because allocating bills 24 hours the moment it happens. |
+| `macos/push.sh` | here | Toolchain, the tracked tree, `build_pkg.py`, the pkg fetched into `dist/`. |
+| `macos/toolchain.sh` | the Mac | A Python new enough for the build scripts; the image already carries the command line tools and Homebrew. |
+| `macos/build.sh` | the Mac | The build. |
+| `macos/test.sh` | here | Mints a link, installs the pkg, joins the hub, checks both ends. |
+| `macos/test_remote.sh` | the Mac | What `test.sh` runs there: install, the LaunchDaemon, leave any earlier binding, join, heartbeat. |
 
 `state/` holds the keys, the ids, the addresses, the panel password and the
 link. It is gitignored and belongs to one run. There are two keys because
@@ -40,6 +45,9 @@ cd packaging/integration_aws
 linux/push_hub.sh       # the deb from dist/, or a path
 windows/push.sh         # ~10 minutes the first time, the toolchain is most of it
 windows/test.sh
+macos/up.sh             # the 24-hour decision; ~15 minutes to boot
+macos/push.sh
+macos/test.sh
 ./down.sh
 ```
 

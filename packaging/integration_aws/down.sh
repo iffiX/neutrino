@@ -52,6 +52,6 @@ for key in "$NAME" "$NAME-rsa"; do
     aws ec2 delete-key-pair --key-name "$key" >/dev/null 2>&1 && echo "   deleted $key" || echo "   none ($key)"
 done
 
-rm -f "$STATE"/{hub_id,win_id,hub_ip,win_ip,hub_private_ip,win_private_ip,sg_id,enroll_link}
+rm -f "$STATE"/{hub_id,win_id,mac_id,mac_host_id,hub_ip,win_ip,mac_ip,hub_private_ip,win_private_ip,mac_private_ip,sg_id,enroll_link}
 echo
 "$HERE/status.sh"

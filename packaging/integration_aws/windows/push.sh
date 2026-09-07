@@ -14,7 +14,7 @@ ONLY_BUILD=0
 [ "${1:-}" = "--build" ] && ONLY_BUILD=1
 
 echo "== packing the tree"
-(cd "$REPO" && git ls-files -z | tar --null -T - -czf "$STATE/src.tgz")
+pack_tree
 du -h "$STATE/src.tgz" | cut -f1
 
 echo "== pushing to $(win_ip)"
