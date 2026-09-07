@@ -39,7 +39,7 @@ from neutrino_agent.constants import (
     AGENT_SERVICE_NAME_WINDOWS,
     AGENT_STEP_DOWN_TIMEOUT_S,
 )
-from neutrino_agent.core.metrics import HostMetrics
+from neutrino_agent.core.metrics import HostMetrics, ProcessMetrics
 from neutrino_agent.platforms import windows_service
 from neutrino_agent.platforms.base import (
     AgentPlatform,
@@ -95,6 +95,13 @@ WTS_CONNECTSTATE_CLASS = 8
 WTS_CONNECTSTATE_ACTIVE = 0
 WTS_CONNECTSTATE_DISCONNECTED = 4
 CREATE_NO_WINDOW = 0x08000000
+# The process walk: how many pids one enumeration holds, how long an image
+# path may be, the least access that still reads times and memory, and how
+# many rows the monitor lists, the same dozen the Linux platform sends.
+PROCESS_ENUM_CAPACITY = 4096
+PROCESS_IMAGE_CAPACITY = 1024
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+PROCESS_TOP_COUNT = 12
 STARTF_USESTDHANDLES = 0x00000100
 WAIT_TIMEOUT = 0x00000102
 
@@ -282,6 +289,8 @@ class WindowsPlatform(AgentPlatform):
             "packages",
             "openssh",
             "shares",
+            # A window on the person's desktop from session 0.
+            "screen",
         }
     )
 
@@ -294,6 +303,10 @@ class WindowsPlatform(AgentPlatform):
         self._win32_api = win32
         # The previous GetSystemTimes sample, for the load between two beats.
         self._previous_cpu_times: "tuple[int, int, int] | None" = None
+        # The process walk's memory between beats: when the last sample was
+        # taken, and each pid's processor time then.
+        self._previous_uptime_ms: "int | None" = None
+        self._previous_process_cpu: "dict[int, int]" = {}
         # Account name to its resolved profile directory, so the database is
         # asked once per account rather than per file operation.
         self._home_cache: "dict[str, str]" = {}
@@ -593,10 +606,24 @@ class WindowsPlatform(AgentPlatform):
             typed refusal ``{"code", "params"}``.
         """
         if re.fullmatch(r"[A-Za-z]:", location) is None:
-            return {"code": "mountpoint_invalid", "params": {}}
+            return {"code": "mountpoint_not_drive_letter", "params": {}}
         if os.path.exists(location + "\\"):
             return {"code": "mountpoint_not_empty", "params": {}}
         return None
+
+    def suggest_mount_location(self) -> str:
+        """The first unused drive letter, from the top down.
+
+        Z: first: the low letters are where Windows and removable media
+        land, and a suggestion that collides is one the person retypes.
+
+        Returns:
+            A letter with its colon, or empty when every letter is taken.
+        """
+        for letter in "ZYXWVUTSRQPONMLKJIHGFE":
+            if not os.path.exists(f"{letter}:\\"):
+                return f"{letter}:"
+        return ""
 
     def prepare_mount_location(self, *, account: str, location: str) -> "dict | None":
         """A drive letter needs no preparation.
@@ -796,9 +823,10 @@ class WindowsPlatform(AgentPlatform):
 
         ``GetSystemTimes`` gives the aggregate processor load between two
         beats, ``GlobalMemoryStatusEx`` the memory, ``GetDiskFreeSpaceExW``
-        the system drive and ``GetTickCount64`` the uptime — no subprocess per
-        beat. Per-core numbers and the process list are not sampled: they cost
-        a second interface the panel's Windows tile does not read.
+        the system drive, ``GetTickCount64`` the uptime and the process walk
+        the monitor's rows, each process's share of one core between two
+        beats the way the Linux platform reads it off /proc. No subprocess
+        per beat. Per-core numbers are not sampled.
 
         Returns:
             The current metrics; an unreadable machine contributes the
@@ -821,14 +849,68 @@ class WindowsPlatform(AgentPlatform):
         disk_percent = 0.0
         if disk_total:
             disk_percent = 100.0 * (disk_total - disk_free) / disk_total
+        processes = self._read_processes(win32, uptime_ms, memory_total)
         return HostMetrics(
             cpu_percent=cpu_percent,
             cpu_core_percents=[],
             memory_percent=max(0.0, min(100.0, memory_percent)),
             disk_percent=max(0.0, min(100.0, disk_percent)),
             uptime_s=max(0, uptime_ms // 1000),
-            processes=[],
+            processes=processes,
         )
+
+    def _read_processes(
+        self, win32, uptime_ms: int, memory_total: int
+    ) -> "list[ProcessMetrics]":
+        """The monitor's rows: the busiest dozen processes since the last beat.
+
+        Args:
+            win32: The Win32 seam.
+            uptime_ms: This sample's uptime, which dates it.
+            memory_total: Physical memory, for each process's share of it.
+
+        Returns:
+            The rows, busiest first; empty on the first sample and when the
+            walk is refused.
+        """
+        try:
+            rows = win32.processes()
+        except OSError:
+            rows = []
+        previous_uptime = self._previous_uptime_ms
+        previous_cpu = self._previous_process_cpu
+        self._previous_uptime_ms = uptime_ms
+        # Replaced wholesale so a recycled pid cannot inherit a dead
+        # process's total.
+        self._previous_process_cpu = {row["pid"]: row["cpu_100ns"] for row in rows}
+        if previous_uptime is None:
+            return []
+        elapsed_100ns = max(0, uptime_ms - previous_uptime) * 10_000
+        processes = []
+        for row in rows:
+            before = previous_cpu.get(row["pid"])
+            cpu_percent = 0.0
+            if before is not None and elapsed_100ns > 0:
+                cpu_percent = max(
+                    0.0, 100.0 * (row["cpu_100ns"] - before) / elapsed_100ns
+                )
+            memory_percent = 0.0
+            if memory_total > 0:
+                memory_percent = 100.0 * row["resident_bytes"] / memory_total
+            processes.append(
+                ProcessMetrics(
+                    pid=int(row["pid"]),
+                    user=str(row.get("user", "")),
+                    name=str(row.get("name", "")),
+                    cpu_percent=cpu_percent,
+                    memory_percent=memory_percent,
+                )
+            )
+        processes.sort(
+            key=lambda process: (process.cpu_percent, process.memory_percent),
+            reverse=True,
+        )
+        return processes[:PROCESS_TOP_COUNT]
 
     def install_package(self, path: str, *, package_kind: str, entry: dict) -> None:
         """Install one downloaded package.
@@ -970,6 +1052,42 @@ class WindowsPlatform(AgentPlatform):
             return win32.profile_directory(account)
         except OSError:
             return ""
+
+    def start_on_screen(self, argv: list) -> "dict | None":
+        """Start a windowed program where the person at the machine sees it.
+
+        The agent's own session is 0, where a window is a window nobody
+        sees; the client goes into the active session with a person in it.
+
+        Args:
+            argv: Argument vector.
+
+        Returns:
+            None when it started, ``rdp_no_desktop`` with nobody seated,
+            ``rdp_launch_failed`` when Windows refused the spawn.
+        """
+        session_id = self._seated_session_id()
+        if session_id is None:
+            return {"code": "rdp_no_desktop", "params": {}}
+        try:
+            self._win32().start_in_session(session_id, argv)
+        except OSError as error:
+            return {"code": "rdp_launch_failed", "params": {"detail": str(error)}}
+        return None
+
+    def _seated_session_id(self) -> "int | None":
+        """The active session with a person in it, None with nobody seated."""
+        try:
+            sessions = self._win32().sessions()
+        except OSError:
+            return None
+        for session in sessions:
+            if (
+                session.get("account")
+                and session.get("state") == WTS_CONNECTSTATE_ACTIVE
+            ):
+                return int(session["session_id"])
+        return None
 
     def _account_session_id(self, account: str) -> "int | None":
         """The session the target account is logged on in, None without one.
@@ -1113,6 +1231,36 @@ class _Win32Api:
             ctypes.c_void_p,
         ]
         self._kernel32.GetTickCount64.restype = ctypes.c_ulonglong
+        # The process walk: every pid, then per process its times, its
+        # working set, its image and its owner.
+        self._kernel32.K32EnumProcesses.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_ulong,
+            ctypes.c_void_p,
+        ]
+        self._kernel32.OpenProcess.argtypes = [
+            ctypes.c_ulong,
+            ctypes.c_int,
+            ctypes.c_ulong,
+        ]
+        self._kernel32.OpenProcess.restype = ctypes.c_void_p
+        self._kernel32.GetProcessTimes.argtypes = [ctypes.c_void_p] * 5
+        self._kernel32.K32GetProcessMemoryInfo.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_ulong,
+        ]
+        self._kernel32.QueryFullProcessImageNameW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_ulong,
+            ctypes.c_wchar_p,
+            ctypes.c_void_p,
+        ]
+        self._advapi32.OpenProcessToken.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_ulong,
+            ctypes.c_void_p,
+        ]
         self._kernel32.LocalFree.argtypes = [ctypes.c_void_p]
         self._advapi32.LookupAccountNameW.argtypes = [
             ctypes.c_wchar_p,
@@ -1185,6 +1333,87 @@ class _Win32Api:
         if not ok:
             raise ctypes.WinError(ctypes.get_last_error())
         return int(total.value), int(free.value)
+
+    def processes(self) -> list:
+        """Every process this account may look at, with what the monitor lists.
+
+        Returns:
+            ``[{"pid", "name", "user", "cpu_100ns", "resident_bytes"}]``;
+            a process that cannot be opened is left out, an owner that
+            cannot be read is an empty name.
+
+        Raises:
+            OSError: When the enumeration itself is refused.
+        """
+        pids = (ctypes.c_ulong * PROCESS_ENUM_CAPACITY)()
+        returned = ctypes.c_ulong(0)
+        ok = self._kernel32.K32EnumProcesses(
+            pids, ctypes.sizeof(pids), ctypes.byref(returned)
+        )
+        if not ok:
+            raise ctypes.WinError(ctypes.get_last_error())
+        rows = []
+        for index in range(returned.value // ctypes.sizeof(ctypes.c_ulong)):
+            pid = int(pids[index])
+            if pid == 0:
+                continue
+            handle = self._kernel32.OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+            )
+            if not handle:
+                continue
+            try:
+                rows.append(self._process_row(handle, pid))
+            finally:
+                self._kernel32.CloseHandle(handle)
+        return [row for row in rows if row is not None]
+
+    def _process_row(self, handle: int, pid: int) -> "dict | None":
+        creation = ctypes.c_ulonglong(0)
+        exited = ctypes.c_ulonglong(0)
+        kernel = ctypes.c_ulonglong(0)
+        user = ctypes.c_ulonglong(0)
+        ok = self._kernel32.GetProcessTimes(
+            ctypes.c_void_p(handle),
+            ctypes.byref(creation),
+            ctypes.byref(exited),
+            ctypes.byref(kernel),
+            ctypes.byref(user),
+        )
+        if not ok:
+            return None
+        counters = _ProcessMemoryCounters()
+        counters.cb = ctypes.sizeof(counters)
+        resident = 0
+        if self._kernel32.K32GetProcessMemoryInfo(
+            ctypes.c_void_p(handle), ctypes.byref(counters), counters.cb
+        ):
+            resident = int(counters.WorkingSetSize)
+        image = ctypes.create_unicode_buffer(PROCESS_IMAGE_CAPACITY)
+        length = ctypes.c_ulong(PROCESS_IMAGE_CAPACITY)
+        name = ""
+        if self._kernel32.QueryFullProcessImageNameW(
+            ctypes.c_void_p(handle), 0, image, ctypes.byref(length)
+        ):
+            name = os.path.basename(image.value)
+        owner = ""
+        token = ctypes.c_void_p()
+        if self._advapi32.OpenProcessToken(
+            ctypes.c_void_p(handle), TOKEN_QUERY, ctypes.byref(token)
+        ):
+            try:
+                owner = self.token_account(token.value)
+            except OSError:
+                owner = ""
+            finally:
+                self._kernel32.CloseHandle(token)
+        return {
+            "pid": pid,
+            "name": name,
+            "user": owner,
+            "cpu_100ns": int(kernel.value) + int(user.value),
+            "resident_bytes": resident,
+        }
 
     def uptime_ms(self) -> int:
         """Milliseconds since boot, from GetTickCount64."""
@@ -1453,6 +1682,49 @@ class _Win32Api:
         finally:
             self._kernel32.CloseHandle(token)
 
+    def start_in_session(self, session_id: int, argv: list) -> None:
+        """Start a windowed process in one session and let it run.
+
+        Unlike :meth:`run_in_session` nothing is captured or waited for:
+        this is a window for the person in that session, on their desktop.
+
+        Args:
+            session_id: The session whose token spawns the process.
+            argv: Argument vector.
+
+        Raises:
+            OSError: When the session token or the spawn is refused.
+        """
+        token = ctypes.c_void_p()
+        if not self._wtsapi32.WTSQueryUserToken(session_id, ctypes.byref(token)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            startup = _StartupInfo()
+            startup.cb = ctypes.sizeof(startup)
+            # The interactive desktop by name: a process from session 0
+            # opens its window on no desktop otherwise.
+            startup.lpDesktop = "winsta0\\default"
+            info = _ProcessInformation()
+            ok = self._advapi32.CreateProcessAsUserW(
+                ctypes.c_void_p(token.value),
+                None,
+                subprocess.list2cmdline(argv),
+                None,
+                None,
+                False,
+                0,
+                None,
+                None,
+                ctypes.byref(startup),
+                ctypes.byref(info),
+            )
+            if not ok:
+                raise ctypes.WinError(ctypes.get_last_error())
+            self._kernel32.CloseHandle(info.hProcess)
+            self._kernel32.CloseHandle(info.hThread)
+        finally:
+            self._kernel32.CloseHandle(token)
+
     def _session_account(self, session_id: int) -> str:
         """One session's account name, empty for a session nobody owns."""
         buffer = ctypes.c_void_p()
@@ -1554,6 +1826,23 @@ class _Win32Api:
             with open(stderr_path, "r", encoding="utf-8", errors="replace") as stream:
                 stderr = stream.read()
         return subprocess.CompletedProcess(list(argv), int(code.value), stdout, stderr)
+
+
+class _ProcessMemoryCounters(ctypes.Structure):
+    """PROCESS_MEMORY_COUNTERS: the working set is the one field read."""
+
+    _fields_ = [
+        ("cb", ctypes.c_ulong),
+        ("PageFaultCount", ctypes.c_ulong),
+        ("PeakWorkingSetSize", ctypes.c_size_t),
+        ("WorkingSetSize", ctypes.c_size_t),
+        ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+        ("QuotaPagedPoolUsage", ctypes.c_size_t),
+        ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+        ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+        ("PagefileUsage", ctypes.c_size_t),
+        ("PeakPagefileUsage", ctypes.c_size_t),
+    ]
 
 
 class _WtsSessionInfo(ctypes.Structure):

@@ -70,6 +70,7 @@ def _scoped_state(agent, identity: ControlIdentity) -> dict:
         # What a mount location is on this machine; the page greys the
         # directory browser where it is a drive letter.
         "mount_location_shape": agent.mount_location_shape(),
+        "mount_location_suggestion": agent.suggest_mount_location(),
         "caller": {
             "account": identity.account,
             "is_privileged": identity.is_privileged,

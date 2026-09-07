@@ -197,6 +197,10 @@ class Agent:
         """This machine's platform tuple."""
         return self._engine.platform_tuple
 
+    def suggest_mount_location(self) -> str:
+        """What the platform offers as a mount location before one is typed."""
+        return self._platform.suggest_mount_location()
+
     def mount_location_shape(self) -> str:
         """What a mount location is here: ``path`` or ``drive_letter``."""
         return self._platform.mount_location_shape
@@ -271,6 +275,10 @@ class Agent:
         rdp = self._services.get("rdp")
         return {
             "mounts": (handler.state().get("mounts", []) if handler else []),
+            # The hub's drawer offers a location the way the page does, so
+            # it needs the same two answers the page reads.
+            "mount_location_shape": self.mount_location_shape(),
+            "mount_location_suggestion": self.suggest_mount_location(),
             "ai_states": self.ai_states(),
             "rdp": (rdp.summary() if rdp is not None else {}),
         }

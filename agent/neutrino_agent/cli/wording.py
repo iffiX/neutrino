@@ -73,7 +73,8 @@ CLI_CODE_WORDS = {
         "the saved login is gone; enter it again: nagent service file config"
     ),
     "fs_refused": "this account may not use that folder",
-    "mountpoint_invalid": "that is not a mount location this machine can use",
+    "mountpoint_invalid": "give an absolute path, like /mnt/share",
+    "mountpoint_not_drive_letter": "give an unused drive letter, like N:",
     "no_logged_on_session": (
         "sign in as the mount's account on this machine, then try again"
     ),

@@ -123,6 +123,7 @@ def test_each_platform_advertises_its_capability_set():
             "packages",
             "openssh",
             "shares",
+            "screen",
         }
     )
 

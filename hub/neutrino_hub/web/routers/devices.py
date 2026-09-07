@@ -507,6 +507,8 @@ def list_services(
         ai_states=dict(state.get("ai_states", {}) or {}),
         mounts=list(state.get("mounts", []) or []),
         rdp=dict(state.get("rdp", {}) or {}),
+        mount_location_shape=str(state.get("mount_location_shape") or "path"),
+        mount_location_suggestion=str(state.get("mount_location_suggestion") or ""),
     )
 
 

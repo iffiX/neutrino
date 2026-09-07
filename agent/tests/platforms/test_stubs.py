@@ -56,6 +56,10 @@ CONTRACT_CALLS = {
     "install_openssh": ("openssh", ({},), {}),
     "uninstall_openssh": ("openssh", ({},), {}),
     "read_openssh_status": ("openssh", ({},), {}),
+    # A window where the person at the machine sees it: the daemon's own
+    # session is not a screen on Windows, so the platform has to put it
+    # there; the POSIX platforms borrow a seat session in the rdp service.
+    "start_on_screen": ("screen", (["app", "--connect", "peer"],), {}),
 }
 
 # Contract methods the base class implements for everyone: the file
@@ -73,6 +77,7 @@ BASE_IMPLEMENTED = {
     "has_mount_tooling": "shares",
     "validate_mount_location": "shares",
     "prepare_mount_location": "shares",
+    "suggest_mount_location": "shares",
     "agent_service_start_hint": "agent_service",
 }
 

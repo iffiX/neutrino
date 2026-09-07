@@ -380,6 +380,10 @@ class ModuleEngine(ReconcileWorker):
             return {"code": "unknown_kind", "params": {"kind": kind}}
         if action == ORDER_INSTALL:
             if kind in BY_NAME_KINDS:
+                if kind == "openssh" and os.name == "nt":
+                    # Minutes with nothing to show otherwise: the capability
+                    # comes down from Windows Update.
+                    self._collect(f"{name}: installing through Windows Update")
                 runner.install(resolved)
             else:
                 refusal = self._install(name, resolved, order)

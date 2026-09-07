@@ -254,6 +254,31 @@ class AgentPlatform:
         """
         raise PlatformUnsupportedError("cannot run as another account here")
 
+    def suggest_mount_location(self) -> str:
+        """A location to offer before the person types one.
+
+        Returns:
+            Empty here: on the POSIX platforms the page composes a path
+            under the account's home. Windows answers with a free drive
+            letter, the one shape it takes.
+        """
+        return ""
+
+    def start_on_screen(self, argv: list) -> "dict | None":
+        """Start a windowed program where the person at the machine sees it.
+
+        Args:
+            argv: Argument vector.
+
+        Returns:
+            None when it started, otherwise the typed refusal.
+
+        Raises:
+            PlatformUnsupportedError: Where the daemon has no way onto a
+                screen; the POSIX platforms borrow a seat session instead.
+        """
+        raise PlatformUnsupportedError("no screen to start a window on here")
+
     def validate_mount_location(self, *, location: str) -> "dict | None":
         """Judge a proposed mount location by this platform's own rules.
 

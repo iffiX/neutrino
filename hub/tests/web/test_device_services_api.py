@@ -90,7 +90,24 @@ def test_a_device_that_never_beat_reads_empty_rather_than_erroring(api):
         "ai_states": {},
         "mounts": [],
         "rdp": {},
+        "mount_location_shape": "path",
+        "mount_location_suggestion": "",
     }
+
+
+def test_the_view_carries_what_a_mount_location_is_on_that_machine(api):
+    """The drawer offers a location the way the machine's own page does: a
+    free drive letter where Windows mounts at one, a path elsewhere."""
+    client, runtime = api
+    runtime.client_service_state[MAC] = {
+        "mount_location_shape": "drive_letter",
+        "mount_location_suggestion": "Z:",
+    }
+
+    answer = client.get(f"/api/devices/{MAC}/services").json()
+
+    assert answer["mount_location_shape"] == "drive_letter"
+    assert answer["mount_location_suggestion"] == "Z:"
 
 
 def test_the_view_is_the_beats_rows_over_the_devices_own_catalog(api):

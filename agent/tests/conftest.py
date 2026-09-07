@@ -174,6 +174,9 @@ class FakeControlAgent:
     def mount_location_shape(self) -> str:
         return "path"
 
+    def suggest_mount_location(self) -> str:
+        return ""
+
     def catalog(self) -> dict:
         # Modules arrive already resolved for this platform: the hub read
         # the manifest and picked the entry, so `entry` is the machine's

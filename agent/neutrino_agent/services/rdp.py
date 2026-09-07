@@ -515,6 +515,10 @@ class RdpServiceHandler(ServiceTypeHandler):
         )
         if not peer:
             return {"code": "rdp_no_address", "params": {}}
+        # The service lives in session 0, where a window is a window nobody
+        # sees; the platform puts the client on the screen a person is at.
+        if os.name == "nt":
+            return self._platform.start_on_screen([binary, "--connect", peer]) or {}
         try:
             invocation, environment = client_invocation(binary, peer)
         except LookupError:

@@ -45,6 +45,7 @@ const WORDING = {
   usernameHint: "Share username",
   passwordHint: "Share password", // scan: allow
   pathHint: "Mount path",
+  driveLetterHint: "Drive letter, like N:",
   unhealthy: "unreachable",
   rdpLocalShare: "Local share",
   rdpThisMachine: "This machine",
@@ -63,7 +64,8 @@ const SERVICE_ERROR_WORDING: Record<string, string> = {
   agent_offline: "Agent offline.",
   module_missing: "Missing a required module.",
   mountpoint_not_empty: "That folder isn't empty.",
-  mountpoint_invalid: "Not a usable mount location.",
+  mountpoint_invalid: "Give an absolute path, like /mnt/share.",
+  mountpoint_not_drive_letter: "Give an unused drive letter, like N:.",
   cifs_missing: "Mount tooling missing.",
   credentials_missing: "Saved login is gone. Enter it again.",
   fs_refused: "No access to that folder.",
@@ -424,7 +426,9 @@ function FilesPanel({
                         account: record?.account ?? view.accounts[0] ?? "",
                         username: record?.username ?? "",
                         password: "",
-                        path: record?.path ?? "",
+                        // The machine's own offer where it mounts at a drive
+                        // letter; a path is the person's to choose.
+                        path: record?.path ?? view.mount_location_suggestion,
                       };
                     }
                     return next;
@@ -469,6 +473,7 @@ function FilesPanel({
                 form={form}
                 accounts={view.accounts}
                 onForms={onForms}
+                shape={view.mount_location_shape}
               />
             )}
           </div>
@@ -483,11 +488,13 @@ function MountFormFields({
   form,
   accounts,
   onForms,
+  shape,
 }: {
   entryId: string;
   form: MountForm;
   accounts: string[];
   onForms: (update: FormsUpdate) => void;
+  shape: DeviceServicesView["mount_location_shape"];
 }) {
   const set = (change: Partial<MountForm>) =>
     onForms((held) => ({ ...held, [entryId]: { ...form, ...change } }));
@@ -520,7 +527,9 @@ function MountFormFields({
       />
       <input
         type="text"
-        placeholder={WORDING.pathHint}
+        placeholder={
+          shape === "drive_letter" ? WORDING.driveLetterHint : WORDING.pathHint
+        }
         value={form.path}
         onChange={(event) => set({ path: event.target.value })}
       />

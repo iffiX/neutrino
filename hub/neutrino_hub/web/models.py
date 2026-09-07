@@ -1386,6 +1386,10 @@ class DeviceServicesView(BaseModel):
     entries: list[dict] = Field(default_factory=list)
     ai_targets: dict[str, bool] = Field(default_factory=dict)
     ai_states: dict = Field(default_factory=dict)
+    # What a mount location is on that machine, and one it offers: a path
+    # under the account's home, or the free drive letter Windows found.
+    mount_location_shape: str = "path"
+    mount_location_suggestion: str = ""
     mounts: list[dict] = Field(default_factory=list)
     # The machine's share at a glance: ``{"is_shared", "state", "port",
     # "account"}``, empty until it beats.

@@ -75,6 +75,10 @@ export interface DeviceServicesView {
   mounts: DeviceMountRecord[];
   /** The machine's share at a glance; empty until it beats. */
   rdp: Record<string, unknown>;
+  /** What a mount location is there: a path, or a drive letter on Windows. */
+  mount_location_shape: "path" | "drive_letter";
+  /** One the machine offers, the free drive letter where that is the shape. */
+  mount_location_suggestion: string;
 }
 
 /** One service action for a device's agent — the page's own verb. */

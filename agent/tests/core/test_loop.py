@@ -487,6 +487,8 @@ def test_heartbeat_payload_every_field_comes_from_its_source(config_path, monkey
     # share at a glance, with no credential anywhere in them.
     assert payload["service_state"] == {
         "mounts": [],
+        "mount_location_shape": "path",
+        "mount_location_suggestion": "",
         "ai_states": {},
         "rdp": {
             "is_shared": False,

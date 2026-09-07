@@ -565,7 +565,7 @@ def test_windows_mount_locations_are_unused_drive_letters(monkeypatch):
 
     for bad in ("", "Z", "Z:\\media", "/mnt/media", "ZZ:"):
         assert platform.validate_mount_location(location=bad) == {
-            "code": "mountpoint_invalid",
+            "code": "mountpoint_not_drive_letter",
             "params": {},
         }
 
@@ -738,6 +738,8 @@ class FakeMetricsWin32:
         self._uptime_ms = uptime_ms
         self._error = error
         self.disk_paths = []
+        # One list per sample; the last one is reused once they run out.
+        self.process_samples = []
 
     def system_times(self):
         if self._error is not None:
@@ -752,7 +754,20 @@ class FakeMetricsWin32:
         return self._disk
 
     def uptime_ms(self):
+        if isinstance(self._uptime_ms, list):
+            return (
+                self._uptime_ms.pop(0)
+                if len(self._uptime_ms) > 1
+                else self._uptime_ms[0]
+            )
         return self._uptime_ms
+
+    def processes(self):
+        if not self.process_samples:
+            return []
+        if len(self.process_samples) > 1:
+            return self.process_samples.pop(0)
+        return self.process_samples[0]
 
 
 def test_windows_cpu_percent_is_the_busy_share_between_two_samples():
@@ -897,3 +912,192 @@ def test_windows_directory_ops_stay_inside_the_profile(monkeypatch, tmp_path):
         platform.list_directories(account="bob", path=str(tmp_path))
     with pytest.raises(OSError):
         platform.make_directory(account="bob", path=str(tmp_path / "outside"))
+
+
+# --- what the page offers as a mount location ---
+
+
+def test_windows_suggests_the_top_free_drive_letter(monkeypatch):
+    """Z: first: the low letters are where Windows and removable media land,
+    and a suggestion that collides is one the person retypes. Found on a
+    laptop offered `C:\\Users\\x/nas/share`, a path with two kinds of slash
+    that no drive-letter machine could take."""
+    taken = {"C:\\", "D:\\", "Z:\\", "Y:\\"}
+    monkeypatch.setattr(windows_module.os.path, "exists", lambda path: path in taken)
+
+    assert WindowsPlatform().suggest_mount_location() == "X:"
+
+
+def test_windows_suggests_nothing_when_every_letter_is_taken(monkeypatch):
+    monkeypatch.setattr(windows_module.os.path, "exists", lambda path: True)
+
+    assert WindowsPlatform().suggest_mount_location() == ""
+
+
+# --- a window on the screen a person is at ---
+
+
+def test_windows_starts_the_client_in_the_seated_session():
+    """The agent's own session is 0, where a window is a window nobody
+    sees. Found on a laptop: Connect did nothing visible."""
+    win32 = FakeWin32(
+        sessions=[
+            {"session_id": 0, "account": "", "state": WTS_CONNECTSTATE_ACTIVE},
+            {"session_id": 2, "account": "Pat", "state": WTS_CONNECTSTATE_ACTIVE},
+        ]
+    )
+    win32.started = []
+    win32.start_in_session = lambda session_id, argv: win32.started.append(
+        (session_id, tuple(argv))
+    )
+    platform = WindowsPlatform()
+    platform._win32 = lambda: win32
+
+    outcome = platform.start_on_screen(["rustdesk.exe", "--connect", "10.0.0.6"])
+
+    assert outcome is None
+    assert win32.started == [(2, ("rustdesk.exe", "--connect", "10.0.0.6"))]
+
+
+def test_windows_refuses_a_window_with_nobody_seated():
+    win32 = FakeWin32(
+        sessions=[
+            {"session_id": 0, "account": "", "state": WTS_CONNECTSTATE_ACTIVE},
+            {"session_id": 3, "account": "Pat", "state": WTS_CONNECTSTATE_DISCONNECTED},
+        ]
+    )
+    platform = WindowsPlatform()
+    platform._win32 = lambda: win32
+
+    outcome = platform.start_on_screen(["rustdesk.exe", "--connect", "10.0.0.6"])
+
+    assert outcome == {"code": "rdp_no_desktop", "params": {}}
+
+
+def test_windows_reports_a_refused_spawn_as_a_launch_failure():
+    win32 = FakeWin32(
+        sessions=[{"session_id": 2, "account": "Pat", "state": WTS_CONNECTSTATE_ACTIVE}]
+    )
+
+    def refuse(session_id, argv):
+        raise OSError("access denied")
+
+    win32.start_in_session = refuse
+    platform = WindowsPlatform()
+    platform._win32 = lambda: win32
+
+    outcome = platform.start_on_screen(["rustdesk.exe", "--connect", "10.0.0.6"])
+
+    assert outcome == {
+        "code": "rdp_launch_failed",
+        "params": {"detail": "access denied"},
+    }
+
+
+def test_windows_lists_the_busiest_processes_between_two_beats():
+    """Each row's processor time between two beats over the wall time
+    between them is its share of one core, as on Linux; the working set
+    over physical memory is its share of memory. The first beat has nothing
+    to compare against and lists none."""
+    gib = 1024**3
+    win32 = FakeMetricsWin32(
+        times=[(0, 0, 0), (0, 0, 0), (0, 0, 0)],
+        memory=(4 * gib, 2 * gib),
+        disk=(100, 50),
+        uptime_ms=[10_000, 15_000, 20_000],
+    )
+    win32.process_samples = [
+        [
+            {
+                "pid": 7,
+                "name": "app.exe",
+                "user": "Pat",
+                "cpu_100ns": 0,
+                "resident_bytes": gib,
+            },
+            {
+                "pid": 9,
+                "name": "idle.exe",
+                "user": "",
+                "cpu_100ns": 5_000,
+                "resident_bytes": 0,
+            },
+        ],
+        [
+            # 2.5 s of processor time over a 5 s beat: half of one core.
+            {
+                "pid": 7,
+                "name": "app.exe",
+                "user": "Pat",
+                "cpu_100ns": 25_000_000,
+                "resident_bytes": gib,
+            },
+            {
+                "pid": 9,
+                "name": "idle.exe",
+                "user": "",
+                "cpu_100ns": 5_000,
+                "resident_bytes": 0,
+            },
+            # New since the last beat: no share to compute yet.
+            {
+                "pid": 11,
+                "name": "new.exe",
+                "user": "Pat",
+                "cpu_100ns": 9_000_000,
+                "resident_bytes": 0,
+            },
+        ],
+    ]
+    platform = WindowsPlatform(win32=win32)
+
+    first = platform.read_host_metrics()
+    second = platform.read_host_metrics()
+
+    assert first.processes == []
+    rows = {process.pid: process for process in second.processes}
+    assert [process.pid for process in second.processes] == [7, 9, 11]
+    assert rows[7].name == "app.exe" and rows[7].user == "Pat"
+    assert rows[7].cpu_percent == 50.0
+    assert rows[7].memory_percent == 25.0
+    assert rows[9].cpu_percent == 0.0
+    assert rows[11].cpu_percent == 0.0
+
+
+def test_windows_processes_are_capped_at_the_monitors_dozen():
+    win32 = FakeMetricsWin32(
+        times=[(0, 0, 0), (0, 0, 0)], memory=(1, 0), disk=(1, 0), uptime_ms=[0, 1000]
+    )
+    rows = [
+        {
+            "pid": pid,
+            "name": f"{pid}.exe",
+            "user": "",
+            "cpu_100ns": pid,
+            "resident_bytes": 0,
+        }
+        for pid in range(1, 30)
+    ]
+    win32.process_samples = [rows, rows]
+    platform = WindowsPlatform(win32=win32)
+
+    platform.read_host_metrics()
+    listed = platform.read_host_metrics().processes
+
+    assert len(listed) == windows_module.PROCESS_TOP_COUNT
+
+
+def test_a_refused_process_walk_lists_none_and_keeps_the_rest():
+    win32 = FakeMetricsWin32(
+        times=[(0, 0, 0)], memory=(4, 2), disk=(100, 50), uptime_ms=7_000
+    )
+
+    def refuse():
+        raise OSError("no")
+
+    win32.processes = refuse
+
+    sample = WindowsPlatform(win32=win32).read_host_metrics()
+
+    assert sample.processes == []
+    assert sample.uptime_s == 7

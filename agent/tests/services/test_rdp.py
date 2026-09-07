@@ -858,3 +858,43 @@ def test_a_machine_that_shares_nothing_asks_the_seat_nothing(handler, monkeypatc
     monkeypatch.setattr(rdp_module, "graphical_accounts", refuse)
 
     assert handler.declaration()["attention"] == ""
+
+
+def test_connect_on_windows_goes_through_the_platforms_own_screen(handler, monkeypatch):
+    """The service lives in session 0, where a Popen opens a window nobody
+    sees. Found on a laptop: Connect did nothing visible."""
+    started = []
+    handler._platform.start_on_screen = lambda argv: started.append(list(argv))
+    monkeypatch.setattr(rdp_module.os, "name", "nt")
+    monkeypatch.setattr(
+        rdp_module.subprocess,
+        "Popen",
+        lambda command, **kwargs: (_ for _ in ()).throw(AssertionError("Popen used")),
+    )
+
+    outcome = handler.act(
+        entries=[ENTRY],
+        account="pat",
+        is_privileged=False,
+        body={"action": "connect", "id": "rdp_s9"},
+    )
+
+    assert outcome == {}
+    assert started == [["/usr/bin/rustdesk", "--connect", "192.168.100.6"]]
+
+
+def test_connect_on_windows_carries_the_platforms_refusal(handler, monkeypatch):
+    handler._platform.start_on_screen = lambda argv: {
+        "code": "rdp_no_desktop",
+        "params": {},
+    }
+    monkeypatch.setattr(rdp_module.os, "name", "nt")
+
+    outcome = handler.act(
+        entries=[ENTRY],
+        account="pat",
+        is_privileged=False,
+        body={"action": "connect", "id": "rdp_s9"},
+    )
+
+    assert outcome == {"code": "rdp_no_desktop", "params": {}}
