@@ -138,7 +138,8 @@ const WORDS = {
     no_endpoint: "the hub has not granted this account a key yet",
     module_missing: "install the {module} module first",
     mountpoint_not_empty: "that folder is not empty",
-    mountpoint_invalid: "that is not a mount location this machine can use",
+    mountpoint_invalid: "give an absolute path, like /mnt/share",
+    mountpoint_not_drive_letter: "give an unused drive letter, like N:",
     cifs_missing: "the mount tooling is missing on this machine",
     credentials_missing: "the saved login is gone; enter it again with Config",
     no_logged_on_session: "sign in as the mount's account on this machine, then try again",
@@ -1187,6 +1188,10 @@ function closeDialog(overlay) {
 // --- the Files panel: Config, then Mount / Unmount ---
 
 function mountDefaultPath(payload, state) {
+  // A drive letter where that is the shape, the platform's own free one.
+  if ((state.mount_location_shape || 'path') === 'drive_letter') {
+    return state.mount_location_suggestion || 'N:';
+  }
   const home = state.caller.home || ('/home/' + state.caller.account);
   return home + '/nas/' + (payload.share || '');
 }
