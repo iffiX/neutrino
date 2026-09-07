@@ -87,8 +87,8 @@ echo "   $HUB_ID"
 
 if [ "$WITH_WINDOWS" = 1 ]; then
     echo "== windows ($WIN_TYPE, Windows Server 2025)"
-    WIN_AMI="$(aws ssm get-parameter \
-        --name /aws/service/ami-windows-latest/Windows_Server-2025-English-Full-Base \
+    WIN_AMI_PARAMETER=/aws/service/ami-windows-latest/Windows_Server-2025-English-Full-Base  # scan: allow
+    WIN_AMI="$(aws ssm get-parameter --name "$WIN_AMI_PARAMETER" \
         --query Parameter.Value --output text)"
     sed "s|@AUTHORIZED_KEY@|$(cat "$RSA_KEY_FILE.pub")|" "$HERE/windows/user_data.ps1" \
         > "$STATE/windows_user_data.ps1"
