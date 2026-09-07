@@ -58,6 +58,8 @@ class RouterNftRenderer:
         self._wans = network.wan_device_names
         self._lans = network.lan_device_names
         self._exposed = network.exposed_device_names
+        self._exposed_overlays = network.exposed_overlay_device_names
+        self._overlay_ports = network.exposed_overlay_peer_ports
         self._side_lans = _side_lan_subnets(network)
         self._is_inter_lan_allowed = network.is_inter_lan_allowed
         # Two independent scopes: what the box forwards, and the box itself.
@@ -230,16 +232,20 @@ class RouterNftRenderer:
                     "        # The served networks are fenced off from each other:",
                     "        # no rule here, so the drop policy holds between them.",
                 ]
-        lines += [
-            "",
-            "        # The overlay reaches the LAN and back: remote access in both",
-            "        # directions. wt0 is netbird's WireGuard interface.",
-            '        iifname "wt0" accept',
-        ]
-        if self._lans:
-            lines.append(
-                f"        iifname {_interface_set(self._lans)} " 'oifname "wt0" accept'
-            )
+        if self._exposed_overlays:
+            overlays = _interface_set(self._exposed_overlays)
+            lines += [
+                "",
+                "        # An overlay reaches the served networks and back: it is",
+                "        # one trust domain with them, which is what joining one",
+                "        # is for.",
+                f"        iifname {overlays} accept",
+            ]
+            if self._lans:
+                lines.append(
+                    f"        iifname {_interface_set(self._lans)} "
+                    f"oifname {overlays} accept"
+                )
         lines += [
             "",
             "        # Containers on the podman bridge: without these the",
@@ -261,20 +267,16 @@ class RouterNftRenderer:
             '        iifname "lo" accept',
             "",
         ]
-        if self._exposed:
+        answering = self._exposed + self._exposed_overlays
+        if answering:
             lines += [
                 "        # Where this box answers. Every service here binds every",
                 "        # address and settles its own port, so which wires reach",
                 "        # them is the whole of the question, and it is one answer",
-                "        # per interface.",
-                f"        iifname {_interface_set(self._exposed)} accept",
+                "        # per interface, an overlay included.",
+                f"        iifname {_interface_set(answering)} accept",
             ]
-        lines += [
-            "        # The overlay always answers: it is how a box nobody exposed",
-            "        # is reached at all.",
-            '        iifname "wt0" accept',
-            "",
-        ]
+        lines.append("")
         closed_wans = [name for name in self._wans if name not in self._exposed]
         if closed_wans:
             external = _interface_set(closed_wans)
@@ -303,10 +305,15 @@ class RouterNftRenderer:
             "time-exceeded, parameter-problem } accept",
             "        icmpv6 type { echo-request, nd-neighbor-solicit, "
             "nd-neighbor-advert, nd-router-advert } accept",
-            # NetBird's WireGuard port, so peers can reach this box directly.
-            "        udp dport 51820 accept",
-            "    }\n",
         ]
+        if self._overlay_ports:
+            ports = ", ".join(str(port) for port in self._overlay_ports)
+            lines += [
+                "        # Where each overlay's own peers knock, so they reach",
+                "        # this box directly instead of through a relay.",
+                f"        udp dport {{ {ports} }} accept",
+            ]
+        lines.append("    }\n")
         return "\n".join(lines)
 
     def _render_postrouting(self) -> str:

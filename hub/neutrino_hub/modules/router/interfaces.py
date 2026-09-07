@@ -23,6 +23,8 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_MODE_ROUTER,
     ROUTER_MODES_ADDRESSING_OWNED,
     ROUTER_MODES_KEYS,
+    ROUTER_OVERLAY_KEYS,
+    ROUTER_OVERLAY_PROVIDERS,
     ROUTER_POLICIES,
     ROUTER_POLICY_FAILOVER,
     ROUTER_ROLE_DISABLED,
@@ -417,6 +419,65 @@ class RouterInterface:
 
 
 @dataclass
+class RouterOverlay:
+    """One overlay network this box is a member of.
+
+    A member, not a port: nobody plugs an overlay in, and the box does not
+    address it. What is left to decide is the same single question an
+    interface answers, so it carries the same field and no others.
+
+    Attributes:
+        provider: Who runs the overlay, one of
+            :data:`ROUTER_OVERLAY_PROVIDERS`.
+        is_exposed: Whether this box answers on the overlay, and whether the
+            served networks reach it. One switch for both, because closing an
+            overlay means cutting it off rather than going quiet on it while
+            still forwarding into the LAN.
+    """
+
+    provider: str
+    is_exposed: bool = True
+
+    @property
+    def device_name(self) -> str:
+        """The kernel interface the provider brings up."""
+        return str(ROUTER_OVERLAY_PROVIDERS[self.provider]["device"])
+
+    @property
+    def title(self) -> str:
+        """What the overlay is called where a person reads it."""
+        return str(ROUTER_OVERLAY_PROVIDERS[self.provider]["title"])
+
+    @property
+    def peer_port(self) -> int:
+        """The UDP port the overlay's own peers knock on."""
+        return int(ROUTER_OVERLAY_PROVIDERS[self.provider]["port"])
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "RouterOverlay":
+        """Parse one overlay entry.
+
+        Args:
+            data: An entry of the ``overlays`` list.
+
+        Returns:
+            The parsed overlay, exposed unless the entry says otherwise.
+        """
+        return cls(
+            provider=str(data["provider"]),
+            is_exposed=bool(data.get("is_exposed", True)),
+        )
+
+    def to_dict(self) -> dict:
+        """Serialize back to the config shape.
+
+        Returns:
+            A plain object ready for ``config/router/network.json``.
+        """
+        return {"provider": self.provider, "is_exposed": self.is_exposed}
+
+
+@dataclass
 class RouterNetworkConfig:
     """The whole of ``config/router/network.json``.
 
@@ -430,6 +491,10 @@ class RouterNetworkConfig:
             ``balance`` to spread across the distinct upstream lines. Opt-in
             rather than inferred: guessing it would put traffic on a metered
             link whose owner forgot to mark it.
+        overlays: The overlay networks this box is a member of. A sibling of
+            ``interfaces`` rather than an entry in it: switching modes
+            rebuilds that list, and an overlay in there would be dropped by a
+            change that has nothing to do with it.
         is_inter_lan_allowed: Whether devices on one served network can reach
             devices on another. One switch for all of them rather than a
             per-pair matrix: the whole point of turning it off is "my VLANs
@@ -439,6 +504,7 @@ class RouterNetworkConfig:
 
     mode: str = ROUTER_MODE_ROUTER
     interfaces: list[RouterInterface] = field(default_factory=list)
+    overlays: list[RouterOverlay] = field(default_factory=list)
     uplink_policy: str = ROUTER_POLICY_FAILOVER
     is_inter_lan_allowed: bool = True
 
@@ -467,6 +533,39 @@ class RouterNetworkConfig:
             for interface in self.interfaces
             if interface.is_exposed
         )
+
+    @property
+    def overlay_device_names(self) -> list[str]:
+        """The kernel devices the configured overlays ride on."""
+        return _unique(overlay.device_name for overlay in self.overlays)
+
+    @property
+    def exposed_overlay_device_names(self) -> list[str]:
+        """The overlay devices this box answers on and forwards to."""
+        return _unique(
+            overlay.device_name for overlay in self.overlays if overlay.is_exposed
+        )
+
+    @property
+    def exposed_overlay_peer_ports(self) -> list[int]:
+        """The UDP ports the exposed overlays' peers knock on, ascending."""
+        return sorted(
+            {overlay.peer_port for overlay in self.overlays if overlay.is_exposed}
+        )
+
+    def overlay(self, provider: str) -> "RouterOverlay | None":
+        """Find one overlay by provider.
+
+        Args:
+            provider: The provider key.
+
+        Returns:
+            The overlay, or None when this box is not configured for it.
+        """
+        for overlay in self.overlays:
+            if overlay.provider == provider:
+                return overlay
+        return None
 
     @property
     def wan_interfaces(self) -> list[RouterInterface]:
@@ -697,12 +796,27 @@ class RouterNetworkConfig:
         """
         policy = str(data.get("uplink_policy", ROUTER_POLICY_FAILOVER))
         mode = str(data.get("mode", ROUTER_MODE_ROUTER))
+        # A configuration written before overlays were a thing gets one entry
+        # per provider, exposed: that is what the firewall did unconditionally
+        # until now, so the day the new hub starts changes nothing about who
+        # can reach the box. Whoever first turns the switch off decides that.
+        stored = data.get("overlays")
+        overlays = (
+            [{"provider": provider} for provider in ROUTER_OVERLAY_KEYS]
+            if stored is None
+            else stored
+        )
         return cls(
             mode=mode if mode in ROUTER_MODES_KEYS else ROUTER_MODE_ROUTER,
             interfaces=[
                 RouterInterface.from_dict(entry)
                 for entry in data.get("interfaces", [])
                 if entry.get("name")
+            ],
+            overlays=[
+                RouterOverlay.from_dict(entry)
+                for entry in overlays
+                if entry.get("provider") in ROUTER_OVERLAY_PROVIDERS
             ],
             uplink_policy=(
                 policy if policy in ROUTER_POLICIES else ROUTER_POLICY_FAILOVER
@@ -719,6 +833,7 @@ class RouterNetworkConfig:
         return {
             "mode": self.mode,
             "interfaces": [interface.to_dict() for interface in self.interfaces],
+            "overlays": [overlay.to_dict() for overlay in self.overlays],
             "uplink_policy": self.uplink_policy,
             "is_inter_lan_allowed": self.is_inter_lan_allowed,
         }

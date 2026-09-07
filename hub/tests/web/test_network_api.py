@@ -36,6 +36,7 @@ class FakeRuntime:
         self._status = status
         self._connections = RouterConnectionSet()
         self.applied: list[str | None] = []
+        self.client_address: dict[str, str] = {}
 
     def network(self) -> RouterNetworkConfig:
         return RouterNetworkConfig.from_dict(self._config.to_dict())
@@ -469,6 +470,91 @@ def test_an_interface_this_machine_does_not_have_cannot_be_opened(guest_box):
     assert response.status_code == 400
 
 
+def test_the_view_lists_every_overlay_this_box_is_a_member_of(box, monkeypatch):
+    client, _, _ = box
+    monkeypatch.setattr(
+        network_router, "device_addresses", lambda: {"wt0": "100.88.178.129/16"}
+    )
+
+    overlays = client.get("/api/network").json()["overlays"]
+
+    assert overlays == [
+        {
+            "provider": "netbird",
+            "title": "NetBird",
+            "address": "100.88.178.129",
+            "is_exposed": True,
+            "device_count": 0,
+        }
+    ]
+
+
+def test_an_overlay_that_is_not_up_is_listed_with_no_address(box, monkeypatch):
+    """It is still configured, and hiding the row would leave the switch
+    nowhere while the daemon is restarting."""
+    client, _, _ = box
+    monkeypatch.setattr(network_router, "device_addresses", dict)
+
+    (overlay,) = client.get("/api/network").json()["overlays"]
+
+    assert overlay["address"] == ""
+
+
+def test_a_row_counts_the_devices_reaching_the_hub_across_it(box, monkeypatch):
+    """What closing it would end, so the warning can say so before the press
+    rather than after it."""
+    client, runtime, _ = box
+    monkeypatch.setattr(
+        network_router, "device_addresses", lambda: {"wt0": "100.88.178.129/16"}
+    )
+    runtime.client_address = {
+        "one": "100.88.4.9",
+        "two": "100.88.7.2",
+        "three": "192.168.100.40",
+        "four": "",
+    }
+
+    view = client.get("/api/network").json()
+    served = next(
+        entry for entry in view["interfaces"] if entry["settings"]["name"] == "enp1s0"
+    )
+
+    assert view["overlays"][0]["device_count"] == 2
+    assert served["link"]["device_count"] == 1
+
+
+def test_an_overlay_closes_and_reopens_through_the_same_write(box):
+    client, runtime, _ = box
+
+    closed = client.put("/api/network", json=_options(exposed=["enp1s0"], overlays=[]))
+    assert closed.status_code == 200
+    assert runtime.network().exposed_overlay_device_names == []
+
+    reopened = client.put(
+        "/api/network", json=_options(exposed=["enp1s0"], overlays=["netbird"])
+    )
+    assert reopened.status_code == 200
+    assert runtime.network().exposed_overlay_device_names == ["wt0"]
+
+
+def test_a_write_that_says_nothing_about_overlays_leaves_them_alone(box):
+    """A caller that has never heard of overlays must not be able to cut the
+    way back into this box by not mentioning them."""
+    client, runtime, _ = box
+
+    response = client.put(
+        "/api/network",
+        json={
+            "uplink_policy": "failover",
+            "is_inter_lan_allowed": True,
+            "exposed_interfaces": ["enp1s0"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert runtime.network().exposed_overlay_device_names == ["wt0"]
+
+
 def test_a_mode_that_is_not_one_of_them_is_refused(box):
     client, _, _ = box
 
@@ -596,11 +682,12 @@ def test_becoming_a_side_gateway_joins_the_network_it_is_already_on(guest_box):
     assert not joined.lan.is_dhcp_enabled
 
 
-def _options(*, exposed: list) -> dict:
+def _options(*, exposed: list, overlays: list | None = None) -> dict:
     return {
         "uplink_policy": "failover",
         "is_inter_lan_allowed": True,
         "exposed_interfaces": exposed,
+        "exposed_overlays": ["netbird"] if overlays is None else overlays,
     }
 
 

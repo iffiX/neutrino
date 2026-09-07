@@ -14,6 +14,7 @@ export type IconName =
   | "nodes"
   | "network"
   | "proxy"
+  | "mesh"
   | "globe"
   | "devices"
   | "services"
@@ -85,6 +86,18 @@ const ICON_SHAPES: Record<IconName, ReactNode> = {
     </>
   ),
   proxy: <path d="m12 3 8 3v6c0 5-3.4 8.2-8 9-4.6-.8-8-4-8-9V6z" />,
+  // An overlay: peers meeting at one point over whatever is underneath. It
+  // has to read as none of its neighbours — the globe is the proxy's, the
+  // chain is a wired interface's — because they sit in the same row.
+  mesh: (
+    <>
+      <circle cx="12" cy="12" r="2.4" />
+      <circle cx="5" cy="5.5" r="1.9" />
+      <circle cx="19" cy="5.5" r="1.9" />
+      <circle cx="12" cy="20" r="1.9" />
+      <path d="M10.3 10.3 6.4 6.9M13.7 10.3l3.9-3.4M12 14.4v3.7" />
+    </>
+  ),
   globe: (
     <>
       <circle cx="12" cy="12" r="9" />

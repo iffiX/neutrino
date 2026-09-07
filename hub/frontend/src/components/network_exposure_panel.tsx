@@ -6,25 +6,30 @@ import type { IconName } from "./icon";
 import { apiPut, describeError } from "../api_client";
 import { interruptionWarning } from "../network_warnings";
 import { useDraftSeeding } from "../use_draft_seeding";
-import type { InterfaceView, NetworkOptions, NetworkView } from "../api_types";
+import type {
+  InterfaceView,
+  NetworkOptions,
+  NetworkView,
+  OverlayView,
+} from "../api_types";
 
 import "./network_exposure_panel.css";
 
 /**
- * Which interfaces the services on this box answer on.
+ * Which networks the services on this box answer on.
  *
- * One answer per interface and no port list: every service binds every address
- * and settles its own port in its own tab, so the interface is what is left to
+ * One answer per network and no port list: every service binds every address
+ * and settles its own port in its own tab, so the network is what is left to
  * decide. It lands in the nftables input chain.
  *
- * The overlay is not listed and cannot be closed. It is how a box that answers
- * nowhere else is reached at all.
+ * An overlay is one of them. Joining one is joining your own network, so it
+ * starts open, and closing it says first how many devices that would cut off.
  */
 
 const KIND_ICONS: Record<string, IconName> = {
   wifi: "wifi",
   modem: "globe",
-  vlan: "nodes",
+  vlan: "network",
   ethernet: "link",
 };
 
@@ -38,7 +43,10 @@ export function NetworkExposurePanel({
   onApplied,
 }: NetworkExposurePanelProps) {
   const applied = exposedNames(network);
+  const appliedOverlays = exposedProviders(network);
   const [chosen, setChosen] = useState<string[]>(applied);
+  const [chosenOverlays, setChosenOverlays] =
+    useState<string[]>(appliedOverlays);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -46,28 +54,53 @@ export function NetworkExposurePanel({
   // The page polls, and a chip turned off but not applied stays off until
   // Apply or Reset says otherwise.
   const isReseedable = useDraftSeeding(
-    namesPayload(chosen),
-    namesPayload(applied),
+    namesPayload([...chosen, ...chosenOverlays]),
+    namesPayload([...applied, ...appliedOverlays]),
   );
 
   useEffect(() => {
     const fresh = exposedNames(network);
-    if (!isReseedable(namesPayload(fresh))) {
+    const freshOverlays = exposedProviders(network);
+    if (!isReseedable(namesPayload([...fresh, ...freshOverlays]))) {
       return;
     }
     setChosen(fresh);
+    setChosenOverlays(freshOverlays);
   }, [network, isReseedable]);
 
-  const isDirty = !sameSet(chosen, applied);
+  const isDirty =
+    !sameSet(chosen, applied) || !sameSet(chosenOverlays, appliedOverlays);
   // A trunk carries no traffic of its own; what answers is each VLAN on it.
   const offered = network.interfaces.filter(
     (entry) => entry.settings.role !== "split",
   );
   const closing = applied.filter((name) => !chosen.includes(name));
+  const closingOverlays = network.overlays.filter(
+    (overlay) =>
+      overlay.is_exposed && !chosenOverlays.includes(overlay.provider),
+  );
   const openedUplinks = offered.filter(
     (entry) =>
       entry.settings.role === "wan" && chosen.includes(entry.settings.name),
   );
+  // An overlay closes the same way an interface does and costs the same
+  // thing, so it is named in the same line rather than only in the count.
+  const closingNames = [
+    ...closing,
+    ...closingOverlays.map((overlay) => overlay.title),
+  ];
+  const cutOff = [
+    ...offered
+      .filter((entry) => closing.includes(entry.settings.name))
+      .map((entry) => ({
+        label: entry.settings.name,
+        count: entry.link.device_count,
+      })),
+    ...closingOverlays.map((overlay) => ({
+      label: overlay.title,
+      count: overlay.device_count,
+    })),
+  ].filter((entry) => entry.count > 0);
 
   const toggle = (name: string) => {
     setNotice(null);
@@ -75,6 +108,15 @@ export function NetworkExposurePanel({
       current.includes(name)
         ? current.filter((kept) => kept !== name)
         : [...current, name],
+    );
+  };
+
+  const toggleOverlay = (provider: string) => {
+    setNotice(null);
+    setChosenOverlays((current) =>
+      current.includes(provider)
+        ? current.filter((kept) => kept !== provider)
+        : [...current, provider],
     );
   };
 
@@ -87,6 +129,7 @@ export function NetworkExposurePanel({
         uplink_policy: network.uplink_policy,
         is_inter_lan_allowed: network.is_inter_lan_allowed,
         exposed_interfaces: chosen,
+        exposed_overlays: chosenOverlays,
       };
       onApplied(await apiPut<NetworkView>("/network", options));
       setNotice("Applied to the firewall.");
@@ -105,9 +148,8 @@ export function NetworkExposurePanel({
         <h2>Exposure</h2>
       </div>
       <p className="field_hint">
-        The interfaces on which this box accepts connections to its own
-        services: the panel, SSH, DNS, the shares. The overlay accepts them
-        whatever is set here.
+        The networks on which this box accepts connections to its own services:
+        the panel, SSH, DNS, the shares.
       </p>
 
       <div className="exposure_chips">
@@ -119,6 +161,14 @@ export function NetworkExposurePanel({
             onToggle={() => toggle(entry.settings.name)}
           />
         ))}
+        {network.overlays.map((overlay) => (
+          <OverlayChip
+            key={overlay.provider}
+            overlay={overlay}
+            isOn={chosenOverlays.includes(overlay.provider)}
+            onToggle={() => toggleOverlay(overlay.provider)}
+          />
+        ))}
       </div>
 
       <ApplyBar
@@ -126,10 +176,13 @@ export function NetworkExposurePanel({
         isBusy={isBusy}
         label="Apply exposure"
         hint="Reloads the firewall input chain."
-        warning={exposureWarning(closing, openedUplinks)}
+        warning={exposureWarning(closingNames, openedUplinks, cutOff)}
         error={error}
         notice={notice}
-        onReset={() => setChosen(applied)}
+        onReset={() => {
+          setChosen(applied);
+          setChosenOverlays(appliedOverlays);
+        }}
         onApply={() => void apply()}
       />
     </section>
@@ -163,16 +216,43 @@ function ExposureChip({ entry, isOn, onToggle }: ExposureChipProps) {
   );
 }
 
+interface OverlayChipProps {
+  overlay: OverlayView;
+  isOn: boolean;
+  onToggle: () => void;
+}
+
+function OverlayChip({ overlay, isOn, onToggle }: OverlayChipProps) {
+  return (
+    <button
+      type="button"
+      className={`exposure_chip ${isOn ? "exposure_chip--on" : ""}`}
+      aria-pressed={isOn}
+      onClick={onToggle}
+    >
+      <Icon name="mesh" size={14} />
+      <span className="exposure_chip_name mono">{overlay.title}</span>
+      <span className="exposure_chip_state mono">
+        {overlay.address === "" ? "not up" : overlay.address}
+      </span>
+      <span className="badge">overlay</span>
+    </button>
+  );
+}
+
 /**
- * What applying costs: sessions on an interface being closed, and an uplink
- * being opened onto the internet. Both are the press's cost rather than what
- * the control does, which is what the description above it carries.
+ * What applying costs: the devices a closed network is carrying, the sessions
+ * on it, and an uplink being opened onto the internet. All three are the
+ * press's cost rather than what the control does, which is what the
+ * description above it carries.
  */
 function exposureWarning(
   closing: string[],
   openedUplinks: InterfaceView[],
+  cutOff: { label: string; count: number }[],
 ): string | undefined {
   return interruptionWarning(
+    cutOff.length === 0 ? null : devicesCutOff(cutOff),
     closing.length === 0
       ? null
       : `${closing.join(", ")} stops accepting connections.`,
@@ -184,10 +264,25 @@ function exposureWarning(
   );
 }
 
+/** The devices reaching the hub across what is being closed, named by where. */
+function devicesCutOff(cutOff: { label: string; count: number }[]): string {
+  const total = cutOff.reduce((sum, entry) => sum + entry.count, 0);
+  const where = cutOff.map((entry) => entry.label).join(", ");
+  return total === 1
+    ? `1 device reaches the hub on ${where}. Closing it ends its link.`
+    : `${total} devices reach the hub on ${where}. Closing it ends their link.`;
+}
+
 function exposedNames(network: NetworkView): string[] {
   return network.interfaces
     .filter((entry) => entry.settings.is_exposed)
     .map((entry) => entry.settings.name);
+}
+
+function exposedProviders(network: NetworkView): string[] {
+  return network.overlays
+    .filter((overlay) => overlay.is_exposed)
+    .map((overlay) => overlay.provider);
 }
 
 /** One set of interfaces, in an order two of them can be compared in. */

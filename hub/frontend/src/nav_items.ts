@@ -106,7 +106,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     path: "/netbird",
     label: "NetBird",
-    icon: "link",
+    icon: "mesh",
     description: "Remote access to this gateway",
     group: "optional",
     service: "netbird",

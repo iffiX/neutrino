@@ -5,8 +5,11 @@ The content assertions run anywhere. The ones that hand the result to the real
 netlink socket; run the suite with sudo to include them.
 """
 
+from pathlib import Path
+
 import pytest
 
+from neutrino_hub.modules.router import nft_renderer
 from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
 
 from tests.conftest import (
@@ -104,7 +107,7 @@ def test_an_uplink_answers_nothing_until_it_is_exposed():
     opened = render(wan_entry("enp2s0", is_exposed=True), served)
 
     assert 'iifname { "enp2s0" } accept' not in closed
-    assert 'iifname { "enp2s0", "enp1s0" } accept' in opened
+    assert 'iifname { "enp2s0", "enp1s0", "wt0" } accept' in opened
 
 
 def test_a_closed_uplink_can_still_take_a_lease():
@@ -130,7 +133,44 @@ def test_the_overlay_answers_on_a_box_that_exposes_nothing():
         wan_entry("enp2s0"), lan_entry("enp1s0", address="10.0.0.1", is_exposed=False)
     )
 
-    assert 'iifname "wt0" accept' in ruleset
+    assert 'iifname { "wt0" } accept' in ruleset
+
+
+def test_a_configuration_with_no_overlays_block_still_answers_on_one():
+    """The firewall accepted the overlay unconditionally before it was
+    configurable, so a box upgrading into this must find nothing changed. Who
+    can reach the machine is not a thing to alter behind somebody's back."""
+    ruleset = render(lan_entry("enp1s0", address="10.0.0.1", is_exposed=False))
+
+    assert 'iifname { "wt0" } accept' in ruleset
+    assert "udp dport { 51820 } accept" in ruleset
+
+
+def test_a_closed_overlay_is_absent_from_the_whole_ruleset():
+    """Closing one cuts it off rather than going quiet on it: the box stops
+    answering there, the served networks stop reaching it, and its peers stop
+    being able to knock."""
+    closed = RouterNftRenderer(
+        network=network_config(
+            lan_entry("enp1s0", address="10.0.0.1", is_exposed=True),
+            overlays=[{"provider": "netbird", "is_exposed": False}],
+        ),
+        routing=ROUTING_DIRECT,
+        xray_uid=999,
+        agent_port=AGENT_PORT,
+    ).render()
+
+    assert "wt0" not in closed
+    assert "51820" not in closed
+
+
+def test_no_overlay_is_named_in_the_renderer_itself():
+    """Every overlay rule comes from the configuration. A device name written
+    into this module is the next overlay's rules being written by hand."""
+    source = Path(nft_renderer.__file__).read_text()
+
+    assert "wt0" not in source
+    assert "51820" not in source
 
 
 def test_the_local_proxy_chain_cannot_loop_back_into_itself():
@@ -168,7 +208,7 @@ def test_an_unconfigured_box_renders_no_empty_sets():
 def test_a_box_with_no_uplink_still_serves_and_firewalls_its_lan():
     ruleset = render(lan_entry("enp1s0", address="192.168.100.1"))
 
-    assert 'iifname { "enp1s0" } accept' in ruleset
+    assert 'iifname { "enp1s0", "wt0" } accept' in ruleset
     assert "masquerade" not in without_comments(ruleset)
 
 
@@ -224,7 +264,7 @@ def test_fenced_lans_cannot_reach_each_other():
     assert f'{lan_set} oifname {{ "enp1s0", "enp1s0.10" }} accept' not in fenced
     # Every network still reaches the internet and the overlay.
     assert f'{lan_set} oifname {{ "enp2s0" }} accept' in fenced
-    assert f'{lan_set} oifname "wt0" accept' in fenced
+    assert f'{lan_set} oifname {{ "wt0" }} accept' in fenced
 
 
 def test_the_untagged_main_names_the_port_itself():
@@ -278,7 +318,7 @@ def test_an_exposed_lan_needs_no_extra_serving_rules():
         lan_entry("enp1s0", address="192.168.93.1"),
     )
 
-    assert 'iifname { "enp1s0" } accept' in ruleset
+    assert 'iifname { "enp1s0", "wt0" } accept' in ruleset
     assert 'iifname { "enp1s0" } udp dport 67 accept' not in ruleset
     assert f"tcp dport {AGENT_PORT}" not in ruleset
 

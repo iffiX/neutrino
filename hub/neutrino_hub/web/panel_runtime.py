@@ -8,8 +8,10 @@ by itself.
 
 import asyncio
 import ipaddress
+import shutil
 from collections import deque
 
+from neutrino_hub.modules.netbird.ops import NetbirdInboundGate
 from neutrino_hub.modules.router.dnsmasq_renderer import RouterDnsmasqRenderer
 from neutrino_hub.modules.router.connections import RouterConnectionSet
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
@@ -32,10 +34,10 @@ from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiServedModelCache
 from neutrino_hub.modules.devices.catalog import DeviceCatalogCache
 from neutrino_hub.modules.samba.config import SambaConfig
 from neutrino_hub.modules.samba.ops import SambaConfigApplier, SambaUserManager
-from neutrino_hub.modules.router.link_status import RouterLinkStatus
+from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.modules.samba.renderer import (
     SambaConfigRenderer,
-    allowed_subnets,
+    share_subnets,
 )
 from neutrino_hub.modules.services.probe import DeclaredServiceProbe
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
@@ -71,6 +73,7 @@ from neutrino_hub.modules.xray.stats_client import XrayStatsClient
 from neutrino_hub.modules.router.constants import (
     ROUTER_DNSMASQ_PATH,
     ROUTER_NFT_PATH,
+    ROUTER_OVERLAY_NETBIRD,
 )
 
 DNSMASQ_SERVICE_NAME = SYSTEM_CORE_UNITS["dnsmasq"]
@@ -522,6 +525,7 @@ class PanelRuntime:
         write_generated(ROUTER_NFT_PATH, nft_ruleset)
         write_generated(ROUTER_DNSMASQ_PATH, dnsmasq_config)
         run(["systemctl", "restart", DNSMASQ_SERVICE_NAME])
+        _converge_overlays(network)
 
         if xray_failure:
             raise CommandError(
@@ -594,10 +598,51 @@ class PanelRuntime:
             # its uplink handed it.
             changes += applier.apply_resolver()
         run(["systemctl", "restart", DNSMASQ_SERVICE_NAME])
+        changes += _converge_overlays(network)
+        changes += self._refresh_share_fence()
 
         self.is_config_dirty = False
         summary = "; ".join(changes) if changes else "no interface change"
         return f"applied network ({summary})"
+
+    def _refresh_share_fence(self) -> list[str]:
+        """Re-render ``smb.conf`` for the networks the box now has.
+
+        The shares' ``hosts allow`` is derived from the network, so a network
+        change that does not reach it leaves the second fence describing a box
+        that no longer exists: an opened network the shares refuse, or a
+        closed one they still admit. Belongs to the network apply for the same
+        reason the firewall does.
+
+        Returns:
+            A note for the summary, empty when there is nothing to do.
+
+        The share configuration failing is reported rather than raised: the
+        network is already applied by this point, and taking the whole apply
+        down for a file the firewall does not depend on would leave the box
+        looking unreachable when it is not.
+        """
+        if shutil.which("testparm") is None:
+            return []
+        try:
+            config = self.samba()
+            config.validate()
+            links = {
+                link.name: link.ipv4_address or ""
+                for link in RouterLinkStatus().all_links()
+            }
+            rendered = SambaConfigRenderer(
+                config=config,
+                lan_subnets=share_subnets(
+                    network=self.network(),
+                    link_addresses=links,
+                    device_addresses=device_addresses(),
+                ),
+            ).render()
+            SambaConfigApplier().apply(rendered, config=config)
+        except (CommandError, FileNotFoundError, ValueError) as error:
+            return [f"shares not refreshed: {error}"]
+        return ["shares refreshed"]
 
     def _apply_samba_blocking(self) -> str:
         config = self.samba()
@@ -610,13 +655,10 @@ class PanelRuntime:
             link.name: link.ipv4_address or ""
             for link in RouterLinkStatus().all_links()
         }
-        if network.mode == "server":
-            reachable = [address for address in links.values() if address]
-        else:
-            reachable = [links.get(name, "") for name in network.exposed_device_names()]
-        subnets = allowed_subnets(
-            [interface.lan.cidr for interface in network.lan_interfaces],
-            reachable,
+        subnets = share_subnets(
+            network=network,
+            link_addresses=links,
+            device_addresses=device_addresses(),
         )
         rendered = SambaConfigRenderer(config=config, lan_subnets=subnets).render()
         # Configuration first: smbpasswd itself reads smb.conf, and the link
@@ -651,6 +693,38 @@ class PanelRuntime:
             secrets=GiteaSecretStore().load(),
         ).render()
         return GiteaConfigApplier().apply(rendered)
+
+
+def _converge_overlays(network: RouterNetworkConfig) -> list[str]:
+    """Tell each overlay's own daemon what the exposure switch says.
+
+    Rendering the rules is not enough for an overlay. NetBird's client puts an
+    accept for its interface back at the top of this hub's input chain within
+    seconds of any reload, so a closed overlay that was only rendered stays
+    open, and the switch reads as a lie. Its own setting is what holds, and it
+    is set here for the same reason the ruleset is loaded here.
+
+    Args:
+        network: The parsed router configuration.
+
+    Returns:
+        Notes for the apply summary, empty when every daemon already agreed.
+        A daemon that refuses is reported rather than raised: the ruleset is
+        already loaded by this point, and the overlay's own state is not what
+        the rest of the network depends on.
+    """
+    notes = []
+    for overlay in network.overlays:
+        if overlay.provider != ROUTER_OVERLAY_NETBIRD:
+            continue
+        try:
+            note = NetbirdInboundGate().converge(is_blocked=not overlay.is_exposed)
+        except CommandError as error:
+            notes.append(f"{overlay.title} not set: {error}")
+            continue
+        if note:
+            notes.append(f"{overlay.title}: {note}")
+    return notes
 
 
 def _is_forwarding(network: RouterNetworkConfig) -> bool:

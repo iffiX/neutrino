@@ -21,10 +21,11 @@ FINGERPRINT = "cd" * 32
 
 
 class FakeRuntime:
-    def __init__(self, *, settings=None, addresses=("192.168.8.1",)):
+    def __init__(self, *, settings=None, addresses=("192.168.8.1",), overlays=()):
         self.settings = settings or {}
         self.enrollments = {}
         self._addresses = addresses
+        self._overlays = overlays
 
     def network(self):
         interfaces = [
@@ -35,7 +36,10 @@ class FakeRuntime:
             )
             for index, address in enumerate(self._addresses)
         ]
-        return SimpleNamespace(device_facing_interfaces=interfaces)
+        return SimpleNamespace(
+            device_facing_interfaces=interfaces,
+            exposed_overlay_device_names=list(self._overlays),
+        )
 
 
 def client_for(runtime) -> TestClient:
@@ -84,7 +88,9 @@ def test_a_server_generates_from_its_exposed_ports_live_address(
 ):
     runtime = FakeRuntime(addresses=())
     exposed = SimpleNamespace(is_lan=False, device_name="enp1s0", lan=None)
-    runtime.network = lambda: SimpleNamespace(device_facing_interfaces=[exposed])
+    runtime.network = lambda: SimpleNamespace(
+        device_facing_interfaces=[exposed], exposed_overlay_device_names=[]
+    )
 
     class FakeReader:
         def link(self, name):
@@ -97,6 +103,26 @@ def test_a_server_generates_from_its_exposed_ports_live_address(
 
     assert answer.status_code == 200
     assert decoded(answer.json()["link"])["urls"] == ["https://192.168.100.7:8443"]
+
+
+def test_the_link_carries_the_overlay_a_remote_machine_is_the_only_one_on(
+    fingerprinted, monkeypatch
+):
+    """A machine that reaches this hub only over the overlay has no other
+    address to be told, and the link is the whole of what it is told."""
+    runtime = FakeRuntime(overlays=["wt0"])
+    monkeypatch.setattr(
+        devices_router,
+        "device_addresses",
+        lambda: {"enp1s0": "192.168.8.1/24", "wt0": "100.88.178.129/16"},
+    )
+
+    answer = client_for(runtime).post("/api/devices/enrollment", json={"name": ""})
+
+    assert decoded(answer.json()["link"])["urls"] == [
+        "https://192.168.8.1:8443",
+        "https://100.88.178.129:8443",
+    ]
 
 
 def test_generating_again_replaces_the_outstanding_ticket(fingerprinted):

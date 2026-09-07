@@ -333,6 +333,29 @@ class RouterLinkStatus:
         return routes
 
 
+def device_addresses() -> dict[str, str]:
+    """Every device on the box holding an IPv4 address.
+
+    Wider than :meth:`RouterLinkStatus.all_links`, which answers what the
+    Network page draws. This answers where the box can be reached, so it
+    counts the interfaces the hub assigns no role to: an overlay's tun is not
+    a port anybody plugged in, and it is still an address devices come in on.
+
+    Returns:
+        Device name to address with its prefix, loopback left out.
+    """
+    result = run(["ip", "-json", "addr", "show"], is_checked=False)
+    if not result.is_success:
+        return {}
+    found = {}
+    for entry in json.loads(result.stdout or "[]"):
+        name = entry.get("ifname", "")
+        address = _first_ipv4(entry)
+        if name and name != "lo" and address:
+            found[name] = address
+    return found
+
+
 def _first_ipv4(entry: dict) -> str | None:
     for address in entry.get("addr_info", []):
         if address.get("family") == "inet":

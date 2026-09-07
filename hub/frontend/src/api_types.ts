@@ -328,11 +328,27 @@ export interface InterfaceLink {
    * what greys out the LAN role.
    */
   is_ap_capable: boolean;
+  /**
+   * Managed devices reaching this hub across this network right now, which is
+   * what closing it would end. Live, so a device that is off is not counted.
+   */
+  device_count: number;
 }
 
 export interface InterfaceView {
   settings: InterfaceSettings;
   link: InterfaceLink;
+}
+
+/** One overlay network this box is a member of. */
+export interface OverlayView {
+  /** Who runs it. The key the write side names it by. */
+  provider: string;
+  title: string;
+  /** This box's address on it, empty while the overlay is not up. */
+  address: string;
+  is_exposed: boolean;
+  device_count: number;
 }
 
 /** One uplink's place in the gateway's plan for them. */
@@ -372,6 +388,7 @@ export interface NetworkView {
   mode: NetworkModeKey;
   modes: NetworkMode[];
   interfaces: InterfaceView[];
+  overlays: OverlayView[];
   uplink_policy: UplinkPolicy;
   is_inter_lan_allowed: boolean;
   /**
@@ -391,6 +408,8 @@ export interface NetworkOptions {
   is_inter_lan_allowed: boolean;
   /** The interfaces that answer, by name. Everything else is closed. */
   exposed_interfaces: string[];
+  /** The overlays that answer, by provider. Everything else is closed. */
+  exposed_overlays: string[];
 }
 
 /** The mode to become. Nothing else: what each port is for is its own. */

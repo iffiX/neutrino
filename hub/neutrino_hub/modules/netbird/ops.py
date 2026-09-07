@@ -12,7 +12,15 @@ shell has ``netbird down``.
 
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 
+from neutrino_hub.modules.netbird.constants import (
+    NETBIRD_ACTIVE_PROFILE_PATH,
+    NETBIRD_BLOCK_INBOUND_KEY,
+    NETBIRD_INBOUND_TIMEOUT_S,
+    NETBIRD_LEGACY_CONFIG_PATH,
+    NETBIRD_STATE_DIR,
+)
 from neutrino_hub.utils.subprocess_run import run
 
 # Long enough for the first handshake with the management plane; `netbird up`
@@ -121,6 +129,79 @@ class NetbirdStatusReader:
             fqdn=status.get("fqdn", ""),
             peers=peers,
         )
+
+
+class NetbirdInboundGate:
+    """Whether NetBird itself accepts inbound connections on the overlay.
+
+    The exposure switch has to reach here, because the daemon does not leave
+    the firewall to us: within ten seconds of any reload it inserts an accept
+    for its own interface at the top of whatever input chain it finds, this
+    hub's included. A rule we render and it overrides is a switch that reads
+    as closed and is open, so closing the overlay tells NetBird as well.
+    """
+
+    def state(self) -> bool | None:
+        """What the daemon was last told about inbound connections.
+
+        Returns:
+            True when it is blocking them, False when it is not, and None
+            when nothing on this box says either way.
+        """
+        for path in self._state_paths():
+            try:
+                stored = json.loads(path.read_text())
+            except (OSError, ValueError):
+                continue
+            if NETBIRD_BLOCK_INBOUND_KEY in stored:
+                return bool(stored[NETBIRD_BLOCK_INBOUND_KEY])
+        return None
+
+    def converge(self, *, is_blocked: bool) -> str:
+        """Make the daemon agree, and only then.
+
+        Two things about ``netbird up`` are settled by what it does rather
+        than by what reads well, both measured on a running client: it is a
+        no-op while the client is already connected, so the session is taken
+        down first the way an enrollment does; and the flag is sticky, so
+        leaving it off keeps whatever was stored last rather than clearing
+        it, and the value is always stated.
+
+        Args:
+            is_blocked: Whether inbound connections should be refused.
+
+        Returns:
+            A note for the apply summary, empty when nothing had to change.
+            Setting it re-establishes the session, so a state that already
+            agrees is left alone: a network apply must not cost the overlay a
+            reconnection every time somebody saves an unrelated interface.
+
+        Raises:
+            CommandError: If the daemon refuses to come back up.
+        """
+        if self.state() == is_blocked:
+            return ""
+        status = NetbirdStatusReader().survey()
+        if not status.is_installed or not status.is_enrolled:
+            return ""
+        run(["netbird", "down"], is_checked=False, timeout_s=30)
+        run(
+            ["netbird", "up", f"--block-inbound={'true' if is_blocked else 'false'}"],
+            timeout_s=NETBIRD_INBOUND_TIMEOUT_S,
+        )
+        return "overlay closed" if is_blocked else "overlay opened"
+
+    def _state_paths(self) -> list:
+        paths = []
+        try:
+            active = json.loads(NETBIRD_ACTIVE_PROFILE_PATH.read_text())
+            name = str(active.get("name", "") or "")
+        except (OSError, ValueError):
+            name = ""
+        if name and Path(name).name == name:
+            paths.append(NETBIRD_STATE_DIR / f"{name}.json")
+        paths.append(NETBIRD_LEGACY_CONFIG_PATH)
+        return paths
 
 
 class NetbirdEnroller:

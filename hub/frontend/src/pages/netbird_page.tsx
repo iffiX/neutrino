@@ -171,7 +171,7 @@ function IdentitySection({ view, isReady, onJoined }: IdentitySectionProps) {
         </div>
       </div>
       <p className="field_hint">
-        The panel also answers on the overlay address.
+        Whether this box answers on the overlay is set under Network, Exposure.
       </p>
       {isReconfiguring && (
         <JoinForm

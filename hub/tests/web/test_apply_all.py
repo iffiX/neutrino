@@ -115,3 +115,79 @@ def test_a_refused_apply_leaves_the_configuration_dirty(applied):
         panel._apply_all_blocking()
 
     assert panel.is_config_dirty
+
+
+def test_applying_the_network_re_renders_the_share_fence(applied, monkeypatch):
+    """`hosts allow` is derived from the networks this box has, so a network
+    change that never reaches smb.conf leaves the shares refusing a network
+    that was just opened."""
+    panel, written = applied
+    monkeypatch.setattr(runtime_module.shutil, "which", lambda name: "/usr/bin/x")
+    monkeypatch.setattr(runtime_module.PanelRuntime, "samba", lambda self: _Shares())
+    monkeypatch.setattr(runtime_module.RouterLinkStatus, "all_links", lambda self: [])
+    monkeypatch.setattr(runtime_module, "device_addresses", dict)
+    monkeypatch.setattr(
+        runtime_module.SambaConfigApplier,
+        "apply",
+        lambda self, rendered, **kwargs: written.append(("loaded", "smb.conf")),
+    )
+    monkeypatch.setattr(
+        runtime_module.RouterInterfaceApplier, "apply_all", lambda self: []
+    )
+
+    summary = panel._apply_network_blocking(None)
+
+    assert ("loaded", "smb.conf") in written
+    assert "shares refreshed" in summary
+
+
+def test_a_box_without_samba_applies_its_network_all_the_same(applied, monkeypatch):
+    panel, written = applied
+    monkeypatch.setattr(runtime_module.shutil, "which", lambda name: None)
+    monkeypatch.setattr(
+        runtime_module.RouterInterfaceApplier, "apply_all", lambda self: []
+    )
+
+    summary = panel._apply_network_blocking(None)
+
+    assert ("loaded", "nft") in written
+    assert "shares" not in summary
+
+
+def test_a_share_configuration_that_will_not_render_does_not_fail_the_network(
+    applied, monkeypatch
+):
+    """The network is applied by then. Failing the whole call for a file the
+    firewall does not depend on leaves the box reading as unreachable."""
+    panel, written = applied
+    monkeypatch.setattr(runtime_module.shutil, "which", lambda name: "/usr/bin/x")
+    monkeypatch.setattr(runtime_module.PanelRuntime, "samba", lambda self: _Shares())
+    monkeypatch.setattr(runtime_module.RouterLinkStatus, "all_links", lambda self: [])
+    monkeypatch.setattr(runtime_module, "device_addresses", dict)
+    monkeypatch.setattr(
+        runtime_module.SambaConfigApplier,
+        "apply",
+        _refusing_shares,
+    )
+    monkeypatch.setattr(
+        runtime_module.RouterInterfaceApplier, "apply_all", lambda self: []
+    )
+
+    summary = panel._apply_network_blocking(None)
+
+    assert ("loaded", "nft") in written
+    assert "shares not refreshed" in summary
+
+
+class _Shares:
+    """The share configuration, with nothing shared."""
+
+    shares: list = []
+    users: list = []
+
+    def validate(self) -> None:
+        return None
+
+
+def _refusing_shares(self, rendered, **kwargs):
+    raise CommandError("Samba rejected the configuration")

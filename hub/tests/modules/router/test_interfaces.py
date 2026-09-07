@@ -20,6 +20,46 @@ def test_an_unknown_role_reads_as_disabled():
     assert config.interface("enp2s0").is_disabled
 
 
+# --- Overlays ---------------------------------------------------------------
+
+
+def test_a_file_with_no_overlays_block_reads_one_open_overlay():
+    """That is what the firewall did before the switch existed. Reading it as
+    "no overlay" would close the way back into every box that upgrades."""
+    config = RouterNetworkConfig.from_dict({"interfaces": []})
+
+    assert [overlay.provider for overlay in config.overlays] == ["netbird"]
+    assert config.exposed_overlay_device_names == ["wt0"]
+
+
+def test_an_empty_overlays_block_is_a_decision_and_is_kept():
+    """Somebody closed the last one. That is not the same as never having
+    been asked, and the round trip is what tells the two apart."""
+    config = RouterNetworkConfig.from_dict({"interfaces": [], "overlays": []})
+
+    assert config.overlays == []
+
+
+def test_an_overlay_nobody_supports_is_dropped_rather_than_carried():
+    config = RouterNetworkConfig.from_dict(
+        {"interfaces": [], "overlays": [{"provider": "tinc"}]}
+    )
+
+    assert config.overlays == []
+
+
+def test_an_overlay_survives_a_round_trip_with_its_switch():
+    config = RouterNetworkConfig.from_dict(
+        {"interfaces": [], "overlays": [{"provider": "netbird", "is_exposed": False}]}
+    )
+
+    again = RouterNetworkConfig.from_dict(config.to_dict())
+
+    assert again.overlays[0].is_exposed is False
+    assert again.exposed_overlay_device_names == []
+    assert again.exposed_overlay_peer_ports == []
+
+
 def test_unknown_enums_fall_back_rather_than_raising():
     config = RouterNetworkConfig.from_dict(
         {

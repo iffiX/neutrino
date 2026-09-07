@@ -106,22 +106,76 @@ puts them back, with nothing retyped on the Proxy page.
 
 Every service this box runs binds every address and settles its own port in
 its own tab. What is left to decide is which wires reach them, and that is one
-answer per interface — `is_exposed` — rather than a port list per interface
-that would have to be kept in step with what is installed.
+answer per network — `is_exposed` — rather than a port list per network that
+would have to be kept in step with what is installed.
 
 ```text
-iifname { "enp1s0" } accept        # everything this box listens on
-iifname "wt0" accept               # the overlay, always
+iifname { "enp1s0", "wt0" } accept  # everything this box listens on
+udp dport { 51820 } accept          # where the overlay's peers knock
 ```
 
-The overlay is not in the list and cannot be closed: it is how a box that
-answers nowhere else is reached at all. A served network is exposed by
-definition — it is where the panel, the leases and DNS are reached — and an
-uplink is closed, because remote access arrives over the overlay. Opening an
-uplink opens *everything*, which is why there is no "SSH from the WAN" switch:
-a per-port list on the one interface facing the internet is a list that gets
-half right, and the honest control is the whole interface with what it costs
-written beside it.
+A served network is exposed by definition — it is where the panel, the leases
+and DNS are reached — and an uplink is closed, because remote access arrives
+over the overlay. Opening an uplink opens *everything*, which is why there is
+no "SSH from the WAN" switch: a per-port list on the one interface facing the
+internet is a list that gets half right, and the honest control is the whole
+interface with what it costs written beside it.
+
+An overlay is one more row in that same list, and starts open: joining one is
+joining your own network, which is the whole reason somebody set it up. It
+answers the same single question and gets no matrix of its own, because a
+second mental model for one kind of network costs more than the control is
+worth. What it does get is the cost of closing it, said before the press: how
+many managed devices are reaching this hub across it right now. Closing an
+overlay cuts it off rather than going quiet on it, so the box stops answering
+there, the served networks stop reaching it, and its peers stop being able to
+knock.
+
+Overlays live in `overlays`, beside `interfaces` rather than in it, and are
+keyed by provider. Both halves matter. Switching modes rebuilds the interface
+list, and an overlay riding in there would be dropped by a change that has
+nothing to do with it; and the device name belongs to the provider, so a
+configuration storing `wt0` would render rules for an interface that no longer
+exists the day somebody renamed it, matching nothing, silently. A
+configuration written before the switch existed reads as one open overlay,
+which is exactly what the firewall did unconditionally until then: who can
+reach a machine is not a thing to change behind somebody's back.
+
+The firewall names no overlay of its own. A device name or a peer port
+written into `nft_renderer.py` is the next overlay's rules being written by
+hand, and a test reads the module's source to keep it that way.
+
+### An overlay's daemon is a second firewall, and it wins
+
+Rendering the rules does not close an overlay. Measured on a running NetBird
+0.77.1 client on 2026-09-07: within ten seconds of any reload it inserts
+`iifname "wt0" accept` at the top of whatever input chain it finds, this hub's
+`inet neutrino` included, and it keeps its own `ip netbird` table where the
+real decision is made — `iifname "wt0" jump netbird-acl-input-rules` followed
+by `iifname "wt0" drop`, so the floor is deny and the management plane's
+policy is what opens it. A switch that only rendered rules would read closed
+and be open.
+
+So closing an overlay tells its daemon too, through
+`NetbirdInboundGate`, which sets NetBird's own `BlockInbound`. Three things
+about it are what the client does rather than what reads well, and each was
+measured rather than assumed:
+
+- **`netbird up` is a no-op while the client is connected.** The session is
+  taken down first, exactly as an enrollment does.
+- **The flag is sticky.** Leaving `--block-inbound` off keeps whatever was
+  stored last, so the value is always stated: `--block-inbound=true|false`.
+- **`netbird status --json` does not report it.** The only readable answer is
+  the daemon's own state file, named by `active_profile.json` under
+  `/var/lib/netbird/`, with the older `/etc/netbird/config.json` still read
+  for a box that upgraded. It is read for one reason: setting a value the
+  daemon already holds costs a reconnection, and a network apply runs every
+  time somebody saves an interface.
+
+Blocked means established and related only. It is not `--disable-firewall`,
+which was considered and rejected: NetBird's own rules are what make this box
+usable as a routing peer, which is the thing the NetBird page sends people to
+the console to set up.
 
 `server` and `side_gateway` start with every interface open. That is what the
 machine was already doing before the hub arrived, and a VPS that answers on
@@ -239,7 +293,7 @@ Everything else is left alone, and each for its own reason:
 | Bluetooth tethering | `bnep0` carries no device of its own, and a 1 Mbit link is not an uplink to build on |
 | A bridge, a bond, a team | somebody made it; the hub does not take a port that is already owned |
 | docker's, podman's and libvirt's interfaces | theirs |
-| The overlay's `wt0` | the hub's, driven by the NetBird module rather than here |
+| The overlay's `wt0` | the hub's, driven by the NetBird module rather than here. It carries no role and takes no address from the hub; what it does have is an exposure row, because that is a firewall question rather than a role |
 | CAN, IEEE 802.15.4, InfiniBand | buses, not ports. A CAN adapter offered as a way to the internet is worse than one not shown |
 
 Adding a kind means being able to drive it end to end. Half-driving one is how

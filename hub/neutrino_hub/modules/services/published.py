@@ -22,6 +22,7 @@ from neutrino_hub.modules.cliproxyapi.ops import load_config as load_cliproxyapi
 from neutrino_hub.modules.credentials.vault import VaultError
 from neutrino_hub.modules.gitea.config import GiteaConfig
 from neutrino_hub.modules.podman.ops import PodmanStatusReader
+from neutrino_hub.modules.router import link_status
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.services.collector import (
     ServiceListCollector,
@@ -104,8 +105,13 @@ class PublishedServiceCache:
             for health in self._declared_probe.results(declared)
         }
         lan_addresses = self._lan_addresses()
-        hub_host = lan_addresses[0] if lan_addresses else "127.0.0.1"
-        self._hub_addresses = hub_self_addresses(lan_addresses)
+        own_addresses = self._own_addresses()
+        # Composed with the address most devices are on, then rewritten per
+        # caller to whatever that one actually reached the hub at. The
+        # composed value only shows through where a caller reaches the box on
+        # nothing the box knows it holds.
+        hub_host = (lan_addresses or own_addresses or ["127.0.0.1"])[0]
+        self._hub_addresses = hub_self_addresses(own_addresses)
 
         gitea = self._unit("gitea")
         samba = self._unit("samba")
@@ -161,6 +167,23 @@ class PublishedServiceCache:
             for interface in network.lan_interfaces
             if interface.lan.address
         ]
+
+    def _own_addresses(self) -> list[str]:
+        """Every address this box can be reached at, served ones first.
+
+        What makes an entry the hub's own rather than some machine's it was
+        told about, so a device that came in over an overlay is handed the
+        overlay's address and not the LAN one it cannot route to.
+
+        Returns:
+            Addresses without their prefixes, in no particular order beyond
+            the served networks coming first.
+        """
+        served = self._lan_addresses()
+        live = [
+            address.split("/")[0] for address in link_status.device_addresses().values()
+        ]
+        return served + [address for address in live if address not in served]
 
     def _samba_share_names(self) -> list[str]:
         try:

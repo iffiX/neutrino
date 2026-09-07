@@ -19,9 +19,11 @@ import ipaddress
 import json
 import sys
 
+from neutrino_hub.modules.netbird.ops import NetbirdInboundGate
 from neutrino_hub.modules.router.constants import (
     ROUTER_DNSMASQ_PATH,
     ROUTER_NFT_PATH,
+    ROUTER_OVERLAY_NETBIRD,
 )
 from neutrino_hub.modules.router.dnsmasq_renderer import RouterDnsmasqRenderer
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
@@ -48,10 +50,10 @@ from neutrino_hub.modules.samba.constants import (
     SAMBA_GENERATED_NAME,
 )
 from neutrino_hub.modules.samba.ops import SambaConfigApplier, SambaUserManager
-from neutrino_hub.modules.router.link_status import RouterLinkStatus
+from neutrino_hub.modules.router.link_status import RouterLinkStatus, device_addresses
 from neutrino_hub.modules.samba.renderer import (
     SambaConfigRenderer,
-    allowed_subnets,
+    share_subnets,
 )
 from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
@@ -196,13 +198,10 @@ def _render(selected: tuple[str, ...]) -> dict:
             link.name: link.ipv4_address or ""
             for link in RouterLinkStatus().all_links()
         }
-        if network.mode == "server":
-            reachable = [address for address in links.values() if address]
-        else:
-            reachable = [links.get(name, "") for name in network.exposed_device_names()]
-        subnets = allowed_subnets(
-            [interface.lan.cidr for interface in network.lan_interfaces],
-            reachable,
+        subnets = share_subnets(
+            network=network,
+            link_addresses=links,
+            device_addresses=device_addresses(),
         )
         artifacts["samba"] = SambaConfigRenderer(
             config=samba_config, lan_subnets=subnets
@@ -302,6 +301,15 @@ def _apply(artifacts: dict) -> None:
         # from `neutrino_hub_router.service`, before anything it serves.
         for change in RouterInterfaceApplier(network=network).apply_all():
             print(change)
+        # An overlay's own daemon puts an accept for its interface back into
+        # this chain seconds after any reload, so the exposure switch has to
+        # reach it too or a closed overlay is only closed on paper.
+        for overlay in network.overlays:
+            if overlay.provider != ROUTER_OVERLAY_NETBIRD:
+                continue
+            note = NetbirdInboundGate().converge(is_blocked=not overlay.is_exposed)
+            if note:
+                print(f"{overlay.title}: {note}")
     if "dnsmasq" in artifacts:
         run(["systemctl", "restart", DNSMASQ_SERVICE_NAME])
     if "cliproxyapi" in artifacts:

@@ -247,7 +247,11 @@ class InterfaceSettings(BaseModel):
 
 
 class InterfaceLink(BaseModel):
-    """What an interface is actually doing, as opposed to what it is for."""
+    """What an interface is actually doing, as opposed to what it is for.
+
+    ``device_count`` is how many managed devices are reaching this hub across
+    this network right now, which is what closing it would end.
+    """
 
     name: str
     kind: str = "ethernet"
@@ -260,6 +264,7 @@ class InterfaceLink(BaseModel):
     speed_mbps: int | None = None
     gateway: str | None = None
     is_ap_capable: bool = True
+    device_count: int = 0
 
 
 class InterfaceView(BaseModel):
@@ -303,12 +308,32 @@ class NetworkModeView(BaseModel):
     is_addressing_owned: bool
 
 
+class OverlayView(BaseModel):
+    """One overlay network this box is a member of.
+
+    Attributes:
+        provider: Who runs it, the key the write side names it by.
+        title: What it is called where a person reads it.
+        address: This box's address on it, empty when the overlay is not up.
+        is_exposed: Whether the box answers there.
+        device_count: How many managed devices are reaching this hub over it
+            right now, which is what closing it would end.
+    """
+
+    provider: str
+    title: str
+    address: str = ""
+    is_exposed: bool = True
+    device_count: int = 0
+
+
 class NetworkView(BaseModel):
     """The Network tab payload."""
 
     mode: str
     modes: list[NetworkModeView] = Field(default_factory=list)
     interfaces: list[InterfaceView]
+    overlays: list[OverlayView] = Field(default_factory=list)
     uplink_policy: str = "failover"
     is_inter_lan_allowed: bool = True
     is_addressing_owned: bool = True
@@ -326,6 +351,11 @@ class NetworkOptions(BaseModel):
     # because the panel shows every interface at once and applying it is one
     # decision about the whole box.
     exposed_interfaces: list[str] = Field(default_factory=list)
+    # And which overlays, by provider. The same question about the same box,
+    # so it is answered in the same write. Absent leaves them as they are
+    # rather than closing every one: a caller that has never heard of
+    # overlays must not be able to cut the way back into this box.
+    exposed_overlays: list[str] | None = None
 
 
 class NetworkModeRequest(BaseModel):

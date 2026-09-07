@@ -55,6 +55,21 @@ ROUTER_ROLES = (
     ROUTER_ROLE_DISABLED,
 )
 
+# The overlay networks this box can be a member of, keyed by who runs them.
+# Keyed by provider rather than by device name because the device is the
+# provider's to name: a configuration that stored `wt0` would render a
+# firewall for an interface that no longer exists the day somebody renamed
+# it, and match nothing, silently.
+#
+# An overlay is not an interface entry. Switching modes rebuilds that list,
+# and an overlay riding in it would be dropped by a change that has nothing
+# to do with it.
+ROUTER_OVERLAY_NETBIRD = "netbird"
+ROUTER_OVERLAY_PROVIDERS = {
+    ROUTER_OVERLAY_NETBIRD: {"title": "NetBird", "device": "wt0", "port": 51820},
+}
+ROUTER_OVERLAY_KEYS = tuple(ROUTER_OVERLAY_PROVIDERS)
+
 # What a served or static address may be masked by. A /0 is not a network,
 # it is an on-link route for the whole internet, and `ip_network` accepts it
 # happily — which is what makes every containment check after it pass.

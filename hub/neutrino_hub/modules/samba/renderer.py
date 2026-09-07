@@ -11,6 +11,8 @@ Pure: text in, text out. Writing, validating and reloading is
 
 import ipaddress
 
+from neutrino_hub.modules.router.constants import ROUTER_MODE_SERVER
+from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.samba.constants import SAMBA_GROUP
 from neutrino_hub.modules.samba.config import SambaConfig, SambaShare
 
@@ -38,6 +40,45 @@ def allowed_subnets(lan_cidrs: list, exposed_addresses: list) -> list:
         if network not in subnets:
             subnets.append(network)
     return subnets
+
+
+def share_subnets(
+    *,
+    network: RouterNetworkConfig,
+    link_addresses: dict[str, str],
+    device_addresses: dict[str, str],
+) -> list[str]:
+    """The networks the shares answer on, for one box as it is now.
+
+    Rendered from two sources because the answer has two halves: which
+    networks this box serves, which is configuration, and which addresses it
+    holds, which is the kernel. Both call sites ask here rather than working
+    it out themselves, so a fix to one is a fix to both.
+
+    Args:
+        network: The parsed router configuration.
+        link_addresses: Interface name to live address with prefix, for the
+            interfaces the hub assigns roles to.
+        device_addresses: The same for every device on the box, which is
+            where an overlay's address is found.
+
+    Returns:
+        Deduplicated network addresses, served networks first.
+    """
+    if network.mode == ROUTER_MODE_SERVER:
+        # Nothing here has a role, so every wire the box holds an address on
+        # is a wire its shares are meant to answer.
+        reachable = [address for address in link_addresses.values() if address]
+    else:
+        reachable = [
+            link_addresses.get(name, "") for name in network.exposed_device_names
+        ]
+    reachable += [
+        device_addresses.get(name, "") for name in network.exposed_overlay_device_names
+    ]
+    return allowed_subnets(
+        [interface.lan.cidr for interface in network.lan_interfaces], reachable
+    )
 
 
 class SambaConfigRenderer:

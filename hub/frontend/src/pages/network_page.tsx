@@ -89,7 +89,10 @@ const ROLE_OPTIONS: { value: InterfaceRole; label: string; hint: string }[] = [
 const LINK_ICONS: Record<string, IconName> = {
   wifi: "wifi",
   modem: "globe",
-  vlan: "nodes",
+  // A tag on a trunk, drawn as the switch it rides through. Not the world:
+  // that glyph is the modem's here and the proxy's everywhere else, and two
+  // rows of the same picture is a row nobody reads.
+  vlan: "network",
   ethernet: "link",
 };
 
@@ -708,6 +711,9 @@ function optionsOf(view: NetworkView): NetworkOptions {
     exposed_interfaces: view.interfaces
       .filter((entry) => entry.settings.is_exposed)
       .map((entry) => entry.settings.name),
+    exposed_overlays: view.overlays
+      .filter((overlay) => overlay.is_exposed)
+      .map((overlay) => overlay.provider),
   };
 }
 

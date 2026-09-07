@@ -46,6 +46,7 @@ from neutrino_hub.modules.router.link_status import (
     LINK_KIND_WIFI,
     LinkStatus,
     RouterLinkStatus,
+    device_addresses,
 )
 from neutrino_hub.modules.router.modes import (
     ROUTER_MODE_DEFAULT_PREFIX_LEN,
@@ -73,6 +74,7 @@ from neutrino_hub.web.models import (
     NetworkModeView,
     NetworkOptions,
     NetworkView,
+    OverlayView,
     PlannedUplinkView,
     UpstreamLineView,
     WifiJoinRequest,
@@ -126,6 +128,10 @@ async def update_options(
     network.uplink_policy = options.uplink_policy
     network.is_inter_lan_allowed = options.is_inter_lan_allowed
     _set_exposure(network, options.exposed_interfaces, runtime=runtime)
+    if options.exposed_overlays is not None:
+        wanted = set(options.exposed_overlays)
+        for overlay in network.overlays:
+            overlay.is_exposed = overlay.provider in wanted
     runtime.write_network(network)
     await _apply(runtime, only=None)
     return _build_view(runtime)
@@ -645,10 +651,82 @@ def _adopt_known_networks(runtime: PanelRuntime) -> None:
         runtime.write_connections(known)
 
 
+def _reaching_addresses(runtime: PanelRuntime) -> list[str]:
+    """Where the managed devices currently on the channel are reaching from.
+
+    Live rather than remembered: what closing a network costs is the links it
+    would end, and a device that is off right now has no link to end. Saying
+    "3 devices" of machines nobody can see would be a number the person
+    cannot check.
+
+    Args:
+        runtime: The shared runtime, which holds each connected device's peer
+            address.
+
+    Returns:
+        One address per connected device.
+    """
+    return [address for address in runtime.client_address.values() if address]
+
+
+def _count_reaching(addresses: list[str], cidr: str) -> int:
+    """How many of those addresses are on one network.
+
+    Args:
+        addresses: The connected devices' addresses.
+        cidr: The network, as ``a.b.c.d/nn``.
+
+    Returns:
+        The count, zero for a network that cannot be parsed.
+    """
+    try:
+        network = ipaddress.ip_network(cidr, strict=False)
+    except ValueError:
+        return 0
+    counted = 0
+    for address in addresses:
+        try:
+            if ipaddress.ip_address(address) in network:
+                counted += 1
+        except ValueError:
+            continue
+    return counted
+
+
+def _overlay_views(
+    network: RouterNetworkConfig, *, runtime: PanelRuntime
+) -> list[OverlayView]:
+    """The overlay rows for the Exposure panel.
+
+    Args:
+        network: The parsed configuration.
+        runtime: The shared runtime, for the devices on the channel.
+
+    Returns:
+        One row per configured overlay, in configuration order.
+    """
+    addresses = device_addresses()
+    reaching = _reaching_addresses(runtime)
+    views = []
+    for overlay in network.overlays:
+        cidr = addresses.get(overlay.device_name, "")
+        views.append(
+            OverlayView(
+                provider=overlay.provider,
+                title=overlay.title,
+                address=cidr.split("/")[0] if cidr else "",
+                is_exposed=overlay.is_exposed,
+                device_count=_count_reaching(reaching, cidr) if cidr else 0,
+            )
+        )
+    return views
+
+
 def _build_view(runtime: PanelRuntime) -> NetworkView:
     network = runtime.network()
     status_reader = runtime.link_status()
     links = {link.name: link for link in status_reader.all_links()}
+    reaching = _reaching_addresses(runtime)
 
     names = list(links)
     for interface in network.interfaces:
@@ -682,6 +760,7 @@ def _build_view(runtime: PanelRuntime) -> NetworkView:
                     speed_mbps=link.speed_mbps,
                     gateway=status_reader.gateway_for(interface.device_name),
                     is_ap_capable=link.is_ap_capable,
+                    device_count=_count_reaching(reaching, link.ipv4_address or ""),
                 ),
             )
         )
@@ -690,6 +769,7 @@ def _build_view(runtime: PanelRuntime) -> NetworkView:
         mode=network.mode,
         modes=_mode_views(),
         interfaces=views,
+        overlays=_overlay_views(network, runtime=runtime),
         uplink_policy=network.uplink_policy,
         is_inter_lan_allowed=network.is_inter_lan_allowed,
         is_addressing_owned=network.is_addressing_owned,

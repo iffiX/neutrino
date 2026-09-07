@@ -39,7 +39,7 @@ from neutrino_hub.modules.devices.remote_desktop import (
 )
 from neutrino_hub.modules.devices.ssh_ops import DeviceSshOperator, SshCredentials
 from neutrino_hub.modules.devices.wake_on_lan import send_magic_packet
-from neutrino_hub.modules.router.link_status import RouterLinkStatus
+from neutrino_hub.modules.router.link_status import RouterLinkStatus, device_addresses
 from neutrino_hub import HUB_VERSION
 from neutrino_hub.web.agent_tls import certificate_fingerprint
 from neutrino_hub.web.constants import WEB_DEFAULT_AGENT_LISTEN_PORT
@@ -746,21 +746,24 @@ def _agent_urls(runtime: PanelRuntime) -> list:
 
 
 def _facing_cidrs(runtime: PanelRuntime) -> list:
-    """IPv4 CIDRs of the device-facing interfaces.
+    """IPv4 CIDRs of the networks devices reach this hub on.
 
     A served network's address is configuration; an exposed port on a
     ``server`` has whatever address the machine's own manager gave it, which
-    only the live link can answer.
+    only the live link can answer. An exposed overlay is neither: nobody
+    plugged it in, and a machine that is only on the overlay has no other way
+    to be told where the hub is.
 
     Args:
         runtime: The shared runtime, for the network configuration.
 
     Returns:
-        CIDR strings in configuration order, one per addressed interface.
+        CIDR strings in configuration order, the overlays last.
     """
+    network = runtime.network()
     reader = None
     cidrs = []
-    for interface in runtime.network().device_facing_interfaces:
+    for interface in network.device_facing_interfaces:
         if interface.is_lan and interface.lan.address:
             cidrs.append(interface.lan.cidr)
             continue
@@ -768,6 +771,11 @@ def _facing_cidrs(runtime: PanelRuntime) -> list:
             reader = RouterLinkStatus()
         live = reader.link(interface.device_name).ipv4_address
         if live:
+            cidrs.append(live)
+    addresses = device_addresses()
+    for name in network.exposed_overlay_device_names:
+        live = addresses.get(name, "")
+        if live and live not in cidrs:
             cidrs.append(live)
     return cidrs
 
