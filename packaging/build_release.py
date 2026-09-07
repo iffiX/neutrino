@@ -67,6 +67,9 @@ HUB_BUILDS = {
         "script": "build_pkg.py",
         "architecture": "{pkg_arch}",
         "extra": "--build-user builder",
+        # Arch Linux is x86-64 only; Arch Linux ARM is another project with
+        # no image of its own to build in.
+        "architectures": ("amd64",),
     },
 }
 
@@ -179,6 +182,10 @@ def main() -> int:
 
     if arguments.only in ("all", "hub"):
         for family in _families(arguments.families):
+            published = HUB_BUILDS[family].get("architectures", BUILD_PLATFORMS)
+            if arguments.architecture not in published:
+                print(f"  no hub package for {family} {arguments.architecture}")
+                continue
             print(
                 f"building the hub package for {family} "
                 f"{arguments.architecture} in {HUB_BUILDS[family]['image']}"
