@@ -169,3 +169,13 @@ def test_a_publisher_with_an_address_stays_a_name_and_not_markup():
 
     package = tree.find("{http://wixtoolset.org/schemas/v4/wxs}Package")
     assert package.get("Manufacturer") == "iffiX <someone@example.com>"
+
+
+def test_the_service_host_lives_beside_the_interpreter_it_is():
+    """A copy of pythonw.exe finds python3xx.dll and the ._pth in its own
+    directory and nowhere else. Placed at the install root it exits before
+    reaching the service control manager, which then reports a start timeout
+    and the installer rolls back. Found on a rented Windows Server 2025."""
+    written = source()
+
+    assert 'Id="ServiceHost" Guid="*" Subdirectory="python"' in written

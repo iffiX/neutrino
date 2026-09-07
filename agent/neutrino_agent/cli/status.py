@@ -56,13 +56,13 @@ ERROR_ADVICE = {
         "itself, or run `sudo nagent disconnect` and join with a fresh link"
     ),
     "hub_untrusted": (
-        "what answers there is not the hub this machine pinned — it was "
+        "what answers there is not the hub this machine pinned. It was "
         "reset or reinstalled; the running service unbinds by itself after "
         "a few of these, and a fresh link from the hub's Devices page rejoins"
     ),
     "agent_newer_than_hub": (
         "the hub turns this agent away; the running service unbinds by "
-        "itself after a few of these — update the hub, then rejoin with a "
+        "itself after a few of these. Update the hub, then rejoin with a "
         "fresh link from its Devices page"
     ),
 }
@@ -104,9 +104,7 @@ def main() -> int:
     else:
         hint = _start_hint()
         tail = f"; start it: {hint}" if hint else ""
-        print(
-            f"service    {current} — the machine beats only while " f"status runs{tail}"
-        )
+        print(f"service    {current}. The machine beats only while status runs{tail}")
 
     agent = Agent(log=_discard)
     started_at = time.monotonic()
@@ -119,7 +117,7 @@ def main() -> int:
         if advice:
             print(f"           {advice}")
         return 1
-    print(f"heartbeat  ok, {elapsed_ms} ms — next report in {delay}s")
+    print(f"heartbeat  ok, {elapsed_ms} ms. Next report in {delay}s")
     return 0
 
 
@@ -221,7 +219,7 @@ def _status_from_service(state: dict) -> int:
     if isinstance(error, dict) and error.get("code"):
         print(f"heartbeat  {word_error(error)}")
         return 1
-    print("heartbeat  ok — the service reports every few seconds")
+    print("heartbeat  ok. The service reports every few seconds")
     return 0
 
 

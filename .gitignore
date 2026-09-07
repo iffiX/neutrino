@@ -71,3 +71,6 @@ hub/neutrino_hub/data/frontend/
 # vendor software a device needs is fetched by the agent itself from the
 # manifests, on the device's own network.
 .claude/
+
+# One AWS run at a time: its key, ids, addresses and panel password.
+packaging/integration_aws/state/

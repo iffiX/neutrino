@@ -99,7 +99,7 @@ def test_status_reads_the_running_service_for_a_privileged_caller(
     assert f"neutrino-agent {AGENT_VERSION}" in out
     assert f"hub        {GATEWAY_URL}   connected" in out
     assert "service    running" in out
-    assert "heartbeat  ok — the service reports every few seconds" in out
+    assert "heartbeat  ok. The service reports every few seconds" in out
 
 
 def test_status_falls_back_to_the_binding_file_and_beats_once(
@@ -127,10 +127,10 @@ def test_status_falls_back_to_the_binding_file_and_beats_once(
     out = capsys.readouterr().out
     assert beats == ["beat"]
     assert f"hub        {GATEWAY_URL}   connected" in out
-    assert "service    inactive — the machine beats only while status runs" in out
+    assert "service    inactive. The machine beats only while status runs" in out
     assert "sudo systemctl enable --now neutrino_agent.service" in out
     assert "heartbeat  ok," in out
-    assert "next report in 5s" in out
+    assert "Next report in 5s" in out
 
 
 def test_status_says_a_privileged_caller_has_joined_nothing(

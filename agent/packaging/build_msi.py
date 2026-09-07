@@ -206,7 +206,11 @@ WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
 
     <ComponentGroup Id="Payload" Directory="INSTALLFOLDER">
       <Files Include="@PAYLOAD@\**" />
-      <Component Id="ServiceHost" Guid="*">
+      <!-- Beside the interpreter's DLL and its ._pth, not at the root: a
+           copy of pythonw.exe resolves both from its own directory, and one
+           placed anywhere else exits before it can reach the service
+           control manager, which reads as a start timeout. -->
+      <Component Id="ServiceHost" Guid="*" Subdirectory="python">
         <File Id="ServiceHostExe"
               Source="@SERVICE_HOST@"
               Name="neutrino_agent_service.exe"
