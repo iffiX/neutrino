@@ -462,6 +462,7 @@ def test_the_password_reads_back_to_root_and_the_shares_own_account(handler):
 def test_connect_launches_the_local_client_at_the_published_address(
     handler, monkeypatch
 ):
+    monkeypatch.setattr(rdp_module.os, "environ", {"DISPLAY": ":0"})
     launched = []
     monkeypatch.setattr(
         rdp_module.subprocess,
@@ -481,6 +482,7 @@ def test_connect_launches_the_local_client_at_the_published_address(
 
 
 def test_connecting_is_open_to_an_ordinary_account(handler, monkeypatch):
+    monkeypatch.setattr(rdp_module.os, "environ", {"DISPLAY": ":0"})
     monkeypatch.setattr(rdp_module.subprocess, "Popen", lambda command, **kwargs: None)
 
     outcome = handler.act(
@@ -518,6 +520,8 @@ def test_connecting_to_an_entry_nobody_published_is_refused(handler):
 
 
 def test_a_client_that_will_not_start_is_typed(handler, monkeypatch):
+    monkeypatch.setattr(rdp_module.os, "environ", {"DISPLAY": ":0"})
+
     def explode(command, **kwargs):
         raise OSError("no such binary")
 
