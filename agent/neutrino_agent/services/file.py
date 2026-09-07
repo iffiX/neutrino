@@ -64,18 +64,23 @@ class FileServiceHandler(ServiceTypeHandler):
 
     service_type = "file"
 
-    def __init__(self, *, platform, store, credentials_dir: str = "", log=print):
+    def __init__(
+        self, *, platform, store, credentials_dir: str = "", accounts=None, log=print
+    ):
         """
         Args:
             platform: The machine's platform, behind the contract.
             store: The :class:`~neutrino_agent.services.store.MachineServiceStore`.
             credentials_dir: Where the per-record credentials files live;
                 empty uses the agent's own.
+            accounts: Callable answering the machine's human accounts, for
+                judging the account a mount names.
             log: Callable used for progress messages.
         """
         self._platform = platform
         self._store = store
         self._credentials_dir = credentials_dir or AGENT_MOUNT_CREDENTIALS_DIR
+        self._accounts = accounts
         self._log = log
         self._lock = threading.Lock()
         self._problems: dict = {}
@@ -111,8 +116,20 @@ class FileServiceHandler(ServiceTypeHandler):
             entry = find_entry(entries, self.service_type, str(body.get("id", "")))
             if entry is None:
                 return {"code": "unknown_request", "params": {}}
+            named = str(body.get("account", "")) or account
+            # A hub ask arrives with no caller of its own, so the body must
+            # say whom the mount is for; a local caller naming nobody — or
+            # themselves — is themselves, root included.
+            if not named:
+                return {"code": "no_target_user", "params": {}}
+            if named != account:
+                if not is_privileged:
+                    return {"code": "control_scope_refused", "params": {}}
+                reported = self._accounts() if self._accounts is not None else []
+                if named not in reported:
+                    return {"code": "no_target_user", "params": {}}
             return self.attach(
-                account=account,
+                account=named,
                 is_privileged=is_privileged,
                 entry_id=str(body.get("id", "")),
                 payload=entry.get("payload") or {},

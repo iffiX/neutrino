@@ -46,7 +46,7 @@ const SCREENS = [
 /** What the first screen says the two secrets are for. */
 const SECRETS_LEAD =
   "The password signs you into the panel. The passphrase seals every " +
-  "credential this box will hold, and restoring a backup asks for it again — " +
+  "credential this box will hold, and restoring a backup asks for it again; " +
   "keep it somewhere safe.";
 
 /** How often the running screen asks how far the steps have got. */
@@ -306,7 +306,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
         <div className="setup_welcome">
           <h1 className="setup_welcome_title">Neutrino Hub</h1>
           <p className="setup_welcome_line">
-            Pour a coffee and sit back — this takes about a minute.
+            Pour a coffee and sit back; this takes about a minute.
           </p>
           <p className="setup_welcome_note">
             Nothing is written until the last screen confirms it, and Back steps
@@ -921,7 +921,7 @@ function SetupRunning({
         <div className="notice notice--warn setup_notice">
           <Icon name="alert" size={15} />
           <div className="notice_body">
-            This page is no longer on the same wire as the box — its ports are
+            This page is no longer on the same wire as the box; its ports are
             being taken over, which is one of the steps. The work carries on
             there. It will be at {panelUrl}.
           </div>

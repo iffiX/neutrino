@@ -29,6 +29,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import xml.sax.saxutils
 import zipfile
 from pathlib import Path
 
@@ -305,7 +306,10 @@ def main() -> int:
         source = root / "neutrino_agent.wxs"
         source.write_text(
             WIX_SOURCE.replace("@VERSION@", version)
-            .replace("@PUBLISHER@", arguments.publisher)
+            # Every value lands inside an XML attribute; a publisher with
+            # an address in angle brackets is an ordinary name and must not
+            # become markup.
+            .replace("@PUBLISHER@", xml.sax.saxutils.escape(arguments.publisher))
             .replace("@UPGRADE_CODE@", UPGRADE_CODE)
             .replace("@PAYLOAD@", str(staged["payload"]))
             .replace("@SERVICE_HOST@", str(staged["service_host"]))

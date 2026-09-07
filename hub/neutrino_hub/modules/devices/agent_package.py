@@ -4,10 +4,13 @@ Two callers hand these out: the SSH install pushes one to a device, and the
 agent channel serves one to an agent updating itself. Both resolve the same
 file for a family and a machine.
 
-**The cache key is the package name, the platform it is for, and a digest of
-the file itself.** The agent carries an interpreter and compiled bindings, so
-one family is not one file: a package is for one platform and one machine, and
-its own hash is the only honest identity of what a device would install.
+**A file here is named the way the release publishes it**, so one name
+addresses a package in this directory, in the manifest, and in the release a
+device may be sent to. The agent carries an interpreter and compiled bindings,
+so one family is not one file: a package is for one platform and one machine,
+and the manifest pins the hash of each. Because the name says nothing about
+what is inside it, a held file is believed only while it still hashes to what
+the manifest pins; one that does not is a stale fetch and is fetched again.
 
 The hub's package seeds this directory with the builds it was made from, which
 is what keeps a Linux install and a Linux self-update offline. A platform it
@@ -26,12 +29,10 @@ import urllib.request
 from pathlib import Path
 
 from neutrino_hub.modules.devices.constants import (
-    AGENT_MODULE_KEY_DIGEST_CHARS,
     AGENT_PACKAGE_CACHE_DIR,
     AGENT_PACKAGE_FETCH_LIMIT_BYTES,
     AGENT_PACKAGE_FETCH_TIMEOUT_S,
     AGENT_PACKAGE_MANIFEST_PATH,
-    AGENT_PACKAGE_NAME,
 )
 from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
 
@@ -68,7 +69,7 @@ class AgentPackageFetchError(RuntimeError):
 
 
 def platform_key(family: str, architecture: str) -> str:
-    """What addresses one platform in the manifest and in a cache key.
+    """What addresses one platform in the manifest.
 
     Args:
         family: ``deb`` or ``rpm``.
@@ -83,17 +84,20 @@ def platform_key(family: str, architecture: str) -> str:
     return f"{family}-{architecture}"
 
 
-def package_key(*, key: str, digest: str) -> str:
-    """What addresses one package's file in the cache.
+def package_name(entry: dict) -> str:
+    """What one manifest entry calls its file.
 
     Args:
-        key: The platform key.
-        digest: The package's SHA-256.
+        entry: The manifest's entry for a platform.
 
     Returns:
-        The cache key.
+        The file name, empty when the entry names none or names one that
+        would land outside the cache directory.
     """
-    return f"{AGENT_PACKAGE_NAME}-{key}-{digest[:AGENT_MODULE_KEY_DIGEST_CHARS]}"
+    name = str(entry.get("name", "") or "")
+    if not name or name in (".", "..") or Path(name).name != name:
+        return ""
+    return name
 
 
 def package_architecture(name: str) -> str:
@@ -176,7 +180,7 @@ class AgentPackageCache:
             architecture: The machine the device reported.
 
         Returns:
-            True when the package is pinned, held, or fetchable.
+            True when the package is pinned, on disk, or fetchable.
         """
         if self._pinned(family=family, architecture=architecture) is not None:
             return True
@@ -184,7 +188,7 @@ class AgentPackageCache:
         entry = self.manifest().get(key)
         if not isinstance(entry, dict):
             return False
-        return self._held(key, entry) is not None or bool(entry.get("url"))
+        return self._file(entry) is not None or bool(entry.get("url"))
 
     def package(self, *, family: str, architecture: str) -> Path:
         """The agent package for one family and machine.
@@ -211,12 +215,13 @@ class AgentPackageCache:
         entry = self.manifest().get(key)
         if not isinstance(entry, dict):
             raise AgentPackageFetchError("agent_package_missing", platform=key)
-        held = self._held(key, entry)
+        held = self._held(entry)
         if held is not None:
             return held
 
         url = str(entry.get("url", "") or "")
-        if not url:
+        name = package_name(entry)
+        if not url or not name:
             raise AgentPackageFetchError("agent_package_missing", platform=key)
         content = self._fetch(url)
         pinned_digest = str(entry.get("sha256", "") or "").lower()
@@ -228,7 +233,7 @@ class AgentPackageCache:
                 expected=pinned_digest,
                 received=received,
             )
-        path = self._root / package_key(key=key, digest=received)
+        path = self._root / name
         self._write(path, content)
         return path
 
@@ -245,21 +250,42 @@ class AgentPackageCache:
             return {}
         return loaded if isinstance(loaded, dict) else {}
 
-    def _held(self, key: str, entry: dict) -> "Path | None":
-        """The file the manifest's entry names, when the cache holds it.
+    def _file(self, entry: dict) -> "Path | None":
+        """Where one entry's package would be, when a file is there.
 
         Args:
-            key: The platform key.
-            entry: The manifest's entry for it.
+            entry: The manifest's entry for a platform.
 
         Returns:
-            Its path, or None.
+            Its path, or None when the entry names no file or none is there.
         """
+        name = package_name(entry)
+        if not name:
+            return None
+        path = self._root / name
+        return path if path.is_file() else None
+
+    def _held(self, entry: dict) -> "Path | None":
+        """The file the entry names, while it still holds what the entry pins.
+
+        Args:
+            entry: The manifest's entry for a platform.
+
+        Returns:
+            Its path, or None when nothing is there or what is there is
+            another build under the release's name.
+        """
+        path = self._file(entry)
+        if path is None:
+            return None
         digest = str(entry.get("sha256", "") or "").lower()
         if not digest:
             return None
-        path = self._root / package_key(key=key, digest=digest)
-        return path if path.is_file() else None
+        try:
+            held = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError:
+            return None
+        return path if held == digest else None
 
     def _pinned(self, *, family: str, architecture: str) -> "Path | None":
         """A build dropped under ``config/devices/packages`` for one platform.

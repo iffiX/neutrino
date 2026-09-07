@@ -208,6 +208,7 @@ def test_the_config_verb_is_never_used(monkeypatch):
 
 
 def test_a_refused_password_is_raised_rather_than_believed(monkeypatch):
+    _fake_clock(monkeypatch)
     monkeypatch.setattr(rustdesk, "binary_path", lambda: "/usr/bin/rustdesk")
     monkeypatch.setattr(
         rustdesk.subprocess,
@@ -215,8 +216,64 @@ def test_a_refused_password_is_raised_rather_than_believed(monkeypatch):
         _recording([], stdout="Installation and administrative privileges required!"),
     )
 
+    with pytest.raises(InstallError) as refusal:
+        rustdesk.set_password("hunter2")
+
+    assert "administrative privileges" in str(refusal.value)
+
+
+def test_a_socket_not_up_yet_is_waited_for_rather_than_reported(monkeypatch):
+    """The service control returns as soon as the process is forked, and the
+    socket the password travels over accepts a moment later; a share that
+    reported that as a refusal would be reporting its own haste."""
+    _fake_clock(monkeypatch)
+    monkeypatch.setattr(rustdesk, "binary_path", lambda: "/usr/bin/rustdesk")
+    calls = []
+    answers = iter(
+        ["Connection refused (os error 111)", "Connection refused (os error 111)"]
+    )
+    monkeypatch.setattr(
+        rustdesk.subprocess,
+        "run",
+        _answering(calls, lambda: next(answers, "Done!")),
+    )
+
+    rustdesk.set_password("hunter2")
+
+    assert calls == [["/usr/bin/rustdesk", "--password", "hunter2"]] * 3
+
+
+def test_a_socket_that_never_comes_up_is_reported_after_the_wait(monkeypatch):
+    clock = _fake_clock(monkeypatch)
+    monkeypatch.setattr(rustdesk, "binary_path", lambda: "/usr/bin/rustdesk")
+    monkeypatch.setattr(
+        rustdesk.subprocess,
+        "run",
+        _recording([], stdout="Connection refused (os error 111)"),
+    )
+
+    with pytest.raises(InstallError) as refusal:
+        rustdesk.set_password("hunter2")
+
+    assert "os error 111" in str(refusal.value)
+    assert clock["now"] >= rustdesk.RUSTDESK_PASSWORD_READY_TIMEOUT_S
+
+
+def test_a_binary_that_cannot_be_run_is_not_waited_on(monkeypatch):
+    """No wait fixes a missing executable, and retrying one would only put
+    the password on an argument vector again for nothing."""
+    clock = _fake_clock(monkeypatch)
+    monkeypatch.setattr(rustdesk, "binary_path", lambda: "/usr/bin/rustdesk")
+
+    def refuse(*args, **kwargs):
+        raise OSError("no such file")
+
+    monkeypatch.setattr(rustdesk.subprocess, "run", refuse)
+
     with pytest.raises(InstallError):
         rustdesk.set_password("hunter2")
+
+    assert clock["now"] == 0.0
 
 
 def test_setting_a_password_without_rustdesk_is_refused(monkeypatch):
@@ -324,11 +381,55 @@ def test_details_are_empty_when_no_id_can_be_read(monkeypatch):
 def test_install_hands_the_package_to_the_platform(monkeypatch, tmp_path):
     platform = _Platform()
     monkeypatch.setattr(rustdesk, "binary_path", lambda: "")
+    monkeypatch.setattr(rustdesk, "write_config", lambda path, options: None)
     package = str(tmp_path / "rustdesk.deb")
 
     runner(platform).install({"entry": {"package_kind": "deb"}}, package)
 
     assert platform.installed == [(package, "deb")]
+
+
+def test_install_points_the_service_at_the_lan_and_nothing_else(monkeypatch, tmp_path):
+    """The moment the module lands, every machine is direct-only: no
+    rendezvous, no relay, the port pinned — connect-only machines included,
+    so nothing under a hub ever registers with public infrastructure. The
+    port itself stays closed until a share opens it."""
+    monkeypatch.setattr(rustdesk.os, "name", "posix")
+    monkeypatch.setattr(rustdesk, "_is_darwin", lambda: False)
+    monkeypatch.setattr(rustdesk, "binary_path", lambda: "")
+    written = {}
+    monkeypatch.setattr(
+        rustdesk,
+        "write_config",
+        lambda path, options: written.__setitem__(path, dict(options)),
+    )
+
+    runner().install({"entry": {"package_kind": "deb"}}, str(tmp_path / "rustdesk.deb"))
+
+    options = written["/root/.config/rustdesk/RustDesk2.toml"]
+    assert options["custom-rendezvous-server"] == ""
+    assert options["relay-server"] == ""
+    assert options["direct-access-port"] == "21118"
+    assert "direct-server" not in options
+
+
+def test_a_baseline_the_machine_cannot_take_does_not_fail_the_install(
+    monkeypatch, tmp_path
+):
+    logged = []
+
+    def refuse(path, options):
+        raise InstallError("could not write " + path)
+
+    monkeypatch.setattr(rustdesk.os, "name", "posix")
+    monkeypatch.setattr(rustdesk, "_is_darwin", lambda: False)
+    monkeypatch.setattr(rustdesk, "binary_path", lambda: "")
+    monkeypatch.setattr(rustdesk, "write_config", refuse)
+    module = RustdeskModuleRunner(platform=_Platform(), log=logged.append)
+
+    module.install({"entry": {"package_kind": "deb"}}, str(tmp_path / "r.deb"))
+
+    assert len(logged) == 1 and "could not write" in logged[0]
 
 
 def test_registering_the_service_hands_it_no_pipe(monkeypatch, tmp_path):
@@ -341,6 +442,7 @@ def test_registering_the_service_hands_it_no_pipe(monkeypatch, tmp_path):
     )
     calls = _RunRecorder()
     monkeypatch.setattr(rustdesk.subprocess, "run", calls.run)
+    monkeypatch.setattr(rustdesk, "write_config", lambda path, options: None)
 
     runner().install({"entry": {"package_kind": "msi"}}, str(tmp_path / "rustdesk.msi"))
 
@@ -357,6 +459,7 @@ def test_a_registration_that_exits_nonzero_is_logged_and_not_raised(monkeypatch)
     monkeypatch.setattr(rustdesk, "_is_darwin", lambda: False)
     monkeypatch.setattr(rustdesk, "binary_path", lambda: "/usr/bin/rustdesk")
     monkeypatch.setattr(rustdesk.subprocess, "run", _recording([], returncode=1))
+    monkeypatch.setattr(rustdesk, "write_config", lambda path, options: None)
     module = RustdeskModuleRunner(platform=_Platform(), log=logged.append)
 
     module.install({"entry": {"package_kind": "deb"}}, "/tmp/rustdesk.deb")
@@ -392,6 +495,34 @@ class _RunRecorder:
         return self
 
 
+def _fake_clock(monkeypatch):
+    """A clock that only moves when the module sleeps, so a wait is asserted
+    on rather than served."""
+    clock = {"now": 0.0}
+    monkeypatch.setattr(rustdesk.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(
+        rustdesk.time, "sleep", lambda seconds: clock.update(now=clock["now"] + seconds)
+    )
+    return clock
+
+
+def _answering(calls, next_stdout):
+    """A subprocess.run that records its vector and answers a fresh line each
+    time, for a service that is not up yet and then is."""
+
+    class _Result:
+        def __init__(self, stdout):
+            self.returncode = 0
+            self.stdout = stdout
+            self.stderr = ""
+
+    def run(command, *args, **kwargs):
+        calls.append(command)
+        return _Result(next_stdout())
+
+    return run
+
+
 def _recording(calls, *, stdout="", returncode=0, is_shell=False):
     """A subprocess.run that records its argument vector and answers fixed."""
 
@@ -406,3 +537,75 @@ def _recording(calls, *, stdout="", returncode=0, is_shell=False):
         return _Result()
 
     return run
+
+
+# --- a session's config stays that person's own ---
+
+
+def test_a_rewrite_keeps_the_owner_and_mode_the_file_had(monkeypatch, tmp_path):
+    """RustDesk runs as the person at the screen and writes its Wayland
+    screen-capture permission into this file. Left owned by root it cannot,
+    and that permission dialog returns on every connection."""
+    path = tmp_path / "RustDesk2.toml"
+    path.write_text("[options]\nwayland-restore-token = 'tok'\n", encoding="utf-8")
+    chowned, chmodded = [], []
+    monkeypatch.setattr(rustdesk, "_owner_of", lambda target: (1000, 1000, 0o600))
+    monkeypatch.setattr(
+        rustdesk.os, "chown", lambda target, uid, gid: chowned.append((uid, gid))
+    )
+    monkeypatch.setattr(
+        rustdesk.os, "chmod", lambda target, mode: chmodded.append(mode)
+    )
+
+    rustdesk.write_config(str(path), RUSTDESK_SHARE_OPTIONS)
+
+    assert chowned == [(1000, 1000)]
+    assert chmodded == [0o600]
+    # And what RustDesk wrote there is still there.
+    assert "tok" in path.read_text(encoding="utf-8")
+
+
+def test_an_existing_config_answers_for_its_own_owner(tmp_path):
+    path = tmp_path / "RustDesk2.toml"
+    path.write_text("", encoding="utf-8")
+    path.chmod(0o600)
+
+    owner = rustdesk._owner_of(str(path))
+
+    assert owner == (os.getuid(), os.getgid(), 0o600)
+
+
+def test_a_fresh_config_takes_the_home_it_is_under(tmp_path):
+    """Nothing exists to ask, so the directory answers: under a home that is
+    the person whose permission RustDesk will want to store."""
+    home = tmp_path / "pat"
+    (home / ".config" / "rustdesk").mkdir(parents=True)
+
+    owner = rustdesk._owner_of(str(home / ".config" / "rustdesk" / "RustDesk2.toml"))
+
+    assert owner == (os.getuid(), os.getgid(), 0o644)
+
+
+def test_a_config_under_nothing_but_root_is_left_to_root(monkeypatch, tmp_path):
+    """Only a home says whose a file is; the service's own copy is root's."""
+    monkeypatch.setattr(rustdesk.os, "name", "posix")
+
+    class _Root:
+        st_uid = 0
+        st_gid = 0
+        st_mode = 0o755
+
+    # The file itself is absent; every directory above it is root's.
+    monkeypatch.setattr(
+        rustdesk,
+        "_stat",
+        lambda target: None if target.endswith(".toml") else _Root(),
+    )
+
+    assert rustdesk._owner_of("/root/.config/rustdesk/RustDesk2.toml") is None
+
+
+def test_windows_has_no_such_notion(monkeypatch):
+    monkeypatch.setattr(rustdesk.os, "name", "nt")
+
+    assert rustdesk._owner_of("C:\\x\\RustDesk2.toml") is None

@@ -250,6 +250,7 @@ def test_the_heartbeat_carries_the_wire_contract(config_path, monkeypatch):
         "wire",
         "metrics",
         "platform",
+        "addresses",
         "accounts",
         "catalog_hash",
         "modules",
@@ -454,12 +455,14 @@ def test_heartbeat_payload_every_field_comes_from_its_source(config_path, monkey
         "wire",
         "metrics",
         "platform",
+        "addresses",
         "accounts",
         "catalog_hash",
         "modules",
         "module_requests",
         "module_results",
         "ai_targets",
+        "service_state",
         "rdp_share",
         "last_error",
     }
@@ -468,6 +471,10 @@ def test_heartbeat_payload_every_field_comes_from_its_source(config_path, monkey
     assert payload["wire"] == AGENT_WIRE_GENERATION
     assert payload["metrics"] == metrics.to_dict()
     assert payload["platform"] == platform_tuple()
+    # Each interface's address with the MAC carrying it: the hub names the
+    # device by the one on its identity MAC rather than whichever address a
+    # kernel routed the beat out of.
+    assert all(set(entry) == {"mac", "address"} for entry in payload["addresses"])
     assert payload["accounts"] == ["alice", "bob"]
     assert payload["catalog_hash"] == ""
     assert payload["modules"] == agent.module_states()
@@ -476,6 +483,18 @@ def test_heartbeat_payload_every_field_comes_from_its_source(config_path, monkey
     # for both and for nothing else about modules.
     assert payload["module_results"] == []
     assert payload["ai_targets"] == {"alice": True}
+    # The drawer's service rows: the mount records, the AI rows and the
+    # share at a glance, with no credential anywhere in them.
+    assert payload["service_state"] == {
+        "mounts": [],
+        "ai_states": {},
+        "rdp": {
+            "is_shared": False,
+            "state": "not_shared",
+            "port": 21118,
+            "account": "",
+        },
+    }
     assert payload["last_error"] is None
 
 
@@ -944,3 +963,114 @@ def test_disconnecting_forgets_the_hubs_operation(config_path):
     agent.disconnect()
 
     assert agent.operation() is None
+
+
+def test_a_service_command_lands_on_the_handler_in_the_privileged_scope(config_path):
+    """The hub's ask is the page's own verb, run exactly as a local
+    privileged caller's would be, and the typed refusal rides the result."""
+    agent = scripted_agent(
+        config_path,
+        [
+            {
+                "module_orders": [],
+                "catalog_hash": "",
+                "commands": [
+                    {
+                        "id": "s1",
+                        "action": "service",
+                        "args": {
+                            "service_type": "ai",
+                            "body": {"targets": {"alice": True}},
+                        },
+                    }
+                ],
+            },
+            {},
+        ],
+        platform=_FakePlatform(accounts=["alice", "bob"]),
+    )
+    agent._operator = _FakeOperator()
+
+    agent.run_once()
+
+    result_path, result = agent._channel.posts[1]
+    assert result_path == AGENT_RESULT_PATH
+    assert result == {"id": "s1", "exit_code": 0}
+    assert agent.ai_targets() == {"alice": True}
+
+
+def test_a_service_command_refusal_rides_the_result_typed(config_path):
+    agent = scripted_agent(
+        config_path,
+        [
+            {
+                "module_orders": [],
+                "catalog_hash": "",
+                "commands": [
+                    {
+                        "id": "s2",
+                        "action": "service",
+                        "args": {
+                            "service_type": "ai",
+                            "body": {"targets": {"nobody": True}},
+                        },
+                    }
+                ],
+            },
+            {},
+        ],
+        platform=_FakePlatform(accounts=["alice"]),
+    )
+    agent._operator = _FakeOperator()
+
+    agent.run_once()
+
+    _, result = agent._channel.posts[1]
+    assert result == {
+        "id": "s2",
+        "exit_code": 1,
+        "code": "no_target_user",
+        "params": {},
+    }
+
+
+def test_a_hub_asked_share_lands_on_the_handler_privileged(config_path):
+    """The share's password rides inside the one ask, the way a mount's
+    credentials do; the handler's own gates then judge it — here the module
+    is absent, and that refusal comes back typed."""
+    agent = scripted_agent(
+        config_path,
+        [
+            {
+                "module_orders": [],
+                "catalog_hash": "",
+                "commands": [
+                    {
+                        "id": "s3",
+                        "action": "service",
+                        "args": {
+                            "service_type": "rdp",
+                            "body": {
+                                "action": "share",
+                                "password": "hunter2",
+                                "account": "alice",
+                            },
+                        },
+                    }
+                ],
+            },
+            {},
+        ],
+        platform=_FakePlatform(accounts=["alice"]),
+    )
+    agent._operator = _FakeOperator()
+
+    agent.run_once()
+
+    _, result = agent._channel.posts[1]
+    assert result == {
+        "id": "s3",
+        "exit_code": 1,
+        "code": "module_missing",
+        "params": {"module": "rustdesk"},
+    }

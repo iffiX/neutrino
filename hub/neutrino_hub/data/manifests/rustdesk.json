@@ -1,14 +1,14 @@
 {
-  "_comment": "Remote desktop, hub-tier: the cache fetches the pinned release asset and the agent installs it. Upstream publishes no checksums, so every sha256 here is the hub's own, taken once from the 1.4.9 assets. Flutter builds only — the *-sciter assets carry a proprietary engine the AGPL does not admit. AGPL-3.0 obliges the source beside the binary: corresponding_source names the exact tag and source_archive is fetched into the cache next to the artifact.",
+  "_comment": "Remote desktop, hub-tier: the cache fetches the pinned release asset and the agent installs it. Upstream publishes no checksums, so every sha256 here is the hub's own, taken once from the 1.4.9 assets. Flutter builds only — the *-sciter assets carry a proprietary engine the AGPL does not admit. AGPL-3.0 obliges directions to the source beside the binary: corresponding_source names the exact tag, and every row renders it.",
   "name": "rustdesk",
   "title": "RustDesk",
   "kind": "rustdesk",
   "installer": "hub",
+  "source": "rustdesk/rustdesk",
   "version": "1.4.9",
-  "description": "Remote desktop, direct connect on the LAN; the Remote desktop service needs it",
   "license": "AGPL-3.0",
   "corresponding_source": "https://github.com/rustdesk/rustdesk/tree/1.4.9",
-  "source_archive": "https://github.com/rustdesk/rustdesk/archive/refs/tags/1.4.9.tar.gz",
+  "description": "Remote desktop, direct connect on the LAN; the Remote desktop service needs it",
   "platforms": {
     "linux-debian-amd64": {
       "url": "https://github.com/rustdesk/rustdesk/releases/download/1.4.9/rustdesk-1.4.9-x86_64.deb",

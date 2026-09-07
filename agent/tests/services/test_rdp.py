@@ -44,6 +44,7 @@ def handler(tmp_path, monkeypatch):
         platform=_Platform(),
         store=store,
         credentials_dir=str(tmp_path / "credentials"),
+        accounts=lambda: ["pat", "sam"],
         log=lambda message: None,
     )
     made.bind_modules(lambda: dict(INSTALLED))
@@ -62,6 +63,10 @@ def handler(tmp_path, monkeypatch):
     monkeypatch.setattr(rustdesk, "binary_path", lambda: "/usr/bin/rustdesk")
     monkeypatch.setattr(RdpServiceHandler, "_answers", lambda self: True)
     monkeypatch.setattr(rdp_module, "has_desktop_session", lambda: True)
+    # The machine cannot say who is at the screen, so the account named on
+    # the body — or the caller — only has to exist; the seat tests below
+    # answer with a real seat instead.
+    monkeypatch.setattr(rdp_module, "graphical_accounts", lambda: None)
     return made
 
 
@@ -77,11 +82,53 @@ def share(handler, password="hunter2", account="pat", is_privileged=True):
 # --- who may share, and what must be there first ---
 
 
-def test_an_ordinary_account_may_not_share_the_whole_machine(handler):
-    refusal = share(handler, is_privileged=False)
+def test_an_ordinary_account_shares_its_own_seat(handler):
+    """One share per machine, and a person owns their own: sharing yourself
+    takes no privilege, the root daemon does the mechanics either way."""
+    outcome = share(handler, is_privileged=False)
+
+    assert outcome == {}
+    assert handler.state()["rdp"]["account"] == "pat"
+
+
+def test_an_ordinary_account_may_not_share_someone_else(handler):
+    refusal = handler.act(
+        entries=[],
+        account="pat",
+        is_privileged=False,
+        body={"action": "share", "password": "hunter2", "account": "sam"},
+    )
 
     assert refusal == {"code": "control_scope_refused", "params": {}}
     assert handler.written == {}
+
+
+def test_an_ordinary_account_may_not_replace_anothers_share(handler):
+    share(handler, account="sam")
+
+    refusal = handler.act(
+        entries=[],
+        account="pat",
+        is_privileged=False,
+        body={"action": "share", "password": "hunter2"},
+    )
+
+    assert refusal == {"code": "control_scope_refused", "params": {}}
+    assert handler.state()["rdp"]["account"] == "sam"
+
+
+def test_the_privileged_scope_replaces_anyones_share(handler):
+    share(handler, account="sam")
+
+    outcome = handler.act(
+        entries=[],
+        account="root",
+        is_privileged=True,
+        body={"action": "share", "password": "hunter2", "account": "pat"},
+    )
+
+    assert outcome == {}
+    assert handler.state()["rdp"]["account"] == "pat"
 
 
 def test_sharing_without_the_module_is_refused_before_anything_is_written(handler):
@@ -263,7 +310,7 @@ def test_the_declaration_carries_no_password_at_all(handler):
 
     declaration = handler.declaration()
 
-    assert set(declaration) == {"is_shared", "share_id", "port"}
+    assert set(declaration) == {"is_shared", "share_id", "port", "attention"}
     assert "hunter2" not in repr(declaration)
 
 
@@ -380,27 +427,33 @@ def test_unsharing_forgets_the_access_password(handler, tmp_path):
     )
 
     assert not (tmp_path / "credentials" / "rdp_access_password").exists()
-    assert handler.reveal_password(is_privileged=True) == ""
+    assert handler.reveal_password(account="", is_privileged=True) == ""
 
 
-def test_an_ordinary_account_may_not_unshare(handler):
-    share(handler)
+def test_the_shares_own_account_stops_it_and_nobody_else_ordinary_does(handler):
+    share(handler, account="pat")
 
     refusal = handler.act(
+        entries=[], account="sam", is_privileged=False, body={"action": "unshare"}
+    )
+    assert refusal == {"code": "control_scope_refused", "params": {}}
+
+    outcome = handler.act(
         entries=[], account="pat", is_privileged=False, body={"action": "unshare"}
     )
-
-    assert refusal == {"code": "control_scope_refused", "params": {}}
+    assert outcome == {}
+    assert handler.state()["rdp"]["is_shared"] is False
 
 
 # --- the password is read back only by the scope that set it ---
 
 
-def test_only_a_privileged_caller_reads_the_access_password_back(handler):
-    share(handler, password="hunter2")
+def test_the_password_reads_back_to_root_and_the_shares_own_account(handler):
+    share(handler, password="hunter2", account="pat")
 
-    assert handler.reveal_password(is_privileged=True) == "hunter2"
-    assert handler.reveal_password(is_privileged=False) == ""
+    assert handler.reveal_password(account="", is_privileged=True) == "hunter2"
+    assert handler.reveal_password(account="pat", is_privileged=False) == "hunter2"
+    assert handler.reveal_password(account="sam", is_privileged=False) == ""
 
 
 # --- connecting to somebody else's desktop ---
@@ -517,3 +570,291 @@ def test_an_action_the_handler_does_not_know_is_typed(handler):
     )
 
     assert refusal == {"code": "unknown_request", "params": {}}
+
+
+# --- whose desktop a share means: the seat decides, the body declares ---
+
+
+def test_a_share_names_an_account_and_the_seat_must_agree(handler, monkeypatch):
+    """RustDesk spawns its screen server into the signed-in session whoever
+    asked, so naming anyone else would promise a desktop the peer will not
+    be shown."""
+    monkeypatch.setattr(rdp_module, "graphical_accounts", lambda: ["sam"])
+
+    refusal = handler.act(
+        entries=[],
+        account="root",
+        is_privileged=True,
+        body={"action": "share", "password": "hunter2", "account": "pat"},
+    )
+
+    assert refusal == {"code": "rdp_wrong_seat", "params": {"account": "pat"}}
+    assert handler.written == {}
+
+
+def test_a_share_naming_the_seated_account_goes_through_as_them(handler, monkeypatch):
+    monkeypatch.setattr(rdp_module, "graphical_accounts", lambda: ["sam"])
+
+    outcome = handler.act(
+        entries=[],
+        account="root",
+        is_privileged=True,
+        body={"action": "share", "password": "hunter2", "account": "sam"},
+    )
+
+    assert outcome == {}
+    assert "/home/sam/.config/rustdesk/RustDesk2.toml" in handler.written
+    assert handler.state()["rdp"]["account"] == "sam"
+
+
+def test_a_share_naming_nobody_defaults_to_the_one_seated_account(handler, monkeypatch):
+    """`share` from a root shell means the person at the screen; the machine
+    knows who that is, so nobody has to spell it."""
+    monkeypatch.setattr(rdp_module, "graphical_accounts", lambda: ["sam"])
+
+    outcome = handler.act(
+        entries=[],
+        account="root",
+        is_privileged=True,
+        body={"action": "share", "password": "hunter2"},
+    )
+
+    assert outcome == {}
+    assert handler.state()["rdp"]["account"] == "sam"
+
+
+def test_where_the_seat_cannot_be_read_the_account_only_has_to_exist(handler):
+    refusal = handler.act(
+        entries=[],
+        account="root",
+        is_privileged=True,
+        body={"action": "share", "password": "hunter2", "account": "nobody"},
+    )
+
+    assert refusal == {"code": "no_target_user", "params": {}}
+    assert handler.written == {}
+
+
+def test_the_state_says_who_is_at_the_screen(handler, monkeypatch):
+    monkeypatch.setattr(rdp_module, "graphical_accounts", lambda: ["sam", "pat"])
+
+    assert handler.state()["rdp"]["desktop_accounts"] == ["sam", "pat"]
+
+
+def test_the_seat_owners_are_read_with_their_sessions(monkeypatch):
+    """Two sessions, one graphical: the owner of the graphical one is the
+    answer, matched to its own type and not the tty's."""
+    monkeypatch.setattr(rdp_module.os, "name", "posix")
+    monkeypatch.setattr(rdp_module, "_is_darwin", lambda: False)
+    _loginctl_answering(
+        monkeypatch,
+        "1 1000 sam seat0 tty1\n3 1001 pat seat0 tty2\n",
+        "Type=tty\nType=x11\n",
+    )
+
+    assert rdp_module.graphical_accounts() == ["pat"]
+
+
+def test_a_machine_without_loginctl_cannot_say_who_is_seated(monkeypatch):
+    monkeypatch.setattr(rdp_module.os, "name", "posix")
+    monkeypatch.setattr(rdp_module, "_is_darwin", lambda: False)
+    monkeypatch.setattr(rdp_module, "_loginctl", lambda arguments: None)
+
+    assert rdp_module.graphical_accounts() is None
+
+
+# --- the client opens on the seat's screen, not in the daemon's void ---
+
+
+class _FakePwd:
+    class _Entry:
+        pw_uid = 1000
+        pw_dir = "/home/sam"
+
+    @staticmethod
+    def getpwnam(name):
+        if name != "sam":
+            raise KeyError(name)
+        return _FakePwd._Entry()
+
+
+def _fake_proc(tmp_path, monkeypatch, *, uid=1000, environ=b""):
+    """One process of the seat user in a stand-in proc tree."""
+    proc = tmp_path / "proc"
+    (proc / "4242").mkdir(parents=True)
+    (proc / "4242" / "environ").write_bytes(environ)
+    monkeypatch.setattr(rdp_module, "RDP_PROC_DIR", str(proc))
+    real_stat = os.stat
+    monkeypatch.setattr(
+        rdp_module.os,
+        "stat",
+        lambda path, **kw: (
+            type("S", (), {"st_uid": uid})()
+            if str(path).endswith("4242")
+            else real_stat(path, **kw)
+        ),
+    )
+    monkeypatch.setattr(rdp_module, "pwd", _FakePwd)
+
+
+def test_the_session_environment_is_read_off_the_seats_own_processes(
+    tmp_path, monkeypatch
+):
+    _fake_proc(
+        tmp_path,
+        monkeypatch,
+        environ=b"DISPLAY=:0\0WAYLAND_DISPLAY=wayland-0\0"
+        b"XAUTHORITY=/run/user/1000/.mutter\0XDG_RUNTIME_DIR=/run/user/1000\0"
+        b"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus\0HOME=/home/sam\0",
+    )
+
+    assert rdp_module.session_environment("sam") == {
+        "DISPLAY": ":0",
+        "WAYLAND_DISPLAY": "wayland-0",
+        "XAUTHORITY": "/run/user/1000/.mutter",
+        "XDG_RUNTIME_DIR": "/run/user/1000",
+        "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+    }
+
+
+def test_a_process_without_a_display_is_no_environment_source(tmp_path, monkeypatch):
+    _fake_proc(tmp_path, monkeypatch, environ=b"HOME=/home/sam\0TERM=xterm\0")
+
+    assert rdp_module.session_environment("sam") is None
+
+
+def test_the_daemon_steps_the_client_into_the_seat_session(tmp_path, monkeypatch):
+    """A window spawned by a displayless root daemon is a process nobody
+    sees; the seat session's own environment is what makes it a window."""
+    monkeypatch.setattr(rdp_module.os, "name", "posix")
+    monkeypatch.setattr(rdp_module, "_is_darwin", lambda: False)
+    monkeypatch.setattr(rdp_module.os, "environ", {})
+    monkeypatch.setattr(rdp_module.os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setattr(rdp_module, "pwd", _FakePwd)
+    monkeypatch.setattr(rdp_module, "graphical_accounts", lambda: ["sam"])
+    monkeypatch.setattr(
+        rdp_module, "session_environment", lambda account: {"DISPLAY": ":0"}
+    )
+
+    invocation, environment = rdp_module.client_invocation(
+        "/usr/bin/rustdesk", "192.168.100.2"
+    )
+
+    assert invocation == [
+        "runuser",
+        "-u",
+        "sam",
+        "--",
+        "/usr/bin/rustdesk",
+        "--connect",
+        "192.168.100.2",
+    ]
+    assert environment["DISPLAY"] == ":0"
+    assert environment["HOME"] == "/home/sam"
+    assert environment["USER"] == "sam"
+
+
+def test_a_connect_with_no_seat_is_refused_not_silently_lost(handler, monkeypatch):
+    monkeypatch.setattr(rdp_module.os, "name", "posix")
+    monkeypatch.setattr(rdp_module, "_is_darwin", lambda: False)
+    monkeypatch.setattr(rdp_module.os, "environ", {})
+    monkeypatch.setattr(rdp_module.os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setattr(rdp_module, "graphical_accounts", lambda: [])
+
+    refusal = handler.act(
+        entries=[
+            {
+                "id": "rdp_x",
+                "type": "rdp",
+                "payload": {"host": "192.168.100.2", "port": 21118},
+            }
+        ],
+        account="sam",
+        is_privileged=False,
+        body={"action": "connect", "id": "rdp_x"},
+    )
+
+    assert refusal == {"code": "rdp_no_desktop", "params": {}}
+
+
+def test_a_caller_with_its_own_display_spawns_plainly(monkeypatch):
+    """`nagent service rdp connect` from a desktop terminal already owns a
+    display; nothing needs borrowing."""
+    monkeypatch.setattr(rdp_module.os, "name", "posix")
+    monkeypatch.setattr(rdp_module, "_is_darwin", lambda: False)
+    monkeypatch.setattr(rdp_module.os, "environ", {"DISPLAY": ":0"})
+
+    invocation, environment = rdp_module.client_invocation(
+        "/usr/bin/rustdesk", "192.168.100.2"
+    )
+
+    assert invocation == ["/usr/bin/rustdesk", "--connect", "192.168.100.2"]
+    assert environment is None
+
+
+# --- what a peer would wait on, said before it dials ---
+
+
+def test_a_wayland_seat_without_the_permission_says_so(handler, monkeypatch):
+    """RustDesk hands the screen out through a dialog on this machine's own
+    screen. A peer that dials before somebody answers it waits in
+    "connecting" forever, so the fleet is told first."""
+    monkeypatch.setattr(rdp_module, "graphical_accounts", lambda: ["pat"])
+    monkeypatch.setattr(RdpServiceHandler, "_is_wayland_seat", lambda self: True)
+    monkeypatch.setattr(
+        RdpServiceHandler, "_has_wayland_permission", staticmethod(lambda home: False)
+    )
+
+    assert handler.attention("pat") == "rdp_screen_not_allowed"
+
+
+def test_a_seat_that_already_granted_it_says_nothing(handler, monkeypatch):
+    """Once per person, not once per connection: RustDesk keeps the answer."""
+    monkeypatch.setattr(rdp_module, "graphical_accounts", lambda: ["pat"])
+    monkeypatch.setattr(RdpServiceHandler, "_is_wayland_seat", lambda self: True)
+    monkeypatch.setattr(
+        RdpServiceHandler, "_has_wayland_permission", staticmethod(lambda home: True)
+    )
+
+    assert handler.attention("pat") == ""
+
+
+def test_an_x11_seat_needs_no_permission(handler, monkeypatch):
+    monkeypatch.setattr(rdp_module, "graphical_accounts", lambda: ["pat"])
+    monkeypatch.setattr(RdpServiceHandler, "_is_wayland_seat", lambda self: False)
+
+    assert handler.attention("pat") == ""
+
+
+def test_nobody_at_the_screen_is_its_own_answer(handler, monkeypatch):
+    monkeypatch.setattr(rdp_module, "graphical_accounts", lambda: [])
+
+    assert handler.attention("pat") == "rdp_nobody_seated"
+
+
+def test_a_greeters_session_holds_no_permission_it_could_keep(handler, monkeypatch):
+    """Its home is a tmpfs, so the answer could never be remembered there."""
+    monkeypatch.setattr(rdp_module, "graphical_accounts", lambda: ["gdm-greeter"])
+
+    assert handler.attention("gdm-greeter") == "rdp_nobody_seated"
+
+
+def test_the_declaration_carries_what_a_peer_would_wait_on(handler, monkeypatch):
+    share(handler)
+    # Asked after the share, because only a sharing machine pays for it.
+    monkeypatch.setattr(rdp_module, "graphical_accounts", lambda: [])
+
+    assert handler.declaration()["attention"] == "rdp_nobody_seated"
+
+
+def test_a_machine_that_shares_nothing_asks_the_seat_nothing(handler, monkeypatch):
+    """The heartbeat runs this every few seconds on every machine; a machine
+    with no share has nothing for a peer to wait on and reads no session
+    table to say so."""
+
+    def refuse():
+        raise AssertionError("a machine that shares nothing must not ask")
+
+    monkeypatch.setattr(rdp_module, "graphical_accounts", refuse)
+
+    assert handler.declaration()["attention"] == ""

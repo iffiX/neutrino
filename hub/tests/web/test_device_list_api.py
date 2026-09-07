@@ -48,6 +48,7 @@ class FakeScanner:
 class FakeRuntime:
     def __init__(self):
         self.client_metrics = {}
+        self.client_address = {}
         self.client_platform = {}
         self.client_hostname = {}
         self.client_last_error = {}
@@ -142,3 +143,14 @@ def test_renaming_a_device_keeps_its_platform(api):
 
     assert answer["name"] == "renamed"
     assert answer["client"]["platform_os"] == "linux"
+
+
+def test_a_device_is_at_the_address_its_channel_comes_from(api):
+    """SSH is for installing and power, never for locating: an agent joined
+    by a link has no stored host and is no less reachable."""
+    client, runtime = api
+    runtime.client_address[MAC] = "192.168.100.7"
+
+    (device,) = client.get("/api/devices").json()["devices"]
+
+    assert device["ipv4_address"] == "192.168.100.7"

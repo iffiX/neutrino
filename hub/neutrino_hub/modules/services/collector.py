@@ -158,6 +158,10 @@ class ServiceListCollector:
                     "protocol": SERVICES_RDP_PROTOCOL,
                     "host": share.host,
                     "port": share.port,
+                    # What a peer would wait on if it dialed now: the
+                    # dialing machine says it instead of sitting in
+                    # "connecting".
+                    "attention": share.attention,
                 },
                 is_healthy=True,
                 description=SERVICES_RDP_DESCRIPTION.format(

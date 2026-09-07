@@ -18,7 +18,7 @@ const ENROLLMENT_TITLE_DEVICE =
   "Paste this link into the agent window on {name}.";
 
 const ENROLLMENT_HINT =
-  "Install the agent there, then paste the link into its window (`nagent gui`) — or run `sudo nagent connect <link>` in its terminal; it pastes safely unquoted. It works for {minutes} minutes.";
+  "Install the agent there, then paste the link into its window (`nagent gui`), or run `sudo nagent connect <link>` in its terminal; it pastes safely unquoted. It works for {minutes} minutes.";
 
 interface DeviceEnrollmentNoticeProps {
   enrollment: DeviceEnrollmentView;

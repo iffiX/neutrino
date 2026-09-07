@@ -22,7 +22,7 @@ export type DeviceActionName = "install_client" | "reboot" | "shutdown";
 
 /** One remote-desktop product's state on a device. */
 export interface RemoteDesktopStatus {
-  product: "anydesk";
+  product: "anydesk" | "teamviewer";
   is_installed: boolean;
   is_running: boolean;
   /** Why the device could not be asked, empty when it was. A machine that is
@@ -32,11 +32,59 @@ export interface RemoteDesktopStatus {
   can_set_password: boolean;
 }
 
-/** The remote-desktop product's state on a device. */
+/** The remote-desktop products' state on a device. */
 export interface RemoteDesktopView {
   anydesk: RemoteDesktopStatus;
+  teamviewer: RemoteDesktopStatus;
   /** The id a peer connects to RustDesk by, off the module's own report. */
   rustdesk_id: string;
+}
+
+/** One catalog entry as the agent itself is served it. */
+export interface DeviceServiceEntry {
+  id: string;
+  type: string;
+  title: string;
+  description: string;
+  is_healthy: boolean;
+  payload: Record<string, unknown>;
+}
+
+/** One mount record off a device's beat; passwords appear nowhere. */
+export interface DeviceMountRecord {
+  record_id: string;
+  entry_id: string;
+  host: string;
+  share: string;
+  username: string;
+  path: string;
+  account: string;
+  is_enabled: boolean;
+  is_attached: boolean;
+  state: string;
+  code: string;
+  params: Record<string, unknown>;
+}
+
+/** One managed device's services, for the drawer's operable panels. */
+export interface DeviceServicesView {
+  accounts: string[];
+  entries: DeviceServiceEntry[];
+  ai_targets: Record<string, boolean>;
+  ai_states: Record<string, { state?: string; is_active?: boolean }>;
+  mounts: DeviceMountRecord[];
+  /** The machine's share at a glance; empty until it beats. */
+  rdp: Record<string, unknown>;
+}
+
+/** One service action for a device's agent — the page's own verb. */
+export interface DeviceServiceAsk {
+  body: Record<string, unknown>;
+}
+
+/** The queued ask, findable later among the command results. */
+export interface DeviceServiceAskStarted {
+  command_id: string;
 }
 
 export type ModuleActionName =
@@ -711,6 +759,9 @@ export interface DeviceCommandResult {
   id: string;
   exit_code: number;
   output: string;
+  /** A service ask's typed refusal; this surface words it. */
+  code: string;
+  params: Record<string, unknown>;
   finished_at: string;
 }
 
@@ -756,6 +807,8 @@ export interface DeviceModuleView {
   is_supported: boolean;
   /** The platform carries this natively: worded built in, no button. */
   is_native: boolean;
+  /** Where the software comes from: a repository, a vendor, or `system`. */
+  source: string;
   /** What the hub conveys this under, and where its exact source is. Empty
    * for software the hub does not hand on itself. */
   license: string;

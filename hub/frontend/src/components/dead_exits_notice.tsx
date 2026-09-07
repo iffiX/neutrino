@@ -40,7 +40,7 @@ export function DeadExitsNotice({
       <div className="notice_body">
         {isFallingBack
           ? "Every enabled exit node is unreachable, so traffic sent to the proxy is leaving through the WAN instead, under this machine's own address."
-          : "Every enabled exit node is unreachable. Traffic sent to the proxy — the LAN's names included — fails until one answers."}
+          : "Every enabled exit node is unreachable. Traffic sent to the proxy (the LAN's names included) fails until one answers."}
       </div>
     </div>
   );

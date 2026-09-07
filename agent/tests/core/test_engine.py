@@ -408,14 +408,16 @@ def test_a_module_with_no_build_here_is_reported_unsupported_not_failed():
     }
 
 
-def test_a_kind_the_engine_does_not_run_is_reported_as_unknown():
+def test_a_kind_the_engine_does_not_run_is_reported_as_unsupported():
+    """An older agent meeting a module kind a newer hub serves is a machine
+    that cannot have it, not one that has not answered."""
     engine = bare_engine()
     engine._catalog = {"modules": {"thing": {"kind": "ai_tools", "entry": {}}}}
 
     engine._refresh(is_forced=True)
 
     assert engine.report()["thing"] == {
-        "state": "unknown",
+        "state": "unsupported",
         "code": "unknown_kind",
         "params": {"kind": "ai_tools"},
         "details": {},

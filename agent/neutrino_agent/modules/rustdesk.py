@@ -28,6 +28,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import time
 
 from neutrino_agent.modules.base import ModuleRunner
 from neutrino_agent.modules.installers import InstallError
@@ -36,6 +37,13 @@ RUSTDESK_TIMEOUT_S = 60
 # Long enough for a service to come up on a slow machine, short enough that
 # a share flow never looks hung.
 RUSTDESK_SERVICE_TIMEOUT_S = 120
+
+# How long the password call keeps being made while the service is still
+# coming up, and how often. The unit is `Type=simple`, so the platform's
+# service control returns as soon as the process is forked and the socket
+# the password travels over accepts about half a second later.
+RUSTDESK_PASSWORD_READY_TIMEOUT_S = 15
+RUSTDESK_PASSWORD_RETRY_S = 0.25
 
 # The port a direct connection lands on. RustDesk dials a bare address at
 # its own relay port plus one, so a peer typed as an address reaches this
@@ -74,6 +82,17 @@ RUSTDESK_LINUX_UNIT = "rustdesk"
 RUSTDESK_DARWIN_DAEMON_LABEL = "com.carriez.RustDesk_service"
 RUSTDESK_DARWIN_DAEMON_PLIST = (
     "/Library/LaunchDaemons/com.carriez.RustDesk_service.plist"
+)
+
+# What every machine gets the moment the module lands: no rendezvous, no
+# relay, the direct port pinned. Connections under a hub are dialed by
+# address on the LAN; nothing registers with public infrastructure.
+# ``direct-server`` is not here — opening the port is the share's decision.
+RUSTDESK_BASE_OPTIONS = (
+    ("custom-rendezvous-server", ""),
+    ("relay-server", ""),
+    ("direct-access-port", str(RUSTDESK_DIRECT_PORT)),
+    ("allow-auto-update", "N"),
 )
 
 # What the share flow writes. Direct mode with a permanent password, and
@@ -214,7 +233,16 @@ def render_config(existing: str, options: tuple) -> str:
 
 
 def write_config(path: str, options: tuple) -> None:
-    """Write one ``RustDesk2.toml``, keeping what it already said.
+    """Write one ``RustDesk2.toml``, keeping what it already said and whose
+    it was.
+
+    **The owner is part of the file.** A session's copy is written by this
+    root daemon but read *and written* by RustDesk running as that person:
+    on Wayland it stores the screen-capture permission there
+    (``wayland-restore-token``), so a copy left owned by root costs them
+    that permission dialog on every single connection. The file keeps the
+    owner and mode it had, and a new one under a home is created as that
+    home's owner.
 
     Args:
         path: The file to write.
@@ -225,16 +253,53 @@ def write_config(path: str, options: tuple) -> None:
     """
     try:
         existing = ""
+        kept = _owner_of(path)
         if os.path.isfile(path):
             with open(path, "r", encoding="utf-8") as stream:
                 existing = stream.read()
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        directory = os.path.dirname(path) or "."
+        os.makedirs(directory, exist_ok=True)
         temporary = f"{path}.tmp"
         with open(temporary, "w", encoding="utf-8") as stream:
             stream.write(render_config(existing, options))
+        if kept is not None:
+            os.chown(temporary, kept[0], kept[1])
+            os.chmod(temporary, kept[2])
         os.replace(temporary, path)
     except OSError as error:
         raise InstallError(f"could not write {path}: {error}")
+
+
+def _owner_of(path: str):
+    """Who a config belongs to, so a rewrite does not take it away.
+
+    Args:
+        path: The file being written.
+
+    Returns:
+        ``(uid, gid, mode)`` to restore, or None where this platform has no
+        such notion or nothing says whose the file is. An existing file
+        answers for itself; a new one takes its directory's owner, which
+        under a home is that person.
+    """
+    if os.name == "nt":
+        return None
+    existing = _stat(path)
+    if existing is not None:
+        return existing.st_uid, existing.st_gid, existing.st_mode & 0o777
+    for parent in (os.path.dirname(path), os.path.dirname(os.path.dirname(path))):
+        owner = _stat(parent)
+        if owner is not None and owner.st_uid != 0:
+            return owner.st_uid, owner.st_gid, 0o644
+    return None
+
+
+def _stat(path: str):
+    """One path's stat, or None when it cannot be read."""
+    try:
+        return os.stat(path)
+    except OSError:
+        return None
 
 
 def set_password(password: str) -> None:
@@ -245,15 +310,47 @@ def set_password(password: str) -> None:
     it. The value is on this one argument vector for the length of the call
     and is kept nowhere else on the machine.
 
+    **The call is also the readiness check.** It travels over the service's
+    own socket, which starts accepting after the service control has already
+    returned, so a call made straight after a restart is refused by the
+    socket rather than by RustDesk. Nothing else the binary offers proves
+    that socket is up — ``--get-id`` answers out of the configuration file
+    with the service stopped — so the call is repeated until it takes.
+
     Args:
         password: The access password.
 
     Raises:
-        InstallError: If RustDesk is absent or refuses.
+        InstallError: If RustDesk is absent, or still refusing when the
+            wait runs out.
     """
     binary = binary_path()
     if not binary:
         raise InstallError("RustDesk is not installed")
+    deadline = time.monotonic() + RUSTDESK_PASSWORD_READY_TIMEOUT_S
+    while True:
+        refusal = _password_refusal(binary, password)
+        if not refusal:
+            return
+        if time.monotonic() >= deadline:
+            raise InstallError(f"rustdesk refused the password: {refusal}")
+        time.sleep(RUSTDESK_PASSWORD_RETRY_S)
+
+
+def _password_refusal(binary: str, password: str) -> str:
+    """Make the password call once.
+
+    Args:
+        binary: The RustDesk binary.
+        password: The access password.
+
+    Returns:
+        Empty when it took, what RustDesk printed when it did not.
+
+    Raises:
+        InstallError: If the binary could not be run at all, which no wait
+            would fix.
+    """
     try:
         result = subprocess.run(
             [binary, "--password", password],
@@ -266,7 +363,8 @@ def set_password(password: str) -> None:
     # The binary reports a refusal on standard output and still exits zero.
     printed = (result.stdout or "").strip()
     if result.returncode != 0 or (printed and not printed.startswith("Done")):
-        raise InstallError(f"rustdesk refused the password: {printed}")
+        return printed or f"exit {result.returncode}"
+    return ""
 
 
 def control_service(action: str) -> None:
@@ -367,6 +465,7 @@ class RustdeskModuleRunner(ModuleRunner):
             entry=entry,
         )
         self._register_service()
+        self._write_baseline()
 
     def uninstall(self, resolved: dict) -> None:
         """Take RustDesk off this machine.
@@ -383,6 +482,19 @@ class RustdeskModuleRunner(ModuleRunner):
         if not command:
             return
         self._platform.uninstall_package(command)
+
+    def _write_baseline(self) -> None:
+        """Point the service's own configuration at the LAN and nothing else.
+
+        Best effort beside an install that already succeeded: a machine that
+        cannot take the write still verifies installed, and the share writes
+        the full set again anyway.
+        """
+        for path in config_paths(""):
+            try:
+                write_config(path, RUSTDESK_BASE_OPTIONS)
+            except InstallError as error:
+                self._log(f"rustdesk: {error}")
 
     def _register_service(self) -> None:
         """Make RustDesk answer at boot, where its package does not.

@@ -4,6 +4,9 @@
   "title": "cc-switch",
   "kind": "switcher",
   "installer": "hub",
+  "source": "SaladDay/cc-switch-cli",
+  "license": "MIT",
+  "corresponding_source": "https://github.com/SaladDay/cc-switch-cli",
   "description": "Switches a machine's AI tools between providers; the AI service needs it",
   "platforms": {
     "linux-amd64": {

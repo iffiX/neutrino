@@ -54,6 +54,7 @@ class FakeRuntime:
         self.client_platform = {}
         self.client_hostname = {}
         self.client_metrics = {}
+        self.client_address = {}
         self.client_last_error = {}
         self.client_command_results = {}
         self.pending = {}
@@ -72,6 +73,7 @@ class FakeRuntime:
             self.client_modules,
             self.client_platform,
             self.client_metrics,
+            self.client_address,
             self.client_last_error,
             self.client_command_results,
             self.pending,

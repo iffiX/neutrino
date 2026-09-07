@@ -61,6 +61,9 @@ from neutrino_hub.web.models import (
     DeviceModuleUpdate,
     DeviceModuleView,
     DeviceProcessKill,
+    DeviceServiceAsk,
+    DeviceServiceAskStarted,
+    DeviceServicesView,
     DeviceSshConfig,
     DeviceView,
     DeviceActionRequest,
@@ -150,6 +153,10 @@ def _device_view(runtime: PanelRuntime, device: ManagedDevice) -> DeviceView:
     """
     key = device.mac_address.lower()
     view = _to_view(device, runtime.client_metrics.get(key))
+    # Where its channel comes from wins over a scan: an agent on the overlay
+    # is on no served LAN, and a machine that moved is at its new address a
+    # beat later.
+    view.ipv4_address = runtime.client_address.get(key) or view.ipv4_address
     platform = runtime.client_platform.get(key, {})
     if view.client is not None:
         view.client.platform_os = platform.get("os") or None
@@ -438,6 +445,123 @@ def _generate_enrollment_link(
     return f"neutrino://enroll/{payload}", token
 
 
+# What the drawer may ask of an agent's services: the page's own verbs and
+# nothing wider. A share's access password rides inside the one ask, the way
+# a mount's credentials do, and lands in a root-only file on the machine.
+def _service_ask_refusal(service_type: str, body: dict) -> "str | None":
+    """Why one service ask may not be queued, or None when it may.
+
+    Args:
+        service_type: The type the drawer acted on.
+        body: The action's own fields, as the agent's handler takes them.
+
+    Returns:
+        A typed code, or None.
+    """
+    if service_type == "ai":
+        return None if isinstance(body.get("targets"), dict) else "unknown_request"
+    action = str(body.get("action", ""))
+    if service_type == "file":
+        if action == "unmount" and body.get("record_id"):
+            return None
+        if action == "mount" and body.get("record_id"):
+            return None
+        if action == "mount":
+            # The hub is no account on the machine, so a fresh mount must say
+            # whom it is for.
+            return None if str(body.get("account", "")) else "no_target_user"
+        return "unknown_request"
+    if service_type == "rdp":
+        return None if action in ("share", "unshare") else "unknown_request"
+    return "unknown_request"
+
+
+@router.get("/{mac_address}/services", response_model=DeviceServicesView)
+def list_services(
+    mac_address: str, runtime: PanelRuntime = Depends(get_runtime)
+) -> DeviceServicesView:
+    """Read one device's services: the catalog it is served, and its rows.
+
+    Args:
+        mac_address: The device.
+        runtime: The shared runtime, for what the agent last reported.
+
+    Returns:
+        The view; empty entries mean the device has not beaten since the
+        panel started.
+    """
+    DeviceRegistry().get(mac_address)
+    key = mac_address.lower()
+    state = runtime.client_service_state.get(key, {})
+    entries: list = []
+    host = runtime.client_device_host.get(key, "")
+    if host:
+        catalog, _ = runtime.device_catalog.catalog(
+            device_host=host, platform=runtime.client_platform.get(key, {})
+        )
+        entries = list(catalog.get("services", []))
+    return DeviceServicesView(
+        accounts=list(runtime.client_accounts.get(key, [])),
+        entries=entries,
+        ai_targets=dict(runtime.client_ai_targets.get(key, {})),
+        ai_states=dict(state.get("ai_states", {}) or {}),
+        mounts=list(state.get("mounts", []) or []),
+        rdp=dict(state.get("rdp", {}) or {}),
+    )
+
+
+@router.post(
+    "/{mac_address}/services/{service_type}",
+    response_model=DeviceServiceAskStarted,
+)
+def ask_service(
+    mac_address: str,
+    service_type: str,
+    request: DeviceServiceAsk,
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> DeviceServiceAskStarted:
+    """Queue one service action for a device's agent.
+
+    The body lands on the same typed handler a local privileged caller
+    reaches, on the device's next beat; how it went comes back among the
+    command results, refusals typed.
+
+    Args:
+        mac_address: The device.
+        service_type: The service type the drawer acted on.
+        request: The action's own fields.
+        runtime: The shared runtime.
+
+    Returns:
+        The queued ask's command id.
+
+    Raises:
+        HTTPException: 400 with the typed code for an ask outside the verb
+            set, 409 when the agent is not answering.
+    """
+    device = DeviceRegistry().get(mac_address)
+    if not device.is_agent_online:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail={"code": "agent_offline"}
+        )
+    body = dict(request.body)
+    refused = _service_ask_refusal(service_type, body)
+    if refused is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail={"code": refused}
+        )
+    command_id = f"service-{service_type}-{secrets.token_hex(4)}"
+    runtime.queue_client_command(
+        mac_address,
+        {
+            "id": command_id,
+            "action": "service",
+            "args": {"service_type": service_type, "body": body},
+        },
+    )
+    return DeviceServiceAskStarted(command_id=command_id)
+
+
 @router.get("/{mac_address}/modules", response_model=DeviceModuleListView)
 def list_modules(
     mac_address: str, runtime: PanelRuntime = Depends(get_runtime)
@@ -461,7 +585,7 @@ def list_modules(
     keys = platform_keys(platform)
     controller = runtime.agent_module_orders
     modules = []
-    for name, manifest in sorted(load_module_manifests().items()):
+    for name, manifest in load_module_manifests().items():
         status_ = reported.get(name, {})
         platforms = manifest.get("platforms", {})
         state = status_.get("state", "unknown")
@@ -490,6 +614,7 @@ def list_modules(
                 # agent will say what it cannot do once it beats.
                 is_supported=(any(key in platforms for key in keys) if keys else True),
                 is_native=(entry == {}),
+                source=manifest.get("source", ""),
                 license=manifest.get("license", ""),
                 corresponding_source=manifest.get("corresponding_source", ""),
                 state=state,
@@ -827,20 +952,15 @@ async def remote_desktop_status(
         runtime: The shared runtime.
 
     Returns:
-        AnyDesk state, and RustDesk's id when the machine has reported one.
+        Each SSH-read product's state, and RustDesk's id when the machine has
+        reported one.
     """
     device = DeviceRegistry().get(mac_address)
     rustdesk_id = _reported_rustdesk_id(runtime, device.mac_address)
     if not device.has_ssh:
         return RemoteDesktopView(
-            anydesk=RemoteDesktopStatusView(
-                product="anydesk",
-                is_installed=False,
-                is_running=False,
-                unreachable=REMOTE_DESKTOP_NEEDS_SSH,
-                session_id=None,
-                can_set_password=False,
-            ),
+            anydesk=_remote_desktop_needs_ssh("anydesk"),
+            teamviewer=_remote_desktop_needs_ssh("teamviewer"),
             rustdesk_id=rustdesk_id,
         )
     manager = RemoteDesktopManager(
@@ -850,7 +970,28 @@ async def remote_desktop_status(
     )
     return RemoteDesktopView(
         anydesk=_remote_desktop_view(await manager.status("anydesk")),
+        teamviewer=_remote_desktop_view(await manager.status("teamviewer")),
         rustdesk_id=rustdesk_id,
+    )
+
+
+def _remote_desktop_needs_ssh(product: str) -> RemoteDesktopStatusView:
+    """One product's card on a device the hub holds no credentials for.
+
+    Args:
+        product: The product the card is for.
+
+    Returns:
+        A card that says why it is empty rather than one reading "not
+        installed" about a machine nobody asked.
+    """
+    return RemoteDesktopStatusView(
+        product=product,
+        is_installed=False,
+        is_running=False,
+        unreachable=REMOTE_DESKTOP_NEEDS_SSH,
+        session_id=None,
+        can_set_password=False,
     )
 
 

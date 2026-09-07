@@ -99,7 +99,9 @@ class ManagedDevice:
 
     Attributes:
         mac_address: Lower-case MAC, the identity.
-        ipv4_address: Address from the latest scan or the stored SSH host.
+        ipv4_address: Address from the latest scan. Where a machine is
+            reached from is the agent channel's business, not SSH's: an
+            agent joined by a link has no SSH host and is no less located.
         name: User-chosen label.
         icon: User-chosen icon key.
         vendor: OUI vendor string from the scan.
@@ -414,7 +416,6 @@ class DeviceRegistry:
         ssh = entry.get("ssh")
         return ManagedDevice(
             mac_address=mac_address,
-            ipv4_address=(ssh or {}).get("host", ""),
             name=entry.get("name"),
             icon=entry.get("icon"),
             is_wol_enabled=entry.get("is_wol_enabled", False),

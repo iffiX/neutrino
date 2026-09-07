@@ -93,11 +93,15 @@ def test_no_asset_is_ever_a_sciter_build():
 
 
 def test_the_agpl_block_names_the_license_and_the_exact_tag():
+    """The directions next to the object code are the whole obligation: the
+    source stays on the project's own server, at the tag the binaries came
+    from, and no copy of it is kept here."""
     shipped = manifest()
 
+    assert shipped["source"] == "rustdesk/rustdesk"
     assert shipped["license"] == "AGPL-3.0"
     assert shipped["corresponding_source"].endswith(f"/tree/{PINNED_VERSION}")
-    assert shipped["source_archive"].endswith(f"/tags/{PINNED_VERSION}.tar.gz")
+    assert "source_archive" not in shipped
 
 
 def test_every_platform_carries_a_verify_and_an_uninstall():

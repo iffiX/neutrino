@@ -132,6 +132,18 @@ class PanelRuntime:
         self.client_hostname: dict[str, str] = {}
         # The human accounts each agent last reported, keyed by MAC.
         self.client_accounts: dict[str, list] = {}
+        # Where each agent's channel comes from, as this hub's own socket
+        # sees it, refreshed every beat. A machine that moves is at its new
+        # address the moment it beats from there.
+        self.client_address: dict[str, str] = {}
+        # Which accounts each machine wants switched, off its last beat.
+        self.client_ai_targets: dict[str, dict] = {}
+        # The drawer's service rows off each machine's last beat:
+        # ``{"mounts", "ai_states"}``, credentials in neither.
+        self.client_service_state: dict[str, dict] = {}
+        # The address each device reaches this hub on, resolved at its last
+        # beat; the services view composes the same catalog with it.
+        self.client_device_host: dict[str, str] = {}
         # The most recent error each agent reported, keyed by MAC:
         # ``{"code", "params"}``.
         self.client_last_error: dict[str, dict] = {}
@@ -446,6 +458,10 @@ class PanelRuntime:
         self.client_modules.pop(key, None)
         self.client_platform.pop(key, None)
         self.client_accounts.pop(key, None)
+        self.client_address.pop(key, None)
+        self.client_ai_targets.pop(key, None)
+        self.client_service_state.pop(key, None)
+        self.client_device_host.pop(key, None)
         self.client_last_error.pop(key, None)
         self.client_command_results.pop(key, None)
         self.device_shares.withdraw(key)

@@ -77,6 +77,9 @@ AGENT_CONTROL_REQUEST_TIMEOUT_S = 5
 
 # The window `nagent gui` opens.
 AGENT_GUI_WINDOW_TITLE = "Neutrino agent"
+# What the packages install the launcher and the icon under, and therefore
+# the name the window must wear for a desktop to match the two together.
+AGENT_DESKTOP_NAME = "neutrino_agent"
 AGENT_GUI_WINDOW_WIDTH = 760
 AGENT_GUI_WINDOW_HEIGHT = 900
 

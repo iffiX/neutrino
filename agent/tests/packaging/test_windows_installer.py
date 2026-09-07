@@ -4,6 +4,8 @@ Assembling the .msi needs WiX on Windows; the source it is assembled from is
 generated here, and so is the import path the embeddable interpreter reads.
 """
 
+import xml.sax.saxutils
+
 import pytest
 
 import build_msi
@@ -139,3 +141,31 @@ def test_an_interpreter_whose_path_file_is_not_the_expected_shape_is_refused(tmp
 def test_an_interpreter_with_no_path_file_at_all_is_refused(tmp_path):
     with pytest.raises(SystemExit):
         build_msi._open_import_path(tmp_path)
+
+
+def test_a_publisher_with_an_address_stays_a_name_and_not_markup():
+    """The default publisher carries an address in angle brackets, and every
+    value lands inside an XML attribute: unescaped it is a source file WiX
+    cannot read at all."""
+    import xml.etree.ElementTree as ElementTree
+
+    source = build_msi.WIX_SOURCE.replace(
+        "@PUBLISHER@", xml.sax.saxutils.escape("iffiX <someone@example.com>")
+    )
+    source = (
+        source.replace("@VERSION@", "9.9.9")
+        .replace("@UPGRADE_CODE@", build_msi.UPGRADE_CODE)
+        .replace("@PAYLOAD@", r"C:\stage\payload")
+        .replace("@SERVICE_HOST@", r"C:\stage\host.exe")
+        .replace("@BOOTSTRAPPER@", r"C:\stage\web.exe")
+        .replace("@BOOTSTRAPPER_NAME@", build_msi.WEBVIEW2_BOOTSTRAPPER_NAME)
+        .replace("@ICON@", r"C:\stage\icon.ico")
+        .replace("@SERVICE_NAME@", AGENT_SERVICE_NAME_WINDOWS)
+        .replace("@SERVICE_DISPLAY_NAME@", AGENT_SERVICE_DISPLAY_NAME_WINDOWS)
+        .replace("@WEBVIEW2_KEY@", build_msi.WEBVIEW2_REGISTRY_KEY)
+    )
+
+    tree = ElementTree.fromstring(source)
+
+    package = tree.find("{http://wixtoolset.org/schemas/v4/wxs}Package")
+    assert package.get("Manufacturer") == "iffiX <someone@example.com>"

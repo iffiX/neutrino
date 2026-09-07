@@ -512,7 +512,7 @@ type RestorePhase = "ask" | "applying" | "failed" | "restarting";
 
 const RESTORE_FAILED_APPLY =
   "The apply did not finish; the lines above say why. The files were " +
-  "restored — fix the cause and run it again from a terminal: sudo nhub apply";
+  "restored; fix the cause and run it again from a terminal: sudo nhub apply";
 const RESTORE_FAILED_LOST =
   "The panel did not come back on its own. The files were restored; run " +
   "sudo nhub apply from a terminal, then reload this page.";
@@ -522,7 +522,7 @@ const RESTORE_PHASE_HINTS: Record<
   string
 > = {
   applying:
-    "Applying the restored configuration — this can take minutes when " +
+    "Applying the restored configuration; this can take minutes when " +
     "heavy services re-render.",
   restarting:
     "The panel is restarting; this page reloads by itself. Sign in with " +

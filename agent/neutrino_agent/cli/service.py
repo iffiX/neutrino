@@ -135,7 +135,7 @@ def main_port(ref: str, *, is_enabled: bool) -> int:
     return 0
 
 
-def main_file_config(ref: str, *, path: str, username: str) -> int:
+def main_file_config(ref: str, *, path: str, username: str, user: str = "") -> int:
     """Save one share's login and path, and mount it there.
 
     The password is asked on the terminal, the way the page's form asks,
@@ -145,6 +145,7 @@ def main_file_config(ref: str, *, path: str, username: str) -> int:
         ref: The entry's per-kind number or id.
         path: Where to mount the share.
         username: The share's own username.
+        user: The account the mount is for; empty means the caller.
 
     Returns:
         Process exit status.
@@ -163,16 +164,16 @@ def main_file_config(ref: str, *, path: str, username: str) -> int:
         print(f"{entry.get('title', '')} — {SERVICE_UNHEALTHY}", file=sys.stderr)
         return 1
     password = getpass.getpass("Share password: ")
-    reply = _act(
-        "file",
-        {
-            "action": "mount",
-            "id": entry.get("id"),
-            "username": username,
-            "password": password,
-            "path": path,
-        },
-    )
+    body = {
+        "action": "mount",
+        "id": entry.get("id"),
+        "username": username,
+        "password": password,
+        "path": path,
+    }
+    if user:
+        body["account"] = user
+    reply = _act("file", body)
     if reply is None:
         return 1
     record = _record_at(reply, entry, path)
@@ -246,13 +247,16 @@ def main_file_unmount(ref: str) -> int:
     return 0
 
 
-def main_rdp_share() -> int:
+def main_rdp_share(*, user: str = "") -> int:
     """Share this machine's desktop behind an access password.
 
     The password is asked on the terminal, the way the page's form asks,
     and appears on no command line. It stays on this machine: RustDesk
     keeps it salted and the agent keeps a copy only root can read, and the
     hub is never told it.
+
+    Args:
+        user: Whose desktop; empty means the one account at the screen.
 
     Returns:
         Process exit status.
@@ -268,7 +272,10 @@ def main_rdp_share() -> int:
     if not password:
         print(wording.word_code("rdp_password_missing", {}), file=sys.stderr)
         return 2
-    reply = _act("rdp", {"action": "share", "password": password})
+    body = {"action": "share", "password": password}
+    if user:
+        body["account"] = user
+    reply = _act("rdp", body)
     if reply is None:
         return 1
     print(_rdp_share_line(reply))
@@ -312,6 +319,12 @@ def main_rdp_connect(ref: str) -> int:
     missing = _missing_rdp_module(state)
     if missing:
         print(_needs_line(missing), file=sys.stderr)
+        return 1
+    # A dial into a dialog nobody can answer is a client that hangs on
+    # "connecting"; the machine already said so.
+    attention = str((entry.get("payload") or {}).get("attention", ""))
+    if attention:
+        print(wording.word_code(attention, {}), file=sys.stderr)
         return 1
     reply = _act("rdp", {"action": "connect", "id": entry.get("id")})
     if reply is None:
@@ -583,6 +596,9 @@ def _entry_line(state: dict, kind: str, entry: dict, title_width: int) -> str:
     notes = []
     if not entry.get("is_healthy"):
         notes.append(SERVICE_UNHEALTHY)
+    # What that machine says a peer would wait on, said before dialing.
+    if payload.get("attention"):
+        notes.append(wording.word_code(str(payload.get("attention")), {}))
     if entry.get("description"):
         notes.append(str(entry.get("description")))
     tail = f" — {'; '.join(notes)}" if notes else ""

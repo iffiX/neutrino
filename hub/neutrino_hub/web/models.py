@@ -790,6 +790,9 @@ class DeviceCommandResultView(BaseModel):
     id: str
     exit_code: int
     output: str = ""
+    # A service ask's typed refusal; the drawer words it, never the wire.
+    code: str = ""
+    params: dict = Field(default_factory=dict)
     finished_at: str = ""
 
 
@@ -932,13 +935,14 @@ class RemoteDesktopStatusView(BaseModel):
 class RemoteDesktopView(BaseModel):
     """The remote-desktop products' state on a device.
 
-    AnyDesk is read over SSH, because a user-tier product is whatever the
-    person put there. RustDesk is a module the hub installs, so its id
-    arrives on the heartbeat with the rest of that module's report and
+    AnyDesk and TeamViewer are read over SSH, because a user-tier product is
+    whatever the person put there. RustDesk is a module the hub installs, so
+    its id arrives on the heartbeat with the rest of that module's report and
     needs no credentials at all.
     """
 
     anydesk: RemoteDesktopStatusView
+    teamviewer: RemoteDesktopStatusView
     # The id a peer connects to RustDesk by, empty until the module is
     # installed and the machine has reported one.
     rustdesk_id: str = ""
@@ -1170,6 +1174,10 @@ class ClientHeartbeat(BaseModel):
     wire: int = 0
     metrics: dict = Field(default_factory=dict)
     platform: dict = Field(default_factory=dict)
+    # Each interface's IPv4 address with the MAC that carries it, as
+    # ``[{"mac", "address"}]``. The hub names the device by the one on its
+    # identity MAC; a beat's peer address is the fallback.
+    addresses: list[dict] = Field(default_factory=list)
     # The machine's human accounts, the platform's own judgment; root is
     # never listed.
     accounts: list[str] = Field(default_factory=list)
@@ -1186,8 +1194,11 @@ class ClientHeartbeat(BaseModel):
     module_results: list[dict] = Field(default_factory=list)
     # Which accounts want their AI tools pointed at the gateway.
     ai_targets: dict[str, bool] = Field(default_factory=dict)
+    # What the drawer's service panels draw: ``{"mounts", "ai_states"}``.
+    # No credential is in it.
+    service_state: dict = Field(default_factory=dict)
     # Whether this machine is sharing its desktop, as
-    # ``{"is_shared", "share_id", "port"}``. The declaration is the
+    # ``{"is_shared", "share_id", "port", "attention"}``. The declaration is the
     # machine's alone — the panel's form cannot make one — and the access
     # password it was set up with never leaves the machine.
     rdp_share: dict = Field(default_factory=dict)
@@ -1319,6 +1330,9 @@ class DeviceModuleView(BaseModel):
     is_supported: bool = True
     # The platform carries this natively: worded built in, no button.
     is_native: bool = False
+    # Where the software comes from, in the words the row is attributed to:
+    # a repository, a vendor, or the machine's own packages.
+    source: str = ""
     # What the hub conveys this under, and where its exact source is. Empty
     # for software the hub does not hand on itself.
     license: str = ""
@@ -1327,6 +1341,38 @@ class DeviceModuleView(BaseModel):
     # Why the state is what it is, when the agent said; the pages word it.
     code: str = ""
     params: dict = Field(default_factory=dict)
+
+
+class DeviceServicesView(BaseModel):
+    """One managed device's services, for the drawer's operable panels.
+
+    The entries are the catalog the agent itself is served; the rows are
+    what its last beat reported. Everything here the machine's own page
+    also shows, and no credential is in any of it. Empty entries mean the
+    device has not beaten since the panel started.
+    """
+
+    accounts: list[str] = Field(default_factory=list)
+    entries: list[dict] = Field(default_factory=list)
+    ai_targets: dict[str, bool] = Field(default_factory=dict)
+    ai_states: dict = Field(default_factory=dict)
+    mounts: list[dict] = Field(default_factory=list)
+    # The machine's share at a glance: ``{"is_shared", "state", "port",
+    # "account"}``, empty until it beats.
+    rdp: dict = Field(default_factory=dict)
+
+
+class DeviceServiceAsk(BaseModel):
+    """One service action for a device's agent — the page's own verb, run
+    there in the privileged scope."""
+
+    body: dict = Field(default_factory=dict)
+
+
+class DeviceServiceAskStarted(BaseModel):
+    """The queued ask, findable later among the command results."""
+
+    command_id: str
 
 
 class DeviceModuleListView(BaseModel):
@@ -1386,6 +1432,9 @@ class ClientCommandResult(BaseModel):
     id: str
     exit_code: int
     output: str = ""
+    # A service ask's typed refusal, for the drawer's own wording table.
+    code: str = ""
+    params: dict = Field(default_factory=dict)
 
 
 class SambaShareView(BaseModel):

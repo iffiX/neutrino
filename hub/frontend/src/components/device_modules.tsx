@@ -35,7 +35,12 @@ const WORDING = {
     "What it was last told to run is shown; nothing can be changed until it " +
     "answers.",
   noBuild: "No build for this platform",
-  moduleSource: "source",
+  // The attribution line every row carries, so no row reads as singled out
+  // for carrying a license and a link. The name is the link: the row is one
+  // line wide and ellipsised, and a label after the license would be the
+  // part cut off.
+  sourceLabel: "source: ",
+  licenseLabel: ", License: ",
   builtIn: "built in",
   userTier: "Install it on the machine yourself; the hub only manages it",
   install: "Install",
@@ -110,6 +115,11 @@ type Step = "installing" | "uninstalling";
 // Every word that means a step is under way; a row mid-step must not read
 // as finished and offer the opposite button.
 const BUSY_STATES: string[] = ["installing", "uninstalling"];
+
+// The machine's own word for a module it cannot have, whatever the hub
+// resolved for its platform: an older agent meeting a newer hub's module kind
+// says this, and pressing anything would only fail.
+const UNSUPPORTED_STATE = "unsupported";
 
 /** One click's ask; the hub queues one order for it and keeps nothing. */
 interface ModuleAsk {
@@ -262,6 +272,7 @@ export function DeviceModules({
           const isBusy = BUSY_STATES.includes(deviceModule.state);
           const isActionable =
             deviceModule.is_supported &&
+            deviceModule.state !== UNSUPPORTED_STATE &&
             agent.isOnline &&
             !isBusy &&
             !isOperationOpen;
@@ -277,28 +288,26 @@ export function DeviceModules({
                   className="device_module_note"
                   title={deviceModule.description}
                 >
+                  {WORDING.sourceLabel}
+                  {deviceModule.corresponding_source === "" ? (
+                    deviceModule.source
+                  ) : (
+                    <a
+                      href={deviceModule.corresponding_source}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                    >
+                      {deviceModule.source}
+                    </a>
+                  )}
+                  {deviceModule.license !== "" &&
+                    `${WORDING.licenseLabel}${deviceModule.license}`}
+                </span>
+                <span className="device_module_note">
                   {deviceModule.is_supported
                     ? describeModule(deviceModule)
                     : WORDING.noBuild}
                 </span>
-                {deviceModule.license !== "" && (
-                  <span className="device_module_note">
-                    {deviceModule.corresponding_source === "" ? (
-                      deviceModule.license
-                    ) : (
-                      <>
-                        {`${deviceModule.license} — `}
-                        <a
-                          href={deviceModule.corresponding_source}
-                          target="_blank"
-                          rel="noreferrer noopener"
-                        >
-                          {WORDING.moduleSource}
-                        </a>
-                      </>
-                    )}
-                  </span>
-                )}
               </div>
               {!deviceModule.is_native &&
                 deviceModule.installer !== USER_INSTALLER && (

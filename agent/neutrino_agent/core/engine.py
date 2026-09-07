@@ -294,7 +294,7 @@ class ModuleEngine(ReconcileWorker):
         kind = resolved.get("kind", "")
         runner = self._runner_for(kind)
         if runner is None:
-            return _typed("unknown", "unknown_kind", kind=kind)
+            return _typed("unsupported", "unknown_kind", kind=kind)
         try:
             # A module the platform carries natively is simply there.
             if kind == "system_package" and self._system.is_native(resolved):

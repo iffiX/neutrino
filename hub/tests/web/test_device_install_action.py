@@ -32,6 +32,7 @@ class FakeRuntime:
         self.settings = {}
         self.tasks = TaskStreamRegistry()
         self.client_metrics = {}
+        self.client_address = {}
         self.client_platform = {}
         self.enrollments = {}
         self.agent_packages = AgentPackageCache(

@@ -19,14 +19,15 @@ import "./remote_desktop_panel.css";
 /**
  * Remote-desktop status and management for one device.
  *
- * A device that already runs AnyDesk shows the id someone connects to,
- * whether or not this hub put it there, and takes an unattended password.
- * AnyDesk is a user-tier module the person installs themselves, so this
- * panel only reads and manages what is already on the machine.
+ * A device that already runs AnyDesk or TeamViewer shows the id someone
+ * connects to, whether or not this hub put it there, and takes an unattended
+ * password. Both are user-tier modules the person installs themselves, so
+ * this panel only reads and manages what is already on the machine.
  */
 
 const PRODUCT_LABELS: Record<string, string> = {
   anydesk: "AnyDesk",
+  teamviewer: "TeamViewer",
 };
 
 interface RemoteDesktopPanelProps {
@@ -98,6 +99,12 @@ export function RemoteDesktopPanel({
           <RustdeskCard sessionId={status.rustdesk_id} />
           <ProductCard
             status={status.anydesk}
+            macAddress={device.mac_address}
+            isBusy={task.isRunning}
+            onRun={runTask}
+          />
+          <ProductCard
+            status={status.teamviewer}
             macAddress={device.mac_address}
             isBusy={task.isRunning}
             onRun={runTask}

@@ -1,15 +1,17 @@
 """Reading remote-desktop software on a device over SSH.
 
-AnyDesk is the one product covered. What this reads is the part only the
-running product knows: whether its service is up, the session id someone
-connects to, and the unattended password. AnyDesk is a user-tier module —
-the person puts it on the machine, and the hub only detects and manages
-what is already there.
+The user-tier products are covered here: AnyDesk and TeamViewer. What this
+reads is the part only the running product knows — whether its service is
+up, the session id someone connects to, and the unattended password. Both
+are user-tier modules: the person puts them on the machine, and the hub only
+detects and manages what is already there. RustDesk is not here at all; the
+hub installs it, so its id rides the heartbeat.
 
 Commands run with a forced UTF-8 locale: AnyDesk refuses to start without one,
 and an SSH session carries none by default.
 """
 
+import re
 import shlex
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -17,17 +19,50 @@ from dataclasses import dataclass
 from neutrino_hub.modules.devices.constants import SSH_UNREACHABLE_STATUS
 from neutrino_hub.modules.devices.ssh_ops import DeviceSshOperator
 
-SUPPORTED_PRODUCTS = ("anydesk",)
+SUPPORTED_PRODUCTS = ("anydesk", "teamviewer")
 
-# How the product identifies itself on a device.
+# How each product identifies itself on a device, and what it answers to.
+# `is_id_privileged` because TeamViewer reads its id out of a file under
+# /opt only root may open, and prints an empty id to anyone else.
 _PRODUCT_UNITS = {
     "anydesk": {
         "binary": "anydesk",
         "service": "anydesk",
         "package": "anydesk",
         "paths": ("/usr/bin/anydesk",),
+        "id_command": "anydesk --get-id",
+    },
+    "teamviewer": {
+        "binary": "teamviewer",
+        "service": "teamviewerd",
+        "package": "teamviewer",
+        "paths": ("/usr/bin/teamviewer",),
+        "id_command": "teamviewer info",
     },
 }
+
+# What TeamViewer calls its id, in a table it draws with bold escapes.
+TEAMVIEWER_ID_LABEL = "TeamViewer ID:"
+
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def teamviewer_id(output: str) -> str:
+    """The id ``teamviewer info`` printed.
+
+    Args:
+        output: Everything the command wrote.
+
+    Returns:
+        The id, empty when the command printed none — which is what a
+        daemon that is down, or a caller that is not root, gets.
+    """
+    for line in _ANSI_ESCAPE.sub("", output).splitlines():
+        if TEAMVIEWER_ID_LABEL not in line:
+            continue
+        digits = line.split(TEAMVIEWER_ID_LABEL, 1)[1].strip()
+        return digits if digits.isdigit() else ""
+    return ""
 
 
 @dataclass
@@ -127,7 +162,7 @@ class RemoteDesktopManager:
             product=product,
             is_installed=True,
             is_running=running.strip() == "active",
-            session_id=await self._session_id(),
+            session_id=await self._session_id(product),
             can_set_password=True,
         )
 
@@ -148,6 +183,17 @@ class RemoteDesktopManager:
             ValueError: If the product is unknown.
         """
         self._require_product(product)
+        if product == "teamviewer":
+            # Root, and the password on the argument vector the binary
+            # offers: TeamViewer's own verb exists for exactly this, and the
+            # daemon it writes for runs as root.
+            yield "[setting the TeamViewer password]\n"
+            async for chunk in self._operator.run_privileged_stream(
+                f"teamviewer passwd {self._quote(password)}"
+            ):
+                yield chunk
+            yield "\n[done — connect with the TeamViewer id above and this password]\n"
+            return
         # Set it as the login user, not through sudo. AnyDesk keeps two separate
         # configs — the system service under /etc/anydesk, and the desktop
         # session under the user's ~/.anydesk. A person connecting back to their
@@ -164,8 +210,22 @@ class RemoteDesktopManager:
             yield chunk
         yield "\n[done — connect with the AnyDesk id above and this password]\n"
 
-    async def _session_id(self) -> str | None:
-        code, output = await self._operator.run_once("anydesk --get-id")
+    async def _session_id(self, product: str) -> str | None:
+        """The id someone connects to.
+
+        Args:
+            product: One of :data:`SUPPORTED_PRODUCTS`.
+
+        Returns:
+            The id, or None when the product printed none.
+        """
+        command = str(_PRODUCT_UNITS[product]["id_command"])
+        if product == "teamviewer":
+            # Root, and out of a drawn table: the id lives in a file under
+            # /opt that only root opens, and anyone else is printed a blank.
+            _, output = await self._operator.run_privileged_once(command)
+            return teamviewer_id(output) or None
+        code, output = await self._operator.run_once(command)
         if code == 0 and output.strip().isdigit():
             return output.strip()
         return None

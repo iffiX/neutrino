@@ -98,7 +98,7 @@ def main() -> int:
         return 2
     reason = ROOT_COMMANDS.get(arguments.command)
     if reason is not None and hasattr(os, "geteuid") and os.geteuid() != 0:
-        print(f"nagent {arguments.command} needs root — {reason}:", file=sys.stderr)
+        print(f"nagent {arguments.command} needs root ({reason}):", file=sys.stderr)
         print(f"    sudo nagent {shlex.join(sys.argv[1:])}", file=sys.stderr)
         return 2
     if arguments.command == "connect":
@@ -211,6 +211,9 @@ def _add_service_parser(subparsers):
     )
     file_config.add_argument("--path", required=True, help="where to mount the share")
     file_config.add_argument("--username", default="", help="the share's own username")
+    file_config.add_argument(
+        "--user", default="", help="the account the mount is for; root may name anyone"
+    )
     for verb, description in (
         ("mount", "mount a share again with its saved login"),
         ("unmount", "unmount a share; its saved login stays"),
@@ -261,8 +264,13 @@ def _add_service_parser(subparsers):
     rdp_parser = kinds.add_parser("rdp", help="this machine's desktop, and shared ones")
     rdp_actions = rdp_parser.add_subparsers(dest="rdp_action", metavar="<action>")
     rdp_actions.add_parser("show", help="where this machine's own share stands")
-    rdp_actions.add_parser(
+    rdp_share = rdp_actions.add_parser(
         "share", help="share this desktop; the password is asked, never an argument"
+    )
+    rdp_share.add_argument(
+        "--user",
+        default="",
+        help="whose desktop; unnamed, the one account at the screen",
     )
     rdp_actions.add_parser("unshare", help="stop sharing this desktop")
     rdp_connect = rdp_actions.add_parser(
@@ -327,7 +335,10 @@ def _run_service(arguments, service_parser, kind_parsers) -> int:
         )
     if kind == "file" and arguments.file_action == "config":
         return service.main_file_config(
-            arguments.ref, path=arguments.path, username=arguments.username
+            arguments.ref,
+            path=arguments.path,
+            username=arguments.username,
+            user=arguments.user,
         )
     if kind == "file" and arguments.file_action == "mount":
         return service.main_file_mount(arguments.ref)
@@ -349,7 +360,7 @@ def _run_service(arguments, service_parser, kind_parsers) -> int:
     if kind == "rdp" and arguments.rdp_action == "show":
         return service.main_rdp_show()
     if kind == "rdp" and arguments.rdp_action == "share":
-        return service.main_rdp_share()
+        return service.main_rdp_share(user=arguments.user)
     if kind == "rdp" and arguments.rdp_action == "unshare":
         return service.main_rdp_unshare()
     if kind == "rdp" and arguments.rdp_action == "connect":

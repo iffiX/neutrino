@@ -1,0 +1,141 @@
+.device_services {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* One panel per service type, the agent page's card. */
+.device_service_panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+/* The page's panel_title: small caps over a hairline. */
+.device_service_panel_title {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-faint);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* The page's feat row: dot, stacked body, buttons on the right. */
+.device_service_feat {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-width: 0;
+}
+
+.device_service_feat--greyed {
+  opacity: 0.55;
+}
+
+.device_service_feat_body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.device_service_feat_title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.device_service_feat_note {
+  overflow: hidden;
+  color: var(--color-text-faint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device_service_feat_note--muted {
+  opacity: 0.8;
+}
+
+.device_service_nest {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* The page's rec line: a record's own words, never a button. */
+.device_service_rec {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-width: 0;
+  padding-left: 20px;
+}
+
+.device_service_head_row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.device_service_sub {
+  color: var(--color-text-faint);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.device_service_hint {
+  color: var(--color-text-faint);
+  font-size: 11px;
+}
+
+.device_service_chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.device_service_chip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.device_service_chip--on {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.device_service_chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The page's form: stacked fields, indented under its entry. */
+.device_service_form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-left: 20px;
+}
+
+.device_service_form input {
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-raised);
+  color: var(--color-text);
+  font-size: 12px;
+}

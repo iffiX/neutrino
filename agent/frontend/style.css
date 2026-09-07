@@ -43,6 +43,7 @@ button:disabled { opacity: .4; cursor: not-allowed; border-color: #1f2937; }
 .panel_title { color: #8b96a5; font-size: 11px; text-transform: uppercase;
          letter-spacing: .08em; border-bottom: 1px solid #1f2937;
          padding-bottom: 6px; margin-bottom: 4px; }
+.panel_rule { height: 1px; background: #1f2937; margin: 12px 0 2px; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 0 10px; }
 .subhead { color: #7d8590; font-size: 11px; letter-spacing: .06em;
            text-transform: uppercase; margin-top: 10px; }
@@ -64,7 +65,7 @@ a.link:hover { text-decoration: underline; }
 .oplog { margin: 10px 0 0; padding: 10px; border: 1px solid #1f2937;
          border-radius: 8px; background: #0a0e14; color: #8b96a5;
          font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap;
-         overflow-wrap: anywhere; max-height: 260px; overflow-y: auto; }
+         overflow-wrap: anywhere; max-height: 110px; overflow-y: auto; }
 .overlay { position: fixed; inset: 0; background: rgba(4,6,10,.7);
            display: flex; align-items: center; justify-content: center;
            z-index: 10; }

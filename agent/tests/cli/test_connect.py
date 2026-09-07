@@ -115,7 +115,7 @@ def test_an_unprivileged_connect_is_refused_with_the_command(monkeypatch, capsys
 
     err = capsys.readouterr().err
     assert (
-        "nagent connect needs root — it writes the binding and starts the service"
+        "nagent connect needs root (it writes the binding and starts the service)"
         in err
     )
     assert f"sudo nagent connect {LINK}" in err

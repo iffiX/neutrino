@@ -4,6 +4,7 @@
   "title": "TeamViewer",
   "kind": "package",
   "installer": "user",
+  "source": "TeamViewer Germany GmbH",
   "description": "Remote desktop, reachable by TeamViewer ID",
   "platforms": {
     "linux": {

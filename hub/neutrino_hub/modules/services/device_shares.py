@@ -33,6 +33,10 @@ class DeviceShare:
         hostname: What the machine calls itself, for the entry's title.
         host: The address the hub reaches that machine on.
         port: The port a direct connection lands on.
+        attention: What somebody must do at the sharing machine before a
+            peer is shown its desktop, as a typed code; empty when nothing
+            stands in the way. A machine about to dial says this rather
+            than waiting in "connecting" for a dialog it cannot see.
         declared_at: When the declaring beat arrived, on the monotonic
             clock; a share older than the online window is gone.
     """
@@ -43,6 +47,7 @@ class DeviceShare:
     host: str
     port: int
     declared_at: float
+    attention: str = ""
 
 
 class DeviceShareRegistry:
@@ -67,6 +72,7 @@ class DeviceShareRegistry:
         hostname: str,
         host: str,
         port: int,
+        attention: str = "",
         now: "float | None" = None,
     ) -> None:
         """Record that one machine is sharing its desktop.
@@ -77,6 +83,8 @@ class DeviceShareRegistry:
             hostname: What the machine calls itself.
             host: The address the hub reaches it on.
             port: The port a direct connection lands on.
+            attention: What somebody must do at that machine before a peer
+                is shown its desktop; empty when nothing stands in the way.
             now: The monotonic reading to stamp with; None reads the clock.
         """
         key = (mac_address or "").lower()
@@ -89,6 +97,7 @@ class DeviceShareRegistry:
                 hostname=str(hostname),
                 host=str(host),
                 port=int(port),
+                attention=str(attention or ""),
                 declared_at=time.monotonic() if now is None else now,
             )
 

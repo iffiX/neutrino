@@ -28,7 +28,7 @@ export function StringListEditor({
   onChange,
   description,
   placeholder = "Add an entry",
-  emptyText = "No entries — everything goes through the proxy.",
+  emptyText = "No entries; everything goes through the proxy.",
 }: StringListEditorProps) {
   const [draft, setDraft] = useState("");
 

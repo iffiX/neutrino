@@ -33,7 +33,7 @@ CLI_CODE_WORDS = {
     "no_platform_build": "no version of this exists for this machine",
     "install_unconfirmed": "the install finished, but the software cannot be found",
     "vendor_served_a_page": (
-        "the vendor served a challenge page, not the package — install it "
+        "the vendor served a challenge page, not the package; install it "
         "by hand and the row follows"
     ),
     "module_fetch_failed": "the hub could not fetch this from the vendor",
@@ -48,9 +48,12 @@ CLI_CODE_WORDS = {
     ),
     "rdp_password_missing": "set an access password to share this desktop",  # scan: allow
     "rdp_no_desktop": "this machine has no desktop session to share",
+    "rdp_wrong_seat": "{account} is not signed in at this machine's screen",
     "rdp_configure_failed": "RustDesk could not be configured: {detail}",
     "rdp_launch_failed": "the RustDesk client could not be started: {detail}",
     "rdp_no_address": "that machine published no address to connect to",
+    "rdp_nobody_seated": "nobody is signed in at that machine's screen",
+    "rdp_screen_not_allowed": ("allow screen sharing once at that machine's screen"),
     "agent_never_reported": "this machine never said how the install went",
     "uninstall_unconfirmed": "the uninstall finished, but the software is still there",
     "no_download_named": "the catalog names no download for this machine",
@@ -66,7 +69,7 @@ CLI_CODE_WORDS = {
     "mountpoint_not_empty": "that folder is not empty",
     "cifs_missing": "the mount tooling is missing on this machine",
     "credentials_missing": (
-        "the saved login is gone — enter it again: nagent service file config"
+        "the saved login is gone; enter it again: nagent service file config"
     ),
     "fs_refused": "this account may not use that folder",
     "mountpoint_invalid": "that is not a mount location this machine can use",

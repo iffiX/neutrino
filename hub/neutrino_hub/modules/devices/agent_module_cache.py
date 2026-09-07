@@ -31,7 +31,6 @@ from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_FETCH_TIMEOUT_S,
     AGENT_MODULE_GITHUB_API,
     AGENT_MODULE_KEY_DIGEST_CHARS,
-    AGENT_MODULE_SOURCE_SUFFIX,
 )
 
 
@@ -63,15 +62,12 @@ class AgentModuleArtifact:
         path: Where the file is.
         digest: Its SHA-256, which the agent checks what it received against.
         package_kind: The kind the manifest names.
-        source_path: The corresponding source kept beside it, or None when
-            the manifest names none.
     """
 
     key: str
     path: Path
     digest: str
     package_kind: str
-    source_path: "Path | None" = None
 
 
 def platform_keys(platform: dict) -> list:
@@ -192,7 +188,6 @@ class AgentModuleCache:
         package_kind = str(entry.get("package_kind", "") or "")
         key = self._key(name=name, platform_key=platform_key, entry=entry)
         path = self._root / key
-        source_url = str(manifest.get("source_archive", "") or "")
 
         with self._lock_for(key):
             held = self._read_held(path)
@@ -205,49 +200,7 @@ class AgentModuleCache:
                 path=path,
                 digest=held,
                 package_kind=package_kind,
-                source_path=self._source(key, source_url),
             )
-
-    def source_path(self, key: str) -> "Path | None":
-        """The corresponding source kept beside one artifact, when it is held.
-
-        Args:
-            key: The artifact's cache key.
-
-        Returns:
-            Its path, or None when the module carries no source archive or
-            the directory has been cleared.
-        """
-        if not self._is_safe_key(key):
-            return None
-        path = self._root / f"{key}{AGENT_MODULE_SOURCE_SUFFIX}"
-        return path if path.is_file() else None
-
-    def _source(self, key: str, url: str) -> "Path | None":
-        """Put the corresponding source beside the artifact, fetching once.
-
-        The copyleft licenses oblige the source with the binary, so a module
-        naming one is not served without it: a source that cannot be fetched
-        fails the module the way its own bytes failing would.
-
-        Args:
-            key: The artifact's cache key.
-            url: The manifest's ``source_archive``, empty for a module that
-                names none.
-
-        Returns:
-            Where the source is, or None when the manifest names none.
-
-        Raises:
-            AgentModuleFetchError: The fetch's own typed reasons.
-        """
-        if not url:
-            return None
-        path = self._root / f"{key}{AGENT_MODULE_SOURCE_SUFFIX}"
-        if path.is_file():
-            return path
-        self._write(path, self._fetch_plain(url))
-        return path
 
     def artifact_for_key(
         self, key: str, *, sources: dict, platform: dict

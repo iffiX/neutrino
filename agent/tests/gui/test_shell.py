@@ -5,6 +5,7 @@ embedding calls and the import-guard refusals all run without a display.
 """
 
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -13,7 +14,10 @@ import neutrino_agent.gui.webview2 as webview2
 import neutrino_agent.gui.wkwebview as wkwebview
 from neutrino_agent.gui.bridge import GuiBridge
 from neutrino_agent.gui.shell import GuiShellUnavailableError, open_shell_window
+from neutrino_agent.constants import AGENT_DESKTOP_NAME
 from tests.gui.test_bridge import FakeGuiChannel
+
+AGENT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class FakeWebviewModule:
@@ -158,3 +162,84 @@ def test_the_linux_shell_pins_the_41_api(monkeypatch):
         webkitgtk.open_window(title="t", html="<html>", bridge=None)
 
     assert pinned == [("Gtk", "3.0"), ("WebKit2", "4.1")]
+
+
+def test_the_linux_window_wears_the_name_its_launcher_is_installed_under(monkeypatch):
+    """GTK takes WM_CLASS from argv[0], which for a carried interpreter is the
+    entry script; a desktop matching a window to its launcher by that name
+    then finds neither the installed icon nor the installed title."""
+    named = {}
+
+    class FakeGLib:
+        @staticmethod
+        def set_prgname(name):
+            named["prgname"] = name
+
+        @staticmethod
+        def set_application_name(name):
+            named["application"] = name
+
+        @staticmethod
+        def idle_add(*args, **kwargs):
+            return None
+
+    class FakeWindow:
+        def __init__(self, **kwargs):
+            named["title"] = kwargs.get("title", "")
+
+        def set_default_size(self, *args):
+            return None
+
+        def set_icon_from_file(self, *args):
+            return None
+
+        def add(self, *args):
+            return None
+
+        def connect(self, *args):
+            return None
+
+        def show_all(self):
+            return None
+
+    class FakeGtk:
+        Window = FakeWindow
+        main_quit = staticmethod(lambda *a: None)
+        main = staticmethod(lambda: None)
+
+    class FakeManager:
+        def register_script_message_handler(self, *args):
+            return None
+
+        def connect(self, *args):
+            return None
+
+    class FakeWebKit2:
+        UserContentManager = FakeManager
+
+        @staticmethod
+        def WebView(**kwargs):
+            class _View:
+                def load_html(self, *args):
+                    return None
+
+            return _View()
+
+    monkeypatch.setattr(webkitgtk, "_toolkit", lambda: (FakeGLib, FakeGtk, FakeWebKit2))
+
+    webkitgtk.open_window(title="Neutrino agent", html="<html>", bridge=None)
+
+    assert named["prgname"] == AGENT_DESKTOP_NAME
+    assert named["application"] == "Neutrino agent"
+    assert named["title"] == "Neutrino agent"
+
+
+def test_the_name_the_window_wears_is_the_one_the_packages_install():
+    """One spelling: the launcher, the icon and WM_CLASS agree or the desktop
+    matches none of them together."""
+    desktop = (
+        AGENT_ROOT / "neutrino_agent/data/desktop" / f"{AGENT_DESKTOP_NAME}.desktop"
+    )
+
+    assert desktop.is_file()
+    assert f"Icon={AGENT_DESKTOP_NAME}" in desktop.read_text(encoding="utf-8")

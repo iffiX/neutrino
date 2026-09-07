@@ -75,7 +75,13 @@ STATE_PATTERNS = (
 # Strings the else-pattern catches that are not states: a code the codes
 # test covers, the rpm family's fallback package manager, and the CLI
 # surface's own verb and switch words.
-NON_STATES = {"agent_update_fetch_failed", "yum", "off", "uninstall"}
+NON_STATES = {
+    "agent_update_fetch_failed",
+    "rdp_screen_not_allowed",
+    "yum",
+    "off",
+    "uninstall",
+}
 
 # Mount record states the page words through ``is_attached`` rather than a
 # states entry: an attached record shows the ok dot, a detached one the
@@ -231,8 +237,11 @@ def test_the_connection_controls_grey_for_an_ordinary_caller():
 
 
 def test_the_module_buttons_grey_for_scope_support_busy_and_operations():
+    """`unsupported` is the machine's own word, which an older agent meeting a
+    newer hub's module kind says even where the platform is resolved."""
     assert (
-        "button.disabled = !isPrivileged || !m.is_supported || working || isHeld"
+        "button.disabled = !isPrivileged || !m.is_supported ||\n"
+        "      m.state === 'unsupported' || working || isHeld"
     ) in PAGE_JS
 
 
@@ -446,6 +455,24 @@ def test_installing_missing_modules_is_ordinary_asks_in_order():
     assert "await send('/api/module', { name: name, is_enabled: true });" in body
 
 
+def test_a_module_row_is_three_lines_the_panel_draws_the_same_way():
+    """Title, where it comes from, where it stands. The description is the
+    row's tooltip rather than a fourth line, so every row is the same height
+    and the one that must name a license is not the odd one out."""
+    assert '<div class="body" title="\' + m.description + \'">' in PAGE_JS
+    assert "'<div class=\"title\">' + m.title + '</div>' +" in PAGE_JS
+    assert "sourceLine(m) +" in PAGE_JS
+    assert "'<div class=\"note\">' + note + '</div></div>'" in PAGE_JS
+
+
+def test_the_source_line_names_the_source_and_links_it_where_there_is_one():
+    assert 'source_label: "source: "' in PAGE_JS
+    assert 'license_label: ", License: "' in PAGE_JS
+    # The name itself is the link: the line is ellipsised at one row's width,
+    # and a label after the license would be the part cut off.
+    assert "'rel=\"noreferrer noopener\">' + (m.source || '') + '</a>'" in PAGE_JS
+
+
 def test_a_native_module_row_reads_built_in_and_offers_no_button():
     assert "if (m.is_native || m.installer === 'user') {" in PAGE_JS
     assert 'built_in: "built in"' in PAGE_JS
@@ -472,15 +499,18 @@ def test_uninstalling_the_ssh_server_asks_first():
     assert 'uninstall_ssh_title: "Uninstall the SSH server?"' in PAGE_JS
 
 
-# --- the remote desktop panels ---
+# --- the remote desktop panel ---
 
 
-def test_the_two_remote_desktop_panels_are_titled():
-    for panel in (
-        'panel_rdp_share: "Remote desktop"',
-        'panel_rdp_peers: "Remote desktops"',
-    ):
-        assert panel in PAGE_JS
+def test_one_remote_desktop_panel_holds_both_halves():
+    """Sharing this screen and reaching another's are one subject, so they
+    are one panel: the local share, a rule, then the fleet's."""
+    assert 'panel_rdp: "Remote desktop"' in PAGE_JS
+    assert 'rdp_local_share: "Local share"' in PAGE_JS
+    assert 'rdp_remote_shares: "Remote shares"' in PAGE_JS
+    assert "drawRdpPeersPanel" not in PAGE_JS
+    assert "rule.className = 'panel_rule'" in PAGE_JS
+    assert ".panel_rule" in PAGE_CSS
 
 
 def test_every_share_state_has_a_word():
@@ -493,9 +523,10 @@ def test_every_share_state_has_a_word():
 
 
 def test_the_share_panel_stands_whether_or_not_the_fleet_publishes_anything():
-    # Sharing is decided on the machine, so its panel is pushed
+    # Sharing is decided on the machine, so the panel is pushed
     # unconditionally rather than only when an entry exists.
-    assert "panels.push(drawRdpSharePanel(state, WORDS.ui.panel_rdp_share))" in PAGE_JS
+    assert "panels.push(drawRdpPanel(state, peerRdpEntries(state)))" in PAGE_JS
+    assert 'rdp_no_peers: "No other machine is sharing."' in PAGE_JS
 
 
 def test_the_share_panel_gates_on_the_rustdesk_module():
@@ -503,9 +534,38 @@ def test_the_share_panel_gates_on_the_rustdesk_module():
     assert "missingModulesNotice(state, missing)" in PAGE_JS
 
 
-def test_the_share_button_greys_for_an_ordinary_caller():
-    assert "button.disabled = isGated || !isPrivileged" in PAGE_JS
-    assert "button.title = isPrivileged ? '' : WORDS.ui.privileged_only" in PAGE_JS
+def test_anyone_shares_their_own_seat_and_only_the_owner_stops_it():
+    """Share is open to the caller's own account; Stop sharing greys for an
+    ordinary caller who does not own the standing share."""
+    assert (
+        "const isOwn = isPrivileged || share.account === state.caller.account"
+    ) in PAGE_JS
+    assert "button.disabled = isGated || (isShared && !isOwn)" in PAGE_JS
+
+
+def test_the_share_and_mount_forms_pick_their_account_the_same_way():
+    """One single-select chip row for both: whose desktop a share means and
+    whose home a mount lands in. The account list arrives already scoped, so
+    an ordinary caller is shown only themselves."""
+    assert "function accountChipRow(" in PAGE_JS
+    assert 'share_user: "Share user"' in PAGE_JS
+    assert 'mount_user: "Mount for"' in PAGE_JS
+    assert (
+        "accountChipRow(\n      WORDS.ui.share_user, state.accounts, shareUser(state),"
+    ) in PAGE_JS
+    assert "accountChipRow(\n    WORDS.ui.mount_user, state.accounts," in PAGE_JS
+
+
+def test_a_share_preselects_the_account_at_the_screen():
+    """The seat decides what a peer is shown, so the seat's account is the
+    default; the caller is only the fallback where the machine cannot say."""
+    assert "((state.rdp || {}).desktop_accounts || [])[0]" in PAGE_JS
+    assert "rdpStaged.account || seated || state.caller.account" in PAGE_JS
+    assert "account: shareUser(state)" in PAGE_JS
+
+
+def test_a_mount_rides_with_the_picked_account():
+    assert "account: staged.account || state.caller.account" in PAGE_JS
 
 
 def test_the_typed_password_is_cleared_from_the_stage_when_it_is_sent():
@@ -529,5 +589,27 @@ def test_waiting_for_approval_says_what_a_person_must_do():
     assert "System Settings" in PAGE_JS
 
 
-def test_the_page_says_the_password_never_reaches_the_hub():
-    assert "the hub is never told it" in PAGE_JS
+def test_the_page_offers_no_reassurance_prose():
+    # The property (the password never crosses the wire) is pinned in the
+    # store and declaration tests; the page shows controls, not promises.
+    assert "the hub is never told it" not in PAGE_JS
+
+
+def test_the_access_password_is_masked_until_it_is_asked_for():
+    """A secret this machine generated for its owner: masked by default,
+    with Reveal and a copy beside it, the way the hub's panels show one."""
+    assert "function revealedSecret(" in PAGE_JS
+    assert "'•'.repeat(value.length)" in PAGE_JS
+    assert 'reveal: "Reveal"' in PAGE_JS
+    assert 'hide: "Hide"' in PAGE_JS
+    # And never built into a line of plain text.
+    assert "WORDS.ui.rdp_password_label + ': ' + share.password" not in PAGE_JS
+
+
+def test_a_peer_that_would_only_wait_is_greyed_and_says_why():
+    """The dialing machine says what the shared one is waiting on rather
+    than discovering it by sitting in "connecting"."""
+    assert "const attention = payload.attention || ''" in PAGE_JS
+    assert "connect.disabled = isGated || !!attention || !entry.is_healthy" in PAGE_JS
+    assert "rdp_nobody_seated:" in PAGE_JS
+    assert "rdp_screen_not_allowed:" in PAGE_JS

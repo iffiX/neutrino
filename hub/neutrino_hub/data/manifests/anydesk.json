@@ -4,6 +4,7 @@
   "title": "AnyDesk",
   "kind": "package",
   "installer": "user",
+  "source": "AnyDesk Software GmbH",
   "description": "Remote desktop, reachable by AnyDesk address",
   "platforms": {
     "linux": {

@@ -109,9 +109,12 @@ device and letting a Linux agent update itself need no network at all; an
 upgrade replaces those files the way it replaces `/opt/neutrino`, because the
 package manager owns them. A platform the package seeded none for is fetched
 once from the release its manifest names, checked against the hash pinned
-there, and kept beside them. Both halves are addressed by the same key — the
-package name, the platform, and a digest of the file — so a build that changed
-cannot be served under an old name. This is why `nhub reset all` clears
+there, and kept beside them. Both halves are addressed by the same name — the
+one the release publishes the asset under, which is also a name `apt` and
+`dnf` accept for a local file. Because that name says nothing about which
+build is inside it, a file already here is served only while it still hashes
+to what the manifest pins; one that does not is a stale fetch and is fetched
+again. This is why `nhub reset all` clears
 `agent_module_cache/` and leaves `agent_cache/` alone: one is a cache the hub
 filled, the other is largely what dpkg put there.
 

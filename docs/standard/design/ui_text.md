@@ -92,6 +92,22 @@ rather than inventing a friendlier word nobody else uses.
 **Numbers and units are half-width, with a space**: `12 devices`, `443 ms`,
 `8 MB`. A count of one still reads as a count: `1 device`.
 
+**No em dash inside a sentence.** `The saved login is gone; enter it again`,
+never `The saved login is gone — enter it again`. As a plain separator
+between two values it is fine — `leastPing — lowest latency wins`, a `—`
+placeholder for a missing reading — the ban is on splicing prose with it.
+
+**States, not mechanics; progress, not sentences.** A surface says where a
+thing stands (`mounting…`, `shared`), never how the system will get there
+(`the machine answers on its next heartbeat`). While something is under way
+the control that asked shows it is busy; when it lands, the row itself is
+the answer, and no `done` sentence follows it.
+
+**Never announce what the product does not do.** `The password stays on this
+machine; the hub is never told it` explains an implementation boundary
+nobody asked about. Security properties live in `docs/`; the surface shows
+the controls that exist and omits the reassurance.
+
 ## Localization
 
 Not built. The panel is English-only today, and this section exists so that

@@ -14,7 +14,8 @@ const WORDS = {
     uninstall: "Uninstall",
     built_in: "built in",
     user_tier: "Install it on the machine yourself; the hub only manages it",
-    module_source: "source",
+    source_label: "source: ",
+    license_label: ", License: ",
     uninstall_ssh_title: "Uninstall the SSH server?",
     uninstall_ssh_body:
       "SSH stops answering on this machine; the agent channel keeps managing it.",
@@ -39,6 +40,8 @@ const WORDS = {
     browse_drive_letter: "This machine mounts at a drive letter, typed as Z:",
     unmounting: "unmounting…",
     enabled_users: "Enabled users",
+    share_user: "Share user",
+    mount_user: "Mount for",
     mount_queued: "waiting for the agent…",
     mount_mounting: "mounting…",
     mount_pending: "waiting to mount…",
@@ -54,19 +57,22 @@ const WORDS = {
     panel_ports: "Ports",
     panel_ai: "AI",
     panel_files: "Files",
-    panel_rdp_share: "Remote desktop",
-    panel_rdp_peers: "Remote desktops",
+    panel_rdp: "Remote desktop",
+    rdp_local_share: "Local share",
+    rdp_remote_shares: "Remote shares",
+    rdp_no_peers: "No other machine is sharing.",
     rdp_share: "Share",
     rdp_unshare: "Stop sharing",
     rdp_connect: "Connect",
     rdp_password_hint: "Access password",  // scan: allow
     rdp_password_label: "Access password",  // scan: allow
+    reveal: "Reveal",
+    hide: "Hide",
+    copy: "Copy",
+    copied: "Copied",
     rdp_this_machine: "This machine",
-    rdp_id_label: "RustDesk ID",
     rdp_reach: "reached at {host}:{port}",
     rdp_not_shared: "This machine's desktop is not shared.",
-    rdp_password_kept:
-      "The password stays on this machine; the hub is never told it.",
     rdp_approval_hint:
       "Allow RustDesk to record the screen in System Settings on this " +
       "machine; the share is published once it answers.",
@@ -112,9 +118,13 @@ const WORDS = {
       "the download did not match the checksum this hub pins for it",
     rdp_password_missing: "set an access password to share this desktop",  // scan: allow
     rdp_no_desktop: "this machine has no desktop session to share",
+    rdp_wrong_seat: "{account} is not signed in at this machine's screen",
     rdp_configure_failed: "RustDesk could not be configured: {detail}",
     rdp_launch_failed: "the RustDesk client could not be started: {detail}",
     rdp_no_address: "that machine published no address to connect to",
+    rdp_nobody_seated: "nobody is signed in at that machine's screen",
+    rdp_screen_not_allowed:
+      "allow screen sharing once at that machine's screen",
     agent_never_reported: "this machine never said how the install went",
     uninstall_unconfirmed: "the uninstall finished, but the software is still there",
     no_download_named: "the catalog names no download for this machine",
@@ -130,13 +140,13 @@ const WORDS = {
     mountpoint_not_empty: "that folder is not empty",
     mountpoint_invalid: "that is not a mount location this machine can use",
     cifs_missing: "the mount tooling is missing on this machine",
-    credentials_missing: "the saved login is gone — enter it again with Config",
+    credentials_missing: "the saved login is gone; enter it again with Config",
     no_logged_on_session: "sign in as the mount's account on this machine, then try again",
     fs_refused: "this account may not use that folder",
     control_scope_refused: "this account is not allowed to do that",
     control_identity_unknown: "the agent cannot tell who is asking",
     control_channel_closed:
-      "the agent stopped answering — close this window and run nagent gui again",
+      "the agent stopped answering; close this window and run nagent gui again",
     unknown_request: "the agent does not know this request",
     agent_internal: "the agent hit an unexpected error ({error}); check its log",
   },
@@ -221,7 +231,7 @@ const fileAsked = {};
 let fileStaged = {};
 // The access password typed into the share form, cleared the moment it is
 // sent — it lives here and in that one request and nowhere else.
-const rdpStaged = { password: '' };
+const rdpStaged = { password: '', account: '' };
 // Dialogs are built outside draw() and counted here, so a poll never
 // redraws under one.
 let openDialogs = 0;
@@ -395,6 +405,7 @@ function drawOperation(op) {
     log.className = 'oplog';
     log.textContent = op.output;
     card.appendChild(log);
+    requestAnimationFrame(() => { log.scrollTop = log.scrollHeight; });
   }
   return card;
 }
@@ -486,15 +497,17 @@ function hasArrived(m, step) {
   return m.state === 'absent';
 }
 
-// The license and the exact source of software the hub conveys, beside the
-// row it conveys it on. A module naming no license renders nothing.
-function licenseLine(m) {
-  if (!m.license) return '';
-  const source = m.corresponding_source
-    ? ' — <a href="' + m.corresponding_source + '" target="_blank" ' +
-      'rel="noreferrer noopener">' + WORDS.ui.module_source + '</a>'
-    : '';
-  return '<div class="note muted">' + m.license + source + '</div>';
+// Where a module's software comes from, on the row that installs it: a
+// repository, a vendor, or the machine's own packages. Every row carries
+// one, so the one that must name a license is not the odd row out.
+function sourceLine(m) {
+  const named = m.corresponding_source
+    ? '<a href="' + m.corresponding_source + '" target="_blank" ' +
+      'rel="noreferrer noopener">' + (m.source || '') + '</a>'
+    : (m.source || '');
+  const licensed = m.license ? WORDS.ui.license_label + m.license : '';
+  return '<div class="note">' + WORDS.ui.source_label + named + licensed +
+    '</div>';
 }
 
 function drawModules(state) {
@@ -526,12 +539,14 @@ function drawModules(state) {
         (worded ? ' — ' + worded : '');
     const row = document.createElement('div');
     row.className = 'feat';
+    // Three lines, the same three the panel draws: what it is, where it
+    // comes from, where it stands. The description is the row's tooltip.
     row.innerHTML = (working ? '<span class="spin"></span>'
       : '<span class="dot ' + tone + '"></span>') +
-      '<div class="body"><div class="title">' + m.title + '</div>' +
-      '<div class="note">' + m.description + '</div>' +
-      '<div class="note">' + note + '</div>' +
-      licenseLine(m) + '</div>';
+      '<div class="body" title="' + m.description + '">' +
+      '<div class="title">' + m.title + '</div>' +
+      sourceLine(m) +
+      '<div class="note">' + note + '</div></div>';
     // A module the platform carries natively, or one the person installs
     // themselves, offers nothing to press.
     if (m.is_native || m.installer === 'user') {
@@ -541,7 +556,8 @@ function drawModules(state) {
     const button = document.createElement('button');
     button.className = isOn ? 'danger' : 'install';
     button.textContent = isOn ? WORDS.ui.uninstall : WORDS.ui.install;
-    button.disabled = !isPrivileged || !m.is_supported || working || isHeld;
+    button.disabled = !isPrivileged || !m.is_supported ||
+      m.state === 'unsupported' || working || isHeld;
     button.title = isPrivileged ? '' : WORDS.ui.privileged_only;
     const act = () => askFor(m.name, isOn ? 'uninstalling' : 'installing',
       { name: m.name, is_enabled: !isOn });
@@ -614,12 +630,9 @@ function drawServices(state) {
     if (entries.length === 0) continue;
     panels.push(build(state, entries, title));
   }
-  // Sharing this desktop is decided here and nowhere else, so its panel
+  // Sharing this desktop is decided here and nowhere else, so the panel
   // stands whether or not the hub publishes anything at all.
-  panels.push(drawRdpSharePanel(state, WORDS.ui.panel_rdp_share));
-  const peers = peerRdpEntries(state);
-  if (peers.length > 0)
-    panels.push(drawRdpPeersPanel(state, peers, WORDS.ui.panel_rdp_peers));
+  panels.push(drawRdpPanel(state, peerRdpEntries(state)));
   if (panels.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'card';
@@ -750,7 +763,70 @@ function drawPortsPanel(state, entries, title) {
   return card;
 }
 
+// One account, picked from the machine's people. Single-select: a mount
+// belongs to one home, and a screen seats one person.
+function accountChipRow(label, accounts, chosen, isDisabled, onPick) {
+  const wrap = document.createElement('div');
+  const head = document.createElement('div');
+  head.className = 'subhead';
+  head.textContent = label;
+  wrap.appendChild(head);
+  const chips = document.createElement('div');
+  chips.className = 'chips';
+  for (const account of accounts) {
+    const isOn = account === chosen;
+    const chip = document.createElement('button');
+    chip.className = isOn ? 'chip on' : 'chip';
+    chip.disabled = isDisabled;
+    chip.innerHTML = '<span class="dot ' + (isOn ? 'ok' : 'off') + '"></span>' +
+      account;
+    chip.onclick = () => { onPick(account); redraw(); };
+    chips.appendChild(chip);
+  }
+  wrap.appendChild(chips);
+  return wrap;
+}
+
 // --- the remote desktop panels: share here, connect there ---
+
+function drawRdpPanel(state, peers) {
+  const card = drawRdpSharePanel(state, WORDS.ui.panel_rdp);
+  const rule = document.createElement('div');
+  rule.className = 'panel_rule';
+  card.appendChild(rule);
+  const head = document.createElement('div');
+  head.className = 'subhead';
+  head.textContent = WORDS.ui.rdp_remote_shares;
+  card.appendChild(head);
+  if (peers.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'note muted';
+    empty.textContent = WORDS.ui.rdp_no_peers;
+    card.appendChild(empty);
+    return card;
+  }
+  const missing = missingNamed(state, ['rustdesk']);
+  const isGated = missing.length > 0;
+  for (const entry of peers) {
+    const payload = entry.payload || {};
+    const noteKey = 'rdp_' + entry.id;
+    // What that machine says a peer would wait on: shown here rather than
+    // discovered by dialing and sitting in "connecting".
+    const attention = payload.attention || '';
+    const row = entryRow(
+      entry, (payload.host || '') + ':' + (payload.port || ''),
+      serviceNotes[noteKey] || (attention ? wordCode(attention, {}) : ''));
+    if (isGated || attention) row.classList.add('greyed');
+    const connect = document.createElement('button');
+    connect.textContent = WORDS.ui.rdp_connect;
+    connect.disabled = isGated || !!attention || !entry.is_healthy;
+    connect.onclick = () => serviceAction('rdp',
+      { action: 'connect', id: entry.id }, noteKey);
+    row.appendChild(connect);
+    card.appendChild(row);
+  }
+  return card;
+}
 
 function drawRdpSharePanel(state, title) {
   const share = state.rdp || {};
@@ -759,6 +835,10 @@ function drawRdpSharePanel(state, title) {
   const isPrivileged = state.caller.is_privileged;
   const card = panelCard(title, false);
   if (isGated) card.appendChild(missingModulesNotice(state, missing));
+  const localHead = document.createElement('div');
+  localHead.className = 'subhead';
+  localHead.textContent = WORDS.ui.rdp_local_share;
+  card.appendChild(localHead);
 
   const isShared = !!share.is_shared;
   const standing = WORDS.states[share.state] || WORDS.states.unknown;
@@ -766,29 +846,30 @@ function drawRdpSharePanel(state, title) {
   row.className = isShared ? 'feat' : 'feat greyed';
   const reach = isShared
     ? fill(WORDS.ui.rdp_reach,
-        { host: state.hostname, port: share.port }) + ' — ' + standing
+        { host: state.hostname, port: share.port }) + ' — ' + standing +
+      (share.account ? ' · ' + share.account : '')
     : WORDS.ui.rdp_not_shared;
   row.innerHTML = '<span class="dot ' + (share.state === 'sharing' ? 'ok' : 'off') +
     '"></span>' +
     '<div class="body"><div class="title">' + WORDS.ui.rdp_this_machine +
     '</div><div class="note">' + reach + '</div>' +
-    (share.rustdesk_id
-      ? '<div class="note muted">' + WORDS.ui.rdp_id_label + ' ' +
-        share.rustdesk_id + '</div>'
-      : '') +
-    '</div>';
+'</div>';
 
+  const isOwn = isPrivileged || share.account === state.caller.account;
   const button = document.createElement('button');
   button.className = isShared ? 'danger' : '';
   button.textContent = isShared ? WORDS.ui.rdp_unshare : WORDS.ui.rdp_share;
-  button.disabled = isGated || !isPrivileged;
-  button.title = isPrivileged ? '' : WORDS.ui.privileged_only;
+  button.disabled = isGated || (isShared && !isOwn);
+  button.title = !isShared || isOwn ? '' : WORDS.ui.privileged_only;
   button.onclick = () => {
     if (isShared) {
       serviceAction('rdp', { action: 'unshare' }, 'rdp');
       return;
     }
-    const sent = { action: 'share', password: rdpStaged.password };
+    const sent = {
+      action: 'share', password: rdpStaged.password,
+      account: shareUser(state),
+    };
     rdpStaged.password = '';
     serviceAction('rdp', sent, 'rdp').then(() => redraw());
   };
@@ -805,18 +886,76 @@ function drawRdpSharePanel(state, title) {
   if (note) card.appendChild(errorLine(note));
 
   if (!isShared) {
-    card.appendChild(rdpPasswordForm(state, isGated || !isPrivileged, button));
-  } else if (isPrivileged && share.password) {
-    const kept = document.createElement('div');
-    kept.className = 'rec';
-    kept.textContent = WORDS.ui.rdp_password_label + ': ' + share.password;
-    card.appendChild(kept);
+    card.appendChild(accountChipRow(
+      WORDS.ui.share_user, state.accounts, shareUser(state),
+      isGated,
+      (account) => { rdpStaged.account = account; }));
+    card.appendChild(rdpPasswordForm(state, isGated, button));
+  } else if (share.password) {
+    card.appendChild(revealedSecret(WORDS.ui.rdp_password_label, share.password));
   }
-  const kept = document.createElement('div');
-  kept.className = 'note muted';
-  kept.textContent = WORDS.ui.rdp_password_kept;
-  card.appendChild(kept);
   return card;
+}
+
+function shareUser(state) {
+  const seated = ((state.rdp || {}).desktop_accounts || [])[0] || '';
+  return rdpStaged.account || seated || state.caller.account;
+}
+
+// The window is served over no origin the clipboard API trusts, so a copy
+// falls back to selecting the text for the person to take.
+function copyText(value) {
+  try {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(value);
+      return;
+    }
+  } catch (error) {
+    // Fall through to the selection.
+  }
+  const holder = document.createElement('textarea');
+  holder.value = value;
+  document.body.appendChild(holder);
+  holder.select();
+  try { document.execCommand('copy'); } catch (error) { /* selected */ }
+  document.body.removeChild(holder);
+}
+
+// A secret this machine generated for its owner: masked until asked for,
+// never standing in plain text on a screen somebody else can be shown.
+function revealedSecret(label, value) {
+  const row = document.createElement('div');
+  row.className = 'rec';
+  const name = document.createElement('span');
+  name.textContent = label;
+  const shown = document.createElement('span');
+  shown.className = 'path';
+  let isRevealed = false;
+  const draw = () => {
+    shown.textContent = isRevealed ? value : '•'.repeat(value.length);
+  };
+  draw();
+  const reveal = document.createElement('button');
+  reveal.className = 'ghost';
+  reveal.textContent = WORDS.ui.reveal;
+  reveal.onclick = () => {
+    isRevealed = !isRevealed;
+    reveal.textContent = isRevealed ? WORDS.ui.hide : WORDS.ui.reveal;
+    draw();
+  };
+  const copy = document.createElement('button');
+  copy.className = 'ghost';
+  copy.textContent = WORDS.ui.copy;
+  copy.onclick = () => {
+    copyText(value);
+    copy.textContent = WORDS.ui.copied;
+    setTimeout(() => { copy.textContent = WORDS.ui.copy; }, 1500);
+  };
+  row.appendChild(name);
+  row.appendChild(shown);
+  row.appendChild(reveal);
+  row.appendChild(copy);
+  return row;
 }
 
 // The password the person sets lives here and in the one request that
@@ -836,29 +975,6 @@ function rdpPasswordForm(state, isDisabled, button) {
   button.disabled = isDisabled || !rdpStaged.password;
   form.appendChild(input);
   return form;
-}
-
-function drawRdpPeersPanel(state, entries, title) {
-  const card = panelCard(title, false);
-  const missing = missingNamed(state, ['rustdesk']);
-  const isGated = missing.length > 0;
-  if (isGated) card.appendChild(missingModulesNotice(state, missing));
-  for (const entry of entries) {
-    const payload = entry.payload || {};
-    const noteKey = 'rdp_' + entry.id;
-    const row = entryRow(
-      entry, (payload.host || '') + ':' + (payload.port || ''),
-      serviceNotes[noteKey] || '');
-    if (isGated) row.classList.add('greyed');
-    const connect = document.createElement('button');
-    connect.textContent = WORDS.ui.rdp_connect;
-    connect.disabled = isGated || !entry.is_healthy;
-    connect.onclick = () => serviceAction('rdp',
-      { action: 'connect', id: entry.id }, noteKey);
-    row.appendChild(connect);
-    card.appendChild(row);
-  }
-  return card;
 }
 
 // --- the AI panel: chips + Config + Apply, staged ---
@@ -1106,6 +1222,7 @@ function drawFilesPanel(state, entries, title) {
           is_open: true, username: kept ? (kept.username || '') : '',
           password: '',
           path: kept ? kept.path : mountDefaultPath(payload, state),
+          account: kept ? (kept.account || '') : '',
         };
       }
       redraw();
@@ -1143,6 +1260,7 @@ function mountButton(entry, record, staged, state, noteKey) {
       const sent = {
         action: 'mount', id: entry.id, username: staged.username,
         password: staged.password, path: staged.path,
+        account: staged.account || state.caller.account,
       };
       staged.password = '';
       if (await serviceAction('file', sent, noteKey)) {
@@ -1207,6 +1325,10 @@ function drawMountRecord(record, state, noteKey) {
 function drawFileForm(entryId, staged, state) {
   const form = document.createElement('div');
   form.className = 'form';
+  form.appendChild(accountChipRow(
+    WORDS.ui.mount_user, state.accounts,
+    staged.account || state.caller.account, false,
+    (account) => { staged.account = account; }));
   const fields = [
     ['username', WORDS.ui.username_hint, 'text'],
     ['password', WORDS.ui.password_hint, 'password'],

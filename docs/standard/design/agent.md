@@ -131,6 +131,15 @@ heartbeat time to the address that device actually reaches, the way the ai
 endpoint always was; a device-declared host is another machine's and is
 never rewritten.
 
+**Where a machine is comes from its channel.** The hub records the peer
+address of every beat and uses that wherever a device's own address is
+needed: the share it publishes, the LAN its catalog is composed for, the
+address the panel shows. A scan sees only the LANs this box serves, and a
+stored SSH host is a credential rather than a location, so neither is the
+answer: SSH installs the agent and drives power, nothing more. The record
+follows the machine, because a beat from a new address is the machine at
+that address.
+
 **The `device` source is the machine's own word, and it expires.** Only an
 agent can declare an rdp entry: the panel's form offers no such type and no
 hub module publishes one. The declaration rides the heartbeat as
@@ -170,6 +179,9 @@ has not reported:
 | --- | --- | --- |
 | `absent`, `installed` | `installing`, `uninstalling` | `failed`, `unsupported` |
 
+A module kind the agent has no runner for is `unsupported` — an older agent
+meeting a newer hub's catalog is a machine that cannot have it, not one that
+has not answered — and a row in that state offers no button on either surface.
 A row the platform carries natively is worded **built in** rather than
 installed, and `failed` is always accompanied by its `{code, params}`,
 worded from the surface's own table. Three invariants
@@ -186,8 +198,16 @@ Three sections under outer titles set in the hub's module-page style —
 **Status**, **Modules**, **Services** — in that order on the agent as on
 the hub. Status is one panel: the connection card, its controls greyed for
 an ordinary caller. Modules is one panel of rows, install/uninstall each,
-greyed likewise; a row whose software the hub conveys under a copyleft
-license carries its license and a link to the exact source beside it. Services is
+greyed likewise. **Every row is the same three lines** — its title, where
+its software comes from, and where it stands — with the description as the
+row's tooltip rather than a fourth line, and the rows in one order the hub
+decides so the drawer and the page cannot disagree: what the machine's own
+packages carry, then what this hub fetches from a public repository, then
+what a person installs from a vendor themselves, by title inside each. The
+middle line names a repository, a company, or `system`; where the hub
+conveys the bytes itself the name links to the exact source and the license
+follows it, which is the whole of what a copyleft license obliges — no copy
+of the source is kept here. Services is
 one panel per type — Web, Ports, AI, Files, Remote desktop, Remote
 desktops — and a panel with staged,
 unapplied edits lights its frame the way the hub's panels do; unhealthy
@@ -196,6 +216,16 @@ the one panel that stands with no entry behind it: sharing is decided on
 the machine, so the panel is there whether or not the fleet publishes
 anything.
 
+**A service that acts on accounts names them on its own panel.** AI's
+enabled users are a multi-select — one machine serves several people's
+tools; a mount and a share are single-select chips — a mount belongs to
+one home, a screen seats one person. The chip list is the scoped account
+list every state read already carries, so an ordinary caller is shown
+themselves and nobody else, and root or the hub is shown everyone; naming
+anyone else from an ordinary scope is refused, and naming an account the
+machine does not have is refused by name. The share's chip preselects the
+account at the screen, and a mount's the record's own.
+
 One **Operation output** panel closes the Modules section, and it is the
 same panel the hub's drawer shows: whenever an agent install, reinstall
 or uninstall, or a module install or uninstall, is running or has just
@@ -203,6 +233,20 @@ run, the panel is present with that operation's stream. The hub holds the one pe
 it, so an operation started on either side appears on both, line for
 line — neither surface keeps a private log, and the two can no more
 disagree about what is running than the module rows can.
+
+**The hub's drawer mirrors the page for a managed device**, in its own
+order — Modules, Operation output, Services, Remote desktop — and its
+Services block is operable: an ask there is the page's own verb, queued on
+the device's command channel and run by the agent in the privileged scope,
+with the typed refusal riding the result back for the drawer to word. The
+verb set is closed — the AI apply, a mount naming whom it is for, an
+unmount, a share naming its account and password, an unshare — and what
+cannot be asked from there is not offered: a port forward opens on the
+machine's own loopback. A share's access password rides inside the one
+ask, the way a mount's credentials do, and lands in a root-only file on
+the machine. The drawer's rows are the machine's last
+beat, which carries the mount records and the AI rows up beside the module
+report, credentials in none of it.
 
 The page redraws only when the payload actually changed, and never while
 the person holds a text selection, a focused form field, or an open
@@ -254,14 +298,30 @@ mounting over content hides it).
 direct-connection configuration to every path the service and the desktop
 session read, and sets the password. Direct mode only: no rendezvous
 server and no relay, `direct-server` on port 21118, and reachability is the
-LAN's or the overlay's job. Sharing takes the privileged scope — it opens
-the whole machine, not one account's files — and the share is declared
+LAN's or the overlay's job. **One share per machine, owned by its
+account**: an ordinary caller shares their own seat and stops their own
+share, and the privileged scope controls anyone's — the mechanics run in
+the root daemon either way. The share is declared
 upward only once the direct port answers, so the fleet is never offered a
 desktop that cannot be reached. macOS says **waiting for approval** until
 then rather than claiming otherwise: screen recording there is one
 person's allowance in System Settings, and no configuration substitutes
 for it. Unshare closes the direct server in every file sharing opened and
 withdraws the declaration.
+
+**Which desktop a peer reaches is the seat's, never the caller's.** The
+privileged scope decides who may configure the share; it does not decide
+what is shown. RustDesk's root service holds no port of its own — it
+spawns a second process into the session of whoever is logged in at the
+seat, and that process is what listens on 21118. So sharing from a root
+shell shares the logged-in person's desktop, and a machine with nobody
+logged in has nothing listening at all, which is what `rdp_no_desktop`
+refuses in front of and what waiting for the port to answer would
+otherwise sit through. Setting the password is the same story from the
+other side: it travels over the service's own socket, which starts
+accepting after the platform's service control has already returned, so
+the call is repeated until it takes rather than reported as a refusal —
+nothing else the binary offers proves that socket is up.
 
 **Remote desktops.** One row per machine the fleet says is sharing, its
 own excluded, and Connect launches the local RustDesk client at that

@@ -29,7 +29,7 @@ import "./ai_access_panel.css";
 
 const WORDING = {
   title: "Access",
-  hint: "Keys for machines no agent manages — a phone, a tablet, a laptop nobody enrolled. A managed device is handed its own key over the agent channel.",
+  hint: "Keys for machines no agent manages: a phone, a tablet, a laptop nobody enrolled. A managed device is handed its own key over the agent channel.",
   endpoint: "Endpoint",
   copy: "Copy",
   copied: "Copied",

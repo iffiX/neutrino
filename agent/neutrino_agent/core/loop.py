@@ -157,6 +157,7 @@ class Agent:
                     credentials_dir=os.path.join(
                         data_dir, AGENT_MOUNT_CREDENTIALS_DIR_NAME
                     ),
+                    accounts=self._read_accounts,
                     log=log,
                 ),
                 RdpServiceHandler(
@@ -165,6 +166,7 @@ class Agent:
                     credentials_dir=os.path.join(
                         data_dir, AGENT_MOUNT_CREDENTIALS_DIR_NAME
                     ),
+                    accounts=self._read_accounts,
                     log=log,
                 ),
             )
@@ -256,6 +258,23 @@ class Agent:
         except (KeyError, PlatformUnsupportedError):
             return ""
 
+    def service_report(self) -> dict:
+        """What the hub's drawer draws about this machine's services.
+
+        The file handler's rows, the AI rows, and the share at a glance;
+        neither passwords nor forward sockets belong on a wire.
+
+        Returns:
+            ``{"mounts", "ai_states", "rdp"}``.
+        """
+        handler = self._services.get("file")
+        rdp = self._services.get("rdp")
+        return {
+            "mounts": (handler.state().get("mounts", []) if handler else []),
+            "ai_states": self.ai_states(),
+            "rdp": (rdp.summary() if rdp is not None else {}),
+        }
+
     def service_states(self) -> dict:
         """Every service type's machine state, merged for the page payload."""
         merged = {}
@@ -273,19 +292,21 @@ class Agent:
         handler = self._services.get(RdpServiceHandler.service_type)
         return handler.declaration() if handler is not None else {}
 
-    def rdp_password(self, *, is_privileged: bool) -> str:
+    def rdp_password(self, *, account: str, is_privileged: bool) -> str:
         """The access password this machine shares with, for its owner.
 
         Args:
+            account: The asking account.
             is_privileged: Whether the caller holds the privileged scope.
 
         Returns:
-            The password, empty for an ordinary caller or when none is set.
+            The password, for the privileged scope and the share's own
+            account; empty for anyone else or when none is set.
         """
         handler = self._services.get(RdpServiceHandler.service_type)
         if handler is None:
             return ""
-        return handler.reveal_password(is_privileged=is_privileged)
+        return handler.reveal_password(account=account, is_privileged=is_privileged)
 
     # --- what the local page does ---
 
@@ -421,6 +442,10 @@ class Agent:
             "wire": AGENT_WIRE_GENERATION,
             "metrics": self._read_metrics(),
             "platform": self._engine.platform_tuple,
+            # Each interface's address with the MAC carrying it, so the hub
+            # can name the one on this machine's own wire rather than
+            # whichever the kernel routed a beat out of.
+            "addresses": enrollment.machine_addresses(),
             "accounts": self._read_accounts(),
             # The gateway sends the catalog only when this differs from what
             # it serves, so a converged fleet is not shipped it every beat.
@@ -429,6 +454,9 @@ class Agent:
             "module_requests": requests,
             "module_results": self._engine.results(),
             "ai_targets": self._store.ai_targets(),
+            # What the hub's drawer draws about this machine's services;
+            # credentials appear nowhere in it.
+            "service_state": self.service_report(),
             # Whether this machine's desktop is reachable. The access
             # password it was set up with stays on the machine.
             "rdp_share": self.rdp_declaration(),
@@ -654,18 +682,44 @@ class Agent:
         action = command.get("action", "")
         command_id = command.get("id", action)
         self._log(f"running {action}")
-        outcome = operator.run(action, command.get("args", {}))
+        if action == "service":
+            report = self._run_service_command(dict(command.get("args") or {}))
+        else:
+            outcome = operator.run(action, command.get("args", {}))
+            report = {"exit_code": outcome.exit_code, "output": outcome.output}
         try:
-            channel.post(
-                AGENT_RESULT_PATH,
-                {
-                    "id": command_id,
-                    "exit_code": outcome.exit_code,
-                    "output": outcome.output,
-                },
-            )
+            channel.post(AGENT_RESULT_PATH, {"id": command_id, **report})
         except (GatewayUnreachable, GatewayUntrusted) as error:
             self._log(f"could not report {action} result: {error}")
+
+    def _run_service_command(self, args: dict) -> dict:
+        """One service action the hub asked for, in the privileged scope.
+
+        The hub's surface is the page's own verb set and nothing wider:
+        the body lands on the same handler a local privileged caller
+        reaches. A share's access password rides inside the one ask, the
+        way a mount's credentials already do, and lands in a root-only
+        file on the machine.
+
+        Args:
+            args: ``{"service_type", "body"}``.
+
+        Returns:
+            The result fields the hub's surface words: an exit code, and
+            the typed refusal when there was one.
+        """
+        service_type = str(args.get("service_type", ""))
+        body = dict(args.get("body") or {})
+        refusal = self.service_action(
+            service_type, account="", is_privileged=True, body=body
+        )
+        if refusal:
+            return {
+                "exit_code": 1,
+                "code": str(refusal.get("code", "")),
+                "params": dict(refusal.get("params") or {}),
+            }
+        return {"exit_code": 0}
 
     def _force_self_update(self, target: str) -> None:
         """Reinstall this agent from the hub's package, version equal or not.

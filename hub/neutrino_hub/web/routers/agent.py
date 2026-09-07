@@ -141,11 +141,18 @@ def heartbeat(
     runtime.client_metrics[key] = dict(beat.metrics)
     runtime.client_modules[key] = dict(beat.modules)
     runtime.client_accounts[key] = list(beat.accounts)
+    address = _device_address(beat.addresses, key, _peer_host(request))
+    if address:
+        runtime.client_address[key] = address
+    runtime.client_ai_targets[key] = dict(beat.ai_targets)
+    runtime.client_service_state[key] = dict(beat.service_state)
     if beat.platform:
         runtime.client_platform[key] = dict(beat.platform)
     if beat.hostname:
         runtime.client_hostname[key] = beat.hostname
-    _record_rdp_share(runtime, device, beat.rdp_share)
+    _record_rdp_share(
+        runtime, device, beat.rdp_share, runtime.client_address.get(key, "")
+    )
     if isinstance(beat.last_error, dict) and beat.last_error.get("code"):
         runtime.client_last_error[key] = {
             "code": str(beat.last_error.get("code")),
@@ -159,7 +166,10 @@ def heartbeat(
         seen_at=datetime.now(timezone.utc).isoformat(),
     )
 
-    device_host = _device_host(runtime, device.ipv4_address, _reached_host(request))
+    device_host = _device_host(
+        runtime, runtime.client_address.get(key, ""), _reached_host(request)
+    )
+    runtime.client_device_host[key] = device_host
     ai_accounts = _ai_accounts(device, runtime, registry, beat.ai_targets, device_host)
     catalog, served_hash = runtime.device_catalog.catalog(
         device_host=device_host, platform=platform
@@ -183,7 +193,9 @@ def heartbeat(
 
 @router.post("/enroll", response_model=ClientEnrollReply)
 def enroll(
-    request: ClientEnroll, runtime: PanelRuntime = Depends(get_runtime)
+    request: ClientEnroll,
+    http_request: Request,
+    runtime: PanelRuntime = Depends(get_runtime),
 ) -> ClientEnrollReply:
     """Let a machine introduce itself with an enrollment ticket.
 
@@ -195,6 +207,7 @@ def enroll(
 
     Args:
         request: The ticket and what the machine says it is.
+        http_request: The connection, for where the machine is.
         runtime: The shared runtime, which holds the open tickets.
 
     Returns:
@@ -226,38 +239,91 @@ def enroll(
         runtime.client_platform[key] = dict(request.platform)
     if request.hostname:
         runtime.client_hostname[key] = request.hostname
+    peer_host = _peer_host(http_request)
+    if peer_host:
+        runtime.client_address[key] = peer_host
     return ClientEnrollReply(token=token, mac_address=key, hub_version=HUB_VERSION)
 
 
-def _record_rdp_share(runtime: PanelRuntime, device, share: dict) -> None:
+def _device_address(reported: list, mac_address: str, peer_host: str) -> str:
+    """Where a machine is, out of everything it carries.
+
+    The address on the machine's **identity MAC**: the interface the hub
+    keys the device by, which is the machine's own wire rather than a
+    macvlan, a container bridge or a second address on the same segment
+    that a kernel may route a beat out of just as happily. The connection's
+    peer address stands in where nothing matches, which is every machine
+    that cannot enumerate this and every overlay-only one.
+
+    Args:
+        reported: The beat's ``addresses``, ``[{"mac", "address"}]``.
+        mac_address: The device's identity MAC.
+        peer_host: Where this beat came from.
+
+    Returns:
+        The address, empty when there is none to be had.
+    """
+    wanted = mac_address.lower()
+    for entry in reported:
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("mac", "")).lower() != wanted:
+            continue
+        address = str(entry.get("address", "") or "")
+        if address:
+            return address
+    return peer_host
+
+
+def _peer_host(request: Request) -> str:
+    """Where a channel comes from, as this hub's own socket sees it.
+
+    The one first-hand answer to where a machine is: a scan sees only the
+    LANs this box serves, and a stored SSH host is a credential rather than
+    a location. It follows the machine, because a beat from a new address
+    is the machine at that address.
+
+    Args:
+        request: The agent's request.
+
+    Returns:
+        The peer's address, empty when the transport names none.
+    """
+    client = request.client
+    return client.host if client is not None else ""
+
+
+def _record_rdp_share(runtime: PanelRuntime, device, share: dict, host: str) -> None:
     """Take one machine's word on whether its desktop is shared.
 
     Only a machine's own agent declares this, and only for itself: the
     device the token resolved to is the one the share is recorded against,
     so nothing a beat carries can declare on another machine's behalf. The
-    address is the hub's own record of where that machine is, not one the
-    beat names.
+    address is where its channel comes from, which is the hub's own
+    observation rather than anything the beat names.
 
     Args:
         runtime: The shared runtime.
         device: The device the token resolved to.
         share: The beat's ``rdp_share``.
+        host: Where this machine's channel comes from.
     """
     key = device.mac_address
     was_sharing = any(held.mac_address == key for held in runtime.device_shares.live())
     is_shared = bool(share.get("is_shared")) if isinstance(share, dict) else False
     share_id = str(share.get("share_id", "") or "") if is_shared else ""
-    if is_shared and share_id and device.ipv4_address:
+    if is_shared and share_id and host:
         runtime.device_shares.declare(
             mac_address=key,
             share_id=share_id,
             hostname=runtime.client_hostname.get(key, "") or device.name,
-            host=device.ipv4_address,
+            host=host,
             port=int(share.get("port") or SERVICES_RDP_PORT),
+            attention=str(share.get("attention", "") or ""),
         )
     else:
         runtime.device_shares.withdraw(key)
-    if was_sharing != (is_shared and bool(share_id) and bool(device.ipv4_address)):
+    if was_sharing != (is_shared and bool(share_id) and bool(host)):
         # The published list is cached for a few seconds; a share appearing
         # or ending is what a person is watching for, so it recomposes now.
         runtime.published_services.expire()
@@ -350,6 +416,8 @@ def result(
         "id": report.id,
         "exit_code": report.exit_code,
         "output": report.output,
+        "code": report.code,
+        "params": dict(report.params),
         "finished_at": datetime.now(timezone.utc).isoformat(),
     }
     return {}

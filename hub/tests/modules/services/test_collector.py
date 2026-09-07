@@ -384,6 +384,9 @@ def test_a_declaring_machine_publishes_one_rdp_entry():
         "protocol": "rustdesk",
         "host": "192.168.100.5",
         "port": 21118,
+        # What a peer would wait on at that machine, so the one about to
+        # dial says it rather than sitting in "connecting".
+        "attention": "",
     }
 
 

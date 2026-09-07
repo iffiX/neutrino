@@ -33,7 +33,8 @@ def resolve_module(manifest: dict, platform: dict) -> dict:
     Returns:
         The module's title, kind and installer tier, plus the entry, verify
         command and package name for this platform, and the license and
-        exact-tag source pointer the surfaces render beside the row.
+        exact-tag source pointer the surfaces render beside the row, and the
+        source the row is attributed to.
         ``entry`` is None where the manifest offers this platform nothing,
         which is the machine's whole basis for reporting the module
         unsupported.
@@ -45,6 +46,7 @@ def resolve_module(manifest: dict, platform: dict) -> dict:
         "description": manifest.get("description", ""),
         "kind": manifest.get("kind", ""),
         "installer": str(manifest.get("installer", "")),
+        "source": str(manifest.get("source", "") or ""),
         "version": str(manifest.get("version", "") or ""),
         "license": str(manifest.get("license", "") or ""),
         "corresponding_source": str(manifest.get("corresponding_source", "") or ""),
@@ -64,9 +66,10 @@ def resolved_modules(platform: dict) -> dict:
     Returns:
         Module name to its resolved form.
     """
+    # The loader's order is the order both surfaces draw, so nothing re-sorts.
     return {
         name: resolve_module(manifest, platform)
-        for name, manifest in sorted(load_module_manifests().items())
+        for name, manifest in load_module_manifests().items()
     }
 
 

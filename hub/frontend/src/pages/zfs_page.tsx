@@ -1131,7 +1131,7 @@ function ShareModal({
         <span className="field_label">Who may use it</span>
         {users.length === 0 ? (
           <span className="field_hint">
-            Every user — none are configured yet.
+            Every user; none are configured yet.
           </span>
         ) : (
           <div className="samba_user_chips">
@@ -1236,7 +1236,7 @@ function memberDetailRows(
 /** zpool's refusals in plain words, for the amber confirm they become. */
 function friendlyForceReason(message: string): string {
   if (message.includes("mismatched replication")) {
-    return "This layout does not match the pool's existing vdevs — the pool would only be as safe as its weakest vdev. Add anyway?";
+    return "This layout does not match the pool's existing vdevs: the pool would only be as safe as its weakest vdev. Add anyway?";
   }
   if (message.includes("in use") || message.includes("part of")) {
     return "A chosen disk still carries traces of an earlier pool or filesystem; adding will overwrite them. Add anyway?";

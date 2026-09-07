@@ -52,7 +52,14 @@ def box(monkeypatch, tmp_path):
 
 def write_manifest(manifests, name: str) -> None:
     (manifests / f"{name}.json").write_text(
-        json.dumps({"name": name, "title": name.title(), "installer": "hub"})
+        json.dumps(
+            {
+                "name": name,
+                "title": name.title(),
+                "installer": "hub",
+                "source": f"vendor/{name}",
+            }
+        )
     )
 
 

@@ -142,7 +142,7 @@ export function SambaPage() {
       setPendingPasswords({});
       resource.reload();
       if (failures.length > 0) {
-        setErrors({ [group]: `password not set — ${failures.join("; ")}` });
+        setErrors({ [group]: `password not set: ${failures.join("; ")}` });
         return;
       }
       setNotice({ [group]: result.message });
@@ -422,7 +422,7 @@ function ShareEditor({
         <span className="field_label">Who may use it</span>
         {userNames.length === 0 ? (
           <span className="field_hint">
-            Every user — none are configured yet.
+            Every user; none are configured yet.
           </span>
         ) : (
           <div className="samba_user_chips">

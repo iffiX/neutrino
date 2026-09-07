@@ -14,7 +14,11 @@ can refuse for.
 import json
 import threading
 
-from neutrino_agent.constants import AGENT_GUI_WINDOW_HEIGHT, AGENT_GUI_WINDOW_WIDTH
+from neutrino_agent.constants import (
+    AGENT_DESKTOP_NAME,
+    AGENT_GUI_WINDOW_HEIGHT,
+    AGENT_GUI_WINDOW_WIDTH,
+)
 
 # The distribution packages the import guard names when the C stack is
 # absent. Not the distribution's bindings: the agent never runs its Python.
@@ -34,6 +38,12 @@ def open_window(*, title: str, html: str, bridge, icon_path: str = "") -> None:
         GuiShellUnavailableError: When WebKitGTK 4.1 is not on the machine.
     """
     GLib, Gtk, WebKit2 = _toolkit()
+    # WM_CLASS, which GTK otherwise takes from argv[0] — the carried
+    # interpreter's entry script. The desktop matches a window to its
+    # launcher by this name, so without it the window wears the script's
+    # name and none of the icon the package installed.
+    GLib.set_prgname(AGENT_DESKTOP_NAME)
+    GLib.set_application_name(title)
     window = Gtk.Window(title=title)
     window.set_default_size(AGENT_GUI_WINDOW_WIDTH, AGENT_GUI_WINDOW_HEIGHT)
     if icon_path:

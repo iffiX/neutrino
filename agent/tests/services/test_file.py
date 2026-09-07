@@ -103,6 +103,7 @@ def service(tmp_path):
         platform=platform,
         store=store,
         credentials_dir=str(tmp_path / "creds"),
+        accounts=lambda: ["pat", "sam"],
         log=discard,
     )
     return subject, platform, store, tmp_path
@@ -519,3 +520,67 @@ def test_act_mounts_and_unmounts_by_typed_entry(service):
         entries=[], account="root", is_privileged=True, body={"action": "mount"}
     )
     assert refused == {"code": "unknown_request", "params": {}}
+
+
+# --- mounting for a named account ---
+
+
+def mount_body(location, account=""):
+    body = {
+        "action": "mount",
+        "id": "hub_share_media",
+        "username": "media",
+        "password": "pw",
+        "path": location,
+    }
+    if account:
+        body["account"] = account
+    return body
+
+
+def test_a_privileged_mount_may_name_the_account_it_is_for(service):
+    """Managing the family machine from one login: the record belongs to the
+    named account, so the mount is made and owned as them."""
+    subject, platform, store, tmp_path = service
+    location = str(tmp_path / "nas")
+
+    outcome = subject.act(
+        entries=[entry_for(PAYLOAD)],
+        account="root",
+        is_privileged=True,
+        body=mount_body(location, account="pat"),
+    )
+
+    assert outcome == {}
+    (record,) = store.mounts().values()
+    assert record["account"] == "pat"
+
+
+def test_an_ordinary_caller_may_not_mount_for_someone_else(service):
+    subject, platform, store, tmp_path = service
+    location = str(tmp_path / "nas")
+
+    outcome = subject.act(
+        entries=[entry_for(PAYLOAD)],
+        account="pat",
+        is_privileged=False,
+        body=mount_body(location, account="sam"),
+    )
+
+    assert outcome == {"code": "control_scope_refused", "params": {}}
+    assert store.mounts() == {}
+
+
+def test_a_mount_for_an_account_the_machine_does_not_have_is_refused(service):
+    subject, platform, store, tmp_path = service
+    location = str(tmp_path / "nas")
+
+    outcome = subject.act(
+        entries=[entry_for(PAYLOAD)],
+        account="root",
+        is_privileged=True,
+        body=mount_body(location, account="nobody"),
+    )
+
+    assert outcome == {"code": "no_target_user", "params": {}}
+    assert store.mounts() == {}

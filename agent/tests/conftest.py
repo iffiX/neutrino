@@ -178,6 +178,8 @@ class FakeControlAgent:
         # Modules arrive already resolved for this platform: the hub read
         # the manifest and picked the entry, so `entry` is the machine's
         # whole basis for knowing the module runs here at all.
+        # Two, in the hub's own order — platform tier before hub tier —
+        # which is not the order their names sort in.
         return {
             "modules": {
                 "openssh_server": {
@@ -185,11 +187,25 @@ class FakeControlAgent:
                     "description": "",
                     "kind": "openssh",
                     "installer": "platform",
+                    "source": "system",
                     "platform_key": "linux-debian",
                     "entry": {"packages": ["openssh-server"], "service": "ssh"},
                     "verify": "",
                     "package": "openssh_server",
-                }
+                },
+                "cc_switch": {
+                    "title": "cc-switch",
+                    "description": "",
+                    "kind": "switcher",
+                    "installer": "hub",
+                    "source": "SaladDay/cc-switch-cli",
+                    "license": "MIT",
+                    "corresponding_source": "https://github.com/SaladDay/cc-switch-cli",
+                    "platform_key": "linux-amd64",
+                    "entry": {"github_repo": "SaladDay/cc-switch-cli"},
+                    "verify": "",
+                    "package": "cc_switch",
+                },
             },
             "services": SERVICES,
         }
@@ -232,7 +248,7 @@ class FakeControlAgent:
     def account_home(self, account) -> str:
         return "/root" if account == "root" else f"/home/{account}"
 
-    def rdp_password(self, *, is_privileged: bool) -> str:
+    def rdp_password(self, *, account: str, is_privileged: bool) -> str:
         return "hunter2" if is_privileged else ""
 
     def service_states(self) -> dict:

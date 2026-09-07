@@ -91,7 +91,7 @@ def _scoped_state(agent, identity: ControlIdentity) -> dict:
     # it. It is read from this machine's own file and goes nowhere else.
     if isinstance(state.get("rdp"), dict):
         state["rdp"]["password"] = agent.rdp_password(  # scan: allow
-            is_privileged=identity.is_privileged
+            account=identity.account, is_privileged=identity.is_privileged
         )
     return state
 
@@ -109,7 +109,9 @@ def _module_rows(agent, modules: dict) -> list:
     """
     reported = agent.module_states()
     rows = []
-    for name, resolved in sorted(modules.items()):
+    # The hub's own order, which the panel draws too; re-sorting here is the
+    # one way the two lists could disagree.
+    for name, resolved in modules.items():
         if not isinstance(resolved, dict):
             continue
         status = reported.get(name, {})
@@ -126,6 +128,9 @@ def _module_rows(agent, modules: dict) -> list:
                 # The platform carries this natively: worded built in, no
                 # button.
                 "is_native": resolved.get("entry") == {},
+                # Where the software comes from, which every row says: a
+                # repository, a vendor, or the machine's own packages.
+                "source": resolved.get("source", ""),
                 # What the hub conveys under a copyleft license, and where
                 # its corresponding source is.
                 "license": resolved.get("license", ""),

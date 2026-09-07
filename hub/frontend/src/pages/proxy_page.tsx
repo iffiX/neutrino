@@ -254,7 +254,7 @@ export function ProxyPage() {
           isOn={draft.is_direct_fallback_enabled}
           onChange={(isOn) => updateDraft({ is_direct_fallback_enabled: isOn })}
           label="Let traffic out directly when no exit node answers"
-          description="Whether traffic sent to the proxy leaves through the WAN when every enabled exit node is unreachable. Off, it fails instead — and so do the LAN's names, because they are resolved at the exit."
+          description="Whether traffic sent to the proxy leaves through the WAN when every enabled exit node is unreachable. Off, it fails instead, and so do the LAN's names, because they are resolved at the exit."
         />
 
         <div className="proxy_switches">

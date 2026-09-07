@@ -153,10 +153,14 @@ class FakeRuntime:
 
     def __init__(self):
         self.client_metrics = {}
+        self.client_address = {}
         self.client_modules = {}
         self.client_platform = {}
         self.client_hostname = {}
         self.client_accounts = {}
+        self.client_ai_targets = {}
+        self.client_service_state = {}
+        self.client_device_host = {}
         self.client_last_error = {}
         self.client_command_results = {}
         self.enrollments = {}
@@ -185,6 +189,7 @@ class FakeRuntime:
         key = mac_address.lower()
         for held in (
             self.client_metrics,
+            self.client_address,
             self.client_modules,
             self.client_platform,
             self.client_hostname,
@@ -323,6 +328,33 @@ def test_accounts_and_last_error_land_in_the_runtime(api):
         "code": "mount_failed",
         "params": {"share": "media"},
     }
+
+
+def test_the_beats_service_rows_land_where_the_drawer_reads(api, monkeypatch):
+    """Targets, mounts and AI rows off the beat, and the address the device
+    reached the hub on — the services view composes its catalog with it."""
+    client, runtime, _ = api
+    # The grant path is its own tests' business and reads the real vault.
+    monkeypatch.setattr(agent_router, "_ai_accounts", lambda *args: {})
+
+    response = client.post(
+        "/api/agent/heartbeat",
+        json=beat_body(
+            ai_targets={"alice": True},
+            service_state={
+                "mounts": [{"record_id": "r1", "account": "alice"}],
+                "ai_states": {"alice": {"state": "active"}},
+            },
+        ),
+    )
+
+    assert response.status_code == 200
+    assert runtime.client_ai_targets[MAC] == {"alice": True}
+    assert runtime.client_service_state[MAC] == {
+        "mounts": [{"record_id": "r1", "account": "alice"}],
+        "ai_states": {"alice": {"state": "active"}},
+    }
+    assert runtime.client_device_host[MAC] != ""
 
 
 def test_a_beat_without_an_error_clears_the_stored_one(api):
@@ -1088,12 +1120,9 @@ def test_a_bootstrap_task_is_the_operation_too(api):
 
 # --- the rdp share a machine declares for itself ---
 
-SHARE_IP = "192.168.100.5"
-
 
 def sharing(client, device, **share):
-    """One beat carrying an rdp declaration, from a device with an address."""
-    device.ipv4_address = SHARE_IP
+    """One beat carrying an rdp declaration."""
     return client.post("/api/agent/heartbeat", json=_beat(rdp_share=share))
 
 
@@ -1105,9 +1134,10 @@ def test_a_beat_declaring_a_share_records_it_against_that_device(api):
     live = runtime.device_shares.live()
     assert [share.share_id for share in live] == ["s1"]
     assert live[0].mac_address == MAC
-    # The address is the hub's own record of the device, never one the beat
-    # named: nothing a machine sends can point a share somewhere else.
-    assert live[0].host == SHARE_IP
+    # The address is where the channel comes from, as this hub's own socket
+    # saw it: never one the beat named, and never a stored SSH host, which a
+    # machine joined by a link does not have.
+    assert live[0].host == runtime.client_address[MAC]
     assert live[0].port == 21118
 
 
@@ -1128,9 +1158,11 @@ def test_a_beat_carrying_no_share_declares_nothing(api):
     assert runtime.device_shares.live() == []
 
 
-def test_a_device_with_no_address_declares_nothing(api):
-    client, runtime, device = api
-    device.ipv4_address = ""
+def test_a_channel_naming_no_peer_declares_nothing(api, monkeypatch):
+    """Without an address there is nothing for another machine to dial, and
+    a share pointing nowhere is worse than none."""
+    client, runtime, _device = api
+    monkeypatch.setattr(agent_router, "_peer_host", lambda request: "")
 
     client.post(
         "/api/agent/heartbeat",
@@ -1138,6 +1170,20 @@ def test_a_device_with_no_address_declares_nothing(api):
     )
 
     assert runtime.device_shares.live() == []
+
+
+def test_the_beat_records_where_its_channel_comes_from(api, monkeypatch):
+    """A machine is where it beats from: no scan reaches an overlay, and a
+    machine that moves is at its new address one beat later."""
+    client, runtime, _device = api
+    monkeypatch.setattr(agent_router, "_peer_host", lambda request: "192.168.100.7")
+
+    client.post("/api/agent/heartbeat", json=_beat())
+    assert runtime.client_address[MAC] == "192.168.100.7"
+
+    monkeypatch.setattr(agent_router, "_peer_host", lambda request: "10.8.0.3")
+    client.post("/api/agent/heartbeat", json=_beat())
+    assert runtime.client_address[MAC] == "10.8.0.3"
 
 
 def test_a_share_appearing_or_ending_recomposes_the_published_list(api):
@@ -1176,3 +1222,39 @@ def test_the_beat_never_carries_the_access_password(api):
     live = runtime.device_shares.live()
     assert not hasattr(live[0], "password")
     assert "hunter2" not in repr(live[0])
+
+
+def test_the_address_is_the_one_on_the_devices_identity_mac(api, monkeypatch):
+    """A second address on the same wire answers a connection just as well
+    and is not the machine's own: xenode's macvlan shim is what the kernel
+    routed its beat out of, and .2 is where the machine is."""
+    client, runtime, _device = api
+    monkeypatch.setattr(agent_router, "_peer_host", lambda request: "192.168.100.3")
+
+    client.post(
+        "/api/agent/heartbeat",
+        json=_beat(
+            addresses=[
+                {"mac": "e6:2f:36:1b:07:66", "address": "192.168.100.3"},
+                {"mac": MAC, "address": "192.168.100.2"},
+                {"mac": "02:42:ac:11:00:01", "address": "172.17.0.1"},
+            ]
+        ),
+    )
+
+    assert runtime.client_address[MAC] == "192.168.100.2"
+
+
+def test_a_machine_reporting_no_matching_interface_falls_back_to_its_peer(
+    api, monkeypatch
+):
+    """Every machine that cannot enumerate this, and every overlay-only one."""
+    client, runtime, _device = api
+    monkeypatch.setattr(agent_router, "_peer_host", lambda request: "10.8.0.3")
+
+    client.post(
+        "/api/agent/heartbeat",
+        json=_beat(addresses=[{"mac": "aa:00:00:00:00:99", "address": "10.1.1.1"}]),
+    )
+
+    assert runtime.client_address[MAC] == "10.8.0.3"

@@ -132,7 +132,7 @@ def test_an_unprivileged_run_is_refused_with_the_command(monkeypatch, capsys):
     assert entry.main() == 2
 
     err = capsys.readouterr().err
-    assert "nagent run needs root — the agent manages this machine" in err
+    assert "nagent run needs root (the agent manages this machine)" in err
     assert "sudo nagent run" in err
 
 

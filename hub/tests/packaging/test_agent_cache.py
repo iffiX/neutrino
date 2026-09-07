@@ -13,7 +13,7 @@ import pytest
 import venv_tree
 from neutrino_hub.modules.devices.agent_package import (
     AgentPackageCache,
-    package_key,
+    package_name,
 )
 
 DEB_NAME = "neutrino-agent_0.1.0_amd64.deb"
@@ -38,8 +38,10 @@ def test_a_local_build_stamps_what_it_seeded_and_no_url(built):
 
     assert sorted(entries) == ["deb-amd64", "rpm-amd64"]
     for entry in entries.values():
-        assert sorted(entry) == ["sha256", "size", "url"]
+        assert sorted(entry) == ["name", "sha256", "size", "url"]
         assert entry["url"] == ""
+    assert entries["deb-amd64"]["name"] == DEB_NAME
+    assert entries["rpm-amd64"]["name"] == RPM_NAME
     assert (
         entries["deb-amd64"]["sha256"]
         == hashlib.sha256(b"!<arch>deb bytes").hexdigest()
@@ -74,14 +76,15 @@ def test_a_build_that_names_no_machine_stops_the_package(tmp_path):
 
 def test_the_cache_resolves_every_entry_the_build_stamped(built, tmp_path):
     """The one thing the two sides must agree on: the name the build writes is
-    the name the panel looks up."""
-    entries = venv_tree.agent_cache_entries(built, "")
+    the name the panel looks up — and it is the release's own asset name."""
+    entries = venv_tree.agent_cache_entries(built, RELEASE_BASE)
     root = tmp_path / "agent_cache"
     root.mkdir()
     for path in built:
         key = "deb-amd64" if path.name.endswith(".deb") else "rpm-amd64"
-        name = package_key(key=key, digest=entries[key]["sha256"])
-        (root / name).write_bytes(path.read_bytes())
+        assert package_name(entries[key]) == path.name
+        assert entries[key]["url"].endswith("/" + path.name)
+        (root / path.name).write_bytes(path.read_bytes())
 
     manifest = tmp_path / "agent_packages.json"
     manifest.write_text(json.dumps(entries), encoding="utf-8")

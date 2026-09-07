@@ -724,3 +724,31 @@ def test_a_refused_share_is_worded_from_the_agents_code(stack, monkeypatch, caps
     assert service_cli.main_rdp_share() == 1
 
     assert "RustDesk could not be configured" in capsys.readouterr().err
+
+
+def test_share_names_the_desktop_it_is_for_when_told_whose(stack, monkeypatch, capsys):
+    """`--user` rides the body as the page's chip does; unnamed, the agent
+    itself falls back to the one account at the screen."""
+    agent, _ = stack
+    agent.module_state_map["rustdesk"] = {"state": "installed"}
+    monkeypatch.setattr(service_cli.getpass, "getpass", lambda prompt: "hunter2")
+
+    assert service_cli.main_rdp_share(user="pat") == 0
+
+    kind, _account, _is_privileged, body = agent.service_calls[-1]
+    assert kind == "rdp"
+    assert body == {"action": "share", "password": "hunter2", "account": "pat"}
+
+
+def test_file_config_names_the_account_the_mount_is_for(stack, monkeypatch):
+    agent, _ = stack
+    asked = FakeGetpass("s3cret")  # scan: allow
+    monkeypatch.setattr(service_cli, "getpass", asked)
+
+    code = service_cli.main_file_config(
+        "1", path="/home/pat/nas/media", username="alice", user="pat"
+    )
+
+    assert code == 0
+    _kind, _account, _is_privileged, body = agent.service_calls[0]
+    assert body["account"] == "pat"

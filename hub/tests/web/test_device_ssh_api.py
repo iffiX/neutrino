@@ -27,6 +27,7 @@ SUDO_PASSWORD = "a-sudo-password"  # scan: allow
 class FakeRuntime:
     def __init__(self):
         self.client_metrics = {}
+        self.client_address = {}
         self.client_platform = {}
 
 

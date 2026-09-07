@@ -66,7 +66,7 @@ const WORDING = {
   fieldNewTokenName: "New token name",
   fieldNewTokenValue: "Value",
   baseUrlHint:
-    "Leave empty for the service's default; set it for a relay. Match the kind to the protocol the endpoint speaks, not to whose models are behind it — DeepSeek's /anthropic endpoint is Anthropic.",
+    "Leave empty for the service's default; set it for a relay. Match the kind to the protocol the endpoint speaks, not to whose models are behind it: DeepSeek's /anthropic endpoint is Anthropic.",
   modelsHint:
     "One per line, real name first; add = alias when tools should see a different name. Devices are told to ask for the first one.",
   tokenHint: "Pick a stored token, or store a new one.",

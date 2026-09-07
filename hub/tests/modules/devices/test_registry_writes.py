@@ -76,3 +76,17 @@ def test_forgetting_one_device_keeps_the_host_key_another_still_uses(
     DeviceRegistry().forget("aa:bb:cc:dd:ee:02")
 
     assert host_pattern("10.0.0.5", 22) in known_hosts.read_text()
+
+
+def test_a_stored_ssh_host_is_a_credential_and_not_an_address(stored):
+    """SSH installs the agent and drives power; where a machine is comes
+    from the channel it beats on. A machine joined by an enrollment link has
+    no SSH host and is no less located."""
+    stored.annotate(
+        "aa:bb:cc:dd:ee:01", {"ssh": {"host": "10.0.0.5", "username": "me"}}
+    )
+
+    device = DeviceRegistry().get("aa:bb:cc:dd:ee:01")
+
+    assert device.has_ssh
+    assert device.ipv4_address == ""

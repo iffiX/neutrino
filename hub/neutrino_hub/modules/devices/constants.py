@@ -48,25 +48,17 @@ AGENT_MODULE_FETCH_LIMIT_BYTES = 512 * 1024 * 1024
 AGENT_MODULE_KEY_DIGEST_CHARS = 16
 AGENT_MODULE_GITHUB_API = "https://api.github.com/repos/{repo}/releases/latest"
 
-# What the copyleft licenses oblige beside a binary the hub conveys: the
-# corresponding source, kept next to the artifact under this suffix. A
-# manifest naming ``source_archive`` is fetched with its binary and neither
-# is served without the other.
-AGENT_MODULE_SOURCE_SUFFIX = ".source"
-
 # The hub's own agent packages, which are not third-party modules: the hub's
 # package lands the builds it was made with here, and a platform it carries
-# none for is fetched from the release the manifest names. Keyed the way the
-# module cache keys an artifact — by what would actually be installed — so a
-# lost directory costs a download and a changed build cannot be served under
-# an old name.
+# none for is fetched from the release the manifest names. A file is named the
+# way the release publishes it, so one name addresses a package here, in the
+# manifest and in the release.
 AGENT_PACKAGE_CACHE_DIR = UTILS_STATE_ROOT / "agent_cache"
-AGENT_PACKAGE_NAME = "neutrino_agent"
 
-# Per platform key, ``{url, sha256, size}``. Stamped by the build that seeded
-# the cache: a release stamps the URL its assets are published at, and a local
-# build stamps none, which is what makes a platform it did not seed refuse
-# rather than reach for a file nobody published.
+# Per platform key, ``{name, url, sha256, size}``. Stamped by the build that
+# seeded the cache: a release stamps the URL its assets are published at, and
+# a local build stamps none, which is what makes a platform it did not seed
+# refuse rather than reach for a file nobody published.
 AGENT_PACKAGE_MANIFEST_NAME = "agent_packages.json"
 AGENT_PACKAGE_MANIFEST_PATH = UTILS_DATA_DIR / AGENT_PACKAGE_MANIFEST_NAME
 

@@ -151,7 +151,8 @@
 
 .device_drawer_log_output {
   overflow: auto;
-  max-height: 240px;
+  /* Five lines of 12px/1.5 monospace plus the padding. */
+  max-height: 114px;
   margin: 0;
   padding: var(--space-3);
   border: 1px solid var(--color-border);

@@ -60,5 +60,5 @@ def test_an_unprivileged_disconnect_is_refused_with_the_command(monkeypatch, cap
     assert entry.main() == 2
 
     err = capsys.readouterr().err
-    assert "nagent disconnect needs root — it removes the binding" in err
+    assert "nagent disconnect needs root (it removes the binding)" in err
     assert "sudo nagent disconnect" in err

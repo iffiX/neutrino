@@ -643,7 +643,7 @@ function ContainerShellModal({ name, onClose }: ContainerShellModalProps) {
           }
         >
           {failedCode !== null
-            ? `The shell failed (exit code ${failedCode}) — what it printed stays until you close.`
+            ? `The shell failed (exit code ${failedCode}). What it printed stays until you close.`
             : "Shell inside the container."}
         </div>
       </div>

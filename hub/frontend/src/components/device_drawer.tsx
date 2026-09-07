@@ -9,6 +9,7 @@ import { FileTransferModal } from "./file_transfer_modal";
 import { PasswordInput } from "./password_input";
 import { StatusDot } from "./status_dot";
 import { TerminalModal } from "./terminal_modal";
+import { DeviceServices } from "./device_services";
 import { RemoteDesktopPanel } from "./remote_desktop_panel";
 import { ToggleSwitch } from "./toggle_switch";
 import {
@@ -1031,17 +1032,6 @@ export function DeviceDrawer({
             />
           )}
 
-          {device.client !== null &&
-            device.client.is_managed &&
-            device.ssh !== null && (
-              <RemoteDesktopPanel
-                device={device}
-                moduleRevision={orders
-                  .map((order) => `${order.id}:${order.state}`)
-                  .join(",")}
-              />
-            )}
-
           {shownOperation !== null && (
             <div className="device_drawer_log">
               <div className="device_drawer_log_head">
@@ -1097,6 +1087,25 @@ export function DeviceDrawer({
               )}
             </div>
           )}
+
+          {device.client !== null && device.client.is_managed && (
+            <DeviceServices
+              macAddress={device.mac_address}
+              isOnline={device.client.is_online}
+              commandResults={device.client.command_results}
+            />
+          )}
+
+          {device.client !== null &&
+            device.client.is_managed &&
+            device.ssh !== null && (
+              <RemoteDesktopPanel
+                device={device}
+                moduleRevision={orders
+                  .map((order) => `${order.id}:${order.state}`)
+                  .join(",")}
+              />
+            )}
 
           {device.client != null &&
             device.client.command_results.length > 0 && (
@@ -1207,7 +1216,7 @@ function describeActionError(cause: unknown): string {
     cause.detail !== null
   ) {
     const os = String((cause.detail as Record<string, unknown>).os ?? "");
-    return `This machine reports ${os || "another OS"}; the SSH installer is for Linux — use Get link instead.`;
+    return `This machine reports ${os || "another OS"}; the SSH installer is for Linux; use Get link instead.`;
   }
   if (cause instanceof ApiError && cause.code === "agent_package_missing") {
     return "This hub carries no agent package. An installed hub ships the Linux builds it was made with; a checkout drops one into config/devices/packages with agent/packaging/build_deb.py.";

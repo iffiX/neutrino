@@ -76,11 +76,17 @@ def test_socket_state_is_scoped_to_the_peer(control):
     }
     assert state["accounts"] == ["alice"]
     assert state["ai_targets"] == {"alice": True}
-    assert [m["name"] for m in state["modules"]] == ["openssh_server"]
+    # The hub's own order, which the panel draws too — not the order the
+    # names sort in, which would put cc_switch first.
+    assert [m["name"] for m in state["modules"]] == ["openssh_server", "cc_switch"]
     assert state["modules"][0]["kind"] == "openssh"
     # The tier rides the row, so the page can withhold the buttons a
     # user-tier module never offers.
     assert state["modules"][0]["installer"] == "platform"
+    # Where the software comes from, which every row draws under its title.
+    assert state["modules"][0]["source"] == "system"
+    assert state["modules"][1]["source"] == "SaladDay/cc-switch-cli"
+    assert state["modules"][1]["license"] == "MIT"
 
 
 def test_the_state_carries_the_mount_location_shape_for_every_scope(control):

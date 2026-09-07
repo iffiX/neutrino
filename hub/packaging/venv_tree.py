@@ -163,7 +163,7 @@ AGENT_PACKAGE_CACHE_DIR, AGENT_PACKAGE_MANIFEST_NAME = _runtime(
     "AGENT_PACKAGE_MANIFEST_NAME",
 )
 _AGENT_PACKAGE_MODULE = "neutrino_hub.modules.devices.agent_package"
-AGENT_PACKAGE_KEY = _runtime(_AGENT_PACKAGE_MODULE, "package_key")
+AGENT_PACKAGE_NAME = _runtime(_AGENT_PACKAGE_MODULE, "package_name")
 AGENT_PLATFORM_KEY = _runtime(_AGENT_PACKAGE_MODULE, "platform_key")
 AGENT_PACKAGE_FAMILY = _runtime(_AGENT_PACKAGE_MODULE, "package_family")
 AGENT_PACKAGE_MACHINE = _runtime(_AGENT_PACKAGE_MODULE, "package_architecture")
@@ -343,7 +343,7 @@ def stage_agent_cache(tree: Path, staged_python: Path, machine: str) -> None:
         manifest = agent_cache_entries(sorted(built.iterdir()), _agent_url_base())
         for path in sorted(built.iterdir()):
             key = AGENT_PLATFORM_KEY(*_agent_platform(path.name))
-            target = cache / AGENT_PACKAGE_KEY(key=key, digest=manifest[key]["sha256"])
+            target = cache / AGENT_PACKAGE_NAME(manifest[key])
             shutil.copyfile(path, target)
             target.chmod(0o644)
 
@@ -363,7 +363,8 @@ def agent_cache_entries(paths: list, url_base: str) -> dict:
             publishes nothing.
 
     Returns:
-        Platform key to ``{url, sha256, size}``.
+        Platform key to ``{name, url, sha256, size}``. The name is the file's
+        own, which is what a release publishes it as.
 
     Raises:
         SystemExit: When a file's name says no family or no machine.
@@ -373,6 +374,7 @@ def agent_cache_entries(paths: list, url_base: str) -> dict:
         family, architecture = _agent_platform(path.name)
         payload = path.read_bytes()
         entries[AGENT_PLATFORM_KEY(family, architecture)] = {
+            "name": path.name,
             "url": f"{url_base.rstrip('/')}/{path.name}" if url_base else "",
             "sha256": hashlib.sha256(payload).hexdigest(),
             "size": len(payload),
