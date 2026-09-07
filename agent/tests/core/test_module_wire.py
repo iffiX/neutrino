@@ -16,7 +16,7 @@ from tests.core.test_loop import scripted_agent
 
 ORDER = {
     "id": "order-1",
-    "module": "openssh_server",
+    "module": "ssh_server",
     "action": "install",
     "artifact_key": "",
     "digest": "",
@@ -25,14 +25,14 @@ ORDER = {
 
 CATALOG = {
     "modules": {
-        "openssh_server": {
+        "ssh_server": {
             "title": "SSH server",
             "description": "",
             "kind": "openssh",
             "platform_key": "linux-debian",
             "entry": {"packages": ["openssh-server"], "service": "ssh"},
             "verify": "",
-            "package": "openssh_server",
+            "package": "ssh_server",
         }
     },
     "services": [],
@@ -68,7 +68,7 @@ def test_an_order_comes_down_and_its_result_goes_up(config_path):
     _, second = agent._channel.posts[1]
     results = second["module_results"]
     assert [result["id"] for result in results] == ["order-1"]
-    assert results[0]["module"] == "openssh_server"
+    assert results[0]["module"] == "ssh_server"
     assert results[0]["state"] in ("done", "failed")
 
 
@@ -107,7 +107,7 @@ def test_the_machine_reports_state_without_being_ordered_to(config_path):
     _, second = agent._channel.posts[1]
     # A module nobody has ordered anything about is still reported, and
     # still untouched: "not asked for" is not "take it off this machine".
-    assert "openssh_server" in second["modules"]
+    assert "ssh_server" in second["modules"]
 
 
 def test_the_bytes_are_asked_for_on_their_own_endpoint(config_path):
@@ -159,11 +159,11 @@ def test_a_local_toggle_asks_the_hub_and_applies_nothing(config_path):
     )
     agent.run_once()
 
-    agent.request_module("openssh_server", is_enabled=True)
+    agent.request_module("ssh_server", is_enabled=True)
     agent.run_once()
 
     _, second = agent._channel.posts[1]
     # The machine's own page asks; it never acts. The hub answers with an
     # order, which is the same door the panel's button goes through.
-    assert second["module_requests"] == {"openssh_server": {"is_enabled": True}}
+    assert second["module_requests"] == {"ssh_server": {"is_enabled": True}}
     assert json.dumps(second["module_results"]) == "[]"

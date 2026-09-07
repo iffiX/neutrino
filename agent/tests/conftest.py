@@ -185,7 +185,7 @@ class FakeControlAgent:
         # which is not the order their names sort in.
         return {
             "modules": {
-                "openssh_server": {
+                "ssh_server": {
                     "title": "SSH server",
                     "description": "",
                     "kind": "openssh",
@@ -194,7 +194,7 @@ class FakeControlAgent:
                     "platform_key": "linux-debian",
                     "entry": {"packages": ["openssh-server"], "service": "ssh"},
                     "verify": "",
-                    "package": "openssh_server",
+                    "package": "ssh_server",
                 },
                 "cc_switch": {
                     "title": "cc-switch",
@@ -217,7 +217,7 @@ class FakeControlAgent:
         return list(SERVICES)
 
     def module_states(self) -> dict:
-        return {"openssh_server": {"state": "installed"}}
+        return {"ssh_server": {"state": "installed"}}
 
     def pending_module_requests(self) -> dict:
         return {}

@@ -25,7 +25,7 @@ from tests.conftest import (
 )
 
 MODULES = {
-    "openssh_server": {
+    "ssh_server": {
         "title": "SSH server",
         "description": "",
         "kind": "openssh",
@@ -71,7 +71,7 @@ class FakeModuleAgent(FakeControlAgent):
     def __init__(self):
         super().__init__()
         self.module_state_map = {
-            "openssh_server": {"state": "installed"},
+            "ssh_server": {"state": "installed"},
             "cc_switch": {"state": "absent"},
             "anydesk": {
                 "state": "failed",
@@ -139,7 +139,7 @@ def test_list_words_every_row_as_the_page_does(stack, config_path, capsys):
     assert module_cli.main_list() == 0
 
     out = capsys.readouterr().out
-    assert "openssh_server" in out and "SSH server" in out and "installed" in out
+    assert "ssh_server" in out and "SSH server" in out and "installed" in out
     assert "cc_switch" in out and "not installed" in out
     assert "samba_mount" in out and "built in" in out
     assert "rustdesk" in out and "not available on this machine" in out
@@ -281,7 +281,7 @@ def test_the_ssh_uninstall_asks_first_and_no_keeps_the_machine(
     monkeypatch.setattr(builtins, "input", lambda prompt: "n")
 
     code = module_cli.main_switch(
-        "openssh_server", is_enabled=False, is_waited=False, is_confirmed=False
+        "ssh_server", is_enabled=False, is_waited=False, is_confirmed=False
     )
 
     assert code == 1
@@ -300,18 +300,18 @@ def test_the_ssh_uninstall_posts_on_yes_and_skips_the_ask_with_the_flag(
 
     assert (
         module_cli.main_switch(
-            "openssh_server", is_enabled=False, is_waited=False, is_confirmed=False
+            "ssh_server", is_enabled=False, is_waited=False, is_confirmed=False
         )
         == 0
     )
     assert (
         module_cli.main_switch(
-            "openssh_server", is_enabled=False, is_waited=False, is_confirmed=True
+            "ssh_server", is_enabled=False, is_waited=False, is_confirmed=True
         )
         == 0
     )
 
-    assert agent.requested == [("openssh_server", False), ("openssh_server", False)]
+    assert agent.requested == [("ssh_server", False), ("ssh_server", False)]
     assert capsys.readouterr().out.count(module_cli.UNINSTALL_SSH_TITLE) == 1
 
 
@@ -386,7 +386,7 @@ def test_a_row_already_there_posts_nothing(stack, config_path, capsys):
     bind(config_path)
 
     code = module_cli.main_switch(
-        "openssh_server", is_enabled=True, is_waited=False, is_confirmed=False
+        "ssh_server", is_enabled=True, is_waited=False, is_confirmed=False
     )
 
     assert code == 0

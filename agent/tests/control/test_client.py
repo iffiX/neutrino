@@ -61,13 +61,13 @@ def test_a_pipe_path_dials_the_named_pipe(monkeypatch):
         socket_path="\\\\.\\pipe\\neutrino_agent_control",
         method="POST",
         path="/api/module",
-        body={"name": "openssh_server"},
+        body={"name": "ssh_server"},
     )
 
     assert (status, reply) == (200, {"caller": {"account": "root"}})
     sent = bytes(api.sent)
     assert sent.startswith(b"POST /api/module HTTP/1.1\r\n")
-    assert b'{"name": "openssh_server"}' in sent
+    assert b'{"name": "ssh_server"}' in sent
     assert api.opened == ["\\\\.\\pipe\\neutrino_agent_control"]
     assert api.closed == [31]
 

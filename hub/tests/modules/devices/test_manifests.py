@@ -59,7 +59,7 @@ def test_samba_mount_resolves_per_platform():
 
 
 def test_the_ssh_server_wears_its_plain_title():
-    assert load_module_manifests()["openssh_server"]["title"] == "SSH server"
+    assert load_module_manifests()["ssh_server"]["title"] == "SSH server"
 
 
 def test_every_shipped_manifest_names_its_installer_tier():
@@ -69,7 +69,7 @@ def test_every_shipped_manifest_names_its_installer_tier():
     }
 
     assert tiers == {
-        "openssh_server": "platform",
+        "ssh_server": "platform",
         "samba_mount": "platform",
         "cc_switch": "hub",
         "rustdesk": "hub",
@@ -167,7 +167,7 @@ def test_every_shipped_manifest_says_where_its_software_comes_from():
     }
 
     assert sources == {
-        "openssh_server": "system",
+        "ssh_server": "system",
         "samba_mount": "system",
         "cc_switch": "SaladDay/cc-switch-cli",
         "rustdesk": "rustdesk/rustdesk",
@@ -206,7 +206,7 @@ def test_the_manifests_come_back_in_the_order_both_surfaces_draw():
     a person installs themselves — and by title inside each tier."""
     assert list(load_module_manifests()) == [
         "samba_mount",
-        "openssh_server",
+        "ssh_server",
         "cc_switch",
         "rustdesk",
         "anydesk",

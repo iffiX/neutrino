@@ -426,11 +426,11 @@ def test_a_kind_the_engine_does_not_run_is_reported_as_unsupported():
 
 def test_an_absent_capability_reports_unsupported_platform():
     engine = bare_engine(platform=AgentPlatform())
-    engine._catalog = {"modules": {"openssh_server": {"kind": "openssh", "entry": {}}}}
+    engine._catalog = {"modules": {"ssh_server": {"kind": "openssh", "entry": {}}}}
 
     engine._refresh(is_forced=True)
 
-    assert engine.report()["openssh_server"] == {
+    assert engine.report()["ssh_server"] == {
         "state": "failed",
         "code": "unsupported_platform",
         "params": {},
@@ -467,12 +467,12 @@ def test_the_engine_holds_no_failure_memory():
 
 SSH_CATALOG = {
     "modules": {
-        "openssh_server": {
+        "ssh_server": {
             "title": "SSH server",
             "kind": "openssh",
             "entry": {"packages": ["openssh-server"], "service": "ssh"},
             "verify": "",
-            "package": "openssh_server",
+            "package": "ssh_server",
         }
     },
     "services": [],
@@ -509,7 +509,7 @@ def test_an_openssh_install_order_fetches_nothing_and_reports_done():
     engine.update(
         catalog=None,
         catalog_hash="abc",
-        orders=[{"id": "order-1", "module": "openssh_server", "action": "install"}],
+        orders=[{"id": "order-1", "module": "ssh_server", "action": "install"}],
     )
     engine._reconcile()
 
@@ -518,8 +518,8 @@ def test_an_openssh_install_order_fetches_nothing_and_reports_done():
     result = engine.results()[0]
     assert result["state"] == "done" and result["code"] == ""
     # Every order carries its output, success included.
-    assert "openssh_server: install" in result["output"]
-    assert engine.report()["openssh_server"]["state"] == "installed"
+    assert "ssh_server: install" in result["output"]
+    assert engine.report()["ssh_server"]["state"] == "installed"
 
 
 def test_an_openssh_uninstall_order_takes_the_server_out_with_output():
@@ -530,15 +530,15 @@ def test_an_openssh_uninstall_order_takes_the_server_out_with_output():
     engine.update(
         catalog=None,
         catalog_hash="abc",
-        orders=[{"id": "order-1", "module": "openssh_server", "action": "uninstall"}],
+        orders=[{"id": "order-1", "module": "ssh_server", "action": "uninstall"}],
     )
     engine._reconcile()
 
     assert platform.switches == ["uninstall"]
     result = engine.results()[0]
     assert result["state"] == "done" and result["code"] == ""
-    assert "openssh_server: uninstall" in result["output"]
-    assert engine.report()["openssh_server"]["state"] == "absent"
+    assert "ssh_server: uninstall" in result["output"]
+    assert engine.report()["ssh_server"]["state"] == "absent"
 
 
 SYSTEM_CATALOG = {

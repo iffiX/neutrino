@@ -41,7 +41,7 @@ MANIFEST = {
     },
 }
 OPENSSH = {
-    "name": "openssh_server",
+    "name": "ssh_server",
     "kind": "openssh",
     "installer": "platform",
     "platforms": {"linux-debian": {"packages": ["openssh-server"], "service": "ssh"}},

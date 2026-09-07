@@ -46,7 +46,7 @@ def test_a_post_carries_its_body_and_nothing_else():
             "id": 8,
             "method": "POST",
             "path": "/api/module",
-            "body": {"name": "openssh_server", "is_enabled": True},
+            "body": {"name": "ssh_server", "is_enabled": True},
             "account": "root",
             "is_privileged": True,
             "token": "forged",
@@ -54,7 +54,7 @@ def test_a_post_carries_its_body_and_nothing_else():
     )
 
     assert channel.asked == [
-        ("POST", "/api/module", {"name": "openssh_server", "is_enabled": True})
+        ("POST", "/api/module", {"name": "ssh_server", "is_enabled": True})
     ]
 
 

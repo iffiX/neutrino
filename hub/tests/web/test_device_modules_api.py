@@ -168,7 +168,7 @@ def test_the_manifest_kind_reaches_the_row_for_the_ssh_confirm(api, monkeypatch)
         devices_router,
         "load_module_manifests",
         lambda: {
-            "openssh_server": {
+            "ssh_server": {
                 "title": "SSH server",
                 "kind": "openssh",
                 "platforms": {"linux-debian": {"service": "ssh"}},

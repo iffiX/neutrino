@@ -1,6 +1,6 @@
 {
   "_comment": "The SSH server, installed and uninstalled like every other module; the mechanics are each platform's own. Linux installs the package and starts its unit, and uninstall removes the package; Windows adds and removes the capability; macOS switches Remote Login, since its sealed system volume lets nothing be removed. Uninstalling is allowed because the agent channel, not SSH, is the management path.",
-  "name": "openssh_server",
+  "name": "ssh_server",
   "title": "SSH server",
   "kind": "openssh",
   "installer": "platform",

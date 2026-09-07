@@ -442,7 +442,7 @@ def test_heartbeat_payload_every_field_comes_from_its_source(config_path, monkey
     agent = scripted_agent(config_path, platform=platform)
     monkeypatch.setattr(loop_module, "hostname", lambda: "census-box")
     agent._store.set_ai_target("alice", is_activated=True)
-    agent.request_module("openssh_server", is_enabled=True)
+    agent.request_module("ssh_server", is_enabled=True)
 
     agent.run_once()
 
@@ -478,7 +478,7 @@ def test_heartbeat_payload_every_field_comes_from_its_source(config_path, monkey
     assert payload["accounts"] == ["alice", "bob"]
     assert payload["catalog_hash"] == ""
     assert payload["modules"] == agent.module_states()
-    assert payload["module_requests"] == {"openssh_server": {"is_enabled": True}}
+    assert payload["module_requests"] == {"ssh_server": {"is_enabled": True}}
     # What is true and what the last order produced; the machine answers
     # for both and for nothing else about modules.
     assert payload["module_results"] == []
@@ -542,14 +542,14 @@ def test_heartbeat_catalog_hash_after_a_catalog_lands_echoes_the_hubs(config_pat
 
 def test_heartbeat_module_requests_accepted_beat_drops_them(config_path):
     agent = scripted_agent(config_path)
-    agent.request_module("openssh_server", is_enabled=True)
+    agent.request_module("ssh_server", is_enabled=True)
 
     agent.run_once()
     agent.run_once()
 
     _, first = agent._channel.posts[0]
     _, second = agent._channel.posts[1]
-    assert first["module_requests"] == {"openssh_server": {"is_enabled": True}}
+    assert first["module_requests"] == {"ssh_server": {"is_enabled": True}}
     assert second["module_requests"] == {}
 
 
@@ -600,7 +600,7 @@ def test_reply_field_of_the_wrong_type_is_typed_and_never_fatal(
 
 def test_reply_with_every_field_missing_applies_as_empty_truth(config_path):
     agent = scripted_agent(config_path, [{}])
-    agent._pending = {"openssh_server": {"is_enabled": True}}
+    agent._pending = {"ssh_server": {"is_enabled": True}}
 
     delay = agent.run_once()
 
@@ -832,7 +832,7 @@ def test_wire_stale_platform_without_a_package_installs_nothing(
 def test_adopt_binding_a_changed_url_swaps_the_channel_and_clears_state(config_path):
     bind(config_path)
     agent = Agent(log=lambda message: None)
-    agent._pending = {"openssh_server": {"is_enabled": False}}
+    agent._pending = {"ssh_server": {"is_enabled": False}}
     agent._update_target = "9.9.9"
     agent._update_error = {"code": "agent_update_launch_failed", "params": {}}
 

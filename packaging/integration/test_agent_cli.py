@@ -315,13 +315,13 @@ def test_module_list_names_every_module_the_catalog_offers(device, panel, mac):
 def test_the_ssh_server_is_installed_and_its_uninstall_is_guarded(device, panel, mac):
     """These checks come in through it. It reads installed on both surfaces,
     and uninstalling it asks first; declining changes nothing."""
-    assert hub_modules(panel, mac)["openssh_server"]["state"] == "installed"
+    assert hub_modules(panel, mac)["ssh_server"]["state"] == "installed"
 
-    declined = device.nagent("module", "uninstall", "openssh_server", stdin="n\n")
+    declined = device.nagent("module", "uninstall", "ssh_server", stdin="n\n")
 
     assert declined.returncode == 1, declined.stdout + declined.stderr
     assert "nothing was changed" in declined.stdout
-    assert hub_modules(panel, mac)["openssh_server"]["state"] == "installed"
+    assert hub_modules(panel, mac)["ssh_server"]["state"] == "installed"
 
 
 @pytest.mark.parametrize("name", ["anydesk", "teamviewer"])

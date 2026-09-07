@@ -78,7 +78,7 @@ def test_socket_state_is_scoped_to_the_peer(control):
     assert state["ai_targets"] == {"alice": True}
     # The hub's own order, which the panel draws too — not the order the
     # names sort in, which would put cc_switch first.
-    assert [m["name"] for m in state["modules"]] == ["openssh_server", "cc_switch"]
+    assert [m["name"] for m in state["modules"]] == ["ssh_server", "cc_switch"]
     assert state["modules"][0]["kind"] == "openssh"
     # The tier rides the row, so the page can withhold the buttons a
     # user-tier module never offers.
@@ -286,7 +286,7 @@ def test_privileged_verbs_refuse_an_ordinary_caller(control):
     for path, body in (
         ("/api/connect", {"link": "neutrino://enroll/x"}),
         ("/api/disconnect", {}),
-        ("/api/module", {"name": "openssh_server", "is_enabled": False}),
+        ("/api/module", {"name": "ssh_server", "is_enabled": False}),
     ):
         status, reply = over_socket(server, "POST", path, body)
         assert (status, reply["code"]) == (403, "control_scope_refused")
@@ -315,11 +315,11 @@ def test_a_module_uninstall_request_rides_through(control):
     platform.peer = dict(ROOT)
 
     status, _state = over_socket(
-        server, "POST", "/api/module", {"name": "openssh_server", "is_enabled": False}
+        server, "POST", "/api/module", {"name": "ssh_server", "is_enabled": False}
     )
 
     assert status == 200
-    assert agent.requested == [("openssh_server", False)]
+    assert agent.requested == [("ssh_server", False)]
 
 
 def test_a_refused_link_reports_on_the_state(control):
