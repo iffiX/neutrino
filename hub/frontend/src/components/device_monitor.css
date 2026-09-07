@@ -79,6 +79,10 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  /* A grid child is as wide as its widest content unless told otherwise,
+     and a table of live numbers would widen the panel with every poll. */
+  min-width: 0;
+  overflow: hidden;
   padding: var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -117,11 +121,33 @@
   height: 84px;
 }
 
+/* Fixed columns: the table is laid out once from the widths below, so a
+   longer command or a wider number on the next poll clips inside its cell
+   instead of moving every column and the panel's edge with it. */
 .device_monitor_processes {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
   font-family: var(--font-mono);
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.device_monitor_processes col.pid {
+  width: 64px;
+}
+
+.device_monitor_processes col.user {
+  width: 128px;
+}
+
+.device_monitor_processes col.cpu,
+.device_monitor_processes col.mem {
+  width: 64px;
+}
+
+.device_monitor_processes col.kill {
+  width: 26px;
 }
 
 .device_monitor_processes th {
@@ -134,9 +160,12 @@
 }
 
 .device_monitor_processes td {
+  overflow: hidden;
   padding: 4px 8px;
   border-bottom: 1px solid var(--color-border);
   color: var(--color-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .device_monitor_processes tr:last-child td {
@@ -152,11 +181,7 @@
 }
 
 .device_monitor_process_name {
-  overflow: hidden;
-  max-width: 220px;
   color: var(--color-text);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .device_monitor_processes .kill {

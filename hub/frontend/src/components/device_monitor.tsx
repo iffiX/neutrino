@@ -168,6 +168,14 @@ export function DeviceMonitor({ device }: DeviceMonitorProps) {
             {client.processes.length > 0 && (
               <div className="device_monitor_panel">
                 <table className="device_monitor_processes">
+                  <colgroup>
+                    <col className="pid" />
+                    <col className="user" />
+                    <col />
+                    <col className="cpu" />
+                    <col className="mem" />
+                    <col className="kill" />
+                  </colgroup>
                   <thead>
                     <tr>
                       <th className="num">pid</th>
