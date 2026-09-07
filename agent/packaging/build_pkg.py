@@ -198,7 +198,9 @@ def main() -> int:
     version = payload.version()
     output_dir = Path(arguments.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    target = output_dir / f"{PACKAGE_NAME}-{version}.pkg"
+    # One file for both machines, named for what it is; this name is what the
+    # hub fetches by.
+    target = output_dir / f"{PACKAGE_NAME}-{version}-macos-universal2.pkg"
 
     for tool in ("pkgutil", "install_name_tool", "codesign", "pkgbuild"):
         if shutil.which(tool) is None:

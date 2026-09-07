@@ -302,7 +302,9 @@ def main() -> int:
     machine = WINDOWS_MACHINES[payload.machine_name(arguments.architecture)]
     output_dir = Path(arguments.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    target = output_dir / f"{PACKAGE_NAME}-{version}-{machine}.msi"
+    # The OS in the name: nothing about `.msi` says Windows to a release page
+    # listing five platforms, and this name is what the hub fetches by.
+    target = output_dir / f"{PACKAGE_NAME}-{version}-windows-{machine}.msi"
 
     with tempfile.TemporaryDirectory() as workdir:
         root = Path(workdir)

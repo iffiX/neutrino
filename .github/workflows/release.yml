@@ -7,13 +7,18 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      windows:
+        description: "also build the Windows installer (not part of a release yet)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 jobs:
   hub:
-    name: hub .deb (${{ matrix.architecture }})
+    name: hub .deb, .rpm and Arch (${{ matrix.architecture }})
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -50,11 +55,14 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: hub_${{ matrix.architecture }}
-          path: dist/*.deb
+          path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.pkg.tar.zst
           if-no-files-found: error
 
   agent:
-    name: agent .deb and .rpm (${{ matrix.architecture }})
+    name: agent .deb, .rpm and Arch (${{ matrix.architecture }})
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -81,10 +89,15 @@ jobs:
           path: |
             dist/*.deb
             dist/*.rpm
+            dist/*.pkg.tar.zst
           if-no-files-found: error
 
+  # Not on a tag: a release is Linux until the installer has been walked on
+  # real Windows, and this job has yet to run on a runner at all. A manual
+  # run asks for it by name.
   agent_windows:
     name: agent installer (Windows)
+    if: github.event_name == 'workflow_dispatch' && inputs.windows
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v7
@@ -110,7 +123,7 @@ jobs:
           $ErrorActionPreference = 'Continue'
           $PSNativeCommandUseErrorActionPreference = $false
 
-          $msi = (Get-ChildItem dist\*-amd64.msi)[0].FullName
+          $msi = (Get-ChildItem dist\*-windows-amd64.msi)[0].FullName
           Start-Process msiexec -Wait -ArgumentList '/i',$msi,'/quiet','/norestart'
 
           # A service that registers but cannot answer its manager reads as
@@ -148,6 +161,13 @@ jobs:
   draft:
     name: checksums and draft release
     needs: [hub, agent, agent_windows]
+    # The Windows job is skipped on a tag, and a skipped need must not
+    # skip the release with it.
+    if: >-
+      always()
+      && needs.hub.result == 'success'
+      && needs.agent.result == 'success'
+      && (needs.agent_windows.result == 'success' || needs.agent_windows.result == 'skipped')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
