@@ -554,11 +554,11 @@ def test_a_document_can_name_the_modules_to_install():
             "password": "a-long-enough-password",
             "vault_passphrase": VAULT_PASSPHRASE,
             "network": {"mode": "server", "lan": ["a"], "address": "10.0.0.2"},
-            "services": ["samba", "podman"],
+            "services": ["netbird"],
         }
     )
 
-    assert answers.services == ("samba", "podman")
+    assert answers.services == ("netbird",)
 
 
 def test_a_module_nobody_has_is_refused_with_the_ones_there_are():
@@ -590,4 +590,4 @@ def test_core_modules_are_not_offered_as_optional():
     offered = [name for name, _ in wizard._installable()]
 
     assert "cliproxyapi" not in offered
-    assert "samba" in offered
+    assert "netbird" in offered

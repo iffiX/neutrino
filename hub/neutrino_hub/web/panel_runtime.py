@@ -8,7 +8,6 @@ by itself.
 
 import asyncio
 import ipaddress
-import shutil
 
 from neutrino_hub.modules.netbird.ops import NetbirdInboundGate
 from neutrino_hub.modules.router.dnsmasq_renderer import RouterDnsmasqRenderer
@@ -22,22 +21,11 @@ from neutrino_hub.modules.router.routes import (
     RouterRulesetApplier,
     lookup_xray_uid,
 )
-from neutrino_hub.modules.gitea.config import GiteaConfig
-from neutrino_hub.modules.gitea.ops import GiteaConfigApplier, GiteaSecretStore
-from neutrino_hub.modules.gitea.renderer import GiteaConfigRenderer
-from neutrino_hub.modules.podman import ops as podman_ops
-from neutrino_hub.modules.podman.config import PodmanConfig
-from neutrino_hub.modules.podman.ops import PodmanRegistriesApplier
-from neutrino_hub.modules.podman.renderer import PodmanRegistriesRenderer
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiServedModelCache
 from neutrino_hub.modules.devices.catalog import DeviceCatalogCache
-from neutrino_hub.modules.samba.config import SambaConfig
-from neutrino_hub.modules.samba.ops import SambaConfigApplier, SambaUserManager
+from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.router.link_status import device_addresses
-from neutrino_hub.modules.samba.renderer import (
-    SambaConfigRenderer,
-    share_subnets,
-)
+from neutrino_hub.modules.router.share_fence import share_subnets
 from neutrino_hub.modules.services.probe import DeclaredServiceProbe
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.modules.services.published import PublishedServiceCache
@@ -115,11 +103,23 @@ class PanelRuntime:
         # Runtime only: a share is the machine's own word, refreshed every
         # beat, and a hub restart simply waits for the next one.
         self.device_shares = DeviceShareRegistry()
+        # Every managed machine's live socket, and the streams on it.
+        self.agent_sessions = AgentSessionRegistry()
+        # Where each agent's channel comes from, as this hub's own socket
+        # sees it, refreshed every report. A machine that moves is at its
+        # new address the moment it reports from there.
+        self.client_address: dict[str, str] = {}
+        # What each device should host, one directory per device under
+        # config/, composed into the state its agent applies.
+        self.desired_states = DesiredStateStore()
         self.published_services = PublishedServiceCache(
             declared_probe=self.declared_probe,
             served_models=self.served_models,
             units=self.services,
             device_shares=self.device_shares,
+            agent_sessions=self.agent_sessions,
+            device_addresses=self.client_address,
+            desired_states=self.desired_states,
         )
         self.device_catalog = DeviceCatalogCache(services=self.published_services)
         # The hub is the only thing that fetches and installs a module: one
@@ -130,8 +130,6 @@ class PanelRuntime:
         # from the release for a platform it was not built for.
         self.agent_packages = AgentPackageCache()
         self.device_install_locks = DeviceInstallLocks()
-        # Every managed machine's live socket, and the streams on it.
-        self.agent_sessions = AgentSessionRegistry()
         self.agent_module_orders = AgentModuleController(
             cache=self.agent_modules,
             locks=self.device_install_locks,
@@ -152,10 +150,6 @@ class PanelRuntime:
         self.client_hostname: dict[str, str] = {}
         # The human accounts each agent last reported, keyed by MAC.
         self.client_accounts: dict[str, list] = {}
-        # Where each agent's channel comes from, as this hub's own socket
-        # sees it, refreshed every report. A machine that moves is at its
-        # new address the moment it reports from there.
-        self.client_address: dict[str, str] = {}
         # The address each device reaches this hub on, resolved when its
         # socket opened; the services view composes the same catalog with it.
         self.client_device_host: dict[str, str] = {}
@@ -219,97 +213,6 @@ class PanelRuntime:
             Parsed ``config/xray/nodes.json``.
         """
         return XrayNodeList.from_dict(read_config("xray/nodes.json"))
-
-    def samba(self) -> SambaConfig:
-        """Read the current share configuration.
-
-        Returns:
-            Parsed ``config/samba/samba.json``.
-        """
-        return SambaConfig.from_dict(read_config("samba/samba.json"))
-
-    def write_samba(self, config: SambaConfig) -> None:
-        """Store a changed share configuration.
-
-        Args:
-            config: The configuration to write. Validated before it lands, so
-                ``config/`` never holds a file the renderer would refuse.
-        """
-        config.validate()
-        write_config("samba/samba.json", config.to_dict())
-
-    async def apply_samba(self) -> str:
-        """Render the share configuration, converge accounts, and load it.
-
-        Returns:
-            A short description of what was applied.
-
-        Raises:
-            CommandError: If rendering or applying fails. The running server
-                keeps its previous configuration when validation fails.
-        """
-        async with self._apply_lock:
-            return await asyncio.to_thread(self._apply_samba_blocking)
-
-    def podman(self) -> PodmanConfig:
-        """Read the declared containers.
-
-        Returns:
-            Parsed ``config/podman/podman.json``.
-        """
-        return PodmanConfig.from_dict(read_config("podman/podman.json"))
-
-    def write_podman(self, config: PodmanConfig) -> None:
-        """Store changed container declarations.
-
-        Args:
-            config: The configuration to write. Validated before it lands, so
-                ``config/`` never holds a file the renderer would refuse.
-        """
-        config.validate()
-        write_config("podman/podman.json", config.to_dict())
-
-    async def apply_podman(self) -> str:
-        """Render the Quadlet files and reconcile systemd with them.
-
-        Returns:
-            A short description of what was applied.
-
-        Raises:
-            CommandError: If systemd refuses a unit.
-        """
-        async with self._apply_lock:
-            return await asyncio.to_thread(self._apply_podman_blocking)
-
-    def gitea(self) -> GiteaConfig:
-        """Read the current git server configuration.
-
-        Returns:
-            Parsed ``config/gitea/gitea.json``.
-        """
-        return GiteaConfig.from_dict(read_config("gitea/gitea.json"))
-
-    def write_gitea(self, config: GiteaConfig) -> None:
-        """Store a changed git server configuration.
-
-        Args:
-            config: The configuration to write. Validated before it lands, so
-                ``config/`` never holds a file the renderer would refuse.
-        """
-        config.validate()
-        write_config("gitea/gitea.json", config.to_dict())
-
-    async def apply_gitea(self) -> str:
-        """Render ``app.ini`` and restart a running server on it.
-
-        Returns:
-            A short description of what was applied.
-
-        Raises:
-            CommandError: If rendering or applying fails.
-        """
-        async with self._apply_lock:
-            return await asyncio.to_thread(self._apply_gitea_blocking)
 
     def link_status(self) -> RouterLinkStatus:
         """Build a reader for the live state of the interfaces.
@@ -440,16 +343,51 @@ class PanelRuntime:
             return await asyncio.to_thread(self._apply_network_blocking, only)
 
     def desired_state_for(self, device) -> tuple[str, dict]:
-        """What a device should be, and the hash the agent compares against.
+        """What a device should host, and the hash the agent compares against.
 
         Args:
-            device: The device asking.
+            device: The device asking, or its key.
 
         Returns:
-            The hash and the state. Nothing is desired yet, so both are empty.
+            The hash and the state.
         """
-        del device
-        return "", {}
+        key = (device if isinstance(device, str) else device.mac_address).lower()
+        desired, state_hash = self.desired_states.compose(
+            key,
+            self.client_platform.get(key, {}),
+            address=self.client_address.get(key, ""),
+            allowed_subnets=self.share_subnets(),
+        )
+        return state_hash, desired
+
+    def share_subnets(self) -> list:
+        """The networks a device's shares answer, from this hub's own fence.
+
+        Returns:
+            Network addresses, served networks first.
+        """
+        links = {
+            link.name: link.ipv4_address or ""
+            for link in RouterLinkStatus().all_links()
+        }
+        return share_subnets(
+            network=self.network(),
+            link_addresses=links,
+            device_addresses=device_addresses(),
+        )
+
+    def push_desired_state(self, key: str) -> None:
+        """Send one device the state it should hold now.
+
+        Args:
+            key: The device.
+
+        Raises:
+            AgentOfflineError: When the device has no channel.
+            StreamRefusedError: When the socket did not take it in time.
+        """
+        state_hash, desired = self.desired_state_for(key)
+        self.agent_sessions.push_state_from_thread(key, state_hash, desired)
 
     def forget_client_state(self, mac_address: str) -> None:
         """Drop everything held in memory about one device.
@@ -472,6 +410,7 @@ class PanelRuntime:
         self.client_last_error.pop(key, None)
         self.device_shares.withdraw(key)
         self.agent_module_orders.forget(key)
+        self.desired_states.forget(key)
         self.agent_sessions.close_from_thread(
             key, AGENT_WS_CLOSE_UNKNOWN_TOKEN, "unknown_token"
         )
@@ -631,100 +570,39 @@ class PanelRuntime:
             changes += applier.apply_resolver()
         run(["systemctl", "restart", DNSMASQ_SERVICE_NAME])
         changes += _converge_overlays(network)
-        changes += self._refresh_share_fence()
+        changes += self._push_desired_states()
 
         self.is_config_dirty = False
         summary = "; ".join(changes) if changes else "no interface change"
         return f"applied network ({summary})"
 
-    def _refresh_share_fence(self) -> list[str]:
-        """Re-render ``smb.conf`` for the networks the box now has.
+    def _push_desired_states(self) -> list[str]:
+        """Hand every online device the state the network now composes.
 
-        The shares' ``hosts allow`` is derived from the network, so a network
-        change that does not reach it leaves the second fence describing a box
-        that no longer exists: an opened network the shares refuse, or a
-        closed one they still admit. Belongs to the network apply for the same
-        reason the firewall does.
+        The shares' ``allowed_subnets`` and a git server's address derive
+        from the network, so a network change that never reached a device
+        would leave its shares refusing a network that was just opened.
 
         Returns:
-            A note for the summary, empty when there is nothing to do.
-
-        The share configuration failing is reported rather than raised: the
-        network is already applied by this point, and taking the whole apply
-        down for a file the firewall does not depend on would leave the box
-        looking unreachable when it is not.
+            A note for the summary, empty when no device is online. A
+            device that would not take the push is named rather than
+            raised: the network is already applied by this point.
         """
-        if shutil.which("testparm") is None:
-            return []
-        try:
-            config = self.samba()
-            config.validate()
-            links = {
-                link.name: link.ipv4_address or ""
-                for link in RouterLinkStatus().all_links()
-            }
-            rendered = SambaConfigRenderer(
-                config=config,
-                lan_subnets=share_subnets(
-                    network=self.network(),
-                    link_addresses=links,
-                    device_addresses=device_addresses(),
-                ),
-            ).render()
-            SambaConfigApplier().apply(rendered, config=config)
-        except (CommandError, FileNotFoundError, ValueError) as error:
-            return [f"shares not refreshed: {error}"]
-        return ["shares refreshed"]
-
-    def _apply_samba_blocking(self) -> str:
-        config = self.samba()
-        config.validate()
-        # The LAN subnets go into hosts allow, the second fence behind the
-        # firewall's own; both change together when the LAN does. Normalised to
-        # the network address — cidr is the gateway's own host form.
-        network = self.network()
-        links = {
-            link.name: link.ipv4_address or ""
-            for link in RouterLinkStatus().all_links()
-        }
-        subnets = share_subnets(
-            network=network,
-            link_addresses=links,
-            device_addresses=device_addresses(),
-        )
-        rendered = SambaConfigRenderer(config=config, lan_subnets=subnets).render()
-        # Configuration first: smbpasswd itself reads smb.conf, and the link
-        # to a valid one is the applier's to place.
-        summary = SambaConfigApplier().apply(rendered, config=config)
-        notes = SambaUserManager().converge(config.users)
-        if notes:
-            summary += "; " + "; ".join(notes)
-        return summary
-
-    def _apply_podman_blocking(self) -> str:
-        config = self.podman()
-        config.validate()
-        renderer = podman_ops.container_renderer(config)
-        mirror_note = PodmanRegistriesApplier().apply(
-            PodmanRegistriesRenderer(config=config).render()
-        )
-        autostart = [
-            container.name for container in config.containers if container.is_autostart
-        ]
-        note = podman_ops.container_applier().apply(
-            renderer.render(), autostart_names=autostart
-        )
-        return f"{note}; {mirror_note}"
-
-    def _apply_gitea_blocking(self) -> str:
-        config = self.gitea()
-        config.validate()
-        rendered = GiteaConfigRenderer(
-            config=config,
-            lan_address=self.network().primary_lan_address,
-            secrets=GiteaSecretStore().load(),
-        ).render()
-        return GiteaConfigApplier().apply(rendered)
+        pushed = []
+        refused = []
+        for key in self.agent_sessions.keys():
+            try:
+                self.push_desired_state(key)
+            except (AgentOfflineError, StreamRefusedError):
+                refused.append(key)
+                continue
+            pushed.append(key)
+        notes = []
+        if pushed:
+            notes.append(f"desired state pushed to {len(pushed)} devices")
+        if refused:
+            notes.append(f"desired state not pushed to {', '.join(refused)}")
+        return notes
 
 
 def _converge_overlays(network: RouterNetworkConfig) -> list[str]:

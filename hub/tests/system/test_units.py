@@ -129,17 +129,6 @@ def test_no_rendered_unit_keeps_a_placeholder():
             assert not left, f"{template.name}, packaged={is_packaged_value}: {left}"
 
 
-def test_a_template_nobody_renders_carries_no_placeholder():
-    """Gitea's provisioner writes its own unit, so its template may not need
-    substituting — and this is what says so out loud."""
-    from neutrino_hub.utils.constants import UTILS_DATA_DIR
-
-    text = (UTILS_DATA_DIR / "services" / "neutrino_hub_gitea.service").read_text()
-
-    assert "@PYTHON@" not in text
-    assert "@REPO_ROOT@" not in text
-
-
 def test_the_units_the_panel_restarts_are_not_rate_limited():
     """systemd stops a unit after five starts in ten seconds and leaves it
     down until the window clears. The panel restarts these by design — every

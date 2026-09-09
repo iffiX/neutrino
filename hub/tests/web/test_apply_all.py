@@ -8,6 +8,7 @@ node left the LAN with no firewall rules and no DNS until it was fixed.
 
 import pytest
 
+from neutrino_hub.modules.devices.agent_sessions import StreamRefusedError
 from neutrino_hub.modules.router.constants import ROUTER_NFT_PATH as NFT_PATH
 from neutrino_hub.utils.subprocess_run import CommandError
 from neutrino_hub.web import panel_runtime as runtime_module
@@ -117,77 +118,75 @@ def test_a_refused_apply_leaves_the_configuration_dirty(applied):
     assert panel.is_config_dirty
 
 
-def test_applying_the_network_re_renders_the_share_fence(applied, monkeypatch):
-    """`hosts allow` is derived from the networks this box has, so a network
-    change that never reaches smb.conf leaves the shares refusing a network
-    that was just opened."""
-    panel, written = applied
-    monkeypatch.setattr(runtime_module.shutil, "which", lambda name: "/usr/bin/x")
-    monkeypatch.setattr(runtime_module.PanelRuntime, "samba", lambda self: _Shares())
-    monkeypatch.setattr(runtime_module.RouterLinkStatus, "all_links", lambda self: [])
-    monkeypatch.setattr(runtime_module, "device_addresses", dict)
-    monkeypatch.setattr(
-        runtime_module.SambaConfigApplier,
-        "apply",
-        lambda self, rendered, **kwargs: written.append(("loaded", "smb.conf")),
-    )
-    monkeypatch.setattr(
-        runtime_module.RouterInterfaceApplier, "apply_all", lambda self: []
-    )
+class _Sessions:
+    """The live sockets: who is online, and what each was handed."""
 
-    summary = panel._apply_network_blocking(None)
+    def __init__(self, online, refusing=()):
+        self.online = list(online)
+        self.refusing = set(refusing)
+        self.pushed: list = []
 
-    assert ("loaded", "smb.conf") in written
-    assert "shares refreshed" in summary
+    def keys(self):
+        return list(self.online)
+
+    def push_state_from_thread(self, key, state_hash, desired, timeout=5.0):
+        if key in self.refusing:
+            raise StreamRefusedError("agent_never_reported", {"device": key})
+        self.pushed.append((key, state_hash, desired))
 
 
-def test_a_box_without_samba_applies_its_network_all_the_same(applied, monkeypatch):
-    panel, written = applied
-    monkeypatch.setattr(runtime_module.shutil, "which", lambda name: None)
+def _with_devices(panel, monkeypatch, sessions):
     monkeypatch.setattr(
         runtime_module.RouterInterfaceApplier, "apply_all", lambda self: []
     )
+    monkeypatch.setattr(
+        runtime_module.PanelRuntime,
+        "desired_state_for",
+        lambda self, device: ("h-" + device, {"modules": {}}),
+    )
+    panel.agent_sessions = sessions
+
+
+def test_applying_the_network_hands_every_online_device_its_state(applied, monkeypatch):
+    """The shares' fence and a git server's address derive from the network,
+    so a network change that never reaches a device leaves its shares
+    refusing a network that was just opened."""
+    panel, written = applied
+    sessions = _Sessions(["aa:bb:cc:dd:ee:ff", "11:22:33:44:55:66"])
+    _with_devices(panel, monkeypatch, sessions)
 
     summary = panel._apply_network_blocking(None)
 
-    assert ("loaded", "nft") in written
-    assert "shares" not in summary
+    assert [key for key, _, _ in sessions.pushed] == [
+        "aa:bb:cc:dd:ee:ff",
+        "11:22:33:44:55:66",
+    ]
+    assert sessions.pushed[0][1] == "h-aa:bb:cc:dd:ee:ff"
+    assert "desired state pushed to 2 devices" in summary
 
 
-def test_a_share_configuration_that_will_not_render_does_not_fail_the_network(
+def test_a_box_with_no_device_online_applies_its_network_all_the_same(
     applied, monkeypatch
 ):
-    """The network is applied by then. Failing the whole call for a file the
-    firewall does not depend on leaves the box reading as unreachable."""
     panel, written = applied
-    monkeypatch.setattr(runtime_module.shutil, "which", lambda name: "/usr/bin/x")
-    monkeypatch.setattr(runtime_module.PanelRuntime, "samba", lambda self: _Shares())
-    monkeypatch.setattr(runtime_module.RouterLinkStatus, "all_links", lambda self: [])
-    monkeypatch.setattr(runtime_module, "device_addresses", dict)
-    monkeypatch.setattr(
-        runtime_module.SambaConfigApplier,
-        "apply",
-        _refusing_shares,
-    )
-    monkeypatch.setattr(
-        runtime_module.RouterInterfaceApplier, "apply_all", lambda self: []
-    )
+    _with_devices(panel, monkeypatch, _Sessions([]))
 
     summary = panel._apply_network_blocking(None)
 
     assert ("loaded", "nft") in written
-    assert "shares not refreshed" in summary
+    assert "desired state" not in summary
 
 
-class _Shares:
-    """The share configuration, with nothing shared."""
+def test_a_device_that_will_not_take_the_push_does_not_fail_the_network(
+    applied, monkeypatch
+):
+    """The network is applied by then; a socket that did not answer in
+    time is named in the summary rather than raised."""
+    panel, written = applied
+    sessions = _Sessions(["aa:bb:cc:dd:ee:ff"], refusing=["aa:bb:cc:dd:ee:ff"])
+    _with_devices(panel, monkeypatch, sessions)
 
-    shares: list = []
-    users: list = []
+    summary = panel._apply_network_blocking(None)
 
-    def validate(self) -> None:
-        return None
-
-
-def _refusing_shares(self, rendered, **kwargs):
-    raise CommandError("Samba rejected the configuration")
+    assert ("loaded", "nft") in written
+    assert "desired state not pushed to aa:bb:cc:dd:ee:ff" in summary

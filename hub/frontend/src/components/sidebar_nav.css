@@ -159,10 +159,3 @@
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
-
-.sidebar_group_empty {
-  padding: 2px var(--space-3);
-  color: var(--color-text-faint);
-  font-size: 12px;
-  font-style: italic;
-}

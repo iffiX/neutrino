@@ -2,7 +2,6 @@
 
 import pytest
 
-from neutrino_hub.modules.gitea.provisioner import download_url
 from neutrino_hub.system import machine
 from neutrino_hub.system.machine import machine_architecture, require_architecture
 
@@ -40,9 +39,3 @@ def test_an_unsupported_machine_is_refused_by_name(monkeypatch):
 
     with pytest.raises(RuntimeError, match="riscv64"):
         require_architecture(("amd64", "arm64"), "gitea")
-
-
-def test_the_gitea_download_follows_the_machine():
-    """The bug this bans: an amd64 binary hardcoded onto a Raspberry Pi."""
-    assert download_url("arm64").endswith("linux-arm64")
-    assert download_url("amd64").endswith("linux-amd64")

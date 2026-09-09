@@ -5,10 +5,7 @@ config/router/network.json
 config/router/connections.json
 config/web/settings.json
 config/web/agent_tls/
-config/samba/samba.json
-config/gitea/gitea.json
-config/podman/podman.json
-config/gitea/secrets.json
+config/devices/*/
 config/devices/devices.json
 config/ai/providers.json
 config/credentials/vault.json

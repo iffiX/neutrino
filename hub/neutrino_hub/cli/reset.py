@@ -40,7 +40,6 @@ from neutrino_hub.utils.constants import (
 # What `all` clears that no example replaces: material a running box collected
 # rather than a file it was given.
 RESET_COLLECTED_PATHS = (
-    "gitea/secrets.json",
     "devices/known_hosts",
     "devices/packages",
     # The agent channel's certificate and key go with the fleet that pinned
@@ -57,6 +56,10 @@ RESET_STATE_PATHS = ("session.secret", "vault.key", "agent_tls_key.pem")
 # download and nothing else. `agent_cache` is not here: what the hub's own
 # package laid there is the package manager's to remove.
 RESET_STATE_DIRS = ("agent_module_cache",)
+# Where every device's desired state lives, one directory per device. A
+# reset forgets them with the tokens: they describe machines the next owner
+# has not enrolled.
+RESET_DEVICES_DIR = "devices"
 RESET_EXAMPLE_SUFFIX = ".example.json"
 RESET_PANEL_UNIT = "web"
 RESET_TARGETS = {
@@ -193,6 +196,12 @@ def _forget_collected() -> list:
         else:
             continue
         removed.append(relative_path)
+    devices_dir = UTILS_CONFIG_DIR / RESET_DEVICES_DIR
+    if devices_dir.is_dir():
+        for path in sorted(devices_dir.iterdir()):
+            if path.is_dir():
+                shutil.rmtree(path)
+                removed.append(f"{RESET_DEVICES_DIR}/{path.name}")
     for relative_path in RESET_STATE_PATHS:
         path = UTILS_STATE_ROOT / relative_path
         if path.exists():
@@ -215,6 +224,10 @@ def _restore_examples() -> int:
     written = 0
     for example_path in sorted(UTILS_EXAMPLES_DIR.rglob(f"*{RESET_EXAMPLE_SUFFIX}")):
         relative = example_path.relative_to(UTILS_EXAMPLES_DIR)
+        # A device directory's examples document a shape; no device of the
+        # next owner's stands behind them.
+        if len(relative.parts) > 2:
+            continue
         real_path = UTILS_CONFIG_DIR / relative.with_name(
             relative.name.replace(RESET_EXAMPLE_SUFFIX, ".json")
         )

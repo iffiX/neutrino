@@ -12,10 +12,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
 from neutrino_hub.modules.devices.registry import DeviceRegistry
-from neutrino_hub.modules.podman.config import CONTAINER_NAME_PATTERN
-from neutrino_hub.modules.podman.ops import shell_command
 from neutrino_hub.system.local_shell import LocalShellSession
-from neutrino_hub.system.sandbox import outside_sandbox_interactive
 from neutrino_hub.modules.devices.ssh_ops import DeviceSshOperator, SshCredentials
 from neutrino_hub.web.constants import WEB_SESSION_COOKIE, WEB_STATS_PUSH_INTERVAL_S
 from neutrino_hub.web.dns_log import DnsLogReader
@@ -164,31 +161,6 @@ async def terminal_socket(websocket: WebSocket) -> None:
     if not await _accept(websocket):
         return
     await _serve_pty_session(websocket, LocalShellSession())
-
-
-@router.websocket("/ws/container/{name}")
-async def container_shell_socket(websocket: WebSocket, name: str) -> None:
-    """Bridge a browser terminal to a shell inside a running container.
-
-    The same pty machinery as the gateway's own terminal, with ``podman exec``
-    on the far end of it — same sweep on close, same everything.
-
-    Args:
-        websocket: The client socket.
-        name: The container's name, held to the config charset so it cannot
-            smuggle arguments into the exec.
-    """
-    if not await _accept(websocket):
-        return
-    if not CONTAINER_NAME_PATTERN.match(name):
-        await websocket.close(code=POLICY_VIOLATION_CODE, reason="bad name")
-        return
-    await _serve_pty_session(
-        websocket,
-        # Outside the unit's sandbox: exec grants the container's capability
-        # set, which NoNewPrivileges forbids from in here.
-        LocalShellSession(command=outside_sandbox_interactive(shell_command(name))),
-    )
 
 
 async def _serve_pty_session(websocket: WebSocket, session: LocalShellSession) -> None:

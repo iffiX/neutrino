@@ -127,8 +127,8 @@ class LocalShellSession:
             rows: Initial terminal height.
             columns: Initial terminal width.
             command: What to run on the terminal. None is the box's own login
-                shell; a container shell passes ``podman exec`` here and gets
-                the same pty, the same sweep, the same everything.
+                shell; any other command gets the same pty and the same
+                sweep on close.
         """
         self._rows = rows
         self._columns = columns

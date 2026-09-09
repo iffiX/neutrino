@@ -3,7 +3,9 @@
 A system-package module names distro packages, never a download: its orders
 skip the hub's cache and the platform installs the names with its own
 tooling. An entry with no packages means the platform carries the capability
-natively — nothing to install, and the row reads as built in.
+natively: nothing to install, and the row reads as built in. An entry may
+name ``pre_install`` shell steps, run before the packages, for a repository
+the distribution keeps the software in.
 
 Not pure: runs the package manager.
 """
@@ -15,6 +17,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 
+from neutrino_agent.modules import installers
 from neutrino_agent.modules.base import ModuleRunner
 from neutrino_agent.modules.package import DEB_INSTALLED_STATUS, VERIFY_TIMEOUT_S
 
@@ -23,6 +26,12 @@ def _entry_packages(resolved: dict) -> list:
     """The package names this module's entry asks for."""
     entry = resolved.get("entry") or {}
     return [str(name) for name in entry.get("packages") or []]
+
+
+def _entry_steps(resolved: dict) -> list:
+    """The shell steps this module's entry runs before its packages."""
+    entry = resolved.get("entry") or {}
+    return [str(step) for step in entry.get("pre_install") or []]
 
 
 class SystemPackageModuleRunner(ModuleRunner):
@@ -59,9 +68,14 @@ class SystemPackageModuleRunner(ModuleRunner):
             resolved: The module as the hub resolved it.
 
         Raises:
-            InstallError: If the package manager refuses.
+            InstallError: If a step or the package manager refuses.
             PlatformUnsupportedError: If this platform installs nothing.
         """
+        for step in _entry_steps(resolved):
+            self._log(step)
+            output = installers.run_shell(step)
+            if output.strip():
+                self._log(output.strip())
         output = self._platform.install_system_packages(_entry_packages(resolved))
         if output.strip():
             self._log(output.strip())

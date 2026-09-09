@@ -201,15 +201,15 @@ def test_the_log_is_named_before_the_first_step(monkeypatch):
 
 def test_a_module_that_does_more_than_install_packages_needs_agreement(monkeypatch):
     """An answers document names modules; it agrees to nothing. Without the
-    flag, zfs used to start a kernel-module build with nobody having said so."""
+    flag, a module used to add a vendor repository with nobody having said so."""
     installed: list = []
     monkeypatch.setattr(setup, "plan_for", lambda p: _Plan(is_consent_needed=True))
     monkeypatch.setattr(
-        setup.MODULE_SPECS["samba"], "provisioner", lambda: _Provisioner(installed)
+        setup.MODULE_SPECS["netbird"], "provisioner", lambda: _Provisioner(installed)
     )
 
     with pytest.raises(ValueError) as refusal:
-        setup._install_service("samba", _SilentReporter(), is_consented=False)
+        setup._install_service("netbird", _SilentReporter(), is_consented=False)
 
     assert "--yes" in str(refusal.value)
     assert installed == [], "the module was provisioned anyway"
@@ -220,10 +220,10 @@ def test_the_flag_is_the_agreement(monkeypatch):
     monkeypatch.setattr(setup, "run", lambda command, **kwargs: None)
     monkeypatch.setattr(setup, "plan_for", lambda p: _Plan(is_consent_needed=True))
     monkeypatch.setattr(
-        setup.MODULE_SPECS["samba"], "provisioner", lambda: _Provisioner(installed)
+        setup.MODULE_SPECS["netbird"], "provisioner", lambda: _Provisioner(installed)
     )
 
-    setup._install_service("samba", _SilentReporter(), is_consented=True)
+    setup._install_service("netbird", _SilentReporter(), is_consented=True)
 
     assert installed == ["provisioned"]
 
@@ -237,12 +237,12 @@ def test_a_module_that_only_installs_packages_needs_no_agreement(monkeypatch):
         lambda provisioner: _Plan(is_consent_needed=False),
     )
     monkeypatch.setattr(
-        setup.MODULE_SPECS["samba"],
+        setup.MODULE_SPECS["netbird"],
         "provisioner",
         lambda: _Provisioner(installed),
     )
 
-    setup._install_service("samba", _SilentReporter(), is_consented=False)
+    setup._install_service("netbird", _SilentReporter(), is_consented=False)
 
     assert installed == ["provisioned"]
 

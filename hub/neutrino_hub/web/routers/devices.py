@@ -194,14 +194,16 @@ def _device_view(runtime: PanelRuntime, device: ManagedDevice) -> DeviceView:
         device: The stored device.
 
     Returns:
-        The view, carrying the platform on a device whose agent has beaten
-        since the panel started.
+        The view, carrying the platform and the agent version on a device
+        whose agent has beaten since the panel started.
     """
     key = device.mac_address.lower()
     view = _to_view(
         device,
         runtime.client_metrics.get(key),
         is_agent_online=runtime.agent_sessions.is_online(key),
+        version=runtime.agent_sessions.version_of(key),
+        last_seen=runtime.agent_sessions.last_seen_at(key),
     )
     # Where its channel comes from wins over a scan: an agent on the overlay
     # is on no served LAN, and a machine that moved is at its new address a
@@ -1144,7 +1146,12 @@ async def _agent_command_stream(
 
 
 def _to_view(
-    device: ManagedDevice, metrics: dict | None = None, *, is_agent_online: bool = False
+    device: ManagedDevice,
+    metrics: dict | None = None,
+    *,
+    is_agent_online: bool = False,
+    version: str = "",
+    last_seen: "str | None" = None,
 ) -> DeviceView:
     ssh_view = None
     if device.ssh:
@@ -1172,9 +1179,9 @@ def _to_view(
         client_view = DeviceClientInfoView(
             is_managed=True,
             is_online=is_agent_online,
-            version=device.client.version,
-            is_version_mismatched=_is_version_mismatched(device.client.version),
-            last_seen=device.client.last_seen,
+            version=version or None,
+            is_version_mismatched=_is_version_mismatched(version),
+            last_seen=last_seen,
             cpu_percent=latest.get("cpu_percent"),
             memory_percent=latest.get("memory_percent"),
             disk_percent=latest.get("disk_percent"),

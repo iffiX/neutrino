@@ -1,9 +1,7 @@
-import { useContext } from "react";
 import { NavLink } from "react-router-dom";
 
 import { Icon } from "./icon";
-import { visibleNavItems } from "../nav_items";
-import { ModulesContext } from "../modules_context";
+import { NAV_ITEMS } from "../nav_items";
 import "./bottom_nav.css";
 
 /**
@@ -20,18 +18,10 @@ interface BottomNavProps {
 }
 
 export function BottomNav({ onLogout }: BottomNavProps) {
-  // The same shared module list the sidebar reads, so both navs agree on
-  // which optional pages exist in the same render.
-  const modules = useContext(ModulesContext);
-  const enabled = (modules?.data?.modules ?? [])
-    .filter((module) => module.is_enabled && !module.is_core)
-    .map((module) => module.name);
-  const items = visibleNavItems(enabled);
-
   return (
     <nav className="bottom_nav" aria-label="Main">
       <div className="bottom_nav_items">
-        {items.map((item) => (
+        {NAV_ITEMS.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}

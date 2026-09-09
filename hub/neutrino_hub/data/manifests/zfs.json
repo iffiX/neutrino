@@ -1,0 +1,36 @@
+{
+  "_comment": "The ZFS tools and smartmontools, hosted by a device's agent. No distribution but Ubuntu ships ZFS in its default repositories, so each family's pre_install steps add the repository the distribution keeps it in and build the kernel module where none is shipped. zfs-zed is spelled out on Debian: it is only a Recommends of zfsutils-linux.",
+  "name": "zfs",
+  "title": "ZFS storage",
+  "kind": "system_package",
+  "installer": "platform",
+  "source": "system",
+  "description": "Pooled storage with redundancy and compression",
+  "platforms": {
+    "linux-debian": {
+      "pre_install": [
+        "for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do [ -f \"$f\" ] || continue; sed -i -E '/^deb(-src)? .*debian\\.org/{/ contrib/! s/$/ contrib/}' \"$f\"; done",
+        "for f in /etc/apt/sources.list.d/*.sources; do [ -f \"$f\" ] || continue; grep -qE 'debian\\.org|mirror\\+file' \"$f\" || continue; sed -i -E '/^Components:/{/contrib/! s/$/ contrib/}' \"$f\"; done",
+        "apt-get update",
+        "modinfo -n zfs >/dev/null 2>&1 || apt-get install -y \"linux-headers-$(uname -r)\" zfs-dkms"
+      ],
+      "packages": ["zfsutils-linux", "zfs-zed", "smartmontools"]
+    },
+    "linux-rhel": {
+      "pre_install": [
+        "rpm -q zfs-release >/dev/null 2>&1 || dnf -y install https://zfsonlinux.org/epel/zfs-release-2-3.el9.noarch.rpm",
+        "modinfo -n zfs >/dev/null 2>&1 || dnf -y install \"kernel-devel-$(uname -r)\" zfs-dkms"
+      ],
+      "packages": ["zfs", "smartmontools"]
+    },
+    "linux-arch": {
+      "pre_install": [
+        "pacman-key --recv-keys DDF7DB817396A49B2A2723F7403BD972F75D9D76 && pacman-key --lsign-key DDF7DB817396A49B2A2723F7403BD972F75D9D76",
+        "grep -q '^\\[archzfs\\]' /etc/pacman.conf || printf '\\n[archzfs]\\nServer = https://archzfs.com/$repo/$arch\\n' >> /etc/pacman.conf",
+        "pacman -Sy --noconfirm",
+        "modinfo -n zfs >/dev/null 2>&1 || pacman -S --noconfirm zfs-linux"
+      ],
+      "packages": ["zfs-utils", "smartmontools"]
+    }
+  }
+}

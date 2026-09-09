@@ -20,7 +20,7 @@ AGENT_SERVICE_NAME = "neutrino_agent.service"
 # The shape of what crosses the hub channel. Bumped on any wire change, so
 # a hub upgrade that changed the shapes tells a same-version agent to
 # reinstall instead of feeding it frames it cannot read.
-AGENT_WIRE_GENERATION = 5
+AGENT_WIRE_GENERATION = 6
 
 # The one socket to the hub, on the agent TLS port. Every stream rides it.
 AGENT_WS_PATH = "/api/agent/ws"
@@ -83,3 +83,17 @@ AGENT_DATA_DIR_POSIX = "/etc/neutrino/agent"
 AGENT_STATE_NAME = "state.json"
 AGENT_CREDENTIALS_DIR_NAME = "credentials"
 AGENT_STATE_PATH = AGENT_DATA_DIR_POSIX + "/" + AGENT_STATE_NAME
+
+# The hub's desired state for this machine, kept beside the state store so
+# the last copy taken is readable after a restart. Root-only: a module's
+# configuration carries the secrets its service signs with.
+AGENT_DESIRED_STATE_NAME = "desired.json"
+AGENT_DESIRED_STATE_PATH = AGENT_DATA_DIR_POSIX + "/" + AGENT_DESIRED_STATE_NAME
+
+# How long a module's live details stand in the report before the engine
+# reads them again. The reporter never waits on a read.
+AGENT_MODULE_DETAILS_TTL_S = 5.0
+
+# Where the agent's own RustDesk build lands. The module is built in: its
+# row reads installed while this file exists, and no order moves it.
+AGENT_RUSTDESK_BINARY_PATH = "/opt/neutrino_agent/vendor/rustdesk/rustdesk"

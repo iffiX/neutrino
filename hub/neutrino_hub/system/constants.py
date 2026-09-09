@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-from neutrino_hub.modules.samba.constants import SAMBA_UNIT
-
 # Units the panel shows and controls. The key is what the panel displays; the
 # value is the systemd unit behind it.
 # The units without which this is not a gateway. Traffic does not move if any
@@ -31,13 +29,6 @@ SYSTEM_OPTIONAL_UNITS = {
     # over a network. Installed from the vendor by the machine that wants it,
     # never carried in these packages.
     "netbird": "netbird.service",
-    "samba": SAMBA_UNIT,
-    "gitea": "neutrino_hub_gitea.service",
-    # Podman has no daemon; its API socket stands for the engine here.
-    "podman": "podman.socket",
-    # The event daemon stands for ZFS: pools work without it, but it is the
-    # monitorable part, and its presence is what puts the page in the sidebar.
-    "zfs": "zfs-zed.service",
 }
 
 SYSTEM_MANAGED_UNITS = {**SYSTEM_CORE_UNITS, **SYSTEM_OPTIONAL_UNITS}
@@ -55,8 +46,8 @@ SYSTEM_CONSENT_THIRD_PARTY_REPOSITORY = "third_party_repository"
 #
 # Nothing an optional module needs belongs here. Each declares its own
 # `<PREFIX>_PACKAGES` and installs it when the panel provisions it, and
-# everything vendored (xray, the AI gateway, NetBird, Gitea) comes from its
-# vendor because the distribution versions lag badly.
+# everything vendored (xray, the AI gateway, NetBird) comes from its vendor
+# because the distribution versions lag badly.
 #
 # Nothing here may manage a network. A dependency is installed before any of
 # the hub's own code runs, and on Debian installing a service starts it: a

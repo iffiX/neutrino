@@ -42,18 +42,13 @@ class DeviceClientInfo:
 
     Attributes:
         token_sha256: SHA-256 hex of the shared secret the agent
-            authenticates its heartbeats with; the raw token exists only in
-            the enroll reply and on the device. A token nobody has used yet
-            is an offer, not management.
-        version: Agent version from the last heartbeat.
-        last_seen: ISO timestamp of the last heartbeat.
+            authenticates its channel with; the raw token exists only in
+            the enroll reply and on the device.
         ai_key_ids: The cliproxyapi client key generated for each of this
             device's activated accounts, by account name.
     """
 
     token_sha256: str | None = None
-    version: str | None = None
-    last_seen: str | None = None
     ai_key_ids: dict = field(default_factory=dict)
 
     @classmethod
@@ -68,26 +63,21 @@ class DeviceClientInfo:
         """
         return cls(
             token_sha256=data.get("token_sha256"),
-            version=data.get("version"),
-            last_seen=data.get("last_seen"),
             ai_key_ids=data.get("ai_key_ids", {}),
         )
 
     def to_dict(self) -> dict:
         """Serialize the persistent fields.
 
-        Live metrics are deliberately not stored: they are runtime state that
-        would be stale the moment the panel restarts. What each module is
-        stands in the agent's own reports; the hub keeps no record of what a
-        machine should have.
+        What an agent reports — its version, when it was last seen, its
+        metrics — is runtime state and stays in memory: it would be stale
+        the moment the panel restarts.
 
         Returns:
             A JSON-ready object.
         """
         return {
             "token_sha256": self.token_sha256,
-            "version": self.version,
-            "last_seen": self.last_seen,
             "ai_key_ids": self.ai_key_ids,
         }
 
@@ -127,14 +117,13 @@ class ManagedDevice:
 
     @property
     def is_managed(self) -> bool:
-        """Whether an agent completed its handshake and still holds a token.
+        """Whether an agent token was issued for this device and still stands.
 
-        A token alone is an offer — an install that failed after generating
-        leaves one dangling, invisibly — and the first authenticated
-        heartbeat is what turns the offer into management. The hub lets go
-        by deleting the token; the device lets go by leaving.
+        The hub lets go by deleting the token; the device lets go by
+        leaving. Whether the agent is there right now is the session
+        registry's answer, not this one's.
         """
-        return bool(self.client.token_sha256 and self.client.last_seen)
+        return bool(self.client.token_sha256)
 
     @property
     def is_stored(self) -> bool:
@@ -159,17 +148,16 @@ class ManagedDevice:
 
 
 # The config-wide lock, held across every read-modify-write of the device
-# file. The panel is one process with many threads — a heartbeat, a page load
-# and a save all land at once — and the file is written whole.
+# file. The panel is one process with many threads, two saves can land at
+# once, and the file is written whole.
 _WRITE_LOCK = CONFIG_WRITE_LOCK
 
 
 class DeviceRegistry:
     """Reads, merges, and writes the device list.
 
-    Every write re-reads the file first. An agent beats every five seconds and
-    each beat rewrites the whole list, so a panel action that took its own
-    snapshot a moment earlier would put every other device back as it was —
+    Every write re-reads the file first: a caller that took its own snapshot
+    a moment earlier would otherwise put every other device back as it was,
     including one somebody has just forgotten, credentials and all.
     """
 
@@ -340,20 +328,6 @@ class DeviceRegistry:
                 return self._from_stored(mac_address, entry)
         return None
 
-    def record_heartbeat(self, mac_address: str, *, version: str, seen_at: str) -> None:
-        """Persist the agent version and last-seen time from a heartbeat.
-
-        Args:
-            mac_address: The device's MAC.
-            version: Agent version it reported.
-            seen_at: ISO timestamp of the heartbeat.
-        """
-        with _WRITE_LOCK:
-            device = self._fresh(mac_address)
-            device.client.version = version
-            device.client.last_seen = seen_at
-            self._store(device)
-
     def forget_client(self, mac_address: str) -> None:
         """Record that a device's agent has left.
 
@@ -368,8 +342,6 @@ class DeviceRegistry:
         with _WRITE_LOCK:
             device = self._fresh(mac_address)
             device.client.token_sha256 = None
-            device.client.version = None
-            device.client.last_seen = None
             self._store(device)
 
     def set_ai_key_id(self, mac_address: str, account: str, key_id: str | None) -> None:

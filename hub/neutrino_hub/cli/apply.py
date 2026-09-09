@@ -14,8 +14,6 @@ alone.
 """
 
 import argparse
-import shutil
-import ipaddress
 import json
 import sys
 
@@ -35,25 +33,6 @@ from neutrino_hub.modules.router.routes import (
 )
 from neutrino_hub.modules.router.supplicant import (
     write_config as write_supplicant_config,
-)
-from neutrino_hub.modules.gitea.config import GiteaConfig
-from neutrino_hub.modules.gitea.constants import GITEA_BINARY_PATH, GITEA_CONF_LINK_PATH
-from neutrino_hub.modules.gitea.ops import GiteaConfigApplier, GiteaSecretStore
-from neutrino_hub.modules.gitea.renderer import GiteaConfigRenderer
-from neutrino_hub.modules.podman import ops as podman_ops
-from neutrino_hub.modules.podman.config import PodmanConfig
-from neutrino_hub.modules.podman.ops import PodmanRegistriesApplier
-from neutrino_hub.modules.podman.renderer import PodmanRegistriesRenderer
-from neutrino_hub.modules.samba.config import SambaConfig
-from neutrino_hub.modules.samba.constants import (
-    SAMBA_CONF_LINK_PATH,
-    SAMBA_GENERATED_NAME,
-)
-from neutrino_hub.modules.samba.ops import SambaConfigApplier, SambaUserManager
-from neutrino_hub.modules.router.link_status import RouterLinkStatus, device_addresses
-from neutrino_hub.modules.samba.renderer import (
-    SambaConfigRenderer,
-    share_subnets,
 )
 from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
@@ -80,7 +59,7 @@ from neutrino_hub.modules.xray.node_secrets import resolve_node_secrets
 
 # --- config ---
 DNSMASQ_SERVICE_NAME = SYSTEM_CORE_UNITS["dnsmasq"]
-COMPONENTS = ("router", "xray", "dnsmasq", "cliproxyapi", "samba", "gitea", "podman")
+COMPONENTS = ("router", "xray", "dnsmasq", "cliproxyapi")
 
 
 def main() -> int:
@@ -187,46 +166,6 @@ def _render(selected: tuple[str, ...]) -> dict:
             print("cliproxyapi: not installed, skipping")
         else:
             artifacts["cliproxyapi"] = gateway.render_with_stored_key()
-    # The optional modules render only where installed: a fresh box without
-    # extras still gets a clean full-render run.
-    if "samba" in selected and shutil.which("smbd") is None:
-        print("samba: not installed, skipping")
-    elif "samba" in selected:
-        samba_config = SambaConfig.from_dict(read_config("samba/samba.json"))
-        samba_config.validate()
-        links = {
-            link.name: link.ipv4_address or ""
-            for link in RouterLinkStatus().all_links()
-        }
-        subnets = share_subnets(
-            network=network,
-            link_addresses=links,
-            device_addresses=device_addresses(),
-        )
-        artifacts["samba"] = SambaConfigRenderer(
-            config=samba_config, lan_subnets=subnets
-        ).render()
-    if "gitea" in selected:
-        if not GITEA_BINARY_PATH.is_file():
-            print("gitea: not installed, skipping")
-        else:
-            gitea_config = GiteaConfig.from_dict(read_config("gitea/gitea.json"))
-            gitea_config.validate()
-            # Loading generates missing secrets, an effect the render phase
-            # normally avoids — but a placeholder here would render an
-            # app.ini that must never reach the box, and generating is
-            # idempotent, so the lesser evil is to generate.
-            artifacts["gitea"] = GiteaConfigRenderer(
-                config=gitea_config,
-                lan_address=network.primary_lan_address,
-                secrets=GiteaSecretStore().load(),
-            ).render()
-    if "podman" in selected and shutil.which("podman") is None:
-        print("podman: not installed, skipping")
-    elif "podman" in selected:
-        podman_config = PodmanConfig.from_dict(read_config("podman/podman.json"))
-        podman_config.validate()
-        artifacts["podman"] = podman_ops.container_renderer(podman_config).render()
     return artifacts
 
 
@@ -255,17 +194,6 @@ def _print_artifacts(artifacts: dict) -> None:
     if "cliproxyapi" in artifacts:
         print(f"\n--- {UTILS_GENERATED_DIR / CLIPROXYAPI_GENERATED_NAME} ---")
         print(artifacts["cliproxyapi"])
-    if "samba" in artifacts:
-        print(f"\n--- {SAMBA_CONF_LINK_PATH} ---")
-        print(artifacts["samba"])
-    if "gitea" in artifacts:
-        print(f"\n--- {GITEA_CONF_LINK_PATH} ---")
-        print(artifacts["gitea"])
-    if "podman" in artifacts:
-        directory = podman_ops.container_applier().directory
-        for file_name, text in artifacts["podman"].items():
-            print(f"\n--- {directory / file_name} ---")
-            print(text)
 
 
 def _write(artifacts: dict) -> None:
@@ -276,8 +204,6 @@ def _write(artifacts: dict) -> None:
         XrayConfigApplier().write(artifacts["xray"])
     if "dnsmasq" in artifacts:
         write_generated(ROUTER_DNSMASQ_PATH, artifacts["dnsmasq"])
-    if "samba" in artifacts:
-        write_generated(UTILS_GENERATED_DIR / SAMBA_GENERATED_NAME, artifacts["samba"])
 
 
 def _apply(artifacts: dict) -> None:
@@ -318,32 +244,6 @@ def _apply(artifacts: dict) -> None:
         # motion the panel's apply runs, so neither path leaves the gateway
         # behind the stored configuration.
         print(CliproxyApiConfigApplier().apply())
-    if "samba" in artifacts:
-        samba_config = SambaConfig.from_dict(read_config("samba/samba.json"))
-        # Configuration first: smbpasswd itself reads smb.conf, and the link
-        # to a valid one is the applier's to place.
-        print(SambaConfigApplier().apply(artifacts["samba"], config=samba_config))
-        for change in SambaUserManager().converge(samba_config.users):
-            print(change)
-    if "gitea" in artifacts:
-        print(GiteaConfigApplier().apply(artifacts["gitea"]))
-    if "podman" in artifacts:
-        podman_config = PodmanConfig.from_dict(read_config("podman/podman.json"))
-        autostart = [
-            container.name
-            for container in podman_config.containers
-            if container.is_autostart
-        ]
-        print(
-            PodmanRegistriesApplier().apply(
-                PodmanRegistriesRenderer(config=podman_config).render()
-            )
-        )
-        print(
-            podman_ops.container_applier().apply(
-                artifacts["podman"], autostart_names=autostart
-            )
-        )
 
 
 if __name__ == "__main__":

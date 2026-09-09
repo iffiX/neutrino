@@ -29,6 +29,7 @@ import re
 import subprocess
 import time
 
+from neutrino_agent.constants import AGENT_RUSTDESK_BINARY_PATH
 from neutrino_agent.modules.base import ModuleRunner
 from neutrino_agent.modules.installers import InstallError
 
@@ -56,8 +57,12 @@ RUSTDESK_CONFIG_NAME = "RustDesk2.toml"
 RUSTDESK_ROOT_CONFIG = "/root/.config/rustdesk"
 RUSTDESK_ACCOUNT_RELATIVE = ".config/rustdesk"
 
-# Where the binary lands.
-RUSTDESK_BINARY_PATHS = ("/usr/bin/rustdesk", "/usr/local/bin/rustdesk")
+# Where the binary is: the agent's own build first, then a package's.
+RUSTDESK_BINARY_PATHS = (
+    AGENT_RUSTDESK_BINARY_PATH,
+    "/usr/bin/rustdesk",
+    "/usr/local/bin/rustdesk",
+)
 
 RUSTDESK_ACTION_START = "start"
 RUSTDESK_ACTION_STOP = "stop"

@@ -1,0 +1,20 @@
+{
+  "_comment": "The container engine, hosted by a device's agent. podman-docker adds a docker alias over podman. Declared containers become systemd units from the hub's desired state for that device.",
+  "name": "podman",
+  "title": "Containers",
+  "kind": "system_package",
+  "installer": "platform",
+  "source": "system",
+  "description": "Runs declared containers as systemd units",
+  "platforms": {
+    "linux-debian": {
+      "packages": ["podman", "podman-docker"]
+    },
+    "linux-rhel": {
+      "packages": ["podman", "podman-docker"]
+    },
+    "linux-arch": {
+      "packages": ["podman", "podman-docker"]
+    }
+  }
+}

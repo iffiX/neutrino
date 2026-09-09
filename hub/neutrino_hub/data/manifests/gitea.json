@@ -1,0 +1,26 @@
+{
+  "_comment": "The git server, hub-tier: the cache fetches the pinned release binary from the vendor's downloads and the agent installs it beside git from the machine's own packages. Every sha256 is the one dl.gitea.com publishes in the release's own .sha256 file. MIT obliges the license notice beside the binary; corresponding_source names the exact tag.",
+  "name": "gitea",
+  "title": "Gitea",
+  "kind": "gitea",
+  "installer": "hub",
+  "source": "go-gitea/gitea",
+  "version": "1.27.3",
+  "license": "MIT",
+  "corresponding_source": "https://github.com/go-gitea/gitea/tree/v1.27.3",
+  "description": "A private git server with its own web UI",
+  "platforms": {
+    "linux-amd64": {
+      "url": "https://dl.gitea.com/gitea/1.27.3/gitea-1.27.3-linux-amd64",
+      "sha256": "4da93c2c10b6980c359bcb86d5573ebfd7770e2e151756534edee24c8c12d971", "_sha256_scan": "scan: allow",
+      "package_kind": "binary",
+      "packages": ["git"]
+    },
+    "linux-arm64": {
+      "url": "https://dl.gitea.com/gitea/1.27.3/gitea-1.27.3-linux-arm64",
+      "sha256": "04c086d36dba793546e331484a9da34571763efdfa77dc526cc98e0f10917e7b", "_sha256_scan": "scan: allow",
+      "package_kind": "binary",
+      "packages": ["git"]
+    }
+  }
+}

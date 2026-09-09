@@ -7,10 +7,12 @@ answers each open with ``opened`` or ``refused``, delivers ``event`` lines
 and bytes while the stream runs, and ends it with ``close``.
 
 The registry holds the sessions, keyed by device, and is what the rest of
-the hub asks: whether a device is online, to push its desired state, to
-open a stream on it. Routes on the hub's loop await the session directly;
-threadpool routes and worker threads go through the ``*_from_thread``
-methods.
+the hub asks: whether a device is online, what version its agent is, when
+its last session ended, to push its desired state, to open a stream on it.
+Presence is memory alone: a device this hub has not seen since it started
+has no version and no last-seen stamp. Routes on the hub's loop await the
+session directly; threadpool routes and worker threads go through the
+``*_from_thread`` methods.
 """
 
 import asyncio
@@ -19,6 +21,7 @@ import itertools
 import json
 import threading
 import time
+from datetime import datetime, timezone
 
 from neutrino_hub.modules.devices.constants import (
     AGENT_WS_CHUNK_BYTES,
@@ -30,6 +33,7 @@ from neutrino_hub.modules.devices.constants import (
 
 STREAM_KIND_COMMAND = "command"
 STREAM_KIND_ORDER = "order"
+STREAM_KIND_VALIDATE = "validate"
 
 # What an agent sends about one stream.
 STREAM_MESSAGE_TYPES = ("opened", "refused", "event", "close", "credit")
@@ -37,6 +41,11 @@ STREAM_MESSAGE_TYPES = ("opened", "refused", "event", "close", "credit")
 CODE_AGENT_OFFLINE = "agent_offline"
 CODE_STREAM_OPEN_TIMEOUT = "stream_open_timeout"
 CODE_STREAM_TIMEOUT = "agent_never_reported"
+
+
+def _now() -> str:
+    """The current time as an ISO 8601 stamp in UTC."""
+    return datetime.now(timezone.utc).isoformat()
 
 
 class AgentOfflineError(Exception):
@@ -446,6 +455,8 @@ class AgentSessionRegistry:
         self.loop: "asyncio.AbstractEventLoop | None" = None
         self._lock = threading.Lock()
         self._sessions: dict[str, AgentSession] = {}
+        self._versions: dict[str, str] = {}
+        self._ended_at: dict[str, str] = {}
 
     async def attach(self, session: AgentSession) -> None:
         """Make a session the device's current one.
@@ -457,6 +468,8 @@ class AgentSessionRegistry:
         with self._lock:
             previous = self._sessions.get(session.key)
             self._sessions[session.key] = session
+            self._versions[session.key] = session.version
+            self._ended_at.pop(session.key, None)
             self.loop = session.loop
         if previous is not None and previous is not session:
             await previous.close(AGENT_WS_CLOSE_REPLACED, "replaced")
@@ -475,6 +488,7 @@ class AgentSessionRegistry:
             if self._sessions.get(session.key) is not session:
                 return False
             self._sessions.pop(session.key, None)
+            self._ended_at[session.key] = _now()
         session.fail_streams()
         return True
 
@@ -486,6 +500,32 @@ class AgentSessionRegistry:
     def is_online(self, key: str) -> bool:
         """Whether the device has a live channel."""
         return self.get(key) is not None
+
+    def last_seen_at(self, key: str) -> "str | None":
+        """When the device's last channel ended.
+
+        Args:
+            key: The device.
+
+        Returns:
+            The ISO stamp the session detached at, or None while the device
+            is online and for one this hub has not seen since it started.
+        """
+        with self._lock:
+            return self._ended_at.get((key or "").lower())
+
+    def version_of(self, key: str) -> str:
+        """The agent release the device's last hello named.
+
+        Args:
+            key: The device.
+
+        Returns:
+            The version, kept after the channel ends; empty for a device
+            this hub has not seen since it started.
+        """
+        with self._lock:
+            return self._versions.get((key or "").lower(), "")
 
     def keys(self) -> list:
         """Every device with a live channel."""
@@ -571,6 +611,34 @@ class AgentSessionRegistry:
         """
         stream = await self.open_stream(key, STREAM_KIND_ORDER, order)
         return await self._collect(stream, on_line)
+
+    async def validate(self, key: str, module: str, config: dict) -> dict:
+        """Have a device check a module configuration before it is stored.
+
+        Args:
+            key: The device.
+            module: The module name.
+            config: The configuration.
+
+        Returns:
+            What the agent closed with: ``{"is_valid", "code", "params"}``.
+
+        Raises:
+            AgentOfflineError: When the device has no channel, or the socket
+                ends before the close.
+            StreamRefusedError: When the agent refused the stream.
+        """
+        stream = await self.open_stream(
+            key, STREAM_KIND_VALIDATE, {"module": module, "config": dict(config)}
+        )
+        return await self._collect(stream, None)
+
+    def validate_from_thread(
+        self, key: str, module: str, config: dict, timeout: "float | None" = None
+    ) -> dict:
+        """:meth:`validate` for a caller outside the loop."""
+        session = self._require(key)
+        return session.call(self.validate(key, module, config), timeout=timeout)
 
     def open_stream_from_thread(
         self, key: str, kind: str, args: dict, timeout: "float | None" = None

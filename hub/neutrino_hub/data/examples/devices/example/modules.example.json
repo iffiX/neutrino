@@ -1,0 +1,9 @@
+{
+  "_comment": "Which modules one device hosts, under config/devices/<dir>/ where <dir> is the device key with ':' written '-'. Each module's own configuration sits beside this file; the hub composes them into the device's desired state and the agent applies it.",
+  "modules": {
+    "zfs": {"is_enabled": false},
+    "samba": {"is_enabled": false},
+    "gitea": {"is_enabled": false},
+    "podman": {"is_enabled": false}
+  }
+}

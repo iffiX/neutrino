@@ -59,24 +59,65 @@ def unlock_vault(monkeypatch, tmp_path) -> bytes:
 
 
 class FakeAgentSessions:
-    """The live-socket registry as routes see it: who is online, what ran."""
+    """The live-socket registry as routes see it: who is online, what ran.
+
+    Attributes:
+        commands: Every command run, ``(key, action, args)``.
+        validations: Every configuration checked, ``(key, module, config)``.
+        pushes: Every state pushed, ``(key, hash, desired)``.
+        verdict: What a validate closes with.
+        outcome: What a command closes with.
+        versions: What each device's last hello named, by key.
+        ended_at: When each device's last channel ended, by key.
+    """
 
     def __init__(self, online=()):
         self.online = {key.lower() for key in online}
+        self.versions: dict = {}
+        self.ended_at: dict = {}
         self.commands: list = []
+        self.validations: list = []
+        self.pushes: list = []
         self.closed: list = []
+        self.verdict = {"is_valid": True, "code": "", "params": {}}
+        self.outcome = {"exit_code": 0, "code": "", "params": {}, "output": ""}
 
     def is_online(self, key: str) -> bool:
         return key.lower() in self.online
 
+    def version_of(self, key: str) -> str:
+        return self.versions.get(key.lower(), "")
+
+    def last_seen_at(self, key: str) -> "str | None":
+        return self.ended_at.get(key.lower())
+
     def keys(self) -> list:
         return sorted(self.online)
+
+    def reports(self) -> dict:
+        return {}
 
     def run_command_from_thread(
         self, key, action, args=None, on_line=None, timeout=None
     ) -> dict:
+        self._require(key)
         self.commands.append((key.lower(), action, dict(args or {})))
-        return {"exit_code": 0, "code": "", "params": {}, "output": ""}
+        return dict(self.outcome)
+
+    def validate_from_thread(self, key, module, config, timeout=None) -> dict:
+        self._require(key)
+        self.validations.append((key.lower(), module, dict(config)))
+        return dict(self.verdict)
+
+    def push_state_from_thread(self, key, state_hash, desired, timeout=5.0) -> None:
+        self._require(key)
+        self.pushes.append((key.lower(), state_hash, desired))
+
+    def _require(self, key: str) -> None:
+        from neutrino_hub.modules.devices.agent_sessions import AgentOfflineError
+
+        if key.lower() not in self.online:
+            raise AgentOfflineError(key.lower())
 
     def close_from_thread(self, key, code, reason="") -> None:
         self.closed.append((key.lower(), code, reason))
@@ -86,6 +127,99 @@ class FakeAgentSessions:
 def holding_dispatch(order) -> None:
     """A dispatch that keeps an order open for a moment and never answers."""
     threading.Event().wait(2.0)
+
+
+class FakeModuleRuntime:
+    """The runtime as a device-hosted module's routes reach for it.
+
+    Devices are stored in memory, the desired states land under a
+    temporary config dir the caller monkeypatched, and every socket
+    effect is recorded on :attr:`agent_sessions`.
+    """
+
+    def __init__(self, *, devices, online=(), lan_addresses=()):
+        """
+        Args:
+            devices: The stored :class:`ManagedDevice` list.
+            online: Which of them hold a socket.
+            lan_addresses: This hub's own LAN addresses, for the hub-first
+                ordering.
+        """
+        from neutrino_hub.modules.devices.agent_module_controller import (
+            AgentModuleController,
+        )
+        from neutrino_hub.modules.devices.desired_state import DesiredStateStore
+        from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
+
+        self.devices = {device.mac_address.lower(): device for device in devices}
+        self.agent_sessions = FakeAgentSessions(online)
+        self.desired_states = DesiredStateStore()
+        self.client_modules: dict = {}
+        self.client_platform: dict = {}
+        self.client_hostname: dict = {}
+        self.client_address: dict = {}
+        self.lan_addresses = list(lan_addresses)
+        self.agent_module_orders = AgentModuleController(
+            cache=None, locks=DeviceInstallLocks(), dispatch=holding_dispatch
+        )
+
+    def network(self):
+        return _Network(self.lan_addresses)
+
+    def push_desired_state(self, key: str) -> None:
+        self.agent_sessions.push_state_from_thread(key, f"hash-{key}", {"modules": {}})
+
+    def report(self, key: str, module: str, state: str = "installed", **details):
+        """Let the runtime hold one module's last report for one device."""
+        self.client_modules.setdefault(key.lower(), {})[module] = {
+            "state": state,
+            "code": "",
+            "params": {},
+            "details": details,
+        }
+
+
+class _Network:
+    def __init__(self, addresses):
+        self.lan_interfaces = [_Lan(address) for address in addresses]
+
+
+class _Lan:
+    def __init__(self, address):
+        self.lan = _LanBlock(address)
+
+
+class _LanBlock:
+    def __init__(self, address):
+        self.address = address
+
+
+class FakeDeviceRegistry:
+    """A registry answering from a runtime's stored devices."""
+
+    runtime = None
+
+    def all_stored(self) -> list:
+        return list(FakeDeviceRegistry.runtime.devices.values())
+
+    def get(self, mac_address: str):
+        from neutrino_hub.modules.devices.registry import ManagedDevice
+
+        key = mac_address.lower()
+        return FakeDeviceRegistry.runtime.devices.get(key) or ManagedDevice(
+            mac_address=key
+        )
+
+
+def managed_device(mac_address: str, name: str = ""):
+    """A stored device the hub issued an agent token for."""
+    from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice
+
+    return ManagedDevice(
+        mac_address=mac_address.lower(),
+        name=name or None,
+        client=DeviceClientInfo(token_sha256="t"),
+    )
 
 
 # --- Builders for configuration ---------------------------------------------

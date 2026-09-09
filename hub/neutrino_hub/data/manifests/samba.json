@@ -1,0 +1,20 @@
+{
+  "_comment": "The file share, hosted by a device's agent. The package comes from the machine's own package manager; the shares, users and the rendered smb.conf come from the hub's desired state for that device.",
+  "name": "samba",
+  "title": "File share",
+  "kind": "system_package",
+  "installer": "platform",
+  "source": "system",
+  "description": "Serves shares over SMB from this machine",
+  "platforms": {
+    "linux-debian": {
+      "packages": ["samba"]
+    },
+    "linux-rhel": {
+      "packages": ["samba", "samba-client"]
+    },
+    "linux-arch": {
+      "packages": ["samba"]
+    }
+  }
+}

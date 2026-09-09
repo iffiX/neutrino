@@ -1,173 +1,149 @@
-"""The Gitea tab: the seams the gateway owns, and a door into the rest.
+"""The Gitea page: which devices host a git server, and each one's seams.
 
 Deliberately thin. Gitea carries its own complete admin UI, so this manages
-only what must agree with the gateway — the port, the advertised URL, the
-sign-up switch — plus the one thing Gitea cannot do for itself: the first
-administrator, without whom a registration-closed Gitea can never be entered.
+only what must agree with the hub, the port, the advertised URL, the
+sign-up switch, plus the one thing Gitea cannot do for itself: the first
+administrator.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 
-from neutrino_hub.modules.gitea.config import GiteaConfig
-from neutrino_hub.modules.gitea.ops import GiteaAdminManager
-from neutrino_hub.utils.subprocess_run import CommandError
-from neutrino_hub.web.dependencies import get_runtime, require_session
+from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.models import (
-    ApplyResult,
     GiteaAdminCreate,
     GiteaConfigUpdate,
+    GiteaDeviceView,
     GiteaPasswordUpdate,
-    GiteaSettingsView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
-
-router = APIRouter(
-    prefix="/api/gitea", tags=["gitea"], dependencies=[Depends(require_session)]
+from neutrino_hub.web.routers.device_modules import (
+    DeviceModuleContext,
+    device_context,
+    module_router,
+    run_command,
+    store_config,
 )
 
+MODULE = "gitea"
+COMMAND_ADMIN = "gitea_admin"
+COMMAND_PASSWORD = "gitea_password"
+DEFAULT_PORT = 3000
 
-@router.get("", response_model=GiteaSettingsView)
-def read_settings(runtime: PanelRuntime = Depends(get_runtime)) -> GiteaSettingsView:
-    """Read the configuration and what the box actually has.
+
+def device_view(runtime: PanelRuntime, context: DeviceModuleContext) -> GiteaDeviceView:
+    """One device's git server: the configuration and what it actually has.
 
     Args:
         runtime: The shared runtime.
+        context: The device.
 
     Returns:
-        The stored settings, plus installed-ness, liveness, version, and
-        whether an administrator exists yet.
+        The stored settings, plus installed-ness, liveness, version, the
+        administrators and the URL that opens it.
     """
-    config = runtime.gitea()
-    state = GiteaAdminManager().survey()
-    return GiteaSettingsView(
-        **config.to_dict(),
-        is_installed=state.is_installed,
-        is_active=runtime.services.status("gitea").is_active,
-        version=state.version,
-        has_admin=state.has_admin,
-        admin_usernames=state.admin_usernames,
+    details = context.details
+    admins = [str(name) for name in details.get("admins") or []]
+    config = context.config
+    return GiteaDeviceView(
+        **context.fields(),
+        listen_port=int(config.get("listen_port", DEFAULT_PORT) or DEFAULT_PORT),
+        root_url=str(config.get("root_url", "") or ""),
+        is_registration_enabled=bool(config.get("is_registration_enabled", False)),
+        is_installed=context.state == "installed",
+        is_active=bool(details.get("is_running")),
+        version=str(details.get("version", "") or ""),
+        has_admin=bool(admins),
+        admin_usernames=admins,
+        url=str(details.get("url", "") or ""),
     )
 
 
-@router.put("", response_model=GiteaSettingsView)
+router: APIRouter = module_router(
+    MODULE, view_model=GiteaDeviceView, build_view=device_view
+)
+
+
+@router.put("/devices/{device_id}", response_model=GiteaDeviceView)
 def update_settings(
-    update: GiteaConfigUpdate, runtime: PanelRuntime = Depends(get_runtime)
-) -> GiteaSettingsView:
+    device_id: str,
+    update: GiteaConfigUpdate,
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> GiteaDeviceView:
     """Change the configuration.
 
     Args:
+        device_id: The device.
         update: The new settings.
         runtime: The shared runtime.
 
     Returns:
-        The stored settings.
+        The device's view afterwards.
 
     Raises:
-        HTTPException: 400 when the configuration does not hold together.
+        HTTPException: 409 ``agent_offline``, 400 with the agent's code when
+            the configuration does not hold together.
     """
-    config = GiteaConfig.from_dict(update.model_dump())
-    try:
-        runtime.write_gitea(config)
-    except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
-        ) from error
-    return read_settings(runtime)
+    context = device_context(runtime, MODULE, device_id)
+    store_config(runtime, context, update.model_dump())
+    return device_view(runtime, context)
 
 
-@router.post("/apply", response_model=ApplyResult)
-async def apply(runtime: PanelRuntime = Depends(get_runtime)) -> ApplyResult:
-    """Render ``app.ini`` from the stored configuration and load it.
-
-    Args:
-        runtime: The shared runtime.
-
-    Returns:
-        Whether the apply succeeded and what was done. A failure is reported
-        rather than raised, so the panel shows the reason beside the button.
-    """
-    try:
-        message = await runtime.apply_gitea()
-    except (CommandError, ValueError, FileNotFoundError) as error:
-        return ApplyResult(is_applied=False, message=str(error))
-    return ApplyResult(is_applied=True, message=message)
-
-
-@router.post("/admin", response_model=GiteaSettingsView)
+@router.post("/devices/{device_id}/admin", response_model=GiteaDeviceView)
 def create_admin(
-    request: GiteaAdminCreate, runtime: PanelRuntime = Depends(get_runtime)
-) -> GiteaSettingsView:
-    """Create the first administrator account.
+    device_id: str,
+    request: GiteaAdminCreate,
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> GiteaDeviceView:
+    """Create the first administrator account on the device.
 
     Args:
+        device_id: The device.
         request: Name, password and address for the account.
         runtime: The shared runtime.
 
     Returns:
-        The settings view afterwards, with ``has_admin`` flipped.
+        The device's view afterwards.
 
     Raises:
-        HTTPException: 409 when an administrator already exists — later
-            accounts are made inside Gitea, where managing them belongs —
-            400 for an unusable name, and 502 when Gitea refuses.
+        HTTPException: 409 ``agent_offline``, 502 with the agent's code:
+            ``admin_exists`` when one already exists, ``username_invalid``
+            for an unusable name, ``command_failed`` when Gitea refuses.
     """
-    manager = GiteaAdminManager()
-    if manager.survey().has_admin:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="an administrator already exists; add more in Gitea",
-        )
-    try:
-        manager.create_admin(
-            username=request.username,
-            password=request.password,
-            email=request.email,
-        )
-    except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
-        ) from error
-    except CommandError as error:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)
-        ) from error
-    return read_settings(runtime)
+    context = device_context(runtime, MODULE, device_id)
+    run_command(runtime, context, COMMAND_ADMIN, request.model_dump())
+    return device_view(runtime, context)
 
 
-@router.post("/admin/{username}/password", response_model=GiteaSettingsView)
+@router.post(
+    "/devices/{device_id}/admin/{username}/password", response_model=GiteaDeviceView
+)
 def reset_admin_password(
+    device_id: str,
     username: str,
     update: GiteaPasswordUpdate,
     runtime: PanelRuntime = Depends(get_runtime),
-) -> GiteaSettingsView:
-    """Reset an administrator's password.
-
-    The recovery door: a forgotten admin password cannot be fixed inside
-    Gitea, because fixing it requires the login it replaces. Renaming stays
-    in Gitea's own UI — reachable again once the password is.
+) -> GiteaDeviceView:
+    """Reset an administrator's password on the device.
 
     Args:
+        device_id: The device.
         username: An existing administrator.
         update: The new password.
         runtime: The shared runtime.
 
     Returns:
-        The settings view afterwards.
+        The device's view afterwards.
 
     Raises:
-        HTTPException: 404 for a name that is not an administrator, 502 when
-            Gitea refuses.
+        HTTPException: 409 ``agent_offline``, 502 with the agent's code:
+            ``admin_unknown`` for a name that is not an administrator,
+            ``command_failed`` when Gitea refuses.
     """
-    manager = GiteaAdminManager()
-    if username not in manager.survey().admin_usernames:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"{username!r} is not an administrator",
-        )
-    try:
-        manager.change_password(username=username, password=update.password)
-    except CommandError as error:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)
-        ) from error
-    return read_settings(runtime)
+    context = device_context(runtime, MODULE, device_id)
+    run_command(
+        runtime,
+        context,
+        COMMAND_PASSWORD,
+        {"username": username, "password": update.password},
+    )
+    return device_view(runtime, context)

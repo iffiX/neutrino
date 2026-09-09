@@ -1,244 +1,259 @@
-"""The Containers tab: declared containers beside what actually runs.
+"""The Containers page: which devices run an engine, and each one's containers.
 
-A declared container goes through config/ — save the group, apply the group —
-and comes out the other side as a systemd unit via Quadlet. The live list
-shows every container podman knows, including ones started by hand at a
-shell, each with start/stop/restart and a shell of its own.
+A declared container is the device's desired state, checked on the agent,
+stored and pushed, and comes out the other side as a systemd unit on the
+device. The live list shows every container the device's podman knows,
+including ones started by hand at a shell, each with start, stop and
+restart and its unit's journal.
 """
 
-import shutil
+import httpx
+from fastapi import APIRouter, Depends, Query
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-
-from neutrino_hub.modules.podman.config import (
-    CONTAINER_NAME_PATTERN,
-    PodmanConfig,
-    PodmanContainer,
-)
-from neutrino_hub.modules.podman.ops import (
-    PodmanContainerController,
-    PodmanStatusReader,
-    list_image_tags,
-)
-from neutrino_hub.utils.subprocess_run import CommandError, run
-from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.constants import WEB_JOURNAL_LINE_LIMIT
+from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.models import (
     JournalView,
-    ApplyResult,
     PodmanContainerListUpdate,
-    PodmanMirrorListUpdate,
     PodmanContainerStateView,
     PodmanContainerView,
-    PodmanSettingsView,
+    PodmanDeviceView,
+    PodmanMirrorListUpdate,
     PodmanTagListView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
-
-router = APIRouter(
-    prefix="/api/podman", tags=["podman"], dependencies=[Depends(require_session)]
+from neutrino_hub.web.routers.device_modules import (
+    DeviceModuleContext,
+    device_context,
+    module_router,
+    run_command,
+    store_config,
 )
 
+MODULE = "podman"
+COMMAND_CONTROL = "podman_control"
+COMMAND_JOURNAL = "podman_journal"
+TAGS_TIMEOUT_S = 10.0
 
-@router.get("", response_model=PodmanSettingsView)
-def read_settings(runtime: PanelRuntime = Depends(get_runtime)) -> PodmanSettingsView:
-    """Read the declarations and the live container list.
+
+def device_view(
+    runtime: PanelRuntime, context: DeviceModuleContext
+) -> PodmanDeviceView:
+    """One device's engine: the declarations beside what actually runs.
 
     Args:
         runtime: The shared runtime.
+        context: The device.
 
     Returns:
-        Declared containers as configured, every container podman knows about
-        right now, and the engine's own state.
+        Declared containers as configured, every container the device's
+        podman knows, and the engine's own state.
     """
-    config = runtime.podman()
-    declared = [container.name for container in config.containers]
-    is_installed = shutil.which("podman") is not None
-    version = ""
-    if is_installed:
-        version_output = run(["podman", "--version"], is_checked=False).stdout
-        # "podman version 4.9.3"
-        parts = version_output.split()
-        version = parts[2] if len(parts) > 2 else ""
-    return PodmanSettingsView(
+    details = context.details
+    config = context.config
+    return PodmanDeviceView(
+        **context.fields(),
         containers=[
-            PodmanContainerView(**container.to_dict())
-            for container in config.containers
+            PodmanContainerView(**container)
+            for container in config.get("containers", [])
         ],
-        mirrors=config.mirrors,
+        mirrors=[str(mirror) for mirror in config.get("mirrors", [])],
         running=[
-            PodmanContainerStateView(**vars(state))
-            for state in PodmanStatusReader().survey(declared_names=declared)
+            PodmanContainerStateView(**state)
+            for state in details.get("containers") or []
+            if isinstance(state, dict)
         ],
-        is_installed=is_installed,
-        is_active=runtime.services.status("podman").is_active,
-        version=version,
+        is_installed=context.state == "installed",
+        is_active=bool(details.get("is_active")),
+        version=str(details.get("version", "") or ""),
     )
 
 
-@router.put("/containers", response_model=PodmanSettingsView)
+router: APIRouter = module_router(
+    MODULE, view_model=PodmanDeviceView, build_view=device_view
+)
+
+
+@router.put("/devices/{device_id}/containers", response_model=PodmanDeviceView)
 def update_containers(
-    update: PodmanContainerListUpdate, runtime: PanelRuntime = Depends(get_runtime)
-) -> PodmanSettingsView:
+    device_id: str,
+    update: PodmanContainerListUpdate,
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> PodmanDeviceView:
     """Replace the declared container list.
 
     Args:
+        device_id: The device.
         update: The new declarations.
         runtime: The shared runtime.
 
     Returns:
-        The stored settings.
+        The device's view afterwards.
 
     Raises:
-        HTTPException: 400 when the configuration does not hold together.
+        HTTPException: 409 ``agent_offline``, 400 with the agent's code when
+            the configuration does not hold together.
     """
-    config = runtime.podman()
-    config.containers = [
-        PodmanContainer.from_dict(container.model_dump())
-        for container in update.containers
-    ]
-    try:
-        runtime.write_podman(config)
-    except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
-        ) from error
-    return read_settings(runtime)
+    context = device_context(runtime, MODULE, device_id)
+    config = dict(context.config)
+    config["containers"] = [container.model_dump() for container in update.containers]
+    store_config(runtime, context, config)
+    return device_view(runtime, context)
 
 
-@router.put("/mirrors", response_model=PodmanSettingsView)
+@router.put("/devices/{device_id}/mirrors", response_model=PodmanDeviceView)
 def update_mirrors(
-    update: PodmanMirrorListUpdate, runtime: PanelRuntime = Depends(get_runtime)
-) -> PodmanSettingsView:
+    device_id: str,
+    update: PodmanMirrorListUpdate,
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> PodmanDeviceView:
     """Replace the docker.io mirror list.
 
     Args:
+        device_id: The device.
         update: The new mirrors, in the order pulls should try them.
         runtime: The shared runtime.
 
     Returns:
-        The stored settings.
-
-    Raises:
-        HTTPException: 400 when an entry is not a registry host.
+        The device's view afterwards.
     """
-    config = runtime.podman()
-    config.mirrors = update.mirrors
-    try:
-        runtime.write_podman(config)
-    except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
-        ) from error
-    return read_settings(runtime)
+    context = device_context(runtime, MODULE, device_id)
+    config = dict(context.config)
+    config["mirrors"] = list(update.mirrors)
+    store_config(runtime, context, config)
+    return device_view(runtime, context)
 
 
-@router.post("/apply", response_model=ApplyResult)
-async def apply(runtime: PanelRuntime = Depends(get_runtime)) -> ApplyResult:
-    """Render the Quadlet files from the declarations and reconcile systemd.
-
-    Args:
-        runtime: The shared runtime.
-
-    Returns:
-        Whether the apply succeeded and what was done. A failure is reported
-        rather than raised, so the panel shows the reason beside the button.
-    """
-    try:
-        message = await runtime.apply_podman()
-    except (CommandError, ValueError, FileNotFoundError) as error:
-        return ApplyResult(is_applied=False, message=str(error))
-    return ApplyResult(is_applied=True, message=message)
-
-
-@router.get("/tags", response_model=PodmanTagListView)
-def image_tags(image: str) -> PodmanTagListView:
+@router.get("/devices/{device_id}/tags", response_model=PodmanTagListView)
+def image_tags(device_id: str, image: str) -> PodmanTagListView:
     """List an image's recent tags, so picking one is a click, not a guess.
 
     Args:
+        device_id: The device, which the listing does not depend on.
         image: The image reference, with or without a tag.
 
     Returns:
-        Recent tags from Docker Hub, or none for other registries and for a
-        hub that cannot be reached — typing a tag by hand always works.
+        Recent tags from Docker Hub, or none for other registries and for
+        a hub that cannot be reached.
     """
+    del device_id
     return PodmanTagListView(tags=list_image_tags(image))
 
 
-@router.get("/containers/{name}/journal", response_model=JournalView)
+@router.get(
+    "/devices/{device_id}/containers/{name}/journal", response_model=JournalView
+)
 def container_journal(
+    device_id: str,
     name: str,
     lines: int = Query(default=100, ge=1, le=WEB_JOURNAL_LINE_LIMIT),
+    runtime: PanelRuntime = Depends(get_runtime),
 ) -> JournalView:
-    """Read the tail of one container unit's journal.
-
-    The image pull happens inside the unit's own start, so this is where
-    its progress and its failures are read.
+    """Read the tail of one container unit's journal on the device.
 
     Args:
-        name: The container's name, held to the config charset.
-        lines: How many lines to return.
+        device_id: The device.
+        name: The container's name.
+        lines: How many lines to keep.
+        runtime: The shared runtime.
 
     Returns:
         The journal text.
 
     Raises:
-        HTTPException: 404 for a name outside the charset.
+        HTTPException: 409 ``agent_offline``, 502 with the agent's code.
     """
-    if not CONTAINER_NAME_PATTERN.match(name):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=name)
-    result = run(
-        [
-            "journalctl",
-            "-u",
-            f"{name}.service",
-            "-n",
-            str(lines),
-            "--no-pager",
-            "--output",
-            "short-iso",
-        ],
-        is_checked=False,
-    )
-    return JournalView(text=result.stdout or result.stderr)
+    context = device_context(runtime, MODULE, device_id)
+    info = run_command(runtime, context, COMMAND_JOURNAL, {"name": name})
+    text = str(info.get("output", "") or "")
+    return JournalView(text="\n".join(text.splitlines()[-lines:]))
 
 
-@router.post("/containers/{name}/{action}", response_model=PodmanSettingsView)
+@router.post(
+    "/devices/{device_id}/containers/{name}/{action}", response_model=PodmanDeviceView
+)
 def control(
-    name: str, action: str, runtime: PanelRuntime = Depends(get_runtime)
-) -> PodmanSettingsView:
-    """Start, stop or restart one container.
+    device_id: str,
+    name: str,
+    action: str,
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> PodmanDeviceView:
+    """Start, stop or restart one container on the device.
 
     Args:
-        name: The container's name, which must exist in podman's own list —
-            the panel controls containers, it does not conjure them.
+        device_id: The device.
+        name: The container's name.
         action: ``start``, ``stop`` or ``restart``.
         runtime: The shared runtime.
 
     Returns:
-        The settings view afterwards.
+        The device's view afterwards.
 
     Raises:
-        HTTPException: 404 for a container podman does not know, 400 for a
-            bad action, 502 when the container refuses.
+        HTTPException: 409 ``agent_offline``, 502 with the agent's code:
+            ``container_unknown``, ``unsupported_action``, ``command_failed``.
     """
-    config = runtime.podman()
-    declared = [container.name for container in config.containers]
-    states = PodmanStatusReader().survey(declared_names=declared)
-    state = next((entry for entry in states if entry.name == name), None)
-    if state is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"{name!r} is not a container podman knows",
-        )
+    context = device_context(runtime, MODULE, device_id)
+    run_command(runtime, context, COMMAND_CONTROL, {"name": name, "action": action})
+    return device_view(runtime, context)
+
+
+def hub_tags_url(image: str) -> str | None:
+    """The Docker Hub API endpoint listing an image's tags.
+
+    Args:
+        image: An image reference, with or without the ``docker.io/``
+            prefix and with or without a tag.
+
+    Returns:
+        The URL, or None for an image not hosted on Docker Hub.
+    """
+    base = image.strip()
+    if base.startswith("docker.io/"):
+        base = base[len("docker.io/") :]
+    elif "." in base.split("/", 1)[0]:
+        return None
+    colon = base.rfind(":")
+    if colon > base.rfind("/"):
+        base = base[:colon]
+    if "/" not in base:
+        base = f"library/{base}"
+    if (
+        base.count("/") != 1
+        or not base.replace("/", "")
+        .replace("-", "")
+        .replace("_", "")
+        .replace(".", "")
+        .isalnum()
+    ):
+        return None
+    return (
+        f"https://hub.docker.com/v2/repositories/{base}/tags"
+        f"?page_size=25&ordering=last_updated"
+    )
+
+
+def list_image_tags(image: str) -> list[str]:
+    """Fetch an image's recent tags from Docker Hub, best effort.
+
+    Args:
+        image: An image reference.
+
+    Returns:
+        Tag names, newest first, possibly empty.
+    """
+    url = hub_tags_url(image)
+    if url is None:
+        return []
     try:
-        PodmanContainerController().control(name, action, is_declared=state.is_declared)
-    except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
-        ) from error
-    except CommandError as error:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)
-        ) from error
-    return read_settings(runtime)
+        response = httpx.get(url, timeout=TAGS_TIMEOUT_S, follow_redirects=True)
+        payload = response.json()
+    except (httpx.HTTPError, ValueError):
+        return []
+    if response.status_code != 200 or not isinstance(payload, dict):
+        return []
+    return [
+        entry["name"]
+        for entry in payload.get("results", [])
+        if isinstance(entry, dict) and entry.get("name")
+    ]

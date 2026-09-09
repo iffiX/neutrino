@@ -1,11 +1,9 @@
 """Two writers on one device file.
 
-An agent beats every five seconds and each beat rewrites the whole list, so
-the window between somebody else's read and their write is never closed for
-long. What used to happen in it: forget a device while a heartbeat was in
-flight and the heartbeat's older snapshot put the device back — name, SSH
-host and credential references intact — and the page's next poll showed it
-as though nothing had been deleted.
+The panel is one process with many threads, and each write rewrites the
+whole list. A writer holding an older snapshot must not put back what
+another one deleted — name, SSH host and credential references intact —
+nor undo a save that landed between its own read and write.
 """
 
 import pytest
@@ -35,21 +33,21 @@ def names(registry: DeviceRegistry) -> list:
 
 
 def test_a_write_from_a_stale_reader_does_not_resurrect_what_another_deleted(stored):
-    """The heartbeat's registry was built before the delete; writing its own
-    device must not write back the one that has gone."""
-    beating = DeviceRegistry()
+    """The stale registry was built before the delete; writing its own device
+    must not write back the one that has gone."""
+    stale = DeviceRegistry()
 
     DeviceRegistry().forget("aa:bb:cc:dd:ee:02")
-    beating.record_heartbeat("aa:bb:cc:dd:ee:01", version="0.1.0", seen_at="now")
+    stale.issue_client_token("aa:bb:cc:dd:ee:01")
 
     assert names(DeviceRegistry()) == ["first"]
 
 
 def test_a_write_from_a_stale_reader_does_not_undo_another_save(stored):
-    beating = DeviceRegistry()
+    stale = DeviceRegistry()
 
     DeviceRegistry().annotate("aa:bb:cc:dd:ee:02", {"name": "renamed"})
-    beating.record_heartbeat("aa:bb:cc:dd:ee:01", version="0.1.0", seen_at="now")
+    stale.issue_client_token("aa:bb:cc:dd:ee:01")
 
     assert names(DeviceRegistry()) == ["first", "renamed"]
 

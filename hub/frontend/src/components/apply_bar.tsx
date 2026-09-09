@@ -32,6 +32,11 @@ interface ApplyBarProps {
   hint: string;
   /** Said before the fact when applying is disruptive. */
   warning?: string;
+  /**
+   * Why this bar cannot be pressed at all, or null when it can. Stands in
+   * for the hint and kills both buttons, however dirty the group is.
+   */
+  blockedHint?: string | null;
   error?: string | null;
   notice?: string | null;
   onReset: () => void;
@@ -44,6 +49,7 @@ export function ApplyBar({
   label,
   hint,
   warning,
+  blockedHint = null,
   error = null,
   notice = null,
   onReset,
@@ -74,14 +80,14 @@ export function ApplyBar({
 
       <div className="apply_bar_row">
         <span className="field_hint">
-          {isDirty ? hint : "Nothing changed here."}
+          {blockedHint ?? (isDirty ? hint : "Nothing changed here.")}
         </span>
         <div className="button_row">
           <button
             type="button"
             className="button button--ghost"
             onClick={onReset}
-            disabled={isBusy || !isDirty}
+            disabled={isBusy || !isDirty || blockedHint !== null}
           >
             Reset
           </button>
@@ -89,7 +95,7 @@ export function ApplyBar({
             type="button"
             className="button button--primary"
             onClick={onApply}
-            disabled={isBusy || !isDirty}
+            disabled={isBusy || !isDirty || blockedHint !== null}
           >
             {isBusy ? <Spinner size={13} /> : <Icon name="check" size={14} />}
             {isBusy ? "Applying…" : label}

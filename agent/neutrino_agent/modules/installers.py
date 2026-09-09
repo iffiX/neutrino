@@ -71,6 +71,36 @@ def run_checked(command: list, *, timeout_s: int = COMMAND_TIMEOUT_S) -> str:
     return result.stdout or ""
 
 
+def run_shell(command: str, *, timeout_s: int = INSTALL_TIMEOUT_S) -> str:
+    """Run one shell step a manifest names, raising with its output on failure.
+
+    Args:
+        command: The shell command.
+        timeout_s: How long to wait.
+
+    Returns:
+        Standard output.
+
+    Raises:
+        InstallError: If the step fails or times out.
+    """
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            env=_apt_env(),
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise InstallError(f"step could not run: {error}")
+    if result.returncode != 0:
+        output = (result.stderr or result.stdout or "").strip()
+        raise InstallError(f"step failed: {output[-AGENT_MODULE_OUTPUT_LIMIT_BYTES:]}")
+    return result.stdout or ""
+
+
 def uninstall_package(command: str) -> None:
     """Remove a package the way its manifest says to.
 

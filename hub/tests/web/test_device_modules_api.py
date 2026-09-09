@@ -94,9 +94,7 @@ def api(monkeypatch):
     FakeRegistry.device = ManagedDevice(
         mac_address=MAC,
         name="testbox",
-        client=DeviceClientInfo(
-            token_sha256="t" * 64, last_seen="2026-01-01T00:00:00+00:00"
-        ),
+        client=DeviceClientInfo(token_sha256="t" * 64),
     )
     monkeypatch.setattr(devices_router, "DeviceRegistry", FakeRegistry)
     monkeypatch.setattr(devices_router, "certificate_fingerprint", lambda: FINGERPRINT)

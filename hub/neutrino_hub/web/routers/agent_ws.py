@@ -71,16 +71,14 @@ async def agent_socket(websocket: WebSocket) -> None:
     )
     await runtime.agent_sessions.attach(session)
     try:
-        await asyncio.to_thread(
-            record_hello,
+        record_hello(
             runtime,
-            registry,
             device,
             hello,
             peer_host=_peer_host(websocket),
             reached_host=websocket.url.hostname or "",
         )
-        state_hash, _ = runtime.desired_state_for(device)
+        state_hash, desired = await asyncio.to_thread(runtime.desired_state_for, device)
         await session.send_json(
             {
                 "type": "welcome",
@@ -89,14 +87,18 @@ async def agent_socket(websocket: WebSocket) -> None:
                 "state_hash": state_hash,
             }
         )
+        # A machine holding another state than the one composed for it is
+        # handed the whole state at once, before it asks.
+        if str(hello.get("state_hash", "") or "") != state_hash:
+            await session.send_json(
+                {"type": "state", "hash": state_hash, "desired": desired}
+            )
         await _serve(websocket, runtime, session, device)
     except WebSocketDisconnect:
         pass
     finally:
         if runtime.agent_sessions.detach(session):
-            await asyncio.to_thread(
-                record_offline, runtime, registry, device, version=session.version
-            )
+            record_offline(runtime, device)
 
 
 async def _serve(websocket: WebSocket, runtime, session: AgentSession, device):
@@ -124,7 +126,9 @@ async def _serve(websocket: WebSocket, runtime, session: AgentSession, device):
             session.record_report(decoded)
             record_report(runtime, device, decoded)
         elif kind == "state_request":
-            state_hash, desired = runtime.desired_state_for(device)
+            state_hash, desired = await asyncio.to_thread(
+                runtime.desired_state_for, device
+            )
             await session.send_json(
                 {"type": "state", "hash": state_hash, "desired": desired}
             )

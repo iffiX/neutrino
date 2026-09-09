@@ -1,10 +1,8 @@
-import { useContext } from "react";
 import { NavLink } from "react-router-dom";
 
 import { Icon } from "./icon";
-import { navItemsInGroup, visibleNavItems } from "../nav_items";
+import { navItemsInGroup } from "../nav_items";
 import type { NavGroup, NavItem } from "../nav_items";
-import { ModulesContext } from "../modules_context";
 import "./sidebar_nav.css";
 
 /**
@@ -15,37 +13,20 @@ import "./sidebar_nav.css";
  * the page content for attention. Narrow and portrait viewports hide the rail
  * and show the bottom bar (bottom_nav.tsx) in its place.
  *
- * Two zones, always both. Core is what makes this a gateway; Optional is what
- * the box also hosts, and each of those appears only once its service is
- * enabled — an appliance serving no files should not have a Files page telling
- * it so. The Optional heading stays even when nothing is under it, because an
- * empty half says "there is more this box can do" where a missing half would
- * say nothing at all.
+ * Two zones, always both, always whole. Hub is the box itself; Agent is what
+ * the hub drives on a machine running the agent.
  */
 
 const GROUP_LABELS: Record<NavGroup, string> = {
-  core: "Core",
-  optional: "Optional",
+  hub: "Hub",
+  agent: "Agent",
 };
-
-// What an empty half says for itself. Only Optional can be empty: a gateway
-// with no core pages would be a panel with nothing to show.
-const EMPTY_OPTIONAL_HINT = "Nothing switched on";
 
 interface SidebarNavProps {
   onLogout: () => void;
 }
 
 export function SidebarNav({ onLogout }: SidebarNavProps) {
-  // The shell's shared copy of the module list, the same one the Modules
-  // page writes its actions into — which is what makes disabling a module
-  // drop its page from here immediately rather than on the next refetch.
-  const modules = useContext(ModulesContext);
-  const enabled = (modules?.data?.modules ?? [])
-    .filter((module) => module.is_enabled && !module.is_core)
-    .map((module) => module.name);
-  const items = visibleNavItems(enabled);
-
   return (
     <nav className="sidebar_nav" aria-label="Main">
       <div className="sidebar_brand">
@@ -59,11 +40,8 @@ export function SidebarNav({ onLogout }: SidebarNavProps) {
       </div>
 
       <div className="sidebar_items">
-        <SidebarGroup group="core" items={navItemsInGroup(items, "core")} />
-        <SidebarGroup
-          group="optional"
-          items={navItemsInGroup(items, "optional")}
-        />
+        <SidebarGroup group="hub" items={navItemsInGroup("hub")} />
+        <SidebarGroup group="agent" items={navItemsInGroup("agent")} />
       </div>
 
       <div className="sidebar_footer">
@@ -90,24 +68,20 @@ function SidebarGroup({ group, items }: SidebarGroupProps) {
   return (
     <div className="sidebar_group">
       <div className="sidebar_group_label">{GROUP_LABELS[group]}</div>
-      {items.length === 0 ? (
-        <div className="sidebar_group_empty">{EMPTY_OPTIONAL_HINT}</div>
-      ) : (
-        items.map((item) => (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            end={item.path === "/"}
-            title={item.description}
-            className={({ isActive }) =>
-              `sidebar_item ${isActive ? "sidebar_item--active" : ""}`
-            }
-          >
-            <Icon name={item.icon} size={17} className="sidebar_item_icon" />
-            <span className="sidebar_item_label">{item.label}</span>
-          </NavLink>
-        ))
-      )}
+      {items.map((item) => (
+        <NavLink
+          key={item.path}
+          to={item.path}
+          end={item.path === "/"}
+          title={item.description}
+          className={({ isActive }) =>
+            `sidebar_item ${isActive ? "sidebar_item--active" : ""}`
+          }
+        >
+          <Icon name={item.icon} size={17} className="sidebar_item_icon" />
+          <span className="sidebar_item_label">{item.label}</span>
+        </NavLink>
+      ))}
     </div>
   );
 }

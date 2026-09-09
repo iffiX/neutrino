@@ -36,7 +36,6 @@ from neutrino_hub.system.constants import (
     SYSTEM_FAIL2BAN_JAIL_PATH,
     SYSTEM_XRAY_USER,
 )
-from neutrino_hub.modules.samba.constants import SAMBA_DEFAULT_SHARE_DIR
 from neutrino_hub.modules.cliproxyapi.provisioner import CliproxyApiProvisioner
 from neutrino_hub.system.machine import machine_architecture, require_architecture
 from neutrino_hub.modules.registry import MODULE_SPECS
@@ -126,9 +125,6 @@ CONFIG_FILES = (
     "router/network.json",
     "router/connections.json",
     "web/settings.json",
-    "samba/samba.json",
-    "gitea/gitea.json",
-    "podman/podman.json",
     "devices/devices.json",
 )
 
@@ -863,7 +859,6 @@ def _step_users_and_dirs(reporter: InstallReporter) -> str:
         UTILS_GENERATED_DIR,
         UTILS_GEODATA_DIR,
         UTILS_LOG_DIR,
-        SAMBA_DEFAULT_SHARE_DIR,
     ):
         if not directory.exists():
             directory.mkdir(parents=True, exist_ok=True)
@@ -873,7 +868,6 @@ def _step_users_and_dirs(reporter: InstallReporter) -> str:
     # would be unopenable to it, so ownership is corrected rather than assumed.
     for log_path in UTILS_LOG_DIR.glob("xray_*.log"):
         shutil.chown(log_path, user=SYSTEM_XRAY_USER)
-    SAMBA_DEFAULT_SHARE_DIR.chmod(0o2775)
     return "created user and directories" if is_changed else "present"
 
 
@@ -1148,8 +1142,8 @@ def _step_start_services(
 SETUP_STEPS_THE_BOX_SURVIVES = (_step_fail2ban, _step_cliproxyapi)
 
 # Defined here, after the functions it names. Everything the appliance is not
-# itself without: routing, the proxy core and the AI gateway. Samba, Gitea,
-# NetBird, podman and ZFS install themselves from the panel's Services page.
+# itself without: routing, the proxy core and the AI gateway. NetBird installs
+# itself from the panel's Modules page; what a device hosts is the agent's.
 CORE_STEPS = (
     ("Checking the packages the hub needs", _step_required_packages),
     ("Guarding SSH with fail2ban", _step_fail2ban),

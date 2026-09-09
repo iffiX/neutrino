@@ -1,10 +1,11 @@
 """What one device carries into the panel's two sections.
 
 The Devices page splits on ``client.is_managed`` and draws a managed tile
-with what its agent says the machine is. That platform is held in memory from
-heartbeats and never stored, so what these pin is that the list carries it
-when an agent has reported one, carries nulls when none has, and does not
-lose it on the single-device path a save comes back through.
+with what its agent says the machine is. The platform, the agent version
+and the last-seen stamp are held in memory and never stored, so what these
+pin is that the list carries them when an agent has been seen, carries
+nulls when none has, and does not lose them on the single-device path a
+save comes back through.
 """
 
 import pytest
@@ -72,11 +73,7 @@ def api(monkeypatch):
         mac_address=MAC,
         name="xenode",
         ipv4_address="192.168.100.2",
-        client=DeviceClientInfo(
-            token_sha256="t" * 64,
-            last_seen="2026-01-01T00:00:00+00:00",
-            version="0.3.0",
-        ),
+        client=DeviceClientInfo(token_sha256="t" * 64),
     )
     monkeypatch.setattr(devices_router, "DeviceRegistry", FakeRegistry)
     monkeypatch.setattr(devices_router, "LanScanner", FakeScanner)
@@ -144,6 +141,32 @@ def test_renaming_a_device_keeps_its_platform(api):
 
     assert answer["name"] == "renamed"
     assert answer["client"]["platform_os"] == "linux"
+
+
+def test_the_version_and_the_stamp_come_from_the_session_registry(api):
+    client, runtime = api
+    runtime.agent_sessions.versions[MAC] = "0.3.0"
+    runtime.agent_sessions.ended_at[MAC] = "2026-01-01T00:00:00+00:00"
+
+    (device,) = client.get("/api/devices").json()["devices"]
+
+    assert device["client"]["version"] == "0.3.0"
+    assert device["client"]["last_seen"] == "2026-01-01T00:00:00+00:00"
+    assert device["client"]["is_online"] is False
+
+
+def test_a_device_not_seen_since_the_panel_started_has_no_version_or_stamp(api):
+    """Presence lives in memory alone. A managed device the hub has not
+    heard from is still managed, with nothing to say about when it was
+    last here."""
+    client, _ = api
+
+    (device,) = client.get("/api/devices").json()["devices"]
+
+    assert device["client"]["is_managed"] is True
+    assert device["client"]["version"] is None
+    assert device["client"]["last_seen"] is None
+    assert device["client"]["is_version_mismatched"] is False
 
 
 def test_a_device_is_at_the_address_its_channel_comes_from(api):

@@ -92,11 +92,3 @@ def test_wifi_is_wanted_rather_than_needed():
     """A gateway with no radio routes perfectly well without hostapd."""
     assert SYSTEM_WIFI_PACKAGES == ("hostapd",)
     assert "hostapd" not in SYSTEM_RUNTIME_PACKAGES
-
-
-def test_an_optional_module_declares_its_own_packages():
-    """git is the git server's, not the hub's; it used to be in the base list."""
-    from neutrino_hub.modules.gitea.constants import GITEA_PACKAGES
-
-    assert "git" not in SYSTEM_RUNTIME_PACKAGES
-    assert all("git" in packages for packages in GITEA_PACKAGES.values())

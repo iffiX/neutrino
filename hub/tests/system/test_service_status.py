@@ -64,9 +64,9 @@ def test_a_running_unit_reads_as_all_three(systemd):
 def test_an_installed_unit_that_is_stopped_is_still_installed(systemd):
     """The distinction the Services page is built on: a module that is there
     and switched off is not one that has to be installed again."""
-    systemd["smbd.service"] = STOPPED
+    systemd["netbird.service"] = STOPPED
 
-    status = SystemdServiceController().status("samba")
+    status = SystemdServiceController().status("netbird")
 
     assert status.is_installed
     assert not status.is_active
@@ -76,17 +76,17 @@ def test_an_installed_unit_that_is_stopped_is_still_installed(systemd):
 def test_a_unit_with_no_install_section_counts_as_enabled(systemd):
     """`static` is what a unit something else pulls in reports, and it starts
     at boot as surely as an enabled one."""
-    systemd["podman.socket"] = STATIC
+    systemd["netbird.service"] = STATIC
 
-    assert SystemdServiceController().status("podman").is_enabled
+    assert SystemdServiceController().status("netbird").is_enabled
 
 
 def test_a_masked_unit_is_installed_and_not_enabled(systemd):
     """Masking is what the hub does to a manager it has taken over from, and
     the unit is still on the disk."""
-    systemd["zfs-zed.service"] = MASKED
+    systemd["netbird.service"] = MASKED
 
-    status = SystemdServiceController().status("zfs")
+    status = SystemdServiceController().status("netbird")
 
     assert status.is_installed
     assert not status.is_enabled

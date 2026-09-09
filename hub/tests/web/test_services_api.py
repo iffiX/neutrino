@@ -10,6 +10,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.services.ops import SambaShareListing
 from neutrino_hub.modules.services.probe import DeclaredServiceHealth
 from neutrino_hub.modules.services.published import PublishedServiceCache
@@ -61,13 +62,29 @@ class StubUnits:
         )
 
 
+MAC = "aa:bb:cc:dd:ee:ff"
+
+
+class StubSessions:
+    def __init__(self):
+        self.report_by_key: dict = {}
+
+    def reports(self):
+        return dict(self.report_by_key)
+
+
 class FakeRuntime:
     def __init__(self, units: StubUnits):
         self.declared_probe = RecordingProbe()
+        self.agent_sessions = StubSessions()
+        self.client_address = {MAC: "192.168.100.7"}
         self.published_services = PublishedServiceCache(
             declared_probe=self.declared_probe,
             served_models=StubServedModels(),
             units=units,
+            agent_sessions=self.agent_sessions,
+            device_addresses=self.client_address,
+            desired_states=DesiredStateStore(),
         )
 
 
@@ -80,7 +97,7 @@ def box(monkeypatch, tmp_path):
     app = FastAPI()
     app.include_router(services.router)
     app.dependency_overrides[require_session] = lambda: None
-    runtime = FakeRuntime(StubUnits({"samba": True}))
+    runtime = FakeRuntime(StubUnits())
     app.dependency_overrides[get_runtime] = lambda: runtime
     with TestClient(app) as client:
         yield client, runtime
@@ -125,9 +142,6 @@ def test_each_form_kind_lands_as_its_own_type(box):
     assert by_type["port"]["description"] == "the forge box"
     # Stored, probed and republished under a record id the rows can act on.
     assert all(entry["record_id"] for entry in entries)
-    # Every entry names the device modules it cannot work without.
-    assert by_type["file"]["modules"] == ["samba_mount"]
-    assert by_type["web"]["modules"] == [] and by_type["port"]["modules"] == []
 
 
 def test_the_list_folds_the_probe_health_in(box):
@@ -144,19 +158,25 @@ def test_the_list_folds_the_probe_health_in(box):
     assert payload["services"][0]["is_healthy"] is False
 
 
-def test_a_hub_module_share_is_a_read_only_row(box):
-    client, _ = box
-    write_config(
-        "samba/samba.json", {"shares": [{"name": "media", "path": "/srv"}], "users": []}
+def test_a_device_hosted_share_is_a_read_only_row_at_the_devices_address(box):
+    client, runtime = box
+    store = DesiredStateStore()
+    store.set_enabled(MAC, "samba", True)
+    store.write(
+        MAC, "samba", {"shares": [{"name": "media", "path": "/srv"}], "users": []}
     )
+    runtime.agent_sessions.report_by_key[MAC] = {
+        "modules": {"samba": {"state": "installed", "details": {"is_active": True}}}
+    }
 
     payload = client.get("/api/services").json()
 
     entry = payload["services"][0]
-    assert entry["id"] == "samba_media"
+    assert entry["id"] == "samba_aa-bb-cc-dd-ee-ff_media"
     assert entry["source"] == "module"
     assert entry["record_id"] is None
     assert entry["is_healthy"] is True
+    assert entry["payload"]["host"] == "192.168.100.7"
 
 
 def test_a_hub_self_host_is_shown_as_the_panel_host(box):

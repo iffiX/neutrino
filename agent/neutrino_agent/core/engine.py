@@ -24,11 +24,19 @@ import tempfile
 import threading
 import time
 
-from neutrino_agent.constants import AGENT_MODULE_OUTPUT_LIMIT_BYTES
+from neutrino_agent.constants import (
+    AGENT_MODULE_DETAILS_TTL_S,
+    AGENT_MODULE_OUTPUT_LIMIT_BYTES,
+    AGENT_RUSTDESK_BINARY_PATH,
+)
+from neutrino_agent.modules.gitea.runner import GiteaModuleRunner
 from neutrino_agent.modules.installers import InstallError
 from neutrino_agent.modules.package import PackageModuleRunner
+from neutrino_agent.modules.podman.runner import PodmanModuleRunner
 from neutrino_agent.modules.rustdesk import RustdeskModuleRunner
+from neutrino_agent.modules.samba.runner import SambaModuleRunner
 from neutrino_agent.modules.system_package import SystemPackageModuleRunner
+from neutrino_agent.modules.zfs.runner import ZfsModuleRunner
 from neutrino_agent.platforms.base import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import platform_tuple
 
@@ -53,6 +61,26 @@ BY_NAME_KINDS = ("system_package",)
 
 ORDER_DONE = "done"
 ORDER_FAILED = "failed"
+
+# The module the agent carries itself. Its row reads installed while the
+# agent's own build is on disk, and no order moves it.
+BUILTIN_RUSTDESK_NAME = "rustdesk"
+BUILTIN_MODULES = {
+    BUILTIN_RUSTDESK_NAME: {
+        "title": "RustDesk",
+        "description": "Remote desktop, direct connect on the LAN",
+        "kind": "rustdesk",
+        "installer": "agent",
+        "source": "rustdesk/rustdesk",
+        "version": "",
+        "license": "AGPL-3.0",
+        "corresponding_source": "https://github.com/rustdesk/rustdesk",
+        "platform_key": "linux",
+        "entry": {},
+        "verify": "",
+        "package": "rustdesk",
+    }
+}
 
 
 class ReconcileWorker:
@@ -151,6 +179,8 @@ class ModuleEngine(ReconcileWorker):
         self._output: list = []
         self._on_line = None
         self._order_lock = threading.Lock()
+        self._apply_results: dict = {}
+        self._details_at = 0.0
         self._package = PackageModuleRunner(
             platform=platform, log=self._collect, publish=self._publish
         )
@@ -160,7 +190,36 @@ class ModuleEngine(ReconcileWorker):
         self._rustdesk = RustdeskModuleRunner(
             platform=platform, log=self._collect, publish=self._publish
         )
+        # The modules this agent applies the hub's configuration to, by
+        # name; each also carries out its own orders.
+        self._module_runners = {
+            runner.name: runner
+            for runner in (
+                SambaModuleRunner(
+                    platform=platform, log=self._collect, publish=self._publish
+                ),
+                GiteaModuleRunner(
+                    platform=platform, log=self._collect, publish=self._publish
+                ),
+                PodmanModuleRunner(
+                    platform=platform, log=self._collect, publish=self._publish
+                ),
+                ZfsModuleRunner(
+                    platform=platform, log=self._collect, publish=self._publish
+                ),
+            )
+        }
         super().__init__(log=log, on_change=on_change)
+        # The built-in rows are known from the start, so their first
+        # refresh is not news that wakes a report.
+        with self._lock:
+            for name, resolved in BUILTIN_MODULES.items():
+                self._statuses[name] = self._read_one(name, resolved)
+
+    @property
+    def module_runners(self) -> dict:
+        """The runners that apply configuration, by module name."""
+        return dict(self._module_runners)
 
     @property
     def catalog_hash(self) -> str:
@@ -177,11 +236,48 @@ class ModuleEngine(ReconcileWorker):
         """The catalog this machine currently holds.
 
         Returns:
-            ``{"modules", "services"}``, as the hub last sent it, its
-            modules already resolved for this platform.
+            ``{"modules"}``, as the hub last sent it, its modules already
+            resolved for this platform, with the agent's own built-in rows
+            added.
         """
         with self._lock:
-            return dict(self._catalog)
+            return {**self._catalog, "modules": self._modules()}
+
+    def resolved(self, name: str) -> "dict | None":
+        """One module as the hub resolved it for this platform.
+
+        Args:
+            name: The module name.
+
+        Returns:
+            The resolved module, or None when the catalog has no such row.
+        """
+        with self._lock:
+            return self._modules().get(name)
+
+    def report(self) -> dict:
+        """The per-module statuses, their details read again when stale."""
+        if time.monotonic() - self._details_at > AGENT_MODULE_DETAILS_TTL_S:
+            self._wakeup.set()
+        return super().report()
+
+    def record_apply(self, name: str, code: str, params: dict) -> None:
+        """Keep how the last apply of one module went, for its row.
+
+        Args:
+            name: The module name.
+            code: Why it failed; empty when it took.
+            params: What the wording names.
+        """
+        with self._lock:
+            if code:
+                self._apply_results[name] = (code, dict(params))
+            else:
+                self._apply_results.pop(name, None)
+
+    def refresh_now(self) -> None:
+        """Report every module again from what is true right now."""
+        self._refresh(is_forced=True)
 
     def update(self, *, catalog: "dict | None", catalog_hash: str) -> None:
         """Take the hub's catalog when this copy is stale.
@@ -239,18 +335,42 @@ class ModuleEngine(ReconcileWorker):
     def _reconcile(self) -> None:
         self._refresh(is_forced=False)
 
+    def _modules(self) -> dict:
+        """The catalog's modules with the built-in rows. Call under the lock."""
+        return {**self._catalog.get("modules", {}), **BUILTIN_MODULES}
+
     def _refresh(self, *, is_forced: bool) -> None:
         """Report what every module in the catalog actually is."""
         with self._lock:
-            modules = dict(self._catalog.get("modules", {}))
+            modules = self._modules()
             signature = json.dumps(sorted(modules), sort_keys=True, default=str)
             is_stale = self._is_stale(signature)
         if not is_stale and not is_forced:
+            self._refresh_details(modules)
             return
         for name, resolved in modules.items():
             self._publish(name, self._read_one(name, resolved))
+        self._details_at = time.monotonic()
         # A module the hub no longer serves stops being reported.
         self._keep_only(modules)
+
+    def _refresh_details(self, modules: dict) -> None:
+        """Read the live details of every installed module again."""
+        if time.monotonic() - self._details_at <= AGENT_MODULE_DETAILS_TTL_S:
+            return
+        self._details_at = time.monotonic()
+        for name, runner in self._module_runners.items():
+            resolved = modules.get(name)
+            with self._lock:
+                status = dict(self._statuses.get(name) or {})
+            if resolved is None or status.get("state") != "installed":
+                continue
+            try:
+                status["details"] = runner.details(resolved)
+            except Exception as error:  # noqa: BLE001 - a read never fails a row
+                self._log(f"{name}: details unreadable: {error}")
+                continue
+            self._publish(name, status)
 
     def _read_one(self, name: str, resolved: dict) -> dict:
         """What one module actually is on this machine, acting on nothing.
@@ -262,20 +382,27 @@ class ModuleEngine(ReconcileWorker):
         Returns:
             ``{"state", "code", "params", "details"}``.
         """
+        if name in BUILTIN_MODULES:
+            is_present = os.path.isfile(AGENT_RUSTDESK_BINARY_PATH)
+            return _typed("installed" if is_present else "absent", "")
         if not isinstance(resolved, dict) or resolved.get("entry") is None:
             return _typed("unsupported", "no_platform_build")
         kind = resolved.get("kind", "")
-        runner = self._runner_for(kind)
+        runner = self._runner_for(kind, name)
         if runner is None:
             return _typed("unsupported", "unknown_kind", kind=kind)
         try:
             # A module the platform carries natively is simply there.
-            if kind == "system_package" and self._system.is_native(resolved):
+            if kind == "system_package" and runner.is_native(resolved):
                 return _typed("installed", "")
             is_present = runner.verify(resolved)
             status = _typed("installed" if is_present else "absent", "")
             if is_present:
                 status["details"] = runner.details(resolved)
+                with self._lock:
+                    failure = self._apply_results.get(name)
+                if failure is not None:
+                    status["code"], status["params"] = failure[0], dict(failure[1])
             return status
         except PlatformUnsupportedError:
             return _typed("failed", "unsupported_platform")
@@ -294,6 +421,8 @@ class ModuleEngine(ReconcileWorker):
         name = str(order.get("module", ""))
         action = str(order.get("action", ""))
         self._output = []
+        if name in BUILTIN_MODULES:
+            return self._result(ORDER_FAILED, "module_not_orderable", {"module": name})
         with self._lock:
             resolved = dict(self._catalog.get("modules", {})).get(name)
         if not isinstance(resolved, dict) or resolved.get("entry") is None:
@@ -336,7 +465,7 @@ class ModuleEngine(ReconcileWorker):
             Empty when it took, ``{"code", "params"}`` when it did not.
         """
         kind = str(resolved.get("kind", ""))
-        runner = self._runner_for(kind)
+        runner = self._runner_for(kind, name)
         if runner is None:
             return {"code": "unknown_kind", "params": {"kind": kind}}
         if action == ORDER_INSTALL:
@@ -352,9 +481,19 @@ class ModuleEngine(ReconcileWorker):
         runner.uninstall(resolved)
         return {} if not runner.verify(resolved) else {"code": "uninstall_unconfirmed"}
 
-    def _runner_for(self, kind: str):
-        """The runner that owns one manifest kind, or None for a kind this
-        agent does not know."""
+    def _runner_for(self, kind: str, name: str = ""):
+        """The runner for one module: its own by name, else its kind's.
+
+        Args:
+            kind: The manifest kind.
+            name: The module name.
+
+        Returns:
+            The runner, or None for a kind this agent does not know.
+        """
+        runner = self._module_runners.get(name)
+        if runner is not None and (not kind or runner.kind == kind):
+            return runner
         return {
             "package": self._package,
             "system_package": self._system,
@@ -385,7 +524,9 @@ class ModuleEngine(ReconcileWorker):
             if refusal:
                 return refusal
             self._collect(f"{name}: installing")
-            self._runner_for(str(resolved.get("kind", ""))).install(resolved, package)
+            self._runner_for(str(resolved.get("kind", "")), name).install(
+                resolved, package
+            )
         return {}
 
     def _result(self, state: str, code: str, params: dict) -> dict:

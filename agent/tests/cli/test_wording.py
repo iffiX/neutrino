@@ -38,6 +38,48 @@ UNSTRUCTURED_CODES = (
     RDP_ATTENTION_SCREEN_NOT_ALLOWED,
 )
 
+# What a module runner refuses with, raised by name rather than emitted as
+# a literal, and what the engine records against a built-in row.
+MODULE_CODES = (
+    "module_not_orderable",
+    "samba_missing",
+    "samba_config_rejected",
+    "share_name_invalid",
+    "share_name_reserved",
+    "share_name_duplicate",
+    "share_path_relative",
+    "share_user_unknown",
+    "user_name_invalid",
+    "user_name_duplicate",
+    "user_unknown",
+    "command_failed",
+    "port_invalid",
+    "port_reserved",
+    "root_url_invalid",
+    "secrets_missing",
+    "username_invalid",
+    "admin_exists",
+    "admin_unknown",
+    "container_name_invalid",
+    "container_name_duplicate",
+    "container_unknown",
+    "image_invalid",
+    "port_mapping_invalid",
+    "volume_invalid",
+    "environment_invalid",
+    "command_invalid",
+    "mirror_invalid",
+    "pool_name_invalid",
+    "pool_name_reserved",
+    "layout_unknown",
+    "layout_disk_count",
+    "dataset_name_invalid",
+    "compression_unknown",
+    "recordsize_unknown",
+    "mountpoint_invalid",
+    "mountpoint_forbidden",
+)
+
 # What the self-update raises, worded by the surface that shows last_error.
 UPDATE_CODES = (
     "agent_package_digest_mismatch",
@@ -75,7 +117,7 @@ def test_every_code_the_agent_emits_is_worded(code):
     assert is_worded(code), f"code {code} has no CLI wording"
 
 
-@pytest.mark.parametrize("code", UNSTRUCTURED_CODES + UPDATE_CODES)
+@pytest.mark.parametrize("code", UNSTRUCTURED_CODES + UPDATE_CODES + MODULE_CODES)
 def test_every_code_that_travels_another_way_is_worded(code):
     assert is_worded(code), f"code {code} has no CLI wording"
 

@@ -1,10 +1,10 @@
 """What the hub keeps of a hello, a report, and a socket ending.
 
-The hello is the one point that writes the registry; a report lands in the
-runtime's memory alone. The address is the one on the machine's identity
-MAC, the peer standing in when nothing matches; the desktop share is
-recorded against the device the token resolved to, at the address the hub
-holds, and withdrawn when the machine stops or its socket ends.
+A hello and a report both land in the runtime's memory alone. The address
+is the one on the machine's identity MAC, the peer standing in when nothing
+matches; the desktop share is recorded against the device the token
+resolved to, at the address the hub holds, and withdrawn when the machine
+stops or its socket ends.
 """
 
 from types import SimpleNamespace
@@ -18,14 +18,6 @@ from neutrino_hub.modules.devices.registry import ManagedDevice
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 
 MAC = "aa:bb:cc:dd:ee:ff"
-
-
-class FakeRegistry:
-    def __init__(self):
-        self.beats: list = []
-
-    def record_heartbeat(self, mac_address, *, version, seen_at):
-        self.beats.append((mac_address, version, seen_at))
 
 
 class StubPublishedServices:
@@ -64,7 +56,6 @@ class FakeRuntime:
 def box():
     return (
         FakeRuntime(lans=[("192.168.100.1", "192.168.100.0/24")]),
-        FakeRegistry(),
         ManagedDevice(mac_address=MAC, name="testbox"),
     )
 
@@ -105,12 +96,11 @@ def report(**fields) -> dict:
 # --- hello ---
 
 
-def test_a_hello_records_the_machine_and_writes_last_seen(box):
-    runtime, registry, device = box
+def test_a_hello_records_the_machine_in_memory(box):
+    runtime, device = box
 
     agent_reports.record_hello(
         runtime,
-        registry,
         device,
         hello(),
         peer_host="192.168.100.7",
@@ -122,17 +112,13 @@ def test_a_hello_records_the_machine_and_writes_last_seen(box):
     assert runtime.client_accounts[MAC] == ["alice"]
     assert runtime.client_address[MAC] == "192.168.100.7"
     assert runtime.client_device_host[MAC] == "192.168.100.1"
-    ((mac, version, seen_at),) = registry.beats
-    assert (mac, version) == (MAC, "0.2.0")
-    assert seen_at
 
 
 def test_the_address_is_the_one_on_the_identity_mac(box):
-    runtime, registry, device = box
+    runtime, device = box
 
     agent_reports.record_hello(
         runtime,
-        registry,
         device,
         hello(
             addresses=[
@@ -148,11 +134,10 @@ def test_the_address_is_the_one_on_the_identity_mac(box):
 
 
 def test_the_device_host_is_the_address_it_reached_off_any_served_lan(box):
-    runtime, registry, device = box
+    runtime, device = box
 
     agent_reports.record_hello(
         runtime,
-        registry,
         device,
         hello(),
         peer_host="100.64.0.9",
@@ -167,7 +152,7 @@ def test_the_device_host_is_the_address_it_reached_off_any_served_lan(box):
 
 
 def test_a_report_lands_in_memory_and_writes_nothing(box):
-    runtime, registry, device = box
+    runtime, device = box
     runtime.client_address[MAC] = "192.168.100.7"
 
     agent_reports.record_report(
@@ -183,11 +168,10 @@ def test_a_report_lands_in_memory_and_writes_nothing(box):
         "code": "hub_unreachable",
         "params": {"detail": "x"},
     }
-    assert registry.beats == []
 
 
 def test_a_report_without_an_error_clears_the_stored_one(box):
-    runtime, _, device = box
+    runtime, device = box
     runtime.client_last_error[MAC] = {"code": "mount_failed", "params": {}}
 
     agent_reports.record_report(runtime, device, report())
@@ -196,7 +180,7 @@ def test_a_report_without_an_error_clears_the_stored_one(box):
 
 
 def test_a_report_settles_a_standing_failure_when_the_software_turned_up(box):
-    runtime, _, device = box
+    runtime, device = box
     runtime.agent_module_orders._failures[(MAC, "rustdesk")] = "old-order"
 
     agent_reports.record_report(runtime, device, report())
@@ -205,7 +189,7 @@ def test_a_report_settles_a_standing_failure_when_the_software_turned_up(box):
 
 
 def test_a_report_declaring_a_share_records_it_at_the_held_address(box):
-    runtime, _, device = box
+    runtime, device = box
     runtime.client_address[MAC] = "192.168.100.7"
     runtime.client_hostname[MAC] = "box"
 
@@ -227,7 +211,7 @@ def test_a_report_declaring_a_share_records_it_at_the_held_address(box):
 
 
 def test_a_report_that_stops_sharing_withdraws_the_share(box):
-    runtime, _, device = box
+    runtime, device = box
     runtime.client_address[MAC] = "192.168.100.7"
     agent_reports.record_report(
         runtime, device, report(rdp={"is_shared": True, "share_id": "s1"})
@@ -240,7 +224,7 @@ def test_a_report_that_stops_sharing_withdraws_the_share(box):
 
 
 def test_a_share_with_no_address_to_pair_it_with_is_not_declared(box):
-    runtime, _, device = box
+    runtime, device = box
 
     agent_reports.record_report(
         runtime, device, report(rdp={"is_shared": True, "share_id": "s1"})
@@ -252,15 +236,13 @@ def test_a_share_with_no_address_to_pair_it_with_is_not_declared(box):
 # --- the socket ending ---
 
 
-def test_a_socket_ending_writes_last_seen_and_withdraws_the_share(box):
-    runtime, registry, device = box
+def test_a_socket_ending_withdraws_the_share(box):
+    runtime, device = box
     runtime.client_address[MAC] = "192.168.100.7"
     agent_reports.record_report(
         runtime, device, report(rdp={"is_shared": True, "share_id": "s1"})
     )
 
-    agent_reports.record_offline(runtime, registry, device, version="0.2.0")
+    agent_reports.record_offline(runtime, device)
 
     assert runtime.device_shares.live() == []
-    ((mac, version, _),) = registry.beats
-    assert (mac, version) == (MAC, "0.2.0")

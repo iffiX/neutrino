@@ -4,7 +4,6 @@ import { createPortal } from "react-dom";
 import { Icon } from "./icon";
 import type { IconName } from "./icon";
 import { DeviceEnrollmentNotice } from "./device_enrollment_notice";
-import { DeviceModules } from "./device_modules";
 import { FileTransferModal } from "./file_transfer_modal";
 import { PasswordInput } from "./password_input";
 import { StatusDot } from "./status_dot";
@@ -1024,13 +1023,6 @@ export function DeviceDrawer({
               </div>
             )}
           </div>
-
-          {device.client !== null && device.client.is_managed && (
-            <DeviceModules
-              macAddress={device.mac_address}
-              isOperationOpen={isOperationOpen}
-            />
-          )}
 
           {shownOperation !== null && (
             <div className="device_drawer_log">

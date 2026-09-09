@@ -1,10 +1,10 @@
 """Gathering and caching the published service list.
 
-The collector is pure; this is the half that reads — the configs, the unit
-states, the podman survey, the gateway's served models, the declared-service
-probes — and keeps the composed list for a short while, because the Services
-page polls it and every heartbeat reads it. One list feeds both, under one
-fingerprint.
+The collector is pure; this is the half that reads: the configs, the
+agents' last reports, the gateway's served models, the declared-service
+probes. It keeps the composed list for a short while, because the Services
+page polls it and every device catalog reads it. One list feeds both,
+under one fingerprint.
 """
 
 import hashlib
@@ -20,8 +20,8 @@ from neutrino_hub.modules.cliproxyapi.constants import (
 )
 from neutrino_hub.modules.cliproxyapi.ops import load_config as load_cliproxyapi_config
 from neutrino_hub.modules.credentials.vault import VaultError
-from neutrino_hub.modules.gitea.config import GiteaConfig
-from neutrino_hub.modules.podman.ops import PodmanStatusReader
+from neutrino_hub.modules.devices.constants import DEVICE_MODULE_NAMES
+from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.router import link_status
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.services.collector import (
@@ -41,7 +41,17 @@ from neutrino_hub.utils import json_file
 class PublishedServiceCache:
     """Composes the published service list and keeps it for a short while."""
 
-    def __init__(self, *, declared_probe, served_models, units, device_shares=None):
+    def __init__(
+        self,
+        *,
+        declared_probe,
+        served_models,
+        units,
+        device_shares=None,
+        agent_sessions=None,
+        device_addresses=None,
+        desired_states=None,
+    ):
         """
         Args:
             declared_probe: The shared
@@ -53,11 +63,26 @@ class PublishedServiceCache:
             device_shares: The shared
                 :class:`neutrino_hub.modules.services.device_shares.DeviceShareRegistry`;
                 None publishes no desktop shares.
+            agent_sessions: The shared
+                :class:`neutrino_hub.modules.devices.agent_sessions.AgentSessionRegistry`,
+                whose reports say which device hosts what; None publishes
+                no device-hosted entries.
+            device_addresses: Device key to the address its channel comes
+                from, the runtime's own mapping.
+            desired_states: The :class:`DesiredStateStore` the shares are
+                read from; None builds one.
         """
         self._declared_probe = declared_probe
         self._served_models = served_models
         self._units = units
         self._device_shares = device_shares
+        self._agent_sessions = agent_sessions
+        self._device_addresses = (
+            device_addresses if device_addresses is not None else {}
+        )
+        self._desired_states = (
+            desired_states if desired_states is not None else DesiredStateStore()
+        )
         self._entries: list[dict] = []
         self._fingerprint = ""
         self._hub_addresses: set[str] = set()
@@ -113,33 +138,17 @@ class PublishedServiceCache:
         hub_host = (lan_addresses or own_addresses or ["127.0.0.1"])[0]
         self._hub_addresses = hub_self_addresses(own_addresses)
 
-        gitea = self._unit("gitea")
-        samba = self._unit("samba")
         cliproxyapi = self._unit("cliproxyapi")
-        podman = self._unit("podman")
-
-        gitea_url = self._gitea_url(hub_host)
         is_ai_served = self._is_ai_served()
         ai_port, ai_models, is_ai_healthy = self._ai_state(cliproxyapi.is_active)
 
         entries = ServiceListCollector(
             hub_host=hub_host,
-            is_gitea_served=_is_served(gitea),
-            gitea_url=gitea_url,
-            is_gitea_healthy=gitea.is_active and self._is_answering(gitea_url),
-            is_samba_served=_is_served(samba),
-            samba_share_names=self._samba_share_names(),
-            is_samba_healthy=samba.is_active,
             is_ai_served=is_ai_served,
             ai_port=ai_port,
             ai_models=ai_models,
             is_ai_healthy=is_ai_healthy,
-            is_podman_served=_is_served(podman),
-            podman_containers=(
-                PodmanStatusReader().survey(declared_names=[])
-                if _is_served(podman)
-                else []
-            ),
+            device_modules=self._device_modules(),
             declared_services=declared,
             declared_healths=healths,
             device_shares=(
@@ -185,25 +194,69 @@ class PublishedServiceCache:
         ]
         return served + [address for address in live if address not in served]
 
-    def _samba_share_names(self) -> list[str]:
-        try:
-            data = json_file.read_config("samba/samba.json")
-        except (FileNotFoundError, ValueError):
-            return []
-        return [
-            str(share.get("name", ""))
-            for share in data.get("shares", [])
-            if share.get("name")
-        ]
+    def _device_modules(self) -> list:
+        """What every online device hosts, from its last report.
 
-    def _gitea_url(self, hub_host: str) -> str:
-        try:
-            config = GiteaConfig.from_dict(json_file.read_config("gitea/gitea.json"))
-        except (FileNotFoundError, ValueError):
-            config = GiteaConfig()
-        if config.root_url:
-            return config.root_url
-        return f"http://{hub_host}:{config.listen_port}/"
+        Returns:
+            One entry per device whose report names a hosted module, each
+            ``{"device_id", "host", "samba", "gitea", "podman"}``.
+        """
+        if self._agent_sessions is None:
+            return []
+        devices = []
+        for key, report in self._agent_sessions.reports().items():
+            modules = report.get("modules") if isinstance(report, dict) else {}
+            modules = modules if isinstance(modules, dict) else {}
+            host = str(self._device_addresses.get(key, "") or "")
+            entry = {"device_id": key, "host": host}
+            for name in DEVICE_MODULE_NAMES:
+                entry[name] = self._hosted(key, name, modules.get(name))
+            if any(entry[name] for name in DEVICE_MODULE_NAMES):
+                devices.append(entry)
+        return devices
+
+    def _hosted(self, key: str, name: str, status) -> "dict | None":
+        """One device's module as the list needs it, None while not served."""
+        if not isinstance(status, dict) or status.get("state") != "installed":
+            return None
+        if not self._desired_states.is_enabled(key, name):
+            return None
+        details = (
+            status.get("details") if isinstance(status.get("details"), dict) else {}
+        )
+        if name == "samba":
+            shares = self._desired_states.read(key, "samba").get("shares", [])
+            return {
+                "is_healthy": bool(details.get("is_active")),
+                "share_names": [
+                    str(share.get("name", ""))
+                    for share in shares
+                    if isinstance(share, dict) and share.get("name")
+                ],
+            }
+        if name == "gitea":
+            url = str(details.get("url", "") or "")
+            return {
+                "is_healthy": bool(details.get("is_running"))
+                and self._is_answering(url),
+                "url": url,
+            }
+        if name == "podman":
+            return {
+                "containers": [
+                    {
+                        "name": str(container.get("name", "")),
+                        "image": str(container.get("image", "")),
+                        "is_running": bool(container.get("is_running")),
+                        "host_ports": [
+                            int(port) for port in container.get("host_ports") or []
+                        ],
+                    }
+                    for container in details.get("containers") or []
+                    if isinstance(container, dict) and container.get("name")
+                ]
+            }
+        return None
 
     def _is_answering(self, url: str) -> bool:
         if not url:
@@ -256,11 +309,6 @@ class PublishedServiceCache:
             port=config.listen_port, client_key=key
         )
         return config.listen_port, models, is_answered
-
-
-def _is_served(status) -> bool:
-    """Whether a module counts as installed and enabled."""
-    return status.is_installed and (status.is_enabled or status.is_active)
 
 
 __all__ = ["PublishedServiceCache"]

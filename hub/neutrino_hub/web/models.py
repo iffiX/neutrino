@@ -829,16 +829,19 @@ class DeviceCommandResultView(BaseModel):
 class DeviceClientInfoView(BaseModel):
     """Agent state and latest metrics for one device."""
 
-    # An agent that completed its handshake and still holds a token. A generated
-    # token whose install then failed never reads managed.
+    # A device the hub issued an agent token for and has not forgotten.
     is_managed: bool = False
-    # Whether the agent has checked in inside the heartbeat window.
+    # Whether the agent holds a live channel right now.
     is_online: bool = False
+    # What the agent's last hello named, from memory: null for a device that
+    # has not connected since the panel started.
     version: str | None = None
     # True when the agent's version is not this hub's. The two ship together
     # and are only supported together, so the panel offers an upgrade rather
     # than trying to interoperate.
     is_version_mismatched: bool = False
+    # When the device's last channel ended, from memory: null while it is
+    # online and for one that has not connected since the panel started.
     last_seen: str | None = None
     # What the agent said it runs on, held in memory from its heartbeats and
     # never stored: None until it beats again after a panel restart.
@@ -1070,8 +1073,6 @@ class PublishedServiceView(BaseModel):
     is_healthy: bool | None = None
     source: str
     description: str = ""
-    # The device modules this entry cannot work without.
-    modules: list[str] = Field(default_factory=list)
     record_id: str | None = None
     detail_code: str | None = None
 
@@ -1381,6 +1382,42 @@ class ClientLeave(BaseModel):
     token: str
 
 
+class ModuleDeviceView(BaseModel):
+    """One device on a module's page: whether it hosts the module, and how."""
+
+    device_id: str
+    name: str
+    hostname: str = ""
+    is_online: bool
+    is_enabled: bool
+    state: str = "unknown"
+    code: str = ""
+    params: dict = Field(default_factory=dict)
+
+
+class ModuleDeviceListView(BaseModel):
+    """Every stored device with an agent, the hub box's own first."""
+
+    devices: list[ModuleDeviceView] = Field(default_factory=list)
+
+
+class ModuleDeviceSelection(BaseModel):
+    """Which devices should host a module: the whole set, replacing the last."""
+
+    device_ids: list[str] = Field(default_factory=list)
+
+
+class ModuleDeviceFields(BaseModel):
+    """What every per-device module view carries beside its own fields."""
+
+    device_id: str
+    host: str = ""
+    is_online: bool = False
+    state: str = "unknown"
+    code: str = ""
+    params: dict = Field(default_factory=dict)
+
+
 class SambaShareView(BaseModel):
     """One exported directory, as configured."""
 
@@ -1450,6 +1487,14 @@ class SambaStatusView(BaseModel):
     disks: list[SambaDiskView]
 
 
+class SambaDeviceView(ModuleDeviceFields, SambaSettingsView):
+    """One device's file share: the configuration and the live parts."""
+
+    is_active: bool = False
+    sessions: list[SambaSessionView] = Field(default_factory=list)
+    disks: list[SambaDiskView] = Field(default_factory=list)
+
+
 class GiteaSettingsView(BaseModel):
     """The Gitea tab: configuration plus what the box actually has."""
 
@@ -1461,6 +1506,12 @@ class GiteaSettingsView(BaseModel):
     version: str
     has_admin: bool
     admin_usernames: list[str] = Field(default_factory=list)
+
+
+class GiteaDeviceView(ModuleDeviceFields, GiteaSettingsView):
+    """One device's git server: the configuration and what it actually has."""
+
+    url: str = ""
 
 
 class GiteaConfigUpdate(BaseModel):
@@ -1518,6 +1569,10 @@ class PodmanSettingsView(BaseModel):
     is_installed: bool
     is_active: bool
     version: str
+
+
+class PodmanDeviceView(ModuleDeviceFields, PodmanSettingsView):
+    """One device's container engine: declarations beside what runs."""
 
 
 class PodmanContainerListUpdate(BaseModel):
@@ -1674,6 +1729,10 @@ class ZfsView(BaseModel):
     disks: list[ZfsDiskView] = Field(default_factory=list)
     importable: list[ZfsImportableView] = Field(default_factory=list)
     samba: ZfsSambaView = Field(default_factory=ZfsSambaView)
+
+
+class ZfsDeviceView(ModuleDeviceFields, ZfsView):
+    """One device's storage picture."""
 
 
 class ZfsPoolCreate(BaseModel):

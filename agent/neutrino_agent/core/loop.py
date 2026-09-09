@@ -28,6 +28,7 @@ from neutrino_agent.constants import (
     AGENT_BACKOFF_MAX_S,
     AGENT_BACKOFF_MIN_S,
     AGENT_CREDENTIALS_DIR_NAME,
+    AGENT_DESIRED_STATE_NAME,
     AGENT_HEARTBEAT_INTERVAL_S,
     AGENT_LEAVE_PATH,
     AGENT_MODULE_PACKAGE_PATH,
@@ -47,12 +48,14 @@ from neutrino_agent.core.channel import (
     GatewayWireStale,
 )
 from neutrino_agent.core.commands import DeviceOperator
+from neutrino_agent.core.desired_state import DesiredStateApplier, DesiredStateStore
 from neutrino_agent.core.engine import ModuleEngine
 from neutrino_agent.core.metrics import HostMetrics, hostname
 from neutrino_agent.core.session import AgentSession
 from neutrino_agent.core.store import MachineStateStore
 from neutrino_agent.core.version import parse_version
 from neutrino_agent.core.ws_client import WebSocketClient
+from neutrino_agent.modules.base import ModuleApplyError
 from neutrino_agent.platforms.base import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import detect_platform
 from neutrino_agent.rdp.host import RdpShareHost
@@ -132,9 +135,17 @@ class Agent:
             on_change=self._news.set,
         )
         # The store and the access password live under the platform's own
-        # data root.
+        # data root, and so does the last desired state taken from the hub.
         data_dir = self._platform.agent_data_dir()
         self._store = MachineStateStore(path=os.path.join(data_dir, AGENT_STATE_NAME))
+        self._desired = DesiredStateApplier(
+            engine=self._engine,
+            runners=self._engine.module_runners,
+            store=DesiredStateStore(
+                path=os.path.join(data_dir, AGENT_DESIRED_STATE_NAME)
+            ),
+            log=log,
+        )
         self._rdp = RdpShareHost(
             platform=self._platform,
             store=self._store,
@@ -386,12 +397,14 @@ class Agent:
             token=token,
             hello=self._hello_payload(),
             report=self._report_payload,
-            run_order=self._engine.run_order,
+            run_order=self._run_order,
             run_command=self._run_command,
             news=self._news,
             log=self._log,
             interval_s=AGENT_HEARTBEAT_INTERVAL_S,
             on_tick=self._adopt_external_binding,
+            on_state=self._desired.take,
+            validate=self._validate,
         )
 
     def _hello_payload(self) -> dict:
@@ -402,7 +415,7 @@ class Agent:
             "platform": self._engine.platform_tuple,
             "addresses": enrollment.machine_addresses(),
             "accounts": self._read_accounts(),
-            "state_hash": "",
+            "state_hash": self._desired.applied_hash,
         }
 
     def _report_payload(self) -> dict:
@@ -414,15 +427,52 @@ class Agent:
             "addresses": enrollment.machine_addresses(),
             "accounts": self._read_accounts(),
             "modules": self._engine.report(),
-            "state_hash": "",
-            "state_error": None,
+            "state_hash": self._desired.applied_hash,
+            "state_error": self._desired.state_error,
             # Whether this machine's desktop is reachable. The access
             # password it was set up with stays on the machine.
             "rdp": self.rdp_declaration(),
             "last_error": self.last_error(),
         }
 
-    def _run_command(self, action: str, args: dict) -> dict:
+    def _run_order(self, order: dict, on_line=None) -> dict:
+        """Run one order, then give the changed machine its configuration.
+
+        Args:
+            order: The order on the wire.
+            on_line: Called with each output line.
+
+        Returns:
+            ``{"state", "code", "params", "output"}``.
+        """
+        result = self._engine.run_order(order, on_line)
+        self._desired.apply_again()
+        return result
+
+    def _validate(self, module: str, config: dict) -> dict:
+        """Check a configuration the hub is about to store for one module.
+
+        Args:
+            module: The module name.
+            config: The configuration.
+
+        Returns:
+            Empty when sound, ``{"code", "params"}`` when not.
+        """
+        runner = self._engine.module_runners.get(module)
+        if runner is None:
+            return {"code": "unknown_module", "params": {"module": module}}
+        try:
+            runner.validate(dict(config))
+        except ModuleApplyError as error:
+            return {"code": error.code, "params": dict(error.params)}
+        except PlatformUnsupportedError:
+            return {"code": "unsupported_platform", "params": {}}
+        except Exception as error:  # noqa: BLE001 - reported, never raised
+            return {"code": "validate_failed", "params": {"detail": str(error)[:200]}}
+        return {}
+
+    def _run_command(self, action: str, args: dict, on_line=None) -> dict:
         with self._lock:
             operator = self._operator
         if operator is None:
@@ -433,7 +483,7 @@ class Agent:
                 "output": "",
             }
         self._log(f"running {action}")
-        outcome = operator.run(action, args)
+        outcome = operator.run(action, args, on_line)
         return {
             "exit_code": outcome.exit_code,
             "code": outcome.code,
@@ -566,7 +616,9 @@ class Agent:
                     gateway_url=gateway_url, token=token, fingerprint=fingerprint
                 )
                 self._operator = DeviceOperator(
-                    platform=self._platform, reinstall=self._reinstall
+                    platform=self._platform,
+                    reinstall=self._reinstall,
+                    module_runners=self._engine.module_runners,
                 )
             else:
                 self._channel = None

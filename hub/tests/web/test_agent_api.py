@@ -74,10 +74,7 @@ class FakeRegistry:
         return "issued-token"
 
     def forget_client(self, mac_address):
-        client = FakeRegistry.device.client
-        client.token_sha256 = None
-        client.version = None
-        client.last_seen = None
+        FakeRegistry.device.client.token_sha256 = None
 
 
 class StubModuleCache:
@@ -134,8 +131,7 @@ def api(monkeypatch):
         name="testbox",
         ssh={"host": "10.0.0.5", "username": "me"},
         client=DeviceClientInfo(
-            token_sha256=hashlib.sha256(b"device-token").hexdigest(),
-            last_seen="2026-01-01T00:00:00+00:00",
+            token_sha256=hashlib.sha256(b"device-token").hexdigest()
         ),
     )
     FakeRegistry.reset(device)

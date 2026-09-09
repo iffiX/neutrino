@@ -1,0 +1,21 @@
+/* The panel-scope Apply sits at the far end of its own header, the way a
+   panel's other header actions do. */
+.agent_service_actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin-left: auto;
+}
+
+/* The module's own panels, laid out exactly as a page lays out its sections.
+   It is a fieldset so that one attribute takes every control inside out of
+   reach at once while an agent is not answering. */
+.agent_service_body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}

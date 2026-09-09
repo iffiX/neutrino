@@ -1,8 +1,8 @@
 """What every module's provisioner reports back to the installer.
 
-The provisioners themselves live with their modules — ``modules/gitea``
-installs Gitea, ``modules/netbird`` installs NetBird — since installing a
-thing is that thing's business. What they share is only the shape of their
+The provisioners themselves live with their modules, ``modules/netbird``
+installs NetBird and ``modules/cliproxyapi`` the AI gateway, since
+installing a thing is that thing's business. What they share is only the shape of their
 answer, and each is idempotent: asked twice, the second call finds its work
 already done.
 """

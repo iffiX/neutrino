@@ -1,6 +1,5 @@
-"""The typed service list: what each module publishes, and how hosts resolve."""
+"""The typed service list: what each device's module publishes, and how hosts resolve."""
 
-from neutrino_hub.modules.podman.ops import PodmanContainerState
 from neutrino_hub.modules.services.collector import (
     ServiceListCollector,
     catalog_entries,
@@ -12,23 +11,18 @@ from neutrino_hub.modules.services.device_shares import DeviceShare
 from neutrino_hub.modules.services.probe import DeclaredServiceHealth
 
 HUB = "192.168.100.1"
+DEVICE = "aa:bb:cc:dd:ee:ff"
+DEVICE_HOST = "192.168.100.7"
 
 
 def collect(**overrides) -> list[dict]:
     fields = {
         "hub_host": HUB,
-        "is_gitea_served": False,
-        "gitea_url": "",
-        "is_gitea_healthy": False,
-        "is_samba_served": False,
-        "samba_share_names": [],
-        "is_samba_healthy": False,
         "is_ai_served": False,
         "ai_port": 8317,
         "ai_models": [],
         "is_ai_healthy": False,
-        "is_podman_served": False,
-        "podman_containers": [],
+        "device_modules": [],
         "declared_services": [],
         "declared_healths": {},
         "device_shares": [],
@@ -37,15 +31,23 @@ def collect(**overrides) -> list[dict]:
     return ServiceListCollector(**fields).render()
 
 
-def container(name: str, *, ports: list[int], is_running: bool = True):
-    return PodmanContainerState(
-        name=name,
-        image="docker.io/nginx:1.25",
-        status="Up 2 hours" if is_running else "Exited",
-        is_running=is_running,
-        is_declared=True,
-        host_ports=ports,
-    )
+def hosting(*, device_id=DEVICE, host=DEVICE_HOST, samba=None, gitea=None, podman=None):
+    return {
+        "device_id": device_id,
+        "host": host,
+        "samba": samba,
+        "gitea": gitea,
+        "podman": podman,
+    }
+
+
+def container(name: str, *, ports: list[int], is_running: bool = True) -> dict:
+    return {
+        "name": name,
+        "image": "docker.io/nginx:1.25",
+        "is_running": is_running,
+        "host_ports": ports,
+    }
 
 
 def health(record_id: str, is_healthy: bool | None, detail_code: str | None = None):
@@ -75,43 +77,62 @@ def test_nothing_served_and_nothing_declared_is_an_empty_list():
     assert collect() == []
 
 
-def test_gitea_publishes_one_web_entry_only_while_served():
+def test_a_devices_gitea_publishes_one_web_entry_only_while_served():
     entries = collect(
-        is_gitea_served=True,
-        gitea_url=f"http://{HUB}:3000/",
-        is_gitea_healthy=True,
+        device_modules=[
+            hosting(gitea={"is_healthy": True, "url": f"http://{DEVICE_HOST}:3000/"})
+        ]
     )
-    assert [e["id"] for e in entries] == ["gitea"]
+    assert [e["id"] for e in entries] == ["gitea_aa-bb-cc-dd-ee-ff"]
     entry = entries[0]
     assert entry["type"] == "web"
-    assert entry["payload"] == {"url": f"http://{HUB}:3000/"}
+    assert entry["payload"] == {"url": f"http://{DEVICE_HOST}:3000/"}
     assert entry["is_healthy"] is True
     assert entry["source"] == "module"
     assert entry["record_id"] is None
+    assert entry["description"] == f"published by the gitea module on {DEVICE_HOST}"
 
-    assert collect(is_gitea_served=False, gitea_url=f"http://{HUB}:3000/") == []
+    assert collect(device_modules=[hosting(gitea=None)]) == []
 
 
 def test_gitea_health_is_the_measured_answer_never_painted():
     entries = collect(
-        is_gitea_served=True,
-        gitea_url=f"http://{HUB}:3000/",
-        is_gitea_healthy=False,
+        device_modules=[hosting(gitea={"is_healthy": False, "url": "http://x:3000/"})]
     )
     assert entries[0]["is_healthy"] is False
 
 
-def test_samba_publishes_one_file_entry_per_share_with_the_unit_health():
+def test_a_devices_samba_publishes_one_file_entry_per_share_at_its_address():
     entries = collect(
-        is_samba_served=True,
-        samba_share_names=["media", "backup"],
-        is_samba_healthy=True,
+        device_modules=[
+            hosting(samba={"is_healthy": True, "share_names": ["media", "backup"]})
+        ]
     )
-    assert [e["id"] for e in entries] == ["samba_media", "samba_backup"]
+    assert [e["id"] for e in entries] == [
+        "samba_aa-bb-cc-dd-ee-ff_media",
+        "samba_aa-bb-cc-dd-ee-ff_backup",
+    ]
     entry = entries[0]
     assert entry["type"] == "file"
-    assert entry["payload"] == {"protocol": "smb", "host": HUB, "share": "media"}
+    assert entry["payload"] == {
+        "protocol": "smb",
+        "host": DEVICE_HOST,
+        "share": "media",
+    }
     assert entry["source"] == "module"
+
+
+def test_a_device_with_no_address_publishes_nothing_reachable():
+    entries = collect(
+        device_modules=[
+            hosting(
+                host="",
+                samba={"is_healthy": True, "share_names": ["media"]},
+                podman={"containers": [container("web", ports=[8080])]},
+            )
+        ]
+    )
+    assert entries == []
 
 
 def test_the_ai_entry_carries_the_served_models_and_the_probe_health():
@@ -131,52 +152,53 @@ def test_the_ai_entry_carries_the_served_models_and_the_probe_health():
     assert entry["is_healthy"] is True
 
 
-def test_every_entry_names_the_modules_it_cannot_work_without():
+def test_a_devices_podman_publishes_one_port_entry_per_published_container_port():
     entries = collect(
-        is_gitea_served=True,
-        gitea_url=f"http://{HUB}:3000/",
-        is_gitea_healthy=True,
-        is_samba_served=True,
-        samba_share_names=["media"],
-        is_samba_healthy=True,
-        is_ai_served=True,
-        is_podman_served=True,
-        podman_containers=[container("web", ports=[8080])],
-        declared_services=[
-            declared("samba", id="n1", shares=[DeclaredShare(name="backup")])
-        ],
-        declared_healths={},
+        device_modules=[
+            hosting(podman={"containers": [container("web", ports=[8080, 8443])]})
+        ]
     )
-
-    by_type = {}
-    for entry in entries:
-        by_type.setdefault(entry["type"], []).append(entry["modules"])
-    # ai needs cc-switch, every file entry needs the mount tooling, and the
-    # open-a-link types need nothing on the machine.
-    assert by_type["ai"] == [["cc_switch"]]
-    assert all(modules == ["samba_mount"] for modules in by_type["file"])
-    assert len(by_type["file"]) >= 2
-    assert all(modules == [] for modules in by_type["web"] + by_type["port"])
-
-
-def test_podman_publishes_one_port_entry_per_published_container_port():
-    entries = collect(
-        is_podman_served=True,
-        podman_containers=[container("web", ports=[8080, 8443])],
-    )
-    assert [e["id"] for e in entries] == ["podman_web_8080", "podman_web_8443"]
+    assert [e["id"] for e in entries] == [
+        "podman_aa-bb-cc-dd-ee-ff_web_8080",
+        "podman_aa-bb-cc-dd-ee-ff_web_8443",
+    ]
     entry = entries[0]
     assert entry["type"] == "port"
-    assert entry["payload"] == {"host": HUB, "port": 8080}
-    assert entry["description"] == "published by container web (docker.io/nginx:1.25)"
+    assert entry["payload"] == {"host": DEVICE_HOST, "port": 8080}
+    assert entry["description"] == (
+        f"published by container web (docker.io/nginx:1.25) on {DEVICE_HOST}"
+    )
 
 
 def test_a_stopped_container_publishes_its_port_as_unhealthy():
     entries = collect(
-        is_podman_served=True,
-        podman_containers=[container("web", ports=[8080], is_running=False)],
+        device_modules=[
+            hosting(
+                podman={
+                    "containers": [container("web", ports=[8080], is_running=False)]
+                }
+            )
+        ]
     )
     assert entries[0]["is_healthy"] is False
+
+
+def test_two_devices_publish_their_own_entries_side_by_side():
+    entries = collect(
+        device_modules=[
+            hosting(samba={"is_healthy": True, "share_names": ["media"]}),
+            hosting(
+                device_id="11:22:33:44:55:66",
+                host="192.168.100.8",
+                samba={"is_healthy": False, "share_names": ["media"]},
+            ),
+        ]
+    )
+    assert [e["id"] for e in entries] == [
+        "samba_aa-bb-cc-dd-ee-ff_media",
+        "samba_11-22-33-44-55-66_media",
+    ]
+    assert [e["payload"]["host"] for e in entries] == [DEVICE_HOST, "192.168.100.8"]
 
 
 def test_declared_records_map_onto_the_types_with_their_probe_health():
@@ -192,10 +214,7 @@ def test_declared_records_map_onto_the_types_with_their_probe_health():
     ]
     entries = collect(
         declared_services=records,
-        declared_healths={
-            "w1": health("w1", True),
-            "p1": health("p1", False),
-        },
+        declared_healths={"w1": health("w1", True), "p1": health("p1", False)},
     )
 
     by_id = {e["id"]: e for e in entries}
@@ -206,18 +225,15 @@ def test_declared_records_map_onto_the_types_with_their_probe_health():
     assert by_id["w1"]["description"] == "the forge box"
     assert by_id["p1"]["payload"] == {"host": "10.0.0.5", "port": 9000}
     assert by_id["p1"]["is_healthy"] is False
-    # One entry per share, both carrying the record's id for delete.
     assert by_id["f1_media"]["payload"]["share"] == "media"
     assert by_id["f1_media"]["record_id"] == "f1"
     assert by_id["f1_backup"]["record_id"] == "f1"
     assert by_id["w1"]["detail_code"] is None
-    # Never probed reads None, not unhealthy.
     assert by_id["f1_media"]["is_healthy"] is None
     assert by_id["f1_media"]["detail_code"] is None
 
 
 def test_every_row_of_a_record_carries_what_its_probe_measured():
-    """A record's detail code reaches the page on each row it published."""
     record = declared(
         "samba",
         id="f1",
@@ -237,11 +253,8 @@ def test_every_row_of_a_record_carries_what_its_probe_measured():
 
 
 def test_a_module_entry_never_carries_a_detail_code():
-    """Health is the module's own, and it reports no probe reason."""
     entries = collect(
-        is_samba_served=True,
-        samba_share_names=["media"],
-        is_samba_healthy=False,
+        device_modules=[hosting(samba={"is_healthy": False, "share_names": ["media"]})]
     )
 
     assert entries[0]["source"] == "module"
@@ -249,7 +262,6 @@ def test_a_module_entry_never_carries_a_detail_code():
 
 
 def test_the_catalog_copy_drops_the_detail_code():
-    """A device catalog carries health, not the panel's reason for it."""
     record = declared("generic_tcp", id="p1")
     entries = collect(
         declared_services=[record],
@@ -262,15 +274,15 @@ def test_the_catalog_copy_drops_the_detail_code():
 def test_resolution_substitutes_every_hub_self_host_for_the_caller_address():
     addresses = hub_self_addresses([HUB])
     entries = collect(
-        is_gitea_served=True,
-        gitea_url=f"http://{HUB}:3000/",
-        is_gitea_healthy=True,
-        is_samba_served=True,
-        samba_share_names=["media"],
-        is_samba_healthy=True,
         is_ai_served=True,
-        is_podman_served=True,
-        podman_containers=[container("web", ports=[8080])],
+        device_modules=[
+            hosting(
+                host=HUB,
+                samba={"is_healthy": True, "share_names": ["media"]},
+                gitea={"is_healthy": True, "url": f"http://{HUB}:3000/"},
+                podman={"containers": [container("web", ports=[8080])]},
+            )
+        ],
         declared_services=[declared("generic_tcp", id="p1", host="127.0.0.1")],
         declared_healths={},
     )
@@ -282,12 +294,46 @@ def test_resolution_substitutes_every_hub_self_host_for_the_caller_address():
         )
     }
 
-    assert resolved["gitea"]["payload"]["url"] == "http://192.168.93.1:3000/"
-    assert resolved["samba_media"]["payload"]["host"] == "192.168.93.1"
+    # A module hosted on the hub box's own agent sits at a hub address and
+    # resolves like the hub's own.
+    assert (
+        resolved["gitea_aa-bb-cc-dd-ee-ff"]["payload"]["url"]
+        == "http://192.168.93.1:3000/"
+    )
+    assert (
+        resolved["samba_aa-bb-cc-dd-ee-ff_media"]["payload"]["host"] == "192.168.93.1"
+    )
     assert resolved["ai"]["payload"]["endpoint"] == "http://192.168.93.1:8317"
-    assert resolved["podman_web_8080"]["payload"]["host"] == "192.168.93.1"
+    assert (
+        resolved["podman_aa-bb-cc-dd-ee-ff_web_8080"]["payload"]["host"]
+        == "192.168.93.1"
+    )
     # A loopback host in a declaration is the hub's own by definition.
     assert resolved["p1"]["payload"]["host"] == "192.168.93.1"
+
+
+def test_resolution_leaves_a_device_host_alone():
+    entries = collect(
+        device_modules=[
+            hosting(
+                samba={"is_healthy": True, "share_names": ["media"]},
+                gitea={"is_healthy": True, "url": f"http://{DEVICE_HOST}:3000/"},
+            )
+        ]
+    )
+
+    resolved = {
+        e["id"]: e
+        for e in resolve_entries(
+            entries, hub_addresses=hub_self_addresses([HUB]), target_host="192.168.93.1"
+        )
+    }
+
+    assert resolved["samba_aa-bb-cc-dd-ee-ff_media"]["payload"]["host"] == DEVICE_HOST
+    assert (
+        resolved["gitea_aa-bb-cc-dd-ee-ff"]["payload"]["url"]
+        == f"http://{DEVICE_HOST}:3000/"
+    )
 
 
 def test_resolution_leaves_a_foreign_host_alone():
@@ -302,43 +348,12 @@ def test_resolution_leaves_a_foreign_host_alone():
     resolved = {
         e["id"]: e
         for e in resolve_entries(
-            entries,
-            hub_addresses=hub_self_addresses([HUB]),
-            target_host="192.168.93.1",
+            entries, hub_addresses=hub_self_addresses([HUB]), target_host="192.168.93.1"
         )
     }
 
     assert resolved["p1"]["payload"]["host"] == "10.0.0.5"
     assert resolved["w1"]["payload"]["url"] == "http://wiki.lan:9000/"
-
-
-def test_a_module_entry_resolves_even_when_its_host_is_not_recognized():
-    # Server mode can compose a hub host the address set does not name; a
-    # module entry is the hub's own regardless and still resolves per device,
-    # the way the ai credential does — a foreign declared host would not.
-    entries = collect(
-        is_samba_served=True,
-        samba_share_names=["media"],
-        is_samba_healthy=True,
-        is_ai_served=True,
-        is_podman_served=True,
-        podman_containers=[container("web", ports=[8080])],
-        declared_services=[declared("generic_tcp", id="p1", host="10.0.0.5")],
-        declared_healths={},
-    )
-
-    resolved = {
-        e["id"]: e
-        for e in resolve_entries(
-            entries, hub_addresses=set(), target_host="192.168.122.92"
-        )
-    }
-
-    assert resolved["samba_media"]["payload"]["host"] == "192.168.122.92"
-    assert resolved["ai"]["payload"]["endpoint"] == "http://192.168.122.92:8317"
-    assert resolved["podman_web_8080"]["payload"]["host"] == "192.168.122.92"
-    # A declared foreign host is never rewritten, recognized or not.
-    assert resolved["p1"]["payload"]["host"] == "10.0.0.5"
 
 
 def test_the_catalog_copy_drops_the_panel_only_fields():
@@ -354,7 +369,6 @@ def test_the_catalog_copy_drops_the_panel_only_fields():
         "is_healthy",
         "source",
         "description",
-        "modules",
     }
 
 
@@ -384,8 +398,6 @@ def test_a_declaring_machine_publishes_one_rdp_entry():
         "protocol": "rustdesk",
         "host": "192.168.100.5",
         "port": 21118,
-        # What a peer would wait on at that machine, so the one about to
-        # dial says it rather than sitting in "connecting".
         "attention": "",
     }
 
@@ -397,20 +409,12 @@ def test_an_rdp_entry_says_it_came_from_a_device():
     assert entry["description"] == "shared from workshop"
 
 
-def test_an_rdp_entry_names_the_module_it_cannot_work_without():
-    entry = collect(device_shares=[share()])[0]
-
-    assert entry["modules"] == ["rustdesk"]
-
-
 def test_no_declaration_publishes_no_rdp_entry():
     assert collect(device_shares=[]) == []
     assert collect() == []
 
 
 def test_a_device_host_is_never_rewritten_to_the_hubs_own_address():
-    # The address is another machine's, so resolving hub-own hosts for one
-    # caller must leave it exactly as the sharing machine was reached at.
     entries = collect(device_shares=[share(host="192.168.100.5")])
 
     resolved = resolve_entries(
@@ -425,8 +429,6 @@ def test_the_catalog_carries_an_rdp_entry_whole():
 
     assert entries[0]["source"] == "device"
     assert entries[0]["type"] == "rdp"
-    assert entries[0]["modules"] == ["rustdesk"]
-    # The panel-only fields are dropped here as they are for every type.
     assert "record_id" not in entries[0]
 
 

@@ -75,6 +75,9 @@ def bare_engine(*, platform=None, fetch_artifact=None, verified=None):
     engine._on_change = None
     engine._lock = threading.Lock()
     engine._wakeup = threading.Event()
+    engine._apply_results = {}
+    engine._details_at = 0.0
+    engine._module_runners = {}
 
     from neutrino_agent.modules.package import PackageModuleRunner
     from neutrino_agent.modules.rustdesk import RustdeskModuleRunner
@@ -408,3 +411,136 @@ def test_a_system_package_uninstall_rides_the_package_manager_too():
 
     assert platform.removed == [["cifs-utils"]]
     assert result["state"] == "done"
+
+
+# --- the modules this agent applies, and what it carries itself ---
+
+
+class ConfigurableRunner:
+    """A module runner whose details and verify a test scripts."""
+
+    kind = "system_package"
+    name = "samba"
+
+    def __init__(self, *, is_installed=True):
+        self.is_installed = is_installed
+        self.detail_reads = 0
+
+    def is_native(self, resolved):
+        return False
+
+    def verify(self, resolved):
+        return self.is_installed
+
+    def details(self, resolved):
+        self.detail_reads += 1
+        return {"sessions": [self.detail_reads]}
+
+
+MODULE_CATALOG = {
+    "modules": {
+        "samba": {
+            "title": "Samba",
+            "kind": "system_package",
+            "entry": {"packages": ["samba"]},
+            "verify": "",
+            "package": "samba",
+        }
+    }
+}
+
+
+def module_engine(runner):
+    engine = bare_engine()
+    engine._catalog = dict(MODULE_CATALOG)
+    engine._module_runners = {"samba": runner}
+    return engine
+
+
+def test_a_module_runner_is_found_by_name_before_its_kind():
+    runner = ConfigurableRunner()
+    engine = module_engine(runner)
+
+    assert engine._runner_for("system_package", "samba") is runner
+    assert engine._runner_for("system_package", "samba_mount") is engine._system
+
+
+def test_an_installed_module_reports_its_details():
+    engine = module_engine(ConfigurableRunner())
+
+    engine._refresh(is_forced=True)
+
+    assert engine.report()["samba"]["details"] == {"sessions": [1]}
+
+
+def test_details_are_read_again_only_once_they_are_stale(monkeypatch):
+    runner = ConfigurableRunner()
+    engine = module_engine(runner)
+    engine._refresh(is_forced=True)
+    assert runner.detail_reads == 1
+
+    engine._refresh(is_forced=False)
+    assert runner.detail_reads == 1
+
+    monkeypatch.setattr("neutrino_agent.core.engine.AGENT_MODULE_DETAILS_TTL_S", 0.0)
+    engine._refresh(is_forced=False)
+    assert runner.detail_reads == 2
+    assert engine.report()["samba"]["details"] == {"sessions": [2]}
+
+
+def test_report_wakes_the_worker_for_stale_details_and_never_waits():
+    engine = module_engine(ConfigurableRunner())
+    engine._refresh(is_forced=True)
+    engine._details_at = 0.0
+
+    engine.report()
+
+    assert engine._wakeup.is_set()
+
+
+def test_an_apply_failure_rides_the_installed_row():
+    engine = module_engine(ConfigurableRunner())
+    engine.record_apply("samba", "samba_config_rejected", {"detail": "bad"})
+
+    engine._refresh(is_forced=True)
+
+    row = engine.report()["samba"]
+    assert row["state"] == "installed"
+    assert (row["code"], row["params"]) == ("samba_config_rejected", {"detail": "bad"})
+
+    engine.record_apply("samba", "", {})
+    engine._refresh(is_forced=True)
+    assert engine.report()["samba"]["code"] == ""
+
+
+def test_resolved_answers_the_catalog_row_by_name():
+    engine = module_engine(ConfigurableRunner())
+
+    assert engine.resolved("samba")["package"] == "samba"
+    assert engine.resolved("nothing") is None
+
+
+def test_the_built_in_rustdesk_row_follows_the_agents_own_binary(monkeypatch, tmp_path):
+    engine = bare_engine()
+    engine._catalog = {"modules": {}}
+    binary = tmp_path / "rustdesk"
+    monkeypatch.setattr(
+        "neutrino_agent.core.engine.AGENT_RUSTDESK_BINARY_PATH", str(binary)
+    )
+
+    engine._refresh(is_forced=True)
+    assert engine.report()["rustdesk"]["state"] == "absent"
+    assert engine.catalog()["modules"]["rustdesk"]["entry"] == {}
+
+    binary.write_text("")
+    engine._refresh(is_forced=True)
+    assert engine.report()["rustdesk"]["state"] == "installed"
+
+
+def test_the_built_in_module_takes_no_order():
+    engine = bare_engine()
+
+    result = engine.run_order({"id": "o", "module": "rustdesk", "action": "install"})
+
+    assert (result["state"], result["code"]) == ("failed", "module_not_orderable")
+    assert result["params"] == {"module": "rustdesk"}

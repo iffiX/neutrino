@@ -1,18 +1,17 @@
 """Composing the typed service list the hub publishes.
 
 Every entry is ``{id, type, title, payload, is_healthy, source, description,
-modules, record_id, detail_code}`` with five types — web, port, ai, file,
-rdp. Module-declared entries exist only while their module serves and carry
-the module's own health; manual declarations carry their probe results; an
-rdp entry is a managed machine's own word that it is sharing its desktop,
-and lives only while that machine keeps saying so.
-``modules`` names the device modules the entry cannot work without.
-``record_id`` names the declared record an entry came from, for the panel's
-delete and probe, and ``detail_code`` is what that record's last probe
-measured; the catalog copy drops both.
+record_id, detail_code}`` with five types: web, port, ai, file, rdp. An
+entry a device's module declares exists only while that device's agent
+reports the module serving and carries the module's own health; manual
+declarations carry their probe results; an rdp entry is a managed machine's
+own word that it is sharing its desktop, and lives only while that machine
+keeps saying so. ``record_id`` names the declared record an entry came
+from, for the panel's delete and probe, and ``detail_code`` is what that
+record's last probe measured; the catalog copy drops both.
 
 Pure: everything composed comes in through the constructor. Reading the
-configs, the unit states and the probe caches is the caller's.
+configs, the reports and the probe caches is the caller's.
 """
 
 from urllib.parse import urlsplit, urlunsplit
@@ -21,10 +20,8 @@ from neutrino_hub.modules.services.config import DeclaredService
 from neutrino_hub.modules.services.constants import (
     SERVICES_AI_DESCRIPTION,
     SERVICES_AI_ID,
-    SERVICES_AI_MODULES,
     SERVICES_AI_PROTOCOL,
     SERVICES_AI_TITLE,
-    SERVICES_FILE_MODULES,
     SERVICES_FILE_PROTOCOL,
     SERVICES_GITEA_DESCRIPTION,
     SERVICES_GITEA_ID,
@@ -35,7 +32,6 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_KIND_SAMBA,
     SERVICES_PODMAN_DESCRIPTION,
     SERVICES_RDP_DESCRIPTION,
-    SERVICES_RDP_MODULES,
     SERVICES_RDP_PROTOCOL,
     SERVICES_SAMBA_DESCRIPTION,
     SERVICES_SOURCE_DECLARED,
@@ -57,7 +53,6 @@ CATALOG_ENTRY_FIELDS = (
     "is_healthy",
     "source",
     "description",
-    "modules",
 )
 
 
@@ -68,18 +63,11 @@ class ServiceListCollector:
         self,
         *,
         hub_host: str,
-        is_gitea_served: bool,
-        gitea_url: str,
-        is_gitea_healthy: bool,
-        is_samba_served: bool,
-        samba_share_names: list[str],
-        is_samba_healthy: bool,
         is_ai_served: bool,
         ai_port: int,
         ai_models: list[str],
         is_ai_healthy: bool,
-        is_podman_served: bool,
-        podman_containers: list,
+        device_modules: list,
         declared_services: list[DeclaredService],
         declared_healths: dict,
         device_shares: list | None = None,
@@ -88,42 +76,31 @@ class ServiceListCollector:
         Args:
             hub_host: The address the hub's own entries name; resolved per
                 caller by :func:`resolve_entries`.
-            is_gitea_served: Whether the gitea module is installed and enabled.
-            gitea_url: The URL that opens it.
-            is_gitea_healthy: Whether its unit runs and it answers.
-            is_samba_served: Whether the samba module is installed and enabled.
-            samba_share_names: The hub's own share names.
-            is_samba_healthy: Whether its unit runs.
             is_ai_served: Whether the AI gateway is installed and enabled.
             ai_port: The port the gateway listens on.
             ai_models: The model names the gateway really serves.
             is_ai_healthy: Whether the gateway answers.
-            is_podman_served: Whether the podman module is installed and
-                enabled.
-            podman_containers: The surveyed containers, each with ``name``,
-                ``image``, ``is_running`` and ``host_ports``.
+            device_modules: One entry per device hosting modules:
+                ``{"device_id", "host", "samba", "gitea", "podman"}`` where
+                each module is None when the device does not serve it,
+                else ``samba: {"is_healthy", "share_names"}``,
+                ``gitea: {"is_healthy", "url"}`` and
+                ``podman: {"containers": [{"name", "image", "is_running",
+                "host_ports"}]}``.
             declared_services: Every declared service.
             declared_healths: Declared record id to its
                 :class:`neutrino_hub.modules.services.probe.DeclaredServiceHealth`;
                 a record never probed is absent.
             device_shares: The live
                 :class:`neutrino_hub.modules.services.device_shares.DeviceShare`
-                declarations; a machine sharing its desktop is the only
-                thing that puts one here.
+                declarations.
         """
         self._hub_host = hub_host
-        self._is_gitea_served = is_gitea_served
-        self._gitea_url = gitea_url
-        self._is_gitea_healthy = is_gitea_healthy
-        self._is_samba_served = is_samba_served
-        self._samba_share_names = samba_share_names
-        self._is_samba_healthy = is_samba_healthy
         self._is_ai_served = is_ai_served
         self._ai_port = ai_port
         self._ai_models = ai_models
         self._is_ai_healthy = is_ai_healthy
-        self._is_podman_served = is_podman_served
-        self._podman_containers = podman_containers
+        self._device_modules = list(device_modules)
         self._declared_services = declared_services
         self._declared_healths = declared_healths
         self._device_shares = device_shares or []
@@ -143,12 +120,7 @@ class ServiceListCollector:
         return entries
 
     def _rdp_entries(self) -> list[dict]:
-        """One entry per machine that says it is sharing its desktop.
-
-        The declaring machine is the only judge of health: it is answering
-        beats and it says the share is up, which is the whole of what the
-        hub knows and more than a probe of a port could tell it.
-        """
+        """One entry per machine that says it is sharing its desktop."""
         return [
             _entry(
                 id=f"rdp_{share.share_id}",
@@ -158,9 +130,6 @@ class ServiceListCollector:
                     "protocol": SERVICES_RDP_PROTOCOL,
                     "host": share.host,
                     "port": share.port,
-                    # What a peer would wait on if it dialed now: the
-                    # dialing machine says it instead of sitting in
-                    # "connecting".
                     "attention": share.attention,
                 },
                 is_healthy=True,
@@ -174,15 +143,20 @@ class ServiceListCollector:
 
     def _web_entries(self) -> list[dict]:
         entries = []
-        if self._is_gitea_served and self._gitea_url:
+        for device in self._device_modules:
+            gitea = device.get("gitea")
+            if not gitea or not gitea.get("url"):
+                continue
             entries.append(
                 _entry(
-                    id=SERVICES_GITEA_ID,
+                    id=f"{SERVICES_GITEA_ID}_{_device_id(device)}",
                     type=SERVICES_TYPE_WEB,
                     title=SERVICES_GITEA_TITLE,
-                    payload={"url": self._gitea_url},
-                    is_healthy=self._is_gitea_healthy,
-                    description=SERVICES_GITEA_DESCRIPTION,
+                    payload={"url": gitea["url"]},
+                    is_healthy=bool(gitea.get("is_healthy")),
+                    description=SERVICES_GITEA_DESCRIPTION.format(
+                        host=device.get("host", "")
+                    ),
                 )
             )
         for record in self._declared_of(SERVICES_KIND_HTTP):
@@ -204,18 +178,24 @@ class ServiceListCollector:
 
     def _port_entries(self) -> list[dict]:
         entries = []
-        if self._is_podman_served and self._hub_host:
-            for container in self._podman_containers:
-                for port in container.host_ports:
+        for device in self._device_modules:
+            podman = device.get("podman")
+            host = device.get("host", "")
+            if not podman or not host:
+                continue
+            for container in podman.get("containers") or []:
+                for port in container.get("host_ports") or []:
                     entries.append(
                         _entry(
-                            id=f"podman_{container.name}_{port}",
+                            id=f"podman_{_device_id(device)}_{container['name']}_{port}",
                             type=SERVICES_TYPE_PORT,
-                            title=container.name,
-                            payload={"host": self._hub_host, "port": port},
-                            is_healthy=container.is_running,
+                            title=container["name"],
+                            payload={"host": host, "port": port},
+                            is_healthy=bool(container.get("is_running")),
                             description=SERVICES_PODMAN_DESCRIPTION.format(
-                                name=container.name, image=container.image
+                                name=container["name"],
+                                image=container.get("image", ""),
+                                host=host,
                             ),
                         )
                     )
@@ -255,20 +235,24 @@ class ServiceListCollector:
 
     def _file_entries(self) -> list[dict]:
         entries = []
-        if self._is_samba_served and self._hub_host:
-            for name in self._samba_share_names:
+        for device in self._device_modules:
+            samba = device.get("samba")
+            host = device.get("host", "")
+            if not samba or not host:
+                continue
+            for name in samba.get("share_names") or []:
                 entries.append(
                     _entry(
-                        id=f"samba_{name}",
+                        id=f"samba_{_device_id(device)}_{name}",
                         type=SERVICES_TYPE_FILE,
                         title=name,
                         payload={
                             "protocol": SERVICES_FILE_PROTOCOL,
-                            "host": self._hub_host,
+                            "host": host,
                             "share": name,
                         },
-                        is_healthy=self._is_samba_healthy,
-                        description=SERVICES_SAMBA_DESCRIPTION,
+                        is_healthy=bool(samba.get("is_healthy")),
+                        description=SERVICES_SAMBA_DESCRIPTION.format(host=host),
                     )
                 )
         for record in self._declared_of(SERVICES_KIND_SAMBA):
@@ -319,17 +303,10 @@ def resolve_entries(
 ) -> list[dict]:
     """Substitute the hub's own payload hosts with the address one caller reaches.
 
-    Args:
-        entries: The composed entries.
-        hub_addresses: Every host that means the hub itself.
-        target_host: The address the caller reaches the hub on.
-
-    A module-declared entry is the hub's own by construction, so its host is
-    resolved even when the composed address is not one the caller would
-    recognize; a declared entry names any host and keeps the address-set
-    guard, so a NAS a person declared is never rewritten. A ``web`` entry
-    keeps the guard either way, so a Gitea reached through a custom URL is
-    left as the administrator set it.
+    A host outside the hub's own set is somebody else's machine, a NAS a
+    person declared or a device hosting a module, and is never rewritten;
+    a module hosted on the hub box's own agent sits at a hub address and
+    resolves like the hub's own entries.
 
     Args:
         entries: The composed entries.
@@ -342,14 +319,13 @@ def resolve_entries(
     resolved = []
     for entry in entries:
         payload = dict(entry["payload"])
-        is_hub_own = entry.get("source") == SERVICES_SOURCE_MODULE
         if entry["type"] == SERVICES_TYPE_WEB:
             payload["url"] = _resolve_url(payload["url"], hub_addresses, target_host)
         elif entry["type"] == SERVICES_TYPE_AI:
             payload["endpoint"] = _resolve_url(
-                payload["endpoint"], hub_addresses, target_host, force=is_hub_own
+                payload["endpoint"], hub_addresses, target_host
             )
-        elif is_hub_own or payload.get("host") in hub_addresses:
+        elif payload.get("host") in hub_addresses:
             payload["host"] = target_host
         resolved.append({**entry, "payload": payload})
     return resolved
@@ -365,6 +341,11 @@ def catalog_entries(entries: list[dict]) -> list[dict]:
         The same list without the panel-only fields.
     """
     return [{key: entry[key] for key in CATALOG_ENTRY_FIELDS} for entry in entries]
+
+
+def _device_id(device: dict) -> str:
+    """One device's key as it appears inside an entry id."""
+    return str(device.get("device_id", "")).lower().replace(":", "-")
 
 
 def _entry(
@@ -388,31 +369,15 @@ def _entry(
         "source": source
         or (SERVICES_SOURCE_DECLARED if record_id else SERVICES_SOURCE_MODULE),
         "description": description,
-        "modules": list(_type_modules(type)),
         "record_id": record_id,
         "detail_code": detail_code,
     }
 
 
-def _type_modules(type: str) -> tuple:
-    """The device modules an entry of this type depends on."""
-    if type == SERVICES_TYPE_AI:
-        return SERVICES_AI_MODULES
-    if type == SERVICES_TYPE_FILE:
-        return SERVICES_FILE_MODULES
-    if type == SERVICES_TYPE_RDP:
-        return SERVICES_RDP_MODULES
-    return ()
-
-
-def _resolve_url(
-    url: str, hub_addresses: set[str], target_host: str, force: bool = False
-) -> str:
+def _resolve_url(url: str, hub_addresses: set[str], target_host: str) -> str:
     parts = urlsplit(url)
     hostname = parts.hostname
-    if hostname is None:
-        return url
-    if not force and hostname not in hub_addresses:
+    if hostname is None or hostname not in hub_addresses:
         return url
     netloc = target_host if parts.port is None else f"{target_host}:{parts.port}"
     return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))

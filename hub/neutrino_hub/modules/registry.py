@@ -19,22 +19,8 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_UNIT,
 )
 from neutrino_hub.modules.cliproxyapi.provisioner import CliproxyApiProvisioner
-from neutrino_hub.modules.gitea.constants import GITEA_SUPPORTED_ARCHITECTURES
-from neutrino_hub.modules.gitea.provisioner import GiteaProvisioner
-from neutrino_hub.modules.podman.constants import (
-    PODMAN_SUPPORTED_ARCHITECTURES,
-    PODMAN_UNIT,
-)
-from neutrino_hub.modules.podman.provisioner import PodmanProvisioner
-from neutrino_hub.modules.samba.constants import (
-    SAMBA_SUPPORTED_ARCHITECTURES,
-    SAMBA_UNIT,
-)
-from neutrino_hub.modules.samba.provisioner import SambaProvisioner
 from neutrino_hub.modules.netbird.constants import NETBIRD_SUPPORTED_ARCHITECTURES
 from neutrino_hub.modules.netbird.provisioner import NetbirdProvisioner
-from neutrino_hub.modules.zfs.constants import ZFS_SUPPORTED_ARCHITECTURES, ZFS_ZED_UNIT
-from neutrino_hub.modules.zfs.provisioner import ZfsProvisioner
 
 
 @dataclass
@@ -60,27 +46,6 @@ class ModuleSpec:
 
 
 MODULE_SPECS = {
-    "samba": ModuleSpec(
-        unit=SAMBA_UNIT,
-        provisioner=SambaProvisioner,
-        architectures=SAMBA_SUPPORTED_ARCHITECTURES,
-        install_note="file sharing over SMB, for the LAN and the overlay",
-        data_description="the files in every configured share",
-    ),
-    "gitea": ModuleSpec(
-        unit="neutrino_hub_gitea.service",
-        provisioner=GiteaProvisioner,
-        architectures=GITEA_SUPPORTED_ARCHITECTURES,
-        install_note="a private git server with its own web UI",
-        data_description="every repository and account under /var/lib/gitea",
-    ),
-    "podman": ModuleSpec(
-        unit=PODMAN_UNIT,
-        provisioner=PodmanProvisioner,
-        architectures=PODMAN_SUPPORTED_ARCHITECTURES,
-        install_note="containers as systemd units, with a docker-compatible CLI",
-        data_description="every image, container layer and named volume",
-    ),
     "netbird": ModuleSpec(
         unit="netbird.service",
         provisioner=NetbirdProvisioner,
@@ -94,12 +59,5 @@ MODULE_SPECS = {
         architectures=CLIPROXYAPI_SUPPORTED_ARCHITECTURES,
         install_note="one AI endpoint for every tool on every machine (~20 MB download)",
         data_description="imported provider account logins",
-    ),
-    "zfs": ModuleSpec(
-        unit=ZFS_ZED_UNIT,
-        provisioner=ZfsProvisioner,
-        architectures=ZFS_SUPPORTED_ARCHITECTURES,
-        install_note="pooled storage with redundancy and compression",
-        data_description="nothing — pools stay on their disks either way",
     ),
 }

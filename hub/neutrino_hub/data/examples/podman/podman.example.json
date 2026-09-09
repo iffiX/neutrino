@@ -1,6 +1,0 @@
-{
-  "_comment": "Declared containers. Each becomes a systemd unit through Quadlet, so it is supervised, journalled, and comes back after a reboot. The Containers page edits this. Containers started by hand with podman/docker run still appear on the page's live list; they are just not declared here and owe nobody a restart.",
-
-  "_comment_fields": "ports are host:container (append /udp for UDP). volumes are source:destination — an absolute source binds a host path, a bare name is a named volume podman manages. environment entries are KEY=value lines. Everything runs on podman's default network; custom networks are out of scope here.",
-  "containers": []
-}

@@ -19,9 +19,7 @@
       "_comment_client": "Filled in automatically once neutrino_client is installed on the device.",
       "client": {
         "is_installed": false,
-        "token": null,
-        "version": null,
-        "last_seen": null
+        "token": null
       }
     }
   }

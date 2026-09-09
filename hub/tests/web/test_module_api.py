@@ -283,8 +283,8 @@ def test_a_journal_longer_than_the_limit_is_refused(box):
     """Unbounded, one call reads an entire unit journal into one response."""
     opened, _ = box
 
-    assert opened.get("/api/modules/samba/journal?lines=100000000").status_code == 422
-    assert opened.get("/api/modules/samba/journal?lines=-5").status_code == 422
+    assert opened.get("/api/modules/netbird/journal?lines=100000000").status_code == 422
+    assert opened.get("/api/modules/netbird/journal?lines=-5").status_code == 422
 
 
 def test_a_second_install_joins_the_first(box, monkeypatch):
@@ -295,8 +295,8 @@ def test_a_second_install_joins_the_first(box, monkeypatch):
     opened, _ = box
     monkeypatch.setattr(modules_router, "_install_source", _never_finishes)
 
-    first = opened.post("/api/modules/samba/install")
-    second = opened.post("/api/modules/samba/install")
+    first = opened.post("/api/modules/netbird/install")
+    second = opened.post("/api/modules/netbird/install")
 
     assert first.status_code == 200
     assert first.json()["task_id"] == second.json()["task_id"]
@@ -306,8 +306,8 @@ def test_installing_another_module_is_its_own_job(box, monkeypatch):
     opened, _ = box
     monkeypatch.setattr(modules_router, "_install_source", _never_finishes)
 
-    first = opened.post("/api/modules/samba/install")
-    other = opened.post("/api/modules/gitea/install")
+    first = opened.post("/api/modules/netbird/install")
+    other = opened.post("/api/modules/cliproxyapi/install")
 
     assert first.json()["task_id"] != other.json()["task_id"]
 
@@ -317,11 +317,11 @@ def test_a_running_install_can_be_found_again(box, monkeypatch):
     to leave a package manager running with a live Install button beside it."""
     opened, _ = box
     monkeypatch.setattr(modules_router, "_install_source", _never_finishes)
-    started = opened.post("/api/modules/samba/install").json()
+    started = opened.post("/api/modules/netbird/install").json()
 
     listed = opened.get("/api/modules/tasks").json()["tasks"]
 
-    assert listed == [{"id": started["task_id"], "label": "install samba"}]
+    assert listed == [{"id": started["task_id"], "label": "install netbird"}]
 
 
 def test_a_box_with_nothing_running_lists_nothing(box):

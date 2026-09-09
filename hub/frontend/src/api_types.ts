@@ -91,9 +91,6 @@ export interface DeviceServiceAskStarted {
   command_id: string;
 }
 
-export type ModuleActionName =
-  "start" | "stop" | "restart" | "enable" | "disable";
-
 // --- Auth ---
 
 export interface AuthState {
@@ -816,42 +813,6 @@ export interface DeviceClientInfo {
   command_results: DeviceCommandResult[];
 }
 
-/** One managed module on a device, as the panel shows it. */
-export interface DeviceModuleView {
-  name: string;
-  title: string;
-  description: string;
-  /** The manifest kind; the SSH server's uninstall confirmation keys on it. */
-  kind: string;
-  /** Who installs it: platform (the OS carries it), hub (the hub fetches
-   * it), or user (the person installs it; the hub only detects and
-   * manages). A user-tier row offers no install or uninstall button. */
-  installer: string;
-  is_supported: boolean;
-  /** The platform carries this natively: worded built in, no button. */
-  is_native: boolean;
-  /** Where the software comes from: a repository, a vendor, or `system`. */
-  source: string;
-  /** What the hub conveys this under, and where its exact source is. Empty
-   * for software the hub does not hand on itself. */
-  license: string;
-  corresponding_source: string;
-  state: string;
-  /** Why the state is what it is, when the agent said; the page words it. */
-  code: string;
-  params: Record<string, unknown>;
-}
-
-export interface DeviceModulesResponse {
-  modules: DeviceModuleView[];
-  /** Whether an agent install was ever asked for. Never cleared by itself. */
-  is_agent_managed: boolean;
-  /** Whether the agent has checked in inside the heartbeat window. Every
-   * module state below comes from it, so this is what says whether they
-   * mean anything. */
-  is_agent_online: boolean;
-}
-
 /** What one install on a device did, whatever asked for it. */
 export interface DeviceInstallOrderView {
   id: string;
@@ -937,47 +898,41 @@ export interface DeviceActionResult {
   task_id: string;
 }
 
-// --- Modules ---
+// --- Modules on devices ---
 
-export interface ModuleView {
+/** Where a module stands on one device, as its agent last reported. */
+export interface ModuleDeviceState {
+  /** Whether the agent on this device is answering. */
+  is_online: boolean;
+  /** installed, absent, installing, uninstalling, unsupported or failed. */
+  state: string;
+  /** Why the state is what it is; the panel words it. Empty when there is
+   * nothing to say. */
+  code: string;
+  params: Record<string, unknown>;
+}
+
+/** One device's row in a module's device list. */
+export interface ModuleDeviceView extends ModuleDeviceState {
+  device_id: string;
   name: string;
-  unit: string;
-  is_installed: boolean;
-  is_active: boolean;
+  hostname: string;
+  /** Whether the module is asked for on this device. */
   is_enabled: boolean;
-  /** Core modules are what makes this a gateway; they have no off switch. */
-  is_core: boolean;
-  /** Whether the panel can install and remove this module. */
-  is_installable: boolean;
-  is_machine_supported: boolean;
-  unsupported_reason: string | null;
-  /** What installing entails — a download's size, a repository added. */
-  install_note: string;
-  /** What "delete the data too" would delete, named plainly. */
-  data_description: string;
+}
+
+export interface ModuleDevicesView {
+  devices: ModuleDeviceView[];
+}
+
+/** The devices a module should be on; the hub installs and removes to match. */
+export interface ModuleDevicesRequest {
+  device_ids: string[];
 }
 
 export interface ProvisionConsentView {
   code: string;
   detail: Record<string, unknown>;
-}
-
-export interface ModuleInstallPlanView {
-  name: string;
-  is_consent_needed: boolean;
-  consents: ProvisionConsentView[];
-}
-
-export interface ModuleInstallRequest {
-  is_consented: boolean;
-}
-
-export interface ModuleUninstallRequest {
-  is_data_kept: boolean;
-}
-
-export interface ModulesResponse {
-  modules: ModuleView[];
 }
 
 // --- Services ---
@@ -1038,17 +993,6 @@ export interface ServiceSharesResponse {
 
 export interface ServiceJournal {
   text: string;
-}
-
-/** One background job the panel is still running. */
-export interface TaskView {
-  id: string;
-  /** How the job was started: `install <module>`, `uninstall <module>`. */
-  label: string;
-}
-
-export interface TaskListResponse {
-  tasks: TaskView[];
 }
 
 // --- Settings ---
@@ -1141,6 +1085,9 @@ export interface SambaStatus {
   disks: SambaDisk[];
 }
 
+/** Samba on one device: its settings, and where the module stands there. */
+export interface SambaDeviceView extends SambaSettings, ModuleDeviceState {}
+
 // --- Gitea ---
 
 export interface GiteaSettings {
@@ -1158,6 +1105,9 @@ export interface GiteaSettings {
   has_admin: boolean;
   admin_usernames: string[];
 }
+
+/** Gitea on one device: its settings, and where the module stands there. */
+export interface GiteaDeviceView extends GiteaSettings, ModuleDeviceState {}
 
 export interface GiteaConfigUpdate {
   listen_port: number;
@@ -1236,6 +1186,9 @@ export interface PodmanSettings {
   is_active: boolean;
   version: string;
 }
+
+/** Podman on one device: its settings, and where the module stands there. */
+export interface PodmanDeviceView extends PodmanSettings, ModuleDeviceState {}
 
 // --- Websocket frames ---
 
@@ -1345,3 +1298,6 @@ export interface ZfsView {
   importable: ZfsImportable[];
   samba: ZfsSamba;
 }
+
+/** ZFS on one device: its view, and where the module stands there. */
+export interface ZfsDeviceView extends ZfsView, ModuleDeviceState {}

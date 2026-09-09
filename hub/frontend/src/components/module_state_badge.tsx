@@ -1,53 +1,39 @@
-import { useContext, useEffect } from "react";
-
-import { ModulesContext } from "../modules_context";
-
 /**
- * One module's unit state, beside its page title.
+ * Where a module stands on one device, in one word.
  *
- * Read from the list the shell shares with the Modules page, so a page and
- * its card say the same thing about the same module. A module page that never
- * mentioned its unit made a service that had died invisible from everywhere
- * except the Modules tab: the Proxy page went on drawing nodes and switches
- * with no xray running behind any of it.
+ * Only a step in flight and a failure are worth a badge: a machine the module
+ * is installed on says so by being selectable, and a machine it is not on
+ * says so by its chip being clear. Badging those too would put a word under
+ * every chip and leave the two that matter no louder than the rest.
  */
 
-const REFRESH_INTERVAL_MS = 10000;
+const STATE_WORDING: Record<string, string> = {
+  installing: "installing…",
+  uninstalling: "uninstalling…",
+  failed: "failed",
+  unsupported: "not available here",
+};
+
+// The tone each badged state wears. A state with no entry is drawn plain.
+const STATE_TONES: Record<string, string> = {
+  installing: "badge--warn",
+  uninstalling: "badge--warn",
+  failed: "badge--error",
+};
 
 interface ModuleStateBadgeProps {
-  /** The panel-facing module name, as the Modules page lists it. */
-  name: string;
+  /** The agent's word for the module on this device. */
+  state: string;
 }
 
-export function ModuleStateBadge({ name }: ModuleStateBadgeProps) {
-  const resource = useContext(ModulesContext);
-  const reload = resource?.reload;
-
-  useEffect(() => {
-    if (reload === undefined) {
-      return;
-    }
-    reload();
-    const timer = window.setInterval(() => {
-      if (!document.hidden) {
-        reload();
-      }
-    }, REFRESH_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, [reload]);
-
-  const module = resource?.data?.modules.find((entry) => entry.name === name);
-  if (module === undefined) {
+export function ModuleStateBadge({ state }: ModuleStateBadgeProps) {
+  const wording = STATE_WORDING[state];
+  if (wording === undefined) {
     return null;
   }
-  if (!module.is_installed) {
-    return <span className="badge">not installed</span>;
-  }
   return (
-    <span
-      className={`badge ${module.is_active ? "badge--ok" : "badge--error"}`}
-    >
-      {module.is_active ? "running" : "not running"}
+    <span className={`badge ${STATE_TONES[state] ?? ""}`.trimEnd()}>
+      {wording}
     </span>
   );
 }

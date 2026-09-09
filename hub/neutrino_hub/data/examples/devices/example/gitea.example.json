@@ -1,0 +1,7 @@
+{
+  "_comment": "One device's git server: how it listens and who may sign up. The Gitea page edits this per device; repositories and accounts are managed in Gitea's own UI. A gitea_secrets.json appears beside this file when the state is first composed: machine-generated and safe to lose, since a fresh one only invalidates sessions and tokens.",
+  "listen_port": 3000,
+  "_comment_root_url": "Base URL written into clone addresses and links. Empty derives http://<device address>:<port>/.",
+  "root_url": "",
+  "is_registration_enabled": false
+}

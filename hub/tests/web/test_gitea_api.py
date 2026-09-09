@@ -1,158 +1,161 @@
-"""The Gitea tab's API, with the CLI underneath replaced.
-
-What matters here is the request path and the one gate with teeth: the panel
-makes the first administrator and refuses to make a second, because every
-later account belongs inside Gitea.
-"""
+"""The Gitea page's per-device API, with the agent underneath replaced."""
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
-from neutrino_hub.modules.gitea.config import GiteaConfig
-from neutrino_hub.modules.gitea.ops import GiteaState
-from neutrino_hub.system.systemd_ctl import ServiceStatus
-from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import gitea as gitea_router
+from tests.web.module_api_box import DEVICE, HOST, OFFLINE, module_box
 
-
-class FakeAdminManager:
-    """The server is installed; which admins exist is the dial."""
-
-    def __init__(self):
-        self.admins: list[str] = []
-        self.created: list[str] = []
-        self.password_reset_for: list[str] = []
-
-    def survey(self) -> GiteaState:
-        return GiteaState(
-            is_installed=True, version="1.24.3", admin_usernames=list(self.admins)
-        )
-
-    def create_admin(self, *, username, password, email):
-        self.created.append(username)
-        self.admins.append(username)
-
-    def change_password(self, *, username, password):
-        self.password_reset_for.append(username)
-
-
-class FakeServices:
-    def status(self, name: str) -> ServiceStatus:
-        return ServiceStatus(
-            name=name,
-            unit=f"{name}.service",
-            is_installed=True,
-            is_active=True,
-            is_enabled=True,
-        )
-
-
-class FakeRuntime:
-    def __init__(self, config: GiteaConfig):
-        self._config = config
-        self.services = FakeServices()
-        self.applied_count = 0
-
-    def gitea(self) -> GiteaConfig:
-        return GiteaConfig.from_dict(self._config.to_dict())
-
-    def write_gitea(self, config: GiteaConfig) -> None:
-        config.validate()
-        self._config = config
-
-    async def apply_gitea(self) -> str:
-        self.applied_count += 1
-        return "restarted gitea"
+BASE = f"/api/gitea/devices/{DEVICE}"
 
 
 @pytest.fixture
-def box(monkeypatch):
-    runtime = FakeRuntime(GiteaConfig())
-    manager = FakeAdminManager()
-    monkeypatch.setattr(gitea_router, "GiteaAdminManager", lambda: manager)
-
-    app = FastAPI()
-    app.include_router(gitea_router.router)
-    app.dependency_overrides[require_session] = lambda: None
-    app.dependency_overrides[get_runtime] = lambda: runtime
-    with TestClient(app) as client:
-        yield client, runtime, manager
+def box(monkeypatch, tmp_path):
+    client, runtime = module_box(monkeypatch, tmp_path, gitea_router.router)
+    runtime.desired_states.write(
+        DEVICE,
+        "gitea",
+        {"listen_port": 3000, "root_url": "", "is_registration_enabled": False},
+    )
+    runtime.report(
+        DEVICE,
+        "gitea",
+        "installed",
+        is_running=True,
+        url=f"http://{HOST}:3000/",
+        version="1.27.3",
+        admins=[],
+    )
+    with client:
+        yield client, runtime
 
 
 def test_the_view_reports_config_beside_reality(box):
-    client, _, _ = box
+    client, _ = box
 
-    payload = client.get("/api/gitea").json()
+    payload = client.get(BASE).json()
 
     assert payload["listen_port"] == 3000
     assert payload["is_installed"] is True
-    assert payload["version"] == "1.24.3"
+    assert payload["is_active"] is True
+    assert payload["version"] == "1.27.3"
     assert payload["has_admin"] is False
+    assert payload["admin_usernames"] == []
+    assert payload["url"] == f"http://{HOST}:3000/"
+    assert (payload["device_id"], payload["host"], payload["is_online"]) == (
+        DEVICE,
+        HOST,
+        True,
+    )
 
 
-def test_saving_settings_stores_them(box):
-    client, runtime, _ = box
+def test_a_device_that_never_reported_reads_as_not_installed(box):
+    client, _ = box
+
+    payload = client.get(f"/api/gitea/devices/{OFFLINE}").json()
+
+    assert payload["is_installed"] is False
+    assert payload["is_online"] is False
+    assert payload["listen_port"] == 3000
+
+
+def test_saving_settings_checks_stores_and_pushes(box):
+    client, runtime = box
 
     response = client.put(
-        "/api/gitea",
-        json={"listen_port": 3100, "root_url": "", "is_registration_enabled": True},
+        BASE,
+        json={
+            "listen_port": 3100,
+            "root_url": "http://box:3100/",
+            "is_registration_enabled": True,
+        },
     )
 
     assert response.status_code == 200
-    assert runtime.gitea().listen_port == 3100
-    assert runtime.gitea().is_registration_enabled is True
+    assert runtime.agent_sessions.validations == [
+        (
+            DEVICE,
+            "gitea",
+            {
+                "listen_port": 3100,
+                "root_url": "http://box:3100/",
+                "is_registration_enabled": True,
+            },
+        )
+    ]
+    assert runtime.desired_states.read(DEVICE, "gitea")["listen_port"] == 3100
+    assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE]
+    assert response.json()["root_url"] == "http://box:3100/"
 
 
-def test_a_port_the_gateway_owns_is_refused_and_nothing_stored(box):
-    client, runtime, _ = box
+def test_a_port_the_agent_refuses_is_refused_and_nothing_stored(box):
+    client, runtime = box
+    runtime.agent_sessions.verdict = {
+        "is_valid": False,
+        "code": "port_reserved",
+        "params": {"port": 80},
+    }
 
-    response = client.put(
-        "/api/gitea",
-        json={"listen_port": 80, "root_url": "", "is_registration_enabled": False},
-    )
+    response = client.put(BASE, json={"listen_port": 80})
 
     assert response.status_code == 400
-    assert runtime.gitea().listen_port == 3000
+    assert response.json()["detail"] == {
+        "code": "port_reserved",
+        "params": {"port": 80},
+    }
+    assert runtime.desired_states.read(DEVICE, "gitea")["listen_port"] == 3000
 
 
-def test_the_first_admin_is_made_and_the_second_refused(box):
-    """Later accounts belong inside Gitea, where managing them lives."""
-    client, _, manager = box
+def test_the_first_admin_is_made_on_the_device(box):
+    client, runtime = box
 
-    first = client.post(
-        "/api/gitea/admin",
-        json={"username": "ann", "password": "pw", "email": "a@b.c"},
+    response = client.post(
+        f"{BASE}/admin",
+        json={"username": "ann", "password": "pw", "email": "a@x"},  # scan: allow
     )
-    second = client.post(
-        "/api/gitea/admin",
-        json={"username": "again", "password": "pw", "email": "a@b.c"},
+
+    assert response.status_code == 200
+    assert runtime.agent_sessions.commands == [
+        (DEVICE, "gitea_admin", {"username": "ann", "password": "pw", "email": "a@x"})
+    ]
+    assert response.json()["device_id"] == DEVICE
+
+
+def test_a_second_admin_the_agent_refuses_is_answered_with_its_code(box):
+    client, runtime = box
+    runtime.agent_sessions.outcome = {
+        "exit_code": 1,
+        "code": "admin_exists",
+        "params": {},
+        "output": "",
+    }
+
+    response = client.post(
+        f"{BASE}/admin", json={"username": "bob", "password": "pw", "email": "b@x"}
     )
 
-    assert first.status_code == 200
-    assert first.json()["has_admin"] is True
-    assert second.status_code == 409
-    assert manager.created == ["ann"]
+    assert response.status_code == 502
+    assert response.json()["detail"] == {"code": "admin_exists", "params": {}}
 
 
-def test_apply_reports_what_it_did(box):
-    client, runtime, _ = box
+def test_a_password_reset_rides_the_command(box):
+    client, runtime = box
 
-    payload = client.post("/api/gitea/apply").json()
+    response = client.post(f"{BASE}/admin/ann/password", json={"password": "pw2"})
 
-    assert payload["is_applied"] is True
-    assert runtime.applied_count == 1
+    assert response.status_code == 200
+    assert runtime.agent_sessions.commands == [
+        (DEVICE, "gitea_password", {"username": "ann", "password": "pw2"})
+    ]
 
 
-def test_a_password_reset_lands_only_on_an_administrator(box):
-    """The recovery door: a forgotten admin password cannot be fixed from a
-    login screen it locks."""
-    client, _, manager = box
-    manager.admins.append("ann")
+def test_an_offline_device_takes_no_verb(box):
+    client, runtime = box
 
-    good = client.post("/api/gitea/admin/ann/password", json={"password": "pw"})
-    bad = client.post("/api/gitea/admin/ghost/password", json={"password": "pw"})
+    edit = client.put(f"/api/gitea/devices/{OFFLINE}", json={"listen_port": 3000})
+    admin = client.post(
+        f"/api/gitea/devices/{OFFLINE}/admin",
+        json={"username": "ann", "password": "pw", "email": "a@x"},
+    )
 
-    assert good.status_code == 200
-    assert bad.status_code == 404
-    assert manager.password_reset_for == ["ann"]
+    assert edit.status_code == 409 and admin.status_code == 409
+    assert runtime.agent_sessions.commands == []

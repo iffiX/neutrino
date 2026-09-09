@@ -34,9 +34,9 @@ interface RemoteDesktopPanelProps {
   device: DeviceView;
   /**
    * Changes whenever a module order on this device moves. Installing the
-   * software happens on the Modules rows, a path this panel starts nothing
-   * on and would otherwise never hear about — leaving it saying "not
-   * installed" beside a row that says installed.
+   * software happens elsewhere, a path this panel starts nothing on and
+   * would otherwise never hear about — leaving it saying "not installed"
+   * beside software that is there.
    */
   moduleRevision: string;
 }
@@ -158,8 +158,8 @@ function RustdeskCard({ sessionId }: RustdeskCardProps) {
         </div>
       ) : (
         <span className="field_hint">
-          Not reported by this machine. Install it from Modules above; sharing
-          the desktop is done on the machine itself.
+          Not reported by this machine. Sharing the desktop is done on the
+          machine itself.
         </span>
       )}
     </div>
@@ -255,9 +255,7 @@ function ProductCard({ status, macAddress, isBusy, onRun }: ProductCardProps) {
           {status.unreachable}
         </span>
       ) : (
-        <span className="field_hint">
-          Not on this device. Install it from Modules above.
-        </span>
+        <span className="field_hint">Not on this device.</span>
       )}
     </div>
   );

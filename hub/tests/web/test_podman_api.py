@@ -1,150 +1,198 @@
-"""The Containers tab's API, with podman replaced by a recorder.
-
-The rule with teeth: a declared container is driven through systemd, an
-ad-hoc one through podman — mixing those up leaves systemd supervising a
-container it believes crashed.
-"""
+"""The Containers page's per-device API, with the agent underneath replaced."""
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
-from neutrino_hub.modules.podman.config import PodmanConfig
-from neutrino_hub.modules.podman.ops import PodmanContainerState
-from neutrino_hub.system.systemd_ctl import ServiceStatus
-from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import podman as podman_router
+from tests.web.module_api_box import DEVICE, HOST, OFFLINE, module_box
 
-
-class FakeReader:
-    """Two containers exist: one declared, one someone ran by hand."""
-
-    def survey(self, *, declared_names):
-        return [
-            PodmanContainerState(
-                name="webdav",
-                image="nginx",
-                status="Up 2 hours",
-                is_running=True,
-                is_declared="webdav" in declared_names,
-            ),
-            PodmanContainerState(
-                name="stray",
-                image="alpine",
-                status="Exited",
-                is_running=False,
-                is_declared=False,
-            ),
-        ]
-
-
-class FakeController:
-    performed: list[tuple] = []
-
-    def control(self, name, action, *, is_declared):
-        FakeController.performed.append((name, action, is_declared))
-
-
-class FakeServices:
-    def status(self, name):
-        return ServiceStatus(
-            name=name,
-            unit="podman.socket",
-            is_installed=True,
-            is_active=True,
-            is_enabled=True,
-        )
-
-
-class FakeRuntime:
-    def __init__(self, config: PodmanConfig):
-        self._config = config
-        self.services = FakeServices()
-        self.applied_count = 0
-
-    def podman(self) -> PodmanConfig:
-        return PodmanConfig.from_dict(self._config.to_dict())
-
-    def write_podman(self, config: PodmanConfig) -> None:
-        config.validate()
-        self._config = config
-
-    async def apply_podman(self) -> str:
-        self.applied_count += 1
-        return "containers: webdav.container"
+BASE = f"/api/podman/devices/{DEVICE}"
 
 
 @pytest.fixture
-def box(monkeypatch):
-    FakeController.performed = []
-    runtime = FakeRuntime(
-        PodmanConfig.from_dict({"containers": [{"name": "webdav", "image": "nginx"}]})
+def box(monkeypatch, tmp_path):
+    client, runtime = module_box(monkeypatch, tmp_path, podman_router.router)
+    runtime.desired_states.write(
+        DEVICE,
+        "podman",
+        {
+            "containers": [{"name": "web", "image": "nginx", "ports": ["8080:80"]}],
+            "mirrors": [],
+        },
     )
-    monkeypatch.setattr(podman_router, "PodmanStatusReader", FakeReader)
-    monkeypatch.setattr(podman_router, "PodmanContainerController", FakeController)
-    monkeypatch.setattr(podman_router.shutil, "which", lambda name: "/usr/bin/podman")
-    monkeypatch.setattr(
-        podman_router,
-        "run",
-        lambda *a, **k: type("R", (), {"stdout": "podman version 4.9.3"})(),
+    runtime.report(
+        DEVICE,
+        "podman",
+        "installed",
+        is_active=True,
+        version="4.9.3",
+        containers=[
+            {
+                "name": "web",
+                "image": "nginx",
+                "status": "Up",
+                "is_running": True,
+                "is_declared": True,
+                "host_ports": [8080],
+            },
+            {
+                "name": "adhoc",
+                "image": "alpine",
+                "status": "Exited",
+                "is_running": False,
+                "is_declared": False,
+                "host_ports": [],
+            },
+        ],
     )
-
-    app = FastAPI()
-    app.include_router(podman_router.router)
-    app.dependency_overrides[require_session] = lambda: None
-    app.dependency_overrides[get_runtime] = lambda: runtime
-    with TestClient(app) as client:
+    with client:
         yield client, runtime
 
 
 def test_the_view_separates_declared_from_ad_hoc(box):
     client, _ = box
 
-    payload = client.get("/api/podman").json()
+    payload = client.get(BASE).json()
 
-    assert [c["name"] for c in payload["containers"]] == ["webdav"]
-    by_name = {entry["name"]: entry for entry in payload["running"]}
-    assert by_name["webdav"]["is_declared"] is True
-    assert by_name["stray"]["is_declared"] is False
+    assert [c["name"] for c in payload["containers"]] == ["web"]
+    by_name = {c["name"]: c for c in payload["running"]}
+    assert by_name["web"]["is_declared"] is True
+    assert by_name["adhoc"]["is_declared"] is False
+    assert payload["is_installed"] is True
+    assert payload["is_active"] is True
     assert payload["version"] == "4.9.3"
+    assert (payload["device_id"], payload["host"]) == (DEVICE, HOST)
+
+
+def test_saving_containers_checks_stores_and_pushes(box):
+    client, runtime = box
+
+    response = client.put(
+        f"{BASE}/containers",
+        json={"containers": [{"name": "redis", "image": "redis:7"}]},
+    )
+
+    assert response.status_code == 200
+    key, module, checked = runtime.agent_sessions.validations[0]
+    assert (key, module) == (DEVICE, "podman")
+    assert [c["name"] for c in checked["containers"]] == ["redis"]
+    assert (
+        runtime.desired_states.read(DEVICE, "podman")["containers"][0]["name"]
+        == "redis"
+    )
+    assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE]
 
 
 def test_a_bad_declaration_is_refused_and_nothing_stored(box):
     client, runtime = box
+    runtime.agent_sessions.verdict = {
+        "is_valid": False,
+        "code": "container_name_invalid",
+        "params": {"name": "Bad"},
+    }
 
     response = client.put(
-        "/api/podman/containers",
-        json={"containers": [{"name": "Bad Name", "image": "x"}]},
+        f"{BASE}/containers", json={"containers": [{"name": "Bad", "image": "x"}]}
     )
 
     assert response.status_code == 400
-    assert [c.name for c in runtime.podman().containers] == ["webdav"]
+    assert response.json()["detail"]["code"] == "container_name_invalid"
+    assert (
+        runtime.desired_states.read(DEVICE, "podman")["containers"][0]["name"] == "web"
+    )
 
 
-def test_each_container_is_driven_through_its_rightful_owner(box):
-    """Declared through systemd, ad hoc through podman."""
-    client, _ = box
-
-    client.post("/api/podman/containers/webdav/restart")
-    client.post("/api/podman/containers/stray/start")
-
-    assert ("webdav", "restart", True) in FakeController.performed
-    assert ("stray", "start", False) in FakeController.performed
-
-
-def test_an_unknown_container_is_refused(box):
-    client, _ = box
-
-    response = client.post("/api/podman/containers/ghost/start")
-
-    assert response.status_code == 404
-    assert FakeController.performed == []
-
-
-def test_apply_reports_what_it_did(box):
+def test_saving_mirrors_keeps_the_containers(box):
     client, runtime = box
 
-    payload = client.post("/api/podman/apply").json()
+    response = client.put(f"{BASE}/mirrors", json={"mirrors": ["mirror.example"]})
 
-    assert payload["is_applied"] is True
-    assert runtime.applied_count == 1
+    assert response.status_code == 200
+    stored = runtime.desired_states.read(DEVICE, "podman")
+    assert stored["mirrors"] == ["mirror.example"]
+    assert stored["containers"][0]["name"] == "web"
+    assert response.json()["mirrors"] == ["mirror.example"]
+
+
+def test_a_container_is_driven_on_the_device_and_the_view_answers(box):
+    client, runtime = box
+
+    response = client.post(f"{BASE}/containers/web/restart")
+
+    assert response.status_code == 200
+    assert runtime.agent_sessions.commands == [
+        (DEVICE, "podman_control", {"name": "web", "action": "restart"})
+    ]
+    assert response.json()["device_id"] == DEVICE
+
+
+def test_a_container_the_agent_does_not_know_is_answered_with_its_code(box):
+    client, runtime = box
+    runtime.agent_sessions.outcome = {
+        "exit_code": 1,
+        "code": "container_unknown",
+        "params": {"name": "ghost"},
+        "output": "",
+    }
+
+    response = client.post(f"{BASE}/containers/ghost/start")
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == {
+        "code": "container_unknown",
+        "params": {"name": "ghost"},
+    }
+
+
+def test_the_journal_is_read_on_the_device(box):
+    client, runtime = box
+    runtime.agent_sessions.outcome = {
+        "exit_code": 0,
+        "code": "",
+        "params": {},
+        "output": "one\ntwo\nthree",
+    }
+
+    response = client.get(f"{BASE}/containers/web/journal?lines=2")
+
+    assert response.json() == {"text": "two\nthree"}
+    assert runtime.agent_sessions.commands == [
+        (DEVICE, "podman_journal", {"name": "web"})
+    ]
+
+
+def test_an_offline_device_takes_no_verb(box):
+    client, runtime = box
+
+    assert (
+        client.post(f"/api/podman/devices/{OFFLINE}/containers/web/start").status_code
+        == 409
+    )
+    assert (
+        client.get(f"/api/podman/devices/{OFFLINE}/containers/web/journal").status_code
+        == 409
+    )
+    assert runtime.agent_sessions.commands == []
+
+
+def test_hub_urls_resolve_and_foreign_registries_decline():
+    assert "repositories/library/python/tags" in podman_router.hub_tags_url("python")
+    assert "repositories/library/redis/tags" in podman_router.hub_tags_url(
+        "docker.io/library/redis:7"
+    )
+    assert "repositories/ann/tool/tags" in podman_router.hub_tags_url(
+        "docker.io/ann/tool"
+    )
+    assert podman_router.hub_tags_url("ghcr.io/owner/thing") is None
+    assert podman_router.hub_tags_url("quay.io/owner/thing:1") is None
+
+
+def test_tags_come_from_docker_hub_best_effort(box, monkeypatch):
+    client, _ = box
+    monkeypatch.setattr(
+        podman_router,
+        "list_image_tags",
+        lambda image: ["3.12", "3.11"] if image == "python" else [],
+    )
+
+    assert client.get(f"{BASE}/tags?image=python").json() == {"tags": ["3.12", "3.11"]}
+    assert client.get(f"{BASE}/tags?image=ghcr.io/x/y").json() == {"tags": []}

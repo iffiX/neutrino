@@ -5,7 +5,7 @@ reports, answers the streams the hub opens. What these pin is the wire
 both sides must match — the hello gate and its close codes, the welcome,
 what a report lands in the runtime, the empty state answer, an order and a
 command opened from a hub thread and closed with the machine's word, and
-that a socket ending takes the device offline with its last-seen written.
+that a socket ending takes the device offline, stamped and unshared.
 """
 
 import hashlib
@@ -37,22 +37,15 @@ class FakeRegistry:
     """A registry of one device, in memory; the router builds one per socket."""
 
     device: ManagedDevice
-    beats: list = []
 
     @classmethod
     def reset(cls, device: ManagedDevice) -> None:
         cls.device = device
-        cls.beats = []
 
     def find_by_client_token(self, token):
         stored = FakeRegistry.device.client.token_sha256
         presented = hashlib.sha256(token.encode()).hexdigest()
         return FakeRegistry.device if stored and stored == presented else None
-
-    def record_heartbeat(self, mac_address, *, version, seen_at):
-        FakeRegistry.device.client.version = version
-        FakeRegistry.device.client.last_seen = seen_at
-        FakeRegistry.beats.append(seen_at)
 
 
 class StubPublishedServices:
@@ -86,13 +79,14 @@ class FakeRuntime:
             cache=None, locks=DeviceInstallLocks()
         )
         self.state_requests = 0
+        self.desired = ("", {})
 
     def network(self):
         return _EmptyNetwork()
 
     def desired_state_for(self, device):
         self.state_requests += 1
-        return "", {}
+        return self.desired
 
 
 @pytest.fixture
@@ -102,8 +96,7 @@ def api(monkeypatch):
             mac_address=MAC,
             name="testbox",
             client=DeviceClientInfo(
-                token_sha256=hashlib.sha256(TOKEN.encode()).hexdigest(),
-                last_seen="2026-01-01T00:00:00+00:00",
+                token_sha256=hashlib.sha256(TOKEN.encode()).hexdigest()
             ),
         )
     )
@@ -211,8 +204,9 @@ def test_another_wire_generation_is_refused_with_the_code_word(api):
         socket.send_json(hello(wire=1))
         assert closed_with(socket) == (4409, "agent_wire_stale")
     assert not runtime.agent_sessions.is_online(MAC)
-    # A refusal is not a sighting: nothing was written.
-    assert FakeRegistry.beats == []
+    # A refusal is not a sighting: the device has no version and no stamp.
+    assert runtime.agent_sessions.version_of(MAC) == ""
+    assert runtime.agent_sessions.last_seen_at(MAC) is None
 
 
 def test_a_newer_agent_is_refused_with_the_code_word(api):
@@ -246,14 +240,15 @@ def test_a_good_hello_is_welcomed_and_puts_the_device_online(api):
         # The address on the identity MAC, over the socket's own peer.
         assert runtime.client_address[MAC] == "192.168.100.7"
         assert runtime.client_device_host[MAC]
-        # The hello is the sighting that writes config.
-        assert len(FakeRegistry.beats) == 1
-        assert FakeRegistry.device.client.version == "1.2.3"
+        # The hello's version is held in memory; an online device has no
+        # last-seen stamp.
+        assert runtime.agent_sessions.version_of(MAC) == "1.2.3"
+        assert runtime.agent_sessions.last_seen_at(MAC) is None
     finally:
         socket.__exit__(None, None, None)
 
 
-def test_the_socket_ending_takes_the_device_offline_with_last_seen_written(api):
+def test_the_socket_ending_takes_the_device_offline_and_stamps_it(api):
     client, runtime = api
     socket, _ = welcomed(client)
     socket.send_json(report(rdp={"is_shared": True, "share_id": "s1"}))
@@ -262,7 +257,10 @@ def test_the_socket_ending_takes_the_device_offline_with_last_seen_written(api):
     socket.__exit__(None, None, None)
 
     assert wait_until(lambda: not runtime.agent_sessions.is_online(MAC))
-    assert wait_until(lambda: len(FakeRegistry.beats) == 2)
+    # The detach stamps the device under the same lock that took it
+    # offline, so the stamp is there the moment the device reads offline.
+    assert runtime.agent_sessions.last_seen_at(MAC)
+    assert runtime.agent_sessions.version_of(MAC) == "1.2.3"
     assert wait_until(lambda: runtime.device_shares.live() == [])
 
 
@@ -295,8 +293,8 @@ def test_a_report_lands_in_the_runtime_and_declares_the_share(api):
             21118,
         )
         assert runtime.agent_sessions.get(MAC).report["metrics"] == {"cpu_percent": 4.0}
-        # A report writes nothing: the hello's sighting is the only one.
-        assert len(FakeRegistry.beats) == 1
+        # A report is not an ending: the device is still online, unstamped.
+        assert runtime.agent_sessions.last_seen_at(MAC) is None
     finally:
         socket.__exit__(None, None, None)
 
@@ -506,13 +504,11 @@ def test_a_second_socket_from_the_same_device_replaces_the_first(api):
     assert wait_until(lambda: not runtime.agent_sessions.is_online(MAC))
 
 
-def test_the_welcome_state_hash_is_what_the_provider_says(api, monkeypatch):
+def test_the_welcome_state_hash_is_what_the_provider_says(api):
     client, runtime = api
-    monkeypatch.setattr(
-        runtime, "desired_state_for", lambda device: ("h9", {"modules": {}})
-    )
+    runtime.desired = ("h9", {"modules": {}})
 
-    socket, welcome = welcomed(client)
+    socket, welcome = welcomed(client, state_hash="h9")
     try:
         assert welcome["state_hash"] == "h9"
         socket.send_json({"type": "state_request"})
@@ -521,5 +517,37 @@ def test_the_welcome_state_hash_is_what_the_provider_says(api, monkeypatch):
             "hash": "h9",
             "desired": {"modules": {}},
         }
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_hello_holding_another_state_is_handed_the_state_at_once(api):
+    client, runtime = api
+    runtime.desired = ("h9", {"modules": {"samba": {"is_enabled": True}}})
+
+    socket, welcome = welcomed(client, state_hash="stale")
+    try:
+        assert welcome["state_hash"] == "h9"
+        assert socket.receive_json() == {
+            "type": "state",
+            "hash": "h9",
+            "desired": {"modules": {"samba": {"is_enabled": True}}},
+        }
+        # Composed once for the hello, not again for the push.
+        assert runtime.state_requests == 1
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_hello_holding_the_same_state_is_handed_nothing(api):
+    client, runtime = api
+    runtime.desired = ("h9", {"modules": {}})
+
+    socket, _ = welcomed(client, state_hash="h9")
+    try:
+        socket.send_json({"type": "state_request"})
+        # The first frame after the welcome is the answer, not a push.
+        assert socket.receive_json()["type"] == "state"
+        assert runtime.state_requests == 2
     finally:
         socket.__exit__(None, None, None)

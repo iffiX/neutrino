@@ -1,0 +1,64 @@
+/* Machine chips, cut to the same pattern as the Network page's interface
+   tabs: a bordered box that takes the accent when picked. */
+
+.device_chip_strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.device_chip {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+  padding: 7px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.device_chip:hover:not(:disabled) {
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.device_chip--on {
+  border-color: var(--color-accent);
+  background: var(--color-accent-wash);
+  color: var(--color-text);
+}
+
+/* Picked here but not yet applied there: the same amber the frames use. */
+.device_chip--staged {
+  border-color: var(--color-warn);
+}
+
+.device_chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.device_chip_head {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.device_chip_name {
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.device_chip_host {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}

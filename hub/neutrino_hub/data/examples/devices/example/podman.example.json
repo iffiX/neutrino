@@ -1,0 +1,5 @@
+{
+  "_comment": "One device's declared containers. Each becomes a systemd unit on the device, supervised and started at boot. ports are host:container (append /udp for UDP); volumes are source:destination; environment entries are KEY=value lines. mirrors are docker.io registry mirrors tried in order.",
+  "containers": [],
+  "mirrors": []
+}

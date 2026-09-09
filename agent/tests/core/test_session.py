@@ -94,8 +94,10 @@ def make_session(client, **overrides):
         on_line("step two")
         return {"state": "done", "code": "", "params": {}, "output": "step one"}
 
-    def run_command(action, args):
+    def run_command(action, args, on_line=None):
         commands.append((action, args))
+        if on_line is not None:
+            on_line("running")
         return {"exit_code": 0, "code": "", "params": {}, "output": "ran"}
 
     fields = dict(
@@ -306,6 +308,120 @@ def test_a_command_stream_closes_with_its_exit():
         "output": "ran",
     }
     assert commands == [("reboot", {"when": "now"})]
+    session.close()
+    thread.join(timeout=2)
+
+
+def test_a_command_streams_its_lines_before_the_close():
+    client = ScriptedClient()
+    session, _, _, _ = make_session(client)
+    client.feed(welcome())
+    session.connect()
+    thread, _ = serving(session)
+
+    client.feed(
+        {
+            "type": "open",
+            "stream": "00000009",
+            "kind": "command",
+            "args": {"action": "podman_journal", "args": {"name": "web"}},
+            "credit": 0,
+        }
+    )
+
+    (event,) = client.wait_for("event")
+    assert event == {"type": "event", "stream": "00000009", "line": "running"}
+    client.wait_for("close")
+    session.close()
+    thread.join(timeout=2)
+
+
+def test_a_validate_stream_closes_with_the_verdict():
+    client = ScriptedClient()
+    checked: list = []
+
+    def validate(module, config):
+        checked.append((module, config))
+        if config.get("bad"):
+            return {"code": "share_name_invalid", "params": {"name": "x"}}
+        return {}
+
+    session, _, _, _ = make_session(client, validate=validate)
+    client.feed(welcome())
+    session.connect()
+    thread, _ = serving(session)
+
+    client.feed(
+        {
+            "type": "open",
+            "stream": "00000010",
+            "kind": "validate",
+            "args": {"module": "samba", "config": {"shares": []}},
+            "credit": 0,
+        }
+    )
+    client.feed(
+        {
+            "type": "open",
+            "stream": "00000011",
+            "kind": "validate",
+            "args": {"module": "samba", "config": {"bad": True}},
+            "credit": 0,
+        }
+    )
+
+    closes = {c["stream"]: c for c in client.wait_for("close", count=2)}
+    assert closes["00000010"] == {
+        "type": "close",
+        "stream": "00000010",
+        "is_valid": True,
+        "code": "",
+        "params": {},
+    }
+    assert closes["00000011"] == {
+        "type": "close",
+        "stream": "00000011",
+        "is_valid": False,
+        "code": "share_name_invalid",
+        "params": {"name": "x"},
+    }
+    assert checked == [("samba", {"shares": []}), ("samba", {"bad": True})]
+    session.close()
+    thread.join(timeout=2)
+
+
+def test_without_a_validator_the_validate_kind_is_refused():
+    client = ScriptedClient()
+    session, _, _, _ = make_session(client)
+    client.feed(welcome())
+    session.connect()
+    thread, _ = serving(session)
+
+    client.feed({"type": "open", "stream": "00000012", "kind": "validate", "args": {}})
+
+    (refused,) = client.wait_for("refused")
+    assert refused["code"] == "unknown_stream_kind"
+    session.close()
+    thread.join(timeout=2)
+
+
+def test_a_state_frame_hands_the_desired_state_on():
+    client = ScriptedClient()
+    taken: list = []
+    session, _, _, _ = make_session(
+        client, on_state=lambda state_hash, desired: taken.append((state_hash, desired))
+    )
+    client.feed(welcome())
+    session.connect()
+    thread, _ = serving(session)
+
+    client.feed({"type": "state", "hash": "h3", "desired": {"modules": {}}})
+    client.feed({"type": "state", "hash": "h4", "desired": "not an object"})
+    client.feed({"type": "open", "stream": "00000013", "kind": "command", "args": {}})
+
+    client.wait_for("close")
+    assert taken == [("h3", {"modules": {}})]
+    assert session.state_hash == "h4"
     session.close()
     thread.join(timeout=2)
 

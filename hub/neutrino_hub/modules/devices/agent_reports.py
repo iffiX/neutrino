@@ -1,27 +1,23 @@
 """What the hub keeps of an agent's hello and its reports.
 
 An agent's socket opens with one ``hello`` and then carries a ``report``
-every few seconds. The hello is the moment the device is seen, so it is the
-one point that writes ``config/``: the registry's last-seen stamp. A report
-lands only in the runtime's memory, which is what the panel reads.
-
-Not pure: writes the device registry on hello and on the socket ending.
+every few seconds. Both land in the runtime's memory alone, which is what
+the panel reads: a machine's presence is true only while this hub runs, so
+nothing here writes ``config/``.
 """
 
 import ipaddress
-from datetime import datetime, timezone
 
 from neutrino_hub.modules.services.constants import SERVICES_RDP_PORT
 
 
 def record_hello(
-    runtime, registry, device, hello: dict, *, peer_host: str, reached_host: str
+    runtime, device, hello: dict, *, peer_host: str, reached_host: str
 ) -> None:
     """Take what a machine says it is when its socket opens.
 
     Args:
         runtime: The shared runtime.
-        registry: The device registry.
         device: The device the token resolved to.
         hello: The hello message.
         peer_host: Where the socket comes from.
@@ -37,9 +33,6 @@ def record_hello(
     _record_machine(runtime, key, hello, peer_host=peer_host)
     runtime.client_device_host[key] = device_host(
         runtime, runtime.client_address.get(key, ""), reached_host
-    )
-    registry.record_heartbeat(
-        key, version=str(hello.get("client_version", "") or ""), seen_at=_now()
     )
 
 
@@ -76,17 +69,14 @@ def record_report(runtime, device, report: dict) -> None:
         runtime.client_last_error.pop(key, None)
 
 
-def record_offline(runtime, registry, device, *, version: str) -> None:
-    """Take a socket ending: the device was last seen now.
+def record_offline(runtime, device) -> None:
+    """Take a socket ending: whatever the machine hosted stops with it.
 
     Args:
         runtime: The shared runtime.
-        registry: The device registry.
         device: The device whose socket ended.
-        version: The agent release it reported.
     """
     key = device.mac_address
-    registry.record_heartbeat(key, version=version, seen_at=_now())
     record_rdp_share(runtime, device, {}, runtime.client_address.get(key, ""))
 
 
@@ -194,7 +184,3 @@ def _record_machine(runtime, key: str, message: dict, *, peer_host: str) -> None
     )
     if address:
         runtime.client_address[key] = address
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()

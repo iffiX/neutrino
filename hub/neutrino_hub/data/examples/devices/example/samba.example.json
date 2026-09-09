@@ -1,0 +1,13 @@
+{
+  "_comment": "One device's file share: which directories are exported and who may connect. The Samba page edits this per device. Passwords are not here; they live only in Samba's own credential store on the device, set from the panel. The hub adds allowed_subnets when it composes the desired state.",
+  "shares": [
+    {
+      "name": "share",
+      "path": "/srv/share",
+      "comment": "Shared space",
+      "is_read_only": false,
+      "valid_users": []
+    }
+  ],
+  "users": []
+}

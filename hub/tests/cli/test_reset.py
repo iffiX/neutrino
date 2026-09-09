@@ -41,8 +41,9 @@ def box(tmp_path, monkeypatch):
     )
     (config / "xray").mkdir()
     (config / "xray/nodes.json").write_text(json.dumps({"nodes": [{"id": "hk"}]}))
-    (config / "gitea").mkdir()
-    (config / "gitea/secrets.json").write_text("{}")
+    (config / "devices/aa-bb-cc-dd-ee-ff").mkdir(parents=True)
+    (config / "devices/aa-bb-cc-dd-ee-ff/modules.json").write_text("{}")
+    (config / "devices/devices.json").write_text("{}")
     (config / "credentials").mkdir(parents=True)
     (config / "credentials/vault.json").write_text(
         json.dumps(
@@ -82,7 +83,8 @@ def test_reset_all_forgets_the_keys_the_box_was_holding(box):
     vault = json.loads((box / "credentials/vault.json").read_text())
     assert vault["secrets"] == {}
     assert "wrapped_key" not in vault
-    assert not (box / "gitea/secrets.json").exists()
+    assert not (box / "devices/aa-bb-cc-dd-ee-ff").exists()
+    assert (box / "devices/devices.json").exists()
     assert not (box / "web/agent_tls").exists()
     assert not (box.parent / "state" / "session.secret").exists()
     assert not (box.parent / "state" / "vault.key").exists()

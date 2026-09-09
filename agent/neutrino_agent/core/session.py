@@ -29,6 +29,7 @@ from neutrino_agent.core.ws_client import SocketClosed, close_error
 
 STREAM_KIND_ORDER = "order"
 STREAM_KIND_COMMAND = "command"
+STREAM_KIND_VALIDATE = "validate"
 
 
 class AgentSession:
@@ -52,6 +53,8 @@ class AgentSession:
         log=print,
         interval_s: float = AGENT_HEARTBEAT_INTERVAL_S,
         on_tick=None,
+        on_state=None,
+        validate=None,
     ):
         """
         Args:
@@ -61,12 +64,17 @@ class AgentSession:
             report: Called for each report's body.
             run_order: Called with ``(order, on_line)``; runs one module
                 order and returns ``{"state", "code", "params", "output"}``.
-            run_command: Called with ``(action, args)``; returns
+            run_command: Called with ``(action, args, on_line)``; returns
                 ``{"exit_code", "code", "params", "output"}``.
             news: Set whenever a report should go up at once.
             log: Callable used for progress messages.
             interval_s: How often a report goes up while nothing changes.
             on_tick: Called once per report interval, before the report.
+            on_state: Called with ``(hash, desired)`` for each state frame
+                the hub sends. None takes the hash and nothing else.
+            validate: Called with ``(module, config)``; returns empty when
+                the configuration is sound, ``{"code", "params"}`` when
+                not. None refuses the validate stream kind.
         """
         self._client = client
         self._token = token
@@ -78,6 +86,8 @@ class AgentSession:
         self._log = log
         self._interval_s = interval_s
         self._on_tick = on_tick
+        self._on_state = on_state
+        self._validate = validate
         self.hub_version = ""
         self.state_hash = ""
         self._lock = threading.Lock()
@@ -212,6 +222,9 @@ class AgentSession:
                 self._open_streams.discard(str(message.get("stream", "")))
         elif message_type == "state":
             self.state_hash = str(message.get("hash", "") or "")
+            desired = message.get("desired")
+            if self._on_state is not None and isinstance(desired, dict):
+                self._on_state(self.state_hash, desired)
         elif message_type in ("resize", "credit"):
             return
         else:
@@ -225,6 +238,8 @@ class AgentSession:
             STREAM_KIND_ORDER: self._serve_order,
             STREAM_KIND_COMMAND: self._serve_command,
         }
+        if self._validate is not None:
+            handlers[STREAM_KIND_VALIDATE] = self._serve_validate
         handler = handlers.get(kind)
         if handler is None or len(stream_id) != AGENT_WS_STREAM_ID_LENGTH:
             self._send(
@@ -280,9 +295,13 @@ class AgentSession:
         )
 
     def _serve_command(self, stream_id: str, args: dict) -> None:
+        def on_line(line: str) -> None:
+            self._event(stream_id, line)
+
         outcome = self._run_command(
             str(args.get("action", "")),
             args.get("args") if isinstance(args.get("args"), dict) else {},
+            on_line,
         )
         self._finish(
             stream_id,
@@ -291,6 +310,18 @@ class AgentSession:
                 "code": str(outcome.get("code", "") or ""),
                 "params": dict(outcome.get("params") or {}),
                 "output": str(outcome.get("output", "") or ""),
+            },
+        )
+
+    def _serve_validate(self, stream_id: str, args: dict) -> None:
+        config = args.get("config") if isinstance(args.get("config"), dict) else {}
+        refusal = self._validate(str(args.get("module", "")), config)
+        self._finish(
+            stream_id,
+            {
+                "is_valid": not refusal,
+                "code": str((refusal or {}).get("code", "") or ""),
+                "params": dict((refusal or {}).get("params") or {}),
             },
         )
 

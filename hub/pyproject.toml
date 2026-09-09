@@ -46,6 +46,7 @@ neutrino_hub = [
     "data/services/*",
     "data/manifests/*.json",
     "data/examples/*/*.json",
+    "data/examples/*/*/*.json",
     "data/frontend/**/*",
     "data/resources/*",
 ]

@@ -1,15 +1,12 @@
 import { Outlet, useLocation } from "react-router-dom";
 
-import { TerminalPage } from "../pages/terminal_page";
+import { TerminalsPage } from "../pages/terminals_page";
 import { BottomNav } from "./bottom_nav";
 import { SidebarNav } from "./sidebar_nav";
 import { TopBar } from "./top_bar";
-import { ModulesContext } from "../modules_context";
 import { StatsContext } from "../stats_context";
-import { useApiResource } from "../use_api_resource";
 import { useAuth } from "../use_auth";
 import { useStatsSocket } from "../use_stats_socket";
-import type { ModulesResponse } from "../api_types";
 
 import "./app_shell.css";
 
@@ -19,8 +16,8 @@ import "./app_shell.css";
  *
  * The window's height is divided up here rather than grown into: the body is
  * what scrolls, so the bar above it stays put and a page can ask to fill
- * exactly what is left — which the Terminal does, and which a page cannot do
- * against a container that would just get taller to accommodate it.
+ * exactly what is left — which the Terminals page does, and which a page
+ * cannot do against a container that would just get taller to accommodate it.
  *
  * The shell owns the one live stats socket and publishes it, so the top bar
  * and the dashboard read identical frames from a single connection. The two
@@ -30,17 +27,12 @@ import "./app_shell.css";
 
 export function AppShell() {
   const { logout } = useAuth();
-  // The Terminal is not routed like the other pages: it stays mounted here
-  // and is merely hidden while another page shows. Unmounting it would close
+  // Terminals is not routed like the other pages: it stays mounted here and
+  // is merely hidden while another page shows. Unmounting it would close
   // every shell's socket, and open shells are exactly what a person expects
   // to find again after looking something up on another tab.
-  const isTerminalOpen = useLocation().pathname === "/terminal";
+  const isTerminalOpen = useLocation().pathname === "/terminals";
   const stats = useStatsSocket();
-  // One copy of the module list for the whole shell: the sidebar reads it to
-  // decide which optional pages exist, and the Modules page writes each
-  // action's result back into it, so disabling a module drops its page from
-  // the rail in the same render.
-  const modules = useApiResource<ModulesResponse>("/modules");
 
   const handleLogout = () => {
     void logout();
@@ -48,29 +40,27 @@ export function AppShell() {
 
   return (
     <StatsContext.Provider value={stats}>
-      <ModulesContext.Provider value={modules}>
-        <div className="app_shell">
-          <div className="app_shell_glow app_shell_glow--cyan" />
-          <div className="app_shell_glow app_shell_glow--violet" />
-          <SidebarNav onLogout={handleLogout} />
-          <div className="app_shell_main">
-            <TopBar />
-            <main className="app_shell_body">
-              <div className="app_shell_content">
-                <Outlet />
-                <div
-                  className={`app_shell_terminal ${
-                    isTerminalOpen ? "" : "app_shell_terminal--hidden"
-                  }`}
-                >
-                  <TerminalPage />
-                </div>
+      <div className="app_shell">
+        <div className="app_shell_glow app_shell_glow--cyan" />
+        <div className="app_shell_glow app_shell_glow--violet" />
+        <SidebarNav onLogout={handleLogout} />
+        <div className="app_shell_main">
+          <TopBar />
+          <main className="app_shell_body">
+            <div className="app_shell_content">
+              <Outlet />
+              <div
+                className={`app_shell_terminal ${
+                  isTerminalOpen ? "" : "app_shell_terminal--hidden"
+                }`}
+              >
+                <TerminalsPage />
               </div>
-            </main>
-          </div>
-          <BottomNav onLogout={handleLogout} />
+            </div>
+          </main>
         </div>
-      </ModulesContext.Provider>
+        <BottomNav onLogout={handleLogout} />
+      </div>
     </StatsContext.Provider>
   );
 }

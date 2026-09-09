@@ -1,160 +1,186 @@
-"""The Samba tab's API, with the system underneath replaced.
+"""The Samba page's per-device API, with the agent underneath replaced.
 
-The account survey and the password setter are stubbed; what is exercised is
-the request path — validation, the config round-trip, and the one rule with
-teeth: removing a user scrubs it from every share that named it.
+What is exercised is the request path: the view composed from the stored
+configuration and the last report, each save checked on the agent before
+it lands and is pushed, the one rule with teeth, removing a user scrubs it
+from every share that named it, and the password as the one imperative
+verb answering the user's state.
 """
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
-from neutrino_hub.modules.samba.config import SambaConfig
-from neutrino_hub.modules.samba.ops import SambaUserState
-from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import samba as samba_router
+from tests.web.module_api_box import DEVICE, HOST, OFFLINE, module_box
 
-
-class FakeUserManager:
-    """Accounts exist and have passwords; setting one is recorded."""
-
-    def __init__(self):
-        self.password_set_for: list[str] = []
-
-    def survey(self, users):
-        return [
-            SambaUserState(name=name, is_present=True, has_password=True)
-            for name in users
-        ]
-
-    def set_password(self, name, password):
-        self.password_set_for.append(name)
-
-
-class FakeRuntime:
-    """Just the parts of PanelRuntime the Samba routes reach for."""
-
-    def __init__(self, config: SambaConfig):
-        self._config = config
-        self.applied_count = 0
-
-    def samba(self) -> SambaConfig:
-        return SambaConfig.from_dict(self._config.to_dict())
-
-    def write_samba(self, config: SambaConfig) -> None:
-        config.validate()
-        self._config = config
-
-    async def apply_samba(self) -> str:
-        self.applied_count += 1
-        return "reloaded smbd"
+BASE = f"/api/samba/devices/{DEVICE}"
+CONFIG = {
+    "shares": [
+        {"name": "share", "path": "/srv/share", "valid_users": []},
+        {"name": "mine", "path": "/srv/mine", "valid_users": ["ann"]},
+    ],
+    "users": ["ann", "bob"],
+}
 
 
 @pytest.fixture
-def box(monkeypatch):
-    config = SambaConfig.from_dict(
-        {
-            "shares": [
-                {"name": "share", "path": "/srv/share", "valid_users": []},
-                {"name": "mine", "path": "/srv/mine", "valid_users": ["ann"]},
-            ],
-            "users": ["ann", "bob"],
-        }
+def box(monkeypatch, tmp_path):
+    client, runtime = module_box(monkeypatch, tmp_path, samba_router.router)
+    runtime.desired_states.write(DEVICE, "samba", CONFIG)
+    runtime.desired_states.write(OFFLINE, "samba", CONFIG)
+    runtime.report(
+        DEVICE,
+        "samba",
+        "installed",
+        is_active=True,
+        sessions=[
+            {
+                "username": "ann",
+                "hostname": "pc",
+                "remote_address": "10.0.0.2",
+                "shares": ["share"],
+            }
+        ],
+        disk_usage=[{"share": "share", "total_bytes": 10, "free_bytes": 4}],
+        users=[
+            {"name": "ann", "is_present": True, "has_password": True},
+            {"name": "bob", "is_present": True, "has_password": False},
+        ],
     )
-    runtime = FakeRuntime(config)
-    manager = FakeUserManager()
-    monkeypatch.setattr(samba_router, "SambaUserManager", lambda: manager)
-
-    app = FastAPI()
-    app.include_router(samba_router.router)
-    app.dependency_overrides[require_session] = lambda: None
-    app.dependency_overrides[get_runtime] = lambda: runtime
-    with TestClient(app) as client:
-        yield client, runtime, manager
+    with client:
+        yield client, runtime
 
 
-def test_the_view_reports_shares_and_surveyed_users(box):
-    client, _, _ = box
+def test_the_view_reports_shares_surveyed_users_and_the_live_parts(box):
+    client, _ = box
 
-    payload = client.get("/api/samba").json()
+    payload = client.get(BASE).json()
 
     assert [share["name"] for share in payload["shares"]] == ["share", "mine"]
+    assert payload["shares"][1]["valid_users"] == ["ann"]
     assert [user["name"] for user in payload["users"]] == ["ann", "bob"]
     assert payload["users"][0]["has_password"] is True
+    assert payload["users"][1]["has_password"] is False
+    assert payload["is_active"] is True
+    assert payload["sessions"][0]["username"] == "ann"
+    assert payload["disks"] == [{"share": "share", "total_bytes": 10, "free_bytes": 4}]
+    assert (payload["device_id"], payload["host"]) == (DEVICE, HOST)
+    assert (payload["is_online"], payload["state"]) == (True, "installed")
 
 
-def test_saving_shares_replaces_the_list(box):
-    client, runtime, _ = box
+def test_the_status_route_carries_the_live_parts_alone(box):
+    client, _ = box
+
+    payload = client.get(f"{BASE}/status").json()
+
+    assert set(payload) == {"is_active", "sessions", "disks"}
+    assert payload["is_active"] is True
+
+
+def test_an_offline_device_reads_but_its_users_have_no_state(box):
+    client, _ = box
+
+    payload = client.get(f"/api/samba/devices/{OFFLINE}").json()
+
+    assert payload["is_online"] is False
+    assert [share["name"] for share in payload["shares"]] == ["share", "mine"]
+    assert all(not user["is_present"] for user in payload["users"])
+
+
+def test_saving_shares_checks_on_the_agent_stores_and_pushes(box):
+    client, runtime = box
 
     response = client.put(
-        "/api/samba/shares",
-        json={"shares": [{"name": "media", "path": "/srv/media"}]},
+        f"{BASE}/shares", json={"shares": [{"name": "media", "path": "/srv/media"}]}
     )
 
     assert response.status_code == 200
-    assert [share.name for share in runtime.samba().shares] == ["media"]
+    key, module, checked = runtime.agent_sessions.validations[0]
+    assert (key, module) == (DEVICE, "samba")
+    assert [share["name"] for share in checked["shares"]] == ["media"]
+    assert checked["users"] == ["ann", "bob"]
+    stored = runtime.desired_states.read(DEVICE, "samba")
+    assert [share["name"] for share in stored["shares"]] == ["media"]
+    assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE]
+    assert [share["name"] for share in response.json()["shares"]] == ["media"]
 
 
-def test_a_bad_share_is_refused_and_nothing_is_stored(box):
-    client, runtime, _ = box
+def test_a_share_the_agent_refuses_is_refused_and_nothing_is_stored(box):
+    client, runtime = box
+    runtime.agent_sessions.verdict = {
+        "is_valid": False,
+        "code": "share_name_reserved",
+        "params": {"name": "global"},
+    }
 
     response = client.put(
-        "/api/samba/shares",
-        json={"shares": [{"name": "global", "path": "/srv/x"}]},
+        f"{BASE}/shares", json={"shares": [{"name": "global", "path": "/srv/x"}]}
     )
 
     assert response.status_code == 400
-    assert [share.name for share in runtime.samba().shares] == ["share", "mine"]
+    assert response.json()["detail"] == {
+        "code": "share_name_reserved",
+        "params": {"name": "global"},
+    }
+    stored = runtime.desired_states.read(DEVICE, "samba")
+    assert [share["name"] for share in stored["shares"]] == ["share", "mine"]
 
 
 def test_removing_a_user_scrubs_it_from_the_shares_that_named_it(box):
-    """A share restricted to accounts that no longer exist would refuse
-    everyone, and nothing would say why."""
-    client, runtime, _ = box
+    client, runtime = box
 
-    response = client.put("/api/samba/users", json={"users": ["bob"]})
+    response = client.put(f"{BASE}/users", json={"users": ["bob"]})
 
     assert response.status_code == 200
-    config = runtime.samba()
-    assert config.users == ["bob"]
-    restricted = next(share for share in config.shares if share.name == "mine")
-    assert restricted.valid_users == []
+    stored = runtime.desired_states.read(DEVICE, "samba")
+    assert stored["users"] == ["bob"]
+    restricted = next(share for share in stored["shares"] if share["name"] == "mine")
+    assert restricted["valid_users"] == []
+
+
+def test_an_offline_device_cannot_be_edited(box):
+    client, runtime = box
+
+    response = client.put(f"/api/samba/devices/{OFFLINE}/users", json={"users": []})
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "agent_offline"
+    assert runtime.desired_states.read(OFFLINE, "samba")["users"] == ["ann", "bob"]
 
 
 def test_a_password_lands_only_on_a_configured_user(box):
-    client, _, manager = box
+    client, runtime = box
 
-    good = client.post("/api/samba/users/ann/password", json={"password": "s3cret"})
-    bad = client.post("/api/samba/users/ghost/password", json={"password": "x"})
+    good = client.post(f"{BASE}/users/ann/password", json={"password": "s3cret"})
+    bad = client.post(f"{BASE}/users/ghost/password", json={"password": "x"})
 
     assert good.status_code == 200
+    assert good.json() == {"name": "ann", "is_present": True, "has_password": True}
     assert bad.status_code == 404
-    assert manager.password_set_for == ["ann"]
+    assert bad.json()["detail"]["code"] == "user_unknown"
+    assert runtime.agent_sessions.commands == [
+        (DEVICE, "samba_set_password", {"name": "ann", "password": "s3cret"})
+    ]
 
 
-def test_apply_reports_what_it_did(box):
-    client, runtime, _ = box
+def test_a_password_samba_refuses_is_answered_with_the_agents_code(box):
+    client, runtime = box
+    runtime.agent_sessions.outcome = {
+        "exit_code": 1,
+        "code": "command_failed",
+        "params": {"detail": "no such account"},
+        "output": "",
+    }
 
-    payload = client.post("/api/samba/apply").json()
+    response = client.post(f"{BASE}/users/ann/password", json={"password": "x"})
+
+    assert response.status_code == 502
+    assert response.json()["detail"]["code"] == "command_failed"
+
+
+def test_apply_pushes_the_state_again(box):
+    client, runtime = box
+
+    payload = client.post(f"{BASE}/apply").json()
 
     assert payload["is_applied"] is True
-    assert runtime.applied_count == 1
-
-
-def test_a_refused_file_operation_is_a_reported_failure_not_a_500(box, monkeypatch):
-    """The bug this pins: the sandboxed unit denied the share directory its
-    setgid bit, the PermissionError escaped the route, and adding a user
-    answered 500 with nothing on the page to say why."""
-    client, runtime, _ = box
-
-    async def refused() -> str:
-        raise PermissionError("chmod: operation not permitted")
-
-    monkeypatch.setattr(runtime, "apply_samba", refused)
-
-    response = client.post("/api/samba/apply")
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["is_applied"] is False
-    assert "not permitted" in payload["message"]
+    assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE]

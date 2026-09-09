@@ -3,8 +3,9 @@
 A fake socket records what the hub sends and lets a test play the agent:
 answer an open, deliver lines and bytes, grant credit, close. What these
 pin is the framing the agent side must match, the credit rule on bytes, the
-replaced-socket close, and that a socket going away fails every stream on
-it with ``agent_offline`` rather than leaving a caller waiting.
+replaced-socket close, the presence the registry keeps in memory after a
+session ends, and that a socket going away fails every stream on it with
+``agent_offline`` rather than leaving a caller waiting.
 """
 
 import asyncio
@@ -329,8 +330,51 @@ def test_detaching_a_replaced_socket_leaves_the_device_online():
 
         assert registry.detach(first) is False
         assert registry.is_online(MAC)
+        assert registry.last_seen_at(MAC) is None
         assert registry.detach(second) is True
         assert not registry.is_online(MAC)
+
+    run(scenario)
+
+
+def test_a_detach_stamps_the_device_and_keeps_the_version():
+    async def scenario():
+        registry = AgentSessionRegistry()
+        made = session()
+        await registry.attach(made)
+
+        assert registry.version_of(MAC) == "0.2.0"
+        assert registry.last_seen_at(MAC) is None
+        registry.detach(made)
+
+        assert registry.last_seen_at(MAC)
+        assert registry.version_of(MAC) == "0.2.0"
+
+    run(scenario)
+
+
+def test_a_device_this_hub_has_not_seen_has_no_version_and_no_stamp():
+    async def scenario():
+        registry = AgentSessionRegistry()
+
+        assert registry.version_of(MAC) == ""
+        assert registry.last_seen_at(MAC) is None
+        assert registry.version_of(MAC.upper()) == ""
+
+    run(scenario)
+
+
+def test_a_device_coming_back_is_online_with_no_stamp_again():
+    async def scenario():
+        registry = AgentSessionRegistry()
+        first = session()
+        await registry.attach(first)
+        registry.detach(first)
+        assert registry.last_seen_at(MAC)
+
+        await registry.attach(session())
+
+        assert registry.last_seen_at(MAC) is None
 
     run(scenario)
 

@@ -1,7 +1,5 @@
 """Fixed values of the services module."""
 
-from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_SWITCHER_NAME
-
 SERVICES_DECLARED_PATH = "services/declared.json"
 
 SERVICES_KIND_SAMBA = "samba"
@@ -103,22 +101,15 @@ SERVICES_RDP_PROTOCOL = "rustdesk"
 # direct-access-port; the agent's own constant is the same number.
 SERVICES_RDP_PORT = 21118
 
-# The device modules an entry of each type cannot work without. Composed
-# into every entry's ``modules`` field; the machine's own page compares them
-# against its module states and gates the panel.
-SERVICES_AI_MODULES = (CLIPROXYAPI_SWITCHER_NAME,)
-SERVICES_FILE_MODULES = ("samba_mount",)
-SERVICES_RDP_MODULES = ("rustdesk",)
-
 SERVICES_LIST_TTL_S = 10.0
 SERVICES_ANSWER_TIMEOUT_S = 2.0
 
 # The provenance line each module-declared entry carries. A description is
 # data the declarer words, so these live beside the entries they describe.
-SERVICES_GITEA_DESCRIPTION = "published by the gitea module"
-SERVICES_SAMBA_DESCRIPTION = "published by the samba module"
+SERVICES_GITEA_DESCRIPTION = "published by the gitea module on {host}"
+SERVICES_SAMBA_DESCRIPTION = "published by the samba module on {host}"
 SERVICES_AI_DESCRIPTION = "published by the AI gateway"
-SERVICES_PODMAN_DESCRIPTION = "published by container {name} ({image})"
+SERVICES_PODMAN_DESCRIPTION = "published by container {name} ({image}) on {host}"
 SERVICES_RDP_DESCRIPTION = "shared from {hostname}"
 
 SERVICES_GITEA_TITLE = "Gitea"

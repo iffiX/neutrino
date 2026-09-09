@@ -14,7 +14,7 @@ DEVICE_AGENT_ONLINE_WINDOW_S = 30
 # The shape of what crosses the agent channel. Must match the agent's own
 # AGENT_WIRE_GENERATION; a hello carrying another number is answered with
 # agent_wire_stale so the agent reinstalls itself.
-AGENT_WIRE_GENERATION = 5
+AGENT_WIRE_GENERATION = 6
 # The agent channel's one socket, on the agent TLS port. An agent opens it
 # after enrolling and keeps it open; every stream the hub needs rides it.
 AGENT_WS_PATH = "/api/agent/ws"
@@ -123,6 +123,7 @@ AGENT_MODULE_PACKAGE_MAGIC = {
     ),
     "tar_binary": (b"\x1f\x8b", b"BZh", b"\xfd7zXZ"),
     "zip_binary": (b"PK\x03\x04",),
+    "binary": (b"\x7fELF",),
 }
 
 # How long one order may stand handed-down before the controller stops
@@ -138,3 +139,28 @@ AGENT_MODULE_OUTPUT_LIMIT_BYTES = 16 * 1024
 # How many lines of an operation's output the heartbeat reply carries, the
 # same tail the panel's journals show.
 AGENT_OPERATION_OUTPUT_LINES = 200
+
+# The modules a device hosts from the hub's desired state, in the order the
+# agent applies them. One file per module under the device's directory.
+DEVICE_MODULE_NAMES = ("zfs", "samba", "gitea", "podman")
+# What ``config/devices/<dir>/modules.json`` is called, and the per-module
+# files beside it. A device directory is its key with ``:`` written ``-``.
+DEVICE_MODULES_FILE = "modules.json"
+DEVICE_RDP_FILE = "rdp.json"
+DEVICE_GITEA_SECRETS_FILE = "gitea_secrets.json"  # scan: allow
+# The files a device directory may hold that are not a module's own.
+DEVICE_DIR_FILES = (DEVICE_MODULES_FILE, DEVICE_RDP_FILE, DEVICE_GITEA_SECRETS_FILE)
+
+# Machine secrets Gitea's app.ini needs, generated once per device by the
+# hub and handed down in the desired configuration.
+DEVICE_GITEA_SECRET_NAMES = (
+    "SECRET_KEY",
+    "INTERNAL_TOKEN",
+    "JWT_SECRET",
+    "LFS_JWT_SECRET",
+)
+
+# How long a panel route waits on an agent to check a configuration or run
+# a command before answering that the machine never reported.
+DEVICE_MODULE_VALIDATE_TIMEOUT_S = 30.0
+DEVICE_MODULE_COMMAND_TIMEOUT_S = 120.0
