@@ -5,18 +5,13 @@ import { Icon } from "./icon";
 import { PasswordInput } from "./password_input";
 import { Spinner } from "./spinner";
 import { StatusDot } from "./status_dot";
-import { ToggleSwitch } from "./toggle_switch";
+import { VaultPicker } from "./vault_picker";
 import { ApiError, apiPost, describeError } from "../api_client";
 import { stripAnsi } from "../strip_ansi";
-import { useApiResource } from "../use_api_resource";
 import { useTaskStream } from "../use_task_stream";
 import type {
   DeviceInstallRequest,
   DeviceView,
-  KeysResponse,
-  KeyView,
-  LoginsResponse,
-  LoginView,
   TaskStarted,
 } from "../api_types";
 
@@ -25,10 +20,9 @@ import "./install_agent_modal.css";
 /**
  * The SSH login the hub installs a machine's agent with, and the install.
  *
- * The credential is one of three: a key the vault holds, a login it holds, or
- * a password typed here, which is kept only if the person asks for it. The
- * sudo password is typed for this install alone; nothing echoes either into
- * the output below.
+ * The credential is one the vault holds: a key or a login, picked here and
+ * stored here where it is not stored yet. The sudo password is typed for this
+ * install alone; nothing echoes either into the output below.
  */
 
 const WORDING = {
@@ -41,15 +35,12 @@ const WORDING = {
   username: "Username",
   credential: "Credential", // scan: allow
   credentialHint: "How the hub signs in to install the agent.",
-  storedKey: "An SSH key from the vault",
-  storedLogin: "A stored login",
-  typedPassword: "A password typed now", // scan: allow
-  pickKey: "Select a key…",
-  pickLogin: "Select a login…",
-  password: "Password", // scan: allow
-  savePassword: "Save to the vault", // scan: allow
-  savePasswordHint:
-    "Whether this password is kept as a login other devices can use.",
+  keyKind: "SSH key",
+  loginKind: "Password", // scan: allow
+  key: "SSH key",
+  keyHint: "The key the hub signs in with.",
+  login: "Login",
+  loginHint: "The stored password the hub signs in with.",
   sudoPassword: "Sudo password", // scan: allow
   sudoHint:
     "Used for this install and stored nowhere. Leave blank when the account has passwordless sudo.",
@@ -71,8 +62,8 @@ const INSTALL_ERROR_WORDING: Record<string, string> = {
 
 const DEFAULT_SSH_PORT = 22;
 
-/** Which of the three the person is signing in with. */
-type CredentialKind = "key" | "login" | "password";
+/** Which of the two the person is signing in with. */
+type CredentialKind = "key" | "login";
 
 interface InstallAgentModalProps {
   device: DeviceView;
@@ -89,8 +80,6 @@ export function InstallAgentModal({
   onClose,
   onFinished,
 }: InstallAgentModalProps) {
-  const keys = useApiResource<KeysResponse>("/credentials/ssh_keys");
-  const logins = useApiResource<LoginsResponse>("/credentials/logins");
   const [host, setHost] = useState(device.ssh?.host ?? device.ipv4_address);
   const [port, setPort] = useState(
     String(device.ssh?.port ?? DEFAULT_SSH_PORT),
@@ -99,10 +88,10 @@ export function InstallAgentModal({
   const [credentialKind, setCredentialKind] = useState<CredentialKind>(
     device.ssh?.login_id != null ? "login" : "key",
   );
-  const [keyId, setKeyId] = useState(device.ssh?.key_id ?? "");
-  const [loginId, setLoginId] = useState(device.ssh?.login_id ?? "");
-  const [password, setPassword] = useState("");
-  const [isPasswordSaved, setIsPasswordSaved] = useState(false);
+  const [keyId, setKeyId] = useState<string | null>(device.ssh?.key_id ?? null);
+  const [loginId, setLoginId] = useState<string | null>(
+    device.ssh?.login_id ?? null,
+  );
   const [sudoPassword, setSudoPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
@@ -141,11 +130,7 @@ export function InstallAgentModal({
 
   const isPortValid = isValidPort(port);
   const hasCredential =
-    credentialKind === "key"
-      ? keyId.length > 0
-      : credentialKind === "login"
-        ? loginId.length > 0
-        : password.length > 0;
+    credentialKind === "key" ? keyId !== null : loginId !== null;
   const isReady =
     host.trim().length > 0 &&
     username.trim().length > 0 &&
@@ -164,8 +149,6 @@ export function InstallAgentModal({
       username: username.trim(),
       key_id: credentialKind === "key" ? keyId : null,
       login_id: credentialKind === "login" ? loginId : null,
-      password: credentialKind === "password" ? password : null,
-      is_password_saved: credentialKind === "password" && isPasswordSaved,
       sudo_password: sudoPassword,
     };
     try {
@@ -259,63 +242,29 @@ export function InstallAgentModal({
                   setCredentialKind(event.target.value as CredentialKind)
                 }
               >
-                <option value="key">{WORDING.storedKey}</option>
-                <option value="login">{WORDING.storedLogin}</option>
-                <option value="password">{WORDING.typedPassword}</option>
+                <option value="key">{WORDING.keyKind}</option>
+                <option value="login">{WORDING.loginKind}</option>
               </select>
               <span className="field_hint">{WORDING.credentialHint}</span>
             </label>
           </div>
 
-          {credentialKind === "key" && (
-            <label className="field">
-              <span className="field_label">{WORDING.storedKey}</span>
-              <select
-                className="select"
-                value={keyId}
-                onChange={(event) => setKeyId(event.target.value)}
-              >
-                <option value="">{WORDING.pickKey}</option>
-                {(keys.data?.keys ?? []).map((storedKey) => (
-                  <option key={storedKey.id} value={storedKey.id}>
-                    {keyLabel(storedKey)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-
-          {credentialKind === "login" && (
-            <label className="field">
-              <span className="field_label">{WORDING.storedLogin}</span>
-              <select
-                className="select"
-                value={loginId}
-                onChange={(event) => setLoginId(event.target.value)}
-              >
-                <option value="">{WORDING.pickLogin}</option>
-                {(logins.data?.logins ?? []).map((storedLogin) => (
-                  <option key={storedLogin.id} value={storedLogin.id}>
-                    {loginLabel(storedLogin)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-
-          {credentialKind === "password" && (
-            <>
-              <label className="field">
-                <span className="field_label">{WORDING.password}</span>
-                <PasswordInput value={password} onChange={setPassword} />
-              </label>
-              <ToggleSwitch
-                isOn={isPasswordSaved}
-                onChange={setIsPasswordSaved}
-                label={WORDING.savePassword}
-                description={WORDING.savePasswordHint}
-              />
-            </>
+          {credentialKind === "key" ? (
+            <VaultPicker
+              kind="ssh_key"
+              value={keyId}
+              onChange={setKeyId}
+              label={WORDING.key}
+              hint={WORDING.keyHint}
+            />
+          ) : (
+            <VaultPicker
+              kind="login"
+              value={loginId}
+              onChange={setLoginId}
+              label={WORDING.login}
+              hint={WORDING.loginHint}
+            />
           )}
 
           <label className="field">
@@ -406,18 +355,4 @@ function isValidPort(value: string): boolean {
   }
   const port = Number(value);
   return port >= 1 && port <= 65535;
-}
-
-/** The picker row for one login: its name, and its username where it has one. */
-function loginLabel(login: LoginView): string {
-  return login.username === null
-    ? login.name
-    : `${login.name} · ${login.username}`;
-}
-
-/** Enough of the fingerprint to tell two keys apart without filling the row. */
-function keyLabel(key: KeyView): string {
-  const body = key.fingerprint.replace(/^SHA256:/, "");
-  const short = body.length > 12 ? `${body.slice(0, 12)}…` : body;
-  return `${key.name} · ${short}`;
 }

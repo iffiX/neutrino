@@ -900,7 +900,6 @@ class DeviceView(BaseModel):
     # and on one whose agent has gone quiet — which is how a machine that is
     # up but no longer reporting is told apart from one that is off.
     is_agent_online: bool = False
-    is_wol_enabled: bool = False
     has_ssh: bool = False
     # Whether this box holds anything about the device — a name, credentials,
     # an agent token. A scan-only row holds nothing, so there is nothing to
@@ -921,7 +920,6 @@ class DeviceAnnotation(BaseModel):
 
     name: str | None = None
     icon: str | None = None
-    is_wol_enabled: bool | None = None
     ssh: DeviceSshConfig | None = None
 
 

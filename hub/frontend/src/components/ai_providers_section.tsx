@@ -4,8 +4,8 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { ApplyBar } from "./apply_bar";
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
-import { PasswordInput } from "./password_input";
 import { ToggleSwitch } from "./toggle_switch";
+import { VaultPicker } from "./vault_picker";
 import { apiDelete, apiPost, apiPut, describeError } from "../api_client";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
@@ -14,8 +14,6 @@ import type {
   AiProviderModel,
   AiProviderView,
   AiProvidersResponse,
-  TokenView,
-  TokensResponse,
 } from "../api_types";
 
 import "./ai_providers_section.css";
@@ -63,15 +61,11 @@ const WORDING = {
   fieldBaseUrl: "Base URL",
   fieldModels: "Model aliases",
   fieldToken: "API token",
-  fieldNewTokenName: "New token name",
-  fieldNewTokenValue: "Value",
   baseUrlHint:
     "Leave empty for the service's default; set it for a relay. Match the kind to the protocol the endpoint speaks, not to whose models are behind it: DeepSeek's /anthropic endpoint is Anthropic.",
   modelsHint:
     "One per line, real name first; add = alias when tools should see a different name. Devices are told to ask for the first one.",
-  tokenHint: "Pick a stored token, or store a new one.",
-  tokenPlaceholder: "Select a token…",
-  tokenNewOption: "＋ Store a new token…",
+  tokenHint: "The stored token this endpoint is keyed with.",
   namePlaceholder: "Anthropic direct",
   cancel: "Cancel",
   save: "Save provider",
@@ -79,12 +73,7 @@ const WORDING = {
 } as const;
 
 const AI_PROVIDERS_PATH = "/ai/providers";
-const TOKENS_PATH = "/credentials/tokens";
 const CLIPROXYAPI_APPLY_PATH = "/cliproxyapi/apply";
-
-// The provider form's <select> sentinel for "store a new token" rather than
-// choosing an existing one.
-const NEW_TOKEN_OPTION = "__new__";
 
 const PROVIDER_KINDS: AiProviderKind[] = [
   "anthropic",
@@ -399,7 +388,6 @@ interface ProviderFormProps {
 }
 
 function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
-  const tokens = useApiResource<TokensResponse>(TOKENS_PATH);
   const [name, setName] = useState(initial?.name ?? "");
   const [kind, setKind] = useState<AiProviderKind>(
     initial?.kind ?? "anthropic",
@@ -408,38 +396,24 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
   const [modelsText, setModelsText] = useState(
     serializeModels(initial?.models ?? []),
   );
-  const [secretId, setSecretId] = useState(initial?.secret_id ?? "");
-  const [newTokenName, setNewTokenName] = useState("");
-  const [newTokenValue, setNewTokenValue] = useState("");
+  const [secretId, setSecretId] = useState<string | null>(
+    initial?.secret_id ?? null,
+  );
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const isEditing = initial !== undefined;
-  const isAddingToken = secretId === NEW_TOKEN_OPTION;
-  const isSecretReady = isAddingToken
-    ? newTokenValue.trim().length > 0
-    : isEditing || secretId.length > 0;
-  const isReady = name.trim().length > 0 && isSecretReady;
+  const isReady = name.trim().length > 0 && (isEditing || secretId !== null);
 
   const handleSubmit = async () => {
     setIsSaving(true);
     setError(null);
     try {
-      // A new token is stored first, then the provider references it — the
-      // same token any other provider can then reuse.
-      let resolvedSecretId = secretId;
-      if (isAddingToken) {
-        const createdToken = await apiPost<TokenView>(TOKENS_PATH, {
-          name: newTokenName.trim() || `${name.trim()} key`,
-          value: newTokenValue,
-        });
-        resolvedSecretId = createdToken.id;
-      }
       const payload = {
         name: name.trim(),
         kind,
         base_url: baseUrl.trim(),
-        secret_id: resolvedSecretId.length > 0 ? resolvedSecretId : null,
+        secret_id: secretId,
         models: parseModels(modelsText),
       };
       const saved = isEditing
@@ -510,40 +484,13 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
         />
         <span className="field_hint">{WORDING.modelsHint}</span>
       </label>
-      <label className="field">
-        <span className="field_label">{WORDING.fieldToken}</span>
-        <select
-          className="input"
-          value={secretId}
-          onChange={(event) => setSecretId(event.target.value)}
-        >
-          <option value="">{WORDING.tokenPlaceholder}</option>
-          {(tokens.data?.tokens ?? []).map((token) => (
-            <option key={token.id} value={token.id}>
-              {token.name}
-            </option>
-          ))}
-          <option value={NEW_TOKEN_OPTION}>{WORDING.tokenNewOption}</option>
-        </select>
-        <span className="field_hint">{WORDING.tokenHint}</span>
-      </label>
-      {isAddingToken && (
-        <div className="credentials_form_row">
-          <label className="field">
-            <span className="field_label">{WORDING.fieldNewTokenName}</span>
-            <input
-              className="input"
-              value={newTokenName}
-              placeholder={`${name.trim() || "provider"} key`}
-              onChange={(event) => setNewTokenName(event.target.value)}
-            />
-          </label>
-          <label className="field">
-            <span className="field_label">{WORDING.fieldNewTokenValue}</span>
-            <PasswordInput value={newTokenValue} onChange={setNewTokenValue} />
-          </label>
-        </div>
-      )}
+      <VaultPicker
+        kind="token"
+        value={secretId}
+        onChange={setSecretId}
+        label={WORDING.fieldToken}
+        hint={WORDING.tokenHint}
+      />
       {error !== null && <span className="field_error">{error}</span>}
       <div className="keys_add_actions">
         <button

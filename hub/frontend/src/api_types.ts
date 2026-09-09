@@ -830,7 +830,6 @@ export interface DeviceView {
   is_online: boolean;
   /** Its agent beat within the last half minute. */
   is_agent_online: boolean;
-  is_wol_enabled: boolean;
   has_ssh: boolean;
   /** Whether this box holds anything about the device; a scan-only row has
    * nothing to forget. */
@@ -842,7 +841,6 @@ export interface DeviceView {
 export interface DeviceAnnotation {
   name?: string;
   icon?: string;
-  is_wol_enabled?: boolean;
   ssh?: DeviceSshConfig | null;
 }
 
@@ -862,9 +860,8 @@ export interface DeviceActionRequest {
 /**
  * What installing the agent over SSH needs.
  *
- * The credential is exactly one of the three: a stored key, a stored login,
- * or a password typed now, which is kept only when `is_password_saved` says
- * so. `sudo_password` is typed for this install and stored nowhere.
+ * The credential is exactly one of the two the vault holds: a stored key or a
+ * stored login. `sudo_password` is typed for this install and stored nowhere.
  */
 export interface DeviceInstallRequest {
   action: "install_client";
@@ -873,8 +870,6 @@ export interface DeviceInstallRequest {
   username: string;
   key_id: string | null;
   login_id: string | null;
-  password: string | null;
-  is_password_saved: boolean;
   sudo_password: string;
 }
 

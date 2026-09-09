@@ -8,7 +8,6 @@ import { DeviceEnrollmentNotice } from "./device_enrollment_notice";
 import { InstallAgentModal } from "./install_agent_modal";
 import { RemoteDesktopPanel } from "./remote_desktop_panel";
 import { StatusDot } from "./status_dot";
-import { ToggleSwitch } from "./toggle_switch";
 import {
   ApiError,
   apiDelete,
@@ -46,8 +45,8 @@ import "./device_drawer.css";
  *
  * A machine's shell and its files live on their own pages, which this links
  * to with the machine already picked. What stays here is what belongs to the
- * one record: its name, its icon, whether it wakes on a magic packet, and the
- * remote actions its agent takes. Action output streams into the log at the
+ * one record: its name, its icon, and the remote actions it takes. Action
+ * output streams into the log at the
  * bottom rather than into a toast, because an install is a thing you read.
  */
 
@@ -58,9 +57,6 @@ const WORDING = {
   identity: "Identity",
   displayName: "Display name",
   icon: "Icon",
-  wol: "Wake-on-LAN",
-  wolHint:
-    "Whether this device can be woken with a magic packet sent to its MAC from the LAN interface.",
   actions: "Actions",
   wake: "Wake-on-LAN",
   install: "Install agent",
@@ -183,7 +179,6 @@ export function DeviceDrawer({
   const navigate = useNavigate();
   const [name, setName] = useState(device.name ?? "");
   const [icon, setIcon] = useState<IconName>(toDeviceIconName(device.icon));
-  const [isWolEnabled, setIsWolEnabled] = useState(device.is_wol_enabled);
   const [isSaving, setIsSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -253,7 +248,6 @@ export function DeviceDrawer({
       const annotation: DeviceAnnotation = {
         name: name.trim(),
         icon,
-        is_wol_enabled: isWolEnabled,
       };
       onSaved(
         await apiPut<DeviceView>(`/devices/${device.mac_address}`, annotation),
@@ -490,12 +484,6 @@ export function DeviceDrawer({
                 ))}
               </div>
             </div>
-            <ToggleSwitch
-              isOn={isWolEnabled}
-              onChange={setIsWolEnabled}
-              label={WORDING.wol}
-              description={WORDING.wolHint}
-            />
           </div>
 
           <div className="device_drawer_section">

@@ -1,0 +1,125 @@
+/* The vault picker: a control shaped like a select, over a panel of the
+   credentials the vault holds and the row that stores one more. */
+
+.vault_picker {
+  position: relative;
+}
+
+.vault_picker_control {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-width: 0;
+  text-align: left;
+}
+
+.vault_picker_control:disabled {
+  border-color: var(--color-border);
+  color: var(--color-text-faint);
+  cursor: not-allowed;
+}
+
+.vault_picker_value {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.vault_picker_value--none {
+  color: var(--color-text-faint);
+}
+
+/* Fixed to the viewport, so no scrolling container can clip the open list. */
+.vault_picker_panel {
+  --vault-picker-row: 34px;
+
+  position: fixed;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-elevated);
+  box-shadow: 0 24px 50px -24px rgb(0 0 0 / 85%);
+  animation: fade_in_up 120ms ease both;
+}
+
+.vault_picker_list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.vault_picker_row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex: 0 0 var(--vault-picker-row);
+  width: 100%;
+  padding: 0 var(--space-3);
+  border: 0;
+  background: none;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vault_picker_row--active {
+  background: var(--color-accent-wash);
+}
+
+.vault_picker_row[aria-selected="true"] {
+  color: var(--color-accent);
+}
+
+.vault_picker_row_name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.vault_picker_row_detail {
+  margin-left: auto;
+  padding-left: var(--space-2);
+  overflow: hidden;
+  color: var(--color-text-faint);
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.vault_picker_row--add {
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.vault_picker_empty {
+  padding: var(--space-3) var(--space-3) 0;
+  color: var(--color-text-faint);
+  font-size: 12px;
+}
+
+.vault_picker_form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  padding: var(--space-3);
+  overflow-y: auto;
+}
+
+.vault_picker_key {
+  min-height: 96px;
+  font-size: 11px;
+}
+
+.vault_picker_form_actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}

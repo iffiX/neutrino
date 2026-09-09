@@ -95,7 +95,6 @@ class ManagedDevice:
         icon: User-chosen icon key.
         vendor: OUI vendor string from the scan.
         is_online: Whether the latest scan saw it.
-        is_wol_enabled: Whether the user marked it wakeable.
         ssh: Stored SSH settings, when configured.
         client: Agent state.
     """
@@ -106,7 +105,6 @@ class ManagedDevice:
     icon: str | None = None
     vendor: str = ""
     is_online: bool = False
-    is_wol_enabled: bool = False
     ssh: dict | None = None
     client: DeviceClientInfo = field(default_factory=DeviceClientInfo)
 
@@ -128,9 +126,7 @@ class ManagedDevice:
     @property
     def is_stored(self) -> bool:
         """Whether this device has anything worth persisting."""
-        return bool(
-            self.name or self.ssh or self.is_wol_enabled or self.client.token_sha256
-        )
+        return bool(self.name or self.ssh or self.client.token_sha256)
 
     def to_dict(self) -> dict:
         """Serialize to the ``devices.json`` shape.
@@ -141,7 +137,6 @@ class ManagedDevice:
         return {
             "name": self.name,
             "icon": self.icon,
-            "is_wol_enabled": self.is_wol_enabled,
             "ssh": self.ssh,
             "client": self.client.to_dict(),
         }
@@ -227,7 +222,7 @@ class DeviceRegistry:
 
         Args:
             mac_address: The device's MAC.
-            annotation: Any of ``name``, ``icon``, ``is_wol_enabled``, ``ssh``.
+            annotation: Any of ``name``, ``icon``, ``ssh``.
 
         Returns:
             The stored device after the update.
@@ -238,8 +233,6 @@ class DeviceRegistry:
                 device.name = annotation["name"]
             if "icon" in annotation:
                 device.icon = annotation["icon"]
-            if "is_wol_enabled" in annotation:
-                device.is_wol_enabled = bool(annotation["is_wol_enabled"])
             if "ssh" in annotation:
                 device.ssh = annotation["ssh"]
             self._store(device)
@@ -366,7 +359,6 @@ class DeviceRegistry:
             mac_address=mac_address,
             name=entry.get("name"),
             icon=entry.get("icon"),
-            is_wol_enabled=entry.get("is_wol_enabled", False),
             ssh=ssh,
             client=DeviceClientInfo.from_dict(entry.get("client", {})),
         )

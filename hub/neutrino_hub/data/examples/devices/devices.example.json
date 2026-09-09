@@ -4,7 +4,6 @@
     "_example_aa:bb:cc:dd:ee:ff": {
       "name": "work-laptop",
       "icon": "laptop",
-      "is_wol_enabled": true,
       "_comment_ssh": "Written by the panel, not by hand. auth is 'key' or 'password'. Every credential is a reference into the vault (config/credentials/vault.json): key_id names a sealed SSH key, login_id a sealed login. No secret material is stored here, and the sudo password an install takes is typed for that install and never stored.",
       "ssh": {
         "host": "192.168.100.150",

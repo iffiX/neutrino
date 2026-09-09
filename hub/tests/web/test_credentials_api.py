@@ -51,7 +51,6 @@ def write_device(tmp_path, ssh: dict) -> None:
                 "devices": {
                     "aa:bb:cc:dd:ee:ff": {
                         "name": "xenode",
-                        "is_wol_enabled": False,
                         "ssh": {"host": "192.168.100.2", "username": "root", **ssh},
                     }
                 }
