@@ -152,6 +152,21 @@ def word_state(state: str) -> str:
     return CLI_STATE_WORDS.get(state, CLI_STATE_WORDS["unknown"])
 
 
+def word_reinstall(result: dict) -> str:
+    """One reinstall record's wording on this surface.
+
+    Args:
+        result: What the install's own unit wrote: ``{"exit_code",
+            "finished_at", ...}``.
+
+    Returns:
+        The words to print.
+    """
+    exit_code = result.get("exit_code")
+    outcome = "ok" if exit_code == 0 else f"failed, exit {exit_code}"
+    return f"{outcome} at {result.get('finished_at', '')}"
+
+
 def read_state() -> "dict | None":
     """The running agent's state.
 

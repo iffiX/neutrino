@@ -13,6 +13,7 @@ import pytest
 
 from neutrino_hub.modules.devices import agent_reports
 from neutrino_hub.modules.devices.agent_module_controller import AgentModuleController
+from neutrino_hub.modules.devices.agent_sessions import AgentSessionRegistry
 from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.modules.devices.registry import ManagedDevice
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
@@ -43,6 +44,7 @@ class FakeRuntime:
         self.agent_module_orders = AgentModuleController(
             cache=None, locks=DeviceInstallLocks()
         )
+        self.agent_sessions = AgentSessionRegistry()
         self._lans = [
             SimpleNamespace(lan=SimpleNamespace(address=address, cidr=cidr))
             for address, cidr in lans

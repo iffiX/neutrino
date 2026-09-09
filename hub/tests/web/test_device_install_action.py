@@ -389,8 +389,10 @@ def test_an_unknown_action_is_refused_typed(api):
 class Presence:
     """A sessions stand-in whose presence flips on a script."""
 
-    def __init__(self, script):
+    def __init__(self, script, *, record=None, is_reported=True):
         self.script = list(script)
+        self.report = {"last_reinstall": record} if record else {}
+        self.is_reported = is_reported
         self.outcome = {
             "exit_code": 0,
             "code": "",
@@ -404,8 +406,34 @@ class Presence:
     def version_of(self, key):
         return "9.9.9"
 
+    def get(self, key):
+        return SimpleNamespace(
+            report=self.report,
+            reported_at="2026-09-10T10:00:12Z" if self.is_reported else "",
+        )
+
     async def open_stream(self, key, kind, args):
         return _ClosedStream(self.outcome)
+
+
+REINSTALL_RESULT = {
+    "package": "neutrino-agent_9.9.9_amd64.deb",
+    "kind": "deb",
+    "started_at": "2026-09-10T10:00:00Z",
+    "finished_at": "2026-09-10T10:00:12Z",
+    "exit_code": 0,
+    "output": "Setting up neutrino-agent\n",
+}
+
+
+def reinstalled(runtime) -> list:
+    """Every line the reinstall task writes, drained."""
+    import asyncio
+
+    async def drain():
+        return [line async for line in devices_router._reinstall_stream(runtime, MAC)]
+
+    return asyncio.run(drain())
 
 
 class _ClosedStream:
@@ -417,38 +445,69 @@ class _ClosedStream:
 
 
 def test_reinstall_follows_the_agent_out_and_back(monkeypatch):
-    import asyncio
-    from types import SimpleNamespace
-
-    from neutrino_hub.web.routers import devices as devices_router
-
     monkeypatch.setattr(devices_router, "WEB_REINSTALL_POLL_S", 0.0)
-    runtime = SimpleNamespace(agent_sessions=Presence([True, True, False, False, True]))
+    runtime = SimpleNamespace(
+        agent_sessions=Presence(
+            [True, True, False, False, True], record=REINSTALL_RESULT
+        )
+    )
 
-    async def drain():
-        return [line async for line in devices_router._reinstall_stream(runtime, MAC)]
-
-    lines = asyncio.run(drain())
+    lines = reinstalled(runtime)
 
     assert lines[0] == "reinstall launched\n"
     assert "waiting for the agent to leave\n" in lines
     assert "waiting for the agent to come back\n" in lines
-    assert lines[-1] == "agent 9.9.9 is back\n"
+    assert "agent 9.9.9 is back\n" in lines
+    assert lines[-2:] == ["Setting up neutrino-agent\n", "[exit 0]\n"]
+
+
+def test_reinstall_prints_a_failed_installs_output_and_its_code(monkeypatch):
+    monkeypatch.setattr(devices_router, "WEB_REINSTALL_POLL_S", 0.0)
+    failed = dict(REINSTALL_RESULT, exit_code=100, output="dpkg: dependency problems\n")
+    runtime = SimpleNamespace(
+        agent_sessions=Presence([True, True, False, False, True], record=failed)
+    )
+
+    lines = reinstalled(runtime)
+
+    assert lines[-2] == "dpkg: dependency problems\n"
+    assert json.loads(lines[-1]) == {
+        "code": "reinstall_failed",
+        "params": {"exit_code": 100},
+    }
+
+
+def test_reinstall_says_when_the_returned_agent_carries_no_record(monkeypatch):
+    monkeypatch.setattr(devices_router, "WEB_REINSTALL_POLL_S", 0.0)
+    runtime = SimpleNamespace(agent_sessions=Presence([True, True, False, False, True]))
+
+    lines = reinstalled(runtime)
+
+    assert lines[-1] == "the agent came back without a reinstall record\n"
+
+
+def test_reinstall_waits_for_the_returned_agents_first_report(monkeypatch):
+    monkeypatch.setattr(devices_router, "WEB_REINSTALL_POLL_S", 0.0)
+    monkeypatch.setattr(devices_router, "WEB_REINSTALL_REPORT_TIMEOUT_S", 0.01)
+    runtime = SimpleNamespace(
+        agent_sessions=Presence(
+            [True, True, False, False, True],
+            record=REINSTALL_RESULT,
+            is_reported=False,
+        )
+    )
+
+    lines = reinstalled(runtime)
+
+    # The record rides the hello, so a silent agent is still read.
+    assert lines[-2:] == ["Setting up neutrino-agent\n", "[exit 0]\n"]
 
 
 def test_reinstall_says_when_the_agent_never_leaves(monkeypatch):
-    import asyncio
-    from types import SimpleNamespace
-
-    from neutrino_hub.web.routers import devices as devices_router
-
     monkeypatch.setattr(devices_router, "WEB_REINSTALL_POLL_S", 0.0)
     monkeypatch.setattr(devices_router, "WEB_REINSTALL_LEAVE_TIMEOUT_S", 0.01)
     runtime = SimpleNamespace(agent_sessions=Presence([True]))
 
-    async def drain():
-        return [line async for line in devices_router._reinstall_stream(runtime, MAC)]
-
-    lines = asyncio.run(drain())
+    lines = reinstalled(runtime)
 
     assert lines[-1] == "the agent kept its socket; the package may not have changed\n"

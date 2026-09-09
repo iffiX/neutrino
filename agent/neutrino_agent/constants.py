@@ -105,6 +105,14 @@ AGENT_STATE_PATH = AGENT_DATA_DIR_POSIX + "/" + AGENT_STATE_NAME
 AGENT_DESIRED_STATE_NAME = "desired.json"
 AGENT_DESIRED_STATE_PATH = AGENT_DATA_DIR_POSIX + "/" + AGENT_DESIRED_STATE_NAME
 
+# What the last reinstall did, written beside the state by the transient
+# unit the install ran in and read by the agent that install put here. Both
+# files are root-only: the package manager's output is nobody else's.
+AGENT_REINSTALL_RESULT_NAME = "reinstall.json"
+AGENT_REINSTALL_LOG_NAME = "reinstall.log"
+# How much of the install log the result carries up.
+AGENT_REINSTALL_OUTPUT_LIMIT_BYTES = 4 * 1024
+
 # How long a module's live details stand in the report before the engine
 # reads them again. The reporter never waits on a read.
 AGENT_MODULE_DETAILS_TTL_S = 5.0

@@ -19,6 +19,7 @@ from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import (
     AGENT_BACKOFF_MIN_S,
     AGENT_HEARTBEAT_INTERVAL_S,
+    AGENT_REINSTALL_RESULT_NAME,
     AGENT_WIRE_GENERATION,
     AGENT_WS_PATH,
 )
@@ -251,6 +252,7 @@ def test_the_hello_carries_the_wire_contract(config_path, monkeypatch):
         "addresses": [{"mac": "aa:bb:cc:dd:ee:ff", "address": "192.168.100.7"}],
         "accounts": ["alice", "bob"],
         "state_hash": "",
+        "last_reinstall": None,
     }
 
 
@@ -283,6 +285,7 @@ def test_the_report_carries_every_field_from_its_source(config_path, monkeypatch
     }
     assert report["rdp"]["is_shared"] is False
     assert report["last_error"] is None
+    assert report["last_reinstall"] is None
 
 
 def test_report_metrics_platform_cannot_read_sends_the_empty_shape(
@@ -311,6 +314,60 @@ def test_report_accounts_platform_cannot_enumerate_sends_an_empty_list(
 
     (hello,) = script.clients[0].frames("hello")
     assert hello["accounts"] == []
+
+
+REINSTALL_RESULT = {
+    "package": "neutrino-agent_0.1.0_amd64.deb",
+    "kind": "deb",
+    "started_at": "2026-09-10T10:00:00Z",
+    "finished_at": "2026-09-10T10:00:12Z",
+    "exit_code": 0,
+    "output": "Setting up neutrino-agent\n",
+}
+
+
+def test_the_hello_and_the_report_carry_the_install_this_agent_came_from(
+    tmp_path, config_path, monkeypatch
+):
+    (tmp_path / AGENT_REINSTALL_RESULT_NAME).write_text(json.dumps(REINSTALL_RESULT))
+    agent, script = scripted_agent(config_path, monkeypatch, [welcomed_then_dropped()])
+
+    agent.run_once()
+
+    (hello,) = script.clients[0].frames("hello")
+    (report,) = script.clients[0].frames("report")
+    assert hello["last_reinstall"] == REINSTALL_RESULT
+    assert report["last_reinstall"] == REINSTALL_RESULT
+
+
+def test_a_reinstall_record_written_mid_run_rides_the_next_report(
+    tmp_path, config_path, monkeypatch
+):
+    """The install writes its result after the new agent is already up."""
+    agent, script = scripted_agent(
+        config_path, monkeypatch, [welcomed_then_dropped(), welcomed_then_dropped()]
+    )
+    agent.run_once()
+    (first,) = script.clients[0].frames("report")
+
+    (tmp_path / AGENT_REINSTALL_RESULT_NAME).write_text(json.dumps(REINSTALL_RESULT))
+    agent.run_once()
+
+    (second,) = script.clients[1].frames("report")
+    assert first["last_reinstall"] is None
+    assert second["last_reinstall"] == REINSTALL_RESULT
+
+
+def test_a_reinstall_record_that_cannot_be_read_rides_up_as_nothing(
+    tmp_path, config_path, monkeypatch
+):
+    (tmp_path / AGENT_REINSTALL_RESULT_NAME).write_text("not json at all")
+    agent, script = scripted_agent(config_path, monkeypatch, [welcomed_then_dropped()])
+
+    agent.run_once()
+
+    (hello,) = script.clients[0].frames("hello")
+    assert hello["last_reinstall"] is None
 
 
 def test_the_last_error_rides_the_next_connections_report(config_path, monkeypatch):
@@ -473,7 +530,7 @@ def test_a_stale_wire_answer_reinstalls_and_never_unbinds(config_path, monkeypat
     monkeypatch.setattr(
         loop_module.self_update,
         "run_update",
-        lambda posting, kind, architecture: installed.append(kind),
+        lambda posting, kind, architecture, data_dir: installed.append(kind),
     )
 
     delays = [agent.run_once() for _ in range(4)]
@@ -506,7 +563,7 @@ def test_wire_stale_a_failed_reinstall_is_coded_and_not_retried(
     )
     attempts = []
 
-    def fail(posting, kind, architecture):
+    def fail(posting, kind, architecture, data_dir):
         attempts.append(kind)
         raise error
 
@@ -532,7 +589,7 @@ def test_wire_stale_platform_without_a_package_installs_nothing(
     monkeypatch.setattr(
         loop_module.self_update,
         "run_update",
-        lambda posting, kind, architecture: installed.append(kind),
+        lambda posting, kind, architecture, data_dir: installed.append(kind),
     )
 
     agent.run_once()
@@ -555,7 +612,7 @@ def test_a_newer_hub_launches_the_self_update_once_per_target(config_path, monke
     monkeypatch.setattr(
         loop_module.self_update,
         "run_update",
-        lambda posting, kind, architecture: installed.append(kind),
+        lambda posting, kind, architecture, data_dir: installed.append(kind),
     )
 
     agent.run_once()
@@ -571,7 +628,7 @@ def test_an_older_or_equal_hub_updates_nothing(config_path, monkeypatch):
     monkeypatch.setattr(
         loop_module.self_update,
         "run_update",
-        lambda posting, kind, architecture: installed.append(kind),
+        lambda posting, kind, architecture, data_dir: installed.append(kind),
     )
 
     agent.run_once()
@@ -589,7 +646,7 @@ def test_a_reinstall_command_forces_the_self_update(config_path, monkeypatch):
     monkeypatch.setattr(
         loop_module.self_update,
         "run_update",
-        lambda posting, kind, architecture: installed.append(kind),
+        lambda posting, kind, architecture, data_dir: installed.append(kind),
     )
 
     outcome = agent._run_command("reinstall", {})

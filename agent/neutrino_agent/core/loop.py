@@ -137,6 +137,7 @@ class Agent:
         # The store and the access password live under the platform's own
         # data root, and so does the last desired state taken from the hub.
         data_dir = self._platform.agent_data_dir()
+        self._data_dir = data_dir
         self._store = MachineStateStore(path=os.path.join(data_dir, AGENT_STATE_NAME))
         self._desired = DesiredStateApplier(
             engine=self._engine,
@@ -416,6 +417,7 @@ class Agent:
             "addresses": enrollment.machine_addresses(),
             "accounts": self._read_accounts(),
             "state_hash": self._desired.applied_hash,
+            "last_reinstall": self._read_reinstall(),
         }
 
     def _report_payload(self) -> dict:
@@ -433,7 +435,14 @@ class Agent:
             # password it was set up with stays on the machine.
             "rdp": self.rdp_declaration(),
             "last_error": self.last_error(),
+            # What the install this agent came from said, written by the
+            # transient unit that ran it and read back here.
+            "last_reinstall": self._read_reinstall(),
         }
+
+    def _read_reinstall(self) -> "dict | None":
+        """What the reinstall this launch came from did, if it left a record."""
+        return self_update.read_reinstall_result(self._data_dir)
 
     def _run_order(self, order: dict, on_line=None) -> dict:
         """Run one order, then give the changed machine its configuration.
@@ -691,6 +700,7 @@ class Agent:
                 channel,
                 kind=kind,
                 architecture=self._engine.platform_tuple.get("arch", ""),
+                data_dir=self._data_dir,
             )
         except (
             self_update.SelfUpdateError,
@@ -737,6 +747,7 @@ class Agent:
                 channel,
                 kind=kind,
                 architecture=self._engine.platform_tuple.get("arch", ""),
+                data_dir=self._data_dir,
             )
         except (
             self_update.SelfUpdateError,

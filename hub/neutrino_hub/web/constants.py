@@ -153,3 +153,6 @@ WEB_LINK_SAMPLE_INTERVAL_S = 5.0
 WEB_REINSTALL_LEAVE_TIMEOUT_S = 60.0
 WEB_REINSTALL_RETURN_TIMEOUT_S = 180.0
 WEB_REINSTALL_POLL_S = 0.5
+# How long the returned agent has to send its first report, which is where
+# the install's own output and exit status ride up.
+WEB_REINSTALL_REPORT_TIMEOUT_S = 10.0

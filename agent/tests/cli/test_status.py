@@ -7,14 +7,25 @@ over its socket; the binding file answers only when nothing does, and then
 status connects once itself to see whether the hub welcomes this machine.
 """
 
+import json
+
 import pytest
 
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.cli import status as status_cli
+from neutrino_agent.constants import AGENT_REINSTALL_RESULT_NAME
 from neutrino_agent.control.server import ControlServer
 from tests.conftest import FakeControlAgent, FakeControlPlatform, bind, discard
 
 GATEWAY_URL = "https://hub.lan:8443"
+REINSTALL_RESULT = {
+    "package": "neutrino-agent_0.1.0_amd64.deb",
+    "kind": "deb",
+    "started_at": "2026-09-10T10:00:00Z",
+    "finished_at": "2026-09-10T10:00:12Z",
+    "exit_code": 0,
+    "output": "Setting up neutrino-agent\n",
+}
 
 
 def serve_nothing(monkeypatch, tmp_path, *, unit_state="inactive"):
@@ -232,3 +243,41 @@ def test_status_words_a_version_refusal_distinctly(
     assert "newer than the hub" in out
     assert "unbinds by itself" in out
     assert "fresh link" in out
+
+
+# --- the install this agent came from ---
+
+
+def test_status_says_the_reinstall_this_agent_came_from_went_through(
+    tmp_path, monkeypatch, capsys
+):
+    serve_nothing(monkeypatch, tmp_path)
+    (tmp_path / AGENT_REINSTALL_RESULT_NAME).write_text(json.dumps(REINSTALL_RESULT))
+
+    status_cli.main()
+
+    assert "reinstall  ok at 2026-09-10T10:00:12Z" in capsys.readouterr().out
+
+
+def test_status_says_which_status_a_failed_reinstall_exited_with(
+    tmp_path, monkeypatch, capsys
+):
+    serve_nothing(monkeypatch, tmp_path)
+    (tmp_path / AGENT_REINSTALL_RESULT_NAME).write_text(
+        json.dumps(dict(REINSTALL_RESULT, exit_code=100))
+    )
+
+    status_cli.main()
+
+    out = capsys.readouterr().out
+    assert "reinstall  failed, exit 100 at 2026-09-10T10:00:12Z" in out
+
+
+def test_status_says_nothing_about_a_reinstall_that_never_happened(
+    tmp_path, monkeypatch, capsys
+):
+    serve_nothing(monkeypatch, tmp_path)
+
+    status_cli.main()
+
+    assert "reinstall" not in capsys.readouterr().out

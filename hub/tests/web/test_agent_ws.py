@@ -266,6 +266,58 @@ def test_the_socket_ending_takes_the_device_offline_and_stamps_it(api):
     assert wait_until(lambda: runtime.device_shares.live() == [])
 
 
+# --- the install a returned agent came from ---
+
+REINSTALL_RESULT = {
+    "package": "neutrino-agent_1.2.3_amd64.deb",
+    "kind": "deb",
+    "started_at": "2026-09-10T10:00:00Z",
+    "finished_at": "2026-09-10T10:00:12Z",
+    "exit_code": 0,
+    "output": "Setting up neutrino-agent\n",
+}
+
+
+def test_a_hello_carrying_a_reinstall_record_lands_before_any_report(api):
+    client, runtime = api
+
+    socket, _ = welcomed(client, last_reinstall=REINSTALL_RESULT)
+    try:
+        session = runtime.agent_sessions.get(MAC)
+        assert session.report["last_reinstall"] == REINSTALL_RESULT
+        assert session.reported_at == ""
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_report_carries_the_reinstall_record_on(api):
+    client, runtime = api
+    socket, _ = welcomed(client)
+    try:
+        socket.send_json(report(last_reinstall=REINSTALL_RESULT))
+
+        assert wait_until(
+            lambda: runtime.agent_sessions.get(MAC).report.get("last_reinstall")
+        )
+        assert (
+            runtime.agent_sessions.get(MAC).report["last_reinstall"] == REINSTALL_RESULT
+        )
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_report_without_a_reinstall_record_leaves_none_standing(api):
+    client, runtime = api
+    socket, _ = welcomed(client, last_reinstall=REINSTALL_RESULT)
+    try:
+        socket.send_json(report())
+
+        assert wait_until(lambda: runtime.agent_sessions.get(MAC).reported_at)
+        assert "last_reinstall" not in runtime.agent_sessions.get(MAC).report
+    finally:
+        socket.__exit__(None, None, None)
+
+
 # --- reports ---
 
 

@@ -14,8 +14,9 @@ from __future__ import annotations
 import time
 
 from neutrino_agent import AGENT_VERSION
+from neutrino_agent.cli.wording import word_reinstall
 from neutrino_agent.control import client
-from neutrino_agent.core import enrollment
+from neutrino_agent.core import enrollment, self_update
 from neutrino_agent.core.loop import Agent
 from neutrino_agent.platforms.base import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import detect_platform
@@ -80,6 +81,7 @@ def main() -> int:
         Process exit status: 0 when bound and the hub answered, 1 otherwise.
     """
     print(f"neutrino-agent {AGENT_VERSION}")
+    _print_reinstall()
     # The running service is the one that knows. The binding file is only
     # read when there is no service to ask.
     state = _local_state()
@@ -156,6 +158,17 @@ def word_error(error: dict) -> str:
         target = params.get("target", "")
         return f"self-update to {target} could not be launched"
     return ERROR_WORDS.get(code, code)
+
+
+def _print_reinstall() -> None:
+    """The line about the reinstall this agent came from, when there is one."""
+    try:
+        data_dir = detect_platform().agent_data_dir()
+    except PlatformUnsupportedError:
+        return
+    result = self_update.read_reinstall_result(data_dir)
+    if result:
+        print(f"reinstall  {word_reinstall(result)}")
 
 
 def _start_hint() -> str:

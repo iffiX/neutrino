@@ -190,6 +190,9 @@ class FakeAgentSessions:
     def is_online(self, key: str) -> bool:
         return key.lower() in self.online
 
+    def get(self, key: str):
+        return None
+
     def version_of(self, key: str) -> str:
         return self.versions.get(key.lower(), "")
 

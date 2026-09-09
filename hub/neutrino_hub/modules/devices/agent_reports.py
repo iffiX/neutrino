@@ -31,6 +31,7 @@ def record_hello(
     if hostname:
         runtime.client_hostname[key] = hostname
     _record_machine(runtime, key, hello, peer_host=peer_host)
+    _record_reinstall(runtime, key, hello)
     runtime.client_device_host[key] = device_host(
         runtime, runtime.client_address.get(key, ""), reached_host
     )
@@ -56,6 +57,7 @@ def record_report(runtime, device, report: dict) -> None:
     if isinstance(platform, dict) and platform:
         runtime.client_platform[key] = dict(platform)
     _record_machine(runtime, key, report, peer_host="")
+    _record_reinstall(runtime, key, report)
     record_rdp_share(
         runtime, device, report.get("rdp") or {}, runtime.client_address.get(key, "")
     )
@@ -170,6 +172,27 @@ def record_rdp_share(runtime, device, share: dict, host: str) -> None:
         # The published list is cached for a few seconds; a share appearing
         # or ending is what a person is watching for, so it recomposes now.
         runtime.published_services.expire()
+
+
+def _record_reinstall(runtime, key: str, message: dict) -> None:
+    """Keep the machine's word on the install it came back from.
+
+    The hello carries it before the first report does, so the reinstall
+    task can read it the moment the socket is up.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        message: The hello or the report.
+    """
+    session = runtime.agent_sessions.get(key)
+    if session is None:
+        return
+    record = message.get("last_reinstall")
+    if isinstance(record, dict) and record:
+        session.report["last_reinstall"] = dict(record)
+    else:
+        session.report.pop("last_reinstall", None)
 
 
 def _record_machine(runtime, key: str, message: dict, *, peer_host: str) -> None:
