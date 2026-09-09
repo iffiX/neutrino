@@ -29,6 +29,7 @@ from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.routers import agent as agent_router
 from neutrino_hub.web.routers import agent_ws
+from tests.conftest import StubDesiredStates
 
 MAC = "aa:bb:cc:dd:ee:ff"
 TOKEN = "device-token"
@@ -76,6 +77,7 @@ class FakeRuntime:
         self.client_last_error = {}
         self.device_shares = DeviceShareRegistry()
         self.published_services = StubPublishedServices()
+        self.desired_states = StubDesiredStates()
         self.agent_sessions = AgentSessionRegistry()
         self.agent_module_orders = AgentModuleController(
             cache=None, locks=DeviceInstallLocks()

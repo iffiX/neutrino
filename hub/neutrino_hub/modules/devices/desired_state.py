@@ -1,8 +1,9 @@
 """One desired state per device: what the hub wants a machine to host.
 
-``config/devices/<dir>/`` holds ``modules.json``, which modules are on, and
-one file per module with its configuration; ``<dir>`` is the device key
-with ``:`` written ``-``. Composing a device's desired state gathers those
+``config/devices/<dir>/`` holds ``modules.json``, which modules are on, one
+file per module with its configuration, and ``rdp.json``, which seals the
+machine's seat password; ``<dir>`` is the device key with ``:`` written
+``-``. Composing a device's desired state gathers those
 with the catalog resolved for its platform and the parts the hub knows
 about the machine, the address it sits at and the networks its shares
 answer, under one hash the agent compares against.
@@ -16,7 +17,13 @@ import hashlib
 import json
 import secrets
 import shutil
+import string
 
+from neutrino_hub.modules.credentials.vault import (
+    VaultError,
+    seal_bytes,
+    unseal_bytes,
+)
 from neutrino_hub.modules.devices.catalog import resolved_modules
 from neutrino_hub.modules.devices.constants import (
     DEVICE_GITEA_SECRET_NAMES,
@@ -24,6 +31,8 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_NAMES,
     DEVICE_MODULES_FILE,
     DEVICE_RDP_FILE,
+    DEVICE_RDP_SEAT_PASSWORD_AAD,
+    DEVICE_RDP_SEAT_PASSWORD_CHARS,
 )
 from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
 from neutrino_hub.utils.json_file import (
@@ -148,12 +157,55 @@ class DesiredStateStore:
         return {name: str(held[name]) for name in DEVICE_GITEA_SECRET_NAMES}
 
     def seat_password(self, key: str) -> str:
-        """The sealed seat password ``rdp.json`` holds, empty while absent."""
-        try:
-            held = read_config(self._path(key, DEVICE_RDP_FILE))
-        except (FileNotFoundError, ValueError):
+        """The seat password ``rdp.json`` seals, opened for the machine.
+
+        Args:
+            key: The device key.
+
+        Returns:
+            The password, empty when the device has none, when the vault is
+            locked, or when the seal does not open under this box's data
+            key.
+        """
+        sealed = self._sealed_seat_password(key)
+        if not sealed:
             return ""
-        return str(held.get("seat_password_sealed", "") or "")
+        try:
+            return unseal_bytes(sealed, DEVICE_RDP_SEAT_PASSWORD_AAD).decode()
+        except VaultError:
+            return ""
+
+    def ensure_seat_password(self, key: str) -> bool:
+        """Give one device a seat password the first time it needs one.
+
+        Args:
+            key: The device key.
+
+        Returns:
+            True when a password was generated and stored. A device that
+            already has one keeps it, and a locked vault has nothing to seal
+            with, which leaves the device for the next report.
+        """
+        with CONFIG_WRITE_LOCK:
+            if self._sealed_seat_password(key):
+                return False
+            try:
+                self._write_seat_password(key)
+            except VaultError:
+                return False
+        return True
+
+    def reset_seat_password(self, key: str) -> None:
+        """Replace one device's seat password with a fresh one.
+
+        Args:
+            key: The device key.
+
+        Raises:
+            VaultLockedError: If there is no data key to seal it under.
+        """
+        with CONFIG_WRITE_LOCK:
+            self._write_seat_password(key)
 
     def compose(
         self,
@@ -199,11 +251,35 @@ class DesiredStateStore:
         with CONFIG_WRITE_LOCK:
             shutil.rmtree(self._directory(key), ignore_errors=True)
 
+    def _write_seat_password(self, key: str) -> None:
+        """Seal a fresh seat password into the device's ``rdp.json``."""
+        sealed = seal_bytes(
+            _generate_seat_password().encode(), DEVICE_RDP_SEAT_PASSWORD_AAD
+        )
+        write_config(self._path(key, DEVICE_RDP_FILE), {"seat_password_sealed": sealed})
+
+    def _sealed_seat_password(self, key: str) -> dict:
+        """The seal ``rdp.json`` holds, empty when the file holds none."""
+        try:
+            held = read_config(self._path(key, DEVICE_RDP_FILE))
+        except (FileNotFoundError, ValueError):
+            return {}
+        sealed = held.get("seat_password_sealed")
+        return sealed if isinstance(sealed, dict) else {}
+
     def _directory(self, key: str):
         return UTILS_CONFIG_DIR / DEVICES_DIR_NAME / device_dir(key)
 
     def _path(self, key: str, name: str) -> str:
         return f"{DEVICES_DIR_NAME}/{device_dir(key)}/{name}"
+
+
+def _generate_seat_password() -> str:
+    """One seat password: letters and digits, long enough to stand alone."""
+    alphabet = string.ascii_letters + string.digits
+    return "".join(
+        secrets.choice(alphabet) for _ in range(DEVICE_RDP_SEAT_PASSWORD_CHARS)
+    )
 
 
 def _generate_secret(name: str) -> str:

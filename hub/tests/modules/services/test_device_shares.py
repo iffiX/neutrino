@@ -34,6 +34,35 @@ def test_a_declared_share_is_live_with_what_the_machine_said():
     assert live[0].mac_address == MAC
 
 
+def test_a_share_carries_whose_desktop_it_is_and_how_many_watch():
+    registry = DeviceShareRegistry(window_s=30)
+
+    registry.declare(
+        mac_address=MAC,
+        share_id="s1",
+        hostname="workshop",
+        host="192.168.100.5",
+        port=21118,
+        account="pat",
+        connected_count=3,
+        now=0.0,
+    )
+
+    (share,) = registry.live(now=0.0)
+    assert share.account == "pat"
+    assert share.connected_count == 3
+
+
+def test_a_share_naming_neither_carries_an_empty_account_and_no_viewers():
+    registry = DeviceShareRegistry(window_s=30)
+
+    declared(registry)
+
+    (share,) = registry.live(now=0.0)
+    assert share.account == ""
+    assert share.connected_count == 0
+
+
 def test_declaring_again_replaces_the_machines_one_share():
     registry = DeviceShareRegistry(window_s=30)
 

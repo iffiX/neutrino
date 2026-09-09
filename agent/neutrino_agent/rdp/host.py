@@ -1,11 +1,11 @@
 """Sharing this machine's desktop.
 
-Sharing is decided on the machine and nowhere else: a person sets an access
-password, the agent configures RustDesk for direct connection and declares
-the share upward, and every other machine's fleet list shows it. The access
-password travels only inside the one ask that sets it, is set into RustDesk
-salted, and is kept in a root-only file so the owner can read back what they
-set. It enters neither the store nor any heartbeat.
+Which desktop is shared is decided on the machine: the agent configures
+RustDesk for direct connection and declares the share upward, and every
+other machine's fleet list shows it. The seat password a peer connects with
+is the hub's — it arrives in the desired state, is set into RustDesk salted
+whenever it changed, and is kept in a root-only file so the machine knows
+what it already set. It enters neither the store nor any heartbeat.
 
 **A machine with no desktop is refused before anything is configured.**
 RustDesk on a box with no graphical session answers nothing, and the share
@@ -44,11 +44,13 @@ from neutrino_agent.rdp.constants import (
     RDP_PROBE_TIMEOUT_S,
     RDP_PROBE_TTL_S,
     RDP_PROC_DIR,
+    RDP_PROC_TCP_PATHS,
     RDP_SESSION_ENVIRONMENT_KEYS,
     RDP_SESSION_TIMEOUT_S,
     RDP_STATE_NOT_SHARED,
     RDP_STATE_SHARING,
     RDP_STATE_STARTING,
+    RDP_TCP_ESTABLISHED,
     RDP_WAYLAND_TOKEN_OPTION,
 )
 
@@ -138,6 +140,53 @@ def graphical_accounts() -> "list | None":
     return named
 
 
+def connected_count(port: int) -> int:
+    """How many peers are connected to the direct port right now.
+
+    Args:
+        port: The local port a direct connection lands on.
+
+    Returns:
+        The number of established connections to it, zero on a machine whose
+        connection table cannot be read.
+    """
+    total = 0
+    for path in RDP_PROC_TCP_PATHS:
+        try:
+            with open(path, "r", encoding="utf-8") as stream:
+                rows = stream.read().splitlines()[1:]
+        except OSError:
+            continue
+        for row in rows:
+            fields = row.split()
+            if len(fields) < 4 or fields[3] != RDP_TCP_ESTABLISHED:
+                continue
+            if _local_port(fields[1]) == port:
+                total += 1
+    return total
+
+
+def closed_options() -> tuple:
+    """The share configuration with the direct server shut again.
+
+    Returns:
+        The ``(key, value)`` pairs to write.
+    """
+    return tuple(
+        (key, value) if key != "direct-server" else (key, "N")
+        for key, value in rustdesk.RUSTDESK_SHARE_OPTIONS
+    )
+
+
+def _local_port(address: str) -> int:
+    """The port out of one ``/proc/net/tcp`` address, -1 when it has none."""
+    _, _, port = address.partition(":")
+    try:
+        return int(port, 16)
+    except ValueError:
+        return -1
+
+
 def _loginctl(arguments: list):
     """What ``loginctl`` printed, or None when this machine cannot be asked."""
     try:
@@ -184,7 +233,7 @@ class RdpShareHost:
         Args:
             platform: The machine's platform, behind the contract.
             store: The :class:`MachineStateStore` holding the share record.
-            credentials_dir: Where the access password file lives.
+            credentials_dir: Where the seat password file lives.
             log: Callable used for progress messages.
         """
         self._platform = platform
@@ -206,20 +255,20 @@ class RdpShareHost:
         """
         self._module_reader = reader
 
-    def share(self, account: str, password: str) -> dict:
+    def share(self, account: str) -> dict:
         """Configure RustDesk for direct connection and declare the share.
+
+        A machine shares one seat at a time: naming another account closes
+        the copy the previous one was shared through.
 
         Args:
             account: The account sitting at the machine's screen.
-            password: The access password a peer connects with.
 
         Returns:
             Empty on success, ``{"code", "params"}`` on a refusal.
         """
         if not account:
             return {"code": "rdp_no_seat", "params": {}}
-        if not password:
-            return {"code": "rdp_password_missing", "params": {}}
         status = self._module_states().get(RDP_MODULE_NAME) or {}
         if status.get("state") != "installed":
             return {"code": "module_missing", "params": {"module": RDP_MODULE_NAME}}
@@ -230,12 +279,16 @@ class RdpShareHost:
             return refusal
         record = self._store.rdp_share()
         share_id = str(record.get("share_id", "")) or uuid.uuid4().hex
+        replaced = str(record.get("account", "") or "")
         try:
+            if replaced and replaced != account:
+                self._configure(replaced, closed_options(), is_restarted=False)
             self._configure(account, rustdesk.RUSTDESK_SHARE_OPTIONS)
-            rustdesk.set_password(password)
+            seat_password = self._read_password()
+            if seat_password:
+                rustdesk.set_password(seat_password)
         except InstallError as error:
             return {"code": "rdp_configure_failed", "params": {"detail": str(error)}}
-        self._write_password(password)
         self._store.set_rdp_share(
             {
                 "share_id": share_id,
@@ -255,18 +308,56 @@ class RdpShareHost:
         Returns:
             Empty on success, ``{"code", "params"}`` on a refusal.
         """
-        closed = tuple(
-            (key, value) if key != "direct-server" else (key, "N")
-            for key, value in rustdesk.RUSTDESK_SHARE_OPTIONS
-        )
         account = str(self._store.rdp_share().get("account", ""))
         try:
-            self._configure(account, closed, is_restarted=False)
+            self._configure(account, closed_options(), is_restarted=False)
         except InstallError as error:
             return {"code": "rdp_configure_failed", "params": {"detail": str(error)}}
         self._store.clear_rdp_share()
-        self._remove_password()
         self._probed_at = 0.0
+        return {}
+
+    def apply_baseline(self) -> None:
+        """Point RustDesk at the LAN and nothing else, wherever it reads.
+
+        A service already running reads its configuration once, so a
+        baseline that changed anything is followed by a restart. Best
+        effort: a machine that cannot take the write still runs.
+        """
+        is_changed = False
+        for path in rustdesk.config_paths(""):
+            try:
+                if rustdesk.write_config(path, rustdesk.RUSTDESK_BASE_OPTIONS):
+                    is_changed = True
+            except InstallError as error:
+                self._log(f"rdp: {error}")
+        if not is_changed:
+            return
+        try:
+            rustdesk.control_service(rustdesk.RUSTDESK_ACTION_RESTART)
+        except InstallError as error:
+            self._log(f"rdp: {error}")
+
+    def apply_seat_password(self, password: str) -> dict:
+        """Set the seat password the hub holds, when it is not the one set.
+
+        RustDesk stores it salted, so the root-only file beside the store is
+        the only record of what this machine already set.
+
+        Args:
+            password: The seat password from the desired state.
+
+        Returns:
+            Empty when it took or there was nothing to do,
+            ``{"code", "params"}`` when RustDesk refused it.
+        """
+        if not password or password == self._read_password():
+            return {}
+        try:
+            rustdesk.set_password(password)
+        except InstallError as error:
+            return {"code": "rdp_password_refused", "params": {"detail": str(error)}}
+        self._write_password(password)
         return {}
 
     def state(self) -> dict:
@@ -274,7 +365,7 @@ class RdpShareHost:
 
         Returns:
             ``{"is_shared", "state", "port", "account", "attention",
-            "rustdesk_id", "has_password"}``. The access password itself is
+            "rustdesk_id", "has_password"}``. The seat password itself is
             in none of it.
         """
         record = self._store.rdp_share()
@@ -294,24 +385,27 @@ class RdpShareHost:
         """What the heartbeat carries up about this machine's share.
 
         Returns:
-            ``{"is_shared", "account", "share_id", "port", "attention"}``.
-            ``is_shared`` is true only while the share actually answers, so
-            a fleet list never offers a desktop that cannot be reached;
-            ``attention`` names what a peer would wait on if it dialed now.
-            The access password is in none of it and never crosses the wire.
+            ``{"is_shared", "account", "share_id", "port", "attention",
+            "connected_count"}``. ``is_shared`` is true only while the share
+            actually answers, so a fleet list never offers a desktop that
+            cannot be reached; ``attention`` names what a peer would wait on
+            if it dialed now. The seat password is in none of it and never
+            crosses the wire.
         """
         record = self._store.rdp_share()
         is_shared = bool(record.get("is_shared"))
+        port = int(record.get("port") or rustdesk.RUSTDESK_DIRECT_PORT)
         return {
             "is_shared": is_shared and self._state(is_shared) == RDP_STATE_SHARING,
             "account": str(record.get("account", "") or ""),
             "share_id": str(record.get("share_id", "")),
-            "port": int(record.get("port") or rustdesk.RUSTDESK_DIRECT_PORT),
+            "port": port,
             # Only a share has anything for a peer to wait on, and only a
             # sharing machine should pay for asking.
             "attention": (
                 self.attention(str(record.get("account", ""))) if is_shared else ""
             ),
+            "connected_count": connected_count(port) if is_shared else 0,
         }
 
     def attention(self, account: str) -> str:
@@ -482,7 +576,7 @@ class RdpShareHost:
             return ""
 
     def _write_password(self, password: str) -> None:
-        """Keep the access password where only root reads it."""
+        """Keep the seat password where only root reads it."""
         path = self._password_path()
         try:
             os.makedirs(self._credentials_dir, exist_ok=True)
@@ -491,10 +585,4 @@ class RdpShareHost:
             with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
                 stream.write(password)
         except OSError as error:
-            self._log(f"rdp: could not keep the access password: {error}")
-
-    def _remove_password(self) -> None:
-        try:
-            os.unlink(self._password_path())
-        except OSError:
-            return
+            self._log(f"rdp: could not keep the seat password: {error}")

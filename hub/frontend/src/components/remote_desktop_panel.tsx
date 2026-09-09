@@ -4,10 +4,12 @@ import { copyText } from "../copy_text";
 import { Icon } from "./icon";
 import { PasswordInput } from "./password_input";
 import { StatusDot } from "./status_dot";
-import { apiGet, apiPost, describeError } from "../api_client";
+import { ApiError, apiGet, apiPost, describeError } from "../api_client";
 import { stripAnsi } from "../strip_ansi";
+import { useConfirm } from "../use_confirm";
 import { useTaskStream } from "../use_task_stream";
 import type {
+  DeviceRdp,
   DeviceView,
   RemoteDesktopStatus,
   RemoteDesktopView,
@@ -22,8 +24,29 @@ import "./remote_desktop_panel.css";
  * A device that already runs AnyDesk or TeamViewer shows the id someone
  * connects to, whether or not this hub put it there, and takes an unattended
  * password. Both are user-tier modules the person installs themselves, so
- * this panel only reads and manages what is already on the machine.
+ * this panel only reads and manages what is already on the machine. RustDesk
+ * rides in every agent package instead, and its card reads the machine's own
+ * report.
  */
+
+const WORDING = {
+  title: "Remote desktop",
+  reading: "Reading status…",
+  idLabel: "ID",
+  copyId: "Copy ID",
+  noId: "—",
+  notReached: "not reached",
+  notInstalled: "not installed",
+  running: "running",
+  stopped: "stopped",
+  noIdYet: "No id yet; assigned once the device connects to {product}.",
+  setPassword: "Set unattended password", // scan: allow
+  set: "Set",
+  passwordOnDevice: "Set the password in the {product} app on the device.", // scan: allow
+  notAsked:
+    "This device could not be asked, so what it is running is unknown: {reason}",
+  notOnDevice: "Not on this device.",
+};
 
 const UNREACHABLE_WORDS: Record<string, string> = {
   agent_offline: "the agent is offline",
@@ -35,6 +58,55 @@ const PRODUCT_LABELS: Record<string, string> = {
   anydesk: "AnyDesk",
   teamviewer: "TeamViewer",
 };
+
+const RUSTDESK_WORDING = {
+  name: "RustDesk",
+  shared: "shared",
+  notSharing: "not sharing",
+  idLabel: "ID",
+  copyId: "Copy ID",
+  sharedBy: "Shared by {account}.",
+  oneViewer: "1 viewer",
+  viewers: "{count} viewers",
+  directPort: "Direct port {port}",
+  startHint: "Run sudo nagent rdp start on the machine to share its desktop.",
+  notReported: "Not reported by this machine.",
+  notInPackage: "Not in this agent's package.",
+  reset: "Reset seat password",
+  resetTitle: "Reset the seat password",
+  resetBody:
+    "The machine is given a new password at once. Every viewer connected now must connect again.",
+  resetConfirm: "Reset",
+};
+
+// The {code, params} a reset is refused with, worded.
+const RESET_ERROR_WORDING: Record<string, string> = {
+  agent_offline: "The machine is not answering, so its password is unchanged.",
+};
+
+const ATTENTION_WORDS: Record<string, string> = {
+  rdp_nobody_seated: "Nobody is signed in at that machine's screen.",
+  rdp_screen_not_allowed:
+    "Allow screen sharing once at that machine's own screen.",
+};
+
+/** One count worded, so no sentence is assembled from fragments. */
+function viewerWords(count: number): string {
+  return count === 1
+    ? RUSTDESK_WORDING.oneViewer
+    : RUSTDESK_WORDING.viewers.replace("{count}", String(count));
+}
+
+/** Wording for a refused reset, with the coded refusals spelled out. */
+function describeResetError(cause: unknown): string {
+  if (cause instanceof ApiError) {
+    const wording = RESET_ERROR_WORDING[cause.code];
+    if (wording !== undefined) {
+      return wording;
+    }
+  }
+  return describeError(cause);
+}
 
 interface RemoteDesktopPanelProps {
   device: DeviceView;
@@ -51,6 +123,7 @@ export function RemoteDesktopPanel({
   device,
   moduleRevision,
 }: RemoteDesktopPanelProps) {
+  const confirm = useConfirm();
   const [status, setStatus] = useState<RemoteDesktopView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
@@ -94,15 +167,33 @@ export function RemoteDesktopPanel({
     }
   };
 
+  const resetSeatPassword = () => {
+    confirm.ask({
+      title: RUSTDESK_WORDING.resetTitle,
+      body: RUSTDESK_WORDING.resetBody,
+      confirmLabel: RUSTDESK_WORDING.resetConfirm,
+      onConfirm: () => {
+        setError(null);
+        void apiPost(`/devices/${device.mac_address}/rdp/seat_password`).catch(
+          (cause: unknown) => setError(describeResetError(cause)),
+        );
+      },
+    });
+  };
+
   return (
     <div className="remote_desktop">
-      <div className="section_label">Remote desktop</div>
+      <div className="section_label">{WORDING.title}</div>
       {error !== null && <span className="field_error">{error}</span>}
       {status === null ? (
-        <span className="field_hint">Reading status…</span>
+        <span className="field_hint">{WORDING.reading}</span>
       ) : (
         <div className="remote_desktop_grid">
-          <RustdeskCard sessionId={status.rustdesk_id} />
+          <RustdeskCard
+            sessionId={status.rustdesk_id}
+            rdp={device.client?.rdp ?? null}
+            onResetSeatPassword={resetSeatPassword}
+          />
           <ProductCard
             status={status.anydesk}
             macAddress={device.mac_address}
@@ -123,51 +214,109 @@ export function RemoteDesktopPanel({
           {stripAnsi(task.lines.join("\n"))}
         </pre>
       )}
+      {confirm.modal}
     </div>
   );
 }
 
 interface RustdeskCardProps {
   sessionId: string;
+  rdp: DeviceRdp | null;
+  onResetSeatPassword: () => void;
 }
 
 /**
- * RustDesk's id, as the machine's own module report carries it.
+ * RustDesk as the machine's own report carries it: its id, and whether the
+ * desktop is shared right now.
  *
- * Installing and removing it happens on the Modules rows like any other
- * hub-tier module, and the machine's own page is where a person shares the
- * desktop — this card only shows what to connect to.
+ * Every agent package carries the host, so there is nothing to install here
+ * and nothing here asks a machine to share — that is one command on the
+ * machine itself. The seat password is the hub's, generated and never shown,
+ * and resetting it is the one action this card has.
  */
-function RustdeskCard({ sessionId }: RustdeskCardProps) {
+function RustdeskCard({
+  sessionId,
+  rdp,
+  onResetSeatPassword,
+}: RustdeskCardProps) {
   const isReported = sessionId !== "";
+  const isShared = rdp?.is_shared ?? false;
+  const attention = rdp?.attention ?? "";
+
+  if (rdp !== null && !rdp.is_available) {
+    return (
+      <div className="remote_desktop_card">
+        <div className="remote_desktop_card_head">
+          <span className="remote_desktop_card_name">
+            {RUSTDESK_WORDING.name}
+          </span>
+          <StatusDot tone="idle" label={RUSTDESK_WORDING.notSharing} />
+        </div>
+        <span className="field_hint">{RUSTDESK_WORDING.notInPackage}</span>
+      </div>
+    );
+  }
+
   return (
     <div className="remote_desktop_card">
       <div className="remote_desktop_card_head">
-        <span className="remote_desktop_card_name">RustDesk</span>
+        <span className="remote_desktop_card_name">
+          {RUSTDESK_WORDING.name}
+        </span>
         <StatusDot
-          tone={isReported ? "ok" : "idle"}
-          label={isReported ? "installed" : "not installed"}
+          tone={isShared ? "ok" : "idle"}
+          label={
+            isShared ? RUSTDESK_WORDING.shared : RUSTDESK_WORDING.notSharing
+          }
         />
       </div>
+
       {isReported ? (
         <div className="remote_desktop_id_row">
-          <span className="remote_desktop_id_label">ID</span>
+          <span className="remote_desktop_id_label">
+            {RUSTDESK_WORDING.idLabel}
+          </span>
           <span className="remote_desktop_id">{sessionId}</span>
           <button
             type="button"
             className="button button--ghost button--small"
             onClick={() => void copyText(sessionId)}
-            title="Copy ID"
+            title={RUSTDESK_WORDING.copyId}
           >
             <Icon name="link" size={12} />
           </button>
         </div>
       ) : (
-        <span className="field_hint">
-          Not reported by this machine. Sharing the desktop is done on the
-          machine itself.
+        <span className="field_hint">{RUSTDESK_WORDING.notReported}</span>
+      )}
+
+      {isShared && rdp !== null ? (
+        <>
+          <span className="muted">
+            {RUSTDESK_WORDING.sharedBy.replace("{account}", rdp.account)}{" "}
+            {viewerWords(rdp.connected_count)}
+          </span>
+          <span className="field_hint">
+            {RUSTDESK_WORDING.directPort.replace("{port}", String(rdp.port))}
+          </span>
+        </>
+      ) : (
+        <span className="field_hint">{RUSTDESK_WORDING.startHint}</span>
+      )}
+
+      {attention.length > 0 && (
+        <span className="field_error">
+          {ATTENTION_WORDS[attention] ?? attention}
         </span>
       )}
+
+      <button
+        type="button"
+        className="button button--ghost button--small remote_desktop_action"
+        onClick={onResetSeatPassword}
+      >
+        {RUSTDESK_WORDING.reset}
+      </button>
     </div>
   );
 }
@@ -200,12 +349,12 @@ function ProductCard({ status, macAddress, isBusy, onRun }: ProductCardProps) {
           }
           label={
             status.unreachable.length > 0
-              ? "not reached"
+              ? WORDING.notReached
               : !status.is_installed
-                ? "not installed"
+                ? WORDING.notInstalled
                 : status.is_running
-                  ? "running"
-                  : "stopped"
+                  ? WORDING.running
+                  : WORDING.stopped
           }
         />
       </div>
@@ -213,16 +362,16 @@ function ProductCard({ status, macAddress, isBusy, onRun }: ProductCardProps) {
       {status.is_installed ? (
         <>
           <div className="remote_desktop_id_row">
-            <span className="remote_desktop_id_label">ID</span>
+            <span className="remote_desktop_id_label">{WORDING.idLabel}</span>
             <span className="remote_desktop_id">
-              {status.session_id ?? "—"}
+              {status.session_id ?? WORDING.noId}
             </span>
             {status.session_id !== null && (
               <button
                 type="button"
                 className="button button--ghost button--small"
                 onClick={() => void copyText(status.session_id ?? "")}
-                title="Copy ID"
+                title={WORDING.copyId}
               >
                 <Icon name="link" size={12} />
               </button>
@@ -230,14 +379,14 @@ function ProductCard({ status, macAddress, isBusy, onRun }: ProductCardProps) {
           </div>
           {status.session_id === null && (
             <span className="field_hint">
-              {`No id yet; assigned once the device connects to ${label}.`}
+              {WORDING.noIdYet.replace("{product}", label)}
             </span>
           )}
           {status.can_set_password ? (
             <div className="remote_desktop_pw">
               <PasswordInput
                 value={password}
-                placeholder="Set unattended password"
+                placeholder={WORDING.setPassword}
                 onChange={setPassword}
               />
               <button
@@ -246,22 +395,24 @@ function ProductCard({ status, macAddress, isBusy, onRun }: ProductCardProps) {
                 disabled={isBusy || password.length === 0}
                 onClick={() => onRun(`${base}/password`, { password })}
               >
-                Set
+                {WORDING.set}
               </button>
             </div>
           ) : (
             <span className="field_hint">
-              Set the password in the {label} app on the device.
+              {WORDING.passwordOnDevice.replace("{product}", label)}
             </span>
           )}
         </>
       ) : status.unreachable.length > 0 ? (
         <span className="field_hint">
-          This device could not be asked, so what it is running is unknown:{" "}
-          {UNREACHABLE_WORDS[status.unreachable] ?? status.unreachable}
+          {WORDING.notAsked.replace(
+            "{reason}",
+            UNREACHABLE_WORDS[status.unreachable] ?? status.unreachable,
+          )}
         </span>
       ) : (
-        <span className="field_hint">Not on this device.</span>
+        <span className="field_hint">{WORDING.notOnDevice}</span>
       )}
     </div>
   );

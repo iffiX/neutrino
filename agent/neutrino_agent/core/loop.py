@@ -134,23 +134,24 @@ class Agent:
             log=log,
             on_change=self._news.set,
         )
-        # The store and the access password live under the platform's own
+        # The store and the seat password live under the platform's own
         # data root, and so does the last desired state taken from the hub.
         data_dir = self._platform.agent_data_dir()
         self._data_dir = data_dir
         self._store = MachineStateStore(path=os.path.join(data_dir, AGENT_STATE_NAME))
+        self._rdp = RdpShareHost(
+            platform=self._platform,
+            store=self._store,
+            credentials_dir=os.path.join(data_dir, AGENT_CREDENTIALS_DIR_NAME),
+            log=log,
+        )
         self._desired = DesiredStateApplier(
             engine=self._engine,
             runners=self._engine.module_runners,
             store=DesiredStateStore(
                 path=os.path.join(data_dir, AGENT_DESIRED_STATE_NAME)
             ),
-            log=log,
-        )
-        self._rdp = RdpShareHost(
-            platform=self._platform,
-            store=self._store,
-            credentials_dir=os.path.join(data_dir, AGENT_CREDENTIALS_DIR_NAME),
+            rdp=self._rdp,
             log=log,
         )
         # The share flow refuses before it configures anything when RustDesk
@@ -207,7 +208,8 @@ class Agent:
         """What this machine says upward about sharing its desktop.
 
         Returns:
-            ``{"is_shared", "account", "share_id", "port", "attention"}``.
+            ``{"is_shared", "account", "share_id", "port", "attention",
+            "connected_count"}``.
         """
         return self._rdp.declaration()
 
@@ -279,17 +281,16 @@ class Agent:
             return {"code": "hub_unreachable", "params": {}}
         return {}
 
-    def rdp_share(self, *, account: str, password: str) -> dict:
-        """Share this machine's desktop behind an access password.
+    def rdp_share(self, *, account: str) -> dict:
+        """Share this machine's desktop behind the hub's seat password.
 
         Args:
             account: The account sitting at the machine's screen.
-            password: The access password a peer connects with.
 
         Returns:
             Empty on success, ``{"code", "params"}`` on a refusal.
         """
-        outcome = self._rdp.share(account, password)
+        outcome = self._rdp.share(account)
         self._news.set()
         return outcome
 
@@ -308,6 +309,9 @@ class Agent:
     def run_forever(self) -> None:
         """Hold the socket, or wait to be enrolled, until the process stops."""
         self._log(f"neutrino_agent {AGENT_VERSION} starting on {hostname()}")
+        # The desktop host runs on every machine this package installed on,
+        # and reaches the LAN and nothing else from the first start.
+        self._rdp.apply_baseline()
         while True:
             delay = self.run_once()
             self._news.clear()
@@ -431,8 +435,8 @@ class Agent:
             "modules": self._engine.report(),
             "state_hash": self._desired.applied_hash,
             "state_error": self._desired.state_error,
-            # Whether this machine's desktop is reachable. The access
-            # password it was set up with stays on the machine.
+            # Whether this machine's desktop is reachable. The seat
+            # password it answers with stays on the machine.
             "rdp": self.rdp_declaration(),
             "last_error": self.last_error(),
             # What the install this agent came from said, written by the

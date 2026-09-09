@@ -90,7 +90,7 @@ AGENT_CONTROL_SOCKET_PATH = "/run/neutrino_agent/agent.sock"
 AGENT_CONTROL_REQUEST_TIMEOUT_S = 5
 
 # Where the machine keeps what it decided for itself, and the directory
-# holding the one secret that never enters it: the share's access password,
+# holding the one secret that never enters it: the desktop's seat password,
 # in its own root-only file. The directory both live in is the platform
 # contract's ``agent_data_dir``; these are the POSIX paths, which double as
 # the defaults where nothing wires a root in.

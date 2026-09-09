@@ -89,7 +89,8 @@
   font-size: 11px;
 }
 
-.remote_desktop_uninstall {
+.remote_desktop_uninstall,
+.remote_desktop_action {
   align-self: flex-start;
   margin-top: 2px;
 }

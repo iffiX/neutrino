@@ -32,6 +32,8 @@ from neutrino_hub.modules.devices.agent_sessions import (
 from neutrino_hub.modules.devices.constants import (
     DEVICE_MAC_PATTERN,
     DEVICE_MODULE_COMMAND_TIMEOUT_S,
+    DEVICE_MODULE_STATE_ABSENT,
+    DEVICE_RDP_MODULE,
     DEVICE_REMOTE_DESKTOP_PRODUCTS,
 )
 from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
@@ -58,6 +60,7 @@ from neutrino_hub.web.constants import (
     WEB_REINSTALL_RETURN_TIMEOUT_S,
     WEB_DEFAULT_AGENT_LISTEN_PORT,
     WEB_EVENT_DEVICES,
+    WEB_EVENT_DEVICE_REPORT,
 )
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
@@ -70,6 +73,7 @@ from neutrino_hub.web.models import (
     DeviceOnlineListView,
     DeviceOnlineView,
     DeviceProcessView,
+    DeviceRdpView,
     DeviceEnrollmentRequest,
     DeviceEnrollmentView,
     DeviceInstallOrderView,
@@ -235,6 +239,34 @@ def _device_view(runtime: PanelRuntime, device: ManagedDevice) -> DeviceView:
             view.client.last_error = DeviceClientErrorView(
                 code=error.get("code", ""), params=error.get("params", {})
             )
+        view.client.rdp = _rdp_view(runtime, key)
+    return view
+
+
+def _rdp_view(runtime: PanelRuntime, key: str) -> DeviceRdpView:
+    """What one machine last said about sharing its desktop.
+
+    Args:
+        runtime: The shared runtime, which holds every declared share.
+        key: The device's MAC, lowercased.
+
+    Returns:
+        The share as the machine declared it, and whether its agent package
+        carries the host at all. Only a machine reporting the host absent
+        reads unavailable: one nobody has heard from says nothing either way.
+    """
+    reported = (runtime.client_modules.get(key) or {}).get(DEVICE_RDP_MODULE)
+    state = str(reported.get("state", "")) if isinstance(reported, dict) else ""
+    view = DeviceRdpView(is_available=state != DEVICE_MODULE_STATE_ABSENT)
+    for share in runtime.device_shares.live():
+        if share.mac_address != key:
+            continue
+        view.is_shared = True
+        view.account = share.account
+        view.port = share.port
+        view.attention = share.attention
+        view.connected_count = share.connected_count
+        break
     return view
 
 
@@ -1247,6 +1279,49 @@ async def set_remote_desktop_password(
         ),
     )
     return TaskStarted(task_id=stream.id)
+
+
+@router.post("/{mac_address}/rdp/seat_password")
+def reset_seat_password(
+    mac_address: str, runtime: PanelRuntime = Depends(get_runtime)
+) -> dict:
+    """Give one device a fresh seat password and hand it down.
+
+    Nobody types this password and nobody is shown it: the hub generates it,
+    seals it under the vault's data key, and the machine reads it out of the
+    state it is pushed. Every viewer connected on the old one must dial
+    again.
+
+    Args:
+        mac_address: The device's MAC.
+        runtime: The shared runtime.
+
+    Returns:
+        An empty object.
+
+    Raises:
+        HTTPException: 409 ``agent_offline`` when the device has no channel,
+            502 when its socket did not take the state in time.
+    """
+    key = DeviceRegistry().get(mac_address).mac_address.lower()
+    if not runtime.agent_sessions.is_online(key):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail={"code": "agent_offline"}
+        )
+    runtime.desired_states.reset_seat_password(key)
+    try:
+        runtime.push_desired_state(key)
+    except AgentOfflineError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail={"code": "agent_offline"}
+        ) from error
+    except StreamRefusedError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": error.code, "params": dict(error.params)},
+        ) from error
+    runtime.events.publish(WEB_EVENT_DEVICE_REPORT, key)
+    return {}
 
 
 async def _agent_command_stream(

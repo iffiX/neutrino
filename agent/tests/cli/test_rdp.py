@@ -36,7 +36,6 @@ def running_agent(tmp_path, monkeypatch):
     )
     server.start()
     monkeypatch.setattr(wording, "detect_platform", lambda: platform)
-    monkeypatch.setattr(wording, "ask_secret", lambda prompt: "hunter2")
     monkeypatch.delenv("SUDO_USER", raising=False)
     yield agent
     server.stop()
@@ -50,7 +49,7 @@ def test_the_sudo_invoker_is_the_default_seat(running_agent, monkeypatch, capsys
 
     assert rdp_cli.main_start() == 0
 
-    assert running_agent.rdp_calls == [("alice", "hunter2")]
+    assert running_agent.rdp_calls == ["alice"]
     assert capsys.readouterr().out.strip() == "not shared"
 
 
@@ -59,7 +58,7 @@ def test_the_one_account_at_the_screen_is_the_next_default(running_agent, monkey
 
     assert rdp_cli.main_start() == 0
 
-    assert running_agent.rdp_calls == [("sam", "hunter2")]
+    assert running_agent.rdp_calls == ["sam"]
 
 
 def test_a_named_account_wins_over_both(running_agent, monkeypatch):
@@ -68,7 +67,7 @@ def test_a_named_account_wins_over_both(running_agent, monkeypatch):
 
     assert rdp_cli.main_start(user="pat") == 0
 
-    assert running_agent.rdp_calls == [("pat", "hunter2")]
+    assert running_agent.rdp_calls == ["pat"]
 
 
 @pytest.mark.parametrize("seated", [[], ["sam", "pat"], None])
@@ -83,17 +82,21 @@ def test_no_seat_it_can_name_is_the_typed_refusal(
     assert wording.word_code("rdp_no_seat") in capsys.readouterr().err
 
 
-# --- the password ---
+# --- the password nobody at this machine types ---
 
 
-def test_an_empty_password_never_reaches_the_agent(running_agent, monkeypatch, capsys):
+def test_starting_a_share_asks_for_no_password_at_all(running_agent, monkeypatch):
+    """The seat password is the hub's; the terminal never sees one."""
+
+    def refuse(prompt):
+        raise AssertionError("the seat password is not typed here")
+
     monkeypatch.setenv("SUDO_USER", "alice")
-    monkeypatch.setattr(wording, "ask_secret", lambda prompt: "")
+    monkeypatch.setattr(wording, "ask_secret", refuse)
 
-    assert rdp_cli.main_start() == 2
+    assert rdp_cli.main_start() == 0
 
-    assert running_agent.rdp_calls == []
-    assert wording.word_code("rdp_password_missing") in capsys.readouterr().err
+    assert running_agent.rdp_calls == ["alice"]
 
 
 # --- the share line ---
@@ -154,7 +157,6 @@ def test_stopping_a_share_rides_through(running_agent, capsys):
 def test_no_agent_running_is_the_honest_line(tmp_path, monkeypatch, capsys):
     platform = FakeRdpPlatform(str(tmp_path / "absent.sock"))
     monkeypatch.setattr(wording, "detect_platform", lambda: platform)
-    monkeypatch.setattr(wording, "ask_secret", lambda prompt: "hunter2")
     monkeypatch.setenv("SUDO_USER", "alice")
 
     assert rdp_cli.main_start() == 1

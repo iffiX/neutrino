@@ -151,6 +151,18 @@ DEVICE_GITEA_SECRETS_FILE = "gitea_secrets.json"  # scan: allow
 # The files a device directory may hold that are not a module's own.
 DEVICE_DIR_FILES = (DEVICE_MODULES_FILE, DEVICE_RDP_FILE, DEVICE_GITEA_SECRETS_FILE)
 
+# The remote desktop host every agent package carries, as the module report
+# names it, and the two states its row can take.
+DEVICE_RDP_MODULE = "rustdesk"
+DEVICE_MODULE_STATE_INSTALLED = "installed"
+DEVICE_MODULE_STATE_ABSENT = "absent"
+# The seat password the hub generates for a device, sealed under the vault's
+# data key and bound to the one thing it opens. As long as
+# ``secrets.token_urlsafe(16)`` is, and letters and digits alone, so it
+# survives being copied by hand into a client.
+DEVICE_RDP_SEAT_PASSWORD_AAD = b"device_rdp:seat_password"
+DEVICE_RDP_SEAT_PASSWORD_CHARS = 22
+
 # Machine secrets Gitea's app.ini needs, generated once per device by the
 # hub and handed down in the desired configuration.
 DEVICE_GITEA_SECRET_NAMES = (

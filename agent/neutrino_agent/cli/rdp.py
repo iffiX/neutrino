@@ -1,9 +1,8 @@
 """``nagent rdp``: sharing this machine's desktop, from a terminal.
 
-The access password is read from the terminal and travels only in the one
-request that sends it, never on argv. Which desktop is shared is the seat's:
-with no account named, the one that invoked sudo, else the one account at
-the screen.
+The seat password a peer connects with is the hub's, so nothing here asks
+for one. Which desktop is shared is the seat's: with no account named, the
+one that invoked sudo, else the one account at the screen.
 
 The agent reports refusals as ``{"code", "params"}``; the wording lives in
 ``wording.py``.
@@ -24,7 +23,7 @@ RDP_ID_LABEL = "RustDesk ID"
 
 
 def main_start(*, user: str = "") -> int:
-    """Share this machine's desktop behind an access password.
+    """Share this machine's desktop behind the hub's seat password.
 
     Args:
         user: Whose desktop; empty resolves the seat.
@@ -36,13 +35,7 @@ def main_start(*, user: str = "") -> int:
     if not account:
         print(wording.word_code("rdp_no_seat", {}), file=sys.stderr)
         return 2
-    password = wording.ask_secret("Access password: ")
-    if not password:
-        print(wording.word_code("rdp_password_missing", {}), file=sys.stderr)
-        return 2
-    reply = wording.act(
-        "/api/rdp/start", {"user": account, "password": password}  # scan: allow
-    )
+    reply = wording.act("/api/rdp/start", {"user": account})
     if reply is None:
         return 1
     print(share_line(reply))

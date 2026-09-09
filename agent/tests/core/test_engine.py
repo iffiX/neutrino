@@ -80,7 +80,6 @@ def bare_engine(*, platform=None, fetch_artifact=None, verified=None):
     engine._module_runners = {}
 
     from neutrino_agent.modules.package import PackageModuleRunner
-    from neutrino_agent.modules.rustdesk import RustdeskModuleRunner
     from neutrino_agent.modules.system_package import SystemPackageModuleRunner
 
     platform = platform if platform is not None else FakePlatform()
@@ -89,9 +88,6 @@ def bare_engine(*, platform=None, fetch_artifact=None, verified=None):
         platform=platform, log=engine._collect, publish=engine._publish
     )
     engine._system = SystemPackageModuleRunner(
-        platform=platform, log=engine._collect, publish=engine._publish
-    )
-    engine._rustdesk = RustdeskModuleRunner(
         platform=platform, log=engine._collect, publish=engine._publish
     )
     answers = list(verified or [])

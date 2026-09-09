@@ -274,10 +274,7 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
 
     def _rdp_start(self, body: dict) -> None:
         agent = self.server.control_agent
-        outcome = agent.rdp_share(
-            account=str(body.get("user", "")),
-            password=str(body.get("password", "")),  # scan: allow
-        )
+        outcome = agent.rdp_share(account=str(body.get("user", "")))
         if outcome:
             self._send_refusal(outcome)
             return

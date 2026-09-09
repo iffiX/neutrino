@@ -1,10 +1,10 @@
 """What the hub keeps of a hello, a report, and a socket ending.
 
-A hello and a report both land in the runtime's memory alone. The address
-is the one on the machine's identity MAC, the peer standing in when nothing
-matches; the desktop share is recorded against the device the token
-resolved to, at the address the hub holds, and withdrawn when the machine
-stops or its socket ends.
+A hello and a report land in the runtime's memory, and the seat password is
+the one thing either writes. The address is the one on the machine's
+identity MAC, the peer standing in when nothing matches; the desktop share
+is recorded against the device the token resolved to, at the address the
+hub holds, and withdrawn when the machine stops or its socket ends.
 """
 
 from types import SimpleNamespace
@@ -17,6 +17,7 @@ from neutrino_hub.modules.devices.agent_sessions import AgentSessionRegistry
 from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.modules.devices.registry import ManagedDevice
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
+from tests.conftest import StubDesiredStates
 
 MAC = "aa:bb:cc:dd:ee:ff"
 
@@ -41,6 +42,7 @@ class FakeRuntime:
         self.client_last_error = {}
         self.device_shares = DeviceShareRegistry()
         self.published_services = StubPublishedServices()
+        self.desired_states = StubDesiredStates()
         self.agent_module_orders = AgentModuleController(
             cache=None, locks=DeviceInstallLocks()
         )
@@ -153,7 +155,7 @@ def test_the_device_host_is_the_address_it_reached_off_any_served_lan(box):
 # --- report ---
 
 
-def test_a_report_lands_in_memory_and_writes_nothing(box):
+def test_a_report_lands_in_memory(box):
     runtime, device = box
     runtime.client_address[MAC] = "192.168.100.7"
 
@@ -198,7 +200,15 @@ def test_a_report_declaring_a_share_records_it_at_the_held_address(box):
     agent_reports.record_report(
         runtime,
         device,
-        report(rdp={"is_shared": True, "share_id": "s1", "port": 21118}),
+        report(
+            rdp={
+                "is_shared": True,
+                "share_id": "s1",
+                "port": 21118,
+                "account": "pat",
+                "connected_count": 2,
+            }
+        ),
     )
 
     (share,) = runtime.device_shares.live()
@@ -209,7 +219,42 @@ def test_a_report_declaring_a_share_records_it_at_the_held_address(box):
         21118,
     )
     assert share.hostname == "box"
+    assert (share.account, share.connected_count) == ("pat", 2)
     assert runtime.published_services.expiries == 1
+
+
+def test_a_share_that_names_no_account_or_viewers_carries_neither(box):
+    runtime, device = box
+    runtime.client_address[MAC] = "192.168.100.7"
+
+    agent_reports.record_report(
+        runtime, device, report(rdp={"is_shared": True, "share_id": "s1"})
+    )
+
+    (share,) = runtime.device_shares.live()
+    assert (share.account, share.connected_count) == ("", 0)
+
+
+# --- the seat password ---
+
+
+def test_a_machine_reporting_the_host_installed_is_given_a_seat_password(box):
+    runtime, device = box
+
+    agent_reports.record_report(runtime, device, report())
+
+    assert runtime.desired_states.ensured == [MAC]
+
+
+def test_a_machine_whose_package_lacks_the_host_is_given_none(box):
+    runtime, device = box
+
+    agent_reports.record_report(
+        runtime, device, report(modules={"rustdesk": {"state": "absent"}})
+    )
+    agent_reports.record_report(runtime, device, report(modules={}))
+
+    assert runtime.desired_states.ensured == []
 
 
 def test_a_report_that_stops_sharing_withdraws_the_share(box):

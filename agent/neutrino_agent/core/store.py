@@ -2,7 +2,7 @@
 
 The record is machine state: it lives here, survives a hub restore untouched,
 and appears in no hub backup. The file is root-owned mode 0600. Secrets never
-enter it: the share's access password lives in its own credentials file
+enter it: the desktop's seat password lives in its own credentials file
 beside it.
 
 Every write re-reads the file under one lock and lands atomically — a
@@ -36,7 +36,7 @@ class MachineStateStore:
 
         Returns:
             ``{"share_id", "is_shared", "port", "account"}``, empty until
-            somebody shares. The access password is not here: it lives in
+            somebody shares. The seat password is not here: it lives in
             its own root-only file.
         """
         record = self._read().get("rdp", {})

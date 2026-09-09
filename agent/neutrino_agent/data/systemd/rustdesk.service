@@ -1,0 +1,14 @@
+[Unit]
+Description=RustDesk
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/opt/neutrino_agent/vendor/rustdesk/rustdesk --service
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=100000
+
+[Install]
+WantedBy=multi-user.target

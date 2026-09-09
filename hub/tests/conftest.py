@@ -235,6 +235,21 @@ class FakeAgentSessions:
         self.online.discard(key.lower())
 
 
+class StubDesiredStates:
+    """The per-device store as the report path touches it.
+
+    Attributes:
+        ensured: Every device a report asked a seat password for.
+    """
+
+    def __init__(self):
+        self.ensured: list = []
+
+    def ensure_seat_password(self, key: str) -> bool:
+        self.ensured.append(key.lower())
+        return True
+
+
 def holding_dispatch(order) -> None:
     """A dispatch that keeps an order open for a moment and never answers."""
     threading.Event().wait(2.0)

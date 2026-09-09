@@ -20,6 +20,7 @@ from neutrino_hub.modules.devices.agent_module_cache import AgentModuleArtifact
 from neutrino_hub.modules.devices.agent_module_controller import AgentModuleController
 from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice
+from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
@@ -61,6 +62,7 @@ class FakeRuntime:
         self.client_last_error = {}
         self.pending = {}
         self.enrollments = {}
+        self.device_shares = DeviceShareRegistry()
         self.agent_sessions = FakeAgentSessions()
         self.agent_modules = StubModuleCache()
         self.device_install_locks = DeviceInstallLocks()

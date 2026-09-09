@@ -94,7 +94,7 @@ def _add_rdp_parser(subparsers):
     rdp_parser = subparsers.add_parser("rdp", help="this machine's desktop share")
     actions = rdp_parser.add_subparsers(dest="rdp_command", metavar="<action>")
     start = actions.add_parser(
-        "start", help="share this desktop; the password is asked, never an argument"
+        "start", help="share this desktop at the seat password the hub set"
     )
     start.add_argument(
         "--user",

@@ -16,33 +16,10 @@ from neutrino_agent.modules.installers import InstallError
 from neutrino_agent.modules.rustdesk import (
     RUSTDESK_DIRECT_PORT,
     RUSTDESK_SHARE_OPTIONS,
-    RustdeskModuleRunner,
     config_paths,
     render_config,
     write_config,
 )
-from neutrino_agent.platforms.base import AgentPlatform
-
-
-class _Platform(AgentPlatform):
-    """A platform that records what it was asked to install and remove."""
-
-    def __init__(self):
-        self.installed = []
-        self.removed = []
-
-    def install_package(self, path, *, package_kind, entry):
-        self.installed.append((path, package_kind))
-
-    def uninstall_package(self, command):
-        self.removed.append(command)
-
-
-def runner(platform=None):
-    return RustdeskModuleRunner(
-        platform=platform or _Platform(), log=lambda message: None
-    )
-
 
 # --- the configuration, and where every copy of it goes ---
 
@@ -115,6 +92,15 @@ def test_a_written_file_is_whole_and_readable_again(tmp_path):
     assert text.count("direct-server = 'Y'") == 1
     # The temporary the write lands through is never left behind.
     assert not os.path.exists(f"{path}.tmp")
+
+
+def test_a_write_says_whether_the_file_is_not_what_it_was(tmp_path):
+    """A service already running reads its configuration once, so the caller
+    has to know whether anything moved."""
+    path = tmp_path / "RustDesk2.toml"
+
+    assert write_config(str(path), RUSTDESK_SHARE_OPTIONS) is True
+    assert write_config(str(path), RUSTDESK_SHARE_OPTIONS) is False
 
 
 def test_a_file_that_cannot_be_written_is_a_typed_refusal(tmp_path):
@@ -297,147 +283,6 @@ def test_no_rustdesk_reads_no_id(monkeypatch):
     monkeypatch.setattr(rustdesk, "binary_path", lambda: "")
 
     assert rustdesk.read_id() == ""
-
-
-# --- the runner's own contract ---
-
-
-def test_verify_is_the_manifests_check_and_its_exit_status(monkeypatch):
-    monkeypatch.setattr(
-        rustdesk.subprocess, "run", _recording([], returncode=0, is_shell=True)
-    )
-
-    assert runner().verify({"verify": "which rustdesk"}) is True
-
-
-def test_a_verify_that_exits_nonzero_reads_absent(monkeypatch):
-    monkeypatch.setattr(
-        rustdesk.subprocess, "run", _recording([], returncode=1, is_shell=True)
-    )
-
-    assert runner().verify({"verify": "which rustdesk"}) is False
-
-
-def test_a_verify_that_cannot_run_reads_absent_rather_than_installed(monkeypatch):
-    def explode(*args, **kwargs):
-        raise OSError("no shell")
-
-    monkeypatch.setattr(rustdesk.subprocess, "run", explode)
-
-    assert runner().verify({"verify": "which rustdesk"}) is False
-
-
-def test_the_details_carry_the_id_for_every_surface(monkeypatch):
-    monkeypatch.setattr(rustdesk, "read_id", lambda: "123456789")
-
-    assert runner().details({}) == {"rustdesk_id": "123456789"}
-
-
-def test_details_are_empty_when_no_id_can_be_read(monkeypatch):
-    monkeypatch.setattr(rustdesk, "read_id", lambda: "")
-
-    assert runner().details({}) == {}
-
-
-def test_install_hands_the_package_to_the_platform(monkeypatch, tmp_path):
-    platform = _Platform()
-    monkeypatch.setattr(rustdesk, "binary_path", lambda: "")
-    monkeypatch.setattr(rustdesk, "write_config", lambda path, options: None)
-    package = str(tmp_path / "rustdesk.deb")
-
-    runner(platform).install({"entry": {"package_kind": "deb"}}, package)
-
-    assert platform.installed == [(package, "deb")]
-
-
-def test_install_points_the_service_at_the_lan_and_nothing_else(monkeypatch, tmp_path):
-    """The moment the module lands, every machine is direct-only: no
-    rendezvous, no relay, the port pinned — connect-only machines included,
-    so nothing under a hub ever registers with public infrastructure. The
-    port itself stays closed until a share opens it."""
-    monkeypatch.setattr(rustdesk, "binary_path", lambda: "")
-    written = {}
-    monkeypatch.setattr(
-        rustdesk,
-        "write_config",
-        lambda path, options: written.__setitem__(path, dict(options)),
-    )
-
-    runner().install({"entry": {"package_kind": "deb"}}, str(tmp_path / "rustdesk.deb"))
-
-    options = written["/root/.config/rustdesk/RustDesk2.toml"]
-    assert options["custom-rendezvous-server"] == ""
-    assert options["relay-server"] == ""
-    assert options["direct-access-port"] == "21118"
-    assert "direct-server" not in options
-
-
-def test_a_baseline_the_machine_cannot_take_does_not_fail_the_install(
-    monkeypatch, tmp_path
-):
-    logged = []
-
-    def refuse(path, options):
-        raise InstallError("could not write " + path)
-
-    monkeypatch.setattr(rustdesk, "binary_path", lambda: "")
-    monkeypatch.setattr(rustdesk, "write_config", refuse)
-    module = RustdeskModuleRunner(platform=_Platform(), log=logged.append)
-
-    module.install({"entry": {"package_kind": "deb"}}, str(tmp_path / "r.deb"))
-
-    assert len(logged) == 1 and "could not write" in logged[0]
-
-
-def test_registering_the_service_hands_it_no_pipe(monkeypatch, tmp_path):
-    """``systemctl enable --now`` leaves a service running behind it. A
-    service that inherited a captured pipe holds it open, and the read
-    outlives the timeout that was supposed to bound the call."""
-    monkeypatch.setattr(rustdesk, "binary_path", lambda: "/usr/bin/rustdesk")
-    calls = _RunRecorder()
-    monkeypatch.setattr(rustdesk.subprocess, "run", calls.run)
-    monkeypatch.setattr(rustdesk, "write_config", lambda path, options: None)
-
-    runner().install({"entry": {"package_kind": "deb"}}, str(tmp_path / "rustdesk.deb"))
-
-    assert calls.entries[0]["command"] == [
-        "systemctl",
-        "enable",
-        "--now",
-        "rustdesk",
-    ]
-    assert calls.entries[0]["kwargs"]["stdout"] is rustdesk.subprocess.DEVNULL
-    assert calls.entries[0]["kwargs"]["stderr"] is rustdesk.subprocess.DEVNULL
-    assert "capture_output" not in calls.entries[0]["kwargs"]
-    assert calls.entries[0]["kwargs"]["timeout"] == rustdesk.RUSTDESK_SERVICE_TIMEOUT_S
-
-
-def test_a_registration_that_exits_nonzero_is_logged_and_not_raised(monkeypatch):
-    logged = []
-    monkeypatch.setattr(rustdesk, "binary_path", lambda: "/usr/bin/rustdesk")
-    monkeypatch.setattr(rustdesk.subprocess, "run", _recording([], returncode=1))
-    monkeypatch.setattr(rustdesk, "write_config", lambda path, options: None)
-    module = RustdeskModuleRunner(platform=_Platform(), log=logged.append)
-
-    module.install({"entry": {"package_kind": "deb"}}, "/tmp/rustdesk.deb")
-
-    assert logged == ["rustdesk: systemctl exited 1"]
-
-
-def test_uninstall_runs_the_manifests_own_command(monkeypatch):
-    platform = _Platform()
-
-    runner(platform).uninstall({"entry": {"uninstall": "apt-get purge -y rustdesk"}})
-
-    assert platform.removed == ["apt-get purge -y rustdesk"]
-
-
-def test_a_platform_naming_no_uninstall_is_left_alone():
-    platform = _Platform()
-
-    runner(platform).uninstall({"entry": {}})
-
-    assert platform.removed == []
 
 
 class _RunRecorder:

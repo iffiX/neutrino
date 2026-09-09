@@ -169,15 +169,13 @@ def test_a_refused_link_reports_on_the_state(control):
 # --- POST /api/rdp/start and /api/rdp/stop ---
 
 
-def test_a_share_names_its_account_and_carries_its_password(control):
+def test_a_share_names_its_account_and_no_password_at_all(control):
     server, agent = control
 
-    body = {"user": "alice", "password": "hunter2"}  # scan: allow
-
-    status, state = over_socket(server, "POST", "/api/rdp/start", body)
+    status, state = over_socket(server, "POST", "/api/rdp/start", {"user": "alice"})
 
     assert status == 200
-    assert agent.rdp_calls == [("alice", "hunter2")]
+    assert agent.rdp_calls == ["alice"]
     assert state["rdp"]["is_shared"] is False
 
 
@@ -187,16 +185,14 @@ def test_an_unnamed_account_reaches_the_agent_as_empty(control):
     status, _state = over_socket(server, "POST", "/api/rdp/start", {})
 
     assert status == 200
-    assert agent.rdp_calls == [("", "")]
+    assert agent.rdp_calls == [""]
 
 
 def test_a_share_refusal_maps_to_400(control):
     server, agent = control
     agent.rdp_reply = {"code": "rdp_wrong_seat", "params": {"account": "bob"}}
 
-    status, reply = over_socket(
-        server, "POST", "/api/rdp/start", {"user": "bob", "password": "hunter2"}
-    )
+    status, reply = over_socket(server, "POST", "/api/rdp/start", {"user": "bob"})
 
     assert status == 400
     assert reply == {"code": "rdp_wrong_seat", "params": {"account": "bob"}}
@@ -241,16 +237,14 @@ def test_a_garbage_body_acts_on_nothing_and_never_crashes(control):
     # The garbage decodes to an empty object: nothing named, and the agent's
     # own guard does nothing with a nameless ask.
     assert status == 200
-    assert agent.rdp_calls == [("", "")]
+    assert agent.rdp_calls == [""]
 
 
 def test_a_handler_exception_answers_typed_and_keeps_the_server_answering(control):
     server, agent = control
     agent.rdp_error = OSError("a secret-bearing message")
 
-    status, reply = over_socket(
-        server, "POST", "/api/rdp/start", {"user": "alice", "password": "hunter2"}
-    )
+    status, reply = over_socket(server, "POST", "/api/rdp/start", {"user": "alice"})
 
     # The wire carries the class name only, never the message's own words.
     assert status == 500

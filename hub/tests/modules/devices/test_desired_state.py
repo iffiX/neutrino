@@ -130,15 +130,11 @@ def test_gitea_secrets_are_generated_once_and_kept(config):
 
 
 def test_the_seat_password_is_empty_until_rdp_json_exists(config):
+    """What ``rdp.json`` seals, and what a locked vault leaves of it, is
+    ``test_rdp_passwords.py``'s case."""
     store = DesiredStateStore()
+
     assert store.seat_password(MAC) == ""
-
-    (config / "devices/aa-bb-cc-dd-ee-ff").mkdir(parents=True)
-    (config / "devices/aa-bb-cc-dd-ee-ff/rdp.json").write_text(
-        json.dumps({"seat_password_sealed": "sealed"})
-    )
-
-    assert store.seat_password(MAC) == "sealed"
 
 
 def test_forget_removes_the_devices_directory(config):

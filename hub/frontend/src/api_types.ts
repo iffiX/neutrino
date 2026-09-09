@@ -733,6 +733,23 @@ export interface DeviceCommandResult {
   finished_at: string;
 }
 
+/** What one machine last said about sharing its desktop. */
+export interface DeviceRdp {
+  is_shared: boolean;
+  /** Whose desktop is shared; empty while nothing is. */
+  account: string;
+  /** The port a direct connection lands on; 0 while nothing is shared. */
+  port: number;
+  /** What somebody must do at that machine before a peer is shown its
+   * desktop, as a code this panel words; empty when nothing stands in the
+   * way. */
+  attention: string;
+  connected_count: number;
+  /** Whether this machine's agent package carries the remote desktop host.
+   * False only on a package built before it did. */
+  is_available: boolean;
+}
+
 export interface DeviceClientInfo {
   /** An agent that completed its handshake and still holds a token; a
    * failed install never reads managed. */
@@ -763,6 +780,8 @@ export interface DeviceClientInfo {
   last_error: DeviceClientError | null;
   /** The last outcome of each queued command, newest first. */
   command_results: DeviceCommandResult[];
+  /** The machine's own word on its desktop, from its last report. */
+  rdp: DeviceRdp;
 }
 
 /** What one install on a device did, whatever asked for it. */

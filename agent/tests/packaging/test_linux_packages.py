@@ -14,7 +14,7 @@ import payload
 
 @pytest.fixture
 def carried(monkeypatch):
-    """A staged interpreter, without fetching or compiling one.
+    """A staged interpreter and desktop host, without fetching either.
 
     Returns:
         What each build asked to be compiled, and where it is installed.
@@ -29,9 +29,18 @@ def carried(monkeypatch):
     def compile_bytecode(staged_python, install_python):
         compiled.append((staged_python, install_python))
 
+    def stage_rustdesk(tree, architecture, kind):
+        vendor = tree / str(payload.RUSTDESK_VENDOR_DIR).lstrip("/")
+        vendor.mkdir(parents=True)
+        (vendor / "rustdesk").write_text("")
+        link = tree / payload.RUSTDESK_LINK
+        link.parent.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(payload.RUSTDESK_VENDOR_DIR / "rustdesk")
+
     for module in (build_deb, build_rpm):
         monkeypatch.setattr(module.payload, "stage_linux_interpreter", stage)
         monkeypatch.setattr(module.payload, "compile_bytecode", compile_bytecode)
+        monkeypatch.setattr(module.payload, "stage_rustdesk", stage_rustdesk)
     return compiled
 
 
@@ -61,23 +70,49 @@ def test_the_deb_entry_point_runs_the_carried_interpreter(tmp_path, carried):
 
 def test_the_deb_asks_for_systemd_and_no_python(tmp_path, carried):
     """The interpreter is the package's own; what the machine still owes is
-    the init system that runs the service."""
+    the init system that runs the service, and the C libraries the desktop
+    host loads."""
     build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
 
     control = (tmp_path / "DEBIAN/control").read_text()
 
     assert "Architecture: amd64" in control
     assert "Depends: systemd" in control
+    assert "libgtk-3-0t64 | libgtk-3-0" in control
+    assert "gstreamer1.0-pipewire" in control
     assert "Recommends" not in control
     assert "python3" not in control.split("Description:")[0]
 
 
-def test_the_deb_carries_the_unit_and_nothing_for_a_desktop(tmp_path, carried):
+def test_the_deb_carries_both_units_and_nothing_for_a_desktop(tmp_path, carried):
     build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
 
     assert (tmp_path / "lib/systemd/system/neutrino_agent.service").is_file()
+    unit = (tmp_path / "lib/systemd/system/rustdesk.service").read_text()
+    assert "ExecStart=/opt/neutrino_agent/vendor/rustdesk/rustdesk --service" in unit
     assert not (tmp_path / "usr/share/applications").exists()
     assert not (tmp_path / "usr/share/icons").exists()
+
+
+def test_the_deb_starts_the_desktop_host_and_stops_it_on_removal(tmp_path, carried):
+    """RustDesk's own code runs `systemctl enable rustdesk`, so the unit is
+    named that and no other."""
+    build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
+
+    postinst = (tmp_path / "DEBIAN/postinst").read_text()
+    prerm = (tmp_path / "DEBIAN/prerm").read_text()
+
+    assert "systemctl enable --now rustdesk.service" in postinst
+    assert "systemctl stop rustdesk.service" in prerm
+
+
+def test_the_deb_carries_the_licence_of_what_it_ships(tmp_path, carried):
+    build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
+
+    licence = tmp_path / "usr/share/doc/neutrino-agent/licenses/rustdesk.txt"
+
+    assert "GNU AFFERO GENERAL PUBLIC LICENSE" in licence.read_text()
+    assert "https://github.com/rustdesk/rustdesk/tree/1.4.9" in licence.read_text()
 
 
 def test_the_deb_compiles_the_tree_at_the_path_it_installs_it_at(tmp_path, carried):
@@ -141,6 +176,8 @@ def test_the_rpm_lays_the_same_payload_under_the_same_prefix(tmp_path, carried):
     )
     assert 'AGENT_VERSION = "9.9.9"' in (package / "_version.py").read_text()
     assert (tmp_path / "usr/lib/systemd/system/neutrino_agent.service").is_file()
+    assert (tmp_path / "usr/lib/systemd/system/rustdesk.service").is_file()
+    assert (tmp_path / "opt/neutrino_agent/vendor/rustdesk/rustdesk").is_file()
     assert not (tmp_path / "usr/share/applications").exists()
     wrapper = (tmp_path / "usr/bin/nagent").read_text()
     assert "/opt/neutrino_agent/python/bin/python3" in wrapper
@@ -165,6 +202,8 @@ def _spec(architecture="aarch64"):
         staged="/staged",
         prefix=payload.INSTALL_PREFIX,
         unit_dir=build_rpm.UNIT_DIR,
+        rustdesk_link=payload.RUSTDESK_LINK,
+        rustdesk_unit=payload.RUSTDESK_UNIT_NAME,
         prune=payload.PRUNE_UNTRACKED,
     )
 
@@ -176,6 +215,18 @@ def test_the_rpm_spec_names_the_machine_and_asks_for_no_python():
     assert "BuildArch:      aarch64" in spec
     assert "noarch" not in spec
     assert "Requires:       systemd" in spec
+    assert "Requires:       gtk3" in spec
+    assert "Requires:       pipewire-gstreamer" in spec
     assert "Requires:       python3" not in spec
     assert "Recommends" not in spec
     assert "/opt/neutrino_agent" in spec
+
+
+def test_the_rpm_owns_the_desktop_host_it_carries():
+    spec = _spec()
+
+    assert "/usr/bin/rustdesk" in spec
+    assert "/usr/lib/systemd/system/rustdesk.service" in spec
+    assert "/usr/share/doc/neutrino-agent" in spec
+    assert "systemctl enable --now rustdesk.service" in spec
+    assert "systemctl stop rustdesk.service" in spec

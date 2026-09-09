@@ -33,7 +33,6 @@ from neutrino_agent.modules.gitea.runner import GiteaModuleRunner
 from neutrino_agent.modules.installers import InstallError
 from neutrino_agent.modules.package import PackageModuleRunner
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
-from neutrino_agent.modules.rustdesk import RustdeskModuleRunner
 from neutrino_agent.modules.samba.runner import SambaModuleRunner
 from neutrino_agent.modules.system_package import SystemPackageModuleRunner
 from neutrino_agent.modules.zfs.runner import ZfsModuleRunner
@@ -185,9 +184,6 @@ class ModuleEngine(ReconcileWorker):
             platform=platform, log=self._collect, publish=self._publish
         )
         self._system = SystemPackageModuleRunner(
-            platform=platform, log=self._collect, publish=self._publish
-        )
-        self._rustdesk = RustdeskModuleRunner(
             platform=platform, log=self._collect, publish=self._publish
         )
         # The modules this agent applies the hub's configuration to, by
@@ -494,11 +490,7 @@ class ModuleEngine(ReconcileWorker):
         runner = self._module_runners.get(name)
         if runner is not None and (not kind or runner.kind == kind):
             return runner
-        return {
-            "package": self._package,
-            "system_package": self._system,
-            "rustdesk": self._rustdesk,
-        }.get(kind)
+        return {"package": self._package, "system_package": self._system}.get(kind)
 
     def _install(self, name: str, resolved: dict, order: dict) -> dict:
         """Get the bytes the hub holds and install them.

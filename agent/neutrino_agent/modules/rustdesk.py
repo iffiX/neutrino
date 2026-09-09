@@ -1,9 +1,10 @@
 """RustDesk as a module, and the mechanics of driving it.
 
-The hub's cache fetches the pinned release for this platform and hands the
-bytes down; this installs them with the platform's own installer and answers
-what is on the machine. ``rdp/host.py`` decides when a machine shares its
-desktop; everything here is what RustDesk itself is and how it is driven.
+The Linux agent packages carry the host at
+:data:`~neutrino_agent.constants.AGENT_RUSTDESK_BINARY_PATH`, so a machine
+that has the agent has RustDesk and nothing is fetched onto it.
+``rdp/host.py`` decides when a machine shares its desktop; everything here
+is what RustDesk itself is and how it is driven.
 
 **No rendezvous server.** ``custom-rendezvous-server`` and ``relay-server``
 are written empty and ``direct-server`` is on, so a peer is reached by
@@ -17,7 +18,7 @@ form is salted, so no file write can set it either. The call is made as
 short-lived as it can be and is the one place a secret is on a command
 line.
 
-Not pure: installs packages, writes configuration and drives services.
+Not pure: writes configuration and drives services.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -30,7 +31,6 @@ import subprocess
 import time
 
 from neutrino_agent.constants import AGENT_RUSTDESK_BINARY_PATH
-from neutrino_agent.modules.base import ModuleRunner
 from neutrino_agent.modules.installers import InstallError
 
 RUSTDESK_TIMEOUT_S = 60
@@ -66,11 +66,12 @@ RUSTDESK_BINARY_PATHS = (
 
 RUSTDESK_ACTION_START = "start"
 RUSTDESK_ACTION_STOP = "stop"
+RUSTDESK_ACTION_RESTART = "restart"
 
 RUSTDESK_UNIT = "rustdesk"
 
-# What every machine gets the moment the module lands: no rendezvous, no
-# relay, the direct port pinned. Connections under a hub are dialed by
+# What every machine gets when the agent starts: no rendezvous, no relay,
+# the direct port pinned. Connections under a hub are dialed by
 # address on the LAN; nothing registers with public infrastructure.
 # ``direct-server`` is not here — opening the port is the share's decision.
 RUSTDESK_BASE_OPTIONS = (
@@ -195,7 +196,7 @@ def render_config(existing: str, options: tuple) -> str:
     return "\n".join(lines) + "\n"
 
 
-def write_config(path: str, options: tuple) -> None:
+def write_config(path: str, options: tuple) -> bool:
     """Write one ``RustDesk2.toml``, keeping what it already said and whose
     it was.
 
@@ -211,6 +212,9 @@ def write_config(path: str, options: tuple) -> None:
         path: The file to write.
         options: ``(key, value)`` pairs to set.
 
+    Returns:
+        True when the file's text is not what it was.
+
     Raises:
         InstallError: If the file cannot be written.
     """
@@ -220,17 +224,19 @@ def write_config(path: str, options: tuple) -> None:
         if os.path.isfile(path):
             with open(path, "r", encoding="utf-8") as stream:
                 existing = stream.read()
+        rendered = render_config(existing, options)
         directory = os.path.dirname(path) or "."
         os.makedirs(directory, exist_ok=True)
         temporary = f"{path}.tmp"
         with open(temporary, "w", encoding="utf-8") as stream:
-            stream.write(render_config(existing, options))
+            stream.write(rendered)
         if kept is not None:
             os.chown(temporary, kept[0], kept[1])
             os.chmod(temporary, kept[2])
         os.replace(temporary, path)
     except OSError as error:
         raise InstallError(f"could not write {path}: {error}")
+    return rendered != existing
 
 
 def _owner_of(path: str):
@@ -346,123 +352,3 @@ def control_service(action: str) -> None:
         )
     except (OSError, subprocess.SubprocessError) as error:
         raise InstallError(f"{command[0]} could not run: {error}")
-
-
-class RustdeskModuleRunner(ModuleRunner):
-    """Puts RustDesk on this machine, takes it off, and reads its id."""
-
-    kind = "rustdesk"
-
-    def verify(self, resolved: dict) -> bool:
-        """Whether RustDesk is on this machine.
-
-        The manifest's own check for this platform decides, and its exit
-        status is the whole answer — a check that cannot be run reads as
-        absent rather than as installed.
-
-        Args:
-            resolved: The module as the hub resolved it.
-
-        Returns:
-            True when it is installed.
-        """
-        command = str(resolved.get("verify", ""))
-        if not command:
-            return bool(binary_path())
-        try:
-            result = subprocess.run(
-                command, shell=True, capture_output=True, timeout=RUSTDESK_TIMEOUT_S
-            )
-        except (OSError, subprocess.SubprocessError):
-            return False
-        return result.returncode == 0
-
-    def details(self, resolved: dict) -> dict:
-        """What the surfaces show beside the row.
-
-        Args:
-            resolved: The module as the hub resolved it.
-
-        Returns:
-            ``{"rustdesk_id"}`` when an id can be read, empty otherwise.
-        """
-        identifier = read_id()
-        return {"rustdesk_id": identifier} if identifier else {}
-
-    def install(self, resolved: dict, package_path: str) -> None:
-        """Install the package the hub handed down, and register the service.
-
-        Args:
-            resolved: The module as the hub resolved it.
-            package_path: The package on local disk.
-
-        Raises:
-            InstallError: If the platform's installer refuses.
-            PlatformUnsupportedError: If this platform installs nothing.
-        """
-        entry = resolved.get("entry") or {}
-        self._platform.install_package(
-            package_path,
-            package_kind=str(entry.get("package_kind", "")),
-            entry=entry,
-        )
-        self._register_service()
-        self._write_baseline()
-
-    def uninstall(self, resolved: dict) -> None:
-        """Take RustDesk off this machine.
-
-        Args:
-            resolved: The module as the hub resolved it.
-
-        Raises:
-            InstallError: If the uninstall refuses.
-            PlatformUnsupportedError: If this platform removes nothing.
-        """
-        entry = resolved.get("entry") or {}
-        command = str(entry.get("uninstall", ""))
-        if not command:
-            return
-        self._platform.uninstall_package(command)
-
-    def _write_baseline(self) -> None:
-        """Point the service's own configuration at the LAN and nothing else.
-
-        Best effort beside an install that already succeeded: a machine that
-        cannot take the write still verifies installed, and the share writes
-        the full set again anyway.
-        """
-        for path in config_paths(""):
-            try:
-                write_config(path, RUSTDESK_BASE_OPTIONS)
-            except InstallError as error:
-                self._log(f"rustdesk: {error}")
-
-    def _register_service(self) -> None:
-        """Make RustDesk answer at boot.
-
-        A registration that does not take is logged and not raised: the
-        software is installed either way, and the module's verify is what
-        reports the truth.
-
-        No pipe is handed to it. Registering leaves a service behind that
-        outlives the call, and a service that inherited a captured pipe holds
-        it open for as long as it runs — the read never ends and the timeout
-        never bounds it. The exit status is the whole answer here.
-        """
-        binary = binary_path()
-        if not binary:
-            return
-        command = ["systemctl", "enable", "--now", RUSTDESK_UNIT]
-        try:
-            result = subprocess.run(
-                command,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=RUSTDESK_SERVICE_TIMEOUT_S,
-            )
-        except (OSError, subprocess.SubprocessError) as error:
-            self._log(f"rustdesk: {command[0]} could not run: {error}")
-            return
-        if result.returncode != 0:
-            self._log(f"rustdesk: {command[0]} exited {result.returncode}")

@@ -10,8 +10,15 @@ RDP_STATE_NOT_SHARED = "not_shared"
 RDP_STATE_SHARING = "sharing"
 RDP_STATE_STARTING = "starting"
 
-# Where the access password is kept, mode 0600 under the agent's own root.
+# Where the seat password last set into RustDesk is kept, mode 0600 under
+# the agent's own root.
 RDP_PASSWORD_FILE = "rdp_access_password"
+
+# Where the kernel lists this machine's connections, and the state word an
+# established one carries. A peer that has dialed the direct port is one row
+# of these.
+RDP_PROC_TCP_PATHS = ("/proc/net/tcp", "/proc/net/tcp6")
+RDP_TCP_ESTABLISHED = "01"
 
 # How long a probe of the direct port is believed. The heartbeat reads every
 # few seconds, and nothing wants a connect attempt each time.

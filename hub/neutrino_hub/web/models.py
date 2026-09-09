@@ -827,6 +827,27 @@ class DeviceCommandResultView(BaseModel):
     finished_at: str = ""
 
 
+class DeviceRdpView(BaseModel):
+    """What one machine last said about sharing its desktop."""
+
+    # Whether the machine is sharing its desktop right now.
+    is_shared: bool = False
+    # Whose desktop it is, as the machine named it; empty while nothing is
+    # shared.
+    account: str = ""
+    # The port a direct connection lands on; 0 while nothing is shared.
+    port: int = 0
+    # What somebody must do at that machine before a peer is shown its
+    # desktop, as a typed code the panel words; empty when nothing stands in
+    # the way.
+    attention: str = ""
+    # How many viewers the machine has right now.
+    connected_count: int = 0
+    # Whether this machine's agent package carries the remote desktop host.
+    # False on a package built before it did.
+    is_available: bool = True
+
+
 class DeviceClientInfoView(BaseModel):
     """Agent state and latest metrics for one device."""
 
@@ -865,6 +886,8 @@ class DeviceClientInfoView(BaseModel):
     # Kept for the drawer, which reads it; nothing fills it since commands
     # run over the agent's socket and stream their output as a task.
     command_results: list[DeviceCommandResultView] = Field(default_factory=list)
+    # The machine's own word on its desktop, from its last report.
+    rdp: DeviceRdpView = Field(default_factory=DeviceRdpView)
 
 
 class DeviceOnlineView(BaseModel):

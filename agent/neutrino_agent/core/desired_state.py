@@ -1,11 +1,12 @@
 """The hub's desired state for this machine, kept and made true.
 
 The hub holds one desired state per device: which modules are enabled,
-each module's configuration, and the catalog resolved for this platform.
-A copy lands here on every ``state`` frame, root-only on disk, and the
-applier makes it true in one fixed module order. An enabled module that is
-installed is applied, an installed module that is disabled is stopped, and
-a module that is not installed is left alone until an order installs it.
+each module's configuration, the catalog resolved for this platform, and
+the seat password this machine's desktop answers with. A copy lands here on
+every ``state`` frame, root-only on disk, and the applier makes it true in
+one fixed module order. An enabled module that is installed is applied, an
+installed module that is disabled is stopped, and a module that is not
+installed is left alone until an order installs it.
 
 The applied hash is what the hub compares against: it moves to the state's
 hash only once every enabled module applied, so a failed apply keeps asking
@@ -84,7 +85,9 @@ class DesiredStateStore:
 class DesiredStateApplier:
     """Takes states from the hub and makes the latest one true, in order."""
 
-    def __init__(self, *, engine, runners: dict, store: DesiredStateStore, log=print):
+    def __init__(
+        self, *, engine, runners: dict, store: DesiredStateStore, rdp=None, log=print
+    ):
         """
         Args:
             engine: The :class:`ModuleEngine`, which holds the catalog and
@@ -92,11 +95,14 @@ class DesiredStateApplier:
             runners: Module name to its runner, for the modules this agent
                 applies.
             store: Where the last taken state is kept.
+            rdp: The :class:`RdpShareHost` the desktop half of the state is
+                handed to; None applies nothing of it.
             log: Callable used for progress messages.
         """
         self._engine = engine
         self._runners = dict(runners)
         self._store = store
+        self._rdp = rdp
         self._log = log
         self._lock = threading.Lock()
         self._idle = threading.Condition(self._lock)
@@ -183,6 +189,7 @@ class DesiredStateApplier:
         )
         modules = desired.get("modules")
         modules = modules if isinstance(modules, dict) else {}
+        self._apply_rdp(desired.get("rdp"))
         first_failure = None
         for name in APPLY_ORDER:
             runner = self._runners.get(name)
@@ -214,6 +221,23 @@ class DesiredStateApplier:
                     },
                 }
         self._engine.refresh_now()
+
+    def _apply_rdp(self, wanted) -> None:
+        """Give the desktop host the seat password the hub holds.
+
+        The password is set into RustDesk only when it is not the one this
+        machine already set. A refusal is logged rather than raised: it says
+        nothing about whether the modules applied.
+
+        Args:
+            wanted: The state's ``rdp`` block, or anything else when it
+                carries none.
+        """
+        if self._rdp is None or not isinstance(wanted, dict):
+            return
+        refusal = self._rdp.apply_seat_password(str(wanted.get("seat_password", "")))
+        if refusal:
+            self._log(f"rdp: {refusal['code']}")
 
     def _apply_one(self, name: str, runner, wanted: dict) -> "dict | None":
         """Apply or stop one installed module.

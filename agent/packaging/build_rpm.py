@@ -30,7 +30,22 @@ PACKAGE_NAME = payload.PACKAGE_NAME
 UNIT_DIR = "usr/lib/systemd/system"
 
 # The agent is a headless service; the interpreter it runs from is its own.
-RUNTIME_REQUIRES = ("systemd",)
+# The rest is what the RustDesk host the package carries loads, under the
+# names the RHEL family gives those libraries.
+RUNTIME_REQUIRES = (
+    "systemd",
+    "gtk3",
+    "libxcb",
+    "xdotool",
+    "libXfixes",
+    "alsa-lib",
+    "systemd-libs",
+    "curl",
+    "libva",
+    "gstreamer1-plugins-base",
+    "pam",
+    "pipewire-gstreamer",
+)
 
 SPEC = """Name:           {name}
 Version:        {version}
@@ -65,7 +80,10 @@ cp -a {staged}/. %{{buildroot}}/
 %files
 {prefix}
 /usr/bin/nagent
+/{rustdesk_link}
 /{unit_dir}/neutrino_agent.service
+/{unit_dir}/{rustdesk_unit}
+/usr/share/doc/{name}
 
 %post
 systemctl daemon-reload >/dev/null 2>&1 || true
@@ -74,6 +92,9 @@ systemctl daemon-reload >/dev/null 2>&1 || true
 if [ "$1" -ge 2 ]; then
     systemctl try-restart neutrino_agent.service >/dev/null 2>&1 || true
 fi
+# The desktop host the package carries. Its unit is named the way RustDesk's
+# own code names it, which runs `systemctl enable rustdesk` for itself.
+systemctl enable --now {rustdesk_unit} >/dev/null 2>&1 || true
 if [ "$1" = 1 ]; then
     echo ""
     echo "  Neutrino agent installed. Start it and join a hub:"
@@ -87,6 +108,8 @@ fi
 if [ "$1" = 0 ]; then
     systemctl stop neutrino_agent.service >/dev/null 2>&1 || true
     systemctl disable neutrino_agent.service >/dev/null 2>&1 || true
+    systemctl stop {rustdesk_unit} >/dev/null 2>&1 || true
+    systemctl disable {rustdesk_unit} >/dev/null 2>&1 || true
 fi
 
 %postun
@@ -151,6 +174,8 @@ def main() -> int:
                 staged=staged,
                 prefix=payload.INSTALL_PREFIX,
                 unit_dir=UNIT_DIR,
+                rustdesk_link=payload.RUSTDESK_LINK,
+                rustdesk_unit=payload.RUSTDESK_UNIT_NAME,
                 prune=payload.PRUNE_UNTRACKED,
             ),
             encoding="utf-8",
@@ -174,6 +199,8 @@ def _lay_out(staged: Path, version: str, architecture: str) -> None:
     payload.stage_agent_tree(payload.site_packages_of(staged_python), version)
     payload.compile_bytecode(staged_python, payload.PYTHON_DIR)
     payload.strip_build_paths(staged_python, staged)
+    payload.stage_rustdesk(staged, architecture, "rpm")
+    payload.stage_licenses(staged)
 
     payload.write(
         staged / "usr/bin/nagent",
@@ -185,6 +212,12 @@ def _lay_out(staged: Path, version: str, architecture: str) -> None:
         (AGENT_ROOT / "neutrino_agent/data/systemd/neutrino_agent.service").read_text(
             encoding="utf-8"
         ),
+    )
+    payload.write(
+        staged / UNIT_DIR / payload.RUSTDESK_UNIT_NAME,
+        (
+            AGENT_ROOT / "neutrino_agent/data/systemd" / payload.RUSTDESK_UNIT_NAME
+        ).read_text(encoding="utf-8"),
     )
 
 

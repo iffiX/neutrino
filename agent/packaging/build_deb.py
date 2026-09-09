@@ -22,7 +22,26 @@ AGENT_ROOT = payload.AGENT_ROOT
 PACKAGE_NAME = payload.PACKAGE_NAME
 
 # The agent is a headless service; the interpreter it runs from is its own.
-RUNTIME_DEPENDENCIES = ("systemd",)
+# The rest is what the RustDesk host the package carries loads: upstream's
+# own list, with the alternatives Debian's t64 transition split names over.
+RUNTIME_DEPENDENCIES = (
+    "systemd",
+    "libgtk-3-0t64 | libgtk-3-0",
+    "libxcb-randr0",
+    "libxdo3 | libxdo4",
+    "libxfixes3",
+    "libxcb-shape0",
+    "libxcb-xfixes0",
+    "libasound2t64 | libasound2",
+    "libsystemd0",
+    "curl",
+    "libva2",
+    "libva-drm2",
+    "libva-x11-2",
+    "libgstreamer-plugins-base1.0-0",
+    "libpam0g",
+    "gstreamer1.0-pipewire",
+)
 
 CONTROL = """Package: {name}
 Version: {version}
@@ -63,6 +82,11 @@ if [ "$1" = configure ] && [ -n "$2" ]; then
 fi
 systemctl enable --now neutrino_agent.service >/dev/null 2>&1 || true
 
+# The desktop host the package carries, started after the agent that writes
+# its configuration. Its unit is named the way RustDesk's own code names it,
+# which runs `systemctl enable rustdesk` for itself.
+systemctl enable --now {rustdesk_unit} >/dev/null 2>&1 || true
+
 echo ""
 echo "  Neutrino agent installed. Join a hub with:"
 echo ""
@@ -82,6 +106,8 @@ if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
     fi
     systemctl stop neutrino_agent.service >/dev/null 2>&1 || true
     systemctl disable neutrino_agent.service >/dev/null 2>&1 || true
+    systemctl stop {rustdesk_unit} >/dev/null 2>&1 || true
+    systemctl disable {rustdesk_unit} >/dev/null 2>&1 || true
 fi
 """
 
@@ -160,6 +186,8 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
     payload.stage_agent_tree(payload.site_packages_of(staged_python), version)
     payload.compile_bytecode(staged_python, payload.PYTHON_DIR)
     payload.strip_build_paths(staged_python, tree)
+    payload.stage_rustdesk(tree, architecture, "deb")
+    payload.stage_licenses(tree)
 
     payload.write(
         tree / "usr/bin/nagent",
@@ -171,6 +199,12 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
         (AGENT_ROOT / "neutrino_agent/data/systemd/neutrino_agent.service").read_text(
             encoding="utf-8"
         ),
+    )
+    payload.write(
+        tree / "lib/systemd/system" / payload.RUSTDESK_UNIT_NAME,
+        (
+            AGENT_ROOT / "neutrino_agent/data/systemd" / payload.RUSTDESK_UNIT_NAME
+        ).read_text(encoding="utf-8"),
     )
 
     control = CONTROL.format(
@@ -187,10 +221,15 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
             prune=payload.PRUNE_UNTRACKED,
             package=PACKAGE_NAME,
             prefix=payload.INSTALL_PREFIX,
+            rustdesk_unit=payload.RUSTDESK_UNIT_NAME,
         ),
         is_executable=True,
     )
-    payload.write(tree / "DEBIAN/prerm", PRERM, is_executable=True)
+    payload.write(
+        tree / "DEBIAN/prerm",
+        PRERM.format(rustdesk_unit=payload.RUSTDESK_UNIT_NAME),
+        is_executable=True,
+    )
     payload.write(
         tree / "DEBIAN/postrm",
         POSTRM.format(prefix=payload.INSTALL_PREFIX),

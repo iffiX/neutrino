@@ -2,12 +2,19 @@
 
 An agent's socket opens with one ``hello`` and then carries a ``report``
 every few seconds. Both land in the runtime's memory alone, which is what
-the panel reads: a machine's presence is true only while this hub runs, so
-nothing here writes ``config/``.
+the panel reads: a machine's presence is true only while this hub runs.
+
+The one thing a report writes is the seat password: a machine reporting the
+remote desktop host installed is given one, sealed under the vault's data
+key, the first time it says so.
 """
 
 import ipaddress
 
+from neutrino_hub.modules.devices.constants import (
+    DEVICE_MODULE_STATE_INSTALLED,
+    DEVICE_RDP_MODULE,
+)
 from neutrino_hub.modules.services.constants import SERVICES_RDP_PORT
 
 
@@ -53,6 +60,7 @@ def record_report(runtime, device, report: dict) -> None:
     runtime.client_modules[key] = modules
     # Software turning up on the machine anyway settles a standing failure.
     runtime.agent_module_orders.note_reported_states(key, modules)
+    _ensure_seat_password(runtime, key, modules)
     platform = report.get("platform")
     if isinstance(platform, dict) and platform:
         runtime.client_platform[key] = dict(platform)
@@ -165,6 +173,8 @@ def record_rdp_share(runtime, device, share: dict, host: str) -> None:
             host=host,
             port=int(share.get("port") or SERVICES_RDP_PORT),
             attention=str(share.get("attention", "") or ""),
+            account=str(share.get("account", "") or ""),
+            connected_count=int(share.get("connected_count") or 0),
         )
     else:
         runtime.device_shares.withdraw(key)
@@ -172,6 +182,26 @@ def record_rdp_share(runtime, device, share: dict, host: str) -> None:
         # The published list is cached for a few seconds; a share appearing
         # or ending is what a person is watching for, so it recomposes now.
         runtime.published_services.expire()
+
+
+def _ensure_seat_password(runtime, key: str, modules: dict) -> None:
+    """Give a device its seat password once its agent hosts RustDesk.
+
+    The password is the hub's to make, so a machine that reports the host
+    installed is handed one it never typed. A locked vault seals nothing
+    and the next report tries again.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        modules: The module states the report carries.
+    """
+    reported = modules.get(DEVICE_RDP_MODULE)
+    if not isinstance(reported, dict):
+        return
+    if str(reported.get("state", "")) != DEVICE_MODULE_STATE_INSTALLED:
+        return
+    runtime.desired_states.ensure_seat_password(key)
 
 
 def _record_reinstall(runtime, key: str, message: dict) -> None:

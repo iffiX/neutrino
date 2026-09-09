@@ -140,8 +140,8 @@ class FakeControlAgent:
         self.syncs += 1
         return dict(self.sync_reply)
 
-    def rdp_share(self, *, account: str, password: str) -> dict:
-        self.rdp_calls.append((account, password))
+    def rdp_share(self, *, account: str) -> dict:
+        self.rdp_calls.append(account)
         if self.rdp_error is not None:
             raise self.rdp_error
         return dict(self.rdp_reply)

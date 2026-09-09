@@ -66,22 +66,15 @@ def share_host(tmp_path, monkeypatch):
 def test_sharing_without_the_module_is_refused_before_anything_is_written(share_host):
     share_host.bind_modules(lambda: dict(ABSENT))
 
-    refusal = share_host.share("pat", "hunter2")
+    refusal = share_host.share("pat")
 
     assert refusal == {"code": "module_missing", "params": {"module": "rustdesk"}}
     assert share_host.written == {}
     assert share_host.services == []
 
 
-def test_sharing_without_a_password_is_refused(share_host):
-    refusal = share_host.share("pat", "")
-
-    assert refusal == {"code": "rdp_password_missing", "params": {}}
-    assert share_host.written == {}
-
-
 def test_sharing_without_an_account_is_refused(share_host):
-    refusal = share_host.share("", "hunter2")
+    refusal = share_host.share("")
 
     assert refusal == {"code": "rdp_no_seat", "params": {}}
     assert share_host.written == {}
@@ -95,7 +88,7 @@ def test_a_machine_with_no_desktop_is_refused_before_rustdesk_is_touched(
     can act on."""
     monkeypatch.setattr(host_module, "has_desktop_session", lambda: False)
 
-    refusal = share_host.share("pat", "hunter2")
+    refusal = share_host.share("pat")
 
     assert refusal == {"code": "rdp_no_desktop", "params": {}}
     assert share_host.written == {}
@@ -189,7 +182,7 @@ def test_a_loginctl_that_exits_nonzero_answers_nothing(monkeypatch):
 
 
 def test_sharing_writes_the_direct_configuration_everywhere_it_is_read(share_host):
-    assert share_host.share("pat", "hunter2") == {}
+    assert share_host.share("pat") == {}
 
     assert set(share_host.written) == {
         "/root/.config/rustdesk/RustDesk2.toml",
@@ -202,14 +195,15 @@ def test_sharing_writes_the_direct_configuration_everywhere_it_is_read(share_hos
 
 
 def test_the_service_is_stopped_around_the_write_and_started_after(share_host):
-    share_host.share("pat", "hunter2")
+    share_host.share("pat")
 
     # A write underneath a running service is one it overwrites as it exits.
     assert share_host.services == ["stop", "start"]
 
 
-def test_the_password_is_set_into_rustdesk_and_kept_only_for_root(share_host, tmp_path):
-    share_host.share("pat", "hunter2")
+def test_the_seat_password_is_the_hubs_and_is_set_into_rustdesk(share_host, tmp_path):
+    """It arrives in the desired state, not from anybody at this machine."""
+    assert share_host.apply_seat_password("hunter2") == {}
 
     assert share_host.passwords == ["hunter2"]
     kept = tmp_path / "credentials" / "rdp_access_password"
@@ -218,14 +212,58 @@ def test_the_password_is_set_into_rustdesk_and_kept_only_for_root(share_host, tm
     assert oct(kept.parent.stat().st_mode & 0o777) == "0o700"
 
 
-def test_the_password_never_enters_the_store(share_host, tmp_path):
-    share_host.share("pat", "hunter2")
+def test_the_seat_password_is_set_only_when_it_changed(share_host):
+    share_host.apply_seat_password("hunter2")
+    share_host.apply_seat_password("hunter2")
+
+    assert share_host.passwords == ["hunter2"]
+
+    share_host.apply_seat_password("correcthorse")
+
+    assert share_host.passwords == ["hunter2", "correcthorse"]
+
+
+def test_a_state_carrying_no_seat_password_sets_nothing(share_host):
+    assert share_host.apply_seat_password("") == {}
+
+    assert share_host.passwords == []
+
+
+def test_a_password_rustdesk_refuses_is_typed_and_not_recorded(
+    share_host, tmp_path, monkeypatch
+):
+    """A password recorded as set while RustDesk refused it would never be
+    tried again."""
+
+    def refuse(password):
+        raise InstallError("rustdesk refused the password")
+
+    monkeypatch.setattr(rustdesk, "set_password", refuse)
+
+    refusal = share_host.apply_seat_password("hunter2")
+
+    assert refusal["code"] == "rdp_password_refused"
+    assert not (tmp_path / "credentials" / "rdp_access_password").exists()
+
+
+def test_a_share_answers_with_the_seat_password_the_hub_set(share_host):
+    share_host.apply_seat_password("hunter2")
+    share_host.passwords.clear()
+
+    share_host.share("pat")
+
+    assert share_host.passwords == ["hunter2"]
+
+
+def test_the_seat_password_never_enters_the_store(share_host, tmp_path):
+    share_host.apply_seat_password("hunter2")
+    share_host.share("pat")
 
     assert "hunter2" not in (tmp_path / "state.json").read_text()
 
 
 def test_the_declaration_carries_no_password_at_all(share_host):
-    share_host.share("pat", "hunter2")
+    share_host.share("pat")
 
     declaration = share_host.declaration()
 
@@ -235,13 +273,15 @@ def test_the_declaration_carries_no_password_at_all(share_host):
         "share_id",
         "port",
         "attention",
+        "connected_count",
     }
     assert declaration["account"] == "pat"
     assert "hunter2" not in repr(declaration)
 
 
 def test_the_state_carries_no_password_at_all(share_host):
-    share_host.share("pat", "hunter2")
+    share_host.apply_seat_password("hunter2")
+    share_host.share("pat")
 
     state = share_host.state()
 
@@ -250,7 +290,7 @@ def test_the_state_carries_no_password_at_all(share_host):
 
 
 def test_a_shared_machine_declares_itself_with_its_own_share_id(share_host):
-    share_host.share("pat", "hunter2")
+    share_host.share("pat")
 
     declaration = share_host.declaration()
 
@@ -260,10 +300,10 @@ def test_a_shared_machine_declares_itself_with_its_own_share_id(share_host):
 
 
 def test_sharing_again_keeps_the_share_id_the_fleet_already_knows(share_host):
-    share_host.share("pat", "hunter2")
+    share_host.share("pat")
     first = share_host.declaration()["share_id"]
 
-    share_host.share("pat", "other")
+    share_host.share("pat")
 
     assert share_host.declaration()["share_id"] == first
 
@@ -274,7 +314,7 @@ def test_a_configure_that_fails_is_typed_and_declares_nothing(share_host, monkey
 
     monkeypatch.setattr(rustdesk, "write_config", explode)
 
-    refusal = share_host.share("pat", "hunter2")
+    refusal = share_host.share("pat")
 
     assert refusal["code"] == "rdp_configure_failed"
     assert share_host.declaration()["is_shared"] is False
@@ -286,7 +326,7 @@ def test_a_configure_that_fails_is_typed_and_declares_nothing(share_host, monkey
 def test_a_configured_share_that_does_not_answer_is_starting_not_shared(
     share_host, monkeypatch
 ):
-    share_host.share("pat", "hunter2")
+    share_host.share("pat")
     monkeypatch.setattr(RdpShareHost, "_answers", lambda self: False)
 
     assert share_host.state()["state"] == "starting"
@@ -295,7 +335,7 @@ def test_a_configured_share_that_does_not_answer_is_starting_not_shared(
 
 
 def test_an_answering_share_reads_as_shared(share_host):
-    share_host.share("pat", "hunter2")
+    share_host.share("pat")
 
     assert share_host.state()["state"] == "sharing"
     assert share_host.declaration()["is_shared"] is True
@@ -307,7 +347,7 @@ def test_a_machine_that_never_shared_reads_not_shared(share_host):
 
 
 def test_the_state_carries_the_id_a_peer_connects_by(share_host):
-    share_host.share("pat", "hunter2")
+    share_host.share("pat")
 
     assert share_host.state()["rustdesk_id"] == "123456789"
 
@@ -316,7 +356,7 @@ def test_the_state_carries_the_id_a_peer_connects_by(share_host):
 
 
 def test_unsharing_closes_the_direct_server_and_stops_declaring(share_host):
-    share_host.share("pat", "hunter2")
+    share_host.share("pat")
     share_host.written.clear()
     share_host.services.clear()
 
@@ -335,17 +375,20 @@ def test_unsharing_closes_the_direct_server_and_stops_declaring(share_host):
     assert share_host.state()["state"] == "not_shared"
 
 
-def test_unsharing_forgets_the_access_password(share_host, tmp_path):
-    share_host.share("pat", "hunter2")
+def test_unsharing_keeps_the_seat_password_the_hub_holds(share_host, tmp_path):
+    """The password is the machine's, not the share's: the hub sets it and a
+    later share answers with the same one."""
+    share_host.apply_seat_password("hunter2")
+    share_host.share("pat")
 
     share_host.unshare()
 
-    assert not (tmp_path / "credentials" / "rdp_access_password").exists()
-    assert share_host.state()["has_password"] is False
+    assert (tmp_path / "credentials" / "rdp_access_password").read_text() == "hunter2"
+    assert share_host.state()["has_password"] is True
 
 
 def test_an_unshare_that_cannot_be_written_is_typed(share_host, monkeypatch):
-    share_host.share("pat", "hunter2")
+    share_host.share("pat")
 
     def explode(path, options):
         raise InstallError("read-only file system")
@@ -364,7 +407,7 @@ def test_a_share_names_an_account_and_the_seat_must_agree(share_host, monkeypatc
     be shown."""
     monkeypatch.setattr(host_module, "graphical_accounts", lambda: ["sam"])
 
-    refusal = share_host.share("pat", "hunter2")
+    refusal = share_host.share("pat")
 
     assert refusal == {"code": "rdp_wrong_seat", "params": {"account": "pat"}}
     assert share_host.written == {}
@@ -375,7 +418,7 @@ def test_a_share_naming_the_seated_account_goes_through_as_them(
 ):
     monkeypatch.setattr(host_module, "graphical_accounts", lambda: ["sam"])
 
-    outcome = share_host.share("sam", "hunter2")
+    outcome = share_host.share("sam")
 
     assert outcome == {}
     assert "/home/sam/.config/rustdesk/RustDesk2.toml" in share_host.written
@@ -383,7 +426,7 @@ def test_a_share_naming_the_seated_account_goes_through_as_them(
 
 
 def test_where_the_seat_cannot_be_read_the_account_only_has_to_exist(share_host):
-    refusal = share_host.share("nobody", "hunter2")
+    refusal = share_host.share("nobody")
 
     assert refusal == {"code": "no_target_user", "params": {}}
     assert share_host.written == {}
@@ -405,6 +448,150 @@ def test_a_machine_without_loginctl_cannot_say_who_is_seated(monkeypatch):
     monkeypatch.setattr(host_module, "_loginctl", lambda arguments: None)
 
     assert host_module.graphical_accounts() is None
+
+
+def test_naming_another_account_closes_the_share_the_last_one_had(
+    share_host, monkeypatch
+):
+    """One machine shares one seat: the copy the previous account was shared
+    through is closed before the new one is written."""
+    monkeypatch.setattr(host_module, "graphical_accounts", lambda: ["pat", "sam"])
+    share_host.share("pat")
+    share_host.written.clear()
+
+    assert share_host.share("sam") == {}
+
+    assert (
+        share_host.written["/home/pat/.config/rustdesk/RustDesk2.toml"]["direct-server"]
+        == "N"
+    )
+    assert (
+        share_host.written["/home/sam/.config/rustdesk/RustDesk2.toml"]["direct-server"]
+        == "Y"
+    )
+    assert share_host.state()["account"] == "sam"
+
+
+def test_sharing_the_same_account_again_closes_nothing(share_host):
+    share_host.share("pat")
+    share_host.written.clear()
+
+    share_host.share("pat")
+
+    for options in share_host.written.values():
+        assert options["direct-server"] == "Y"
+
+
+# --- how many peers are on it ---
+
+
+def _proc_tcp(tmp_path, monkeypatch, rows: str, rows6: str = ""):
+    """A connection table saying exactly what a test wants it to."""
+    table = tmp_path / "tcp"
+    table.write_text(
+        "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when"
+        " retrnsmt   uid  timeout inode\n" + rows
+    )
+    table6 = tmp_path / "tcp6"
+    table6.write_text(
+        "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when"
+        " retrnsmt   uid  timeout inode\n" + rows6
+    )
+    monkeypatch.setattr(host_module, "RDP_PROC_TCP_PATHS", (str(table), str(table6)))
+
+
+def test_the_peers_on_the_direct_port_are_counted_off_the_kernels_own_table(
+    tmp_path, monkeypatch
+):
+    # 527E is 21118; 01 is established, 0A is a listening socket.
+    _proc_tcp(
+        tmp_path,
+        monkeypatch,
+        "   0: 0100007F:527E 00000000:0000 0A 00000000:00000000 00:00000000 0\n"
+        "   1: C0A80102:527E C0A80105:E1F4 01 00000000:00000000 00:00000000 0\n"
+        "   2: C0A80102:527E C0A80106:E1F5 01 00000000:00000000 00:00000000 0\n"
+        "   3: C0A80102:0016 C0A80107:E1F6 01 00000000:00000000 00:00000000 0\n",
+        "   0: 00000000000000000000000000000000:527E "
+        "00000000000000000000000000000001:E1F7 01 00000000:00000000 00:00000000 0\n",
+    )
+
+    assert host_module.connected_count(21118) == 3
+    assert host_module.connected_count(22) == 1
+
+
+def test_a_machine_whose_table_cannot_be_read_counts_nobody(monkeypatch):
+    monkeypatch.setattr(host_module, "RDP_PROC_TCP_PATHS", ("/nowhere/tcp",))
+
+    assert host_module.connected_count(21118) == 0
+
+
+def test_the_declaration_says_how_many_peers_are_connected(
+    share_host, tmp_path, monkeypatch
+):
+    _proc_tcp(
+        tmp_path,
+        monkeypatch,
+        "   0: C0A80102:527E C0A80105:E1F4 01 00000000:00000000 00:00000000 0\n",
+    )
+    share_host.share("pat")
+
+    assert share_host.declaration()["connected_count"] == 1
+
+
+def test_a_machine_that_shares_nothing_counts_nobody(share_host, tmp_path, monkeypatch):
+    _proc_tcp(
+        tmp_path,
+        monkeypatch,
+        "   0: C0A80102:527E C0A80105:E1F4 01 00000000:00000000 00:00000000 0\n",
+    )
+
+    assert share_host.declaration()["connected_count"] == 0
+
+
+# --- the baseline every machine gets, shared or not ---
+
+
+def test_the_baseline_names_no_rendezvous_and_opens_nothing(share_host):
+    """A machine carrying RustDesk must not register with public
+    infrastructure before anybody asked it to share."""
+    share_host.apply_baseline()
+
+    assert set(share_host.written) == {"/root/.config/rustdesk/RustDesk2.toml"}
+    options = share_host.written["/root/.config/rustdesk/RustDesk2.toml"]
+    assert options["custom-rendezvous-server"] == ""
+    assert options["relay-server"] == ""
+    assert "direct-server" not in options
+
+
+def test_a_baseline_that_changed_the_file_restarts_the_service(share_host, monkeypatch):
+    """A running service read its configuration once."""
+    monkeypatch.setattr(rustdesk, "write_config", lambda path, options: True)
+
+    share_host.apply_baseline()
+
+    assert share_host.services == ["restart"]
+
+
+def test_a_baseline_that_changed_nothing_restarts_nothing(share_host):
+    share_host.apply_baseline()
+
+    assert share_host.services == []
+
+
+def test_a_baseline_the_machine_cannot_take_is_logged_and_not_raised(
+    share_host, monkeypatch
+):
+    logged = []
+    share_host._log = logged.append
+
+    def refuse(path, options):
+        raise InstallError("read-only file system")
+
+    monkeypatch.setattr(rustdesk, "write_config", refuse)
+
+    share_host.apply_baseline()
+
+    assert logged == ["rdp: read-only file system"]
 
 
 # --- the seat session's own display environment ---
@@ -521,7 +708,7 @@ def test_a_greeters_session_holds_no_permission_it_could_keep(share_host, monkey
 
 
 def test_the_declaration_carries_what_a_peer_would_wait_on(share_host, monkeypatch):
-    share_host.share("pat", "hunter2")
+    share_host.share("pat")
     # Asked after the share, because only a sharing machine pays for it.
     monkeypatch.setattr(host_module, "graphical_accounts", lambda: [])
 

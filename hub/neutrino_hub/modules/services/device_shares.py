@@ -39,6 +39,8 @@ class DeviceShare:
             than waiting in "connecting" for a dialog it cannot see.
         declared_at: When the declaring beat arrived, on the monotonic
             clock; a share older than the online window is gone.
+        account: Whose desktop is shared, as the machine named it.
+        connected_count: How many viewers the machine has right now.
     """
 
     share_id: str
@@ -48,6 +50,8 @@ class DeviceShare:
     port: int
     declared_at: float
     attention: str = ""
+    account: str = ""
+    connected_count: int = 0
 
 
 class DeviceShareRegistry:
@@ -73,6 +77,8 @@ class DeviceShareRegistry:
         host: str,
         port: int,
         attention: str = "",
+        account: str = "",
+        connected_count: int = 0,
         now: "float | None" = None,
     ) -> None:
         """Record that one machine is sharing its desktop.
@@ -85,6 +91,8 @@ class DeviceShareRegistry:
             port: The port a direct connection lands on.
             attention: What somebody must do at that machine before a peer
                 is shown its desktop; empty when nothing stands in the way.
+            account: Whose desktop is shared.
+            connected_count: How many viewers the machine has right now.
             now: The monotonic reading to stamp with; None reads the clock.
         """
         key = (mac_address or "").lower()
@@ -98,6 +106,8 @@ class DeviceShareRegistry:
                 host=str(host),
                 port=int(port),
                 attention=str(attention or ""),
+                account=str(account or ""),
+                connected_count=int(connected_count or 0),
                 declared_at=time.monotonic() if now is None else now,
             )
 

@@ -1,11 +1,11 @@
 """What one device carries into the panel's two sections.
 
 The Devices page splits on ``client.is_managed`` and draws a managed tile
-with what its agent says the machine is. The platform, the agent version
-and the last-seen stamp are held in memory and never stored, so what these
-pin is that the list carries them when an agent has been seen, carries
-nulls when none has, and does not lose them on the single-device path a
-save comes back through.
+with what its agent says the machine is. The platform, the agent version,
+the last-seen stamp and the desktop the machine says it is sharing are held
+in memory and never stored, so what these pin is that the list carries them
+when an agent has been seen, carries nulls when none has, and does not lose
+them on the single-device path a save comes back through.
 """
 
 import pytest
@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice
+from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
@@ -56,6 +57,8 @@ class FakeRuntime:
         self.client_platform = {}
         self.client_hostname = {}
         self.client_last_error = {}
+        self.client_modules = {}
+        self.device_shares = DeviceShareRegistry()
         self.agent_sessions = FakeAgentSessions()
 
     def network(self):
@@ -206,3 +209,81 @@ def test_the_ssh_block_carries_its_references_and_no_password_field(api):
         "login_id": "abc123",
         "sudo_login_id": None,
     }
+
+
+# --- the desktop the machine says it is sharing ---
+
+
+def test_a_device_sharing_its_desktop_carries_the_share_it_declared(api):
+    client, runtime = api
+    runtime.client_modules[MAC] = {"rustdesk": {"state": "installed"}}
+    runtime.device_shares.declare(
+        mac_address=MAC,
+        share_id="s1",
+        hostname="xenode",
+        host="192.168.100.2",
+        port=21118,
+        attention="rdp_nobody_seated",
+        account="pat",
+        connected_count=2,
+    )
+
+    (device,) = client.get("/api/devices").json()["devices"]
+
+    assert device["client"]["rdp"] == {
+        "is_shared": True,
+        "account": "pat",
+        "port": 21118,
+        "attention": "rdp_nobody_seated",
+        "connected_count": 2,
+        "is_available": True,
+    }
+
+
+def test_a_device_sharing_nothing_says_so_without_a_port_or_an_account(api):
+    client, runtime = api
+    runtime.client_modules[MAC] = {"rustdesk": {"state": "installed"}}
+
+    (device,) = client.get("/api/devices").json()["devices"]
+
+    assert device["client"]["rdp"] == {
+        "is_shared": False,
+        "account": "",
+        "port": 0,
+        "attention": "",
+        "connected_count": 0,
+        "is_available": True,
+    }
+
+
+def test_a_package_built_without_the_host_reads_unavailable(api):
+    """Only a machine reporting the row absent says so. One nobody has heard
+    from says nothing either way, and the card stands as it always did."""
+    client, runtime = api
+    runtime.client_modules[MAC] = {"rustdesk": {"state": "absent"}}
+
+    (device,) = client.get("/api/devices").json()["devices"]
+
+    assert device["client"]["rdp"]["is_available"] is False
+
+    runtime.client_modules[MAC] = {}
+
+    (device,) = client.get("/api/devices").json()["devices"]
+
+    assert device["client"]["rdp"]["is_available"] is True
+
+
+def test_another_machines_share_is_not_shown_on_this_device(api):
+    client, runtime = api
+    runtime.device_shares.declare(
+        mac_address="11:22:33:44:55:66",
+        share_id="s2",
+        hostname="other",
+        host="192.168.100.9",
+        port=21118,
+        account="sam",
+    )
+
+    (device,) = client.get("/api/devices").json()["devices"]
+
+    assert device["client"]["rdp"]["is_shared"] is False

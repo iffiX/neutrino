@@ -53,6 +53,51 @@ PYTHON_SHA256 = {
     "aarch64": "e5d0df1a6070a8614d808496e5ea28c727480e40ffcce1a94697a067f1690aa8",  # scan: allow
 }
 
+# The RustDesk host the Linux packages carry, pinned by hash. It is unpacked
+# out of the upstream package at build time and installed under the agent's
+# own prefix, so a device has the host from the install and fetches nothing
+# at runtime.
+RUSTDESK_VERSION = "1.4.9"
+RUSTDESK_URL = (
+    "https://github.com/rustdesk/rustdesk/releases/download/"
+    "{version}/rustdesk-{version}{suffix}"
+)
+# The Flutter builds. The same release publishes `-sciter` assets of the old
+# frontend, which are carried nowhere.
+RUSTDESK_ASSETS = {
+    ("deb", "x86_64"): (
+        "-x86_64.deb",
+        "7244ba47c40e804172044bfbe659467c54ce46554c98e78c8c0406f1d612fda3",  # scan: allow
+    ),
+    ("deb", "aarch64"): (
+        "-aarch64.deb",
+        "ce62c996f14d33f3bbe3a330e953644a44bace7f05885a7953f7395d69fb49c0",  # scan: allow
+    ),
+    ("rpm", "x86_64"): (
+        "-0.x86_64.rpm",
+        "eb1b053ac5b2f774f2271f7fbbfd2ea475899f7a55135c5e172bc54b9388f108",  # scan: allow
+    ),
+    ("rpm", "aarch64"): (
+        "-0.aarch64.rpm",
+        "3e523df7ceb6f3804b047a3cac797354c4bf46ec19f2d7ff5e198787003cb092",  # scan: allow
+    ),
+}
+RUSTDESK_VENDOR_DIR = INSTALL_PREFIX / "vendor/rustdesk"
+# Where the upstream package keeps the whole host: the binary, the libraries
+# it loads and the data it reads. What surrounds it there — the unit, the
+# desktop file, the polkit and pam rules — is upstream's own session setup
+# and is not carried.
+RUSTDESK_UPSTREAM_DIR = "usr/share/rustdesk"
+RUSTDESK_BINARY_NAME = "rustdesk"
+# RustDesk finds its own files through ``current_exe``, but some of its paths
+# still assume the name on PATH.
+RUSTDESK_LINK = "usr/bin/rustdesk"
+RUSTDESK_UNIT_NAME = "rustdesk.service"
+
+# The licences of what the agent packages carry, by the file name they have
+# in the repository's own ``licenses/``.
+CARRIED_LICENSES = ("rustdesk.txt",)
+
 # What each packaging format calls the machine, mapped to what the interpreter
 # release calls it. 32-bit ARM is not on the list: no interpreter is published
 # for it here, and it is not a machine this project ships to.
@@ -208,6 +253,76 @@ def stage_linux_interpreter(staged_python: Path, architecture: str) -> None:
     trim_interpreter(staged_python)
 
 
+def stage_rustdesk(tree: Path, architecture: str, kind: str) -> None:
+    """Unpack the pinned RustDesk host into a Linux package tree.
+
+    The upstream package is fetched and opened here, and only its host
+    directory is carried: the binary, its libraries and its data, under the
+    agent's own prefix. The symlink on PATH points at that copy.
+
+    Args:
+        tree: The staging directory standing in for the filesystem root.
+        architecture: The architecture, named however the format names it.
+        kind: ``deb`` or ``rpm``, which says how the asset is opened.
+
+    Raises:
+        SystemExit: When there is no asset pinned for the machine, when what
+            arrived is not what was pinned, or when it carries no host.
+    """
+    machine = machine_name(architecture)
+    asset = RUSTDESK_ASSETS.get((kind, machine))
+    if asset is None:
+        raise SystemExit(
+            f"no RustDesk {kind} pinned for {architecture}; there is one for: "
+            f"{', '.join(sorted(name for k, name in RUSTDESK_ASSETS if k == kind))}"
+        )
+    suffix, digest = asset
+    url = RUSTDESK_URL.format(version=RUSTDESK_VERSION, suffix=suffix)
+    downloaded = fetch(url, digest, "the RustDesk host")
+
+    staged = tree / str(RUSTDESK_VENDOR_DIR).lstrip("/")
+    with tempfile.TemporaryDirectory() as workdir:
+        root = Path(workdir)
+        package = root / f"rustdesk{suffix}"
+        package.write_bytes(downloaded)
+        opened = root / "opened"
+        opened.mkdir()
+        _unpack_package(package, opened, kind)
+        carried = opened / RUSTDESK_UPSTREAM_DIR
+        if not (carried / RUSTDESK_BINARY_NAME).is_file():
+            raise SystemExit(
+                f"{url} carries no {RUSTDESK_UPSTREAM_DIR}/{RUSTDESK_BINARY_NAME}"
+            )
+        staged.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(carried, staged)
+
+    link = tree / RUSTDESK_LINK
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.unlink(missing_ok=True)
+    link.symlink_to(RUSTDESK_VENDOR_DIR / RUSTDESK_BINARY_NAME)
+
+
+def stage_licenses(tree: Path) -> None:
+    """Copy the licences of what the package carries into the tree.
+
+    Args:
+        tree: The staging directory standing in for the filesystem root.
+
+    Raises:
+        SystemExit: When a licence the package owes is not in the checkout.
+    """
+    destination = tree / "usr/share/doc" / PACKAGE_NAME / "licenses"
+    destination.mkdir(parents=True, exist_ok=True)
+    for name in CARRIED_LICENSES:
+        source = REPO_ROOT / "licenses" / name
+        if not source.is_file():
+            raise SystemExit(
+                f"the package carries {name} and there is none at {source}"
+            )
+        shutil.copyfile(source, destination / name)
+        (destination / name).chmod(0o644)
+
+
 def trim_interpreter(staged_python: Path) -> None:
     """Take out of a staged interpreter what no package needs.
 
@@ -354,3 +469,46 @@ def write(path: Path, text: str, *, is_executable: bool = False) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
     path.chmod(0o755 if is_executable else 0o644)
+
+
+def _unpack_package(package: Path, into: Path, kind: str) -> None:
+    """Open one downloaded package with the tooling its format needs.
+
+    Args:
+        package: The file on disk.
+        into: The directory its payload belongs in.
+        kind: ``deb`` or ``rpm``.
+
+    Raises:
+        SystemExit: When the tooling is absent or refuses.
+    """
+    if kind == "deb":
+        _run_tool(["dpkg-deb", "-x", str(package), str(into)], into)
+        return
+    payload_stream = package.parent / f"{package.name}.cpio"
+    with open(payload_stream, "wb") as target:
+        _run_tool(["rpm2cpio", str(package)], into, stdout=target)
+    with open(payload_stream, "rb") as source:
+        _run_tool(["cpio", "-idm", "--quiet"], into, stdin=source)
+
+
+def _run_tool(command: list, cwd: Path, **streams) -> None:
+    """Run one extraction tool, or say which one is not there.
+
+    Args:
+        command: The command and its arguments.
+        cwd: The directory to run it in.
+        **streams: Standard input and output to hand it.
+
+    Raises:
+        SystemExit: When the tool is absent or refuses.
+    """
+    try:
+        result = subprocess.run(
+            command, cwd=str(cwd), stderr=subprocess.PIPE, **streams
+        )
+    except OSError as error:
+        raise SystemExit(f"{command[0]} is needed to open the package: {error}")
+    if result.returncode != 0:
+        printed = (result.stderr or b"").decode("utf-8", "replace").strip()
+        raise SystemExit(f"{command[0]} exited {result.returncode}: {printed}")

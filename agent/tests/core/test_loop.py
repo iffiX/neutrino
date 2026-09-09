@@ -279,6 +279,7 @@ def test_the_report_carries_every_field_from_its_source(config_path, monkeypatch
     assert set(report["rdp"]) == {
         "is_shared",
         "account",
+        "connected_count",
         "share_id",
         "port",
         "attention",

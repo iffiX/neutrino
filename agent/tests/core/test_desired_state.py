@@ -45,6 +45,18 @@ class FakeEngine:
         self.refreshes += 1
 
 
+class FakeShareHost:
+    """A desktop host that records the seat passwords it was handed."""
+
+    def __init__(self, refusal=None):
+        self.passwords: list = []
+        self.refusal = refusal
+
+    def apply_seat_password(self, password):
+        self.passwords.append(password)
+        return dict(self.refusal) if self.refusal else {}
+
+
 class FakeRunner:
     """A runner that records the verbs it is asked, and refuses on cue."""
 
@@ -80,12 +92,13 @@ def desired(**modules) -> dict:
     }
 
 
-def applier(runners, engine=None, tmp_path=None):
+def applier(runners, engine=None, tmp_path=None, rdp=None):
     engine = engine if engine is not None else FakeEngine(runners)
     held = DesiredStateApplier.__new__(DesiredStateApplier)
     held._engine = engine
     held._runners = dict(runners)
     held._store = DesiredStateStore(path=str(tmp_path / "desired.json"))
+    held._rdp = rdp
     held._log = lambda message: None
     held._lock = threading.Lock()
     held._idle = threading.Condition(held._lock)
@@ -273,3 +286,42 @@ def test_settle_returns_once_the_taken_state_has_applied(tmp_path):
     assert held.applied_hash == "h1"
     assert runners["samba"].applied == [{"n": "samba"}]
     assert held.settle(0.1)
+
+
+# --- the desktop half of the state ---
+
+
+def test_the_seat_password_reaches_the_desktop_host(tmp_path):
+    host = FakeShareHost()
+    held, _engine = applier({"samba": FakeRunner()}, tmp_path=tmp_path, rdp=host)
+    state = desired(samba=True)
+    state["rdp"] = {"seat_password": "hunter2"}  # scan: allow
+
+    held.apply("h1", state)
+
+    assert host.passwords == ["hunter2"]
+
+
+def test_a_state_with_no_desktop_block_hands_the_host_nothing(tmp_path):
+    host = FakeShareHost()
+    held, _engine = applier({"samba": FakeRunner()}, tmp_path=tmp_path, rdp=host)
+    state = desired(samba=True)
+    state.pop("rdp")
+
+    held.apply("h1", state)
+
+    assert host.passwords == []
+
+
+def test_a_password_the_host_refuses_does_not_fail_the_state(tmp_path):
+    """What RustDesk did with a password says nothing about whether the
+    modules applied."""
+    host = FakeShareHost(refusal={"code": "rdp_password_refused", "params": {}})
+    held, _engine = applier({"samba": FakeRunner()}, tmp_path=tmp_path, rdp=host)
+    state = desired(samba=True)
+    state["rdp"] = {"seat_password": "hunter2"}  # scan: allow
+
+    held.apply("h1", state)
+
+    assert held.applied_hash == "h1"
+    assert held.state_error is None
