@@ -49,6 +49,8 @@ Section: admin
 Priority: optional
 Architecture: {architecture}
 Depends: {depends}
+Conflicts: rustdesk
+Replaces: rustdesk
 Maintainer: {maintainer}
 Description: Neutrino device agent
  Keeps a managed machine's modules in the state its Neutrino Hub asks for:

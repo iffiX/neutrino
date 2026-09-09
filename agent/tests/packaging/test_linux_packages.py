@@ -230,3 +230,8 @@ def test_the_rpm_owns_the_desktop_host_it_carries():
     assert "/usr/share/doc/neutrino-agent" in spec
     assert "systemctl enable --now rustdesk.service" in spec
     assert "systemctl stop rustdesk.service" in spec
+
+
+def test_the_packages_replace_the_upstream_rustdesk_package():
+    assert "Conflicts: rustdesk\nReplaces: rustdesk\n" in build_deb.CONTROL
+    assert "Conflicts:      rustdesk" in build_rpm.SPEC

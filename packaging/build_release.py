@@ -45,7 +45,7 @@ HUB_BUILDS = {
     "debian": {
         "image": "debian:12",
         "install": "apt-get -qq update >/dev/null 2>&1 && "
-        "apt-get -qq install -y python3 python3-venv python3-pip dpkg-dev rpm "
+        "apt-get -qq install -y python3 python3-venv python3-pip dpkg-dev rpm cpio "
         "pkg-config build-essential libgirepository1.0-dev libcairo2-dev "
         "ca-certificates >/dev/null 2>&1",
         "script": "build_deb.py",

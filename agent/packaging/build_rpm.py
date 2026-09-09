@@ -55,6 +55,7 @@ License:        MIT
 URL:            https://github.com/iffiX/neutrino
 BuildArch:      {architecture}
 {requires}
+Conflicts:      rustdesk
 Packager:       {packager}
 
 # The payload is prebuilt and carries its own interpreter, so none of
