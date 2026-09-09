@@ -148,9 +148,8 @@ WEB_EVENT_COALESCE_WINDOW_S = 0.1
 # How often the panel's live interface readings are sampled.
 WEB_LINK_SAMPLE_INTERVAL_S = 5.0
 
-# How long a reinstall task waits for the agent to drop its socket, then to
-# come back with the new package, before it says the agent did not return.
-WEB_REINSTALL_LEAVE_TIMEOUT_S = 60.0
+# How long a reinstall task waits for the machine's record of the install
+# before it says nothing was reported.
 WEB_REINSTALL_RETURN_TIMEOUT_S = 180.0
 WEB_REINSTALL_POLL_S = 0.5
 # How long the returned agent has to send its first report, which is where

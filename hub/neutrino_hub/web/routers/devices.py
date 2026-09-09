@@ -53,7 +53,6 @@ from neutrino_hub.modules.router.link_status import RouterLinkStatus, device_add
 from neutrino_hub import HUB_VERSION
 from neutrino_hub.web.agent_tls import certificate_fingerprint
 from neutrino_hub.web.constants import (
-    WEB_REINSTALL_LEAVE_TIMEOUT_S,
     WEB_REINSTALL_POLL_S,
     WEB_REINSTALL_REPORT_TIMEOUT_S,
     WEB_REINSTALL_RETURN_TIMEOUT_S,
@@ -1289,102 +1288,80 @@ async def _agent_command_stream(
 
 
 async def _reinstall_stream(runtime: PanelRuntime, key: str) -> AsyncIterator[str]:
-    """Reinstall a device's agent and follow it until it is back.
+    """Reinstall a device's agent and report what the installer said.
 
-    The agent launches its own reinstall and closes the command at once,
-    since the process about to be replaced cannot report its replacement.
-    The task then watches the device's socket drop and return.
+    The agent hands the package to a transient unit on the machine and
+    closes the command; the unit runs the package manager, which replaces
+    and restarts the agent, and writes a record of how that went. The task
+    follows that record: the socket the returning agent opens carries it,
+    and an installer that failed without restarting anything reports it on
+    the socket that stayed.
 
     Args:
         runtime: The shared runtime, which holds the sockets.
         key: The device.
 
     Yields:
-        The command's lines, then where the agent stands until it is back
-        or the wait runs out, then what the install itself said.
+        The command's lines, the agent's return, then the installer's output
+        and its exit status, or a typed word when nothing was reported.
     """
-    is_launched = True
+    before = runtime.agent_sessions.get(key)
+    before_record = _reinstall_record(before)
     async for line in _agent_command_stream(runtime, key, "reinstall"):
         if line.startswith("{"):
-            is_launched = False
+            yield line
+            return
         yield line
-    if not is_launched:
-        return
-    yield "waiting for the agent to leave\n"
-    if not await _wait_for_presence(runtime, key, False, WEB_REINSTALL_LEAVE_TIMEOUT_S):
-        yield "the agent kept its socket; the package may not have changed\n"
-        return
-    yield "waiting for the agent to come back\n"
-    if not await _wait_for_presence(runtime, key, True, WEB_REINSTALL_RETURN_TIMEOUT_S):
-        yield json.dumps({"code": "agent_not_back", "params": {}}) + "\n"
-        return
-    yield f"agent {runtime.agent_sessions.version_of(key)} is back\n"
-    record = await _wait_for_reinstall_record(
-        runtime, key, WEB_REINSTALL_REPORT_TIMEOUT_S
-    )
-    if record is None:
-        yield "the agent came back without a reinstall record\n"
-        return
+    yield "the package manager runs in a transient unit on the machine\n"
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + WEB_REINSTALL_RETURN_TIMEOUT_S
+    reconnected_at = None
+    while loop.time() < deadline:
+        session = runtime.agent_sessions.get(key)
+        if session is not None and session is not before and reconnected_at is None:
+            reconnected_at = loop.time()
+            yield f"agent {runtime.agent_sessions.version_of(key)} reconnected\n"
+        record = _reinstall_record(session)
+        if record is not None and record != before_record:
+            for line in _reinstall_outcome(record):
+                yield line
+            return
+        if (
+            reconnected_at is not None
+            and loop.time() - reconnected_at > WEB_REINSTALL_REPORT_TIMEOUT_S
+        ):
+            yield (
+                "the agent that ran this reinstall predates reinstall records;"
+                " it is back, so run it once more for the installer's output\n"
+            )
+            return
+        await asyncio.sleep(WEB_REINSTALL_POLL_S)
+    yield json.dumps({"code": "reinstall_not_reported", "params": {}}) + "\n"
+
+
+def _reinstall_record(session) -> "dict | None":
+    """The reinstall record a session's last report carries, if any."""
+    if session is None:
+        return None
+    record = session.report.get("last_reinstall")
+    return dict(record) if isinstance(record, dict) and record else None
+
+
+def _reinstall_outcome(record: dict) -> list:
+    """The installer's output and status as task lines."""
+    lines = []
     output = str(record.get("output", "") or "")
     if output:
-        yield output if output.endswith("\n") else output + "\n"
-    exit_code = record.get("exit_code", 0)
+        lines.append(output if output.endswith("\n") else output + "\n")
+    exit_code = int(record.get("exit_code", 0) or 0)
     if exit_code:
-        yield json.dumps(
-            {"code": "reinstall_failed", "params": {"exit_code": exit_code}}
-        ) + "\n"
-        return
-    yield f"[exit {exit_code}]\n"
-
-
-async def _wait_for_reinstall_record(
-    runtime: PanelRuntime, key: str, timeout_s: float
-) -> "dict | None":
-    """Wait for the returned agent's word on the install it came from.
-
-    Args:
-        runtime: The shared runtime.
-        key: The device.
-        timeout_s: How long the agent has to say anything at all.
-
-    Returns:
-        The record the machine's unit wrote, or None when the agent
-        reported without one or said nothing in time.
-    """
-    deadline = asyncio.get_running_loop().time() + timeout_s
-    while True:
-        session = runtime.agent_sessions.get(key)
-        if session is not None:
-            record = session.report.get("last_reinstall")
-            if isinstance(record, dict) and record:
-                return record
-            if session.reported_at:
-                return None
-        if asyncio.get_running_loop().time() >= deadline:
-            return None
-        await asyncio.sleep(WEB_REINSTALL_POLL_S)
-
-
-async def _wait_for_presence(
-    runtime: PanelRuntime, key: str, is_wanted: bool, timeout_s: float
-) -> bool:
-    """Wait until a device's socket is present or absent.
-
-    Args:
-        runtime: The shared runtime.
-        key: The device.
-        is_wanted: Whether to wait for the socket to be there.
-        timeout_s: How long to wait.
-
-    Returns:
-        True when the wanted presence was seen in time.
-    """
-    deadline = asyncio.get_running_loop().time() + timeout_s
-    while asyncio.get_running_loop().time() < deadline:
-        if runtime.agent_sessions.is_online(key) == is_wanted:
-            return True
-        await asyncio.sleep(WEB_REINSTALL_POLL_S)
-    return False
+        lines.append(
+            json.dumps({"code": "reinstall_failed", "params": {"exit_code": exit_code}})
+            + "\n"
+        )
+    else:
+        lines.append(f"[exit {exit_code}]\n")
+    return lines
 
 
 def _to_view(
