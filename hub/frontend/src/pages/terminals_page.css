@@ -5,42 +5,104 @@
   min-height: 0;
 }
 
+/* With nothing open, the empty state takes the same room the panel would. */
+.terminal_page > .placeholder {
+  flex: 1;
+}
+
+/* --- The terminal panel --- */
+
+/* A flex column, so the terminal's height comes down from the panel rather
+   than up from its own content — content-driven height makes the fit addon
+   read the terminal's own size back and grow it by a row forever. */
+.terminal_panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: 0 0 0 1px rgb(34 211 238 / 18%);
+}
+
+.terminal_panel_head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-elevated);
+}
+
+.terminal_panel_actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.terminal_panel_surface {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: var(--space-3);
+  background: var(--color-bg);
+}
+
+.terminal_panel_status {
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+/* --- One tab per open shell, in the header bar --- */
+
 .terminal_tabs {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
+  min-width: 0;
 }
 
 .terminal_tab {
   display: inline-flex;
   align-items: center;
-  border: 1px solid var(--color-border);
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  background: var(--color-surface);
   transition:
     border-color var(--transition-fast),
     background var(--transition-fast);
 }
 
 .terminal_tab:hover {
-  border-color: var(--color-border-strong);
+  border-color: var(--color-border);
 }
 
+/* The picked shell wears what the window's title wore: its own surface out of
+   the header's tone, and the name in the accent. */
 .terminal_tab--on {
-  border-color: var(--color-accent);
-  background: var(--color-accent-wash);
+  border-color: var(--color-border-strong);
+  background: var(--color-surface);
 }
 
 .terminal_tab_label {
   display: inline-flex;
   gap: var(--space-2);
   align-items: center;
-  padding: 6px 4px 6px 11px;
+  overflow: hidden;
+  padding: 5px 4px 5px 10px;
   border: none;
   background: none;
   color: var(--color-text-muted);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -51,7 +113,7 @@
 .terminal_tab_close {
   display: inline-flex;
   align-items: center;
-  padding: 6px 9px 6px 5px;
+  padding: 5px 8px 5px 4px;
   border: none;
   background: none;
   color: var(--color-text-faint);
@@ -60,8 +122,4 @@
 
 .terminal_tab_close:hover {
   color: var(--color-error);
-}
-
-.placeholder .button {
-  margin-top: var(--space-2);
 }

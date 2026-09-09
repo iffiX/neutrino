@@ -6,6 +6,7 @@ import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
 import { InstallConsentModal } from "./install_consent_modal";
 import { Spinner } from "./spinner";
+import { TabStrip } from "./tab_strip";
 import { ApiError, apiPut, describeError } from "../api_client";
 import { useApiResource } from "../use_api_resource";
 import {
@@ -15,6 +16,7 @@ import {
   HUB_EVENT_MODULE_ORDER,
 } from "../use_hub_events";
 import type { DeviceChip } from "./device_chip_strip";
+import type { StripTab } from "./tab_strip";
 import type {
   ModuleDeviceView,
   ModuleDevicesRequest,
@@ -27,14 +29,13 @@ import "./agent_service_page.css";
 /**
  * The shape every Agent-group service page takes.
  *
- * A module is a thing the hub puts on machines, so each of its pages opens
- * with the same two questions before any of its own: which machines run it,
- * and which one is being configured now. The hub box is a managed machine
- * like the rest and is simply first in the list.
+ * A module is a thing the hub puts on machines, so each of its pages opens by
+ * asking which machines run it. The hub box is a managed machine like the rest
+ * and is simply first in the list.
  *
- * The third panel is the module's own, and it is handed the selected
- * machine's address rather than a global one — the same forms, pointed at
- * whichever agent is answering for them.
+ * The machines it really stands on are tabs below that, the way the Network
+ * page tabs its interfaces, and the module's own panels hang under the picked
+ * one: the same forms, pointed at whichever agent is answering for them.
  */
 
 const WORDING = {
@@ -46,8 +47,6 @@ const WORDING = {
   enabledApplying: "Applying…",
   noDevices: "No machines run the agent",
   noDevicesHint: "Install the agent on a machine from the Devices page.",
-  activeTitle: "Configuring",
-  activeHint: "Which machine the settings below belong to.",
   noActive: "{module} is on no machine yet",
   noActiveHint: "Pick a machine above and apply.",
   offline: "The agent is offline",
@@ -266,27 +265,19 @@ export function AgentServicePage({
         ))}
       </section>
 
-      <section className="settings_group">
-        <div className="settings_group_title">
-          <h2>{WORDING.activeTitle}</h2>
+      {activeDevices.length === 0 ? (
+        <div className="placeholder">
+          <span>{fill(WORDING.noActive, { module: moduleName })}</span>
+          <span className="faint">{WORDING.noActiveHint}</span>
         </div>
-        {activeDevices.length === 0 ? (
-          <div className="placeholder">
-            <span>{fill(WORDING.noActive, { module: moduleName })}</span>
-            <span className="faint">{WORDING.noActiveHint}</span>
-          </div>
-        ) : (
-          <>
-            <p className="field_hint">{WORDING.activeHint}</p>
-            <DeviceChipStrip
-              chips={activeDevices.map(toChip)}
-              selected={selectedId}
-              onSelect={setSelectedId}
-              isMulti={false}
-            />
-          </>
-        )}
-      </section>
+      ) : (
+        <TabStrip
+          label="Devices"
+          tabs={activeDevices.map(toTab)}
+          selected={selectedId}
+          onSelect={setSelectedId}
+        />
+      )}
 
       {selected !== null && (
         <fieldset className="agent_service_body" disabled={!selected.is_online}>
@@ -317,6 +308,15 @@ export function AgentServicePage({
       )}
     </div>
   );
+}
+
+/** One machine that runs the module, as the tab strip wants it. */
+function toTab(device: ModuleDeviceView): StripTab {
+  return {
+    key: device.device_id,
+    name: device.name,
+    dotTone: device.is_online ? "ok" : "idle",
+  };
 }
 
 /** One device row as the chip strip wants it. */

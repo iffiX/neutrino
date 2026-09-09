@@ -12,6 +12,8 @@ import { PasswordInput } from "../components/password_input";
 import { SavedNetworksPanel } from "../components/saved_networks_panel";
 import { SignalBars } from "../components/signal_bars";
 import { StatusDot } from "../components/status_dot";
+import { TabStrip } from "../components/tab_strip";
+import type { StripTab } from "../components/tab_strip";
 import { ToggleSwitch } from "../components/toggle_switch";
 import { UpstreamGatewayPanel } from "../components/upstream_gateway_panel";
 import { WifiScanPanel } from "../components/wifi_scan_panel";
@@ -107,6 +109,13 @@ const LINK_ICONS: Record<string, IconName> = {
   // rows of the same picture is a row nobody reads.
   vlan: "network",
   ethernet: "link",
+};
+
+// Which accent a role's pill wears. The two that carry traffic are told apart
+// by colour; the rest read in the tab's own tone.
+const ROLE_TAG_TONES: Record<string, "accent" | "secondary"> = {
+  wan: "secondary",
+  lan: "accent",
 };
 
 const VLAN_ID_MIN = 1;
@@ -456,16 +465,12 @@ export function NetworkPage() {
         ))}
 
       {isRouting && (
-        <div className="network_tabs" role="tablist" aria-label="Interfaces">
-          {interfaces.map((entry) => (
-            <InterfaceTab
-              key={entry.settings.name}
-              entry={entry}
-              isSelected={entry.settings.name === selectedName}
-              onSelect={() => setSelectedName(entry.settings.name)}
-            />
-          ))}
-        </div>
+        <TabStrip
+          label="Interfaces"
+          tabs={interfaces.map(toInterfaceTab)}
+          selected={selectedName}
+          onSelect={setSelectedName}
+        />
       )}
 
       {isRouting && (
@@ -728,32 +733,18 @@ function optionsOf(view: NetworkView): NetworkOptions {
   };
 }
 
-interface InterfaceTabProps {
-  entry: InterfaceView;
-  isSelected: boolean;
-  onSelect: () => void;
-}
-
-function InterfaceTab({ entry, isSelected, onSelect }: InterfaceTabProps) {
+/** One interface as the tab strip wants it. */
+function toInterfaceTab(entry: InterfaceView): StripTab {
   const { settings, link } = entry;
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={isSelected}
-      className={`network_tab network_tab--${settings.role} ${isSelected ? "network_tab--on" : ""}`}
-      onClick={onSelect}
-    >
-      <Icon name={LINK_ICONS[link.kind] ?? "link"} size={14} />
-      <span className="network_tab_name">{settings.name}</span>
-      <span className="network_tab_role">{settings.role}</span>
-      <StatusDot
-        tone={
-          settings.role === "disabled" ? "idle" : link.is_up ? "ok" : "error"
-        }
-      />
-    </button>
-  );
+  return {
+    key: settings.name,
+    icon: LINK_ICONS[link.kind] ?? "link",
+    name: settings.name,
+    tag: settings.role,
+    tagTone: ROLE_TAG_TONES[settings.role],
+    dotTone:
+      settings.role === "disabled" ? "idle" : link.is_up ? "ok" : "error",
+  };
 }
 
 function LinkSummary({ entry }: { entry: InterfaceView }) {

@@ -9,66 +9,6 @@
     var(--color-surface);
 }
 
-/* --- The row of interface tabs --- */
-
-.network_tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.network_tab {
-  display: inline-flex;
-  gap: var(--space-2);
-  align-items: center;
-  padding: 7px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text-muted);
-  cursor: pointer;
-  transition:
-    border-color var(--transition-fast),
-    background var(--transition-fast),
-    color var(--transition-fast);
-}
-
-.network_tab:hover {
-  border-color: var(--color-border-strong);
-  color: var(--color-text);
-}
-
-.network_tab_name {
-  color: var(--color-text);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.network_tab_role {
-  padding: 1px 7px;
-  border-radius: var(--radius-pill);
-  background: var(--color-elevated);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.network_tab--wan .network_tab_role {
-  color: var(--color-accent-secondary);
-}
-
-.network_tab--lan .network_tab_role {
-  color: var(--color-accent);
-}
-
-.network_tab--on {
-  border-color: var(--color-accent);
-  background: var(--color-accent-wash);
-  color: var(--color-text);
-}
-
 /* --- The selected interface's live state --- */
 
 .network_link_summary {

@@ -1,0 +1,59 @@
+/* --- The row of tabs above the panels one of them owns --- */
+
+.tab_strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.tab_strip_tab {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: 7px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.tab_strip_tab:hover {
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.tab_strip_name {
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tab_strip_tag {
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--color-elevated);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tab_strip_tag--accent {
+  color: var(--color-accent);
+}
+
+.tab_strip_tag--secondary {
+  color: var(--color-accent-secondary);
+}
+
+.tab_strip_tab--on {
+  border-color: var(--color-accent);
+  background: var(--color-accent-wash);
+  color: var(--color-text);
+}
