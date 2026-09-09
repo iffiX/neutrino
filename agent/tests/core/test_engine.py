@@ -76,10 +76,8 @@ def bare_engine(*, platform=None, fetch_artifact=None, verified=None):
     engine._lock = threading.Lock()
     engine._wakeup = threading.Event()
 
-    from neutrino_agent.modules.openssh import OpensshModuleRunner
     from neutrino_agent.modules.package import PackageModuleRunner
     from neutrino_agent.modules.rustdesk import RustdeskModuleRunner
-    from neutrino_agent.modules.switcher import SwitcherModuleRunner
     from neutrino_agent.modules.system_package import SystemPackageModuleRunner
 
     platform = platform if platform is not None else FakePlatform()
@@ -87,13 +85,7 @@ def bare_engine(*, platform=None, fetch_artifact=None, verified=None):
     engine._package = PackageModuleRunner(
         platform=platform, log=engine._collect, publish=engine._publish
     )
-    engine._switcher = SwitcherModuleRunner(
-        platform=platform, log=engine._collect, publish=engine._publish
-    )
     engine._system = SystemPackageModuleRunner(
-        platform=platform, log=engine._collect, publish=engine._publish
-    )
-    engine._openssh = OpensshModuleRunner(
         platform=platform, log=engine._collect, publish=engine._publish
     )
     engine._rustdesk = RustdeskModuleRunner(
@@ -426,16 +418,17 @@ def test_a_kind_the_engine_does_not_run_is_reported_as_unsupported():
 
 def test_an_absent_capability_reports_unsupported_platform():
     engine = bare_engine(platform=AgentPlatform())
-    engine._catalog = {"modules": {"ssh_server": {"kind": "openssh", "entry": {}}}}
+    engine._catalog = dict(SYSTEM_CATALOG)
 
-    engine._refresh(is_forced=True)
+    engine.update(
+        catalog=None,
+        catalog_hash="abc",
+        orders=[{"id": "order-1", "module": "samba_mount", "action": "install"}],
+    )
+    engine._reconcile()
 
-    assert engine.report()["ssh_server"] == {
-        "state": "failed",
-        "code": "unsupported_platform",
-        "params": {},
-        "details": {},
-    }
+    result = engine.results()[0]
+    assert (result["state"], result["code"]) == ("failed", "unsupported_platform")
 
 
 def test_the_engine_holds_no_failure_memory():
@@ -463,83 +456,7 @@ def test_the_engine_holds_no_failure_memory():
     assert not hasattr(engine, "_remove_unconfirmed")
 
 
-# --- the by-name kinds ride the same order path ---
-
-SSH_CATALOG = {
-    "modules": {
-        "ssh_server": {
-            "title": "SSH server",
-            "kind": "openssh",
-            "entry": {"packages": ["openssh-server"], "service": "ssh"},
-            "verify": "",
-            "package": "ssh_server",
-        }
-    },
-    "services": [],
-}
-
-
-class SwitchingPlatform(AgentPlatform):
-    """A platform whose SSH server can be switched and observed."""
-
-    os_name = "linux"
-
-    def __init__(self, *, is_running=False):
-        self.is_running = is_running
-        self.switches: list = []
-
-    def read_openssh_status(self, entry):
-        return self.is_running
-
-    def install_openssh(self, entry):
-        self.switches.append("install")
-        self.is_running = True
-
-    def uninstall_openssh(self, entry):
-        self.switches.append("uninstall")
-        self.is_running = False
-
-
-def test_an_openssh_install_order_fetches_nothing_and_reports_done():
-    platform = SwitchingPlatform(is_running=False)
-    fetches: list = []
-    engine = bare_engine(platform=platform, fetch_artifact=landing_fetch(fetches))
-    engine._catalog = dict(SSH_CATALOG)
-
-    engine.update(
-        catalog=None,
-        catalog_hash="abc",
-        orders=[{"id": "order-1", "module": "ssh_server", "action": "install"}],
-    )
-    engine._reconcile()
-
-    assert platform.switches == ["install"]
-    assert fetches == []
-    result = engine.results()[0]
-    assert result["state"] == "done" and result["code"] == ""
-    # Every order carries its output, success included.
-    assert "ssh_server: install" in result["output"]
-    assert engine.report()["ssh_server"]["state"] == "installed"
-
-
-def test_an_openssh_uninstall_order_takes_the_server_out_with_output():
-    platform = SwitchingPlatform(is_running=True)
-    engine = bare_engine(platform=platform)
-    engine._catalog = dict(SSH_CATALOG)
-
-    engine.update(
-        catalog=None,
-        catalog_hash="abc",
-        orders=[{"id": "order-1", "module": "ssh_server", "action": "uninstall"}],
-    )
-    engine._reconcile()
-
-    assert platform.switches == ["uninstall"]
-    result = engine.results()[0]
-    assert result["state"] == "done" and result["code"] == ""
-    assert "ssh_server: uninstall" in result["output"]
-    assert engine.report()["ssh_server"]["state"] == "absent"
-
+# --- the by-name kind rides the same order path ---
 
 SYSTEM_CATALOG = {
     "modules": {
@@ -629,63 +546,3 @@ def test_a_native_system_package_reads_installed_with_nothing_to_run():
     engine._refresh(is_forced=True)
 
     assert engine.report()["samba_mount"]["state"] == "installed"
-
-
-SWITCHER_CATALOG = {
-    "modules": {
-        "cc_switch": {
-            "title": "cc-switch",
-            "kind": "switcher",
-            "entry": {"binary": "cc-switch", "package_kind": "tar_binary"},
-            "verify": "",
-            "package": "cc_switch",
-        }
-    },
-    "services": [],
-}
-
-
-def test_a_switcher_order_unpacks_the_handed_archive():
-    fetches: list = []
-    engine = bare_engine(fetch_artifact=landing_fetch(fetches))
-    engine._catalog = dict(SWITCHER_CATALOG)
-    installs: list = []
-    engine._switcher.install = lambda resolved, path: installs.append(path)
-    engine._switcher.verify = lambda resolved: bool(installs)
-
-    engine.update(
-        catalog=None,
-        catalog_hash="abc",
-        orders=[
-            {
-                "id": "order-1",
-                "module": "cc_switch",
-                "action": "install",
-                "artifact_key": "cc_switch-linux-amd64-abcd",
-                "package_kind": "tar_binary",
-            }
-        ],
-    )
-    engine._reconcile()
-
-    assert fetches == ["cc_switch-linux-amd64-abcd"]
-    assert len(installs) == 1
-    assert engine.results()[0]["state"] == "done"
-
-
-def test_a_switcher_uninstall_deletes_the_cli():
-    engine = bare_engine()
-    engine._catalog = dict(SWITCHER_CATALOG)
-    removed: list = []
-    engine._switcher.uninstall = lambda resolved: removed.append(True)
-    engine._switcher.verify = lambda resolved: not removed
-
-    engine.update(
-        catalog=None,
-        catalog_hash="abc",
-        orders=[{"id": "order-1", "module": "cc_switch", "action": "uninstall"}],
-    )
-    engine._reconcile()
-
-    assert removed == [True]
-    assert engine.results()[0]["state"] == "done"

@@ -1,70 +1,73 @@
 """The platform contract: advertised capabilities, honest refusals.
 
 A platform says what it has; invoking what it lacks answers
-``unsupported_platform``, never a guess. The shared file operations ride one
-step-down seam, and the home they resolve comes from the account database.
+``unsupported_platform``, never a guess. The capability table is asserted
+complete, so a new contract method without a capability fails here.
 """
-
-import os
-import subprocess
 
 import pytest
 
 import neutrino_agent.platforms.base as base_module
-from neutrino_agent.constants import (
-    AGENT_MOUNT_CREDENTIALS_DIR,
-    AGENT_SERVICE_STORE_PATH,
-    AGENT_STEP_DOWN_TIMEOUT_S,
-)
+from neutrino_agent.constants import AGENT_STATE_PATH
 from neutrino_agent.platforms.base import AgentPlatform, PlatformUnsupportedError
-from neutrino_agent.platforms.darwin import DarwinPlatform
 from neutrino_agent.platforms.linux import LinuxPlatform
-from neutrino_agent.platforms.windows import WindowsPlatform
 
-ACCOUNT_HOME = "/home/alice"
+# Contract method -> the capability it belongs to, and a call that reaches
+# the platform's own answer.
+CONTRACT_CALLS = {
+    "human_accounts": ("accounts", (), {}),
+    "account_home": ("accounts", ("alice",), {}),
+    "control_socket_path": ("control_socket", (), {}),
+    "run_as_account": ("run_as", ("alice", ["id"]), {}),
+    "install_system_packages": ("system_packages", (["cifs-utils"],), {}),
+    "remove_system_packages": ("system_packages", (["cifs-utils"],), {}),
+    "read_agent_service_state": ("agent_service", (), {}),
+    "start_agent_service": ("agent_service", (), {}),
+    "power": ("power", ("reboot",), {}),
+    "read_host_metrics": ("metrics", (), {}),
+    "install_package": (
+        "packages",
+        ("/tmp/app.deb",),
+        {"package_kind": "deb", "entry": {}},
+    ),
+    "uninstall_package": ("packages", ("apt-get remove -y app",), {}),
+}
 
-
-class RecordingPlatform(AgentPlatform):
-    """A platform whose only mechanism is a recorded step-down."""
-
-    os_name = "recording"
-    capabilities = frozenset({"accounts", "account_files", "run_as"})
-
-    def __init__(self):
-        self.calls = []
-        self.stdout = ""
-        self.stderr = ""
-        self.returncode = 0
-
-    def account_home(self, account: str) -> str:
-        return ACCOUNT_HOME
-
-    def run_as_account(
-        self,
-        account: str,
-        argv: list,
-        *,
-        stdin: str = "",
-        timeout_s: int = AGENT_STEP_DOWN_TIMEOUT_S,
-    ) -> "subprocess.CompletedProcess":
-        self.calls.append(
-            {
-                "account": account,
-                "argv": list(argv),
-                "stdin": stdin,
-                "timeout_s": timeout_s,
-            }
-        )
-        return subprocess.CompletedProcess(
-            argv, self.returncode, stdout=self.stdout, stderr=self.stderr
-        )
+# Contract methods the base class answers for everyone.
+BASE_IMPLEMENTED = {
+    "agent_data_dir": "",
+    "agent_service_start_hint": "agent_service",
+}
 
 
-class PreparingPlatform(AgentPlatform):
-    """A platform whose directory making is the standard library's own."""
+def test_the_capability_table_names_every_contract_method():
+    contract_methods = {
+        name
+        for name in vars(AgentPlatform)
+        if not name.startswith("_") and callable(getattr(AgentPlatform, name))
+    }
+    assert contract_methods == set(CONTRACT_CALLS) | set(BASE_IMPLEMENTED)
 
-    def make_directory(self, *, account: str, path: str) -> None:
-        os.makedirs(path, exist_ok=True)
+    named = {capability for capability, _, _ in CONTRACT_CALLS.values()}
+    named |= {capability for capability in BASE_IMPLEMENTED.values() if capability}
+    assert named == LinuxPlatform().capabilities
+
+
+@pytest.mark.parametrize("method_name", sorted(CONTRACT_CALLS))
+def test_the_base_contract_refuses_every_capability(method_name):
+    _capability, args, kwargs = CONTRACT_CALLS[method_name]
+
+    with pytest.raises(PlatformUnsupportedError) as caught:
+        getattr(AgentPlatform(), method_name)(*args, **kwargs)
+
+    assert caught.value.code == "unsupported_platform"
+
+
+@pytest.mark.parametrize("method_name", sorted(CONTRACT_CALLS))
+def test_linux_implements_every_capability_it_advertises(method_name):
+    assert getattr(LinuxPlatform, method_name) is not getattr(
+        AgentPlatform, method_name
+    )
 
 
 def test_the_base_platform_advertises_nothing():
@@ -73,218 +76,22 @@ def test_the_base_platform_advertises_nothing():
 
 def test_the_agent_data_root_defaults_to_the_posix_directory(monkeypatch):
     # The suite-wide fixture redirects the root off the machine; the real
-    # value is put back here to pin it with the paths that hang off it.
+    # value is put back here to pin it with the path that hangs off it.
     monkeypatch.setattr(base_module, "AGENT_DATA_DIR_POSIX", "/etc/neutrino/agent")
 
     assert AgentPlatform().agent_data_dir() == "/etc/neutrino/agent"
-    assert AGENT_SERVICE_STORE_PATH == "/etc/neutrino/agent/services.json"
-    assert AGENT_MOUNT_CREDENTIALS_DIR == "/etc/neutrino/agent/mount_credentials"
+    assert AGENT_STATE_PATH == "/etc/neutrino/agent/state.json"
 
 
-def test_each_platform_advertises_its_capability_set():
-    assert LinuxPlatform().capabilities == frozenset(
-        {
-            "accounts",
-            "account_files",
-            "run_as",
-            "control_socket",
-            "agent_service",
-            "power",
-            "system_packages",
-            "metrics",
-            "packages",
-            "openssh",
-            "shares",
-        }
-    )
-    assert DarwinPlatform().capabilities == frozenset(
-        {
-            "accounts",
-            "account_files",
-            "run_as",
-            "control_socket",
-            "agent_service",
-            "power",
-            "metrics",
-            "packages",
-            "openssh",
-            "shares",
-        }
-    )
-    assert WindowsPlatform().capabilities == frozenset(
-        {
-            "accounts",
-            "account_files",
-            "run_as",
-            "control_socket",
-            "agent_service",
-            "power",
-            "metrics",
-            "packages",
-            "openssh",
-            "shares",
-            "screen",
-        }
-    )
-
-
-def test_system_packages_stay_linux_only():
-    assert LinuxPlatform().has_capability("system_packages")
-    for platform in (DarwinPlatform(), WindowsPlatform()):
-        assert not platform.has_capability("system_packages")
-
-
-def test_the_posix_mount_location_judgment_wants_an_absolute_path():
-    platform = AgentPlatform()
-
-    assert platform.validate_mount_location(location="/mnt/media") is None
-    for bad in ("", "nas/media", "Z:"):
-        assert platform.validate_mount_location(location=bad) == {
-            "code": "mountpoint_invalid",
-            "params": {},
-        }
-
-
-def test_linux_and_darwin_share_the_posix_mount_location_judgment():
-    for platform in (LinuxPlatform, DarwinPlatform):
-        assert platform.validate_mount_location is AgentPlatform.validate_mount_location
-        assert platform.prepare_mount_location is AgentPlatform.prepare_mount_location
-
-
-def test_mount_locations_are_paths_except_windows_drive_letters():
-    assert AgentPlatform.mount_location_shape == "path"
-    assert LinuxPlatform.mount_location_shape == "path"
-    assert DarwinPlatform.mount_location_shape == "path"
-    assert WindowsPlatform.mount_location_shape == "drive_letter"
-
-
-def test_the_posix_mount_preparation_wants_an_empty_directory(tmp_path):
-    platform = PreparingPlatform()
-    full = tmp_path / "full"
-    full.mkdir()
-    (full / "kept").write_text("content")
-    plain = tmp_path / "plain"
-    plain.write_text("content")
-    empty = tmp_path / "empty"
-    empty.mkdir()
-    fresh = tmp_path / "fresh"
-
-    refusal = {"code": "mountpoint_not_empty", "params": {}}
-    assert platform.prepare_mount_location(account="", location=str(full)) == refusal
-    assert platform.prepare_mount_location(account="", location=str(plain)) == refusal
-    assert platform.prepare_mount_location(account="", location=str(empty)) is None
-    assert platform.prepare_mount_location(account="", location=str(fresh)) is None
-    assert fresh.is_dir()
-
-
-def test_an_absent_capability_is_refused_not_guessed():
-    with pytest.raises(PlatformUnsupportedError) as caught:
-        WindowsPlatform().install_system_packages(["cifs-utils"])
-    assert caught.value.code == "unsupported_platform"
-    with pytest.raises(PlatformUnsupportedError):
-        AgentPlatform().read_host_metrics()
-    with pytest.raises(PlatformUnsupportedError):
-        DarwinPlatform().install_system_packages(["cifs-utils"])
-    with pytest.raises(PlatformUnsupportedError):
-        WindowsPlatform().remove_system_packages(["cifs-utils"])
-
-
-def test_base_file_operations_refuse_without_run_as():
-    with pytest.raises(PlatformUnsupportedError):
-        AgentPlatform().read_account_file(account="alice", relative="f")
+def test_the_base_start_hint_is_empty_rather_than_another_platforms():
+    assert AgentPlatform().agent_service_start_hint() == ""
 
 
 def test_base_account_home_refuses_rather_than_reading_the_environment(monkeypatch):
+    """A root agent's $HOME names root's home, never the account's."""
     monkeypatch.setenv("HOME", "/home/lying")
 
     with pytest.raises(PlatformUnsupportedError) as caught:
         AgentPlatform().account_home("alice")
 
     assert caught.value.code == "unsupported_platform"
-
-
-def test_base_account_files_resolve_the_home_from_the_account_database(monkeypatch):
-    """A root agent's $HOME names root's home; the snippet must carry the
-    account database's answer instead."""
-    monkeypatch.setenv("HOME", "/home/lying")
-    platform = RecordingPlatform()
-
-    platform.write_account_file(
-        account="alice",
-        relative=".claude/settings.json",
-        text='{"model": "opus"}',
-        mode="600",
-    )
-
-    call = platform.calls[-1]
-    assert call["account"] == "alice"
-    assert os.path.basename(call["argv"][0]) in ("python3", "python")
-    assert call["argv"][1] == "-c"
-    script = call["argv"][2]
-    assert f"p = pathlib.Path('{ACCOUNT_HOME}') / '.claude/settings.json'" in script
-    assert "/home/lying" not in script
-    assert "pathlib.Path.home()" not in script
-    assert "m = '600'" in script
-    assert "p.chmod(int(m, 8))" in script
-    assert call["stdin"] == '{"model": "opus"}'
-    assert '{"model": "opus"}' not in script
-    assert call["timeout_s"] == AGENT_STEP_DOWN_TIMEOUT_S
-
-
-def test_base_account_files_read_and_remove_the_same_path(monkeypatch):
-    monkeypatch.setenv("HOME", "/home/lying")
-    platform = RecordingPlatform()
-    platform.stdout = '{"model": "opus"}'
-
-    assert (
-        platform.read_account_file(account="alice", relative=".claude/settings.json")
-        == '{"model": "opus"}'
-    )
-    platform.stdout = "600\n"
-    assert (
-        platform.read_account_file_mode(
-            account="alice", relative=".claude/settings.json"
-        )
-        == "600"
-    )
-    platform.remove_account_file(account="alice", relative=".claude/settings.json")
-    platform.read_account_file(account="", relative="own.json")
-
-    scripts = [call["argv"][2] for call in platform.calls]
-    for script in scripts[:3]:
-        assert f"pathlib.Path('{ACCOUNT_HOME}') / '.claude/settings.json'" in script
-    assert "p.read_text() if p.is_file() else ''" in scripts[0]
-    assert "oct(p.stat().st_mode & 0o777)[2:]" in scripts[1]
-    assert "p.unlink() if p.is_file() else None" in scripts[2]
-    assert "pathlib.Path.home() / 'own.json'" in scripts[3]
-    assert platform.calls[3]["account"] == ""
-    assert "/home/lying" not in "".join(scripts)
-
-
-def test_base_directory_operations_step_down_to_the_account():
-    platform = RecordingPlatform()
-    platform.stdout = '["docs", "media"]'
-
-    assert platform.list_directories(account="alice", path="/srv/pool") == [
-        "docs",
-        "media",
-    ]
-    platform.make_directory(account="alice", path="/srv/pool/new")
-    platform.stdout = "1"
-    assert platform.is_path_writable(account="alice", path="/srv/pool/new")
-    platform.stdout = "0"
-    assert not platform.is_path_writable(account="alice", path="/srv/pool/new")
-
-    assert [call["account"] for call in platform.calls] == ["alice"] * 4
-    assert "os.scandir('/srv/pool')" in platform.calls[0]["argv"][2]
-    assert "os.makedirs('/srv/pool/new', exist_ok=True)" in platform.calls[1]["argv"][2]
-    assert "os.path.abspath('/srv/pool/new')" in platform.calls[2]["argv"][2]
-
-    platform.returncode = 1
-    platform.stderr = "Permission denied"
-    with pytest.raises(OSError) as caught:
-        platform.list_directories(account="alice", path="/root")
-    assert "Permission denied" in str(caught.value)
-    with pytest.raises(OSError):
-        platform.make_directory(account="alice", path="/root/new")
-    assert not platform.is_path_writable(account="alice", path="/root/new")

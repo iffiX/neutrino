@@ -26,10 +26,8 @@ import time
 
 from neutrino_agent.constants import AGENT_MODULE_OUTPUT_LIMIT_BYTES
 from neutrino_agent.modules.installers import InstallError
-from neutrino_agent.modules.openssh import OpensshModuleRunner
 from neutrino_agent.modules.package import PackageModuleRunner
 from neutrino_agent.modules.rustdesk import RustdeskModuleRunner
-from neutrino_agent.modules.switcher import SwitcherModuleRunner
 from neutrino_agent.modules.system_package import SystemPackageModuleRunner
 from neutrino_agent.platforms.base import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import platform_tuple
@@ -51,7 +49,7 @@ ORDER_TRANSIENTS = {
 
 # The kinds whose install runs by name with the platform's own tooling; the
 # rest install from the artifact an order hands down.
-BY_NAME_KINDS = ("system_package", "openssh")
+BY_NAME_KINDS = ("system_package",)
 
 ORDER_DONE = "done"
 ORDER_FAILED = "failed"
@@ -157,13 +155,7 @@ class ModuleEngine(ReconcileWorker):
         self._package = PackageModuleRunner(
             platform=platform, log=self._collect, publish=self._publish
         )
-        self._switcher = SwitcherModuleRunner(
-            platform=platform, log=self._collect, publish=self._publish
-        )
         self._system = SystemPackageModuleRunner(
-            platform=platform, log=self._collect, publish=self._publish
-        )
-        self._openssh = OpensshModuleRunner(
             platform=platform, log=self._collect, publish=self._publish
         )
         self._rustdesk = RustdeskModuleRunner(
@@ -380,10 +372,6 @@ class ModuleEngine(ReconcileWorker):
             return {"code": "unknown_kind", "params": {"kind": kind}}
         if action == ORDER_INSTALL:
             if kind in BY_NAME_KINDS:
-                if kind == "openssh" and os.name == "nt":
-                    # Minutes with nothing to show otherwise: the capability
-                    # comes down from Windows Update.
-                    self._collect(f"{name}: installing through Windows Update")
                 runner.install(resolved)
             else:
                 refusal = self._install(name, resolved, order)
@@ -400,9 +388,7 @@ class ModuleEngine(ReconcileWorker):
         agent does not know."""
         return {
             "package": self._package,
-            "switcher": self._switcher,
             "system_package": self._system,
-            "openssh": self._openssh,
             "rustdesk": self._rustdesk,
         }.get(kind)
 

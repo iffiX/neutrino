@@ -1,9 +1,8 @@
 """RustDesk as a module, and the mechanics of driving it.
 
 The hub's cache fetches the pinned release for this platform and hands the
-bytes down; this installs them with the platform's own installer, registers
-the service where the package does not, and answers what is on the machine.
-The rdp service in ``services/rdp.py`` decides when a machine shares its
+bytes down; this installs them with the platform's own installer and answers
+what is on the machine. ``rdp/host.py`` decides when a machine shares its
 desktop; everything here is what RustDesk itself is and how it is driven.
 
 **No rendezvous server.** ``custom-rendezvous-server`` and ``relay-server``
@@ -50,39 +49,20 @@ RUSTDESK_PASSWORD_RETRY_S = 0.25
 # without a rendezvous server; ``direct-access-port`` is set to match.
 RUSTDESK_DIRECT_PORT = 21118
 
-# What the service and the desktop session read. Written to every one of
-# them, because the service answering a connection and the session showing
-# it are different processes with different homes.
+# What the service and the desktop session read. Written to both, because
+# the service answering a connection and the session showing it are
+# different processes with different homes.
 RUSTDESK_CONFIG_NAME = "RustDesk2.toml"
-RUSTDESK_WINDOWS_SERVICE_PROFILE = (
-    "C:\\Windows\\ServiceProfiles\\LocalService\\AppData\\Roaming\\RustDesk\\config"
-)
-RUSTDESK_WINDOWS_ACCOUNT_RELATIVE = "AppData\\Roaming\\RustDesk\\config"
-RUSTDESK_LINUX_ROOT_CONFIG = "/root/.config/rustdesk"
-RUSTDESK_LINUX_ACCOUNT_RELATIVE = ".config/rustdesk"
-RUSTDESK_DARWIN_ROOT_CONFIG = "/var/root/Library/Preferences/com.carriez.RustDesk"
-RUSTDESK_DARWIN_ACCOUNT_RELATIVE = "Library/Preferences/com.carriez.RustDesk"
+RUSTDESK_ROOT_CONFIG = "/root/.config/rustdesk"
+RUSTDESK_ACCOUNT_RELATIVE = ".config/rustdesk"
 
-# Where the binary lands, per platform.
-RUSTDESK_BINARY_PATHS = (
-    "/usr/bin/rustdesk",
-    "/usr/local/bin/rustdesk",
-    "C:\\Program Files\\RustDesk\\RustDesk.exe",
-    "/Applications/RustDesk.app/Contents/MacOS/RustDesk",
-)
+# Where the binary lands.
+RUSTDESK_BINARY_PATHS = ("/usr/bin/rustdesk", "/usr/local/bin/rustdesk")
 
 RUSTDESK_ACTION_START = "start"
 RUSTDESK_ACTION_STOP = "stop"
-# Windows drives a service by its own verb pair, keyed on whether the ask
-# was to start it.
-RUSTDESK_WINDOWS_VERBS = {True: "start", False: "stop"}
 
-RUSTDESK_WINDOWS_SERVICE = "RustDesk"
-RUSTDESK_LINUX_UNIT = "rustdesk"
-RUSTDESK_DARWIN_DAEMON_LABEL = "com.carriez.RustDesk_service"
-RUSTDESK_DARWIN_DAEMON_PLIST = (
-    "/Library/LaunchDaemons/com.carriez.RustDesk_service.plist"
-)
+RUSTDESK_UNIT = "rustdesk"
 
 # What every machine gets the moment the module lands: no rendezvous, no
 # relay, the direct port pinned. Connections under a hub are dialed by
@@ -162,32 +142,10 @@ def config_paths(account_home: str = "") -> list:
     Returns:
         The paths to write.
     """
-    if os.name == "nt":
-        paths = [os.path.join(RUSTDESK_WINDOWS_SERVICE_PROFILE, RUSTDESK_CONFIG_NAME)]
-        if account_home:
-            paths.append(
-                os.path.join(
-                    account_home,
-                    RUSTDESK_WINDOWS_ACCOUNT_RELATIVE,
-                    RUSTDESK_CONFIG_NAME,
-                )
-            )
-        return paths
-    if _is_darwin():
-        paths = [os.path.join(RUSTDESK_DARWIN_ROOT_CONFIG, RUSTDESK_CONFIG_NAME)]
-        if account_home:
-            paths.append(
-                os.path.join(
-                    account_home, RUSTDESK_DARWIN_ACCOUNT_RELATIVE, RUSTDESK_CONFIG_NAME
-                )
-            )
-        return paths
-    paths = [os.path.join(RUSTDESK_LINUX_ROOT_CONFIG, RUSTDESK_CONFIG_NAME)]
+    paths = [os.path.join(RUSTDESK_ROOT_CONFIG, RUSTDESK_CONFIG_NAME)]
     if account_home:
         paths.append(
-            os.path.join(
-                account_home, RUSTDESK_LINUX_ACCOUNT_RELATIVE, RUSTDESK_CONFIG_NAME
-            )
+            os.path.join(account_home, RUSTDESK_ACCOUNT_RELATIVE, RUSTDESK_CONFIG_NAME)
         )
     return paths
 
@@ -277,13 +235,10 @@ def _owner_of(path: str):
         path: The file being written.
 
     Returns:
-        ``(uid, gid, mode)`` to restore, or None where this platform has no
-        such notion or nothing says whose the file is. An existing file
-        answers for itself; a new one takes its directory's owner, which
-        under a home is that person.
+        ``(uid, gid, mode)`` to restore, or None where nothing says whose
+        the file is. An existing file answers for itself; a new one takes
+        its directory's owner, which under a home is that person.
     """
-    if os.name == "nt":
-        return None
     existing = _stat(path)
     if existing is not None:
         return existing.st_uid, existing.st_gid, existing.st_mode & 0o777
@@ -368,24 +323,15 @@ def _password_refusal(binary: str, password: str) -> str:
 
 
 def control_service(action: str) -> None:
-    """Start or stop the RustDesk service, the way this platform does.
+    """Start or stop the RustDesk service.
 
     Args:
         action: ``start`` or ``stop``.
 
     Raises:
-        InstallError: If the platform's own service control refuses.
+        InstallError: If systemd refuses.
     """
-    is_start = action == RUSTDESK_ACTION_START
-    if os.name == "nt":
-        command = ["net", RUSTDESK_WINDOWS_VERBS[is_start], RUSTDESK_WINDOWS_SERVICE]
-    elif _is_darwin():
-        if is_start:
-            command = ["launchctl", "bootstrap", "system", RUSTDESK_DARWIN_DAEMON_PLIST]
-        else:
-            command = ["launchctl", "bootout", f"system/{RUSTDESK_DARWIN_DAEMON_LABEL}"]
-    else:
-        command = ["systemctl", action, RUSTDESK_LINUX_UNIT]
+    command = ["systemctl", action, RUSTDESK_UNIT]
     try:
         subprocess.run(
             command,
@@ -395,11 +341,6 @@ def control_service(action: str) -> None:
         )
     except (OSError, subprocess.SubprocessError) as error:
         raise InstallError(f"{command[0]} could not run: {error}")
-
-
-def _is_darwin() -> bool:
-    """Whether this machine is macOS."""
-    return os.uname().sysname == "Darwin" if hasattr(os, "uname") else False
 
 
 class RustdeskModuleRunner(ModuleRunner):
@@ -445,10 +386,6 @@ class RustdeskModuleRunner(ModuleRunner):
 
     def install(self, resolved: dict, package_path: str) -> None:
         """Install the package the hub handed down, and register the service.
-
-        The deb and the rpm ship their own unit and the dmg's app carries
-        its plists, so only Windows needs the binary asked to register
-        itself.
 
         Args:
             resolved: The module as the hub resolved it.
@@ -497,7 +434,7 @@ class RustdeskModuleRunner(ModuleRunner):
                 self._log(f"rustdesk: {error}")
 
     def _register_service(self) -> None:
-        """Make RustDesk answer at boot, where its package does not.
+        """Make RustDesk answer at boot.
 
         A registration that does not take is logged and not raised: the
         software is installed either way, and the module's verify is what
@@ -511,18 +448,7 @@ class RustdeskModuleRunner(ModuleRunner):
         binary = binary_path()
         if not binary:
             return
-        if os.name == "nt":
-            command = [binary, "--install-service"]
-        elif _is_darwin():
-            if not os.path.isfile(RUSTDESK_DARWIN_DAEMON_PLIST):
-                self._log(
-                    "rustdesk: the service plists are not installed; "
-                    "open RustDesk once on this machine to install them"
-                )
-                return
-            command = ["launchctl", "bootstrap", "system", RUSTDESK_DARWIN_DAEMON_PLIST]
-        else:
-            command = ["systemctl", "enable", "--now", RUSTDESK_LINUX_UNIT]
+        command = ["systemctl", "enable", "--now", RUSTDESK_UNIT]
         try:
             result = subprocess.run(
                 command,

@@ -1,9 +1,8 @@
-"""Installing a downloaded package, the way each platform installs things.
+"""Installing a downloaded package, the way this machine installs things.
 
-One function per package kind, each doing what that platform's own tooling
-does unattended: dpkg with an apt fix-up on Debian, dnf on RHEL, msiexec
-quietly on Windows, the vendor's own silent switch for an exe, and on macOS
-``installer -pkg`` for a pkg or mounting and copying an app out of a dmg.
+One function per package kind, each doing what the machine's own tooling
+does unattended: dpkg with an apt fix-up on Debian family, dnf or yum on
+RHEL family.
 
 Not pure: runs installers.
 """
@@ -13,7 +12,6 @@ Not pure: runs installers.
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import subprocess
 
@@ -21,8 +19,6 @@ from neutrino_agent.constants import AGENT_MODULE_OUTPUT_LIMIT_BYTES
 
 INSTALL_TIMEOUT_S = 1800
 COMMAND_TIMEOUT_S = 120
-
-MOUNT_POINT_PATTERN = re.compile(r"(/Volumes/[^\n]+)")
 
 
 class InstallError(RuntimeError):
@@ -34,10 +30,8 @@ def install_package(path: str, *, package_kind: str, entry: dict) -> None:
 
     Args:
         path: The downloaded file.
-        package_kind: ``deb`` / ``rpm`` / ``msi`` / ``exe`` / ``dmg`` /
-            ``pkg``.
-        entry: The manifest's platform entry, for per-package details like an
-            exe's silent switch or the app to copy out of a dmg.
+        package_kind: ``deb`` or ``rpm``.
+        entry: The manifest's platform entry.
 
     Raises:
         InstallError: If the installer fails or the kind is unknown.
@@ -46,14 +40,6 @@ def install_package(path: str, *, package_kind: str, entry: dict) -> None:
         _install_deb(path)
     elif package_kind == "rpm":
         _install_rpm(path)
-    elif package_kind == "msi":
-        _install_msi(path)
-    elif package_kind == "exe":
-        _install_exe(path, entry.get("install_args", []))
-    elif package_kind == "dmg":
-        _install_dmg(path, entry.get("app_name", ""))
-    elif package_kind == "pkg":
-        _install_pkg(path)
     else:
         raise InstallError(f"unknown package kind {package_kind!r}")
 
@@ -83,6 +69,37 @@ def run_checked(command: list, *, timeout_s: int = COMMAND_TIMEOUT_S) -> str:
             f"{command[0]} failed: {output[-AGENT_MODULE_OUTPUT_LIMIT_BYTES:]}"
         )
     return result.stdout or ""
+
+
+def uninstall_package(command: str) -> None:
+    """Remove a package the way its manifest says to.
+
+    Every platform removes things differently — apt, dnf, an uninstaller the
+    vendor left behind, or deleting an app bundle — so the manifest carries
+    the command rather than this guessing from the package kind.
+
+    Args:
+        command: The manifest's uninstall command for this platform.
+
+    Raises:
+        InstallError: If the uninstall fails.
+    """
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=INSTALL_TIMEOUT_S,
+            env=_apt_env(),
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise InstallError(f"uninstall could not run: {error}")
+    if result.returncode != 0:
+        output = (result.stderr or result.stdout or "").strip()
+        raise InstallError(
+            f"uninstall failed: {output[-AGENT_MODULE_OUTPUT_LIMIT_BYTES:]}"
+        )
 
 
 def _apt_env() -> dict:
@@ -120,91 +137,3 @@ def _install_deb(path: str) -> None:
 def _install_rpm(path: str) -> None:
     manager = "dnf" if shutil.which("dnf") else "yum"
     run_checked([manager, "install", "-y", path], timeout_s=INSTALL_TIMEOUT_S)
-
-
-def _install_msi(path: str) -> None:
-    run_checked(
-        ["msiexec", "/i", path, "/quiet", "/norestart"], timeout_s=INSTALL_TIMEOUT_S
-    )
-
-
-def _install_pkg(path: str) -> None:
-    # macOS's own silent installer; -target / is the booted system volume.
-    run_checked(
-        ["installer", "-pkg", path, "-target", "/"], timeout_s=INSTALL_TIMEOUT_S
-    )
-
-
-def _install_exe(path: str, install_args: list) -> None:
-    # Silent switches are the vendor's own, so they come from the manifest;
-    # with none given the installer is run bare and may want a click.
-    run_checked([path] + list(install_args), timeout_s=INSTALL_TIMEOUT_S)
-
-
-def _install_dmg(path: str, app_name: str) -> None:
-    output = run_checked(
-        ["hdiutil", "attach", "-nobrowse", "-readonly", path], timeout_s=600
-    )
-    match = MOUNT_POINT_PATTERN.search(output)
-    if match is None:
-        raise InstallError("the disk image mounted nowhere findable")
-    mount_point = match.group(1).strip()
-    try:
-        source = _find_app(mount_point, app_name)
-        if source is None:
-            raise InstallError(f"no application inside {os.path.basename(path)}")
-        destination = os.path.join("/Applications", os.path.basename(source))
-        if os.path.exists(destination):
-            shutil.rmtree(destination, ignore_errors=True)
-        shutil.copytree(source, destination, symlinks=True)
-    finally:
-        subprocess.run(
-            ["hdiutil", "detach", mount_point, "-quiet"],
-            capture_output=True,
-            timeout=COMMAND_TIMEOUT_S,
-        )
-
-
-def _find_app(mount_point: str, app_name: str) -> "str | None":
-    if app_name:
-        candidate = os.path.join(mount_point, app_name)
-        if os.path.isdir(candidate):
-            return candidate
-    try:
-        for entry in sorted(os.listdir(mount_point)):
-            if entry.endswith(".app"):
-                return os.path.join(mount_point, entry)
-    except OSError:
-        return None
-    return None
-
-
-def uninstall_package(command: str) -> None:
-    """Remove a package the way its manifest says to.
-
-    Every platform removes things differently — apt, dnf, an uninstaller the
-    vendor left behind, or deleting an app bundle — so the manifest carries
-    the command rather than this guessing from the package kind.
-
-    Args:
-        command: The manifest's uninstall command for this platform.
-
-    Raises:
-        InstallError: If the uninstall fails.
-    """
-    try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=INSTALL_TIMEOUT_S,
-            env=_apt_env(),
-        )
-    except (OSError, subprocess.SubprocessError) as error:
-        raise InstallError(f"uninstall could not run: {error}")
-    if result.returncode != 0:
-        output = (result.stderr or result.stdout or "").strip()
-        raise InstallError(
-            f"uninstall failed: {output[-AGENT_MODULE_OUTPUT_LIMIT_BYTES:]}"
-        )

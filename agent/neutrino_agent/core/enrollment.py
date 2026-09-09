@@ -1,9 +1,9 @@
 """Joining a gateway, and leaving one.
 
-A machine with no SSH — a Windows laptop, a tablet — cannot be reached by the
-gateway, so it introduces itself instead: the owner pastes one enrollment link
-into the agent's own page, and the agent posts to the gateway, which hands
-back the token its heartbeats will carry. Nothing else has to be configured.
+A machine with no SSH cannot be reached by the gateway, so it introduces
+itself instead: the owner pastes one enrollment link into ``nagent
+connect``, and the agent posts to the gateway, which hands back the token
+its heartbeats will carry. Nothing else has to be configured.
 
 The link is ``neutrino://enroll/<payload>`` where the payload is base64url
 over ``{"urls": [...], "token": ..., "fp": ...}``. That alphabet holds no
@@ -147,8 +147,8 @@ def machine_id() -> str:
 
     Returns:
         The system's machine id where there is one, else a generated id kept
-        in the agent's own configuration — a Windows laptop on the overlay has
-        no LAN MAC the gateway could key it by.
+        in the agent's own configuration — a machine reached only over the
+        overlay has no LAN MAC the gateway could key it by.
     """
     for path in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
         try:

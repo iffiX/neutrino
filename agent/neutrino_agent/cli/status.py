@@ -14,7 +14,6 @@ from __future__ import annotations
 import time
 
 from neutrino_agent import AGENT_VERSION
-from neutrino_agent.constants import AGENT_CONFIG_PATH
 from neutrino_agent.control import client
 from neutrino_agent.core import enrollment
 from neutrino_agent.core.loop import Agent
@@ -81,17 +80,11 @@ def main() -> int:
         Process exit status: 0 when bound and the hub answered, 1 otherwise.
     """
     print(f"neutrino-agent {AGENT_VERSION}")
-    # The running service is the one that knows, and any local user may ask
-    # it. Files are only read when there is no service to ask, and a binding
-    # this account cannot read is said to be that — never mistaken for no
-    # binding at all.
+    # The running service is the one that knows. The binding file is only
+    # read when there is no service to ask.
     state = _local_state()
     if state is not None:
         return _status_from_service(state)
-    if not _is_binding_readable():
-        print("hub        the binding is root's to read: sudo nagent status")
-        print(f"service    {service_state()}")
-        return 1
     gateway_url = enrollment.load_config().get("gateway_url", "")
     if not gateway_url:
         print(f"hub        {STATUS_UNBOUND}")
@@ -180,9 +173,6 @@ def _start_hint() -> str:
 def _local_state() -> "dict | None":
     """What the running service says about itself, asked over its socket.
 
-    The socket answers any local account with that account's own scope,
-    which is all this surface reads.
-
     Returns:
         The service's own state, or None when nothing answers on the
         control socket.
@@ -221,22 +211,6 @@ def _status_from_service(state: dict) -> int:
         return 1
     print("heartbeat  ok. The service reports every few seconds")
     return 0
-
-
-def _is_binding_readable() -> bool:
-    """Whether this account may read the binding file at all.
-
-    Returns:
-        True when it is readable or absent; False only on a permission
-        refusal, which must never read as an empty binding.
-    """
-    try:
-        with open(AGENT_CONFIG_PATH, "r", encoding="utf-8"):
-            return True
-    except PermissionError:
-        return False
-    except OSError:
-        return True
 
 
 def _discard(message: str) -> None:

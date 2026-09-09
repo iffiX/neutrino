@@ -1,16 +1,15 @@
 """The agent itself: connection state, the heartbeat, and the module engine.
 
-One object owns everything the machine's own page and the gateway both talk
-to. It runs whether or not the machine belongs to a gateway yet — an agent
-that has never enrolled still serves its page, waiting for a link, which is
-the whole point on a machine the gateway cannot reach first.
+One object owns everything the local control channel and the gateway both
+talk to. It runs whether or not the machine belongs to a gateway yet — an
+agent that has never enrolled still answers locally, waiting for a link,
+which is the whole point on a machine the gateway cannot reach first.
 
-The gateway decides everything about modules: a toggle on the local page is
+The gateway decides everything about modules: a toggle asked for here is
 sent up with the next heartbeat and comes back as an order, so the panel and
-the page can never disagree for longer than one beat, and this machine never
-downloads anything or decides to try again. Services are the other way
-round: visible and decided only on the machine, one typed handler per
-service type.
+the machine can never disagree for longer than one beat, and this machine
+never downloads anything or decides to try again. The desktop share is the
+other way round: decided only on the machine, and declared upward.
 
 Errors cross the wire as ``{"code", "params"}``, never an English sentence;
 every surface does its own wording.
@@ -26,9 +25,9 @@ import threading
 
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import (
+    AGENT_CREDENTIALS_DIR_NAME,
     AGENT_MODULE_PACKAGE_PATH,
-    AGENT_MOUNT_CREDENTIALS_DIR_NAME,
-    AGENT_SERVICE_STORE_NAME,
+    AGENT_STATE_NAME,
     AGENT_WIRE_GENERATION,
     AGENT_BACKOFF_MAX_S,
     AGENT_BACKOFF_MIN_S,
@@ -52,14 +51,10 @@ from neutrino_agent.core.commands import DeviceOperator
 from neutrino_agent.core.engine import ModuleEngine
 from neutrino_agent.core.metrics import HostMetrics, hostname
 from neutrino_agent.core.version import parse_version
+from neutrino_agent.core.store import MachineStateStore
 from neutrino_agent.platforms.base import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import detect_platform
-from neutrino_agent.services.ai import AiServiceHandler, AiServiceReconciler
-from neutrino_agent.services.file import FileServiceHandler
-from neutrino_agent.services.port import PortServiceHandler
-from neutrino_agent.services.rdp import RdpServiceHandler
-from neutrino_agent.services.store import MachineServiceStore
-from neutrino_agent.services.web import WebServiceHandler
+from neutrino_agent.rdp.host import RdpShareHost
 
 # How often an unenrolled agent looks again, which is only to notice that its
 # own page has since been used to join a gateway.
@@ -130,50 +125,19 @@ class Agent:
             log=log,
             on_change=self._news.set,
         )
-        # The service store and the mount credentials live under the
-        # platform's own data root.
+        # The store and the access password live under the platform's own
+        # data root.
         data_dir = self._platform.agent_data_dir()
-        self._store = MachineServiceStore(
-            path=os.path.join(data_dir, AGENT_SERVICE_STORE_NAME)
-        )
-        self._ai = AiServiceReconciler(
+        self._store = MachineStateStore(path=os.path.join(data_dir, AGENT_STATE_NAME))
+        self._rdp = RdpShareHost(
+            platform=self._platform,
             store=self._store,
-            platform_tuple=self._engine.platform_tuple,
+            credentials_dir=os.path.join(data_dir, AGENT_CREDENTIALS_DIR_NAME),
             log=log,
         )
-        self._services = {
-            handler.service_type: handler
-            for handler in (
-                WebServiceHandler(),
-                PortServiceHandler(log=log),
-                AiServiceHandler(
-                    store=self._store,
-                    accounts=self._read_accounts,
-                    on_change=self._news.set,
-                ),
-                FileServiceHandler(
-                    platform=self._platform,
-                    store=self._store,
-                    credentials_dir=os.path.join(
-                        data_dir, AGENT_MOUNT_CREDENTIALS_DIR_NAME
-                    ),
-                    accounts=self._read_accounts,
-                    log=log,
-                ),
-                RdpServiceHandler(
-                    platform=self._platform,
-                    store=self._store,
-                    credentials_dir=os.path.join(
-                        data_dir, AGENT_MOUNT_CREDENTIALS_DIR_NAME
-                    ),
-                    accounts=self._read_accounts,
-                    log=log,
-                ),
-            )
-        }
         # The share flow refuses before it configures anything when RustDesk
         # is not on the machine, which is what the engine's report answers.
-        self._services[RdpServiceHandler.service_type].bind_modules(self._engine.report)
+        self._rdp.bind_modules(self._engine.report)
         self._backoff_s = AGENT_BACKOFF_MIN_S
         self._last_error: "dict | None" = None
         self._pending: dict = {}
@@ -191,28 +155,15 @@ class Agent:
         self._update_error: "dict | None" = None
         self._load_connection()
 
-    # --- what the local page reads ---
+    # --- what the control channel reads ---
 
     def platform(self) -> dict:
         """This machine's platform tuple."""
         return self._engine.platform_tuple
 
-    def suggest_mount_location(self) -> str:
-        """What the platform offers as a mount location before one is typed."""
-        return self._platform.suggest_mount_location()
-
-    def mount_location_shape(self) -> str:
-        """What a mount location is here: ``path`` or ``drive_letter``."""
-        return self._platform.mount_location_shape
-
     def catalog(self) -> dict:
-        """The catalog the gateway last sent: ``{"modules", "services"}``."""
+        """The catalog the gateway last sent: ``{"modules"}``."""
         return self._engine.catalog()
-
-    def service_entries(self) -> list:
-        """The typed service list, as the hub last sent it."""
-        entries = self.catalog().get("services", [])
-        return [entry for entry in entries if isinstance(entry, dict)]
 
     def module_states(self) -> dict:
         """What state each module is actually in."""
@@ -243,80 +194,19 @@ class Agent:
         """The machine's human accounts, by the platform's own judgment."""
         return self._read_accounts()
 
-    def ai_targets(self) -> dict:
-        """Which accounts are switched at the hub's gateway."""
-        return self._store.ai_targets()
-
-    def ai_states(self) -> dict:
-        """Each account's AI service state, as the reconcile last saw it."""
-        return self._ai.report()
-
-    def ai_tool_configs(self) -> dict:
-        """The per-tool model choices this machine keeps."""
-        return self._store.ai_tool_configs()
-
-    def account_home(self, account: str) -> str:
-        """One account's home directory, empty when it cannot be resolved."""
-        try:
-            return self._platform.account_home(account)
-        except (KeyError, PlatformUnsupportedError):
-            return ""
-
-    def service_report(self) -> dict:
-        """What the hub's drawer draws about this machine's services.
-
-        The file handler's rows, the AI rows, and the share at a glance;
-        neither passwords nor forward sockets belong on a wire.
-
-        Returns:
-            ``{"mounts", "ai_states", "rdp"}``.
-        """
-        handler = self._services.get("file")
-        rdp = self._services.get("rdp")
-        return {
-            "mounts": (handler.state().get("mounts", []) if handler else []),
-            # The hub's drawer offers a location the way the page does, so
-            # it needs the same two answers the page reads.
-            "mount_location_shape": self.mount_location_shape(),
-            "mount_location_suggestion": self.suggest_mount_location(),
-            "ai_states": self.ai_states(),
-            "rdp": (rdp.summary() if rdp is not None else {}),
-        }
-
-    def service_states(self) -> dict:
-        """Every service type's machine state, merged for the page payload."""
-        merged = {}
-        for handler in self._services.values():
-            merged.update(handler.state())
-        return merged
+    def rdp_state(self) -> dict:
+        """Where this machine's own desktop share stands."""
+        return self._rdp.state()
 
     def rdp_declaration(self) -> dict:
         """What this machine says upward about sharing its desktop.
 
         Returns:
-            ``{"is_shared", "share_id", "port"}``; empty when this build
-            carries no rdp handler.
+            ``{"is_shared", "share_id", "port", "attention"}``.
         """
-        handler = self._services.get(RdpServiceHandler.service_type)
-        return handler.declaration() if handler is not None else {}
+        return self._rdp.declaration()
 
-    def rdp_password(self, *, account: str, is_privileged: bool) -> str:
-        """The access password this machine shares with, for its owner.
-
-        Args:
-            account: The asking account.
-            is_privileged: Whether the caller holds the privileged scope.
-
-        Returns:
-            The password, for the privileged scope and the share's own
-            account; empty for anyone else or when none is set.
-        """
-        handler = self._services.get(RdpServiceHandler.service_type)
-        if handler is None:
-            return ""
-        return handler.reveal_password(account=account, is_privileged=is_privileged)
-
-    # --- what the local page does ---
+    # --- what the control channel asks for ---
 
     def connect(self, link: str) -> None:
         """Join the gateway an enrollment link points at.
@@ -368,7 +258,7 @@ class Agent:
         self._news.set()
 
     def request_module(self, name: str, *, is_enabled: "bool | None" = None) -> None:
-        """Ask for one module order, from this machine's own page.
+        """Ask for one module order, from this machine itself.
 
         The click is sent up with the next heartbeat rather than applied
         here, so the hub remains the one place that decides.
@@ -385,29 +275,25 @@ class Agent:
         # what comes back is an order like any the panel's own button makes.
         self.beat_soon()
 
-    def service_action(
-        self, service_type: str, *, account: str, is_privileged: bool, body: dict
-    ) -> dict:
-        """Hand one page action to the handler for its service type.
+    def rdp_share(self, *, account: str, password: str) -> dict:
+        """Share this machine's desktop behind an access password.
 
         Args:
-            service_type: The type the page acted on.
-            account: The asking account.
-            is_privileged: Whether the caller holds the privileged scope.
-            body: The action's own fields.
+            account: The account sitting at the machine's screen.
+            password: The access password a peer connects with.
 
         Returns:
             Empty on success, ``{"code", "params"}`` on a refusal.
         """
-        handler = self._services.get(service_type)
-        if handler is None:
-            return {"code": "unknown_request", "params": {}}
-        return handler.act(
-            entries=self.service_entries(),
-            account=account,
-            is_privileged=is_privileged,
-            body=body,
-        )
+        return self._rdp.share(account, password)
+
+    def rdp_unshare(self) -> dict:
+        """Stop sharing this machine's desktop.
+
+        Returns:
+            Empty on success, ``{"code", "params"}`` on a refusal.
+        """
+        return self._rdp.unshare()
 
     # --- the loop ---
 
@@ -416,13 +302,8 @@ class Agent:
 
         The wait between beats ends early when a module changes state, so
         the panel sees a step start and finish rather than only its result.
-        The service handlers' own reconciles start here: enabled mounts are
-        remounted now and on a timer, which is what brings them back after a
-        reboot.
         """
         self._log(f"neutrino_agent {AGENT_VERSION} starting on {hostname()}")
-        for handler in self._services.values():
-            handler.start()
         while True:
             delay = self.run_once()
             self._news.clear()
@@ -461,10 +342,6 @@ class Agent:
             "modules": self._engine.report(),
             "module_requests": requests,
             "module_results": self._engine.results(),
-            "ai_targets": self._store.ai_targets(),
-            # What the hub's drawer draws about this machine's services;
-            # credentials appear nowhere in it.
-            "service_state": self.service_report(),
             # Whether this machine's desktop is reachable. The access
             # password it was set up with stays on the machine.
             "rdp_share": self.rdp_declaration(),
@@ -521,11 +398,6 @@ class Agent:
                 catalog=reply.get("catalog"),
                 catalog_hash=str(reply.get("catalog_hash", "")),
                 orders=reply.get("module_orders") or [],
-            )
-            self._ai.update(
-                entry=self._ai_entry(),
-                accounts=self._read_accounts(),
-                credentials=reply.get("ai_accounts") or {},
             )
             for command in reply.get("commands", []):
                 self._execute(command)
@@ -590,13 +462,6 @@ class Agent:
             return self._platform.human_accounts()
         except PlatformUnsupportedError:
             return []
-
-    def _ai_entry(self) -> dict:
-        """The service list's ai entry, empty when the hub publishes none."""
-        for entry in self.service_entries():
-            if entry.get("type") == "ai":
-                return entry
-        return {}
 
     def _on_rejected(self, error: Exception) -> int:
         """Take a definitive rejection for what it is, after a short grace.
@@ -690,44 +555,12 @@ class Agent:
         action = command.get("action", "")
         command_id = command.get("id", action)
         self._log(f"running {action}")
-        if action == "service":
-            report = self._run_service_command(dict(command.get("args") or {}))
-        else:
-            outcome = operator.run(action, command.get("args", {}))
-            report = {"exit_code": outcome.exit_code, "output": outcome.output}
+        outcome = operator.run(action, command.get("args", {}))
+        report = {"exit_code": outcome.exit_code, "output": outcome.output}
         try:
             channel.post(AGENT_RESULT_PATH, {"id": command_id, **report})
         except (GatewayUnreachable, GatewayUntrusted) as error:
             self._log(f"could not report {action} result: {error}")
-
-    def _run_service_command(self, args: dict) -> dict:
-        """One service action the hub asked for, in the privileged scope.
-
-        The hub's surface is the page's own verb set and nothing wider:
-        the body lands on the same handler a local privileged caller
-        reaches. A share's access password rides inside the one ask, the
-        way a mount's credentials already do, and lands in a root-only
-        file on the machine.
-
-        Args:
-            args: ``{"service_type", "body"}``.
-
-        Returns:
-            The result fields the hub's surface words: an exit code, and
-            the typed refusal when there was one.
-        """
-        service_type = str(args.get("service_type", ""))
-        body = dict(args.get("body") or {})
-        refusal = self.service_action(
-            service_type, account="", is_privileged=True, body=body
-        )
-        if refusal:
-            return {
-                "exit_code": 1,
-                "code": str(refusal.get("code", "")),
-                "params": dict(refusal.get("params") or {}),
-            }
-        return {"exit_code": 0}
 
     def _force_self_update(self, target: str) -> None:
         """Reinstall this agent from the hub's package, version equal or not.

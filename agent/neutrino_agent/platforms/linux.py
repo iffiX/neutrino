@@ -16,19 +16,12 @@ the reasoning is docs/standard/design/privilege.md.
 from __future__ import annotations
 
 import os
+import pwd
 import re
 import shutil
-import socket
-import struct
 import subprocess
 import time
 
-try:
-    import pwd
-except ImportError:  # Windows has no account database module.
-    pwd = None
-
-from neutrino_agent.modules import installers
 from neutrino_agent.constants import (
     AGENT_COMMAND_TIMEOUT_S,
     AGENT_CONTROL_SOCKET_PATH,
@@ -36,7 +29,8 @@ from neutrino_agent.constants import (
     AGENT_STEP_DOWN_TIMEOUT_S,
 )
 from neutrino_agent.core.metrics import GpuMetrics, HostMetrics, ProcessMetrics
-from neutrino_agent.platforms.base import AgentPlatform, ShareAttachError
+from neutrino_agent.modules import installers
+from neutrino_agent.platforms.base import AgentPlatform
 
 # Accounts below this uid are the system's, not people's.
 LINUX_HUMAN_UID_FLOOR = 1000
@@ -62,17 +56,6 @@ NVIDIA_SMI_COMMAND = (
 )
 
 PROCESS_TOP_COUNT = 12
-
-CIFS_HELPER = "mount.cifs"
-CIFS_MOUNT_TIMEOUT_S = 60
-PROC_MOUNTS_PATH = "/proc/mounts"
-# How /proc/mounts spells the characters a mount point may not carry plainly.
-PROC_MOUNTS_ESCAPES = (
-    ("\\", "\\134"),
-    (" ", "\\040"),
-    ("\t", "\\011"),
-    ("\n", "\\012"),
-)
 
 POWER_COMMANDS = {
     "reboot": ["systemctl", "reboot"],
@@ -110,7 +93,6 @@ class LinuxPlatform(AgentPlatform):
     capabilities = frozenset(
         {
             "accounts",
-            "account_files",
             "run_as",
             "control_socket",
             "agent_service",
@@ -118,8 +100,6 @@ class LinuxPlatform(AgentPlatform):
             "metrics",
             "packages",
             "system_packages",
-            "openssh",
-            "shares",
         }
     )
 
@@ -133,8 +113,6 @@ class LinuxPlatform(AgentPlatform):
         Returns:
             Account names, sorted.
         """
-        if pwd is None:
-            return []
         accounts = []
         for entry in pwd.getpwall():
             if entry.pw_uid < LINUX_HUMAN_UID_FLOOR:
@@ -161,8 +139,6 @@ class LinuxPlatform(AgentPlatform):
         Raises:
             KeyError: When the account database has no such account.
         """
-        if pwd is None:
-            raise KeyError(account)
         return pwd.getpwnam(account).pw_dir
 
     def control_socket_path(self) -> str:
@@ -172,32 +148,6 @@ class LinuxPlatform(AgentPlatform):
             The absolute socket path.
         """
         return AGENT_CONTROL_SOCKET_PATH
-
-    def read_peer_identity(self, connection) -> dict:
-        """The peer's identity, from the kernel's ``SO_PEERCRED``.
-
-        Args:
-            connection: The accepted socket.
-
-        Returns:
-            ``{"account", "uid", "is_privileged"}``.
-
-        Raises:
-            KeyError: When the peer's uid names no account.
-        """
-        data = connection.getsockopt(
-            socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")
-        )
-        _pid, uid, _gid = struct.unpack("3i", data)
-        if uid == 0:
-            return {"account": "root", "uid": 0, "is_privileged": True}
-        if pwd is None:
-            raise KeyError(uid)
-        return {
-            "account": pwd.getpwuid(uid).pw_name,
-            "uid": uid,
-            "is_privileged": False,
-        }
 
     def run_as_account(
         self,
@@ -236,10 +186,6 @@ class LinuxPlatform(AgentPlatform):
             env=env,
         )
 
-    def has_mount_tooling(self) -> bool:
-        """Whether ``mount.cifs`` is on this machine."""
-        return shutil.which(CIFS_HELPER) is not None
-
     def install_system_packages(self, names: list) -> str:
         """Install packages by name with apt, dnf or yum.
 
@@ -276,12 +222,6 @@ class LinuxPlatform(AgentPlatform):
             command = [manager, "remove", "-y"] + list(names)
         return installers.run_checked(command, timeout_s=installers.INSTALL_TIMEOUT_S)
 
-    def write_share_credentials(
-        self, *, credentials_path: str, username: str, password: str
-    ) -> None:
-        """Keep a share's login as a root-only credentials file."""
-        self._write_share_credentials(credentials_path, username, password)
-
     def _install_system_package(self, package: str) -> str:
         if shutil.which("apt-get"):
             return installers.run_checked(
@@ -293,104 +233,6 @@ class LinuxPlatform(AgentPlatform):
             [manager, "install", "-y", package],
             timeout_s=installers.INSTALL_TIMEOUT_S,
         )
-
-    def attach_share(
-        self,
-        *,
-        account: str,
-        share_url: str,
-        username: str,
-        password: str,
-        location: str,
-        credentials_path: str = "",
-    ) -> None:
-        """Mount a CIFS share, ownership-mapped under the account's own home.
-
-        The password becomes the credentials file and never a command-line
-        argument. A location under the asking account's home carries ``uid=``
-        and ``gid=`` so what appears belongs to the account; anywhere else
-        the share's own permissions rule.
-
-        Args:
-            account: The asking account.
-            share_url: The share, as ``//host/name``.
-            username: The share's own username.
-            password: The share's own password; empty reattaches with the
-                credentials file already there.
-            location: The mount point.
-            credentials_path: Where this attachment's credentials file lives.
-
-        Raises:
-            ShareAttachError: ``cifs_missing`` without ``mount.cifs``,
-                ``credentials_missing`` without the file, ``mount_failed``
-                with the tool's own words otherwise.
-        """
-        if shutil.which(CIFS_HELPER) is None:
-            raise ShareAttachError("cifs_missing")
-        if password:
-            self._write_share_credentials(credentials_path, username, password)
-        if not os.path.isfile(credentials_path):
-            raise ShareAttachError("credentials_missing")
-        options = self._mount_options(
-            account=account, location=location, credentials_path=credentials_path
-        )
-        command = ["mount", "-t", "cifs", share_url, location, "-o", options]
-        try:
-            result = subprocess.run(
-                command, capture_output=True, text=True, timeout=CIFS_MOUNT_TIMEOUT_S
-            )
-        except (OSError, subprocess.SubprocessError) as error:
-            raise ShareAttachError("mount_failed", detail=str(error)[:200])
-        if result.returncode != 0:
-            detail = (result.stderr or result.stdout or "").strip()[-200:]
-            raise ShareAttachError("mount_failed", detail=detail)
-
-    def detach_share(self, *, location: str, account: str = "") -> None:
-        """Unmount the share at a location.
-
-        Args:
-            location: The mount point.
-            account: Ignored; a mount here is machine-wide.
-
-        Raises:
-            ShareAttachError: ``unmount_failed`` with the tool's own words.
-        """
-        try:
-            result = subprocess.run(
-                ["umount", location],
-                capture_output=True,
-                text=True,
-                timeout=CIFS_MOUNT_TIMEOUT_S,
-            )
-        except (OSError, subprocess.SubprocessError) as error:
-            raise ShareAttachError("unmount_failed", detail=str(error)[:200])
-        if result.returncode != 0:
-            detail = (result.stderr or result.stdout or "").strip()[-200:]
-            raise ShareAttachError("unmount_failed", detail=detail)
-
-    def is_share_attached(self, *, location: str, account: str = "") -> bool:
-        """Whether anything is mounted at a location, read from the kernel.
-
-        Args:
-            location: The mount point.
-            account: Ignored; a mount here is machine-wide.
-
-        Returns:
-            True when ``/proc/mounts`` names it.
-        """
-        encoded = location
-        for character, escape in PROC_MOUNTS_ESCAPES:
-            encoded = encoded.replace(character, escape)
-        try:
-            with open(PROC_MOUNTS_PATH, "r", encoding="utf-8") as stream:
-                lines = stream.readlines()
-        except OSError:
-            return False
-        for line in lines:
-            fields = line.split()
-            if len(fields) >= 2 and fields[1] == encoded:
-                return True
-        return False
 
     def read_agent_service_state(self) -> str:
         """What systemd says about the agent's own service.
@@ -474,98 +316,6 @@ class LinuxPlatform(AgentPlatform):
         """
         installers.uninstall_package(command)
 
-    def install_openssh(self, entry: dict) -> None:
-        """Install the SSH server package and start its unit.
-
-        Args:
-            entry: The manifest's platform entry, naming the packages and
-                the service.
-
-        Raises:
-            InstallError: If the install or systemd refuses.
-        """
-        if shutil.which("sshd") is None and not os.path.exists("/usr/sbin/sshd"):
-            for package in entry.get("packages") or ["openssh-server"]:
-                self._install_system_package(package)
-        service = entry.get("service", "ssh")
-        installers.run_checked(["systemctl", "enable", "--now", service])
-
-    def uninstall_openssh(self, entry: dict) -> None:
-        """Stop the SSH server's unit and remove its package.
-
-        Args:
-            entry: The manifest's platform entry, naming the packages and
-                the service.
-
-        Raises:
-            InstallError: If systemd or the package manager refuses.
-        """
-        service = entry.get("service", "ssh")
-        installers.run_checked(["systemctl", "disable", "--now", service])
-        self.remove_system_packages(entry.get("packages") or ["openssh-server"])
-
-    def read_openssh_status(self, entry: dict) -> bool:
-        """Whether the SSH server is installed and running.
-
-        Args:
-            entry: The manifest's platform entry.
-
-        Returns:
-            True when the service is active.
-        """
-        try:
-            result = subprocess.run(
-                ["systemctl", "is-active", entry.get("service", "ssh")],
-                capture_output=True,
-                text=True,
-                timeout=AGENT_COMMAND_TIMEOUT_S,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return False
-        return result.stdout.strip() == "active"
-
-    def _mount_options(
-        self, *, account: str, location: str, credentials_path: str
-    ) -> str:
-        """The mount options one attachment takes.
-
-        Args:
-            account: The asking account.
-            location: The mount point.
-            credentials_path: The credentials file.
-
-        Returns:
-            The ``-o`` string: the credentials file, plus ``uid=``/``gid=``
-            when the location sits under the account's own home.
-        """
-        options = [f"credentials={credentials_path}"]
-        try:
-            entry = pwd.getpwnam(account) if pwd is not None and account else None
-        except KeyError:
-            entry = None
-        if entry is not None:
-            home = entry.pw_dir.rstrip("/")
-            if home and (location == home or location.startswith(home + "/")):
-                options.append(f"uid={entry.pw_uid}")
-                options.append(f"gid={entry.pw_gid}")
-        return ",".join(options)
-
-    def _write_share_credentials(self, path: str, username: str, password: str) -> None:
-        """Write one attachment's credentials file, root-only mode 0600.
-
-        Args:
-            path: The credentials file.
-            username: The share's own username.
-            password: The share's own password.
-        """
-        directory = os.path.dirname(path)
-        if directory:
-            os.makedirs(directory, exist_ok=True)
-            os.chmod(directory, 0o700)
-        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            stream.write(f"username={username}\npassword={password}\n")
-
     def _account_env(self, account: str) -> "dict | None":
         """The environment a stepped-down child runs with.
 
@@ -578,10 +328,8 @@ class LinuxPlatform(AgentPlatform):
             refuses the unknown account itself.
         """
         try:
-            entry = pwd.getpwnam(account) if pwd is not None else None
+            entry = pwd.getpwnam(account)
         except KeyError:
-            entry = None
-        if entry is None:
             return None
         env = dict(os.environ)
         env["HOME"] = entry.pw_dir
@@ -900,6 +648,6 @@ class HostMetricsReader:
         if uid not in self._users:
             try:
                 self._users[uid] = pwd.getpwuid(uid).pw_name
-            except (KeyError, AttributeError):
+            except KeyError:
                 self._users[uid] = str(uid)
         return self._users[uid]

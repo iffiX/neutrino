@@ -2,19 +2,14 @@
 
     python3 agent/packaging/build_deb.py --output-dir dist/ --architecture amd64
 
-The package carries its own interpreter under /opt/neutrino_agent and the
-window's bindings built beside it, so it names no Python at all. That fixes it
-to one architecture: build it in a container of the machine it is for, the way
-the hub's package is built.
-
-Needs the development headers the window's bindings compile against; the build
-refuses by name when the container has none.
+The package carries its own interpreter under /opt/neutrino_agent, so it
+names no Python at all. That fixes it to one architecture: build it in a
+container of the machine it is for, the way the hub's package is built.
 
 Not pure: writes a package tree and runs dpkg-deb.
 """
 
 import argparse
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -22,16 +17,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import payload  # noqa: E402
-from gui_assets import ICONS_DIR  # noqa: E402
 
 AGENT_ROOT = payload.AGENT_ROOT
 PACKAGE_NAME = payload.PACKAGE_NAME
 
-# The C stack the window loads through its own bindings, and nothing else.
-# `gir1.2-webkit2-4.1` pulls the GTK and WebKit typelibs with it; the
-# introspection library is named as well, because which package pulls that one
-# has moved between releases.
-RUNTIME_DEPENDENCIES = ("gir1.2-webkit2-4.1", "libgirepository-1.0-1", "systemd")
+# The agent is a headless service; the interpreter it runs from is its own.
+RUNTIME_DEPENDENCIES = ("systemd",)
 
 CONTROL = """Package: {name}
 Version: {version}
@@ -39,15 +30,13 @@ Section: admin
 Priority: optional
 Architecture: {architecture}
 Depends: {depends}
-Recommends: cifs-utils, openssh-server
 Maintainer: {maintainer}
 Description: Neutrino device agent
  Keeps a managed machine's modules in the state its Neutrino Hub asks for:
- installs and removes software from the hub's catalog, reports metrics, and
- offers a window for joining a hub and choosing what this machine runs.
+ installs and removes software from the hub's catalog, and reports metrics.
  .
- Carries its own interpreter and the window's bindings, so it installs on a
- machine with no Python and touches none the machine already has.
+ Carries its own interpreter, so it installs on a machine with no Python and
+ touches none the machine already has.
 """
 
 POSTINST = """#!/bin/sh
@@ -56,7 +45,7 @@ set -e
 systemctl daemon-reload || true
 
 # The agent runs from install: unbound it idles waiting for a link, and its
-# control channel answers nagent gui. A service that only starts after a
+# control channel answers nagent. A service that only starts after a
 # connect is a heartbeat counter that never accumulates. An upgrade must
 # RESTART it — enable --now on a running unit is a no-op, and the whole
 # self-update path ends here: without the restart the new code lies on
@@ -65,11 +54,6 @@ if [ "$1" = configure ] && [ -n "$2" ]; then
     systemctl try-restart neutrino_agent.service >/dev/null 2>&1 || true
 fi
 systemctl enable --now neutrino_agent.service >/dev/null 2>&1 || true
-
-if [ -d /usr/share/icons/hicolor ]; then
-    gtk-update-icon-cache -f /usr/share/icons/hicolor >/dev/null 2>&1 || true
-fi
-update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
 
 echo ""
 echo "  Neutrino agent installed. Join a hub with:"
@@ -112,7 +96,7 @@ fi
 
 WRAPPER = """#!/bin/sh
 # The agent runs from the interpreter the package carries, never the system
-# one; the window process it starts inherits the same one.
+# one.
 exec {python}/bin/python3 -m neutrino_agent.cli.entry "$@"
 """
 
@@ -166,7 +150,6 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
     staged_python = tree / str(payload.PYTHON_DIR).lstrip("/")
     payload.stage_linux_interpreter(staged_python, architecture)
     payload.stage_agent_tree(payload.site_packages_of(staged_python), version)
-    payload.stage_linux_gui_bindings(staged_python)
     payload.strip_build_paths(staged_python, tree)
 
     payload.write(
@@ -180,19 +163,6 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
             encoding="utf-8"
         ),
     )
-
-    desktop = AGENT_ROOT / "neutrino_agent/data/desktop"
-    payload.write(
-        tree / "usr/share/applications/neutrino_agent.desktop",
-        (desktop / "neutrino_agent.desktop").read_text(encoding="utf-8"),
-    )
-    for source, edge in (("neutrino_256.png", 256), ("neutrino_48.png", 48)):
-        destination = (
-            tree / f"usr/share/icons/hicolor/{edge}x{edge}/apps/neutrino_agent.png"
-        )
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(ICONS_DIR / source, destination)
-        destination.chmod(0o644)
 
     control = CONTROL.format(
         name=PACKAGE_NAME,

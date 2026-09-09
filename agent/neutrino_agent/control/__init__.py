@@ -1,1 +1,1 @@
-"""The local control channel: who is asking, and what their scope allows."""
+"""The local control channel: the root-only socket the agent answers on."""

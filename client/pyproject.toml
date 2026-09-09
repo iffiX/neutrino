@@ -1,0 +1,32 @@
+[project]
+name = "neutrino-client"
+version = "0.2.0"
+description = "The Neutrino client: a person's window onto the services a hub publishes"
+requires-python = ">=3.9"
+# Deliberately empty, and it stays that way. The client's own code is standard
+# library: what its window draws through is imported by the shells alone, at
+# the moment a window opens, and the packaging build vendors those per
+# platform.
+dependencies = []
+
+[project.scripts]
+nclient = "neutrino_client.cli.entry:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["neutrino_client*"]
+
+[tool.setuptools.package-data]
+neutrino_client = ["data/desktop/*", "data/polkit/*", "data/gui/*"]
+
+[tool.black]
+line-length = 88
+target-version = ["py39"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra --strict-markers"

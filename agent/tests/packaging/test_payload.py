@@ -1,4 +1,4 @@
-"""What every agent package carries, staged into a temporary tree.
+"""What both agent packages carry, staged into a temporary tree.
 
 The parts that reach the network are not exercised here; what is, is the
 shape they produce — where the agent package lands, what is stamped into it,
@@ -12,8 +12,8 @@ import payload
 
 
 def test_the_machines_the_packages_are_published_for():
-    """One machine, spelled four ways by four formats, and nothing else: the
-    interpreter is published for these two and 32-bit ARM is not one."""
+    """One machine, spelled several ways, and nothing else: the interpreter
+    is published for these two and 32-bit ARM is not one."""
     assert payload.machine_name("amd64") == "x86_64"
     assert payload.machine_name("x64") == "x86_64"
     assert payload.machine_name("arm64") == "aarch64"
@@ -40,16 +40,14 @@ def test_the_version_is_the_one_the_pyproject_declares():
     assert payload.version() == declared[0].split('"')[1]
 
 
-def test_the_agent_tree_is_staged_with_its_version_and_its_page(tmp_path):
-    """No format installs a .dist-info, so the version is stamped in; the
-    window's page and icon are copied from their own sources."""
+def test_the_agent_tree_is_staged_with_its_version_stamped_in(tmp_path):
+    """No format installs a .dist-info, so the version is stamped in."""
     staged = payload.stage_agent_tree(tmp_path / "site-packages", "9.9.9")
 
     assert staged.name == "neutrino_agent"
     assert 'AGENT_VERSION = "9.9.9"' in (staged / "_version.py").read_text()
     assert (staged / "cli" / "entry.py").is_file()
-    assert (staged / "data" / "gui" / "index.html").is_file()
-    assert (staged / "data" / "gui" / "neutrino_agent.png").is_file()
+    assert (staged / "data" / "systemd" / "neutrino_agent.service").is_file()
     assert not list(staged.rglob("__pycache__"))
 
 
@@ -75,8 +73,8 @@ def test_a_tree_with_no_interpreter_in_it_is_refused(tmp_path):
 
 
 def test_the_carried_interpreter_loses_what_draws_no_window(tmp_path):
-    """The shells embed the platform's own web view, and Tcl/Tk carries the
-    rpath of the machine it was built on, which rpmbuild rejects outright."""
+    """Tcl/Tk carries the rpath of the machine it was built on, which
+    rpmbuild rejects outright."""
     library = tmp_path / "lib"
     (library / "python3.13" / "tkinter").mkdir(parents=True)
     (library / "python3.13" / "idlelib").mkdir(parents=True)

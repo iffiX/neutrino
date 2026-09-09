@@ -1,9 +1,9 @@
 """What kind of machine this is, and which platform class answers for it.
 
-A function manifest lists the platforms a package exists for; this module
-produces the keys that listing is matched against, from most to least
-specific, so a manifest can say ``linux-debian-amd64`` when the artifact is
-that particular, or just ``linux`` when anything with the right kernel works.
+A manifest lists the platforms a package exists for; this module produces
+the keys that listing is matched against, from most to least specific, so a
+manifest can say ``linux-debian-amd64`` when the artifact is that
+particular, or just ``linux`` when anything with the right kernel works.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -13,10 +13,8 @@ from __future__ import annotations
 import platform
 import sys
 
-from neutrino_agent.platforms.base import AgentPlatform
-from neutrino_agent.platforms.darwin import DarwinPlatform
+from neutrino_agent.platforms.base import PlatformUnsupportedError
 from neutrino_agent.platforms.linux import LinuxPlatform
-from neutrino_agent.platforms.windows import WindowsPlatform
 
 OS_RELEASE_PATH = "/etc/os-release"
 
@@ -37,18 +35,11 @@ def platform_tuple() -> dict:
     """Describe this machine.
 
     Returns:
-        ``{"os", "family", "arch"}`` — the operating system (``linux`` /
-        ``windows`` / ``darwin``), the distribution family (``debian`` /
-        ``rhel`` / empty), and the normalized architecture.
+        ``{"os", "family", "arch"}`` — the operating system, the
+        distribution family (``debian`` / ``rhel`` / empty), and the
+        normalized architecture.
     """
-    if sys.platform.startswith("linux"):
-        os_name = "linux"
-    elif sys.platform == "win32":
-        os_name = "windows"
-    elif sys.platform == "darwin":
-        os_name = "darwin"
-    else:
-        os_name = sys.platform
+    os_name = "linux" if sys.platform.startswith("linux") else sys.platform
     return {
         "os": os_name,
         "family": _distro_family() if os_name == "linux" else "",
@@ -56,22 +47,19 @@ def platform_tuple() -> dict:
     }
 
 
-def detect_platform() -> AgentPlatform:
+def detect_platform() -> LinuxPlatform:
     """The platform class that answers for this machine.
 
     Returns:
-        A platform instance; an operating system the agent does not know
-        gets the base contract, which advertises nothing and refuses every
-        capability.
+        The Linux platform.
+
+    Raises:
+        PlatformUnsupportedError: On anything that is not Linux.
     """
     os_name = platform_tuple()["os"]
-    if os_name == "linux":
-        return LinuxPlatform()
-    if os_name == "darwin":
-        return DarwinPlatform()
-    if os_name == "windows":
-        return WindowsPlatform()
-    return AgentPlatform()
+    if os_name != "linux":
+        raise PlatformUnsupportedError(f"the agent runs on Linux, not {os_name}")
+    return LinuxPlatform()
 
 
 def _distro_family() -> str:

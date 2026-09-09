@@ -125,53 +125,14 @@ def test_a_file_that_cannot_be_written_is_a_typed_refusal(tmp_path):
         write_config(str(blocker / "config" / "RustDesk2.toml"), (("a", "b"),))
 
 
-@pytest.mark.parametrize(
-    "os_name,is_darwin,expected",
-    [
-        (
-            "posix",
-            False,
-            [
-                "/root/.config/rustdesk/RustDesk2.toml",
-                "/home/pat/.config/rustdesk/RustDesk2.toml",
-            ],
-        ),
-        (
-            "posix",
-            True,
-            [
-                "/var/root/Library/Preferences/com.carriez.RustDesk/RustDesk2.toml",
-                "/home/pat/Library/Preferences/com.carriez.RustDesk/RustDesk2.toml",
-            ],
-        ),
-    ],
-)
-def test_every_path_the_service_and_the_session_read(
-    monkeypatch, os_name, is_darwin, expected
-):
-    monkeypatch.setattr(rustdesk.os, "name", os_name)
-    monkeypatch.setattr(rustdesk, "_is_darwin", lambda: is_darwin)
-
-    assert config_paths("/home/pat") == expected
-
-
-def test_windows_writes_the_service_profile_and_the_users_roaming(monkeypatch):
-    monkeypatch.setattr(rustdesk.os, "name", "nt")
-    monkeypatch.setattr(rustdesk.os.path, "join", lambda *parts: "\\".join(parts))
-
-    paths = config_paths("C:\\Users\\pat")
-
-    assert paths == [
-        "C:\\Windows\\ServiceProfiles\\LocalService\\AppData\\Roaming\\RustDesk"
-        "\\config\\RustDesk2.toml",
-        "C:\\Users\\pat\\AppData\\Roaming\\RustDesk\\config\\RustDesk2.toml",
+def test_every_path_the_service_and_the_session_read():
+    assert config_paths("/home/pat") == [
+        "/root/.config/rustdesk/RustDesk2.toml",
+        "/home/pat/.config/rustdesk/RustDesk2.toml",
     ]
 
 
-def test_with_no_account_only_the_services_own_copy_is_written(monkeypatch):
-    monkeypatch.setattr(rustdesk.os, "name", "posix")
-    monkeypatch.setattr(rustdesk, "_is_darwin", lambda: False)
-
+def test_with_no_account_only_the_services_own_copy_is_written():
     assert config_paths("") == ["/root/.config/rustdesk/RustDesk2.toml"]
 
 
@@ -394,8 +355,6 @@ def test_install_points_the_service_at_the_lan_and_nothing_else(monkeypatch, tmp
     rendezvous, no relay, the port pinned — connect-only machines included,
     so nothing under a hub ever registers with public infrastructure. The
     port itself stays closed until a share opens it."""
-    monkeypatch.setattr(rustdesk.os, "name", "posix")
-    monkeypatch.setattr(rustdesk, "_is_darwin", lambda: False)
     monkeypatch.setattr(rustdesk, "binary_path", lambda: "")
     written = {}
     monkeypatch.setattr(
@@ -421,8 +380,6 @@ def test_a_baseline_the_machine_cannot_take_does_not_fail_the_install(
     def refuse(path, options):
         raise InstallError("could not write " + path)
 
-    monkeypatch.setattr(rustdesk.os, "name", "posix")
-    monkeypatch.setattr(rustdesk, "_is_darwin", lambda: False)
     monkeypatch.setattr(rustdesk, "binary_path", lambda: "")
     monkeypatch.setattr(rustdesk, "write_config", refuse)
     module = RustdeskModuleRunner(platform=_Platform(), log=logged.append)
@@ -433,20 +390,22 @@ def test_a_baseline_the_machine_cannot_take_does_not_fail_the_install(
 
 
 def test_registering_the_service_hands_it_no_pipe(monkeypatch, tmp_path):
-    """``--install-service`` leaves a service running behind it. A service
-    that inherited a captured pipe holds it open, and the read outlives the
-    timeout that was supposed to bound the call."""
-    monkeypatch.setattr(rustdesk.os, "name", "nt")
-    monkeypatch.setattr(
-        rustdesk, "binary_path", lambda: "C:\\Program Files\\RustDesk\\RustDesk.exe"
-    )
+    """``systemctl enable --now`` leaves a service running behind it. A
+    service that inherited a captured pipe holds it open, and the read
+    outlives the timeout that was supposed to bound the call."""
+    monkeypatch.setattr(rustdesk, "binary_path", lambda: "/usr/bin/rustdesk")
     calls = _RunRecorder()
     monkeypatch.setattr(rustdesk.subprocess, "run", calls.run)
     monkeypatch.setattr(rustdesk, "write_config", lambda path, options: None)
 
-    runner().install({"entry": {"package_kind": "msi"}}, str(tmp_path / "rustdesk.msi"))
+    runner().install({"entry": {"package_kind": "deb"}}, str(tmp_path / "rustdesk.deb"))
 
-    assert calls.entries[0]["command"][-1] == "--install-service"
+    assert calls.entries[0]["command"] == [
+        "systemctl",
+        "enable",
+        "--now",
+        "rustdesk",
+    ]
     assert calls.entries[0]["kwargs"]["stdout"] is rustdesk.subprocess.DEVNULL
     assert calls.entries[0]["kwargs"]["stderr"] is rustdesk.subprocess.DEVNULL
     assert "capture_output" not in calls.entries[0]["kwargs"]
@@ -455,8 +414,6 @@ def test_registering_the_service_hands_it_no_pipe(monkeypatch, tmp_path):
 
 def test_a_registration_that_exits_nonzero_is_logged_and_not_raised(monkeypatch):
     logged = []
-    monkeypatch.setattr(rustdesk.os, "name", "posix")
-    monkeypatch.setattr(rustdesk, "_is_darwin", lambda: False)
     monkeypatch.setattr(rustdesk, "binary_path", lambda: "/usr/bin/rustdesk")
     monkeypatch.setattr(rustdesk.subprocess, "run", _recording([], returncode=1))
     monkeypatch.setattr(rustdesk, "write_config", lambda path, options: None)
@@ -605,7 +562,7 @@ def test_a_config_under_nothing_but_root_is_left_to_root(monkeypatch, tmp_path):
     assert rustdesk._owner_of("/root/.config/rustdesk/RustDesk2.toml") is None
 
 
-def test_windows_has_no_such_notion(monkeypatch):
-    monkeypatch.setattr(rustdesk.os, "name", "nt")
+def test_a_path_nothing_can_be_read_about_has_no_owner(monkeypatch):
+    monkeypatch.setattr(rustdesk, "_stat", lambda target: None)
 
-    assert rustdesk._owner_of("C:\\x\\RustDesk2.toml") is None
+    assert rustdesk._owner_of("/root/.config/rustdesk/RustDesk2.toml") is None

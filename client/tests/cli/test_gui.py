@@ -1,0 +1,181 @@
+"""``nclient gui``: the resident, walked as the person invokes it.
+
+One process binds the socket, starts the session and the socket server,
+and opens the window on the main thread; when the window closes everything
+shuts down. A second invocation finds the socket held, asks the running one
+to show its window, and exits 0. Refusals are the wording tables' own.
+"""
+
+import pytest
+
+import neutrino_client.cli.gui as gui_cli
+from neutrino_client.cli import wording
+from neutrino_client.control import client
+from neutrino_client.control.server import ControlServer
+from neutrino_client.gui.shell import GuiShellUnavailableError
+from neutrino_client.platforms.base import ControlSocketUnavailableError
+from tests.conftest import FakeClientPlatform, FakeSession, discard
+
+
+class FakeSessionFactory:
+    """Stands in for ``ClientSession``, remembering the one it made."""
+
+    def __init__(self):
+        self.made = []
+
+    def __call__(self, *, platform, log=print):
+        session = FakeSession(platform=platform)
+        session.started = 0
+        session.shutdowns = 0
+        session.start = lambda: setattr(session, "started", session.started + 1)
+        session.shutdown = lambda: setattr(session, "shutdowns", session.shutdowns + 1)
+        self.made.append(session)
+        return session
+
+
+@pytest.fixture
+def platform(monkeypatch):
+    platform = FakeClientPlatform()
+    monkeypatch.setattr(gui_cli, "detect_platform", lambda: platform)
+    return platform
+
+
+@pytest.fixture
+def sessions(monkeypatch):
+    factory = FakeSessionFactory()
+    monkeypatch.setattr(gui_cli, "ClientSession", factory)
+    return factory
+
+
+def test_a_platform_without_a_socket_is_refused(monkeypatch, capsys):
+    class NoSocketPlatform(FakeClientPlatform):
+        def control_socket_path(self):
+            raise ControlSocketUnavailableError("none")
+
+    monkeypatch.setattr(gui_cli, "detect_platform", NoSocketPlatform)
+
+    assert gui_cli.main() == 1
+    assert wording.word_code("control_socket_unavailable") in capsys.readouterr().err
+
+
+def test_the_resident_binds_starts_serves_and_shows_the_window(
+    platform, sessions, monkeypatch
+):
+    opened = []
+
+    def fake_shell(*, os_name, title, html, bridge, icon_path):
+        status, _state = client.request(
+            socket_path=platform.control_socket_path(), method="GET", path="/api/state"
+        )
+        reply = bridge.handle({"id": 1, "method": "GET", "path": "/api/state"})
+        opened.append({"os_name": os_name, "title": title, "html": html})
+        opened[-1]["socket"] = status
+        opened[-1]["reply"] = reply
+
+    monkeypatch.setattr(gui_cli, "open_shell_window", fake_shell)
+
+    assert gui_cli.main() == 0
+
+    (session,) = sessions.made
+    window = opened[0]
+    assert window["os_name"] == "linux"
+    assert window["title"] == "Neutrino client"
+    assert "const WORDS" in window["html"]
+    assert window["socket"] == 200
+    assert window["reply"]["body"]["hostname"] == "box"
+    assert session.started == 1
+    assert session.shutdowns == 1
+
+
+def test_a_second_invocation_posts_show_and_exits(platform, sessions, monkeypatch):
+    running = FakeSession()
+    server = ControlServer(
+        session=running,
+        platform=platform,
+        log=discard,
+        socket_path=platform.control_socket_path(),
+    )
+    assert server.start()
+    monkeypatch.setattr(
+        gui_cli, "open_shell_window", lambda **kwargs: pytest.fail("no window")
+    )
+    try:
+        assert gui_cli.main() == 0
+    finally:
+        server.stop()
+
+    assert running.shows == 1
+    assert all(session.started == 0 for session in sessions.made)
+
+
+def test_a_held_socket_that_answers_nobody_is_worded(
+    platform, sessions, monkeypatch, capsys
+):
+    running = FakeSession()
+    platform.peer = {"account": "bob", "uid": 1001, "is_same_user": False}
+    server = ControlServer(
+        session=running,
+        platform=platform,
+        log=discard,
+        socket_path=platform.control_socket_path(),
+    )
+    assert server.start()
+    try:
+        assert gui_cli.main() == 1
+    finally:
+        server.stop()
+
+    assert running.shows == 0
+    assert wording.word_code("control_socket_unavailable") in capsys.readouterr().err
+
+
+def test_a_missing_shell_prints_the_wording_that_names_the_package(
+    platform, sessions, monkeypatch, capsys
+):
+    def refuse(**kwargs):
+        raise GuiShellUnavailableError(
+            "gui_webkitgtk_missing", {"packages": "gir1.2-webkit2-4.1"}
+        )
+
+    monkeypatch.setattr(gui_cli, "open_shell_window", refuse)
+
+    assert gui_cli.main() == 1
+
+    streams = capsys.readouterr()
+    assert streams.out == ""
+    assert streams.err.strip().splitlines()[-1] == wording.word_code(
+        "gui_webkitgtk_missing", {"packages": "gir1.2-webkit2-4.1"}
+    )
+    assert sessions.made[0].shutdowns == 1
+
+
+def test_the_socket_is_released_when_the_window_closes(platform, sessions, monkeypatch):
+    monkeypatch.setattr(gui_cli, "open_shell_window", lambda **kwargs: None)
+
+    assert gui_cli.main() == 0
+
+    with pytest.raises(OSError):
+        client.request(
+            socket_path=platform.control_socket_path(), method="GET", path="/api/state"
+        )
+
+
+def test_hidden_is_accepted_and_starts_the_resident(platform, sessions, monkeypatch):
+    monkeypatch.setattr(gui_cli, "open_shell_window", lambda **kwargs: None)
+
+    assert gui_cli.main(is_hidden=True) == 0
+    assert sessions.made[0].started == 1
+
+
+def test_nothing_is_printed_for_a_person_to_copy(
+    platform, sessions, monkeypatch, capsys
+):
+    monkeypatch.setattr(gui_cli, "open_shell_window", lambda **kwargs: None)
+
+    gui_cli.main()
+
+    streams = capsys.readouterr()
+    assert streams.out == ""
+    # The resident's own log goes to stderr and names no link or token.
+    assert "neutrino://" not in streams.err
+    assert "token" not in streams.err

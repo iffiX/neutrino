@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Neutrino Client
+GenericName=Hub client
+Comment=Use the services a Neutrino Hub publishes for you
+Exec=nclient gui
+Icon=neutrino_client
+Terminal=false
+Categories=Network;
+Keywords=neutrino;hub;client;remote;ai;
+StartupNotify=false

@@ -1,90 +1,79 @@
-"""The control client: one request function, dialed by the path's shape.
+"""The control client: one request function over one Unix socket.
 
-A Unix path opens the socket; a ``\\\\.\\pipe\\`` name opens the named
-pipe. The socket side is exercised end to end by the server suite; here the
-pipe side speaks HTTP through a scripted connection.
+The happy path is exercised end to end by the server suite; here the two
+ways a request has no answer to give back.
 """
 
 import json
+import socket
+import threading
 
 import pytest
 
-import neutrino_agent.control.windows_pipe as windows_pipe
 from neutrino_agent.control import client
 
 
-class ScriptedPipeApi:
-    """A client-end pipe that answers with one canned HTTP response."""
+def serve_once(socket_path: str, response: bytes) -> threading.Thread:
+    """Answer exactly one connection with canned bytes.
 
-    def __init__(self, response: bytes):
-        self.response = response
-        self.position = 0
-        self.sent = bytearray()
-        self.closed = []
-        self.opened = []
+    Args:
+        socket_path: Where to listen.
+        response: What to write back.
 
-    def open_client(self, pipe_name):
-        self.opened.append(pipe_name)
-        return 31
+    Returns:
+        The serving thread, already started.
+    """
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    listener.bind(socket_path)
+    listener.listen(1)
 
-    def read(self, handle, size):
-        chunk = self.response[self.position : self.position + size]
-        self.position += len(chunk)
-        return chunk
+    def serve() -> None:
+        connection, _ = listener.accept()
+        connection.recv(4096)
+        connection.sendall(response)
+        connection.close()
+        listener.close()
 
-    def write(self, handle, data):
-        self.sent.extend(data)
-
-    def close(self, handle):
-        self.closed.append(handle)
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    return thread
 
 
-def canned_response(payload: dict) -> bytes:
-    body = json.dumps(payload).encode("utf-8")
+def canned(body: bytes) -> bytes:
     return (
-        b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
-        b"Content-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
+        b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+        + str(len(body)).encode()
+        + b"\r\n\r\n"
+        + body
     )
 
 
-def test_a_pipe_path_dials_the_named_pipe(monkeypatch):
-    api = ScriptedPipeApi(canned_response({"caller": {"account": "root"}}))
-
-    def open_scripted(pipe_name, **kwargs):
-        return windows_pipe.PipeConnection(
-            api=api, handle=api.open_client(pipe_name), is_server_end=False
-        )
-
-    monkeypatch.setattr(windows_pipe, "open_pipe_connection", open_scripted)
+def test_a_request_carries_its_body_and_decodes_the_reply(tmp_path):
+    path = str(tmp_path / "agent.sock")
+    serve_once(path, canned(json.dumps({"version": "0.1.0"}).encode()))
 
     status, reply = client.request(
-        socket_path="\\\\.\\pipe\\neutrino_agent_control",
+        socket_path=path,
         method="POST",
-        path="/api/module",
-        body={"name": "ssh_server"},
+        path="/api/rdp/stop",
+        body={"user": "alice"},
     )
 
-    assert (status, reply) == (200, {"caller": {"account": "root"}})
-    sent = bytes(api.sent)
-    assert sent.startswith(b"POST /api/module HTTP/1.1\r\n")
-    assert b'{"name": "ssh_server"}' in sent
-    assert api.opened == ["\\\\.\\pipe\\neutrino_agent_control"]
-    assert api.closed == [31]
+    assert (status, reply) == (200, {"version": "0.1.0"})
 
 
-def test_a_pipe_that_answers_no_object_is_refused(monkeypatch):
-    api = ScriptedPipeApi(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n[]")
-
-    def open_scripted(pipe_name, **kwargs):
-        return windows_pipe.PipeConnection(
-            api=api, handle=api.open_client(pipe_name), is_server_end=False
-        )
-
-    monkeypatch.setattr(windows_pipe, "open_pipe_connection", open_scripted)
-
-    with pytest.raises(ValueError):
+def test_nothing_listening_is_an_os_error(tmp_path):
+    with pytest.raises(OSError):
         client.request(
-            socket_path="\\\\.\\pipe\\neutrino_agent_control",
+            socket_path=str(tmp_path / "absent.sock"),
             method="GET",
             path="/api/state",
         )
+
+
+def test_a_reply_that_is_no_object_is_refused(tmp_path):
+    path = str(tmp_path / "agent.sock")
+    serve_once(path, canned(b"[]"))
+
+    with pytest.raises(ValueError):
+        client.request(socket_path=path, method="GET", path="/api/state")

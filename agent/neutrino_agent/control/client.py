@@ -1,7 +1,7 @@
 """Talking to the running agent over its control socket.
 
-The CLI connects as whoever ran it; the kernel reports that identity to the
-server, so no credential travels in the request.
+The socket is root's, so a caller that reaches it is already root and no
+credential travels in the request.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -12,10 +12,7 @@ import http.client
 import json
 import socket
 
-from neutrino_agent.constants import (
-    AGENT_CONTROL_PIPE_PREFIX,
-    AGENT_CONTROL_REQUEST_TIMEOUT_S,
-)
+from neutrino_agent.constants import AGENT_CONTROL_REQUEST_TIMEOUT_S
 
 
 def request(
@@ -42,10 +39,7 @@ def request(
         OSError: When nothing answers on the socket.
         ValueError: When the reply is not JSON.
     """
-    if socket_path.startswith(AGENT_CONTROL_PIPE_PREFIX):
-        connection = _ControlPipeHttpConnection(socket_path, timeout_s=timeout_s)
-    else:
-        connection = _ControlSocketHttpConnection(socket_path, timeout_s=timeout_s)
+    connection = _ControlSocketHttpConnection(socket_path, timeout_s=timeout_s)
     try:
         payload = None
         headers = {}
@@ -79,23 +73,3 @@ class _ControlSocketHttpConnection(http.client.HTTPConnection):
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.sock.settimeout(self.timeout)
         self.sock.connect(self._socket_path)
-
-
-class _ControlPipeHttpConnection(http.client.HTTPConnection):
-    """An HTTP connection over a Windows named pipe."""
-
-    def __init__(self, pipe_name: str, *, timeout_s: int):
-        """
-        Args:
-            pipe_name: The pipe to connect to.
-            timeout_s: How long to wait; a blocking pipe carries no deadline,
-                so this is accepted for shape.
-        """
-        super().__init__("localhost", timeout=timeout_s)
-        self._pipe_name = pipe_name
-
-    def connect(self) -> None:
-        """Open the pipe instead of a host and port."""
-        from neutrino_agent.control.windows_pipe import open_pipe_connection
-
-        self.sock = open_pipe_connection(self._pipe_name)

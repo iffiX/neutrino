@@ -1,9 +1,8 @@
 """The tree each Linux package lays down, with the carried parts faked.
 
-Fetching an interpreter and compiling the window's bindings need a build
-container; what they produce is stood in for here, so what is asserted is the
-shape around them — where the payload goes, what runs it, and what the
-package still asks the machine for.
+Fetching an interpreter needs a build container; what it produces is stood
+in for here, so what is asserted is the shape around it — where the payload
+goes, what runs it, and what the package still asks the machine for.
 """
 
 import pytest
@@ -24,9 +23,6 @@ def carried(monkeypatch):
 
     for module in (build_deb, build_rpm):
         monkeypatch.setattr(module.payload, "stage_linux_interpreter", stage)
-        monkeypatch.setattr(
-            module.payload, "stage_linux_gui_bindings", lambda staged_python: None
-        )
 
 
 def test_the_deb_puts_the_agent_inside_the_interpreter_it_carries(tmp_path, carried):
@@ -38,11 +34,10 @@ def test_the_deb_puts_the_agent_inside_the_interpreter_it_carries(tmp_path, carr
     )
     assert (package / "cli" / "entry.py").is_file()
     assert 'AGENT_VERSION = "9.9.9"' in (package / "_version.py").read_text()
-    assert (package / "data" / "gui" / "index.html").is_file()
 
 
 def test_the_deb_entry_point_runs_the_carried_interpreter(tmp_path, carried):
-    """Never the machine's own: the window process it starts inherits it."""
+    """Never the machine's own."""
     build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
 
     wrapper = (tmp_path / "usr/bin/nagent").read_text()
@@ -54,31 +49,25 @@ def test_the_deb_entry_point_runs_the_carried_interpreter(tmp_path, carried):
     assert "/usr/bin/python3" not in wrapper
 
 
-def test_the_deb_asks_for_c_libraries_and_no_python(tmp_path, carried):
-    """The bindings are the package's own, built for the interpreter it
-    carries; what the machine still owes is the C stack under them."""
+def test_the_deb_asks_for_systemd_and_no_python(tmp_path, carried):
+    """The interpreter is the package's own; what the machine still owes is
+    the init system that runs the service."""
     build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
 
     control = (tmp_path / "DEBIAN/control").read_text()
 
     assert "Architecture: amd64" in control
-    assert "gir1.2-webkit2-4.1" in control
-    assert "libgirepository-1.0-1" in control
+    assert "Depends: systemd" in control
+    assert "Recommends" not in control
     assert "python3" not in control.split("Description:")[0]
-    assert "python3-gi" not in control
 
 
-def test_the_deb_carries_the_unit_the_desktop_entry_and_the_icons(tmp_path, carried):
+def test_the_deb_carries_the_unit_and_nothing_for_a_desktop(tmp_path, carried):
     build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
 
     assert (tmp_path / "lib/systemd/system/neutrino_agent.service").is_file()
-    assert (tmp_path / "usr/share/applications/neutrino_agent.desktop").is_file()
-    for edge in (48, 256):
-        icon = (
-            tmp_path / f"usr/share/icons/hicolor/{edge}x{edge}/apps/neutrino_agent.png"
-        )
-        assert icon.is_file()
-        assert icon.read_bytes().startswith(b"\x89PNG")
+    assert not (tmp_path / "usr/share/applications").exists()
+    assert not (tmp_path / "usr/share/icons").exists()
 
 
 def test_the_deb_removes_its_own_payload_and_never_the_hub_s(tmp_path, carried):
@@ -113,13 +102,13 @@ def test_the_rpm_lays_the_same_payload_under_the_same_prefix(tmp_path, carried):
     )
     assert 'AGENT_VERSION = "9.9.9"' in (package / "_version.py").read_text()
     assert (tmp_path / "usr/lib/systemd/system/neutrino_agent.service").is_file()
-    assert (tmp_path / "usr/share/applications/neutrino_agent.desktop").is_file()
+    assert not (tmp_path / "usr/share/applications").exists()
     wrapper = (tmp_path / "usr/bin/nagent").read_text()
     assert "/opt/neutrino_agent/python/bin/python3" in wrapper
     assert "PYTHONPATH" not in wrapper
 
 
-def test_the_rpm_spec_names_the_machine_and_the_c_stack():
+def test_the_rpm_spec_names_the_machine_and_asks_for_no_python():
     """A payload with an interpreter in it is not noarch any more."""
     spec = build_rpm.SPEC.format(
         name="neutrino-agent",
@@ -134,6 +123,7 @@ def test_the_rpm_spec_names_the_machine_and_the_c_stack():
 
     assert "BuildArch:      aarch64" in spec
     assert "noarch" not in spec
-    assert "webkit2gtk4.1" in spec
+    assert "Requires:       systemd" in spec
     assert "Requires:       python3" not in spec
+    assert "Recommends" not in spec
     assert "/opt/neutrino_agent" in spec

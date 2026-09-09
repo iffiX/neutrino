@@ -16,16 +16,6 @@ AGENT_CONFIG_PATH = "/etc/neutrino/agent/agent.json"
 AGENT_REFUSALS_BEFORE_UNBIND = 3
 
 AGENT_SERVICE_NAME = "neutrino_agent.service"
-# What the agent is called on Windows, where it is a service of the service
-# control manager's own: the key the installer registers and the platform
-# reads and starts, and the name a person sees beside it.
-AGENT_SERVICE_NAME_WINDOWS = "NeutrinoAgent"
-
-# The hub's installer tier for a module the person puts on the machine
-# themselves. The hub takes no order for one, so the CLI refuses the ask
-# before posting it rather than letting it read as accepted.
-AGENT_MODULE_INSTALLER_USER = "user"
-AGENT_SERVICE_DISPLAY_NAME_WINDOWS = "Neutrino Agent"
 
 # The shape of what crosses the hub channel. Bumped on any wire change, so
 # a hub upgrade that changed the shapes tells a same-version agent to
@@ -44,12 +34,6 @@ AGENT_MODULE_PACKAGE_PATH = "/api/agent/module_package"
 # How much of a failed order's output travels up. Enough to read the package
 # manager's own complaint, bounded so a verbose failure cannot fill a beat.
 AGENT_MODULE_OUTPUT_LIMIT_BYTES = 16 * 1024
-
-# The module names the services on this machine depend on, as the hub's
-# manifests name them. What a refusal's ``module`` param carries when the
-# software a service needs is not installed.
-AGENT_SWITCHER_MODULE_NAME = "cc_switch"
-AGENT_MOUNT_MODULE_NAME = "samba_mount"
 
 # The transient unit a self-update runs in. Installing the package restarts
 # neutrino_agent.service, so the install must outlive the process that
@@ -71,44 +55,17 @@ AGENT_OUTPUT_LIMIT_BYTES = 64 * 1024
 # How long a stepped-down account command may take.
 AGENT_STEP_DOWN_TIMEOUT_S = 120
 
-# The local control channel: a socket any local account may connect to,
-# whose peer identity the kernel reports. On Windows the socket is a named
-# pipe and the peer identity comes from pipe impersonation.
+# The local control channel: a socket the agent serves as root. Its file is
+# 0600 under a 0700 directory, so only root reaches it.
 AGENT_CONTROL_SOCKET_PATH = "/run/neutrino_agent/agent.sock"
-AGENT_CONTROL_SOCKET_PATH_DARWIN = "/var/run/neutrino_agent/agent.sock"
-AGENT_CONTROL_PIPE_PREFIX = "\\\\.\\pipe\\"
-AGENT_CONTROL_PIPE_NAME = AGENT_CONTROL_PIPE_PREFIX + "neutrino_agent_control"
 AGENT_CONTROL_REQUEST_TIMEOUT_S = 5
 
-# The window `nagent gui` opens.
-AGENT_GUI_WINDOW_TITLE = "Neutrino agent"
-# What the packages install the launcher and the icon under, and therefore
-# the name the window must wear for a desktop to match the two together.
-AGENT_DESKTOP_NAME = "neutrino_agent"
-AGENT_GUI_WINDOW_WIDTH = 760
-AGENT_GUI_WINDOW_HEIGHT = 900
-
-# How the module and operation commands follow the hub's one operation
-# stream: how often they ask the running agent, and how long a posted ask
-# may wait for the hub to open an order — the same two minutes a surface's
-# optimistic step may stand.
-AGENT_CLI_FOLLOW_INTERVAL_S = 2
-AGENT_CLI_FOLLOW_PATIENCE_S = 120
-
-# Where the machine keeps its service choices — AI switching targets and
-# mount records. Machine state: it survives a hub restore and appears in no
-# hub backup. Mount passwords never enter it; each mount record has its own
-# credentials file under the directory beside it. The directory both live in
-# is the platform contract's ``agent_data_dir``; these are the POSIX paths,
-# which double as the defaults where nothing wires a root in.
+# Where the machine keeps what it decided for itself, and the directory
+# holding the one secret that never enters it: the share's access password,
+# in its own root-only file. The directory both live in is the platform
+# contract's ``agent_data_dir``; these are the POSIX paths, which double as
+# the defaults where nothing wires a root in.
 AGENT_DATA_DIR_POSIX = "/etc/neutrino/agent"
-AGENT_SERVICE_STORE_NAME = "services.json"
-AGENT_MOUNT_CREDENTIALS_DIR_NAME = "mount_credentials"
-AGENT_SERVICE_STORE_PATH = AGENT_DATA_DIR_POSIX + "/" + AGENT_SERVICE_STORE_NAME
-AGENT_MOUNT_CREDENTIALS_DIR = (
-    AGENT_DATA_DIR_POSIX + "/" + AGENT_MOUNT_CREDENTIALS_DIR_NAME
-)
-
-# How often enabled mount records that are not attached are remounted, which
-# is also what brings them back after a reboot.
-AGENT_MOUNT_RECHECK_INTERVAL_S = 60
+AGENT_STATE_NAME = "state.json"
+AGENT_CREDENTIALS_DIR_NAME = "credentials"
+AGENT_STATE_PATH = AGENT_DATA_DIR_POSIX + "/" + AGENT_STATE_NAME

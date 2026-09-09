@@ -1,36 +1,25 @@
-"""Staging the payload every agent package carries.
+"""Staging the payload both agent packages carry.
 
-All four packagers ship the same thing — an interpreter, the agent installed
-beside it, the window's page and icon, and whatever the platform's web view
-needs on the Python side — and differ only in how their format wants that
-described. What they have in common lives here so it cannot drift four ways.
+The deb and the rpm ship the same thing — an interpreter with the agent
+installed beside it — and differ only in how their format wants that
+described. What they have in common lives here so it cannot drift two ways.
 
 The interpreter is carried rather than depended on, the hub package's own
-precedent. It is also what makes the window possible: the shells embed a web
-view through Python bindings, and a machine's own interpreter is not a place
-this project may install into. Everything Python the agent runs therefore
-lives under :data:`INSTALL_PREFIX`, and a platform's C libraries — WebKitGTK,
-WebView2, WKWebView — are the only thing a package still names as a
-dependency.
+precedent: a machine's own interpreter is not a place this project may
+install into. Everything Python the agent runs therefore lives under
+:data:`INSTALL_PREFIX`, and the package names no Python at all.
 
-The agent's own code stays pure standard library. Nothing here is imported by
-it; the bindings are imported by the shells alone, at the moment a window
-opens.
+The agent's own code stays pure standard library.
 
-Not pure: downloads interpreters and wheels, writes package trees.
+Not pure: downloads interpreters, writes package trees.
 """
 
 import hashlib
 import shutil
-import subprocess
-import sys
 import tarfile
 import tempfile
 import urllib.request
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from gui_assets import stage_gui  # noqa: E402
 
 AGENT_ROOT = Path(__file__).resolve().parent.parent
 REPO_ROOT = AGENT_ROOT.parent
@@ -47,15 +36,12 @@ PYTHON_DIR = INSTALL_PREFIX / "python"
 # hub's packages carry, so one machine running both carries two copies of one
 # thing rather than two different interpreters.
 #
-# The interpreter itself needs no more than GLIBC 2.17. What the agent's own
-# floor is comes from the bindings built beside it, which are compiled in the
-# packaging container against that container's glibc.
+# The interpreter itself needs no more than GLIBC 2.17.
 PYTHON_VERSION = "3.13.15"
 PYTHON_BUILD = "20260825"
 #
-# The stripped flavor of the same build. The bindings compiled beside it link
-# the platform's C libraries over their own ABI, so the symbols the flavor
-# drops are read by nothing the package installs.
+# The stripped flavor of the same build: the symbols it drops are read by
+# nothing the package installs.
 PYTHON_URL = (
     "https://github.com/astral-sh/python-build-standalone/releases/download/"
     "{build}/cpython-{version}+{build}-{machine}"
@@ -78,45 +64,6 @@ MACHINE_NAMES = {
 }
 DEBIAN_ARCHITECTURES = {"x86_64": "amd64", "aarch64": "arm64"}
 RPM_ARCHITECTURES = {"x86_64": "x86_64", "aarch64": "aarch64"}
-
-# The Python side of the Linux window, built in the packaging container for
-# the interpreter above and vendored into the package. PyGObject links
-# libgirepository over the C ABI, so the C libraries the package depends on
-# serve the copy built here; the distribution's own python3-gi is never
-# involved, because the agent never runs the distribution's Python.
-#
-# PyGObject 3.50 is the last release built against girepository-1.0. Every
-# release after it needs the 2.0 library, which arrived with GLib 2.80 —
-# newer than the container this is built in, and newer than the machines the
-# package installs on.
-LINUX_GUI_SOURCES = (
-    (
-        "pycairo",
-        "1.27.0",
-        "https://files.pythonhosted.org/packages/07/4a/"
-        "42b26390181a7517718600fa7d98b951da20be982a50cd4afb3d46c2e603/"
-        "pycairo-1.27.0.tar.gz",
-        "5cb21e7a00a2afcafea7f14390235be33497a2cce53a98a19389492a60628430",  # scan: allow
-    ),
-    (
-        "PyGObject",
-        "3.50.0",
-        "https://files.pythonhosted.org/packages/2b/58/"
-        "d34e67a79631177e3c08e7d02b5165147f590171f2cae6769502af5f7f7e/"
-        "pygobject-3.50.0.tar.gz",
-        "4500ad3dbf331773d8dedf7212544c999a76fc96b63a91b3dcac1e5925a1d103",  # scan: allow
-    ),
-)
-
-# What has to be in the container before those two can be compiled, spelled
-# the way pkg-config names them. Checked first, so the build fails on the
-# missing package rather than inside a compiler.
-LINUX_GUI_BUILD_HEADERS = (
-    "gobject-introspection-1.0",
-    "cairo",
-    "cairo-gobject",
-    "libffi",
-)
 
 
 def version() -> str:
@@ -184,7 +131,6 @@ def stage_agent_tree(parent: Path, package_version: str) -> Path:
         f'AGENT_VERSION = "{package_version}"\n',
         encoding="utf-8",
     )
-    stage_gui(package_dir)
 
     # Whatever umask the build ran under does not belong in a package.
     for path in package_dir.rglob("*"):
@@ -227,107 +173,11 @@ def stage_linux_interpreter(staged_python: Path, architecture: str) -> None:
     trim_interpreter(staged_python)
 
 
-def stage_linux_gui_bindings(staged_python: Path) -> None:
-    """Build the window's Python bindings for the staged interpreter.
-
-    Compiled here, in the container, against the same C libraries the package
-    depends on. The distribution's own bindings are built for the
-    distribution's interpreter and cannot be imported by this one.
-
-    Args:
-        staged_python: The interpreter tree as staged.
-
-    Raises:
-        SystemExit: When the container lacks the development headers, or a
-            binding does not build.
-    """
-    missing = [
-        name
-        for name in LINUX_GUI_BUILD_HEADERS
-        if subprocess.run(
-            ["pkg-config", "--exists", name], capture_output=True
-        ).returncode
-        != 0
-    ]
-    if missing:
-        raise SystemExit(
-            "the window's bindings need development headers this container "
-            f"does not have: {', '.join(missing)}"
-        )
-    python = staged_python / "bin" / "python3"
-    with tempfile.TemporaryDirectory() as workdir:
-        for name, pinned, url, digest in LINUX_GUI_SOURCES:
-            source = Path(workdir) / url.rsplit("/", 1)[-1]
-            source.write_bytes(fetch(url, digest, f"{name} {pinned}"))
-            # What ships is pinned; the meson backend pip fetches to compile
-            # it is the build's, and reaches no package.
-            run(
-                [
-                    str(python),
-                    "-m",
-                    "pip",
-                    "install",
-                    "--quiet",
-                    "--no-deps",
-                    str(source),
-                ]
-            )
-
-
-def stage_wheels(
-    python: Path,
-    target: Path,
-    wheels: tuple,
-    *,
-    platform_tag: str = "",
-    abi_tag: str = "",
-) -> None:
-    """Put pinned distributions into a staged interpreter's import path.
-
-    Args:
-        python: The interpreter that does the unpacking. It is the build
-            machine's own, not the one being packaged: the files are read
-            here and written into a tree that runs elsewhere.
-        target: The directory the packages belong in.
-        wheels: ``(name, version, url, sha256)`` for each file.
-        platform_tag: The machine the wheels are for, when it is not this
-            one; empty installs for the build machine.
-        abi_tag: The interpreter ABI those wheels are for.
-
-    Raises:
-        SystemExit: When a file is not what was pinned, or pip refuses it.
-    """
-    target.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory() as workdir:
-        binaries = []
-        sources = []
-        for name, pinned, url, digest in wheels:
-            path = Path(workdir) / url.rsplit("/", 1)[-1]
-            path.write_bytes(fetch(url, digest, f"{name} {pinned}"))
-            (binaries if path.suffix == ".whl" else sources).append(str(path))
-
-        # No dependency resolution: every dependency is pinned in the list
-        # above, so nothing is reached for beyond the files named. What a
-        # source distribution's backend needs to build is the build's, and
-        # reaches no package.
-        base = [str(python), "-m", "pip", "install", "--quiet", "--no-deps"]
-        if binaries:
-            tags = []
-            if platform_tag:
-                tags = ["--platform", platform_tag, "--implementation", "cp"]
-                if abi_tag:
-                    tags += ["--abi", abi_tag, "--python-version", abi_tag[2:]]
-            run(base + tags + ["--target", str(target)] + binaries)
-        if sources:
-            run(base + ["--target", str(target)] + sources)
-
-
 def trim_interpreter(staged_python: Path) -> None:
     """Take out of a staged interpreter what no package needs.
 
-    Tkinter draws no window here — the shells embed the platform's own web
-    view — and its libraries carry the rpath of the machine the interpreter
-    was built on, which rpmbuild rejects outright.
+    Tkinter draws no window here, and its libraries carry the rpath of the
+    machine the interpreter was built on, which rpmbuild rejects outright.
 
     Args:
         staged_python: The interpreter tree as staged.
@@ -413,23 +263,6 @@ def fetch(url: str, digest: str, what: str) -> bytes:
             f"{what} at {url} hashes to {arrived}, not the pinned {digest}"
         )
     return payload
-
-
-def run(command: list, *, cwd: "Path | None" = None) -> None:
-    """Run a build step, failing loudly.
-
-    Args:
-        command: The argument vector.
-        cwd: Directory to run in, when it is not the caller's.
-
-    Raises:
-        SystemExit: If the command fails.
-    """
-    result = subprocess.run(command, capture_output=True, text=True, cwd=cwd)
-    if result.returncode != 0:
-        raise SystemExit(
-            f"{' '.join(command[:3])} failed:\n{(result.stderr or result.stdout).strip()}"
-        )
 
 
 def write(path: Path, text: str, *, is_executable: bool = False) -> None:

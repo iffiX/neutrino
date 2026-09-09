@@ -1,48 +1,103 @@
-"""``nagent`` entry: the Windows console is switched to UTF-8.
+"""``nagent`` entry: the verb set, and the root gate over all of it.
 
-The status output carries em-dashes and arrows; the Windows console default
-mangles them, so the entry reconfigures the streams before anything prints.
-Other platforms are left untouched.
+Everything the agent does is root's to do, and the control socket every
+verb asks through is root's to open, so the gate covers every command but
+``--version``.
 """
 
-from neutrino_agent.cli import entry
+import pytest
+
+import neutrino_agent.cli.entry as entry
+from neutrino_agent import AGENT_VERSION
 
 
-class FakeStream:
-    """A stream that only remembers how it was reconfigured."""
-
-    def __init__(self):
-        self.reconfigured = None
-
-    def reconfigure(self, *, encoding, errors):
-        self.reconfigured = (encoding, errors)
-
-
-def test_the_windows_console_is_switched_to_utf8(monkeypatch):
-    out, err = FakeStream(), FakeStream()
-    monkeypatch.setattr(entry.os, "name", "nt")
-    monkeypatch.setattr(entry.sys, "stdout", out)
-    monkeypatch.setattr(entry.sys, "stderr", err)
-
-    entry._use_utf8_console()
-
-    assert out.reconfigured == ("utf-8", "replace")
-    assert err.reconfigured == ("utf-8", "replace")
+def test_the_gate_covers_every_verb():
+    assert sorted(entry.ROOT_COMMANDS) == [
+        "connect",
+        "disconnect",
+        "rdp",
+        "run",
+        "status",
+    ]
 
 
-def test_other_platforms_leave_the_console_alone(monkeypatch):
-    out = FakeStream()
-    monkeypatch.setattr(entry.os, "name", "posix")
-    monkeypatch.setattr(entry.sys, "stdout", out)
+@pytest.mark.parametrize(
+    "argv, reason",
+    [
+        (["nagent", "status"], "it asks the agent over its root-only control socket"),
+        (["nagent", "connect", "neutrino://enroll/x"], "it writes the binding"),
+        (["nagent", "disconnect"], "it removes the binding"),
+        (["nagent", "rdp", "start"], "it configures this machine's desktop share"),
+        (["nagent", "run"], "the agent manages this machine"),
+    ],
+)
+def test_an_unprivileged_caller_is_refused_with_the_command(
+    monkeypatch, capsys, argv, reason
+):
+    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(entry.sys, "argv", argv)
 
-    entry._use_utf8_console()
+    assert entry.main() == 2
 
-    assert out.reconfigured is None
+    err = capsys.readouterr().err
+    assert f"nagent {argv[1]} needs root" in err
+    assert reason in err
+    assert f"sudo nagent {' '.join(argv[1:])}" in err
 
 
-def test_a_stream_without_reconfigure_is_left_alone(monkeypatch):
-    monkeypatch.setattr(entry.os, "name", "nt")
-    monkeypatch.setattr(entry.sys, "stdout", object())
-    monkeypatch.setattr(entry.sys, "stderr", object())
+def test_the_version_answers_any_account(monkeypatch, capsys):
+    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(entry.sys, "argv", ["nagent", "--version"])
 
-    entry._use_utf8_console()
+    with pytest.raises(SystemExit) as done:
+        entry.main()
+
+    assert done.value.code == 0
+    assert capsys.readouterr().out.strip() == AGENT_VERSION
+
+
+def test_no_command_prints_the_help(monkeypatch, capsys):
+    monkeypatch.setattr(entry.sys, "argv", ["nagent"])
+
+    assert entry.main() == 2
+    assert "usage: nagent" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "argv, expected",
+    [
+        (["nagent", "rdp", "start"], ("start", "")),
+        (["nagent", "rdp", "start", "--user", "alice"], ("start", "alice")),
+        (["nagent", "rdp", "stop"], ("stop", "")),
+    ],
+)
+def test_the_rdp_verbs_reach_their_own_command(monkeypatch, argv, expected):
+    called = {}
+    monkeypatch.setattr(entry.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(entry.sys, "argv", argv)
+    monkeypatch.setattr(
+        entry.rdp, "main_start", lambda *, user: called.update(start=user) or 0
+    )
+    monkeypatch.setattr(entry.rdp, "main_stop", lambda: called.update(stop="") or 0)
+
+    assert entry.main() == 0
+    assert called == {expected[0]: expected[1]}
+
+
+def test_rdp_with_no_action_prints_the_help(monkeypatch, capsys):
+    monkeypatch.setattr(entry.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(entry.sys, "argv", ["nagent", "rdp"])
+
+    assert entry.main() == 2
+    assert "usage: nagent rdp" in capsys.readouterr().out
+
+
+def test_the_verbs_that_were_pruned_are_gone(monkeypatch, capsys):
+    for verb in ("gui", "module", "operation", "service", "sync"):
+        monkeypatch.setattr(entry.sys, "argv", ["nagent", verb])
+
+        with pytest.raises(SystemExit) as refused:
+            entry.main()
+
+        assert refused.value.code == 2
+        assert "invalid choice" in capsys.readouterr().err

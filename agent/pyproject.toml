@@ -3,11 +3,8 @@ name = "neutrino-agent"
 version = "0.1.0"
 description = "The Neutrino device agent: keeps a managed machine's modules in the state its hub asks for"
 requires-python = ">=3.9"
-# Deliberately empty, and it stays that way. The agent's own code is standard
-# library: what its window draws through is imported by the shells alone, at
-# the moment a window opens, and the packaging build vendors those per
-# platform. A dependency here would be one every checkout and every package
-# carried whether or not anything opened a window.
+# Deliberately empty, and it stays that way: the agent's own code is
+# standard library, and the packages carry the interpreter that runs it.
 dependencies = []
 
 [project.scripts]
@@ -21,7 +18,7 @@ build-backend = "setuptools.build_meta"
 include = ["neutrino_agent*"]
 
 [tool.setuptools.package-data]
-neutrino_agent = ["data/systemd/*", "data/desktop/*", "data/gui/*"]
+neutrino_agent = ["data/systemd/*"]
 
 [tool.black]
 line-length = 88

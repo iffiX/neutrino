@@ -1,27 +1,17 @@
 """``nagent status``: what the operator reads must never lie about the box.
 
-The matrix is walked as the person types it: privileged and ordinary, the
-service alive and dead, bound and unbound. The running service is asked
-first over its socket; the binding file answers only when nothing does, and
-a binding this account may not read is said to be that, never read as no
-binding at all.
+Three things break independently, and a device missing from the panel looks
+the same for all three: the machine never joined, the service is not
+running, or the hub cannot be reached. The running service is asked first
+over its socket; the binding file answers only when nothing does.
 """
 
 import pytest
 
 from neutrino_agent import AGENT_VERSION
-from neutrino_agent.cli import entry
 from neutrino_agent.cli import status as status_cli
-from neutrino_agent.control import client
 from neutrino_agent.control.server import ControlServer
-from tests.conftest import (
-    ALICE,
-    ROOT,
-    FakeControlAgent,
-    FakeControlPlatform,
-    bind,
-    discard,
-)
+from tests.conftest import FakeControlAgent, FakeControlPlatform, bind, discard
 
 GATEWAY_URL = "https://hub.lan:8443"
 
@@ -42,16 +32,10 @@ def serve_nothing(monkeypatch, tmp_path, *, unit_state="inactive"):
     return platform
 
 
-def refuse_the_binding(*args, **kwargs):
-    """The kernel refusing an ordinary account the root-owned binding."""
-    raise PermissionError(13, "Permission denied")
-
-
 class FakeStatusPlatform(FakeControlPlatform):
     """The machine status asks: one socket path, one unit state."""
 
     def __init__(self, socket_path: str, *, unit_state: str = "running"):
-        super().__init__()
         self._socket_path = socket_path
         self._unit_state = unit_state
 
@@ -65,7 +49,8 @@ class FakeStatusPlatform(FakeControlPlatform):
 @pytest.fixture(scope="module")
 def service_stack(tmp_path_factory):
     """One running service for the whole module, on its own socket."""
-    platform = FakeStatusPlatform(str(tmp_path_factory.mktemp("status") / "agent.sock"))
+    root = tmp_path_factory.mktemp("status")
+    platform = FakeStatusPlatform(str(root / "run" / "agent.sock"))
     server = ControlServer(
         agent=FakeControlAgent(),
         platform=platform,
@@ -80,10 +65,8 @@ def service_stack(tmp_path_factory):
 
 @pytest.fixture
 def running_service(service_stack, monkeypatch):
-    """The agent's own service, answering this test as root by default."""
+    """The agent's own service, on the socket status will ask."""
     server, platform = service_stack
-    platform.peer = dict(ROOT)
-    platform.peer_error = None
     monkeypatch.setattr(status_cli, "detect_platform", lambda: platform)
     return server, platform
 
@@ -146,60 +129,7 @@ def test_status_says_a_privileged_caller_has_joined_nothing(
     assert "heartbeat" not in out
 
 
-def test_status_answers_an_ordinary_caller_in_its_own_scope(
-    running_service, config_path, capsys
-):
-    bind(config_path, url=GATEWAY_URL)
-    server, platform = running_service
-    platform.peer = dict(ALICE)
-
-    assert status_cli.main() == 0
-
-    out = capsys.readouterr().out
-    assert f"hub        {GATEWAY_URL}   connected" in out
-    assert "service    running" in out
-    status, state = client.request(
-        socket_path=server.socket_path, method="GET", path="/api/state"
-    )
-    assert status == 200
-    assert state["accounts"] == ["alice"]
-    assert state["caller"]["is_privileged"] is False
-
-
-def test_status_keeps_the_unit_state_true_when_the_socket_refuses_the_caller(
-    running_service, config_path, monkeypatch, capsys
-):
-    bind(config_path, url=GATEWAY_URL)
-    _server, platform = running_service
-    platform.peer_error = KeyError("uid 1000 names no account")
-    monkeypatch.setattr(status_cli, "open", refuse_the_binding, raising=False)
-
-    assert status_cli.main() == 1
-
-    out = capsys.readouterr().out
-    assert "hub        the binding is root's to read: sudo nagent status" in out
-    assert "service    running" in out
-    assert "joined no gateway" not in out
-
-
-def test_status_names_sudo_and_the_units_real_state(tmp_path, monkeypatch, capsys):
-    serve_nothing(monkeypatch, tmp_path)
-    monkeypatch.setattr(status_cli, "open", refuse_the_binding, raising=False)
-
-    assert status_cli.main() == 1
-
-    out = capsys.readouterr().out
-    assert "hub        the binding is root's to read: sudo nagent status" in out
-    assert "service    inactive" in out
-    assert "joined no gateway" not in out
-
-
-def test_status_says_an_ordinary_callers_machine_has_joined_nothing(
-    running_service, capsys
-):
-    _server, platform = running_service
-    platform.peer = dict(ALICE)
-
+def test_status_says_a_running_service_has_joined_nothing(running_service, capsys):
     assert status_cli.main() == 1
 
     out = capsys.readouterr().out
@@ -287,14 +217,3 @@ def test_status_words_a_version_refusal_distinctly(
     assert "newer than the hub" in out
     assert "unbinds by itself" in out
     assert "fresh link" in out
-
-
-def test_the_version_answers_any_caller(monkeypatch, capsys):
-    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
-    monkeypatch.setattr(entry.sys, "argv", ["nagent", "--version"])
-
-    with pytest.raises(SystemExit) as refusal:
-        entry.main()
-
-    assert refusal.value.code == 0
-    assert AGENT_VERSION in capsys.readouterr().out
