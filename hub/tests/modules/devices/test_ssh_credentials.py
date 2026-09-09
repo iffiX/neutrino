@@ -16,7 +16,6 @@ from tests.conftest import unlock_vault
 
 PASSPHRASE = "opens-the-key"
 LOGIN_PASSWORD = "a-password"  # scan: allow
-SUDO_PASSWORD = "a-sudo-password"  # scan: allow
 
 
 @pytest.fixture
@@ -125,7 +124,7 @@ def test_a_password_device_offers_no_key(config_dir, tmp_path):
         {
             "host": "192.168.100.2",
             "username": "iffi",
-            "password_id": stored_password(LOGIN_PASSWORD),
+            "login_id": stored_password(LOGIN_PASSWORD),
         }
     )
 
@@ -135,40 +134,32 @@ def test_a_password_device_offers_no_key(config_dir, tmp_path):
     assert options["password"] == LOGIN_PASSWORD
 
 
-def test_both_password_ids_are_opened_from_the_vault(config_dir):
+def test_a_login_id_is_opened_from_the_vault(config_dir):
     credentials = SshCredentials.from_dict(
         {
             "host": "192.168.100.2",
             "username": "iffi",
-            "password_id": stored_password(LOGIN_PASSWORD),
-            "sudo_password_id": stored_password(SUDO_PASSWORD),
+            "login_id": stored_password(LOGIN_PASSWORD),
         }
     )
 
     assert credentials.password == LOGIN_PASSWORD
-    assert credentials.sudo_password == SUDO_PASSWORD
 
 
-def test_a_password_id_that_is_gone_leaves_no_material(config_dir, tmp_path):
+def test_a_login_id_that_is_gone_leaves_no_material(config_dir, tmp_path):
     credentials = SshCredentials.from_dict(
-        {
-            "host": "192.168.100.2",
-            "username": "iffi",
-            "password_id": "absent",
-            "sudo_password_id": "absent",
-        }
+        {"host": "192.168.100.2", "username": "iffi", "login_id": "absent"}
     )
 
     assert credentials.password is None
-    assert credentials.sudo_password is None
     assert "password" not in operator(credentials, tmp_path)._connect_options()
 
 
-def test_a_password_id_naming_another_kind_leaves_no_material(config_dir):
+def test_a_login_id_naming_another_kind_leaves_no_material(config_dir):
     key_id, _ = stored_key()
 
     credentials = SshCredentials.from_dict(
-        {"host": "192.168.100.2", "username": "iffi", "password_id": key_id}
+        {"host": "192.168.100.2", "username": "iffi", "login_id": key_id}
     )
 
     assert credentials.password is None

@@ -440,14 +440,14 @@ def test_a_refused_stream_carries_the_agents_code(api):
             {
                 "type": "refused",
                 "stream": opened["stream"],
-                "code": "unknown_stream_kind",
+                "code": "stream_unknown",
                 "params": {"kind": "shell"},
             }
         )
         thread.join(timeout=5)
 
         assert outcome == {
-            "code": "unknown_stream_kind",
+            "code": "stream_unknown",
             "params": {"kind": "shell"},
         }
     finally:

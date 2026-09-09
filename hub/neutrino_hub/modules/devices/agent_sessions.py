@@ -34,6 +34,12 @@ from neutrino_hub.modules.devices.constants import (
 STREAM_KIND_COMMAND = "command"
 STREAM_KIND_ORDER = "order"
 STREAM_KIND_VALIDATE = "validate"
+STREAM_KIND_SHELL = "shell"
+STREAM_KIND_CONTAINER_SHELL = "container_shell"
+STREAM_KIND_FILE_LIST = "file_list"
+STREAM_KIND_FILE_DOWNLOAD = "file_download"
+STREAM_KIND_FILE_UPLOAD = "file_upload"
+STREAM_KIND_FILE_OP = "file_op"
 
 # What an agent sends about one stream.
 STREAM_MESSAGE_TYPES = ("opened", "refused", "event", "close", "credit")

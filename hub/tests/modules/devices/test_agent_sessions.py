@@ -125,7 +125,7 @@ def test_a_refused_open_raises_the_agents_code():
             {
                 "type": "refused",
                 "stream": stream_id,
-                "code": "unknown_stream_kind",
+                "code": "stream_unknown",
                 "params": {"kind": "shell"},
             }
         )
@@ -133,7 +133,7 @@ def test_a_refused_open_raises_the_agents_code():
         with pytest.raises(StreamRefusedError) as refused:
             await task
 
-        assert refused.value.code == "unknown_stream_kind"
+        assert refused.value.code == "stream_unknown"
         assert refused.value.params == {"kind": "shell"}
 
     run(scenario)

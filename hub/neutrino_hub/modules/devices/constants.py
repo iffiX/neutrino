@@ -14,7 +14,7 @@ DEVICE_AGENT_ONLINE_WINDOW_S = 30
 # The shape of what crosses the agent channel. Must match the agent's own
 # AGENT_WIRE_GENERATION; a hello carrying another number is answered with
 # agent_wire_stale so the agent reinstalls itself.
-AGENT_WIRE_GENERATION = 6
+AGENT_WIRE_GENERATION = 7
 # The agent channel's one socket, on the agent TLS port. An agent opens it
 # after enrolling and keeps it open; every stream the hub needs rides it.
 AGENT_WS_PATH = "/api/agent/ws"
@@ -164,3 +164,9 @@ DEVICE_GITEA_SECRET_NAMES = (
 # a command before answering that the machine never reported.
 DEVICE_MODULE_VALIDATE_TIMEOUT_S = 30.0
 DEVICE_MODULE_COMMAND_TIMEOUT_S = 120.0
+# How long a file listing or one small file operation may take on the
+# agent before the route answers that the machine never reported.
+DEVICE_FILE_OP_TIMEOUT_S = 30.0
+
+# The user-tier remote desktops the agent reads and sets up.
+DEVICE_REMOTE_DESKTOP_PRODUCTS = ("anydesk", "teamviewer")

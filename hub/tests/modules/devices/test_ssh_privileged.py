@@ -4,8 +4,10 @@ The sudo password and the enrollment link land in the device's process table
 if they travel in the command string, so what these pin is that both travel
 over stdin: the command asyncssh is handed never contains either, and the
 stdin payload carries the password line first, then whatever the command
-itself reads. The install half pins the package flow: the family the device's
-own tools pick, and a failure stopping before the join.
+itself reads. The password is the call's own argument, typed for one
+install and held by no credentials object. The install half pins the
+package flow: the family the device's own tools pick, and a failure
+stopping before the join.
 """
 
 import asyncio
@@ -73,15 +75,8 @@ class FakeConnection:
         return FakeSftp(self.uploads)
 
 
-def operator(
-    *, username: str = "iffi", sudo_password: str | None = None
-) -> DeviceSshOperator:
-    credentials = SshCredentials(
-        host="192.168.100.2",
-        port=22,
-        username=username,
-        sudo_password=sudo_password,
-    )
+def operator(*, username: str = "iffi") -> DeviceSshOperator:
+    credentials = SshCredentials(host="192.168.100.2", port=22, username=username)
     return DeviceSshOperator(credentials=credentials)
 
 
@@ -119,8 +114,8 @@ def stub_probe(op: DeviceSshOperator, *, is_passwordless: bool) -> list:
     return calls
 
 
-def plan(op: DeviceSshOperator, command: str, input_text=None):
-    return asyncio.run(op._sudo_plan(command, input_text))
+def plan(op: DeviceSshOperator, command: str, input_text=None, sudo_password=None):
+    return asyncio.run(op._sudo_plan(command, input_text, sudo_password))
 
 
 def test_root_needs_no_probe_and_no_wrap():
@@ -131,13 +126,13 @@ def test_root_needs_no_probe_and_no_wrap():
     assert calls == []
 
 
-def test_a_passwordless_account_never_receives_the_stored_password():
+def test_a_passwordless_account_never_receives_the_typed_password():
     """The probe asks sudo itself, so a password the account does not need
     never leaves the hub — and never lies in wait on anyone's stdin."""
-    op = operator(sudo_password=SUDO_PASSWORD)
+    op = operator()
     stub_probe(op, is_passwordless=True)
 
-    (command, payload), refusal = plan(op, "cat", f"{TOKEN}\n")
+    (command, payload), refusal = plan(op, "cat", f"{TOKEN}\n", SUDO_PASSWORD)
 
     assert refusal == ""
     assert command == "sudo -n bash -lc cat"
@@ -146,10 +141,10 @@ def test_a_passwordless_account_never_receives_the_stored_password():
 
 
 def test_a_prompting_account_gets_exactly_one_password_line():
-    op = operator(sudo_password=SUDO_PASSWORD)
+    op = operator()
     stub_probe(op, is_passwordless=False)
 
-    (command, payload), refusal = plan(op, "cat", f"{TOKEN}\n")
+    (command, payload), refusal = plan(op, "cat", f"{TOKEN}\n", SUDO_PASSWORD)
 
     assert refusal == ""
     assert command == "sudo -S -p '' -k bash -lc cat"
@@ -158,31 +153,33 @@ def test_a_prompting_account_gets_exactly_one_password_line():
     assert payload == f"{SUDO_PASSWORD}\n{TOKEN}\n"
 
 
-def test_a_prompting_account_with_no_stored_password_is_refused():
+def test_a_prompting_account_with_no_password_given_is_refused():
     op = operator()
     stub_probe(op, is_passwordless=False)
 
     planned, refusal = plan(op, "whoami")
 
     assert planned is None
-    assert "none is stored" in refusal
+    assert "none was given" in refusal
 
 
 def test_the_probe_runs_once_per_operator():
-    op = operator(sudo_password=SUDO_PASSWORD)
+    op = operator()
     calls = stub_probe(op, is_passwordless=False)
 
-    plan(op, "whoami")
-    plan(op, "cat")
+    plan(op, "whoami", None, SUDO_PASSWORD)
+    plan(op, "cat", None, SUDO_PASSWORD)
 
     assert [c["command"] for c in calls].count("sudo -n true") == 1
 
 
 def test_run_privileged_once_probes_then_feeds_the_composed_stdin():
-    op = operator(sudo_password=SUDO_PASSWORD)
+    op = operator()
     calls = stub_probe(op, is_passwordless=False)
 
-    asyncio.run(op.run_privileged_once("systemctl restart x"))
+    asyncio.run(
+        op.run_privileged_once("systemctl restart x", sudo_password=SUDO_PASSWORD)
+    )
 
     assert calls[0]["command"] == "sudo -n true"
     assert SUDO_PASSWORD not in calls[1]["command"]
@@ -190,12 +187,14 @@ def test_run_privileged_once_probes_then_feeds_the_composed_stdin():
 
 
 def test_run_privileged_stream_feeds_the_composed_stdin():
-    op = operator(sudo_password=SUDO_PASSWORD)
+    op = operator()
     op._is_sudo_passwordless = False
     captured = capture_run_stream(op)
 
     async def drain():
-        async for _ in op.run_privileged_stream("systemctl poweroff"):
+        async for _ in op.run_privileged_stream(
+            "systemctl poweroff", sudo_password=SUDO_PASSWORD
+        ):
             pass
 
     asyncio.run(drain())
@@ -214,7 +213,7 @@ def test_a_refused_stream_reports_and_runs_nothing():
 
     lines = asyncio.run(collect())
 
-    assert any("none is stored" in line for line in lines)
+    assert any("none was given" in line for line in lines)
     assert lines[-1] == "\n[exit 1]\n"
     assert captured == {}
 
@@ -239,10 +238,12 @@ def packages(tmp_path) -> AgentPackageCache:
 
 
 async def install_lines(
-    op: DeviceSshOperator, packages: AgentPackageCache
+    op: DeviceSshOperator, packages: AgentPackageCache, sudo_password=None
 ) -> list[str]:
     lines = []
-    async for chunk in op.install_client(packages=packages, enrollment_link=LINK):
+    async for chunk in op.install_client(
+        packages=packages, enrollment_link=LINK, sudo_password=sudo_password
+    ):
         lines.append(chunk)
     return lines
 
@@ -251,8 +252,16 @@ def capture_privileged_once(op: DeviceSshOperator, codes=(0, 0, 0)) -> list:
     calls: list = []
     remaining = list(codes)
 
-    async def run_privileged_once(command, *, timeout_s=30, input_text=None):
-        calls.append({"command": command, "input_text": input_text})
+    async def run_privileged_once(
+        command, *, timeout_s=30, input_text=None, sudo_password=None
+    ):
+        calls.append(
+            {
+                "command": command,
+                "input_text": input_text,
+                "sudo_password": sudo_password,
+            }
+        )
         return remaining.pop(0), "[remote output]"
 
     op.run_privileged_once = run_privileged_once
@@ -260,7 +269,7 @@ def capture_privileged_once(op: DeviceSshOperator, codes=(0, 0, 0)) -> list:
 
 
 def test_install_refuses_a_device_that_is_not_linux(packages):
-    op = operator(sudo_password=SUDO_PASSWORD)
+    op = operator()
     connection = FakeConnection(kernel="Darwin")
     op._connect = fake_connect(connection)
     calls = capture_privileged_once(op)
@@ -276,17 +285,18 @@ def test_install_refuses_a_device_that_is_not_linux(packages):
 def test_install_picks_deb_and_joins_with_the_link_on_argv(packages):
     """The link was shaped for a command line; stdin stays sudo's alone, so
     an account whose sudo never prompts cannot shift what connect reads."""
-    op = operator(sudo_password=SUDO_PASSWORD)
+    op = operator()
     connection = FakeConnection(tools=("dpkg",))
     op._connect = fake_connect(connection)
     calls = capture_privileged_once(op)
 
-    lines = asyncio.run(install_lines(op, packages))
+    lines = asyncio.run(install_lines(op, packages, SUDO_PASSWORD))
 
     assert connection.uploads[0][1].endswith(".deb")
     assert "apt-get install" in calls[1]["command"]
     assert calls[2]["command"] == f"nagent connect --yes {LINK}"
     assert calls[2]["input_text"] is None
+    assert [call["sudo_password"] for call in calls] == [SUDO_PASSWORD] * 3
     assert lines[-1] == "\n[exit 0]\n"
 
 

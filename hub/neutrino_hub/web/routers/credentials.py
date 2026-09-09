@@ -205,7 +205,7 @@ def create_login(request: LoginCreate) -> LoginView:
 def delete_login(login_id: str) -> dict:
     """Remove a login and its password, clearing every reference to it.
 
-    A device naming it for its account or its sudo prompt loses that id.
+    A device naming it for its account loses that id.
 
     Args:
         login_id: The login's identifier.
@@ -239,13 +239,9 @@ def _login_secret(username: "str | None", password: str) -> dict:
 def _login_device_counts() -> dict[str, int]:
     counts: dict[str, int] = {}
     for device in DeviceRegistry().all_stored():
-        ssh = device.ssh or {}
-        # A device naming one login for both its account and its sudo counts
-        # once.
-        referenced = {ssh.get("password_id"), ssh.get("sudo_password_id")}
-        for login_id in referenced:
-            if login_id:
-                counts[login_id] = counts.get(login_id, 0) + 1
+        login_id = (device.ssh or {}).get("login_id")
+        if login_id:
+            counts[login_id] = counts.get(login_id, 0) + 1
     return counts
 
 
@@ -254,13 +250,10 @@ def _clear_login_on_devices(login_id: str) -> int:
     cleared = 0
     for device in registry.all_stored():
         ssh = device.ssh or {}
-        if login_id not in (ssh.get("password_id"), ssh.get("sudo_password_id")):
+        if ssh.get("login_id") != login_id:
             continue
         updated = dict(ssh)
-        if updated.get("password_id") == login_id:
-            updated["password_id"] = None
-        if updated.get("sudo_password_id") == login_id:
-            updated["sudo_password_id"] = None
+        updated["login_id"] = None
         registry.annotate(device.mac_address, {"ssh": updated})
         cleared += 1
     return cleared

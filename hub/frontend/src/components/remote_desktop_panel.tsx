@@ -11,7 +11,7 @@ import type {
   DeviceView,
   RemoteDesktopStatus,
   RemoteDesktopView,
-  DeviceActionResult,
+  TaskStarted,
 } from "../api_types";
 
 import "./remote_desktop_panel.css";
@@ -24,6 +24,12 @@ import "./remote_desktop_panel.css";
  * password. Both are user-tier modules the person installs themselves, so
  * this panel only reads and manages what is already on the machine.
  */
+
+const UNREACHABLE_WORDS: Record<string, string> = {
+  agent_offline: "the agent is offline",
+  stream_unknown: "this agent cannot answer",
+  agent_never_reported: "the agent did not answer in time",
+};
 
 const PRODUCT_LABELS: Record<string, string> = {
   anydesk: "AnyDesk",
@@ -81,7 +87,7 @@ export function RemoteDesktopPanel({
     setError(null);
     setTaskId(null);
     try {
-      const result = await apiPost<DeviceActionResult>(path, body);
+      const result = await apiPost<TaskStarted>(path, body);
       setTaskId(result.task_id);
     } catch (cause: unknown) {
       setError(describeError(cause));
@@ -252,7 +258,7 @@ function ProductCard({ status, macAddress, isBusy, onRun }: ProductCardProps) {
       ) : status.unreachable.length > 0 ? (
         <span className="field_hint">
           This device could not be asked, so what it is running is unknown:{" "}
-          {status.unreachable}
+          {UNREACHABLE_WORDS[status.unreachable] ?? status.unreachable}
         </span>
       ) : (
         <span className="field_hint">Not on this device.</span>

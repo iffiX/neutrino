@@ -19,7 +19,6 @@ import type {
   PodmanDeviceView,
 } from "../api_types";
 
-import "./terminal_modal.css";
 import "./containers_panels.css";
 
 /**
@@ -643,16 +642,16 @@ function ContainerShellModal({
   onClose,
 }: ContainerShellModalProps) {
   const [failedCode, setFailedCode] = useState<number | null>(null);
-  // A portal, same as the device terminal: no ancestor may capture it.
+  // A portal, so no ancestor may capture the fixed backdrop.
   return createPortal(
-    <div className="terminal_modal_backdrop" role="dialog" aria-modal="true">
-      <div className="terminal_modal">
-        <div className="terminal_modal_head">
-          <div className="terminal_modal_title">
+    <div className="container_shell_backdrop" role="dialog" aria-modal="true">
+      <div className="container_shell">
+        <div className="container_shell_head">
+          <div className="container_shell_title">
             <Icon name="terminal" size={15} />
-            <span className="terminal_modal_target">{name}</span>
+            <span className="container_shell_target">{name}</span>
           </div>
-          <div className="terminal_modal_actions">
+          <div className="container_shell_actions">
             <button
               type="button"
               className="button button--small"
@@ -663,7 +662,7 @@ function ContainerShellModal({
             </button>
           </div>
         </div>
-        <div className="terminal_modal_surface">
+        <div className="container_shell_surface">
           <ShellTerminal
             socketPath={`/ws/agent_container/${deviceId}/${name}`}
             onExit={(code) => {
@@ -681,8 +680,8 @@ function ContainerShellModal({
         <div
           className={
             failedCode !== null
-              ? "terminal_modal_status terminal_modal_status--warn"
-              : "terminal_modal_status"
+              ? "container_shell_status container_shell_status--warn"
+              : "container_shell_status"
           }
         >
           {failedCode !== null

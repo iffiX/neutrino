@@ -1,5 +1,6 @@
 """The Devices tab: LAN discovery, annotations, and remote actions."""
 
+import asyncio
 import base64
 import ipaddress
 import json
@@ -28,19 +29,20 @@ from neutrino_hub.modules.devices.agent_sessions import (
     AgentOfflineError,
     StreamRefusedError,
 )
-from neutrino_hub.modules.devices.constants import DEVICE_MAC_PATTERN
+from neutrino_hub.modules.devices.constants import (
+    DEVICE_MAC_PATTERN,
+    DEVICE_MODULE_COMMAND_TIMEOUT_S,
+    DEVICE_REMOTE_DESKTOP_PRODUCTS,
+)
 from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
-from neutrino_hub.modules.credentials.vault import SecretVault
+from neutrino_hub.modules.credentials.vault import (
+    SecretVault,
+    VaultError,
+    VaultLockedError,
+)
 from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
 from neutrino_hub.modules.devices.lan_scan import LanScanner
-from neutrino_hub.modules.devices.remote_desktop import (
-    SUPPORTED_PRODUCTS,
-)
-from neutrino_hub.modules.devices.remote_desktop import (
-    RemoteDesktopManager,
-    RemoteDesktopStatus,
-)
 from neutrino_hub.modules.devices.ssh_ops import DeviceSshOperator, SshCredentials
 from neutrino_hub.modules.devices.wake_on_lan import send_magic_packet
 from neutrino_hub.modules.router.link_status import RouterLinkStatus, device_addresses
@@ -104,6 +106,9 @@ _ORDER_STEP_STATES = {
 }
 
 LOGIN_KIND = "login"
+ACTION_INSTALL_CLIENT = "install_client"
+AUTH_KEY = "key"
+AUTH_PASSWORD = "password"  # scan: allow
 
 ENROLLMENT_TOKEN_BYTES = 18
 # Long enough to walk to another machine and paste it, short enough that a
@@ -313,9 +318,8 @@ def _store_ssh_secrets(ssh: DeviceSshConfig | None) -> dict | None:
     """Turn a submitted SSH form into what gets stored.
 
     Every credential is a reference: ``key_id`` into the key registry,
-    ``password_id`` and ``sudo_password_id`` into the vault's stored logins —
-    the sudo one for its password alone. No secret material passes through
-    here.
+    ``login_id`` into the vault's stored logins. No secret material passes
+    through here.
 
     Args:
         ssh: The submitted credentials, or None to remove them.
@@ -329,26 +333,18 @@ def _store_ssh_secrets(ssh: DeviceSshConfig | None) -> dict | None:
     """
     if ssh is None:
         return None
-
-    stored = {
+    if ssh.key_id and not KeyRegistry().has_key(ssh.key_id):
+        _refuse_unknown_credential("key_id")
+    if ssh.login_id and not _is_stored_login(ssh.login_id):
+        _refuse_unknown_credential("login_id")
+    return {
         "host": ssh.host,
         "port": ssh.port,
         "username": ssh.username,
         "auth": ssh.auth,
+        "key_id": ssh.key_id or None,
+        "login_id": ssh.login_id or None,
     }
-    if ssh.key_id:
-        if not KeyRegistry().has_key(ssh.key_id):
-            _refuse_unknown_credential("key_id")
-        stored["key_id"] = ssh.key_id
-    if ssh.password_id:
-        if not _is_stored_login(ssh.password_id):
-            _refuse_unknown_credential("password_id")
-        stored["password_id"] = ssh.password_id
-    if ssh.sudo_password_id:
-        if not _is_stored_login(ssh.sudo_password_id):
-            _refuse_unknown_credential("sudo_password_id")
-        stored["sudo_password_id"] = ssh.sudo_password_id
-    return stored
 
 
 def _is_stored_login(login_id: str) -> bool:
@@ -819,36 +815,75 @@ def _facing_cidrs(runtime: PanelRuntime) -> list:
 
 
 @router.post("/{mac_address}/kill_process")
-async def kill_process(mac_address: str, request: DeviceProcessKill) -> dict:
-    """End one process on a device, through sudo over SSH.
+def kill_process(
+    mac_address: str,
+    request: DeviceProcessKill,
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> dict:
+    """End one process on a device, through its agent.
 
     Args:
         mac_address: The device's MAC.
         request: The process id to signal.
+        runtime: The shared runtime.
 
     Returns:
         An empty acknowledgement.
 
     Raises:
-        HTTPException: 400 for a pid no one should signal, or when the device
-            has no SSH credentials; 502 when the device refuses.
+        HTTPException: 400 for a pid no one should signal, 404 when no such
+            process runs, 409 when the agent is not answering, 502 when the
+            device refused the signal.
     """
     if request.pid <= 1:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="bad pid")
-    device = DeviceRegistry().get(mac_address)
-    if not device.has_ssh:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="no SSH credentials for this device",
+            detail={"code": "kill_failed", "params": {"pid": request.pid}},
         )
-    operator = DeviceSshOperator(credentials=SshCredentials.from_dict(device.ssh or {}))
-    code, output = await operator.run_privileged_once(f"kill {int(request.pid)}")
-    if code != 0:
+    key = DeviceRegistry().get(mac_address).mac_address.lower()
+    info = _run_device_command(runtime, key, "kill_process", {"pid": request.pid})
+    code = str(info.get("code", "") or "")
+    if code == "process_missing":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": code, "params": dict(info.get("params") or {})},
+        )
+    if code or int(info.get("exit_code", 1) or 0) != 0:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=output or "the device refused the signal",
+            detail={
+                "code": code or "kill_failed",
+                "params": dict(info.get("params") or {}),
+            },
         )
     return {}
+
+
+def _run_device_command(runtime: PanelRuntime, key: str, action: str, args: dict):
+    """Run one command on a device's agent and wait for its close.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        action: The command's action.
+        args: The action's arguments.
+
+    Returns:
+        What the agent closed with.
+
+    Raises:
+        HTTPException: 409 with the code when the device has no channel or
+            the agent refused the stream.
+    """
+    try:
+        return runtime.agent_sessions.run_command_from_thread(
+            key, action, args, timeout=DEVICE_MODULE_COMMAND_TIMEOUT_S
+        )
+    except (AgentOfflineError, StreamRefusedError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": error.code, "params": dict(error.params)},
+        ) from error
 
 
 @router.post("/{mac_address}/action", response_model=TaskStarted)
@@ -859,26 +894,28 @@ async def start_action(
 ) -> TaskStarted:
     """Start a long-running action on a device.
 
-    The actions are ``install_client`` (over SSH), and ``reboot`` / ``shutdown``
-    (queued for the agent when installed, otherwise run over SSH). Remote
-    desktop has its own endpoints.
+    ``install_client`` puts the agent on a machine over SSH, with the
+    credentials the request carries; ``reinstall_agent``, ``reboot`` and
+    ``shutdown`` are commands on the device's agent. Remote desktop has its
+    own endpoints.
 
     Declared async deliberately: it schedules the background job on the running
     event loop, which a threadpool route would not have.
 
     Args:
         mac_address: The device's MAC.
-        request: Which action to run.
+        request: Which action to run, and for an install how to reach the
+            machine.
         runtime: The shared runtime.
 
     Returns:
         A task id the browser streams output from.
 
     Raises:
-        HTTPException: 400 for an unknown action, 409 with ``agent_offline``
-            when the device has no live agent for a command, or 409 when
-            the install lacks credentials or its pre-flight finds a device
-            that is not Linux
+        HTTPException: 400 for an unknown action or an install naming no
+            single credential, 409 with ``agent_offline`` when the device
+            has no live agent for a command, or 409 when the install's
+            pre-flight finds a device that is not Linux
             (``{"code": "unsupported_remote_install", "os": ...}``).
     """
     registry = DeviceRegistry()
@@ -898,18 +935,13 @@ async def start_action(
         runtime.events.publish(WEB_EVENT_DEVICES)
         return TaskStarted(task_id=stream.id)
 
-    if action != "install_client":
+    if action != ACTION_INSTALL_CLIENT:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"unknown action {action!r}",
+            detail={"code": "unknown_action", "params": {"action": action}},
         )
-    if not device.has_ssh:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="installing the agent needs SSH credentials for this device",
-        )
-
-    operator = DeviceSshOperator(credentials=SshCredentials.from_dict(device.ssh or {}))
+    credentials = await asyncio.to_thread(_install_credentials, device, request)
+    operator = DeviceSshOperator(credentials=credentials)
     # Pre-flight, refused before a task starts. A probe that failed — device
     # off, wrong credentials — is not a refusal: the task runs and its log
     # reports the failure, the same surface as every mid-install one.
@@ -939,11 +971,83 @@ async def start_action(
         source=_locked_install(
             runtime,
             mac_address,
-            operator.install_client(packages=packages, enrollment_link=link),
+            operator.install_client(
+                packages=packages,
+                enrollment_link=link,
+                sudo_password=request.sudo_password or None,
+            ),
         ),
     )
     runtime.events.publish(WEB_EVENT_DEVICES)
     return TaskStarted(task_id=stream.id)
+
+
+def _install_credentials(
+    device: ManagedDevice, request: DeviceActionRequest
+) -> SshCredentials:
+    """Store the install's SSH block and open the credentials it names.
+
+    Exactly one credential source is taken: a stored key, a stored login,
+    or a password typed now. A typed password is stored as a vault login
+    only when asked, and the device's block records the id. The sudo
+    password is not looked at here and is written nowhere.
+
+    Args:
+        device: The device being installed on.
+        request: The install request.
+
+    Returns:
+        The credentials the install connects with.
+
+    Raises:
+        HTTPException: 400 when the request names no host or username, or
+            not exactly one credential source, or a stale id.
+    """
+    sources = [
+        name for name in ("key_id", "login_id", "password") if getattr(request, name)
+    ]
+    if len(sources) != 1 or not request.host.strip() or not request.username.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "install_credentials_invalid", "params": {}},
+        )
+    host = request.host.strip()
+    username = request.username.strip()
+    login_id = request.login_id
+    with CONFIG_WRITE_LOCK:
+        if request.password and request.is_password_saved:
+            try:
+                login_id = (
+                    SecretVault()
+                    .add(
+                        kind=LOGIN_KIND,
+                        name=f"{username}@{host}",
+                        secret={"username": username, "password": request.password},
+                    )
+                    .id
+                )
+            except VaultLockedError:
+                raise
+            except VaultError as error:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"code": "login_rejected", "params": {}},
+                ) from error
+        stored = _store_ssh_secrets(
+            DeviceSshConfig(
+                host=host,
+                port=request.port,
+                username=username,
+                auth=AUTH_KEY if request.key_id else AUTH_PASSWORD,
+                key_id=request.key_id,
+                login_id=login_id,
+            )
+        )
+        DeviceRegistry().annotate(device.mac_address, {"ssh": stored})
+    credentials = SshCredentials.from_dict(stored)
+    if request.password:
+        credentials.password = request.password
+    return credentials
 
 
 async def _locked_install(
@@ -968,50 +1072,51 @@ async def _locked_install(
 
 
 @router.get("/{mac_address}/remote_desktop", response_model=RemoteDesktopView)
-async def remote_desktop_status(
+def remote_desktop_status(
     mac_address: str, runtime: PanelRuntime = Depends(get_runtime)
 ) -> RemoteDesktopView:
     """Report what remote-desktop software is on a device.
 
-    The two halves are read differently on purpose. AnyDesk is user-tier,
-    so only SSH can say what is there; RustDesk is a module this hub
-    installs, and its id rides the heartbeat with that module's report — so
-    a device with no SSH credentials still shows it rather than refusing
-    the whole panel.
+    AnyDesk and TeamViewer are read by the agent on request; RustDesk is a
+    module this hub installs, and its id rides the report with that
+    module's block, so a device whose agent is quiet still shows it.
 
     Args:
         mac_address: The device's MAC.
         runtime: The shared runtime.
 
     Returns:
-        Each SSH-read product's state, and RustDesk's id when the machine has
-        reported one.
+        Each agent-read product's state, and RustDesk's id when the machine
+        has reported one.
     """
     device = DeviceRegistry().get(mac_address)
-    rustdesk_id = _reported_rustdesk_id(runtime, device.mac_address)
-    if not device.has_ssh:
-        return RemoteDesktopView(
-            anydesk=_remote_desktop_needs_ssh("anydesk"),
-            teamviewer=_remote_desktop_needs_ssh("teamviewer"),
-            rustdesk_id=rustdesk_id,
-        )
-    manager = RemoteDesktopManager(
-        operator=DeviceSshOperator(
-            credentials=SshCredentials.from_dict(device.ssh or {})
-        )
-    )
+    key = device.mac_address.lower()
+    cards = {}
+    for product in DEVICE_REMOTE_DESKTOP_PRODUCTS:
+        try:
+            info = runtime.agent_sessions.run_command_from_thread(
+                key,
+                "remote_desktop_status",
+                {"product": product},
+                timeout=DEVICE_MODULE_COMMAND_TIMEOUT_S,
+            )
+        except (AgentOfflineError, StreamRefusedError) as error:
+            cards[product] = _remote_desktop_unreachable(product, error.code)
+            continue
+        cards[product] = _remote_desktop_view(product, info)
     return RemoteDesktopView(
-        anydesk=_remote_desktop_view(await manager.status("anydesk")),
-        teamviewer=_remote_desktop_view(await manager.status("teamviewer")),
-        rustdesk_id=rustdesk_id,
+        anydesk=cards["anydesk"],
+        teamviewer=cards["teamviewer"],
+        rustdesk_id=_reported_rustdesk_id(runtime, key),
     )
 
 
-def _remote_desktop_needs_ssh(product: str) -> RemoteDesktopStatusView:
-    """One product's card on a device the hub holds no credentials for.
+def _remote_desktop_unreachable(product: str, code: str) -> RemoteDesktopStatusView:
+    """One product's card on a device that could not be asked.
 
     Args:
         product: The product the card is for.
+        code: Why the device could not be asked.
 
     Returns:
         A card that says why it is empty rather than one reading "not
@@ -1021,9 +1126,25 @@ def _remote_desktop_needs_ssh(product: str) -> RemoteDesktopStatusView:
         product=product,
         is_installed=False,
         is_running=False,
-        unreachable=REMOTE_DESKTOP_NEEDS_SSH,
+        unreachable=code,
         session_id=None,
         can_set_password=False,
+    )
+
+
+def _remote_desktop_view(product: str, info: dict) -> RemoteDesktopStatusView:
+    """One product's card from what the agent closed its status with."""
+    code = str(info.get("code", "") or "")
+    if code:
+        return _remote_desktop_unreachable(product, code)
+    result = info.get("result") if isinstance(info.get("result"), dict) else {}
+    session_id = result.get("session_id")
+    return RemoteDesktopStatusView(
+        product=product,
+        is_installed=bool(result.get("is_installed")),
+        is_running=bool(result.get("is_running")),
+        session_id=str(session_id) if session_id else None,
+        can_set_password=bool(result.get("can_set_password", True)),
     )
 
 
@@ -1059,7 +1180,7 @@ async def set_remote_desktop_password(
 
     Args:
         mac_address: The device's MAC.
-        product: One of ``SUPPORTED_PRODUCTS``.
+        product: One of ``DEVICE_REMOTE_DESKTOP_PRODUCTS``.
         request: The password to set.
         runtime: The shared runtime.
 
@@ -1067,58 +1188,33 @@ async def set_remote_desktop_password(
         A task id to stream the result from.
 
     Raises:
-        HTTPException: 400 for an unknown product, 409 without SSH.
+        HTTPException: 400 for an unknown product, 409 when the agent is
+            not answering.
     """
-    _, manager = _remote_desktop_manager(mac_address)
-    # Checked here rather than caught from the call below: that is an async
-    # generator, so calling it runs none of its body and the ValueError it
-    # documents can never arrive. The refusal used to surface minutes later as
-    # a failed task instead of as this 400.
-    if product not in SUPPORTED_PRODUCTS:
+    if product not in DEVICE_REMOTE_DESKTOP_PRODUCTS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"unknown remote desktop product {product!r}; "
-            f"expected one of {', '.join(SUPPORTED_PRODUCTS)}",
+            detail={"code": "product_unknown", "params": {"product": product}},
         )
-    source = manager.set_password_stream(product, password=request.password)
+    key = DeviceRegistry().get(mac_address).mac_address.lower()
+    if not runtime.agent_sessions.is_online(key):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail={"code": "agent_offline"}
+        )
     stream = runtime.tasks.start(
-        label=f"set {product} password {mac_address}", source=source
+        label=f"set {product} password {mac_address}",
+        source=_agent_command_stream(
+            runtime,
+            key,
+            "remote_desktop_password",
+            {"product": product, "password": request.password},
+        ),
     )
     return TaskStarted(task_id=stream.id)
 
 
-def _remote_desktop_manager(mac_address: str):
-    device = DeviceRegistry().get(mac_address)
-    if not device.has_ssh:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="this needs SSH credentials for the device",
-        )
-    return device, RemoteDesktopManager(
-        operator=DeviceSshOperator(
-            credentials=SshCredentials.from_dict(device.ssh or {})
-        )
-    )
-
-
-def _remote_desktop_view(status_: RemoteDesktopStatus) -> RemoteDesktopStatusView:
-    return RemoteDesktopStatusView(
-        product=status_.product,
-        is_installed=status_.is_installed,
-        is_running=status_.is_running,
-        unreachable=status_.unreachable,
-        session_id=status_.session_id,
-        can_set_password=status_.can_set_password,
-    )
-
-
-# What the AnyDesk half says when there are no credentials to ask with.
-# The RustDesk half needs none, so the panel still renders.
-REMOTE_DESKTOP_NEEDS_SSH = "reading this needs SSH credentials for the device"
-
-
 async def _agent_command_stream(
-    runtime: PanelRuntime, key: str, action: str
+    runtime: PanelRuntime, key: str, action: str, args: "dict | None" = None
 ) -> AsyncIterator[str]:
     """Run one command on a device's agent, streaming what it prints.
 
@@ -1126,13 +1222,14 @@ async def _agent_command_stream(
         runtime: The shared runtime, which holds the sockets.
         key: The device.
         action: The command's action on the wire.
+        args: The action's arguments.
 
     Yields:
         Each line the agent sends, then the close's output and its code.
     """
     try:
         stream = await runtime.agent_sessions.open_stream(
-            key, "command", {"action": action, "args": {}}
+            key, "command", {"action": action, "args": dict(args or {})}
         )
     except (AgentOfflineError, StreamRefusedError) as error:
         yield json.dumps({"code": error.code, "params": dict(error.params)}) + "\n"
@@ -1177,11 +1274,10 @@ def _to_view(
             host=device.ssh.get("host", ""),
             port=device.ssh.get("port", 22),
             username=device.ssh.get("username", ""),
-            auth=device.ssh.get("auth", "key"),
+            auth=device.ssh.get("auth", AUTH_KEY),
             key_id=key_id,
             key_name=key_name,
-            password_id=device.ssh.get("password_id"),
-            sudo_password_id=device.ssh.get("sudo_password_id"),
+            login_id=device.ssh.get("login_id"),
         )
     client_view = None
     if device.is_managed:

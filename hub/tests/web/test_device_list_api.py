@@ -180,3 +180,28 @@ def test_a_device_is_at_the_address_its_channel_comes_from(api):
     (device,) = client.get("/api/devices").json()["devices"]
 
     assert device["ipv4_address"] == "192.168.100.7"
+
+
+def test_the_ssh_block_carries_its_references_and_no_password_field(api):
+    client, _ = api
+    FakeRegistry.device.ssh = {
+        "host": "192.168.100.2",
+        "port": 22,
+        "username": "iffi",
+        "auth": "password",
+        "key_id": None,
+        "login_id": "abc123",
+    }
+
+    (device,) = client.get("/api/devices").json()["devices"]
+
+    assert device["has_ssh"] is True
+    assert device["ssh"] == {
+        "host": "192.168.100.2",
+        "port": 22,
+        "username": "iffi",
+        "auth": "password",
+        "key_id": None,
+        "key_name": None,
+        "login_id": "abc123",
+    }

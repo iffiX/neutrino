@@ -18,7 +18,8 @@ export type NetworkModeKey = "server" | "side_gateway" | "router";
 
 export type DeviceAuthMethod = "key" | "password";
 
-export type DeviceActionName = "install_client" | "reboot" | "shutdown";
+export type DeviceActionName =
+  "install_client" | "reinstall_agent" | "reboot" | "shutdown";
 
 /** One remote-desktop product's state on a device. */
 export interface RemoteDesktopStatus {
@@ -38,57 +39,6 @@ export interface RemoteDesktopView {
   teamviewer: RemoteDesktopStatus;
   /** The id a peer connects to RustDesk by, off the module's own report. */
   rustdesk_id: string;
-}
-
-/** One catalog entry as the agent itself is served it. */
-export interface DeviceServiceEntry {
-  id: string;
-  type: string;
-  title: string;
-  description: string;
-  is_healthy: boolean;
-  payload: Record<string, unknown>;
-}
-
-/** One mount record off a device's beat; passwords appear nowhere. */
-export interface DeviceMountRecord {
-  record_id: string;
-  entry_id: string;
-  host: string;
-  share: string;
-  username: string;
-  path: string;
-  account: string;
-  is_enabled: boolean;
-  is_attached: boolean;
-  state: string;
-  code: string;
-  params: Record<string, unknown>;
-}
-
-/** One managed device's services, for the drawer's operable panels. */
-export interface DeviceServicesView {
-  accounts: string[];
-  entries: DeviceServiceEntry[];
-  ai_targets: Record<string, boolean>;
-  ai_states: Record<string, { state?: string; is_active?: boolean }>;
-  mounts: DeviceMountRecord[];
-  /** The machine's share at a glance; empty until it beats. */
-  rdp: Record<string, unknown>;
-  /** What a mount location is there: a path, or a drive letter on Windows. */
-  mount_location_shape: "path" | "drive_letter";
-  /** One the machine offers, the free drive letter where that is the shape. */
-  mount_location_suggestion: string;
-}
-
-/** One service action for a device's agent — the page's own verb. */
-export interface DeviceServiceAsk {
-  body: Record<string, unknown>;
-}
-
-/** The queued ask, findable later among the command results. */
-export interface DeviceServiceAskStarted {
-  command_id: string;
 }
 
 // --- Auth ---
@@ -733,11 +683,11 @@ export interface CliproxyApiJournalResponse {
 }
 
 /**
- * SSH credentials for a device.
+ * The SSH login the hub last installed this device's agent with.
  *
- * Every credential is a reference: `key_id` names a stored key, `password_id`
- * and `sudo_password_id` name vault login objects. No secret material
- * crosses this shape; `key_name` is the resolved label for display.
+ * Every credential is a reference: `key_id` names a stored key and `login_id`
+ * a stored login. No secret material crosses this shape, and a sudo password
+ * is typed per install rather than kept.
  */
 export interface DeviceSshConfig {
   host: string;
@@ -745,9 +695,7 @@ export interface DeviceSshConfig {
   username: string;
   auth: DeviceAuthMethod;
   key_id: string | null;
-  key_name: string | null;
-  password_id: string | null;
-  sudo_password_id: string | null;
+  login_id: string | null;
 }
 
 export interface DeviceGpuInfo {
@@ -854,9 +802,22 @@ export interface DeviceFileEntry {
   modified_at: number;
 }
 
-export interface DeviceFileList {
+export interface DeviceFileListView {
   path: string;
   entries: DeviceFileEntry[];
+}
+
+/** One machine whose agent is answering right now. */
+export interface DeviceOnlineView {
+  device_id: string;
+  name: string;
+  hostname: string;
+  platform: string;
+}
+
+/** The machines a terminal or a file browser can open on, hub box first. */
+export interface DevicesOnlineResponse {
+  devices: DeviceOnlineView[];
 }
 
 export interface DeviceView {
@@ -898,7 +859,27 @@ export interface DeviceActionRequest {
   action: DeviceActionName;
 }
 
-export interface DeviceActionResult {
+/**
+ * What installing the agent over SSH needs.
+ *
+ * The credential is exactly one of the three: a stored key, a stored login,
+ * or a password typed now, which is kept only when `is_password_saved` says
+ * so. `sudo_password` is typed for this install and stored nowhere.
+ */
+export interface DeviceInstallRequest {
+  action: "install_client";
+  host: string;
+  port: number;
+  username: string;
+  key_id: string | null;
+  login_id: string | null;
+  password: string | null;
+  is_password_saved: boolean;
+  sudo_password: string;
+}
+
+/** The job an action started, followed on `/ws/task/{task_id}`. */
+export interface TaskStarted {
   task_id: string;
 }
 
@@ -1196,12 +1177,12 @@ export interface PodmanDeviceView extends PodmanSettings, ModuleDeviceState {}
 
 // --- Websocket frames ---
 
-/** Client to server on `/ws/ssh/{mac}`. */
+/** Client to server on `/ws/agent_shell/{device_id}`. */
 export type TerminalClientMessage =
   | { type: "input"; data: string }
   | { type: "resize"; cols: number; rows: number };
 
-/** Server to client on `/ws/ssh/{mac}` and `/ws/task/{task_id}`. */
+/** Server to client on a shell socket and on `/ws/task/{task_id}`. */
 export type StreamServerMessage =
   | { type: "output"; data: string }
   | { type: "exit"; code: number }

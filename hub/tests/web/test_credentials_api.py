@@ -188,7 +188,7 @@ def test_deleting_a_login_clears_its_references(client, tmp_path):
         json={"name": "lab machines", "password": STORED_PASSWORD},
     )
     login_id = created.json()["id"]
-    write_device(tmp_path, {"password_id": login_id, "sudo_password_id": login_id})
+    write_device(tmp_path, {"login_id": login_id})
 
     listed = client.get("/api/credentials/logins").json()["logins"]
     assert listed[0]["device_count"] == 1
@@ -198,8 +198,7 @@ def test_deleting_a_login_clears_its_references(client, tmp_path):
     assert response.json() == {"cleared": {"device_count": 1}}
 
     ssh = read_device_ssh(tmp_path)
-    assert ssh["password_id"] is None
-    assert ssh["sudo_password_id"] is None
+    assert ssh["login_id"] is None
     assert ssh["host"] == "192.168.100.2"
     assert ssh["username"] == "root"
     assert client.get("/api/credentials/logins").json() == {"logins": []}
@@ -214,13 +213,13 @@ def test_deleting_an_unreferenced_login_touches_nothing(client, tmp_path):
         "/api/credentials/logins",
         json={"name": "spare", "password": STORED_PASSWORD},
     ).json()
-    write_device(tmp_path, {"password_id": kept["id"]})
+    write_device(tmp_path, {"login_id": kept["id"]})
 
     response = client.delete(f"/api/credentials/logins/{spare['id']}")
 
     assert response.status_code == 200
     assert response.json() == {"cleared": {"device_count": 0}}
-    assert read_device_ssh(tmp_path)["password_id"] == kept["id"]
+    assert read_device_ssh(tmp_path)["login_id"] == kept["id"]
 
 
 def test_a_login_of_another_kind_is_not_addressable(client):

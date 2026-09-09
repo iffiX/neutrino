@@ -767,12 +767,11 @@ class CliproxyApiLoginStateView(BaseModel):
 
 
 class DeviceSshConfig(BaseModel):
-    """SSH credentials for one device.
+    """How the hub reaches a device over SSH to put its agent there.
 
     Every credential is a reference: ``key_id`` names a stored key,
-    ``password_id`` and ``sudo_password_id`` name vault login objects. No
-    secret material passes through this model; ``key_name`` is the resolved
-    label for display.
+    ``login_id`` a vault login. No secret material passes through this
+    model; ``key_name`` is the resolved label for display.
     """
 
     host: str
@@ -781,8 +780,7 @@ class DeviceSshConfig(BaseModel):
     auth: str = "key"
     key_id: str | None = None
     key_name: str | None = None
-    password_id: str | None = None
-    sudo_password_id: str | None = None
+    login_id: str | None = None
 
 
 class DeviceGpuView(BaseModel):
@@ -928,9 +926,23 @@ class DeviceAnnotation(BaseModel):
 
 
 class DeviceActionRequest(BaseModel):
-    """A long-running action to start on a device."""
+    """A long-running action to start on a device.
+
+    ``install_client`` carries how to reach the machine over SSH: exactly
+    one of a stored key, a stored login, or a password typed now, which
+    ``is_password_saved`` stores as a login. The sudo password is used for
+    this one install and written nowhere.
+    """
 
     action: str
+    host: str = ""
+    port: int = 22
+    username: str = ""
+    key_id: str | None = None
+    login_id: str | None = None
+    password: str | None = None
+    is_password_saved: bool = False
+    sudo_password: str | None = None
 
 
 class DeviceProcessKill(BaseModel):

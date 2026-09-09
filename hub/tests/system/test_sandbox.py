@@ -68,32 +68,3 @@ def test_the_separator_keeps_a_command_from_being_read_as_options(monkeypatch):
     wrapped = outside_sandbox(["apt-get", "-q", "update"])
 
     assert wrapped[wrapped.index("--") + 1] == "apt-get"
-
-
-def test_the_interactive_escape_keeps_the_terminal(monkeypatch):
-    """A shell into a container needs a tty, so its escape rides --pty."""
-    from neutrino_hub.system import sandbox
-
-    monkeypatch.setenv("INVOCATION_ID", "abc")
-    monkeypatch.setattr(sandbox.shutil, "which", lambda name: "/bin/systemd-run")
-
-    wrapped = sandbox.outside_sandbox_interactive(["podman", "exec", "-it", "kuma"])
-
-    assert wrapped[:6] == [
-        "systemd-run",
-        "--quiet",
-        "--collect",
-        "--pty",
-        "--wait",
-        "--",
-    ]
-    assert wrapped[6:] == ["podman", "exec", "-it", "kuma"]
-
-
-def test_the_interactive_escape_is_a_no_op_outside_a_unit(monkeypatch):
-    from neutrino_hub.system import sandbox
-
-    monkeypatch.delenv("INVOCATION_ID", raising=False)
-
-    command = ["podman", "exec", "-it", "kuma"]
-    assert sandbox.outside_sandbox_interactive(command) == command

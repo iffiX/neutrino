@@ -2,9 +2,10 @@
 
 What these pin: the hello and the welcome, a report on the interval and at
 once when something changed, an order stream running the engine and closing
-with its state, a command stream closing with its exit, a stream kind this
-build has no handler for refused typed, and how the socket's end is
-reported to the loop that owns it.
+with its state, a command stream closing with its exit, a byte-carrying
+kind opened on its channel with the hub's bytes, resizes, credit and close
+reaching it, a stream kind this build has no handler for refused typed, and
+how the socket's end is reported to the loop that owns it.
 """
 
 import json
@@ -22,6 +23,7 @@ from neutrino_agent.core.channel import (
 )
 from neutrino_agent.core.session import AgentSession
 from neutrino_agent.core.ws_client import SocketClosed
+from neutrino_agent.streams.channel import StreamRefused
 
 
 class ScriptedClient:
@@ -36,6 +38,7 @@ class ScriptedClient:
     def __init__(self):
         self.inbound: queue.Queue = queue.Queue()
         self.sent: list = []
+        self.sent_bytes: list = []
         self.is_connected = False
         self.is_closed = False
         self.connect_error = None
@@ -55,10 +58,17 @@ class ScriptedClient:
             self.drop_after_report = False
             self.inbound.put(GatewayUnreachable("hung up"))
 
+    def send_bytes(self, data: bytes) -> None:
+        if self.is_closed:
+            raise GatewayUnreachable("the socket is closed")
+        self.sent_bytes.append(bytes(data))
+
     def recv(self):
         item = self.inbound.get()
         if isinstance(item, Exception):
             raise item
+        if isinstance(item, bytes):
+            return "binary", item
         return "text", json.dumps(item)
 
     def close(self, code: int = 1000, reason: str = "") -> None:
@@ -118,6 +128,36 @@ def make_session(client, **overrides):
 
 def welcome(**fields) -> dict:
     return {"type": "welcome", "hub_version": "0.2.0", "device_id": "d", **fields}
+
+
+class EchoStream:
+    """A byte-carrying handler: sends back what it was given, records the
+    rest, and closes with what the hub sent it."""
+
+    instances: list = []
+
+    def __init__(self, channel, args):
+        self.channel = channel
+        self.args = args
+        self.items: list = []
+        self.refusal = None
+        EchoStream.instances.append(self)
+
+    def open(self):
+        if self.args.get("refuse"):
+            raise StreamRefused("container_unknown", {"name": "kuma"})
+        self.channel.offer_credit(1024)
+
+    def run(self):
+        while True:
+            item = self.channel.recv(timeout=3)
+            if item is None:
+                return {"exit_code": 9, "code": "", "params": {}}
+            self.items.append(item)
+            if item[0] == "data":
+                self.channel.send_bytes(b"echo:" + item[1])
+            if item[0] == "close":
+                return {"exit_code": 0, "code": "", "params": {}}
 
 
 def serving(session):
@@ -400,7 +440,7 @@ def test_without_a_validator_the_validate_kind_is_refused():
     client.feed({"type": "open", "stream": "00000012", "kind": "validate", "args": {}})
 
     (refused,) = client.wait_for("refused")
-    assert refused["code"] == "unknown_stream_kind"
+    assert refused["code"] == "stream_unknown"
     session.close()
     thread.join(timeout=2)
 
@@ -433,14 +473,14 @@ def test_a_stream_kind_this_build_cannot_serve_is_refused_typed():
     session.connect()
     thread, _ = serving(session)
 
-    client.feed({"type": "open", "stream": "00000003", "kind": "shell", "args": {}})
+    client.feed({"type": "open", "stream": "00000003", "kind": "tunnel", "args": {}})
 
     (refused,) = client.wait_for("refused")
     assert refused == {
         "type": "refused",
         "stream": "00000003",
-        "code": "unknown_stream_kind",
-        "params": {"kind": "shell"},
+        "code": "stream_unknown",
+        "params": {"kind": "tunnel"},
     }
     session.close()
     thread.join(timeout=2)
@@ -566,3 +606,186 @@ def test_request_state_with_the_socket_gone_is_unreachable():
 
     with pytest.raises(GatewayUnreachable):
         session.request_state()
+
+
+# --- the byte-carrying kinds ---
+
+
+def channel_session(client, **overrides):
+    EchoStream.instances = []
+    return make_session(client, stream_kinds={"shell": EchoStream}, **overrides)
+
+
+def open_shell(client, stream_id="00000011", credit=4, **args):
+    client.feed(
+        {
+            "type": "open",
+            "stream": stream_id,
+            "kind": "shell",
+            "args": {"cols": 80, "rows": 24, **args},
+            "credit": credit,
+        }
+    )
+
+
+def test_a_channel_kind_opens_after_its_handler_agreed_and_offers_credit():
+    client = ScriptedClient()
+    session, _, _, _ = channel_session(client)
+    client.feed(welcome())
+    session.connect()
+    thread, _ = serving(session)
+
+    open_shell(client)
+
+    assert client.wait_for("opened") == [{"type": "opened", "stream": "00000011"}]
+    assert client.wait_for("credit") == [
+        {"type": "credit", "stream": "00000011", "bytes": 1024}
+    ]
+    assert EchoStream.instances[0].args == {"cols": 80, "rows": 24}
+    session.close()
+    thread.join(timeout=2)
+
+
+def test_the_hubs_bytes_resizes_and_close_reach_the_handler():
+    client = ScriptedClient()
+    session, _, _, _ = channel_session(client)
+    client.feed(welcome())
+    session.connect()
+    thread, _ = serving(session)
+    open_shell(client, credit=1024)
+    client.wait_for("opened")
+
+    client.feed(b"00000011ls\n")
+    client.feed({"type": "resize", "stream": "00000011", "cols": 120, "rows": 40})
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline and not client.sent_bytes:
+        time.sleep(0.005)
+    client.feed({"type": "close", "stream": "00000011"})
+
+    (closed,) = client.wait_for("close")
+    assert closed == {
+        "type": "close",
+        "stream": "00000011",
+        "exit_code": 0,
+        "code": "",
+        "params": {},
+    }
+    assert EchoStream.instances[0].items == [
+        ("data", b"ls\n"),
+        ("resize", 120, 40),
+        ("close",),
+    ]
+    assert client.sent_bytes == [b"00000011echo:ls\n"]
+    session.close()
+    thread.join(timeout=2)
+
+
+def test_bytes_wait_for_the_hubs_credit():
+    client = ScriptedClient()
+    session, _, _, _ = channel_session(client)
+    client.feed(welcome())
+    session.connect()
+    thread, _ = serving(session)
+    open_shell(client, credit=4)
+    client.wait_for("opened")
+
+    client.feed(b"00000011abcdef")
+    time.sleep(0.1)
+    assert client.sent_bytes == [b"00000011echo"]
+
+    client.feed({"type": "credit", "stream": "00000011", "bytes": 1024})
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline and len(client.sent_bytes) < 2:
+        time.sleep(0.005)
+    assert client.sent_bytes == [b"00000011echo", b"00000011:abcdef"]
+    session.close()
+    thread.join(timeout=2)
+
+
+def test_a_handler_that_refuses_answers_refused_and_never_opens():
+    client = ScriptedClient()
+    session, _, _, _ = channel_session(client)
+    client.feed(welcome())
+    session.connect()
+    thread, _ = serving(session)
+
+    open_shell(client, refuse=True)
+
+    (refused,) = client.wait_for("refused")
+    assert refused == {
+        "type": "refused",
+        "stream": "00000011",
+        "code": "container_unknown",
+        "params": {"name": "kuma"},
+    }
+    assert client.frames("opened") == []
+    session.close()
+    thread.join(timeout=2)
+
+
+def test_a_frame_for_a_stream_nobody_opened_is_dropped():
+    client = ScriptedClient()
+    session, _, _, _ = channel_session(client)
+    client.feed(welcome())
+    session.connect()
+    thread, _ = serving(session)
+
+    client.feed(b"00000099stray")
+    client.feed({"type": "credit", "stream": "00000099", "bytes": 5})
+    client.feed({"type": "resize", "stream": "00000099", "cols": 1, "rows": 1})
+    client.feed({"type": "close", "stream": "00000099"})
+    open_shell(client)
+
+    client.wait_for("opened")
+    session.close()
+    thread.join(timeout=2)
+
+
+def test_the_socket_ending_closes_every_channel():
+    client = ScriptedClient()
+    session, _, _, _ = channel_session(client)
+    client.feed(welcome())
+    session.connect()
+    thread, _ = serving(session)
+    open_shell(client)
+    client.wait_for("opened")
+
+    client.feed(GatewayUnreachable("hung up"))
+    thread.join(timeout=3)
+
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline and not EchoStream.instances[0].items:
+        time.sleep(0.005)
+    assert EchoStream.instances[0].items == [("close",)]
+
+
+def test_a_reading_command_closes_with_its_result():
+    client = ScriptedClient()
+
+    def run_command(action, args, on_line=None):
+        return {
+            "exit_code": 0,
+            "code": "",
+            "params": {},
+            "output": "",
+            "result": {"is_installed": True},
+        }
+
+    session, _, _, _ = make_session(client, run_command=run_command)
+    client.feed(welcome())
+    session.connect()
+    thread, _ = serving(session)
+
+    client.feed(
+        {
+            "type": "open",
+            "stream": "00000012",
+            "kind": "command",
+            "args": {"action": "remote_desktop_status", "args": {}},
+        }
+    )
+
+    (closed,) = client.wait_for("close")
+    assert closed["result"] == {"is_installed": True}
+    session.close()
+    thread.join(timeout=2)

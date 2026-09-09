@@ -484,12 +484,15 @@ class Agent:
             }
         self._log(f"running {action}")
         outcome = operator.run(action, args, on_line)
-        return {
+        reply = {
             "exit_code": outcome.exit_code,
             "code": outcome.code,
             "params": dict(outcome.params),
             "output": outcome.output,
         }
+        if outcome.result:
+            reply["result"] = dict(outcome.result)
+        return reply
 
     def _reinstall(self) -> dict:
         """Reinstall this agent from the hub's package, on the hub's order.

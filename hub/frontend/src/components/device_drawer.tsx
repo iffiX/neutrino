@@ -1,20 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 
 import { Icon } from "./icon";
 import type { IconName } from "./icon";
 import { DeviceEnrollmentNotice } from "./device_enrollment_notice";
-import { FileTransferModal } from "./file_transfer_modal";
-import { PasswordInput } from "./password_input";
-import { StatusDot } from "./status_dot";
-import { TerminalModal } from "./terminal_modal";
-import { DeviceServices } from "./device_services";
+import { InstallAgentModal } from "./install_agent_modal";
 import { RemoteDesktopPanel } from "./remote_desktop_panel";
+import { StatusDot } from "./status_dot";
 import { ToggleSwitch } from "./toggle_switch";
 import {
   ApiError,
   apiDelete,
-  apiGet,
   apiPost,
   apiPut,
   describeError,
@@ -30,55 +27,64 @@ import {
 import type { DeviceUpgradePath } from "../device_level";
 import { useConfirm } from "../use_confirm";
 import { formatTimeAgo } from "../format_duration";
-import { PRIVATE_KEY_PLACEHOLDER } from "../private_key_placeholder";
 import { stripAnsi } from "../strip_ansi";
-import { useApiResource } from "../use_api_resource";
-import {
-  HUB_EVENT_MODULE_ORDER,
-  HUB_EVENT_TASK,
-  useHubEvents,
-} from "../use_hub_events";
+import { HUB_EVENT_MODULE_ORDER, useHubEvents } from "../use_hub_events";
 import { useTaskStream } from "../use_task_stream";
 import type {
   DeviceActionName,
-  DeviceActionResult,
   DeviceAnnotation,
-  DeviceAuthMethod,
   DeviceEnrollmentView,
-  DeviceInstallOrderView,
-  DeviceInstallOutputResponse,
   DeviceView,
   DeviceWolResult,
-  KeyView,
-  KeysResponse,
-  LoginView,
-  LoginsResponse,
+  TaskStarted,
 } from "../api_types";
 
 import "./device_drawer.css";
 
 /**
- * The detail view for one device: identity, credentials, and remote actions.
+ * The detail view for one device: what it is, and what can be done to it now.
  *
- * Everything an action needs comes from the SSH block, so a device without one
- * gets the status header and the credential form and nothing else — offering a
- * reboot button that can only fail would be worse than not offering it. Action
- * output streams into the log at the bottom rather than into a toast, because
- * an install is a thing you read, not a thing you acknowledge.
+ * A machine's shell and its files live on their own pages, which this links
+ * to with the machine already picked. What stays here is what belongs to the
+ * one record: its name, its icon, whether it wakes on a magic packet, and the
+ * remote actions its agent takes. Action output streams into the log at the
+ * bottom rather than into a toast, because an install is a thing you read.
  */
 
-const DEFAULT_SSH_PORT = 22;
-
-// The <select> sentinel for "paste a new key" rather than choosing an existing
-// one.
-const NEW_KEY_OPTION = "__new__";
-
-// The password pickers' sentinel for "store a new login" rather than
-// choosing an existing one.
-const NEW_PASSWORD_OPTION = "__new__";
-
-// Where the vault's logins live; the pickers below list them.
-const LOGINS_PATH = "/credentials/logins";
+const WORDING = {
+  close: "Close",
+  terminal: "Terminal",
+  files: "Files",
+  identity: "Identity",
+  displayName: "Display name",
+  icon: "Icon",
+  wol: "Wake-on-LAN",
+  wolHint:
+    "Whether this device can be woken with a magic packet sent to its MAC from the LAN interface.",
+  actions: "Actions",
+  wake: "Wake-on-LAN",
+  install: "Install agent",
+  reinstall: "Reinstall agent",
+  reboot: "Reboot",
+  shutdown: "Shut down",
+  actionBody:
+    "The machine is told to do this at once; anything unsaved on it is lost.",
+  getLink: "Get link",
+  output: "Action output",
+  commandResults: "Agent command results",
+  forget: "Forget device",
+  forgetBody: "The device and its saved credentials are deleted from this box.",
+  save: "Save device",
+  saving: "Saving…",
+  saved: "Saved.",
+  reporting: "reporting",
+  seen: "on the network",
+  offline: "offline",
+  seenAgo: "seen {when}",
+  unknownVendor: "unknown vendor",
+  running: "{action} · running",
+  finished: "{action} · exit {code}",
+};
 
 // Wording for the way this device becomes managed, or catches up with the hub.
 const GUIDANCE_TITLES: Record<DeviceUpgradePath, string> = {
@@ -87,23 +93,16 @@ const GUIDANCE_TITLES: Record<DeviceUpgradePath, string> = {
 };
 
 const GUIDANCE_HINTS: Record<DeviceUpgradePath, string> = {
-  install: "The Install agent action below runs the installer over SSH.",
-  link: "Add SSH details above and save, or send it an enrollment link.",
+  install: "Install agent below asks for a login and runs the installer.",
+  link: "Send it an enrollment link. The SSH installer needs Linux.",
 };
 
 const VERSION_MISMATCH_TITLE =
   "This agent is a different version from the hub.";
 
 const VERSION_MISMATCH_HINTS: Record<DeviceUpgradePath, string> = {
-  install: "Reinstall it with the Install agent action below.",
+  install: "Reinstall it with the Reinstall agent action below.",
   link: "Re-enroll it with a fresh link. The SSH installer needs Linux.",
-};
-
-// Wording for the save refusals the backend reports as codes.
-const UNKNOWN_CREDENTIAL_WORDING: Record<string, string> = {
-  key_id: "The chosen SSH key is no longer stored; pick another.",
-  password_id: "The chosen login is no longer stored; pick another.",
-  sudo_password_id: "The chosen sudo login is no longer stored; pick another.",
 };
 
 // The agent's last_error {code, params}, worded. A code without an entry
@@ -122,139 +121,12 @@ const AGENT_ERROR_WORDING: Record<string, string> = {
     "The hub could not write the agent package to its own disk.",
 };
 
-const COMMAND_RESULTS_LABEL = "Agent command results";
-
-// One pane, one operation — installing the agent, installing a module,
-// uninstalling one — whatever asked for it: the same operation the
-// machine's own page shows, picked by the same precedence, so the two
-// surfaces render one stream.
-const INSTALL_OUTPUT_LABEL = "Operation output";
-
-// The hub's own order states, worded. The transient ones are what the dot
-// pulses on, the same way a running task does.
-const ORDER_RUNNING_STATES: string[] = ["queued", "fetching", "installing"];
-const ORDER_STATE_WORDING: Record<string, string> = {
-  queued: "waiting its turn",
-  fetching: "downloading",
-  installing: "installing",
-  done: "done",
-  failed: "failed",
+// The {code, params} an action is refused with, worded.
+const ACTION_ERROR_WORDING: Record<string, string> = {
+  agent_offline: "The machine is not answering, so nothing was started on it.",
 };
 
-// The hub runs every order through one `installing` state, which reads
-// wrong above an uninstall. The action decides the word a person sees.
-const ORDER_RUNNING_WORDING: Record<string, string> = {
-  install: "installing",
-  uninstall: "uninstalling",
-};
-
-// What each order was asked to do, worded for the line above its output.
-const ORDER_ACTION_WORDING: Record<string, string> = {
-  install: "install",
-  uninstall: "uninstall",
-};
-
-// The {code, params} an order failed with, worded. A code with no entry
-// shows as itself, because a failure hidden entirely is worse than a bare
-// code.
-const ORDER_ERROR_WORDING: Record<string, string> = {
-  no_platform_build: "There is no build of it for this machine.",
-  no_download_named: "The catalog names no download for this machine.",
-  module_fetch_failed: "The hub could not fetch it from the vendor.",
-  module_fetch_too_large:
-    "The vendor's download is larger than the hub will fetch.",
-  module_release_unreadable: "The hub could not read that project's releases.",
-  module_cache_unwritable: "The hub could not save the download.",
-  module_artifact_missing: "The hub no longer holds that download; ask again.",
-  module_artifact_unknown: "The hub does not know that download; ask again.",
-  module_digest_mismatch: "What arrived did not match the hub's checksum.",
-  module_sha256_mismatch:
-    "The download did not match the checksum this hub pins for it.",
-  install_failed: "The install failed on the machine.",
-  install_unconfirmed:
-    "The install finished, but the software cannot be found on the machine.",
-  uninstall_unconfirmed:
-    "The uninstall finished, but the software is still there.",
-  unsupported_platform: "This machine cannot do that.",
-  unknown_action: "The machine did not understand what it was asked to do.",
-  unknown_kind: "The machine does not know this kind of module.",
-  order_failed: "The install did not finish.",
-  verify_failed:
-    "The machine could not tell whether the software is there afterwards.",
-  agent_never_reported: "The machine never said how it went.",
-  hub_unreachable: "The machine could not reach the hub for the download.",
-};
-
-function orderTone(state: string): "ok" | "warn" | "error" | "idle" {
-  if (ORDER_RUNNING_STATES.includes(state)) {
-    return "warn";
-  }
-  if (state === "done") {
-    return "ok";
-  }
-  if (state === "failed") {
-    return "error";
-  }
-  return "idle";
-}
-
-/** The one operation the pane shows: an SSH task, or a module order. */
-type ShownOperation =
-  { kind: "task" } | { kind: "order"; order: DeviceInstallOrderView };
-
-/**
- * Pick the pane's one operation, by the same precedence the heartbeat's
- * operation object uses: a running order, else a running SSH task, else
- * whichever finished last.
- */
-function operationToShow(
-  orders: DeviceInstallOrderView[],
-  hasTask: boolean,
-  isTaskRunning: boolean,
-  taskFinishedAt: number | null,
-): ShownOperation | null {
-  // Orders arrive newest first, so the one actually running — the queue's
-  // head — is the last open one.
-  const running = orders
-    .filter((order) => ORDER_RUNNING_STATES.includes(order.state))
-    .at(-1);
-  if (running !== undefined) {
-    return { kind: "order", order: running };
-  }
-  if (hasTask && isTaskRunning) {
-    return { kind: "task" };
-  }
-  const latest = orders.at(0) ?? null;
-  if (latest !== null && hasTask && taskFinishedAt !== null) {
-    const stamp = Date.parse(latest.finished_at || latest.asked_at);
-    if (Number.isNaN(stamp) || taskFinishedAt > stamp) {
-      return { kind: "task" };
-    }
-    return { kind: "order", order: latest };
-  }
-  if (latest !== null) {
-    return { kind: "order", order: latest };
-  }
-  return hasTask ? { kind: "task" } : null;
-}
-
-function describeOrder(order: DeviceInstallOrderView): string {
-  const action = ORDER_ACTION_WORDING[order.action] ?? order.action;
-  const state =
-    order.state === "installing"
-      ? (ORDER_RUNNING_WORDING[order.action] ?? "installing")
-      : (ORDER_STATE_WORDING[order.state] ?? order.state);
-  const parts = [`${order.title || order.module} · ${action} · ${state}`];
-  if (order.code.length > 0) {
-    parts.push(ORDER_ERROR_WORDING[order.code] ?? order.code);
-  }
-  const stamp = order.finished_at || order.asked_at;
-  if (stamp.length > 0) {
-    parts.push(formatTimeAgo(stamp));
-  }
-  return parts.join(" · ");
-}
-
+/** One remote action, as the grid draws it. */
 interface DeviceAction {
   action: DeviceActionName;
   label: string;
@@ -271,17 +143,23 @@ interface DeviceGuidance {
   hasEnrollmentLink: boolean;
 }
 
-const DEVICE_ACTIONS: DeviceAction[] = [
+// What a managed machine takes, beside Wake-on-LAN.
+const MANAGED_ACTIONS: DeviceAction[] = [
   {
-    action: "install_client",
-    label: "Install agent",
+    action: "reinstall_agent",
+    label: WORDING.reinstall,
     icon: "download",
     isDestructive: false,
   },
-  { action: "reboot", label: "Reboot", icon: "refresh", isDestructive: true },
+  {
+    action: "reboot",
+    label: WORDING.reboot,
+    icon: "refresh",
+    isDestructive: true,
+  },
   {
     action: "shutdown",
-    label: "Shut down",
+    label: WORDING.shutdown,
     icon: "power",
     isDestructive: true,
   },
@@ -302,112 +180,39 @@ export function DeviceDrawer({
   onForgotten,
   onTaskFinished,
 }: DeviceDrawerProps) {
+  const navigate = useNavigate();
   const [name, setName] = useState(device.name ?? "");
   const [icon, setIcon] = useState<IconName>(toDeviceIconName(device.icon));
   const [isWolEnabled, setIsWolEnabled] = useState(device.is_wol_enabled);
-  const [hasSshDraft, setHasSshDraft] = useState(device.ssh !== null);
-  const [host, setHost] = useState(device.ssh?.host ?? device.ipv4_address);
-  const [port, setPort] = useState(
-    String(device.ssh?.port ?? DEFAULT_SSH_PORT),
-  );
-  const [username, setUsername] = useState(device.ssh?.username ?? "");
-  const [auth, setAuth] = useState<DeviceAuthMethod>(device.ssh?.auth ?? "key");
-  // Key auth references a stored key by id. The keys come from the registry, so
-  // the drawer never holds key material — it either picks an existing key or
-  // pastes a new one, which is created in the registry on save.
-  const keys = useApiResource<KeysResponse>("/credentials/ssh_keys");
-  const [keyId, setKeyId] = useState<string>(device.ssh?.key_id ?? "");
-  const [newKeyName, setNewKeyName] = useState("");
-  const [newKeyMaterial, setNewKeyMaterial] = useState("");
-  const [newKeyPassphrase, setNewKeyPassphrase] = useState("");
-  // Password auth references a vault login by id, the same way key auth
-  // references a key: pick a stored one, or store a new one on save.
-  const logins = useApiResource<LoginsResponse>(LOGINS_PATH);
-  const [passwordId, setPasswordId] = useState<string>(
-    device.ssh?.password_id ?? "",
-  );
-  const [sudoPasswordId, setSudoPasswordId] = useState<string>(
-    device.ssh?.sudo_password_id ?? "",
-  );
-  const [newPasswordName, setNewPasswordName] = useState("");
-  const [newPasswordValue, setNewPasswordValue] = useState("");
-  const [newSudoPasswordName, setNewSudoPasswordName] = useState("");
-  const [newSudoPasswordValue, setNewSudoPasswordValue] = useState("");
-  const isAddingKey = keyId === NEW_KEY_OPTION;
-  const isAddingPassword = passwordId === NEW_PASSWORD_OPTION;
-  const isAddingSudoPassword = sudoPasswordId === NEW_PASSWORD_OPTION;
-
   const [isSaving, setIsSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const confirm = useConfirm();
   const [taskId, setTaskId] = useState<string | null>(null);
   const [runningLabel, setRunningLabel] = useState<string | null>(null);
-  const [isTerminalOpen, setIsTerminalOpen] = useState(false);
-  const [isFilesOpen, setIsFilesOpen] = useState(false);
+  const [isInstallOpen, setIsInstallOpen] = useState(false);
   // A link generated for this machine alone, for the ones no installer reaches.
   const [enrollment, setEnrollment] = useState<DeviceEnrollmentView | null>(
     null,
   );
-
-  // Every install the controller ran for this device, whatever asked.
-  const [orders, setOrders] = useState<DeviceInstallOrderView[]>([]);
-  // When this drawer's SSH task finished, so the pane can pick the
-  // operation that finished last.
-  const [taskFinishedAt, setTaskFinishedAt] = useState<number | null>(null);
+  // Bumped whenever a module order on this machine moves, so the remote
+  // desktop panel reads again after software lands on it.
+  const [moduleRevision, setModuleRevision] = useState(0);
+  const confirm = useConfirm();
 
   const task = useTaskStream(taskId);
   const logRef = useRef<HTMLPreElement | null>(null);
   const wasTaskRunning = useRef(false);
 
-  const isManaged = device.client !== null && device.client.is_managed;
-  const isAnyOrderRunning = orders.some((order) =>
-    ORDER_RUNNING_STATES.includes(order.state),
-  );
-  // One operation at a time per device, whatever kind and whichever surface
-  // started it: while an SSH task or a module order is open, everything
-  // that would start another one greys.
-  const isOperationOpen = task.isRunning || isAnyOrderRunning;
-  const hasTask = taskId !== null || task.lines.length > 0;
-  // The pane shows exactly one operation, the same one the machine's own
-  // page renders from the heartbeat's operation object.
-  const shownOperation = operationToShow(
-    orders,
-    hasTask,
-    task.isRunning,
-    taskFinishedAt,
-  );
-
-  const loadOrders = useCallback(async () => {
-    if (!isManaged) {
-      return;
-    }
-    try {
-      const response = await apiGet<DeviceInstallOutputResponse>(
-        `/devices/${device.mac_address}/install_output`,
-      );
-      setOrders(response.orders);
-    } catch {
-      // The pane is a report, not a control: a read that failed leaves the
-      // last one standing rather than replacing it with an error.
-    }
-  }, [device.mac_address, isManaged]);
-
-  useEffect(() => {
-    void loadOrders();
-  }, [loadOrders]);
+  const isManaged = isDeviceManaged(device);
+  const isAgentOnline = isManaged && device.is_agent_online;
 
   useHubEvents(
-    [
-      { type: HUB_EVENT_MODULE_ORDER, key: device.mac_address },
-      { type: HUB_EVENT_TASK },
-    ],
-    () => void loadOrders(),
+    [{ type: HUB_EVENT_MODULE_ORDER, key: device.mac_address }],
+    () => setModuleRevision((current) => current + 1),
   );
 
   // An install's outcome — the agent appearing, the version catching up — is
-  // the page's to show the moment the task ends. The finish moment is kept so
-  // the pane can pick the operation that finished last.
+  // the page's to show the moment the task ends.
   useEffect(() => {
     if (task.isRunning) {
       wasTaskRunning.current = true;
@@ -415,7 +220,6 @@ export function DeviceDrawer({
     }
     if (wasTaskRunning.current) {
       wasTaskRunning.current = false;
-      setTaskFinishedAt(Date.now());
       onTaskFinished?.();
     }
   }, [task.isRunning, onTaskFinished]);
@@ -429,99 +233,34 @@ export function DeviceDrawer({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !isTerminalOpen) {
+      if (event.key === "Escape" && !isInstallOpen) {
         onClose();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, isTerminalOpen]);
+  }, [onClose, isInstallOpen]);
 
   const reach = toDeviceReach(device);
   const presence = toDevicePresence(device);
   const guidance = toGuidance(device);
-  const isPortValid = isValidPort(port);
-  const isSshComplete =
-    !hasSshDraft ||
-    (host.trim().length > 0 && username.trim().length > 0 && isPortValid);
 
   const handleSave = async () => {
     setIsSaving(true);
     setError(null);
     setNotice(null);
     try {
-      // A new credential is created first, then the device references it —
-      // the same key or password any other device can then reuse.
-      let resolvedKeyId = keyId;
-      if (hasSshDraft && auth === "key" && isAddingKey) {
-        const created = await apiPost<KeyView>("/credentials/ssh_keys", {
-          name: newKeyName.trim() || `${name.trim() || host.trim()} key`,
-          private_key: newKeyMaterial,
-          passphrase: newKeyPassphrase.length > 0 ? newKeyPassphrase : null,
-        });
-        resolvedKeyId = created.id;
-      }
-      let resolvedPasswordId = passwordId;
-      if (hasSshDraft && auth === "password" && isAddingPassword) {
-        const created = await apiPost<LoginView>(LOGINS_PATH, {
-          name: newPasswordName.trim() || `${name.trim() || host.trim()} login`,
-          username: null,
-          password: newPasswordValue,
-        });
-        resolvedPasswordId = created.id;
-      }
-      let resolvedSudoPasswordId = sudoPasswordId;
-      if (hasSshDraft && isAddingSudoPassword) {
-        const created = await apiPost<LoginView>(LOGINS_PATH, {
-          name:
-            newSudoPasswordName.trim() || `${name.trim() || host.trim()} sudo`,
-          username: null,
-          password: newSudoPasswordValue,
-        });
-        resolvedSudoPasswordId = created.id;
-      }
       const annotation: DeviceAnnotation = {
         name: name.trim(),
         icon,
         is_wol_enabled: isWolEnabled,
-        ssh: hasSshDraft
-          ? {
-              host: host.trim(),
-              port: Number(port),
-              username: username.trim(),
-              auth,
-              key_id: auth === "key" ? resolvedKeyId || null : null,
-              key_name: null,
-              password_id:
-                auth === "password" ? resolvedPasswordId || null : null,
-              sudo_password_id: resolvedSudoPasswordId || null,
-            }
-          : null,
       };
-      const saved = await apiPut<DeviceView>(
-        `/devices/${device.mac_address}`,
-        annotation,
+      onSaved(
+        await apiPut<DeviceView>(`/devices/${device.mac_address}`, annotation),
       );
-      onSaved(saved);
-      setKeyId(saved.ssh?.key_id ?? "");
-      setPasswordId(saved.ssh?.password_id ?? "");
-      setSudoPasswordId(saved.ssh?.sudo_password_id ?? "");
-      setNewKeyName("");
-      setNewKeyMaterial("");
-      setNewKeyPassphrase("");
-      setNewPasswordName("");
-      setNewPasswordValue("");
-      setNewSudoPasswordName("");
-      setNewSudoPasswordValue("");
-      if (isAddingKey) {
-        keys.reload();
-      }
-      if (isAddingPassword || isAddingSudoPassword) {
-        logins.reload();
-      }
-      setNotice("Saved.");
+      setNotice(WORDING.saved);
     } catch (cause: unknown) {
-      setError(describeSaveError(cause));
+      setError(describeError(cause));
     } finally {
       setIsSaving(false);
     }
@@ -556,13 +295,19 @@ export function DeviceDrawer({
   };
 
   const handleAction = (deviceAction: DeviceAction) => {
+    // A reinstall reaches a machine through its own agent; one that is not
+    // answering takes the SSH installer, which asks for a login first.
+    if (deviceAction.action === "reinstall_agent" && !isAgentOnline) {
+      setIsInstallOpen(true);
+      return;
+    }
     if (!deviceAction.isDestructive) {
       void runAction(deviceAction);
       return;
     }
     confirm.ask({
       title: `${deviceAction.label} ${device.name ?? device.mac_address}`,
-      body: "The machine is told to do this at once; anything unsaved on it is lost.",
+      body: WORDING.actionBody,
       confirmLabel: deviceAction.label,
       onConfirm: () => void runAction(deviceAction),
     });
@@ -574,11 +319,11 @@ export function DeviceDrawer({
     setTaskId(null);
     setRunningLabel(deviceAction.label);
     try {
-      const result = await apiPost<DeviceActionResult>(
+      const started = await apiPost<TaskStarted>(
         `/devices/${device.mac_address}/action`,
         { action: deviceAction.action },
       );
-      setTaskId(result.task_id);
+      setTaskId(started.task_id);
     } catch (cause: unknown) {
       setRunningLabel(null);
       setError(describeActionError(cause));
@@ -588,7 +333,7 @@ export function DeviceDrawer({
   const handleForget = () =>
     confirm.ask({
       title: `Forget ${device.name ?? device.mac_address}`,
-      body: "The device and its saved credentials are deleted from this box.",
+      body: WORDING.forgetBody,
       confirmLabel: "Forget",
       onConfirm: () => void forgetDevice(),
     });
@@ -601,6 +346,11 @@ export function DeviceDrawer({
     } catch (cause: unknown) {
       setError(describeError(cause));
     }
+  };
+
+  const openPage = (path: string) => {
+    onClose();
+    navigate(`${path}?device=${encodeURIComponent(device.mac_address)}`);
   };
 
   // A portal, so the drawer escapes the page's stacking context — inside it,
@@ -627,14 +377,36 @@ export function DeviceDrawer({
               </span>
             </span>
           </div>
-          <button
-            type="button"
-            className="button button--ghost button--small"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            <Icon name="close" size={15} />
-          </button>
+          <div className="device_drawer_head_actions">
+            {isAgentOnline && (
+              <>
+                <button
+                  type="button"
+                  className="button button--ghost button--small"
+                  onClick={() => openPage("/terminals")}
+                >
+                  <Icon name="terminal" size={13} />
+                  {WORDING.terminal}
+                </button>
+                <button
+                  type="button"
+                  className="button button--ghost button--small"
+                  onClick={() => openPage("/files")}
+                >
+                  <Icon name="folder" size={13} />
+                  {WORDING.files}
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              className="button button--ghost button--small"
+              onClick={onClose}
+              aria-label={WORDING.close}
+            >
+              <Icon name="close" size={15} />
+            </button>
+          </div>
         </div>
 
         <div className="device_drawer_body">
@@ -649,17 +421,21 @@ export function DeviceDrawer({
                 className={`badge ${presence === "offline" ? "badge--warn" : "badge--ok"}`}
               >
                 {presence === "reporting"
-                  ? "reporting"
+                  ? WORDING.reporting
                   : presence === "seen"
-                    ? "on the network"
-                    : "offline"}
+                    ? WORDING.seen
+                    : WORDING.offline}
               </span>
               <span className="badge">
-                {device.client?.hostname ?? (device.vendor || "unknown vendor")}
+                {device.client?.hostname ??
+                  (device.vendor || WORDING.unknownVendor)}
               </span>
               {device.client !== null && !device.client.is_online && (
                 <span className="badge">
-                  seen {formatTimeAgo(device.client.last_seen)}
+                  {WORDING.seenAgo.replace(
+                    "{when}",
+                    formatTimeAgo(device.client.last_seen),
+                  )}
                 </span>
               )}
             </div>
@@ -682,9 +458,9 @@ export function DeviceDrawer({
           )}
 
           <div className="device_drawer_section">
-            <span className="section_label">Identity</span>
+            <span className="section_label">{WORDING.identity}</span>
             <label className="field">
-              <span className="field_label">Display name</span>
+              <span className="field_label">{WORDING.displayName}</span>
               <input
                 className="input"
                 value={name}
@@ -693,7 +469,7 @@ export function DeviceDrawer({
               />
             </label>
             <div className="field">
-              <span className="field_label">Icon</span>
+              <span className="field_label">{WORDING.icon}</span>
               <div className="device_drawer_icons">
                 {DEVICE_ICON_NAMES.map((option) => (
                   <button
@@ -714,241 +490,16 @@ export function DeviceDrawer({
                 ))}
               </div>
             </div>
-          </div>
-
-          <div className="device_drawer_section">
-            <span className="section_label">SSH credentials</span>
             <ToggleSwitch
-              isOn={hasSshDraft}
-              onChange={setHasSshDraft}
-              label="Manage this device over SSH"
-              description="Whether this device is managed over SSH. It unlocks the terminal, one-click installs, reboot and shutdown."
+              isOn={isWolEnabled}
+              onChange={setIsWolEnabled}
+              label={WORDING.wol}
+              description={WORDING.wolHint}
             />
-
-            {hasSshDraft && (
-              <>
-                <div className="field_grid">
-                  <label className="field">
-                    <span className="field_label">Host</span>
-                    <input
-                      className="input"
-                      value={host}
-                      onChange={(event) => setHost(event.target.value)}
-                    />
-                  </label>
-                  <label className="field">
-                    <span className="field_label">Port</span>
-                    <input
-                      className={`input ${isPortValid ? "" : "input--invalid"}`}
-                      value={port}
-                      inputMode="numeric"
-                      onChange={(event) => setPort(event.target.value)}
-                    />
-                    {!isPortValid && (
-                      <span className="field_error">Port must be 1–65535.</span>
-                    )}
-                  </label>
-                  <label className="field">
-                    <span className="field_label">Username</span>
-                    <input
-                      className="input"
-                      value={username}
-                      onChange={(event) => setUsername(event.target.value)}
-                    />
-                  </label>
-                  <label className="field">
-                    <span className="field_label">Authentication</span>
-                    <select
-                      className="select"
-                      value={auth}
-                      onChange={(event) =>
-                        setAuth(event.target.value as DeviceAuthMethod)
-                      }
-                    >
-                      <option value="key">Private key</option>
-                      <option value="password">Password</option>
-                    </select>
-                  </label>
-                </div>
-
-                {auth === "key" ? (
-                  <>
-                    <label className="field">
-                      <span className="field_label">SSH key</span>
-                      <select
-                        className="select"
-                        value={keyId}
-                        onChange={(event) => setKeyId(event.target.value)}
-                      >
-                        <option value="">Select a key…</option>
-                        {(keys.data?.keys ?? []).map((storedKey) => (
-                          <option key={storedKey.id} value={storedKey.id}>
-                            {storedKey.name} · {shortFingerprint(storedKey)}
-                          </option>
-                        ))}
-                        <option value={NEW_KEY_OPTION}>
-                          ＋ Paste a new key…
-                        </option>
-                      </select>
-                      <span className="field_hint">
-                        Pick a stored key, or paste a new one.
-                      </span>
-                    </label>
-                    {isAddingKey && (
-                      <div className="device_drawer_newkey">
-                        <label className="field">
-                          <span className="field_label">New key name</span>
-                          <input
-                            className="input"
-                            value={newKeyName}
-                            placeholder={`${name.trim() || "device"} key`}
-                            onChange={(event) =>
-                              setNewKeyName(event.target.value)
-                            }
-                          />
-                        </label>
-                        <label className="field">
-                          <span className="field_label">Private key</span>
-                          <textarea
-                            className="input input--key"
-                            value={newKeyMaterial}
-                            spellCheck={false}
-                            autoComplete="off"
-                            rows={8}
-                            placeholder={PRIVATE_KEY_PLACEHOLDER}
-                            onChange={(event) =>
-                              setNewKeyMaterial(event.target.value)
-                            }
-                          />
-                          <span className="field_hint">
-                            Stored on the gateway readable only by root, and
-                            never shown again.
-                          </span>
-                        </label>
-                        <label className="field">
-                          <span className="field_label">Key passphrase</span>
-                          <PasswordInput
-                            value={newKeyPassphrase}
-                            onChange={setNewKeyPassphrase}
-                          />
-                          <span className="field_hint">
-                            Only if the key is encrypted. Leave blank otherwise.
-                          </span>
-                        </label>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <label className="field">
-                      <span className="field_label">Password</span>
-                      <select
-                        className="select"
-                        value={passwordId}
-                        onChange={(event) => setPasswordId(event.target.value)}
-                      >
-                        <option value="">Select a login…</option>
-                        {(logins.data?.logins ?? []).map((storedLogin) => (
-                          <option key={storedLogin.id} value={storedLogin.id}>
-                            {loginLabel(storedLogin)}
-                          </option>
-                        ))}
-                        <option value={NEW_PASSWORD_OPTION}>
-                          ＋ Store a new password…
-                        </option>
-                      </select>
-                      <span className="field_hint">
-                        Pick a stored login, or store a new one.
-                      </span>
-                    </label>
-                    {isAddingPassword && (
-                      <div className="device_drawer_newkey">
-                        <label className="field">
-                          <span className="field_label">New password name</span>
-                          <input
-                            className="input"
-                            value={newPasswordName}
-                            placeholder={`${name.trim() || host.trim() || "device"} login`}
-                            onChange={(event) =>
-                              setNewPasswordName(event.target.value)
-                            }
-                          />
-                        </label>
-                        <label className="field">
-                          <span className="field_label">Password</span>
-                          <PasswordInput
-                            value={newPasswordValue}
-                            onChange={setNewPasswordValue}
-                          />
-                          <span className="field_hint">
-                            Sealed in the vault and never shown again.
-                          </span>
-                        </label>
-                      </div>
-                    )}
-                  </>
-                )}
-
-                <label className="field">
-                  <span className="field_label">Sudo password</span>
-                  <select
-                    className="select"
-                    value={sudoPasswordId}
-                    onChange={(event) => setSudoPasswordId(event.target.value)}
-                  >
-                    <option value="">(none)</option>
-                    {(logins.data?.logins ?? []).map((storedLogin) => (
-                      <option key={storedLogin.id} value={storedLogin.id}>
-                        {loginLabel(storedLogin)}
-                      </option>
-                    ))}
-                    <option value={NEW_PASSWORD_OPTION}>
-                      ＋ Store a new password…
-                    </option>
-                  </select>
-                  <span className="field_hint">
-                    Needed for installs. Leave (none) when the account has
-                    passwordless sudo.
-                  </span>
-                </label>
-                {isAddingSudoPassword && (
-                  <div className="device_drawer_newkey">
-                    <label className="field">
-                      <span className="field_label">New password name</span>
-                      <input
-                        className="input"
-                        value={newSudoPasswordName}
-                        placeholder={`${name.trim() || host.trim() || "device"} sudo`}
-                        onChange={(event) =>
-                          setNewSudoPasswordName(event.target.value)
-                        }
-                      />
-                    </label>
-                    <label className="field">
-                      <span className="field_label">Sudo password</span>
-                      <PasswordInput
-                        value={newSudoPasswordValue}
-                        onChange={setNewSudoPasswordValue}
-                      />
-                      <span className="field_hint">
-                        Sealed in the vault and never shown again.
-                      </span>
-                    </label>
-                  </div>
-                )}
-
-                <ToggleSwitch
-                  isOn={isWolEnabled}
-                  onChange={setIsWolEnabled}
-                  label="Wake-on-LAN"
-                  description="Whether this device can be woken with a magic packet sent to its MAC from the LAN interface."
-                />
-              </>
-            )}
           </div>
 
           <div className="device_drawer_section">
-            <span className="section_label">Actions</span>
+            <span className="section_label">{WORDING.actions}</span>
             {guidance !== null && (
               <div className={`notice ${guidance.tone}`}>
                 <Icon name={guidance.icon} size={15} />
@@ -963,7 +514,7 @@ export function DeviceDrawer({
                         onClick={() => void handleEnrollmentLink()}
                       >
                         <Icon name="link" size={14} />
-                        Get link
+                        {WORDING.getLink}
                       </button>
                     </div>
                   )}
@@ -977,132 +528,89 @@ export function DeviceDrawer({
                 onDismiss={() => setEnrollment(null)}
               />
             )}
-            {reach !== "none" && (
-              <div className="device_drawer_actions">
-                <button
-                  type="button"
-                  className="button"
-                  onClick={() => void handleWakeOnLan()}
-                >
-                  <Icon name="bolt" size={14} />
-                  Wake-on-LAN
-                </button>
-                <button
-                  type="button"
-                  className="button"
-                  onClick={() => setIsTerminalOpen(true)}
-                >
-                  <Icon name="terminal" size={14} />
-                  Open terminal
-                </button>
-                <button
-                  type="button"
-                  className="button"
-                  onClick={() => setIsFilesOpen(true)}
-                >
-                  <Icon name="folder" size={14} />
-                  Transfer files
-                </button>
-                {DEVICE_ACTIONS.map((deviceAction) => (
+            <div className="device_drawer_actions">
+              <button
+                type="button"
+                className="button"
+                onClick={() => void handleWakeOnLan()}
+              >
+                <Icon name="bolt" size={14} />
+                {WORDING.wake}
+              </button>
+              {isManaged ? (
+                MANAGED_ACTIONS.map((deviceAction) => (
                   <button
                     key={deviceAction.action}
                     type="button"
                     className={`button ${deviceAction.isDestructive ? "button--danger" : ""}`}
-                    disabled={isOperationOpen}
+                    disabled={task.isRunning}
                     onClick={() => handleAction(deviceAction)}
                   >
                     <Icon name={deviceAction.icon} size={14} />
-                    {deviceAction.action === "install_client" &&
-                    device.client !== null &&
-                    device.client.is_managed
-                      ? "Reinstall agent"
-                      : deviceAction.label}
+                    {deviceAction.label}
                   </button>
-                ))}
-              </div>
-            )}
+                ))
+              ) : (
+                <button
+                  type="button"
+                  className="button"
+                  disabled={task.isRunning}
+                  onClick={() => setIsInstallOpen(true)}
+                >
+                  <Icon name="download" size={14} />
+                  {WORDING.install}
+                </button>
+              )}
+            </div>
           </div>
 
-          {shownOperation !== null && (
+          {taskId !== null && (
             <div className="device_drawer_log">
               <div className="device_drawer_log_head">
-                <span className="section_label">{INSTALL_OUTPUT_LABEL}</span>
+                <span className="section_label">{WORDING.output}</span>
               </div>
-              {shownOperation.kind === "task" ? (
-                <>
-                  <div className="device_drawer_operation_line">
-                    <StatusDot
-                      tone={
-                        task.isRunning
-                          ? "warn"
-                          : task.exitCode === 0
-                            ? "ok"
-                            : task.exitCode === null
-                              ? "idle"
-                              : "error"
-                      }
-                      isPulsing={task.isRunning}
-                      label={
-                        task.isRunning
-                          ? `${runningLabel ?? "action"} · running`
-                          : task.exitCode === null
-                            ? (runningLabel ?? "action")
-                            : `${runningLabel ?? "action"} · exit ${task.exitCode}`
-                      }
-                    />
-                  </div>
-                  <pre className="device_drawer_log_output" ref={logRef}>
-                    {stripAnsi(task.lines.join("\n"))}
-                  </pre>
-                  {task.error !== null && (
-                    <span className="field_error">{task.error}</span>
+              <div className="device_drawer_operation_line">
+                <StatusDot
+                  tone={
+                    task.isRunning
+                      ? "warn"
+                      : task.exitCode === 0
+                        ? "ok"
+                        : task.exitCode === null
+                          ? "idle"
+                          : "error"
+                  }
+                  isPulsing={task.isRunning}
+                  label={describeTask(
+                    runningLabel,
+                    task.isRunning,
+                    task.exitCode,
                   )}
-                </>
-              ) : (
-                <>
-                  <div className="device_drawer_operation_line">
-                    <StatusDot
-                      tone={orderTone(shownOperation.order.state)}
-                      isPulsing={ORDER_RUNNING_STATES.includes(
-                        shownOperation.order.state,
-                      )}
-                      label={describeOrder(shownOperation.order)}
-                    />
-                  </div>
-                  {shownOperation.order.output.length > 0 && (
-                    <pre className="device_drawer_log_output">
-                      {stripAnsi(shownOperation.order.output)}
-                    </pre>
-                  )}
-                </>
+                />
+              </div>
+              <pre className="device_drawer_log_output" ref={logRef}>
+                {stripAnsi(task.lines.join("\n"))}
+              </pre>
+              {task.error !== null && (
+                <span className="field_error">{task.error}</span>
               )}
             </div>
           )}
 
-          {device.client !== null && device.client.is_managed && (
-            <DeviceServices
-              macAddress={device.mac_address}
-              isOnline={device.client.is_online}
-              commandResults={device.client.command_results}
+          {isManaged && (
+            <RemoteDesktopPanel
+              device={device}
+              moduleRevision={String(moduleRevision)}
             />
           )}
-
-          {device.client !== null &&
-            device.client.is_managed &&
-            device.ssh !== null && (
-              <RemoteDesktopPanel
-                device={device}
-                moduleRevision={orders
-                  .map((order) => `${order.id}:${order.state}`)
-                  .join(",")}
-              />
-            )}
 
           {device.client != null &&
             device.client.command_results.length > 0 && (
               <div className="device_drawer_log">
                 <div className="device_drawer_log_head">
-                  <span className="section_label">{COMMAND_RESULTS_LABEL}</span>
+                  <span className="section_label">
+                    {WORDING.commandResults}
+                  </span>
                 </div>
                 {device.client.command_results.map((outcome) => (
                   <div key={outcome.id} className="device_drawer_log_head">
@@ -1135,32 +643,27 @@ export function DeviceDrawer({
               onClick={() => handleForget()}
             >
               <Icon name="trash" size={13} />
-              Forget device
+              {WORDING.forget}
             </button>
           )}
           <button
             type="button"
             className="button button--primary button--commit"
-            disabled={isSaving || !isSshComplete}
+            disabled={isSaving}
             onClick={() => void handleSave()}
           >
             <Icon name="check" size={14} />
-            {isSaving ? "Saving…" : "Save device"}
+            {isSaving ? WORDING.saving : WORDING.save}
           </button>
         </div>
       </aside>
 
-      {isTerminalOpen && (
-        <TerminalModal
+      {isInstallOpen && (
+        <InstallAgentModal
           device={device}
-          onClose={() => setIsTerminalOpen(false)}
-        />
-      )}
-
-      {isFilesOpen && (
-        <FileTransferModal
-          device={device}
-          onClose={() => setIsFilesOpen(false)}
+          isReinstall={isManaged}
+          onClose={() => setIsInstallOpen(false)}
+          onFinished={onTaskFinished}
         />
       )}
       {confirm.modal}
@@ -1198,58 +701,31 @@ function toGuidance(device: DeviceView): DeviceGuidance | null {
   };
 }
 
-/** Wording for a failed action, with the coded refusals spelled out. */
-function describeActionError(cause: unknown): string {
-  if (
-    cause instanceof ApiError &&
-    cause.code === "unsupported_remote_install" &&
-    typeof cause.detail === "object" &&
-    cause.detail !== null
-  ) {
-    const os = String((cause.detail as Record<string, unknown>).os ?? "");
-    return `This machine reports ${os || "another OS"}; the SSH installer is for Linux; use Get link instead.`;
+/** The line above the action's output: what ran, and where it stands. */
+function describeTask(
+  label: string | null,
+  isRunning: boolean,
+  exitCode: number | null,
+): string {
+  const action = label ?? "action";
+  if (isRunning) {
+    return WORDING.running.replace("{action}", action);
   }
-  if (cause instanceof ApiError && cause.code === "agent_package_missing") {
-    return "This hub carries no agent package. An installed hub ships the Linux builds it was made with; a checkout drops one into config/devices/packages with agent/packaging/build_deb.py.";
+  if (exitCode === null) {
+    return action;
   }
-  return describeError(cause);
+  return WORDING.finished
+    .replace("{action}", action)
+    .replace("{code}", String(exitCode));
 }
 
-function describeSaveError(cause: unknown): string {
-  if (
-    cause instanceof ApiError &&
-    typeof cause.detail === "object" &&
-    cause.detail !== null
-  ) {
-    const detail = cause.detail as Record<string, unknown>;
-    if (detail.code === "unknown_credential") {
-      const wording = UNKNOWN_CREDENTIAL_WORDING[String(detail.field)];
-      if (wording !== undefined) {
-        return wording;
-      }
+/** Wording for a failed action, with the coded refusals spelled out. */
+function describeActionError(cause: unknown): string {
+  if (cause instanceof ApiError) {
+    const wording = ACTION_ERROR_WORDING[cause.code];
+    if (wording !== undefined) {
+      return wording;
     }
   }
   return describeError(cause);
-}
-
-function isValidPort(value: string): boolean {
-  if (!/^\d{1,5}$/.test(value)) {
-    return false;
-  }
-  const port = Number(value);
-  return port >= 1 && port <= 65535;
-}
-
-// The picker row for one login: its name, and its username when it has one.
-function loginLabel(login: LoginView): string {
-  return login.username === null
-    ? login.name
-    : `${login.name} · ${login.username}`;
-}
-
-// Enough of the fingerprint to tell two keys apart in a dropdown, without
-// filling the row.
-function shortFingerprint(key: KeyView): string {
-  const body = key.fingerprint.replace(/^SHA256:/, "");
-  return body.length > 12 ? `${body.slice(0, 12)}…` : body;
 }

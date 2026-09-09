@@ -1,24 +1,22 @@
-"""Driving LAN devices over SSH.
+"""Putting the agent on a device over SSH.
 
-Everything the panel does to another machine goes through here: opening an
-interactive shell, running a privileged command with the stored sudo password,
-and the one-click deployments (remote desktop clients, and the neutrino_agent
-agent itself).
+SSH exists here for one thing: installing or reinstalling the agent on a
+machine that has none. Every other device operation rides the agent's own
+channel. The sudo password an install needs is typed for that install,
+fed to ``sudo`` over stdin, and kept nowhere.
 
-Output is streamed rather than collected, because these operations take minutes
-and the panel shows them live.
+Output is streamed rather than collected, because an install takes minutes
+and the panel shows it live.
 
 A device's host key is recorded the first time it is reached and checked on
 every connection after that, because what travels over these sessions is the
-sudo password the panel holds for the machine. See
+sudo password somebody just typed. See
 :mod:`neutrino_hub.modules.devices.host_keys`.
 """
 
 import asyncio
-import posixpath
 import shlex
-import stat
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -54,9 +52,6 @@ HOST_KEY_CHANGED_MESSAGE = (
     "something else has taken its address. Remove the device and add it again "
     "to accept the new key."
 )
-READ_CHUNK_BYTES = 4096
-SFTP_CHUNK_BYTES = 256 * 1024
-
 # uname -m to the architecture names dpkg and arch.json use.
 MACHINE_TO_ARCH = {
     "x86_64": "amd64",
@@ -77,25 +72,25 @@ def _normalise_machine(machine: str) -> str:
     return MACHINE_TO_ARCH.get(machine, machine)
 
 
-def _password_material(password_id: str | None) -> str | None:
+def _password_material(login_id: str | None) -> str | None:
     """Open one referenced login's password.
 
     Args:
-        password_id: The vault object's id, or None when the device names
+        login_id: The vault object's id, or None when the device names
             none.
 
     Returns:
         The password, or None when the id is absent, stale, or names another
         kind — the same stance as a stale ``key_id``.
     """
-    if not password_id:
+    if not login_id:
         return None
     vault = SecretVault()
-    record = vault.get(password_id)
+    record = vault.get(login_id)
     if record is None or record.kind != LOGIN_KIND:
         return None
     try:
-        return vault.open(password_id).get("password")
+        return vault.open(login_id).get("password")
     except VaultError:
         return None
 
@@ -114,11 +109,7 @@ class SshCredentials:
             names one directly.
         private_key_passphrase: Passphrase, when the key is encrypted.
         password: Login password, opened from the vault for the device's
-            ``password_id``.
-        sudo_password: Password fed to ``sudo -S`` over stdin for privileged
-            steps, opened from the vault for the device's
-            ``sudo_password_id``. None means the account has passwordless
-            sudo.
+            ``login_id`` or typed for one install.
     """
 
     host: str
@@ -128,17 +119,16 @@ class SshCredentials:
     private_key_path: str | None = None
     private_key_passphrase: str | None = None
     password: str | None = None
-    sudo_password: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "SshCredentials":
         """Build from a device's ``ssh`` block in ``config/devices``.
 
-        A device references its key by ``key_id`` and its passwords by
-        ``password_id`` and ``sudo_password_id``; the material is opened from
-        the vault here, so the device config never holds any. A stale
-        reference yields no material rather than an error. A
-        ``private_key_path`` naming a file is still honoured.
+        A device references its key by ``key_id`` and its password by
+        ``login_id``; the material is opened from the vault here, so the
+        device config never holds any. A stale reference yields no material
+        rather than an error. A ``private_key_path`` naming a file is still
+        honoured.
 
         Args:
             data: The stored SSH settings.
@@ -160,35 +150,8 @@ class SshCredentials:
             private_key=private_key,
             private_key_path=data.get("private_key_path"),
             private_key_passphrase=passphrase,
-            password=_password_material(data.get("password_id")),
-            sudo_password=_password_material(data.get("sudo_password_id")),
+            password=_password_material(data.get("login_id")),
         )
-
-    @property
-    def has_sudo_password(self) -> bool:
-        """Whether a sudo password was supplied."""
-        return bool(self.sudo_password)
-
-
-@dataclass
-class RemoteFileEntry:
-    """One name in a remote directory listing.
-
-    Attributes:
-        name: Base name within its directory.
-        is_dir: Whether it is a directory.
-        is_link: Whether it is a symlink. A link is offered as a directory to
-            step into, and stepping into one that points at a file simply
-            fails with the server's message.
-        size_bytes: Size, zero for directories.
-        modified_at: Modification time as Unix seconds.
-    """
-
-    name: str
-    is_dir: bool = False
-    is_link: bool = False
-    size_bytes: int = 0
-    modified_at: int = 0
 
 
 class DeviceSshOperator:
@@ -233,9 +196,8 @@ class DeviceSshOperator:
     ) -> tuple[int, str]:
         """Run one command and collect its output.
 
-        For quick status probes, where streaming would be overkill. A locale is
-        forced because some tools (AnyDesk among them) refuse to run without a
-        UTF-8 one, and an SSH session carries none by default.
+        For quick status probes, where streaming would be overkill. A UTF-8
+        locale is forced, since an SSH session carries none by default.
 
         Args:
             command: Shell command to run on the device.
@@ -261,7 +223,12 @@ class DeviceSshOperator:
             return SSH_UNREACHABLE_STATUS, str(error)
 
     async def run_privileged_once(
-        self, command: str, *, timeout_s: int = 30, input_text: str | None = None
+        self,
+        command: str,
+        *,
+        timeout_s: int = 30,
+        input_text: str | None = None,
+        sudo_password: str | None = None,
     ) -> tuple[int, str]:
         """Run one command through sudo and collect its output.
 
@@ -274,11 +241,13 @@ class DeviceSshOperator:
             timeout_s: How long to wait before giving up.
             input_text: What the command itself reads from stdin, after the
                 sudo password line when one is needed.
+            sudo_password: What sudo is fed when it prompts; None when the
+                account is expected not to be asked.
 
         Returns:
             The exit code and combined output.
         """
-        plan, refusal = await self._sudo_plan(command, input_text)
+        plan, refusal = await self._sudo_plan(command, input_text, sudo_password)
         if plan is None:
             return 1, refusal
         wrapped, payload = plan
@@ -347,7 +316,11 @@ class DeviceSshOperator:
             yield f"\n[connection failed: {error}]\n"
 
     async def run_privileged_stream(
-        self, command: str, *, input_text: str | None = None
+        self,
+        command: str,
+        *,
+        input_text: str | None = None,
+        sudo_password: str | None = None,
     ) -> AsyncIterator[str]:
         """Run a command through sudo and yield its output.
 
@@ -355,11 +328,13 @@ class DeviceSshOperator:
             command: Shell command to run as root on the device.
             input_text: What the command itself reads from stdin, after the
                 sudo password line when one is needed.
+            sudo_password: What sudo is fed when it prompts; None when the
+                account is expected not to be asked.
 
         Yields:
             Chunks of combined output, then a final status line.
         """
-        plan, refusal = await self._sudo_plan(command, input_text)
+        plan, refusal = await self._sudo_plan(command, input_text, sudo_password)
         if plan is None:
             yield f"{refusal}\n"
             yield "\n[exit 1]\n"
@@ -373,6 +348,7 @@ class DeviceSshOperator:
         *,
         packages: AgentPackageCache,
         enrollment_link: str,
+        sudo_password: str | None = None,
     ) -> AsyncIterator[str]:
         """Deliver the agent as a native package and join it to this hub.
 
@@ -388,6 +364,8 @@ class DeviceSshOperator:
             packages: The agent packages this hub can deliver, asked once the
                 machine and its package manager are known.
             enrollment_link: The ticket the panel generated for this device.
+            sudo_password: What sudo is fed when it prompts, typed for this
+                install; None when the account is expected not to be asked.
 
         Yields:
             Progress lines and the remote tools' output. A device that is not
@@ -457,6 +435,7 @@ class DeviceSshOperator:
             code, output = await self.run_privileged_once(
                 "DEBIAN_FRONTEND=noninteractive apt-get update",
                 timeout_s=REFRESH_TIMEOUT_S,
+                sudo_password=sudo_password,
             )
             if output:
                 yield output + "\n"
@@ -481,7 +460,7 @@ class DeviceSshOperator:
             )
         yield f"[installing the {family} package]\n"
         code, output = await self.run_privileged_once(
-            install_command, timeout_s=INSTALL_TIMEOUT_S
+            install_command, timeout_s=INSTALL_TIMEOUT_S, sudo_password=sudo_password
         )
         if output:
             yield output + "\n"
@@ -491,199 +470,18 @@ class DeviceSshOperator:
 
         yield "[joining this hub]\n"
         code, output = await self.run_privileged_once(
-            f"nagent connect --yes {shlex.quote(enrollment_link)}"
+            f"nagent connect --yes {shlex.quote(enrollment_link)}",
+            sudo_password=sudo_password,
         )
         if output:
             yield output + "\n"
         yield f"\n[exit {code}]\n"
 
-    async def open_shell(
-        self,
-        *,
-        on_output: Callable[[str], None],
-        term_size: tuple[int, int] = (80, 24),
-    ) -> "SshShellSession":
-        """Open an interactive shell for the terminal view.
-
-        Args:
-            on_output: Called with each chunk the remote shell writes.
-            term_size: Initial columns and rows.
-
-        Returns:
-            A live session the caller writes keystrokes into.
-
-        Raises:
-            OSError: If the connection cannot be established.
-            asyncssh.Error: If SSH negotiation fails.
-        """
-        connection = await self._open_connection()
-        process = await connection.create_process(
-            term_type="xterm-256color",
-            term_size=term_size,
-            stderr=asyncssh.STDOUT,
-        )
-        return SshShellSession(
-            connection=connection, process=process, on_output=on_output
-        )
-
-    async def list_dir(self, path: str) -> tuple[str, list[RemoteFileEntry]]:
-        """List a remote directory for the file-transfer view.
-
-        Args:
-            path: Directory to list; empty means the login user's home.
-
-        Returns:
-            The resolved absolute path and its entries, unsorted.
-
-        Raises:
-            OSError: If the connection cannot be established.
-            asyncssh.Error: If SSH fails or the path is not a listable
-                directory.
-        """
-        async with self._connect() as connection:
-            async with connection.start_sftp_client() as sftp:
-                resolved = await sftp.realpath(path or ".")
-                entries = []
-                for item in await sftp.readdir(resolved):
-                    if item.filename in (".", ".."):
-                        continue
-                    mode = item.attrs.permissions or 0
-                    entries.append(
-                        RemoteFileEntry(
-                            name=item.filename,
-                            is_dir=stat.S_ISDIR(mode),
-                            is_link=stat.S_ISLNK(mode),
-                            size_bytes=item.attrs.size or 0,
-                            modified_at=item.attrs.mtime or 0,
-                        )
-                    )
-                return resolved, entries
-
-    async def open_download(self, path: str) -> "SftpDownload":
-        """Open a remote file for streaming to the browser.
-
-        Args:
-            path: The file to read.
-
-        Returns:
-            A live download; the caller must drain or close it.
-
-        Raises:
-            OSError: If the connection cannot be established.
-            asyncssh.Error: If SSH fails or the file cannot be opened.
-        """
-        connection = await self._open_connection()
-        try:
-            sftp = await connection.start_sftp_client()
-            attrs = await sftp.stat(path)
-            file = await sftp.open(path, "rb")
-        except (OSError, asyncssh.Error):
-            connection.close()
-            raise
-        return SftpDownload(
-            connection=connection, file=file, size_bytes=attrs.size or 0
-        )
-
-    async def upload_stream(self, path: str, chunks: AsyncIterator[bytes]) -> None:
-        """Write a browser upload to a remote file.
-
-        Missing parent directories are created, which is what lets a whole
-        folder upload arrive as a stream of files with relative paths.
-
-        Args:
-            path: Destination file, overwritten if present.
-            chunks: The request body as it arrives.
-
-        Raises:
-            OSError: If the connection cannot be established.
-            asyncssh.Error: If SSH fails or the file cannot be written.
-        """
-        async with self._connect() as connection:
-            async with connection.start_sftp_client() as sftp:
-                parent = posixpath.dirname(path)
-                if parent not in ("", "/"):
-                    await sftp.makedirs(parent, exist_ok=True)
-                async with sftp.open(path, "wb") as file:
-                    async for chunk in chunks:
-                        await file.write(chunk)
-
-    async def open_archive_download(self, path: str) -> "SshArchiveDownload":
-        """Pack a remote directory or file into a tar.gz stream.
-
-        The archive is built by ``tar`` on the device and streamed as it is
-        produced, so nothing is staged on either side.
-
-        Args:
-            path: The directory or file to pack.
-
-        Returns:
-            A live download; the caller must drain or close it.
-
-        Raises:
-            OSError: If the connection cannot be established.
-            asyncssh.Error: If SSH fails.
-        """
-        parent, name = posixpath.split(path.rstrip("/"))
-        connection = await self._open_connection()
-        try:
-            process = await connection.create_process(
-                f"tar -czf - -C {shlex.quote(parent or '/')} {shlex.quote(name)}",
-                encoding=None,
-            )
-        except (OSError, asyncssh.Error):
-            connection.close()
-            raise
-        return SshArchiveDownload(connection=connection, process=process)
-
-    async def make_dir(self, path: str) -> None:
-        """Create a remote directory.
-
-        Args:
-            path: The directory to create.
-
-        Raises:
-            OSError: If the connection cannot be established.
-            asyncssh.Error: If SSH fails or the directory cannot be made.
-        """
-        async with self._connect() as connection:
-            async with connection.start_sftp_client() as sftp:
-                await sftp.mkdir(path)
-
-    async def rename_path(self, path: str, new_path: str) -> None:
-        """Rename or move a remote file or directory.
-
-        Args:
-            path: The current path.
-            new_path: The new path.
-
-        Raises:
-            OSError: If the connection cannot be established.
-            asyncssh.Error: If SSH fails or the rename is refused.
-        """
-        async with self._connect() as connection:
-            async with connection.start_sftp_client() as sftp:
-                await sftp.rename(path, new_path)
-
-    async def delete_path(self, path: str) -> None:
-        """Delete a remote file, or a directory with everything in it.
-
-        Args:
-            path: The path to delete.
-
-        Raises:
-            OSError: If the connection cannot be established.
-            asyncssh.Error: If SSH fails or something cannot be removed.
-        """
-        async with self._connect() as connection:
-            async with connection.start_sftp_client() as sftp:
-                attrs = await sftp.lstat(path)
-                if stat.S_ISDIR(attrs.permissions or 0):
-                    await sftp.rmtree(path)
-                else:
-                    await sftp.remove(path)
-
     async def _sudo_plan(
-        self, command: str, input_text: str | None = None
+        self,
+        command: str,
+        input_text: str | None = None,
+        sudo_password: str | None = None,
     ) -> "tuple[tuple[str, str | None] | None, str]":
         """Compose a privileged run so stdin is never shared by accident.
 
@@ -697,6 +495,7 @@ class DeviceSshOperator:
             command: The command to run as root.
             input_text: What the command itself reads from stdin, when
                 anything.
+            sudo_password: What sudo is fed when it prompts.
 
         Returns:
             The plan — the command to send and its stdin payload — and an
@@ -709,15 +508,14 @@ class DeviceSshOperator:
             self._is_sudo_passwordless = code == 0
         if self._is_sudo_passwordless:
             return (f"sudo -n bash -lc {shlex.quote(command)}", input_text), ""
-        if not self._credentials.has_sudo_password:
+        if not sudo_password:
             return None, (
-                "[sudo on this device wants a password and none is stored; "
-                "add one in the device's drawer]"
+                "[sudo on this device wants a password and none was given; "
+                "type one in the install dialog]"
             )
-        password = self._credentials.sudo_password or ""
         return (
             f"sudo -S -p '' -k bash -lc {shlex.quote(command)}",
-            f"{password}\n{input_text or ''}",
+            f"{sudo_password}\n{input_text or ''}",
         ), ""
 
     @asynccontextmanager
@@ -726,11 +524,6 @@ class DeviceSshOperator:
         async with asyncssh.connect(**self._connect_options()) as connection:
             self._remember_host_key(connection)
             yield connection
-
-    async def _open_connection(self) -> asyncssh.SSHClientConnection:
-        connection = await asyncssh.connect(**self._connect_options())
-        self._remember_host_key(connection)
-        return connection
 
     def _remember_host_key(self, connection) -> None:
         """Write down the key this device presented, the first time it does.
@@ -759,8 +552,8 @@ class DeviceSshOperator:
     def _connect_options(self) -> dict:
         # None means "take this one on trust", which is only ever the first
         # connection to a device. Once a key is on file asyncssh checks it and
-        # refuses a mismatch, so the sudo password this operator carries
-        # cannot be handed to something that merely answered on the address.
+        # refuses a mismatch, so a sudo password somebody typed cannot be
+        # handed to something that merely answered on the address.
         options: dict = {
             "host": self._credentials.host,
             "port": self._credentials.port,
@@ -784,135 +577,3 @@ class DeviceSshOperator:
         if self._credentials.password:
             options["password"] = self._credentials.password
         return options
-
-
-class SshShellSession:
-    """One live interactive shell behind the terminal websocket."""
-
-    def __init__(
-        self,
-        *,
-        connection: asyncssh.SSHClientConnection,
-        process: asyncssh.SSHClientProcess,
-        on_output: Callable[[str], None],
-    ):
-        """
-        Args:
-            connection: The open SSH connection, closed with the session.
-            process: The remote shell process.
-            on_output: Called with each chunk of remote output.
-        """
-        self._connection = connection
-        self._process = process
-        self._on_output = on_output
-
-    async def pump_output(self) -> int:
-        """Forward remote output until the shell exits.
-
-        Reads with ``read()`` rather than iterating the stream. Iterating an
-        asyncssh reader yields one line at a time, which for an interactive
-        shell means a typed character never reaches the browser until Enter is
-        pressed — the whole point of a terminal is to echo each keystroke as it
-        is typed. ``read()`` returns whatever bytes are available immediately.
-
-        Returns:
-            The shell's exit status.
-        """
-        while True:
-            chunk = await self._process.stdout.read(READ_CHUNK_BYTES)
-            if not chunk:
-                break
-            self._on_output(chunk)
-        await self._process.wait_closed()
-        return self._process.exit_status or 0
-
-    def write(self, data: str) -> None:
-        """Send keystrokes to the remote shell.
-
-        Args:
-            data: Raw terminal input.
-        """
-        self._process.stdin.write(data)
-
-    def resize(self, columns: int, rows: int) -> None:
-        """Tell the remote shell its terminal size changed.
-
-        Args:
-            columns: New column count.
-            rows: New row count.
-        """
-        self._process.change_terminal_size(columns, rows)
-
-    def close(self) -> None:
-        """Close the shell and the underlying connection."""
-        self._process.close()
-        self._connection.close()
-
-
-class SftpDownload:
-    """One remote file being streamed to the browser."""
-
-    def __init__(
-        self,
-        *,
-        connection: asyncssh.SSHClientConnection,
-        file,
-        size_bytes: int,
-    ):
-        """
-        Args:
-            connection: The open SSH connection, closed when the stream ends.
-            file: The open remote file.
-            size_bytes: The file's size, for the response headers.
-        """
-        self._connection = connection
-        self._file = file
-        self.size_bytes = size_bytes
-
-    async def chunks(self) -> AsyncIterator[bytes]:
-        """Yield the file's content, closing everything when done.
-
-        The connection is closed in ``finally`` so a browser cancelling the
-        download mid-stream still tears the SSH session down.
-        """
-        try:
-            while True:
-                chunk = await self._file.read(SFTP_CHUNK_BYTES)
-                if not chunk:
-                    return
-                yield chunk
-        finally:
-            self._connection.close()
-
-
-class SshArchiveDownload:
-    """One remote directory being packed and streamed to the browser."""
-
-    def __init__(
-        self,
-        *,
-        connection: asyncssh.SSHClientConnection,
-        process: asyncssh.SSHClientProcess,
-    ):
-        """
-        Args:
-            connection: The open SSH connection, closed when the stream ends.
-            process: The remote ``tar`` writing the archive to stdout.
-        """
-        self._connection = connection
-        self._process = process
-
-    async def chunks(self) -> AsyncIterator[bytes]:
-        """Yield the archive as ``tar`` produces it.
-
-        The connection is closed in ``finally`` so a cancelled download also
-        stops the remote ``tar``.
-        """
-        try:
-            while True:
-                chunk = await self._process.stdout.read(SFTP_CHUNK_BYTES)
-                if not chunk:
-                    return
-                yield chunk
-        finally:
-            self._connection.close()

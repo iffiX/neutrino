@@ -11,11 +11,11 @@ import "./shell_terminal.css";
 /**
  * A terminal wired to a shell over a websocket.
  *
- * The one terminal in the panel. Both places that need one — an SSH session to
- * a device, and a shell on the gateway itself — differ only in which socket
- * they open and what surrounds them, so they differ only in props here. The
- * wiring underneath is identical, and having it in one place is what stops the
- * two drifting apart: the line-buffering bug that once made the device
+ * The one terminal in the panel. Every place that needs one — a shell on a
+ * managed machine, a shell inside a container — differs only in which socket
+ * it opens and what surrounds it, so they differ only in props here. The
+ * wiring underneath is identical, and having it in one place is what stops
+ * them drifting apart: the line-buffering bug that once made the device
  * terminal swallow keystrokes until Enter would have had to be found twice.
  *
  * xterm.js owns the DOM inside the surface, so this is imperative and lives in
@@ -32,7 +32,7 @@ export type TerminalState = "connecting" | "open" | "closed";
 const TERMINAL_SCROLLBACK_LINES = 5000;
 
 interface ShellTerminalProps {
-  /** The websocket path to open, e.g. `/ws/terminal`. */
+  /** The websocket path to open, e.g. `/ws/agent_shell/<device_id>`. */
   socketPath: string;
   /**
    * False keeps the terminal mounted but out of sight. Unmounting would close

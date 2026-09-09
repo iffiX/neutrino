@@ -58,6 +58,82 @@ def unlock_vault(monkeypatch, tmp_path) -> bytes:
     return data_key
 
 
+class ScriptedAgentStream:
+    """One stream as a route sees it, with the agent played by a test.
+
+    Built on the loop the route runs on; a test on another thread drives it
+    through :meth:`feed` and :meth:`finish`, which hop onto that loop.
+
+    Attributes:
+        kind: The stream kind it was opened as.
+        args: What the open carried.
+        sent: Every byte the route sent, in order.
+        resizes: Every ``(cols, rows)`` the route sent.
+        close_info: What the stream closed with, once it has.
+    """
+
+    def __init__(self, kind: str, args: dict):
+        import asyncio
+
+        self.kind = kind
+        self.args = dict(args)
+        self.sent: list = []
+        self.resizes: list = []
+        self.close_info = None
+        self.is_abandoned = False
+        self.is_close_asked = False
+        self._loop = asyncio.get_running_loop()
+        self._inbound: asyncio.Queue = asyncio.Queue()
+        self._closed = asyncio.Event()
+
+    @property
+    def is_closed(self) -> bool:
+        return self._closed.is_set()
+
+    async def recv(self):
+        if self._closed.is_set() and self._inbound.empty():
+            return None
+        return await self._inbound.get()
+
+    async def send_bytes(self, data: bytes) -> None:
+        from neutrino_hub.modules.devices.agent_sessions import AgentOfflineError
+
+        if self._closed.is_set():
+            raise AgentOfflineError("scripted")
+        self.sent.append(bytes(data))
+
+    async def resize(self, cols: int, rows: int) -> None:
+        self.resizes.append((int(cols), int(rows)))
+
+    async def close(self) -> None:
+        self.is_close_asked = True
+
+    async def wait_closed(self):
+        await self._closed.wait()
+        return self.close_info
+
+    def _deliver(self, item) -> None:
+        self._inbound.put_nowait(item)
+
+    def feed(self, item) -> None:
+        """Deliver one item from any thread."""
+        self._loop.call_soon_threadsafe(self._inbound.put_nowait, item)
+
+    def finish(self, info: dict, *, is_abandoned: bool = False) -> None:
+        """Close the stream from any thread, as the agent would."""
+
+        def close_now():
+            self.is_abandoned = is_abandoned
+            self.close_info = dict(info)
+            self._closed.set()
+            self._inbound.put_nowait(None)
+
+        self._loop.call_soon_threadsafe(close_now)
+
+    def sent_bytes(self) -> bytes:
+        return b"".join(self.sent)
+
+
 class FakeAgentSessions:
     """The live-socket registry as routes see it: who is online, what ran.
 
@@ -66,10 +142,16 @@ class FakeAgentSessions:
         validations: Every configuration checked, ``(key, module, config)``.
         pushes: Every state pushed, ``(key, hash, desired)``.
         verdict: What a validate closes with.
-        outcome: What a command closes with.
+        outcome: What a command closes with; ``outcomes`` by action wins
+            over it where set.
         versions: What each device's last hello named, by key.
         ended_at: When each device's last channel ended, by key.
         reported_at: When each device's last report arrived, by key.
+        streams: Every stream opened, in order.
+        scripts: Stream kind to a callable of the open's args answering
+            ``(items, close_info)``: the items are delivered at once and
+            the stream closed with the info, or left open when it is None.
+        refusal: A ``(code, params)`` every open is refused with.
     """
 
     def __init__(self, online=()):
@@ -83,6 +165,27 @@ class FakeAgentSessions:
         self.closed: list = []
         self.verdict = {"is_valid": True, "code": "", "params": {}}
         self.outcome = {"exit_code": 0, "code": "", "params": {}, "output": ""}
+        self.outcomes: dict = {}
+        self.streams: list = []
+        self.scripts: dict = {}
+        self.refusal = None
+
+    async def open_stream(self, key, kind, args):
+        from neutrino_hub.modules.devices.agent_sessions import StreamRefusedError
+
+        self._require(key)
+        if self.refusal is not None:
+            raise StreamRefusedError(*self.refusal)
+        stream = ScriptedAgentStream(kind, dict(args))
+        self.streams.append(stream)
+        script = self.scripts.get(kind)
+        if script is not None:
+            items, info = script(dict(args))
+            for item in items:
+                stream._deliver(item)
+            if info is not None:
+                stream.finish(info)
+        return stream
 
     def is_online(self, key: str) -> bool:
         return key.lower() in self.online
@@ -107,7 +210,7 @@ class FakeAgentSessions:
     ) -> dict:
         self._require(key)
         self.commands.append((key.lower(), action, dict(args or {})))
-        return dict(self.outcome)
+        return dict(self.outcomes.get(action, self.outcome))
 
     def validate_from_thread(self, key, module, config, timeout=None) -> dict:
         self._require(key)

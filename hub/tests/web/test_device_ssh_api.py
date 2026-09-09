@@ -1,9 +1,9 @@
 """How a device's SSH block stores and echoes credential references.
 
-A device's ssh block holds ids into the vault — ``key_id``, ``password_id``,
-``sudo_password_id`` — and no secret material. What these pin is that a save
-stores exactly the ids it was given, that a stale id is refused as a coded
-400, and that no view of a device ever carries a plaintext password field.
+A device's ssh block holds ids into the vault — ``key_id``, ``login_id`` —
+and no secret material. What these pin is that a save stores exactly the
+ids it was given, that a stale id is refused as a coded 400, and that no
+view of a device ever carries a password field of any kind.
 """
 
 import json
@@ -22,7 +22,6 @@ from tests.conftest import FakeAgentSessions, unlock_vault
 
 MAC = "aa:bb:cc:dd:ee:ff"
 LOGIN_PASSWORD = "a-password"  # scan: allow
-SUDO_PASSWORD = "a-sudo-password"  # scan: allow
 
 
 class FakeRuntime:
@@ -73,23 +72,15 @@ def annotate(client, ssh: dict):
 
 def test_valid_references_are_stored_and_echoed(api):
     client, tmp_path = api
-    password_id = stored_password(LOGIN_PASSWORD)
-    sudo_password_id = stored_password(SUDO_PASSWORD)
+    login_id = stored_password(LOGIN_PASSWORD)
 
-    saved = annotate(
-        client,
-        {
-            "auth": "password",
-            "password_id": password_id,
-            "sudo_password_id": sudo_password_id,
-        },
-    )
+    saved = annotate(client, {"auth": "password", "login_id": login_id})
 
     assert saved.status_code == 200
     view = saved.json()["ssh"]
-    assert view["password_id"] == password_id
-    assert view["sudo_password_id"] == sudo_password_id
+    assert view["login_id"] == login_id
     assert "password" not in view
+    assert "sudo_password_id" not in view
     assert "sudo_password" not in view
 
     stored = json.loads((tmp_path / "devices" / "devices.json").read_text())
@@ -99,8 +90,8 @@ def test_valid_references_are_stored_and_echoed(api):
         "port": 22,
         "username": "iffi",
         "auth": "password",
-        "password_id": password_id,
-        "sudo_password_id": sudo_password_id,
+        "key_id": None,
+        "login_id": login_id,
     }
 
 
@@ -114,45 +105,27 @@ def test_a_key_reference_is_stored_and_named(api):
     view = saved.json()["ssh"]
     assert view["key_id"] == key_id
     assert view["key_name"] == "a key"
-    assert view["password_id"] is None
-    assert view["sudo_password_id"] is None
+    assert view["login_id"] is None
 
 
-def test_a_bogus_password_id_is_refused(api):
+def test_a_bogus_login_id_is_refused(api):
     client, tmp_path = api
 
-    refused = annotate(client, {"auth": "password", "password_id": "absent"})
+    refused = annotate(client, {"auth": "password", "login_id": "absent"})
 
     assert refused.status_code == 400
     assert refused.json()["detail"] == {
         "code": "unknown_credential",
-        "field": "password_id",
+        "field": "login_id",
     }
     assert not (tmp_path / "devices" / "devices.json").exists()
 
 
-def test_a_bogus_sudo_password_id_is_refused(api):
+def test_a_login_id_offered_as_a_key_is_refused(api):
     client, _ = api
-    password_id = stored_password(LOGIN_PASSWORD)
+    login_id = stored_password(LOGIN_PASSWORD)
 
-    refused = annotate(
-        client,
-        {
-            "auth": "password",
-            "password_id": password_id,
-            "sudo_password_id": "absent",
-        },
-    )
-
-    assert refused.status_code == 400
-    assert refused.json()["detail"]["field"] == "sudo_password_id"
-
-
-def test_a_password_id_offered_as_a_key_is_refused(api):
-    client, _ = api
-    password_id = stored_password(LOGIN_PASSWORD)
-
-    refused = annotate(client, {"auth": "key", "key_id": password_id})
+    refused = annotate(client, {"auth": "key", "key_id": login_id})
 
     assert refused.status_code == 400
     assert refused.json()["detail"] == {

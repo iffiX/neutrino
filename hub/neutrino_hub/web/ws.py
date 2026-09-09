@@ -3,17 +3,28 @@
 Everything that streams lives here. Each socket checks the session cookie itself
 and closes with a policy-violation code when it is missing, since a websocket
 route cannot answer with a 401 the way an HTTP route does.
+
+A terminal reaches a device through its agent: the browser's socket and the
+agent's shell stream are bridged here, frame for frame. The browser sends
+``{"type": "input", "data"}`` and ``{"type": "resize", "cols", "rows"}``;
+it receives ``{"type": "output", "data"}`` and, once the shell is gone,
+``{"type": "exit", "code"}``.
 """
 
 import asyncio
+import codecs
 import contextlib
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from neutrino_hub.modules.devices.registry import DeviceRegistry
-from neutrino_hub.system.local_shell import LocalShellSession
-from neutrino_hub.modules.devices.ssh_ops import DeviceSshOperator, SshCredentials
+from neutrino_hub.modules.devices.agent_sessions import (
+    CODE_AGENT_OFFLINE,
+    STREAM_KIND_CONTAINER_SHELL,
+    STREAM_KIND_SHELL,
+    AgentOfflineError,
+    StreamRefusedError,
+)
 from neutrino_hub.web.constants import (
     WEB_EVENT_HELLO,
     WEB_SESSION_COOKIE,
@@ -26,7 +37,10 @@ from neutrino_hub.web.stats_collector import PanelStatsCollector
 router = APIRouter()
 
 POLICY_VIOLATION_CODE = 1008
+INTERNAL_ERROR_CODE = 1011
 DNS_LOG_POLL_INTERVAL_S = 1.0
+DEFAULT_COLUMNS = 80
+DEFAULT_ROWS = 24
 
 
 @router.websocket("/ws/stats")
@@ -120,76 +134,34 @@ async def task_socket(websocket: WebSocket, task_id: str) -> None:
         return
 
 
-@router.websocket("/ws/ssh/{mac_address}")
-async def ssh_socket(websocket: WebSocket, mac_address: str) -> None:
-    """Bridge a browser terminal to a device's shell.
+@router.websocket("/ws/agent_shell/{device_id}")
+async def agent_shell_socket(websocket: WebSocket, device_id: str) -> None:
+    """Bridge a browser terminal to a root shell on a device, over its agent.
 
     Args:
         websocket: The client socket.
-        mac_address: Which device to connect to.
+        device_id: Which device to open the shell on.
     """
-    if not await _accept(websocket):
-        return
-    device = DeviceRegistry().get(mac_address)
-    if not device.has_ssh:
-        await websocket.close(
-            code=POLICY_VIOLATION_CODE, reason="no SSH credentials for this device"
-        )
-        return
-
-    loop = asyncio.get_running_loop()
-    outgoing: asyncio.Queue = asyncio.Queue()
-
-    def on_output(chunk: str) -> None:
-        loop.call_soon_threadsafe(outgoing.put_nowait, chunk)
-
-    operator = DeviceSshOperator(credentials=SshCredentials.from_dict(device.ssh or {}))
-    try:
-        session = await operator.open_shell(on_output=on_output)
-    except Exception as error:  # noqa: BLE001 - the reason is shown in the terminal
-        await websocket.send_json({"type": "output", "data": f"\r\n{error}\r\n"})
-        await websocket.close(code=POLICY_VIOLATION_CODE, reason="connection failed")
-        return
-
-    sender = asyncio.create_task(_send_output(websocket, outgoing))
-    pump = asyncio.create_task(session.pump_output())
-    reader = asyncio.create_task(_read_input(websocket, session))
-
-    # Whichever ends first decides how the session tears down: the reader ending
-    # means the browser closed the terminal, and the pump ending means the
-    # remote shell exited. Both must lead to the same clean teardown — the SSH
-    # process killed, no orphan left, and the browser told the session ended.
-    done, _ = await asyncio.wait({pump, reader}, return_when=asyncio.FIRST_COMPLETED)
-
-    if pump in done:
-        exit_code = pump.result()
-        with contextlib.suppress(RuntimeError):
-            await websocket.send_json({"type": "exit", "code": exit_code})
-
-    session.close()
-    for task in (sender, pump, reader):
-        task.cancel()
-    for task in (sender, pump, reader):
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-    with contextlib.suppress(RuntimeError):
-        await websocket.close()
+    await _serve_agent_stream(
+        websocket,
+        device_id,
+        STREAM_KIND_SHELL,
+        {"cols": DEFAULT_COLUMNS, "rows": DEFAULT_ROWS},
+    )
 
 
-@router.websocket("/ws/terminal")
-async def terminal_socket(websocket: WebSocket) -> None:
-    """Bridge a browser terminal to a shell on the gateway itself.
-
-    Every tab in the panel's terminal opens one of these, so closing a tab has
-    to leave nothing behind — the session kills its whole process group on the
-    way out rather than only the shell.
+@router.websocket("/ws/agent_container/{device_id}/{name}")
+async def agent_container_socket(websocket: WebSocket, device_id: str, name: str):
+    """Bridge a browser terminal to a shell inside a container on a device.
 
     Args:
         websocket: The client socket.
+        device_id: Which device the container runs on.
+        name: The container.
     """
-    if not await _accept(websocket):
-        return
-    await _serve_pty_session(websocket, LocalShellSession())
+    await _serve_agent_stream(
+        websocket, device_id, STREAM_KIND_CONTAINER_SHELL, {"name": name}
+    )
 
 
 async def _pump_events(websocket: WebSocket, queue: asyncio.Queue) -> None:
@@ -212,34 +184,43 @@ async def _await_disconnect(websocket: WebSocket) -> None:
                 return
 
 
-async def _serve_pty_session(websocket: WebSocket, session: LocalShellSession) -> None:
-    """Run one pty session over one socket, and leave nothing behind.
+async def _serve_agent_stream(
+    websocket: WebSocket, device_id: str, kind: str, args: dict
+) -> None:
+    """Run one agent shell stream over one browser socket.
 
     Args:
-        websocket: The accepted client socket.
-        session: The unstarted session to serve.
+        websocket: The unaccepted client socket.
+        device_id: The device.
+        kind: The stream kind to open.
+        args: What the kind takes.
     """
+    if not await _accept(websocket):
+        return
+    sessions = websocket.app.state.runtime.agent_sessions
     try:
-        await session.start()
-    except OSError as error:
-        await websocket.send_json({"type": "output", "data": f"\r\n{error}\r\n"})
-        await websocket.close(code=POLICY_VIOLATION_CODE, reason="no shell")
+        stream = await sessions.open_stream(device_id.lower(), kind, args)
+    except AgentOfflineError:
+        await websocket.close(code=POLICY_VIOLATION_CODE, reason=CODE_AGENT_OFFLINE)
+        return
+    except StreamRefusedError as refused:
+        await websocket.close(code=INTERNAL_ERROR_CODE, reason=refused.code)
         return
 
-    reader = asyncio.create_task(_read_input(websocket, session))
-    pump = asyncio.create_task(_pump_local_shell(websocket, session))
-
-    # Whichever finishes first decides the teardown: the reader ending means
-    # the tab was closed, the pump ending means the shell exited. Both lead to
-    # the same place — no process left running, and the browser told so.
+    reader = asyncio.create_task(_read_input(websocket, stream))
+    pump = asyncio.create_task(_pump_stream(websocket, stream))
+    # Whichever ends first decides the teardown: the reader ending means
+    # the browser closed the terminal, the pump ending means the shell
+    # exited or the agent went away.
     done, _ = await asyncio.wait({reader, pump}, return_when=asyncio.FIRST_COMPLETED)
     if pump in done:
+        info = stream.close_info or {}
         with contextlib.suppress(RuntimeError):
             await websocket.send_json(
-                {"type": "exit", "code": await session.exit_code()}
+                {"type": "exit", "code": int(info.get("exit_code", 1) or 0)}
             )
-
-    await session.close()
+    with contextlib.suppress(AgentOfflineError):
+        await stream.close()
     for task in (reader, pump):
         task.cancel()
     for task in (reader, pump):
@@ -249,50 +230,48 @@ async def _serve_pty_session(websocket: WebSocket, session: LocalShellSession) -
         await websocket.close()
 
 
-async def _pump_local_shell(websocket: WebSocket, session: LocalShellSession) -> None:
-    """Forward the shell's output until it exits or the socket goes away."""
+async def _pump_stream(websocket: WebSocket, stream) -> None:
+    """Forward the shell's output until the stream closes or the socket goes."""
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
     while True:
-        chunk = await session.read()
-        if not chunk:
+        item = await stream.recv()
+        if item is None:
             return
+        if item[0] != "data":
+            continue
         if websocket.client_state is not WebSocketState.CONNECTED:
             return
-        with contextlib.suppress(RuntimeError):
-            await websocket.send_json(
-                {"type": "output", "data": chunk.decode("utf-8", errors="replace")}
-            )
+        text = decoder.decode(item[1])
+        if text:
+            with contextlib.suppress(RuntimeError):
+                await websocket.send_json({"type": "output", "data": text})
 
 
-async def _read_input(websocket: WebSocket, session) -> None:
+async def _read_input(websocket: WebSocket, stream) -> None:
     """Forward keystrokes and resizes until the browser goes away.
 
-    Returns (rather than looping forever) when the socket closes, which is how
-    the caller learns the browser shut the terminal.
+    Returns when the socket closes, which is how the caller learns the
+    browser shut the terminal.
 
     Args:
         websocket: The client socket.
-        session: The live shell session to drive.
+        stream: The live shell stream to drive.
     """
     try:
         while True:
             message = await websocket.receive_json()
             kind = message.get("type")
             if kind == "input":
-                session.write(message.get("data", ""))
+                await stream.send_bytes(str(message.get("data", "")).encode("utf-8"))
             elif kind == "resize":
-                session.resize(
-                    int(message.get("cols", 80)), int(message.get("rows", 24))
+                await stream.resize(
+                    int(message.get("cols", DEFAULT_COLUMNS)),
+                    int(message.get("rows", DEFAULT_ROWS)),
                 )
     except (WebSocketDisconnect, RuntimeError, ValueError, KeyError):
         return
-
-
-async def _send_output(websocket: WebSocket, queue: asyncio.Queue) -> None:
-    while True:
-        chunk = await queue.get()
-        if websocket.client_state is not WebSocketState.CONNECTED:
-            return
-        await websocket.send_json({"type": "output", "data": chunk})
+    except AgentOfflineError:
+        return
 
 
 async def _accept(websocket: WebSocket) -> bool:

@@ -1,0 +1,97 @@
+/* The install window: a form that turns into a log once it is running, in
+   the same frame the other modals use. */
+
+.install_modal_backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  background: var(--color-overlay);
+  backdrop-filter: blur(4px);
+  animation: fade_in_up 160ms ease both;
+}
+
+.install_modal {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  width: min(640px, 100%);
+  max-height: min(760px, 100%);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow:
+    0 0 0 1px rgb(34 211 238 / 18%),
+    0 30px 80px -30px rgb(0 0 0 / 90%);
+}
+
+.install_modal_head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-elevated);
+}
+
+.install_modal_title {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-width: 0;
+}
+
+.install_modal_title h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.install_modal_body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+  padding: var(--space-5);
+  overflow-y: auto;
+}
+
+.install_modal_log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.install_modal_log_head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.install_modal_log_output {
+  max-height: 220px;
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-y: auto;
+}
+
+.install_modal_foot {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--color-border);
+}

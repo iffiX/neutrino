@@ -20,7 +20,7 @@ AGENT_SERVICE_NAME = "neutrino_agent.service"
 # The shape of what crosses the hub channel. Bumped on any wire change, so
 # a hub upgrade that changed the shapes tells a same-version agent to
 # reinstall instead of feeding it frames it cannot read.
-AGENT_WIRE_GENERATION = 6
+AGENT_WIRE_GENERATION = 7
 
 # The one socket to the hub, on the agent TLS port. Every stream rides it.
 AGENT_WS_PATH = "/api/agent/ws"
@@ -31,6 +31,11 @@ AGENT_WS_SILENCE_TIMEOUT_S = 45
 AGENT_WS_STREAM_ID_LENGTH = 8
 # The largest binary frame either side sends on one stream.
 AGENT_WS_CHUNK_BYTES = 64 * 1024
+# What the hub may send on one stream before this side grants more: one
+# window of bytes, offered when a stream that takes bytes opens.
+AGENT_WS_STREAM_CREDIT_BYTES = 1024 * 1024
+# How long a stream waits on the hub's credit before it stops trying.
+AGENT_WS_CREDIT_TIMEOUT_S = 60
 # Close codes the hub turns a socket away with. The reason is the code word.
 AGENT_WS_CLOSE_BAD_HELLO = 4400
 AGENT_WS_CLOSE_UNKNOWN_TOKEN = 4401
@@ -65,6 +70,16 @@ AGENT_BACKOFF_MAX_S = 60
 
 AGENT_COMMAND_TIMEOUT_S = 900
 AGENT_OUTPUT_LIMIT_BYTES = 64 * 1024
+
+# The shell a stream opens for the hub: this account's own where it is
+# usable, else the first of these.
+AGENT_SHELL_FALLBACKS = ("/bin/bash", "/bin/sh")
+AGENT_SHELL_READ_BYTES = 4096
+# How long a shell's process group may take to die after the hub closes
+# the stream, per signal.
+AGENT_SHELL_KILL_TIMEOUT_S = 2.0
+# How long a signalled process may take to leave before it is killed.
+AGENT_KILL_GRACE_S = 2.0
 
 # How long a stepped-down account command may take.
 AGENT_STEP_DOWN_TIMEOUT_S = 120

@@ -1,20 +1,18 @@
 {
-  "_comment": "Devices the panel manages, keyed by MAC address. The entry below is named with a leading underscore so it documents the shape without being read as a device: a fresh install that already knows about a machine nobody owns is worse than one that knows about none. Only devices you have annotated live here; anything else found by a LAN scan is runtime state shown in the panel and never written to disk. SSH credentials unlock Wake-on-LAN, the terminal, remote-desktop deployment, and neutrino_client installation.",
+  "_comment": "Devices the panel manages, keyed by MAC address. The entry below is named with a leading underscore so it documents the shape without being read as a device: a fresh install that already knows about a machine nobody owns is worse than one that knows about none. Only devices you have annotated live here; anything else found by a LAN scan is runtime state shown in the panel and never written to disk. SSH credentials exist to install the agent; every other device operation rides the agent's own channel.",
   "devices": {
     "_example_aa:bb:cc:dd:ee:ff": {
       "name": "work-laptop",
       "icon": "laptop",
       "is_wol_enabled": true,
-      "_comment_ssh": "Written by the panel, not by hand. auth is 'key' or 'password'. Every credential is a reference into the vault (config/credentials/vault.json): key_id names a sealed SSH key, password_id the sealed login password. No secret material is stored here.",
+      "_comment_ssh": "Written by the panel, not by hand. auth is 'key' or 'password'. Every credential is a reference into the vault (config/credentials/vault.json): key_id names a sealed SSH key, login_id a sealed login. No secret material is stored here, and the sudo password an install takes is typed for that install and never stored.",
       "ssh": {
         "host": "192.168.100.150",
         "port": 22,
         "username": "me",
         "auth": "key",
         "key_id": "d9d20c004ab4b212",
-        "password_id": null,
-        "_comment_sudo": "sudo_password_id names the sealed password piped to sudo for privileged SSH work, chiefly the one-click agent install. Leave null if the account has passwordless sudo.",
-        "sudo_password_id": null
+        "login_id": null
       },
       "_comment_client": "Written by the panel when the device enrolls. token_sha256 is the hash of the secret its agent authenticates the channel with; the raw token exists only on the device. ai_key_ids names the gateway client key generated for each activated account.",
       "client": {

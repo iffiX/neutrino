@@ -1,14 +1,18 @@
-"""The install action's pre-flight.
+"""The install action: its credentials, its pre-flight, and the reinstall.
 
-A device that answers ``uname -s`` with something other than Linux cannot run
-the agent, and starting a task that fails minutes later says so in the wrong
-place. What these pin is the split: an answered non-Linux probe is a coded 409
-before any task exists, and a probe that failed — device off, wrong
-credentials — starts the task, whose log is the surface for that failure.
+An install carries how to reach the machine: exactly one of a stored key,
+a stored login, or a password typed now, saved as a login only when asked;
+the sudo password is fed to the install and written nowhere. What these
+pin is that shape, that the device's ssh block records the references and
+never a secret, the pre-flight split (a non-Linux answer is a coded 409
+before any task, a failed probe starts the task whose log is the surface),
+and that a reinstall is a command on a live agent and a 409 without one.
 """
 
+import json
 from types import SimpleNamespace
 
+import asyncssh
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -16,6 +20,7 @@ from fastapi.testclient import TestClient
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.agent_package import AgentPackageCache
 from neutrino_hub.modules.devices.constants import SSH_UNREACHABLE_STATUS
+from neutrino_hub.modules.devices.key_registry import KeyRegistry
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
@@ -24,6 +29,8 @@ from tests.conftest import FakeAgentSessions, unlock_vault
 
 MAC = "aa:bb:cc:dd:ee:ff"
 LOGIN_PASSWORD = "a-password"  # scan: allow
+TYPED_PASSWORD = "typed-now"  # scan: allow
+SUDO_PASSWORD = "a-sudo-password"  # scan: allow
 
 
 class FakeRuntime:
@@ -59,29 +66,24 @@ def api(monkeypatch, tmp_path):
     FakeRuntime.instance = runtime
     app.dependency_overrides[get_runtime] = lambda: runtime
     with TestClient(app) as client:
-        yield client
+        yield client, tmp_path
 
 
-def device_with_ssh(client):
-    password_id = (
+def stored_login() -> str:
+    return (
         SecretVault()
         .add(kind="login", name="a password", secret={"password": LOGIN_PASSWORD})
         .id
     )
-    saved = client.put(
-        f"/api/devices/{MAC}",
-        json={
-            "name": "a device",
-            "ssh": {
-                "host": "192.168.100.2",
-                "port": 22,
-                "username": "iffi",
-                "auth": "password",
-                "password_id": password_id,
-            },
-        },
+
+
+def stored_key() -> str:
+    key = asyncssh.generate_private_key("ssh-ed25519")
+    return (
+        KeyRegistry()
+        .add(name="a key", private_key=key.export_private_key().decode())
+        .id
     )
-    assert saved.status_code == 200
 
 
 def probe_answers(monkeypatch, code: int, output: str):
@@ -89,6 +91,25 @@ def probe_answers(monkeypatch, code: int, output: str):
         return code, output
 
     monkeypatch.setattr(devices_router.DeviceSshOperator, "run_once", run_once)
+
+
+def capture_install(monkeypatch) -> dict:
+    """Record what the install is started with, running nothing."""
+    captured: dict = {}
+
+    def install_client(self, *, packages, enrollment_link, sudo_password=None):
+        captured["credentials"] = self._credentials
+        captured["sudo_password"] = sudo_password
+
+        async def lines():
+            yield "[installed]\n"
+
+        return lines()
+
+    monkeypatch.setattr(
+        devices_router.DeviceSshOperator, "install_client", install_client
+    )
+    return captured
 
 
 def hub_carries_a_package(tmp_path, monkeypatch):
@@ -101,12 +122,153 @@ def hub_carries_a_package(tmp_path, monkeypatch):
     monkeypatch.setattr(devices_router, "certificate_fingerprint", lambda: "ab" * 32)
 
 
-def test_a_non_linux_device_is_refused_before_any_task(api, monkeypatch, tmp_path):
-    device_with_ssh(api)
+def install(client, **fields):
+    body = {
+        "action": "install_client",
+        "host": "192.168.100.2",
+        "port": 22,
+        "username": "iffi",
+        **fields,
+    }
+    return client.post(f"/api/devices/{MAC}/action", json=body)
+
+
+def stored_ssh(tmp_path) -> dict:
+    stored = json.loads((tmp_path / "devices" / "devices.json").read_text())
+    return stored["devices"][MAC]["ssh"]
+
+
+def ready(monkeypatch, tmp_path):
+    hub_carries_a_package(tmp_path, monkeypatch)
+    probe_answers(monkeypatch, 0, "Linux")
+    return capture_install(monkeypatch)
+
+
+# --- the credential sources ---
+
+
+def test_a_stored_key_is_the_credential_and_the_block_records_it(api, monkeypatch):
+    client, tmp_path = api
+    captured = ready(monkeypatch, tmp_path)
+    key_id = stored_key()
+
+    started = install(client, key_id=key_id, sudo_password=SUDO_PASSWORD)
+
+    assert started.status_code == 200
+    assert started.json()["task_id"]
+    assert stored_ssh(tmp_path) == {
+        "host": "192.168.100.2",
+        "port": 22,
+        "username": "iffi",
+        "auth": "key",
+        "key_id": key_id,
+        "login_id": None,
+    }
+    assert captured["credentials"].private_key
+    assert captured["credentials"].password is None
+    assert captured["sudo_password"] == SUDO_PASSWORD
+
+
+def test_a_stored_login_is_opened_from_the_vault(api, monkeypatch):
+    client, tmp_path = api
+    captured = ready(monkeypatch, tmp_path)
+    login_id = stored_login()
+
+    started = install(client, login_id=login_id)
+
+    assert started.status_code == 200
+    assert stored_ssh(tmp_path)["auth"] == "password"
+    assert stored_ssh(tmp_path)["login_id"] == login_id
+    assert captured["credentials"].password == LOGIN_PASSWORD
+    assert captured["sudo_password"] is None
+
+
+def test_a_typed_password_is_used_and_stored_nowhere_unless_asked(api, monkeypatch):
+    client, tmp_path = api
+    captured = ready(monkeypatch, tmp_path)
+
+    started = install(client, password=TYPED_PASSWORD, sudo_password=SUDO_PASSWORD)
+
+    assert started.status_code == 200
+    assert captured["credentials"].password == TYPED_PASSWORD
+    block = stored_ssh(tmp_path)
+    assert block["login_id"] is None and block["auth"] == "password"
+    assert SecretVault().list_records(kind="login") == []
+    for path in tmp_path.rglob("*"):
+        if path.is_file():
+            text = path.read_bytes()
+            assert TYPED_PASSWORD.encode() not in text
+            assert SUDO_PASSWORD.encode() not in text
+
+
+def test_a_typed_password_saved_becomes_a_login_the_block_names(api, monkeypatch):
+    client, tmp_path = api
+    captured = ready(monkeypatch, tmp_path)
+
+    started = install(
+        client,
+        password=TYPED_PASSWORD,
+        is_password_saved=True,
+        sudo_password=SUDO_PASSWORD,
+    )
+
+    assert started.status_code == 200
+    (record,) = SecretVault().list_records(kind="login")
+    assert record.name == "iffi@192.168.100.2"
+    assert SecretVault().open(record.id) == {
+        "username": "iffi",
+        "password": TYPED_PASSWORD,
+    }
+    assert stored_ssh(tmp_path)["login_id"] == record.id
+    assert captured["credentials"].password == TYPED_PASSWORD
+    for path in tmp_path.rglob("*"):
+        if path.is_file():
+            assert SUDO_PASSWORD.encode() not in path.read_bytes()
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {},
+        {"key_id": "k", "login_id": "l"},
+        {"key_id": "k", "password": "p"},
+        {"password": "p", "host": ""},
+        {"password": "p", "username": ""},
+    ],
+)
+def test_anything_but_one_credential_source_is_refused(api, monkeypatch, fields):
+    client, tmp_path = api
+    ready(monkeypatch, tmp_path)
+
+    refused = install(client, **fields)
+
+    assert refused.status_code == 400
+    assert refused.json()["detail"]["code"] == "install_credentials_invalid"
+    assert not (tmp_path / "devices" / "devices.json").exists()
+
+
+def test_a_stale_credential_id_is_refused_by_field(api, monkeypatch):
+    client, tmp_path = api
+    ready(monkeypatch, tmp_path)
+
+    refused = install(client, login_id="absent")
+
+    assert refused.status_code == 400
+    assert refused.json()["detail"] == {
+        "code": "unknown_credential",
+        "field": "login_id",
+    }
+
+
+# --- the pre-flight ---
+
+
+def test_a_non_linux_device_is_refused_before_any_task(api, monkeypatch):
+    client, tmp_path = api
     hub_carries_a_package(tmp_path, monkeypatch)
     probe_answers(monkeypatch, 0, "Darwin")
 
-    refused = api.post(f"/api/devices/{MAC}/action", json={"action": "install_client"})
+    refused = install(client, login_id=stored_login())
 
     assert refused.status_code == 409
     assert refused.json()["detail"] == {
@@ -115,35 +277,77 @@ def test_a_non_linux_device_is_refused_before_any_task(api, monkeypatch, tmp_pat
     }
 
 
-def test_an_unanswered_probe_starts_the_task(api, monkeypatch, tmp_path):
-    device_with_ssh(api)
+def test_an_unanswered_probe_starts_the_task(api, monkeypatch):
+    client, tmp_path = api
     hub_carries_a_package(tmp_path, monkeypatch)
     probe_answers(monkeypatch, SSH_UNREACHABLE_STATUS, "Connection refused")
+    capture_install(monkeypatch)
 
-    started = api.post(f"/api/devices/{MAC}/action", json={"action": "install_client"})
+    started = install(client, login_id=stored_login())
 
     assert started.status_code == 200
     assert started.json()["task_id"]
 
 
 def test_a_hub_with_no_agent_package_refuses_with_a_code(api, monkeypatch):
-    device_with_ssh(api)
+    client, _ = api
     probe_answers(monkeypatch, 0, "Linux")
 
-    refused = api.post(f"/api/devices/{MAC}/action", json={"action": "install_client"})
+    refused = install(client, login_id=stored_login())
 
     assert refused.status_code == 409
     assert refused.json()["detail"] == {"code": "agent_package_missing"}
 
 
-def test_the_install_ticket_binds_to_the_device(api, monkeypatch, tmp_path):
+def test_the_install_ticket_binds_to_the_device(api, monkeypatch):
     """The SSH install walks the same enrollment path a pasted link does."""
-    device_with_ssh(api)
-    hub_carries_a_package(tmp_path, monkeypatch)
-    probe_answers(monkeypatch, 0, "Linux")
+    client, tmp_path = api
+    ready(monkeypatch, tmp_path)
 
-    started = api.post(f"/api/devices/{MAC}/action", json={"action": "install_client"})
+    started = install(client, login_id=stored_login())
 
     assert started.status_code == 200
     tickets = list(FakeRuntime.instance.enrollments.values())
     assert tickets and tickets[-1]["mac_address"] == MAC
+
+
+# --- the reinstall ---
+
+
+def test_a_reinstall_with_no_channel_is_409(api):
+    client, _ = api
+
+    refused = client.post(
+        f"/api/devices/{MAC}/action", json={"action": "reinstall_agent"}
+    )
+
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == {"code": "agent_offline"}
+
+
+def test_a_reinstall_on_a_live_agent_runs_the_command_as_a_task(api):
+    client, _ = api
+    sessions = FakeRuntime.instance.agent_sessions
+    sessions.online.add(MAC)
+    sessions.scripts["command"] = lambda args: (
+        [],
+        {"exit_code": 0, "code": "", "params": {}, "output": "reinstall launched\n"},
+    )
+
+    started = client.post(
+        f"/api/devices/{MAC}/action", json={"action": "reinstall_agent"}
+    )
+
+    assert started.status_code == 200
+    (stream,) = sessions.streams
+    assert stream.kind == "command"
+    assert stream.args == {"action": "reinstall", "args": {}}
+
+
+def test_an_unknown_action_is_refused_typed(api):
+    client, _ = api
+
+    refused = client.post(f"/api/devices/{MAC}/action", json={"action": "dance"})
+
+    assert refused.status_code == 400
+    assert refused.json()["detail"]["code"] == "unknown_action"

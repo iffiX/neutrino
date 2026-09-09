@@ -32,10 +32,10 @@ ORDER = {
 
 
 def test_the_wire_generation_is_the_one_this_build_speaks():
-    # Bumped by this change: the desired state carries the catalog and each
-    # module's configuration, a validate stream joins the socket, and an
-    # agent built to the old shape must reinstall rather than misread it.
-    assert AGENT_WIRE_GENERATION == 6
+    # Bumped by this change: shell and file streams join the socket, the
+    # commands gain the process and remote-desktop verbs, and an agent
+    # built to the old shape must reinstall rather than misread it.
+    assert AGENT_WIRE_GENERATION == 7
 
 
 def test_an_order_stream_runs_the_engine_and_closes_with_its_result(

@@ -52,6 +52,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.modules.podman.constants",
     "neutrino_agent.modules.podman.renderer",
     "neutrino_agent.modules.podman.runner",
+    "neutrino_agent.modules.remote_desktop",
     "neutrino_agent.modules.rustdesk",
     "neutrino_agent.modules.samba",
     "neutrino_agent.modules.samba.applier",
@@ -73,6 +74,10 @@ SURVIVING_MODULES = {
     "neutrino_agent.rdp",
     "neutrino_agent.rdp.constants",
     "neutrino_agent.rdp.host",
+    "neutrino_agent.streams",
+    "neutrino_agent.streams.channel",
+    "neutrino_agent.streams.files",
+    "neutrino_agent.streams.shell",
 }
 
 

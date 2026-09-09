@@ -32,6 +32,14 @@
   background: var(--color-elevated);
 }
 
+/* The links to this machine's own pages, beside the close button. */
+.device_drawer_head_actions {
+  display: flex;
+  flex: none;
+  gap: var(--space-2);
+  align-items: center;
+}
+
 .device_drawer_identity {
   display: flex;
   gap: var(--space-3);
@@ -129,10 +137,12 @@
   margin-top: var(--space-2);
 }
 
+/* Two columns, so the four actions read as one block rather than as a row
+   that reflows differently on every device. */
 .device_drawer_actions {
   display: grid;
   gap: var(--space-2);
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .device_drawer_actions .button {
