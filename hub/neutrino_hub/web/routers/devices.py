@@ -1312,7 +1312,6 @@ async def _reinstall_stream(runtime: PanelRuntime, key: str) -> AsyncIterator[st
             yield line
             return
         yield line
-    yield "the package manager runs in a transient unit on the machine\n"
     loop = asyncio.get_running_loop()
     deadline = loop.time() + WEB_REINSTALL_RETURN_TIMEOUT_S
     reconnected_at = None
@@ -1330,10 +1329,7 @@ async def _reinstall_stream(runtime: PanelRuntime, key: str) -> AsyncIterator[st
             reconnected_at is not None
             and loop.time() - reconnected_at > WEB_REINSTALL_REPORT_TIMEOUT_S
         ):
-            yield (
-                "the agent that ran this reinstall predates reinstall records;"
-                " it is back, so run it once more for the installer's output\n"
-            )
+            yield "reinstalled, no installer record from this agent\n"
             return
         await asyncio.sleep(WEB_REINSTALL_POLL_S)
     yield json.dumps({"code": "reinstall_not_reported", "params": {}}) + "\n"

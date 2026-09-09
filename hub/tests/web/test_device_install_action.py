@@ -485,7 +485,7 @@ def test_a_stale_record_from_before_the_launch_is_not_the_answer(monkeypatch):
         WEB_REINSTALL_REPORT_TIMEOUT_S=0.0,
     )
 
-    assert lines[-1].startswith("the agent that ran this reinstall predates")
+    assert lines[-1] == "reinstalled, no installer record from this agent\n"
 
 
 def test_an_old_agent_that_returns_without_a_record_is_named(monkeypatch):
@@ -497,7 +497,7 @@ def test_an_old_agent_that_returns_without_a_record_is_named(monkeypatch):
     )
 
     assert "agent 9.9.9 reconnected\n" in lines
-    assert lines[-1].startswith("the agent that ran this reinstall predates")
+    assert lines[-1] == "reinstalled, no installer record from this agent\n"
 
 
 def test_nothing_reported_in_time_is_typed(monkeypatch):
