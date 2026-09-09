@@ -129,22 +129,22 @@ export function TerminalsPage() {
           <h1>{WORDING.title}</h1>
           <span className="badge badge--warn">{WORDING.root}</span>
         </div>
-        <div className="page_actions">
-          <button
-            type="button"
-            className="button"
-            disabled={selectedDevice === null}
-            onClick={openTab}
-          >
-            <Icon name="plus" size={14} />
-            {WORDING.newTerminal}
-          </button>
-        </div>
       </div>
 
       <section className="settings_group">
         <div className="settings_group_title">
           <h2>{WORDING.pick}</h2>
+          <div className="agent_service_actions">
+            <button
+              type="button"
+              className="button button--primary button--commit"
+              disabled={selectedDevice === null}
+              onClick={openTab}
+            >
+              <Icon name="plus" size={14} />
+              {WORDING.newTerminal}
+            </button>
+          </div>
         </div>
         <p className="field_hint">{WORDING.pickHint}</p>
         {resource.isLoading && devices.length === 0 ? (
