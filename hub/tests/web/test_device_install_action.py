@@ -163,10 +163,40 @@ def test_a_stored_key_is_the_credential_and_the_block_records_it(api, monkeypatc
         "auth": "key",
         "key_id": key_id,
         "login_id": None,
+        "sudo_login_id": None,
     }
     assert captured["credentials"].private_key
     assert captured["credentials"].password is None
     assert captured["sudo_password"] == SUDO_PASSWORD
+
+
+def test_the_sudo_login_is_opened_from_the_vault_and_referenced(api, monkeypatch):
+    client, tmp_path = api
+    captured = ready(monkeypatch, tmp_path)
+    key_id = stored_key()
+    sudo_id = stored_login()
+
+    started = install(client, key_id=key_id, sudo_login_id=sudo_id)
+
+    assert started.status_code == 200
+    assert captured["sudo_password"] == LOGIN_PASSWORD
+    assert stored_ssh(tmp_path)["sudo_login_id"] == sudo_id
+    for path in tmp_path.rglob("*"):
+        if path.is_file() and path.name != "vault.json":
+            assert LOGIN_PASSWORD.encode() not in path.read_bytes()
+
+
+def test_a_stale_sudo_login_is_refused(api, monkeypatch):
+    client, tmp_path = api
+    ready(monkeypatch, tmp_path)
+
+    refused = install(client, key_id=stored_key(), sudo_login_id="deadbeef")
+
+    assert refused.status_code == 400
+    assert refused.json()["detail"] == {
+        "code": "unknown_credential",
+        "field": "sudo_login_id",
+    }
 
 
 def test_a_stored_login_is_opened_from_the_vault(api, monkeypatch):

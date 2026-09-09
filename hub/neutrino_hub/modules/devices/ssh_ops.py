@@ -72,7 +72,7 @@ def _normalise_machine(machine: str) -> str:
     return MACHINE_TO_ARCH.get(machine, machine)
 
 
-def _password_material(login_id: str | None) -> str | None:
+def login_password(login_id: str | None) -> str | None:
     """Open one referenced login's password.
 
     Args:
@@ -150,7 +150,7 @@ class SshCredentials:
             private_key=private_key,
             private_key_path=data.get("private_key_path"),
             private_key_passphrase=passphrase,
-            password=_password_material(data.get("login_id")),
+            password=login_password(data.get("login_id")),
         )
 
 

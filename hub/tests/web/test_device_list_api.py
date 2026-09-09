@@ -204,4 +204,5 @@ def test_the_ssh_block_carries_its_references_and_no_password_field(api):
         "key_id": None,
         "key_name": None,
         "login_id": "abc123",
+        "sudo_login_id": None,
     }

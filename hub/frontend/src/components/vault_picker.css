@@ -29,7 +29,9 @@
   color: var(--color-text-faint);
 }
 
-/* Fixed to the viewport, so no scrolling container can clip the open list. */
+/* Fixed to the viewport, so no scrolling container can clip the open list.
+   It carries the ground, border and radius of .input and .select, so the open
+   list reads as the control it came out of. */
 .vault_picker_panel {
   --vault-picker-row: 34px;
 
@@ -39,9 +41,9 @@
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  background: var(--color-elevated);
+  background: var(--color-bg);
   box-shadow: 0 24px 50px -24px rgb(0 0 0 / 85%);
   animation: fade_in_up 120ms ease both;
 }
@@ -69,11 +71,12 @@
   cursor: pointer;
 }
 
-.vault_picker_row--active {
-  background: var(--color-accent-wash);
-}
-
+/* A row under the cursor and the row already chosen are marked the same way
+   the panel's other lists mark one: the surface lifts a step and the text
+   takes the accent. */
+.vault_picker_row--active,
 .vault_picker_row[aria-selected="true"] {
+  background: var(--color-elevated);
   color: var(--color-accent);
 }
 
@@ -93,9 +96,11 @@
   text-overflow: ellipsis;
 }
 
+/* The row that stores one more is an action rather than an entry, so it
+   carries the accent as its text and never as a fill. */
 .vault_picker_row--add {
   border-top: 1px solid var(--color-border);
-  color: var(--color-text-muted);
+  color: var(--color-accent);
 }
 
 .vault_picker_empty {

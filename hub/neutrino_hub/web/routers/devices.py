@@ -43,7 +43,11 @@ from neutrino_hub.modules.credentials.vault import (
 from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
 from neutrino_hub.modules.devices.lan_scan import LanScanner
-from neutrino_hub.modules.devices.ssh_ops import DeviceSshOperator, SshCredentials
+from neutrino_hub.modules.devices.ssh_ops import (
+    DeviceSshOperator,
+    SshCredentials,
+    login_password,
+)
 from neutrino_hub.modules.devices.wake_on_lan import send_magic_packet
 from neutrino_hub.modules.router.link_status import RouterLinkStatus, device_addresses
 from neutrino_hub import HUB_VERSION
@@ -337,6 +341,8 @@ def _store_ssh_secrets(ssh: DeviceSshConfig | None) -> dict | None:
         _refuse_unknown_credential("key_id")
     if ssh.login_id and not _is_stored_login(ssh.login_id):
         _refuse_unknown_credential("login_id")
+    if ssh.sudo_login_id and not _is_stored_login(ssh.sudo_login_id):
+        _refuse_unknown_credential("sudo_login_id")
     return {
         "host": ssh.host,
         "port": ssh.port,
@@ -344,6 +350,7 @@ def _store_ssh_secrets(ssh: DeviceSshConfig | None) -> dict | None:
         "auth": ssh.auth,
         "key_id": ssh.key_id or None,
         "login_id": ssh.login_id or None,
+        "sudo_login_id": ssh.sudo_login_id or None,
     }
 
 
@@ -974,7 +981,7 @@ async def start_action(
             operator.install_client(
                 packages=packages,
                 enrollment_link=link,
-                sudo_password=request.sudo_password or None,
+                sudo_password=_sudo_material(request),
             ),
         ),
     )
@@ -1041,6 +1048,7 @@ def _install_credentials(
                 auth=AUTH_KEY if request.key_id else AUTH_PASSWORD,
                 key_id=request.key_id,
                 login_id=login_id,
+                sudo_login_id=request.sudo_login_id or None,
             )
         )
         DeviceRegistry().annotate(device.mac_address, {"ssh": stored})
@@ -1048,6 +1056,27 @@ def _install_credentials(
     if request.password:
         credentials.password = request.password
     return credentials
+
+
+def _sudo_material(request: DeviceActionRequest) -> "str | None":
+    """The password sudo is fed on the device for this install.
+
+    Args:
+        request: The install request.
+
+    Returns:
+        The referenced vault login's password, else the one typed for this
+        install, else None for passwordless sudo.
+
+    Raises:
+        HTTPException: 400 when ``sudo_login_id`` names no vault login.
+    """
+    if request.sudo_login_id:
+        material = login_password(request.sudo_login_id)
+        if material is None:
+            _refuse_unknown_credential("sudo_login_id")
+        return material
+    return request.sudo_password or None
 
 
 async def _locked_install(

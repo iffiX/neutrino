@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { Icon } from "./icon";
-import { PasswordInput } from "./password_input";
 import { Spinner } from "./spinner";
 import { StatusDot } from "./status_dot";
 import { VaultPicker } from "./vault_picker";
@@ -21,8 +20,9 @@ import "./install_agent_modal.css";
  * The SSH login the hub installs a machine's agent with, and the install.
  *
  * The credential is one the vault holds: a key or a login, picked here and
- * stored here where it is not stored yet. The sudo password is typed for this
- * install alone; nothing echoes either into the output below.
+ * stored here where it is not stored yet. The login whose password sudo is
+ * given on the device comes from the same vault; nothing echoes a secret into
+ * the output below.
  */
 
 const WORDING = {
@@ -43,7 +43,7 @@ const WORDING = {
   loginHint: "The stored password the hub signs in with.",
   sudoPassword: "Sudo password", // scan: allow
   sudoHint:
-    "Used for this install and stored nowhere. Leave blank when the account has passwordless sudo.",
+    "The login whose password sudo is given on the device. Leave empty when the account has passwordless sudo.",
   submit: "Install agent",
   submitReinstall: "Reinstall agent",
   running: "Installing…",
@@ -92,7 +92,7 @@ export function InstallAgentModal({
   const [loginId, setLoginId] = useState<string | null>(
     device.ssh?.login_id ?? null,
   );
-  const [sudoPassword, setSudoPassword] = useState("");
+  const [sudoLoginId, setSudoLoginId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
   const task = useTaskStream(taskId);
@@ -149,7 +149,7 @@ export function InstallAgentModal({
       username: username.trim(),
       key_id: credentialKind === "key" ? keyId : null,
       login_id: credentialKind === "login" ? loginId : null,
-      sudo_password: sudoPassword,
+      sudo_login_id: sudoLoginId,
     };
     try {
       const started = await apiPost<TaskStarted>(
@@ -267,11 +267,13 @@ export function InstallAgentModal({
             />
           )}
 
-          <label className="field">
-            <span className="field_label">{WORDING.sudoPassword}</span>
-            <PasswordInput value={sudoPassword} onChange={setSudoPassword} />
-            <span className="field_hint">{WORDING.sudoHint}</span>
-          </label>
+          <VaultPicker
+            kind="login"
+            value={sudoLoginId}
+            onChange={setSudoLoginId}
+            label={WORDING.sudoPassword}
+            hint={WORDING.sudoHint}
+          />
 
           {taskId !== null && (
             <div className="install_modal_log">

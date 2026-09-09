@@ -861,7 +861,8 @@ export interface DeviceActionRequest {
  * What installing the agent over SSH needs.
  *
  * The credential is exactly one of the two the vault holds: a stored key or a
- * stored login. `sudo_password` is typed for this install and stored nowhere.
+ * stored login. `sudo_login_id` is the stored login whose password sudo is
+ * given on the device, and null where sudo asks for none.
  */
 export interface DeviceInstallRequest {
   action: "install_client";
@@ -870,7 +871,7 @@ export interface DeviceInstallRequest {
   username: string;
   key_id: string | null;
   login_id: string | null;
-  sudo_password: string;
+  sudo_login_id: string | null;
 }
 
 /** The job an action started, followed on `/ws/task/{task_id}`. */

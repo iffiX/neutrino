@@ -92,6 +92,7 @@ def test_valid_references_are_stored_and_echoed(api):
         "auth": "password",
         "key_id": None,
         "login_id": login_id,
+        "sudo_login_id": None,
     }
 
 

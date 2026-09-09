@@ -781,6 +781,9 @@ class DeviceSshConfig(BaseModel):
     key_id: str | None = None
     key_name: str | None = None
     login_id: str | None = None
+    # The vault login sudo is answered with on the device; a reference, so
+    # a reinstall preselects it.
+    sudo_login_id: str | None = None
 
 
 class DeviceGpuView(BaseModel):
@@ -928,8 +931,10 @@ class DeviceActionRequest(BaseModel):
 
     ``install_client`` carries how to reach the machine over SSH: exactly
     one of a stored key, a stored login, or a password typed now, which
-    ``is_password_saved`` stores as a login. The sudo password is used for
-    this one install and written nowhere.
+    ``is_password_saved`` stores as a login. ``sudo_login_id`` names the
+    vault login whose password sudo is given on the device; empty for an
+    account with passwordless sudo. ``sudo_password`` is the same thing
+    typed for one install.
     """
 
     action: str
@@ -940,6 +945,7 @@ class DeviceActionRequest(BaseModel):
     login_id: str | None = None
     password: str | None = None
     is_password_saved: bool = False
+    sudo_login_id: str | None = None
     sudo_password: str | None = None
 
 
