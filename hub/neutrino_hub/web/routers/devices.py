@@ -53,6 +53,9 @@ from neutrino_hub.modules.router.link_status import RouterLinkStatus, device_add
 from neutrino_hub import HUB_VERSION
 from neutrino_hub.web.agent_tls import certificate_fingerprint
 from neutrino_hub.web.constants import (
+    WEB_REINSTALL_LEAVE_TIMEOUT_S,
+    WEB_REINSTALL_POLL_S,
+    WEB_REINSTALL_RETURN_TIMEOUT_S,
     WEB_DEFAULT_AGENT_LISTEN_PORT,
     WEB_EVENT_DEVICES,
 )
@@ -937,7 +940,11 @@ async def start_action(
             )
         stream = runtime.tasks.start(
             label=f"{action} {mac_address}",
-            source=_agent_command_stream(runtime, key, AGENT_COMMAND_ACTIONS[action]),
+            source=(
+                _reinstall_stream(runtime, key)
+                if action == "reinstall_agent"
+                else _agent_command_stream(runtime, key, AGENT_COMMAND_ACTIONS[action])
+            ),
         )
         runtime.events.publish(WEB_EVENT_DEVICES)
         return TaskStarted(task_id=stream.id)
@@ -1278,6 +1285,61 @@ async def _agent_command_stream(
         yield "\n"
     elif "exit_code" in info:
         yield f"[exit {info['exit_code']}]\n"
+
+
+async def _reinstall_stream(runtime: PanelRuntime, key: str) -> AsyncIterator[str]:
+    """Reinstall a device's agent and follow it until it is back.
+
+    The agent launches its own reinstall and closes the command at once,
+    since the process about to be replaced cannot report its replacement.
+    The task then watches the device's socket drop and return.
+
+    Args:
+        runtime: The shared runtime, which holds the sockets.
+        key: The device.
+
+    Yields:
+        The command's lines, then where the agent stands until it is back
+        or the wait runs out.
+    """
+    is_launched = True
+    async for line in _agent_command_stream(runtime, key, "reinstall"):
+        if line.startswith("{"):
+            is_launched = False
+        yield line
+    if not is_launched:
+        return
+    yield "waiting for the agent to leave\n"
+    if not await _wait_for_presence(runtime, key, False, WEB_REINSTALL_LEAVE_TIMEOUT_S):
+        yield "the agent kept its socket; the package may not have changed\n"
+        return
+    yield "waiting for the agent to come back\n"
+    if not await _wait_for_presence(runtime, key, True, WEB_REINSTALL_RETURN_TIMEOUT_S):
+        yield json.dumps({"code": "agent_not_back", "params": {}}) + "\n"
+        return
+    yield f"agent {runtime.agent_sessions.version_of(key)} is back\n"
+
+
+async def _wait_for_presence(
+    runtime: PanelRuntime, key: str, is_wanted: bool, timeout_s: float
+) -> bool:
+    """Wait until a device's socket is present or absent.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        is_wanted: Whether to wait for the socket to be there.
+        timeout_s: How long to wait.
+
+    Returns:
+        True when the wanted presence was seen in time.
+    """
+    deadline = asyncio.get_running_loop().time() + timeout_s
+    while asyncio.get_running_loop().time() < deadline:
+        if runtime.agent_sessions.is_online(key) == is_wanted:
+            return True
+        await asyncio.sleep(WEB_REINSTALL_POLL_S)
+    return False
 
 
 def _to_view(

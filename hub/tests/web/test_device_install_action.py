@@ -381,3 +381,74 @@ def test_an_unknown_action_is_refused_typed(api):
 
     assert refused.status_code == 400
     assert refused.json()["detail"]["code"] == "unknown_action"
+
+
+# --- reinstall follows the agent out and back ---
+
+
+class Presence:
+    """A sessions stand-in whose presence flips on a script."""
+
+    def __init__(self, script):
+        self.script = list(script)
+        self.outcome = {
+            "exit_code": 0,
+            "code": "",
+            "params": {},
+            "output": "reinstall launched\n",
+        }
+
+    def is_online(self, key):
+        return self.script.pop(0) if len(self.script) > 1 else self.script[0]
+
+    def version_of(self, key):
+        return "9.9.9"
+
+    async def open_stream(self, key, kind, args):
+        return _ClosedStream(self.outcome)
+
+
+class _ClosedStream:
+    def __init__(self, info):
+        self.close_info = info
+
+    async def recv(self):
+        return None
+
+
+def test_reinstall_follows_the_agent_out_and_back(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+
+    from neutrino_hub.web.routers import devices as devices_router
+
+    monkeypatch.setattr(devices_router, "WEB_REINSTALL_POLL_S", 0.0)
+    runtime = SimpleNamespace(agent_sessions=Presence([True, True, False, False, True]))
+
+    async def drain():
+        return [line async for line in devices_router._reinstall_stream(runtime, MAC)]
+
+    lines = asyncio.run(drain())
+
+    assert lines[0] == "reinstall launched\n"
+    assert "waiting for the agent to leave\n" in lines
+    assert "waiting for the agent to come back\n" in lines
+    assert lines[-1] == "agent 9.9.9 is back\n"
+
+
+def test_reinstall_says_when_the_agent_never_leaves(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+
+    from neutrino_hub.web.routers import devices as devices_router
+
+    monkeypatch.setattr(devices_router, "WEB_REINSTALL_POLL_S", 0.0)
+    monkeypatch.setattr(devices_router, "WEB_REINSTALL_LEAVE_TIMEOUT_S", 0.01)
+    runtime = SimpleNamespace(agent_sessions=Presence([True]))
+
+    async def drain():
+        return [line async for line in devices_router._reinstall_stream(runtime, MAC)]
+
+    lines = asyncio.run(drain())
+
+    assert lines[-1] == "the agent kept its socket; the package may not have changed\n"
