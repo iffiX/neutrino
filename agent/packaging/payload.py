@@ -16,6 +16,7 @@ Not pure: downloads interpreters, writes package trees.
 
 import hashlib
 import shutil
+import subprocess
 import tarfile
 import tempfile
 import urllib.request
@@ -64,6 +65,40 @@ MACHINE_NAMES = {
 }
 DEBIAN_ARCHITECTURES = {"x86_64": "amd64", "aarch64": "arm64"}
 RPM_ARCHITECTURES = {"x86_64": "x86_64", "aarch64": "aarch64"}
+
+# What the bytecode pass leaves alone: the standard library's own test suites
+# hold files that are deliberately unparseable, and nothing on a device
+# imports them.
+BYTECODE_EXCLUDED = r"/(test|tests|idle_test)/"
+
+# What both maintainer scripts run over the prefix, given the paths their
+# package manager tracks. Configuration, state and logs live under roots it
+# never names.
+PRUNE_UNTRACKED = """# Everything under the package's own prefix that the package did not install,
+# and the directories that leaves empty. The tracked paths are read on
+# standard input, and an empty list removes nothing.
+prune_untracked() {
+    prefix="$1"
+    [ -d "$prefix" ] || return 0
+    tracked="$(mktemp)" || return 0
+    LC_ALL=C sort >"$tracked"
+    if [ ! -s "$tracked" ]; then
+        rm -f "$tracked"
+        return 0
+    fi
+    found="$(mktemp)" || { rm -f "$tracked"; return 0; }
+    find "$prefix" ! -type d -print | LC_ALL=C sort >"$found"
+    LC_ALL=C comm -23 "$found" "$tracked" | while IFS= read -r path; do
+        case "$path" in "$prefix"/*) rm -f "$path" ;; esac
+    done
+    find "$prefix" -type d -print | LC_ALL=C sort >"$found"
+    LC_ALL=C comm -23 "$found" "$tracked" | LC_ALL=C sort -r |
+        while IFS= read -r path; do
+            case "$path" in "$prefix"/*) rmdir "$path" 2>/dev/null || true ;; esac
+        done
+    rm -f "$tracked" "$found"
+}
+"""
 
 
 def version() -> str:
@@ -196,6 +231,49 @@ def trim_interpreter(staged_python: Path) -> None:
         path.unlink(missing_ok=True)
     for name in ("idle3", f"idle{PYTHON_VERSION[:4]}", "2to3"):
         (staged_python / "bin" / name).unlink(missing_ok=True)
+
+
+def compile_bytecode(staged_python: Path, install_python: Path) -> None:
+    """Compile the carried interpreter's tree so the package ships its bytecode.
+
+    A ``.pyc`` the interpreter writes after the install is in no package's
+    file list, and a directory a later version drops cannot be removed over
+    one. Compiled here, every one of them is a file the package manager
+    installs and replaces.
+
+    Args:
+        staged_python: The interpreter tree as staged.
+        install_python: Where that tree is installed, which is the path
+            recorded in the bytecode.
+
+    Raises:
+        SystemExit: When the interpreter cannot compile its own tree.
+    """
+    result = subprocess.run(
+        [
+            str(staged_python / "bin" / "python3"),
+            "-m",
+            "compileall",
+            "-q",
+            "-f",
+            # The package manager sets its own mtimes, and a timestamp
+            # validated .pyc would be rejected and written again at runtime.
+            "--invalidation-mode",
+            "unchecked-hash",
+            "-x",
+            BYTECODE_EXCLUDED,
+            "-d",
+            str(install_python / "lib"),
+            str(staged_python / "lib"),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise SystemExit(
+            f"compiling {staged_python} failed:\n"
+            f"{(result.stderr or result.stdout).strip()}"
+        )
 
 
 def strip_build_paths(staged_python: Path, tree: Path) -> None:

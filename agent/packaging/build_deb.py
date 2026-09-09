@@ -42,6 +42,14 @@ Description: Neutrino device agent
 POSTINST = """#!/bin/sh
 set -e
 
+{prune}
+if [ "$1" = configure ]; then
+    listing=/var/lib/dpkg/info/{package}.list
+    if [ -r "$listing" ]; then
+        prune_untracked {prefix} <"$listing"
+    fi
+fi
+
 systemctl daemon-reload || true
 
 # The agent runs from install: unbound it idles waiting for a link, and its
@@ -150,6 +158,7 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
     staged_python = tree / str(payload.PYTHON_DIR).lstrip("/")
     payload.stage_linux_interpreter(staged_python, architecture)
     payload.stage_agent_tree(payload.site_packages_of(staged_python), version)
+    payload.compile_bytecode(staged_python, payload.PYTHON_DIR)
     payload.strip_build_paths(staged_python, tree)
 
     payload.write(
@@ -172,7 +181,15 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
         maintainer=maintainer,
     )
     payload.write(tree / "DEBIAN/control", control)
-    payload.write(tree / "DEBIAN/postinst", POSTINST, is_executable=True)
+    payload.write(
+        tree / "DEBIAN/postinst",
+        POSTINST.format(
+            prune=payload.PRUNE_UNTRACKED,
+            package=PACKAGE_NAME,
+            prefix=payload.INSTALL_PREFIX,
+        ),
+        is_executable=True,
+    )
     payload.write(tree / "DEBIAN/prerm", PRERM, is_executable=True)
     payload.write(
         tree / "DEBIAN/postrm",

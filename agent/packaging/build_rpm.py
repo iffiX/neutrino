@@ -67,14 +67,6 @@ cp -a {staged}/. %{{buildroot}}/
 /usr/bin/nagent
 /{unit_dir}/neutrino_agent.service
 
-%pre
-# Python writes __pycache__ into the carried tree while the agent runs; rpm
-# does not own those files, and they would stay behind over the new ones.
-if [ "$1" -ge 2 ] && [ -d {prefix} ]; then
-    find {prefix} -type d -name __pycache__ -prune -print0 |
-        xargs -0 -r rm -rf 2>/dev/null || true
-fi
-
 %post
 systemctl daemon-reload >/dev/null 2>&1 || true
 # An upgrade must restart the running agent: the self-update path ends
@@ -104,6 +96,10 @@ if [ "$1" = 0 ]; then
     echo "  Leaving /etc/neutrino/agent in place; remove it by hand if this"
     echo "  machine is not going to rejoin a hub."
 fi
+
+%posttrans
+{prune}
+rpm -ql {name} | prune_untracked {prefix}
 """
 
 WRAPPER = """#!/bin/sh
@@ -155,6 +151,7 @@ def main() -> int:
                 staged=staged,
                 prefix=payload.INSTALL_PREFIX,
                 unit_dir=UNIT_DIR,
+                prune=payload.PRUNE_UNTRACKED,
             ),
             encoding="utf-8",
         )
@@ -175,6 +172,7 @@ def _lay_out(staged: Path, version: str, architecture: str) -> None:
     staged_python = staged / str(payload.PYTHON_DIR).lstrip("/")
     payload.stage_linux_interpreter(staged_python, architecture)
     payload.stage_agent_tree(payload.site_packages_of(staged_python), version)
+    payload.compile_bytecode(staged_python, payload.PYTHON_DIR)
     payload.strip_build_paths(staged_python, staged)
 
     payload.write(

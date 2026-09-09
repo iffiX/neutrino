@@ -228,6 +228,40 @@ def _package_lists():
     }, packages_for
 
 
+# What the bytecode pass leaves alone: the standard library's own test suites
+# hold files that are deliberately unparseable, and nothing on a box imports
+# them.
+BYTECODE_EXCLUDED = r"/(test|tests|idle_test)/"
+
+# What every maintainer script runs over the prefix, given the paths its
+# package manager tracks. Configuration, state and logs live under roots it
+# never names.
+PRUNE_UNTRACKED = """# Everything under the package's own prefix that the package did not install,
+# and the directories that leaves empty. The tracked paths are read on
+# standard input, and an empty list removes nothing.
+prune_untracked() {
+    prefix="$1"
+    [ -d "$prefix" ] || return 0
+    tracked="$(mktemp)" || return 0
+    LC_ALL=C sort >"$tracked"
+    if [ ! -s "$tracked" ]; then
+        rm -f "$tracked"
+        return 0
+    fi
+    found="$(mktemp)" || { rm -f "$tracked"; return 0; }
+    find "$prefix" ! -type d -print | LC_ALL=C sort >"$found"
+    LC_ALL=C comm -23 "$found" "$tracked" | while IFS= read -r path; do
+        case "$path" in "$prefix"/*) rm -f "$path" ;; esac
+    done
+    find "$prefix" -type d -print | LC_ALL=C sort >"$found"
+    LC_ALL=C comm -23 "$found" "$tracked" | LC_ALL=C sort -r |
+        while IFS= read -r path; do
+            case "$path" in "$prefix"/*) rmdir "$path" 2>/dev/null || true ;; esac
+        done
+    rm -f "$tracked" "$found"
+}
+"""
+
 WRAPPER = """#!/bin/sh
 # The hub runs from the interpreter the package carries, never the system one.
 exec {python}/bin/python3 -m neutrino_hub.cli.entry "$@"
@@ -274,6 +308,7 @@ def build_environment(tree: Path, version: str, machine: str) -> None:
     finally:
         stamp.unlink(missing_ok=True)
 
+    compile_bytecode(staged_python, PYTHON_DIR)
     strip_build_paths(staged_python, tree)
     stage_agent_cache(tree, staged_python, machine)
     stage_vendored(tree, machine)
@@ -579,6 +614,42 @@ def _fetch_interpreter(staged_python: Path, machine: str) -> None:
             else:
                 bundle.extractall(workdir)
         (Path(workdir) / "python").rename(staged_python)
+
+
+def compile_bytecode(staged_python: Path, install_python: Path) -> None:
+    """Compile the carried interpreter's tree so the package ships its bytecode.
+
+    A ``.pyc`` the interpreter writes after the install is in no package's
+    file list, and a directory a later version drops cannot be removed over
+    one. Compiled here, every one of them is a file the package manager
+    installs and replaces.
+
+    Args:
+        staged_python: The interpreter tree as staged.
+        install_python: Where that tree is installed, which is the path
+            recorded in the bytecode.
+
+    Raises:
+        SystemExit: When the interpreter cannot compile its own tree.
+    """
+    run(
+        [
+            str(staged_python / "bin" / "python3"),
+            "-m",
+            "compileall",
+            "-q",
+            "-f",
+            # The package manager sets its own mtimes, and a timestamp
+            # validated .pyc would be rejected and written again at runtime.
+            "--invalidation-mode",
+            "unchecked-hash",
+            "-x",
+            BYTECODE_EXCLUDED,
+            "-d",
+            str(install_python / "lib"),
+            str(staged_python / "lib"),
+        ]
+    )
 
 
 def strip_build_paths(staged_python: Path, tree: Path) -> None:

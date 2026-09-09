@@ -14,15 +14,25 @@ import payload
 
 @pytest.fixture
 def carried(monkeypatch):
-    """A staged interpreter, without fetching or compiling one."""
+    """A staged interpreter, without fetching or compiling one.
+
+    Returns:
+        What each build asked to be compiled, and where it is installed.
+    """
+    compiled = []
 
     def stage(staged_python, architecture):
         (staged_python / "bin").mkdir(parents=True)
         (staged_python / "bin" / "python3").write_text("")
         (staged_python / "lib" / "python3.13" / "site-packages").mkdir(parents=True)
 
+    def compile_bytecode(staged_python, install_python):
+        compiled.append((staged_python, install_python))
+
     for module in (build_deb, build_rpm):
         monkeypatch.setattr(module.payload, "stage_linux_interpreter", stage)
+        monkeypatch.setattr(module.payload, "compile_bytecode", compile_bytecode)
+    return compiled
 
 
 def test_the_deb_puts_the_agent_inside_the_interpreter_it_carries(tmp_path, carried):
@@ -70,6 +80,34 @@ def test_the_deb_carries_the_unit_and_nothing_for_a_desktop(tmp_path, carried):
     assert not (tmp_path / "usr/share/icons").exists()
 
 
+def test_the_deb_compiles_the_tree_at_the_path_it_installs_it_at(tmp_path, carried):
+    """Bytecode the package ships is bytecode the package replaces."""
+    build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
+
+    assert carried == [(tmp_path / "opt/neutrino_agent/python", payload.PYTHON_DIR)]
+
+
+def test_the_deb_prunes_what_the_package_did_not_install(tmp_path, carried):
+    """dpkg's own file list says what the package put under the prefix."""
+    build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
+
+    postinst = (tmp_path / "DEBIAN/postinst").read_text()
+
+    assert payload.PRUNE_UNTRACKED in postinst
+    assert "/var/lib/dpkg/info/neutrino-agent.list" in postinst
+    assert "prune_untracked /opt/neutrino_agent" in postinst
+
+
+def test_the_rpm_prunes_from_its_own_file_list_after_the_transaction(tmp_path, carried):
+    build_rpm._lay_out(tmp_path, "9.9.9", "x86_64")
+    spec = _spec()
+
+    assert payload.PRUNE_UNTRACKED in spec
+    assert "%posttrans" in spec
+    assert "rpm -ql neutrino-agent | prune_untracked /opt/neutrino_agent" in spec
+    assert carried == [(tmp_path / "opt/neutrino_agent/python", payload.PYTHON_DIR)]
+
+
 def test_the_deb_removes_its_own_payload_and_never_the_hub_s(tmp_path, carried):
     """A machine may run both, and /opt/neutrino is the hub package's."""
     build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
@@ -79,7 +117,8 @@ def test_the_deb_removes_its_own_payload_and_never_the_hub_s(tmp_path, carried):
 
     assert "rm -rf /opt/neutrino_agent" in postrm
     assert "rm -rf /opt/neutrino\n" not in postrm
-    assert "/opt/neutrino_agent" not in postinst
+    assert "rm -rf" not in postinst
+    assert "prune_untracked /opt/neutrino\n" not in postinst
 
 
 @pytest.mark.parametrize(
@@ -108,18 +147,31 @@ def test_the_rpm_lays_the_same_payload_under_the_same_prefix(tmp_path, carried):
     assert "PYTHONPATH" not in wrapper
 
 
-def test_the_rpm_spec_names_the_machine_and_asks_for_no_python():
-    """A payload with an interpreter in it is not noarch any more."""
-    spec = build_rpm.SPEC.format(
+def _spec(architecture="aarch64"):
+    """The spec as the build writes it.
+
+    Args:
+        architecture: The machine to name in it.
+
+    Returns:
+        The rendered spec file.
+    """
+    return build_rpm.SPEC.format(
         name="neutrino-agent",
         version="9.9.9",
-        architecture="aarch64",
+        architecture=architecture,
         requires="\n".join(f"Requires:       {n}" for n in build_rpm.RUNTIME_REQUIRES),
         packager="somebody",
         staged="/staged",
         prefix=payload.INSTALL_PREFIX,
         unit_dir=build_rpm.UNIT_DIR,
+        prune=payload.PRUNE_UNTRACKED,
     )
+
+
+def test_the_rpm_spec_names_the_machine_and_asks_for_no_python():
+    """A payload with an interpreter in it is not noarch any more."""
+    spec = _spec()
 
     assert "BuildArch:      aarch64" in spec
     assert "noarch" not in spec
