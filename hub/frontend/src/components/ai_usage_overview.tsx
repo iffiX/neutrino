@@ -11,7 +11,8 @@ import {
   tokensOf,
 } from "../ai_usage";
 import { formatCompact, formatSmallRate } from "../format_compact";
-import { usePolledResource } from "../use_polled_resource";
+import { useApiResource } from "../use_api_resource";
+import { HUB_EVENT_AI_USAGE } from "../use_hub_events";
 import type { AiUsageRange, AiUsageResponse } from "../api_types";
 
 import "./ai_usage_overview.css";
@@ -47,8 +48,8 @@ const WORDING = {
   unavailableHint: "The gateway is not reporting usage on this box yet.",
 } as const;
 
-// Usage moves while somebody watches it; the collector feeds it every 10 s.
-const USAGE_POLL_INTERVAL_MS = 5000;
+// The collector says when what it metered moved.
+const USAGE_INVALIDATE_ON = [{ type: HUB_EVENT_AI_USAGE }];
 
 const RANGE_OPTIONS: { value: AiUsageRange; label: string }[] = [
   { value: "day", label: "Day" },
@@ -60,10 +61,9 @@ const RANGE_OPTIONS: { value: AiUsageRange; label: string }[] = [
 export function AiUsageOverview() {
   const [range, setRange] = useState<AiUsageRange>("day");
   const [keyId, setKeyId] = useState("");
-  const usage = usePolledResource<AiUsageResponse>(
-    usagePath(range, keyId),
-    USAGE_POLL_INTERVAL_MS,
-  );
+  const usage = useApiResource<AiUsageResponse>(usagePath(range, keyId), {
+    invalidateOn: USAGE_INVALIDATE_ON,
+  });
   const data = usage.data;
 
   return (

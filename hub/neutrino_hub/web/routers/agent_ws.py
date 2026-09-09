@@ -28,9 +28,15 @@ from neutrino_hub.modules.devices.constants import (
     AGENT_WS_HELLO_TIMEOUT_S,
 )
 from neutrino_hub.modules.devices.registry import DeviceRegistry
+from neutrino_hub.web.constants import WEB_EVENT_DEVICE_REPORT, WEB_EVENT_METRICS
 from neutrino_hub.web.routers.agent import version_refusal
 
 router = APIRouter(prefix="/api/agent")
+
+# What a report has to change before the panel refetches the device list.
+# Metrics are not among them: every beat carries them, and they ride their
+# own event to the tiles and the monitor rather than costing a request.
+REPORT_PANEL_FIELDS = ("modules", "rdp", "last_error")
 
 
 @router.websocket("/ws")
@@ -123,8 +129,16 @@ async def _serve(websocket: WebSocket, runtime, session: AgentSession, device):
             continue
         kind = decoded.get("type")
         if kind == "report":
+            is_panel_change = _is_panel_change(session.report, decoded)
             session.record_report(decoded)
             record_report(runtime, device, decoded)
+            if is_panel_change:
+                runtime.events.publish(WEB_EVENT_DEVICE_REPORT, device.mac_address)
+            runtime.events.publish(
+                WEB_EVENT_METRICS,
+                device.mac_address,
+                data=dict(runtime.client_metrics.get(device.mac_address, {})),
+            )
         elif kind == "state_request":
             state_hash, desired = await asyncio.to_thread(
                 runtime.desired_state_for, device
@@ -134,6 +148,21 @@ async def _serve(websocket: WebSocket, runtime, session: AgentSession, device):
             )
         else:
             session.dispatch_text(decoded)
+
+
+def _is_panel_change(previous: dict, report: dict) -> bool:
+    """Whether a report says anything new about what the panel draws.
+
+    Args:
+        previous: The report before this one, empty for the first.
+        report: The report that just arrived.
+
+    Returns:
+        True when one of :data:`REPORT_PANEL_FIELDS` differs.
+    """
+    return any(
+        previous.get(field) != report.get(field) for field in REPORT_PANEL_FIELDS
+    )
 
 
 async def _read_hello(websocket: WebSocket) -> "dict | None":

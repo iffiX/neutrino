@@ -18,6 +18,7 @@ export function SambaPage() {
     <AgentServicePage title={WORDING.title} moduleName={WORDING.moduleName}>
       {(target) => (
         <SambaPanels
+          deviceId={target.deviceId}
           basePath={target.basePath}
           isEditable={target.isEditable}
         />

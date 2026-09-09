@@ -11,6 +11,7 @@ import { StringListEditor } from "./string_list_editor";
 import { ToggleSwitch } from "./toggle_switch";
 import { apiGet, apiPost, apiPut, describeError } from "../api_client";
 import { useApiResource } from "../use_api_resource";
+import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
 import type {
   ApplyResult,
   PodmanContainer,
@@ -88,10 +89,6 @@ const WORDING = {
   offline: "The agent is offline",
 };
 
-// The live list follows along: containers start, stop and crash on their own
-// schedule, not the panel's.
-const LIVE_INTERVAL_MS = 3000;
-
 const EMPTY_CONTAINER: PodmanContainer = {
   name: "",
   image: "",
@@ -115,7 +112,14 @@ export function ContainersPanels({
   basePath,
   isEditable,
 }: ContainersPanelsProps) {
-  const resource = useApiResource<PodmanDeviceView>(basePath);
+  // Containers start, stop and crash on their own schedule; the machine's
+  // own report is what says so, and its settings are a write like any other.
+  const resource = useApiResource<PodmanDeviceView>(basePath, {
+    invalidateOn: [
+      { type: HUB_EVENT_DEVICE_REPORT, key: deviceId },
+      { type: HUB_EVENT_CONFIG },
+    ],
+  });
 
   const [containers, setContainers] = useState<PodmanContainer[]>([]);
   const [mirrors, setMirrors] = useState<string[]>([]);
@@ -129,10 +133,10 @@ export function ContainersPanels({
   const [shellTarget, setShellTarget] = useState<string | null>(null);
   const [journalTarget, setJournalTarget] = useState<string | null>(null);
 
-  // The live list polls every few seconds, so resource.data changes identity
-  // constantly. The draft is only re-seeded when the *saved declarations*
-  // actually changed — otherwise every poll would wipe an edit in progress,
-  // including a freshly added container that exists nowhere else yet.
+  // The live list refreshes on its own, so the draft is only re-seeded when
+  // the *saved declarations* actually changed — otherwise a refresh would
+  // wipe an edit in progress, including a freshly added container that exists
+  // nowhere else yet.
   const lastSyncedRef = useRef<string | null>(null);
   useEffect(() => {
     if (resource.data === null) {
@@ -148,16 +152,6 @@ export function ContainersPanels({
       setMirrors(resource.data.mirrors);
     }
   }, [resource.data]);
-
-  const reload = resource.reload;
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      if (!document.hidden) {
-        reload();
-      }
-    }, LIVE_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, [reload]);
 
   const saved = resource.data;
   const isDirty =

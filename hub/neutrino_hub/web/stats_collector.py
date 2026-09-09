@@ -23,6 +23,27 @@ from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.modules.xray.constants import XRAY_DIRECT_TAG, XRAY_NODE_TAG_PREFIX
 
 
+def _node_readings(outbounds: list, probes: list) -> dict:
+    """What the nodes panel draws per node, by outbound tag.
+
+    Args:
+        outbounds: The traffic counters this cycle read.
+        probes: The reachability results this cycle read.
+
+    Returns:
+        Tag to ``(traffic, probe)``, either of which is None where this cycle
+        has nothing for that tag.
+    """
+    traffic = {
+        entry.tag: (entry.uplink_bytes, entry.downlink_bytes) for entry in outbounds
+    }
+    probed = {probe.tag: (probe.is_alive, probe.delay_ms) for probe in probes}
+    return {
+        tag: (traffic.get(tag), probed.get(tag))
+        for tag in sorted(set(traffic) | set(probed))
+    }
+
+
 @dataclass
 class InterfaceSample:
     """One reading of an interface's counters, kept to rate the next one.
@@ -72,6 +93,9 @@ class PanelStatsCollector:
         scope = self._runtime.proxy_scope()
         network = self._runtime.network()
         interface_name, rx_bytes_per_s, tx_bytes_per_s = self._interface_rates(network)
+        # The nodes panel draws these readings and nothing else refreshes
+        # them, so this cycle is what tells it they moved.
+        self._runtime.publish_node_readings(_node_readings(outbounds, probes))
 
         return StatsFrame(
             timestamp=datetime.now(timezone.utc).isoformat(),

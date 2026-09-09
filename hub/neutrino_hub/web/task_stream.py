@@ -93,7 +93,13 @@ class TaskStream:
 class TaskStreamRegistry:
     """Starts jobs and hands out their streams."""
 
-    def __init__(self):
+    def __init__(self, *, on_change=None):
+        """
+        Args:
+            on_change: Called with a job's id when it starts and when it
+                finishes; None tells nobody.
+        """
+        self._on_change = on_change
         self._streams: dict[str, TaskStream] = {}
 
     def start(self, *, label: str, source: AsyncIterator[str]) -> TaskStream:
@@ -114,6 +120,7 @@ class TaskStreamRegistry:
         )
         self._streams[stream.id] = stream
         asyncio.create_task(self._drain(stream, source))
+        self._note_change(stream.id)
         return stream
 
     def running(self, label: str) -> TaskStream | None:
@@ -159,6 +166,11 @@ class TaskStreamRegistry:
         """
         return list(self._streams.values())
 
+    def _note_change(self, task_id: str) -> None:
+        """Say a job started or finished, where anybody asked to be told."""
+        if self._on_change is not None:
+            self._on_change(task_id)
+
     def _evict_finished(self) -> None:
         """Drop the oldest finished jobs, keeping the most recent few."""
         finished = [
@@ -181,3 +193,4 @@ class TaskStreamRegistry:
             exit_code = 1
         finally:
             stream.finish(exit_code)
+            self._note_change(stream.id)

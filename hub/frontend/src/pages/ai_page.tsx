@@ -13,7 +13,8 @@ import { StatusDot } from "../components/status_dot";
 import { apiPut, describeError } from "../api_client";
 import { copyText } from "../copy_text";
 import { formatCompact } from "../format_compact";
-import { usePolledResource } from "../use_polled_resource";
+import { useApiResource } from "../use_api_resource";
+import { HUB_EVENT_AI_USAGE, HUB_EVENT_CONFIG } from "../use_hub_events";
 import type { AiUsageResponse, CliproxyApiStatusView } from "../api_types";
 
 import "./ai_page.css";
@@ -71,8 +72,12 @@ const PORT_MIN = 1;
 const PORT_MAX = 65535;
 const STATUS_PATH = "/cliproxyapi";
 const USAGE_PATH = "/cliproxyapi/usage?range=month";
-// Usage moves while somebody watches it; the collector feeds it every 10 s.
-const USAGE_POLL_INTERVAL_MS = 5000;
+// What moves the gateway's own state and its numbers: the collector saying
+// the counters or the served list changed, and any write to its settings.
+const AI_INVALIDATE_ON = [
+  { type: HUB_EVENT_AI_USAGE },
+  { type: HUB_EVENT_CONFIG },
+];
 
 /** Which half of the usage area the chips are showing. */
 type UsageView = "providers" | "keys";
@@ -97,7 +102,9 @@ function toModelFamilies(models: string[]): ModelFamily[] {
 }
 
 export function AiPage() {
-  const status = usePolledResource<CliproxyApiStatusView>(STATUS_PATH);
+  const status = useApiResource<CliproxyApiStatusView>(STATUS_PATH, {
+    invalidateOn: AI_INVALIDATE_ON,
+  });
   const view = status.data;
   const [portError, setPortError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
@@ -107,14 +114,14 @@ export function AiPage() {
   const [copiedModel, setCopiedModel] = useState<string | null>(null);
   const [usageView, setUsageView] = useState<UsageView>("providers");
   const isInstalled = view !== null && view.is_installed;
-  const usage = usePolledResource<AiUsageResponse>(
+  const usage = useApiResource<AiUsageResponse>(
     isInstalled ? USAGE_PATH : null,
-    USAGE_POLL_INTERVAL_MS,
+    { invalidateOn: AI_INVALIDATE_ON },
   );
   const listenPort = view?.listen_port ?? null;
 
-  // Seeded once: a poll landing while somebody is typing a port must not take
-  // the field back.
+  // Seeded once: a refresh landing while somebody is typing a port must not
+  // take the field back.
   useEffect(() => {
     setPort((current) => (current === null ? listenPort : current));
   }, [listenPort]);

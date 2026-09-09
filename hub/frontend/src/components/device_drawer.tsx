@@ -33,6 +33,11 @@ import { formatTimeAgo } from "../format_duration";
 import { PRIVATE_KEY_PLACEHOLDER } from "../private_key_placeholder";
 import { stripAnsi } from "../strip_ansi";
 import { useApiResource } from "../use_api_resource";
+import {
+  HUB_EVENT_MODULE_ORDER,
+  HUB_EVENT_TASK,
+  useHubEvents,
+} from "../use_hub_events";
 import { useTaskStream } from "../use_task_stream";
 import type {
   DeviceActionName,
@@ -124,8 +129,6 @@ const COMMAND_RESULTS_LABEL = "Agent command results";
 // machine's own page shows, picked by the same precedence, so the two
 // surfaces render one stream.
 const INSTALL_OUTPUT_LABEL = "Operation output";
-const INSTALL_OUTPUT_INTERVAL_MS = 3000;
-const INSTALL_OUTPUT_BUSY_INTERVAL_MS = 1000;
 
 // The hub's own order states, worded. The transient ones are what the dot
 // pulses on, the same way a running task does.
@@ -392,23 +395,19 @@ export function DeviceDrawer({
 
   useEffect(() => {
     void loadOrders();
-    const handle = window.setInterval(
-      () => {
-        if (!document.hidden) {
-          void loadOrders();
-        }
-      },
-      isAnyOrderRunning
-        ? INSTALL_OUTPUT_BUSY_INTERVAL_MS
-        : INSTALL_OUTPUT_INTERVAL_MS,
-    );
-    return () => window.clearInterval(handle);
-  }, [loadOrders, isAnyOrderRunning]);
+  }, [loadOrders]);
+
+  useHubEvents(
+    [
+      { type: HUB_EVENT_MODULE_ORDER, key: device.mac_address },
+      { type: HUB_EVENT_TASK },
+    ],
+    () => void loadOrders(),
+  );
 
   // An install's outcome — the agent appearing, the version catching up — is
-  // the page's to show, and it should not wait for the next poll tick. The
-  // finish moment is kept so the pane can pick the operation that finished
-  // last.
+  // the page's to show the moment the task ends. The finish moment is kept so
+  // the pane can pick the operation that finished last.
   useEffect(() => {
     if (task.isRunning) {
       wasTaskRunning.current = true;
@@ -658,7 +657,7 @@ export function DeviceDrawer({
               <span className="badge">
                 {device.client?.hostname ?? (device.vendor || "unknown vendor")}
               </span>
-              {device.client !== null && (
+              {device.client !== null && !device.client.is_online && (
                 <span className="badge">
                   seen {formatTimeAgo(device.client.last_seen)}
                 </span>

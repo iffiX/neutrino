@@ -6,14 +6,22 @@ import { DeviceMonitor } from "../components/device_monitor";
 import { DeviceTile } from "../components/device_tile";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
-import { apiGet, apiPost, describeError } from "../api_client";
+import { apiPost, describeError } from "../api_client";
 import {
   isDeviceManaged,
   toDeviceReach,
   toDevicePresence,
 } from "../device_level";
 import type { DeviceReach } from "../device_level";
+import { toDeviceMetrics, withDeviceMetrics } from "../device_metrics";
 import { useApiResource } from "../use_api_resource";
+import {
+  HUB_EVENT_DEVICE_REPORT,
+  HUB_EVENT_DEVICES,
+  HUB_EVENT_METRICS,
+  useHubEvents,
+} from "../use_hub_events";
+import type { HubEvent } from "../use_hub_events";
 import type {
   DeviceEnrollmentView,
   DevicesResponse,
@@ -40,8 +48,12 @@ interface DeviceLegendRow {
   hint: string;
 }
 
-// How often the list quietly refreshes so agents and metrics stay current.
-const DEVICE_POLL_INTERVAL_MS = 6000;
+// What moves this list: a machine's channel opening or ending, a machine
+// named, forgotten or enrolled, and a report saying something new about one.
+const INVALIDATE_ON = [
+  { type: HUB_EVENT_DEVICES },
+  { type: HUB_EVENT_DEVICE_REPORT },
+];
 
 const FILTER_LABELS: Record<DeviceFilter, string> = {
   all: "All",
@@ -100,7 +112,9 @@ const DEVICE_LEGEND: DeviceLegendRow[] = [
 ];
 
 export function DevicesPage() {
-  const resource = useApiResource<DevicesResponse>("/devices");
+  const resource = useApiResource<DevicesResponse>("/devices", {
+    invalidateOn: INVALIDATE_ON,
+  });
 
   const [devices, setDevices] = useState<DeviceView[]>([]);
   const [filter, setFilter] = useState<DeviceFilter>("all");
@@ -119,51 +133,23 @@ export function DevicesPage() {
     }
   }, [resource.data]);
 
-  // Auto-refresh: an agent that just came online, or one whose metrics changed,
-  // should appear without a manual reload. The list endpoint is the cheap,
-  // arp-scan-free one, so polling it is quiet. Refreshing the list does not
-  // disturb the open drawer — its form fields are their own state.
-  useEffect(() => {
-    let isCancelled = false;
-    const poll = async () => {
-      if (isScanning) {
-        return;
-      }
-      try {
-        const result = await apiGet<DevicesResponse>("/devices");
-        if (!isCancelled) {
-          setDevices(result.devices);
-        }
-      } catch {
-        // A transient failure is ignored; the next tick tries again.
-      }
-    };
-    const handle = window.setInterval(() => {
-      if (!document.hidden) {
-        void poll();
-      }
-    }, DEVICE_POLL_INTERVAL_MS);
-    return () => {
-      isCancelled = true;
-      window.clearInterval(handle);
-    };
-  }, [isScanning]);
-
-  // Once now for the task's own outcome, once again after the agent's first
-  // heartbeat window, so a fresh install reads as online without waiting for
-  // the next poll tick.
-  const refreshDevices = async () => {
-    try {
-      const result = await apiGet<DevicesResponse>("/devices");
-      setDevices(result.devices);
-    } catch {
-      // The poll picks it up on its next tick.
+  // Vitals ride their own event, so a heartbeat lands on the tiles, the
+  // drawer header and the monitor without the list being asked for again.
+  const handleMetrics = (event: HubEvent) => {
+    const metrics = toDeviceMetrics(event);
+    if (metrics === null) {
+      return;
     }
+    setDevices((current) =>
+      withDeviceMetrics(current, event.key, metrics, event.at),
+    );
   };
+  useHubEvents([{ type: HUB_EVENT_METRICS }], handleMetrics);
 
+  // The task's own outcome, read at once rather than waiting for the agent
+  // to reconnect and say so itself.
   const handleTaskFinished = () => {
-    void refreshDevices();
-    window.setTimeout(() => void refreshDevices(), 2500);
+    resource.reload();
   };
 
   const handleScan = async () => {

@@ -14,6 +14,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
 
@@ -22,6 +23,7 @@ FINGERPRINT = "cd" * 32
 
 class FakeRuntime:
     def __init__(self, *, settings=None, addresses=("192.168.8.1",), overlays=()):
+        self.events = PanelEventBus()
         self.settings = settings or {}
         self.enrollments = {}
         self._addresses = addresses

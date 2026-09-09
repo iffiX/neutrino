@@ -12,6 +12,7 @@ import {
   describeError,
 } from "../api_client";
 import { useApiResource } from "../use_api_resource";
+import { HUB_EVENT_CONFIG, HUB_EVENT_SERVICES } from "../use_hub_events";
 import { useConfirm } from "../use_confirm";
 import type {
   DeclaredServiceCreate,
@@ -132,10 +133,17 @@ const DECLARED_INVALID_WORDING: Record<string, string> = {
 };
 const DECLARED_UNKNOWN_WORDING = "That service is already gone; reload.";
 
-const REFRESH_INTERVAL_MS = 5000;
+// What moves this list: the hub composing it differently, and any write
+// under config/, since a module's own settings decide what it publishes.
+const INVALIDATE_ON = [
+  { type: HUB_EVENT_SERVICES },
+  { type: HUB_EVENT_CONFIG },
+];
 
 export function ServicesPage() {
-  const resource = useApiResource<ServicesResponse>("/services");
+  const resource = useApiResource<ServicesResponse>("/services", {
+    invalidateOn: INVALIDATE_ON,
+  });
   const [services, setServices] = useState<PublishedService[]>([]);
   const [isDeclaring, setIsDeclaring] = useState(false);
 
@@ -144,16 +152,6 @@ export function ServicesPage() {
       setServices(resource.data.services);
     }
   }, [resource.data]);
-
-  const reload = resource.reload;
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      if (!document.hidden) {
-        reload();
-      }
-    }, REFRESH_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, [reload]);
 
   const handleChanged = (next: PublishedService[]) => {
     setServices(next);

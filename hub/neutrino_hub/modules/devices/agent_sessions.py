@@ -204,7 +204,8 @@ class AgentSession:
         address: Where its channel comes from.
         version: The agent release it reported.
         report: The most recent report, whole.
-        reported_at: The monotonic reading of that report.
+        reported_at: When that report arrived, as an ISO stamp; empty
+            before the first one.
         state_hash: The desired-state hash the agent last claimed.
         loop: The loop the socket is served on.
     """
@@ -226,7 +227,7 @@ class AgentSession:
         self.address = address
         self.version = version
         self.report: dict = {}
-        self.reported_at = 0.0
+        self.reported_at = ""
         self.state_hash = ""
         self.loop = loop
         self.opened_at = time.monotonic()
@@ -318,7 +319,7 @@ class AgentSession:
             report: The whole ``report`` message.
         """
         self.report = dict(report)
-        self.reported_at = time.monotonic()
+        self.reported_at = _now()
         self.state_hash = str(report.get("state_hash", "") or "")
         platform = report.get("platform")
         if isinstance(platform, dict) and platform:
@@ -449,10 +450,14 @@ class AgentSessionRegistry:
 
     Attributes:
         loop: The loop the sessions are served on, known once one attaches.
+        on_presence_change: Called with nothing whenever a device's channel
+            opens or ends. The registry knows nothing of the panel; whoever
+            wants to hear sets this.
     """
 
     def __init__(self):
         self.loop: "asyncio.AbstractEventLoop | None" = None
+        self.on_presence_change = None
         self._lock = threading.Lock()
         self._sessions: dict[str, AgentSession] = {}
         self._versions: dict[str, str] = {}
@@ -473,6 +478,7 @@ class AgentSessionRegistry:
             self.loop = session.loop
         if previous is not None and previous is not session:
             await previous.close(AGENT_WS_CLOSE_REPLACED, "replaced")
+        self._note_presence()
 
     def detach(self, session: AgentSession) -> bool:
         """Drop a session, only when it is still the device's current one.
@@ -490,6 +496,7 @@ class AgentSessionRegistry:
             self._sessions.pop(session.key, None)
             self._ended_at[session.key] = _now()
         session.fail_streams()
+        self._note_presence()
         return True
 
     def get(self, key: str) -> "AgentSession | None":
@@ -513,6 +520,21 @@ class AgentSessionRegistry:
         """
         with self._lock:
             return self._ended_at.get((key or "").lower())
+
+    def last_report_at(self, key: str) -> "str | None":
+        """When the device's last report arrived.
+
+        Args:
+            key: The device.
+
+        Returns:
+            The ISO stamp of the newest report on its live channel, or None
+            while it is offline and before its first report.
+        """
+        session = self.get(key)
+        if session is None or not session.reported_at:
+            return None
+        return session.reported_at
 
     def version_of(self, key: str) -> str:
         """The agent release the device's last hello named.
@@ -684,6 +706,11 @@ class AgentSessionRegistry:
             session.call(session.close(code, reason), timeout=5.0)
         except (StreamRefusedError, RuntimeError):
             return
+
+    def _note_presence(self) -> None:
+        """Say a device came or went, where anybody asked to be told."""
+        if self.on_presence_change is not None:
+            self.on_presence_change()
 
     def _require(self, key: str) -> AgentSession:
         session = self.get(key)

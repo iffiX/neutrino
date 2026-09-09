@@ -1,4 +1,4 @@
-"""Websocket endpoints: live statistics, the DNS log, terminals, and tasks.
+"""Websocket endpoints: events, live statistics, the DNS log, terminals, tasks.
 
 Everything that streams lives here. Each socket checks the session cookie itself
 and closes with a policy-violation code when it is missing, since a websocket
@@ -14,8 +14,13 @@ from starlette.websockets import WebSocketState
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.system.local_shell import LocalShellSession
 from neutrino_hub.modules.devices.ssh_ops import DeviceSshOperator, SshCredentials
-from neutrino_hub.web.constants import WEB_SESSION_COOKIE, WEB_STATS_PUSH_INTERVAL_S
+from neutrino_hub.web.constants import (
+    WEB_EVENT_HELLO,
+    WEB_SESSION_COOKIE,
+    WEB_STATS_PUSH_INTERVAL_S,
+)
 from neutrino_hub.web.dns_log import DnsLogReader
+from neutrino_hub.web.events import event_frame
 from neutrino_hub.web.stats_collector import PanelStatsCollector
 
 router = APIRouter()
@@ -41,6 +46,30 @@ async def stats_socket(websocket: WebSocket) -> None:
             await asyncio.sleep(WEB_STATS_PUSH_INTERVAL_S)
     except (WebSocketDisconnect, RuntimeError):
         return
+
+
+@router.websocket("/ws/events")
+async def events_socket(websocket: WebSocket) -> None:
+    """Push one frame per invalidation event, for as long as the panel is open.
+
+    The socket opens with a hello frame, so the browser knows it is live and
+    can refetch what it draws after a reconnection.
+
+    Args:
+        websocket: The client socket.
+    """
+    if not await _accept(websocket):
+        return
+    events = websocket.app.state.runtime.events
+    queue = events.subscribe()
+    pump = asyncio.create_task(_pump_events(websocket, queue))
+    try:
+        await _await_disconnect(websocket)
+    finally:
+        pump.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await pump
+        events.unsubscribe(queue)
 
 
 @router.websocket("/ws/dns_log")
@@ -161,6 +190,26 @@ async def terminal_socket(websocket: WebSocket) -> None:
     if not await _accept(websocket):
         return
     await _serve_pty_session(websocket, LocalShellSession())
+
+
+async def _pump_events(websocket: WebSocket, queue: asyncio.Queue) -> None:
+    """Send the hello frame, then every event, until the socket goes away."""
+    with contextlib.suppress(WebSocketDisconnect, RuntimeError):
+        await websocket.send_json(event_frame(WEB_EVENT_HELLO))
+        while True:
+            await websocket.send_json(await queue.get())
+
+
+async def _await_disconnect(websocket: WebSocket) -> None:
+    """Read and drop frames until the browser closes the socket.
+
+    Nothing travels up this socket; reading it is how the disconnect is
+    noticed.
+    """
+    with contextlib.suppress(WebSocketDisconnect, RuntimeError):
+        while True:
+            if (await websocket.receive())["type"] == "websocket.disconnect":
+                return
 
 
 async def _serve_pty_session(websocket: WebSocket, session: LocalShellSession) -> None:

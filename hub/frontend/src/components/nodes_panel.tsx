@@ -10,7 +10,8 @@ import { diffNodeDraft, isNodeChanged } from "../node_draft";
 import { formatBytes } from "../format_bytes";
 import { nodeIdFromTag } from "../node_tag";
 import { useDraftSeeding } from "../use_draft_seeding";
-import { usePolledResource } from "../use_polled_resource";
+import { useApiResource } from "../use_api_resource";
+import { HUB_EVENT_CONFIG, HUB_EVENT_NODES } from "../use_hub_events";
 import { useConfirm } from "../use_confirm";
 import { useLiveStats } from "../use_live_stats";
 import type {
@@ -40,9 +41,12 @@ import "./nodes_panel.css";
 
 const PROBE_HISTORY_LENGTH = 12;
 
-// A node dying, coming back or being added from somewhere else is a list that
-// changes on its own, so the panel asks again rather than waiting to be told.
-const NODES_POLL_INTERVAL_MS = 10000;
+// What moves this list: a node dying, coming back or moving traffic, which
+// the hub's own probe and stats cycle says; and any write to the node file.
+const NODES_INVALIDATE_ON = [
+  { type: HUB_EVENT_NODES },
+  { type: HUB_EVENT_CONFIG },
+];
 
 const STRATEGY_LABELS: Record<BalancerStrategy, string> = {
   leastPing: "leastPing — lowest latency wins",
@@ -61,10 +65,9 @@ interface NodesPanelProps {
 }
 
 export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
-  const resource = usePolledResource<NodesResponse>(
-    "/proxy/nodes",
-    NODES_POLL_INTERVAL_MS,
-  );
+  const resource = useApiResource<NodesResponse>("/proxy/nodes", {
+    invalidateOn: NODES_INVALIDATE_ON,
+  });
   const { latestFrame } = useLiveStats();
 
   const [draftNodes, setDraftNodes] = useState<NodeView[]>([]);

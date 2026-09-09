@@ -149,7 +149,7 @@ class AgentModuleOrder:
 class AgentModuleController:
     """The one door every module install on every managed machine goes through."""
 
-    def __init__(self, *, cache, locks, dispatch=None):
+    def __init__(self, *, cache, locks, dispatch=None, on_change=None):
         """
         Args:
             cache: The :class:`AgentModuleCache` that resolves bytes.
@@ -158,10 +158,13 @@ class AgentModuleController:
             dispatch: Called with each order once it has its bytes; runs it
                 on the machine and closes it through :meth:`record_result`
                 before returning. None fails every order as ``agent_offline``.
+            on_change: Called with a device key whenever an order on it
+                changes state; None tells nobody.
         """
         self._cache = cache
         self._locks = locks
         self._dispatch = dispatch
+        self._on_change = on_change
         self._guard = threading.Lock()
         self._queues: dict = {}
         self._history: dict = {}
@@ -227,6 +230,7 @@ class AgentModuleController:
             self._history.setdefault(key, []).append(order.id)
             self._trim(key)
         self._ensure_worker(key)
+        self._note_change(key)
         return order
 
     def pending_order(self, mac_address: str) -> "AgentModuleOrder | None":
@@ -280,6 +284,7 @@ class AgentModuleController:
                 self._failures[(key, order.module)] = order.id
             else:
                 self._failures.pop((key, order.module), None)
+        self._note_change(key)
         return True
 
     def note_reported_states(self, mac_address: str, states: dict) -> None:
@@ -396,6 +401,11 @@ class AgentModuleController:
                 pair: value for pair, value in self._failures.items() if pair[0] != key
             }
 
+    def _note_change(self, mac_address: str) -> None:
+        """Say an order on this device moved, where anybody asked to be told."""
+        if self._on_change is not None:
+            self._on_change(mac_address)
+
     def _trim(self, key: str) -> None:
         """Keep a device's history to the recent few. Call under the guard."""
         history = self._history.get(key, [])
@@ -446,6 +456,7 @@ class AgentModuleController:
         with self._guard:
             order.state = ORDER_INSTALLING
             self._handed[order.mac_address] = order.id
+        self._note_change(order.mac_address)
         try:
             if self._dispatch is None:
                 self._fail(order, "agent_offline", {"device": order.mac_address})
@@ -482,6 +493,7 @@ class AgentModuleController:
         """
         with self._guard:
             order.state = ORDER_FETCHING
+        self._note_change(order.mac_address)
         try:
             artifact = self._cache.artifact(
                 name=order.module, manifest=order.manifest, platform=order.platform

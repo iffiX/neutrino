@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
+from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
 from tests.conftest import FakeAgentSessions, unlock_vault
@@ -26,6 +27,7 @@ SUDO_PASSWORD = "a-sudo-password"  # scan: allow
 
 class FakeRuntime:
     def __init__(self):
+        self.events = PanelEventBus()
         self.client_metrics = {}
         self.client_address = {}
         self.client_platform = {}

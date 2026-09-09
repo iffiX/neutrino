@@ -25,7 +25,7 @@ import { toHistorySeries, toTrafficSeries } from "../traffic_series";
 import { useApiResource } from "../use_api_resource";
 import { useDnsLogSocket } from "../use_dns_log_socket";
 import { useLiveStats } from "../use_live_stats";
-import { usePolledResource } from "../use_polled_resource";
+import { HUB_EVENT_AI_USAGE, HUB_EVENT_CONFIG } from "../use_hub_events";
 import type {
   CliproxyApiStatusView,
   DashboardSummary,
@@ -82,7 +82,9 @@ export function DashboardPage() {
   const dnsLog = useDnsLogSocket();
   // The same status view the top bar reads. A gateway that is absent or has
   // served nothing leaves the tile blank rather than reporting a failure.
-  const ai = usePolledResource<CliproxyApiStatusView>("/cliproxyapi");
+  const ai = useApiResource<CliproxyApiStatusView>("/cliproxyapi", {
+    invalidateOn: [{ type: HUB_EVENT_AI_USAGE }, { type: HUB_EVENT_CONFIG }],
+  });
 
   const trafficSeries = toTrafficSeries(frames);
   const latestPoint = trafficSeries[trafficSeries.length - 1];

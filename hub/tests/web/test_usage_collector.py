@@ -248,3 +248,79 @@ def test_a_refusal_and_junk_bodies_fold_nothing(collector, monkeypatch):
         collector_module.httpx, "get", lambda *a, **k: FakeResponse("not a list")
     )
     assert collector.poll_once() == 0
+
+
+class StubServedModels:
+    """The served-model cache, answering from what the test set."""
+
+    def __init__(self, names=()):
+        self.names = list(names)
+
+    def served(self, *, port, client_key) -> tuple:
+        del port, client_key
+        return bool(self.names), list(self.names)
+
+
+class ChangeCounter:
+    """Counts the times the collector said the AI page's numbers moved."""
+
+    def __init__(self):
+        self.count = 0
+
+    def __call__(self) -> None:
+        self.count += 1
+
+
+def test_a_served_list_that_moved_is_worth_telling(collector, monkeypatch, tmp_path):
+    del collector
+    monkeypatch.setattr(
+        collector_module.httpx,
+        "get",
+        lambda *a, **k: FakeResponse({"detail": "no"}, status_code=401),
+    )
+    served = StubServedModels(["gpt-5"])
+    changes = ChangeCounter()
+    watcher = PanelUsageCollector(
+        store=CliproxyApiUsageStore(path=tmp_path / "usage.json"),
+        served_models=served,
+        on_change=changes,
+    )
+
+    assert watcher.sample_once() is False
+    assert watcher.sample_once() is False
+    assert changes.count == 0
+
+    served.names = ["gpt-5", "claude-opus"]
+
+    assert watcher.sample_once() is True
+    assert changes.count == 1
+    assert watcher.sample_once() is False
+    assert changes.count == 1
+
+
+def test_records_folded_in_are_worth_telling(collector, monkeypatch, tmp_path):
+    del collector
+    monkeypatch.setattr(
+        collector_module.httpx, "get", lambda *a, **k: FakeResponse(QUEUE_ANSWER)
+    )
+    changes = ChangeCounter()
+    watcher = PanelUsageCollector(
+        store=CliproxyApiUsageStore(path=tmp_path / "usage.json"),
+        on_change=changes,
+    )
+
+    assert watcher.sample_once() is True
+    assert changes.count == 1
+
+
+def test_a_collector_asked_to_tell_nobody_still_folds(collector, monkeypatch, tmp_path):
+    del collector
+    monkeypatch.setattr(
+        collector_module.httpx, "get", lambda *a, **k: FakeResponse(QUEUE_ANSWER)
+    )
+    watcher = PanelUsageCollector(
+        store=CliproxyApiUsageStore(path=tmp_path / "usage.json")
+    )
+
+    assert watcher.sample_once() is True
+    assert (tmp_path / "usage.json").exists()

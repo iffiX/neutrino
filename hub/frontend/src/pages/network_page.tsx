@@ -23,7 +23,13 @@ import {
 import { interruptionWarning } from "../network_warnings";
 import type { InterfaceErrors, ServedNetwork } from "../network_validation";
 import { useDraftSeeding } from "../use_draft_seeding";
-import { usePolledResource } from "../use_polled_resource";
+import { useApiResource } from "../use_api_resource";
+import {
+  HUB_EVENT_CONFIG,
+  HUB_EVENT_DEVICE_REPORT,
+  HUB_EVENT_DEVICES,
+  HUB_EVENT_LINKS,
+} from "../use_hub_events";
 import type {
   DevicesResponse,
   InterfaceRole,
@@ -51,13 +57,20 @@ import "./network_page.css";
  * with it, and the wired LAN is how you get back in.
  */
 
-// The diagram's own cadence: a machine appearing on the LAN is a list that
-// changes on its own, and nobody should have to ask to see it.
-const DEVICE_POLL_INTERVAL_MS = 10000;
+// What moves the diagram's device list: a machine's channel opening or
+// ending, and one named, forgotten or enrolled.
+const DEVICE_INVALIDATE_ON = [
+  { type: HUB_EVENT_DEVICES },
+  { type: HUB_EVENT_DEVICE_REPORT },
+];
 
-// The same for the ports themselves: a cable pulled out, a lease renewed or a
-// radio losing signal is something the page shows without being asked again.
-const NETWORK_POLL_INTERVAL_MS = 10000;
+// What moves the ports themselves: a cable pulled out, a lease renewed or a
+// radio losing signal, which the hub samples and says; and any write to the
+// router's own configuration.
+const NETWORK_INVALIDATE_ON = [
+  { type: HUB_EVENT_LINKS },
+  { type: HUB_EVENT_CONFIG },
+];
 
 const INTENT_OPTIONS: { value: UplinkIntent; label: string; hint: string }[] = [
   {
@@ -138,17 +151,15 @@ function interfacePayload(
 }
 
 export function NetworkPage() {
-  const network = usePolledResource<NetworkView>(
-    "/network",
-    NETWORK_POLL_INTERVAL_MS,
-  );
+  const network = useApiResource<NetworkView>("/network", {
+    invalidateOn: NETWORK_INVALIDATE_ON,
+  });
   // The cheap list endpoint, no ARP sweep: the diagram only wants to draw
   // what is already known, and it draws what is there now rather than what
   // was there when the page opened.
-  const deviceList = usePolledResource<DevicesResponse>(
-    "/devices",
-    DEVICE_POLL_INTERVAL_MS,
-  );
+  const deviceList = useApiResource<DevicesResponse>("/devices", {
+    invalidateOn: DEVICE_INVALIDATE_ON,
+  });
 
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [draft, setDraft] = useState<InterfaceSettings | null>(null);

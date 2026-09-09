@@ -6,6 +6,7 @@ import { SidebarNav } from "./sidebar_nav";
 import { TopBar } from "./top_bar";
 import { StatsContext } from "../stats_context";
 import { useAuth } from "../use_auth";
+import { useHubEventChannel } from "../use_hub_events";
 import { useStatsSocket } from "../use_stats_socket";
 
 import "./app_shell.css";
@@ -20,9 +21,11 @@ import "./app_shell.css";
  * cannot do against a container that would just get taller to accommodate it.
  *
  * The shell owns the one live stats socket and publishes it, so the top bar
- * and the dashboard read identical frames from a single connection. The two
- * blurred glows behind the content are the only decorative elements in the
- * app; they drift slowly enough to read as depth rather than motion.
+ * and the dashboard read identical frames from a single connection. It opens
+ * the panel's one event socket beside it: every page refetches what it draws
+ * from what arrives there, and nothing polls. The two blurred glows behind
+ * the content are the only decorative elements in the app; they drift slowly
+ * enough to read as depth rather than motion.
  */
 
 export function AppShell() {
@@ -33,6 +36,7 @@ export function AppShell() {
   // to find again after looking something up on another tab.
   const isTerminalOpen = useLocation().pathname === "/terminals";
   const stats = useStatsSocket();
+  useHubEventChannel();
 
   const handleLogout = () => {
     void logout();

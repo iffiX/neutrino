@@ -10,6 +10,7 @@ import { ToggleSwitch } from "./toggle_switch";
 import { apiPost, apiPut, describeError } from "../api_client";
 import { formatBytes } from "../format_bytes";
 import { useApiResource } from "../use_api_resource";
+import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
 import type {
   ApplyResult,
   SambaDeviceView,
@@ -78,9 +79,6 @@ const WORDING = {
   offline: "The agent is offline",
 };
 
-// Sessions come and go as machines mount and unmount.
-const STATUS_INTERVAL_MS = 1000;
-
 type GroupName = "shares" | "users";
 
 const EMPTY_SHARE: SambaShare = {
@@ -92,14 +90,30 @@ const EMPTY_SHARE: SambaShare = {
 };
 
 interface SambaPanelsProps {
+  /** The machine whose Samba this is. */
+  deviceId: string;
   /** Where this machine's Samba answers. */
   basePath: string;
   isEditable: boolean;
 }
 
-export function SambaPanels({ basePath, isEditable }: SambaPanelsProps) {
-  const resource = useApiResource<SambaDeviceView>(basePath);
-  const status = useApiResource<SambaStatus>(`${basePath}/status`);
+export function SambaPanels({
+  deviceId,
+  basePath,
+  isEditable,
+}: SambaPanelsProps) {
+  // Sessions come and go as machines mount and unmount, which the machine's
+  // own report says; the shares and users are a write like any other.
+  const liveOn = [
+    { type: HUB_EVENT_DEVICE_REPORT, key: deviceId },
+    { type: HUB_EVENT_CONFIG },
+  ];
+  const resource = useApiResource<SambaDeviceView>(basePath, {
+    invalidateOn: liveOn,
+  });
+  const status = useApiResource<SambaStatus>(`${basePath}/status`, {
+    invalidateOn: liveOn,
+  });
 
   const [shares, setShares] = useState<SambaShare[]>([]);
   const [users, setUsers] = useState<string[]>([]);
@@ -120,18 +134,6 @@ export function SambaPanels({ basePath, isEditable }: SambaPanelsProps) {
       setUsers(resource.data.users.map((user) => user.name));
     }
   }, [resource.data]);
-
-  // The status section follows along once a second — paused while the tab is
-  // not being looked at.
-  const reloadStatus = status.reload;
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      if (!document.hidden) {
-        reloadStatus();
-      }
-    }, STATUS_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, [reloadStatus]);
 
   const savedShares = resource.data?.shares ?? [];
   const savedUsers = resource.data?.users ?? [];

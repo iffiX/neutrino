@@ -81,7 +81,9 @@ def report(**modules) -> dict:
     }
 
 
-def cache(units: StubUnits, *, sessions=None, addresses=None) -> PublishedServiceCache:
+def cache(
+    units: StubUnits, *, sessions=None, addresses=None, on_fingerprint_change=None
+) -> PublishedServiceCache:
     return PublishedServiceCache(
         declared_probe=StubProbe(),
         served_models=StubServedModels(),
@@ -89,6 +91,7 @@ def cache(units: StubUnits, *, sessions=None, addresses=None) -> PublishedServic
         agent_sessions=sessions,
         device_addresses=addresses,
         desired_states=DesiredStateStore(),
+        on_fingerprint_change=on_fingerprint_change,
     )
 
 
@@ -243,3 +246,41 @@ def test_the_ai_entry_waits_for_a_fed_gateway(box, monkeypatch, tmp_path):
     # model list stays empty.
     assert entries[0]["is_healthy"] is True
     assert entries[0]["payload"]["models"] == []
+
+
+class ChangeCounter:
+    """Counts the times the cache said its list composes differently."""
+
+    def __init__(self):
+        self.count = 0
+
+    def __call__(self) -> None:
+        self.count += 1
+
+
+def test_a_list_that_composes_differently_says_so_once(box, monkeypatch, tmp_path):
+    binary = tmp_path / "cli-proxy-api"
+    binary.write_text("")
+    monkeypatch.setattr(published_module, "CLIPROXYAPI_BINARY_PATH", binary)
+    changes = ChangeCounter()
+    held = cache(StubUnits({"cliproxyapi": True}), on_fingerprint_change=changes)
+
+    held.entries()
+    assert changes.count == 1
+
+    held.expire()
+    held.entries()
+    assert changes.count == 1
+
+    write_config(
+        "ai/providers.json",
+        {
+            "providers": [
+                {"id": "p1", "name": "up", "kind": "anthropic", "secret_id": "s1"}
+            ]
+        },
+    )
+    held.expire()
+    held.entries()
+
+    assert changes.count == 2

@@ -793,7 +793,11 @@ export interface DeviceClientInfo {
   is_online: boolean;
   version: string | null;
   is_version_mismatched: boolean;
+  /** When its channel last ended; null while it is online. */
   last_seen: string | null;
+  /** When its last report arrived; null while it is offline and before its
+   * first one. What the live monitor samples on. */
+  last_report_at: string | null;
   /** What the agent reports it runs on: `linux`, `windows`, `darwin`. Null
    * until it beats again after a panel restart, since it is never stored. */
   platform_os: string | null;

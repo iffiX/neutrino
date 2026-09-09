@@ -843,6 +843,9 @@ class DeviceClientInfoView(BaseModel):
     # When the device's last channel ended, from memory: null while it is
     # online and for one that has not connected since the panel started.
     last_seen: str | None = None
+    # When its last report arrived, from memory: null while it is offline
+    # and before its first report. What the live monitor samples on.
+    last_report_at: str | None = None
     # What the agent said it runs on, held in memory from its heartbeats and
     # never stored: None until it beats again after a panel restart.
     platform_os: str | None = None

@@ -21,6 +21,21 @@ from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
 # cross files and a narrower lock would let a composite interleave.
 CONFIG_WRITE_LOCK = threading.RLock()
 
+# What to call after each write, installed by whoever wants to hear. Nothing
+# here reaches for the web layer; the panel's runtime sets this on startup.
+_config_write_hook = None
+
+
+def set_config_write_hook(hook) -> None:
+    """Install what to call after each ``config/`` write.
+
+    Args:
+        hook: Called with the relative path just written. None installs
+            nothing.
+    """
+    global _config_write_hook
+    _config_write_hook = hook
+
 
 def read_config(relative_path: str) -> dict[str, Any]:
     """Read one JSON file from ``config/``.
@@ -61,6 +76,8 @@ def write_config(relative_path: str, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
     _write_atomic(path, text, mode=0o600)
+    if _config_write_hook is not None:
+        _config_write_hook(relative_path)
 
 
 def write_generated(path: Path, text: str, *, mode: int = 0o644) -> None:

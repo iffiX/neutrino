@@ -6,17 +6,41 @@ else. One runtime behind both is what lets a ticket generated on the panel be
 spent on the agent port.
 """
 
-from types import SimpleNamespace
-
 import pytest
 
 import neutrino_hub.web.app as app_module
 
 
+class StubLinkSampler:
+    def start(self) -> None:
+        return None
+
+
+class StubUsageCollector:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+
+    def start(self) -> None:
+        return None
+
+
+class StubRuntime:
+    """Only what assembling the two applications reaches for."""
+
+    def __init__(self):
+        self.served_models = None
+        self.link_sampler = StubLinkSampler()
+
+    def publish_ai_usage(self) -> None:
+        return None
+
+
 @pytest.fixture
 def factories(monkeypatch):
-    monkeypatch.setattr(app_module, "PanelRuntime", SimpleNamespace)
+    monkeypatch.setattr(app_module, "PanelRuntime", StubRuntime)
+    monkeypatch.setattr(app_module, "PanelUsageCollector", StubUsageCollector)
     monkeypatch.setattr(app_module, "_shared_runtime", None)
+    monkeypatch.setattr(app_module, "_usage_collector", None)
     return app_module
 
 

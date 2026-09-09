@@ -78,7 +78,7 @@ def create_app() -> FastAPI:
     app.state.runtime = _runtime()
     app.add_exception_handler(VaultLockedError, _vault_locked)
     app.add_middleware(OriginGuardMiddleware)
-    _start_usage_collector()
+    _start_samplers()
 
     for router in API_ROUTERS:
         app.include_router(router)
@@ -131,12 +131,22 @@ def _runtime() -> PanelRuntime:
     return _shared_runtime
 
 
-def _start_usage_collector() -> None:
-    """The process-wide usage poller, started with the panel application."""
+def _start_samplers() -> None:
+    """The process-wide background readers, started with the panel application.
+
+    Both watch something no write announces — what the gateway metered, and
+    what the interfaces are doing — and publish an event when the reading
+    moves, so no page has to ask on a timer.
+    """
     global _usage_collector
+    runtime = _runtime()
     if _usage_collector is None:
-        _usage_collector = PanelUsageCollector()
+        _usage_collector = PanelUsageCollector(
+            served_models=runtime.served_models,
+            on_change=runtime.publish_ai_usage,
+        )
         _usage_collector.start()
+    runtime.link_sampler.start()
 
 
 def _mount_frontend(app: FastAPI) -> None:

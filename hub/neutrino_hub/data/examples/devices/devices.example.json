@@ -16,10 +16,10 @@
         "_comment_sudo": "sudo_password_id names the sealed password piped to sudo for privileged SSH work, chiefly the one-click agent install. Leave null if the account has passwordless sudo.",
         "sudo_password_id": null
       },
-      "_comment_client": "Filled in automatically once neutrino_client is installed on the device.",
+      "_comment_client": "Written by the panel when the device enrolls. token_sha256 is the hash of the secret its agent authenticates the channel with; the raw token exists only on the device. ai_key_ids names the gateway client key generated for each activated account.",
       "client": {
-        "is_installed": false,
-        "token": null
+        "token_sha256": null,
+        "ai_key_ids": {}
       }
     }
   }

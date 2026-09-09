@@ -119,3 +119,31 @@ WEB_PROXY_SCOPE_PORTS = "ports"
 WEB_PROXY_SCOPE_LAN = "lan"
 WEB_PROXY_SCOPE_HUB = "hub"
 WEB_PROXY_SCOPE_LAN_AND_HUB = "lan_and_hub"
+
+# --- the panel's event channel ---
+# What the hub tells an open panel has moved. An event is an invalidation
+# hint: a type, the one thing it is about, and nothing else. The page that
+# draws that thing asks for it again.
+WEB_EVENT_DEVICES = "devices"
+WEB_EVENT_DEVICE_REPORT = "device_report"
+WEB_EVENT_MODULE_ORDER = "module_order"
+WEB_EVENT_SERVICES = "services"
+WEB_EVENT_CONFIG = "config"
+WEB_EVENT_TASK = "task"
+WEB_EVENT_LINKS = "links"
+WEB_EVENT_NODES = "nodes"
+WEB_EVENT_AI_USAGE = "ai_usage"
+# The one type that carries a reading rather than a hint: a machine's metrics
+# ride the event itself, so the tiles and the monitor redraw without asking
+# for the device list again.
+WEB_EVENT_METRICS = "metrics"
+# The frame the socket opens with, so the browser knows it is live.
+WEB_EVENT_HELLO = "hello"
+# How many events one browser may fall behind by. Past this the oldest is
+# dropped: a hint that arrives late says nothing a later one does not.
+WEB_EVENT_QUEUE_LIMIT = 256
+# Identical hints inside this window are delivered once. An event carrying a
+# reading is never coalesced.
+WEB_EVENT_COALESCE_WINDOW_S = 0.1
+# How often the panel's live interface readings are sampled.
+WEB_LINK_SAMPLE_INTERVAL_S = 5.0

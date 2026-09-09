@@ -26,6 +26,7 @@ from neutrino_hub.modules.devices.constants import AGENT_WIRE_GENERATION
 from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
+from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.routers import agent as agent_router
 from neutrino_hub.web.routers import agent_ws
 
@@ -64,6 +65,7 @@ class FakeRuntime:
     """Only the parts of the runtime the socket touches."""
 
     def __init__(self):
+        self.events = PanelEventBus()
         self.client_metrics = {}
         self.client_modules = {}
         self.client_platform = {}

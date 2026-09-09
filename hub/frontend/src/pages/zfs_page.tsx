@@ -17,7 +17,11 @@ export function ZfsPage() {
   return (
     <AgentServicePage title={WORDING.title} moduleName={WORDING.moduleName}>
       {(target) => (
-        <ZfsPanels basePath={target.basePath} isEditable={target.isEditable} />
+        <ZfsPanels
+          deviceId={target.deviceId}
+          basePath={target.basePath}
+          isEditable={target.isEditable}
+        />
       )}
     </AgentServicePage>
   );

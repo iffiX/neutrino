@@ -21,7 +21,8 @@ import "./device_tile.css";
  * A device the scanner merely saw is dashed and dimmed and offers only to take
  * SSH details. One with SSH or an agent can be acted on, and says so even when
  * it is currently offline — losing sight of a machine does not lose the
- * credentials for it. Vitals appear only where an agent reports them.
+ * credentials for it. Vitals appear only where an agent reports them, and the
+ * last-seen stamp only where the agent is not answering now.
  */
 
 const TEMPERATURE_WARN_C = 70;
@@ -141,7 +142,7 @@ export function DeviceTile({ device, onOpen }: DeviceTileProps) {
             {UPGRADE_PATH_LABELS[upgradePath]}
           </span>
         )}
-        {isManaged && client !== null && (
+        {isManaged && client !== null && !client.is_online && (
           <span>{formatTimeAgo(client.last_seen)}</span>
         )}
       </div>

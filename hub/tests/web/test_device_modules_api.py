@@ -20,6 +20,7 @@ from neutrino_hub.modules.devices.agent_module_cache import AgentModuleArtifact
 from neutrino_hub.modules.devices.agent_module_controller import AgentModuleController
 from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice
+from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
 from tests.conftest import FakeAgentSessions, holding_dispatch
@@ -51,6 +52,7 @@ class StubModuleCache:
 
 class FakeRuntime:
     def __init__(self):
+        self.events = PanelEventBus()
         self.client_modules = {}
         self.client_platform = {}
         self.client_hostname = {}

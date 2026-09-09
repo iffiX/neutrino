@@ -69,12 +69,14 @@ class FakeAgentSessions:
         outcome: What a command closes with.
         versions: What each device's last hello named, by key.
         ended_at: When each device's last channel ended, by key.
+        reported_at: When each device's last report arrived, by key.
     """
 
     def __init__(self, online=()):
         self.online = {key.lower() for key in online}
         self.versions: dict = {}
         self.ended_at: dict = {}
+        self.reported_at: dict = {}
         self.commands: list = []
         self.validations: list = []
         self.pushes: list = []
@@ -90,6 +92,9 @@ class FakeAgentSessions:
 
     def last_seen_at(self, key: str) -> "str | None":
         return self.ended_at.get(key.lower())
+
+    def last_report_at(self, key: str) -> "str | None":
+        return self.reported_at.get(key.lower())
 
     def keys(self) -> list:
         return sorted(self.online)

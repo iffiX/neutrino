@@ -33,6 +33,13 @@ from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.system.listening_ports import ListeningPortReader
 from neutrino_hub.web.constants import (
     WEB_DEFAULT_AGENT_LISTEN_PORT,
+    WEB_EVENT_AI_USAGE,
+    WEB_EVENT_CONFIG,
+    WEB_EVENT_DEVICES,
+    WEB_EVENT_MODULE_ORDER,
+    WEB_EVENT_NODES,
+    WEB_EVENT_SERVICES,
+    WEB_EVENT_TASK,
     WEB_PROXY_SCOPE_HUB,
     WEB_PROXY_SCOPE_LAN,
     WEB_PROXY_SCOPE_LAN_AND_HUB,
@@ -42,9 +49,16 @@ from neutrino_hub.web.constants import (
 )
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
-from neutrino_hub.utils.json_file import read_config, write_config, write_generated
+from neutrino_hub.utils.json_file import (
+    read_config,
+    set_config_write_hook,
+    write_config,
+    write_generated,
+)
 from neutrino_hub.utils.subprocess_run import CommandError, run
 from neutrino_hub.web.auth import SessionStore, session_secret
+from neutrino_hub.web.events import PanelEventBus
+from neutrino_hub.web.link_sampler import PanelLinkSampler
 from neutrino_hub.modules.devices.agent_module_cache import AgentModuleCache
 from neutrino_hub.modules.devices.agent_module_controller import (
     ORDER_DONE,
@@ -92,7 +106,10 @@ class PanelRuntime:
             password_hash=settings.get("admin_password_hash", ""),
             session_ttl_hours=settings.get("session_ttl_hours", 168),
         )
-        self.tasks = TaskStreamRegistry()
+        # The one channel the panel hears about everything on. Built first,
+        # since what follows publishes through it.
+        self.events = PanelEventBus()
+        self.tasks = TaskStreamRegistry(on_change=self._publish_task)
         self.services = SystemdServiceController()
         self.listening_ports = ListeningPortReader()
         self.stats = XrayStatsClient()
@@ -105,6 +122,7 @@ class PanelRuntime:
         self.device_shares = DeviceShareRegistry()
         # Every managed machine's live socket, and the streams on it.
         self.agent_sessions = AgentSessionRegistry()
+        self.agent_sessions.on_presence_change = self._publish_devices
         # Where each agent's channel comes from, as this hub's own socket
         # sees it, refreshed every report. A machine that moves is at its
         # new address the moment it reports from there.
@@ -120,6 +138,7 @@ class PanelRuntime:
             agent_sessions=self.agent_sessions,
             device_addresses=self.client_address,
             desired_states=self.desired_states,
+            on_fingerprint_change=self._publish_services,
         )
         self.device_catalog = DeviceCatalogCache(services=self.published_services)
         # The hub is the only thing that fetches and installs a module: one
@@ -134,6 +153,7 @@ class PanelRuntime:
             cache=self.agent_modules,
             locks=self.device_install_locks,
             dispatch=self._dispatch_order,
+            on_change=self._publish_module_order,
         )
         self.is_config_dirty = False
         # Latest agent metrics, keyed by MAC. Runtime only: these are stale the
@@ -160,7 +180,15 @@ class PanelRuntime:
         # and short-lived on purpose: a join secret that survives a restart is
         # a join secret lying around, and generating another takes one click.
         self.enrollments: dict[str, dict] = {}
+        # A cable, a lease or a radio moving is a change nothing writes, so
+        # it is sampled. The application starts it; a CLI run builds a runtime
+        # and never wants the thread.
+        self.link_sampler = PanelLinkSampler(runtime=self)
+        # What the nodes panel last drew, so a cycle reading the same numbers
+        # tells nobody. One place, since a collector lives per open socket.
+        self._node_readings: dict = {}
         self._apply_lock = asyncio.Lock()
+        set_config_write_hook(self._publish_config_write)
 
     def network(self) -> RouterNetworkConfig:
         """Read the current router configuration.
@@ -415,6 +443,21 @@ class PanelRuntime:
             key, AGENT_WS_CLOSE_UNKNOWN_TOKEN, "unknown_token"
         )
 
+    def publish_node_readings(self, readings: dict) -> None:
+        """Say the nodes' live readings moved, where they have.
+
+        Args:
+            readings: What the nodes panel draws, by outbound tag.
+        """
+        if readings == self._node_readings:
+            return
+        self._node_readings = readings
+        self.events.publish(WEB_EVENT_NODES)
+
+    def publish_ai_usage(self) -> None:
+        """Say the AI gateway's counters or served list moved."""
+        self.events.publish(WEB_EVENT_AI_USAGE)
+
     def _agent_port(self) -> int:
         """The agent channel's port, from the settings or the default."""
         return int(
@@ -603,6 +646,26 @@ class PanelRuntime:
         if refused:
             notes.append(f"desired state not pushed to {', '.join(refused)}")
         return notes
+
+    def _publish_devices(self) -> None:
+        """Say the device list moved."""
+        self.events.publish(WEB_EVENT_DEVICES)
+
+    def _publish_module_order(self, mac_address: str) -> None:
+        """Say an order on one device moved."""
+        self.events.publish(WEB_EVENT_MODULE_ORDER, mac_address)
+
+    def _publish_services(self) -> None:
+        """Say the published service list composes differently."""
+        self.events.publish(WEB_EVENT_SERVICES)
+
+    def _publish_config_write(self, relative_path: str) -> None:
+        """Say one file under ``config/`` was written."""
+        self.events.publish(WEB_EVENT_CONFIG, relative_path)
+
+    def _publish_task(self, task_id: str) -> None:
+        """Say a background job started or finished."""
+        self.events.publish(WEB_EVENT_TASK, task_id)
 
 
 def _converge_overlays(network: RouterNetworkConfig) -> list[str]:

@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
 import { ZfsTopology } from "./zfs_topology";
-import { apiDelete, apiGet, apiPost, describeError } from "../api_client";
+import { apiDelete, apiPost, describeError } from "../api_client";
 import { formatBytes } from "../format_bytes";
 import { useApiResource } from "../use_api_resource";
+import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
 import { useConfirm } from "../use_confirm";
 import type { ZfsDataset, ZfsDeviceView, ZfsDisk } from "../api_types";
 
@@ -27,9 +28,6 @@ const WORDING = {
   notInstalledHint: "Enable the zfs module for this machine above.",
   offline: "The agent is offline",
 };
-
-const POLL_INTERVAL_MS = 5000;
-const SCAN_POLL_INTERVAL_MS = 2500;
 
 const LAYOUTS: {
   value: string;
@@ -55,13 +53,22 @@ interface Builder {
 }
 
 interface ZfsPanelsProps {
+  /** The machine whose pools these are. */
+  deviceId: string;
   /** Where this machine's ZFS answers. */
   basePath: string;
   isEditable: boolean;
 }
 
-export function ZfsPanels({ basePath, isEditable }: ZfsPanelsProps) {
-  const zfs = useApiResource<ZfsDeviceView>(basePath);
+export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
+  // Resilvers and scrubs move on their own, which the machine's own report
+  // says; the datasets are a write like any other.
+  const zfs = useApiResource<ZfsDeviceView>(basePath, {
+    invalidateOn: [
+      { type: HUB_EVENT_DEVICE_REPORT, key: deviceId },
+      { type: HUB_EVENT_CONFIG },
+    ],
+  });
 
   const [selectedMember, setSelectedMember] = useState<{
     pool: string;
@@ -92,36 +99,6 @@ export function ZfsPanels({ basePath, isEditable }: ZfsPanelsProps) {
   } | null>(null);
 
   const view = zfs.data;
-  const isScanning =
-    view?.pools.some((pool) => pool.scan.kind !== null) ?? false;
-
-  // Resilvers and scrubs move on their own; the page keeps up quietly.
-  useEffect(() => {
-    let isCancelled = false;
-    const poll = async () => {
-      try {
-        const fresh = await apiGet<ZfsDeviceView>(basePath);
-        if (!isCancelled) {
-          zfs.setData(fresh);
-        }
-      } catch {
-        // A transient failure is ignored; the next tick tries again.
-      }
-    };
-    const handle = window.setInterval(
-      () => {
-        if (!document.hidden) {
-          void poll();
-        }
-      },
-      isScanning ? SCAN_POLL_INTERVAL_MS : POLL_INTERVAL_MS,
-    );
-    return () => {
-      isCancelled = true;
-      window.clearInterval(handle);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isScanning]);
 
   const act = async (scope: string, work: () => Promise<ZfsDeviceView>) => {
     if (!isEditable) {

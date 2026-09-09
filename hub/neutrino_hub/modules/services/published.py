@@ -51,6 +51,7 @@ class PublishedServiceCache:
         agent_sessions=None,
         device_addresses=None,
         desired_states=None,
+        on_fingerprint_change=None,
     ):
         """
         Args:
@@ -71,6 +72,8 @@ class PublishedServiceCache:
                 from, the runtime's own mapping.
             desired_states: The :class:`DesiredStateStore` the shares are
                 read from; None builds one.
+            on_fingerprint_change: Called with nothing when a refresh
+                composes a different list; None tells nobody.
         """
         self._declared_probe = declared_probe
         self._served_models = served_models
@@ -83,6 +86,7 @@ class PublishedServiceCache:
         self._desired_states = (
             desired_states if desired_states is not None else DesiredStateStore()
         )
+        self._on_fingerprint_change = on_fingerprint_change
         self._entries: list[dict] = []
         self._fingerprint = ""
         self._hub_addresses: set[str] = set()
@@ -156,10 +160,13 @@ class PublishedServiceCache:
             ),
         ).render()
 
+        previous = self._fingerprint
         self._entries = entries
         serialized = json.dumps(entries, sort_keys=True).encode("utf-8")
         self._fingerprint = hashlib.sha256(serialized).hexdigest()[:16]
         self._refreshed_at = time.monotonic()
+        if self._fingerprint != previous and self._on_fingerprint_change is not None:
+            self._on_fingerprint_change()
 
     def _unit(self, name: str):
         return self._units.status(name)

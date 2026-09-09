@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.agent_package import AgentPackageCache
 from neutrino_hub.modules.devices.constants import SSH_UNREACHABLE_STATUS
+from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
 from neutrino_hub.web.task_stream import TaskStreamRegistry
@@ -29,6 +30,7 @@ class FakeRuntime:
     instance = None
 
     def __init__(self, packages_dir):
+        self.events = PanelEventBus()
         self.settings = {}
         self.tasks = TaskStreamRegistry()
         self.client_metrics = {}

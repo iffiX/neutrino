@@ -78,6 +78,11 @@ class StubRuntime:
         self.stats = StubStats()
         self.node_probe = StubNodeProbe()
         self.agent_sessions = FakeAgentSessions(online)
+        # Every node reading this collector published, newest last.
+        self.node_readings: list = []
+
+    def publish_node_readings(self, readings: dict) -> None:
+        self.node_readings.append(readings)
 
     def node_list(self) -> StubNodeList:
         return StubNodeList()
@@ -226,3 +231,13 @@ def test_the_proxy_totals_are_left_alone(uplink):
     pushed = PanelStatsCollector(runtime=StubRuntime()).collect()
 
     assert (pushed.total_uplink_bytes, pushed.total_downlink_bytes) == (11, 22)
+
+
+def test_each_cycle_hands_on_what_the_nodes_panel_draws(uplink):
+    """The panel has no other source for a node's latency or its traffic."""
+    del uplink
+    runtime = StubRuntime()
+
+    PanelStatsCollector(runtime=runtime).collect()
+
+    assert runtime.node_readings == [{"node_hk1": ((11, 22), None)}]

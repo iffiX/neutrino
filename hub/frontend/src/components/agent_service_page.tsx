@@ -8,6 +8,12 @@ import { InstallConsentModal } from "./install_consent_modal";
 import { Spinner } from "./spinner";
 import { ApiError, apiPut, describeError } from "../api_client";
 import { useApiResource } from "../use_api_resource";
+import {
+  HUB_EVENT_CONFIG,
+  HUB_EVENT_DEVICE_REPORT,
+  HUB_EVENT_DEVICES,
+  HUB_EVENT_MODULE_ORDER,
+} from "../use_hub_events";
 import type { DeviceChip } from "./device_chip_strip";
 import type {
   ModuleDeviceView,
@@ -50,12 +56,15 @@ const WORDING = {
   consentConfirm: "Apply devices",
 };
 
-// A device list where something is mid-step is worth following; the rest of
-// the time the list is as still as the machines are.
-const REFRESH_INTERVAL_MS = 5000;
-
-// The states that mean the hub is still working on a machine.
-const BUSY_STATES: string[] = ["installing", "uninstalling"];
+// What moves this list: a machine coming or going, its report saying the
+// module now stands somewhere else, an install changing state, and the
+// written set of machines the module is asked for on.
+const INVALIDATE_ON = [
+  { type: HUB_EVENT_DEVICES },
+  { type: HUB_EVENT_DEVICE_REPORT },
+  { type: HUB_EVENT_MODULE_ORDER },
+  { type: HUB_EVENT_CONFIG },
+];
 
 // The state that makes a machine configurable: the module is really there.
 const INSTALLED_STATE = "installed";
@@ -104,7 +113,9 @@ export function AgentServicePage({
   moduleName,
   children,
 }: AgentServicePageProps) {
-  const resource = useApiResource<ModuleDevicesView>(`/${moduleName}`);
+  const resource = useApiResource<ModuleDevicesView>(`/${moduleName}`, {
+    invalidateOn: INVALIDATE_ON,
+  });
 
   const [checkedIds, setCheckedIds] = useState<string[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -118,9 +129,6 @@ export function AgentServicePage({
     .map((device) => device.device_id);
   const activeDevices = devices.filter(
     (device) => device.state === INSTALLED_STATE,
-  );
-  const isAnyStepRunning = devices.some((device) =>
-    BUSY_STATES.includes(device.state),
   );
 
   // The draft follows the gateway until somebody edits it: an apply landing
@@ -140,19 +148,6 @@ export function AgentServicePage({
         : (active[0] ?? null),
     );
   }, [activeKey]);
-
-  const reload = resource.reload;
-  useEffect(() => {
-    if (!isAnyStepRunning) {
-      return;
-    }
-    const timer = window.setInterval(() => {
-      if (!document.hidden) {
-        reload();
-      }
-    }, REFRESH_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, [reload, isAnyStepRunning]);
 
   const checked = checkedIds ?? enabledIds;
   const addedDevices = devices.filter(

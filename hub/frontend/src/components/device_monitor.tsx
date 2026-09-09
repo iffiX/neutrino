@@ -4,7 +4,10 @@ import { Area, AreaChart, ResponsiveContainer, YAxis } from "recharts";
 
 import { Icon } from "./icon";
 import { apiPost, describeError } from "../api_client";
+import { toDeviceMetrics } from "../device_metrics";
 import { formatDuration, formatTimeAgo } from "../format_duration";
+import { HUB_EVENT_METRICS, useHubEvents } from "../use_hub_events";
+import type { HubEvent } from "../use_hub_events";
 import type { DeviceGpuInfo, DeviceView } from "../api_types";
 
 import "./device_monitor.css";
@@ -13,19 +16,16 @@ import "./device_monitor.css";
  * Live vitals for the device whose drawer is open, in the space the drawer
  * leaves free.
  *
- * Everything here comes from the agent's heartbeat, refreshed by the page's
- * normal polling — the monitor itself opens no connection. Readings are drawn
- * as short history curves, accumulated while the panel is open, in the same
- * visual language as the dashboard's traffic chart. A device without the
- * agent gets a pointer to the one-click install instead of empty charts.
+ * Everything here comes from the agent's heartbeat, which reaches the panel
+ * as an event carrying the machine's vitals — the monitor itself opens no
+ * connection and asks for nothing. One heartbeat makes one point, so the
+ * readings are drawn as short history curves accumulated while the panel is
+ * open, in the same visual language as the dashboard's traffic chart. A
+ * device without the agent gets a pointer to the one-click install instead of
+ * empty charts.
  */
 
 const MAX_SAMPLES = 120;
-
-// A heartbeat arrives every few seconds; past this the readings are history,
-// not vitals, and the panel says so rather than drawing a frozen chart as
-// though it were live.
-const STALE_AFTER_MS = 30_000;
 
 const CYAN = "#22d3ee";
 const VIOLET = "#a78bfa";
@@ -44,8 +44,6 @@ interface DeviceMonitorProps {
 export function DeviceMonitor({ device }: DeviceMonitorProps) {
   const client = device.client;
   const hasSample = client !== null && client.cpu_percent !== null;
-  const isStale = hasSample && isOlderThan(client.last_seen, STALE_AFTER_MS);
-
   const [samples, setSamples] = useState<MonitorSample[]>([]);
   // Killing takes two clicks on the same cross; the first only arms it.
   const [pendingKillPid, setPendingKillPid] = useState<number | null>(null);
@@ -73,25 +71,28 @@ export function DeviceMonitor({ device }: DeviceMonitorProps) {
     }
   };
 
-  const lastSeen = client?.last_seen ?? null;
-  useEffect(() => {
-    if (client === null || client.cpu_percent === null || isStale) {
+  // A heartbeat is what makes a new point, not a rerender.
+  const handleMetrics = (event: HubEvent) => {
+    const metrics = toDeviceMetrics(event);
+    if (metrics === null || metrics.cpu_percent === null) {
       return;
     }
     setSamples((current) =>
       [
         ...current,
         {
-          cpu: client.cpu_percent,
-          memory: client.memory_percent,
-          gpu_util: client.gpus.map((gpu) => gpu.utilization_percent),
-          gpu_vram: client.gpus.map((gpu) => vramPercent(gpu)),
+          cpu: metrics.cpu_percent,
+          memory: metrics.memory_percent,
+          gpu_util: metrics.gpus.map((gpu) => gpu.utilization_percent),
+          gpu_vram: metrics.gpus.map((gpu) => vramPercent(gpu)),
         },
       ].slice(-MAX_SAMPLES),
     );
-    // A new heartbeat is what makes a new point, not a rerender.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [device.mac_address, lastSeen]);
+  };
+  useHubEvents(
+    [{ type: HUB_EVENT_METRICS, key: device.mac_address }],
+    handleMetrics,
+  );
 
   // A portal, so the monitor escapes the page's stacking context and can sit
   // above the drawer's backdrop; the wrap centres it in the free space.
@@ -225,7 +226,7 @@ export function DeviceMonitor({ device }: DeviceMonitorProps) {
             )}
 
             <div className="device_monitor_footer">
-              sampled {formatTimeAgo(client.last_seen)}
+              sampled {formatTimeAgo(client.last_report_at)}
             </div>
           </div>
         )}
@@ -306,15 +307,6 @@ function ChartPanel({
       </div>
     </div>
   );
-}
-
-/** Whether a timestamp is older than a cutoff; unparseable reads as stale. */
-function isOlderThan(timestamp: string | null, ageMs: number): boolean {
-  if (timestamp === null) {
-    return true;
-  }
-  const stamp = Date.parse(timestamp);
-  return Number.isNaN(stamp) || Date.now() - stamp > ageMs;
 }
 
 function formatPercent(percent: number | null): string {

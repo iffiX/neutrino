@@ -46,7 +46,10 @@ from neutrino_hub.modules.devices.wake_on_lan import send_magic_packet
 from neutrino_hub.modules.router.link_status import RouterLinkStatus, device_addresses
 from neutrino_hub import HUB_VERSION
 from neutrino_hub.web.agent_tls import certificate_fingerprint
-from neutrino_hub.web.constants import WEB_DEFAULT_AGENT_LISTEN_PORT
+from neutrino_hub.web.constants import (
+    WEB_DEFAULT_AGENT_LISTEN_PORT,
+    WEB_EVENT_DEVICES,
+)
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.web.models import (
@@ -204,6 +207,7 @@ def _device_view(runtime: PanelRuntime, device: ManagedDevice) -> DeviceView:
         is_agent_online=runtime.agent_sessions.is_online(key),
         version=runtime.agent_sessions.version_of(key),
         last_seen=runtime.agent_sessions.last_seen_at(key),
+        last_report_at=runtime.agent_sessions.last_report_at(key),
     )
     # Where its channel comes from wins over a scan: an agent on the overlay
     # is on no served LAN, and a machine that moved is at its new address a
@@ -250,6 +254,7 @@ def annotate(
     if "ssh" in payload:
         payload["ssh"] = _store_ssh_secrets(annotation.ssh)
     device = DeviceRegistry().annotate(mac_address, payload)
+    runtime.events.publish(WEB_EVENT_DEVICES)
     return _device_view(runtime, device)
 
 
@@ -277,6 +282,7 @@ def forget(mac_address: str, runtime: PanelRuntime = Depends(get_runtime)) -> di
     _revoke_device_ai_keys(mac_address)
     DeviceRegistry().forget(mac_address)
     runtime.forget_client_state(mac_address)
+    runtime.events.publish(WEB_EVENT_DEVICES)
     return {}
 
 
@@ -422,6 +428,7 @@ def create_enrollment(
     link, token = _generate_enrollment_link(
         runtime, name=request.name, mac_address=request.mac_address
     )
+    runtime.events.publish(WEB_EVENT_DEVICES)
     return DeviceEnrollmentView(link=link, token=token, expires_in_s=ENROLLMENT_TTL_S)
 
 
@@ -888,6 +895,7 @@ async def start_action(
             label=f"{action} {mac_address}",
             source=_agent_command_stream(runtime, key, AGENT_COMMAND_ACTIONS[action]),
         )
+        runtime.events.publish(WEB_EVENT_DEVICES)
         return TaskStarted(task_id=stream.id)
 
     if action != "install_client":
@@ -934,6 +942,7 @@ async def start_action(
             operator.install_client(packages=packages, enrollment_link=link),
         ),
     )
+    runtime.events.publish(WEB_EVENT_DEVICES)
     return TaskStarted(task_id=stream.id)
 
 
@@ -1152,6 +1161,7 @@ def _to_view(
     is_agent_online: bool = False,
     version: str = "",
     last_seen: "str | None" = None,
+    last_report_at: "str | None" = None,
 ) -> DeviceView:
     ssh_view = None
     if device.ssh:
@@ -1182,6 +1192,7 @@ def _to_view(
             version=version or None,
             is_version_mismatched=_is_version_mismatched(version),
             last_seen=last_seen,
+            last_report_at=last_report_at,
             cpu_percent=latest.get("cpu_percent"),
             memory_percent=latest.get("memory_percent"),
             disk_percent=latest.get("disk_percent"),
