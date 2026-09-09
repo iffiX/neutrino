@@ -95,7 +95,7 @@ AGENT_BUILDS = {
 
 AGENT_CONTAINER_BUILD = (
     "{install} && mkdir -p /build/agent /build/images && "
-    "cp -r /src/agent/neutrino_agent /src/agent/packaging /src/agent/frontend "
+    "cp -r /src/agent/neutrino_agent /src/agent/packaging "
     "/src/agent/pyproject.toml /build/agent/ && "
     "cp -r /src/images/icons /build/images/ && cd /build && "
     "python3 agent/packaging/{script} --output-dir /out "
@@ -107,7 +107,7 @@ CONTAINER_BUILD = (
     "cp -r /src/hub/neutrino_hub /src/hub/packaging /src/hub/pyproject.toml "
     "/build/hub/ && "
     "cp -r /src/agent/neutrino_agent /src/agent/packaging "
-    "/src/agent/frontend /src/agent/pyproject.toml "
+    "/src/agent/pyproject.toml "
     "/build/agent/ && "
     "cp -r /src/images/icons /build/images/ && "
     "cp -r /src/licenses /build/licenses && cd /build && "
