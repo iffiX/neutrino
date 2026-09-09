@@ -99,6 +99,8 @@ class DesiredStateApplier:
         self._store = store
         self._log = log
         self._lock = threading.Lock()
+        self._idle = threading.Condition(self._lock)
+        self._is_applying = False
         self._pending: "tuple | None" = None
         self._applied_hash = ""
         self._state_error: "dict | None" = None
@@ -119,6 +121,23 @@ class DesiredStateApplier:
         """Why the last state did not fully apply, as ``{"code", "params"}``."""
         with self._lock:
             return dict(self._state_error) if self._state_error else None
+
+    def settle(self, timeout_s: float) -> bool:
+        """Wait until no state is pending or mid-apply.
+
+        A command that reads a module's configuration runs after the state
+        it was asked against has taken, not beside it.
+
+        Args:
+            timeout_s: How long to wait.
+
+        Returns:
+            True when the applier is idle; False when the wait ran out.
+        """
+        with self._idle:
+            return self._idle.wait_for(
+                lambda: self._pending is None and not self._is_applying, timeout_s
+            )
 
     def take(self, state_hash: str, desired: dict) -> None:
         """Keep one state from the hub and apply it when it is news.
@@ -237,11 +256,21 @@ class DesiredStateApplier:
                     self._pending = None
                     applied = self._applied_hash
                 if pending is None:
+                    with self._idle:
+                        self._idle.notify_all()
                     break
                 state_hash, desired = pending
                 if state_hash and state_hash == applied:
+                    with self._idle:
+                        self._idle.notify_all()
                     continue
+                with self._idle:
+                    self._is_applying = True
                 try:
                     self.apply(state_hash, desired)
                 except Exception as error:  # noqa: BLE001 - the loop must survive
                     self._log(f"applying the desired state crashed: {error}")
+                finally:
+                    with self._idle:
+                        self._is_applying = False
+                        self._idle.notify_all()

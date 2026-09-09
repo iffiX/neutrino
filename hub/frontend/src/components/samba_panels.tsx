@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ApiError } from "../api_client";
 import { copyText } from "../copy_text";
 
 import { ApplyBar } from "./apply_bar";
@@ -71,6 +72,12 @@ const WORDING = {
   usersApplyHint:
     "Creates accounts, sets staged passwords, revokes removed ones.",
   passwordFailure: "password not set: {failures}", // scan: allow
+  passwordCodes: {
+    user_unknown: "the user is not applied on this machine yet",
+    state_not_settled: "the machine is still applying its configuration",
+    agent_offline: "the agent is offline",
+    command_failed: "{detail}",
+  } as Record<string, string>,
   statusTitle: "Now serving",
   statusLive: "live",
   statusEmpty: "Nobody is connected.",
@@ -176,7 +183,7 @@ export function SambaPanels({
         try {
           await apiPost(`${basePath}/users/${name}/password`, { password });
         } catch (cause: unknown) {
-          failures.push(`${name}: ${describeError(cause)}`);
+          failures.push(`${name}: ${wordPasswordFailure(cause)}`);
         }
       }
       setPendingPasswords({});
@@ -617,4 +624,21 @@ function fill(
     filled = filled.replace(`{${name}}`, String(value));
   }
   return filled;
+}
+
+function wordPasswordFailure(cause: unknown): string {
+  if (cause instanceof ApiError) {
+    const sentence = WORDING.passwordCodes[cause.code ?? ""];
+    if (sentence !== undefined) {
+      const detail = cause.detail;
+      const params =
+        typeof detail === "object" && detail !== null && "params" in detail
+          ? ((detail as { params?: Record<string, unknown> }).params ?? {})
+          : {};
+      return fill(sentence, {
+        detail: String(params.detail ?? cause.message),
+      });
+    }
+  }
+  return describeError(cause);
 }

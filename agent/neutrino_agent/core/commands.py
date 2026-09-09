@@ -25,6 +25,7 @@ import time
 from dataclasses import dataclass, field
 
 from neutrino_agent.constants import (
+    AGENT_MODULE_COMMAND_SETTLE_S,
     AGENT_COMMAND_TIMEOUT_S,
     AGENT_KILL_GRACE_S,
     AGENT_OUTPUT_LIMIT_BYTES,
@@ -92,7 +93,13 @@ class DeviceOperator:
     """Runs the supported remote actions on this device."""
 
     def __init__(
-        self, *, platform, reinstall=None, module_runners=None, remote_desktop=None
+        self,
+        *,
+        platform,
+        reinstall=None,
+        module_runners=None,
+        remote_desktop=None,
+        settle=None,
     ):
         """
         Args:
@@ -100,12 +107,16 @@ class DeviceOperator:
             reinstall: Called for the ``reinstall`` action; returns empty
                 when the install was launched, ``{"code", "params"}`` when
                 not. None refuses the action as unsupported.
+            settle: Called with a timeout before a module command runs, to
+                let a pending desired state apply first; None waits for
+                nothing.
             module_runners: Module name to its runner, for the actions a
                 module answers. None refuses every module action.
             remote_desktop: The reader the remote desktop actions run on.
                 None reads this machine through the platform.
         """
         self._platform = platform
+        self._settle = settle
         self._reinstall = reinstall
         self._module_runners = dict(module_runners or {})
         self._remote_desktop = remote_desktop or RemoteDesktopReader(platform=platform)
@@ -158,6 +169,13 @@ class DeviceOperator:
                 output="",
                 code="unsupported_action",
                 params={"action": action},
+            )
+        if self._settle is not None and not self._settle(AGENT_MODULE_COMMAND_SETTLE_S):
+            return CommandOutcome(
+                exit_code=1,
+                output="",
+                code="state_not_settled",
+                params={"module": module},
             )
         try:
             outcome = runner.command(action, dict(args), on_line)

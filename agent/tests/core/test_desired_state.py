@@ -88,6 +88,8 @@ def applier(runners, engine=None, tmp_path=None):
     held._store = DesiredStateStore(path=str(tmp_path / "desired.json"))
     held._log = lambda message: None
     held._lock = threading.Lock()
+    held._idle = threading.Condition(held._lock)
+    held._is_applying = False
     held._pending = None
     held._applied_hash = ""
     held._state_error = None
@@ -253,3 +255,21 @@ def test_apply_again_forces_the_last_state_after_an_order(tmp_path):
     assert held.applied_hash == ""
     assert held._pending[0] == "h1"
     assert held._wakeup.is_set()
+
+
+def test_settle_returns_once_the_taken_state_has_applied(tmp_path):
+    runners = {"samba": FakeRunner()}
+    engine = FakeEngine(runners)
+    held = DesiredStateApplier(
+        engine=engine,
+        runners=runners,
+        store=DesiredStateStore(path=str(tmp_path / "desired.json")),
+        log=lambda message: None,
+    )
+
+    held.take("h1", desired(samba=True))
+
+    assert held.settle(5.0)
+    assert held.applied_hash == "h1"
+    assert runners["samba"].applied == [{"n": "samba"}]
+    assert held.settle(0.1)

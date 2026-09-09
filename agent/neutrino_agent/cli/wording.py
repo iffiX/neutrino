@@ -60,6 +60,7 @@ CLI_CODE_WORDS = {
     "kill_failed": "process {pid} could not be ended: {detail}",
     "product_unknown": "{product} is not a remote desktop this agent reads",
     "unsupported_action": "the hub asked for a command this agent does not run",
+    "state_not_settled": "the machine is still applying its configuration; try again",
     "unsupported_platform": "this machine cannot do this",
     "no_target_user": "that account does not exist on this machine",
     "rdp_no_seat": "say whose desktop to share: nagent rdp start --user <name>",

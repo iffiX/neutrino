@@ -622,6 +622,7 @@ class Agent:
                     platform=self._platform,
                     reinstall=self._reinstall,
                     module_runners=self._engine.module_runners,
+                    settle=self._desired.settle,
                 )
             else:
                 self._channel = None

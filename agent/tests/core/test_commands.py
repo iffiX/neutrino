@@ -222,3 +222,35 @@ def test_a_reader_that_raises_answers_agent_internal():
 
     assert outcome.code == "agent_internal"
     assert outcome.params == {"error": "OSError"}
+
+
+# --- module commands wait for the desired state ---
+
+
+def test_a_module_command_settles_the_desired_state_first():
+    order = []
+    runner = FakeRunner()
+    subject = DeviceOperator(
+        platform=PowerPlatform(),
+        module_runners={"samba": runner},
+        settle=lambda timeout_s: order.append(("settle", timeout_s)) or True,
+    )
+
+    outcome = subject.run("samba_set_password", {"name": "test", "password": "x"})
+
+    assert order and order[0][0] == "settle" and order[0][1] > 0
+    assert outcome.code == ""
+
+
+def test_a_state_that_never_settles_refuses_the_command_typed():
+    runner = FakeRunner()
+    subject = DeviceOperator(
+        platform=PowerPlatform(),
+        module_runners={"samba": runner},
+        settle=lambda timeout_s: False,
+    )
+
+    outcome = subject.run("samba_set_password", {"name": "test", "password": "x"})
+
+    assert (outcome.exit_code, outcome.code) == (1, "state_not_settled")
+    assert outcome.params == {"module": "samba"}
