@@ -3,6 +3,7 @@
     nagent connect neutrino://enroll/...
     nagent disconnect
     nagent status
+    nagent sync
     nagent rdp start [--user <name>] | stop
     nagent run
 
@@ -15,7 +16,7 @@ import shlex
 import sys
 
 from neutrino_agent import AGENT_VERSION
-from neutrino_agent.cli import connect, disconnect, rdp, run, status
+from neutrino_agent.cli import connect, disconnect, rdp, run, status, sync
 
 # Everything the agent does is root's to do, and the control socket it asks
 # through is root's to open. Only ``--version`` answers any account.
@@ -23,6 +24,7 @@ ROOT_COMMANDS = {
     "connect": "it writes the binding and starts the service",
     "disconnect": "it removes the binding",
     "status": "it asks the agent over its root-only control socket",
+    "sync": "it asks the agent over its root-only control socket",
     "rdp": "it configures this machine's desktop share",
     "run": "the agent manages this machine",
 }
@@ -54,6 +56,7 @@ def main() -> int:
 
     subparsers.add_parser("disconnect", help="leave the hub")
     subparsers.add_parser("status", help="what this machine is bound to")
+    subparsers.add_parser("sync", help="ask the hub for this machine's state now")
     subparsers.add_parser("run", help="run the agent in the foreground")
     rdp_parser = _add_rdp_parser(subparsers)
 
@@ -72,6 +75,8 @@ def main() -> int:
         return disconnect.main()
     if arguments.command == "run":
         return run.main()
+    if arguments.command == "sync":
+        return sync.main()
     if arguments.command == "rdp":
         return _run_rdp(arguments, rdp_parser)
     return status.main()

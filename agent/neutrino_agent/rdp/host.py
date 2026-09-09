@@ -294,16 +294,17 @@ class RdpShareHost:
         """What the heartbeat carries up about this machine's share.
 
         Returns:
-            ``{"is_shared", "share_id", "port", "attention"}``. ``is_shared``
-            is true only while the share actually answers, so a fleet list
-            never offers a desktop that cannot be reached; ``attention``
-            names what a peer would wait on if it dialed now. The access
-            password is in neither and never crosses the wire.
+            ``{"is_shared", "account", "share_id", "port", "attention"}``.
+            ``is_shared`` is true only while the share actually answers, so
+            a fleet list never offers a desktop that cannot be reached;
+            ``attention`` names what a peer would wait on if it dialed now.
+            The access password is in none of it and never crosses the wire.
         """
         record = self._store.rdp_share()
         is_shared = bool(record.get("is_shared"))
         return {
             "is_shared": is_shared and self._state(is_shared) == RDP_STATE_SHARING,
+            "account": str(record.get("account", "") or ""),
             "share_id": str(record.get("share_id", "")),
             "port": int(record.get("port") or rustdesk.RUSTDESK_DIRECT_PORT),
             # Only a share has anything for a peer to wait on, and only a

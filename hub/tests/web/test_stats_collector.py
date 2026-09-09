@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 
 import pytest
 
+from tests.conftest import FakeAgentSessions
+
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.xray.stats_client import OutboundTraffic
 from neutrino_hub.web import stats_collector
@@ -70,17 +72,12 @@ class StubUplink:
 
 
 class StubRuntime:
-    """The runtime as the panel holds it: built once, at startup.
+    """The runtime as the panel holds it: built once, at startup."""
 
-    It carries a ``devices`` registry the collector used to count from. Kept
-    here deliberately: the count must not come back from a registry built
-    before the heartbeat it is meant to see.
-    """
-
-    def __init__(self):
+    def __init__(self, online=()):
         self.stats = StubStats()
         self.node_probe = StubNodeProbe()
-        self.devices = DeviceRegistry()
+        self.agent_sessions = FakeAgentSessions(online)
 
     def node_list(self) -> StubNodeList:
         return StubNodeList()
@@ -140,31 +137,16 @@ def config_dir(tmp_path, monkeypatch):
     return tmp_path
 
 
-def test_an_agent_that_has_just_beaten_counts_in_the_strip(config_dir):
-    """The strip's DEVICES chip counted zero on a box whose agent was beating.
-
-    A heartbeat is recorded by the registry serving that request, and the
-    collector was counting from one the panel built at startup — which
-    answers with the file as it was then, before any agent had beaten.
-    """
-    DeviceRegistry().issue_client_token(BEATING_MAC)
-    runtime = StubRuntime()
-
-    DeviceRegistry().record_heartbeat(
-        BEATING_MAC,
-        version="0.1.0",
-        seen_at=datetime.now(timezone.utc).isoformat(),
-    )
+def test_an_agent_holding_a_socket_counts_in_the_strip(config_dir):
+    """The strip's DEVICES chip counts the agents with a live channel."""
+    runtime = StubRuntime(online=[BEATING_MAC])
 
     assert PanelStatsCollector(runtime=runtime).collect().agent_device_count == 1
 
 
-def test_an_agent_that_stopped_beating_leaves_the_count(config_dir):
-    """A token alone is an offer, and a stale beat is not a live agent."""
+def test_an_agent_without_a_socket_leaves_the_count(config_dir):
+    """A token alone is an offer, and a closed socket is not a live agent."""
     DeviceRegistry().issue_client_token(BEATING_MAC)
-    DeviceRegistry().record_heartbeat(
-        BEATING_MAC, version="0.1.0", seen_at="2020-01-01T00:00:00+00:00"
-    )
 
     assert PanelStatsCollector(runtime=StubRuntime()).collect().agent_device_count == 0
 

@@ -1,4 +1,4 @@
-"""The control channel end to end: five routes, one root caller.
+"""The control channel end to end: six routes, one root caller.
 
 The socket is root's — 0600 under a 0700 directory — so nothing judges an
 identity in a handler and no route is refused for scope.
@@ -92,24 +92,15 @@ def test_the_state_carries_the_share_and_no_password(control):
     assert "password" not in state["rdp"]
 
 
-def test_the_state_carries_the_hubs_operation(control):
+def test_the_state_says_whether_the_socket_to_the_hub_is_up(control):
     server, agent = control
-    operation = {
-        "kind": "order",
-        "action": "install",
-        "title": "RustDesk",
-        "state": "installing",
-        "output": "rustdesk: installing",
-    }
-    agent.operation_payload = operation
 
-    status, state = over_socket(server, "GET", "/api/state")
-    assert status == 200
-    assert state["operation"] == operation
-
-    agent.operation_payload = None
     _status, state = over_socket(server, "GET", "/api/state")
-    assert state["operation"] is None
+    assert state["is_online"] is False
+
+    agent.is_socket_open = True
+    _status, state = over_socket(server, "GET", "/api/state")
+    assert state["is_online"] is True
 
 
 def test_the_state_never_carries_the_device_token(control, config_path):
@@ -122,6 +113,28 @@ def test_the_state_never_carries_the_device_token(control, config_path):
     assert state["is_connected"] is True
     assert state["gateway_url"] == "http://127.0.0.1:9"
     assert "tok" not in json.dumps(state)
+
+
+# --- POST /api/sync ---
+
+
+def test_sync_asks_the_agent_and_answers_the_state(control):
+    server, agent = control
+
+    status, state = over_socket(server, "POST", "/api/sync", {})
+
+    assert status == 200
+    assert agent.syncs == 1
+    assert "is_connected" in state
+
+
+def test_sync_with_no_socket_maps_to_400(control):
+    server, agent = control
+    agent.sync_reply = {"code": "hub_unreachable", "params": {}}
+
+    status, reply = over_socket(server, "POST", "/api/sync", {})
+
+    assert (status, reply["code"]) == (400, "hub_unreachable")
 
 
 # --- POST /api/connect and /api/disconnect ---

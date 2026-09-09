@@ -18,6 +18,7 @@ def test_the_gate_covers_every_verb():
         "rdp",
         "run",
         "status",
+        "sync",
     ]
 
 
@@ -29,6 +30,7 @@ def test_the_gate_covers_every_verb():
         (["nagent", "disconnect"], "it removes the binding"),
         (["nagent", "rdp", "start"], "it configures this machine's desktop share"),
         (["nagent", "run"], "the agent manages this machine"),
+        (["nagent", "sync"], "it asks the agent over its root-only control socket"),
     ],
 )
 def test_an_unprivileged_caller_is_refused_with_the_command(
@@ -92,8 +94,16 @@ def test_rdp_with_no_action_prints_the_help(monkeypatch, capsys):
     assert "usage: nagent rdp" in capsys.readouterr().out
 
 
+def test_sync_reaches_its_own_command(monkeypatch):
+    monkeypatch.setattr(entry.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(entry.sys, "argv", ["nagent", "sync"])
+    monkeypatch.setattr(entry.sync, "main", lambda: 0)
+
+    assert entry.main() == 0
+
+
 def test_the_verbs_that_were_pruned_are_gone(monkeypatch, capsys):
-    for verb in ("gui", "module", "operation", "service", "sync"):
+    for verb in ("gui", "module", "operation", "service"):
         monkeypatch.setattr(entry.sys, "argv", ["nagent", verb])
 
         with pytest.raises(SystemExit) as refused:

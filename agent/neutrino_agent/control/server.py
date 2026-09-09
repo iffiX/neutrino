@@ -46,9 +46,9 @@ def _state(agent) -> dict:
         "hostname": hostname(),
         "platform": agent.platform(),
         "is_connected": bool(config.get("gateway_url") and config.get("token")),
+        "is_online": agent.is_online(),
         "gateway_url": config.get("gateway_url", ""),
         "last_error": agent.last_error(),
-        "operation": agent.operation(),
         "modules": _module_rows(agent, catalog.get("modules", {})),
         "rdp": agent.rdp_state(),
     }
@@ -189,7 +189,7 @@ class _ControlSocketHttpServer(ThreadingHTTPServer):
 
 
 class _ControlRequestHandler(BaseHTTPRequestHandler):
-    """The five routes the control socket serves."""
+    """The six routes the control socket serves."""
 
     protocol_version = "HTTP/1.1"
     timeout = 10
@@ -239,6 +239,8 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
             self._connect(body)
         elif route == "/api/disconnect":
             self._disconnect()
+        elif route == "/api/sync":
+            self._sync()
         elif route == "/api/rdp/start":
             self._rdp_start(body)
         elif route == "/api/rdp/stop":
@@ -260,6 +262,14 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
     def _disconnect(self) -> None:
         agent = self.server.control_agent
         agent.disconnect()
+        self._send_json(_state(agent))
+
+    def _sync(self) -> None:
+        agent = self.server.control_agent
+        outcome = agent.sync()
+        if outcome:
+            self._send_refusal(outcome)
+            return
         self._send_json(_state(agent))
 
     def _rdp_start(self, body: dict) -> None:

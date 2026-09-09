@@ -1,12 +1,10 @@
 """The drawer's Services block: what it reads, and what it may ask.
 
 The asks are the page's own verbs and nothing wider: a body outside the
-verb set is refused typed before anything is queued, and a fresh mount must
-say whom it is for. A share's access password rides inside the one ask, the
-way a mount's credentials do, and nothing hub-side keeps it.
+verb set is refused typed before anything runs, and a fresh mount must say
+whom it is for. An ask runs as one command over the device's socket, and a
+device with no socket takes none.
 """
-
-from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi import FastAPI
@@ -15,6 +13,7 @@ from fastapi.testclient import TestClient
 from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
+from tests.conftest import FakeAgentSessions
 
 MAC = "aa:bb:cc:dd:ee:ff"
 
@@ -45,20 +44,10 @@ class FakeRuntime:
     def __init__(self):
         self.client_accounts = {}
         self.client_address = {}
-        self.client_ai_targets = {}
-        self.client_service_state = {}
         self.client_device_host = {}
         self.client_platform = {}
         self.device_catalog = StubCatalog()
-        self.queued = []
-
-    def queue_client_command(self, mac_address: str, command: dict) -> None:
-        self.queued.append((mac_address, command))
-
-
-def beating(seconds_ago: float) -> str:
-    stamp = datetime.now(timezone.utc) - timedelta(seconds=seconds_ago)
-    return stamp.isoformat()
+        self.agent_sessions = FakeAgentSessions(online=[MAC])
 
 
 @pytest.fixture
@@ -66,7 +55,9 @@ def api(monkeypatch):
     FakeRegistry.device = ManagedDevice(
         mac_address=MAC,
         name="testbox",
-        client=DeviceClientInfo(token_sha256="t" * 64, last_seen=beating(2)),
+        client=DeviceClientInfo(
+            token_sha256="t" * 64, last_seen="2026-01-01T00:00:00+00:00"
+        ),
     )
     monkeypatch.setattr(devices_router, "DeviceRegistry", FakeRegistry)
     app = FastAPI()
@@ -95,31 +86,11 @@ def test_a_device_that_never_beat_reads_empty_rather_than_erroring(api):
     }
 
 
-def test_the_view_carries_what_a_mount_location_is_on_that_machine(api):
-    """The drawer offers a location the way the machine's own page does: a
-    free drive letter where Windows mounts at one, a path elsewhere."""
-    client, runtime = api
-    runtime.client_service_state[MAC] = {
-        "mount_location_shape": "drive_letter",
-        "mount_location_suggestion": "Z:",
-    }
-
-    answer = client.get(f"/api/devices/{MAC}/services").json()
-
-    assert answer["mount_location_shape"] == "drive_letter"
-    assert answer["mount_location_suggestion"] == "Z:"
-
-
-def test_the_view_is_the_beats_rows_over_the_devices_own_catalog(api):
+def test_the_view_is_the_devices_own_catalog(api):
     client, runtime = api
     runtime.client_device_host[MAC] = "192.168.100.1"
     runtime.client_platform[MAC] = {"os": "linux"}
     runtime.client_accounts[MAC] = ["pat", "sam"]
-    runtime.client_ai_targets[MAC] = {"pat": True}
-    runtime.client_service_state[MAC] = {
-        "mounts": [{"record_id": "r1", "path": "/home/pat/nas", "account": "pat"}],
-        "ai_states": {"pat": {"state": "active"}},
-    }
 
     answer = client.get(f"/api/devices/{MAC}/services").json()
 
@@ -128,14 +99,12 @@ def test_the_view_is_the_beats_rows_over_the_devices_own_catalog(api):
         "web_gitea",
     ]
     assert answer["accounts"] == ["pat", "sam"]
-    assert answer["ai_targets"] == {"pat": True}
-    assert answer["mounts"][0]["record_id"] == "r1"
     # The catalog is composed for the address the device itself reaches the
     # hub on, so entry URLs match what the machine's own page shows.
     assert runtime.device_catalog.asked == [("192.168.100.1", {"os": "linux"})]
 
 
-def test_an_ai_apply_is_queued_as_the_pages_own_verb(api):
+def test_an_ai_apply_runs_as_the_pages_own_verb(api):
     client, runtime = api
 
     answer = client.post(
@@ -146,16 +115,13 @@ def test_an_ai_apply_is_queued_as_the_pages_own_verb(api):
     assert answer.status_code == 200
     command_id = answer.json()["command_id"]
     assert command_id.startswith("service-ai-")
-    ((mac, command),) = runtime.queued
-    assert mac == MAC
-    assert command == {
-        "id": command_id,
-        "action": "service",
-        "args": {
-            "service_type": "ai",
-            "body": {"targets": {"pat": True, "sam": False}},
-        },
-    }
+    assert runtime.agent_sessions.commands == [
+        (
+            MAC,
+            "service",
+            {"service_type": "ai", "body": {"targets": {"pat": True, "sam": False}}},
+        )
+    ]
 
 
 def test_a_fresh_mount_must_say_whom_it_is_for(api):
@@ -168,7 +134,7 @@ def test_a_fresh_mount_must_say_whom_it_is_for(api):
 
     assert answer.status_code == 400
     assert answer.json()["detail"] == {"code": "no_target_user"}
-    assert runtime.queued == []
+    assert runtime.agent_sessions.commands == []
 
 
 def test_a_remount_by_record_needs_no_account(api):
@@ -180,10 +146,10 @@ def test_a_remount_by_record_needs_no_account(api):
     )
 
     assert answer.status_code == 200
-    assert len(runtime.queued) == 1
+    assert len(runtime.agent_sessions.commands) == 1
 
 
-def test_a_share_is_queued_with_its_account_and_password(api):
+def test_a_share_runs_with_its_account_and_password(api):
     """The access password rides inside the one ask, the way a mount's
     credentials do; nothing hub-side keeps it."""
     client, runtime = api
@@ -194,8 +160,8 @@ def test_a_share_is_queued_with_its_account_and_password(api):
     )
 
     assert answer.status_code == 200
-    ((_mac, command),) = runtime.queued
-    assert command["args"]["body"] == {
+    ((_mac, _action, args),) = runtime.agent_sessions.commands
+    assert args["body"] == {
         "action": "share",
         "account": "pat",
         "password": "pw",  # scan: allow
@@ -210,7 +176,7 @@ def test_an_unshare_is_within_the_verb_set(api):
     )
 
     assert answer.status_code == 200
-    assert len(runtime.queued) == 1
+    assert len(runtime.agent_sessions.commands) == 1
 
 
 def test_a_type_outside_the_verb_set_is_refused_typed(api):
@@ -222,14 +188,12 @@ def test_a_type_outside_the_verb_set_is_refused_typed(api):
 
     assert answer.status_code == 400
     assert answer.json()["detail"] == {"code": "unknown_request"}
-    assert runtime.queued == []
+    assert runtime.agent_sessions.commands == []
 
 
-def test_a_quiet_agent_takes_no_ask(api):
-    """A command queued for an agent that never collects it is a change
-    nobody made and a result that never comes."""
+def test_a_device_without_a_socket_takes_no_ask(api):
     client, runtime = api
-    FakeRegistry.device.client.last_seen = beating(3600)
+    runtime.agent_sessions.online.clear()
 
     answer = client.post(
         f"/api/devices/{MAC}/services/ai", json={"body": {"targets": {"pat": True}}}
@@ -237,4 +201,4 @@ def test_a_quiet_agent_takes_no_ask(api):
 
     assert answer.status_code == 409
     assert answer.json()["detail"] == {"code": "agent_offline"}
-    assert runtime.queued == []
+    assert runtime.agent_sessions.commands == []

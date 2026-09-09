@@ -855,8 +855,27 @@ class DeviceClientInfoView(BaseModel):
     gpus: list[DeviceGpuView] = Field(default_factory=list)
     processes: list[DeviceProcessView] = Field(default_factory=list)
     last_error: DeviceClientErrorView | None = None
-    # The last outcome of each queued command, newest first.
+    # Kept for the drawer, which reads it; nothing fills it since commands
+    # run over the agent's socket and stream their output as a task.
     command_results: list[DeviceCommandResultView] = Field(default_factory=list)
+
+
+class DeviceOnlineView(BaseModel):
+    """One device whose agent holds a live socket."""
+
+    device_id: str
+    name: str
+    hostname: str = ""
+    platform: dict = Field(default_factory=dict)
+    # Whether this is the hub box's own agent: its address is one of the
+    # hub's own LAN addresses.
+    is_hub: bool = False
+
+
+class DeviceOnlineListView(BaseModel):
+    """Every online agent, the hub box's own first."""
+
+    devices: list[DeviceOnlineView] = Field(default_factory=list)
 
 
 class DeviceView(BaseModel):
@@ -1193,103 +1212,6 @@ class AboutView(BaseModel):
     acknowledgements: list[AcknowledgementView] = Field(default_factory=list)
 
 
-class ClientHeartbeat(BaseModel):
-    """A heartbeat posted by a neutrino_agent agent."""
-
-    token: str
-    hostname: str
-    client_version: str
-    # The wire generation the agent was built to; 0 marks a build from
-    # before generations existed.
-    wire: int = 0
-    metrics: dict = Field(default_factory=dict)
-    platform: dict = Field(default_factory=dict)
-    # Each interface's IPv4 address with the MAC that carries it, as
-    # ``[{"mac", "address"}]``. The hub names the device by the one on its
-    # identity MAC; a beat's peer address is the fallback.
-    addresses: list[dict] = Field(default_factory=list)
-    # The machine's human accounts, the platform's own judgment; root is
-    # never listed.
-    accounts: list[str] = Field(default_factory=list)
-    catalog_hash: str = ""
-    # What state each module is in: name to
-    # ``{"state", "code", "params"}``. What is true, which is
-    # the only thing about modules the machine answers for.
-    modules: dict = Field(default_factory=dict)
-    # Toggles made on the machine's own page. They ask the hub rather than
-    # act, so the drawer and the page cannot disagree for longer than a beat.
-    module_requests: dict = Field(default_factory=dict)
-    # How the orders this machine has finished went: one
-    # ``{"id", "state", "code", "params", "output"}`` each.
-    module_results: list[dict] = Field(default_factory=list)
-    # Which accounts want their AI tools pointed at the gateway.
-    ai_targets: dict[str, bool] = Field(default_factory=dict)
-    # What the drawer's service panels draw: ``{"mounts", "ai_states"}``.
-    # No credential is in it.
-    service_state: dict = Field(default_factory=dict)
-    # Whether this machine is sharing its desktop, as
-    # ``{"is_shared", "share_id", "port", "attention"}``. The declaration is the
-    # machine's alone — the panel's form cannot make one — and the access
-    # password it was set up with never leaves the machine.
-    rdp_share: dict = Field(default_factory=dict)
-    # The most recent error worth showing, as ``{"code", "params"}``.
-    last_error: dict | None = None
-
-
-class ClientCommand(BaseModel):
-    """One queued command handed back to an agent."""
-
-    id: str
-    action: str
-    args: dict = Field(default_factory=dict)
-
-
-class ClientModuleOrder(BaseModel):
-    """One thing the hub is telling a machine to do to one module.
-
-    An order names the module, the action, and how to get the bytes — never
-    the bytes themselves, which the machine asks for separately so a beat
-    stays a beat.
-    """
-
-    id: str
-    module: str
-    action: str
-    # What the machine asks the hub for the bytes by, and what it checks
-    # them against. Empty for an action that downloads nothing.
-    artifact_key: str = ""
-    digest: str = ""
-    package_kind: str = ""
-
-
-class ClientHeartbeatReply(BaseModel):
-    """The gateway's answer to a heartbeat.
-
-    ``catalog`` is sent only when the agent's ``catalog_hash`` is stale, so a
-    converged fleet is not shipped it on every beat.
-    """
-
-    commands: list[ClientCommand] = Field(default_factory=list)
-    # What to do now, rather than a state to work out for itself. At most
-    # one stands at a time: a machine installs one thing at a time.
-    module_orders: list[ClientModuleOrder] = Field(default_factory=list)
-    # ``{"modules", "services"}`` under one hash.
-    catalog: dict | None = None
-    catalog_hash: str = ""
-    # ``{account: {"base_url", "api_key", "model"}}`` for the accounts whose
-    # AI target is on; the one per-device secret the reply carries.
-    ai_accounts: dict = Field(default_factory=dict)
-    # The device's current or last-finished operation — a module order or an
-    # SSH bootstrap — as ``{"kind", "action", "title", "state", "output"}``;
-    # None when nothing has run. The machine's own page renders the hub's
-    # copy, so both surfaces show one stream.
-    operation: dict | None = None
-    # The hub's own version, on every reply: an older agent updates itself
-    # from it, so a hub restarted with a new release reaches its fleet within
-    # one beat.
-    hub_version: str = ""
-
-
 class DeviceEnrollmentRequest(BaseModel):
     """Ask the gateway for a link a machine can join with."""
 
@@ -1457,18 +1379,6 @@ class ClientLeave(BaseModel):
     """An agent saying it is leaving; the token is all it needs to prove."""
 
     token: str
-
-
-class ClientCommandResult(BaseModel):
-    """An agent reporting how a command went."""
-
-    token: str
-    id: str
-    exit_code: int
-    output: str = ""
-    # A service ask's typed refusal, for the drawer's own wording table.
-    code: str = ""
-    params: dict = Field(default_factory=dict)
 
 
 class SambaShareView(BaseModel):

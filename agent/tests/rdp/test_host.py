@@ -229,7 +229,14 @@ def test_the_declaration_carries_no_password_at_all(share_host):
 
     declaration = share_host.declaration()
 
-    assert set(declaration) == {"is_shared", "share_id", "port", "attention"}
+    assert set(declaration) == {
+        "is_shared",
+        "account",
+        "share_id",
+        "port",
+        "attention",
+    }
+    assert declaration["account"] == "pat"
     assert "hunter2" not in repr(declaration)
 
 

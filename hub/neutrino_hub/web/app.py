@@ -22,6 +22,7 @@ from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.usage_collector import PanelUsageCollector
 from neutrino_hub.web.routers import (
     agent,
+    agent_ws,
     ai,
     auth,
     cliproxyapi,
@@ -97,6 +98,7 @@ def create_agent_app() -> FastAPI:
     app.state.runtime = _runtime()
     app.add_exception_handler(VaultLockedError, _vault_locked)
     app.include_router(agent.router)
+    app.include_router(agent_ws.router)
     return app
 
 

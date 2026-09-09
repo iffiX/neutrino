@@ -19,7 +19,7 @@ from neutrino_hub.modules.devices.constants import SSH_UNREACHABLE_STATUS
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
 from neutrino_hub.web.task_stream import TaskStreamRegistry
-from tests.conftest import unlock_vault
+from tests.conftest import FakeAgentSessions, unlock_vault
 
 MAC = "aa:bb:cc:dd:ee:ff"
 LOGIN_PASSWORD = "a-password"  # scan: allow
@@ -35,6 +35,7 @@ class FakeRuntime:
         self.client_address = {}
         self.client_platform = {}
         self.enrollments = {}
+        self.agent_sessions = FakeAgentSessions()
         self.agent_packages = AgentPackageCache(
             root=packages_dir / "agent_cache",
             manifest_path=packages_dir / "agent_packages.json",

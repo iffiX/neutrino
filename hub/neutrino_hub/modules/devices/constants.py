@@ -7,14 +7,39 @@ from neutrino_hub.utils.constants import UTILS_DATA_DIR, UTILS_STATE_ROOT
 DEVICE_MAC_PATTERN = r"^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$"
 
 DEVICE_LAN_SCAN_TIMEOUT_S = 30
-# How long an agent's last heartbeat still counts as "reporting". It beats
-# every five seconds, so this is several missed beats rather than one.
+# How long a machine's last report still stands for what it declared: a
+# desktop share outlives the report that made it by this much.
 DEVICE_AGENT_ONLINE_WINDOW_S = 30
 
 # The shape of what crosses the agent channel. Must match the agent's own
-# AGENT_WIRE_GENERATION; a beat carrying another number is answered with
+# AGENT_WIRE_GENERATION; a hello carrying another number is answered with
 # agent_wire_stale so the agent reinstalls itself.
-AGENT_WIRE_GENERATION = 4
+AGENT_WIRE_GENERATION = 5
+# The agent channel's one socket, on the agent TLS port. An agent opens it
+# after enrolling and keeps it open; every stream the hub needs rides it.
+AGENT_WS_PATH = "/api/agent/ws"
+# How long a fresh socket may stay silent before its hello is due.
+AGENT_WS_HELLO_TIMEOUT_S = 10.0
+# How long the hub waits for an agent to answer an open before giving up
+# on that stream.
+AGENT_WS_OPEN_TIMEOUT_S = 15.0
+# Protocol-level keepalive: uvicorn pings on this interval and drops a
+# socket whose pong is late by this much.
+AGENT_WS_PING_INTERVAL_S = 20.0
+AGENT_WS_PING_TIMEOUT_S = 20.0
+# What a stream may have in flight before the receiving side grants more:
+# one window of bytes, so a transfer through the hub stays bounded.
+AGENT_WS_STREAM_CREDIT_BYTES = 1024 * 1024
+# The largest binary frame either side sends on one stream.
+AGENT_WS_CHUNK_BYTES = 64 * 1024
+# A binary frame starts with the stream id, this many ASCII characters.
+AGENT_WS_STREAM_ID_LENGTH = 8
+# Close codes in the application range, one per way the hub turns a socket
+# away. The reason carries the code word.
+AGENT_WS_CLOSE_BAD_HELLO = 4400
+AGENT_WS_CLOSE_UNKNOWN_TOKEN = 4401
+AGENT_WS_CLOSE_REFUSED = 4409
+AGENT_WS_CLOSE_REPLACED = 4410
 DEVICE_WOL_PORT = 9
 # Pure Python over the network; nothing architecture-bound is installed here.
 DEVICE_SUPPORTED_ARCHITECTURES = ("*",)

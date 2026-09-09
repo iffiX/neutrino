@@ -24,6 +24,10 @@ from neutrino_hub.modules.devices.agent_module_controller import (
     ORDER_ACTION_UNINSTALL,
     ask_module,
 )
+from neutrino_hub.modules.devices.agent_sessions import (
+    AgentOfflineError,
+    StreamRefusedError,
+)
 from neutrino_hub.modules.devices.constants import DEVICE_MAC_PATTERN
 from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
 from neutrino_hub.modules.credentials.vault import SecretVault
@@ -49,9 +53,10 @@ from neutrino_hub.web.models import (
     DeviceAnnotation,
     DeviceClientErrorView,
     DeviceClientInfoView,
-    DeviceCommandResultView,
     DeviceGpuView,
     DeviceListView,
+    DeviceOnlineListView,
+    DeviceOnlineView,
     DeviceProcessView,
     DeviceEnrollmentRequest,
     DeviceEnrollmentView,
@@ -79,7 +84,13 @@ router = APIRouter(
     prefix="/api/devices", tags=["devices"], dependencies=[Depends(require_session)]
 )
 
-POWER_ACTIONS = ("reboot", "shutdown")
+# Actions the agent runs as one command over its socket, and what each is
+# called on the wire.
+AGENT_COMMAND_ACTIONS = {
+    "reboot": "reboot",
+    "shutdown": "shutdown",
+    "reinstall_agent": "reinstall",
+}
 
 # What the drawer draws while an order stands. The machine reports the same
 # words once it starts; this is what covers the moment between the click and
@@ -128,6 +139,41 @@ def scan(runtime: PanelRuntime = Depends(get_runtime)) -> DeviceListView:
     return _device_list(runtime, is_active=True)
 
 
+@router.get("/online", response_model=DeviceOnlineListView)
+def list_online(runtime: PanelRuntime = Depends(get_runtime)) -> DeviceOnlineListView:
+    """The devices whose agents hold a live socket, this box's own first.
+
+    Args:
+        runtime: The shared runtime, which holds the sockets.
+
+    Returns:
+        One row per online agent.
+    """
+    own_addresses = {
+        interface.lan.address for interface in runtime.network().lan_interfaces
+    }
+    registry = DeviceRegistry()
+    rows = []
+    for key in runtime.agent_sessions.keys():
+        device = registry.get(key)
+        rows.append(
+            DeviceOnlineView(
+                device_id=key,
+                name=device.name or runtime.client_hostname.get(key, "") or key,
+                hostname=runtime.client_hostname.get(key, ""),
+                platform=dict(runtime.client_platform.get(key, {})),
+                is_hub=runtime.client_address.get(key, "") in own_addresses,
+            )
+        )
+    rows.sort(key=_hub_first)
+    return DeviceOnlineListView(devices=rows)
+
+
+def _hub_first(row: DeviceOnlineView) -> tuple:
+    """Sort the hub box's own device first, then by name."""
+    return (not row.is_hub, row.name.lower())
+
+
 def _device_list(runtime: PanelRuntime, *, is_active: bool) -> DeviceListView:
     scanner = LanScanner(lan_interfaces=runtime.network().device_facing_device_names)
     registry = DeviceRegistry()
@@ -152,7 +198,11 @@ def _device_view(runtime: PanelRuntime, device: ManagedDevice) -> DeviceView:
         since the panel started.
     """
     key = device.mac_address.lower()
-    view = _to_view(device, runtime.client_metrics.get(key))
+    view = _to_view(
+        device,
+        runtime.client_metrics.get(key),
+        is_agent_online=runtime.agent_sessions.is_online(key),
+    )
     # Where its channel comes from wins over a scan: an agent on the overlay
     # is on no served LAN, and a machine that moved is at its new address a
     # beat later.
@@ -167,20 +217,7 @@ def _device_view(runtime: PanelRuntime, device: ManagedDevice) -> DeviceView:
             view.client.last_error = DeviceClientErrorView(
                 code=error.get("code", ""), params=error.get("params", {})
             )
-        view.client.command_results = [
-            DeviceCommandResultView(**outcome)
-            for outcome in sorted(
-                runtime.client_command_results.get(key, {}).values(),
-                key=_outcome_finished_at,
-                reverse=True,
-            )
-        ]
     return view
-
-
-def _outcome_finished_at(outcome: dict) -> str:
-    """When a stored command outcome arrived, for newest-first ordering."""
-    return outcome.get("finished_at", "")
 
 
 @router.put("/{mac_address}", response_model=DeviceView)
@@ -492,7 +529,6 @@ def list_services(
     """
     DeviceRegistry().get(mac_address)
     key = mac_address.lower()
-    state = runtime.client_service_state.get(key, {})
     entries: list = []
     host = runtime.client_device_host.get(key, "")
     if host:
@@ -501,14 +537,7 @@ def list_services(
         )
         entries = list(catalog.get("services", []))
     return DeviceServicesView(
-        accounts=list(runtime.client_accounts.get(key, [])),
-        entries=entries,
-        ai_targets=dict(runtime.client_ai_targets.get(key, {})),
-        ai_states=dict(state.get("ai_states", {}) or {}),
-        mounts=list(state.get("mounts", []) or []),
-        rdp=dict(state.get("rdp", {}) or {}),
-        mount_location_shape=str(state.get("mount_location_shape") or "path"),
-        mount_location_suggestion=str(state.get("mount_location_suggestion") or ""),
+        accounts=list(runtime.client_accounts.get(key, [])), entries=entries
     )
 
 
@@ -522,11 +551,7 @@ def ask_service(
     request: DeviceServiceAsk,
     runtime: PanelRuntime = Depends(get_runtime),
 ) -> DeviceServiceAskStarted:
-    """Queue one service action for a device's agent.
-
-    The body lands on the same typed handler a local privileged caller
-    reaches, on the device's next beat; how it went comes back among the
-    command results, refusals typed.
+    """Run one service action on a device's agent, over its socket.
 
     Args:
         mac_address: The device.
@@ -535,14 +560,15 @@ def ask_service(
         runtime: The shared runtime.
 
     Returns:
-        The queued ask's command id.
+        The ask's command id.
 
     Raises:
         HTTPException: 400 with the typed code for an ask outside the verb
             set, 409 when the agent is not answering.
     """
     device = DeviceRegistry().get(mac_address)
-    if not device.is_agent_online:
+    key = device.mac_address.lower()
+    if not runtime.agent_sessions.is_online(key):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail={"code": "agent_offline"}
         )
@@ -553,14 +579,15 @@ def ask_service(
             status_code=status.HTTP_400_BAD_REQUEST, detail={"code": refused}
         )
     command_id = f"service-{service_type}-{secrets.token_hex(4)}"
-    runtime.queue_client_command(
-        mac_address,
-        {
-            "id": command_id,
-            "action": "service",
-            "args": {"service_type": service_type, "body": body},
-        },
-    )
+    try:
+        runtime.agent_sessions.run_command_from_thread(
+            key, "service", {"service_type": service_type, "body": body}
+        )
+    except (AgentOfflineError, StreamRefusedError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": error.code, "params": dict(error.params)},
+        ) from error
     return DeviceServiceAskStarted(command_id=command_id)
 
 
@@ -627,7 +654,7 @@ def list_modules(
     return DeviceModuleListView(
         modules=modules,
         is_agent_managed=device.is_managed,
-        is_agent_online=device.is_agent_online,
+        is_agent_online=runtime.agent_sessions.is_online(key),
     )
 
 
@@ -839,43 +866,27 @@ async def start_action(
         A task id the browser streams output from.
 
     Raises:
-        HTTPException: 400 for an unknown action, or 409 when the device lacks
-            the credentials or agent that action needs, or when the install
-            pre-flight finds a device that is not Linux
+        HTTPException: 400 for an unknown action, 409 with ``agent_offline``
+            when the device has no live agent for a command, or 409 when
+            the install lacks credentials or its pre-flight finds a device
+            that is not Linux
             (``{"code": "unsupported_remote_install", "os": ...}``).
     """
     registry = DeviceRegistry()
     device = registry.get(mac_address)
     action = request.action
 
-    # reboot and shutdown prefer the installed agent, which needs no shell
-    # credentials, but fall back to SSH so an SSH-only device can still be
-    # power-controlled.
-    if action in POWER_ACTIONS:
-        # An agent that is answering, not one that was installed once: the
-        # flag stays true through a failed install and a stopped service, and
-        # a command queued for an agent that never collects it is a machine
-        # nobody rebooted and a task that ends "exit 0".
-        if device.is_agent_online:
-            runtime.queue_client_command(mac_address, {"id": action, "action": action})
-            stream = runtime.tasks.start(
-                label=f"{action} {mac_address}", source=_queued_message(action)
+    if action in AGENT_COMMAND_ACTIONS:
+        key = device.mac_address.lower()
+        if not runtime.agent_sessions.is_online(key):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail={"code": "agent_offline"}
             )
-            return TaskStarted(task_id=stream.id)
-        if device.has_ssh:
-            operator = DeviceSshOperator(
-                credentials=SshCredentials.from_dict(device.ssh or {})
-            )
-            unit = "reboot" if action == "reboot" else "poweroff"
-            stream = runtime.tasks.start(
-                label=f"{action} {mac_address}",
-                source=operator.run_privileged_stream(f"systemctl {unit}"),
-            )
-            return TaskStarted(task_id=stream.id)
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"{action} needs the agent or SSH credentials on this device",
+        stream = runtime.tasks.start(
+            label=f"{action} {mac_address}",
+            source=_agent_command_stream(runtime, key, AGENT_COMMAND_ACTIONS[action]),
         )
+        return TaskStarted(task_id=stream.id)
 
     if action != "install_client":
         raise HTTPException(
@@ -1095,11 +1106,46 @@ def _remote_desktop_view(status_: RemoteDesktopStatus) -> RemoteDesktopStatusVie
 REMOTE_DESKTOP_NEEDS_SSH = "reading this needs SSH credentials for the device"
 
 
-async def _queued_message(action: str):
-    yield f"[{action} queued; the agent runs it on its next heartbeat]\n"
+async def _agent_command_stream(
+    runtime: PanelRuntime, key: str, action: str
+) -> AsyncIterator[str]:
+    """Run one command on a device's agent, streaming what it prints.
+
+    Args:
+        runtime: The shared runtime, which holds the sockets.
+        key: The device.
+        action: The command's action on the wire.
+
+    Yields:
+        Each line the agent sends, then the close's output and its code.
+    """
+    try:
+        stream = await runtime.agent_sessions.open_stream(
+            key, "command", {"action": action, "args": {}}
+        )
+    except (AgentOfflineError, StreamRefusedError) as error:
+        yield json.dumps({"code": error.code, "params": dict(error.params)}) + "\n"
+        return
+    while True:
+        item = await stream.recv()
+        if item is None:
+            break
+        if item[0] == "event":
+            yield str(item[1].get("line", "")) + "\n"
+    info = stream.close_info or {}
+    output = str(info.get("output", "") or "")
+    if output:
+        yield output if output.endswith("\n") else output + "\n"
+    if info.get("code"):
+        yield json.dumps({"code": info["code"], "params": info.get("params") or {}})
+        yield "\n"
+    elif "exit_code" in info:
+        yield f"[exit {info['exit_code']}]\n"
 
 
-def _to_view(device: ManagedDevice, metrics: dict | None = None) -> DeviceView:
+def _to_view(
+    device: ManagedDevice, metrics: dict | None = None, *, is_agent_online: bool = False
+) -> DeviceView:
     ssh_view = None
     if device.ssh:
         # The block holds only references, so the ids can be echoed for the
@@ -1120,7 +1166,6 @@ def _to_view(device: ManagedDevice, metrics: dict | None = None) -> DeviceView:
             password_id=device.ssh.get("password_id"),
             sudo_password_id=device.ssh.get("sudo_password_id"),
         )
-    is_agent_online = device.is_agent_online
     client_view = None
     if device.is_managed:
         latest = metrics or {}

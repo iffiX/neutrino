@@ -17,7 +17,6 @@ from neutrino_hub.utils.json_file import (
     write_config,
 )
 
-from neutrino_hub.modules.devices.constants import DEVICE_AGENT_ONLINE_WINDOW_S
 from neutrino_hub.modules.devices.host_keys import DeviceHostKeyStore
 from neutrino_hub.modules.devices.lan_scan import DiscoveredDevice
 
@@ -136,29 +135,6 @@ class ManagedDevice:
         by deleting the token; the device lets go by leaving.
         """
         return bool(self.client.token_sha256 and self.client.last_seen)
-
-    @property
-    def is_agent_online(self) -> bool:
-        """Whether this device's agent has beaten inside the window.
-
-        On the device rather than in the panel, because two callers ask it:
-        the page that draws one device, and the strip that counts them.
-
-        Returns:
-            False when there is no agent, no heartbeat yet, or the last one is
-            older than :data:`DEVICE_AGENT_ONLINE_WINDOW_S`. An SSH login is
-            not an agent and never counts here.
-        """
-        if not self.is_managed:
-            return False
-        try:
-            seen = datetime.fromisoformat(self.client.last_seen)
-        except ValueError:
-            return False
-        if seen.tzinfo is None:
-            seen = seen.replace(tzinfo=timezone.utc)
-        age = (datetime.now(timezone.utc) - seen).total_seconds()
-        return age <= DEVICE_AGENT_ONLINE_WINDOW_S
 
     @property
     def is_stored(self) -> bool:

@@ -1,23 +1,22 @@
-"""Carrying out the commands the gateway sends.
+"""Carrying out the commands the hub sends.
 
-Only the actions in :data:`SUPPORTED_ACTIONS` can run. The gateway is trusted,
-but an agent running as root should still not accept an arbitrary shell string
-just because something posted one, so ``run_command`` is deliberately absent
-from the default set.
+Only the actions in :data:`SUPPORTED_ACTIONS` can run. The hub is trusted,
+but an agent running as root should still not accept an arbitrary shell
+string just because something sent one, so ``run_command`` is deliberately
+absent from the set.
 
-Installing is not here. Software reaches a managed machine one way — an
-order from the hub's module controller, carrying bytes the hub's cache
-fetched — and a command that downloaded and installed something of its own
-would be a second way in.
+Installing a module is not here. Software reaches a managed machine one way,
+an order from the hub's module controller carrying bytes the hub's cache
+fetched; ``reinstall`` only puts this agent's own package back.
 """
 
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from neutrino_agent.constants import AGENT_COMMAND_TIMEOUT_S, AGENT_OUTPUT_LIMIT_BYTES
 from neutrino_agent.platforms.base import PlatformUnsupportedError
 
-SUPPORTED_ACTIONS = ("reboot", "shutdown")
+SUPPORTED_ACTIONS = ("reboot", "shutdown", "reinstall")
 
 POWER_ACTIONS = {"reboot": "reboot", "shutdown": "poweroff"}
 
@@ -28,11 +27,15 @@ class CommandOutcome:
 
     Attributes:
         exit_code: The command's exit status; 0 means success.
-        output: Combined output, truncated to a size the gateway will accept.
+        output: Combined output, truncated to a size the hub will accept.
+        code: Why it failed, typed; empty on success.
+        params: What the wording names.
     """
 
     exit_code: int
     output: str
+    code: str = ""
+    params: dict = field(default_factory=dict)
 
     @property
     def is_success(self) -> bool:
@@ -43,12 +46,16 @@ class CommandOutcome:
 class DeviceOperator:
     """Runs the supported remote actions on this device."""
 
-    def __init__(self, *, platform):
+    def __init__(self, *, platform, reinstall=None):
         """
         Args:
             platform: The machine's platform, behind the contract.
+            reinstall: Called for the ``reinstall`` action; returns empty
+                when the install was launched, ``{"code", "params"}`` when
+                not. None refuses the action as unsupported.
         """
         self._platform = platform
+        self._reinstall = reinstall
 
     def run(self, action: str, args: dict) -> CommandOutcome:
         """Run one command by name.
@@ -58,12 +65,25 @@ class DeviceOperator:
             args: Action-specific arguments.
 
         Returns:
-            The outcome, including an explanatory message for an unsupported
-            action rather than raising, so the gateway always gets a report.
+            The outcome; an unsupported action is a typed refusal rather
+            than an exception, so the hub always gets a report.
         """
-        if action not in SUPPORTED_ACTIONS:
+        if action == "reinstall" and self._reinstall is not None:
+            refusal = self._reinstall()
+            if refusal:
+                return CommandOutcome(
+                    exit_code=1,
+                    output="",
+                    code=str(refusal.get("code", "")),
+                    params=dict(refusal.get("params") or {}),
+                )
+            return CommandOutcome(exit_code=0, output="reinstall launched\n")
+        if action not in POWER_ACTIONS:
             return CommandOutcome(
-                exit_code=1, output=f"unsupported action {action!r}\n"
+                exit_code=1,
+                output="",
+                code="unsupported_action",
+                params={"action": action},
             )
         return self._power(POWER_ACTIONS[action])
 

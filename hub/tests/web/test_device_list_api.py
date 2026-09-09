@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
+from tests.conftest import FakeAgentSessions
 
 MAC = "aa:bb:cc:dd:ee:ff"
 
@@ -52,7 +53,7 @@ class FakeRuntime:
         self.client_platform = {}
         self.client_hostname = {}
         self.client_last_error = {}
-        self.client_command_results = {}
+        self.agent_sessions = FakeAgentSessions()
 
     def network(self):
         return _EmptyNetwork()

@@ -16,7 +16,6 @@ from neutrino_hub.web.models import (
     StatsFrame,
 )
 from neutrino_hub.modules.devices.lan_scan import count_lan_neighbours
-from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.system.interface_traffic import interface_counters, traffic_interface
 from neutrino_hub.web.constants import WEB_PROXY_SCOPE_OFF, WEB_PROXY_SCOPE_UNUSED
@@ -63,10 +62,6 @@ class PanelStatsCollector:
             The current frame. Sources that fail contribute zeros rather than
             raising, so a stopped xray still leaves a usable dashboard.
         """
-        # Read here rather than held on the runtime: a registry answers from
-        # the file as it was when it was built, and the heartbeats that set
-        # last-seen are written by the registry serving each agent request.
-        devices = DeviceRegistry().all_stored()
         outbounds = self._runtime.stats.outbound_traffic()
         node_list = self._runtime.node_list()
         nodes = node_list.enabled_nodes
@@ -105,7 +100,7 @@ class PanelStatsCollector:
             interface_tx_bytes_per_s=tx_bytes_per_s,
             proxy_scope=scope,
             network_mode=network.mode,
-            agent_device_count=sum(1 for device in devices if device.is_agent_online),
+            agent_device_count=len(self._runtime.agent_sessions.keys()),
             balancer_strategy=node_list.strategy,
             enabled_node_count=len(nodes),
             lan_device_count=count_lan_neighbours(network.lan_device_names),

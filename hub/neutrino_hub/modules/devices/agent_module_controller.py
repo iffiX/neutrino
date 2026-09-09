@@ -28,10 +28,10 @@ from neutrino_hub.modules.devices.agent_module_cache import (
     AgentModuleFetchError,
     resolve_platform_entry,
 )
+from neutrino_hub.modules.devices.catalog import resolve_module
 from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_INSTALLER_USER,
     AGENT_MODULE_ORDER_HISTORY,
-    AGENT_MODULE_ORDER_TIMEOUT_S,
 )
 
 # What an order can be. The hub owns the first three; the machine's own
@@ -110,11 +110,12 @@ class AgentModuleOrder:
         return self.state in ORDER_OPEN_STATES
 
     def to_wire(self) -> dict:
-        """What the heartbeat hands the machine.
+        """What the order stream hands the machine.
 
         Returns:
             The order, named the way the agent reads it: what module, what
-            to do, and how to get the bytes.
+            to do, how to get the bytes, and the module resolved for the
+            machine's platform.
         """
         return {
             "id": self.id,
@@ -123,6 +124,7 @@ class AgentModuleOrder:
             "artifact_key": self.artifact_key,
             "digest": self.digest,
             "package_kind": self.package_kind,
+            "resolved": resolve_module(self.manifest, self.platform),
         }
 
     def to_view(self) -> dict:
@@ -147,20 +149,19 @@ class AgentModuleOrder:
 class AgentModuleController:
     """The one door every module install on every managed machine goes through."""
 
-    def __init__(
-        self, *, cache, locks, timeout_s: float = AGENT_MODULE_ORDER_TIMEOUT_S
-    ):
+    def __init__(self, *, cache, locks, dispatch=None):
         """
         Args:
             cache: The :class:`AgentModuleCache` that resolves bytes.
             locks: The :class:`DeviceInstallLocks` registry; an order takes
                 its device's lock, which the SSH bootstrap takes too.
-            timeout_s: How long one handed-down order may stand before the
-                controller stops waiting for the machine's word.
+            dispatch: Called with each order once it has its bytes; runs it
+                on the machine and closes it through :meth:`record_result`
+                before returning. None fails every order as ``agent_offline``.
         """
         self._cache = cache
         self._locks = locks
-        self._timeout_s = timeout_s
+        self._dispatch = dispatch
         self._guard = threading.Lock()
         self._queues: dict = {}
         self._history: dict = {}
@@ -168,7 +169,6 @@ class AgentModuleController:
         self._handed: dict = {}
         self._failures: dict = {}
         self._workers: dict = {}
-        self._closed: dict = {}
 
     def ask(
         self,
@@ -230,11 +230,7 @@ class AgentModuleController:
         return order
 
     def pending_order(self, mac_address: str) -> "AgentModuleOrder | None":
-        """The order this device should be working on now.
-
-        Handed down on every beat until the machine reports how it went: a
-        repeat of the order already in flight is one the agent ignores, and
-        a beat lost in the wire is not an order lost.
+        """The order this device is working on now.
 
         Args:
             mac_address: The device.
@@ -284,9 +280,6 @@ class AgentModuleController:
                 self._failures[(key, order.module)] = order.id
             else:
                 self._failures.pop((key, order.module), None)
-            event = self._closed.get(order.id)
-        if event is not None:
-            event.set()
         return True
 
     def note_reported_states(self, mac_address: str, states: dict) -> None:
@@ -397,7 +390,6 @@ class AgentModuleController:
         with self._guard:
             for order_id in self._history.pop(key, []):
                 self._orders.pop(order_id, None)
-                self._closed.pop(order_id, None)
             self._queues.pop(key, None)
             self._handed.pop(key, None)
             self._failures = {
@@ -414,7 +406,6 @@ class AgentModuleController:
                 history.insert(0, dropped)
                 return
             self._orders.pop(dropped, None)
-            self._closed.pop(dropped, None)
 
     def _ensure_worker(self, key: str) -> None:
         """Start this device's worker if it is not already running."""
@@ -445,32 +436,40 @@ class AgentModuleController:
                 self._run_one(order)
 
     def _run_one(self, order: AgentModuleOrder) -> None:
-        """Fetch what an order needs, hand it down, and wait for the answer."""
+        """Fetch what an order needs, hand it down, and take the answer."""
         if (
             order.action == ORDER_ACTION_INSTALL
             and _names_download(order)
             and not self._fetch(order)
         ):
             return
-        event = threading.Event()
         with self._guard:
             order.state = ORDER_INSTALLING
-            self._closed[order.id] = event
             self._handed[order.mac_address] = order.id
-        # The machine does the install and reports back on a later beat; a
-        # machine that goes away mid-order must not hold its lock for ever.
-        if not event.wait(timeout=self._timeout_s):
-            self.record_result(
-                mac_address=order.mac_address,
-                order_id=order.id,
-                state=ORDER_FAILED,
-                code="agent_never_reported",
-                params={"module": order.module},
-            )
-        with self._guard:
-            self._closed.pop(order.id, None)
-            if self._handed.get(order.mac_address) == order.id:
-                self._handed.pop(order.mac_address, None)
+        try:
+            if self._dispatch is None:
+                self._fail(order, "agent_offline", {"device": order.mac_address})
+            else:
+                self._dispatch(order)
+        except Exception as error:  # noqa: BLE001 - the worker must survive
+            self._fail(order, "order_failed", {"detail": str(error)[:200]})
+        finally:
+            if order.is_open:
+                self._fail(order, "agent_never_reported", {"module": order.module})
+            with self._guard:
+                if self._handed.get(order.mac_address) == order.id:
+                    self._handed.pop(order.mac_address, None)
+
+    def _fail(self, order: AgentModuleOrder, code: str, params: dict) -> None:
+        """Close one order as failed with a code of the hub's own."""
+        self.record_result(
+            mac_address=order.mac_address,
+            order_id=order.id,
+            state=ORDER_FAILED,
+            code=code,
+            params=params,
+            output=order.output,
+        )
 
     def _fetch(self, order: AgentModuleOrder) -> bool:
         """Put the order's bytes in the cache.

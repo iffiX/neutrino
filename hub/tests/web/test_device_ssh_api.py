@@ -17,7 +17,7 @@ from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
-from tests.conftest import unlock_vault
+from tests.conftest import FakeAgentSessions, unlock_vault
 
 MAC = "aa:bb:cc:dd:ee:ff"
 LOGIN_PASSWORD = "a-password"  # scan: allow
@@ -29,6 +29,7 @@ class FakeRuntime:
         self.client_metrics = {}
         self.client_address = {}
         self.client_platform = {}
+        self.agent_sessions = FakeAgentSessions()
 
 
 @pytest.fixture

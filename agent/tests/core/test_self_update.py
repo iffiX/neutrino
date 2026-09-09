@@ -1,9 +1,9 @@
 """Self-update downward: the hub's baked package, verified, installed detached.
 
-A hub that reports a later version makes the agent pull the hub's baked
-package and install it in a transient unit that outlives the process.
-Nothing here talks to a network: the channel is replaced at the seam the
-agent uses it through.
+A hub whose welcome names a later version makes the agent pull the hub's
+baked package and install it in a transient unit that outlives the process.
+Nothing here talks to a network: the socket is scripted, and the HTTP
+channel is replaced at the seam the download uses it through.
 """
 
 import hashlib
@@ -12,29 +12,23 @@ import subprocess
 
 import pytest
 
+import neutrino_agent.core.loop as loop_module
 import neutrino_agent.core.self_update as self_update
 from neutrino_agent.core.channel import GatewayUnreachable
 from neutrino_agent.core.loop import Agent
 from tests.conftest import bind, discard
+from tests.core.test_loop import DROP_AFTER_REPORT, WELCOME, ClientScript
 
 PACKAGE_BYTES = b"!<arch>agent-package"
 
 
 class FakeChannel:
-    """Answers heartbeats and hands out package bytes the way the hub would."""
+    """Hands out package bytes the way the hub would."""
 
-    def __init__(self, hub_version: str, *, named_digest: str = "", has_checksum=True):
-        self.hub_version = hub_version
+    def __init__(self, *, named_digest: str = "", has_checksum=True):
         self.named_digest = named_digest
         self.has_checksum = has_checksum
         self.downloads = []
-
-    def post(self, path, payload):
-        return {
-            "module_orders": [],
-            "catalog_hash": "",
-            "hub_version": self.hub_version,
-        }
 
     def post_download(self, path, payload, destination):
         self.downloads.append((path, dict(payload), destination))
@@ -46,7 +40,7 @@ class FakeChannel:
 
 
 class UnreachableDownloadChannel(FakeChannel):
-    """Beats fine, but the package fetch never comes back."""
+    """The package fetch never comes back."""
 
     def post_download(self, path, payload, destination):
         self.downloads.append((path, dict(payload), destination))
@@ -66,12 +60,20 @@ def launched(monkeypatch):
     return commands
 
 
+def welcomed_by(hub_version: str) -> list:
+    return [dict(WELCOME, hub_version=hub_version), DROP_AFTER_REPORT]
+
+
 def bound_agent(config_path, monkeypatch, *, hub_version, named_digest=""):
+    """An agent whose every connection is welcomed by a hub of one version."""
     bind(config_path)
     monkeypatch.setattr("neutrino_agent.core.loop.AGENT_VERSION", "1.0.0")
     monkeypatch.setattr(self_update, "package_kind", lambda platform: "deb")
+    script = ClientScript([], default=welcomed_by(hub_version))
+    monkeypatch.setattr(loop_module, "WebSocketClient", script)
     agent = Agent(log=discard)
-    agent._channel = FakeChannel(hub_version, named_digest=named_digest)
+    agent._channel = FakeChannel(named_digest=named_digest)
+    agent._script = script
     return agent
 
 
@@ -94,7 +96,7 @@ def test_a_newer_hub_triggers_a_detached_install(config_path, monkeypatch, launc
     assert launched_command[5:7] == ["sh", "-c"]
     assert f"dpkg -i {destination}" in launched_command[7]
     assert "apt-get -f install -y" in launched_command[7]
-    assert agent.last_error() is None
+    assert agent._update_error is None
     os.unlink(destination)
 
 
@@ -106,7 +108,7 @@ def test_a_digest_mismatch_installs_nothing(config_path, monkeypatch, launched):
     agent.run_once()
 
     assert launched == []
-    assert agent.last_error() == {
+    assert agent._update_error == {
         "code": "agent_package_digest_mismatch",
         "params": {"target": "9.9.9"},
     }
@@ -133,7 +135,7 @@ def test_a_matching_version_is_left_alone(config_path, monkeypatch, launched):
 
     assert agent._channel.downloads == []
     assert launched == []
-    assert agent.last_error() is None
+    assert agent._update_error is None
 
 
 def test_an_older_hub_is_not_downgraded_to(config_path, monkeypatch, launched):
@@ -152,7 +154,7 @@ def test_an_unparseable_hub_version_updates_nothing(config_path, monkeypatch, la
 
     assert agent._channel.downloads == []
     assert launched == []
-    assert agent.last_error() is None
+    assert agent._update_error is None
 
 
 def test_a_launch_failure_is_coded_and_cleaned_up(config_path, monkeypatch):
@@ -164,7 +166,7 @@ def test_a_launch_failure_is_coded_and_cleaned_up(config_path, monkeypatch):
     monkeypatch.setattr(self_update.subprocess, "run", refuse_to_run)
     agent.run_once()
 
-    assert agent.last_error() == {
+    assert agent._update_error == {
         "code": "agent_update_launch_failed",
         "params": {"target": "9.9.9"},
     }
@@ -180,7 +182,7 @@ def test_a_missing_checksum_header_refuses_the_install(
     agent.run_once()
 
     assert launched == []
-    assert agent.last_error() == {
+    assert agent._update_error == {
         "code": "agent_package_digest_mismatch",
         "params": {"target": "9.9.9"},
     }
@@ -195,13 +197,13 @@ def test_a_new_target_version_after_a_failure_is_tried(
     )
 
     agent.run_once()
-    agent._channel.hub_version = "9.9.10"
+    agent._script.default = welcomed_by("9.9.10")
     agent._channel.named_digest = ""
     agent.run_once()
 
     assert len(agent._channel.downloads) == 2
     assert len(launched) == 1
-    assert agent.last_error() is None
+    assert agent._update_error is None
     os.unlink(agent._channel.downloads[1][2])
 
 
@@ -218,13 +220,13 @@ def test_a_successful_target_is_not_relaunched(config_path, monkeypatch, launche
 
 def test_a_fetch_failure_is_coded_and_latched(config_path, monkeypatch, launched):
     agent = bound_agent(config_path, monkeypatch, hub_version="9.9.9")
-    agent._channel = UnreachableDownloadChannel("9.9.9")
+    agent._channel = UnreachableDownloadChannel()
 
     agent.run_once()
     agent.run_once()
 
     assert launched == []
-    assert agent.last_error() == {
+    assert agent._update_error == {
         "code": "hub_unreachable",
         "params": {"target": "9.9.9"},
     }

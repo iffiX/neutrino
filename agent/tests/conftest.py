@@ -76,7 +76,6 @@ class FakeSocketPlatform(FakeControlPlatform):
 
 class FakeControlAgent:
     def __init__(self):
-        self.requested = []
         self.connected_links = []
         self.is_disconnected = False
         self.connect_error = None
@@ -84,7 +83,9 @@ class FakeControlAgent:
         self.rdp_reply = {}
         self.rdp_error = None
         self.is_unshared = False
-        self.operation_payload = None
+        self.is_socket_open = False
+        self.sync_reply = {}
+        self.syncs = 0
         self.share = {
             "is_shared": False,
             "state": "not_shared",
@@ -123,14 +124,11 @@ class FakeControlAgent:
     def module_states(self) -> dict:
         return {"rustdesk": {"state": "installed"}}
 
-    def pending_module_requests(self) -> dict:
-        return {}
-
     def last_error(self):
         return None
 
-    def operation(self):
-        return self.operation_payload
+    def is_online(self) -> bool:
+        return self.is_socket_open
 
     def accounts(self) -> list:
         return ["alice", "bob"]
@@ -138,8 +136,9 @@ class FakeControlAgent:
     def rdp_state(self) -> dict:
         return dict(self.share)
 
-    def request_module(self, name, *, is_enabled=None):
-        self.requested.append((name, is_enabled))
+    def sync(self) -> dict:
+        self.syncs += 1
+        return dict(self.sync_reply)
 
     def rdp_share(self, *, account: str, password: str) -> dict:
         self.rdp_calls.append((account, password))

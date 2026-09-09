@@ -49,6 +49,8 @@ CLI_CODE_WORDS = {
     "verify_failed": "this machine could not tell whether the software is there",
     "unknown_kind": "the agent does not know this kind of module",
     "unknown_action": "the hub asked for something this agent does not know",
+    "unknown_stream_kind": "the hub opened a stream this agent does not know",
+    "unsupported_action": "the hub asked for a command this agent does not run",
     "unsupported_platform": "this machine cannot do this",
     "no_target_user": "that account does not exist on this machine",
     "rdp_no_seat": "say whose desktop to share: nagent rdp start --user <name>",

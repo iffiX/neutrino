@@ -7,8 +7,10 @@ another way: the software turning up anyway, or an order for the opposite
 action.
 
 Also pinned: two requests for one device run in the order they were made,
-and the SSH bootstrap shares the device's lock without entering the module
-queue, because putting the agent on a machine is not a module order.
+the SSH bootstrap shares the device's lock without entering the module
+queue, because putting the agent on a machine is not a module order, and
+an order reaches the machine through the injected dispatch, which closes
+it with the machine's own word.
 """
 
 import threading
@@ -83,16 +85,42 @@ class StubCache:
         )
 
 
+class StubDispatch:
+    """The machine's side of an order: holds it open until told how it went."""
+
+    def __init__(self):
+        self.handed: list = []
+        self.gate = threading.Event()
+        self.answers: dict = {}
+        self.controller = None
+
+    def __call__(self, order) -> None:
+        self.handed.append(order.to_wire())
+        self.gate.wait(timeout=5)
+        self.gate.clear()
+        answer = self.answers.get(order.id)
+        if answer is not None:
+            self.controller.record_result(
+                mac_address=order.mac_address, order_id=order.id, **answer
+            )
+
+    def finish(self, order, **answer) -> None:
+        """Close the order the way the machine would, and let the dispatch return."""
+        self.controller.record_result(
+            mac_address=order.mac_address, order_id=order.id, **answer
+        )
+        self.gate.set()
+
+
 @pytest.fixture
 def controller():
-    """A controller whose orders wait only briefly for a machine's word."""
+    """A controller whose dispatch holds each order until the test answers."""
     cache = StubCache()
     locks = DeviceInstallLocks()
-    return (
-        AgentModuleController(cache=cache, locks=locks, timeout_s=2.0),
-        cache,
-        locks,
-    )
+    dispatch = StubDispatch()
+    made = AgentModuleController(cache=cache, locks=locks, dispatch=dispatch)
+    dispatch.controller = made
+    return made, cache, locks, dispatch
 
 
 def wait_for(predicate, timeout_s: float = 3.0) -> bool:
@@ -116,7 +144,7 @@ def ask_install(controller, *, mac=MAC, module="fakedesk", manifest=MANIFEST):
 
 
 def test_an_order_is_handed_down_once_it_has_its_bytes(controller):
-    orders, cache, _ = controller
+    orders, cache, _, dispatch = controller
 
     order = ask_install(orders)
 
@@ -125,22 +153,48 @@ def test_an_order_is_handed_down_once_it_has_its_bytes(controller):
     assert standing.id == order.id
     assert standing.artifact_key == "fakedesk-key"
     assert cache.asked == ["fakedesk"]
+    # What the machine is handed names the module resolved for its platform.
+    assert wait_for(lambda: dispatch.handed)
+    assert dispatch.handed[0]["id"] == order.id
+    assert dispatch.handed[0]["artifact_key"] == "fakedesk-key"
+    assert dispatch.handed[0]["resolved"]["entry"]["package_kind"] == "deb"
 
 
-def test_the_same_order_is_handed_down_until_the_machine_answers(controller):
-    orders, _, _ = controller
-    ask_install(orders)
-    assert wait_for(lambda: orders.pending_order(MAC) is not None)
+def test_the_machines_word_closes_the_order(controller):
+    orders, _, _, dispatch = controller
+    order = ask_install(orders)
+    assert wait_for(lambda: dispatch.handed)
 
-    first = orders.pending_order(MAC)
-    second = orders.pending_order(MAC)
+    dispatch.finish(order, state="done", output="Setting up fakedesk")
 
-    # A beat lost in the wire is not an order lost.
-    assert first.id == second.id
+    assert wait_for(lambda: not order.is_open)
+    assert order.state == "done"
+    assert order.output == "Setting up fakedesk"
+    assert orders.pending_order(MAC) is None
+
+
+def test_a_dispatch_that_returns_without_a_word_fails_the_order(controller):
+    orders, _, _, dispatch = controller
+    order = ask_install(orders)
+    assert wait_for(lambda: dispatch.handed)
+
+    dispatch.gate.set()
+
+    assert wait_for(lambda: not order.is_open)
+    assert order.code == "agent_never_reported"
+
+
+def test_with_no_channel_at_all_an_order_is_offline_at_once():
+    orders = AgentModuleController(cache=StubCache(), locks=DeviceInstallLocks())
+
+    order = ask_install(orders)
+
+    assert wait_for(lambda: not order.is_open)
+    assert order.code == "agent_offline"
 
 
 def test_two_requests_for_one_device_run_in_turn(controller):
-    orders, cache, _ = controller
+    orders, cache, _, dispatch = controller
     cache.gate = threading.Event()
 
     first = ask_install(orders)
@@ -155,13 +209,13 @@ def test_two_requests_for_one_device_run_in_turn(controller):
     assert wait_for(lambda: orders.pending_order(MAC) is not None)
     assert orders.pending_order(MAC).id == first.id
 
-    orders.record_result(mac_address=MAC, order_id=first.id, state="done")
+    dispatch.finish(first, state="done")
     assert wait_for(lambda: cache.asked == ["fakedesk", "otherdesk"])
     assert wait_for(lambda: (orders.pending_order(MAC) or first).id == second.id)
 
 
 def test_two_devices_do_not_wait_on_each_other(controller):
-    orders, cache, _ = controller
+    orders, cache, _, dispatch = controller
 
     ask_install(orders)
     ask_install(orders, mac=OTHER_MAC)
@@ -172,7 +226,7 @@ def test_two_devices_do_not_wait_on_each_other(controller):
 
 
 def test_the_ssh_bootstrap_shares_the_device_lock_without_a_module_order(controller):
-    orders, cache, locks = controller
+    orders, cache, locks, dispatch = controller
     cache.gate = threading.Event()
     ask_install(orders)
     assert wait_for(lambda: locks.is_held(MAC))
@@ -197,12 +251,12 @@ def test_the_ssh_bootstrap_shares_the_device_lock_without_a_module_order(control
 
     cache.gate.set()
     order = orders.pending_order(MAC) or orders.orders(MAC)[0]
-    orders.record_result(mac_address=MAC, order_id=order.id, state="done")
+    dispatch.finish(order, state="done")
     assert took_it.wait(timeout=3) is True
 
 
 def test_a_failure_is_recorded_and_no_tick_ever_retries_it(controller):
-    orders, cache, _ = controller
+    orders, cache, _, dispatch = controller
     cache.error = AgentModuleFetchError("module_fetch_failed", detail="refused")
 
     order = ask_install(orders)
@@ -222,7 +276,7 @@ def test_a_failure_is_recorded_and_no_tick_ever_retries_it(controller):
 
 
 def test_asking_again_is_a_new_order_and_runs(controller):
-    orders, cache, _ = controller
+    orders, cache, _, dispatch = controller
     cache.error = AgentModuleFetchError("module_fetch_failed")
     first = ask_install(orders)
     assert wait_for(lambda: not first.is_open)
@@ -238,7 +292,7 @@ def test_asking_again_is_a_new_order_and_runs(controller):
 
 
 def test_the_software_turning_up_anyway_clears_the_failure(controller):
-    orders, cache, _ = controller
+    orders, cache, _, dispatch = controller
     cache.error = AgentModuleFetchError("module_fetch_failed")
     order = ask_install(orders)
     assert wait_for(lambda: not order.is_open)
@@ -252,7 +306,7 @@ def test_the_software_turning_up_anyway_clears_the_failure(controller):
 
 
 def test_the_opposite_action_clears_the_failure_and_orders_nothing(controller):
-    orders, cache, _ = controller
+    orders, cache, _, dispatch = controller
     cache.error = AgentModuleFetchError("module_fetch_failed")
     failed = ask_install(orders)
     assert wait_for(lambda: not failed.is_open)
@@ -273,7 +327,7 @@ def test_the_opposite_action_clears_the_failure_and_orders_nothing(controller):
 
 
 def test_an_uninstall_of_something_present_is_ordered(controller):
-    orders, _, _ = controller
+    orders, _, _, dispatch = controller
 
     order = orders.ask(
         mac_address=MAC,
@@ -289,11 +343,13 @@ def test_an_uninstall_of_something_present_is_ordered(controller):
 
 
 def test_a_machine_that_never_answers_gives_its_lock_back(controller):
-    orders, _, locks = controller
+    orders, _, locks, dispatch = controller
 
     order = ask_install(orders)
+    assert wait_for(lambda: locks.is_held(MAC))
+    dispatch.gate.set()
 
-    assert wait_for(lambda: not order.is_open, timeout_s=6)
+    assert wait_for(lambda: not order.is_open)
     assert order.code == "agent_never_reported"
     # The lock is the device's, and an agent that went away must not hold
     # it against the next thing somebody asks for.
@@ -301,7 +357,7 @@ def test_a_machine_that_never_answers_gives_its_lock_back(controller):
 
 
 def test_a_result_for_an_order_this_device_does_not_own_is_ignored(controller):
-    orders, _, _ = controller
+    orders, _, _, dispatch = controller
     order = ask_install(orders)
 
     assert (
@@ -311,7 +367,7 @@ def test_a_result_for_an_order_this_device_does_not_own_is_ignored(controller):
 
 
 def test_the_history_is_what_the_install_pane_reads(controller):
-    orders, _, _ = controller
+    orders, _, _, dispatch = controller
     first = ask_install(orders)
     orders.record_result(
         mac_address=MAC,
@@ -331,7 +387,7 @@ def test_the_history_is_what_the_install_pane_reads(controller):
 
 
 def test_forgetting_a_device_drops_everything_held_for_it(controller):
-    orders, _, _ = controller
+    orders, _, _, dispatch = controller
     order = ask_install(orders)
     orders.record_result(
         mac_address=MAC, order_id=order.id, state="failed", code="install_failed"
@@ -386,7 +442,7 @@ def test_a_user_tier_module_is_asked_nothing_either_way():
 
 
 def test_a_user_tier_click_queues_no_order(controller):
-    orders, cache, _ = controller
+    orders, cache, _, dispatch = controller
 
     order = ask_module(
         controller=orders,
@@ -402,7 +458,7 @@ def test_a_user_tier_click_queues_no_order(controller):
 
 
 def test_the_controller_refuses_a_user_tier_order_outright(controller):
-    orders, _, _ = controller
+    orders, _, _, dispatch = controller
 
     with pytest.raises(ValueError):
         orders.ask(
@@ -415,7 +471,7 @@ def test_the_controller_refuses_a_user_tier_order_outright(controller):
 
 
 def test_a_distro_package_order_takes_the_queue_but_skips_the_cache(controller):
-    orders, cache, locks = controller
+    orders, cache, locks, dispatch = controller
 
     order = orders.ask(
         mac_address=MAC,
@@ -432,14 +488,12 @@ def test_a_distro_package_order_takes_the_queue_but_skips_the_cache(controller):
     assert cache.asked == []
     handed = orders.pending_order(MAC)
     assert handed.to_wire()["artifact_key"] == ""
-    orders.record_result(
-        mac_address=MAC, order_id=order.id, state="done", output="Setting up"
-    )
+    dispatch.finish(order, state="done", output="Setting up")
     assert wait_for(lambda: not locks.is_held(MAC))
 
 
 def test_a_module_with_no_build_here_is_asked_nothing(controller):
-    orders, cache, _ = controller
+    orders, cache, _, dispatch = controller
 
     order = ask_module(
         controller=orders,
@@ -455,7 +509,7 @@ def test_a_module_with_no_build_here_is_asked_nothing(controller):
 
 
 def test_an_action_that_is_not_one_of_the_four_is_refused(controller):
-    orders, _, _ = controller
+    orders, _, _, dispatch = controller
 
     with pytest.raises(ValueError):
         orders.ask(

@@ -8,7 +8,7 @@ file holds only what is wired into the protocol.
 # so a machine running both has one place to look and one place to back up.
 AGENT_CONFIG_PATH = "/etc/neutrino/agent/agent.json"
 
-# How many heartbeats in a row the hub may reject — a refused token, a
+# How many connections in a row the hub may reject — a refused token, a
 # certificate off the pin, an agent newer than the hub — before the agent
 # drops its binding. One counter for every kind. More than one, so a hub
 # caught mid-restore does not shed its whole fleet over a moment's
@@ -19,11 +19,24 @@ AGENT_SERVICE_NAME = "neutrino_agent.service"
 
 # The shape of what crosses the hub channel. Bumped on any wire change, so
 # a hub upgrade that changed the shapes tells a same-version agent to
-# reinstall instead of feeding it replies it cannot read.
-AGENT_WIRE_GENERATION = 4
+# reinstall instead of feeding it frames it cannot read.
+AGENT_WIRE_GENERATION = 5
 
-AGENT_HEARTBEAT_PATH = "/api/agent/heartbeat"
-AGENT_RESULT_PATH = "/api/agent/result"
+# The one socket to the hub, on the agent TLS port. Every stream rides it.
+AGENT_WS_PATH = "/api/agent/ws"
+# How long the socket may stay silent before it is taken for dead. The hub
+# pings well inside this.
+AGENT_WS_SILENCE_TIMEOUT_S = 45
+# A binary frame starts with the stream id, this many ASCII characters.
+AGENT_WS_STREAM_ID_LENGTH = 8
+# The largest binary frame either side sends on one stream.
+AGENT_WS_CHUNK_BYTES = 64 * 1024
+# Close codes the hub turns a socket away with. The reason is the code word.
+AGENT_WS_CLOSE_BAD_HELLO = 4400
+AGENT_WS_CLOSE_UNKNOWN_TOKEN = 4401
+AGENT_WS_CLOSE_REFUSED = 4409
+AGENT_WS_CLOSE_REPLACED = 4410
+
 AGENT_LEAVE_PATH = "/api/agent/leave"
 AGENT_PACKAGE_PATH = "/api/agent/package"
 # This machine never fetches a module from the internet: the hub's cache did
@@ -41,6 +54,7 @@ AGENT_MODULE_OUTPUT_LIMIT_BYTES = 16 * 1024
 AGENT_UPDATE_UNIT = "neutrino_agent_update"
 AGENT_UPDATE_LAUNCH_TIMEOUT_S = 30
 
+# How often a report goes up while nothing changes.
 AGENT_HEARTBEAT_INTERVAL_S = 5
 AGENT_REQUEST_TIMEOUT_S = 10
 # Backoff bounds used when the gateway is unreachable. Starting at one interval

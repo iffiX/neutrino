@@ -97,11 +97,11 @@ def main() -> int:
     else:
         hint = _start_hint()
         tail = f"; start it: {hint}" if hint else ""
-        print(f"service    {current}. The machine beats only while status runs{tail}")
+        print(f"service    {current}. The machine reports only while it runs{tail}")
 
     agent = Agent(log=_discard)
     started_at = time.monotonic()
-    delay = agent.run_once()
+    agent.probe()
     elapsed_ms = round((time.monotonic() - started_at) * 1000)
     error = agent.last_error()
     if error:
@@ -110,7 +110,7 @@ def main() -> int:
         if advice:
             print(f"           {advice}")
         return 1
-    print(f"heartbeat  ok, {elapsed_ms} ms. Next report in {delay}s")
+    print(f"heartbeat  ok, {elapsed_ms} ms. The hub answered this machine's hello")
     return 0
 
 
@@ -209,7 +209,10 @@ def _status_from_service(state: dict) -> int:
     if isinstance(error, dict) and error.get("code"):
         print(f"heartbeat  {word_error(error)}")
         return 1
-    print("heartbeat  ok. The service reports every few seconds")
+    if not state.get("is_online", True):
+        print("heartbeat  connecting. The service is reaching the hub")
+        return 1
+    print("heartbeat  ok. The service holds its socket to the hub")
     return 0
 
 

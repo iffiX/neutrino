@@ -1,10 +1,10 @@
 """Carrying out the hub's orders, and reporting what is true.
 
-The hub sends orders — install this, uninstall that — and this machine runs
-them one at a time and says how each went. :class:`ReconcileWorker` is the
-shared pattern: a thread woken by news, a signature that skips unchanged
-inputs, an idle re-check so drift is still noticed, and per-name typed
-statuses. The AI service reconciler builds on it too.
+The hub opens an order — install this, uninstall that — as a stream on the
+socket, and this machine runs it in that stream's own thread, one at a
+time, and says how it went. :class:`ReconcileWorker` is the shared pattern:
+a thread woken by news, a signature that skips unchanged inputs, an idle
+re-check so drift is still noticed, and per-name typed statuses.
 
 :class:`ModuleEngine` is deliberately without judgment. It keeps **no retry
 policy and no memory of past failures**: an order that failed is reported
@@ -148,10 +148,9 @@ class ModuleEngine(ReconcileWorker):
         self._catalog_hash = ""
         self._fetch_artifact = fetch_artifact
         self._platform_tuple = platform_tuple()
-        self._queued: list = []
-        self._ran: set = set()
-        self._results: dict = {}
         self._output: list = []
+        self._on_line = None
+        self._order_lock = threading.Lock()
         self._package = PackageModuleRunner(
             platform=platform, log=self._collect, publish=self._publish
         )
@@ -184,79 +183,61 @@ class ModuleEngine(ReconcileWorker):
         with self._lock:
             return dict(self._catalog)
 
-    def results(self) -> list:
-        """How the orders this machine has finished went.
-
-        Returns:
-            One ``{"id", "module", "state", "code", "params", "output"}``
-            each, repeated on every beat until the hub's reply shows it
-            stopped asking — a result lost in the wire is an order the hub
-            would wait on for ever.
-        """
-        with self._lock:
-            return [dict(result) for result in self._results.values()]
-
-    def update(self, *, catalog: "dict | None", catalog_hash: str, orders) -> None:
-        """Take the hub's orders, and its catalog when this copy is stale.
+    def update(self, *, catalog: "dict | None", catalog_hash: str) -> None:
+        """Take the hub's catalog when this copy is stale.
 
         Args:
-            catalog: The catalog, sent only when this machine's copy is
-                stale; None keeps the current one.
+            catalog: The catalog; None keeps the current one.
             catalog_hash: The hash of the catalog the hub is serving.
-            orders: The orders standing for this machine.
-
-        Raises:
-            TypeError: If the orders are not a list. A reply shape this
-                build cannot read becomes a typed error one level up, never
-                a beat that quietly did nothing.
         """
-        if orders is not None and not isinstance(orders, list):
-            raise TypeError(f"module_orders is {type(orders).__name__}, not a list")
         with self._lock:
             if catalog is not None:
                 # A non-mapping catalog raises before the held one is replaced.
                 self._catalog = dict(catalog)
                 self._catalog_hash = catalog_hash
-            standing = set()
-            for order in orders or []:
-                if not isinstance(order, dict):
-                    continue
-                order_id = str(order.get("id", ""))
-                if not order_id:
-                    continue
-                standing.add(order_id)
-                if order_id not in self._ran and not any(
-                    queued.get("id") == order_id for queued in self._queued
-                ):
-                    self._queued.append(dict(order))
-            # The hub has stopped asking about these, so it has the result.
-            for order_id in list(self._results):
-                if order_id not in standing:
-                    self._results.pop(order_id, None)
-                    self._ran.discard(order_id)
         self._wakeup.set()
+
+    def run_order(self, order: dict, on_line=None) -> dict:
+        """Run one order now, in the caller's thread, and say how it went.
+
+        Orders run one at a time: a second caller waits for the first.
+
+        Args:
+            order: ``{"id", "module", "action", "artifact_key", "digest",
+                "package_kind", "resolved"}``; ``resolved`` is the module
+                as the hub resolved it for this platform, and is kept so
+                the module is reported from then on.
+            on_line: Called with each output line as the order produces it.
+
+        Returns:
+            ``{"state", "code", "params", "output"}``.
+        """
+        name = str(order.get("module", ""))
+        resolved = order.get("resolved")
+        with self._order_lock:
+            if isinstance(resolved, dict) and name:
+                with self._lock:
+                    modules = dict(self._catalog.get("modules", {}))
+                    modules[name] = dict(resolved)
+                    self._catalog = {**self._catalog, "modules": modules}
+            self._on_line = on_line
+            try:
+                result = self._run_order(order)
+            finally:
+                self._on_line = None
+            self._refresh(is_forced=True)
+        return result
 
     def _collect(self, message: str) -> None:
         """Log a line, keeping it for the order's report as well."""
         self._output.append(str(message))
+        on_line = self._on_line
+        if on_line is not None:
+            on_line(str(message))
         self._log(message)
 
     def _reconcile(self) -> None:
-        order = self._take_order()
-        if order is not None:
-            self._run_order(order)
-            self._refresh(is_forced=True)
-            return
         self._refresh(is_forced=False)
-
-    def _take_order(self) -> "dict | None":
-        """The next order to run, if the hub has one standing."""
-        with self._lock:
-            if not self._queued:
-                return None
-            order = self._queued.pop(0)
-            self._ran.add(str(order.get("id", "")))
-            return order
 
     def _refresh(self, *, is_forced: bool) -> None:
         """Report what every module in the catalog actually is."""
@@ -301,58 +282,46 @@ class ModuleEngine(ReconcileWorker):
         except Exception as error:  # noqa: BLE001 - reported, never raised
             return _typed("failed", "verify_failed", detail=str(error)[:200])
 
-    def _run_order(self, order: dict) -> None:
-        """Do what one order says, and record how it went.
+    def _run_order(self, order: dict) -> dict:
+        """Do what one order says, and say how it went.
 
         Args:
             order: ``{"id", "module", "action", "artifact_key", "digest"}``.
+
+        Returns:
+            ``{"state", "code", "params", "output"}``.
         """
-        order_id = str(order.get("id", ""))
         name = str(order.get("module", ""))
         action = str(order.get("action", ""))
         self._output = []
         with self._lock:
             resolved = dict(self._catalog.get("modules", {})).get(name)
         if not isinstance(resolved, dict) or resolved.get("entry") is None:
-            self._record(order_id, name, ORDER_FAILED, "no_platform_build", {})
-            return
+            return self._result(ORDER_FAILED, "no_platform_build", {})
         transient = ORDER_TRANSIENTS.get(action)
         if transient is None:
-            self._record(
-                order_id, name, ORDER_FAILED, "unknown_action", {"action": action}
-            )
-            return
+            return self._result(ORDER_FAILED, "unknown_action", {"action": action})
         self._publish(name, _typed(transient, ""))
         self._collect(f"{name}: {action}")
         try:
             refusal = self._carry_out(action, name, resolved, order)
         except PlatformUnsupportedError:
-            self._record(order_id, name, ORDER_FAILED, "unsupported_platform", {})
-            return
+            return self._result(ORDER_FAILED, "unsupported_platform", {})
         except InstallError as error:
             self._collect(str(error))
-            self._record(order_id, name, ORDER_FAILED, "install_failed", {})
-            return
+            return self._result(ORDER_FAILED, "install_failed", {})
         except Exception as error:  # noqa: BLE001 - reported, never raised
             self._collect(str(error))
-            self._record(
-                order_id,
-                name,
-                ORDER_FAILED,
-                "order_failed",
-                {"detail": str(error)[:200]},
+            return self._result(
+                ORDER_FAILED, "order_failed", {"detail": str(error)[:200]}
             )
-            return
         if refusal:
-            self._record(
-                order_id,
-                name,
+            return self._result(
                 ORDER_FAILED,
                 str(refusal.get("code", "order_failed")),
                 dict(refusal.get("params") or {}),
             )
-            return
-        self._record(order_id, name, ORDER_DONE, "", {})
+        return self._result(ORDER_DONE, "", {})
 
     def _carry_out(self, action: str, name: str, resolved: dict, order: dict) -> dict:
         """Run one action and check it took.
@@ -419,27 +388,11 @@ class ModuleEngine(ReconcileWorker):
             self._runner_for(str(resolved.get("kind", ""))).install(resolved, package)
         return {}
 
-    def _record(
-        self, order_id: str, module: str, state: str, code: str, params: dict
-    ) -> None:
-        """Keep how one order went, for the next beat to carry up."""
+    def _result(self, state: str, code: str, params: dict) -> dict:
+        """How one order went, with the output it produced."""
         output = "\n".join(self._output)[-AGENT_MODULE_OUTPUT_LIMIT_BYTES:]
         self._output = []
-        with self._lock:
-            self._results[order_id] = {
-                "id": order_id,
-                "module": module,
-                "state": state,
-                "code": code,
-                "params": dict(params),
-                # Every order carries its output, success included: a result
-                # rides once and stops when the hub acknowledges it, so this
-                # is one message per operation rather than a per-beat cost,
-                # and a person watching an install wants to see it work.
-                "output": output,
-            }
-        if self._on_change is not None:
-            self._on_change()
+        return {"state": state, "code": code, "params": dict(params), "output": output}
 
 
 def _typed(state: str, code: str, **params) -> dict:

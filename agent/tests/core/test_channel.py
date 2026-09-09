@@ -21,6 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 import neutrino_agent.core.enrollment as enrollment
+from neutrino_agent.constants import AGENT_WS_PATH
 from neutrino_agent.core.loop import Agent
 from neutrino_agent.core.channel import (
     GatewayHttpChannel,
@@ -39,6 +40,12 @@ class RecordingHandler(BaseHTTPRequestHandler):
     """Answers every POST with an empty JSON object and records the path."""
 
     requests: list = []
+
+    def do_GET(self):
+        RecordingHandler.requests.append((self.path, b""))
+        self.send_response(404)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -191,17 +198,21 @@ def test_two_mismatched_beats_keep_the_binding(tls_server, config_path):
     assert RecordingHandler.requests == []
 
 
-def test_the_pinned_agent_beats(tls_server, config_path):
+def test_the_pinned_agent_reaches_the_hub(tls_server, config_path):
+    """With the right pin the upgrade request leaves the machine; this server
+    speaks no websocket, so the answer is a refusal to upgrade rather than a
+    changed identity."""
     url, fingerprint = tls_server
     config_path.write_text(
         json.dumps({"gateway_url": url, "token": "tok", "fingerprint": fingerprint})
     )
     agent = Agent(log=discard)
 
-    agent.run_once()
+    agent.probe()
 
-    assert agent.last_error() is None
-    assert len(RecordingHandler.requests) == 1
+    assert agent.last_error()["code"] == "hub_unreachable"
+    (request,) = RecordingHandler.requests
+    assert request[0] == AGENT_WS_PATH
 
 
 def test_a_wrong_fingerprint_link_is_refused_at_enrollment(tls_server, config_path):

@@ -1,7 +1,7 @@
 """Shared runtime objects the panel's routes work through.
 
 One instance is built at startup and reached from every route. It owns the live
-things (session store, running jobs, pending client commands) and knows how to
+things (session store, running jobs, the agents' sockets) and knows how to
 re-render and apply the configuration, so no route shells out to systemd or nft
 by itself.
 """
@@ -9,7 +9,6 @@ by itself.
 import asyncio
 import ipaddress
 import shutil
-from collections import deque
 
 from neutrino_hub.modules.netbird.ops import NetbirdInboundGate
 from neutrino_hub.modules.router.dnsmasq_renderer import RouterDnsmasqRenderer
@@ -59,8 +58,23 @@ from neutrino_hub.utils.json_file import read_config, write_config, write_genera
 from neutrino_hub.utils.subprocess_run import CommandError, run
 from neutrino_hub.web.auth import SessionStore, session_secret
 from neutrino_hub.modules.devices.agent_module_cache import AgentModuleCache
-from neutrino_hub.modules.devices.agent_module_controller import AgentModuleController
+from neutrino_hub.modules.devices.agent_module_controller import (
+    ORDER_DONE,
+    ORDER_FAILED,
+    AgentModuleController,
+    AgentModuleOrder,
+)
 from neutrino_hub.modules.devices.agent_package import AgentPackageCache
+from neutrino_hub.modules.devices.agent_sessions import (
+    AgentOfflineError,
+    AgentSessionRegistry,
+    StreamRefusedError,
+)
+from neutrino_hub.modules.devices.constants import (
+    AGENT_MODULE_ORDER_TIMEOUT_S,
+    AGENT_MODULE_OUTPUT_LIMIT_BYTES,
+    AGENT_WS_CLOSE_UNKNOWN_TOKEN,
+)
 from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.web.task_stream import TaskStreamRegistry
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
@@ -77,7 +91,6 @@ from neutrino_hub.modules.router.constants import (
 )
 
 DNSMASQ_SERVICE_NAME = SYSTEM_CORE_UNITS["dnsmasq"]
-PENDING_COMMAND_LIMIT = 32
 
 
 class PanelRuntime:
@@ -117,8 +130,12 @@ class PanelRuntime:
         # from the release for a platform it was not built for.
         self.agent_packages = AgentPackageCache()
         self.device_install_locks = DeviceInstallLocks()
+        # Every managed machine's live socket, and the streams on it.
+        self.agent_sessions = AgentSessionRegistry()
         self.agent_module_orders = AgentModuleController(
-            cache=self.agent_modules, locks=self.device_install_locks
+            cache=self.agent_modules,
+            locks=self.device_install_locks,
+            dispatch=self._dispatch_order,
         )
         self.is_config_dirty = False
         # Latest agent metrics, keyed by MAC. Runtime only: these are stale the
@@ -136,29 +153,20 @@ class PanelRuntime:
         # The human accounts each agent last reported, keyed by MAC.
         self.client_accounts: dict[str, list] = {}
         # Where each agent's channel comes from, as this hub's own socket
-        # sees it, refreshed every beat. A machine that moves is at its new
-        # address the moment it beats from there.
+        # sees it, refreshed every report. A machine that moves is at its
+        # new address the moment it reports from there.
         self.client_address: dict[str, str] = {}
-        # Which accounts each machine wants switched, off its last beat.
-        self.client_ai_targets: dict[str, dict] = {}
-        # The drawer's service rows off each machine's last beat:
-        # ``{"mounts", "ai_states"}``, credentials in neither.
-        self.client_service_state: dict[str, dict] = {}
-        # The address each device reaches this hub on, resolved at its last
-        # beat; the services view composes the same catalog with it.
+        # The address each device reaches this hub on, resolved when its
+        # socket opened; the services view composes the same catalog with it.
         self.client_device_host: dict[str, str] = {}
         # The most recent error each agent reported, keyed by MAC:
         # ``{"code", "params"}``.
         self.client_last_error: dict[str, dict] = {}
-        # The last outcome of each queued command, keyed by MAC then command
-        # id, so the drawer can show how a reboot went after the stream closed.
-        self.client_command_results: dict[str, dict] = {}
         # Enrollment tickets a machine can join with, by token. Held in memory
         # and short-lived on purpose: a join secret that survives a restart is
         # a join secret lying around, and generating another takes one click.
         self.enrollments: dict[str, dict] = {}
         self._apply_lock = asyncio.Lock()
-        self._pending_commands: dict[str, deque] = {}
 
     def network(self) -> RouterNetworkConfig:
         """Read the current router configuration.
@@ -431,65 +439,89 @@ class PanelRuntime:
         async with self._apply_lock:
             return await asyncio.to_thread(self._apply_network_blocking, only)
 
-    def queue_client_command(self, mac_address: str, command: dict) -> None:
-        """Queue a command for a device's agent to pick up.
+    def desired_state_for(self, device) -> tuple[str, dict]:
+        """What a device should be, and the hash the agent compares against.
 
         Args:
-            mac_address: The device's MAC.
-            command: The command object handed back on the next heartbeat.
+            device: The device asking.
+
+        Returns:
+            The hash and the state. Nothing is desired yet, so both are empty.
         """
-        queue = self._pending_commands.setdefault(
-            mac_address.lower(), deque(maxlen=PENDING_COMMAND_LIMIT)
-        )
-        queue.append(command)
+        del device
+        return "", {}
 
     def forget_client_state(self, mac_address: str) -> None:
         """Drop everything held in memory about one device.
 
-        Called when the device is forgotten. A queue that outlives its record
-        is delivered to whatever machine appears on that MAC next, and the
-        metrics and modules would otherwise be drawn beside a device that has
-        only just been enrolled.
+        Called when the device is forgotten. Its socket, if one is open, is
+        closed with the unknown-token code: the token it authenticated with
+        is gone.
 
         Args:
             mac_address: The device's MAC.
         """
         key = mac_address.lower()
-        self._pending_commands.pop(key, None)
         self.client_metrics.pop(key, None)
         self.client_hostname.pop(key, None)
         self.client_modules.pop(key, None)
         self.client_platform.pop(key, None)
         self.client_accounts.pop(key, None)
         self.client_address.pop(key, None)
-        self.client_ai_targets.pop(key, None)
-        self.client_service_state.pop(key, None)
         self.client_device_host.pop(key, None)
         self.client_last_error.pop(key, None)
-        self.client_command_results.pop(key, None)
         self.device_shares.withdraw(key)
         self.agent_module_orders.forget(key)
-
-    def take_client_commands(self, mac_address: str) -> list[dict]:
-        """Drain the queued commands for one device.
-
-        Args:
-            mac_address: The device's MAC.
-
-        Returns:
-            Every queued command, oldest first; the queue is left empty.
-        """
-        queue = self._pending_commands.get(mac_address.lower())
-        if not queue:
-            return []
-        commands = list(queue)
-        queue.clear()
-        return commands
+        self.agent_sessions.close_from_thread(
+            key, AGENT_WS_CLOSE_UNKNOWN_TOKEN, "unknown_token"
+        )
 
     def _agent_port(self) -> int:
         """The agent channel's port, from the settings or the default."""
         return int(
             self.settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
+        )
+
+    def _dispatch_order(self, order: AgentModuleOrder) -> None:
+        """Run one module order over the device's socket, to its close.
+
+        Args:
+            order: The order the controller handed down; closed here with
+                the machine's word, or with ``agent_offline`` when it has
+                no channel.
+        """
+        controller = self.agent_module_orders
+
+        def collect(line: str) -> None:
+            order.output = (order.output + line + "\n")[
+                -AGENT_MODULE_OUTPUT_LIMIT_BYTES:
+            ]
+
+        try:
+            info = self.agent_sessions.run_order_from_thread(
+                order.mac_address,
+                order.to_wire(),
+                on_line=collect,
+                timeout=AGENT_MODULE_ORDER_TIMEOUT_S,
+            )
+        except (AgentOfflineError, StreamRefusedError) as error:
+            controller.record_result(
+                mac_address=order.mac_address,
+                order_id=order.id,
+                state=ORDER_FAILED,
+                code=error.code,
+                params=dict(error.params),
+                output=order.output,
+            )
+            return
+        output = str(info.get("output", "") or "") or order.output
+        controller.record_result(
+            mac_address=order.mac_address,
+            order_id=order.id,
+            state=ORDER_DONE if info.get("state") == ORDER_DONE else ORDER_FAILED,
+            code=str(info.get("code", "") or ""),
+            params=dict(info.get("params") or {}),
+            output=output[-AGENT_MODULE_OUTPUT_LIMIT_BYTES:],
         )
 
     def _apply_all_blocking(self) -> str:

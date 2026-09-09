@@ -22,6 +22,7 @@ from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
+from tests.conftest import FakeAgentSessions, holding_dispatch
 
 MAC = "aa:bb:cc:dd:ee:ff"
 FINGERPRINT = "ab" * 32
@@ -56,15 +57,17 @@ class FakeRuntime:
         self.client_metrics = {}
         self.client_address = {}
         self.client_last_error = {}
-        self.client_command_results = {}
         self.pending = {}
         self.enrollments = {}
+        self.agent_sessions = FakeAgentSessions()
         self.agent_modules = StubModuleCache()
         self.device_install_locks = DeviceInstallLocks()
-        # A short wait: no agent reports here, so a worker would otherwise
-        # hold its device's lock for the real half hour.
+        # A dispatch that holds each order open briefly and never answers:
+        # the row shows the step, and no worker sits on a lock for long.
         self.agent_module_orders = AgentModuleController(
-            cache=self.agent_modules, locks=self.device_install_locks, timeout_s=1.0
+            cache=self.agent_modules,
+            locks=self.device_install_locks,
+            dispatch=holding_dispatch,
         )
 
     def forget_client_state(self, mac_address: str) -> None:
@@ -75,7 +78,6 @@ class FakeRuntime:
             self.client_metrics,
             self.client_address,
             self.client_last_error,
-            self.client_command_results,
             self.pending,
         ):
             held.pop(key, None)
@@ -118,7 +120,7 @@ def api(monkeypatch):
         yield client, runtime
 
 
-def test_an_agent_that_has_never_beaten_is_not_online(api):
+def test_an_agent_with_no_socket_is_not_online(api):
     client, _ = api
 
     answer = client.get(f"/api/devices/{MAC}/modules").json()
@@ -127,21 +129,22 @@ def test_an_agent_that_has_never_beaten_is_not_online(api):
     assert not answer["is_agent_online"]
 
 
-def test_an_agent_that_beat_just_now_is_online(api):
-    client, _ = api
-    FakeRegistry.device.client.last_seen = beating(2)
+def test_an_agent_holding_a_socket_is_online(api):
+    client, runtime = api
+    runtime.agent_sessions.online.add(MAC)
 
     answer = client.get(f"/api/devices/{MAC}/modules").json()
 
     assert answer["is_agent_online"]
 
 
-def test_an_agent_that_stopped_beating_is_not_online(api):
+def test_an_agent_whose_socket_closed_is_not_online(api):
     """Which is the reported bug: the install flag stays true for ever, so
     this device drew every module as absent while its remote desktop was
     plainly running."""
-    client, _ = api
-    FakeRegistry.device.client.last_seen = beating(3600)
+    client, runtime = api
+    runtime.agent_sessions.online.add(MAC)
+    runtime.agent_sessions.online.discard(MAC)
 
     answer = client.get(f"/api/devices/{MAC}/modules").json()
 
@@ -154,7 +157,7 @@ def test_what_the_agent_reported_is_found_whatever_case_the_MAC_is_asked_in(api)
     by the raw path segment finds nothing, and every module then reads as
     waiting for an agent that is in fact answering."""
     client, runtime = api
-    FakeRegistry.device.client.last_seen = beating(2)
+    runtime.agent_sessions.online.add(MAC)
     runtime.client_modules[MAC] = {"fakedesk": {"state": "installed"}}
 
     answer = client.get(f"/api/devices/{MAC.upper()}/modules").json()
@@ -306,7 +309,7 @@ def test_renaming_a_device_keeps_its_monitor_alive(api):
     """The page redraws the tile from this answer. Built with no metrics, it
     reads as a machine that went offline the moment somebody renamed it."""
     client, runtime = api
-    FakeRegistry.device.client.last_seen = beating(2)
+    runtime.agent_sessions.online.add(MAC)
     runtime.client_metrics[MAC] = {"cpu_percent": 12.5, "memory_percent": 40.0}
 
     answer = client.put(f"/api/devices/{MAC}", json={"name": "renamed"}).json()

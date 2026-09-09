@@ -35,6 +35,10 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_DIR,
     CLIPROXYAPI_GENERATED_NAME,
 )
+from neutrino_hub.modules.devices.constants import (
+    AGENT_WS_PING_INTERVAL_S,
+    AGENT_WS_PING_TIMEOUT_S,
+)
 from neutrino_hub.modules.router.constants import (
     ROUTER_DNSMASQ_PATH,
     ROUTER_SUPPLICANT_CONTROL_DIR,
@@ -361,6 +365,8 @@ def _serve_panel(arguments) -> int:
                     ssl_certfile=str(WEB_AGENT_TLS_CERT_PATH),
                     ssl_keyfile=str(agent_key_path),
                     timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_S,
+                    ws_ping_interval=AGENT_WS_PING_INTERVAL_S,
+                    ws_ping_timeout=AGENT_WS_PING_TIMEOUT_S,
                 )
             )
         )

@@ -1,24 +1,60 @@
 """Talking to the gateway with the standard library, pinned over TLS.
 
-The agent polls rather than holding a socket open: the standard library has no
-websocket client, and polling survives the gateway restarting, the device
-sleeping, and a NAT in between without any reconnect logic of its own.
-
-An ``https`` gateway is verified by fingerprint alone: the handshake runs with
-chain and hostname checks off, and the peer certificate's SHA-256 digest must
-match the pinned value before any request bytes leave this machine.
+The HTTP channel serves enrolling, leaving and fetching a package; the one
+live socket in ``ws_client`` connects the same way. An ``https`` gateway is
+verified by fingerprint alone: the handshake runs with chain and hostname
+checks off, and the peer certificate's SHA-256 digest must match the pinned
+value before any request bytes leave this machine.
 """
 
 import hashlib
 import http.client
 import json
+import socket
 import ssl
 import urllib.parse
 
 from neutrino_agent.constants import AGENT_REQUEST_TIMEOUT_S
 
 
-def _error_detail(data: bytes) -> dict:
+def pinned_socket(
+    host: str, port: int, fingerprint: str, *, timeout: float = AGENT_REQUEST_TIMEOUT_S
+) -> ssl.SSLSocket:
+    """A TLS connection that trusts one certificate and nothing else.
+
+    Args:
+        host: The gateway's address.
+        port: The port to connect to.
+        fingerprint: SHA-256 hex the peer certificate must digest to.
+        timeout: Socket timeout in seconds.
+
+    Returns:
+        The connected socket, handshake done and the peer checked.
+
+    Raises:
+        GatewayUntrusted: When no fingerprint is pinned, or the peer's does
+            not match; the socket is closed before any bytes are sent.
+        OSError: On any network failure.
+    """
+    wanted = fingerprint.strip().lower()
+    if not wanted:
+        raise GatewayUntrusted(f"no certificate fingerprint is pinned for {host}")
+    raw = socket.create_connection((host, port), timeout=timeout)
+    try:
+        wrapped = _pinned_context().wrap_socket(raw, server_hostname=host)
+    except OSError:
+        raw.close()
+        raise
+    certificate = wrapped.getpeercert(binary_form=True) or b""
+    if hashlib.sha256(certificate).hexdigest() != wanted:
+        wrapped.close()
+        raise GatewayUntrusted(
+            "the gateway's certificate does not match the pinned fingerprint"
+        )
+    return wrapped
+
+
+def error_detail(data: bytes) -> dict:
     """The ``detail`` object of an error reply, empty when there is none.
 
     Args:
@@ -32,6 +68,15 @@ def _error_detail(data: bytes) -> dict:
     except (ValueError, UnicodeDecodeError, AttributeError):
         return {}
     return detail if isinstance(detail, dict) else {}
+
+
+def _pinned_context() -> ssl.SSLContext:
+    """A client context that checks nothing itself; the pin does the judging."""
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    return context
 
 
 class GatewayUnreachable(RuntimeError):
@@ -223,7 +268,7 @@ class GatewayHttpChannel:
         if status in (401, 403):
             raise GatewayRefused(f"gateway refused this machine's token ({status})")
         if status == 409:
-            detail = _error_detail(data)
+            detail = error_detail(data)
             params = detail.get("params") or {}
             if detail.get("code") == "agent_wire_stale":
                 raise GatewayWireStale(
@@ -315,11 +360,7 @@ class _PinnedHttpsConnection(http.client.HTTPSConnection):
             fingerprint: SHA-256 hex the peer certificate must digest to.
             timeout: Socket timeout in seconds.
         """
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        context.minimum_version = ssl.TLSVersion.TLSv1_2
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
-        super().__init__(host, port, timeout=timeout, context=context)
+        super().__init__(host, port, timeout=timeout, context=_pinned_context())
         self._fingerprint = fingerprint
 
     def connect(self):
@@ -329,11 +370,6 @@ class _PinnedHttpsConnection(http.client.HTTPSConnection):
             GatewayUntrusted: On a mismatch; the connection is closed before
                 any request bytes are written.
         """
-        super().connect()
-        certificate = self.sock.getpeercert(binary_form=True) or b""
-        digest = hashlib.sha256(certificate).hexdigest()
-        if digest != self._fingerprint:
-            self.close()
-            raise GatewayUntrusted(
-                "the gateway's certificate does not match the pinned fingerprint"
-            )
+        self.sock = pinned_socket(
+            self.host, self.port, self._fingerprint, timeout=self.timeout
+        )

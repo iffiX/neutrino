@@ -1,194 +1,41 @@
-"""Endpoints the neutrino_agent agents talk to.
+"""HTTP endpoints the neutrino_agent agents talk to.
 
 These are the only routes without a session: agents authenticate with a
-per-device token issued when the agent was installed. They are served on the
-agent channel's own TLS port, never on the panel's, and every enrollment link
-carries the certificate fingerprint the agent pins.
+per-device token issued when the agent enrolled. They are served on the
+agent channel's own TLS port, never on the panel's, and every enrollment
+link carries the certificate fingerprint the agent pins.
 
-A heartbeat carries what is true of the machine — metrics, accounts, each
-module's state, and how the last order it ran went — and the reply carries
-what to do now: the order standing for it, the catalog when its copy is
-stale, and a gateway credential for each account whose AI target is on. The
-credential is the one per-device secret the reply resolves; the catalog
-itself carries none, and an order carries a key rather than the bytes.
+Enrolling, leaving and fetching a package stay HTTP; everything live rides
+the one socket in ``agent_ws``.
 """
 
 import hashlib
-import ipaddress
 import re
 import time
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from neutrino_hub import HUB_VERSION
-from neutrino_hub.modules.cliproxyapi.config import CliproxyApiClientKey
-from neutrino_hub.modules.cliproxyapi.ops import (
-    CliproxyApiConfigApplier,
-    load_config,
-    save_config,
-)
-from neutrino_hub.modules.credentials.vault import VaultLockedError
 from neutrino_hub.modules.devices.agent_module_cache import AgentModuleFetchError
-from neutrino_hub.modules.devices.agent_module_controller import (
-    ORDER_ACTION_INSTALL,
-    AgentModuleOrder,
-    ask_module,
-)
 from neutrino_hub.modules.devices.agent_package import AgentPackageFetchError
 from neutrino_hub.modules.devices.constants import (
-    AGENT_MODULE_OUTPUT_LIMIT_BYTES,
-    AGENT_OPERATION_OUTPUT_LINES,
     AGENT_WIRE_GENERATION,
     DEVICE_MAC_PATTERN,
 )
 from neutrino_hub.modules.devices.manifests import load_module_manifests
-from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
-from neutrino_hub.modules.services.constants import SERVICES_RDP_PORT
-from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
+from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.utils.version_number import parse_version
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.models import (
-    ClientCommand,
-    ClientCommandResult,
     ClientEnroll,
     ClientEnrollReply,
-    ClientHeartbeat,
-    ClientHeartbeatReply,
     ClientLeave,
-    ClientModuleOrder,
     ClientModulePackage,
     ClientPackageRequest,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
-
-
-@router.post("/heartbeat", response_model=ClientHeartbeatReply)
-def heartbeat(
-    beat: ClientHeartbeat,
-    request: Request,
-    runtime: PanelRuntime = Depends(get_runtime),
-) -> ClientHeartbeatReply:
-    """Record an agent's report and hand back what to do now.
-
-    Args:
-        beat: The heartbeat payload.
-        runtime: The shared runtime.
-
-    Returns:
-        Any open order, the catalog when the agent's is stale, the
-        per-account AI credentials, and any queued commands.
-
-    Raises:
-        HTTPException: 401 when the token matches no device, 409 when the
-            agent is a later release than this hub.
-    """
-    registry = DeviceRegistry()
-    device = registry.find_by_client_token(beat.token)
-    if device is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="unknown client token"
-        )
-    _refuse_newer_agent(beat.client_version)
-    _refuse_stale_wire(beat.wire)
-    key = device.mac_address
-    platform = (
-        dict(beat.platform) if beat.platform else runtime.client_platform.get(key, {})
-    )
-    # How the last order went, before anything else: it is what frees the
-    # device's queue to start the next one.
-    for result in beat.module_results:
-        if isinstance(result, dict) and result.get("id"):
-            runtime.agent_module_orders.record_result(
-                mac_address=key,
-                order_id=str(result.get("id")),
-                state=str(result.get("state", "")),
-                code=str(result.get("code", "") or ""),
-                params=dict(result.get("params") or {}),
-                output=str(result.get("output", "") or "")[
-                    -AGENT_MODULE_OUTPUT_LIMIT_BYTES:
-                ],
-            )
-    # Software turning up on the machine anyway settles a standing failure.
-    runtime.agent_module_orders.note_reported_states(key, dict(beat.modules))
-    if beat.module_requests:
-        # A click on the machine's own page asks the hub rather than acts,
-        # and enters by the same door the drawer's does: one order each.
-        manifests = load_module_manifests()
-        for module, module_request in beat.module_requests.items():
-            if module not in manifests:
-                continue
-            is_enabled = (
-                bool(module_request.get("is_enabled"))
-                if isinstance(module_request, dict)
-                else bool(module_request)
-            )
-            ask_module(
-                controller=runtime.agent_module_orders,
-                mac_address=key,
-                module=module,
-                manifest=manifests[module],
-                platform=platform,
-                is_enabled=is_enabled,
-                reported_state=str(
-                    (beat.modules.get(module) or {}).get("state", "")
-                    if isinstance(beat.modules.get(module), dict)
-                    else ""
-                ),
-            )
-    runtime.client_metrics[key] = dict(beat.metrics)
-    runtime.client_modules[key] = dict(beat.modules)
-    runtime.client_accounts[key] = list(beat.accounts)
-    address = _device_address(beat.addresses, key, _peer_host(request))
-    if address:
-        runtime.client_address[key] = address
-    runtime.client_ai_targets[key] = dict(beat.ai_targets)
-    runtime.client_service_state[key] = dict(beat.service_state)
-    if beat.platform:
-        runtime.client_platform[key] = dict(beat.platform)
-    if beat.hostname:
-        runtime.client_hostname[key] = beat.hostname
-    _record_rdp_share(
-        runtime, device, beat.rdp_share, runtime.client_address.get(key, "")
-    )
-    if isinstance(beat.last_error, dict) and beat.last_error.get("code"):
-        runtime.client_last_error[key] = {
-            "code": str(beat.last_error.get("code")),
-            "params": dict(beat.last_error.get("params") or {}),
-        }
-    else:
-        runtime.client_last_error.pop(key, None)
-    registry.record_heartbeat(
-        device.mac_address,
-        version=beat.client_version,
-        seen_at=datetime.now(timezone.utc).isoformat(),
-    )
-
-    device_host = _device_host(
-        runtime, runtime.client_address.get(key, ""), _reached_host(request)
-    )
-    runtime.client_device_host[key] = device_host
-    ai_accounts = _ai_accounts(device, runtime, registry, beat.ai_targets, device_host)
-    catalog, served_hash = runtime.device_catalog.catalog(
-        device_host=device_host, platform=platform
-    )
-    standing = runtime.agent_module_orders.pending_order(key)
-    return ClientHeartbeatReply(
-        commands=[
-            ClientCommand(**command)
-            for command in runtime.take_client_commands(device.mac_address)
-        ],
-        module_orders=(
-            [ClientModuleOrder(**standing.to_wire())] if standing is not None else []
-        ),
-        catalog=catalog if beat.catalog_hash != served_hash else None,
-        catalog_hash=served_hash,
-        ai_accounts=ai_accounts,
-        operation=_device_operation(runtime, key),
-        hub_version=HUB_VERSION,
-    )
 
 
 @router.post("/enroll", response_model=ClientEnrollReply)
@@ -218,8 +65,7 @@ def enroll(
             when the agent is a later release than this hub — judged before
             the ticket so a refused machine has not spent the link.
     """
-    _refuse_newer_agent(request.client_version)
-    _refuse_stale_wire(request.wire)
+    _refuse_unadmitted(request.client_version, request.wire)
     # Taken before it is judged: a ticket leaves the store in one step, so
     # two machines racing the same link cannot both spend it.
     ticket = runtime.enrollments.pop(request.enrollment_token, None)
@@ -245,34 +91,35 @@ def enroll(
     return ClientEnrollReply(token=token, mac_address=key, hub_version=HUB_VERSION)
 
 
-def _device_address(reported: list, mac_address: str, peer_host: str) -> str:
-    """Where a machine is, out of everything it carries.
+def version_refusal(client_version: str, wire: int) -> "dict | None":
+    """Judge whether an agent may talk to this hub at all.
 
-    The address on the machine's **identity MAC**: the interface the hub
-    keys the device by, which is the machine's own wire rather than a
-    macvlan, a container bridge or a second address on the same segment
-    that a kernel may route a beat out of just as happily. The connection's
-    peer address stands in where nothing matches, which is every machine
-    that cannot enumerate this and every overlay-only one.
+    The two ship together and are supported only together, so a newer agent
+    is not negotiated with. The generation catches what a version compare
+    cannot: a same-version rebuild that changed the shapes on the wire.
 
     Args:
-        reported: The beat's ``addresses``, ``[{"mac", "address"}]``.
-        mac_address: The device's identity MAC.
-        peer_host: Where this beat came from.
+        client_version: What the agent reported itself as.
+        wire: The generation the agent reported.
 
     Returns:
-        The address, empty when there is none to be had.
+        ``{"code", "params"}`` naming the refusal, or None when the agent
+        is admitted. A version that does not parse on either side refuses
+        nothing.
     """
-    wanted = mac_address.lower()
-    for entry in reported:
-        if not isinstance(entry, dict):
-            continue
-        if str(entry.get("mac", "")).lower() != wanted:
-            continue
-        address = str(entry.get("address", "") or "")
-        if address:
-            return address
-    return peer_host
+    agent = parse_version(client_version)
+    hub = parse_version(HUB_VERSION)
+    if agent is not None and hub is not None and agent > hub:
+        return {
+            "code": "agent_newer_than_hub",
+            "params": {"hub_version": HUB_VERSION, "agent_version": client_version},
+        }
+    if wire != AGENT_WIRE_GENERATION:
+        return {
+            "code": "agent_wire_stale",
+            "params": {"hub_wire": AGENT_WIRE_GENERATION, "agent_wire": wire},
+        }
+    return None
 
 
 def _peer_host(request: Request) -> str:
@@ -291,42 +138,6 @@ def _peer_host(request: Request) -> str:
     """
     client = request.client
     return client.host if client is not None else ""
-
-
-def _record_rdp_share(runtime: PanelRuntime, device, share: dict, host: str) -> None:
-    """Take one machine's word on whether its desktop is shared.
-
-    Only a machine's own agent declares this, and only for itself: the
-    device the token resolved to is the one the share is recorded against,
-    so nothing a beat carries can declare on another machine's behalf. The
-    address is where its channel comes from, which is the hub's own
-    observation rather than anything the beat names.
-
-    Args:
-        runtime: The shared runtime.
-        device: The device the token resolved to.
-        share: The beat's ``rdp_share``.
-        host: Where this machine's channel comes from.
-    """
-    key = device.mac_address
-    was_sharing = any(held.mac_address == key for held in runtime.device_shares.live())
-    is_shared = bool(share.get("is_shared")) if isinstance(share, dict) else False
-    share_id = str(share.get("share_id", "") or "") if is_shared else ""
-    if is_shared and share_id and host:
-        runtime.device_shares.declare(
-            mac_address=key,
-            share_id=share_id,
-            hostname=runtime.client_hostname.get(key, "") or device.name,
-            host=host,
-            port=int(share.get("port") or SERVICES_RDP_PORT),
-            attention=str(share.get("attention", "") or ""),
-        )
-    else:
-        runtime.device_shares.withdraw(key)
-    if was_sharing != (is_shared and bool(share_id) and bool(host)):
-        # The published list is cached for a few seconds; a share appearing
-        # or ending is what a person is watching for, so it recomposes now.
-        runtime.published_services.expire()
 
 
 def _reported_key(registry: DeviceRegistry, request: ClientEnroll) -> str:
@@ -384,42 +195,6 @@ def leave(report: ClientLeave, runtime: PanelRuntime = Depends(get_runtime)) -> 
         )
     registry.forget_client(device.mac_address)
     runtime.forget_client_state(device.mac_address)
-    return {}
-
-
-@router.post("/result")
-def result(
-    report: ClientCommandResult, runtime: PanelRuntime = Depends(get_runtime)
-) -> dict:
-    """Accept an agent's report of how a command went.
-
-    The last outcome per command id is kept in the runtime, so the device
-    drawer can show how a reboot went after its stream has closed.
-
-    Args:
-        report: The command outcome.
-        runtime: The shared runtime.
-
-    Returns:
-        An empty acknowledgement.
-
-    Raises:
-        HTTPException: 401 when the token matches no device.
-    """
-    device = DeviceRegistry().find_by_client_token(report.token)
-    if device is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="unknown client token"
-        )
-    outcomes = runtime.client_command_results.setdefault(device.mac_address, {})
-    outcomes[report.id] = {
-        "id": report.id,
-        "exit_code": report.exit_code,
-        "output": report.output,
-        "code": report.code,
-        "params": dict(report.params),
-        "finished_at": datetime.now(timezone.utc).isoformat(),
-    }
     return {}
 
 
@@ -525,279 +300,16 @@ def module_package(
     )
 
 
-def _device_operation(runtime: PanelRuntime, key: str) -> "dict | None":
-    """The device's current or last-finished operation, for its own page.
-
-    One stream for both surfaces: the drawer reads the orders and the SSH
-    task directly, and this is the same material composed for the heartbeat
-    reply, so the two cannot tell different stories. A running operation
-    wins over a finished one; two finished ones compare by when they closed.
+def _refuse_unadmitted(client_version: str, wire: int) -> None:
+    """Turn away an agent :func:`version_refusal` refuses.
 
     Args:
-        runtime: The shared runtime.
-        key: The device's storage key.
-
-    Returns:
-        ``{"kind", "action", "title", "state", "output"}``, or None when
-        nothing has run for this device.
-    """
-    order = _operation_order(runtime, key)
-    task = None
-    label = f"install_client {key}"
-    for stream in runtime.tasks.streams():
-        if stream.label == label:
-            task = stream
-    if order is not None and order.is_open:
-        return _order_operation(order)
-    if task is not None and not task.is_finished:
-        return _task_operation(task)
-    if order is not None and task is not None:
-        if task.finished_at > order.finished_at:
-            return _task_operation(task)
-        return _order_operation(order)
-    if order is not None:
-        return _order_operation(order)
-    if task is not None:
-        return _task_operation(task)
-    return None
-
-
-def _operation_order(runtime: PanelRuntime, key: str) -> "AgentModuleOrder | None":
-    """The order the device is on: the running one, else the newest."""
-    orders = runtime.agent_module_orders.orders(key)
-    running = [order for order in orders if order.is_open]
-    if running:
-        return running[-1]
-    return orders[0] if orders else None
-
-
-def _order_operation(order: AgentModuleOrder) -> dict:
-    """One module order as the reply's operation object."""
-    manifests = load_module_manifests()
-    title = manifests.get(order.module, {}).get("title", order.module)
-    return {
-        "kind": "order",
-        "action": order.action,
-        "title": title,
-        "state": order.state,
-        "output": _output_tail(order.output),
-    }
-
-
-def _task_operation(task) -> dict:
-    """One SSH bootstrap task as the reply's operation object."""
-    if not task.is_finished:
-        state = "running"
-    else:
-        state = "done" if task.exit_code == 0 else "failed"
-    return {
-        "kind": "bootstrap",
-        "action": ORDER_ACTION_INSTALL,
-        "title": "",
-        "state": state,
-        "output": _output_tail("".join(task.buffer)),
-    }
-
-
-def _output_tail(text: str) -> str:
-    """The journal-sized tail of an operation's output."""
-    lines = text.splitlines()
-    return "\n".join(lines[-AGENT_OPERATION_OUTPUT_LINES:])
-
-
-def _refuse_stale_wire(agent_wire: int) -> None:
-    """Turn away an agent built to another wire generation.
-
-    The hub and the agent share a release version, so a version compare
-    cannot see a rebuild that changed the shapes on the wire. The
-    generation can: an agent carrying another number would misread the
-    replies, and the 409 is what tells it to reinstall itself instead.
-
-    Args:
-        agent_wire: The generation the agent reported.
+        client_version: What the agent reported itself as.
+        wire: The generation the agent reported.
 
     Raises:
-        HTTPException: 409 naming both generations.
+        HTTPException: 409 carrying the refusal.
     """
-    if agent_wire == AGENT_WIRE_GENERATION:
-        return
-    raise HTTPException(
-        status_code=status.HTTP_409_CONFLICT,
-        detail={
-            "code": "agent_wire_stale",
-            "params": {
-                "hub_wire": AGENT_WIRE_GENERATION,
-                "agent_wire": agent_wire,
-            },
-        },
-    )
-
-
-def _refuse_newer_agent(agent_version: str) -> None:
-    """Turn away an agent from a later release than this hub.
-
-    The two ship together and are supported only together, so a newer agent
-    is not negotiated with — the hub must be updated first. A version that
-    does not parse on either side refuses nothing.
-
-    Args:
-        agent_version: What the agent reported itself as.
-
-    Raises:
-        HTTPException: 409 naming both versions.
-    """
-    agent = parse_version(agent_version)
-    hub = parse_version(HUB_VERSION)
-    if agent is None or hub is None or agent <= hub:
-        return
-    raise HTTPException(
-        status_code=status.HTTP_409_CONFLICT,
-        detail={
-            "code": "agent_newer_than_hub",
-            "params": {"hub_version": HUB_VERSION, "agent_version": agent_version},
-        },
-    )
-
-
-def _ai_accounts(
-    device: ManagedDevice,
-    runtime: PanelRuntime,
-    registry: DeviceRegistry,
-    targets: dict,
-    device_host: str,
-) -> dict:
-    """Resolve the gateway credential for each account whose target is on.
-
-    A locked vault fails only this part of the beat: the reply simply omits
-    ``ai_accounts`` for the turn.
-
-    Args:
-        device: The device the heartbeat came from.
-        runtime: The shared runtime.
-        registry: The device registry.
-        targets: The beat's ``ai_targets``.
-        device_host: The address the device reaches the hub on.
-
-    Returns:
-        ``{account: {"base_url", "api_key", "model"}}``.
-    """
-    try:
-        keys = _account_keys(device, registry, targets)
-        materials = {account: key.open_key() for account, key in keys.items()}
-    except VaultLockedError:
-        return {}
-    if not materials:
-        return {}
-    port = load_config().listen_port
-    base_url = f"http://{device_host}:{port}"
-    model = runtime.served_models.first_model(
-        port=port, client_key=next(iter(materials.values()))
-    )
-    return {
-        account: {"base_url": base_url, "api_key": material, "model": model}
-        for account, material in materials.items()
-    }
-
-
-def _account_keys(
-    device: ManagedDevice, registry: DeviceRegistry, targets: dict
-) -> dict:
-    """The client key of each account turned on, revoking the ones turned off.
-
-    An account turned on whose stored id names no key on the gateway — it
-    was revoked, or the record was dropped — is issued a fresh one.
-
-    Args:
-        device: The device the heartbeat came from.
-        registry: The device registry.
-        targets: The beat's ``ai_targets``.
-
-    Returns:
-        Account name to its stored key.
-
-    Raises:
-        VaultLockedError: If there is no data key to seal a new key under.
-    """
-    if not targets:
-        return {}
-    keys = {}
-    is_changed = False
-    with CONFIG_WRITE_LOCK:
-        stored = DeviceRegistry().get(device.mac_address)
-        config = load_config()
-        by_id = {key.id: key for key in config.client_keys}
-        for account in sorted(targets):
-            key_id = stored.client.ai_key_ids.get(account)
-            if targets[account]:
-                key = by_id.get(key_id)
-                if key is None:
-                    key = CliproxyApiClientKey.generated(
-                        f"{device.name or device.mac_address}/{account}"
-                    )
-                    config.client_keys.append(key)
-                    registry.set_ai_key_id(device.mac_address, account, key.id)
-                    is_changed = True
-                keys[account] = key
-                continue
-            if key_id is None:
-                continue
-            if key_id in by_id:
-                config.client_keys = [k for k in config.client_keys if k.id != key_id]
-                is_changed = True
-            registry.set_ai_key_id(device.mac_address, account, None)
-        if is_changed:
-            save_config(config)
-    if is_changed:
-        try:
-            CliproxyApiConfigApplier().apply()
-        except ValueError:
-            pass
-    return keys
-
-
-def _reached_host(request: Request) -> str:
-    """The bare address the device reached the hub on, from the request.
-
-    The agent dials a URL the enrollment link carried, so the host it
-    connected to is one it can open — the truth for a device on a network the
-    hub does not route, whose own address names no served LAN.
-
-    Args:
-        request: The heartbeat request.
-
-    Returns:
-        The host without a port, empty when there is none to read.
-    """
-    return request.url.hostname or ""
-
-
-def _device_host(runtime: PanelRuntime, device_ip: str, reached_host: str = "") -> str:
-    """The address a device reaches the hub on.
-
-    Every hub-self host in the catalog and the AI credential resolves to
-    this, so what the device stores is an address it can actually open. A
-    served LAN that holds the device's own address answers first; otherwise
-    the address the device actually connected to is the truth, and a served
-    LAN address or the default only stand in when the request names none.
-
-    Args:
-        runtime: The shared runtime.
-        device_ip: The device's address, to pick the LAN it is on.
-        reached_host: The address the device connected to, from the request.
-
-    Returns:
-        The bare address, without a scheme or port.
-    """
-    address = None
-    fallback = None
-    for interface in runtime.network().lan_interfaces:
-        lan = interface.lan
-        fallback = fallback or lan.address
-        try:
-            network = ipaddress.ip_network(lan.cidr, strict=False)
-            if device_ip and ipaddress.ip_address(device_ip) in network:
-                address = lan.address
-                break
-        except ValueError:
-            continue
-    return address or reached_host or fallback or "192.168.100.1"
+    refusal = version_refusal(client_version, wire)
+    if refusal is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=refusal)

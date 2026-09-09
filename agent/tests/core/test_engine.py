@@ -1,10 +1,13 @@
 """The module engine: carrying out orders, and holding no policy.
 
-The engine is handed a catalog the hub already resolved and orders the hub
-already decided on. What is pinned here is that it runs what it is given,
+The engine is handed orders the hub already decided on, each carrying the
+module resolved for this platform. What is pinned here is that it runs what
+it is given in the caller's thread, hands each output line on as it comes,
 judges the result by the machine's own state, reports the output of a
 failure — and that nothing in it ever retries anything.
 """
+
+import threading
 
 import pytest
 
@@ -62,17 +65,14 @@ def bare_engine(*, platform=None, fetch_artifact=None, verified=None):
     engine._catalog = dict(CATALOG)
     engine._catalog_hash = "abc"
     engine._platform_tuple = {"os": "linux", "family": "debian", "arch": "amd64"}
-    engine._queued = []
-    engine._ran = set()
-    engine._results = {}
     engine._output = []
+    engine._on_line = None
+    engine._order_lock = threading.Lock()
     engine._statuses = {}
     engine._signature = ""
     engine._checked_at = 0.0
     engine._log = lambda message: None
     engine._on_change = None
-    import threading
-
     engine._lock = threading.Lock()
     engine._wakeup = threading.Event()
 
@@ -114,6 +114,15 @@ def landing_fetch(fetches):
     return fetch
 
 
+INSTALL_ORDER = {
+    "id": "order-1",
+    "module": "fakedesk",
+    "action": "install",
+    "artifact_key": "key",
+    "package_kind": "deb",
+}
+
+
 def test_an_order_installs_what_it_is_given_and_reports_done():
     fetches: list = []
     platform = FakePlatform()
@@ -121,51 +130,49 @@ def test_an_order_installs_what_it_is_given_and_reports_done():
         platform=platform, fetch_artifact=landing_fetch(fetches), verified=[True]
     )
 
-    engine.update(
-        catalog=None,
-        catalog_hash="abc",
-        orders=[
-            {
-                "id": "order-1",
-                "module": "fakedesk",
-                "action": "install",
-                "artifact_key": "fakedesk-linux-debian-amd64-aaaa",
-                "package_kind": "deb",
-            }
-        ],
+    result = engine.run_order(
+        dict(INSTALL_ORDER, artifact_key="fakedesk-linux-debian-amd64-aaaa")
     )
-    engine._reconcile()
 
     assert fetches == ["fakedesk-linux-debian-amd64-aaaa"]
     assert platform.installs == [("deb", DEB_ENTRY)]
-    result = engine.results()[0]
-    assert result["id"] == "order-1"
     assert result["state"] == "done"
-    # Success carries its output too: a result rides once, so the log of
-    # something that worked costs one message and is what a person
-    # watching an install came to read.
+    assert result["code"] == ""
+    # Success carries its output too: a person watching an install came to
+    # read the log of something that worked.
     assert "fakedesk: installing" in result["output"]
+
+
+def test_each_output_line_is_handed_on_as_it_comes():
+    engine = bare_engine(fetch_artifact=landing_fetch([]), verified=[True])
+    lines: list = []
+
+    engine.run_order(INSTALL_ORDER, on_line=lines.append)
+
+    assert lines[0] == "fakedesk: install"
+    assert "fakedesk: installing" in lines
+    # The line handler is the stream's; it does not outlive the order.
+    assert engine._on_line is None
+
+
+def test_the_resolved_module_an_order_carries_is_kept_and_reported():
+    engine = bare_engine(fetch_artifact=landing_fetch([]), verified=[True])
+    engine._catalog = {"modules": {}}
+
+    result = engine.run_order(
+        dict(INSTALL_ORDER, resolved=CATALOG["modules"]["fakedesk"])
+    )
+
+    assert result["state"] == "done"
+    assert engine.catalog()["modules"]["fakedesk"]["kind"] == "package"
+    assert engine.report()["fakedesk"]["state"] == "installed"
 
 
 def test_an_install_the_machine_cannot_confirm_is_failed_not_latched():
     engine = bare_engine(fetch_artifact=landing_fetch([]), verified=[False])
 
-    engine.update(
-        catalog=None,
-        catalog_hash="abc",
-        orders=[
-            {
-                "id": "order-1",
-                "module": "fakedesk",
-                "action": "install",
-                "artifact_key": "key",
-                "package_kind": "deb",
-            }
-        ],
-    )
-    engine._reconcile()
+    result = engine.run_order(INSTALL_ORDER)
 
-    result = engine.results()[0]
     assert result["state"] == "failed"
     assert result["code"] == "install_unconfirmed"
 
@@ -176,22 +183,8 @@ def test_a_failed_install_reports_the_output_it_produced():
         platform=platform, fetch_artifact=landing_fetch([]), verified=[False]
     )
 
-    engine.update(
-        catalog=None,
-        catalog_hash="abc",
-        orders=[
-            {
-                "id": "order-1",
-                "module": "fakedesk",
-                "action": "install",
-                "artifact_key": "key",
-                "package_kind": "deb",
-            }
-        ],
-    )
-    engine._reconcile()
+    result = engine.run_order(INSTALL_ORDER)
 
-    result = engine.results()[0]
     assert result["state"] == "failed"
     assert result["code"] == "install_failed"
     # The vendor's own words, not only that something went wrong.
@@ -204,22 +197,8 @@ def test_a_refused_fetch_is_reported_with_the_hubs_own_code():
 
     engine = bare_engine(fetch_artifact=refuse, verified=[False])
 
-    engine.update(
-        catalog=None,
-        catalog_hash="abc",
-        orders=[
-            {
-                "id": "order-1",
-                "module": "fakedesk",
-                "action": "install",
-                "artifact_key": "key",
-                "package_kind": "deb",
-            }
-        ],
-    )
-    engine._reconcile()
+    result = engine.run_order(INSTALL_ORDER)
 
-    result = engine.results()[0]
     assert result["code"] == "module_fetch_failed"
     assert result["params"] == {"detail": "refused"}
 
@@ -228,90 +207,45 @@ def test_an_uninstall_is_run_and_confirmed():
     platform = FakePlatform()
     engine = bare_engine(platform=platform, verified=[False])
 
-    engine.update(
-        catalog=None,
-        catalog_hash="abc",
-        orders=[{"id": "order-1", "module": "fakedesk", "action": "uninstall"}],
+    result = engine.run_order(
+        {"id": "order-1", "module": "fakedesk", "action": "uninstall"}
     )
-    engine._reconcile()
 
     assert platform.uninstalls == ["apt-get purge -y fakedesk"]
-    assert engine.results()[0]["state"] == "done"
+    assert result["state"] == "done"
 
 
 def test_an_uninstall_that_did_not_take_is_reported_failed():
     engine = bare_engine(verified=[True])
 
-    engine.update(
-        catalog=None,
-        catalog_hash="abc",
-        orders=[{"id": "order-1", "module": "fakedesk", "action": "uninstall"}],
+    result = engine.run_order(
+        {"id": "order-1", "module": "fakedesk", "action": "uninstall"}
     )
-    engine._reconcile()
 
-    assert engine.results()[0]["code"] == "uninstall_unconfirmed"
+    assert result["code"] == "uninstall_unconfirmed"
 
 
-def test_no_tick_ever_reruns_a_failed_order():
+def test_an_idle_pass_reruns_nothing():
     fetches: list = []
     engine = bare_engine(fetch_artifact=landing_fetch(fetches), verified=[False])
-    order = {
-        "id": "order-1",
-        "module": "fakedesk",
-        "action": "install",
-        "artifact_key": "key",
-        "package_kind": "deb",
-    }
 
-    engine.update(catalog=None, catalog_hash="abc", orders=[order])
-    engine._reconcile()
-    # The hub keeps handing the same order down until it hears the result;
-    # every one of those beats, and every idle pass, must run nothing.
+    engine.run_order(INSTALL_ORDER)
+    # Every idle pass after a failed order must run nothing: deciding to
+    # try again is the hub's, and it does so with a new order.
     for _ in range(5):
-        engine.update(catalog=None, catalog_hash="abc", orders=[order])
         engine._reconcile()
 
     assert fetches == ["key"]
-    assert engine.results()[0]["code"] == "install_unconfirmed"
 
 
 def test_asking_again_is_a_new_order_and_runs():
     fetches: list = []
     engine = bare_engine(fetch_artifact=landing_fetch(fetches), verified=[False])
-    first = {
-        "id": "order-1",
-        "module": "fakedesk",
-        "action": "install",
-        "artifact_key": "key",
-        "package_kind": "deb",
-    }
 
-    engine.update(catalog=None, catalog_hash="abc", orders=[first])
-    engine._reconcile()
-    # A person pressing the button again: a different id, so it runs.
-    engine.update(catalog=None, catalog_hash="abc", orders=[dict(first, id="order-2")])
-    engine._reconcile()
+    engine.run_order(INSTALL_ORDER)
+    engine.run_order(dict(INSTALL_ORDER, id="order-2"))
 
     assert fetches == ["key", "key"]
-
-
-def test_a_result_the_hub_has_stopped_asking_about_is_dropped():
-    engine = bare_engine(fetch_artifact=landing_fetch([]), verified=[True])
-    order = {
-        "id": "order-1",
-        "module": "fakedesk",
-        "action": "install",
-        "artifact_key": "key",
-        "package_kind": "deb",
-    }
-
-    engine.update(catalog=None, catalog_hash="abc", orders=[order])
-    engine._reconcile()
-    assert len(engine.results()) == 1
-    # The hub no longer names it, so it has the result and this can forget.
-    engine.update(catalog=None, catalog_hash="abc", orders=[])
-
-    assert engine.results() == []
 
 
 def test_an_order_for_a_module_with_no_build_here_is_refused_not_attempted():
@@ -319,35 +253,19 @@ def test_an_order_for_a_module_with_no_build_here_is_refused_not_attempted():
     engine = bare_engine(fetch_artifact=landing_fetch(fetches))
     engine._catalog = {"modules": {"fakedesk": {"kind": "package", "entry": None}}}
 
-    engine.update(
-        catalog=None,
-        catalog_hash="abc",
-        orders=[
-            {
-                "id": "order-1",
-                "module": "fakedesk",
-                "action": "install",
-                "artifact_key": "key",
-            }
-        ],
-    )
-    engine._reconcile()
+    result = engine.run_order(INSTALL_ORDER)
 
     assert fetches == []
-    assert engine.results()[0]["code"] == "no_platform_build"
+    assert result["code"] == "no_platform_build"
 
 
 def test_an_action_this_agent_does_not_know_is_typed_not_guessed():
     engine = bare_engine(verified=[False])
 
-    engine.update(
-        catalog=None,
-        catalog_hash="abc",
-        orders=[{"id": "order-1", "module": "fakedesk", "action": "reticulate"}],
+    result = engine.run_order(
+        {"id": "order-1", "module": "fakedesk", "action": "reticulate"}
     )
-    engine._reconcile()
 
-    result = engine.results()[0]
     assert result["code"] == "unknown_action"
     assert result["params"] == {"action": "reticulate"}
 
@@ -357,22 +275,9 @@ def test_a_platform_that_installs_nothing_is_reported_not_raised():
         platform=AgentPlatform(), fetch_artifact=landing_fetch([]), verified=[False]
     )
 
-    engine.update(
-        catalog=None,
-        catalog_hash="abc",
-        orders=[
-            {
-                "id": "order-1",
-                "module": "fakedesk",
-                "action": "install",
-                "artifact_key": "key",
-                "package_kind": "deb",
-            }
-        ],
-    )
-    engine._reconcile()
+    result = engine.run_order(INSTALL_ORDER)
 
-    assert engine.results()[0]["code"] == "unsupported_platform"
+    assert result["code"] == "unsupported_platform"
 
 
 def test_reporting_a_module_touches_nothing():
@@ -420,40 +325,24 @@ def test_an_absent_capability_reports_unsupported_platform():
     engine = bare_engine(platform=AgentPlatform())
     engine._catalog = dict(SYSTEM_CATALOG)
 
-    engine.update(
-        catalog=None,
-        catalog_hash="abc",
-        orders=[{"id": "order-1", "module": "samba_mount", "action": "install"}],
+    result = engine.run_order(
+        {"id": "order-1", "module": "samba_mount", "action": "install"}
     )
-    engine._reconcile()
 
-    result = engine.results()[0]
     assert (result["state"], result["code"]) == ("failed", "unsupported_platform")
 
 
 def test_the_engine_holds_no_failure_memory():
     engine = bare_engine(fetch_artifact=landing_fetch([]), verified=[False])
 
-    engine.update(
-        catalog=None,
-        catalog_hash="abc",
-        orders=[
-            {
-                "id": "order-1",
-                "module": "fakedesk",
-                "action": "install",
-                "artifact_key": "key",
-                "package_kind": "deb",
-            }
-        ],
-    )
-    engine._reconcile()
+    engine.run_order(INSTALL_ORDER)
 
-    # Results are what the hub has not collected yet, not a record of what
-    # failed: there is no latch, no failure map and no attempt count here.
+    # A result is the stream's answer, not a record of what failed: there
+    # is no latch, no failure map and no attempt count here.
     assert not hasattr(engine, "_install_failed")
     assert not hasattr(engine, "_install_unconfirmed")
     assert not hasattr(engine, "_remove_unconfirmed")
+    assert not hasattr(engine, "_results")
 
 
 # --- the by-name kind rides the same order path ---
@@ -497,16 +386,12 @@ def test_a_system_package_order_installs_by_name_and_fetches_nothing():
     engine._catalog = dict(SYSTEM_CATALOG)
     engine._system.verify = lambda resolved: True
 
-    engine.update(
-        catalog=None,
-        catalog_hash="abc",
-        orders=[{"id": "order-1", "module": "samba_mount", "action": "install"}],
+    result = engine.run_order(
+        {"id": "order-1", "module": "samba_mount", "action": "install"}
     )
-    engine._reconcile()
 
     assert platform.installed == [["cifs-utils"]]
     assert fetches == []
-    result = engine.results()[0]
     assert result["state"] == "done"
     assert "Setting up cifs-utils" in result["output"]
 
@@ -517,32 +402,9 @@ def test_a_system_package_uninstall_rides_the_package_manager_too():
     engine._catalog = dict(SYSTEM_CATALOG)
     engine._system.verify = lambda resolved: False
 
-    engine.update(
-        catalog=None,
-        catalog_hash="abc",
-        orders=[{"id": "order-1", "module": "samba_mount", "action": "uninstall"}],
+    result = engine.run_order(
+        {"id": "order-1", "module": "samba_mount", "action": "uninstall"}
     )
-    engine._reconcile()
 
     assert platform.removed == [["cifs-utils"]]
-    assert engine.results()[0]["state"] == "done"
-
-
-def test_a_native_system_package_reads_installed_with_nothing_to_run():
-    engine = bare_engine(platform=SystemPackagePlatform())
-    engine._catalog = {
-        "modules": {
-            "samba_mount": {
-                "title": "Samba mount",
-                "kind": "system_package",
-                "entry": {},
-                "verify": "",
-                "package": "samba_mount",
-            }
-        },
-        "services": [],
-    }
-
-    engine._refresh(is_forced=True)
-
-    assert engine.report()["samba_mount"]["state"] == "installed"
+    assert result["state"] == "done"

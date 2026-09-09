@@ -1,15 +1,14 @@
-"""The agent itself: connection state, the heartbeat, and the module engine.
+"""The agent itself: the binding, the socket to the hub, and the module engine.
 
-One object owns everything the local control channel and the gateway both
-talk to. It runs whether or not the machine belongs to a gateway yet — an
-agent that has never enrolled still answers locally, waiting for a link,
-which is the whole point on a machine the gateway cannot reach first.
+One object owns everything the local control channel and the hub both talk
+to. It runs whether or not the machine belongs to a hub yet: an agent that
+has never enrolled still answers locally, waiting for a link.
 
-The gateway decides everything about modules: a toggle asked for here is
-sent up with the next heartbeat and comes back as an order, so the panel and
-the machine can never disagree for longer than one beat, and this machine
-never downloads anything or decides to try again. The desktop share is the
-other way round: decided only on the machine, and declared upward.
+While bound, the agent keeps one socket open to the hub and reconnects when
+it drops. The hub decides everything about modules: an order arrives as a
+stream on the socket, runs here, and closes with how it went. The desktop
+share is the other way round: decided only on the machine, and reported
+upward.
 
 Errors cross the wire as ``{"code", "params"}``, never an English sentence;
 every surface does its own wording.
@@ -22,42 +21,44 @@ from __future__ import annotations
 import hashlib
 import os
 import threading
+import urllib.parse
 
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import (
-    AGENT_CREDENTIALS_DIR_NAME,
-    AGENT_MODULE_PACKAGE_PATH,
-    AGENT_STATE_NAME,
-    AGENT_WIRE_GENERATION,
     AGENT_BACKOFF_MAX_S,
     AGENT_BACKOFF_MIN_S,
+    AGENT_CREDENTIALS_DIR_NAME,
     AGENT_HEARTBEAT_INTERVAL_S,
-    AGENT_HEARTBEAT_PATH,
     AGENT_LEAVE_PATH,
+    AGENT_MODULE_PACKAGE_PATH,
     AGENT_REFUSALS_BEFORE_UNBIND,
-    AGENT_RESULT_PATH,
+    AGENT_STATE_NAME,
+    AGENT_WIRE_GENERATION,
+    AGENT_WS_PATH,
 )
 from neutrino_agent.core import enrollment, self_update
 from neutrino_agent.core.channel import (
-    GatewayRefusedDetail,
-    GatewayWireStale,
     GatewayHttpChannel,
     GatewayRefused,
+    GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
     GatewayVersionRefused,
+    GatewayWireStale,
 )
 from neutrino_agent.core.commands import DeviceOperator
 from neutrino_agent.core.engine import ModuleEngine
 from neutrino_agent.core.metrics import HostMetrics, hostname
-from neutrino_agent.core.version import parse_version
+from neutrino_agent.core.session import AgentSession
 from neutrino_agent.core.store import MachineStateStore
+from neutrino_agent.core.version import parse_version
+from neutrino_agent.core.ws_client import WebSocketClient
 from neutrino_agent.platforms.base import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import detect_platform
 from neutrino_agent.rdp.host import RdpShareHost
 
 # How often an unenrolled agent looks again, which is only to notice that its
-# own page has since been used to join a gateway.
+# binding file has since been written.
 IDLE_POLL_INTERVAL_S = 2
 
 
@@ -98,6 +99,11 @@ def channel_error(error: Exception) -> dict:
                 "agent_version": error.agent_version,
             },
         }
+    if isinstance(error, GatewayWireStale):
+        return {
+            "code": "agent_wire_stale",
+            "params": {"hub_wire": error.hub_wire, "agent_wire": error.agent_wire},
+        }
     if isinstance(error, GatewayRefused):
         return {"code": "hub_refused", "params": {}}
     return {"code": "hub_unreachable", "params": {"detail": str(error)}}
@@ -116,8 +122,8 @@ class Agent:
         self._log = log
         self._lock = threading.Lock()
         self._platform = platform if platform is not None else detect_platform()
-        # Set whenever there is something new to report, so the loop beats
-        # then rather than at the end of its next interval.
+        # Set whenever there is something new to report, so a report goes up
+        # then rather than at the end of the interval.
         self._news = threading.Event()
         self._engine = ModuleEngine(
             fetch_artifact=self._fetch_artifact,
@@ -140,17 +146,14 @@ class Agent:
         self._rdp.bind_modules(self._engine.report)
         self._backoff_s = AGENT_BACKOFF_MIN_S
         self._last_error: "dict | None" = None
-        self._pending: dict = {}
-        # The hub's copy of this device's current or last-finished
-        # operation, straight off the heartbeat reply.
-        self._operation: "dict | None" = None
         self._channel = None
         self._operator = None
+        self._session: "AgentSession | None" = None
         self._binding: tuple = ("", "", "")
         self._binding_stamp = 0
         self._refusals = 0
         # The hub version last acted on and how the attempt went, so a target
-        # that failed is not retried every beat.
+        # that failed is not retried on every connection.
         self._update_target = ""
         self._update_error: "dict | None" = None
         self._load_connection()
@@ -162,33 +165,23 @@ class Agent:
         return self._engine.platform_tuple
 
     def catalog(self) -> dict:
-        """The catalog the gateway last sent: ``{"modules"}``."""
+        """The catalog this machine holds: ``{"modules"}``."""
         return self._engine.catalog()
 
     def module_states(self) -> dict:
         """What state each module is actually in."""
         return self._engine.report()
 
-    def pending_module_requests(self) -> dict:
-        """The clicks made here that have not ridden a heartbeat up yet."""
-        with self._lock:
-            return {name: dict(request) for name, request in self._pending.items()}
-
     def last_error(self) -> "dict | None":
         """The most recent problem worth showing, as ``{"code", "params"}``."""
         with self._lock:
             return self._last_error or self._update_error
 
-    def operation(self) -> "dict | None":
-        """The hub's word on this device's current or last operation.
-
-        Returns:
-            ``{"kind", "action", "title", "state", "output"}``, or None while
-            nothing has run — the hub holds the one stream and this machine
-            renders its copy, so the page and the drawer cannot disagree.
-        """
+    def is_online(self) -> bool:
+        """Whether the socket to the hub is up."""
         with self._lock:
-            return dict(self._operation) if self._operation else None
+            session = self._session
+        return session is not None and session.is_open
 
     def accounts(self) -> list:
         """The machine's human accounts, by the platform's own judgment."""
@@ -202,22 +195,23 @@ class Agent:
         """What this machine says upward about sharing its desktop.
 
         Returns:
-            ``{"is_shared", "share_id", "port", "attention"}``.
+            ``{"is_shared", "account", "share_id", "port", "attention"}``.
         """
         return self._rdp.declaration()
 
     # --- what the control channel asks for ---
 
     def connect(self, link: str) -> None:
-        """Join the gateway an enrollment link points at.
+        """Join the hub an enrollment link points at.
 
         Args:
             link: The link the owner pasted.
 
         Raises:
-            EnrollmentError: If the link is unusable or the gateway refuses.
+            EnrollmentError: If the link is unusable or the hub refuses.
         """
         enrollment.enroll(link)
+        self._drop_session()
         with self._lock:
             self._last_error = None
             self._refusals = 0
@@ -225,15 +219,15 @@ class Agent:
             self._update_error = None
             self._backoff_s = AGENT_BACKOFF_MIN_S
         self._load_connection()
-        self._log("joined the gateway")
+        self._news.set()
+        self._log("joined the hub")
 
     def disconnect(self) -> None:
-        """Leave the gateway, and stop reconciling anything for it.
+        """Leave the hub, and stop reporting to it.
 
-        The gateway is told first, so its panel stops showing this machine as
-        managed straight away rather than waiting for the heartbeats to be
-        missed. A gateway that cannot be reached does not hold the machine
-        here: the local state is cleared either way.
+        The hub is told first, so its panel stops showing this machine as
+        managed straight away. A hub that cannot be reached does not hold
+        the machine here: the local state is cleared either way.
         """
         with self._lock:
             channel = self._channel
@@ -241,39 +235,37 @@ class Agent:
             try:
                 channel.post(AGENT_LEAVE_PATH, {})
             except (GatewayUnreachable, GatewayUntrusted) as error:
-                self._log(f"could not tell the gateway we are leaving: {error}")
+                self._log(f"could not tell the hub we are leaving: {error}")
+        self._drop_session()
         enrollment.disconnect()
         with self._lock:
-            self._pending = {}
-            self._operation = None
             self._last_error = None
             self._update_target = ""
             self._update_error = None
         self._load_connection()
-        self._engine.update(catalog=None, catalog_hash="", orders=[])
-        self._log("disconnected from the gateway")
+        self._engine.update(catalog=None, catalog_hash="")
+        self._log("disconnected from the hub")
 
-    def beat_soon(self) -> None:
-        """Cut the wait before the next heartbeat short."""
+    def report_soon(self) -> None:
+        """Send the next report now rather than at the end of the interval."""
         self._news.set()
 
-    def request_module(self, name: str, *, is_enabled: "bool | None" = None) -> None:
-        """Ask for one module order, from this machine itself.
+    def sync(self) -> dict:
+        """Ask the hub for this machine's desired state.
 
-        The click is sent up with the next heartbeat rather than applied
-        here, so the hub remains the one place that decides.
-
-        Args:
-            name: The module name.
-            is_enabled: True to install, False to uninstall.
+        Returns:
+            Empty when the request went up, ``{"code", "params"}`` when
+            there is no live socket to send it on.
         """
-        if not name or is_enabled is None:
-            return
         with self._lock:
-            self._pending[name] = {"is_enabled": is_enabled}
-        # Nothing is applied here: the click rides up, the hub decides, and
-        # what comes back is an order like any the panel's own button makes.
-        self.beat_soon()
+            session = self._session
+        if session is None or not session.is_open:
+            return {"code": "hub_unreachable", "params": {}}
+        try:
+            session.request_state()
+        except GatewayUnreachable:
+            return {"code": "hub_unreachable", "params": {}}
+        return {}
 
     def rdp_share(self, *, account: str, password: str) -> dict:
         """Share this machine's desktop behind an access password.
@@ -285,7 +277,9 @@ class Agent:
         Returns:
             Empty on success, ``{"code", "params"}`` on a refusal.
         """
-        return self._rdp.share(account, password)
+        outcome = self._rdp.share(account, password)
+        self._news.set()
+        return outcome
 
     def rdp_unshare(self) -> dict:
         """Stop sharing this machine's desktop.
@@ -293,16 +287,14 @@ class Agent:
         Returns:
             Empty on success, ``{"code", "params"}`` on a refusal.
         """
-        return self._rdp.unshare()
+        outcome = self._rdp.unshare()
+        self._news.set()
+        return outcome
 
     # --- the loop ---
 
     def run_forever(self) -> None:
-        """Beat, or wait to be enrolled, until the process is stopped.
-
-        The wait between beats ends early when a module changes state, so
-        the panel sees a step start and finish rather than only its result.
-        """
+        """Hold the socket, or wait to be enrolled, until the process stops."""
         self._log(f"neutrino_agent {AGENT_VERSION} starting on {hostname()}")
         while True:
             delay = self.run_once()
@@ -310,114 +302,160 @@ class Agent:
             self._news.wait(timeout=delay)
 
     def run_once(self) -> int:
-        """Do one beat's worth of work.
+        """One connection's lifetime, or one idle poll while unbound.
 
         Returns:
-            How many seconds to wait before the next one: the normal interval
-            after a success, a backing-off delay after a failure, and a short
-            idle poll while the machine belongs to no gateway.
+            How many seconds to wait before the next one: the interval
+            after a refusal, a backing-off delay after a failure, and a
+            short idle poll while the machine belongs to no hub.
         """
         self._adopt_external_binding()
-        with self._lock:
-            channel = self._channel
-        if channel is None:
+        session = self._open_session()
+        if session is None:
             return IDLE_POLL_INTERVAL_S
-
-        with self._lock:
-            requests = dict(self._pending)
-        payload = {
-            "hostname": hostname(),
-            "client_version": AGENT_VERSION,
-            "wire": AGENT_WIRE_GENERATION,
-            "metrics": self._read_metrics(),
-            "platform": self._engine.platform_tuple,
-            # Each interface's address with the MAC carrying it, so the hub
-            # can name the one on this machine's own wire rather than
-            # whichever the kernel routed a beat out of.
-            "addresses": enrollment.machine_addresses(),
-            "accounts": self._read_accounts(),
-            # The gateway sends the catalog only when this differs from what
-            # it serves, so a converged fleet is not shipped it every beat.
-            "catalog_hash": self._engine.catalog_hash,
-            "modules": self._engine.report(),
-            "module_requests": requests,
-            "module_results": self._engine.results(),
-            # Whether this machine's desktop is reachable. The access
-            # password it was set up with stays on the machine.
-            "rdp_share": self.rdp_declaration(),
-            "last_error": self.last_error(),
-        }
         try:
-            reply = channel.post(AGENT_HEARTBEAT_PATH, payload)
+            session.connect()
         except GatewayWireStale as error:
-            # An answer about this build, not about the binding: the fix is
-            # the hub's own package, so it never counts toward an unbind.
-            with self._lock:
-                self._last_error = {
-                    "code": "agent_wire_stale",
-                    "params": {
-                        "hub_wire": error.hub_wire,
-                        "agent_wire": error.agent_wire,
-                    },
-                }
-            self._log(f"{error}")
-            self._force_self_update(f"wire-{error.hub_wire}")
-            return AGENT_HEARTBEAT_INTERVAL_S
+            return self._on_wire_stale(error)
         except (GatewayRefused, GatewayUntrusted, GatewayVersionRefused) as error:
             return self._on_rejected(error)
         except GatewayUnreachable as error:
-            # A broken wire is not an answer: back off and retry forever.
-            # The one non-obvious rule of the rejection counter applies here:
-            # only a successful beat resets it, so an unreachable beat in the
-            # middle of a run of rejections leaves the count standing.
-            with self._lock:
-                self._last_error = channel_error(error)
-                delay = self._backoff_s
-                self._backoff_s = min(self._backoff_s * 2, AGENT_BACKOFF_MAX_S)
-            self._log(f"heartbeat failed: {error}; retrying in {delay}s")
-            return delay
-
+            return self._on_unreachable(error)
         with self._lock:
+            self._session = session
             self._backoff_s = AGENT_BACKOFF_MIN_S
             self._last_error = None
             self._refusals = 0
-            # Accepted requests are dropped: what comes back is now the truth.
-            for name in requests:
-                self._pending.pop(name, None)
+        self._maybe_self_update(session.hub_version)
+        failure = session.serve()
+        with self._lock:
+            if self._session is session:
+                self._session = None
+        if failure is None:
+            return AGENT_BACKOFF_MIN_S
+        if isinstance(failure, GatewayWireStale):
+            return self._on_wire_stale(failure)
+        if isinstance(failure, (GatewayRefused, GatewayVersionRefused)):
+            return self._on_rejected(failure)
+        return self._on_unreachable(failure)
 
-        # A reply this build cannot read must never take the process down:
-        # the service stays up, says so, and asks again — a crash here is a
-        # machine nobody can reach to fix.
+    def probe(self) -> None:
+        """Connect once, take the welcome, and close: the status check.
+
+        The outcome lands in :meth:`last_error`, empty when the hub
+        answered.
+        """
+        self._adopt_external_binding()
+        session = self._open_session()
+        if session is None:
+            return
         try:
-            operation = reply.get("operation")
+            session.connect()
+        except GatewayWireStale as error:
             with self._lock:
-                self._operation = (
-                    dict(operation) if isinstance(operation, dict) else None
-                )
-            self._engine.update(
-                catalog=reply.get("catalog"),
-                catalog_hash=str(reply.get("catalog_hash", "")),
-                orders=reply.get("module_orders") or [],
-            )
-            for command in reply.get("commands", []):
-                self._execute(command)
-        except Exception as error:  # noqa: BLE001 - reported, never fatal
+                self._last_error = channel_error(error)
+            return
+        except (
+            GatewayRefused,
+            GatewayUntrusted,
+            GatewayVersionRefused,
+            GatewayUnreachable,
+        ) as error:
             with self._lock:
-                self._last_error = {
-                    "code": "hub_reply_unreadable",
-                    "params": {"detail": str(error)[:200]},
-                }
-            self._log(f"could not apply the hub's reply: {error}")
-            return AGENT_HEARTBEAT_INTERVAL_S
-        self._maybe_self_update(str(reply.get("hub_version", "")))
-        return AGENT_HEARTBEAT_INTERVAL_S
+                self._last_error = channel_error(error)
+            return
+        with self._lock:
+            self._last_error = None
+        session.close()
+
+    def _open_session(self) -> "AgentSession | None":
+        """A session for the current binding, or None while unbound."""
+        with self._lock:
+            gateway_url, token, fingerprint = self._binding
+        if not gateway_url or not token:
+            return None
+        parts = urllib.parse.urlsplit(gateway_url)
+        client = WebSocketClient(
+            host=parts.hostname or "",
+            port=parts.port or 443,
+            path=AGENT_WS_PATH,
+            fingerprint=fingerprint,
+        )
+        return AgentSession(
+            client=client,
+            token=token,
+            hello=self._hello_payload(),
+            report=self._report_payload,
+            run_order=self._engine.run_order,
+            run_command=self._run_command,
+            news=self._news,
+            log=self._log,
+            interval_s=AGENT_HEARTBEAT_INTERVAL_S,
+            on_tick=self._adopt_external_binding,
+        )
+
+    def _hello_payload(self) -> dict:
+        return {
+            "client_version": AGENT_VERSION,
+            "wire": AGENT_WIRE_GENERATION,
+            "hostname": hostname(),
+            "platform": self._engine.platform_tuple,
+            "addresses": enrollment.machine_addresses(),
+            "accounts": self._read_accounts(),
+            "state_hash": "",
+        }
+
+    def _report_payload(self) -> dict:
+        return {
+            "metrics": self._read_metrics(),
+            "platform": self._engine.platform_tuple,
+            # Each interface's address with the MAC carrying it, so the hub
+            # can name the one on this machine's own wire.
+            "addresses": enrollment.machine_addresses(),
+            "accounts": self._read_accounts(),
+            "modules": self._engine.report(),
+            "state_hash": "",
+            "state_error": None,
+            # Whether this machine's desktop is reachable. The access
+            # password it was set up with stays on the machine.
+            "rdp": self.rdp_declaration(),
+            "last_error": self.last_error(),
+        }
+
+    def _run_command(self, action: str, args: dict) -> dict:
+        with self._lock:
+            operator = self._operator
+        if operator is None:
+            return {
+                "exit_code": 1,
+                "code": "hub_unreachable",
+                "params": {},
+                "output": "",
+            }
+        self._log(f"running {action}")
+        outcome = operator.run(action, args)
+        return {
+            "exit_code": outcome.exit_code,
+            "code": outcome.code,
+            "params": dict(outcome.params),
+            "output": outcome.output,
+        }
+
+    def _reinstall(self) -> dict:
+        """Reinstall this agent from the hub's package, on the hub's order.
+
+        Returns:
+            Empty when the install was launched, ``{"code", "params"}``
+            when it was not.
+        """
+        with self._lock:
+            self._update_target = ""
+        self._force_self_update("reinstall")
+        with self._lock:
+            return dict(self._update_error) if self._update_error else {}
 
     def _fetch_artifact(self, artifact_key: str, destination: str) -> dict:
         """Take the bytes an order named from the hub, onto disk.
-
-        The hub's cache fetched these once for every machine of this
-        platform; this is only the handing down, over the channel this
-        machine already trusts. Nothing here reaches the internet.
 
         Args:
             artifact_key: What the order named the artifact by.
@@ -463,14 +501,28 @@ class Agent:
         except PlatformUnsupportedError:
             return []
 
+    def _on_unreachable(self, error: Exception) -> int:
+        """Back off after a broken wire; the rejection count stands."""
+        with self._lock:
+            self._last_error = channel_error(error)
+            delay = self._backoff_s
+            self._backoff_s = min(self._backoff_s * 2, AGENT_BACKOFF_MAX_S)
+        self._log(f"hub socket failed: {error}; retrying in {delay}s")
+        return delay
+
+    def _on_wire_stale(self, error: GatewayWireStale) -> int:
+        """Reinstall on a stale-wire answer; it never counts toward an unbind."""
+        with self._lock:
+            self._last_error = channel_error(error)
+        self._log(f"{error}")
+        self._force_self_update(f"wire-{error.hub_wire}")
+        return AGENT_HEARTBEAT_INTERVAL_S
+
     def _on_rejected(self, error: Exception) -> int:
         """Take a definitive rejection for what it is, after a short grace.
 
-        A rejection is an answer, not an outage: the hub — or whatever stands
-        where it stood — said no, and retrying the same binding cannot make
-        it a yes. One counter covers every kind; after a few in a row the
-        binding is dropped and the machine goes back to waiting for a link,
-        with the local page saying which no it heard.
+        One counter covers every kind; after a few in a row the binding is
+        dropped and the machine goes back to waiting for a link.
 
         Args:
             error: What the channel raised.
@@ -488,8 +540,6 @@ class Agent:
             return AGENT_HEARTBEAT_INTERVAL_S
         enrollment.disconnect()
         with self._lock:
-            self._pending = {}
-            self._operation = None
             self._refusals = 0
             self._update_target = ""
             self._update_error = None
@@ -499,7 +549,7 @@ class Agent:
                 "code": "self_unbound",
                 "params": {"cause": rejection["code"]},
             }
-        self._engine.update(catalog=None, catalog_hash="", orders=[])
+        self._engine.update(catalog=None, catalog_hash="")
         self._log(f"unbound: {rejection['code']}")
         return IDLE_POLL_INTERVAL_S
 
@@ -515,18 +565,27 @@ class Agent:
                 self._channel = GatewayHttpChannel(
                     gateway_url=gateway_url, token=token, fingerprint=fingerprint
                 )
-                self._operator = DeviceOperator(platform=self._platform)
+                self._operator = DeviceOperator(
+                    platform=self._platform, reinstall=self._reinstall
+                )
             else:
                 self._channel = None
                 self._operator = None
+
+    def _drop_session(self) -> None:
+        """End the live socket, if there is one."""
+        with self._lock:
+            session = self._session
+            self._session = None
+        if session is not None:
+            session.close()
 
     def _adopt_external_binding(self) -> None:
         """Pick up a binding another process wrote.
 
         ``nagent connect`` and ``nagent disconnect`` edit the configuration
         from their own process. The service notices the file changing and
-        converges, so leaving the hub takes no restart and never goes on
-        beating with a token the hub already dropped.
+        converges: a live socket for a binding that is gone is closed.
         """
         with self._lock:
             if enrollment.config_stamp() == self._binding_stamp:
@@ -536,41 +595,21 @@ class Agent:
         with self._lock:
             if self._binding == binding:
                 return
-            self._pending = {}
-            self._operation = None
             self._last_error = None
             self._refusals = 0
             self._update_target = ""
             self._update_error = None
             self._backoff_s = AGENT_BACKOFF_MIN_S
-        self._engine.update(catalog=None, catalog_hash="", orders=[])
+        self._drop_session()
+        self._engine.update(catalog=None, catalog_hash="")
         self._log("adopted the binding written on disk")
-
-    def _execute(self, command: dict) -> None:
-        with self._lock:
-            channel = self._channel
-            operator = self._operator
-        if channel is None or operator is None:
-            return
-        action = command.get("action", "")
-        command_id = command.get("id", action)
-        self._log(f"running {action}")
-        outcome = operator.run(action, command.get("args", {}))
-        report = {"exit_code": outcome.exit_code, "output": outcome.output}
-        try:
-            channel.post(AGENT_RESULT_PATH, {"id": command_id, **report})
-        except (GatewayUnreachable, GatewayUntrusted) as error:
-            self._log(f"could not report {action} result: {error}")
 
     def _force_self_update(self, target: str) -> None:
         """Reinstall this agent from the hub's package, version equal or not.
 
-        The wire-stale answer means this build misreads the hub however the
-        versions compare, so the version gate does not apply; the target
-        latch still does, so a failed attempt is not retried every beat.
-
         Args:
-            target: A name for what asked, latched like a version target.
+            target: A name for what asked, latched like a version target so
+                a failed attempt is not retried on every connection.
         """
         with self._lock:
             if target == self._update_target:
@@ -583,6 +622,11 @@ class Agent:
         kind = self_update.package_kind(self._engine.platform_tuple)
         if not kind:
             self._log("no reinstall: no package for this platform")
+            with self._lock:
+                self._update_error = {
+                    "code": "agent_package_missing",
+                    "params": {"target": target},
+                }
             return
         self._log("reinstalling from the hub's package")
         try:
@@ -610,14 +654,8 @@ class Agent:
     def _maybe_self_update(self, hub_version: str) -> None:
         """Update this agent when the hub runs a later release, once per target.
 
-        The hub and the agent share a version, so a heartbeat reply naming a
-        later ``hub_version`` means this machine's package is behind. The
-        install is launched detached and restarts the agent's own service; a
-        target that failed is remembered and not retried until the hub
-        reports a different one.
-
         Args:
-            hub_version: What the heartbeat reply named.
+            hub_version: What the welcome named.
         """
         with self._lock:
             if not hub_version or hub_version == self._update_target:

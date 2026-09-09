@@ -17,6 +17,7 @@ netlink socket. Those skip with a reason rather than failing.
 import os
 import secrets
 import subprocess
+import threading
 
 import pytest
 
@@ -55,6 +56,36 @@ def unlock_vault(monkeypatch, tmp_path) -> bytes:
     (state / "vault.key").write_text(data_key.hex() + "\n")
     monkeypatch.setattr("neutrino_hub.utils.constants.UTILS_STATE_ROOT", state)
     return data_key
+
+
+class FakeAgentSessions:
+    """The live-socket registry as routes see it: who is online, what ran."""
+
+    def __init__(self, online=()):
+        self.online = {key.lower() for key in online}
+        self.commands: list = []
+        self.closed: list = []
+
+    def is_online(self, key: str) -> bool:
+        return key.lower() in self.online
+
+    def keys(self) -> list:
+        return sorted(self.online)
+
+    def run_command_from_thread(
+        self, key, action, args=None, on_line=None, timeout=None
+    ) -> dict:
+        self.commands.append((key.lower(), action, dict(args or {})))
+        return {"exit_code": 0, "code": "", "params": {}, "output": ""}
+
+    def close_from_thread(self, key, code, reason="") -> None:
+        self.closed.append((key.lower(), code, reason))
+        self.online.discard(key.lower())
+
+
+def holding_dispatch(order) -> None:
+    """A dispatch that keeps an order open for a moment and never answers."""
+    threading.Event().wait(2.0)
 
 
 # --- Builders for configuration ---------------------------------------------

@@ -3,7 +3,8 @@
 Three things break independently, and a device missing from the panel looks
 the same for all three: the machine never joined, the service is not
 running, or the hub cannot be reached. The running service is asked first
-over its socket; the binding file answers only when nothing does.
+over its socket; the binding file answers only when nothing does, and then
+status connects once itself to see whether the hub welcomes this machine.
 """
 
 import pytest
@@ -74,7 +75,9 @@ def running_service(service_stack, monkeypatch):
 def test_status_reads_the_running_service_for_a_privileged_caller(
     running_service, config_path, capsys
 ):
+    server, _ = running_service
     bind(config_path, url=GATEWAY_URL)
+    server._agent.is_socket_open = True
 
     assert status_cli.main() == 0
 
@@ -82,23 +85,35 @@ def test_status_reads_the_running_service_for_a_privileged_caller(
     assert f"neutrino-agent {AGENT_VERSION}" in out
     assert f"hub        {GATEWAY_URL}   connected" in out
     assert "service    running" in out
-    assert "heartbeat  ok. The service reports every few seconds" in out
+    assert "heartbeat  ok. The service holds its socket to the hub" in out
 
 
-def test_status_falls_back_to_the_binding_file_and_beats_once(
+def test_status_says_when_the_running_service_is_still_connecting(
+    running_service, config_path, capsys
+):
+    server, _ = running_service
+    bind(config_path, url=GATEWAY_URL)
+    server._agent.is_socket_open = False
+
+    assert status_cli.main() == 1
+
+    out = capsys.readouterr().out
+    assert "heartbeat  connecting. The service is reaching the hub" in out
+
+
+def test_status_falls_back_to_the_binding_file_and_connects_once(
     tmp_path, config_path, monkeypatch, capsys
 ):
     bind(config_path, url=GATEWAY_URL)
     serve_nothing(monkeypatch, tmp_path)
-    beats = []
+    probes = []
 
     class ProbingAgent:
         def __init__(self, *, log):
             del log
 
-        def run_once(self) -> int:
-            beats.append("beat")
-            return 5
+        def probe(self) -> None:
+            probes.append("probe")
 
         def last_error(self):
             return None
@@ -108,12 +123,12 @@ def test_status_falls_back_to_the_binding_file_and_beats_once(
     assert status_cli.main() == 0
 
     out = capsys.readouterr().out
-    assert beats == ["beat"]
+    assert probes == ["probe"]
     assert f"hub        {GATEWAY_URL}   connected" in out
-    assert "service    inactive. The machine beats only while status runs" in out
+    assert "service    inactive. The machine reports only while it runs" in out
     assert "sudo systemctl enable --now neutrino_agent.service" in out
     assert "heartbeat  ok," in out
-    assert "Next report in 5s" in out
+    assert "The hub answered this machine's hello" in out
 
 
 def test_status_says_a_privileged_caller_has_joined_nothing(
@@ -175,8 +190,8 @@ def test_status_words_every_heartbeat_refusal(
         def __init__(self, *, log):
             del log
 
-        def run_once(self) -> int:
-            return 5
+        def probe(self) -> None:
+            return None
 
         def last_error(self):
             return error
@@ -200,8 +215,8 @@ def test_status_words_a_version_refusal_distinctly(
         def __init__(self, *, log):
             del log
 
-        def run_once(self) -> int:
-            return 5
+        def probe(self) -> None:
+            return None
 
         def last_error(self):
             return {
