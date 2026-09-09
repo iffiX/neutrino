@@ -254,3 +254,34 @@ def test_a_state_that_never_settles_refuses_the_command_typed():
 
     assert (outcome.exit_code, outcome.code) == (1, "state_not_settled")
     assert outcome.params == {"module": "samba"}
+
+
+def test_a_module_command_that_succeeded_reports_its_module_again():
+    changed = []
+    subject = DeviceOperator(
+        platform=PowerPlatform(),
+        module_runners={"samba": FakeRunner()},
+        on_module_changed=changed.append,
+    )
+
+    subject.run("samba_set_password", {"name": "test", "password": "x"})
+
+    assert changed == ["samba"]
+
+
+class RefusingRunner(FakeRunner):
+    def command(self, action, args, on_line=None):
+        return {"exit_code": 1, "code": "user_unknown", "params": {}, "output": ""}
+
+
+def test_a_module_command_that_failed_reports_nothing_again():
+    changed = []
+    subject = DeviceOperator(
+        platform=PowerPlatform(),
+        module_runners={"samba": RefusingRunner()},
+        on_module_changed=changed.append,
+    )
+
+    subject.run("samba_set_password", {"name": "test", "password": "x"})
+
+    assert changed == []

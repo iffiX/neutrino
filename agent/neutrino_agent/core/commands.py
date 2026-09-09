@@ -100,6 +100,7 @@ class DeviceOperator:
         module_runners=None,
         remote_desktop=None,
         settle=None,
+        on_module_changed=None,
     ):
         """
         Args:
@@ -110,6 +111,8 @@ class DeviceOperator:
             settle: Called with a timeout before a module command runs, to
                 let a pending desired state apply first; None waits for
                 nothing.
+            on_module_changed: Called with the module name after one of its
+                commands succeeded, so its details are read again at once.
             module_runners: Module name to its runner, for the actions a
                 module answers. None refuses every module action.
             remote_desktop: The reader the remote desktop actions run on.
@@ -117,6 +120,7 @@ class DeviceOperator:
         """
         self._platform = platform
         self._settle = settle
+        self._on_module_changed = on_module_changed
         self._reinstall = reinstall
         self._module_runners = dict(module_runners or {})
         self._remote_desktop = remote_desktop or RemoteDesktopReader(platform=platform)
@@ -186,6 +190,8 @@ class DeviceOperator:
                 code="agent_internal",
                 params={"error": type(error).__name__},
             )
+        if int(outcome.get("exit_code", 1)) == 0 and self._on_module_changed:
+            self._on_module_changed(module)
         return CommandOutcome(
             exit_code=int(outcome.get("exit_code", 1)),
             output=str(outcome.get("output", "") or "")[-AGENT_OUTPUT_LIMIT_BYTES:],

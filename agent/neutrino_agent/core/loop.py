@@ -623,6 +623,7 @@ class Agent:
                     reinstall=self._reinstall,
                     module_runners=self._engine.module_runners,
                     settle=self._desired.settle,
+                    on_module_changed=lambda module: self._engine.refresh_now(),
                 )
             else:
                 self._channel = None
