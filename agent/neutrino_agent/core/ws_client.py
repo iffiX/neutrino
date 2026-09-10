@@ -13,9 +13,11 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+import select
 import socket
 import struct
 import threading
+import time
 
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import (
@@ -34,6 +36,9 @@ from neutrino_agent.core.channel import (
     error_detail,
     pinned_socket,
 )
+
+# How long one wait for bytes lasts before the socket is looked at again.
+WAIT_TURN_S = 0.5
 
 OPCODE_CONTINUATION = 0x0
 OPCODE_TEXT = 0x1
@@ -263,7 +268,9 @@ class WebSocketClient:
         self._silence_timeout_s = silence_timeout_s
         self._sock: "socket.socket | None" = None
         self._buffer = b""
-        self._write_lock = threading.Lock()
+        # One TLS socket, two threads: the reader waits for bytes with the
+        # lock released and holds it only to read; every write holds it.
+        self._io_lock = threading.RLock()
         self._fragments: list = []
         self._fragment_opcode = 0
 
@@ -381,7 +388,7 @@ class WebSocketClient:
         if sock is None:
             raise GatewayUnreachable("the socket is closed")
         frame = encode_frame(opcode, payload, mask_key=os.urandom(4))
-        with self._write_lock:
+        with self._io_lock:
             try:
                 sock.sendall(frame)
             except OSError as error:
@@ -402,8 +409,14 @@ class WebSocketClient:
             sock = self._sock
             if sock is None:
                 raise GatewayUnreachable("the socket is closed")
+            if not self._wait_readable(sock):
+                self._drop()
+                raise GatewayUnreachable(
+                    f"no frame from gateway in {self._silence_timeout_s}s"
+                )
             try:
-                chunk = sock.recv(65536)
+                with self._io_lock:
+                    chunk = sock.recv(65536)
             except socket.timeout as error:
                 self._drop()
                 raise GatewayUnreachable(
@@ -416,6 +429,35 @@ class WebSocketClient:
                 self._drop()
                 raise GatewayUnreachable("gateway hung up")
             self._buffer += chunk
+
+    def _wait_readable(self, sock) -> bool:
+        """Wait, without the lock, until a read would find bytes.
+
+        Args:
+            sock: The open socket. One without a descriptor is read at once.
+
+        Returns:
+            False when the silence timeout passed first.
+        """
+        if not hasattr(sock, "fileno"):
+            return True
+        pending = getattr(sock, "pending", None)
+        if pending is not None and pending() > 0:
+            return True
+        # Waited in short turns: a socket another thread closed does not
+        # wake a pending select on Windows, and a closing resident must
+        # not wait out the silence timeout for its reader.
+        deadline = time.monotonic() + self._silence_timeout_s
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            try:
+                ready, _, _ = select.select([sock], [], [], min(remaining, WAIT_TURN_S))
+            except (OSError, ValueError):
+                return True
+            if ready or self._sock is None:
+                return True
 
     def _assemble(self, frame: Frame) -> "tuple[str, object] | None":
         """Put fragments together; a whole message comes back as one."""
@@ -449,7 +491,7 @@ class WebSocketClient:
         if sock is None:
             return
         payload = struct.pack("!H", code) + reason.encode("utf-8")[:120]
-        with self._write_lock:
+        with self._io_lock:
             try:
                 sock.sendall(
                     encode_frame(OPCODE_CLOSE, payload, mask_key=os.urandom(4))
@@ -459,9 +501,18 @@ class WebSocketClient:
         self._drop()
 
     def _drop(self) -> None:
-        sock = self._sock
-        self._sock = None
-        if sock is not None:
+        with self._io_lock:
+            sock = self._sock
+            self._sock = None
+            if sock is None:
+                return
+            # The shutdown is what wakes a reader waiting on the socket
+            # from another thread; a close alone leaves it waiting on
+            # Windows.
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
             try:
                 sock.close()
             except OSError:

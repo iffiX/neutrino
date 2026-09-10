@@ -36,5 +36,5 @@ echo "== fetching to dist/"
 mkdir -p "$REPO/dist"
 scp "${SSH_OPTS[@]}" "$WIN_USER@$(win_ip):C:/neutrino/dist/*.msi" "$REPO/dist/"
 ls -la "$REPO"/dist/*.msi
-basename "$(ls "$REPO"/dist/*amd64.msi | head -1)" > "$STATE/msi_name"
+basename "$(ls "$REPO"/dist/neutrino-client-*amd64.msi | head -1)" > "$STATE/msi_name"
 echo "built: $(state msi_name)"

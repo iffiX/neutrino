@@ -240,3 +240,7 @@ def test_the_rpm_owns_the_desktop_host_it_carries():
 def test_the_packages_replace_the_upstream_rustdesk_package():
     assert "Conflicts: rustdesk\nReplaces: rustdesk\n" in build_deb.CONTROL
     assert "Conflicts:      rustdesk" in build_rpm.SPEC
+
+
+def test_the_rpm_build_allows_the_viewers_upstream_runpath_and_nothing_else():
+    assert build_rpm.RPMBUILD_ENVIRONMENT == {"QA_RPATHS": "0x0002"}

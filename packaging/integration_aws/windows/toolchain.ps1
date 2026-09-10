@@ -43,6 +43,11 @@ if (-not (Test-Path "$toolsHome\wix.exe")) {
 }
 wix --version
 
+# CloseApplication comes from the Util extension, whose own 7 does not load
+# in WiX 6.
+Write-Host "== WiX Util extension $wixVersion"
+wix extension add -g "WixToolset.Util.wixext/$wixVersion"
+
 # The next SSH session must find all of it too.
 $machinePath = [Environment]::GetEnvironmentVariable('PATH', 'Machine')
 foreach ($dir in @($pythonHome, "$pythonHome\Scripts", $dotnetHome, $toolsHome)) {

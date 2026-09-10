@@ -52,8 +52,13 @@ scp_hub() { scp "${SSH_OPTS[@]}" "$@"; }
 
 # The tracked tree and nothing else: no .venv, no node_modules, no local
 # dist/, so a rented box builds what a checkout would.
+# The working tree as it stands: tracked and untracked files that exist,
+# nothing ignored.
 pack_tree() {
-    (cd "$REPO" && git ls-files -z | tar --null -T - -czf "$STATE/src.tgz")
+    (cd "$REPO" && git ls-files -z --cached --others --exclude-standard \
+        | while IFS= read -r -d '' file; do
+            [ -f "$file" ] && printf '%s\0' "$file"
+        done | tar --null -T - -czf "$STATE/src.tgz")
 }
 
 # The panel on the hub, one signed-in session per call.

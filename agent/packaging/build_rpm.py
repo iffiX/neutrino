@@ -14,6 +14,7 @@ Not pure: writes a package tree and runs rpmbuild.
 
 import argparse
 import shutil
+import os
 import subprocess
 import sys
 import tempfile
@@ -136,6 +137,11 @@ exec {python}/bin/python3 -m neutrino_agent.cli.entry "$@"
 """
 
 
+# RustDesk's Flutter plugins carry the runpath of upstream's build tree;
+# rpm's check refuses a path that exists nowhere, and the loader ignores it.
+RPMBUILD_ENVIRONMENT = {"QA_RPATHS": "0x0002"}
+
+
 def main() -> int:
     """Build the package.
 
@@ -256,6 +262,7 @@ def _build(
         ],
         capture_output=True,
         text=True,
+        env={**os.environ, **RPMBUILD_ENVIRONMENT},
     )
     if result.returncode != 0:
         raise SystemExit((result.stderr or result.stdout).strip())

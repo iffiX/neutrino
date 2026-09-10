@@ -1,6 +1,6 @@
-# Runs on the Windows box. Builds the installer from the tree pushed to
-# C:\neutrino\src, exactly as the release workflow does: both architectures,
-# the arm64 one built but never installed here.
+# Runs on the Windows box. Builds the client installer from the tree pushed
+# to C:\neutrino\src, exactly as the release workflow does. x64 only: the
+# viewer and cc-switch upstream publish no Windows arm64 build.
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -13,10 +13,15 @@ $dist = 'C:\neutrino\dist'
 New-Item -Force -ItemType Directory -Path $dist | Out-Null
 Remove-Item "$dist\*.msi" -ErrorAction SilentlyContinue
 
-Set-Location $src
-foreach ($arch in @('x64', 'arm64')) {
-    Write-Host "== building $arch"
-    python agent\packaging\build_msi.py --output-dir $dist --architecture $arch
-    if ($LASTEXITCODE -ne 0) { throw "build_msi.py failed for $arch" }
+# A fresh image trusts no GitHub root until Windows has fetched it; one
+# request per host through schannel does that, and Python's own client then
+# verifies the release assets it downloads.
+foreach ($origin in @('https://github.com/', 'https://objects.githubusercontent.com/', 'https://release-assets.githubusercontent.com/')) {
+    try { Invoke-WebRequest $origin -Method Head -UseBasicParsing | Out-Null } catch {}
 }
+
+Set-Location $src
+Write-Host "== building x64"
+python client\packaging\build_msi.py --output-dir $dist --architecture x64
+if ($LASTEXITCODE -ne 0) { throw "build_msi.py failed" }
 Get-ChildItem $dist | Format-Table Name, Length
