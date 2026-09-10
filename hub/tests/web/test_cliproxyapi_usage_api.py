@@ -12,11 +12,24 @@ from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.clients.registry import Client
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.web.dependencies import require_session
+from neutrino_hub.modules.cliproxyapi import usage_store as usage_store_module
 from neutrino_hub.web.routers import ai as ai_router
 from neutrino_hub.web.routers import cliproxyapi as cliproxyapi_router
 from tests.conftest import unlock_vault
 
+# One moment for the seeded rows and the store's clock alike, so a run
+# that crosses an hour or a day boundary still lands its row in the last
+# bucket.
 NOW = datetime.now(timezone.utc)
+
+
+class FrozenDatetime(datetime):
+    """The store's clock, stopped at NOW."""
+
+    @classmethod
+    def now(cls, tz=None):
+        return NOW if tz is None else NOW.astimezone(tz)
+
 
 # One signed-in account, as GET /v0/management/auth-files reports it, trimmed
 # to what the usage answer reads.
@@ -79,6 +92,7 @@ def gateway(monkeypatch):
 
 @pytest.fixture
 def client(monkeypatch, tmp_path, gateway):
+    monkeypatch.setattr(usage_store_module, "datetime", FrozenDatetime)
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
     unlock_vault(monkeypatch, tmp_path)
     monkeypatch.setattr(cliproxyapi_router, "ClientRegistry", StubClientRegistry)
