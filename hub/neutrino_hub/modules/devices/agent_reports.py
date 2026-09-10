@@ -11,10 +11,7 @@ key, the first time it says so.
 
 import ipaddress
 
-from neutrino_hub.modules.devices.agent_sessions import (
-    AgentOfflineError,
-    StreamRefusedError,
-)
+from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_STATE_INSTALLED,
     DEVICE_RDP_MODULE,

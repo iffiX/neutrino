@@ -12,8 +12,8 @@ import threading
 import pytest
 
 from neutrino_agent.core.engine import ModuleEngine
-from neutrino_agent.modules.installers import InstallError
-from neutrino_agent.platforms.base import AgentPlatform, PlatformUnsupportedError
+from neutrino_agent.exceptions import InstallError, PlatformUnsupportedError
+from neutrino_agent.platforms.base import AgentPlatform
 
 DEB_ENTRY = {"package_kind": "deb", "uninstall": "apt-get remove -y fakedesk"}
 

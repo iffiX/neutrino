@@ -24,12 +24,8 @@ from neutrino_client.constants import (
     CLIENT_CONTROL_PIPE_PREFIX,
 )
 from neutrino_client.platforms import win32
-from neutrino_client.platforms.base import (
-    ClientPlatform,
-    PlatformUnsupportedError,
-    ShareAttachError,
-    run_quietly,
-)
+from neutrino_client.exceptions import PlatformUnsupportedError, ShareAttachError
+from neutrino_client.platforms.base import ClientPlatform, run_quietly
 from neutrino_client.platforms.windows_console import WindowsConsoleApi
 from neutrino_client.platforms.windows_identity import WindowsIdentityApi
 

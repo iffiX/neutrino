@@ -23,11 +23,9 @@ from pathlib import Path
 
 import asyncssh
 
-from neutrino_hub.modules.credentials.vault import SecretVault, VaultError
-from neutrino_hub.modules.devices.agent_package import (
-    AgentPackageCache,
-    AgentPackageFetchError,
-)
+from neutrino_hub.exceptions import AgentArtifactFetchError
+from neutrino_hub.modules.credentials.vault import SecretVault
+from neutrino_hub.modules.devices.agent_package import AgentPackageCache
 from neutrino_hub.modules.devices.constants import (
     SSH_UNREACHABLE_STATUS,
     SSH_UNSUPPORTED_OS_STATUS,
@@ -91,7 +89,7 @@ def login_password(login_id: str | None) -> str | None:
         return None
     try:
         return vault.open(login_id).get("password")
-    except VaultError:
+    except ValueError:
         return None
 
 
@@ -417,7 +415,7 @@ class DeviceSshOperator:
                 yield f"[uploading {package_path.name}]\n"
                 async with connection.start_sftp_client() as sftp:
                     await sftp.put(str(package_path), remote_package)
-        except AgentPackageFetchError as error:
+        except AgentArtifactFetchError as error:
             platform = error.params.get("platform", "this machine")
             yield f"\n[the agent package for {platform} could not be produced: "
             yield f"{error.code}]\n"

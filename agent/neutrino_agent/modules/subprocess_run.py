@@ -2,8 +2,9 @@
 
 Every module applier drives the machine through ``systemctl``, ``smbpasswd``,
 ``zpool`` and the like. One helper runs them all: checked by default, so a
-refusal raises with the command's own complaint, and unchecked where the
-caller reads the exit status itself.
+non-zero exit raises ``subprocess.CalledProcessError`` carrying the
+command's own complaint, and unchecked where the caller reads the exit
+status itself.
 
 Not pure: runs commands.
 """
@@ -18,20 +19,6 @@ from dataclasses import dataclass
 from neutrino_agent.constants import AGENT_MODULE_OUTPUT_LIMIT_BYTES
 
 RUN_TIMEOUT_S = 120
-
-
-class CommandError(RuntimeError):
-    """Raised when a checked command fails or cannot run.
-
-    Attributes:
-        command: The argument vector.
-        detail: The command's own complaint, bounded.
-    """
-
-    def __init__(self, command: list, detail: str):
-        super().__init__(f"{command[0]} failed: {detail}")
-        self.command = list(command)
-        self.detail = detail
 
 
 @dataclass
@@ -75,19 +62,19 @@ def run(
         The result.
 
     Raises:
-        CommandError: When the command fails and ``is_checked`` is set, or
-            when it cannot run at all.
+        subprocess.CalledProcessError: When the command exits non-zero and
+            ``is_checked`` is set.
+        subprocess.SubprocessError: When the command does not finish, a
+            timeout included.
+        OSError: When the command cannot be started at all.
     """
-    try:
-        completed = subprocess.run(
-            command,
-            input=input_text,
-            capture_output=True,
-            text=True,
-            timeout=timeout_s,
-        )
-    except (OSError, subprocess.SubprocessError) as error:
-        raise CommandError(command, str(error)[:AGENT_MODULE_OUTPUT_LIMIT_BYTES])
+    completed = subprocess.run(
+        command,
+        input=input_text,
+        capture_output=True,
+        text=True,
+        timeout=timeout_s,
+    )
     result = CommandResult(
         command=list(command),
         exit_code=completed.returncode,
@@ -95,9 +82,29 @@ def run(
         stderr=completed.stderr or "",
     )
     if is_checked and not result.is_success:
-        detail = (result.stderr or result.stdout).strip()
-        raise CommandError(command, detail[-AGENT_MODULE_OUTPUT_LIMIT_BYTES:])
+        raise subprocess.CalledProcessError(
+            result.exit_code,
+            list(command),
+            output=result.stdout,
+            stderr=result.stderr,
+        )
     return result
+
+
+def command_detail(error: BaseException) -> str:
+    """The bounded complaint one failed command left.
+
+    Args:
+        error: What running the command raised.
+
+    Returns:
+        The command's own words for a non-zero exit, its failure to start
+        otherwise.
+    """
+    if isinstance(error, subprocess.CalledProcessError):
+        text = (error.stderr or error.output or "").strip()
+        return text[-AGENT_MODULE_OUTPUT_LIMIT_BYTES:]
+    return str(error)[:AGENT_MODULE_OUTPUT_LIMIT_BYTES]
 
 
 def unit_state(unit: str) -> str:
@@ -111,5 +118,5 @@ def unit_state(unit: str) -> str:
     """
     try:
         return run(["systemctl", "is-active", unit], is_checked=False).stdout.strip()
-    except CommandError:
+    except (OSError, subprocess.SubprocessError):
         return ""

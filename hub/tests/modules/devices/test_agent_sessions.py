@@ -15,11 +15,10 @@ import threading
 import pytest
 
 from neutrino_hub.modules.devices import agent_sessions
+from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.devices.agent_sessions import (
-    AgentOfflineError,
     AgentSession,
     AgentSessionRegistry,
-    StreamRefusedError,
 )
 from neutrino_hub.modules.devices.constants import (
     AGENT_SESSION_KIND_AGENT,

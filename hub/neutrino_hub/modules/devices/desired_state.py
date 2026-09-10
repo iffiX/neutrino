@@ -20,7 +20,6 @@ import shutil
 import string
 
 from neutrino_hub.modules.credentials.vault import (
-    VaultError,
     seal_bytes,
     unseal_bytes,
 )
@@ -172,7 +171,7 @@ class DesiredStateStore:
             return ""
         try:
             return unseal_bytes(sealed, DEVICE_RDP_SEAT_PASSWORD_AAD).decode()
-        except VaultError:
+        except ValueError:
             return ""
 
     def ensure_seat_password(self, key: str) -> bool:
@@ -191,7 +190,7 @@ class DesiredStateStore:
                 return False
             try:
                 self._write_seat_password(key)
-            except VaultError:
+            except ValueError:
                 return False
         return True
 

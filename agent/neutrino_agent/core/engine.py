@@ -29,14 +29,13 @@ from neutrino_agent.constants import (
     AGENT_MODULE_OUTPUT_LIMIT_BYTES,
     AGENT_RUSTDESK_BINARY_PATH,
 )
+from neutrino_agent.exceptions import InstallError, PlatformUnsupportedError
 from neutrino_agent.modules.gitea.runner import GiteaModuleRunner
-from neutrino_agent.modules.installers import InstallError
 from neutrino_agent.modules.package import PackageModuleRunner
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
 from neutrino_agent.modules.samba.runner import SambaModuleRunner
 from neutrino_agent.modules.system_package import SystemPackageModuleRunner
 from neutrino_agent.modules.zfs.runner import ZfsModuleRunner
-from neutrino_agent.platforms.base import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import platform_tuple
 
 # How often to re-check inputs that have not changed. Every heartbeat wakes

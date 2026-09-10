@@ -15,7 +15,6 @@ from neutrino_hub.modules.cliproxyapi.ops import (
     load_config,
     save_config,
 )
-from neutrino_hub.modules.credentials.vault import VaultError
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 
 
@@ -35,11 +34,11 @@ def ensure_client_key(registry: ClientRegistry, client: Client) -> "str | None":
         if held is not None:
             try:
                 return held.open_key()
-            except VaultError:
+            except ValueError:
                 return None
         try:
             key = CliproxyApiClientKey.generated(_label(client))
-        except VaultError:
+        except ValueError:
             return None
         config.client_keys.append(key)
         save_config(config)

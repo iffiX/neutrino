@@ -17,7 +17,7 @@ import re
 import sys
 
 from neutrino_client.control import client
-from neutrino_client.platforms.base import PlatformUnsupportedError
+from neutrino_client.exceptions import PlatformUnsupportedError
 from neutrino_client.platforms.detect import detect_platform
 
 NOT_JOINED = "this person has joined no hub"

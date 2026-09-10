@@ -1,12 +1,13 @@
 """The file share runner: validate, apply, stop, details and the command."""
 
+import subprocess
+
 import pytest
 
-from neutrino_agent.modules.base import ModuleApplyError
+from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.samba import runner as runner_module
 from neutrino_agent.modules.samba.applier import SambaUserState
 from neutrino_agent.modules.samba.runner import SambaModuleRunner
-from neutrino_agent.modules.subprocess_run import CommandError
 from neutrino_agent.platforms.base import AgentPlatform
 
 CONFIG = {
@@ -122,7 +123,7 @@ def test_apply_renders_applies_and_keeps_the_configuration(runner):
 
 def test_a_refused_apply_is_typed(runner, monkeypatch):
     def refuse(self, rendered, *, config):
-        raise CommandError(["systemctl"], "no unit")
+        raise subprocess.CalledProcessError(1, ["systemctl"], stderr="no unit")
 
     monkeypatch.setattr(FakeApplier, "apply", refuse)
 
@@ -170,7 +171,9 @@ def test_the_password_command_lands_only_on_a_configured_user(runner):
 
 def test_a_refused_password_is_typed(runner):
     runner.apply(CONFIG)
-    FakeUsers.error = CommandError(["smbpasswd"], "no such user")
+    FakeUsers.error = subprocess.CalledProcessError(
+        1, ["smbpasswd"], stderr="no such user"
+    )
 
     outcome = runner.command("samba_set_password", {"name": "ann", "password": "x"})
 

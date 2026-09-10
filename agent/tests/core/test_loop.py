@@ -13,7 +13,6 @@ import os
 
 import pytest
 
-import neutrino_agent.core.channel as channel
 import neutrino_agent.core.loop as loop_module
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import (
@@ -23,16 +22,21 @@ from neutrino_agent.constants import (
     AGENT_WIRE_GENERATION,
     AGENT_WS_PATH,
 )
-from neutrino_agent.core import self_update
 from neutrino_agent.core.loop import IDLE_POLL_INTERVAL_S, Agent
 from neutrino_agent.core.metrics import HostMetrics
-from neutrino_agent.core.ws_client import SocketClosed
-from neutrino_agent.platforms.base import AgentPlatform, PlatformUnsupportedError
+from neutrino_agent.exceptions import (
+    GatewayUnreachable,
+    GatewayUntrusted,
+    PlatformUnsupportedError,
+    SelfUpdateError,
+    SocketClosed,
+)
+from neutrino_agent.platforms.base import AgentPlatform
 from tests.conftest import bind
 from tests.core.test_session import ScriptedClient
 
 WELCOME = {"type": "welcome", "hub_version": "0.0.1", "device_id": "d"}
-HUNG_UP = channel.GatewayUnreachable("hung up")
+HUNG_UP = GatewayUnreachable("hung up")
 # A script entry: the hub hangs up once the first report has gone up.
 DROP_AFTER_REPORT = object()
 
@@ -375,7 +379,7 @@ def test_the_last_error_rides_the_next_connections_report(config_path, monkeypat
     agent, script = scripted_agent(
         config_path,
         monkeypatch,
-        [channel.GatewayUnreachable("gone"), welcomed_then_dropped()],
+        [GatewayUnreachable("gone"), welcomed_then_dropped()],
     )
 
     agent.run_once()
@@ -425,7 +429,7 @@ def test_mixed_rejection_kinds_total_to_an_unbind(config_path, monkeypatch):
         config_path,
         monkeypatch,
         [
-            channel.GatewayUntrusted("wrong pin"),
+            GatewayUntrusted("wrong pin"),
             refused(4409, "agent_newer_than_hub"),
             refused(4401, "unknown_token"),
         ],
@@ -444,8 +448,8 @@ def test_an_unreachable_connect_neither_counts_nor_resets(config_path, monkeypat
         monkeypatch,
         [
             refused(4401, "x"),
-            channel.GatewayUnreachable("gone"),
-            channel.GatewayUnreachable("gone"),
+            GatewayUnreachable("gone"),
+            GatewayUnreachable("gone"),
             refused(4401, "x"),
         ],
     )
@@ -463,7 +467,7 @@ def test_a_welcome_resets_the_rejection_count_and_the_backoff(config_path, monke
         monkeypatch,
         [
             refused(4401, "x"),
-            channel.GatewayUnreachable("gone"),
+            GatewayUnreachable("gone"),
             welcomed_then_dropped(),
             refused(4401, "x"),
             refused(4401, "x"),
@@ -547,11 +551,11 @@ def test_a_stale_wire_answer_reinstalls_and_never_unbinds(config_path, monkeypat
     ("error", "code"),
     [
         (
-            self_update.SelfUpdateError("agent_package_digest_mismatch"),
+            SelfUpdateError("agent_package_digest_mismatch"),
             "agent_package_digest_mismatch",
         ),
         (
-            channel.GatewayUnreachable("cannot reach gateway: gone"),
+            GatewayUnreachable("cannot reach gateway: gone"),
             "agent_update_fetch_failed",
         ),
     ],

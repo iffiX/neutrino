@@ -15,7 +15,7 @@ import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 
-from neutrino_hub.modules.credentials.vault import VaultLockedError
+from neutrino_hub.exceptions import VaultLockedError
 from neutrino_hub.web.agent_tls import (
     certificate_fingerprint,
     ensure_certificate,

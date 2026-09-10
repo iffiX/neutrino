@@ -22,10 +22,6 @@ DEV_ROOT_NAME = "hub_dev_root"
 DEV_PROJECT_FILE = "pyproject.toml"
 
 
-class NoWorkingCopy(RuntimeError):
-    """``--dev`` was asked for by a hub that came from a package."""
-
-
 def enter() -> Path:
     """Point this process at the working copy's development root.
 
@@ -38,7 +34,7 @@ def enter() -> Path:
         The root now in force.
 
     Raises:
-        NoWorkingCopy: When there is no checkout to keep a root beside.
+        FileNotFoundError: When there is no checkout to keep a root beside.
     """
     named = os.environ.get(DEV_ROOT_ENV)
     if named:
@@ -56,11 +52,11 @@ def checkout_root() -> Path:
         The directory holding ``hub/``.
 
     Raises:
-        NoWorkingCopy: When there is no project beside the package.
+        FileNotFoundError: When there is no project beside the package.
     """
     package_root = Path(__file__).resolve().parent.parent
     if not (package_root.parent / DEV_PROJECT_FILE).is_file():
-        raise NoWorkingCopy(
+        raise FileNotFoundError(
             "--dev runs from a working copy, and this hub came from a package"
         )
     return package_root.parent.parent

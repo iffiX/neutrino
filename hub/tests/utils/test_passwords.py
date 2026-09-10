@@ -2,12 +2,12 @@
 
 import pytest
 
+from neutrino_hub.exceptions import PasswordRefusedError
 from neutrino_hub.utils.passwords import (
     PASSWORDS_ERROR_MISSING_CLASSES,
     PASSWORDS_ERROR_TOO_SHORT,
     PASSWORDS_MASTER_RULES,
     PASSWORDS_PANEL_RULES,
-    PasswordRuleError,
     entropy_bits,
     validate,
 )
@@ -18,7 +18,7 @@ def test_the_panel_rules_take_length_alone():
 
 
 def test_the_panel_rules_refuse_a_short_password():
-    with pytest.raises(PasswordRuleError) as refusal:
+    with pytest.raises(PasswordRefusedError) as refusal:
         validate("seven77", PASSWORDS_PANEL_RULES)
     assert refusal.value.code == PASSWORDS_ERROR_TOO_SHORT
     assert refusal.value.params == {"min_length": PASSWORDS_PANEL_RULES.min_length}
@@ -29,7 +29,7 @@ def test_the_master_rules_need_sixteen_and_every_class():
 
 
 def test_the_master_rules_refuse_a_short_passphrase_by_length_first():
-    with pytest.raises(PasswordRuleError) as refusal:
+    with pytest.raises(PasswordRefusedError) as refusal:
         validate("Aa1!aa", PASSWORDS_MASTER_RULES)
     assert refusal.value.code == PASSWORDS_ERROR_TOO_SHORT
 
@@ -44,7 +44,7 @@ def test_the_master_rules_refuse_a_short_passphrase_by_length_first():
     ],
 )
 def test_the_master_rules_name_every_missing_class(candidate, missing):
-    with pytest.raises(PasswordRuleError) as refusal:
+    with pytest.raises(PasswordRefusedError) as refusal:
         validate(candidate, PASSWORDS_MASTER_RULES)
     assert refusal.value.code == PASSWORDS_ERROR_MISSING_CLASSES
     assert refusal.value.params["classes"] == missing

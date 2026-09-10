@@ -30,6 +30,7 @@ from neutrino_agent.constants import (
     AGENT_UPDATE_LAUNCH_TIMEOUT_S,
     AGENT_UPDATE_UNIT,
 )
+from neutrino_agent.exceptions import SelfUpdateError
 
 FAMILY_TO_PACKAGE_KIND = {"debian": "deb", "rhel": "rpm"}
 
@@ -44,10 +45,6 @@ _RESULT_HEAD = (
     '"finished_at":"%s","exit_code":%s,"output":"'
     "'"
 )
-
-
-class SelfUpdateError(RuntimeError):
-    """Raised when the update cannot be fetched, verified, or launched."""
 
 
 def package_kind(platform: dict) -> str:

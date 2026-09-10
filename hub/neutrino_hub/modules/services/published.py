@@ -21,7 +21,6 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_BINARY_PATH,
 )
 from neutrino_hub.modules.cliproxyapi.ops import load_config as load_cliproxyapi_config
-from neutrino_hub.modules.credentials.vault import VaultError
 from neutrino_hub.modules.devices.constants import DEVICE_MODULE_NAMES
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.router import link_status
@@ -349,7 +348,7 @@ class PublishedServiceCache:
             try:
                 key = stored.open_key()
                 break
-            except VaultError:
+            except ValueError:
                 continue
         if key is None or not is_active:
             return config.listen_port, [], is_active

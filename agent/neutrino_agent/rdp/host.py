@@ -29,9 +29,8 @@ import subprocess
 import time
 import uuid
 
+from neutrino_agent.exceptions import InstallError, PlatformUnsupportedError
 from neutrino_agent.modules import rustdesk
-from neutrino_agent.modules.installers import InstallError
-from neutrino_agent.platforms.base import PlatformUnsupportedError
 from neutrino_agent.rdp.constants import (
     RDP_ATTENTION_NOBODY_SEATED,
     RDP_ATTENTION_SCREEN_NOT_ALLOWED,

@@ -19,13 +19,14 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 from dataclasses import dataclass
 
-from neutrino_agent.modules.base import ModuleApplyError
+from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.constants import SAMBA_CONF_PATH, SAMBA_GROUP
-from neutrino_agent.modules.subprocess_run import CommandError, run, unit_state
+from neutrino_agent.modules.subprocess_run import run, unit_state
 
 
 @dataclass
@@ -107,7 +108,7 @@ class SambaUserManager:
             Notes on what was changed, empty when nothing was.
 
         Raises:
-            CommandError: If an account cannot be created or retired.
+            subprocess.CalledProcessError: If an account cannot be created or retired.
         """
         changes = []
         for name in users:
@@ -142,7 +143,7 @@ class SambaUserManager:
                 store and nowhere else.
 
         Raises:
-            CommandError: If Samba refuses.
+            subprocess.CalledProcessError: If Samba refuses.
         """
         run(["smbpasswd", "-s", "-a", name], input_text=f"{password}\n{password}\n")
         run(["smbpasswd", "-e", name])
@@ -185,7 +186,7 @@ class SambaConfigApplier:
 
         Raises:
             ModuleApplyError: If Samba rejects the configuration.
-            CommandError: If the unit will not come up.
+            subprocess.CalledProcessError: If the unit will not come up.
         """
         testparm(rendered)
         self._ensure_share_directories(config)
@@ -237,7 +238,7 @@ class SambaStatusReader:
         """
         try:
             result = run(["smbstatus", "--json"], is_checked=False, timeout_s=15)
-        except CommandError:
+        except (OSError, subprocess.SubprocessError):
             return []
         if not result.is_success:
             return []

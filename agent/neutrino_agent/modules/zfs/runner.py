@@ -11,8 +11,11 @@ Not pure: drives the storage tools through the applier.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
-from neutrino_agent.modules.base import ModuleApplyError, command_outcome
-from neutrino_agent.modules.subprocess_run import CommandError
+import subprocess
+
+from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.modules.base import command_outcome
+from neutrino_agent.modules.subprocess_run import command_detail
 from neutrino_agent.modules.system_package import SystemPackageModuleRunner
 from neutrino_agent.modules.zfs.applier import (
     ZfsDatasetManager,
@@ -72,11 +75,16 @@ class ZfsModuleRunner(SystemPackageModuleRunner):
 
         Args:
             config: The desired configuration, which holds nothing.
+
+        Raises:
+            ModuleApplyError: ``apply_failed`` when the ARC cannot be capped.
         """
         try:
             note = cap_arc()
-        except OSError as error:
-            raise ModuleApplyError("apply_failed", {"detail": str(error)[:500]})
+        except (OSError, subprocess.SubprocessError) as error:
+            raise ModuleApplyError(
+                "apply_failed", {"detail": command_detail(error)[:500]}
+            )
         if note:
             self._log(f"zfs: {note}")
 
@@ -131,8 +139,10 @@ class ZfsModuleRunner(SystemPackageModuleRunner):
             self._run_op(op, fields)
         except ModuleApplyError as error:
             return command_outcome(1, error.code, error.params)
-        except (CommandError, ValueError) as error:
-            detail = error.detail if isinstance(error, CommandError) else str(error)
+        except (OSError, subprocess.SubprocessError, ValueError) as error:
+            detail = (
+                str(error) if isinstance(error, ValueError) else command_detail(error)
+            )
             return command_outcome(1, "command_failed", {"detail": detail[:500]})
         return command_outcome(0, output=f"{op} done\n")
 

@@ -19,15 +19,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 import neutrino_client.core.enrollment as enrollment
-from neutrino_client.core.channel import (
-    GatewayHttpChannel,
+from neutrino_client.core.channel import GatewayHttpChannel
+from neutrino_client.core.session import ClientSession
+from neutrino_client.exceptions import (
     GatewayRefused,
     GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
     GatewayVersionRefused,
 )
-from neutrino_client.core.session import ClientSession
 from tests.conftest import FakeClientPlatform, discard, link_for
 
 WRONG_FINGERPRINT = "0" * 64

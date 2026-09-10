@@ -13,7 +13,7 @@ from __future__ import annotations
 import platform
 import sys
 
-from neutrino_agent.platforms.base import PlatformUnsupportedError
+from neutrino_agent.exceptions import PlatformUnsupportedError
 from neutrino_agent.platforms.linux import LinuxPlatform
 
 OS_RELEASE_PATH = "/etc/os-release"

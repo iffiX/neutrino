@@ -27,14 +27,15 @@ from neutrino_agent.constants import (
     AGENT_WS_CLOSE_UNKNOWN_TOKEN,
     AGENT_WS_SILENCE_TIMEOUT_S,
 )
-from neutrino_agent.core.channel import (
+from neutrino_agent.core.channel import error_detail, pinned_socket
+from neutrino_agent.exceptions import (
     GatewayRefused,
     GatewayRefusedDetail,
     GatewayUnreachable,
+    GatewayUntrusted,
     GatewayVersionRefused,
     GatewayWireStale,
-    error_detail,
-    pinned_socket,
+    SocketClosed,
 )
 
 # How long one wait for bytes lasts before the socket is looked at again.
@@ -72,20 +73,6 @@ class Frame:
         self.opcode = opcode
         self.payload = payload
         self.is_final = is_final
-
-
-class SocketClosed(Exception):
-    """The peer closed the socket.
-
-    Attributes:
-        code: The close code, 1005 when the close frame carried none.
-        reason: The reason text.
-    """
-
-    def __init__(self, code: int, reason: str = ""):
-        super().__init__(f"socket closed ({code}) {reason}".rstrip())
-        self.code = code
-        self.reason = reason
 
 
 def encode_frame(
@@ -294,6 +281,8 @@ class WebSocketClient:
             sock = pinned_socket(
                 self._host, self._port, self._fingerprint, timeout=self._timeout_s
             )
+        except GatewayUntrusted:
+            raise
         except OSError as error:
             raise GatewayUnreachable(f"cannot reach gateway: {error}") from error
         key = base64.b64encode(os.urandom(16)).decode("ascii")
@@ -316,6 +305,9 @@ class WebSocketClient:
             if headers.get("sec-websocket-accept", "") != accept_key(key):
                 sock.close()
                 raise GatewayUnreachable("gateway answered a bad websocket accept")
+        except (GatewayRefused, GatewayUnreachable):
+            sock.close()
+            raise
         except OSError as error:
             sock.close()
             raise GatewayUnreachable(f"websocket handshake failed: {error}") from error

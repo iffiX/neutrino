@@ -11,6 +11,7 @@ Not pure: this runs the client. Parsing what it printed is
 :func:`parse_share_names`, which is.
 """
 
+import subprocess
 from dataclasses import dataclass, field
 from shutil import which
 
@@ -25,7 +26,7 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_SMB_REFUSAL_MARKERS,
     SERVICES_SMBCLIENT_BINARY,
 )
-from neutrino_hub.utils.subprocess_run import CommandError, run
+from neutrino_hub.utils.subprocess_run import run
 
 
 @dataclass
@@ -64,7 +65,7 @@ def list_shares(
             timeout_s=timeout_s,
             is_checked=False,
         )
-    except CommandError:
+    except (subprocess.SubprocessError, OSError):
         return SambaShareListing(error_code=SERVICES_PROBE_CONNECT_FAILED)
     if not result.is_success:
         output = result.stdout + result.stderr

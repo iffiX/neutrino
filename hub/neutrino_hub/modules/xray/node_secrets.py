@@ -6,11 +6,8 @@ share link seals here, and rendering resolves here: the resolution helpers
 read the vault and touch nothing else, so the renderer itself stays pure.
 """
 
-from neutrino_hub.modules.credentials.vault import (
-    SecretVault,
-    VaultError,
-    VaultLockedError,
-)
+from neutrino_hub.exceptions import VaultLockedError
+from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.xray.node_config import XrayNodeConfig, XrayNodeList
 
 
@@ -23,12 +20,12 @@ def store_node_secret(node: XrayNodeConfig, vault: SecretVault | None = None) ->
 
     Raises:
         VaultLockedError: If there is no data key on this box.
-        VaultError: If the node carries no material to seal.
+        ValueError: If the node carries no material to seal.
     """
     vault = vault or SecretVault()
     value = node.password if node.protocol == "shadowsocks" else node.uuid
     if not value:
-        raise VaultError(f"node {node.id!r} carries no secret to seal")
+        raise ValueError(f"node {node.id!r} carries no secret to seal")
     if node.secret_id and vault.get(node.secret_id) is not None:
         vault.replace(node.secret_id, secret={"value": value})
         return
@@ -60,7 +57,7 @@ def resolve_node_secrets(
             value = vault.open(node.secret_id).get("value", "")
         except VaultLockedError:
             return
-        except VaultError:
+        except ValueError:
             continue
         if node.protocol == "shadowsocks":
             node.password = value
@@ -79,6 +76,6 @@ def delete_node_secret(node: XrayNodeConfig, vault: SecretVault | None = None) -
         return
     try:
         (vault or SecretVault()).delete(node.secret_id)
-    except VaultError:
+    except ValueError:
         # An object already gone leaves the node deletable.
         pass

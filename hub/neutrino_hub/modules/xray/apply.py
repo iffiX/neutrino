@@ -11,10 +11,11 @@ listener. A port something else holds passes both and leaves no proxy running.
 """
 
 import json
+import subprocess
 import time
 
 from neutrino_hub.utils.json_file import write_generated
-from neutrino_hub.utils.subprocess_run import CommandError, run
+from neutrino_hub.utils.subprocess_run import command_failure_text, run
 
 from neutrino_hub.modules.xray.output import failure_of, warnings_of
 
@@ -39,9 +40,10 @@ class XrayConfigApplier:
             config: The rendered configuration object.
 
         Raises:
-            CommandError: If xray rejects the configuration, fails to restart,
-                or is gone again a moment later. The previous config file is
-                left in place when validation fails.
+            subprocess.CalledProcessError: If xray rejects the configuration or
+                fails to restart. The previous config file is left in place
+                when validation fails.
+            RuntimeError: If the service is gone again a moment later.
         """
         self.write(config)
         self.restart()
@@ -58,8 +60,8 @@ class XrayConfigApplier:
             config: The rendered configuration object.
 
         Raises:
-            CommandError: If xray rejects the configuration. The previous
-                config file is left in place in that case.
+            subprocess.CalledProcessError: If xray rejects the configuration.
+                The previous config file is left in place in that case.
         """
         self.validate(config)
         write_generated(XRAY_CONFIG_PATH, json.dumps(config, indent=2) + "\n")
@@ -78,11 +80,11 @@ class XrayConfigApplier:
             config: The rendered configuration object.
 
         Raises:
-            CommandError: If xray reports the configuration invalid. The
-                message is xray's own reason, not everything it printed on the
-                way to it: the banner, the file it read and whatever it wants
-                deprecated are on that stream too, and none of them is why it
-                said no.
+            subprocess.CalledProcessError: If xray reports the configuration
+                invalid. Its ``stderr`` is xray's own reason, not everything it
+                printed on the way to it: the banner, the file it read and
+                whatever it wants deprecated are on that stream too, and none
+                of them is why it said no.
         """
         candidate = dict(config)
         candidate["log"] = {
@@ -95,9 +97,15 @@ class XrayConfigApplier:
                 [XRAY_BINARY, "run", "-test", "-config", str(candidate_path)],
                 environment={XRAY_ASSET_ENV: XRAY_ASSET_DIR},
             )
-        except CommandError as error:
-            raise CommandError(
-                f"xray rejected this configuration: {failure_of(str(error))}"
+        except subprocess.CalledProcessError as error:
+            raise subprocess.CalledProcessError(
+                error.returncode,
+                error.cmd,
+                output=error.output,
+                stderr=(
+                    "xray rejected this configuration: "
+                    f"{failure_of(command_failure_text(error))}"
+                ),
             ) from error
         finally:
             candidate_path.unlink(missing_ok=True)
@@ -128,7 +136,7 @@ class XrayConfigApplier:
                 environment={XRAY_ASSET_ENV: XRAY_ASSET_DIR},
                 is_checked=False,
             )
-        except (CommandError, OSError):
+        except (subprocess.SubprocessError, OSError):
             return []
         finally:
             candidate_path.unlink(missing_ok=True)
@@ -138,7 +146,8 @@ class XrayConfigApplier:
         """Restart the xray service.
 
         Raises:
-            CommandError: If systemd reports the restart failed.
+            subprocess.CalledProcessError: If systemd reports the restart
+                failed.
         """
         run(["systemctl", "restart", XRAY_SERVICE_NAME])
 
@@ -149,8 +158,9 @@ class XrayConfigApplier:
             settle_s: How long the process is given to reach its listeners.
 
         Raises:
-            CommandError: If the unit is not active, carrying the last lines of
-                its journal, which is where the port it could not take is named.
+            RuntimeError: If the unit is not active, carrying the last lines of
+                its journal, which is where the port it could not take is
+                named.
         """
         time.sleep(settle_s)
         if self.is_running():
@@ -169,7 +179,7 @@ class XrayConfigApplier:
             is_checked=False,
         )
         reason = " ".join(journal.stdout.split()) or "no reason in its journal"
-        raise CommandError(f"xray stopped again after the restart: {reason}")
+        raise RuntimeError(f"xray stopped again after the restart: {reason}")
 
     def is_running(self) -> bool:
         """Whether the xray service is currently active.

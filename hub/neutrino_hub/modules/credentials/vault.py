@@ -35,6 +35,7 @@ from neutrino_hub.modules.credentials.constants import (
     CREDENTIALS_VAULT_STATE_KEY_NAME,
     CREDENTIALS_VAULT_VERSION,
 )
+from neutrino_hub.exceptions import VaultLockedError, VaultPassphraseError
 from neutrino_hub.utils import constants
 from neutrino_hub.utils.json_file import (
     CONFIG_WRITE_LOCK,
@@ -52,29 +53,6 @@ VAULT_SCRYPT_R = 8
 VAULT_SCRYPT_P = 1
 # scrypt needs 128 * r * n bytes; OpenSSL's default ceiling is exactly that.
 VAULT_SCRYPT_MAXMEM = 2**26
-
-VAULT_ERROR_LOCKED = "vault_locked"
-
-
-class VaultError(ValueError):
-    """Raised when the vault refuses an operation."""
-
-
-class VaultPassphraseError(VaultError):
-    """Raised when a passphrase does not open what it was offered."""
-
-
-class VaultLockedError(VaultError):
-    """Raised when the data key's state file is missing.
-
-    Attributes:
-        code: The machine name callers answer with.
-    """
-
-    code = VAULT_ERROR_LOCKED
-
-    def __init__(self):
-        super().__init__("the vault is locked: no data key on this box")
 
 
 def wrap_data_key(passphrase: str, data_key: bytes) -> dict:
@@ -117,7 +95,7 @@ def unwrap_data_key(passphrase: str, wrapped: dict | None = None) -> bytes:
 
     Raises:
         VaultPassphraseError: If the passphrase does not open it.
-        VaultError: If there is no wrapped key, or the object is not a usable
+        ValueError: If there is no wrapped key, or the object is not a usable
             wrap. The parameters come from the object itself, so a hostile or
             corrupt value refuses rather than crashing or eating the box's
             memory.
@@ -125,7 +103,7 @@ def unwrap_data_key(passphrase: str, wrapped: dict | None = None) -> bytes:
     if wrapped is None:
         wrapped = SecretVault().wrapped_key()
     if not isinstance(wrapped, dict):
-        raise VaultError("the vault holds no wrapped key")
+        raise ValueError("the vault holds no wrapped key")
     try:
         if wrapped.get("kdf") != "scrypt":
             raise ValueError(f"unknown kdf {wrapped.get('kdf')!r}")
@@ -134,11 +112,11 @@ def unwrap_data_key(passphrase: str, wrapped: dict | None = None) -> bytes:
         sealed = base64.b64decode(wrapped["data"])
         factors = (int(wrapped["n"]), int(wrapped["r"]), int(wrapped["p"]))
     except (KeyError, TypeError, ValueError) as error:
-        raise VaultError("the wrapped key is malformed") from error
+        raise ValueError("the wrapped key is malformed") from error
     try:
         kek = _derive_wrap_key(passphrase, salt, *factors)
     except ValueError as error:
-        raise VaultError("the wrapped key is malformed") from error
+        raise ValueError("the wrapped key is malformed") from error
     try:
         return AESGCM(kek).decrypt(nonce, sealed, VAULT_WRAP_AAD)
     except InvalidTag as error:
@@ -179,18 +157,18 @@ def unseal_bytes(sealed: dict, aad: bytes) -> bytes:
 
     Raises:
         VaultLockedError: If there is no data key on this box.
-        VaultError: If the object is malformed or does not decrypt.
+        ValueError: If the object is malformed or does not decrypt.
     """
     key = _read_state_key()
     try:
         nonce = base64.b64decode(sealed["nonce"])
         data = base64.b64decode(sealed["data"])
     except (KeyError, TypeError, ValueError) as error:
-        raise VaultError("the sealed payload is malformed") from error
+        raise ValueError("the sealed payload is malformed") from error
     try:
         return AESGCM(key).decrypt(nonce, data, aad)
     except (InvalidTag, ValueError) as error:
-        raise VaultError(
+        raise ValueError(
             "the sealed payload does not decrypt: the data key is not the one "
             "it was sealed under, or it was modified"
         ) from error
@@ -219,9 +197,9 @@ def _read_state_key() -> bytes:
     try:
         key = bytes.fromhex(path.read_text(encoding="utf-8").strip())
     except (OSError, ValueError) as error:
-        raise VaultError(f"{path} does not hold a usable key") from error
+        raise ValueError(f"{path} does not hold a usable key") from error
     if len(key) != VAULT_KEY_BYTES:
-        raise VaultError(f"{path} does not hold a usable key")
+        raise ValueError(f"{path} does not hold a usable key")
     return key
 
 
@@ -365,13 +343,13 @@ class SecretVault:
 
         Raises:
             VaultLockedError: If there is no data key on this box.
-            VaultError: If the kind is unknown, the name is blank, or the
+            ValueError: If the kind is unknown, the name is blank, or the
                 secret's field names do not match the kind.
         """
         if kind not in CREDENTIALS_SECRET_KINDS:
-            raise VaultError(f"unknown secret kind {kind!r}")
+            raise ValueError(f"unknown secret kind {kind!r}")
         if not name.strip():
-            raise VaultError("a secret needs a name")
+            raise ValueError("a secret needs a name")
         self._validate_fields(kind, secret)
         with _WRITE_LOCK:
             key = _read_state_key()
@@ -411,10 +389,10 @@ class SecretVault:
             One record per secret, newest first.
 
         Raises:
-            VaultError: If the kind filter is not a known kind.
+            ValueError: If the kind filter is not a known kind.
         """
         if kind is not None and kind not in CREDENTIALS_SECRET_KINDS:
-            raise VaultError(f"unknown secret kind {kind!r}")
+            raise ValueError(f"unknown secret kind {kind!r}")
         records = [
             self._to_record(secret_id, entry)
             for secret_id, entry in self._read_store()["secrets"].items()
@@ -434,14 +412,14 @@ class SecretVault:
 
         Raises:
             VaultLockedError: If there is no data key on this box.
-            VaultError: If the id is unknown or the ciphertext does not
+            ValueError: If the id is unknown or the ciphertext does not
                 decrypt under the data key.
         """
         with _WRITE_LOCK:
             key = _read_state_key()
             entry = self._read_store()["secrets"].get(secret_id)
             if entry is None:
-                raise VaultError(f"no secret with id {secret_id!r}")
+                raise ValueError(f"no secret with id {secret_id!r}")
             return self._unseal(key, secret_id, entry)
 
     def update_meta(self, secret_id: str, meta: dict) -> SecretRecord:
@@ -455,13 +433,13 @@ class SecretVault:
             The record after the change.
 
         Raises:
-            VaultError: If the id is unknown.
+            ValueError: If the id is unknown.
         """
         with _WRITE_LOCK:
             store = self._read_store()
             entry = store["secrets"].get(secret_id)
             if entry is None:
-                raise VaultError(f"no secret with id {secret_id!r}")
+                raise ValueError(f"no secret with id {secret_id!r}")
             entry["meta"] = meta
             self._write_store(store)
             return self._to_record(secret_id, entry)
@@ -481,7 +459,7 @@ class SecretVault:
 
         Raises:
             VaultLockedError: If there is no data key on this box.
-            VaultError: If the id is unknown or the secret's field names do
+            ValueError: If the id is unknown or the secret's field names do
                 not match the stored kind.
         """
         with _WRITE_LOCK:
@@ -489,7 +467,7 @@ class SecretVault:
             store = self._read_store()
             entry = store["secrets"].get(secret_id)
             if entry is None:
-                raise VaultError(f"no secret with id {secret_id!r}")
+                raise ValueError(f"no secret with id {secret_id!r}")
             self._validate_fields(entry["kind"], secret)
             entry["nonce"], entry["data"] = self._seal(
                 key, secret_id, entry["kind"], secret
@@ -506,12 +484,12 @@ class SecretVault:
             secret_id: The secret's id.
 
         Raises:
-            VaultError: If the id is unknown.
+            ValueError: If the id is unknown.
         """
         with _WRITE_LOCK:
             store = self._read_store()
             if secret_id not in store["secrets"]:
-                raise VaultError(f"no secret with id {secret_id!r}")
+                raise ValueError(f"no secret with id {secret_id!r}")
             del store["secrets"][secret_id]
             self._write_store(store)
 
@@ -521,10 +499,10 @@ class SecretVault:
         allowed = required | set(fields["optional"])
         missing = required - set(secret)
         if missing:
-            raise VaultError(f"a {kind} secret needs {', '.join(sorted(missing))}")
+            raise ValueError(f"a {kind} secret needs {', '.join(sorted(missing))}")
         extras = set(secret) - allowed
         if extras:
-            raise VaultError(
+            raise ValueError(
                 f"a {kind} secret does not take {', '.join(sorted(extras))}"
             )
 
@@ -542,13 +520,13 @@ class SecretVault:
             nonce = base64.b64decode(entry["nonce"])
             data = base64.b64decode(entry["data"])
         except (KeyError, TypeError, ValueError) as error:
-            raise VaultError(f"secret {secret_id!r} is not readable") from error
+            raise ValueError(f"secret {secret_id!r} is not readable") from error
         try:
             plain = AESGCM(key).decrypt(
                 nonce, data, _aad(secret_id, entry.get("kind", ""))
             )
         except InvalidTag as error:
-            raise VaultError(
+            raise ValueError(
                 f"secret {secret_id!r} does not decrypt: the data key is not "
                 "the one it was sealed under, or the store was modified"
             ) from error
@@ -577,7 +555,7 @@ class SecretVault:
         Raises:
             VaultLockedError: If opening is asked for and there is no data
                 key on this box.
-            VaultError: If the version is not this one's, or the sealed
+            ValueError: If the version is not this one's, or the sealed
                 records do not decrypt or parse.
         """
         try:
@@ -586,7 +564,7 @@ class SecretVault:
             data = {}
         version = data.get("version", CREDENTIALS_VAULT_VERSION)
         if version != CREDENTIALS_VAULT_VERSION:
-            raise VaultError(f"vault version {version!r} is not supported")
+            raise ValueError(f"vault version {version!r} is not supported")
         store = {
             "version": CREDENTIALS_VAULT_VERSION,
             "wrapped_key": data.get("wrapped_key"),
@@ -599,7 +577,7 @@ class SecretVault:
             try:
                 store["secrets"] = json.loads(opened.decode("utf-8"))
             except ValueError as error:
-                raise VaultError("the sealed records are malformed") from error
+                raise ValueError("the sealed records are malformed") from error
         return store
 
     def _write_store(self, store: dict) -> None:

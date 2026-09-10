@@ -70,10 +70,6 @@ def plan_for(provisioner) -> ProvisionPlan:
     return method() if method is not None else ProvisionPlan()
 
 
-class ProvisionNotConsented(RuntimeError):
-    """Raised when an install that needs agreement is run without it."""
-
-
 @dataclass
 class ProvisionResult:
     """What a provisioner did.

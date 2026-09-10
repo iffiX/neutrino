@@ -28,8 +28,11 @@ from neutrino_client.control.server import ControlServer
 from neutrino_client.core.session import ClientSession
 from neutrino_client.gui.bridge import GuiBridge
 from neutrino_client.gui.channel import InProcessChannel
-from neutrino_client.gui.shell import GuiShellUnavailableError, open_shell_window
-from neutrino_client.platforms.base import PlatformUnsupportedError
+from neutrino_client.exceptions import (
+    GuiShellUnavailableError,
+    PlatformUnsupportedError,
+)
+from neutrino_client.gui.shell import open_shell_window
 from neutrino_client.platforms.detect import detect_platform
 
 

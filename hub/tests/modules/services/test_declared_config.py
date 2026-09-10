@@ -10,8 +10,8 @@ import json
 import pytest
 
 import neutrino_hub.utils.json_file
+from neutrino_hub.exceptions import ServiceFieldInvalidError
 from neutrino_hub.modules.services.config import (
-    DeclaredServiceError,
     DeclaredServiceRegistry,
     DeclaredShare,
 )
@@ -149,7 +149,7 @@ def test_an_unknown_id_raises_key_error(config_dir):
 )
 def test_a_bad_field_is_refused_by_name(config_dir, fields, refused):
     record = {"name": "a", "kind": "generic_tcp", "host": "h", "port": 1, **fields}
-    with pytest.raises(DeclaredServiceError) as caught:
+    with pytest.raises(ServiceFieldInvalidError) as caught:
         DeclaredServiceRegistry().add(**record)
     assert caught.value.code == "declared_service_invalid"
     assert caught.value.params == {"field": refused}
@@ -157,25 +157,25 @@ def test_a_bad_field_is_refused_by_name(config_dir, fields, refused):
 
 def test_a_bad_scheme_and_a_relative_path_are_refused(config_dir):
     registry = DeclaredServiceRegistry()
-    with pytest.raises(DeclaredServiceError) as caught:
+    with pytest.raises(ServiceFieldInvalidError) as caught:
         registry.add(name="w", kind="http", host="h", port=80, scheme="gopher")
     assert caught.value.params == {"field": "scheme"}
-    with pytest.raises(DeclaredServiceError) as caught:
+    with pytest.raises(ServiceFieldInvalidError) as caught:
         registry.add(name="w", kind="http", host="h", port=80, path="w")
     assert caught.value.params == {"field": "path"}
 
 
 def test_a_blank_missing_or_duplicate_share_name_is_refused(config_dir):
     registry = DeclaredServiceRegistry()
-    with pytest.raises(DeclaredServiceError) as caught:
+    with pytest.raises(ServiceFieldInvalidError) as caught:
         registry.add(
             name="nas", kind="samba", host="h", shares=[DeclaredShare(name=" ")]
         )
     assert caught.value.params == {"field": "shares"}
-    with pytest.raises(DeclaredServiceError) as caught:
+    with pytest.raises(ServiceFieldInvalidError) as caught:
         registry.add(name="nas", kind="samba", host="h", shares=[])
     assert caught.value.params == {"field": "shares"}
-    with pytest.raises(DeclaredServiceError) as caught:
+    with pytest.raises(ServiceFieldInvalidError) as caught:
         registry.add(
             name="nas",
             kind="samba",
@@ -186,6 +186,6 @@ def test_a_blank_missing_or_duplicate_share_name_is_refused(config_dir):
 
 
 def test_a_refused_record_writes_nothing(config_dir):
-    with pytest.raises(DeclaredServiceError):
+    with pytest.raises(ServiceFieldInvalidError):
         DeclaredServiceRegistry().add(name="a", kind="nope", host="h", port=1)
     assert not (config_dir / SERVICES_DECLARED_PATH).exists()

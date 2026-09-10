@@ -23,8 +23,9 @@ import pytest
 import neutrino_agent.core.enrollment as enrollment
 from neutrino_agent.constants import AGENT_WS_PATH
 from neutrino_agent.core.loop import Agent
-from neutrino_agent.core.channel import (
-    GatewayHttpChannel,
+from neutrino_agent.core.channel import GatewayHttpChannel
+from neutrino_agent.exceptions import (
+    EnrollmentError,
     GatewayRefused,
     GatewayUnreachable,
     GatewayUntrusted,
@@ -219,7 +220,7 @@ def test_a_wrong_fingerprint_link_is_refused_at_enrollment(tls_server, config_pa
     url, _ = tls_server
     link = link_for({"urls": [url], "token": "ticket", "fp": WRONG_FINGERPRINT})
 
-    with pytest.raises(enrollment.EnrollmentError) as refusal:
+    with pytest.raises(EnrollmentError) as refusal:
         enrollment.enroll(link)
 
     assert "certificate" in str(refusal.value)

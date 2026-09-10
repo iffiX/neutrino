@@ -10,6 +10,8 @@ import math
 import string
 from dataclasses import dataclass
 
+from neutrino_hub.exceptions import PasswordRefusedError
+
 # The character classes a password can draw on, each with the pool size it
 # adds to a guesser's search space. The symbol pool is the printable ASCII
 # characters the other three leave over.
@@ -53,20 +55,6 @@ PASSWORDS_PANEL_RULES = PasswordRules(min_length=8, is_every_class_required=Fals
 PASSWORDS_MASTER_RULES = PasswordRules(min_length=16, is_every_class_required=True)
 
 
-class PasswordRuleError(ValueError):
-    """A password that does not satisfy its rule set.
-
-    Attributes:
-        code: Machine name of the refusal; the askers do the wording.
-        params: The values the refusal's sentence needs.
-    """
-
-    def __init__(self, code: str, params: dict | None = None):
-        super().__init__(code)
-        self.code = code
-        self.params = params or {}
-
-
 def validate(password: str, rules: PasswordRules) -> None:
     """Judge a password against one rule set.
 
@@ -75,18 +63,18 @@ def validate(password: str, rules: PasswordRules) -> None:
         rules: The rule set to judge by.
 
     Raises:
-        PasswordRuleError: With ``password_too_short`` and the required
+        PasswordRefusedError: With ``password_too_short`` and the required
             length, or ``password_missing_classes`` and the classes it lacks.
     """
     if len(password) < rules.min_length:
-        raise PasswordRuleError(
+        raise PasswordRefusedError(
             PASSWORDS_ERROR_TOO_SHORT, {"min_length": rules.min_length}
         )
     if rules.is_every_class_required:
         present = _classes_of(password)
         missing = [name for name, _, _ in PASSWORDS_CLASSES if name not in present]
         if missing:
-            raise PasswordRuleError(
+            raise PasswordRefusedError(
                 PASSWORDS_ERROR_MISSING_CLASSES, {"classes": missing}
             )
 

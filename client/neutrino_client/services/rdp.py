@@ -15,7 +15,7 @@ import subprocess
 import threading
 
 from neutrino_client import bundled
-from neutrino_client.core.channel import (
+from neutrino_client.exceptions import (
     GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,

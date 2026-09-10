@@ -177,7 +177,7 @@ class NetbirdInboundGate:
             reconnection every time somebody saves an unrelated interface.
 
         Raises:
-            CommandError: If the daemon refuses to come back up.
+            subprocess.CalledProcessError: If the daemon refuses to come back up.
         """
         if self.state() == is_blocked:
             return ""
@@ -220,7 +220,8 @@ class NetbirdEnroller:
                 NetBird's own.
 
         Raises:
-            CommandError: If the daemon or the management plane refuses.
+            subprocess.CalledProcessError: If the daemon or the management
+                plane refuses.
         """
         # Down first so a re-enrollment with a new key or plane succeeds;
         # harmless when not enrolled.

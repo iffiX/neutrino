@@ -9,12 +9,10 @@ import pytest
 
 import neutrino_hub.utils.json_file
 from neutrino_hub.modules.credentials.constants import CREDENTIALS_VAULT_PATH
+from neutrino_hub.exceptions import VaultLockedError, VaultPassphraseError
 from neutrino_hub.modules.credentials.vault import (
     VAULT_RECORDS_AAD,
     SecretVault,
-    VaultError,
-    VaultLockedError,
-    VaultPassphraseError,
     seal_bytes,
     unseal_bytes,
     unwrap_data_key,
@@ -92,25 +90,25 @@ def test_list_filters_by_kind(config_dir):
     token = vault.add(kind="token", name="two", secret={"value": "y"})
     assert {r.id for r in vault.list_records()} == {password.id, token.id}
     assert [r.id for r in vault.list_records(kind="token")] == [token.id]
-    with pytest.raises(VaultError):
+    with pytest.raises(ValueError):
         vault.list_records(kind="acme")
 
 
 def test_open_unknown_id_is_refused(config_dir):
-    with pytest.raises(VaultError):
+    with pytest.raises(ValueError):
         SecretVault().open("0" * 32)
 
 
 def test_unknown_kind_is_refused(config_dir):
-    with pytest.raises(VaultError):
+    with pytest.raises(ValueError):
         SecretVault().add(kind="acme", name="x", secret={"password": "p"})
 
 
 def test_field_names_must_match_the_kind(config_dir):
     vault = SecretVault()
-    with pytest.raises(VaultError):
+    with pytest.raises(ValueError):
         vault.add(kind="login", name="x", secret={})
-    with pytest.raises(VaultError):
+    with pytest.raises(ValueError):
         vault.add(kind="login", name="x", secret={"password": "p", "note": "n"})
     record = vault.add(kind="ssh_key", name="x", secret={"private_key": "k"})
     assert SecretVault().open(record.id) == {"private_key": "k"}
@@ -122,7 +120,7 @@ def test_delete_and_get(config_dir):
     assert SecretVault().get(record.id).name == "old"
     vault.delete(record.id)
     assert SecretVault().get(record.id) is None
-    with pytest.raises(VaultError):
+    with pytest.raises(ValueError):
         vault.delete(record.id)
 
 
@@ -133,7 +131,7 @@ def test_tampered_data_is_refused(config_dir):
     raw[0] ^= 0x01
     records[record.id]["data"] = base64.b64encode(bytes(raw)).decode()
     write_inner(config_dir, records)
-    with pytest.raises(VaultError):
+    with pytest.raises(ValueError):
         SecretVault().open(record.id)
 
 
@@ -146,9 +144,9 @@ def test_ciphertexts_are_bound_to_their_ids(config_dir):
     one["nonce"], two["nonce"] = two["nonce"], one["nonce"]
     one["data"], two["data"] = two["data"], one["data"]
     write_inner(config_dir, records)
-    with pytest.raises(VaultError):
+    with pytest.raises(ValueError):
         SecretVault().open(first.id)
-    with pytest.raises(VaultError):
+    with pytest.raises(ValueError):
         SecretVault().open(second.id)
 
 
@@ -180,13 +178,13 @@ def test_update_meta_leaves_the_seal_alone(config_dir):
     assert after["nonce"] == before["nonce"]
     assert after["data"] == before["data"]
     assert SecretVault().open(record.id) == {"password": "p"}
-    with pytest.raises(VaultError):
+    with pytest.raises(ValueError):
         vault.update_meta("0" * 32, {"note": "the archive"})
 
 
 def test_an_unsupported_store_version_is_refused(config_dir):
     write_store(config_dir, {"version": 1, "secrets": {}})
-    with pytest.raises(VaultError, match="version"):
+    with pytest.raises(ValueError, match="version"):
         SecretVault().get("anything")
 
 
@@ -250,10 +248,10 @@ def test_a_wrong_passphrase_is_its_own_refusal():
 
 
 def test_a_malformed_wrap_is_refused_before_the_passphrase_matters():
-    with pytest.raises(VaultError) as refusal:
+    with pytest.raises(ValueError) as refusal:
         unwrap_data_key(PASSPHRASE, {"kdf": "acme"})
     assert not isinstance(refusal.value, VaultPassphraseError)
-    with pytest.raises(VaultError) as refusal:
+    with pytest.raises(ValueError) as refusal:
         unwrap_data_key(PASSPHRASE, "not an object")
     assert not isinstance(refusal.value, VaultPassphraseError)
 
@@ -261,7 +259,7 @@ def test_a_malformed_wrap_is_refused_before_the_passphrase_matters():
 def test_hostile_wrap_factors_are_refused():
     wrapped = wrap_data_key(PASSPHRASE, secrets.token_bytes(32))
     wrapped["n"] = 2**30
-    with pytest.raises(VaultError):
+    with pytest.raises(ValueError):
         unwrap_data_key(PASSPHRASE, wrapped)
 
 
@@ -329,7 +327,7 @@ def test_seal_bytes_binds_to_its_purpose(config_dir):
     payload = secrets.token_bytes(120)
     sealed = seal_bytes(payload, b"agent_tls:key")
     assert unseal_bytes(sealed, b"agent_tls:key") == payload
-    with pytest.raises(VaultError):
+    with pytest.raises(ValueError):
         unseal_bytes(sealed, b"something_else")
-    with pytest.raises(VaultError):
+    with pytest.raises(ValueError):
         unseal_bytes({"nonce": "!", "data": "!"}, b"agent_tls:key")

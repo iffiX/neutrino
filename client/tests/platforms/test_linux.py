@@ -14,7 +14,7 @@ import pytest
 
 import neutrino_client.platforms.linux as linux_module
 from neutrino_client.constants import CLIENT_MOUNT_HELPER_PATH
-from neutrino_client.platforms.base import (
+from neutrino_client.exceptions import (
     ControlSocketUnavailableError,
     ShareAttachError,
 )
@@ -262,7 +262,7 @@ def test_a_program_that_cannot_start_answers_127():
 
 def test_without_a_pty_module_the_terminal_is_a_typed_refusal(monkeypatch):
     import neutrino_client.platforms.linux as linux_module
-    from neutrino_client.platforms.base import PlatformUnsupportedError
+    from neutrino_client.exceptions import PlatformUnsupportedError
 
     monkeypatch.setattr(linux_module, "pty", None)
 

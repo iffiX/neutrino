@@ -18,15 +18,15 @@ import pytest
 import neutrino_client.core.session as session_module
 from neutrino_client import CLIENT_VERSION
 from neutrino_client.constants import CLIENT_BACKOFF_MAX_S
-from neutrino_client.core.channel import (
+from neutrino_client.core.session import ClientSession
+from neutrino_client.exceptions import (
     GatewayRefused,
     GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
     GatewayVersionRefused,
+    SocketClosed,
 )
-from neutrino_client.core.session import ClientSession
-from neutrino_client.core.ws_client import SocketClosed
 from neutrino_client.services.base import ServiceTypeHandler
 from tests.conftest import SERVICES, FakeClientPlatform, bind, discard
 

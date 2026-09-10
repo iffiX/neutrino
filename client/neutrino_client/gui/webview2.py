@@ -11,10 +11,12 @@ brings it back and its Quit is what ends the loop.
 """
 
 import json
+
 from neutrino_client.constants import (
     CLIENT_GUI_WINDOW_HEIGHT,
     CLIENT_GUI_WINDOW_WIDTH,
 )
+from neutrino_client.exceptions import GuiShellUnavailableError
 from neutrino_client.gui.bridge import GuiWindowApi
 from neutrino_client.gui.tray import WindowsTrayIcon
 
@@ -51,8 +53,6 @@ def open_window(
         GuiShellUnavailableError: When the embedding library is not in this
             install.
     """
-    from neutrino_client.gui.shell import GuiShellUnavailableError
-
     try:
         import webview
     except ImportError as error:

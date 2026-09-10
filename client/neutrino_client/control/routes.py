@@ -15,8 +15,7 @@ from __future__ import annotations
 import urllib.parse
 
 from neutrino_client import CLIENT_VERSION
-from neutrino_client.core.enrollment import EnrollmentError
-from neutrino_client.platforms.base import PlatformUnsupportedError
+from neutrino_client.exceptions import EnrollmentError, PlatformUnsupportedError
 
 SERVICES_PREFIX = "/api/services/"
 

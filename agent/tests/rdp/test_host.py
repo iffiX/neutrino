@@ -11,7 +11,7 @@ import pytest
 
 from neutrino_agent.core.store import MachineStateStore
 from neutrino_agent.modules import rustdesk
-from neutrino_agent.modules.installers import InstallError
+from neutrino_agent.exceptions import InstallError
 from neutrino_agent.platforms.base import AgentPlatform
 from neutrino_agent.rdp import host as host_module
 from neutrino_agent.rdp.host import RdpShareHost

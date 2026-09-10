@@ -12,8 +12,8 @@ wording.
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from neutrino_hub.exceptions import ServiceFieldInvalidError
 from neutrino_hub.modules.services.config import (
-    DeclaredServiceError,
     DeclaredServiceRegistry,
     DeclaredShare,
 )
@@ -73,7 +73,9 @@ def list_host_shares(host: str) -> ServiceShareListView:
             hub has no smbclient.
     """
     if not host.strip():
-        raise _invalid(DeclaredServiceError(SERVICES_ERROR_INVALID, {"field": "host"}))
+        raise _invalid(
+            ServiceFieldInvalidError(SERVICES_ERROR_INVALID, {"field": "host"})
+        )
     listing = list_shares(host.strip())
     if listing.error_code is not None:
         raise HTTPException(
@@ -110,7 +112,9 @@ def add_declared_service(
     """
     kind = SERVICES_TYPE_TO_KIND.get(body.kind)
     if kind is None:
-        raise _invalid(DeclaredServiceError(SERVICES_ERROR_INVALID, {"field": "kind"}))
+        raise _invalid(
+            ServiceFieldInvalidError(SERVICES_ERROR_INVALID, {"field": "kind"})
+        )
     shares = []
     if kind == SERVICES_KIND_SAMBA:
         shares = [DeclaredShare(name=name) for name in (body.shares or [])]
@@ -125,7 +129,7 @@ def add_declared_service(
             shares=shares,
             description=body.description,
         )
-    except DeclaredServiceError as error:
+    except ServiceFieldInvalidError as error:
         raise _invalid(error) from error
     runtime.published_services.expire()
     return _list_view(request, runtime)
@@ -191,7 +195,7 @@ def _list_view(request: Request, runtime: PanelRuntime) -> ServiceListView:
     )
 
 
-def _invalid(error: DeclaredServiceError) -> HTTPException:
+def _invalid(error: ServiceFieldInvalidError) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail={"code": error.code, "params": error.params},

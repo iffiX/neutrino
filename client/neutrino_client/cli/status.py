@@ -14,7 +14,7 @@ from neutrino_client.cli import wording
 from neutrino_client.control import client
 from neutrino_client.core import enrollment
 from neutrino_client.core.session import CONNECTION_CONNECTED, CONNECTION_UNBOUND
-from neutrino_client.platforms.base import PlatformUnsupportedError
+from neutrino_client.exceptions import PlatformUnsupportedError
 from neutrino_client.platforms.detect import detect_platform
 
 RESIDENT_RUNNING = "running"

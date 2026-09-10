@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from neutrino_hub.modules.cliproxyapi import ops as cliproxyapi_ops
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier
-from neutrino_hub.modules.credentials.vault import VaultLockedError
+from neutrino_hub.exceptions import VaultLockedError
 from neutrino_hub.modules.devices.agent_sessions import AgentSessionRegistry
 from neutrino_hub.modules.devices.constants import AGENT_SESSION_KIND_CLIENT
 from neutrino_hub.system.systemd_ctl import SystemdServiceController

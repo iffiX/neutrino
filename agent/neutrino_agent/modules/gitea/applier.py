@@ -67,7 +67,7 @@ class GiteaInstaller:
             binary_path: The downloaded release binary.
 
         Raises:
-            CommandError: If a step refuses.
+            subprocess.CalledProcessError: If a step refuses.
             OSError: If a file cannot be written.
         """
         self.create_user()
@@ -155,7 +155,7 @@ class GiteaConfigApplier:
             A short summary of what was done.
 
         Raises:
-            CommandError: If the server refuses to come up.
+            subprocess.CalledProcessError: If the server refuses to come up.
         """
         os.makedirs(GITEA_ETC_DIR, exist_ok=True)
         handle, temporary = tempfile.mkstemp(dir=GITEA_ETC_DIR, prefix=".app_")
@@ -233,7 +233,7 @@ class GiteaAdminManager:
             email: The account's address.
 
         Raises:
-            CommandError: If Gitea refuses.
+            subprocess.CalledProcessError: If Gitea refuses.
         """
         run(
             self._as_git(
@@ -259,7 +259,7 @@ class GiteaAdminManager:
             password: The new password.
 
         Raises:
-            CommandError: If Gitea refuses.
+            subprocess.CalledProcessError: If Gitea refuses.
         """
         run(
             self._as_git(

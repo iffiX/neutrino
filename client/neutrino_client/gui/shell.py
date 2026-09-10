@@ -8,19 +8,7 @@ imports the client, and opening the window there refuses with a typed code
 naming what to install.
 """
 
-
-class GuiShellUnavailableError(Exception):
-    """The platform's web view cannot be loaded."""
-
-    def __init__(self, code: str, params=None):
-        """
-        Args:
-            code: The typed refusal code.
-            params: The code's parameters.
-        """
-        super().__init__(code)
-        self.code = code
-        self.params = dict(params or {})
+from neutrino_client.exceptions import GuiShellUnavailableError
 
 
 def open_shell_window(

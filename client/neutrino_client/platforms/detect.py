@@ -7,7 +7,8 @@ from __future__ import annotations
 import platform
 import sys
 
-from neutrino_client.platforms.base import ClientPlatform, PlatformUnsupportedError
+from neutrino_client.exceptions import PlatformUnsupportedError
+from neutrino_client.platforms.base import ClientPlatform
 from neutrino_client.platforms.linux import LinuxPlatform
 from neutrino_client.platforms.windows import WindowsPlatform
 

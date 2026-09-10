@@ -14,9 +14,9 @@ import json
 import pytest
 
 from neutrino_hub.modules.devices import agent_package
+from neutrino_hub.exceptions import AgentArtifactFetchError
 from neutrino_hub.modules.devices.agent_package import (
     AgentPackageCache,
-    AgentPackageFetchError,
     package_architecture,
     package_family,
     package_name,
@@ -198,7 +198,7 @@ def test_a_release_that_serves_something_else_is_refused_and_kept_nowhere(
     )
     answers(monkeypatch, DEB_BYTES)
 
-    with pytest.raises(AgentPackageFetchError) as refused:
+    with pytest.raises(AgentArtifactFetchError) as refused:
         cache.package(family="deb", architecture="arm64")
 
     assert refused.value.code == "agent_package_sha256_mismatch"
@@ -214,7 +214,7 @@ def test_a_platform_with_no_url_and_nothing_held_is_refused_by_name(cache, tmp_p
         {"rpm-arm64": entry("neutrino-agent-0.1.0-1.aarch64.rpm")},
     )
 
-    with pytest.raises(AgentPackageFetchError) as refused:
+    with pytest.raises(AgentArtifactFetchError) as refused:
         cache.package(family="rpm", architecture="arm64")
 
     assert refused.value.code == "agent_package_missing"
@@ -225,7 +225,7 @@ def test_a_platform_with_no_url_and_nothing_held_is_refused_by_name(cache, tmp_p
 def test_a_platform_the_manifest_never_names_is_refused_by_name(cache, tmp_path):
     write_manifest(tmp_path / "agent_packages.json", {"deb-amd64": {"url": ""}})
 
-    with pytest.raises(AgentPackageFetchError) as refused:
+    with pytest.raises(AgentArtifactFetchError) as refused:
         cache.package(family="msi", architecture="amd64")
 
     assert refused.value.params == {"platform": "msi-amd64"}

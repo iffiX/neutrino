@@ -6,7 +6,7 @@ channel; the hub answers on the socket and the service applies what comes.
 
 from neutrino_agent.control import client
 from neutrino_agent.cli.status import word_error
-from neutrino_agent.platforms.base import PlatformUnsupportedError
+from neutrino_agent.exceptions import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import detect_platform
 
 SYNC_UNBOUND = "this machine has joined no gateway"

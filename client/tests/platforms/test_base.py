@@ -11,11 +11,11 @@ import inspect
 import pytest
 
 import neutrino_client.platforms.base as base_module
-from neutrino_client.platforms.base import (
-    ClientPlatform,
+from neutrino_client.exceptions import (
     ControlSocketUnavailableError,
     PlatformUnsupportedError,
 )
+from neutrino_client.platforms.base import ClientPlatform
 from neutrino_client.platforms.linux import LinuxPlatform
 from neutrino_client.platforms.windows import WindowsPlatform
 

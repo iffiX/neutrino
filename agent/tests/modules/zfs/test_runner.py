@@ -1,9 +1,10 @@
 """The ZFS runner: the storage picture, the verbs, and the SMART scan."""
 
+import subprocess
+
 import pytest
 
-from neutrino_agent.modules.base import ModuleApplyError
-from neutrino_agent.modules.subprocess_run import CommandError
+from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.zfs import runner as runner_module
 from neutrino_agent.modules.zfs.applier import ZfsDataset, ZfsDisk, ZfsPool
 from neutrino_agent.modules.zfs.runner import ZfsModuleRunner
@@ -134,7 +135,7 @@ def test_an_op_outside_the_table_is_refused(runner):
 
 
 def test_a_tool_refusing_is_typed_with_its_words(runner):
-    FakePools.error = CommandError(["zpool"], "no such pool")
+    FakePools.error = subprocess.CalledProcessError(1, ["zpool"], stderr="no such pool")
 
     outcome = runner.command("zfs_op", {"op": "destroy_pool", "args": {"name": "tank"}})
 

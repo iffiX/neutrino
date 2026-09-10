@@ -21,6 +21,7 @@ from neutrino_client.constants import (
     CLIENT_GUI_WINDOW_HEIGHT,
     CLIENT_GUI_WINDOW_WIDTH,
 )
+from neutrino_client.exceptions import GuiShellUnavailableError
 from neutrino_client.gui.tray import LinuxTrayIcon
 
 # The distribution packages the import guard names when the C stack is
@@ -147,8 +148,6 @@ def _toolkit():
         GuiShellUnavailableError: When the bindings or the 4.1 API are
             absent.
     """
-    from neutrino_client.gui.shell import GuiShellUnavailableError
-
     try:
         import gi
 

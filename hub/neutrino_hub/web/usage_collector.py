@@ -13,10 +13,8 @@ import threading
 import httpx
 
 from neutrino_hub.modules.ai.registry import AiProviderRegistry
-from neutrino_hub.modules.cliproxyapi.accounts import (
-    CliproxyApiAccountClient,
-    CliproxyApiAccountError,
-)
+from neutrino_hub.exceptions import AiAccountRefusedError
+from neutrino_hub.modules.cliproxyapi.accounts import CliproxyApiAccountClient
 from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_USAGE_POLL_INTERVAL_S,
     CLIPROXYAPI_USAGE_QUEUE_COUNT,
@@ -24,7 +22,6 @@ from neutrino_hub.modules.cliproxyapi.constants import (
 from neutrino_hub.modules.cliproxyapi.management_key import read_management_key
 from neutrino_hub.modules.cliproxyapi.ops import load_config
 from neutrino_hub.modules.cliproxyapi.usage_store import CliproxyApiUsageStore
-from neutrino_hub.modules.credentials.vault import VaultError
 
 LOGGER = logging.getLogger(__name__)
 
@@ -97,7 +94,7 @@ class PanelUsageCollector:
         try:
             config = load_config()
             key_ids = {key.open_key(): key.id for key in config.client_keys}
-        except (ValueError, VaultError):
+        except ValueError:
             return 0
         try:
             response = httpx.get(
@@ -136,7 +133,7 @@ class PanelUsageCollector:
                 continue
             try:
                 value = registry.open_api_key(record)
-            except VaultError:
+            except ValueError:
                 return
             if value:
                 mapping[value] = record.id
@@ -153,7 +150,7 @@ class PanelUsageCollector:
             accounts = CliproxyApiAccountClient(
                 port=port, management_key=management_key
             ).list_accounts()
-        except CliproxyApiAccountError:
+        except AiAccountRefusedError:
             return
         self._account_ids = {
             account.auth_index: account.name
@@ -204,7 +201,7 @@ class PanelUsageCollector:
         for stored in config.client_keys:
             try:
                 key = stored.open_key()
-            except VaultError:
+            except ValueError:
                 continue
             if key:
                 _, names = self._served_models.served(

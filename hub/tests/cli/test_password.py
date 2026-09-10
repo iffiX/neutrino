@@ -9,7 +9,7 @@ import io
 
 import pytest
 
-from neutrino_hub.cli.password import PasswordRefused, read_new_password
+from neutrino_hub.cli.password import read_new_password
 from neutrino_hub.utils.passwords import PASSWORDS_MASTER_RULES, PASSWORDS_PANEL_RULES
 
 
@@ -23,14 +23,14 @@ def test_a_password_read_from_standard_input_is_not_asked_for_twice(monkeypatch)
 def test_a_short_password_is_refused_before_anything_is_written(monkeypatch):
     monkeypatch.setattr("sys.stdin", io.StringIO("short\n"))
 
-    with pytest.raises(PasswordRefused, match=str(PASSWORDS_PANEL_RULES.min_length)):
+    with pytest.raises(ValueError, match=str(PASSWORDS_PANEL_RULES.min_length)):
         read_new_password(is_stdin=True)
 
 
 def test_a_passphrase_missing_a_class_is_refused_with_what_it_lacks(monkeypatch):
     monkeypatch.setattr("sys.stdin", io.StringIO("all-lowercase-and-long\n"))
 
-    with pytest.raises(PasswordRefused, match="uppercase"):
+    with pytest.raises(ValueError, match="uppercase"):
         read_new_password(is_stdin=True, rules=PASSWORDS_MASTER_RULES)
 
 
@@ -47,7 +47,7 @@ def test_two_prompts_that_disagree_are_refused(monkeypatch):
         "getpass.getpass", _answering("a-long-enough-password", "a-different-password")
     )
 
-    with pytest.raises(PasswordRefused, match="do not match"):
+    with pytest.raises(ValueError, match="do not match"):
         read_new_password()
 
 

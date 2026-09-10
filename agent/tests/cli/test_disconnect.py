@@ -8,7 +8,7 @@ import neutrino_agent.cli.disconnect as disconnect_cli
 import neutrino_agent.cli.entry as entry
 import neutrino_agent.core.channel as channel
 import neutrino_agent.core.enrollment as enrollment
-from neutrino_agent.core.channel import GatewayUnreachable
+from neutrino_agent.exceptions import GatewayUnreachable
 from tests.conftest import bind
 
 LEAVE_WORDS = "left the hub; this machine keeps the agent and can join again"

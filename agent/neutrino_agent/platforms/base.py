@@ -18,12 +18,7 @@ from __future__ import annotations
 import subprocess
 
 from neutrino_agent.constants import AGENT_DATA_DIR_POSIX, AGENT_STEP_DOWN_TIMEOUT_S
-
-
-class PlatformUnsupportedError(RuntimeError):
-    """Raised when a capability this platform does not have is invoked."""
-
-    code = "unsupported_platform"
+from neutrino_agent.exceptions import PlatformUnsupportedError
 
 
 class AgentPlatform:

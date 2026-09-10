@@ -275,7 +275,7 @@ class AiProviderRegistry:
             referenced object is gone.
 
         Raises:
-            VaultError: If the stored ciphertext does not decrypt.
+            ValueError: If the stored ciphertext does not decrypt.
         """
         if not record.secret_id:
             return ""

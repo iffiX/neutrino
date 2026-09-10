@@ -2,7 +2,7 @@
 
 import pytest
 
-from neutrino_agent.modules.base import ModuleApplyError
+from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.gitea.config import GiteaConfig
 
 SECRETS = {

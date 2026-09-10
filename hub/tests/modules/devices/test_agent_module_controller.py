@@ -19,10 +19,8 @@ from pathlib import Path
 
 import pytest
 
-from neutrino_hub.modules.devices.agent_module_cache import (
-    AgentModuleArtifact,
-    AgentModuleFetchError,
-)
+from neutrino_hub.exceptions import AgentArtifactFetchError
+from neutrino_hub.modules.devices.agent_module_cache import AgentModuleArtifact
 from neutrino_hub.modules.devices.agent_module_controller import (
     ORDER_FAILED,
     AgentModuleController,
@@ -257,7 +255,7 @@ def test_the_ssh_bootstrap_shares_the_device_lock_without_a_module_order(control
 
 def test_a_failure_is_recorded_and_no_tick_ever_retries_it(controller):
     orders, cache, _, dispatch = controller
-    cache.error = AgentModuleFetchError("module_fetch_failed", detail="refused")
+    cache.error = AgentArtifactFetchError("module_fetch_failed", detail="refused")
 
     order = ask_install(orders)
     assert wait_for(lambda: not order.is_open)
@@ -277,7 +275,7 @@ def test_a_failure_is_recorded_and_no_tick_ever_retries_it(controller):
 
 def test_asking_again_is_a_new_order_and_runs(controller):
     orders, cache, _, dispatch = controller
-    cache.error = AgentModuleFetchError("module_fetch_failed")
+    cache.error = AgentArtifactFetchError("module_fetch_failed")
     first = ask_install(orders)
     assert wait_for(lambda: not first.is_open)
 
@@ -293,7 +291,7 @@ def test_asking_again_is_a_new_order_and_runs(controller):
 
 def test_the_software_turning_up_anyway_clears_the_failure(controller):
     orders, cache, _, dispatch = controller
-    cache.error = AgentModuleFetchError("module_fetch_failed")
+    cache.error = AgentArtifactFetchError("module_fetch_failed")
     order = ask_install(orders)
     assert wait_for(lambda: not order.is_open)
     assert orders.failure_for(MAC, "fakedesk") is not None
@@ -307,7 +305,7 @@ def test_the_software_turning_up_anyway_clears_the_failure(controller):
 
 def test_the_opposite_action_clears_the_failure_and_orders_nothing(controller):
     orders, cache, _, dispatch = controller
-    cache.error = AgentModuleFetchError("module_fetch_failed")
+    cache.error = AgentArtifactFetchError("module_fetch_failed")
     failed = ask_install(orders)
     assert wait_for(lambda: not failed.is_open)
 

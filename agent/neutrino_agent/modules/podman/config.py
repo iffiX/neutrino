@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from neutrino_agent.modules.base import ModuleApplyError
+from neutrino_agent.exceptions import ModuleApplyError
 
 # A container's name becomes a systemd unit name and a shell argument.
 CONTAINER_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}\Z")

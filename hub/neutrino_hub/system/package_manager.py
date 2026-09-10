@@ -13,7 +13,7 @@ Not pure: runs the machine's package manager.
 from neutrino_hub.system.constants import SYSTEM_PACKAGE_NAMES
 from neutrino_hub.system.machine import distribution_family, distribution_name
 from neutrino_hub.system.sandbox import outside_sandbox
-from neutrino_hub.utils.subprocess_run import CommandError, run
+from neutrino_hub.utils.subprocess_run import run
 
 # Package managers are slow on a cold cache and this is not the place to find
 # out. Long enough for a mirror to be reached and a kernel module to be built.
@@ -56,9 +56,13 @@ class SystemPackageController:
     def refresh(self) -> None:
         """Update the package lists.
 
-        A stale list is not an error, so this never raises: the install that
-        follows reports the real problem, and it reports it about a package
-        rather than about a mirror.
+        A stale list is not an error, so a controller reports nothing here:
+        the install that follows reports the real problem, and it reports it
+        about a package rather than about a mirror.
+
+        Raises:
+            NotImplementedError: If the family's controller does not
+                implement it.
         """
         raise NotImplementedError
 
@@ -69,7 +73,9 @@ class SystemPackageController:
             packages: Package names for this family.
 
         Raises:
-            CommandError: If the package manager refuses.
+            subprocess.CalledProcessError: If the package manager refuses.
+            NotImplementedError: If the family's controller does not
+                implement it.
         """
         raise NotImplementedError
 
@@ -81,6 +87,10 @@ class SystemPackageController:
             is_purged: Also delete the configuration the packages own, where
                 the family distinguishes the two. Families that do not treat
                 this as a separate operation ignore it.
+
+        Raises:
+            NotImplementedError: If the family's controller does not
+                implement it.
         """
         raise NotImplementedError
 
@@ -92,6 +102,10 @@ class SystemPackageController:
 
         Returns:
             True when the package manager reports it present.
+
+        Raises:
+            NotImplementedError: If the family's controller does not
+                implement it.
         """
         raise NotImplementedError
 
@@ -104,6 +118,10 @@ class SystemPackageController:
         Returns:
             Something like ``4.3.1+ds1-8+deb12u1``, or empty when the
             distribution offers no such package.
+
+        Raises:
+            NotImplementedError: If the family's controller does not
+                implement it.
         """
         raise NotImplementedError
 
@@ -269,14 +287,14 @@ def current() -> SystemPackageController:
         The controller whose family matches ``/etc/os-release``.
 
     Raises:
-        CommandError: On a distribution with no controller, naming what was
-            found so the report says more than "unsupported".
+        NotImplementedError: On a distribution with no controller, naming what
+            was found so the report says more than "unsupported".
     """
     family = distribution_family()
     for controller in CONTROLLERS:
         if controller.family == family:
             return controller()
-    raise CommandError(
+    raise NotImplementedError(
         f"no package manager is known for {distribution_name()}; "
         f"the hub installs on: {', '.join(c.family for c in CONTROLLERS)}"
     )

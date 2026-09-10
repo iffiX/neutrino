@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 
+from neutrino_hub.exceptions import AiAccountRefusedError
 from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_ACCOUNT_TIMEOUT_S,
     CLIPROXYAPI_AUTH_FILES_PATH,
@@ -34,22 +35,6 @@ GATEWAY_STATUS_TO_LOGIN = {
     "ok": LOGIN_COMPLETE,
     "error": LOGIN_FAILED,
 }
-
-
-class CliproxyApiAccountError(Exception):
-    """A management API call the panel cannot carry out.
-
-    Attributes:
-        code: What the panel words, one of ``gateway_unreachable``,
-            ``login_expired``, ``unsupported_kind``, ``unknown_account`` or
-            ``management_key_missing``.
-        params: What the wording needs, by name.
-    """
-
-    def __init__(self, code: str, **params):
-        super().__init__(code)
-        self.code = code
-        self.params = params
 
 
 @dataclass
@@ -138,11 +123,11 @@ class CliproxyApiAccountClient:
             management_key: The key that unlocks the management API.
 
         Raises:
-            CliproxyApiAccountError: ``management_key_missing`` when there is
+            AiAccountRefusedError: ``management_key_missing`` when there is
                 no key, because every route below needs one.
         """
         if not management_key:
-            raise CliproxyApiAccountError("management_key_missing")
+            raise AiAccountRefusedError("management_key_missing")
         self._base = f"http://127.0.0.1:{port}"
         self._headers = {"Authorization": f"Bearer {management_key}"}
 
@@ -153,7 +138,7 @@ class CliproxyApiAccountClient:
             The accounts, by name.
 
         Raises:
-            CliproxyApiAccountError: If the gateway does not answer.
+            AiAccountRefusedError: If the gateway does not answer.
         """
         payload = self._call("GET", CLIPROXYAPI_AUTH_FILES_PATH)
         return [_account(entry) for entry in payload.get("files") or []]
@@ -165,7 +150,7 @@ class CliproxyApiAccountClient:
             name: The token file's name, as the list reports it.
 
         Raises:
-            CliproxyApiAccountError: ``unknown_account`` when the gateway does
+            AiAccountRefusedError: ``unknown_account`` when the gateway does
                 not have it, ``gateway_unreachable`` when it does not answer.
         """
         self._call(
@@ -186,12 +171,12 @@ class CliproxyApiAccountClient:
             The flow, carrying the URL and the handle to poll.
 
         Raises:
-            CliproxyApiAccountError: ``unsupported_kind`` for a flow this
+            AiAccountRefusedError: ``unsupported_kind`` for a flow this
                 version does not carry, ``gateway_unreachable`` when the
                 gateway does not answer.
         """
         if kind not in CLIPROXYAPI_LOGIN_KINDS:
-            raise CliproxyApiAccountError("unsupported_kind", kind=kind)
+            raise AiAccountRefusedError("unsupported_kind", kind=kind)
         payload = self._call(
             "GET",
             CLIPROXYAPI_AUTH_URL_PATH.format(kind=kind),
@@ -217,7 +202,7 @@ class CliproxyApiAccountClient:
             The flow's state.
 
         Raises:
-            CliproxyApiAccountError: ``gateway_unreachable`` when the gateway
+            AiAccountRefusedError: ``gateway_unreachable`` when the gateway
                 does not answer.
         """
         payload = self._call(
@@ -242,7 +227,7 @@ class CliproxyApiAccountClient:
                 the code taken out of it.
 
         Raises:
-            CliproxyApiAccountError: ``login_expired`` when the gateway no
+            AiAccountRefusedError: ``login_expired`` when the gateway no
                 longer holds the flow, ``gateway_unreachable`` when it does
                 not answer.
         """
@@ -261,7 +246,7 @@ class CliproxyApiAccountClient:
             state: The handle the start returned.
 
         Raises:
-            CliproxyApiAccountError: ``login_expired`` when the gateway has
+            AiAccountRefusedError: ``login_expired`` when the gateway has
                 already forgotten it, ``gateway_unreachable`` when it does not
                 answer.
         """
@@ -297,7 +282,7 @@ class CliproxyApiAccountClient:
             The decoded body, empty when the answer carried none.
 
         Raises:
-            CliproxyApiAccountError: For a refusal or an unreachable gateway.
+            AiAccountRefusedError: For a refusal or an unreachable gateway.
         """
         try:
             response = httpx.request(
@@ -309,13 +294,13 @@ class CliproxyApiAccountClient:
                 timeout=CLIPROXYAPI_ACCOUNT_TIMEOUT_S,
             )
         except httpx.HTTPError as error:
-            raise CliproxyApiAccountError(
+            raise AiAccountRefusedError(
                 "gateway_unreachable", reason=str(error)
             ) from error
         if response.status_code == 404:
-            raise CliproxyApiAccountError(missing_code, **(missing_params or {}))
+            raise AiAccountRefusedError(missing_code, **(missing_params or {}))
         if not response.is_success:
-            raise CliproxyApiAccountError(
+            raise AiAccountRefusedError(
                 "gateway_unreachable", reason=f"answered {response.status_code}"
             )
         try:

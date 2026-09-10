@@ -21,9 +21,8 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 
+from neutrino_hub.exceptions import PasswordRefusedError, VaultPassphraseError
 from neutrino_hub.modules.credentials.vault import (
-    VaultError,
-    VaultPassphraseError,
     unwrap_data_key,
     write_state_key,
 )
@@ -34,11 +33,7 @@ from neutrino_hub.utils.json_file import (
     read_config,
     write_config,
 )
-from neutrino_hub.utils.passwords import (
-    PASSWORDS_PANEL_RULES,
-    PasswordRuleError,
-    validate,
-)
+from neutrino_hub.utils.passwords import PASSWORDS_PANEL_RULES, validate
 from neutrino_hub.utils.subprocess_run import run
 from neutrino_hub.system.sandbox import outside_sandbox
 from neutrino_hub.utils.constants import is_dev_root_set
@@ -192,7 +187,7 @@ def change_password(
         )
     try:
         validate(request.new_password, PASSWORDS_PANEL_RULES)
-    except PasswordRuleError as error:
+    except PasswordRefusedError as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": error.code, "params": error.params},
@@ -503,7 +498,7 @@ def _unwrapped_key(contents: dict[str, bytes], vault_passphrase: str) -> bytes:
         return unwrap_data_key(vault_passphrase, wrapped)
     except VaultPassphraseError as error:
         raise _coded_bad_request(BACKUP_ERROR_PASSPHRASE_WRONG) from error
-    except VaultError as error:
+    except ValueError as error:
         raise _coded_bad_request(BACKUP_ERROR_CORRUPT) from error
 
 

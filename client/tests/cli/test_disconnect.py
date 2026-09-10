@@ -9,7 +9,7 @@ import neutrino_client.cli.disconnect as disconnect_cli
 import neutrino_client.core.channel as channel
 import neutrino_client.core.enrollment as enrollment
 from neutrino_client.cli import wording
-from neutrino_client.core.channel import GatewayUnreachable
+from neutrino_client.exceptions import GatewayUnreachable
 from tests.conftest import bind
 
 

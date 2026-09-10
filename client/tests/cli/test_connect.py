@@ -13,7 +13,7 @@ import neutrino_client.core.channel as channel
 import neutrino_client.core.enrollment as enrollment
 from neutrino_client.cli import wording
 from neutrino_client.control.server import ControlServer
-from neutrino_client.core.channel import (
+from neutrino_client.exceptions import (
     GatewayRefused,
     GatewayUntrusted,
     GatewayVersionRefused,

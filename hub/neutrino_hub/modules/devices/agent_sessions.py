@@ -23,6 +23,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
+from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.devices.constants import (
     AGENT_SESSION_KIND_AGENT,
     AGENT_WS_CHUNK_BYTES,
@@ -53,25 +54,6 @@ CODE_STREAM_TIMEOUT = "agent_never_reported"
 def _now() -> str:
     """The current time as an ISO 8601 stamp in UTC."""
     return datetime.now(timezone.utc).isoformat()
-
-
-class AgentOfflineError(Exception):
-    """The device has no live channel."""
-
-    code = CODE_AGENT_OFFLINE
-
-    def __init__(self, device: str):
-        super().__init__(device)
-        self.params = {"device": device}
-
-
-class StreamRefusedError(Exception):
-    """The agent would not open the stream, or the hub stopped waiting."""
-
-    def __init__(self, code: str, params: "dict | None" = None):
-        super().__init__(code)
-        self.code = code
-        self.params = dict(params or {})
 
 
 class AgentStream:

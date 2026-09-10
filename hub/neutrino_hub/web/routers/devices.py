@@ -20,10 +20,7 @@ from neutrino_hub.modules.devices.agent_module_controller import (
     ORDER_ACTION_UNINSTALL,
     ask_module,
 )
-from neutrino_hub.modules.devices.agent_sessions import (
-    AgentOfflineError,
-    StreamRefusedError,
-)
+from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.devices.constants import (
     DEVICE_MAC_PATTERN,
     DEVICE_MODULE_COMMAND_TIMEOUT_S,
@@ -32,11 +29,8 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_REMOTE_DESKTOP_PRODUCTS,
 )
 from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
-from neutrino_hub.modules.credentials.vault import (
-    SecretVault,
-    VaultError,
-    VaultLockedError,
-)
+from neutrino_hub.exceptions import VaultLockedError
+from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
 from neutrino_hub.modules.devices.lan_scan import LanScanner
@@ -1092,7 +1086,7 @@ def _install_credentials(
                 )
             except VaultLockedError:
                 raise
-            except VaultError as error:
+            except ValueError as error:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail={"code": "login_rejected", "params": {}},

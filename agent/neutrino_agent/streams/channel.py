@@ -13,24 +13,7 @@ import queue
 import threading
 
 from neutrino_agent.constants import AGENT_WS_CHUNK_BYTES, AGENT_WS_CREDIT_TIMEOUT_S
-
-
-class StreamRefused(Exception):
-    """A stream handler will not serve the stream it was opened for.
-
-    Attributes:
-        code: The typed refusal.
-        params: What the wording names.
-    """
-
-    def __init__(self, code: str, params: "dict | None" = None):
-        super().__init__(code)
-        self.code = code
-        self.params = dict(params or {})
-
-
-class StreamClosed(Exception):
-    """The stream ended under its handler: the hub closed it, or the socket."""
+from neutrino_agent.exceptions import StreamClosed
 
 
 class StreamChannel:

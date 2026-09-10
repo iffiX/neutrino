@@ -57,7 +57,6 @@ from neutrino_hub.utils.constants import (
     is_dev_root_set,
 )
 from neutrino_hub.modules.cliproxyapi.management_key import resolve_management_key
-from neutrino_hub.modules.credentials.vault import VaultError
 from neutrino_hub.web.agent_tls import ensure_certificate, write_served_key
 from neutrino_hub.web.constants import (
     WEB_AGENT_TLS_CERT_PATH,
@@ -385,7 +384,7 @@ def _agent_key():
     try:
         ensure_certificate()
         return write_served_key()
-    except (VaultError, OSError, ValueError) as error:
+    except (OSError, ValueError) as error:
         code = getattr(error, "code", "agent_tls_key_unavailable")
         print(
             f'error: {{"code": "{code}"}}: the agent channel cannot start '

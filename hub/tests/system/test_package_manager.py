@@ -15,7 +15,6 @@ from neutrino_hub.system.package_manager import (
     current,
     is_version_at_least,
 )
-from neutrino_hub.utils.subprocess_run import CommandError
 
 # What `podman` reports, per distribution, against the 4.4 floor Quadlet sets.
 PODMAN_VERSIONS = {
@@ -77,7 +76,7 @@ def test_an_unknown_distribution_is_refused_by_name(monkeypatch):
     monkeypatch.setattr(
         "neutrino_hub.system.package_manager.distribution_name", lambda: "Plan 9"
     )
-    with pytest.raises(CommandError, match="Plan 9"):
+    with pytest.raises(NotImplementedError, match="Plan 9"):
         current()
 
 

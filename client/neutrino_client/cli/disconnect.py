@@ -8,8 +8,9 @@ everything on its next poll.
 from neutrino_client.cli import wording
 from neutrino_client.constants import CLIENT_LEAVE_PATH
 from neutrino_client.core import enrollment
-from neutrino_client.core.channel import (
-    GatewayHttpChannel,
+from neutrino_client.core.channel import GatewayHttpChannel
+from neutrino_client.exceptions import (
+    GatewayRefused,
     GatewayUnreachable,
     GatewayUntrusted,
 )
@@ -34,7 +35,7 @@ def main() -> int:
     )
     try:
         channel.post(CLIENT_LEAVE_PATH, {})
-    except (GatewayUnreachable, GatewayUntrusted, RuntimeError):
+    except (GatewayRefused, GatewayUnreachable, GatewayUntrusted):
         pass
     enrollment.disconnect()
     print(LEAVE_WORDS)

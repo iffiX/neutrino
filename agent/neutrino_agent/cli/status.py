@@ -18,7 +18,7 @@ from neutrino_agent.cli.wording import word_reinstall
 from neutrino_agent.control import client
 from neutrino_agent.core import enrollment, self_update
 from neutrino_agent.core.loop import Agent
-from neutrino_agent.platforms.base import PlatformUnsupportedError
+from neutrino_agent.exceptions import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import detect_platform
 
 STATUS_UNBOUND = "this machine has joined no gateway"

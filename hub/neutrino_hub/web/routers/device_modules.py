@@ -21,10 +21,7 @@ from neutrino_hub.modules.devices.agent_module_controller import (
     ORDER_ACTION_UNINSTALL,
     ask_module,
 )
-from neutrino_hub.modules.devices.agent_sessions import (
-    AgentOfflineError,
-    StreamRefusedError,
-)
+from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_COMMAND_TIMEOUT_S,
     DEVICE_MODULE_VALIDATE_TIMEOUT_S,

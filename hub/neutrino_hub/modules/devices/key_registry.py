@@ -14,12 +14,8 @@ from dataclasses import dataclass
 
 import asyncssh
 
-from neutrino_hub.modules.credentials.vault import (
-    SecretRecord,
-    SecretVault,
-    VaultError,
-    VaultLockedError,
-)
+from neutrino_hub.exceptions import KeyMaterialError, VaultLockedError
+from neutrino_hub.modules.credentials.vault import SecretRecord, SecretVault
 
 KEY_KIND = "ssh_key"
 PRIVATE_KEY_MARKER = "-----BEGIN"
@@ -30,10 +26,6 @@ PUBLIC_KEY_PREFIXES = (
     "sk-ecdsa-sha2-",
     "sk-ssh-ed25519",
 )
-
-
-class KeyMaterialError(ValueError):
-    """Raised when pasted key material cannot be used."""
 
 
 @dataclass
@@ -148,7 +140,7 @@ class KeyRegistry:
             secret = SecretVault().open(key_id)
         except VaultLockedError:
             raise
-        except VaultError as error:
+        except ValueError as error:
             raise KeyMaterialError(str(error)) from error
         return secret["private_key"], secret.get("passphrase")
 

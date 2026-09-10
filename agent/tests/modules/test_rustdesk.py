@@ -12,7 +12,7 @@ import os
 import pytest
 
 from neutrino_agent.modules import rustdesk
-from neutrino_agent.modules.installers import InstallError
+from neutrino_agent.exceptions import InstallError
 from neutrino_agent.modules.rustdesk import (
     RUSTDESK_DIRECT_PORT,
     RUSTDESK_SHARE_OPTIONS,

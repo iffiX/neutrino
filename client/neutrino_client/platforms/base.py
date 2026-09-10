@@ -21,6 +21,11 @@ import subprocess
 import time
 import webbrowser
 
+from neutrino_client.exceptions import (
+    ControlSocketUnavailableError,
+    PlatformUnsupportedError,
+)
+
 # A console tool started from the windowless resident would open a console
 # of its own; the flag is Windows' and zero anywhere else.
 CREATE_NO_WINDOW = 0x08000000
@@ -58,32 +63,6 @@ def run_quietly(
         timeout=timeout_s,
         creationflags=CREATE_NO_WINDOW if os.name == "nt" else 0,
     )
-
-
-class PlatformUnsupportedError(RuntimeError):
-    """Raised when a capability this platform does not have is invoked."""
-
-    code = "unsupported_platform"
-
-
-class ControlSocketUnavailableError(PlatformUnsupportedError):
-    """Raised when the platform cannot say where the control socket lives."""
-
-    code = "control_socket_unavailable"
-
-
-class ShareAttachError(RuntimeError):
-    """Raised when a share cannot be attached or detached."""
-
-    def __init__(self, code: str, detail: str = ""):
-        """
-        Args:
-            code: The typed reason.
-            detail: The tool's own words, for the failure's params.
-        """
-        super().__init__(detail or code)
-        self.code = code
-        self.detail = detail
 
 
 class ClientPlatform:

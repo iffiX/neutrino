@@ -24,25 +24,12 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_PORT_MIN,
     SERVICES_SAMBA_DEFAULT_PORT,
 )
+from neutrino_hub.exceptions import ServiceFieldInvalidError
 from neutrino_hub.utils.json_file import (
     CONFIG_WRITE_LOCK,
     read_config,
     write_config,
 )
-
-
-class DeclaredServiceError(ValueError):
-    """A declared service that cannot be stored.
-
-    Attributes:
-        code: Machine name of the refusal; the pages do the wording.
-        params: The values the refusal's sentence needs.
-    """
-
-    def __init__(self, code: str, params: dict | None = None):
-        super().__init__(code)
-        self.code = code
-        self.params = params or {}
 
 
 @dataclass
@@ -195,7 +182,7 @@ class DeclaredServiceRegistry:
             The stored record.
 
         Raises:
-            DeclaredServiceError: If a field does not validate.
+            ServiceFieldInvalidError: If a field does not validate.
         """
         record = _build_record(
             record_id=uuid.uuid4().hex,
@@ -282,20 +269,20 @@ def _build_record(
         The validated record, carrying only the fields its kind has.
 
     Raises:
-        DeclaredServiceError: Naming the first field that does not validate.
+        ServiceFieldInvalidError: Naming the first field that does not validate.
     """
     if kind not in SERVICES_DECLARED_KINDS:
-        raise DeclaredServiceError(SERVICES_ERROR_INVALID, {"field": "kind"})
+        raise ServiceFieldInvalidError(SERVICES_ERROR_INVALID, {"field": "kind"})
     if not name.strip():
-        raise DeclaredServiceError(SERVICES_ERROR_INVALID, {"field": "name"})
+        raise ServiceFieldInvalidError(SERVICES_ERROR_INVALID, {"field": "name"})
     if not host.strip():
-        raise DeclaredServiceError(SERVICES_ERROR_INVALID, {"field": "host"})
+        raise ServiceFieldInvalidError(SERVICES_ERROR_INVALID, {"field": "host"})
     if port is None:
         if kind != SERVICES_KIND_SAMBA:
-            raise DeclaredServiceError(SERVICES_ERROR_INVALID, {"field": "port"})
+            raise ServiceFieldInvalidError(SERVICES_ERROR_INVALID, {"field": "port"})
         port = SERVICES_SAMBA_DEFAULT_PORT
     if not SERVICES_PORT_MIN <= port <= SERVICES_PORT_MAX:
-        raise DeclaredServiceError(SERVICES_ERROR_INVALID, {"field": "port"})
+        raise ServiceFieldInvalidError(SERVICES_ERROR_INVALID, {"field": "port"})
 
     record = DeclaredService(
         id=record_id,
@@ -309,18 +296,20 @@ def _build_record(
     if kind == SERVICES_KIND_HTTP:
         record.scheme = scheme or SERVICES_HTTP_SCHEMES[0]
         if record.scheme not in SERVICES_HTTP_SCHEMES:
-            raise DeclaredServiceError(SERVICES_ERROR_INVALID, {"field": "scheme"})
+            raise ServiceFieldInvalidError(SERVICES_ERROR_INVALID, {"field": "scheme"})
         record.path = path.strip() if path else "/"
         if not record.path.startswith("/"):
-            raise DeclaredServiceError(SERVICES_ERROR_INVALID, {"field": "path"})
+            raise ServiceFieldInvalidError(SERVICES_ERROR_INVALID, {"field": "path"})
     if kind == SERVICES_KIND_SAMBA:
         record.shares = list(shares or [])
         seen: set[str] = set()
         for share in record.shares:
             share.name = share.name.strip()
             if not share.name or share.name in seen:
-                raise DeclaredServiceError(SERVICES_ERROR_INVALID, {"field": "shares"})
+                raise ServiceFieldInvalidError(
+                    SERVICES_ERROR_INVALID, {"field": "shares"}
+                )
             seen.add(share.name)
         if not record.shares:
-            raise DeclaredServiceError(SERVICES_ERROR_INVALID, {"field": "shares"})
+            raise ServiceFieldInvalidError(SERVICES_ERROR_INVALID, {"field": "shares"})
     return record

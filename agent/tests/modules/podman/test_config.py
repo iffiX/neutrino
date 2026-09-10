@@ -3,7 +3,7 @@ them, or a flag out of a command line."""
 
 import pytest
 
-from neutrino_agent.modules.base import ModuleApplyError
+from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.podman.config import PodmanConfig
 
 

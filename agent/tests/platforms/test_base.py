@@ -9,7 +9,8 @@ import pytest
 
 import neutrino_agent.platforms.base as base_module
 from neutrino_agent.constants import AGENT_STATE_PATH
-from neutrino_agent.platforms.base import AgentPlatform, PlatformUnsupportedError
+from neutrino_agent.exceptions import PlatformUnsupportedError
+from neutrino_agent.platforms.base import AgentPlatform
 from neutrino_agent.platforms.linux import LinuxPlatform
 
 # Contract method -> the capability it belongs to, and a call that reaches

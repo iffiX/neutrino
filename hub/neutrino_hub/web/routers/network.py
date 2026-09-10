@@ -10,6 +10,7 @@ import asyncio
 from contextlib import suppress
 import ipaddress
 import re
+import subprocess
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -62,7 +63,7 @@ from neutrino_hub.modules.router.wifi import (
     AP_PASSPHRASE_MAX_LENGTH,
     AP_PASSPHRASE_MIN_LENGTH,
 )
-from neutrino_hub.utils.subprocess_run import CommandError
+from neutrino_hub.utils.subprocess_run import command_failure_text
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
     SavedNetworkListView,
@@ -456,7 +457,7 @@ def _rerender_radios(runtime: PanelRuntime, known) -> None:
         write_config(link.name, known)
         client = RouterWifiClient(interface=link.name)
         if client.is_running:
-            with suppress(CommandError):
+            with suppress(subprocess.SubprocessError, OSError):
                 client.reconfigure()
 
 
@@ -490,8 +491,8 @@ def scan_wifi(name: str, runtime: PanelRuntime = Depends(get_runtime)) -> WifiSc
     client = RouterWifiClient(interface=name)
     try:
         found = client.scan()
-    except CommandError as error:
-        raise _bad_gateway(str(error)) from error
+    except (subprocess.SubprocessError, OSError) as error:
+        raise _bad_gateway(command_failure_text(error)) from error
     # Which networks are already known is the hub's own answer now, out of
     # `config/`, rather than a question put to whatever manager held them.
     known = runtime.connections()
@@ -542,8 +543,10 @@ async def join_wifi(
     _require_wifi(name)
     try:
         await asyncio.to_thread(_join, runtime, name, request)
-    except CommandError as error:
-        raise _bad_gateway(f"could not join {request.ssid}: {error}") from error
+    except (subprocess.SubprocessError, OSError) as error:
+        raise _bad_gateway(
+            f"could not join {request.ssid}: {command_failure_text(error)}"
+        ) from error
 
     network = runtime.network()
     interface = network.interface_or_new(name)
@@ -595,7 +598,8 @@ def _join(runtime: PanelRuntime, name: str, request: WifiJoinRequest) -> None:
             passphrase.
 
     Raises:
-        CommandError: When the association does not finish. The message says
+        subprocess.CalledProcessError: When a step of the association fails.
+        TimeoutError: When the radio does not join in time. The message says
             what the supplicant was doing, because a wrong passphrase and a
             network out of range look different there.
     """
@@ -888,8 +892,13 @@ def _subnet(address: str) -> ipaddress.IPv4Network | ipaddress.IPv6Network | Non
 async def _apply(runtime: PanelRuntime, *, only: str | None) -> None:
     try:
         await runtime.apply_network(only=only)
-    except CommandError as error:
-        raise _bad_gateway(str(error)) from error
+    except (
+        subprocess.SubprocessError,
+        OSError,
+        RuntimeError,
+        ValueError,
+    ) as error:
+        raise _bad_gateway(command_failure_text(error)) from error
 
 
 def _to_settings(interface: RouterInterface) -> InterfaceSettings:

@@ -14,7 +14,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from neutrino_hub.modules.cliproxyapi.accounts import (
     CliproxyApiAccount,
     CliproxyApiAccountClient,
-    CliproxyApiAccountError,
 )
 from neutrino_hub.modules.cliproxyapi.config import CliproxyApiClientKey
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_LOGIN_KINDS
@@ -30,7 +29,7 @@ from neutrino_hub.modules.cliproxyapi.usage_store import (
     zero_counters,
 )
 from neutrino_hub.modules.ai.registry import AiProviderRegistry
-from neutrino_hub.modules.credentials.vault import VaultError, VaultLockedError
+from neutrino_hub.exceptions import AiAccountRefusedError, VaultLockedError
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
@@ -412,7 +411,7 @@ def _account_call(action):
     """
     try:
         return action(_account_client())
-    except CliproxyApiAccountError as error:
+    except AiAccountRefusedError as error:
         raise HTTPException(
             status_code=ACCOUNT_ERROR_STATUS.get(
                 error.code, status.HTTP_502_BAD_GATEWAY
@@ -430,7 +429,7 @@ def _accounts_quietly() -> list[CliproxyApiAccount]:
     """
     try:
         return _account_client().list_accounts()
-    except CliproxyApiAccountError:
+    except AiAccountRefusedError:
         return []
 
 
@@ -497,7 +496,7 @@ def _key_view(key: CliproxyApiClientKey) -> CliproxyApiKeyView:
         material = key.open_key()
     except VaultLockedError:
         raise
-    except VaultError:
+    except ValueError:
         material = ""
     return CliproxyApiKeyView(
         id=key.id, name=key.name, key=material, created_at=key.created_at

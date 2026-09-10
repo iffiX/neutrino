@@ -10,7 +10,7 @@ Pure: checks arguments only.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
-from neutrino_agent.modules.base import ModuleApplyError
+from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.zfs.constants import (
     ZFS_COMPRESSIONS,
     ZFS_DATASET_NAME_PATTERN,

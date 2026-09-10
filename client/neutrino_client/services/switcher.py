@@ -40,12 +40,8 @@ import tempfile
 
 from neutrino_client import bundled
 from neutrino_client.constants import CLIENT_ORIGINAL_DIR_NAME
-from neutrino_client.platforms.base import PlatformUnsupportedError, run_quietly
-
-
-class SwitcherError(RuntimeError):
-    """Raised when cc-switch refuses, or a configuration cannot be kept."""
-
+from neutrino_client.exceptions import PlatformUnsupportedError, ToolSwitchError
+from neutrino_client.platforms.base import run_quietly
 
 SWITCHER_PROVIDER_ID = "neutrino"
 SWITCHER_PROVIDER_NAME = "Neutrino Hub"
@@ -145,7 +141,7 @@ def activate(*, base_url: str, api_key: str, tool_configs: "dict | None" = None)
         A short message naming the tools that took it.
 
     Raises:
-        SwitcherError: If cc-switch refuses for any tool; the tools switched
+        ToolSwitchError: If cc-switch refuses for any tool; the tools switched
             before it are put back first.
     """
     configs = tool_configs or {}
@@ -153,17 +149,17 @@ def activate(*, base_url: str, api_key: str, tool_configs: "dict | None" = None)
     for app in SWITCHER_APPS:
         try:
             _point_at_hub(app, base_url, api_key, configs.get(app) or {})
-        except SwitcherError as error:
+        except ToolSwitchError as error:
             undone = []
             for switched in done:
                 try:
                     _point_away(switched)
-                except SwitcherError as failure:
+                except ToolSwitchError as failure:
                     undone.append(f"{switched}: {failure}")
             problem = f"{app}: {error}"
             if undone:
                 problem += "; not put back: " + "; ".join(undone)
-            raise SwitcherError(problem[:300])
+            raise ToolSwitchError(problem[:300])
         done.append(app)
     return ", ".join(done)
 
@@ -233,7 +229,7 @@ def _point_at_hub(app: str, base_url: str, api_key: str, config: dict) -> None:
         config: The tool's staged choices.
 
     Raises:
-        SwitcherError: If cc-switch refuses, or if Claude Code's settings
+        ToolSwitchError: If cc-switch refuses, or if Claude Code's settings
             did not end up naming the hub.
     """
     relative = SWITCHER_APP_FILES[app]
@@ -261,8 +257,11 @@ def _point_at_hub(app: str, base_url: str, api_key: str, config: dict) -> None:
     arguments += _model_flags(app, config)
     if _common_snippet(app):
         arguments.append("--common-config")
-    _run(arguments, app)
-    _run(["use", SWITCHER_PROVIDER_ID], app)
+    try:
+        _run(arguments, app)
+        _run(["use", SWITCHER_PROVIDER_ID], app)
+    except subprocess.CalledProcessError as error:
+        raise ToolSwitchError(_refusal_words(error)) from error
 
     if app == "codex":
         effort = str(config.get(CODEX_EFFORT_KEY, "") or "")
@@ -274,6 +273,12 @@ def _point_at_hub(app: str, base_url: str, api_key: str, config: dict) -> None:
     _verify(app, base_url, api_key, config)
     record["added"] = wanted
     _write_record(app, record)
+
+
+def _refusal_words(error: "subprocess.CalledProcessError") -> str:
+    """What cc-switch said when it exited non-zero, trimmed for the page."""
+    output = (error.stderr or error.output or "").strip()
+    return output[-200:] or "cc-switch refused"
 
 
 def _adopt_once(app: str) -> dict:
@@ -338,14 +343,14 @@ def _verify(app: str, base_url: str, api_key: str, config: dict) -> None:
         config: The tool's staged choices.
 
     Raises:
-        SwitcherError: When Claude Code's settings do not name the hub.
+        ToolSwitchError: When Claude Code's settings do not name the hub.
     """
     if app != "claude":
         return
     if not is_active(
         base_url=base_url, api_key=api_key, model=str(config.get("default", ""))
     ):
-        raise SwitcherError("the settings file did not take the hub's endpoint")
+        raise ToolSwitchError("the settings file did not take the hub's endpoint")
 
 
 def _point_away(app: str) -> str:
@@ -382,7 +387,7 @@ def _drop_provider(app: str, previous: str) -> str:
         The provider switched to, empty when no switch was needed.
 
     Raises:
-        SwitcherError: If the provider is still there afterwards.
+        ToolSwitchError: If the provider is still there afterwards.
     """
     if not _has_provider(app):
         return ""
@@ -393,7 +398,7 @@ def _drop_provider(app: str, previous: str) -> str:
             _run(["use", returned_to], app, is_checked=False)
     _delete_provider(app)
     if _has_provider(app):
-        raise SwitcherError("cc-switch kept the hub's provider")
+        raise ToolSwitchError("cc-switch kept the hub's provider")
     return returned_to
 
 
@@ -404,11 +409,11 @@ def _delete_provider(app: str) -> None:
         app: Which tool's providers to act on.
 
     Raises:
-        SwitcherError: If no terminal can be made for the question.
+        ToolSwitchError: If no terminal can be made for the question.
     """
     binary = find_cli()
     if binary is None:
-        raise SwitcherError("the cc-switch command line is not installed")
+        raise ToolSwitchError("the cc-switch command line is not installed")
     argv = [binary, "--app", app, "provider", "delete", SWITCHER_PROVIDER_ID]
     try:
         _platform().run_answering(
@@ -418,7 +423,7 @@ def _delete_provider(app: str) -> None:
             timeout_s=COMMAND_TIMEOUT_S,
         )
     except (PlatformUnsupportedError, OSError) as error:
-        raise SwitcherError(f"could not answer cc-switch: {error}")
+        raise ToolSwitchError(f"could not answer cc-switch: {error}")
 
 
 def _has_provider(app: str) -> bool:
@@ -620,21 +625,23 @@ def _run(arguments: list, app: str, *, is_checked: bool = True) -> str:
         Standard output.
 
     Raises:
-        SwitcherError: If the command fails while checked.
+        ToolSwitchError: If cc-switch is not installed or cannot be run.
+        subprocess.CalledProcessError: On a non-zero exit while checked.
     """
     binary = find_cli()
     if binary is None:
-        raise SwitcherError("the cc-switch command line is not installed")
+        raise ToolSwitchError("the cc-switch command line is not installed")
     command = [binary, "--app", app] + arguments
     try:
         result = run_quietly(
             command, timeout_s=COMMAND_TIMEOUT_S, encoding=COMMAND_ENCODING
         )
     except (OSError, subprocess.SubprocessError) as error:
-        raise SwitcherError(f"cc-switch could not run: {error}")
+        raise ToolSwitchError(f"cc-switch could not run: {error}")
     if is_checked and result.returncode != 0:
-        output = (result.stderr or result.stdout or "").strip()
-        raise SwitcherError(output[-200:] or "cc-switch refused")
+        raise subprocess.CalledProcessError(
+            result.returncode, command, output=result.stdout, stderr=result.stderr
+        )
     return result.stdout or ""
 
 

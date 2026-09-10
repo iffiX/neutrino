@@ -96,7 +96,7 @@ class ScriptedAgentStream:
         return await self._inbound.get()
 
     async def send_bytes(self, data: bytes) -> None:
-        from neutrino_hub.modules.devices.agent_sessions import AgentOfflineError
+        from neutrino_hub.exceptions import AgentOfflineError
 
         if self._closed.is_set():
             raise AgentOfflineError("scripted")
@@ -171,7 +171,7 @@ class FakeAgentSessions:
         self.refusal = None
 
     async def open_stream(self, key, kind, args):
-        from neutrino_hub.modules.devices.agent_sessions import StreamRefusedError
+        from neutrino_hub.exceptions import StreamRefusedError
 
         self._require(key)
         if self.refusal is not None:
@@ -225,7 +225,7 @@ class FakeAgentSessions:
         self.pushes.append((key.lower(), state_hash, desired))
 
     def _require(self, key: str) -> None:
-        from neutrino_hub.modules.devices.agent_sessions import AgentOfflineError
+        from neutrino_hub.exceptions import AgentOfflineError
 
         if key.lower() not in self.online:
             raise AgentOfflineError(key.lower())

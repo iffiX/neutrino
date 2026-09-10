@@ -2,7 +2,7 @@
 
 import queue
 
-from neutrino_agent.streams.channel import StreamClosed
+from neutrino_agent.exceptions import StreamClosed
 
 
 class FakeChannel:

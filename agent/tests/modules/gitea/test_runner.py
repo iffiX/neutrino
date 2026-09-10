@@ -1,12 +1,13 @@
 """The git server runner: install from bytes, validate, apply, commands."""
 
+import subprocess
+
 import pytest
 
-from neutrino_agent.modules.base import ModuleApplyError
+from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.gitea import runner as runner_module
 from neutrino_agent.modules.gitea.applier import GiteaState
 from neutrino_agent.modules.gitea.runner import GiteaModuleRunner
-from neutrino_agent.modules.subprocess_run import CommandError
 from neutrino_agent.platforms.base import AgentPlatform
 
 SECRETS = {
@@ -134,7 +135,9 @@ def test_apply_renders_and_keeps_the_url(runner):
 
 
 def test_a_refused_apply_is_typed(runner):
-    FakeApplier.error = CommandError(["systemctl"], "will not start")
+    FakeApplier.error = subprocess.CalledProcessError(
+        1, ["systemctl"], stderr="will not start"
+    )
 
     with pytest.raises(ModuleApplyError) as refused:
         runner.apply(CONFIG)
@@ -182,7 +185,7 @@ def test_a_password_reset_lands_only_on_an_administrator(runner):
 
 
 def test_a_refused_gitea_verb_is_typed(runner):
-    FakeAdmins.error = CommandError(["runuser"], "db locked")
+    FakeAdmins.error = subprocess.CalledProcessError(1, ["runuser"], stderr="db locked")
 
     outcome = runner.command(
         "gitea_admin", {"username": "ann", "password": "p", "email": "a@x"}

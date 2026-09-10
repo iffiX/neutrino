@@ -26,22 +26,19 @@ import uuid
 
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import AGENT_CONFIG_PATH, AGENT_WIRE_GENERATION
-from neutrino_agent.core.channel import (
-    GatewayWireStale,
-    GatewayHttpChannel,
+from neutrino_agent.core.channel import GatewayHttpChannel
+from neutrino_agent.exceptions import (
+    EnrollmentError,
     GatewayRefused,
     GatewayUnreachable,
     GatewayUntrusted,
     GatewayVersionRefused,
+    GatewayWireStale,
 )
 from neutrino_agent.platforms.detect import platform_tuple
 
 ENROLL_PATH = "/api/agent/enroll"
 SYS_NET_DIR = "/sys/class/net"
-
-
-class EnrollmentError(RuntimeError):
-    """Raised when a machine cannot join a gateway."""
 
 
 LINK_PREFIX = "neutrino://enroll/"
@@ -300,6 +297,10 @@ def enroll(link: str) -> dict:
                 "this agent build does not match the hub; reinstall it from "
                 "the hub's Devices page and connect again"
             ) from error
+        except GatewayVersionRefused as error:
+            # The link is fine and unspent; the hub is the side that must
+            # move.
+            raise EnrollmentError(str(error)) from error
         except GatewayRefused as error:
             # The gateway answered and said no: the ticket is spent or has
             # expired. The other addresses reach the same gateway.
@@ -307,10 +308,6 @@ def enroll(link: str) -> dict:
                 "the gateway refused this link — it may have expired; generate a "
                 "fresh one on the Devices page"
             ) from error
-        except GatewayVersionRefused as error:
-            # The link is fine and unspent; the hub is the side that must
-            # move.
-            raise EnrollmentError(str(error)) from error
         except GatewayUntrusted as error:
             # Whatever answered is not the hub this link pins, and it was
             # sent nothing.

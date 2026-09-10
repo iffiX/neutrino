@@ -8,7 +8,7 @@ never on an argument vector. Every Win32 call rides the seam.
 import pytest
 
 import neutrino_client.platforms.windows as windows_module
-from neutrino_client.platforms.base import PlatformUnsupportedError, ShareAttachError
+from neutrino_client.exceptions import PlatformUnsupportedError, ShareAttachError
 from neutrino_client.platforms.windows import (
     WindowsPlatform,
 )

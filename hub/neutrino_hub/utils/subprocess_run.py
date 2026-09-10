@@ -33,10 +33,6 @@ class CommandResult:
         return self.exit_code == 0
 
 
-class CommandError(RuntimeError):
-    """Raised when a checked command fails."""
-
-
 def run(
     command: list[str],
     *,
@@ -59,8 +55,11 @@ def run(
         The captured result.
 
     Raises:
-        CommandError: If the command fails and ``is_checked`` is set, or if it
-            times out.
+        subprocess.CalledProcessError: If the command exits non-zero and
+            ``is_checked`` is set.
+        subprocess.TimeoutExpired: If the command runs past ``timeout_s``.
+        FileNotFoundError: If the tool is not installed and ``is_checked`` is
+            set.
     """
     try:
         completed = subprocess.run(
@@ -71,16 +70,12 @@ def run(
             timeout=timeout_s,
             env={**os.environ, **environment} if environment else None,
         )
-    except subprocess.TimeoutExpired as error:
-        raise CommandError(
-            f"{' '.join(command)} timed out after {timeout_s}s"
-        ) from error
-    except FileNotFoundError as error:
+    except FileNotFoundError:
         # An uninstalled tool is a failure like any other: callers that opted
         # out of checking want a failed result, not an exception, so the panel
         # still renders before the installer has run.
         if is_checked:
-            raise CommandError(f"{command[0]} is not installed") from error
+            raise
         return CommandResult(
             command=command,
             exit_code=127,
@@ -95,8 +90,27 @@ def run(
         stderr=completed.stderr,
     )
     if is_checked and not result.is_success:
-        raise CommandError(
-            f"{' '.join(command)} exited {result.exit_code}: "
-            f"{result.stderr.strip() or result.stdout.strip()}"
+        raise subprocess.CalledProcessError(
+            result.exit_code, command, output=result.stdout, stderr=result.stderr
         )
     return result
+
+
+def command_failure_text(error: BaseException) -> str:
+    """Word a command failure for a person reading it.
+
+    Args:
+        error: What ``run`` raised, or any other failure being reported
+            beside one.
+
+    Returns:
+        The command, its exit status and what it printed for a
+        ``subprocess.CalledProcessError``; the error's own text otherwise.
+    """
+    if not isinstance(error, subprocess.CalledProcessError):
+        return str(error)
+    command = error.cmd if isinstance(error.cmd, str) else " ".join(error.cmd)
+    printed = ((error.stderr or "") or (error.output or "")).strip()
+    if not printed:
+        return f"{command} exited {error.returncode}"
+    return f"{command} exited {error.returncode}: {printed}"

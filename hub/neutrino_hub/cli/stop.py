@@ -27,6 +27,7 @@ hub is the package manager's business, and undoing a setup is ``nhub reset``.
 """
 
 import argparse
+import subprocess
 import sys
 
 from neutrino_hub.modules.router.dhcp_client import RouterDhcpClient
@@ -34,7 +35,7 @@ from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.supplicant import RouterWifiClient
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.utils.json_file import read_config
-from neutrino_hub.utils.subprocess_run import CommandError
+from neutrino_hub.utils.subprocess_run import command_failure_text
 
 # The order they are stopped in, which is the order they sit on each other.
 # The panel first because it is what a person is holding: stopping it while
@@ -110,11 +111,14 @@ def stop(names: list) -> int:
             continue
         try:
             controller.control(name, "stop")
-        except CommandError as error:
+        except (subprocess.SubprocessError, OSError) as error:
             # Reported rather than raised: one unit that will not stop must
             # not hide what happened to the others, and `systemctl status`
             # says more about it than a traceback here could.
-            print(f"  {name}: did not stop: {error}", file=sys.stderr)
+            print(
+                f"  {name}: did not stop: {command_failure_text(error)}",
+                file=sys.stderr,
+            )
             is_failed = True
             continue
         print(f"  {name}: stopped")
@@ -144,8 +148,11 @@ def stop_engine(name: str, interface: str) -> int:
         return 0
     try:
         engine.stop()
-    except CommandError as error:
-        print(f"  {engine.unit}: did not stop: {error}", file=sys.stderr)
+    except (subprocess.SubprocessError, OSError) as error:
+        print(
+            f"  {engine.unit}: did not stop: {command_failure_text(error)}",
+            file=sys.stderr,
+        )
         return 1
     print(f"  {engine.unit}: stopped")
     return 0

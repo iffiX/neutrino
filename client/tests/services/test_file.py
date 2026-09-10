@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-from neutrino_client.platforms.base import ShareAttachError
+from neutrino_client.exceptions import ShareAttachError
 from neutrino_client.services.file import FileServiceHandler, mount_record_id
 from neutrino_client.services.store import ClientServiceStore
 from tests.conftest import FakeClientPlatform, discard

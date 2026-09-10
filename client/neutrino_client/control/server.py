@@ -26,7 +26,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from neutrino_client.constants import CLIENT_CONTROL_PIPE_PREFIX
 from neutrino_client.control import routes
 from neutrino_client.control.identity import peer_identity
-from neutrino_client.platforms.base import PlatformUnsupportedError
+from neutrino_client.exceptions import PlatformUnsupportedError
 
 
 def is_socket_live(path: str) -> bool:
@@ -140,7 +140,9 @@ class _ControlSocketHttpServer(ThreadingHTTPServer):
     def server_bind(self) -> None:
         """Bind the path: make its directory, drop a dead socket, mode 0600.
 
-        A path a live resident answers on is left alone and the bind fails.
+        Raises:
+            OSError: When a live resident already answers on the path, which
+                is left alone.
         """
         directory = os.path.dirname(self.server_address)
         if directory and not os.path.isdir(directory):

@@ -83,7 +83,7 @@ def set_address(interface: str, cidr: str) -> bool:
         binds to it.
 
     Raises:
-        CommandError: When the address cannot be set.
+        subprocess.CalledProcessError: When the address cannot be set.
     """
     existing = addresses_on(interface)
     if existing == [cidr]:
@@ -120,7 +120,7 @@ def set_up(interface: str) -> None:
         interface: Interface name.
 
     Raises:
-        CommandError: When the interface will not come up.
+        subprocess.CalledProcessError: When the interface will not come up.
     """
     run([LINKS_COMMAND, "link", "set", interface, "up"], timeout_s=LINKS_TIMEOUT_S)
 
@@ -153,7 +153,7 @@ def set_mac(interface: str, mac_address: str | None) -> bool:
         address, so this brings it down and back up.
 
     Raises:
-        CommandError: When the address is refused.
+        subprocess.CalledProcessError: When the address is refused.
     """
     if not mac_address:
         return False
@@ -193,8 +193,8 @@ def add_vlan(parent: str, name: str, vlan_id: int) -> bool:
         True when it had to be built.
 
     Raises:
-        CommandError: When the kernel refuses it — most often because the
-            parent is not there.
+        subprocess.CalledProcessError: When the kernel refuses it, most
+            often because the parent is not there.
     """
     if exists(name):
         return False
@@ -411,7 +411,7 @@ def set_default_route(interface: str, gateway: str, metric: int) -> None:
         metric: What to install it at, which is how uplinks are ranked.
 
     Raises:
-        CommandError: When the route cannot be installed.
+        subprocess.CalledProcessError: When the route cannot be installed.
     """
     run(
         [

@@ -35,13 +35,12 @@ from neutrino_client.constants import (
     CLIENT_MOUNT_HELPER_PATH,
     CLIENT_PKEXEC_REFUSAL_EXIT_CODES,
 )
-from neutrino_client.platforms.base import (
-    ClientPlatform,
+from neutrino_client.exceptions import (
     ControlSocketUnavailableError,
     PlatformUnsupportedError,
     ShareAttachError,
-    answer_on_prompt,
 )
+from neutrino_client.platforms.base import ClientPlatform, answer_on_prompt
 
 CIFS_HELPER = "mount.cifs"
 CIFS_MOUNT_TIMEOUT_S = 120

@@ -7,12 +7,12 @@ them, and that `reset password` touches only the password.
 """
 
 import json
+import subprocess
 
 import pytest
 
 from neutrino_hub.cli import password, reset
 from neutrino_hub.cli import stop as stop_module
-from neutrino_hub.utils.subprocess_run import CommandError
 
 
 @pytest.fixture
@@ -135,7 +135,7 @@ def _controller(monkeypatch, *, is_active=True, refusing=()):
         def control(self, name, action):
             asked.append((name, action))
             if name in refusing:
-                raise CommandError("systemctl stop timed out after 60s")
+                raise subprocess.TimeoutExpired(["systemctl", "stop", name], 60)
 
     monkeypatch.setattr(stop_module, "SystemdServiceController", Controller)
     return asked

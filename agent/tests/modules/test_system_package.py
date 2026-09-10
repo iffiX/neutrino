@@ -4,7 +4,7 @@ import pytest
 
 from neutrino_agent.modules import installers
 from neutrino_agent.modules import system_package as system_package_module
-from neutrino_agent.modules.installers import InstallError
+from neutrino_agent.exceptions import InstallError
 from neutrino_agent.modules.system_package import SystemPackageModuleRunner
 from neutrino_agent.platforms.base import AgentPlatform
 

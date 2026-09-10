@@ -27,7 +27,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.core import enrollment
 from neutrino_agent.core.metrics import hostname
-from neutrino_agent.platforms.base import PlatformUnsupportedError
+from neutrino_agent.exceptions import EnrollmentError, PlatformUnsupportedError
 
 
 def _state(agent) -> dict:
@@ -252,7 +252,7 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
         agent = self.server.control_agent
         try:
             agent.connect(str(body.get("link", "")))
-        except enrollment.EnrollmentError as error:
+        except EnrollmentError as error:
             state = _state(agent)
             state["error"] = str(error)
             self._send_json(state)

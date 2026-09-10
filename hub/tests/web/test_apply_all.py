@@ -6,11 +6,12 @@ the panel, and it used to be applied first and to abort the rest — so a bad ex
 node left the LAN with no firewall rules and no DNS until it was fixed.
 """
 
+import subprocess
+
 import pytest
 
-from neutrino_hub.modules.devices.agent_sessions import StreamRefusedError
+from neutrino_hub.exceptions import StreamRefusedError
 from neutrino_hub.modules.router.constants import ROUTER_NFT_PATH as NFT_PATH
-from neutrino_hub.utils.subprocess_run import CommandError
 from neutrino_hub.web import panel_runtime as runtime_module
 from neutrino_hub.web.panel_runtime import PanelRuntime
 
@@ -34,7 +35,11 @@ class _RefusingApplier:
     """An xray that will not load what it is given."""
 
     def apply(self, config) -> None:
-        raise CommandError("xray rejected the rendered config: bad address")
+        raise subprocess.CalledProcessError(
+            1,
+            ["xray", "run", "-test"],
+            stderr="xray rejected the rendered config: bad address",
+        )
 
 
 @pytest.fixture
@@ -69,7 +74,7 @@ def applied(monkeypatch):
 def test_a_refused_xray_config_does_not_take_the_firewall_with_it(applied):
     panel, written = applied
 
-    with pytest.raises(CommandError):
+    with pytest.raises(RuntimeError):
         panel._apply_all_blocking()
 
     assert ("loaded", "nft") in written
@@ -78,7 +83,7 @@ def test_a_refused_xray_config_does_not_take_the_firewall_with_it(applied):
 def test_a_refused_xray_config_does_not_take_dns_with_it(applied):
     panel, written = applied
 
-    with pytest.raises(CommandError):
+    with pytest.raises(RuntimeError):
         panel._apply_all_blocking()
 
     assert any(step == "ran" for step, _ in written)
@@ -89,7 +94,7 @@ def test_the_apply_still_reports_that_xray_refused(applied):
     running the configuration from before their change."""
     panel, _ = applied
 
-    with pytest.raises(CommandError) as refusal:
+    with pytest.raises(RuntimeError) as refusal:
         panel._apply_all_blocking()
 
     assert "xray rejected" in str(refusal.value)
@@ -100,7 +105,7 @@ def test_the_ruleset_is_recorded_only_after_the_kernel_takes_it(applied):
     it answers with where traffic was about to go."""
     panel, written = applied
 
-    with pytest.raises(CommandError):
+    with pytest.raises(RuntimeError):
         panel._apply_all_blocking()
 
     steps = [step for step in written if step[1] in ("nft", str(NFT_PATH))]
@@ -112,7 +117,7 @@ def test_a_refused_apply_leaves_the_configuration_dirty(applied):
     xray is running what it was running before."""
     panel, _ = applied
 
-    with pytest.raises(CommandError):
+    with pytest.raises(RuntimeError):
         panel._apply_all_blocking()
 
     assert panel.is_config_dirty

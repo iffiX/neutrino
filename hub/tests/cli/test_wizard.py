@@ -11,6 +11,7 @@ uplink.
 import pytest
 
 from neutrino_hub.cli import wizard
+from neutrino_hub.exceptions import WizardAborted
 from neutrino_hub.modules.router.link_status import LinkStatus
 
 VAULT_PASSPHRASE = "A-vault-passphrase-16!"  # scan: allow
@@ -67,7 +68,7 @@ def test_an_answers_document_needs_no_terminal():
 
 def test_a_misspelled_key_is_refused_rather_than_ignored():
     """`upstream_gatway` quietly meaning "no upstream router" is a week lost."""
-    with pytest.raises(wizard.WizardAborted, match="upstream_gatway"):
+    with pytest.raises(WizardAborted, match="upstream_gatway"):
         wizard.from_document(
             {
                 "password": "a-long-enough-password",
@@ -91,12 +92,12 @@ def test_an_incomplete_document_is_refused(missing):
     }
     document.pop(missing)
 
-    with pytest.raises(wizard.WizardAborted, match=missing):
+    with pytest.raises(WizardAborted, match=missing):
         wizard.from_document(document)
 
 
 def test_a_mode_nobody_has_is_refused():
-    with pytest.raises(wizard.WizardAborted, match="teapot"):
+    with pytest.raises(WizardAborted, match="teapot"):
         wizard.from_document(
             {
                 "password": "a-long-enough-password",
@@ -210,7 +211,7 @@ def test_an_accepted_password_goes_on(monkeypatch):
 
 
 def _refusing(**_keywords) -> str:
-    raise wizard.PasswordRefused("use at least 8 characters")
+    raise ValueError("use at least 8 characters")
 
 
 def _returning_password(**_keywords) -> str:
@@ -339,7 +340,7 @@ def test_a_machine_with_no_interface_cannot_be_set_up(monkeypatch):
     """A gateway with nothing to route on is not a state to configure."""
     monkeypatch.setattr(wizard, "RouterLinkStatus", _NoPorts)
 
-    with pytest.raises(wizard.WizardAborted, match="no network interface"):
+    with pytest.raises(WizardAborted, match="no network interface"):
         wizard.ask()
 
 
@@ -516,7 +517,7 @@ def test_this_boxs_own_traffic_is_asked_for_rather_than_assumed():
 
 
 def test_a_link_that_cannot_be_read_is_refused():
-    with pytest.raises(wizard.WizardAborted):
+    with pytest.raises(WizardAborted):
         wizard.from_document(
             {
                 "password": "a-long-enough-password",
@@ -562,7 +563,7 @@ def test_a_document_can_name_the_modules_to_install():
 
 
 def test_a_module_nobody_has_is_refused_with_the_ones_there_are():
-    with pytest.raises(wizard.WizardAborted, match="postgres"):
+    with pytest.raises(WizardAborted, match="postgres"):
         wizard.from_document(
             {
                 "password": "a-long-enough-password",

@@ -68,7 +68,7 @@ class CliproxyApiProvisioner:
 
         Raises:
             RuntimeError: On a machine the vendor publishes no binary for.
-            CommandError: If the download or any setup step fails.
+            subprocess.CalledProcessError: If the download or any setup step fails.
         """
         is_changed = False
         applier = CliproxyApiConfigApplier()

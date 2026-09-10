@@ -12,7 +12,7 @@ import pytest
 
 import neutrino_client.bundled as bundled
 import neutrino_client.services.rdp as rdp_module
-from neutrino_client.core.channel import (
+from neutrino_client.exceptions import (
     GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,

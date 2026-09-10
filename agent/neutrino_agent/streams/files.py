@@ -25,7 +25,7 @@ import tarfile
 import tempfile
 
 from neutrino_agent.constants import AGENT_WS_CHUNK_BYTES, AGENT_WS_STREAM_CREDIT_BYTES
-from neutrino_agent.streams.channel import StreamRefused
+from neutrino_agent.exceptions import StreamRefused
 
 FILE_OPS = ("mkdir", "rename", "delete")
 

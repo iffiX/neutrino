@@ -7,8 +7,9 @@ ruleset. The renderers stay pure so they can be tested without root.
 """
 
 import pwd
+import subprocess
 
-from neutrino_hub.utils.subprocess_run import CommandError, run
+from neutrino_hub.utils.subprocess_run import command_failure_text, run
 
 from neutrino_hub.modules.router import links, resolver, stack
 from neutrino_hub.modules.router.connections import RouterConnectionSet
@@ -79,13 +80,13 @@ def lookup_xray_uid() -> int:
         The numeric uid.
 
     Raises:
-        CommandError: If the user does not exist yet. The installer creates it
-            before any ruleset is rendered.
+        RuntimeError: If the user does not exist yet. The installer creates
+            it before any ruleset is rendered.
     """
     try:
         return pwd.getpwnam(XRAY_SERVICE_USER).pw_uid
     except KeyError as error:
-        raise CommandError(
+        raise RuntimeError(
             f"system user {XRAY_SERVICE_USER!r} does not exist; "
             f"run `nhub setup` first"
         ) from error
@@ -364,7 +365,7 @@ class RouterInterfaceApplier:
             One line per change actually made.
 
         Raises:
-            CommandError: If NetworkManager rejects the configuration.
+            subprocess.CalledProcessError: If NetworkManager rejects the configuration.
         """
         if not self._network.is_addressing_owned:
             # Somebody else's machine. Its address, its route and its lease
@@ -469,13 +470,16 @@ class RouterInterfaceApplier:
             try:
                 links.set_default_route(device, upstream, ROUTER_METRIC_SIDE_GATEWAY)
                 changes.append(f"{interface.name} reaching the internet via {upstream}")
-            except CommandError as error:
+            except subprocess.CalledProcessError as error:
                 # Reported, not raised. A next hop the kernel refuses is one
                 # interface's way out; raising here takes down the whole apply
                 # — the served address, the firewall, the resolver — and the
                 # unit that runs it at boot, leaving a box nobody can reach
                 # over a route it never had.
-                changes.append(f"{interface.name} cannot reach {upstream}: {error}")
+                changes.append(
+                    f"{interface.name} cannot reach {upstream}: "
+                    f"{command_failure_text(error)}"
+                )
         return changes
 
     def _apply_wan(self, interface: RouterInterface) -> list[str]:
@@ -760,7 +764,7 @@ class RouterRulesetApplier:
                 it is not the hub's to flip.
 
         Raises:
-            CommandError: If validation or any step fails.
+            subprocess.CalledProcessError: If validation or any step fails.
         """
         is_diverting = "tproxy ip to" in ruleset
         self.enable_forwarding(is_forwarding=is_forwarding, is_diverting=is_diverting)
@@ -880,8 +884,8 @@ class RouterRulesetApplier:
             ruleset: Rendered ruleset text.
 
         Raises:
-            CommandError: If ``nft -c`` rejects the ruleset. The running
-                firewall is left untouched in that case.
+            subprocess.CalledProcessError: If ``nft -c`` rejects the
+                ruleset. The running firewall is left untouched in that case.
         """
         run(["nft", "-c", "-f", "-"], input_text=ruleset)
         run(["nft", "-f", "-"], input_text=ruleset)

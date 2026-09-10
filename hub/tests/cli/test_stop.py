@@ -1,9 +1,10 @@
 """Stopping what the hub runs, and what it deliberately leaves alone."""
 
+import subprocess
+
 import pytest
 
 from neutrino_hub.cli import stop as stop_module
-from neutrino_hub.utils.subprocess_run import CommandError
 
 
 @pytest.fixture
@@ -26,7 +27,7 @@ def systemd(monkeypatch):
         def control(self, name, action):
             asked.append((name, action))
             if name in state["refusing"]:
-                raise CommandError("systemctl stop timed out after 60s")
+                raise subprocess.TimeoutExpired(["systemctl", "stop", name], 60)
 
     monkeypatch.setattr(stop_module, "SystemdServiceController", Controller)
     return asked, state

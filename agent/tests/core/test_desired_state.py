@@ -18,7 +18,7 @@ from neutrino_agent.core.desired_state import (
     DesiredStateApplier,
     DesiredStateStore,
 )
-from neutrino_agent.modules.base import ModuleApplyError
+from neutrino_agent.exceptions import ModuleApplyError
 
 RESOLVED = {"kind": "system_package", "entry": {"packages": ["x"]}}
 

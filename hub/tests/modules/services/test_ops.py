@@ -7,11 +7,13 @@ names out of them is what makes a declared share's health true or false, so
 each shape is pinned rather than assumed.
 """
 
+import subprocess
+
 import pytest
 
 from neutrino_hub.modules.services import ops
 from neutrino_hub.modules.services.ops import list_shares, parse_share_names
-from neutrino_hub.utils.subprocess_run import CommandError, CommandResult
+from neutrino_hub.utils.subprocess_run import CommandResult
 
 # What `smbclient -L 127.0.0.1 -N` prints against this hub's own samba.
 HUB_LISTING = """Anonymous login successful
@@ -158,7 +160,9 @@ def test_a_server_that_does_not_answer_is_a_connect_failure(monkeypatch, install
 
 def test_a_client_killed_on_the_timeout_is_a_connect_failure(monkeypatch, installed):
     """The 2 s discipline is a belt on smbclient's own longer waits."""
-    monkeypatch.setattr(ops, "run", RecordingRun(CommandError("timed out")))
+    monkeypatch.setattr(
+        ops, "run", RecordingRun(subprocess.TimeoutExpired(["smbclient"], 2))
+    )
 
     listing = list_shares("10.0.0.9")
 

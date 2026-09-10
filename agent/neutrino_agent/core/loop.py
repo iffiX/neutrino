@@ -38,15 +38,7 @@ from neutrino_agent.constants import (
     AGENT_WS_PATH,
 )
 from neutrino_agent.core import enrollment, self_update
-from neutrino_agent.core.channel import (
-    GatewayHttpChannel,
-    GatewayRefused,
-    GatewayRefusedDetail,
-    GatewayUnreachable,
-    GatewayUntrusted,
-    GatewayVersionRefused,
-    GatewayWireStale,
-)
+from neutrino_agent.core.channel import GatewayHttpChannel
 from neutrino_agent.core.commands import DeviceOperator
 from neutrino_agent.core.desired_state import DesiredStateApplier, DesiredStateStore
 from neutrino_agent.core.engine import ModuleEngine
@@ -55,8 +47,17 @@ from neutrino_agent.core.session import AgentSession
 from neutrino_agent.core.store import MachineStateStore
 from neutrino_agent.core.version import parse_version
 from neutrino_agent.core.ws_client import WebSocketClient
-from neutrino_agent.modules.base import ModuleApplyError
-from neutrino_agent.platforms.base import PlatformUnsupportedError
+from neutrino_agent.exceptions import (
+    GatewayRefused,
+    GatewayRefusedDetail,
+    GatewayUnreachable,
+    GatewayUntrusted,
+    GatewayVersionRefused,
+    GatewayWireStale,
+    ModuleApplyError,
+    PlatformUnsupportedError,
+    SelfUpdateError,
+)
 from neutrino_agent.platforms.detect import detect_platform
 from neutrino_agent.rdp.host import RdpShareHost
 
@@ -707,7 +708,7 @@ class Agent:
                 data_dir=self._data_dir,
             )
         except (
-            self_update.SelfUpdateError,
+            SelfUpdateError,
             GatewayRefused,
             GatewayUnreachable,
             GatewayUntrusted,
@@ -715,7 +716,7 @@ class Agent:
         ) as error:
             code = (
                 str(error)
-                if isinstance(error, self_update.SelfUpdateError)
+                if isinstance(error, SelfUpdateError)
                 else "agent_update_fetch_failed"
             )
             with self._lock:
@@ -754,14 +755,14 @@ class Agent:
                 data_dir=self._data_dir,
             )
         except (
-            self_update.SelfUpdateError,
+            SelfUpdateError,
             GatewayRefused,
             GatewayUnreachable,
             GatewayUntrusted,
         ) as error:
             code = (
                 str(error)
-                if isinstance(error, self_update.SelfUpdateError)
+                if isinstance(error, SelfUpdateError)
                 else channel_error(error)["code"]
             )
             with self._lock:

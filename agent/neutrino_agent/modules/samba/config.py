@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from neutrino_agent.modules.base import ModuleApplyError
+from neutrino_agent.exceptions import ModuleApplyError
 
 # Share names appear as section headers in smb.conf and on every client's
 # network browser; user names become unix accounts. Both are kept to

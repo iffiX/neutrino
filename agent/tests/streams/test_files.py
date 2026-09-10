@@ -14,7 +14,7 @@ import tarfile
 
 import pytest
 
-from neutrino_agent.streams.channel import StreamRefused
+from neutrino_agent.exceptions import StreamRefused
 from neutrino_agent.streams.files import (
     FileDownloadStream,
     FileListStream,

@@ -17,11 +17,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from neutrino_hub.modules.devices.agent_module_controller import AgentModuleController
-from neutrino_hub.modules.devices.agent_sessions import (
-    AgentOfflineError,
-    AgentSessionRegistry,
-    StreamRefusedError,
-)
+from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
+from neutrino_hub.modules.devices.agent_sessions import AgentSessionRegistry
 from neutrino_hub.modules.devices.constants import AGENT_WIRE_GENERATION
 from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice

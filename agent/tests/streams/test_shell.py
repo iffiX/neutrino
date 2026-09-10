@@ -13,7 +13,7 @@ import time
 import pytest
 
 from neutrino_agent.streams import shell as shell_module
-from neutrino_agent.streams.channel import StreamRefused
+from neutrino_agent.exceptions import StreamRefused
 from neutrino_agent.streams.shell import ContainerShellStream, ShellStream
 from tests.streams.fake_channel import FakeChannel
 

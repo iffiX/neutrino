@@ -34,7 +34,7 @@ from neutrino_agent.modules.remote_desktop import (
     SUPPORTED_PRODUCTS,
     RemoteDesktopReader,
 )
-from neutrino_agent.platforms.base import PlatformUnsupportedError
+from neutrino_agent.exceptions import PlatformUnsupportedError
 
 POWER_ACTIONS = {"reboot": "reboot", "shutdown": "poweroff"}
 

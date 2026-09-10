@@ -11,7 +11,7 @@ import pytest
 
 from neutrino_hub.modules.xray import apply as apply_module
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
-from neutrino_hub.utils.subprocess_run import CommandError, CommandResult
+from neutrino_hub.utils.subprocess_run import CommandResult
 
 JOURNAL = "failed to listen on 0.0.0.0:1080: address already in use"
 
@@ -32,20 +32,20 @@ def test_a_service_that_stayed_up_is_believed(monkeypatch):
 
 
 def test_a_service_that_died_after_the_restart_fails_the_apply(monkeypatch):
-    with pytest.raises(CommandError):
+    with pytest.raises(RuntimeError):
         _answering(monkeypatch, state="failed").confirm_running()
 
 
 def test_the_reason_it_died_is_carried_out_of_its_journal(monkeypatch):
     """The port it could not take is named there and nowhere else."""
-    with pytest.raises(CommandError) as failure:
+    with pytest.raises(RuntimeError) as failure:
         _answering(monkeypatch, state="failed").confirm_running()
 
     assert "address already in use" in str(failure.value)
 
 
 def test_an_empty_journal_still_reports_the_failure(monkeypatch):
-    with pytest.raises(CommandError) as failure:
+    with pytest.raises(RuntimeError) as failure:
         _answering(monkeypatch, state="failed", journal="").confirm_running()
 
     assert "no reason" in str(failure.value)

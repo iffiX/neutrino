@@ -3,7 +3,7 @@
 import json
 
 from neutrino_client.control import routes
-from neutrino_client.core.enrollment import EnrollmentError
+from neutrino_client.exceptions import EnrollmentError
 from tests.conftest import FakeSession
 
 

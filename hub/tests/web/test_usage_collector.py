@@ -4,10 +4,8 @@ import json
 
 import pytest
 
-from neutrino_hub.modules.cliproxyapi.accounts import (
-    CliproxyApiAccount,
-    CliproxyApiAccountError,
-)
+from neutrino_hub.exceptions import AiAccountRefusedError
+from neutrino_hub.modules.cliproxyapi.accounts import CliproxyApiAccount
 from neutrino_hub.modules.cliproxyapi.config import (
     CliproxyApiClientKey,
     CliproxyApiConfig,
@@ -131,7 +129,7 @@ class UnreachableAccountClient:
     """A gateway that does not answer the auth-file list."""
 
     def __init__(self, *, port, management_key):
-        raise CliproxyApiAccountError("gateway_unreachable")
+        raise AiAccountRefusedError("gateway_unreachable")
 
 
 @pytest.fixture

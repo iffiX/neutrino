@@ -23,8 +23,9 @@ import socket
 
 from neutrino_client import CLIENT_VERSION
 from neutrino_client.constants import CLIENT_CONFIG_FILE_NAME, CLIENT_ENROLL_PATH
-from neutrino_client.core.channel import (
-    GatewayHttpChannel,
+from neutrino_client.core.channel import GatewayHttpChannel
+from neutrino_client.exceptions import (
+    EnrollmentError,
     GatewayRefused,
     GatewayUnreachable,
     GatewayUntrusted,
@@ -34,25 +35,6 @@ from neutrino_client.platforms.detect import detect_platform, platform_tuple
 
 LINK_PREFIX = "neutrino://enroll/"
 LINK_KIND = "client"
-
-
-class EnrollmentError(RuntimeError):
-    """Raised when this person cannot join a hub.
-
-    Attributes:
-        code: The typed reason.
-        params: What its wording names.
-    """
-
-    def __init__(self, code: str, params: "dict | None" = None):
-        """
-        Args:
-            code: The typed reason.
-            params: Its parameters.
-        """
-        super().__init__(code)
-        self.code = code
-        self.params = dict(params or {})
 
 
 def parse_link(link: str) -> "tuple[list, str, str]":
@@ -207,8 +189,6 @@ def enroll(link: str) -> dict:
         try:
             reply = channel.post(CLIENT_ENROLL_PATH, payload)
             break
-        except GatewayRefused as error:
-            raise EnrollmentError("enroll_refused") from error
         except GatewayVersionRefused as error:
             raise EnrollmentError(
                 "client_newer_than_hub",
@@ -217,6 +197,8 @@ def enroll(link: str) -> dict:
                     "client_version": error.client_version,
                 },
             ) from error
+        except GatewayRefused as error:
+            raise EnrollmentError("enroll_refused") from error
         except GatewayUntrusted as error:
             raise EnrollmentError("hub_untrusted", {"url": gateway_url}) from error
         except GatewayUnreachable as error:

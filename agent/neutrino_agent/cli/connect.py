@@ -6,7 +6,7 @@ import sys
 from neutrino_agent.cli.status import service_state
 from neutrino_agent.core import enrollment
 from neutrino_agent.core.loop import Agent
-from neutrino_agent.platforms.base import PlatformUnsupportedError
+from neutrino_agent.exceptions import EnrollmentError, PlatformUnsupportedError
 from neutrino_agent.platforms.detect import detect_platform
 
 
@@ -37,7 +37,7 @@ def main(link: str, *, is_forced: bool) -> int:
             return 1
     try:
         Agent().connect(link)
-    except enrollment.EnrollmentError as error:
+    except EnrollmentError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
     print(f"joined {enrollment.load_config().get('gateway_url', '')}")

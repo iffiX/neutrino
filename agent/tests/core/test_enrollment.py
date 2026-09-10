@@ -6,7 +6,8 @@ a URL escapes; these prove both directions and the refusals.
 
 import pytest
 
-from neutrino_agent.core.enrollment import EnrollmentError, parse_link
+from neutrino_agent.core.enrollment import parse_link
+from neutrino_agent.exceptions import EnrollmentError
 from tests.conftest import link_for
 
 

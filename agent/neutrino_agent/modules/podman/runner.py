@@ -11,7 +11,10 @@ Not pure: drives podman and systemd through the applier.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
-from neutrino_agent.modules.base import ModuleApplyError, command_outcome
+import subprocess
+
+from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.modules.base import command_outcome
 from neutrino_agent.modules.podman.applier import (
     PodmanContainerController,
     PodmanRegistriesApplier,
@@ -33,7 +36,7 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_UNIT,
 )
 from neutrino_agent.modules.podman.renderer import PodmanRegistriesRenderer
-from neutrino_agent.modules.subprocess_run import CommandError, unit_state
+from neutrino_agent.modules.subprocess_run import command_detail, unit_state
 from neutrino_agent.modules.system_package import SystemPackageModuleRunner
 
 
@@ -83,8 +86,10 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
                     if container.is_autostart
                 ],
             )
-        except (CommandError, OSError) as error:
-            raise ModuleApplyError("apply_failed", {"detail": str(error)[:500]})
+        except (OSError, subprocess.SubprocessError) as error:
+            raise ModuleApplyError(
+                "apply_failed", {"detail": command_detail(error)[:500]}
+            )
         self._config = parsed
         self._log(f"podman: {note}; {mirror_note}")
 
@@ -144,6 +149,8 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             PodmanContainerController().control(
                 name, verb, is_declared=state.is_declared
             )
-        except CommandError as error:
-            return command_outcome(1, "command_failed", {"detail": error.detail[:500]})
+        except (OSError, subprocess.SubprocessError) as error:
+            return command_outcome(
+                1, "command_failed", {"detail": command_detail(error)[:500]}
+            )
         return command_outcome(0, output=f"{verb} {name}\n")

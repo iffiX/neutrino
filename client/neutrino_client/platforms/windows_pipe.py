@@ -145,6 +145,9 @@ class Win32PipeApi:
 
         Returns:
             The bytes read, empty at end of stream.
+
+        Raises:
+            OSError: On any read failure other than a broken pipe.
         """
         buffer = ctypes.create_string_buffer(size)
         read_count = ctypes.c_ulong(0)

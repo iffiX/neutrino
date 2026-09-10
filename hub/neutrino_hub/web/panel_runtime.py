@@ -8,6 +8,7 @@ by itself.
 
 import asyncio
 import ipaddress
+import subprocess
 
 from neutrino_hub.modules.netbird.ops import NetbirdInboundGate
 from neutrino_hub.modules.router.dnsmasq_renderer import RouterDnsmasqRenderer
@@ -56,7 +57,7 @@ from neutrino_hub.utils.json_file import (
     write_config,
     write_generated,
 )
-from neutrino_hub.utils.subprocess_run import CommandError, run
+from neutrino_hub.utils.subprocess_run import command_failure_text, run
 from neutrino_hub.web.auth import SessionStore, session_secret
 from neutrino_hub.web import client_channel
 from neutrino_hub.web.events import PanelEventBus
@@ -69,11 +70,8 @@ from neutrino_hub.modules.devices.agent_module_controller import (
     AgentModuleOrder,
 )
 from neutrino_hub.modules.devices.agent_package import AgentPackageCache
-from neutrino_hub.modules.devices.agent_sessions import (
-    AgentOfflineError,
-    AgentSessionRegistry,
-    StreamRefusedError,
-)
+from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
+from neutrino_hub.modules.devices.agent_sessions import AgentSessionRegistry
 from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_ORDER_TIMEOUT_S,
     AGENT_MODULE_OUTPUT_LIMIT_BYTES,
@@ -350,8 +348,11 @@ class PanelRuntime:
             A short description of what was applied.
 
         Raises:
-            CommandError: If rendering or applying fails. The running services
-                keep their previous configuration when validation fails.
+            subprocess.CalledProcessError: If a command an apply runs fails.
+                The running services keep their previous configuration when
+                validation fails.
+            RuntimeError: If xray refused what it was handed, or the box is
+                not set up yet.
             ValueError: If the configuration itself is invalid.
         """
         async with self._apply_lock:
@@ -374,7 +375,9 @@ class PanelRuntime:
             A short description of what was applied.
 
         Raises:
-            CommandError: If rendering or applying fails.
+            subprocess.CalledProcessError: If a command an apply runs fails.
+            RuntimeError: If the box is not set up yet.
+            ValueError: If ``only`` names no configured interface.
         """
         async with self._apply_lock:
             return await asyncio.to_thread(self._apply_network_blocking, only)
@@ -541,8 +544,8 @@ class PanelRuntime:
         xray_failure = ""
         try:
             XrayConfigApplier().apply(xray_config)
-        except CommandError as error:
-            xray_failure = str(error)
+        except (subprocess.SubprocessError, OSError, RuntimeError) as error:
+            xray_failure = command_failure_text(error)
 
         RouterRulesetApplier().apply(nft_ruleset, is_forwarding=_is_forwarding(network))
         write_generated(ROUTER_NFT_PATH, nft_ruleset)
@@ -551,7 +554,7 @@ class PanelRuntime:
         _converge_overlays(network)
 
         if xray_failure:
-            raise CommandError(
+            raise RuntimeError(
                 f"{xray_failure}. The firewall and DNS were applied without it."
             )
 
@@ -612,7 +615,7 @@ class PanelRuntime:
         else:
             interface = network.interface(only)
             if interface is None:
-                raise CommandError(f"{only!r} is not a configured interface")
+                raise ValueError(f"{only!r} is not a configured interface")
             changes = applier.apply(interface)
             changes += RouterDefaultRouteApplier(network=network).apply()
             # The same tail the whole-network apply ends with. A LAN given
@@ -707,8 +710,8 @@ def _converge_overlays(network: RouterNetworkConfig) -> list[str]:
             continue
         try:
             note = NetbirdInboundGate().converge(is_blocked=not overlay.is_exposed)
-        except CommandError as error:
-            notes.append(f"{overlay.title} not set: {error}")
+        except (subprocess.SubprocessError, OSError) as error:
+            notes.append(f"{overlay.title} not set: {command_failure_text(error)}")
             continue
         if note:
             notes.append(f"{overlay.title}: {note}")
@@ -737,4 +740,4 @@ def generated_dir_exists() -> bool:
     return UTILS_GENERATED_DIR.is_dir()
 
 
-__all__ = ["PanelRuntime", "generated_dir_exists", "CommandError"]
+__all__ = ["PanelRuntime", "generated_dir_exists"]

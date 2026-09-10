@@ -15,19 +15,14 @@ consumers at it, and deleting the old.
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from neutrino_hub.exceptions import KeyMaterialError, VaultLockedError
 from neutrino_hub.modules.credentials.vault import (
     SecretRecord,
     SecretVault,
-    VaultError,
-    VaultLockedError,
 )
 from neutrino_hub.modules.ai.registry import AiProviderRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
-from neutrino_hub.modules.devices.key_registry import (
-    KeyMaterialError,
-    KeyRecord,
-    KeyRegistry,
-)
+from neutrino_hub.modules.devices.key_registry import KeyRecord, KeyRegistry
 from neutrino_hub.modules.xray.node_config import XrayNodeList
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK, read_config, write_config
 from neutrino_hub.web.dependencies import get_runtime, require_session
@@ -194,7 +189,7 @@ def create_login(request: LoginCreate) -> LoginView:
         )
     except VaultLockedError:
         raise
-    except VaultError as error:
+    except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
         ) from error
@@ -268,7 +263,7 @@ def _login_view(
         username = vault.open(record.id).get("username") or None
     except VaultLockedError:
         raise
-    except VaultError:
+    except ValueError:
         # A ciphertext that will not open still deserves a row: the name and
         # the counts are what say it exists and what would notice a delete.
         username = None
@@ -327,7 +322,7 @@ def create_token(request: TokenCreate) -> TokenView:
         )
     except VaultLockedError:
         raise
-    except VaultError as error:
+    except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
         ) from error

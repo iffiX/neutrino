@@ -16,6 +16,13 @@ import ssl
 import urllib.parse
 
 from neutrino_client.constants import CLIENT_REQUEST_TIMEOUT_S
+from neutrino_client.exceptions import (
+    GatewayRefused,
+    GatewayRefusedDetail,
+    GatewayUnreachable,
+    GatewayUntrusted,
+    GatewayVersionRefused,
+)
 
 
 def pinned_socket(
@@ -78,61 +85,6 @@ def _pinned_context() -> ssl.SSLContext:
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
     return context
-
-
-class GatewayUnreachable(RuntimeError):
-    """Raised when the hub cannot be reached or answers with an error."""
-
-
-class GatewayRefused(RuntimeError):
-    """Raised when the hub answered but rejected this client's token."""
-
-
-class GatewayVersionRefused(RuntimeError):
-    """Raised when the hub turned this client away as newer than itself."""
-
-    def __init__(self, *, hub_version: str, client_version: str):
-        """
-        Args:
-            hub_version: What the hub reported itself as.
-            client_version: What this client reported itself as.
-        """
-        super().__init__(
-            f"this client ({client_version}) is newer than the hub "
-            f"({hub_version}); update the hub first"
-        )
-        self.hub_version = hub_version
-        self.client_version = client_version
-
-
-class GatewayRefusedDetail(GatewayUnreachable):
-    """Raised when the hub refused a request with a typed reason.
-
-    Not about the binding: the hub answered about the thing that was asked
-    for, and the caller words it.
-
-    Attributes:
-        code: The hub's own code.
-        params: What its wording names.
-    """
-
-    def __init__(self, *, code: str, params: dict):
-        """
-        Args:
-            code: The hub's code.
-            params: Its parameters.
-        """
-        super().__init__(code)
-        self.code = code
-        self.params = params
-
-
-class GatewayUntrusted(RuntimeError):
-    """Raised when the peer's certificate does not match the pinned fingerprint.
-
-    Nothing was sent: the check runs on the peer certificate before any
-    request bytes leave the machine.
-    """
 
 
 class GatewayHttpChannel:
@@ -250,6 +202,8 @@ class GatewayHttpChannel:
             response = connection.getresponse()
             named = {name.lower(): value for name, value in response.getheaders()}
             return response.status, response.read(), named
+        except GatewayUntrusted:
+            raise
         except (OSError, http.client.HTTPException) as error:
             raise GatewayUnreachable(f"cannot reach hub: {error}") from error
         finally:

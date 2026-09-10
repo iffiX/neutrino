@@ -15,6 +15,7 @@ alone.
 
 import argparse
 import json
+import subprocess
 import sys
 
 from neutrino_hub.modules.netbird.ops import NetbirdInboundGate
@@ -44,13 +45,12 @@ from neutrino_hub.modules.cliproxyapi.management_key import (
     ensure_management_key,
     write_working_key,
 )
-from neutrino_hub.modules.credentials.vault import VaultError
 from neutrino_hub.web.agent_tls import ensure_certificate, write_served_key
 from neutrino_hub.web.constants import (
     WEB_AGENT_TLS_CERT_PATH,
     WEB_DEFAULT_AGENT_LISTEN_PORT,
 )
-from neutrino_hub.utils.subprocess_run import CommandError, run
+from neutrino_hub.utils.subprocess_run import command_failure_text, run
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
 from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
 from neutrino_hub.modules.xray.constants import XRAY_CONFIG_PATH
@@ -90,8 +90,8 @@ def main() -> int:
 
     try:
         artifacts = _render(selected)
-    except (ValueError, FileNotFoundError, CommandError) as error:
-        print(f"error: {error}", file=sys.stderr)
+    except (ValueError, OSError, subprocess.SubprocessError) as error:
+        print(f"error: {command_failure_text(error)}", file=sys.stderr)
         return 1
 
     if args.dry_run:
@@ -102,7 +102,7 @@ def main() -> int:
         if ensure_certificate():
             print(f"agent certificate generated at {WEB_AGENT_TLS_CERT_PATH}")
         write_served_key()
-    except (VaultError, OSError, ValueError) as error:
+    except (OSError, ValueError) as error:
         code = getattr(error, "code", "agent_tls_key_unavailable")
         print(
             f'error: {{"code": "{code}"}}: the agent channel has no served key '
@@ -114,7 +114,7 @@ def main() -> int:
         if ensure_management_key():
             print("AI gateway management key generated")
         write_working_key()
-    except (VaultError, OSError, ValueError) as error:
+    except (OSError, ValueError) as error:
         code = getattr(error, "code", "management_key_unavailable")
         print(
             f'error: {{"code": "{code}"}}: the AI gateway has no management key '
@@ -129,8 +129,13 @@ def main() -> int:
             if units:
                 print(f"units refreshed: {', '.join(units)}")
             _apply(artifacts)
-    except CommandError as error:
-        print(f"error: {error}", file=sys.stderr)
+    except (
+        OSError,
+        RuntimeError,
+        ValueError,
+        subprocess.SubprocessError,
+    ) as error:
+        print(f"error: {command_failure_text(error)}", file=sys.stderr)
         return 1
 
     print(f"rendered and applied: {', '.join(sorted(artifacts))}")

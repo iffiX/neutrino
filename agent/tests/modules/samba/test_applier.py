@@ -5,7 +5,7 @@ import stat
 
 import pytest
 
-from neutrino_agent.modules.base import ModuleApplyError
+from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.samba import applier as applier_module
 from neutrino_agent.modules.samba.applier import (
     SambaConfigApplier,

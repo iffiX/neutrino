@@ -30,9 +30,9 @@ from neutrino_agent.constants import (
     AGENT_SHELL_READ_BYTES,
     AGENT_WS_STREAM_CREDIT_BYTES,
 )
+from neutrino_agent.exceptions import StreamClosed, StreamRefused
 from neutrino_agent.modules.podman.applier import PodmanStatusReader
 from neutrino_agent.modules.podman.constants import PODMAN_BINARY
-from neutrino_agent.streams.channel import StreamClosed, StreamRefused
 
 try:
     import fcntl

@@ -11,7 +11,8 @@ import pytest
 
 from neutrino_hub.modules.credentials.constants import CREDENTIALS_VAULT_PATH
 from neutrino_hub.modules.credentials.vault import SecretVault
-from neutrino_hub.modules.devices.key_registry import KeyMaterialError, KeyRegistry
+from neutrino_hub.exceptions import KeyMaterialError
+from neutrino_hub.modules.devices.key_registry import KeyRegistry
 from tests.conftest import unlock_vault
 
 PASSPHRASE = "opens-the-key"

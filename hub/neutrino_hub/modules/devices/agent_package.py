@@ -28,6 +28,7 @@ import json
 import urllib.request
 from pathlib import Path
 
+from neutrino_hub.exceptions import AgentArtifactFetchError
 from neutrino_hub.modules.devices.constants import (
     AGENT_PACKAGE_CACHE_DIR,
     AGENT_PACKAGE_FETCH_LIMIT_BYTES,
@@ -47,25 +48,6 @@ AGENT_PACKAGE_ARCHITECTURES = {
 
 # The suffix each family's files carry.
 AGENT_PACKAGE_FAMILIES = {".deb": "deb", ".rpm": "rpm"}
-
-
-class AgentPackageFetchError(RuntimeError):
-    """Raised when an agent package cannot be produced.
-
-    Attributes:
-        code: The typed reason, for every surface to word.
-        params: What the wording names.
-    """
-
-    def __init__(self, code: str, **params):
-        """
-        Args:
-            code: The typed reason.
-            **params: Values the wording names.
-        """
-        super().__init__(code)
-        self.code = code
-        self.params = params
 
 
 def platform_key(family: str, architecture: str) -> str:
@@ -201,7 +183,7 @@ class AgentPackageCache:
             Where the file is.
 
         Raises:
-            AgentPackageFetchError: ``agent_package_missing`` when this hub
+            AgentArtifactFetchError: ``agent_package_missing`` when this hub
                 has nothing for that platform and nothing to fetch,
                 ``agent_package_fetch_failed`` when the release cannot be
                 read, and ``agent_package_sha256_mismatch`` when what arrived
@@ -214,7 +196,7 @@ class AgentPackageCache:
         key = platform_key(family, architecture)
         entry = self.manifest().get(key)
         if not isinstance(entry, dict):
-            raise AgentPackageFetchError("agent_package_missing", platform=key)
+            raise AgentArtifactFetchError("agent_package_missing", platform=key)
         held = self._held(entry)
         if held is not None:
             return held
@@ -222,12 +204,12 @@ class AgentPackageCache:
         url = str(entry.get("url", "") or "")
         name = package_name(entry)
         if not url or not name:
-            raise AgentPackageFetchError("agent_package_missing", platform=key)
+            raise AgentArtifactFetchError("agent_package_missing", platform=key)
         content = self._fetch(url)
         pinned_digest = str(entry.get("sha256", "") or "").lower()
         received = hashlib.sha256(content).hexdigest()
         if pinned_digest and pinned_digest != received:
-            raise AgentPackageFetchError(
+            raise AgentArtifactFetchError(
                 "agent_package_sha256_mismatch",
                 platform=key,
                 expected=pinned_digest,
@@ -324,7 +306,7 @@ class AgentPackageCache:
             content: The bytes.
 
         Raises:
-            AgentPackageFetchError: ``agent_package_cache_unwritable``.
+            AgentArtifactFetchError: ``agent_package_cache_unwritable``.
         """
         temporary = path.with_name(path.name + ".partial")
         try:
@@ -333,7 +315,7 @@ class AgentPackageCache:
             temporary.replace(path)
         except OSError as error:
             temporary.unlink(missing_ok=True)
-            raise AgentPackageFetchError(
+            raise AgentArtifactFetchError(
                 "agent_package_cache_unwritable", detail=str(error)[:200]
             ) from error
 
@@ -348,7 +330,7 @@ class AgentPackageCache:
             The file's bytes.
 
         Raises:
-            AgentPackageFetchError: ``agent_package_fetch_failed``.
+            AgentArtifactFetchError: ``agent_package_fetch_failed``.
         """
         try:
             with urllib.request.urlopen(
@@ -356,11 +338,11 @@ class AgentPackageCache:
             ) as response:
                 content = response.read(AGENT_PACKAGE_FETCH_LIMIT_BYTES + 1)
         except OSError as error:
-            raise AgentPackageFetchError(
+            raise AgentArtifactFetchError(
                 "agent_package_fetch_failed", detail=str(error)[:200]
             ) from error
         if len(content) > AGENT_PACKAGE_FETCH_LIMIT_BYTES:
-            raise AgentPackageFetchError(
+            raise AgentArtifactFetchError(
                 "agent_package_fetch_failed",
                 detail=f"the download is past {AGENT_PACKAGE_FETCH_LIMIT_BYTES} bytes",
             )

@@ -56,7 +56,7 @@ def _without_dev(arguments: list) -> list:
         return arguments
     try:
         dev_root.enter()
-    except dev_root.NoWorkingCopy as error:
+    except FileNotFoundError as error:
         raise SystemExit(f"error: {error}")
     return [argument for argument in arguments if argument != "--dev"]
 

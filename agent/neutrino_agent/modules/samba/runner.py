@@ -12,7 +12,10 @@ Not pure: drives Samba through its applier.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
-from neutrino_agent.modules.base import ModuleApplyError, command_outcome
+import subprocess
+
+from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.modules.base import command_outcome
 from neutrino_agent.modules.samba.applier import (
     SambaConfigApplier,
     SambaStatusReader,
@@ -26,7 +29,7 @@ from neutrino_agent.modules.samba.constants import (
     samba_unit,
 )
 from neutrino_agent.modules.samba.renderer import SambaConfigRenderer
-from neutrino_agent.modules.subprocess_run import CommandError, unit_state
+from neutrino_agent.modules.subprocess_run import command_detail, unit_state
 from neutrino_agent.modules.system_package import SystemPackageModuleRunner
 from neutrino_agent.platforms.detect import platform_tuple
 
@@ -96,8 +99,10 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         try:
             note = SambaConfigApplier(unit=self._unit).apply(rendered, config=parsed)
             changes = SambaUserManager().converge(parsed.users)
-        except (CommandError, OSError) as error:
-            raise ModuleApplyError("apply_failed", {"detail": str(error)[:500]})
+        except (OSError, subprocess.SubprocessError) as error:
+            raise ModuleApplyError(
+                "apply_failed", {"detail": command_detail(error)[:500]}
+            )
         self._config = parsed
         self._log("samba: " + "; ".join([note] + changes))
 
@@ -118,7 +123,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         reader = SambaStatusReader()
         try:
             users = SambaUserManager().survey(config.users)
-        except CommandError:
+        except (OSError, subprocess.SubprocessError):
             users = []
         return {
             "is_active": unit_state(self._unit) == "active",
@@ -146,6 +151,8 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             return command_outcome(1, "user_unknown", {"user": name})
         try:
             SambaUserManager().set_password(name, str(args.get("password", "")))
-        except CommandError as error:
-            return command_outcome(1, "command_failed", {"detail": error.detail[:500]})
+        except (OSError, subprocess.SubprocessError) as error:
+            return command_outcome(
+                1, "command_failed", {"detail": command_detail(error)[:500]}
+            )
         return command_outcome(0, output=f"password set for {name}\n")

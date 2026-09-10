@@ -100,7 +100,7 @@ class CliproxyApiClientKey:
 
         Raises:
             VaultLockedError: If there is no data key on this box.
-            VaultError: If the seal is malformed or does not decrypt.
+            ValueError: If the seal is malformed or does not decrypt.
         """
         return unseal_bytes(self.key_sealed, CLIPROXYAPI_CLIENT_KEY_AAD).decode()
 

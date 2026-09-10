@@ -15,6 +15,14 @@ import ssl
 import urllib.parse
 
 from neutrino_agent.constants import AGENT_REQUEST_TIMEOUT_S
+from neutrino_agent.exceptions import (
+    GatewayRefused,
+    GatewayRefusedDetail,
+    GatewayUnreachable,
+    GatewayUntrusted,
+    GatewayVersionRefused,
+    GatewayWireStale,
+)
 
 
 def pinned_socket(
@@ -79,96 +87,6 @@ def _pinned_context() -> ssl.SSLContext:
     return context
 
 
-class GatewayUnreachable(RuntimeError):
-    """Raised when the gateway cannot be reached or answers with an error."""
-
-
-class GatewayRefused(RuntimeError):
-    """Raised when the gateway answered but rejected this machine's token.
-
-    Not a network problem: the hub deliberately no longer knows this device —
-    it was forgotten on the panel, or the hub was reset — and retrying with
-    the same token can never succeed.
-    """
-
-
-class GatewayVersionRefused(RuntimeError):
-    """Raised when the gateway turned this agent away as newer than itself.
-
-    A definitive rejection, not a network problem: the hub answered and said
-    no, and keeps saying no until it is updated to this agent's version.
-    """
-
-    def __init__(self, *, hub_version: str, agent_version: str):
-        """
-        Args:
-            hub_version: What the hub reported itself as.
-            agent_version: What this agent reported itself as.
-        """
-        super().__init__(
-            f"this agent ({agent_version}) is newer than the hub "
-            f"({hub_version}); update the hub first"
-        )
-        self.hub_version = hub_version
-        self.agent_version = agent_version
-
-
-class GatewayRefusedDetail(GatewayUnreachable):
-    """Raised when the hub refused a request with a typed reason.
-
-    Not about the binding: the hub answered about the thing that was asked
-    for — a vendor that served a page rather than a package, say — and the
-    caller words it. It is a kind of :class:`GatewayUnreachable` so that a
-    caller with no interest in the code still backs off and retries rather
-    than seeing an exception nothing catches.
-
-    Attributes:
-        code: The hub's own code.
-        params: What its wording names.
-    """
-
-    def __init__(self, *, code: str, params: dict):
-        """
-        Args:
-            code: The hub's code.
-            params: Its parameters.
-        """
-        super().__init__(code)
-        self.code = code
-        self.params = params
-
-
-class GatewayWireStale(RuntimeError):
-    """Raised when the hub says this agent's wire generation is not its own.
-
-    A definitive answer, not an outage — but not a rejection of the binding
-    either: the fix is reinstalling this agent from the hub's own package,
-    which the caller triggers.
-    """
-
-    def __init__(self, *, hub_wire: int, agent_wire: int):
-        """
-        Args:
-            hub_wire: The generation the hub serves.
-            agent_wire: The generation this agent was built to.
-        """
-        super().__init__(
-            f"this agent speaks wire generation {agent_wire}, the hub "
-            f"generation {hub_wire}; it reinstalls itself from the hub"
-        )
-        self.hub_wire = hub_wire
-        self.agent_wire = agent_wire
-
-
-class GatewayUntrusted(RuntimeError):
-    """Raised when the peer's certificate does not match the pinned fingerprint.
-
-    Whatever answered at that address is not the hub this machine pinned — a
-    hub reset or reinstalled, or an impersonator. Nothing was sent: the check
-    runs on the peer certificate before any request bytes leave the machine.
-    """
-
-
 class GatewayHttpChannel:
     """Posts JSON to the gateway and parses its replies."""
 
@@ -203,6 +121,9 @@ class GatewayHttpChannel:
             GatewayRefused: When the gateway rejected this machine's token.
             GatewayVersionRefused: When the gateway turned this agent away as
                 newer than itself.
+            GatewayWireStale: When the gateway named this build's wire stale.
+            GatewayRefusedDetail: When the gateway refused with a code of its
+                own.
             GatewayUnreachable: On any network error, timeout, other HTTP
                 error status, or unparseable reply.
         """
@@ -230,6 +151,11 @@ class GatewayHttpChannel:
             GatewayUntrusted: When the gateway's certificate is not the pinned
                 one; nothing was sent.
             GatewayRefused: When the gateway rejected this machine's token.
+            GatewayVersionRefused: When the gateway turned this agent away as
+                newer than itself.
+            GatewayWireStale: When the gateway named this build's wire stale.
+            GatewayRefusedDetail: When the gateway refused with a code of its
+                own.
             GatewayUnreachable: On any network error, error status, or a
                 destination that cannot be written.
         """
@@ -313,6 +239,8 @@ class GatewayHttpChannel:
             response = connection.getresponse()
             named = {name.lower(): value for name, value in response.getheaders()}
             return response.status, response.read(), named
+        except GatewayUntrusted:
+            raise
         except (OSError, http.client.HTTPException) as error:
             raise GatewayUnreachable(f"cannot reach gateway: {error}") from error
         finally:

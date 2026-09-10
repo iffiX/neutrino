@@ -41,15 +41,16 @@ from neutrino_client.constants import (
     CLIENT_WS_PATH,
 )
 from neutrino_client.core import enrollment
-from neutrino_client.core.channel import (
-    GatewayHttpChannel,
+from neutrino_client.core.channel import GatewayHttpChannel
+from neutrino_client.core.ws_client import WebSocketClient, close_error
+from neutrino_client.exceptions import (
     GatewayRefused,
     GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
     GatewayVersionRefused,
+    SocketClosed,
 )
-from neutrino_client.core.ws_client import SocketClosed, WebSocketClient, close_error
 from neutrino_client.platforms.detect import detect_platform, platform_tuple
 from neutrino_client.services.ai import AiServiceHandler
 from neutrino_client.services.file import FileServiceHandler

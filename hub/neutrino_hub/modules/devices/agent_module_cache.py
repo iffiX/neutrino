@@ -23,6 +23,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+from neutrino_hub.exceptions import AgentArtifactFetchError
 from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_PACKAGE_MAGIC,
     AGENT_MODULE_BROWSER_HEADERS,
@@ -32,25 +33,6 @@ from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_GITHUB_API,
     AGENT_MODULE_KEY_DIGEST_CHARS,
 )
-
-
-class AgentModuleFetchError(RuntimeError):
-    """Raised when a module's bytes cannot be obtained.
-
-    Attributes:
-        code: The typed reason, for every surface to word.
-        params: What the wording names.
-    """
-
-    def __init__(self, code: str, **params):
-        """
-        Args:
-            code: The typed reason.
-            **params: Values the wording names.
-        """
-        super().__init__(code)
-        self.code = code
-        self.params = params
 
 
 @dataclass
@@ -177,14 +159,14 @@ class AgentModuleCache:
             The artifact.
 
         Raises:
-            AgentModuleFetchError: ``no_platform_build`` when the manifest
+            AgentArtifactFetchError: ``no_platform_build`` when the manifest
                 offers this platform nothing, ``no_download_named`` when its
                 entry names neither a url nor a release to resolve, and the
                 fetch's own typed reasons otherwise.
         """
         platform_key, entry = resolve_platform_entry(manifest, platform)
         if entry is None:
-            raise AgentModuleFetchError("no_platform_build")
+            raise AgentArtifactFetchError("no_platform_build")
         package_kind = str(entry.get("package_kind", "") or "")
         key = self._key(name=name, platform_key=platform_key, entry=entry)
         path = self._root / key
@@ -221,19 +203,19 @@ class AgentModuleCache:
             The artifact.
 
         Raises:
-            AgentModuleFetchError: ``module_artifact_unknown`` when no
+            AgentArtifactFetchError: ``module_artifact_unknown`` when no
                 manifest this hub holds resolves to that key, and the
                 fetch's own typed reasons otherwise.
         """
         if not self._is_safe_key(key):
-            raise AgentModuleFetchError("module_artifact_unknown")
+            raise AgentArtifactFetchError("module_artifact_unknown")
         for name, manifest in sources.items():
             if (
                 self.artifact_key(name=name, manifest=manifest, platform=platform)
                 == key
             ):
                 return self.artifact(name=name, manifest=manifest, platform=platform)
-        raise AgentModuleFetchError("module_artifact_unknown", artifact_key=key)
+        raise AgentArtifactFetchError("module_artifact_unknown", artifact_key=key)
 
     def held(self, key: str) -> "Path | None":
         """The artifact a key names, when the cache still holds it.
@@ -294,7 +276,7 @@ class AgentModuleCache:
             content: The bytes.
 
         Raises:
-            AgentModuleFetchError: If the cache cannot be written.
+            AgentArtifactFetchError: If the cache cannot be written.
         """
         temporary = path.with_name(path.name + ".partial")
         try:
@@ -303,7 +285,7 @@ class AgentModuleCache:
             temporary.replace(path)
         except OSError as error:
             temporary.unlink(missing_ok=True)
-            raise AgentModuleFetchError(
+            raise AgentArtifactFetchError(
                 "module_cache_unwritable", detail=str(error)[:200]
             ) from error
 
@@ -317,7 +299,7 @@ class AgentModuleCache:
             The package.
 
         Raises:
-            AgentModuleFetchError: With the typed reason; a payload that does
+            AgentArtifactFetchError: With the typed reason; a payload that does
                 not open like the entry's package kind is
                 ``module_fetch_failed``, so an error page never gets cached
                 as a package, and one whose digest is not the pinned
@@ -329,23 +311,23 @@ class AgentModuleCache:
                 str(entry["github_repo"]), str(entry.get("asset_pattern", "") or "")
             )
         if not url:
-            raise AgentModuleFetchError("no_download_named")
+            raise AgentArtifactFetchError("no_download_named")
         content = self._fetch_plain(url)
         if len(content) > AGENT_MODULE_FETCH_LIMIT_BYTES:
-            raise AgentModuleFetchError(
+            raise AgentArtifactFetchError(
                 "module_fetch_too_large",
                 limit_mb=AGENT_MODULE_FETCH_LIMIT_BYTES // (1024 * 1024),
             )
         package_kind = str(entry.get("package_kind", "") or "")
         if not looks_like_package(content, package_kind):
-            raise AgentModuleFetchError(
+            raise AgentArtifactFetchError(
                 "module_fetch_failed",
                 detail=f"the download does not open like a {package_kind} package",
             )
         pinned = str(entry.get("sha256", "") or "").lower()
         received = hashlib.sha256(content).hexdigest()
         if pinned and pinned != received:
-            raise AgentModuleFetchError(
+            raise AgentArtifactFetchError(
                 "module_sha256_mismatch", expected=pinned, received=received
             )
         return content
@@ -361,7 +343,7 @@ class AgentModuleCache:
             The body.
 
         Raises:
-            AgentModuleFetchError: ``module_fetch_failed``.
+            AgentArtifactFetchError: ``module_fetch_failed``.
         """
         request = urllib.request.Request(url, headers=AGENT_MODULE_BROWSER_HEADERS)
         try:
@@ -370,7 +352,7 @@ class AgentModuleCache:
             ) as response:
                 return response.read(AGENT_MODULE_FETCH_LIMIT_BYTES + 1)
         except OSError as error:
-            raise AgentModuleFetchError(
+            raise AgentArtifactFetchError(
                 "module_fetch_failed", detail=str(error)[:200]
             ) from error
 
@@ -386,7 +368,7 @@ class AgentModuleCache:
             The asset's download URL.
 
         Raises:
-            AgentModuleFetchError: ``module_release_unreadable`` when the
+            AgentArtifactFetchError: ``module_release_unreadable`` when the
                 release cannot be read, ``no_download_named`` when nothing
                 in it matches.
         """
@@ -400,13 +382,13 @@ class AgentModuleCache:
             ) as response:
                 release = json.load(response)
         except (OSError, ValueError) as error:
-            raise AgentModuleFetchError(
+            raise AgentArtifactFetchError(
                 "module_release_unreadable", repo=repo, detail=str(error)[:200]
             ) from error
         for asset in release.get("assets", []):
             if str(asset.get("name", "")).endswith(asset_pattern):
                 return str(asset.get("browser_download_url", ""))
-        raise AgentModuleFetchError("no_download_named", repo=repo)
+        raise AgentArtifactFetchError("no_download_named", repo=repo)
 
 
 def clear_module_cache(root: "Path | None" = None) -> None:

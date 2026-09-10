@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import threading
 
+from neutrino_client.exceptions import ToolSwitchError
 from neutrino_client.services import switcher
 from neutrino_client.services.worker import IF_BUSY_KEEP_ONE, ServiceWorker
 from neutrino_client.services.base import ServiceTypeHandler
@@ -184,7 +185,7 @@ class AiServiceHandler(ServiceTypeHandler):
                 status = self._activate(credential)
             else:
                 status = self._deactivate()
-        except switcher.SwitcherError as error:
+        except ToolSwitchError as error:
             status = self._failure("switch_failed", error)
         except Exception as error:  # noqa: BLE001 - reported, not raised
             status = self._failure("reconcile_failed", error)

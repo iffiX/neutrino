@@ -21,7 +21,7 @@ import shutil
 import subprocess
 
 from neutrino_agent.constants import AGENT_OUTPUT_LIMIT_BYTES
-from neutrino_agent.modules.subprocess_run import CommandError, run
+from neutrino_agent.modules.subprocess_run import command_detail, run
 from neutrino_agent.rdp.host import graphical_accounts, session_environment
 
 SUPPORTED_PRODUCTS = ("anydesk", "teamviewer")
@@ -195,8 +195,8 @@ class RemoteDesktopReader:
     def _run(self, argv: list) -> "subprocess.CompletedProcess":
         try:
             result = run(list(argv), is_checked=False)
-        except CommandError as error:
-            return subprocess.CompletedProcess(argv, 127, "", error.detail)
+        except (OSError, subprocess.SubprocessError) as error:
+            return subprocess.CompletedProcess(argv, 127, "", command_detail(error))
         return subprocess.CompletedProcess(
             argv, result.exit_code, result.stdout, result.stderr
         )

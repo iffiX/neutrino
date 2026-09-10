@@ -22,7 +22,8 @@ import threading
 import time
 
 from neutrino_client.platforms import win32
-from neutrino_client.platforms.base import PlatformUnsupportedError, answer_on_prompt
+from neutrino_client.exceptions import PlatformUnsupportedError
+from neutrino_client.platforms.base import answer_on_prompt
 
 CONSOLE_COLUMNS = 120
 CONSOLE_ROWS = 40

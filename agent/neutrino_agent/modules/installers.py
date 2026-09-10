@@ -16,13 +16,10 @@ import shutil
 import subprocess
 
 from neutrino_agent.constants import AGENT_MODULE_OUTPUT_LIMIT_BYTES
+from neutrino_agent.exceptions import InstallError
 
 INSTALL_TIMEOUT_S = 1800
 COMMAND_TIMEOUT_S = 120
-
-
-class InstallError(RuntimeError):
-    """Raised when a package cannot be installed."""
 
 
 def install_package(path: str, *, package_kind: str, entry: dict) -> None:

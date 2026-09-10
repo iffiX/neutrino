@@ -22,8 +22,7 @@ from neutrino_agent.core.channel import (
     GatewayWireStale,
 )
 from neutrino_agent.core.session import AgentSession
-from neutrino_agent.core.ws_client import SocketClosed
-from neutrino_agent.streams.channel import StreamRefused
+from neutrino_agent.exceptions import SocketClosed, StreamRefused
 
 
 class ScriptedClient:

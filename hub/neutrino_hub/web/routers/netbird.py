@@ -9,11 +9,12 @@ a hand at a local shell has `netbird down`.
 
 import asyncio
 import ipaddress
+import subprocess
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub.modules.netbird.ops import NetbirdEnroller, NetbirdStatusReader
-from neutrino_hub.utils.subprocess_run import CommandError
+from neutrino_hub.utils.subprocess_run import command_failure_text
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import NetbirdJoinRequest, NetbirdPeerView, NetbirdView
 from neutrino_hub.web.panel_runtime import PanelRuntime
@@ -78,8 +79,9 @@ async def join(
             setup_key=request.setup_key,
             management_url=request.management_url,
         )
-    except CommandError as error:
+    except (subprocess.SubprocessError, OSError) as error:
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=command_failure_text(error),
         ) from error
     return read_status(runtime)

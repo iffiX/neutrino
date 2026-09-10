@@ -18,8 +18,10 @@ serves it, and nftables carries the traffic, exactly as for a wired LAN.
 Not pure: writes rendered files and drives systemd.
 """
 
+import subprocess
+
 from neutrino_hub.utils.json_file import write_generated
-from neutrino_hub.utils.subprocess_run import CommandError, run
+from neutrino_hub.utils.subprocess_run import run
 
 from neutrino_hub.modules.router import links
 from neutrino_hub.modules.router.constants import (
@@ -77,12 +79,13 @@ class RouterWifiAccessPoint:
             False when it was already publishing exactly this.
 
         Raises:
-            CommandError: If the passphrase is unusable, or hostapd will not
-                start — most often because the card has no access-point mode.
+            ValueError: If the passphrase is the wrong length.
+            subprocess.CalledProcessError: If hostapd will not start, most
+                often because the card has no access-point mode.
         """
         passphrase = interface.wifi.ap_passphrase
         if not AP_PASSPHRASE_MIN_LENGTH <= len(passphrase) <= AP_PASSPHRASE_MAX_LENGTH:
-            raise CommandError(
+            raise ValueError(
                 f"the access point passphrase must be "
                 f"{AP_PASSPHRASE_MIN_LENGTH} to {AP_PASSPHRASE_MAX_LENGTH} characters"
             )
@@ -107,9 +110,11 @@ class RouterWifiAccessPoint:
             is_checked=False,
         )
         if not result.is_success:
-            raise CommandError(
-                f"could not start the access point on {self._interface}: "
-                f"{(result.stderr or result.stdout).strip() or self._complaint()}"
+            raise subprocess.CalledProcessError(
+                result.exit_code,
+                result.command,
+                output=result.stdout,
+                stderr=((result.stderr or result.stdout).strip() or self._complaint()),
             )
         return True
 

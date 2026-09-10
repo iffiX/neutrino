@@ -6,6 +6,7 @@ depending on where somebody happened to answer.
 """
 
 from neutrino_hub.cli import wizard
+from neutrino_hub.exceptions import WizardAborted
 
 
 def test_the_context_offers_the_modes_the_screens_offer(monkeypatch):
@@ -39,7 +40,7 @@ def test_a_machine_with_no_port_is_refused_the_same_way(monkeypatch):
 
     try:
         wizard.context()
-    except wizard.WizardAborted as error:
+    except WizardAborted as error:
         assert "no network interface" in str(error)
     else:
         raise AssertionError("a machine with no port cannot be a gateway")

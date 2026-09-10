@@ -7,6 +7,8 @@ state, because sharing an interface with another manager is where every bug
 in this area has come from.
 """
 
+import subprocess
+
 import pytest
 
 from neutrino_hub.modules.router import routes
@@ -286,7 +288,11 @@ def test_a_next_hop_the_kernel_refuses_does_not_take_the_apply_down(monkeypatch)
     calls = _record_calls(monkeypatch)
 
     def refuse(device, gateway, metric):
-        raise routes.CommandError("Error: Nexthop has invalid gateway.")
+        raise subprocess.CalledProcessError(
+            2,
+            ["ip", "route", "add", "default", "via", gateway],
+            stderr="Error: Nexthop has invalid gateway.",
+        )
 
     monkeypatch.setattr(routes.links, "set_default_route", refuse)
     network = RouterNetworkConfig(

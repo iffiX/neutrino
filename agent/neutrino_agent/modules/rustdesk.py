@@ -31,7 +31,7 @@ import subprocess
 import time
 
 from neutrino_agent.constants import AGENT_RUSTDESK_BINARY_PATH
-from neutrino_agent.modules.installers import InstallError
+from neutrino_agent.exceptions import InstallError
 
 RUSTDESK_TIMEOUT_S = 60
 # Long enough for a service to come up on a slow machine, short enough that

@@ -12,11 +12,11 @@ prompts, words a refusal, and stores what was accepted.
 import getpass
 import sys
 
+from neutrino_hub.exceptions import PasswordRefusedError
 from neutrino_hub.utils.json_file import read_config, write_config
 from neutrino_hub.utils.passwords import (
     PASSWORDS_ERROR_TOO_SHORT,
     PASSWORDS_PANEL_RULES,
-    PasswordRuleError,
     PasswordRules,
     validate,
 )
@@ -29,11 +29,7 @@ PASSWORD_HASH_FIELD = "admin_password_hash"  # scan: allow
 PASSWORD_PLACEHOLDER_PREFIX = "PLACEHOLDER"  # scan: allow
 
 
-class PasswordRefused(ValueError):
-    """The password given cannot be used."""
-
-
-def worded_refusal(error: PasswordRuleError) -> str:
+def worded_refusal(error: PasswordRefusedError) -> str:
     """One sentence for a rule refusal, for the terminal askers.
 
     Args:
@@ -64,8 +60,8 @@ def read_new_password(
         The password.
 
     Raises:
-        PasswordRefused: When the rules refuse it, or the two prompts
-            disagree.
+        ValueError: When the rules refuse it, the two prompts disagree, or
+            there is nothing to read a password from.
     """
     try:
         if is_stdin:
@@ -74,14 +70,14 @@ def read_new_password(
             password = getpass.getpass(f"{prompt}: ")
         try:
             validate(password, rules)
-        except PasswordRuleError as error:
-            raise PasswordRefused(worded_refusal(error)) from error
+        except PasswordRefusedError as error:
+            raise ValueError(worded_refusal(error)) from error
         if not is_stdin and password != getpass.getpass("Repeat: "):
-            raise PasswordRefused("the two passwords do not match")
+            raise ValueError("the two passwords do not match")
     except EOFError as error:
         # Prompting with nothing to read from is an unattended run that forgot
         # --password-stdin, and a traceback is no way to say so.
-        raise PasswordRefused(
+        raise ValueError(
             "there is nothing to read a password from; use --stdin"
         ) from error
     return password

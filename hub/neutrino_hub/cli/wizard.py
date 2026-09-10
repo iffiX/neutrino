@@ -17,15 +17,11 @@ import textwrap
 from pathlib import Path
 from dataclasses import dataclass, field
 
-from neutrino_hub.cli.password import (
-    PasswordRefused,
-    read_new_password,
-    worded_refusal,
-)
+from neutrino_hub.cli.password import read_new_password, worded_refusal
+from neutrino_hub.exceptions import PasswordRefusedError, WizardAborted
 from neutrino_hub.utils.passwords import (
     PASSWORDS_MASTER_RULES,
     PASSWORDS_PANEL_RULES,
-    PasswordRuleError,
     entropy_bits,
     validate,
 )
@@ -159,10 +155,6 @@ class WizardAnswers:
     listen_port: int = WEB_DEFAULT_LISTEN_PORT
 
 
-class WizardAborted(RuntimeError):
-    """The wizard cannot go on: a refused answer, or nothing to read from."""
-
-
 # What an answers document may say, and which planner keyword each becomes.
 # Written this way round so a document is checked against one table rather
 # than against the shape of a function call.
@@ -264,7 +256,7 @@ def _check_secret(given, rules, what: str) -> None:
         raise WizardAborted(f"{what} must be a string")
     try:
         validate(given, rules)
-    except PasswordRuleError as error:
+    except PasswordRefusedError as error:
         raise WizardAborted(f"{what}: {worded_refusal(error)}") from error
 
 
@@ -417,8 +409,8 @@ class SetupWizard:
             The answers, for `setup` to act on.
 
         Raises:
-            WizardAborted: On an interrupt, end of input, or a screen that
-                cannot be answered.
+            WizardAborted: On a screen that cannot be answered.
+            SystemExit: When the person interrupts or standard input ends.
         """
         screens = (
             self._ask_password,
@@ -471,7 +463,7 @@ class SetupWizard:
                 prompt="Vault passphrase", rules=PASSWORDS_MASTER_RULES
             )
             self._say_entropy(self._vault_passphrase)
-        except PasswordRefused as error:
+        except ValueError as error:
             self._say(f"  {error}")
             self._prompt("Press Enter to try again")
             return WIZARD_AGAIN
@@ -1156,6 +1148,9 @@ def welcome() -> None:
     Shown on the way into the terminal's own screens. A machine that can open
     a browser gets :func:`offer_browser` instead, which says the same thing
     and then waits.
+
+    Raises:
+        SystemExit: When the person interrupts or standard input ends.
     """
     _headline(WIZARD_WELCOME_TITLE)
     _intro()
@@ -1187,6 +1182,9 @@ def offer_browser(*, urls: list, token: str, arrived, is_opened: bool = True) ->
     Returns:
         True when the browser answered, False when whoever is at the keyboard
         would rather answer here.
+
+    Raises:
+        SystemExit: When the person interrupts or standard input ends.
     """
     _headline(WIZARD_WELCOME_TITLE)
     _intro()

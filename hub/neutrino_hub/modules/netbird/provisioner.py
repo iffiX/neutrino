@@ -16,7 +16,7 @@ from typing import Callable
 from neutrino_hub.system import package_manager
 from neutrino_hub.system.provisioning import ProvisionResult, say
 from neutrino_hub.system.sandbox import outside_sandbox
-from neutrino_hub.utils.subprocess_run import CommandError, run
+from neutrino_hub.utils.subprocess_run import run
 
 NETBIRD_INSTALL_URL = "https://pkgs.netbird.io/install.sh"
 
@@ -46,7 +46,8 @@ class NetbirdProvisioner:
             What was done.
 
         Raises:
-            CommandError: If the vendor installer fails.
+            subprocess.CalledProcessError: If the vendor installer fails.
+            FileNotFoundError: If it finishes but leaves no binary.
         """
         if shutil.which("netbird"):
             version = run(["netbird", "version"], is_checked=False).stdout.strip()
@@ -58,7 +59,7 @@ class NetbirdProvisioner:
         # goes outside the panel's sandbox rather than the apt call inside it.
         run(outside_sandbox(["sh", "-"]), input_text=script, timeout_s=600)
         if not shutil.which("netbird"):
-            raise CommandError("the NetBird installer finished but left no binary")
+            raise FileNotFoundError("the NetBird installer finished but left no binary")
         return ProvisionResult(is_changed=True, message="installed")
 
     def deprovision(

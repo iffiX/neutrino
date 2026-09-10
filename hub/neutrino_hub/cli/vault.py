@@ -10,8 +10,8 @@ sealed is re-encrypted: the data key does not change, only what opens it.
 import argparse
 import sys
 
-from neutrino_hub.cli.password import PasswordRefused, read_new_password
-from neutrino_hub.modules.credentials.vault import SecretVault, VaultError
+from neutrino_hub.cli.password import read_new_password
+from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.utils.passwords import PASSWORDS_MASTER_RULES
 
 
@@ -40,7 +40,7 @@ def main() -> int:
             rules=PASSWORDS_MASTER_RULES,
         )
         SecretVault().change_passphrase(passphrase)
-    except (PasswordRefused, VaultError) as error:
+    except ValueError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
     print("rekeyed: the vault now opens with the new passphrase")

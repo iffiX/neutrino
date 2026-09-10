@@ -1,5 +1,7 @@
 """The container applier's effects, with podman and systemd replaced."""
 
+import subprocess
+
 import pytest
 
 from neutrino_agent.modules.podman import applier as applier_module
@@ -18,7 +20,7 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_QUADLET_DIR,
     PODMAN_UNIT_DIR,
 )
-from neutrino_agent.modules.subprocess_run import CommandError, CommandResult
+from neutrino_agent.modules.subprocess_run import CommandResult
 
 
 class FakeCommands:
@@ -33,7 +35,9 @@ class FakeCommands:
             raise answer
         exit_code, stdout = answer
         if is_checked and exit_code != 0:
-            raise CommandError(command, "refused")
+            raise subprocess.CalledProcessError(
+                exit_code, list(command), stderr="refused"
+            )
         return CommandResult(list(command), exit_code, stdout, "")
 
 
@@ -66,8 +70,8 @@ def test_the_version_line_podman_prints_decides_which_applier(commands):
 
 
 def test_a_podman_that_will_not_run_gets_the_unit_that_works_everywhere(commands):
-    commands.answers[("/usr/bin/podman", "--version")] = CommandError(
-        ["podman"], "gone"
+    commands.answers[("/usr/bin/podman", "--version")] = subprocess.CalledProcessError(
+        1, ["podman"], stderr="gone"
     )
 
     assert is_quadlet_supported() is False
@@ -157,7 +161,9 @@ def test_a_declared_but_never_started_container_still_appears(commands):
 
 
 def test_no_podman_surveys_as_nothing(commands):
-    commands.answers[("/usr/bin/podman", "ps")] = CommandError(["podman"], "gone")
+    commands.answers[("/usr/bin/podman", "ps")] = subprocess.CalledProcessError(
+        1, ["podman"], stderr="gone"
+    )
 
     assert PodmanStatusReader().survey(declared_names=["x"]) == []
 

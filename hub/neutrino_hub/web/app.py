@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
 
-from neutrino_hub.modules.credentials.vault import VaultLockedError
+from neutrino_hub.exceptions import VaultLockedError
 from neutrino_hub.web import ws
 from neutrino_hub.web.constants import WEB_FRONTEND_DIST_DIR
 from neutrino_hub.web.origin_guard import OriginGuardMiddleware

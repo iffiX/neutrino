@@ -16,9 +16,10 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 from dataclasses import dataclass, field
 
-from neutrino_agent.modules.subprocess_run import CommandError, run
+from neutrino_agent.modules.subprocess_run import run
 from neutrino_agent.modules.zfs.constants import (
     ZFS_ARC_MAX_FRACTION,
     ZFS_ARC_MAX_PARAMETER,
@@ -352,7 +353,7 @@ class ZfsDiskScanner:
                 is_checked=False,
                 timeout_s=30,
             )
-        except CommandError:
+        except (OSError, subprocess.SubprocessError):
             return []
         if not result.is_success:
             return []
@@ -442,7 +443,7 @@ class ZfsDiskScanner:
                 timeout_s=15,
             )
             data = json.loads(result.stdout or "{}")
-        except (CommandError, ValueError):
+        except (OSError, subprocess.SubprocessError, ValueError):
             return None, None
         passed = data.get("smart_status", {}).get("passed")
         temperature = data.get("temperature", {}).get("current")
@@ -473,7 +474,7 @@ class ZfsPoolReader:
                 is_checked=False,
                 timeout_s=30,
             )
-        except CommandError:
+        except (OSError, subprocess.SubprocessError):
             return []
         if not listing.is_success:
             return []
@@ -519,7 +520,7 @@ class ZfsPoolReader:
                 is_checked=False,
                 timeout_s=30,
             )
-        except CommandError:
+        except (OSError, subprocess.SubprocessError):
             return []
         if not result.is_success:
             return []
@@ -554,7 +555,7 @@ class ZfsPoolReader:
         """Find exported or foreign pools sitting on attached disks."""
         try:
             result = run(["zpool", "import"], is_checked=False, timeout_s=60)
-        except CommandError:
+        except (OSError, subprocess.SubprocessError):
             return []
         return parse_zpool_import(result.stdout)
 

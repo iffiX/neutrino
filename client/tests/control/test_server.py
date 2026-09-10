@@ -12,7 +12,7 @@ import pytest
 
 from neutrino_client.control import client
 from neutrino_client.control.server import ControlServer
-from neutrino_client.platforms.base import PlatformUnsupportedError
+from neutrino_client.exceptions import PlatformUnsupportedError
 from tests.conftest import OTHER_USER, SAME_USER, FakeClientPlatform, FakeSession
 
 

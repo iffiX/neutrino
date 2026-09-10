@@ -20,7 +20,7 @@ import os
 import threading
 
 from neutrino_client.constants import CLIENT_MOUNT_RECHECK_INTERVAL_S
-from neutrino_client.platforms.base import PlatformUnsupportedError, ShareAttachError
+from neutrino_client.exceptions import PlatformUnsupportedError, ShareAttachError
 from neutrino_client.services.base import ServiceTypeHandler, find_entry
 
 MOUNT_RECORD_ID_LENGTH = 16

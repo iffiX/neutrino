@@ -7,7 +7,7 @@ class, so the set of units either can touch is exactly
 
 from dataclasses import dataclass
 
-from neutrino_hub.utils.subprocess_run import CommandError, run
+from neutrino_hub.utils.subprocess_run import run
 
 from neutrino_hub.system.constants import SYSTEM_MANAGED_UNITS
 
@@ -108,7 +108,7 @@ class SystemdServiceController:
             KeyError: If the name is not a managed unit.
             ValueError: If the action is not allowed. Anything outside the list
                 would let a panel request run arbitrary systemd verbs.
-            CommandError: If systemd rejects the request.
+            subprocess.CalledProcessError: If systemd rejects the request.
         """
         if action not in ALLOWED_ACTIONS:
             raise ValueError(
@@ -150,7 +150,7 @@ class SystemdServiceController:
         """Reload unit files after installing or editing one.
 
         Raises:
-            CommandError: If systemd fails to reload.
+            subprocess.CalledProcessError: If systemd fails to reload.
         """
         run(["systemctl", "daemon-reload"])
 

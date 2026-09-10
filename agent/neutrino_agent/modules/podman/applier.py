@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import time
 from dataclasses import dataclass, field
 
@@ -31,7 +32,7 @@ from neutrino_agent.modules.podman.renderer import (
     PodmanQuadletRenderer,
     PodmanUnitRenderer,
 )
-from neutrino_agent.modules.subprocess_run import CommandError, run, unit_state
+from neutrino_agent.modules.subprocess_run import run, unit_state
 
 VERSION_NUMBER_PATTERN = re.compile(r"\d+")
 
@@ -86,7 +87,7 @@ def is_quadlet_supported() -> bool:
     """
     try:
         result = run([PODMAN_BINARY, "--version"], is_checked=False, timeout_s=30)
-    except CommandError:
+    except (OSError, subprocess.SubprocessError):
         return False
     if not result.is_success:
         return False
@@ -98,7 +99,7 @@ def podman_version() -> str:
     """The version podman prints, empty when it cannot run."""
     try:
         result = run([PODMAN_BINARY, "--version"], is_checked=False, timeout_s=30)
-    except CommandError:
+    except (OSError, subprocess.SubprocessError):
         return ""
     words = result.stdout.split()
     return words[-1] if result.is_success and words else ""
@@ -151,7 +152,7 @@ class PodmanUnitApplier:
             A short summary of what changed.
 
         Raises:
-            CommandError: If systemd refuses a unit.
+            subprocess.CalledProcessError: If systemd refuses a unit.
         """
         os.makedirs(self._directory, exist_ok=True)
         changed = []
@@ -245,7 +246,7 @@ class PodmanStatusReader:
                 is_checked=False,
                 timeout_s=30,
             )
-        except CommandError:
+        except (OSError, subprocess.SubprocessError):
             return []
         if not result.is_success:
             return []
@@ -300,7 +301,7 @@ class PodmanContainerController:
 
         Raises:
             ValueError: For an action outside the list.
-            CommandError: If the container refuses.
+            subprocess.CalledProcessError: If the container refuses.
         """
         if action not in PODMAN_CONTAINER_ACTIONS:
             raise ValueError(action)
@@ -309,7 +310,7 @@ class PodmanContainerController:
             return
         try:
             run(["systemctl", action, f"{name}.service"], timeout_s=900)
-        except CommandError:
+        except (OSError, subprocess.SubprocessError):
             # netavark's first veth of a boot sometimes fails and the unit's
             # own Restart heals it a second later.
             time.sleep(2)
@@ -342,7 +343,7 @@ def journal_lines(name: str, lines: int) -> list:
             is_checked=False,
             timeout_s=30,
         )
-    except CommandError:
+    except (OSError, subprocess.SubprocessError):
         return []
     return (result.stdout or result.stderr).splitlines()
 

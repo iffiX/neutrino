@@ -12,6 +12,7 @@ supplicant to read the file again.
 Not pure: talks to a running supplicant and to systemd.
 """
 
+import subprocess
 import time
 
 from neutrino_hub.modules.router.constants import (
@@ -20,7 +21,7 @@ from neutrino_hub.modules.router.constants import (
     router_supplicant_config_path,
 )
 from neutrino_hub.utils.json_file import write_generated
-from neutrino_hub.utils.subprocess_run import CommandError, run
+from neutrino_hub.utils.subprocess_run import run
 
 # --- config ---
 SUPPLICANT_CLI = "wpa_cli"
@@ -118,8 +119,8 @@ class RouterWifiClient:
         and nothing it prefers is.
 
         Raises:
-            CommandError: When the supplicant cannot be reached, which means
-                it is not running on this radio.
+            subprocess.CalledProcessError: When the supplicant cannot be
+                reached, which means it is not running on this radio.
         """
         self._cli("reconfigure")
 
@@ -132,8 +133,8 @@ class RouterWifiClient:
             not three.
 
         Raises:
-            CommandError: When the radio will not scan, which normally means
-                the supplicant is not running on it.
+            subprocess.CalledProcessError: When the radio will not scan,
+                which normally means the supplicant is not running on it.
         """
         self._cli("scan", timeout_s=SUPPLICANT_SCAN_TIMEOUT_S)
         # The scan runs in the background and the results come from a second
@@ -173,7 +174,7 @@ class RouterWifiClient:
         """
         try:
             text = self._cli("status")
-        except CommandError:
+        except (subprocess.SubprocessError, OSError):
             return {}
         report = {}
         for line in text.splitlines():
@@ -194,7 +195,7 @@ class RouterWifiClient:
             The network it joined.
 
         Raises:
-            CommandError: When it does not join in time. The message says what
+            TimeoutError: When it does not join in time. The message says what
                 the supplicant was doing when the wait ended, because "wrong
                 passphrase" and "out of range" look different there.
         """
@@ -206,7 +207,7 @@ class RouterWifiClient:
             if last_state == SUPPLICANT_STATE_COMPLETED:
                 return status.get("ssid", "")
             time.sleep(SUPPLICANT_POLL_INTERVAL_S)
-        raise CommandError(_readable_failure(last_state))
+        raise TimeoutError(_readable_failure(last_state))
 
     def _cli(self, *arguments: str, timeout_s: int = 15) -> str:
         """Run one `wpa_cli` command against this radio.
@@ -219,8 +220,8 @@ class RouterWifiClient:
             What it printed.
 
         Raises:
-            CommandError: When the command fails or the supplicant answers
-                ``FAIL``.
+            subprocess.CalledProcessError: When the command fails or the
+                supplicant answers ``FAIL``.
         """
         result = run(
             [
@@ -236,9 +237,11 @@ class RouterWifiClient:
         )
         text = result.stdout.strip()
         if not result.is_success or text == "FAIL":
-            raise CommandError(
-                f"the supplicant on {self._interface} refused "
-                f"{arguments[0]!r}: {(result.stderr or text).strip() or 'no answer'}"
+            raise subprocess.CalledProcessError(
+                result.exit_code or 1,
+                result.command,
+                output=result.stdout,
+                stderr=(result.stderr or text).strip() or "no answer",
             )
         return text
 

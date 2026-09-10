@@ -36,6 +36,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.core.store",
     "neutrino_agent.core.version",
     "neutrino_agent.core.ws_client",
+    "neutrino_agent.exceptions",
     "neutrino_agent.modules",
     "neutrino_agent.modules.base",
     "neutrino_agent.modules.gitea",

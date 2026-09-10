@@ -14,8 +14,10 @@ import neutrino_client.cli.gui as gui_cli
 from neutrino_client.cli import wording
 from neutrino_client.control import client
 from neutrino_client.control.server import ControlServer
-from neutrino_client.gui.shell import GuiShellUnavailableError
-from neutrino_client.platforms.base import ControlSocketUnavailableError
+from neutrino_client.exceptions import (
+    ControlSocketUnavailableError,
+    GuiShellUnavailableError,
+)
 from tests.conftest import FakeClientPlatform, FakeSession, discard
 
 

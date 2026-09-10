@@ -1,6 +1,7 @@
 """The Modules tab: status, start/stop/enable, install/uninstall, journals."""
 
 import asyncio
+import subprocess
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -9,7 +10,7 @@ from neutrino_hub.modules.registry import MODULE_SPECS, ModuleSpec
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.system.machine import ANY_ARCHITECTURE, machine_architecture
 from neutrino_hub.system.provisioning import plan_for
-from neutrino_hub.utils.subprocess_run import CommandError, run
+from neutrino_hub.utils.subprocess_run import command_failure_text, run
 from neutrino_hub.web.constants import WEB_JOURNAL_LINE_LIMIT
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
@@ -277,9 +278,10 @@ def control(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
         ) from error
-    except CommandError as error:
+    except (subprocess.SubprocessError, OSError) as error:
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=command_failure_text(error),
         ) from error
     return _to_view(runtime.services.status(name))
 

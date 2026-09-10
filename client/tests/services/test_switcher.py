@@ -91,7 +91,7 @@ def test_the_cli_runs_quietly_and_is_read_as_utf8(monkeypatch):
     assert seen == {"timeout_s": switcher.COMMAND_TIMEOUT_S, "encoding": "utf-8"}
 
 
-def test_a_refusing_cli_is_a_switcher_error(monkeypatch):
+def test_a_refusing_cli_is_the_commands_own_error(monkeypatch):
     monkeypatch.setattr(bundled, "cc_switch_path", lambda: "/opt/cc-switch")
     monkeypatch.setattr(
         switcher.subprocess,
@@ -101,10 +101,26 @@ def test_a_refusing_cli_is_a_switcher_error(monkeypatch):
         ),
     )
 
-    with pytest.raises(switcher.SwitcherError) as caught:
+    with pytest.raises(subprocess.CalledProcessError) as caught:
         switcher._run(["use", "x"], "claude")
-    assert "no store" in str(caught.value)
+    assert caught.value.returncode == 1
+    assert caught.value.stderr == "no store"
     assert switcher._run(["use", "x"], "claude", is_checked=False) == ""
+
+
+def test_a_refusing_cli_reaches_the_page_as_its_words(tmp_path, monkeypatch):
+    home_file(tmp_path, ".claude/settings.json", "{}")
+
+    def refuse(arguments, app, *, is_checked=True):
+        if is_checked:
+            raise subprocess.CalledProcessError(1, ["cc-switch"], stderr="no store")
+        return ""
+
+    monkeypatch.setattr(switcher, "_run", refuse)
+
+    with pytest.raises(switcher.ToolSwitchError) as caught:
+        switcher._point_at_hub("claude", "http://hub", "k", {"default": "m1"})
+    assert str(caught.value) == "no store"
 
 
 class Cli:
@@ -329,7 +345,7 @@ def test_claude_must_end_up_naming_the_hub(tmp_path, monkeypatch):
     home_file(tmp_path, ".claude/settings.json", "{}")
     monkeypatch.setattr(switcher, "_run", Cli(writes_claude=False))
 
-    with pytest.raises(switcher.SwitcherError) as caught:
+    with pytest.raises(switcher.ToolSwitchError) as caught:
         switcher._point_at_hub("claude", "http://hub", "k", {"default": "m1"})
     assert "did not take" in str(caught.value)
 
@@ -408,20 +424,20 @@ def test_a_delete_that_did_not_take_is_an_error(monkeypatch):
     monkeypatch.setattr(switcher, "_run", cli)
     switcher._PLATFORM.on_answer = None
 
-    with pytest.raises(switcher.SwitcherError) as caught:
+    with pytest.raises(switcher.ToolSwitchError) as caught:
         switcher._drop_provider("codex", "default")
     assert "kept" in str(caught.value)
 
 
 def test_a_platform_without_a_terminal_is_a_typed_error(monkeypatch):
-    from neutrino_client.platforms.base import PlatformUnsupportedError
+    from neutrino_client.exceptions import PlatformUnsupportedError
 
     cli = Cli()
     cli.providers["codex"].add("neutrino")
     monkeypatch.setattr(switcher, "_run", cli)
     switcher._PLATFORM.answer_error = PlatformUnsupportedError("no terminal")
 
-    with pytest.raises(switcher.SwitcherError) as caught:
+    with pytest.raises(switcher.ToolSwitchError) as caught:
         switcher._drop_provider("codex", "default")
     assert "could not answer" in str(caught.value)
 
@@ -532,13 +548,13 @@ def test_activation_is_all_or_nothing(monkeypatch):
 
     def refuse_codex(app, base_url, api_key, config):
         if app == "codex":
-            raise switcher.SwitcherError("no store")
+            raise switcher.ToolSwitchError("no store")
         switched.append(app)
 
     monkeypatch.setattr(switcher, "_point_at_hub", refuse_codex)
     monkeypatch.setattr(switcher, "_point_away", lambda app: put_back.append(app))
 
-    with pytest.raises(switcher.SwitcherError) as caught:
+    with pytest.raises(switcher.ToolSwitchError) as caught:
         switcher.activate(base_url="http://hub", api_key="k")
 
     assert str(caught.value) == "codex: no store"
@@ -549,15 +565,15 @@ def test_activation_is_all_or_nothing(monkeypatch):
 def test_a_rollback_that_fails_is_named_in_the_refusal(monkeypatch):
     def refuse_codex(app, base_url, api_key, config):
         if app == "codex":
-            raise switcher.SwitcherError("no store")
+            raise switcher.ToolSwitchError("no store")
 
     def cannot(app):
-        raise switcher.SwitcherError("kept")
+        raise switcher.ToolSwitchError("kept")
 
     monkeypatch.setattr(switcher, "_point_at_hub", refuse_codex)
     monkeypatch.setattr(switcher, "_point_away", cannot)
 
-    with pytest.raises(switcher.SwitcherError) as caught:
+    with pytest.raises(switcher.ToolSwitchError) as caught:
         switcher.activate(base_url="http://hub", api_key="k")
     assert str(caught.value) == "codex: no store; not put back: claude: kept"
 

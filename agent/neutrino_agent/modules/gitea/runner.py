@@ -12,8 +12,10 @@ Not pure: drives Gitea through its applier.
 from __future__ import annotations
 
 import os
+import subprocess
 
-from neutrino_agent.modules.base import ModuleApplyError, ModuleRunner, command_outcome
+from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.modules.base import ModuleRunner, command_outcome
 from neutrino_agent.modules.gitea.applier import (
     GiteaAdminManager,
     GiteaConfigApplier,
@@ -27,7 +29,7 @@ from neutrino_agent.modules.gitea.constants import (
     GITEA_UNIT,
 )
 from neutrino_agent.modules.gitea.renderer import GiteaConfigRenderer
-from neutrino_agent.modules.subprocess_run import CommandError, unit_state
+from neutrino_agent.modules.subprocess_run import command_detail, unit_state
 
 
 class GiteaModuleRunner(ModuleRunner):
@@ -60,7 +62,7 @@ class GiteaModuleRunner(ModuleRunner):
 
         Raises:
             InstallError: If the package manager refuses.
-            CommandError: If a setup step refuses.
+            subprocess.CalledProcessError: If a setup step refuses.
         """
         entry = resolved.get("entry") or {}
         packages = [str(name) for name in entry.get("packages") or []]
@@ -106,8 +108,10 @@ class GiteaModuleRunner(ModuleRunner):
         rendered = GiteaConfigRenderer(config=parsed).render()
         try:
             note = GiteaConfigApplier().apply(rendered)
-        except (CommandError, OSError) as error:
-            raise ModuleApplyError("apply_failed", {"detail": str(error)[:500]})
+        except (OSError, subprocess.SubprocessError) as error:
+            raise ModuleApplyError(
+                "apply_failed", {"detail": command_detail(error)[:500]}
+            )
         self._config = parsed
         self._log(f"gitea: {note}")
 
@@ -126,7 +130,7 @@ class GiteaModuleRunner(ModuleRunner):
         """
         try:
             state = GiteaAdminManager().survey()
-        except CommandError:
+        except (OSError, subprocess.SubprocessError):
             state = None
         config = self._config
         return {
@@ -175,6 +179,8 @@ class GiteaModuleRunner(ModuleRunner):
     def _run_admin(self, subject: str, step, **fields) -> dict:
         try:
             step(**fields)
-        except CommandError as error:
-            return command_outcome(1, "command_failed", {"detail": error.detail[:500]})
+        except (OSError, subprocess.SubprocessError) as error:
+            return command_outcome(
+                1, "command_failed", {"detail": command_detail(error)[:500]}
+            )
         return command_outcome(0, output=f"{subject}\n")

@@ -18,12 +18,11 @@ import contextlib
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
+from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.devices.agent_sessions import (
     CODE_AGENT_OFFLINE,
     STREAM_KIND_CONTAINER_SHELL,
     STREAM_KIND_SHELL,
-    AgentOfflineError,
-    StreamRefusedError,
 )
 from neutrino_hub.web.constants import (
     WEB_EVENT_HELLO,

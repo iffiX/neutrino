@@ -11,9 +11,10 @@ import subprocess
 
 import pytest
 
-from neutrino_agent.modules.installers import InstallError
+from neutrino_agent.exceptions import InstallError
 from neutrino_agent.modules.package import PackageModuleRunner
-from neutrino_agent.platforms.base import AgentPlatform, PlatformUnsupportedError
+from neutrino_agent.exceptions import PlatformUnsupportedError
+from neutrino_agent.platforms.base import AgentPlatform
 
 DEB_MODULE = {
     "title": "FakeDesk",

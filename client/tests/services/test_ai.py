@@ -9,13 +9,13 @@ import json
 
 import pytest
 
+from neutrino_client.exceptions import ToolSwitchError
 from neutrino_client.services.ai import (
     AiServiceHandler,
     clean_tool_configs,
     resolved_configs,
 )
 from neutrino_client.services.store import ClientServiceStore
-from neutrino_client.services.switcher import SwitcherError
 from tests.conftest import discard
 
 
@@ -204,7 +204,7 @@ def test_disabling_uses_the_last_granted_endpoint_and_clears_it(subject):
 
 def test_a_failed_activation_is_a_typed_failed_state(subject):
     handler, store, fake = subject
-    fake.activate_error = SwitcherError("cc-switch refused")
+    fake.activate_error = ToolSwitchError("cc-switch refused")
     handler.update_credential(CREDENTIAL)
 
     handler.act(entries=[ENTRY], body={"is_enabled": True})

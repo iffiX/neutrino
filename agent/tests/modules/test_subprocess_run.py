@@ -5,7 +5,7 @@ import subprocess
 import pytest
 
 from neutrino_agent.modules import subprocess_run
-from neutrino_agent.modules.subprocess_run import CommandError, run, unit_state
+from neutrino_agent.modules.subprocess_run import command_detail, run, unit_state
 
 
 class Completed:
@@ -40,11 +40,12 @@ def test_a_checked_failure_raises_with_the_commands_own_words(monkeypatch):
         lambda command, **kwargs: Completed(1, "", "no such pool"),
     )
 
-    with pytest.raises(CommandError) as refused:
+    with pytest.raises(subprocess.CalledProcessError) as refused:
         run(["zpool", "destroy", "tank"])
 
-    assert refused.value.detail == "no such pool"
-    assert refused.value.command == ["zpool", "destroy", "tank"]
+    assert command_detail(refused.value) == "no such pool"
+    assert refused.value.cmd == ["zpool", "destroy", "tank"]
+    assert refused.value.returncode == 1
 
 
 def test_an_unchecked_failure_is_answered_not_raised(monkeypatch):
@@ -69,7 +70,7 @@ def test_a_command_that_cannot_run_raises(monkeypatch, error):
 
     monkeypatch.setattr(subprocess_run.subprocess, "run", fake_run)
 
-    with pytest.raises(CommandError):
+    with pytest.raises(type(error)):
         run(["missing"])
 
 

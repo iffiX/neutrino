@@ -98,7 +98,7 @@ def write_served_key(
 
     Raises:
         VaultLockedError: If there is no data key on this box.
-        VaultError: If the sealed key is missing, malformed, or does not
+        ValueError: If the sealed key is missing, malformed, or does not
             decrypt.
         OSError: If the state file cannot be written.
     """

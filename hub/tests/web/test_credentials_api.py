@@ -15,7 +15,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from neutrino_hub.modules.credentials.vault import SecretVault, VaultLockedError
+from neutrino_hub.exceptions import VaultLockedError
+from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.web.app import _vault_locked
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import credentials as credentials_router

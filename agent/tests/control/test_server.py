@@ -12,9 +12,9 @@ import stat
 
 import pytest
 
-import neutrino_agent.core.enrollment as enrollment
 from neutrino_agent.control import client
 from neutrino_agent.control.server import ControlServer
+from neutrino_agent.exceptions import EnrollmentError
 from tests.conftest import FakeControlAgent, FakeControlPlatform, bind
 
 
@@ -156,7 +156,7 @@ def test_connect_and_disconnect_ride_through(control):
 
 def test_a_refused_link_reports_on_the_state(control):
     server, agent = control
-    agent.connect_error = enrollment.EnrollmentError("the link is unusable")
+    agent.connect_error = EnrollmentError("the link is unusable")
 
     status, state = over_socket(
         server, "POST", "/api/connect", {"link": "neutrino://enroll/x"}

@@ -16,9 +16,8 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from neutrino_hub import HUB_VERSION
+from neutrino_hub.exceptions import AgentArtifactFetchError
 from neutrino_hub.modules.clients.constants import CLIENT_ENROLLMENT_KIND
-from neutrino_hub.modules.devices.agent_module_cache import AgentModuleFetchError
-from neutrino_hub.modules.devices.agent_package import AgentPackageFetchError
 from neutrino_hub.modules.devices.constants import (
     AGENT_WIRE_GENERATION,
     DEVICE_MAC_PATTERN,
@@ -252,7 +251,7 @@ def package(
         path = runtime.agent_packages.package(
             family=request.family, architecture=architecture
         )
-    except AgentPackageFetchError as error:
+    except AgentArtifactFetchError as error:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": error.code, "params": error.params},
@@ -299,7 +298,7 @@ def module_package(
             platform=runtime.client_platform.get(device.mac_address, {}),
         )
         data = artifact.path.read_bytes()
-    except AgentModuleFetchError as error:
+    except AgentArtifactFetchError as error:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": error.code, "params": error.params},

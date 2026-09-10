@@ -24,10 +24,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from neutrino_hub.modules.devices.agent_module_cache import (
-    AgentModuleFetchError,
-    resolve_platform_entry,
-)
+from neutrino_hub.exceptions import AgentArtifactFetchError
+from neutrino_hub.modules.devices.agent_module_cache import resolve_platform_entry
 from neutrino_hub.modules.devices.catalog import resolve_module
 from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_INSTALLER_USER,
@@ -498,7 +496,7 @@ class AgentModuleController:
             artifact = self._cache.artifact(
                 name=order.module, manifest=order.manifest, platform=order.platform
             )
-        except AgentModuleFetchError as error:
+        except AgentArtifactFetchError as error:
             self.record_result(
                 mac_address=order.mac_address,
                 order_id=order.id,

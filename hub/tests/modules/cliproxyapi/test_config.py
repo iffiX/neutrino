@@ -10,7 +10,7 @@ from neutrino_hub.modules.cliproxyapi.config import (
     CliproxyApiConfig,
 )
 from neutrino_hub.modules.cliproxyapi.ops import load_config, save_config
-from neutrino_hub.modules.credentials.vault import VaultLockedError
+from neutrino_hub.exceptions import VaultLockedError
 from neutrino_hub.utils.json_file import write_config
 from tests.conftest import unlock_vault
 

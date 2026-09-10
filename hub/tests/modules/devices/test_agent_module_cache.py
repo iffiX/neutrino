@@ -11,9 +11,9 @@ import threading
 
 import pytest
 
+from neutrino_hub.exceptions import AgentArtifactFetchError
 from neutrino_hub.modules.devices.agent_module_cache import (
     AgentModuleCache,
-    AgentModuleFetchError,
     looks_like_package,
     platform_keys,
     resolve_platform_entry,
@@ -100,7 +100,7 @@ def test_an_unsupported_platform_is_refused_before_any_fetch(cache, monkeypatch)
     fetches: list = []
     monkeypatch.setattr(cache, "_fetch", serving(fetches=fetches))
 
-    with pytest.raises(AgentModuleFetchError) as raised:
+    with pytest.raises(AgentArtifactFetchError) as raised:
         cache.artifact(name="fakedesk", manifest=MANIFEST, platform=UNKNOWN)
 
     assert raised.value.code == "no_platform_build"
@@ -245,7 +245,7 @@ def test_a_github_release_entry_resolves_and_fetches_plain(cache, monkeypatch):
 
 
 def test_a_key_no_manifest_resolves_to_is_refused(cache):
-    with pytest.raises(AgentModuleFetchError) as raised:
+    with pytest.raises(AgentArtifactFetchError) as raised:
         cache.artifact_for_key(
             "nothing-like-this", sources={"fakedesk": MANIFEST}, platform=AMD64
         )
@@ -275,7 +275,7 @@ def test_a_download_that_misses_its_pin_is_refused_and_never_cached(cache, monke
     monkeypatch.setattr(AgentModuleCache, "_fetch_plain", staticmethod(_serve_deb))
     manifest = _pinned_manifest("0" * 64)
 
-    with pytest.raises(AgentModuleFetchError) as refusal:
+    with pytest.raises(AgentArtifactFetchError) as refusal:
         cache.artifact(name="rustdesk", manifest=manifest, platform=AMD64)
 
     assert refusal.value.code == "module_sha256_mismatch"

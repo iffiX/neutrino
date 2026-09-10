@@ -22,13 +22,6 @@ import time
 import pytest
 
 from neutrino_client.constants import CLIENT_WS_CLOSE_REPLACED
-from neutrino_client.core.channel import (
-    GatewayRefused,
-    GatewayRefusedDetail,
-    GatewayUnreachable,
-    GatewayUntrusted,
-    GatewayVersionRefused,
-)
 from neutrino_client.core.ws_client import (
     OPCODE_BINARY,
     OPCODE_CLOSE,
@@ -36,12 +29,19 @@ from neutrino_client.core.ws_client import (
     OPCODE_PING,
     OPCODE_PONG,
     OPCODE_TEXT,
-    SocketClosed,
     WebSocketClient,
     accept_key,
     close_error,
     decode_frame,
     encode_frame,
+)
+from neutrino_client.exceptions import (
+    GatewayRefused,
+    GatewayRefusedDetail,
+    GatewayUnreachable,
+    GatewayUntrusted,
+    GatewayVersionRefused,
+    SocketClosed,
 )
 
 WRONG_FINGERPRINT = "0" * 64

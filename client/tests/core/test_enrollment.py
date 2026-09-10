@@ -15,7 +15,8 @@ import pytest
 import neutrino_client.core.channel as channel
 import neutrino_client.core.enrollment as enrollment
 from neutrino_client import CLIENT_VERSION
-from neutrino_client.core.enrollment import EnrollmentError, parse_link
+from neutrino_client.core.enrollment import parse_link
+from neutrino_client.exceptions import EnrollmentError
 from tests.conftest import link_for
 
 

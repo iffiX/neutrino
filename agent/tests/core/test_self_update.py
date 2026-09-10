@@ -18,7 +18,7 @@ import pytest
 import neutrino_agent.core.loop as loop_module
 import neutrino_agent.core.self_update as self_update
 from neutrino_agent.constants import AGENT_REINSTALL_OUTPUT_LIMIT_BYTES
-from neutrino_agent.core.channel import GatewayUnreachable
+from neutrino_agent.exceptions import GatewayUnreachable
 from neutrino_agent.core.loop import Agent
 from tests.conftest import bind, discard
 from tests.core.test_loop import DROP_AFTER_REPORT, WELCOME, ClientScript

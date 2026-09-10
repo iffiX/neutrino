@@ -29,10 +29,15 @@ from neutrino_agent.constants import (
     AGENT_WIRE_GENERATION,
     AGENT_WS_STREAM_ID_LENGTH,
 )
-from neutrino_agent.core.channel import GatewayUnreachable
-from neutrino_agent.core.ws_client import SocketClosed, close_error
+from neutrino_agent.core.ws_client import close_error
+from neutrino_agent.exceptions import (
+    GatewayUnreachable,
+    SocketClosed,
+    StreamClosed,
+    StreamRefused,
+)
 from neutrino_agent.streams import STREAM_KINDS
-from neutrino_agent.streams.channel import StreamChannel, StreamClosed, StreamRefused
+from neutrino_agent.streams.channel import StreamChannel
 
 STREAM_KIND_ORDER = "order"
 STREAM_KIND_COMMAND = "command"

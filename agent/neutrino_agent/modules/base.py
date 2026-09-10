@@ -43,20 +43,6 @@ def command_outcome(
     }
 
 
-class ModuleApplyError(Exception):
-    """A configuration the module refuses or cannot make true.
-
-    Attributes:
-        code: The typed reason.
-        params: What the wording names.
-    """
-
-    def __init__(self, code: str, params: "dict | None" = None):
-        super().__init__(code)
-        self.code = code
-        self.params = dict(params or {})
-
-
 class ModuleRunner:
     """Carries out orders and configuration for one kind of module."""
 

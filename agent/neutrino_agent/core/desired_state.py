@@ -25,8 +25,7 @@ import tempfile
 import threading
 
 from neutrino_agent.constants import AGENT_DESIRED_STATE_PATH
-from neutrino_agent.modules.base import ModuleApplyError
-from neutrino_agent.platforms.base import PlatformUnsupportedError
+from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 
 # The order modules apply in: storage first, then what serves from it.
 APPLY_ORDER = ("zfs", "samba", "gitea", "podman")
@@ -67,6 +66,10 @@ class DesiredStateStore:
         Args:
             state_hash: The hub's hash of the state.
             desired: The state itself.
+
+        Raises:
+            OSError: When the file cannot be written; the partial file is
+                removed first.
         """
         directory = os.path.dirname(self._path)
         os.makedirs(directory, mode=0o700, exist_ok=True)

@@ -40,6 +40,8 @@ hub/
                        subcommand.
     utils/             Generic helpers with no domain: config file IO,
                        subprocess.
+    exceptions.py      The package's one exception table; no kind is
+                       declared anywhere else.
     data/              What ships inside the wheel: services/ the unit
                        templates, examples/ the committed *.example.json,
                        manifests/ the device software catalog, frontend/ the
@@ -64,6 +66,8 @@ password hash and device keys. What each file may contain is documented by the
 agent/
   neutrino_agent/    The agent: heartbeat, reconcile, feature installers, the
                      window a person pastes an enrolment link into.
+    exceptions.py    The package's one exception table; the channel kinds
+                     are the copy the client keeps too.
     data/            Ships inside the package: systemd/ its unit, desktop/
                      its .desktop entry, gui/ the page and window icon the
                      packaging builds copy in from agent/frontend/ and

@@ -9,7 +9,7 @@ platform table, which is what leaves this package nothing to download.
 import pytest
 
 import neutrino_agent.platforms.detect as detect_module
-from neutrino_agent.platforms.base import PlatformUnsupportedError
+from neutrino_agent.exceptions import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import detect_platform
 from neutrino_agent.platforms.linux import LinuxPlatform
 

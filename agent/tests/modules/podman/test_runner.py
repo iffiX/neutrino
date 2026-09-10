@@ -1,12 +1,13 @@
 """The container engine runner: validate, apply, stop, details, commands."""
 
+import subprocess
+
 import pytest
 
-from neutrino_agent.modules.base import ModuleApplyError
+from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.podman import runner as runner_module
 from neutrino_agent.modules.podman.applier import PodmanContainerState
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
-from neutrino_agent.modules.subprocess_run import CommandError
 from neutrino_agent.platforms.base import AgentPlatform
 
 CONFIG = {
@@ -93,7 +94,7 @@ def test_apply_renders_the_units_and_the_mirrors(runner):
 
 def test_a_refused_apply_is_typed(runner, monkeypatch):
     def refuse(self, rendered, *, autostart_names):
-        raise CommandError(["systemctl"], "bad unit")
+        raise subprocess.CalledProcessError(1, ["systemctl"], stderr="bad unit")
 
     monkeypatch.setattr(FakeUnitApplier, "apply", refuse)
 
@@ -143,7 +144,9 @@ def test_a_bad_name_never_reaches_a_command(runner):
 
 
 def test_a_refused_control_is_typed(runner):
-    FakeController.error = CommandError(["systemctl"], "will not start")
+    FakeController.error = subprocess.CalledProcessError(
+        1, ["systemctl"], stderr="will not start"
+    )
 
     outcome = runner.command("podman_control", {"name": "web", "action": "start"})
 

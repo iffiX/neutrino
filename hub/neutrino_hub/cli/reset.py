@@ -15,12 +15,12 @@ is reached over SSH until ``nhub setup`` runs again.
 
 import argparse
 import os
+import subprocess
 import shutil
 import sys
 
 from neutrino_hub.cli.stop import stop_everything
 from neutrino_hub.cli.password import (
-    PasswordRefused,
     clear_password,
     read_new_password,
     store_password,
@@ -29,7 +29,7 @@ from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.routes import hand_back
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.utils.json_file import read_config
-from neutrino_hub.utils.subprocess_run import CommandError
+from neutrino_hub.utils.subprocess_run import command_failure_text
 from neutrino_hub.utils.constants import (
     UTILS_CONFIG_DIR,
     UTILS_EXAMPLES_DIR,
@@ -117,7 +117,7 @@ def _reset_password(*, is_stdin: bool) -> int:
     """
     try:
         store_password(read_new_password(is_stdin=is_stdin))
-    except (PasswordRefused, FileNotFoundError) as error:
+    except (ValueError, OSError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
     panel = _restart_panel()
@@ -254,8 +254,8 @@ def _restart_panel() -> str:
         return ""
     try:
         controller.control(RESET_PANEL_UNIT, "restart")
-    except CommandError as error:
-        return f"the panel did not come back: {error}"
+    except (subprocess.SubprocessError, OSError) as error:
+        return f"the panel did not come back: {command_failure_text(error)}"
     return ""
 
 

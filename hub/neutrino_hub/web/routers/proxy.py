@@ -9,6 +9,7 @@ destinations skip the proxy for whatever is sent to it.
 """
 
 import ipaddress
+import subprocess
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -18,7 +19,7 @@ from neutrino_hub.modules.xray.routing_rules import (
     check_direct_domain,
 )
 from neutrino_hub.utils.json_file import write_config
-from neutrino_hub.utils.subprocess_run import CommandError
+from neutrino_hub.utils.subprocess_run import command_failure_text
 from neutrino_hub.web.constants import WEB_PORT_MAX, WEB_PORT_MIN
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import ApplyResult, ProxySettings
@@ -147,6 +148,6 @@ async def apply(runtime: PanelRuntime = Depends(get_runtime)) -> ApplyResult:
     """
     try:
         message = await runtime.apply_all()
-    except (CommandError, ValueError) as error:
-        return ApplyResult(is_applied=False, message=str(error))
+    except (subprocess.SubprocessError, OSError, RuntimeError, ValueError) as error:
+        return ApplyResult(is_applied=False, message=command_failure_text(error))
     return ApplyResult(is_applied=True, message=message)

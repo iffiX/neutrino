@@ -18,6 +18,7 @@ import os
 import shutil
 import signal
 import socket
+import subprocess
 import sys
 import tempfile
 import time
@@ -26,6 +27,7 @@ import zipfile
 from functools import partial
 from pathlib import Path
 
+from neutrino_hub.exceptions import WizardAborted
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
 from neutrino_hub.modules.router.routes import RouterInterfaceApplier
@@ -58,7 +60,7 @@ from neutrino_hub.utils.constants import (
 )
 from neutrino_hub.utils.json_file import read_config, write_config
 from neutrino_hub.system import package_manager
-from neutrino_hub.utils.subprocess_run import CommandError, run
+from neutrino_hub.utils.subprocess_run import command_failure_text, run
 from neutrino_hub.modules.xray.node_config import XrayNodeList
 from neutrino_hub.modules.xray.node_secrets import store_node_secret
 from neutrino_hub.modules.xray.constants import (
@@ -170,7 +172,7 @@ def main() -> int:
     server = None
     try:
         answers, server = _answers(arguments)
-    except wizard.WizardAborted as error:
+    except WizardAborted as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
 
@@ -219,7 +221,7 @@ def _answers(arguments):
         try:
             document = _parsed(path.read_text(encoding="utf-8"), str(path))
         except OSError as error:
-            raise wizard.WizardAborted(str(error)) from error
+            raise WizardAborted(str(error)) from error
         return wizard.from_document(document), None
     answered = _browser_answers()
     if answered is not None:
@@ -269,7 +271,7 @@ def _browser_answers():
             return None
         try:
             return wizard.from_document(session.wait(WEB_SETUP_WAIT_S)), server
-        except wizard.WizardAborted as error:
+        except WizardAborted as error:
             # The browser is the one that can fix this, so it is told — and so
             # is the terminal, which is where a run that goes wrong is read.
             print(f"\n  the browser sent answers that cannot be used: {error}")
@@ -328,7 +330,7 @@ def _open_browser(command: list) -> None:
     """
     try:
         run(command, is_checked=False, timeout_s=5)
-    except (CommandError, OSError):
+    except (subprocess.SubprocessError, OSError):
         # The link is on the screen either way; an opener that refuses is not
         # a reason to stop.
         pass
@@ -442,7 +444,7 @@ def _parsed(text: str, what: str) -> dict:
     try:
         return json.loads(text)
     except ValueError as error:
-        raise wizard.WizardAborted(f"{what} is not valid JSON: {error}") from error
+        raise WizardAborted(f"{what} is not valid JSON: {error}") from error
 
 
 def _skipped_steps() -> tuple:
@@ -502,8 +504,8 @@ def _setup(
         reporter.start(description)
         try:
             note = step(reporter)
-        except (CommandError, OSError, ValueError) as error:
-            reporter.failed(str(error))
+        except (subprocess.SubprocessError, OSError, ValueError) as error:
+            reporter.failed(command_failure_text(error))
             if step not in SETUP_STEPS_THE_BOX_SURVIVES:
                 return 1
             continue
@@ -521,8 +523,13 @@ def _setup(
                 write_config("router/network.json", answers.network.to_dict())
                 _write_proxy(answers.proxy)
                 _write_listen_port(answers.listen_port)
-            except (CommandError, OSError, ValueError, TypeError) as error:
-                reporter.failed(str(error))
+            except (
+                subprocess.SubprocessError,
+                OSError,
+                ValueError,
+                TypeError,
+            ) as error:
+                reporter.failed(command_failure_text(error))
                 return 1
             reporter.done("vault, network, proxy and panel port")
 
@@ -530,12 +537,17 @@ def _setup(
         reporter.start(f"Installing {name}")
         try:
             note = _install_service(name, reporter, is_consented=is_consented)
-        except (CommandError, OSError, ValueError, RuntimeError) as error:
+        except (
+            subprocess.SubprocessError,
+            OSError,
+            ValueError,
+            RuntimeError,
+        ) as error:
             # Reported as the failure it is, and then the run goes on: one
             # optional module refusing is not a failed setup, because the
             # gateway is already a gateway and the Services page can try
             # again.
-            reporter.failed(f"not installed: {error}")
+            reporter.failed(f"not installed: {command_failure_text(error)}")
             continue
         reporter.done(note)
 
@@ -792,7 +804,8 @@ def _step_required_packages(reporter: InstallReporter) -> str:
         What was found, and False: this step never changes the machine.
 
     Raises:
-        CommandError: When something the hub cannot run without is missing.
+        FileNotFoundError: When something the hub cannot run without is
+            missing.
     """
     controller = package_manager.current()
     wanted = package_manager.packages_for(controller.family, SYSTEM_RUNTIME_PACKAGES)
@@ -803,7 +816,7 @@ def _step_required_packages(reporter: InstallReporter) -> str:
     missing = [name for name in wanted if not controller.is_installed(name)]
     if not missing:
         return f"{len(wanted)} present"
-    raise CommandError(
+    raise FileNotFoundError(
         f"missing: {', '.join(missing)}\n"
         f"  install them first: {controller.install_command(tuple(missing))}"
     )
@@ -913,7 +926,7 @@ def _step_xray_core(reporter: InstallReporter) -> str:
     is_changed = False
     if not Path(XRAY_BINARY).is_file():
         if is_packaged():
-            raise CommandError(
+            raise FileNotFoundError(
                 f"the package should carry xray at {XRAY_BINARY} and it is not "
                 f"there; reinstall the package rather than fetching one"
             )
@@ -924,7 +937,7 @@ def _step_xray_core(reporter: InstallReporter) -> str:
         if (UTILS_GEODATA_DIR / file_name).is_file():
             continue
         if is_packaged():
-            raise CommandError(
+            raise FileNotFoundError(
                 f"the package should carry {file_name} in {UTILS_GEODATA_DIR} "
                 f"and it is not there; reinstall the package"
             )
@@ -978,7 +991,7 @@ def _fetch_pinned(url: str, sha256: str, target: Path) -> None:
         target: Where to write it.
 
     Raises:
-        CommandError: If what arrives is not what was pinned.
+        ValueError: If what arrives is not what was pinned.
     """
     target.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as workdir:
@@ -986,7 +999,7 @@ def _fetch_pinned(url: str, sha256: str, target: Path) -> None:
         run(["curl", "-fL", "--retry", "2", "-o", str(staged), url], timeout_s=600)
         digest = hashlib.sha256(staged.read_bytes()).hexdigest()
         if digest != sha256:
-            raise CommandError(f"{url} came back as {digest}, not {sha256}")
+            raise ValueError(f"{url} came back as {digest}, not {sha256}")
         shutil.move(str(staged), target)
 
 
@@ -1000,7 +1013,7 @@ def _step_config_files(reporter: InstallReporter) -> str:
             ".json", ".example.json"
         )
         if not example_path.is_file():
-            raise CommandError(f"missing example config {example_path}")
+            raise FileNotFoundError(f"missing example config {example_path}")
         real_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(example_path, real_path)
         real_path.chmod(0o600)
@@ -1101,8 +1114,14 @@ def _step_render_all(reporter: InstallReporter) -> str:
         is_checked=False,
     )
     if not result.is_success:
-        raise CommandError(
-            f"rendering failed; fix config/ and re-run:\n{result.stdout}{result.stderr}"
+        raise subprocess.CalledProcessError(
+            result.exit_code,
+            result.command,
+            output=result.stdout,
+            stderr=(
+                "rendering failed; fix config/ and re-run:\n"
+                f"{result.stdout}{result.stderr}"
+            ),
         )
     return f"generated {UTILS_GENERATED_DIR}"
 

@@ -14,8 +14,9 @@ import neutrino_client.gui.tray as tray_module
 import neutrino_client.gui.webkitgtk as webkitgtk
 import neutrino_client.gui.webview2 as webview2
 from neutrino_client.constants import CLIENT_DESKTOP_NAME
+from neutrino_client.exceptions import GuiShellUnavailableError
 from neutrino_client.gui.bridge import GuiBridge
-from neutrino_client.gui.shell import GuiShellUnavailableError, open_shell_window
+from neutrino_client.gui.shell import open_shell_window
 from neutrino_client.gui.tray import TRAY_OPEN_LABEL, TRAY_QUIT_LABEL
 from tests.gui.test_bridge import FakeGuiChannel
 from tests.gui.test_tray import FakeGtk, FakeWin32TrayApi
