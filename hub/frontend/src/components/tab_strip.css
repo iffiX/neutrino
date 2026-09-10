@@ -52,6 +52,14 @@
   color: var(--color-accent-secondary);
 }
 
+.tab_strip_tag--warn {
+  color: var(--color-warn);
+}
+
+.tab_strip_tag--error {
+  color: var(--color-error);
+}
+
 .tab_strip_tab--on {
   border-color: var(--color-accent);
   background: var(--color-accent-wash);

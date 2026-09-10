@@ -39,12 +39,16 @@ const WORDS = {
     forwarding_to: "127.0.0.1:{port}",
     unhealthy: "not reachable now",
     services_wait_join: "Services appear once you join a hub.",
-    services_empty: "Nothing is published for you yet.",
     panel_web: "Web",
     panel_ports: "Ports",
     panel_ai: "AI",
     panel_files: "Files",
     panel_desktops: "Remote desktops",
+    empty_web: "no web service is published",
+    empty_ports: "no port is published",
+    empty_ai: "no AI service is published",
+    empty_files: "no share is published",
+    empty_desktops: "no remote desktop is shared right now",
     rdp_connect: "Connect",
     rdp_open: "viewer open",
     gateway_default: "gateway default",
@@ -348,26 +352,31 @@ function drawServices(state) {
       '</span>';
     return [wait];
   }
+  // Every kind draws, in this order, whether or not it carries entries.
   const kinds = [
-    ['web', WORDS.ui.panel_web, drawWebPanel],
-    ['port', WORDS.ui.panel_ports, drawPortsPanel],
-    ['ai', WORDS.ui.panel_ai, drawAiPanel],
-    ['file', WORDS.ui.panel_files, drawFilesPanel],
-    ['rdp', WORDS.ui.panel_desktops, drawDesktopsPanel],
+    ['web', WORDS.ui.panel_web, drawWebPanel, WORDS.ui.empty_web],
+    ['port', WORDS.ui.panel_ports, drawPortsPanel, WORDS.ui.empty_ports],
+    ['ai', WORDS.ui.panel_ai, drawAiPanel, WORDS.ui.empty_ai],
+    ['file', WORDS.ui.panel_files, drawFilesPanel, WORDS.ui.empty_files],
+    ['rdp', WORDS.ui.panel_desktops, drawDesktopsPanel, WORDS.ui.empty_desktops],
   ];
-  for (const [type, title, build] of kinds) {
+  for (const [type, title, build, empty] of kinds) {
     const entries = entriesOf(state, type);
-    if (entries.length === 0) continue;
-    panels.push(build(state, entries, title));
-  }
-  if (panels.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'card';
-    empty.innerHTML = '<span class="muted">' + WORDS.ui.services_empty +
-      '</span>';
-    panels.push(empty);
+    panels.push(entries.length === 0
+      ? emptyPanel(title, empty)
+      : build(state, entries, title));
   }
   return panels;
+}
+
+function emptyPanel(title, line) {
+  const card = panelCard(title, false);
+  const row = document.createElement('div');
+  row.className = 'feat';
+  row.innerHTML = '<div class="body"><div class="note muted">' + line +
+    '</div></div>';
+  card.appendChild(row);
+  return card;
 }
 
 function panelCard(title, isDirty) {

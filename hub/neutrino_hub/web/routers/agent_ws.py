@@ -130,8 +130,11 @@ async def _serve(websocket: WebSocket, runtime, session: AgentSession, device):
         kind = decoded.get("type")
         if kind == "report":
             is_panel_change = _is_panel_change(session.report, decoded)
+            is_module_change = session.report.get("modules") != decoded.get("modules")
             session.record_report(decoded)
-            record_report(runtime, device, decoded)
+            await asyncio.to_thread(record_report, runtime, device, decoded)
+            if is_module_change:
+                runtime.published_services.schedule_refresh()
             if is_panel_change:
                 runtime.events.publish(WEB_EVENT_DEVICE_REPORT, device.mac_address)
             runtime.events.publish(

@@ -119,9 +119,10 @@ set -e
 systemctl daemon-reload >/dev/null 2>&1 || true
 
 # What dpkg leaves once its own files are gone: the bytecode the interpreter
-# wrote beside them.
+# wrote beside them, and the vendored tree's own directories.
 if [ "$1" = remove ] || [ "$1" = purge ]; then
     rm -rf {prefix}
+    rm -rf {vendor}
 fi
 
 if [ "$1" = purge ]; then
@@ -234,7 +235,7 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
     )
     payload.write(
         tree / "DEBIAN/postrm",
-        POSTRM.format(prefix=payload.INSTALL_PREFIX),
+        POSTRM.format(prefix=payload.INSTALL_PREFIX, vendor=payload.VENDOR_PREFIX),
         is_executable=True,
     )
 

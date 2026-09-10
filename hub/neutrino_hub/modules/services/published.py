@@ -7,8 +7,10 @@ page polls it and every device catalog reads it. One list feeds both,
 under one fingerprint.
 """
 
+import concurrent.futures
 import hashlib
 import json
+import threading
 import time
 
 import httpx
@@ -52,6 +54,7 @@ class PublishedServiceCache:
         device_addresses=None,
         desired_states=None,
         on_fingerprint_change=None,
+        executor=None,
     ):
         """
         Args:
@@ -74,6 +77,8 @@ class PublishedServiceCache:
                 read from; None builds one.
             on_fingerprint_change: Called with nothing when a refresh
                 composes a different list; None tells nobody.
+            executor: The single-thread executor a scheduled recompose runs
+                on; None builds one.
         """
         self._declared_probe = declared_probe
         self._served_models = served_models
@@ -87,6 +92,16 @@ class PublishedServiceCache:
             desired_states if desired_states is not None else DesiredStateStore()
         )
         self._on_fingerprint_change = on_fingerprint_change
+        self._executor = (
+            executor
+            if executor is not None
+            else concurrent.futures.ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="published_services"
+            )
+        )
+        self._refresh_lock = threading.Lock()
+        self._is_refreshing = False
+        self._is_refresh_pending = False
         self._entries: list[dict] = []
         self._fingerprint = ""
         self._hub_addresses: set[str] = set()
@@ -125,6 +140,19 @@ class PublishedServiceCache:
     def expire(self) -> None:
         """Make the next read recompose, after a declaration or probe."""
         self._refreshed_at = None
+
+    def schedule_refresh(self) -> None:
+        """Compose the list again, off the calling thread.
+
+        Safe to call from an event loop. A schedule made while a recompose
+        runs is answered by one more run after it, however many arrive.
+        """
+        with self._refresh_lock:
+            if self._is_refreshing:
+                self._is_refresh_pending = True
+                return
+            self._is_refreshing = True
+        self._executor.submit(self._refresh_until_settled)
 
     def refresh(self) -> None:
         """Compose the list now, replacing the cache whole."""
@@ -167,6 +195,19 @@ class PublishedServiceCache:
         self._refreshed_at = time.monotonic()
         if self._fingerprint != previous and self._on_fingerprint_change is not None:
             self._on_fingerprint_change()
+
+    def _refresh_until_settled(self) -> None:
+        """Refresh, then once more for whatever was asked for meanwhile."""
+        while True:
+            try:
+                self.refresh()
+            finally:
+                with self._refresh_lock:
+                    is_pending = self._is_refresh_pending
+                    self._is_refresh_pending = False
+                    self._is_refreshing = is_pending
+            if not is_pending:
+                return
 
     def _unit(self, name: str):
         return self._units.status(name)

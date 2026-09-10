@@ -1,4 +1,7 @@
-"""The published-list cache: gathering, the fingerprint, and expiry."""
+"""The published-list cache: gathering, the fingerprint, and recomposing."""
+
+import concurrent.futures
+import threading
 
 import pytest
 
@@ -82,7 +85,12 @@ def report(**modules) -> dict:
 
 
 def cache(
-    units: StubUnits, *, sessions=None, addresses=None, on_fingerprint_change=None
+    units: StubUnits,
+    *,
+    sessions=None,
+    addresses=None,
+    on_fingerprint_change=None,
+    executor=None,
 ) -> PublishedServiceCache:
     return PublishedServiceCache(
         declared_probe=StubProbe(),
@@ -92,6 +100,7 @@ def cache(
         device_addresses=addresses,
         desired_states=DesiredStateStore(),
         on_fingerprint_change=on_fingerprint_change,
+        executor=executor,
     )
 
 
@@ -284,3 +293,75 @@ def test_a_list_that_composes_differently_says_so_once(box, monkeypatch, tmp_pat
     held.entries()
 
     assert changes.count == 2
+
+
+# --- recomposing on the events that move the list ---
+
+
+class GatedProbe:
+    """A probe that holds a refresh open until the test lets it go.
+
+    Attributes:
+        calls: How many refreshes reached it.
+        entered: Set once a refresh is inside.
+        gate: What a refresh waits on.
+    """
+
+    def __init__(self):
+        self.calls = 0
+        self.entered = threading.Event()
+        self.gate = threading.Event()
+
+    def results(self, services):
+        self.calls += 1
+        self.entered.set()
+        self.gate.wait(5.0)
+        return []
+
+
+def worker() -> concurrent.futures.ThreadPoolExecutor:
+    return concurrent.futures.ThreadPoolExecutor(max_workers=1)
+
+
+def test_a_scheduled_refresh_composes_the_list_with_nobody_reading_it(box):
+    """A device's report changing what it hosts is on screen before a read."""
+    hosting_samba()
+    sessions = StubSessions({MAC: report(samba={"is_active": True})})
+    changes = ChangeCounter()
+    executor = worker()
+    held = cache(
+        StubUnits(),
+        sessions=sessions,
+        addresses={MAC: "192.168.100.7"},
+        on_fingerprint_change=changes,
+        executor=executor,
+    )
+
+    held.schedule_refresh()
+    executor.shutdown(wait=True)
+
+    assert changes.count == 1
+    assert [entry["id"] for entry in held.entries()[0]] == [
+        "samba_aa-bb-cc-dd-ee-ff_media"
+    ]
+
+
+def test_schedules_arriving_while_one_runs_are_answered_by_one_more(box):
+    probe = GatedProbe()
+    executor = worker()
+    held = PublishedServiceCache(
+        declared_probe=probe,
+        served_models=StubServedModels(),
+        units=StubUnits(),
+        desired_states=DesiredStateStore(),
+        executor=executor,
+    )
+
+    held.schedule_refresh()
+    assert probe.entered.wait(5.0)
+    held.schedule_refresh()
+    held.schedule_refresh()
+    probe.gate.set()
+    executor.shutdown(wait=True)
+
+    assert probe.calls == 2

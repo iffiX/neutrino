@@ -19,7 +19,7 @@ export interface StripTab {
   name: string;
   /** The pill beside the name, where a tab has a kind worth a word. */
   tag?: string;
-  tagTone?: "accent" | "secondary";
+  tagTone?: "accent" | "secondary" | "warn" | "error";
   dotTone?: StatusTone;
 }
 

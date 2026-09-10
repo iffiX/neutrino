@@ -134,6 +134,7 @@ def test_selecting_devices_switches_them_orders_installs_and_pushes(box):
     row = next(r for r in response.json()["devices"] if r["device_id"] == LAPTOP)
     assert row["is_enabled"] is True
     assert row["state"] == "installing"
+    assert runtime.published_services.refreshes == 1
 
 
 def test_dropping_a_device_orders_an_uninstall(box):
@@ -272,6 +273,8 @@ def test_a_configuration_is_checked_on_the_agent_then_stored_then_pushed(box):
     assert runtime.desired_states.read(LAPTOP, MODULE) == {"users": ["ann"]}
     assert [push[0] for push in runtime.agent_sessions.pushes] == [LAPTOP]
     assert context.config == {"users": ["ann"]}
+    # What a machine shares is what the published list reads.
+    assert runtime.published_services.refreshes == 1
 
 
 def test_a_configuration_the_agent_refuses_is_neither_stored_nor_pushed(box):
@@ -293,6 +296,7 @@ def test_a_configuration_the_agent_refuses_is_neither_stored_nor_pushed(box):
     }
     assert runtime.desired_states.read(LAPTOP, MODULE) == {}
     assert runtime.agent_sessions.pushes == []
+    assert runtime.published_services.refreshes == 0
 
 
 def test_an_offline_device_cannot_be_edited(box):

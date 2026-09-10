@@ -3,8 +3,9 @@
 The hub makes it: nobody types it and nobody is shown it. A machine
 reporting the remote desktop host installed is given one, sealed under the
 vault's data key in ``config/devices/<dir>/rdp.json``, and the composed
-desired state is the only place it opens again. A locked vault seals
-nothing and leaves the machine for its next report.
+desired state is the only place it opens again. Making one pushes the state
+that carries it. A locked vault seals nothing and leaves the machine for
+its next report.
 """
 
 import json
@@ -21,16 +22,11 @@ from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.modules.devices.registry import ManagedDevice
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
-from tests.conftest import unlock_vault
+from tests.conftest import StubPublishedServices, unlock_vault
 
 MAC = "aa:bb:cc:dd:ee:ff"
 RDP_PATH = "devices/aa-bb-cc-dd-ee-ff/rdp.json"
 PLATFORM = {"os": "linux", "family": "debian", "arch": "amd64"}
-
-
-class StubPublishedServices:
-    def expire(self):
-        return None
 
 
 class ReportingRuntime:
@@ -51,6 +47,10 @@ class ReportingRuntime:
         )
         self.agent_sessions = AgentSessionRegistry()
         self.desired_states = DesiredStateStore()
+        self.pushed: list = []
+
+    def push_desired_state(self, key: str) -> None:
+        self.pushed.append(key)
 
 
 @pytest.fixture
@@ -102,6 +102,27 @@ def test_the_first_installed_report_generates_one(config, monkeypatch, tmp_path)
     password = runtime.desired_states.seat_password(MAC)
     assert len(password) == 22
     assert set(password) <= set(string.ascii_letters + string.digits)
+
+
+def test_the_password_is_pushed_the_moment_it_exists(config, monkeypatch, tmp_path):
+    unlock_vault(monkeypatch, tmp_path)
+    runtime = ReportingRuntime()
+
+    beat(runtime)
+    beat(runtime)
+
+    assert runtime.pushed == [MAC]
+
+
+def test_a_machine_that_needs_no_new_password_is_pushed_nothing(
+    config, locked, monkeypatch, tmp_path
+):
+    runtime = ReportingRuntime()
+
+    beat(runtime, modules={"rustdesk": {"state": "absent"}})
+    beat(runtime)
+
+    assert runtime.pushed == []
 
 
 def test_a_later_report_keeps_the_password_the_machine_already_has(

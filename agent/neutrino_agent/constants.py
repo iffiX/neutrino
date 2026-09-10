@@ -118,8 +118,10 @@ AGENT_REINSTALL_OUTPUT_LIMIT_BYTES = 4 * 1024
 AGENT_MODULE_DETAILS_TTL_S = 5.0
 
 # Where the agent's own RustDesk build lands. The module is built in: its
-# row reads installed while this file exists, and no order moves it.
-AGENT_RUSTDESK_BINARY_PATH = "/opt/neutrino_agent/vendor/rustdesk/rustdesk"
+# row reads installed while this file exists, and no order moves it. Under
+# /usr because RustDesk refuses `--password` unless its own `current_exe`
+# is there, and it resolves symlinks before it looks.
+AGENT_RUSTDESK_BINARY_PATH = "/usr/lib/neutrino_agent/rustdesk/rustdesk"
 # How long a module command waits for a pending desired state to apply
 # before it runs against the configuration that state carries.
 AGENT_MODULE_COMMAND_SETTLE_S = 30.0

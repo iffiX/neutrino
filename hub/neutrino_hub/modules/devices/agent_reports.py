@@ -11,6 +11,10 @@ key, the first time it says so.
 
 import ipaddress
 
+from neutrino_hub.modules.devices.agent_sessions import (
+    AgentOfflineError,
+    StreamRefusedError,
+)
 from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_STATE_INSTALLED,
     DEVICE_RDP_MODULE,
@@ -179,17 +183,17 @@ def record_rdp_share(runtime, device, share: dict, host: str) -> None:
     else:
         runtime.device_shares.withdraw(key)
     if was_sharing != (is_shared and bool(share_id) and bool(host)):
-        # The published list is cached for a few seconds; a share appearing
-        # or ending is what a person is watching for, so it recomposes now.
-        runtime.published_services.expire()
+        runtime.published_services.schedule_refresh()
 
 
 def _ensure_seat_password(runtime, key: str, modules: dict) -> None:
     """Give a device its seat password once its agent hosts RustDesk.
 
     The password is the hub's to make, so a machine that reports the host
-    installed is handed one it never typed. A locked vault seals nothing
-    and the next report tries again.
+    installed is handed one it never typed, and the state carrying it goes
+    down the moment it exists. A locked vault seals nothing and the next
+    report tries again; a device that does not take the state is left for
+    the next push.
 
     Args:
         runtime: The shared runtime.
@@ -201,7 +205,12 @@ def _ensure_seat_password(runtime, key: str, modules: dict) -> None:
         return
     if str(reported.get("state", "")) != DEVICE_MODULE_STATE_INSTALLED:
         return
-    runtime.desired_states.ensure_seat_password(key)
+    if not runtime.desired_states.ensure_seat_password(key):
+        return
+    try:
+        runtime.push_desired_state(key)
+    except (AgentOfflineError, StreamRefusedError):
+        return
 
 
 def _record_reinstall(runtime, key: str, message: dict) -> None:

@@ -89,7 +89,7 @@ def test_the_deb_carries_both_units_and_nothing_for_a_desktop(tmp_path, carried)
 
     assert (tmp_path / "lib/systemd/system/neutrino_agent.service").is_file()
     unit = (tmp_path / "lib/systemd/system/rustdesk.service").read_text()
-    assert "ExecStart=/opt/neutrino_agent/vendor/rustdesk/rustdesk --service" in unit
+    assert "ExecStart=/usr/lib/neutrino_agent/rustdesk/rustdesk --service" in unit
     assert not (tmp_path / "usr/share/applications").exists()
     assert not (tmp_path / "usr/share/icons").exists()
 
@@ -151,6 +151,7 @@ def test_the_deb_removes_its_own_payload_and_never_the_hub_s(tmp_path, carried):
     postinst = (tmp_path / "DEBIAN/postinst").read_text()
 
     assert "rm -rf /opt/neutrino_agent" in postrm
+    assert "rm -rf /usr/lib/neutrino_agent" in postrm
     assert "rm -rf /opt/neutrino\n" not in postrm
     assert "rm -rf" not in postinst
     assert "prune_untracked /opt/neutrino\n" not in postinst
@@ -177,7 +178,7 @@ def test_the_rpm_lays_the_same_payload_under_the_same_prefix(tmp_path, carried):
     assert 'AGENT_VERSION = "9.9.9"' in (package / "_version.py").read_text()
     assert (tmp_path / "usr/lib/systemd/system/neutrino_agent.service").is_file()
     assert (tmp_path / "usr/lib/systemd/system/rustdesk.service").is_file()
-    assert (tmp_path / "opt/neutrino_agent/vendor/rustdesk/rustdesk").is_file()
+    assert (tmp_path / "usr/lib/neutrino_agent/rustdesk/rustdesk").is_file()
     assert not (tmp_path / "usr/share/applications").exists()
     wrapper = (tmp_path / "usr/bin/nagent").read_text()
     assert "/opt/neutrino_agent/python/bin/python3" in wrapper
@@ -201,6 +202,7 @@ def _spec(architecture="aarch64"):
         packager="somebody",
         staged="/staged",
         prefix=payload.INSTALL_PREFIX,
+        vendor=payload.VENDOR_PREFIX,
         unit_dir=build_rpm.UNIT_DIR,
         rustdesk_link=payload.RUSTDESK_LINK,
         rustdesk_unit=payload.RUSTDESK_UNIT_NAME,
@@ -225,6 +227,9 @@ def test_the_rpm_spec_names_the_machine_and_asks_for_no_python():
 def test_the_rpm_owns_the_desktop_host_it_carries():
     spec = _spec()
 
+    assert "%dir /usr/lib/neutrino_agent" in spec
+    assert "/usr/lib/neutrino_agent/*" in spec
+    assert "rm -rf /usr/lib/neutrino_agent" in spec
     assert "/usr/bin/rustdesk" in spec
     assert "/usr/lib/systemd/system/rustdesk.service" in spec
     assert "/usr/share/doc/neutrino-agent" in spec

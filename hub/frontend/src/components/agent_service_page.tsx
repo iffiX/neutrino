@@ -33,9 +33,10 @@ import "./agent_service_page.css";
  * asking which machines run it. The hub box is a managed machine like the rest
  * and is simply first in the list.
  *
- * The machines it really stands on are tabs below that, the way the Network
- * page tabs its interfaces, and the module's own panels hang under the picked
- * one: the same forms, pointed at whichever agent is answering for them.
+ * The machines it is asked for are tabs below that, the way the Network page
+ * tabs its interfaces, and the module's own panels hang under the picked one:
+ * the same forms, pointed at whichever agent is answering for them. A machine
+ * the module is not standing on yet keeps its tab and says where it stands.
  */
 
 const WORDING = {
@@ -49,6 +50,7 @@ const WORDING = {
   noDevicesHint: "Install the agent on a machine from the Devices page.",
   noActive: "{module} is on no machine yet",
   noActiveHint: "Pick a machine above and apply.",
+  deviceAbsent: "{module} is not on {device} yet.",
   offline: "The agent is offline",
   deviceFailed: "The last step on {device} failed.",
   consentTitle: "Applying {name} changes what these machines run",
@@ -70,6 +72,24 @@ const INSTALLED_STATE = "installed";
 
 // The state that earns a machine a notice of its own, saying why.
 const FAILED_STATE = "failed";
+
+// The states that are a step, not a standing answer; their tab wears amber.
+const IN_FLIGHT_STATES = ["installing", "uninstalling"];
+
+// The word a machine's tab wears while the module is not standing on it.
+const TAB_STATE_WORDING: Record<string, string> = {
+  installing: "installing",
+  uninstalling: "uninstalling",
+  failed: "failed",
+  unsupported: "unavailable",
+};
+
+// What a picked machine says in place of the module's panels, by its state.
+const DEVICE_STATE_WORDING: Record<string, string> = {
+  installing: "Installing {module} on {device}…",
+  uninstalling: "Removing {module} from {device}…",
+  unsupported: "{device} cannot run {module}.",
+};
 
 // What a refused apply says, from the code the API returned.
 const APPLY_ERROR_WORDING: Record<string, string> = {
@@ -123,12 +143,10 @@ export function AgentServicePage({
   const [isConsentOpen, setIsConsentOpen] = useState(false);
 
   const devices = resource.data?.devices ?? [];
-  const enabledIds = devices
-    .filter((device) => device.is_enabled)
-    .map((device) => device.device_id);
-  const activeDevices = devices.filter(
-    (device) => device.state === INSTALLED_STATE,
-  );
+  // Every machine the module is asked for, whatever state it stands in: a
+  // machine keeps its tab while it installs.
+  const enabledDevices = devices.filter((device) => device.is_enabled);
+  const enabledIds = enabledDevices.map((device) => device.device_id);
 
   // The draft follows the gateway until somebody edits it: an apply landing
   // elsewhere, or a machine finishing an install, should move these chips.
@@ -137,16 +155,15 @@ export function AgentServicePage({
     setCheckedIds(null);
   }, [enabledKey]);
 
-  // Whichever machine is picked has to still be one that runs the module.
-  const activeKey = activeDevices.map((device) => device.device_id).join(",");
+  // Whichever machine is picked has to still be one the module is asked for.
   useEffect(() => {
-    const active = activeKey === "" ? [] : activeKey.split(",");
+    const enabled = enabledKey === "" ? [] : enabledKey.split(",");
     setSelectedId((current) =>
-      current !== null && active.includes(current)
+      current !== null && enabled.includes(current)
         ? current
-        : (active[0] ?? null),
+        : (enabled[0] ?? null),
     );
-  }, [activeKey]);
+  }, [enabledKey]);
 
   const checked = checkedIds ?? enabledIds;
   const addedDevices = devices.filter(
@@ -205,7 +222,7 @@ export function AgentServicePage({
   }
 
   const selected =
-    activeDevices.find((device) => device.device_id === selectedId) ?? null;
+    enabledDevices.find((device) => device.device_id === selectedId) ?? null;
   const failedDevices = devices.filter(
     (device) => device.state === FAILED_STATE,
   );
@@ -265,7 +282,7 @@ export function AgentServicePage({
         ))}
       </section>
 
-      {activeDevices.length === 0 ? (
+      {enabledDevices.length === 0 ? (
         <div className="placeholder">
           <span>{fill(WORDING.noActive, { module: moduleName })}</span>
           <span className="faint">{WORDING.noActiveHint}</span>
@@ -273,13 +290,23 @@ export function AgentServicePage({
       ) : (
         <TabStrip
           label="Devices"
-          tabs={activeDevices.map(toTab)}
+          tabs={enabledDevices.map(toTab)}
           selected={selectedId}
           onSelect={setSelectedId}
         />
       )}
 
-      {selected !== null && (
+      {selected !== null && selected.state !== INSTALLED_STATE && (
+        <p
+          className={`agent_service_state ${
+            selected.state === FAILED_STATE ? "agent_service_state--error" : ""
+          }`}
+        >
+          {describeDeviceState(selected, moduleName)}
+        </p>
+      )}
+
+      {selected !== null && selected.state === INSTALLED_STATE && (
         <fieldset className="agent_service_body" disabled={!selected.is_online}>
           {!selected.is_online && (
             <div className="notice notice--warn">
@@ -310,11 +337,13 @@ export function AgentServicePage({
   );
 }
 
-/** One machine that runs the module, as the tab strip wants it. */
+/** One machine the module is asked for, as the tab strip wants it. */
 function toTab(device: ModuleDeviceView): StripTab {
   return {
     key: device.device_id,
     name: device.name,
+    tag: TAB_STATE_WORDING[device.state],
+    tagTone: IN_FLIGHT_STATES.includes(device.state) ? "warn" : "error",
     dotTone: device.is_online ? "ok" : "idle",
   };
 }
@@ -350,6 +379,21 @@ function consentsFor(
     });
   }
   return consents;
+}
+
+/** A picked machine the module does not stand on yet, in one line. */
+function describeDeviceState(
+  device: ModuleDeviceView,
+  moduleName: string,
+): string {
+  if (device.state === FAILED_STATE) {
+    return describeDeviceCode(device);
+  }
+  if (!device.is_online) {
+    return WORDING.offline;
+  }
+  const wording = DEVICE_STATE_WORDING[device.state] ?? WORDING.deviceAbsent;
+  return fill(wording, { module: moduleName, device: device.name });
 }
 
 /** A refused apply, worded from the code and the device it names. */

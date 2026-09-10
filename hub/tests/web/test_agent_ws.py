@@ -29,7 +29,7 @@ from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.routers import agent as agent_router
 from neutrino_hub.web.routers import agent_ws
-from tests.conftest import StubDesiredStates
+from tests.conftest import StubDesiredStates, StubPublishedServices
 
 MAC = "aa:bb:cc:dd:ee:ff"
 TOKEN = "device-token"
@@ -48,14 +48,6 @@ class FakeRegistry:
         stored = FakeRegistry.device.client.token_sha256
         presented = hashlib.sha256(token.encode()).hexdigest()
         return FakeRegistry.device if stored and stored == presented else None
-
-
-class StubPublishedServices:
-    def __init__(self):
-        self.expiries = 0
-
-    def expire(self):
-        self.expiries += 1
 
 
 class _EmptyNetwork:
@@ -84,6 +76,7 @@ class FakeRuntime:
         )
         self.state_requests = 0
         self.desired = ("", {})
+        self.pushed: list = []
 
     def network(self):
         return _EmptyNetwork()
@@ -91,6 +84,9 @@ class FakeRuntime:
     def desired_state_for(self, device):
         self.state_requests += 1
         return self.desired
+
+    def push_desired_state(self, key):
+        self.pushed.append(key)
 
 
 @pytest.fixture
@@ -147,6 +143,18 @@ def report(**fields) -> dict:
     }
     body.update(fields)
     return body
+
+
+def samba(*, is_active: bool) -> dict:
+    """The module states a report carries for a machine hosting samba."""
+    return {
+        "samba": {
+            "state": "installed",
+            "code": "",
+            "params": {},
+            "details": {"is_active": is_active},
+        }
+    }
 
 
 def closed_with(socket) -> tuple:
@@ -351,6 +359,44 @@ def test_a_report_lands_in_the_runtime_and_declares_the_share(api):
         assert runtime.agent_sessions.get(MAC).report["metrics"] == {"cpu_percent": 4.0}
         # A report is not an ending: the device is still online, unstamped.
         assert runtime.agent_sessions.last_seen_at(MAC) is None
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_report_whose_modules_moved_recomposes_the_published_list(api):
+    """The list is composed on the report, not on whoever reads it next."""
+    client, runtime = api
+    socket, _ = welcomed(client)
+    try:
+        socket.send_json(report(modules=samba(is_active=False)))
+        assert wait_until(lambda: runtime.published_services.refreshes == 1)
+
+        # The same modules again say nothing new; different details do.
+        socket.send_json(report(modules=samba(is_active=False)))
+        socket.send_json(report(modules=samba(is_active=True)))
+
+        assert wait_until(lambda: runtime.published_services.refreshes == 2)
+        assert runtime.published_services.refreshes == 2
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_desktop_share_appearing_recomposes_the_published_list(api):
+    client, runtime = api
+    socket, _ = welcomed(client)
+    try:
+        socket.send_json(report(modules=samba(is_active=True)))
+        assert wait_until(lambda: runtime.published_services.refreshes == 1)
+
+        socket.send_json(
+            report(
+                modules=samba(is_active=True),
+                rdp={"is_shared": True, "share_id": "s1", "port": 21118},
+            )
+        )
+
+        assert wait_until(lambda: runtime.published_services.refreshes == 2)
+        assert runtime.device_shares.live() != []
     finally:
         socket.__exit__(None, None, None)
 

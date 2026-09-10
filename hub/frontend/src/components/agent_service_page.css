@@ -19,3 +19,15 @@
   padding: 0;
   border: 0;
 }
+
+/* One line where the module's panels would be, for a machine the module does
+   not stand on yet. */
+.agent_service_state {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.agent_service_state--error {
+  color: var(--color-error);
+}

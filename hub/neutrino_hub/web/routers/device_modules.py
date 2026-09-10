@@ -31,6 +31,7 @@ from neutrino_hub.modules.devices.constants import (
 )
 from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
+from neutrino_hub.modules.services.constants import SERVICES_PUBLISHED_MODULES
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
     ApplyResult,
@@ -223,6 +224,8 @@ def select_hosts(
             push_state(runtime, key)
         except HTTPException:
             continue
+    if changed:
+        _recompose_published(runtime, module)
     return device_list(runtime, module)
 
 
@@ -347,6 +350,7 @@ def store_config(runtime: PanelRuntime, context: DeviceModuleContext, config: di
     runtime.desired_states.write(context.key, context.module, config)
     context.config = dict(config)
     push_state(runtime, context.key)
+    _recompose_published(runtime, context.module)
 
 
 def push_state(runtime: PanelRuntime, key: str) -> None:
@@ -410,6 +414,17 @@ def run_command(
             **params,
         )
     return dict(info)
+
+
+def _recompose_published(runtime: PanelRuntime, module: str) -> None:
+    """Say the published list may read differently, for the modules it reads.
+
+    Args:
+        runtime: The shared runtime.
+        module: The module whose desired state was written.
+    """
+    if module in SERVICES_PUBLISHED_MODULES:
+        runtime.published_services.schedule_refresh()
 
 
 def _hub_first(runtime: PanelRuntime):

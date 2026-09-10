@@ -54,9 +54,9 @@ PYTHON_SHA256 = {
 }
 
 # The RustDesk host the Linux packages carry, pinned by hash. It is unpacked
-# out of the upstream package at build time and installed under the agent's
-# own prefix, so a device has the host from the install and fetches nothing
-# at runtime.
+# out of the upstream package at build time and installed under
+# :data:`VENDOR_PREFIX`, so a device has the host from the install and
+# fetches nothing at runtime.
 RUSTDESK_VERSION = "1.4.9"
 RUSTDESK_URL = (
     "https://github.com/rustdesk/rustdesk/releases/download/"
@@ -82,7 +82,14 @@ RUSTDESK_ASSETS = {
         "3e523df7ceb6f3804b047a3cac797354c4bf46ec19f2d7ff5e198787003cb092",  # scan: allow
     ),
 }
-RUSTDESK_VENDOR_DIR = INSTALL_PREFIX / "vendor/rustdesk"
+# Where what the agent packages vendor is installed. Under /usr because
+# RustDesk 1.4.9 answers `--password` only when its own `is_installed()`
+# holds, and that reads the prefix of `current_exe`: anywhere else the call
+# is refused with "Installation and administrative privileges required!".
+# `current_exe` resolves symlinks, so a link from /usr into another prefix
+# does not answer it; the binary itself has to be here.
+VENDOR_PREFIX = Path("/usr/lib/neutrino_agent")
+RUSTDESK_VENDOR_DIR = VENDOR_PREFIX / "rustdesk"
 # Where the upstream package keeps the whole host: the binary, the libraries
 # it loads and the data it reads. What surrounds it there — the unit, the
 # desktop file, the polkit and pam rules — is upstream's own session setup
@@ -257,8 +264,8 @@ def stage_rustdesk(tree: Path, architecture: str, kind: str) -> None:
     """Unpack the pinned RustDesk host into a Linux package tree.
 
     The upstream package is fetched and opened here, and only its host
-    directory is carried: the binary, its libraries and its data, under the
-    agent's own prefix. The symlink on PATH points at that copy.
+    directory is carried: the binary, its libraries and its data, under
+    :data:`VENDOR_PREFIX`. The symlink on PATH points at that copy.
 
     Args:
         tree: The staging directory standing in for the filesystem root.

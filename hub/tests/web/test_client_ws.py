@@ -439,3 +439,19 @@ def test_a_socket_ending_takes_the_client_offline_with_a_stamp(api):
     assert runtime.client_sessions.last_seen_at(client_id)
     assert runtime.client_sessions.version_of(client_id) == "1.2.3"
     assert wait_until(lambda: "clients" in runtime.events.published)
+
+
+def test_the_socket_says_the_client_list_moved_on_both_ends(api):
+    """The row flips online and offline with nobody reloading the page."""
+    client, runtime, _, token = api
+    runtime.client_sessions.on_presence_change = None
+    socket, _ = welcomed(client, token)
+    socket.receive_json()
+    socket.receive_json()
+
+    assert wait_until(lambda: "clients" in runtime.events.published)
+
+    runtime.events.published.clear()
+    socket.__exit__(None, None, None)
+
+    assert wait_until(lambda: "clients" in runtime.events.published)

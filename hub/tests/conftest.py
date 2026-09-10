@@ -246,8 +246,25 @@ class StubDesiredStates:
         self.ensured: list = []
 
     def ensure_seat_password(self, key: str) -> bool:
-        self.ensured.append(key.lower())
+        key = key.lower()
+        if key in self.ensured:
+            return False
+        self.ensured.append(key)
         return True
+
+
+class StubPublishedServices:
+    """The published list as the paths that can move it reach for it.
+
+    Attributes:
+        refreshes: How many recomposes were scheduled.
+    """
+
+    def __init__(self):
+        self.refreshes = 0
+
+    def schedule_refresh(self) -> None:
+        self.refreshes += 1
 
 
 def holding_dispatch(order) -> None:
@@ -279,6 +296,7 @@ class FakeModuleRuntime:
 
         self.devices = {device.mac_address.lower(): device for device in devices}
         self.agent_sessions = FakeAgentSessions(online)
+        self.published_services = StubPublishedServices()
         self.desired_states = DesiredStateStore()
         self.client_modules: dict = {}
         self.client_platform: dict = {}

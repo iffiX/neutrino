@@ -34,7 +34,7 @@ from neutrino_hub.web.constants import (
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.routers import agent as agent_router
 from neutrino_hub.web.routers import agent_ws
-from tests.conftest import StubDesiredStates
+from tests.conftest import StubDesiredStates, StubPublishedServices
 
 MAC = "aa:bb:cc:dd:ee:ff"
 AGENT_TOKEN = "device-token"
@@ -62,11 +62,6 @@ class StubSessions:
 
     def is_valid(self, token) -> bool:
         return token == SESSION_TOKEN
-
-
-class StubPublishedServices:
-    def expire(self):
-        return None
 
 
 class _EmptyNetwork:
@@ -102,6 +97,9 @@ class FakeRuntime:
 
     def desired_state_for(self, device):
         return self.desired
+
+    def push_desired_state(self, key):
+        return None
 
     def _publish_devices(self) -> None:
         self.events.publish(WEB_EVENT_DEVICES)

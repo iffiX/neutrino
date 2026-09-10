@@ -17,17 +17,9 @@ from neutrino_hub.modules.devices.agent_sessions import AgentSessionRegistry
 from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.modules.devices.registry import ManagedDevice
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
-from tests.conftest import StubDesiredStates
+from tests.conftest import StubDesiredStates, StubPublishedServices
 
 MAC = "aa:bb:cc:dd:ee:ff"
-
-
-class StubPublishedServices:
-    def __init__(self):
-        self.expiries = 0
-
-    def expire(self):
-        self.expiries += 1
 
 
 class FakeRuntime:
@@ -47,6 +39,7 @@ class FakeRuntime:
             cache=None, locks=DeviceInstallLocks()
         )
         self.agent_sessions = AgentSessionRegistry()
+        self.pushed: list = []
         self._lans = [
             SimpleNamespace(lan=SimpleNamespace(address=address, cidr=cidr))
             for address, cidr in lans
@@ -54,6 +47,9 @@ class FakeRuntime:
 
     def network(self):
         return SimpleNamespace(lan_interfaces=self._lans)
+
+    def push_desired_state(self, key):
+        self.pushed.append(key)
 
 
 @pytest.fixture
@@ -220,7 +216,7 @@ def test_a_report_declaring_a_share_records_it_at_the_held_address(box):
     )
     assert share.hostname == "box"
     assert (share.account, share.connected_count) == ("pat", 2)
-    assert runtime.published_services.expiries == 1
+    assert runtime.published_services.refreshes == 1
 
 
 def test_a_share_that_names_no_account_or_viewers_carries_neither(box):
@@ -267,7 +263,7 @@ def test_a_report_that_stops_sharing_withdraws_the_share(box):
     agent_reports.record_report(runtime, device, report(rdp={"is_shared": False}))
 
     assert runtime.device_shares.live() == []
-    assert runtime.published_services.expiries == 2
+    assert runtime.published_services.refreshes == 2
 
 
 def test_a_share_with_no_address_to_pair_it_with_is_not_declared(box):

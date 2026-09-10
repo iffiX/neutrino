@@ -101,6 +101,10 @@ SERVICES_RDP_PROTOCOL = "rustdesk"
 # direct-access-port; the agent's own constant is the same number.
 SERVICES_RDP_PORT = 21118
 
+# The device-hosted modules the list is composed from: a desired state written
+# for one of these composes a different list.
+SERVICES_PUBLISHED_MODULES = ("samba", "gitea", "podman")
+
 SERVICES_LIST_TTL_S = 10.0
 SERVICES_ANSWER_TIMEOUT_S = 2.0
 

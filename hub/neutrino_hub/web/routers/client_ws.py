@@ -21,6 +21,7 @@ from neutrino_hub.modules.devices.constants import (
     AGENT_WS_CLOSE_UNKNOWN_TOKEN,
 )
 from neutrino_hub.web import client_channel
+from neutrino_hub.web.constants import WEB_EVENT_CLIENTS
 from neutrino_hub.web.routers.agent_ws import decode_frame, peer_host, read_hello
 from neutrino_hub.web.routers.client import client_version_refusal
 
@@ -73,6 +74,7 @@ async def client_socket(websocket: WebSocket) -> None:
             platform=session.platform,
             version=version,
         )
+        runtime.events.publish(WEB_EVENT_CLIENTS)
         client_channel.resolve_client_host(
             runtime,
             client.id,
@@ -92,6 +94,7 @@ async def client_socket(websocket: WebSocket) -> None:
         pass
     finally:
         runtime.client_sessions.detach(session)
+        runtime.events.publish(WEB_EVENT_CLIENTS)
 
 
 async def _serve(websocket: WebSocket, runtime, session: AgentSession) -> None:

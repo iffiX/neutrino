@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart=/opt/neutrino_agent/vendor/rustdesk/rustdesk --service
+ExecStart=/usr/lib/neutrino_agent/rustdesk/rustdesk --service
 Restart=on-failure
 RestartSec=10
 LimitNOFILE=100000

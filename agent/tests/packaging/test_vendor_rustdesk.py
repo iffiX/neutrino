@@ -151,6 +151,16 @@ def test_a_machine_with_no_asset_is_refused_by_name(tmp_path):
 # --- what is carried out of the package ---
 
 
+def test_the_host_is_carried_under_usr_because_rustdesk_reads_its_own_prefix():
+    """RustDesk 1.4.9's `is_installed()` is a prefix test on `current_exe`:
+    anywhere but /usr it refuses `--password` and every seat password the hub
+    hands down is rejected. It resolves symlinks first, so only the binary's
+    own path answers this."""
+    assert str(payload.RUSTDESK_VENDOR_DIR / payload.RUSTDESK_BINARY_NAME).startswith(
+        "/usr/"
+    )
+
+
 def test_the_whole_host_directory_is_carried_and_nothing_around_it(
     tmp_path, downloaded
 ):
@@ -158,7 +168,7 @@ def test_the_whole_host_directory_is_carried_and_nothing_around_it(
 
     payload.stage_rustdesk(tmp_path / "tree", "amd64", "deb")
 
-    vendor = tmp_path / "tree/opt/neutrino_agent/vendor/rustdesk"
+    vendor = tmp_path / "tree/usr/lib/neutrino_agent/rustdesk"
     assert (vendor / "rustdesk").is_file()
     assert (vendor / "lib/librustdesk.so").is_file()
     assert (vendor / "data/flutter_assets/asset").is_file()
@@ -178,7 +188,7 @@ def test_the_name_on_the_path_points_at_the_carried_binary(tmp_path, downloaded)
 
     link = tmp_path / "tree/usr/bin/rustdesk"
     assert link.is_symlink()
-    assert str(link.readlink()) == "/opt/neutrino_agent/vendor/rustdesk/rustdesk"
+    assert str(link.readlink()) == "/usr/lib/neutrino_agent/rustdesk/rustdesk"
 
 
 def test_a_package_carrying_no_host_fails_the_build(tmp_path, downloaded):
@@ -202,7 +212,7 @@ def test_the_rpm_is_opened_the_same_way_as_the_deb(tmp_path, downloaded):
 
     payload.stage_rustdesk(tmp_path / "tree", "x86_64", "rpm")
 
-    vendor = tmp_path / "tree/opt/neutrino_agent/vendor/rustdesk"
+    vendor = tmp_path / "tree/usr/lib/neutrino_agent/rustdesk"
     assert (vendor / "rustdesk").is_file()
     assert (vendor / "lib/librustdesk.so").is_file()
     assert (tmp_path / "tree/usr/bin/rustdesk").is_symlink()

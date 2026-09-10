@@ -2,7 +2,8 @@
 
 The page is plain HTML, CSS and JavaScript under ``client/frontend/``, so
 what can be checked here is the contract's visible surface: the two
-sections in order, one panel per service type, the redraw guards, the
+sections in order, the five service panels in their fixed order with the
+line each carries while nothing is published, the redraw guards, the
 bridge adapter with no direct network reach, and the words table asserted
 complete: every ``{code}`` and every state token the client can emit is
 enumerated from the source and must have a wording, so a new code or state
@@ -53,6 +54,23 @@ DETAIL_FALLBACK_CODES = {
 }
 
 MOUNT_BUSY_STATES = ("queued", "mounting", "pending")
+
+# The five service groups in the order the page draws them: the WORDS key
+# stem, the type on the wire, the heading, the builder, and the line the
+# group carries while nothing is published.
+SERVICE_PANELS = (
+    ("web", "web", "Web", "drawWebPanel", "no web service is published"),
+    ("ports", "port", "Ports", "drawPortsPanel", "no port is published"),
+    ("ai", "ai", "AI", "drawAiPanel", "no AI service is published"),
+    ("files", "file", "Files", "drawFilesPanel", "no share is published"),
+    (
+        "desktops",
+        "rdp",
+        "Remote desktops",
+        "drawDesktopsPanel",
+        "no remote desktop is shared right now",
+    ),
+)
 
 # What can carry a state token anywhere in the client.
 STATE_PATTERNS = (
@@ -200,15 +218,30 @@ def test_the_sections_render_status_then_services():
 
 
 def test_one_panel_per_service_type():
-    for panel in (
-        'panel_web: "Web"',
-        'panel_ports: "Ports"',
-        'panel_ai: "AI"',
-        'panel_files: "Files"',
-        'panel_desktops: "Remote desktops"',
-    ):
-        assert panel in PAGE_JS
-    assert "['rdp', WORDS.ui.panel_desktops, drawDesktopsPanel]" in PAGE_JS
+    for stem, kind, heading, builder, empty in SERVICE_PANELS:
+        assert f'panel_{stem}: "{heading}"' in PAGE_JS
+        assert f'empty_{stem}: "{empty}"' in PAGE_JS
+        assert (
+            f"['{kind}', WORDS.ui.panel_{stem}, {builder}, WORDS.ui.empty_{stem}]"
+            in PAGE_JS
+        )
+
+
+def test_the_panels_draw_in_their_fixed_order():
+    kinds = PAGE_JS.split("const kinds = [")[1].split("  ];")[0]
+    drawn = re.findall(r"\['([a-z]+)', WORDS\.ui\.panel_", kinds)
+
+    assert drawn == [kind for _, kind, _, _, _ in SERVICE_PANELS]
+
+
+def test_a_group_with_no_entry_draws_its_heading_and_its_empty_line():
+    body = PAGE_JS.split("function drawServices")[1].split("\n}")[0]
+
+    assert "entries.length === 0" in body
+    assert "emptyPanel(title, empty)" in body
+    assert "continue" not in body
+    assert "function emptyPanel(title, line)" in PAGE_JS
+    assert "services_empty" not in PAGE_JS
 
 
 def test_the_ai_panel_is_one_toggle_config_and_apply():

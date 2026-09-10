@@ -80,6 +80,8 @@ cp -a {staged}/. %{{buildroot}}/
 
 %files
 {prefix}
+%dir {vendor}
+{vendor}/*
 /usr/bin/nagent
 /{rustdesk_link}
 /{unit_dir}/neutrino_agent.service
@@ -117,6 +119,7 @@ fi
 systemctl daemon-reload >/dev/null 2>&1 || true
 if [ "$1" = 0 ]; then
     rm -rf {prefix}
+    rm -rf {vendor}
     echo "  Leaving /etc/neutrino/agent in place; remove it by hand if this"
     echo "  machine is not going to rejoin a hub."
 fi
@@ -174,6 +177,7 @@ def main() -> int:
                 packager=arguments.packager,
                 staged=staged,
                 prefix=payload.INSTALL_PREFIX,
+                vendor=payload.VENDOR_PREFIX,
                 unit_dir=UNIT_DIR,
                 rustdesk_link=payload.RUSTDESK_LINK,
                 rustdesk_unit=payload.RUSTDESK_UNIT_NAME,

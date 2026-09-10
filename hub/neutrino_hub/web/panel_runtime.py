@@ -657,8 +657,9 @@ class PanelRuntime:
         return notes
 
     def _publish_devices(self) -> None:
-        """Say the device list moved."""
+        """Say the device list moved, and recompose what devices publish."""
         self.events.publish(WEB_EVENT_DEVICES)
+        self.published_services.schedule_refresh()
 
     def _publish_module_order(self, mac_address: str) -> None:
         """Say an order on one device moved."""
