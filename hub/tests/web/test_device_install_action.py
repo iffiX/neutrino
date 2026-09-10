@@ -10,6 +10,7 @@ and that a reinstall is a command on a live agent and a 409 without one.
 """
 
 import json
+import time
 from types import SimpleNamespace
 
 import asyncssh
@@ -369,6 +370,11 @@ def test_a_reinstall_on_a_live_agent_runs_the_command_as_a_task(api):
     )
 
     assert started.status_code == 200
+    # The command runs as a task on its own thread; the stream opens after
+    # the answer.
+    deadline = time.monotonic() + 5
+    while not sessions.streams and time.monotonic() < deadline:
+        time.sleep(0.02)
     (stream,) = sessions.streams
     assert stream.kind == "command"
     assert stream.args == {"action": "reinstall", "args": {}}
