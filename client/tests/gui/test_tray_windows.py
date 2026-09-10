@@ -7,6 +7,8 @@ every mouse event answered.
 
 import pytest
 
+from neutrino_client.constants import CLIENT_TRAY_OPEN_LABEL, CLIENT_TRAY_QUIT_LABEL
+
 from neutrino_client.gui.tray_windows import (
     TRAY_CALLBACK_MESSAGE,
     TRAY_COMMAND_OPEN,

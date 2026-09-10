@@ -70,10 +70,12 @@ try:
     log.write(
         "activate: "
         + switcher.activate(
-            base_url="http://hub:8080", api_key="sk-test", tool_configs=cfg
+            base_url="http://hub:8080",
+            api_key="sk-test",
+            tool_configs=cfg,  # scan: allow
         )
         + "\n"
-    )  # scan: allow
+    )
     log.write("first activation took %.2fs\n" % (time.monotonic() - t0))
     show("after first activation")
     log.write(
