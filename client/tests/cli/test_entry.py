@@ -37,6 +37,7 @@ def test_the_version_answers_any_caller(monkeypatch, capsys):
         ["disconnect"],
         ["status"],
         ["gui"],
+        ["quit"],
         ["service", "list"],
     ],
 )
@@ -64,6 +65,7 @@ def test_no_command_prints_the_help(monkeypatch, capsys):
         (["disconnect"], "disconnect", ((), {})),
         (["status"], "status", ((), {})),
         (["gui", "--hidden"], "gui", ((), {"is_hidden": True})),
+        (["quit"], "quit", ((), {})),
     ],
 )
 def test_each_verb_reaches_its_command(monkeypatch, argv, target, expected):

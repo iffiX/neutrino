@@ -12,12 +12,17 @@ Every refusal is ``{"code", "params"}``; each surface does its own wording.
 # client still imports on Python 3.9.
 from __future__ import annotations
 
+import threading
+import time
 import urllib.parse
 
 from neutrino_client import CLIENT_VERSION
+from neutrino_client.core.session import end_process
 from neutrino_client.exceptions import EnrollmentError, PlatformUnsupportedError
 
 SERVICES_PREFIX = "/api/services/"
+# How long the answer is given to reach the caller before the process ends.
+QUIT_ANSWER_GRACE_S = 0.3
 
 
 def state_payload(session) -> dict:
@@ -82,6 +87,8 @@ def dispatch(method: str, path: str, body: "dict | None", session):
         if route == "/api/show":
             session.request_show()
             return 200, {}
+        if route == "/api/quit":
+            return _quit(session)
         return 404, {"code": "unknown_request", "params": {}}
     return 404, {"code": "unknown_request", "params": {}}
 
@@ -101,6 +108,32 @@ def refusal_status(code: str) -> int:
     if code in ("control_peer_refused", "fs_refused", "client_disabled"):
         return 403
     return 400
+
+
+def _quit(session):
+    """Answer, then shut the resident down and end its process.
+
+    Args:
+        session: The running session.
+
+    Returns:
+        ``(200, {})``, sent before the shutdown begins.
+    """
+    threading.Thread(
+        target=_shut_down_and_end, args=(session,), name="client_quit", daemon=True
+    ).start()
+    return 200, {}
+
+
+def _shut_down_and_end(session) -> None:
+    """Let the answer land, then shut down and end the process.
+
+    Args:
+        session: The running session.
+    """
+    time.sleep(QUIT_ANSWER_GRACE_S)
+    session.shutdown()
+    end_process()
 
 
 def _connect(session, body: dict):

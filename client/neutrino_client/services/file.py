@@ -5,10 +5,12 @@ becomes a credentials file only this person reads and never travels to the
 hub. Mount attaches, Unmount detaches. The privileged part of a mount is the
 platform's: on Linux it goes through the root helper under ``pkexec``.
 
-Records are this person's state in the store; the reconcile remounts enabled
-records that are not attached, which is what brings mounts back after a
-login. A record whose credentials file is gone reports
-``credentials_missing`` and waits for the password to be entered again.
+A record in the store is the login and the path this person typed, nothing
+more: what is attached is this run's own. The reconcile remounts what this
+run attached and lost, which is what brings a share back after the network
+dropped; a record from an earlier run waits for the person to ask. A record
+whose credentials file is gone reports ``credentials_missing`` and waits for
+the password to be entered again.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -79,6 +81,8 @@ class FileServiceHandler(ServiceTypeHandler):
         self._problems: dict = {}
         # Live step per record: queued, mounting.
         self._stages: dict = {}
+        # The records this person attached in this run, by record id.
+        self._attached: set = set()
         self._wakeup = threading.Event()
 
     def act(self, *, entries: list, body: dict):
@@ -125,17 +129,40 @@ class FileServiceHandler(ServiceTypeHandler):
         """Reconcile now and keep reconciling on a timer."""
         threading.Thread(target=self._run, daemon=True).start()
 
-    def release(self) -> None:
-        """Detach every attached record; the records and logins stay."""
+    def release(self) -> int:
+        """Detach every attached record; the records and logins stay.
+
+        Returns:
+            How many records were detached.
+        """
+        detached = 0
         with self._lock:
+            self._attached = set()
             for record_id, record in sorted(self._store.mounts().items()):
                 location = str(record.get("path", ""))
                 try:
                     if self._platform.is_share_attached(location=location):
                         self._platform.detach_share(location=location)
+                        detached += 1
                 except (ShareAttachError, PlatformUnsupportedError) as error:
                     self._log(f"could not unmount {location}: {error}")
                 self._stages.pop(record_id, None)
+        return detached
+
+    def clear_leftovers(self) -> None:
+        """Detach every record an earlier run left attached."""
+        with self._lock:
+            records = sorted(self._store.mounts().items())
+        for _record_id, record in records:
+            location = str(record.get("path", ""))
+            try:
+                if not self._platform.is_share_attached(location=location):
+                    continue
+                self._platform.detach_share(location=location)
+            except (ShareAttachError, PlatformUnsupportedError) as error:
+                self._log(f"could not unmount {location}: {error}")
+                continue
+            self._log(f"unmounted {location} after an unclean exit")
 
     def attach(
         self,
@@ -182,6 +209,7 @@ class FileServiceHandler(ServiceTypeHandler):
                 self._store.remove_mount(old_id)
                 self._problems.pop(old_id, None)
                 self._stages.pop(old_id, None)
+                self._attached.discard(old_id)
             record_id = mount_record_id(entry_id, location)
             record = {
                 "entry_id": entry_id,
@@ -189,7 +217,6 @@ class FileServiceHandler(ServiceTypeHandler):
                 "share": str(payload.get("share", "")),
                 "username": username,
                 "path": location,
-                "is_enabled": True,
             }
             try:
                 self._platform.write_share_credentials(
@@ -204,6 +231,7 @@ class FileServiceHandler(ServiceTypeHandler):
             self._store.set_mount(record_id, record)
             self._problems.pop(record_id, None)
             self._stages[record_id] = "queued"
+            self._attached.add(record_id)
             self._log(f"queued {_share_url(record)} for {location}")
         self._wakeup.set()
         self._on_change()
@@ -225,11 +253,9 @@ class FileServiceHandler(ServiceTypeHandler):
             record = self._store.mounts().get(record_id)
             if record is None:
                 return {"code": "unknown_request", "params": {}}
-            record = dict(record)
-            record["is_enabled"] = True
-            self._store.set_mount(record_id, record)
             self._problems.pop(record_id, None)
             self._stages[record_id] = "queued"
+            self._attached.add(record_id)
             self._log(f"queued {_share_url(record)} again")
         self._wakeup.set()
         self._on_change()
@@ -256,11 +282,9 @@ class FileServiceHandler(ServiceTypeHandler):
                 return _share_refusal(error)
             except PlatformUnsupportedError:
                 return {"code": "unsupported_platform", "params": {}}
-            record = dict(record)
-            record["is_enabled"] = False
-            self._store.set_mount(record_id, record)
             self._problems.pop(record_id, None)
             self._stages.pop(record_id, None)
+            self._attached.discard(record_id)
             self._log(f"unmounted {location}; the record and login stay")
             return {}
 
@@ -287,7 +311,7 @@ class FileServiceHandler(ServiceTypeHandler):
                 state = stage
             elif is_attached:
                 state = "mounted"
-            elif record.get("is_enabled"):
+            elif record_id in self._attached:
                 state = "pending"
             else:
                 state = "detached"
@@ -299,7 +323,6 @@ class FileServiceHandler(ServiceTypeHandler):
                     "share": record.get("share", ""),
                     "username": record.get("username", ""),
                     "path": location,
-                    "is_enabled": bool(record.get("is_enabled")),
                     "is_attached": is_attached,
                     "state": state,
                     "code": problem.get("code", ""),
@@ -309,17 +332,19 @@ class FileServiceHandler(ServiceTypeHandler):
         return rows
 
     def reconcile(self) -> None:
-        """Remount every enabled record that is not attached.
+        """Remount every record this run attached that is not attached now.
 
         The snapshot is taken under the lock and the mounting done outside
         it: a mount can take a while, and the control channel must go on
         answering while it does.
         """
         with self._lock:
-            pending = sorted(self._store.mounts().items())
+            pending = [
+                (record_id, record)
+                for record_id, record in sorted(self._store.mounts().items())
+                if record_id in self._attached
+            ]
         for record_id, record in pending:
-            if not record.get("is_enabled"):
-                continue
             self._remount(record_id, record)
 
     def _run(self) -> None:
@@ -373,9 +398,7 @@ class FileServiceHandler(ServiceTypeHandler):
             # A declined authorization is not retried on the timer: the
             # record waits for the person to ask again.
             if error.code == "mount_not_authorized":
-                kept = dict(record)
-                kept["is_enabled"] = False
-                self._store.set_mount(record_id, kept)
+                self._attached.discard(record_id)
             return
         except PlatformUnsupportedError:
             self._stages.pop(record_id, None)

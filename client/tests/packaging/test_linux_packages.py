@@ -3,8 +3,9 @@
 Fetching an interpreter and a viewer needs a build container; what they
 produce is stood in for here, so what is asserted is the shape around them —
 where the payload goes, what runs it, what the desktop gets, the root helper
-and the policy that gates it, that no unit is registered at all, and what the
-package still asks the machine for.
+and the policy that gates it, that no unit is registered at all, what the
+maintainer scripts do to a running resident and to a person's own
+configuration, and what the package still asks the machine for.
 """
 
 import pytest
@@ -12,6 +13,9 @@ import pytest
 import build_deb
 import build_rpm
 import payload
+
+from neutrino_client.constants import CLIENT_CONTROL_SOCKET_NAME
+from neutrino_client.platforms.linux import CONFIG_DIR_NAME
 
 
 @pytest.fixture
@@ -63,6 +67,26 @@ def rpm(tmp_path, carried):
     return tmp_path
 
 
+@pytest.fixture
+def spec():
+    """The spec the .rpm build writes, with the staged tree stood in for."""
+    return build_rpm.SPEC.format(
+        name="neutrino-client",
+        version="9.9.9",
+        architecture="x86_64",
+        requires="",
+        packager="somebody",
+        staged="/staged",
+        prefix=payload.INSTALL_PREFIX,
+        helper="/usr/libexec/neutrino_client/mount_helper",
+        desktop="neutrino_client",
+        action="com.neutrino.client.mount",
+        prune=payload.PRUNE_UNTRACKED,
+        stop=payload.STOP_RESIDENTS,
+        wipe=payload.WIPE_PERSONAL_STATE,
+    )
+
+
 def test_the_deb_puts_the_client_inside_the_interpreter_it_carries(deb):
     package = (
         deb / "opt/neutrino_client/python/lib/python3.13/site-packages/neutrino_client"
@@ -87,9 +111,8 @@ def test_the_deb_registers_no_unit_at_all(deb):
     """The client is a person's application, not a service."""
     assert not (deb / "lib/systemd/system").exists()
     assert not (deb / "usr/lib/systemd/system").exists()
-    for script in ("postinst", "postrm"):
+    for script in ("postinst", "prerm", "postrm"):
         assert "systemctl" not in (deb / "DEBIAN" / script).read_text()
-    assert not (deb / "DEBIAN/prerm").exists()
 
 
 def test_the_deb_lays_down_the_launcher_and_no_autostart(deb):
@@ -156,6 +179,35 @@ def test_the_deb_prunes_what_it_did_not_install(deb):
     assert "prune_untracked /opt/neutrino_client" in postinst
 
 
+def test_the_deb_asks_every_resident_to_quit_before_it_takes_their_files(deb):
+    """A resident releases its services itself; the signal is the ask."""
+    prerm = deb / "DEBIAN/prerm"
+    script = prerm.read_text()
+
+    assert prerm.stat().st_mode & 0o777 == 0o755
+    assert "upgrade|remove|deconfigure" in script
+    assert "command -v pkill" in script
+    assert "command -v pgrep" in script
+    assert 'pkill -TERM -f "$resident"' in script
+    assert 'while [ "$waited" -lt 10 ]' in script
+    assert 'pgrep -f "$resident"' in script
+    assert 'echo "a Neutrino client did not quit in 10 s; ending it" >&2' in script
+    assert 'pkill -KILL -f "$resident"' in script
+
+
+def test_the_deb_takes_every_persons_own_directory_on_remove_and_purge(deb):
+    """Uninstalling the client leaves nothing of it behind."""
+    postrm = (deb / "DEBIAN/postrm").read_text()
+
+    assert '[ "$1" = remove ] || [ "$1" = purge ]' in postrm
+    assert "wipe_personal_state" in postrm
+    assert "getent passwd" in postrm
+    assert '[ "$uid" -ge 1000 ]' in postrm
+    assert f'rm -rf "$home/.config/{CONFIG_DIR_NAME}"' in postrm
+    assert f"rm -rf /root/.config/{CONFIG_DIR_NAME}" in postrm
+    assert f"rm -f /run/user/*/{CLIENT_CONTROL_SOCKET_NAME}" in postrm
+
+
 def test_the_bytecode_is_compiled_for_the_path_it_is_installed_at(tmp_path, carried):
     build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
 
@@ -191,21 +243,33 @@ def test_the_rpm_names_the_fedora_libraries(rpm):
     assert not [name for name in build_rpm.RUNTIME_REQUIRES if "python" in name]
 
 
-def test_the_rpm_files_list_names_everything_the_package_lays_down():
-    spec = build_rpm.SPEC.format(
-        name="neutrino-client",
-        version="9.9.9",
-        architecture="x86_64",
-        requires="",
-        packager="somebody",
-        staged="/staged",
-        prefix=payload.INSTALL_PREFIX,
-        helper="/usr/libexec/neutrino_client/mount_helper",
-        desktop="neutrino_client",
-        action="com.neutrino.client.mount",
-        prune=payload.PRUNE_UNTRACKED,
-    )
-    files = spec.split("%files")[1].split("%post")[0]
+def test_the_rpm_asks_every_resident_to_quit_before_it_takes_their_files(spec):
+    """The upgrade side is %pre, before the new files land; erasing is %preun."""
+    before_upgrade = spec.split("%pre\n")[1].split("%post\n")[0]
+    before_erase = spec.split("%preun\n")[1].split("%postun\n")[0]
+
+    assert "stop_residents() {" in before_upgrade
+    assert '[ "$1" -ge 2 ]' in before_upgrade
+    assert "pkill -TERM -f" in before_upgrade
+    assert "stop_residents() {" in before_erase
+    assert '[ "$1" = 0 ]' in before_erase
+    assert "    stop_residents\n" in before_erase
+
+
+def test_the_rpm_takes_every_persons_own_directory_on_erase(spec):
+    """Uninstalling the client leaves nothing of it behind."""
+    after_erase = spec.split("%postun\n")[1].split("%posttrans\n")[0]
+
+    assert "wipe_personal_state" in after_erase
+    assert "getent passwd" in after_erase
+    assert f'rm -rf "$home/.config/{CONFIG_DIR_NAME}"' in after_erase
+    assert f"rm -rf /root/.config/{CONFIG_DIR_NAME}" in after_erase
+    assert f"rm -f /run/user/*/{CLIENT_CONTROL_SOCKET_NAME}" in after_erase
+    assert f"rm -rf {payload.INSTALL_PREFIX}" in after_erase
+
+
+def test_the_rpm_files_list_names_everything_the_package_lays_down(spec):
+    files = spec.split("%files")[1].split("%pre")[0]
 
     assert "/opt/neutrino_client" in files
     assert "/usr/bin/nclient" in files

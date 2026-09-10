@@ -12,6 +12,7 @@ import base64
 import json
 import os
 import subprocess
+import threading
 
 import pytest
 
@@ -251,6 +252,8 @@ class FakeSession:
         self.service_reply = {}
         self.service_error = None
         self.shows = 0
+        self.shutdowns = 0
+        self.is_shut_down = threading.Event()
         self.is_bound = True
         self.error_payload = None
         self.hub_version_value = "0.2.0"
@@ -341,6 +344,10 @@ class FakeSession:
 
     def request_show(self) -> None:
         self.shows += 1
+
+    def shutdown(self) -> None:
+        self.shutdowns += 1
+        self.is_shut_down.set()
 
     def subscribe(self, watcher) -> None:
         self.__dict__.setdefault("watchers", []).append(watcher)

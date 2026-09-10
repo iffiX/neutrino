@@ -485,6 +485,11 @@ def test_the_snippet_loses_the_providers_own_keys():
         switcher._without_own_keys("claude", '{"hooks": {"x": 1}}')
         == '{\n  "hooks": {\n    "x": 1\n  }\n}'
     )
+    # Claude Code's own model choice is the provider's, never carried over.
+    assert (
+        switcher._without_own_keys("claude", '{"model": "opus[1m]", "theme": "dark"}')
+        == '{\n  "theme": "dark"\n}'
+    )
     assert switcher._without_own_keys("claude", "") == ""
     assert switcher._without_own_keys("claude", "not json") == ""
     assert switcher._without_own_keys("claude", "[1, 2]") == ""

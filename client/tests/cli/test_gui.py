@@ -2,11 +2,14 @@
 
 One process binds the socket, starts the session and the socket server, and
 runs the window on the main thread; when the loop ends everything shuts
-down. The tray's Quit reaches the session, and the window's own show is what
-a second invocation's ask lands on. That second invocation finds the socket
-held, asks the running one to show its window, and exits 0. Refusals are the
+down. The tray's Quit reaches the session, and so does every signal that
+means this process is ending. The window's own show is what a second
+invocation's ask lands on. That second invocation finds the socket held,
+asks the running one to show its window, and exits 0. Refusals are the
 wording tables' own.
 """
+
+import signal
 
 import pytest
 
@@ -235,6 +238,59 @@ def test_nothing_is_printed_for_a_person_to_copy(
     # The resident's own log goes to stderr and names no link or token.
     assert "neutrino://" not in streams.err
     assert "token" not in streams.err
+
+
+class FakeControlServer:
+    """A control server that only remembers being stopped."""
+
+    def __init__(self):
+        self.stops = 0
+
+    def stop(self) -> None:
+        self.stops += 1
+
+
+def test_a_signal_shuts_the_resident_down_and_ends_the_process(monkeypatch):
+    """A terminal, an installer and a logout each send one of these."""
+    installed = {}
+    monkeypatch.setattr(
+        gui_cli.signal,
+        "signal",
+        lambda number, handler: installed.setdefault(number, handler),
+    )
+    ended = []
+    monkeypatch.setattr(gui_cli, "end_process", lambda: ended.append(1))
+    session = FakeSession()
+    server = FakeControlServer()
+
+    gui_cli._install_quit_signals(session, server)
+    installed[signal.SIGTERM](signal.SIGTERM, None)
+
+    assert set(installed) >= {signal.SIGTERM, signal.SIGINT}
+    assert session.shutdowns == 1
+    assert server.stops == 1
+    assert ended == [1]
+
+
+def test_the_resident_installs_them_as_it_starts(platform, sessions, monkeypatch):
+    installed = []
+    monkeypatch.setattr(
+        gui_cli.signal, "signal", lambda number, handler: installed.append(number)
+    )
+    monkeypatch.setattr(gui_cli, "open_shell_window", lambda **kwargs: None)
+
+    assert gui_cli.main() == 0
+
+    assert signal.SIGTERM in installed
+
+
+def test_a_signal_a_thread_may_not_take_is_no_reason_to_refuse(monkeypatch):
+    def refuse(number, handler):
+        raise ValueError("signal only works in main thread")
+
+    monkeypatch.setattr(gui_cli.signal, "signal", refuse)
+
+    gui_cli._install_quit_signals(FakeSession(), FakeControlServer())
 
 
 def test_the_windows_resident_ends_its_process_after_the_cleanup(monkeypatch):

@@ -1,8 +1,9 @@
 """The Windows status-area icon, driven with no shell under it.
 
 The Win32 seam is faked, so the message pump runs here on Linux. What is
-pinned is the icon's own lifetime: put up on start, taken down on stop, and
-every mouse event answered.
+pinned is the icon's own lifetime: put up on start, taken down on stop,
+every mouse event answered, and every close the shell sends its owner window
+taken for the Quit it is.
 """
 
 import pytest
@@ -16,9 +17,12 @@ from neutrino_client.gui.tray_windows import (
     WindowsTrayIcon,
 )
 from neutrino_client.platforms.win32 import (
+    WM_CLOSE,
     WM_COMMAND,
+    WM_ENDSESSION,
     WM_LBUTTONDBLCLK,
     WM_LBUTTONUP,
+    WM_QUERYENDSESSION,
     WM_RBUTTONUP,
 )
 
@@ -161,6 +165,31 @@ def test_a_menu_command_the_window_receives_runs_the_same_entries(clicks):
     win32.on_event(WM_COMMAND, TRAY_COMMAND_QUIT, 0)
 
     assert clicks == {"open": 1, "quit": 1}
+
+
+@pytest.mark.parametrize("message", [WM_CLOSE, WM_QUERYENDSESSION, WM_ENDSESSION])
+def test_a_close_from_the_shell_is_the_quit_it_is(clicks, message):
+    """An installer, Task Manager's End task and a sign-out each send one."""
+    win32 = FakeWin32TrayApi()
+    icon = windows_tray(clicks, win32=win32)
+    icon.start()
+
+    win32.on_event(message, 0, 0)
+    win32.on_event(message, 0, 0)
+
+    assert clicks == {"open": 0, "quit": 1}
+
+
+def test_the_close_the_icon_posts_itself_quits_nothing(clicks):
+    win32 = FakeWin32TrayApi()
+    icon = windows_tray(clicks, win32=win32)
+    icon.start()
+
+    icon.stop()
+    win32.on_event(WM_CLOSE, 0, 0)
+
+    assert clicks == {"open": 0, "quit": 0}
+    assert win32.closed == [4242]
 
 
 def test_a_message_the_icon_does_not_know_is_ignored(clicks):

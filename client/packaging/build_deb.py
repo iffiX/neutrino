@@ -10,6 +10,10 @@ container of the machine it is for, the way the hub's package is built.
 The client is a person's application, not a service: the package installs a
 launcher, no autostart entry, and registers no unit.
 
+The client's services last only as long as it runs, so the maintainer scripts
+ask every resident to quit before they take its files, and removing the
+package takes each person's own configuration with it.
+
 Needs the development headers the window's bindings compile against, and
 `dpkg-deb` for both the build and the viewer it unpacks.
 
@@ -106,13 +110,26 @@ echo "      nclient gui"
 echo ""
 """
 
+PRERM = """#!/bin/sh
+set -e
+
+{stop}
+case "$1" in
+    upgrade|remove|deconfigure)
+        stop_residents
+        ;;
+esac
+"""
+
 POSTRM = """#!/bin/sh
 set -e
 
+{wipe}
 # What dpkg leaves once its own files are gone: the bytecode the interpreter
-# wrote beside them.
+# wrote beside them, and what the people on this machine kept.
 if [ "$1" = remove ] || [ "$1" = purge ]; then
     rm -rf {prefix}
+    wipe_personal_state
 fi
 """
 
@@ -220,8 +237,13 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
         is_executable=True,
     )
     payload.write(
+        tree / "DEBIAN/prerm",
+        PRERM.format(stop=payload.STOP_RESIDENTS),
+        is_executable=True,
+    )
+    payload.write(
         tree / "DEBIAN/postrm",
-        POSTRM.format(prefix=payload.INSTALL_PREFIX),
+        POSTRM.format(prefix=payload.INSTALL_PREFIX, wipe=payload.WIPE_PERSONAL_STATE),
         is_executable=True,
     )
 

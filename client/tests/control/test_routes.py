@@ -1,6 +1,9 @@
 """The route table, driven directly: one table for both transports."""
 
 import json
+import time
+
+import pytest
 
 from neutrino_client.control import routes
 from neutrino_client.exceptions import EnrollmentError
@@ -132,6 +135,30 @@ def test_show_reaches_the_session():
 
     assert (status, reply) == (200, {})
     assert session.shows == 1
+
+
+@pytest.fixture
+def quit_without_ending(monkeypatch):
+    """The quit route with the process end recorded instead of taken."""
+    ended = []
+    monkeypatch.setattr(routes, "QUIT_ANSWER_GRACE_S", 0)
+    monkeypatch.setattr(routes, "end_process", lambda: ended.append(1))
+    return ended
+
+
+def test_quit_answers_first_and_shuts_the_resident_down(quit_without_ending):
+    session = FakeSession()
+
+    status, reply = routes.dispatch("POST", "/api/quit", {}, session)
+
+    assert (status, reply) == (200, {})
+    assert session.is_shut_down.wait(timeout=5)
+    assert session.shutdowns == 1
+    for _ in range(100):
+        if quit_without_ending:
+            break
+        time.sleep(0.01)
+    assert quit_without_ending == [1]
 
 
 def test_unknown_routes_and_methods_answer_a_code():

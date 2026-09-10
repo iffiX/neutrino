@@ -1,21 +1,26 @@
 """The ai service type: pointing this person's AI tools at the hub's gateway.
 
 The page stages one Enabled toggle and per-tool model choices, and Apply
-commits them here in one step: the choice lands in the store and the tools
-are pointed at once when the poll reply has granted a credential. The store
-keeps only the choice and the last-granted endpoint; the key itself arrives
-fresh in every poll reply and is held in memory.
+commits them here in one step: the tools are pointed at once when the poll
+reply has granted a credential. The store keeps the model choices only;
+whether the tools point at the hub, and the endpoint the last activation
+granted, are this run's own and go with it.
 
 The staged choices are what each tool is pointed with; the grant's ``model``
 is only the prefill default for a slot nobody has chosen. Deactivation uses
 the endpoint activation recorded, because by then the hub may no longer name
 it.
+
+A run that ended without putting the tools back leaves cc-switch standing on
+the hub and an adopt record beside it; :meth:`AiServiceHandler.clear_leftovers`
+is what the resident calls at start to undo that.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
 # client still imports on Python 3.9.
 from __future__ import annotations
 
+import os
 import threading
 
 from neutrino_client.exceptions import ToolSwitchError
@@ -105,6 +110,7 @@ class AiServiceHandler(ServiceTypeHandler):
         self,
         *,
         store,
+        original_dir,
         log=print,
         switcher_module=None,
         on_change=None,
@@ -113,6 +119,7 @@ class AiServiceHandler(ServiceTypeHandler):
         """
         Args:
             store: The :class:`~neutrino_client.services.store.ClientServiceStore`.
+            original_dir: Where the switcher keeps its adopt records.
             log: Callable used for progress messages.
             switcher_module: The switcher to drive; None uses the real one.
             on_change: Called after every change of standing; None for
@@ -121,10 +128,13 @@ class AiServiceHandler(ServiceTypeHandler):
                 thread.
         """
         self._store = store
+        self._original_dir = original_dir
         self._log = log
         self._switcher = switcher_module if switcher_module is not None else switcher
         self._lock = threading.Lock()
         self._credential: dict = {}
+        self._is_enabled = False
+        self._granted: dict = {}
         self._status: dict = self._steady(is_active=False)
         self._on_change = on_change if on_change is not None else _nobody
         self._worker = ServiceWorker(
@@ -148,7 +158,8 @@ class AiServiceHandler(ServiceTypeHandler):
         tool_configs = body.get("tool_configs")
         if isinstance(tool_configs, dict):
             self._store.set_ai_tool_configs(clean_tool_configs(tool_configs))
-        self._store.set_ai_enabled(bool(body.get("is_enabled")))
+        with self._lock:
+            self._is_enabled = bool(body.get("is_enabled"))
         return self._worker.submit(AI_STEP_SWITCHING, self.reconcile)
 
     def state(self) -> dict:
@@ -160,7 +171,7 @@ class AiServiceHandler(ServiceTypeHandler):
         """
         with self._lock:
             status = dict(self._status)
-        status["is_enabled"] = self._store.is_ai_enabled()
+            status["is_enabled"] = self._is_enabled
         status["work"] = self._worker.status()
         return {"ai": status, "ai_tool_configs": self._store.ai_tool_configs()}
 
@@ -180,8 +191,9 @@ class AiServiceHandler(ServiceTypeHandler):
         """Point the tools where the choice says, once, and record it."""
         with self._lock:
             credential = dict(self._credential)
+            is_enabled = self._is_enabled
         try:
-            if self._store.is_ai_enabled():
+            if is_enabled:
                 status = self._activate(credential)
             else:
                 status = self._deactivate()
@@ -195,7 +207,8 @@ class AiServiceHandler(ServiceTypeHandler):
 
     def restore(self) -> None:
         """Put the tools back the way activation found them."""
-        granted = self._store.ai_granted()
+        with self._lock:
+            granted = dict(self._granted)
         if not granted:
             return
         self._log("ai service: pointing the tools away from the hub")
@@ -204,13 +217,43 @@ class AiServiceHandler(ServiceTypeHandler):
         except Exception as error:  # noqa: BLE001 - reported, not raised
             self._log(f"ai service: could not restore the tools: {error}")
             return
-        self._store.clear_ai_granted()
         with self._lock:
+            self._granted = {}
             self._status = self._steady(is_active=False)
 
-    def release(self) -> None:
-        """Restore the tools; the enabled choice itself is kept."""
+    def release(self) -> int:
+        """Restore the tools; the toggle this run holds is kept.
+
+        Returns:
+            Zero: the tools are one thing, put back or already back.
+        """
         self.restore()
+        return 0
+
+    def clear_leftovers(self) -> None:
+        """Put the tools back when an earlier run did not.
+
+        Raises:
+            ToolSwitchError: If cc-switch refuses to put a tool back.
+        """
+        if not self._is_left_over():
+            return
+        self._switcher.deactivate()
+        self._log("ai service: put the tools back after an unclean exit")
+
+    def _is_left_over(self) -> bool:
+        """Whether a tool still stands on the hub, or a record was kept."""
+        try:
+            if os.listdir(self._original_dir):
+                return True
+        except OSError:
+            pass
+        if self._switcher.find_cli() is None:
+            return False
+        for app in switcher.SWITCHER_APPS:
+            if self._switcher.is_active_for(app):
+                return True
+        return False
 
     def _activate(self, credential: dict) -> dict:
         base_url = str(credential.get("base_url", ""))
@@ -238,15 +281,18 @@ class AiServiceHandler(ServiceTypeHandler):
         )
         if switched:
             self._log(f"ai service: pointed {switched} at the hub")
-        self._store.set_ai_granted({"base_url": base_url, "model": default_model})
+        with self._lock:
+            self._granted = {"base_url": base_url, "model": default_model}
         return {"state": "installed", "code": "", "params": {}, "is_active": True}
 
     def _deactivate(self) -> dict:
-        granted = self._store.ai_granted()
+        with self._lock:
+            granted = dict(self._granted)
         if granted:
             self._log("ai service: pointing the tools away from the hub")
             self._switcher.deactivate(base_url=granted.get("base_url", ""))
-            self._store.clear_ai_granted()
+            with self._lock:
+                self._granted = {}
         return self._steady(is_active=False)
 
     def _steady(self, *, is_active: bool) -> dict:

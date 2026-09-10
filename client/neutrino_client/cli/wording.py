@@ -21,6 +21,8 @@ from neutrino_client.exceptions import PlatformUnsupportedError
 from neutrino_client.platforms.detect import detect_platform
 
 NOT_JOINED = "this person has joined no hub"
+NOT_RUNNING = "the client is not running"
+QUIT_ASKED = "asked the client to quit"
 
 # What each typed refusal or failure code says on this surface.
 CLIENT_CODE_WORDS = {

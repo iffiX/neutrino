@@ -7,6 +7,10 @@ interpreter, the window's bindings and the two binaries the client drives.
 That fixes the package to one architecture, so it is built in a container of
 the machine it is for.
 
+The same maintainer scripts too: every resident is asked to quit before its
+files are taken, and erasing the package takes each person's own
+configuration with it.
+
 Needs `rpmbuild`, from the `rpm` package on Debian family and `rpm-build` on
 RHEL family, and `dpkg` for the viewer it unpacks out of upstream's own .deb.
 
@@ -97,6 +101,12 @@ cp -a {staged}/. %{{buildroot}}/
 /usr/share/polkit-1/actions/{action}.policy
 /usr/share/doc/{name}
 
+%pre
+{stop}
+if [ "$1" -ge 2 ]; then
+    stop_residents
+fi
+
 %post
 if [ -d /usr/share/icons/hicolor ]; then
     gtk-update-icon-cache -f /usr/share/icons/hicolor >/dev/null 2>&1 || true
@@ -110,9 +120,17 @@ if [ "$1" = 1 ]; then
     echo ""
 fi
 
+%preun
+{stop}
+if [ "$1" = 0 ]; then
+    stop_residents
+fi
+
 %postun
+{wipe}
 if [ "$1" = 0 ]; then
     rm -rf {prefix}
+    wipe_personal_state
 fi
 
 %posttrans
@@ -181,6 +199,8 @@ def main() -> int:
                 desktop=CLIENT_DESKTOP_NAME,
                 action=CLIENT_MOUNT_POLKIT_ACTION,
                 prune=payload.PRUNE_UNTRACKED,
+                stop=payload.STOP_RESIDENTS,
+                wipe=payload.WIPE_PERSONAL_STATE,
             ),
             encoding="utf-8",
         )

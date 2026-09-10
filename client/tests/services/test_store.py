@@ -1,4 +1,9 @@
-"""The person's service-choice store: atomic, 0600, and free of secrets."""
+"""The person's preference store: atomic, 0600, and free of secrets.
+
+What the store keeps is what somebody typed: the tool choices and the mount
+records. Nothing about a service standing on is in it, and a file an older
+build wrote reads without the keys it had.
+"""
 
 import json
 import os
@@ -7,53 +12,66 @@ import pytest
 
 from neutrino_client.services.store import ClientServiceStore
 
+RECORD = {
+    "entry_id": "share_media",
+    "host": "hub",
+    "share": "media",
+    "username": "media",
+    "path": "/home/alice/nas/media",
+}
+
 
 @pytest.fixture
 def store(tmp_path):
     return ClientServiceStore(path=str(tmp_path / "state.json"))
 
 
-def test_the_ai_choice_and_grant_round_trip(store):
-    assert store.is_ai_enabled() is False
-    assert store.ai_granted() == {}
-
-    store.set_ai_enabled(True)
-    store.set_ai_granted({"base_url": "http://hub:8080", "model": "m1"})
-
-    assert store.is_ai_enabled() is True
-    assert store.ai_granted() == {"base_url": "http://hub:8080", "model": "m1"}
-
-    store.clear_ai_granted()
-    assert store.ai_granted() == {}
-
-
 def test_mount_records_round_trip(store):
-    record = {
-        "entry_id": "share_media",
-        "host": "hub",
-        "share": "media",
-        "username": "media",
-        "path": "/home/alice/nas/media",
-        "is_enabled": True,
-    }
-    store.set_mount("r1", record)
+    store.set_mount("r1", RECORD)
 
-    assert store.mounts() == {"r1": record}
+    assert store.mounts() == {"r1": RECORD}
 
     store.remove_mount("r1")
     assert store.mounts() == {}
 
 
-def test_passwords_never_reach_the_file(store, tmp_path):
-    store.set_mount(
-        "r1",
-        {
-            "entry_id": "o",
-            "path": "/p",
-            "is_enabled": True,
-            "password": "s3cret",  # scan: allow
-        },
+def test_a_record_keeps_only_the_fields_the_store_holds(store, tmp_path):
+    store.set_mount("r1", dict(RECORD, is_enabled=True, is_attached=True))
+
+    assert store.mounts() == {"r1": RECORD}
+    assert "is_enabled" not in (tmp_path / "state.json").read_text()
+
+
+def test_a_file_an_older_build_wrote_is_read_without_its_keys(tmp_path):
+    path = tmp_path / "state.json"
+    path.write_text(
+        json.dumps(
+            {
+                "ai": {
+                    "is_enabled": True,
+                    "granted": {"base_url": "http://hub:8080", "model": "m1"},
+                    "tool_configs": {"claude": {"default": "m1"}},
+                },
+                "mounts": {"r1": dict(RECORD, is_enabled=True)},
+            }
+        )
     )
+    store = ClientServiceStore(path=str(path))
+
+    assert store.ai_tool_configs() == {"claude": {"default": "m1"}}
+    assert store.mounts() == {"r1": RECORD}
+
+    store.set_ai_tool_configs({"claude": {"default": "m2"}})
+
+    written = json.loads(path.read_text())
+    assert written == {
+        "ai": {"tool_configs": {"claude": {"default": "m2"}}},
+        "mounts": {"r1": RECORD},
+    }
+
+
+def test_passwords_never_reach_the_file(store, tmp_path):
+    store.set_mount("r1", dict(RECORD, password="s3cret"))  # scan: allow
 
     text = (tmp_path / "state.json").read_text()
     assert "s3cret" not in text  # scan: allow
@@ -62,7 +80,7 @@ def test_passwords_never_reach_the_file(store, tmp_path):
 
 
 def test_the_file_is_written_0600_and_atomically(store, tmp_path):
-    store.set_ai_enabled(True)
+    store.set_mount("r1", RECORD)
 
     path = tmp_path / "state.json"
     assert oct(path.stat().st_mode & 0o777) == "0o600"
@@ -74,11 +92,11 @@ def test_an_unreadable_file_reads_as_empty(tmp_path):
     path.write_text("not json")
     store = ClientServiceStore(path=str(path))
 
-    assert store.is_ai_enabled() is False
+    assert store.ai_tool_configs() == {}
     assert store.mounts() == {}
 
-    store.set_ai_enabled(True)
-    assert store.is_ai_enabled() is True
+    store.set_mount("r1", RECORD)
+    assert store.mounts() == {"r1": RECORD}
     assert isinstance(json.loads(path.read_text()), dict)
 
 
@@ -94,17 +112,9 @@ def test_tool_configs_survive_the_round_trip(store):
 
 
 def test_no_write_path_serializes_a_secret(store, tmp_path):
-    store.set_ai_enabled(True)
     store.set_ai_tool_configs({"claude": {"default": "m1"}, "codex": {"model": "m2"}})
-    store.set_ai_granted(
-        {
-            "base_url": "http://hub:8080",
-            "model": "m1",
-            "api_key": "leak-key",  # scan: allow
-        }
-    )
     store.set_mount(
-        "r1", {"path": "/p", "is_enabled": True, "password": "leak-pw"}  # scan: allow
+        "r1", dict(RECORD, password="leak-pw", api_key="leak-key")  # scan: allow
     )
 
     raw = (tmp_path / "state.json").read_bytes()

@@ -22,6 +22,7 @@ import json
 import os
 import secrets
 import socket
+import sys
 import threading
 import time
 import urllib.parse
@@ -35,7 +36,9 @@ from neutrino_client.constants import (
     CLIENT_IDLE_POLL_INTERVAL_S,
     CLIENT_LEAVE_PATH,
     CLIENT_MOUNT_CREDENTIALS_DIR_NAME,
+    CLIENT_ORIGINAL_DIR_NAME,
     CLIENT_REFUSALS_BEFORE_UNBIND,
+    CLIENT_SHUTDOWN_DEADLINE_S,
     CLIENT_STATE_FILE_NAME,
     CLIENT_WS_CLOSE_REPLACED,
     CLIENT_WS_PATH,
@@ -66,9 +69,35 @@ CONNECTION_UNBOUND = "unbound"
 
 # How long a shutdown waits for the loop thread to come back.
 SHUTDOWN_JOIN_TIMEOUT_S = 5
+# What a shutdown lets go of, in order: the handler, the name its line
+# carries, and how that line reads.
+SHUTDOWN_STEPS = (
+    ("ai", "ai", "restored"),
+    ("file", "mounts", "{count} detached"),
+    ("port", "forwards", "{count} closed"),
+    ("rdp", "viewers", "{count} closed"),
+)
 # How long a burst of changes is left to settle before the watchers hear.
 ANNOUNCE_SETTLE_S = 0.05
 ASK_ID_LENGTH = 8
+
+
+def end_process(status: int = 0) -> None:
+    """End this process now, whatever the window's runtime left running.
+
+    The shutdown is what restores the machine, and it has already run by the
+    time this is called. What can still be standing is the window runtime's
+    own: on Windows the embedded browser's helper processes and the threads
+    .NET holds, none of which answer to this interpreter. A resident that
+    lingers there holds this person's socket and hands the next install a
+    file it cannot replace.
+
+    Args:
+        status: The exit status.
+    """
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(status)
 
 
 def channel_error(error: Exception) -> dict:
@@ -143,7 +172,12 @@ class ClientSession:
             for handler in (
                 WebServiceHandler(platform=self.platform),
                 PortServiceHandler(log=log, on_change=self.notify),
-                AiServiceHandler(store=self._store, log=log, on_change=self.notify),
+                AiServiceHandler(
+                    store=self._store,
+                    original_dir=os.path.join(config_dir, CLIENT_ORIGINAL_DIR_NAME),
+                    log=log,
+                    on_change=self.notify,
+                ),
                 FileServiceHandler(
                     platform=self.platform,
                     store=self._store,
@@ -426,7 +460,13 @@ class ClientSession:
     # --- the loop ---
 
     def start(self) -> None:
-        """Start the handlers' reconciles and the connection loop on a thread."""
+        """Clear what an unclean exit left, then run the handlers and the loop.
+
+        Nothing this person had on is turned on again: the client opens with
+        every service off, and the leftovers of a run that did not shut down
+        are undone before the hub's first catalog arrives.
+        """
+        self._clear_leftovers()
         for handler in self._services.values():
             handler.start()
         self._thread = threading.Thread(target=self.run_forever, daemon=True)
@@ -472,7 +512,8 @@ class ClientSession:
 
         The order is the one that leaves the machine as it was found: the
         tools restored, the shares unmounted, the forwards closed, the
-        viewers closed.
+        viewers closed. The four share ``CLIENT_SHUTDOWN_DEADLINE_S``; a
+        step past its part of what is left is given up and the next runs.
         """
         with self._lock:
             if self._is_shut_down:
@@ -481,7 +522,7 @@ class ClientSession:
         self._stop.set()
         self._news.set()
         self._drop_socket()
-        self._release()
+        self._release_in_time()
         thread = self._thread
         if thread is not None and thread is not threading.current_thread():
             thread.join(timeout=SHUTDOWN_JOIN_TIMEOUT_S)
@@ -744,13 +785,56 @@ class ClientSession:
         self._log(f"unbound: {rejection['code']}")
         return CLIENT_IDLE_POLL_INTERVAL_S
 
+    def _clear_leftovers(self) -> None:
+        """Undo what a run that did not end cleanly left on this machine."""
+        for service_type in ("ai", "file"):
+            try:
+                self._services[service_type].clear_leftovers()
+            except Exception as error:  # noqa: BLE001 - reported, never fatal
+                self._log(f"{service_type}: could not clear what was left: {error}")
+
     def _release(self) -> None:
         """Undo everything the handlers hold, in the shutdown order."""
-        for service_type in ("ai", "file", "port", "rdp"):
+        for service_type, _name, _word in SHUTDOWN_STEPS:
             try:
                 self._services[service_type].release()
             except Exception as error:  # noqa: BLE001 - the rest must still run
                 self._log(f"{service_type}: could not release: {error}")
+
+    def _release_in_time(self) -> None:
+        """Release every handler in order, none of them holding up the rest."""
+        deadline = time.monotonic() + CLIENT_SHUTDOWN_DEADLINE_S
+        for index, (service_type, name, word) in enumerate(SHUTDOWN_STEPS):
+            left = max(deadline - time.monotonic(), 0)
+            share = left / (len(SHUTDOWN_STEPS) - index)
+            outcome: dict = {}
+            step = threading.Thread(
+                target=self._release_one,
+                args=(service_type, outcome),
+                name=f"client_release_{service_type}",
+                daemon=True,
+            )
+            step.start()
+            step.join(timeout=share)
+            if step.is_alive():
+                self._log(f"{name}: gave up after {share:.1f}s")
+            elif "error" in outcome:
+                self._log(f"{name}: could not release: {outcome['error']}")
+            else:
+                count = outcome.get("count") or 0
+                self._log(f"{name}: " + word.format(count=count))
+
+    def _release_one(self, service_type: str, outcome: dict) -> None:
+        """Run one handler's release, its count or its failure in ``outcome``.
+
+        Args:
+            service_type: The handler to release.
+            outcome: Filled with ``count`` or with ``error``.
+        """
+        try:
+            outcome["count"] = self._services[service_type].release()
+        except Exception as error:  # noqa: BLE001 - the rest must still run
+            outcome["error"] = error
 
     def _reset_binding_state(self) -> None:
         with self._lock:

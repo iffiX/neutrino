@@ -156,6 +156,42 @@ prune_untracked() {
 }
 """
 
+# What both maintainer scripts run before the files a resident is running
+# from are replaced or taken away. The client's services exist only while it
+# runs, so a resident that is asked to quit releases them itself.
+STOP_RESIDENTS = r"""# Every resident on this machine, asked to quit; ended when it does not.
+stop_residents() {
+    if ! command -v pkill >/dev/null 2>&1 || ! command -v pgrep >/dev/null 2>&1; then
+        return 0
+    fi
+    resident='neutrino_client\.cli\.entry gui'
+    pkill -TERM -f "$resident" >/dev/null 2>&1 || return 0
+    waited=0
+    while [ "$waited" -lt 10 ]; do
+        pgrep -f "$resident" >/dev/null 2>&1 || return 0
+        sleep 1
+        waited=$((waited + 1))
+    done
+    echo "a Neutrino client did not quit in 10 s; ending it" >&2
+    pkill -KILL -f "$resident" >/dev/null 2>&1 || true
+}
+"""
+
+# What both maintainer scripts run once the package's own files are gone.
+# Uninstalling the client takes every person's configuration with it, and the
+# socket their resident answered on.
+WIPE_PERSONAL_STATE = """# Every person's own client directory on this machine, and their socket.
+wipe_personal_state() {
+    getent passwd | while IFS=: read -r account password uid gid gecos home shell; do
+        [ "$uid" -ge 1000 ] 2>/dev/null || continue
+        [ -n "$home" ] || continue
+        rm -rf "$home/.config/neutrino_client"
+    done
+    rm -rf /root/.config/neutrino_client
+    rm -f /run/user/*/neutrino_client.sock
+}
+"""
+
 
 def version() -> str:
     """The version declared in the client's pyproject.

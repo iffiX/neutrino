@@ -106,13 +106,18 @@ class PortServiceHandler(ServiceTypeHandler):
                 }
             }
 
-    def release(self) -> None:
-        """Close every forward."""
+    def release(self) -> int:
+        """Close every forward.
+
+        Returns:
+            How many forwards were closed.
+        """
         with self._lock:
             relays = dict(self._relays)
             self._relays = {}
         for relay in relays.values():
             relay.close()
+        return len(relays)
 
     def forward(
         self, *, entry_id: str, host: str, port: int, local_port: int = 0

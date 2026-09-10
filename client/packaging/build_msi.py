@@ -11,6 +11,10 @@ The client is a person's application, not a service and not an autostart: it
 runs when the person opens it. The installer puts a Start menu shortcut and
 adds the install to PATH so ``nclient`` works in a terminal.
 
+The client's services last only as long as it runs, so an upgrade or a
+removal asks the resident to quit before it takes its files, and an uninstall
+takes the person's own configuration with it.
+
 WebView2 is the one thing the machine may still lack. Windows 11 and any
 updated Windows 10 carry the Evergreen runtime; LTSC and Server editions do
 not, so Microsoft's bootstrapper travels in the package and runs when the
@@ -162,6 +166,16 @@ WEBVIEW2_REGISTRY_KEY = rf"SOFTWARE\Microsoft\EdgeUpdate\Clients\{WEBVIEW2_CLIEN
 # under the carried interpreter, so that is the name an install must close.
 RESIDENT_IMAGE = "pythonw.exe"
 
+# How long a resident gets to release its services and exit before the close
+# below ends it.
+RESIDENT_QUIT_TIMEOUT_MS = 10000
+
+# Where this person's own configuration lives, and where the installer
+# remembers that path so an uninstall can find it again. The folder is the
+# runtime's own; the key is the installer's.
+CLIENT_CONFIG_FOLDER = "Neutrino Client"
+CLIENT_CONFIG_REGISTRY_KEY = r"Software\Neutrino Client"
+
 # The extension CloseApplication comes from, at the version this WiX loads.
 WIX_UTIL_EXTENSION = "WixToolset.Util.wixext/6.0.2"
 
@@ -169,10 +183,22 @@ WIX_UTIL_EXTENSION = "WixToolset.Util.wixext/6.0.2"
 # changing it makes an upgrade install beside the old one instead of over it.
 UPGRADE_CODE = "0221A508-0A7E-4CFE-B517-B901D9318962"
 
+CONSOLE_WRAPPER_NAME = "nclient.cmd"
 CONSOLE_WRAPPER = """@echo off
 rem Run the client in a terminal, for `nclient status` and for reading errors.
 "%~dp0python\\python.exe" -m neutrino_client.cli.entry %*
 """
+
+# The quit, run as the person installing, and given a bounded wait: the
+# console wrapper is what carries the verb, and PowerShell is the one
+# interpreter every Windows has that can time a process out.
+QUIT_COMMAND = (
+    '"[SystemFolder]WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile '
+    '-Command "$resident = Start-Process -FilePath '
+    f"'[INSTALLFOLDER]{CONSOLE_WRAPPER_NAME}' -ArgumentList 'quit' "
+    "-WindowStyle Hidden -PassThru; "
+    f'$null = $resident.WaitForExit({RESIDENT_QUIT_TIMEOUT_MS})"'
+)
 
 # @NAME@ rather than str.format: the source is XML with braces of its own in
 # the property expressions.
@@ -189,8 +215,17 @@ WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
                   DowngradeErrorMessage="A newer Neutrino Client is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
-    <!-- A resident still holding the install's files is what makes an
-         upgrade land half-applied, so it is asked to close and then ended. -->
+    <!-- The client's services live only as long as the resident does, so it
+         is asked to quit before its files are replaced or taken away. No
+         resident to answer is not a failed install. -->
+    <CustomAction Id="QuitClientResident"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="@QUIT_COMMAND@"
+                  Execute="immediate"
+                  Return="ignore" />
+
+    <!-- What still holds the install's files once the quit is done, and what
+         makes an upgrade land half-applied, so it is closed and then ended. -->
     <util:CloseApplication Id="CloseClientWindow"
                            Target="@RESIDENT_IMAGE@"
                            CloseMessage="yes"
@@ -200,6 +235,16 @@ WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
                            Property="CLIENTWINDOWRUNNING" />
     <Icon Id="ClientIcon" SourceFile="@ICON@" />
     <Property Id="ARPPRODUCTICON" Value="ClientIcon" />
+
+    <!-- Where this person's configuration is, read back at uninstall out of
+         the record the install leaves. -->
+    <Property Id="CLIENTCONFIGDIR" Secure="yes">
+      <RegistrySearch Id="ClientConfigDir"
+                      Root="HKLM"
+                      Key="@CONFIG_KEY@"
+                      Name="ConfigDir"
+                      Type="raw" />
+    </Property>
 
     <!-- The runtime records itself here; absent, the bootstrapper runs. -->
     <Property Id="WEBVIEW2INSTALLED" Secure="yes">
@@ -215,6 +260,7 @@ WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
       <Directory Id="INSTALLFOLDER" Name="Neutrino Client" />
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder" />
+    <StandardDirectory Id="AppDataFolder" />
 
     <ComponentGroup Id="Payload" Directory="INSTALLFOLDER">
       <Files Include="@PAYLOAD@\**" />
@@ -237,6 +283,17 @@ WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
                        Type="integer"
                        Value="1"
                        KeyPath="yes" />
+      </Component>
+      <!-- Uninstalling the client takes this person's configuration with
+           it; the record is what tells the uninstall where it was. -->
+      <Component Id="ConfigDirRecord" Guid="*">
+        <RegistryValue Root="HKMU"
+                       Key="@CONFIG_KEY@"
+                       Name="ConfigDir"
+                       Type="string"
+                       Value="[AppDataFolder]@CONFIG_FOLDER@"
+                       KeyPath="yes" />
+        <util:RemoveFolderEx On="uninstall" Property="CLIENTCONFIGDIR" />
       </Component>
       <Component Id="StartMenuShortcut" Guid="*">
         <Shortcut Id="ClientWindowShortcut"
@@ -263,6 +320,11 @@ WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
                   Impersonate="no"
                   Return="ignore" />
     <InstallExecuteSequence>
+      <!-- After costing, which resolves [INSTALLFOLDER], and before the
+           extension's own close, which it schedules on InstallInitialize. -->
+      <Custom Action="QuitClientResident"
+              After="CostFinalize"
+              Condition="Installed OR WIX_UPGRADE_DETECTED" />
       <Custom Action="InstallWebView2"
               After="InstallFiles"
               Condition="NOT WEBVIEW2INSTALLED AND NOT REMOVE" />
@@ -347,6 +409,9 @@ def _wix_source(staged: dict, version: str, publisher: str) -> str:
         .replace("@ICON@", str(staged["icon"]))
         .replace("@WEBVIEW2_KEY@", WEBVIEW2_REGISTRY_KEY)
         .replace("@RESIDENT_IMAGE@", RESIDENT_IMAGE)
+        .replace("@QUIT_COMMAND@", _attribute_text(QUIT_COMMAND))
+        .replace("@CONFIG_KEY@", CLIENT_CONFIG_REGISTRY_KEY)
+        .replace("@CONFIG_FOLDER@", CLIENT_CONFIG_FOLDER)
     )
 
 
@@ -394,7 +459,7 @@ def _lay_out(root: Path, version: str, machine: str, architecture: str) -> dict:
     )
     bundled.stage_windows_binaries(installed, architecture)
     _stage_licenses(installed)
-    (installed / "nclient.cmd").write_text(CONSOLE_WRAPPER, encoding="utf-8")
+    (installed / CONSOLE_WRAPPER_NAME).write_text(CONSOLE_WRAPPER, encoding="utf-8")
 
     # Named files the installer's source points at directly, kept out of the
     # payload directory so the file glob does not claim them twice.

@@ -71,8 +71,10 @@ TOOL_ENDPOINT_SUFFIXES = {"codex": "/v1"}
 
 # What cc-switch's extract leaves in a common snippet that is nonetheless the
 # provider's own: a snippet carrying these would override the hub's choice.
+# The keys a tool's own file holds that belong to the provider, not to the
+# person: cc-switch's common snippet would carry them onto the hub and back.
 COMMON_SNIPPET_OWN_KEYS = {
-    "claude": (),
+    "claude": ("model",),
     "codex": ("model",),
     "gemini": ("GEMINI_MODEL",),
 }

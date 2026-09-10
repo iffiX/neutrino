@@ -84,8 +84,12 @@ CLIENT_MOUNT_HELPER_EXIT_CODES = {
 }
 CLIENT_PKEXEC_REFUSAL_EXIT_CODES = (126, 127)
 
-# How often enabled mount records that are not attached are remounted.
+# How often a record this run attached and lost is mounted again.
 CLIENT_MOUNT_RECHECK_INTERVAL_S = 60
+
+# How long the four release steps of a quit are given together. A step past
+# its share of what is left is given up and the next one runs.
+CLIENT_SHUTDOWN_DEADLINE_S = 10
 
 # The resident's own log, beside its state; one file, kept to a size, the
 # previous one beside it. A window process has no terminal to speak to.

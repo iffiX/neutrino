@@ -178,18 +178,28 @@ class RdpViewerHandler(ServiceTypeHandler):
             viewers = {entry_id: {"is_running": True} for entry_id in self._viewers}
         return {"viewers": viewers, "rdp_work": self._worker.status()}
 
-    def release(self) -> None:
-        """Close every viewer this resident opened."""
-        self.close_all()
+    def release(self) -> int:
+        """Close every viewer this resident opened.
 
-    def close_all(self) -> None:
-        """Terminate every viewer process still running."""
+        Returns:
+            How many viewers were closed.
+        """
+        return self.close_all()
+
+    def close_all(self) -> int:
+        """Terminate every viewer process still running.
+
+        Returns:
+            How many were still running and were ended.
+        """
         with self._lock:
             viewers = dict(self._viewers)
             self._viewers = {}
+        closed = 0
         for process in viewers.values():
             if process.poll() is not None:
                 continue
+            closed += 1
             try:
                 process.terminate()
                 process.wait(timeout=RDP_CLOSE_TIMEOUT_S)
@@ -198,6 +208,7 @@ class RdpViewerHandler(ServiceTypeHandler):
                     process.kill()
                 except OSError:
                     pass
+        return closed
 
     def _prune(self) -> None:
         """Forget viewers the person already closed. Call under the lock."""

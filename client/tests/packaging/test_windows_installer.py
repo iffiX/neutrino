@@ -2,10 +2,10 @@
 
 wix is not run here — it needs Windows and the .NET tool — so what is
 asserted is the document the build writes: a product identity of its own, no
-service, no autostart Run entry, the
-PATH entry, the shortcut, and the bootstrapper chained only where the
-runtime's key is absent. The payload's own laying out is checked with the
-downloads faked.
+service, no autostart Run entry, the PATH entry, the shortcut, the quit that
+comes before anything ends a resident, the person's configuration going with
+the uninstall, and the bootstrapper chained only where the runtime's key is
+absent. The payload's own laying out is checked with the downloads faked.
 """
 
 import xml.etree.ElementTree
@@ -15,8 +15,14 @@ import pytest
 import build_msi
 import payload
 
+from neutrino_client.platforms.windows import WINDOWS_CONFIG_DIR_NAME
+
 # The agent's own upgrade code, which this one must not be.
 AGENT_UPGRADE_CODE = "9F4E4A1C-9C0B-4C0E-9E2E-6C5A2C7C1E33"
+
+# The two namespaces the document is written in.
+WXS = "{http://wixtoolset.org/schemas/v4/wxs}"
+UTIL = "{http://wixtoolset.org/schemas/v4/wxs/util}"
 
 
 @pytest.fixture
@@ -49,21 +55,85 @@ def test_the_source_is_well_formed_and_the_publisher_survives_its_brackets(sourc
     """A publisher with an address in angle brackets is text, not markup."""
     root = xml.etree.ElementTree.fromstring(source)
     assert (
-        root.find("{http://wixtoolset.org/schemas/v4/wxs}Package").get("Manufacturer")
-        == "iffiX <someone@example.com>"
+        root.find(WXS + "Package").get("Manufacturer") == "iffiX <someone@example.com>"
     )
 
 
 def test_a_running_resident_is_closed_before_its_files_are_replaced(source):
     """An upgrade over a live resident is what lands half-applied."""
     root = xml.etree.ElementTree.fromstring(source)
-    closes = list(
-        root.iter("{http://wixtoolset.org/schemas/v4/wxs/util}CloseApplication")
-    )
+    closes = list(root.iter(UTIL + "CloseApplication"))
     assert len(closes) == 1
     assert closes[0].get("Target") == build_msi.RESIDENT_IMAGE
     assert closes[0].get("RebootPrompt") == "no"
     assert build_msi.RESIDENT_IMAGE.endswith(".exe")
+
+
+def test_a_running_resident_is_asked_to_quit_before_anything_ends_it(source):
+    """The client's services go with the resident, so the quit comes first."""
+    root = xml.etree.ElementTree.fromstring(source)
+    quits = [
+        action
+        for action in root.iter(WXS + "CustomAction")
+        if action.get("Id") == "QuitClientResident"
+    ]
+
+    assert len(quits) == 1
+    command = quits[0].get("ExeCommand")
+    assert build_msi.CONSOLE_WRAPPER_NAME in command
+    assert "'quit'" in command
+    assert str(build_msi.RESIDENT_QUIT_TIMEOUT_MS) in command
+    assert quits[0].get("Directory") == "INSTALLFOLDER"
+    assert quits[0].get("Execute") == "immediate"
+    # No resident to answer is not a failed install.
+    assert quits[0].get("Return") == "ignore"
+
+
+def test_the_quit_runs_before_the_close_that_ends_what_did_not_answer(source):
+    """CostFinalize is earlier than InstallInitialize, where the close goes."""
+    root = xml.etree.ElementTree.fromstring(source)
+    scheduled = [
+        custom
+        for custom in root.iter(WXS + "Custom")
+        if custom.get("Action") == "QuitClientResident"
+    ]
+
+    assert len(scheduled) == 1
+    assert scheduled[0].get("After") == "CostFinalize"
+    assert scheduled[0].get("Condition") == "Installed OR WIX_UPGRADE_DETECTED"
+    assert list(root.iter(UTIL + "CloseApplication"))
+
+
+def test_an_uninstall_takes_the_persons_own_configuration_with_it(source):
+    """Uninstalling the client leaves nothing of it behind."""
+    root = xml.etree.ElementTree.fromstring(source)
+    removals = list(root.iter(UTIL + "RemoveFolderEx"))
+    searches = [
+        search
+        for search in root.iter(WXS + "RegistrySearch")
+        if search.get("Id") == "ClientConfigDir"
+    ]
+    values = [
+        value
+        for value in root.iter(WXS + "RegistryValue")
+        if value.get("Name") == "ConfigDir"
+    ]
+
+    assert len(removals) == 1
+    assert removals[0].get("On") == "uninstall"
+    assert removals[0].get("Property") == "CLIENTCONFIGDIR"
+    # The extension reads the folder out of a property, which only a search
+    # fills in again at uninstall.
+    assert searches[0].get("Root") == "HKLM"
+    assert searches[0].get("Key") == build_msi.CLIENT_CONFIG_REGISTRY_KEY
+    assert len(values) == 1
+    assert values[0].get("Root") == "HKMU"
+    assert values[0].get("Value") == f"[AppDataFolder]{build_msi.CLIENT_CONFIG_FOLDER}"
+    assert '<StandardDirectory Id="AppDataFolder" />' in source
+
+
+def test_the_folder_the_uninstall_removes_is_the_one_the_client_writes():
+    assert build_msi.CLIENT_CONFIG_FOLDER == WINDOWS_CONFIG_DIR_NAME
 
 
 def test_the_build_loads_the_extension_that_element_comes_from():
@@ -140,6 +210,7 @@ def test_the_licences_travel_beside_the_payload(tmp_path):
 
 
 def test_the_console_wrapper_runs_the_carried_interpreter():
+    assert build_msi.CONSOLE_WRAPPER_NAME == "nclient.cmd"
     assert "python\\python.exe" in build_msi.CONSOLE_WRAPPER
     assert "neutrino_client.cli.entry" in build_msi.CONSOLE_WRAPPER
 

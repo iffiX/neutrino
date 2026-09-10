@@ -5,8 +5,9 @@ frames the hub would send and reads back what the client sent. What is
 pinned here is the hello's own fields, the welcome, a catalog that replaces
 what was held, the credential handed to the AI handler, the disabled switch
 letting go once and resuming, an ask correlated to its answer, three
-refusals unbinding, the backoff after a broken wire, and a shutdown that
-runs its order once.
+refusals unbinding, the backoff after a broken wire, a start that turns
+nothing on and clears what an unclean exit left, and a shutdown that runs its
+order once, logs a line a step, and lets no step hold up the rest.
 """
 
 import json
@@ -17,7 +18,10 @@ import pytest
 
 import neutrino_client.core.session as session_module
 from neutrino_client import CLIENT_VERSION
-from neutrino_client.constants import CLIENT_BACKOFF_MAX_S
+from neutrino_client.constants import (
+    CLIENT_BACKOFF_MAX_S,
+    CLIENT_MOUNT_CREDENTIALS_DIR_NAME,
+)
 from neutrino_client.core.session import ClientSession
 from neutrino_client.exceptions import (
     GatewayRefused,
@@ -28,6 +32,7 @@ from neutrino_client.exceptions import (
     SocketClosed,
 )
 from neutrino_client.services.base import ServiceTypeHandler
+from neutrino_client.services.file import mount_record_id
 from tests.conftest import SERVICES, FakeClientPlatform, bind, discard
 
 CREDENTIAL = {
@@ -86,11 +91,30 @@ class ScriptedSocket:
 
 
 class RecordingHandler(ServiceTypeHandler):
-    """A handler that remembers when it was released."""
+    """A handler that remembers the lifecycle calls it was given.
 
-    def __init__(self, service_type: str, log: list):
+    Attributes:
+        starts: How often the resident started it.
+        cleared: How often it was asked to clear leftovers.
+        is_holding: Set while a release that hangs is held.
+    """
+
+    def __init__(self, service_type: str, log: list, *, count=None, is_hanging=False):
+        """
+        Args:
+            service_type: The type this stands in for.
+            log: Appended to on every release, in order.
+            count: What its release reports letting go of.
+            is_hanging: Whether its release blocks until it is let go.
+        """
         self.service_type = service_type
+        self.starts = 0
+        self.cleared = 0
         self._log = log
+        self._count = count
+        self._is_hanging = is_hanging
+        self._held = threading.Event()
+        self.is_holding = threading.Event()
 
     def act(self, *, entries, body):
         return {}
@@ -98,8 +122,22 @@ class RecordingHandler(ServiceTypeHandler):
     def update_credential(self, credential) -> None:
         return None
 
-    def release(self) -> None:
+    def start(self) -> None:
+        self.starts += 1
+
+    def clear_leftovers(self) -> None:
+        self.cleared += 1
+
+    def release(self):
         self._log.append(self.service_type)
+        if self._is_hanging:
+            self.is_holding.set()
+            self._held.wait(timeout=5)
+        return self._count
+
+    def let_go(self) -> None:
+        """Let a hanging release finish, so the test leaves no thread behind."""
+        self._held.set()
 
 
 class SocketScript:
@@ -144,12 +182,39 @@ def take(session, frame: dict) -> None:
     session._dispatch("text", json.dumps(frame))
 
 
-def released_handlers(session) -> list:
+def released_handlers(session, counts=None) -> list:
     """Swap every releasable handler for one that records, and return the log."""
     log = []
+    counts = counts or {}
     for service_type in ("ai", "file", "port", "rdp"):
-        session._services[service_type] = RecordingHandler(service_type, log)
+        session._services[service_type] = RecordingHandler(
+            service_type, log, count=counts.get(service_type)
+        )
     return log
+
+
+class QuietSwitcher:
+    """A switcher over a machine with nothing pointed at the hub."""
+
+    def __init__(self):
+        self.calls = []
+
+    def is_installed(self) -> bool:
+        return True
+
+    def find_cli(self) -> str:
+        return "/opt/neutrino_client/bin/cc-switch"
+
+    def is_active_for(self, app: str) -> bool:
+        return False
+
+    def activate(self, *, base_url, api_key, tool_configs=None) -> str:
+        self.calls.append("activate")
+        return "claude"
+
+    def deactivate(self, *, base_url="") -> str:
+        self.calls.append("deactivate")
+        return ""
 
 
 @pytest.fixture
@@ -551,6 +616,110 @@ def test_disconnect_tells_the_hub_over_http_first_and_lets_go(
     assert bound.is_connected() is False
     assert "gateway_url" not in json.loads(config_path.read_text())
     assert released == ["ai", "file", "port", "rdp"]
+
+
+# --- the start, and the one way out ---
+
+
+def test_the_start_turns_nothing_on(config_path, tmp_path):
+    """Opening the client shows a clean machine: a record is a preference,
+    never a mount to bring back."""
+    platform = FakeClientPlatform()
+    session = ClientSession(log=discard, platform=platform)
+    session._services["ai"]._switcher = QuietSwitcher()
+    location = str(tmp_path / "nas")
+    record_id = mount_record_id("share_media", location)
+    session._store.set_mount(
+        record_id,
+        {
+            "entry_id": "share_media",
+            "host": "hub",
+            "share": "media",
+            "username": "media",
+            "path": location,
+        },
+    )
+    credentials = tmp_path / "config" / CLIENT_MOUNT_CREDENTIALS_DIR_NAME
+    credentials.mkdir(parents=True)
+    (credentials / f"{record_id}.credentials").write_text("username=media")
+
+    session.start()
+    try:
+        session._services["file"].reconcile()
+    finally:
+        session.shutdown()
+
+    assert platform.attach_calls == []
+    states = session.service_states()
+    assert states["ai"]["is_enabled"] is False
+    assert states["ai"]["is_active"] is False
+    assert [row["state"] for row in states["mounts"]] == ["detached"]
+
+
+def test_the_start_clears_what_an_unclean_exit_left(config_path):
+    session = ClientSession(log=discard, platform=FakeClientPlatform())
+    released_handlers(session)
+
+    session.start()
+    session.shutdown()
+
+    assert session._services["ai"].cleared == 1
+    assert session._services["file"].cleared == 1
+    assert session._services["ai"].starts == 1
+
+
+def test_a_handler_that_cannot_clear_is_logged_and_never_fatal(config_path):
+    lines = []
+    session = ClientSession(log=lines.append, platform=FakeClientPlatform())
+    released_handlers(session)
+
+    def refuse() -> None:
+        raise OSError("busy")
+
+    session._services["file"].clear_leftovers = refuse
+
+    session.start()
+    session.shutdown()
+
+    assert any(line.startswith("file: could not clear") for line in lines)
+    assert session._services["file"].starts == 1
+
+
+def test_the_shutdown_logs_one_line_a_step_in_order(config_path):
+    lines = []
+    session = ClientSession(log=lines.append, platform=FakeClientPlatform())
+    released_handlers(session, counts={"file": 2, "port": 1, "rdp": 0})
+
+    session.shutdown()
+
+    assert lines == [
+        "ai: restored",
+        "mounts: 2 detached",
+        "forwards: 1 closed",
+        "viewers: 0 closed",
+        "shut down",
+    ]
+
+
+def test_a_step_that_hangs_is_given_up_and_the_others_still_run(
+    config_path, monkeypatch
+):
+    monkeypatch.setattr(session_module, "CLIENT_SHUTDOWN_DEADLINE_S", 0.4)
+    lines = []
+    session = ClientSession(log=lines.append, platform=FakeClientPlatform())
+    released = released_handlers(session)
+    hanging = RecordingHandler("ai", released, is_hanging=True)
+    session._services["ai"] = hanging
+
+    started = time.monotonic()
+    session.shutdown()
+    hanging.let_go()
+
+    assert hanging.is_holding.is_set()
+    assert released == ["ai", "file", "port", "rdp"]
+    assert lines[0].startswith("ai: gave up after ")
+    assert lines[-1] == "shut down"
+    assert time.monotonic() - started < 5
 
 
 def test_shutdown_runs_the_order_once_and_is_idempotent(bound):

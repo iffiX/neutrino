@@ -1,13 +1,16 @@
-"""The one store for the service choices this person keeps.
+"""The one store for what this person typed once and keeps.
 
 The file is the person's own, mode 0600, under the client's configuration
-directory. It holds the AI choice with the last-granted endpoint, and the
-mount records. Secrets never enter it: a mount's password lives in that
-record's own credentials file, and the gateway key arrives fresh in every
-poll reply.
+directory. It holds the AI tool choices and the mount records: a share's
+host, its login name and where it goes. Nothing about a service standing
+on is here; that is the running client's own and starts clean.
+
+Secrets never enter it: a mount's password lives in that record's own
+credentials file, and the gateway key arrives fresh in every poll reply.
 
 Every write re-reads the file under one lock and lands atomically: a
-temporary file in the same directory, then ``os.replace``.
+temporary file in the same directory, then ``os.replace``. A key an older
+build wrote reads as if it were absent and is gone from the next write.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -18,9 +21,65 @@ import json
 import os
 import threading
 
+# What one mount record keeps; a record's other fields are dropped.
+STORE_MOUNT_KEYS = ("entry_id", "host", "share", "username", "path")
+
+
+def _tool_configs(raw) -> dict:
+    """The per-tool choices, tools of an unusable shape dropped.
+
+    Args:
+        raw: What the file held under ``ai.tool_configs``.
+
+    Returns:
+        ``{tool: {knob: value}}``.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(tool): dict(values)
+        for tool, values in raw.items()
+        if isinstance(values, dict)
+    }
+
+
+def _record(raw: dict) -> dict:
+    """One mount record with only the fields the store keeps.
+
+    Args:
+        raw: The record as it was given or read.
+
+    Returns:
+        The record, its other fields dropped.
+    """
+    return {key: raw[key] for key in STORE_MOUNT_KEYS if key in raw}
+
+
+def _kept(data: dict) -> dict:
+    """The store's own keys, whatever else the file carries.
+
+    Args:
+        data: What the file held.
+
+    Returns:
+        ``{"ai": {"tool_configs": {...}}, "mounts": {id: record}}``.
+    """
+    ai = data.get("ai")
+    mounts = data.get("mounts")
+    ai = ai if isinstance(ai, dict) else {}
+    mounts = mounts if isinstance(mounts, dict) else {}
+    return {
+        "ai": {"tool_configs": _tool_configs(ai.get("tool_configs"))},
+        "mounts": {
+            str(record_id): _record(record)
+            for record_id, record in mounts.items()
+            if isinstance(record, dict)
+        },
+    }
+
 
 class ClientServiceStore:
-    """Reads and writes this person's service choices."""
+    """Reads and writes what this person keeps between runs."""
 
     def __init__(self, *, path: str):
         """
@@ -30,22 +89,6 @@ class ClientServiceStore:
         self._path = path
         self._lock = threading.RLock()
 
-    def is_ai_enabled(self) -> bool:
-        """Whether this person's tools should point at the hub."""
-        return bool(self._read().get("ai", {}).get("is_enabled"))
-
-    def set_ai_enabled(self, is_enabled: bool) -> None:
-        """Record whether the tools should point at the hub.
-
-        Args:
-            is_enabled: The choice.
-        """
-
-        def change(data: dict) -> None:
-            data.setdefault("ai", {})["is_enabled"] = bool(is_enabled)
-
-        self._mutate(change)
-
     def ai_tool_configs(self) -> dict:
         """The per-tool model choices this person keeps.
 
@@ -53,12 +96,7 @@ class ClientServiceStore:
             ``{"claude": {...}, "codex": {...}, "gemini": {...}}``; empty
             tools until somebody configures them.
         """
-        configs = self._read().get("ai", {}).get("tool_configs", {})
-        return {
-            str(tool): dict(values)
-            for tool, values in configs.items()
-            if isinstance(values, dict)
-        }
+        return self._read()["ai"]["tool_configs"]
 
     def set_ai_tool_configs(self, configs: dict) -> None:
         """Record the per-tool model choices.
@@ -68,44 +106,7 @@ class ClientServiceStore:
         """
 
         def change(data: dict) -> None:
-            data.setdefault("ai", {})["tool_configs"] = {
-                str(tool): dict(values)
-                for tool, values in configs.items()
-                if isinstance(values, dict)
-            }
-
-        self._mutate(change)
-
-    def ai_granted(self) -> dict:
-        """The endpoint the last activation pointed the tools at.
-
-        Returns:
-            ``{"base_url", "model"}``, empty until an activation. The key is
-            never here.
-        """
-        granted = self._read().get("ai", {}).get("granted", {})
-        return dict(granted) if isinstance(granted, dict) else {}
-
-    def set_ai_granted(self, config: dict) -> None:
-        """Record what an activation granted.
-
-        Args:
-            config: ``{"base_url", "model"}``.
-        """
-
-        def change(data: dict) -> None:
-            data.setdefault("ai", {})["granted"] = {
-                "base_url": str(config.get("base_url", "")),
-                "model": str(config.get("model", "")),
-            }
-
-        self._mutate(change)
-
-    def clear_ai_granted(self) -> None:
-        """Forget the granted endpoint, after deactivation."""
-
-        def change(data: dict) -> None:
-            data.get("ai", {}).pop("granted", None)
+            data["ai"]["tool_configs"] = _tool_configs(configs)
 
         self._mutate(change)
 
@@ -115,24 +116,18 @@ class ClientServiceStore:
         Returns:
             Record id to the record.
         """
-        mounts = self._read().get("mounts", {})
-        return {
-            str(record_id): dict(record)
-            for record_id, record in mounts.items()
-            if isinstance(record, dict)
-        }
+        return self._read()["mounts"]
 
     def set_mount(self, record_id: str, record: dict) -> None:
-        """Keep one mount record. Passwords are never stored here.
+        """Keep one mount record; only the fields the store keeps land in it.
 
         Args:
             record_id: The record id.
-            record: The record; any ``password`` field is dropped.
+            record: The record; a ``password`` field is one of those dropped.
         """
-        kept = {key: value for key, value in record.items() if key != "password"}
 
         def change(data: dict) -> None:
-            data.setdefault("mounts", {})[record_id] = kept
+            data["mounts"][record_id] = _record(record)
 
         self._mutate(change)
 
@@ -144,7 +139,7 @@ class ClientServiceStore:
         """
 
         def change(data: dict) -> None:
-            data.get("mounts", {}).pop(record_id, None)
+            data["mounts"].pop(record_id, None)
 
         self._mutate(change)
 
@@ -153,8 +148,8 @@ class ClientServiceStore:
             with open(self._path, "r", encoding="utf-8") as stream:
                 data = json.load(stream)
         except (OSError, ValueError):
-            return {}
-        return data if isinstance(data, dict) else {}
+            data = {}
+        return _kept(data if isinstance(data, dict) else {})
 
     def _mutate(self, change) -> None:
         """Re-read, apply one change, and write atomically. A change that

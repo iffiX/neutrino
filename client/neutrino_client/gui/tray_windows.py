@@ -5,6 +5,10 @@ how the person gets it back. Windows has no toolkit binding for the shell
 notification area, so it is driven through :class:`_Win32TrayApi` on a thread
 of its own with its own message pump. Every DLL call, structure and constant
 comes from :mod:`neutrino_client.platforms.win32`.
+
+The icon's own window is where the shell asks this process to end: an
+installer, Task Manager's End task and a sign-out each send one of
+``QUIT_MESSAGES``, and every one of them is the tray's Quit.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -36,6 +40,8 @@ TRAY_READY_TIMEOUT_S = 5
 
 # A left click or double click opens; a right click drops the menu.
 OPEN_MESSAGES = (win32.WM_LBUTTONUP, win32.WM_LBUTTONDBLCLK)
+# What the shell sends the owner window when this process is to end.
+QUIT_MESSAGES = (win32.WM_CLOSE, win32.WM_QUERYENDSESSION, win32.WM_ENDSESSION)
 
 
 class WindowsTrayIcon:
@@ -58,6 +64,7 @@ class WindowsTrayIcon:
         self._window = 0
         self._thread: "threading.Thread | None" = None
         self._is_ready = threading.Event()
+        self._is_stopping = False
 
     def start(self) -> None:
         """Put the icon up and start pumping its messages."""
@@ -72,6 +79,7 @@ class WindowsTrayIcon:
         window = self._window
         if not window:
             return
+        self._is_stopping = True
         self._window = 0
         self._win32.remove_icon(window=window)
         self._win32.close_window(window=window)
@@ -99,6 +107,8 @@ class WindowsTrayIcon:
             self._on_mouse(lparam)
         elif message == win32.WM_COMMAND:
             self._on_command(wparam)
+        elif message in QUIT_MESSAGES:
+            self._on_shell_close()
 
     def _on_mouse(self, event: int) -> None:
         if event in OPEN_MESSAGES:
@@ -120,6 +130,17 @@ class WindowsTrayIcon:
             self._on_open()
         elif command == TRAY_COMMAND_QUIT:
             self._on_quit()
+
+    def _on_shell_close(self) -> None:
+        """The shell asking this process to end, which is Quit.
+
+        The close this icon posts to end its own pump arrives here too, and
+        is not one.
+        """
+        if self._is_stopping:
+            return
+        self._is_stopping = True
+        self._on_quit()
 
 
 class _Win32TrayApi:

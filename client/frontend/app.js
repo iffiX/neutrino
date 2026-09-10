@@ -570,47 +570,71 @@ function drawAiPanel(state, entries, title) {
 let openPicker = '';
 
 // The page's one dropdown: a field that opens a list of at most five rows
-// and scrolls past that, after the hub's own credential picker.
+// and scrolls past that, after the hub's own credential picker. The list
+// opens and closes inside the field's own element, so it works the same on
+// the page and inside a dialog, and no redraw is needed to show it.
 function picker(id, options, chosen, onPick, isDisabled) {
   const wrap = document.createElement('div');
   wrap.className = 'picker';
-  const current = options.filter((option) => option.value === chosen)[0];
+  let current = options.filter((option) => option.value === chosen)[0]
+    || options[0];
   const field = document.createElement('button');
   field.type = 'button';
   field.className = 'picker_field';
   field.disabled = !!isDisabled;
   const label = document.createElement('span');
-  label.textContent = current ? current.label : (options[0] ? options[0].label : '');
+  label.textContent = current ? current.label : '';
   const caret = document.createElement('span');
   caret.className = 'caret';
   caret.textContent = '▾';
   field.appendChild(label);
   field.appendChild(caret);
-  field.onclick = () => {
-    openPicker = openPicker === id ? '' : id;
-    redraw();
-  };
   wrap.appendChild(field);
-  if (openPicker === id && !isDisabled) {
+
+  function close() {
+    const open = wrap.querySelector('.picker_list');
+    if (open) open.remove();
+    if (openPicker === id) openPicker = '';
+  }
+  function open() {
+    closeEveryPicker();
+    openPicker = id;
     const list = document.createElement('div');
     list.className = 'picker_list';
     for (const option of options) {
       const row = document.createElement('button');
       row.type = 'button';
-      row.className = 'picker_row' + (option.value === chosen ? ' on' : '');
+      row.className = 'picker_row' +
+        (current && option.value === current.value ? ' on' : '');
       row.textContent = option.label;
-      row.onclick = () => {
-        openPicker = '';
+      row.onclick = (event) => {
+        event.stopPropagation();
+        current = option;
+        label.textContent = option.label;
+        close();
         onPick(option.value);
-        redraw();
         settle();
       };
       list.appendChild(row);
     }
     wrap.appendChild(list);
   }
+  field.onclick = (event) => {
+    event.stopPropagation();
+    if (wrap.querySelector('.picker_list')) { close(); settle(); } else open();
+  };
+  if (openPicker === id && !isDisabled) open();
   return wrap;
 }
+
+// A click anywhere else closes whichever list is open.
+function closeEveryPicker() {
+  for (const list of document.querySelectorAll('.picker_list')) list.remove();
+  openPicker = '';
+}
+document.addEventListener('click', () => {
+  if (openPicker) { closeEveryPicker(); settle(); }
+});
 
 function modelSelect(id, models, chosen, onPick) {
   const options = [{ value: '', label: '(' + WORDS.ui.gateway_default + ')' }];

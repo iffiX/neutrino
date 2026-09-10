@@ -2,7 +2,8 @@
 
 The staged choices are what each tool is pointed with; the grant's model is
 only the prefill default for a slot nobody has chosen. The store never holds
-a key, and restore puts the tools back the way activation found them.
+a key and never holds the toggle: a handler starts with the tools pointed
+nowhere, and restore puts them back the way activation found them.
 """
 
 import json
@@ -51,6 +52,10 @@ class FakeSwitcher:
         self.calls = []
         self.activate_error = None
         self.deactivate_error = None
+        self.active_apps = set()
+
+    def is_active_for(self, app):
+        return app in self.active_apps
 
     def is_installed(self):
         return self.has_cli
@@ -84,7 +89,11 @@ def subject(tmp_path):
     store = ClientServiceStore(path=str(tmp_path / "state.json"))
     fake = FakeSwitcher()
     handler = AiServiceHandler(
-        store=store, log=discard, switcher_module=fake, start_thread=run_inline
+        store=store,
+        original_dir=str(tmp_path / "original"),
+        log=discard,
+        switcher_module=fake,
+        start_thread=run_inline,
     )
     return handler, store, fake
 
@@ -104,7 +113,6 @@ def test_apply_with_a_grant_activates_with_the_prefill_default(subject):
         "sonnet": "m1",
         "haiku": "m1",
     }
-    assert store.ai_granted() == {"base_url": "http://hub:8080", "model": "m1"}
     row = handler.state()["ai"]
     assert row["is_enabled"] is True and row["is_active"] is True
     assert row["code"] == ""
@@ -135,7 +143,6 @@ def test_staged_choices_beat_the_grants_model(subject):
     }
     assert tool_configs["codex"] == {"model": "m2", "model_reasoning_effort": "high"}
     assert tool_configs["gemini"] == {"model": "m3"}
-    assert store.ai_granted()["model"] == "m2"
     assert handler.state()["ai_tool_configs"]["codex"]["model"] == "m2"
 
 
@@ -151,7 +158,6 @@ def test_a_missing_cli_is_a_bundle_refusal_never_an_install(subject):
     assert row["code"] == "bundle_missing"
     assert row["params"] == {"binary": "cc-switch"}
     assert not any(call[0] == "activate" for call in fake.calls)
-    assert store.ai_granted() == {}
 
 
 def test_enabling_before_a_grant_waits_then_activates_on_the_credential(subject):
@@ -195,16 +201,19 @@ def test_an_already_pointed_person_is_looked_at_and_left_as_they_stand(subject):
     assert handler.state()["ai"]["is_active"] is True
 
 
-def test_disabling_uses_the_last_granted_endpoint_and_clears_it(subject):
-    handler, store, fake = subject
-    store.set_ai_granted({"base_url": "http://old:8080", "model": "m0"})
+def test_disabling_uses_the_endpoint_the_activation_granted(subject):
+    handler, _store, fake = subject
+    handler.update_credential(CREDENTIAL)
+    handler.act(entries=[ENTRY], body={"is_enabled": True})
 
     outcome = handler.act(entries=[ENTRY], body={"is_enabled": False})
 
     assert outcome == {}
-    assert ("deactivate", "http://old:8080") in fake.calls
-    assert store.ai_granted() == {}
+    assert ("deactivate", "http://hub:8080") in fake.calls
     assert handler.state()["ai"]["is_active"] is False
+
+    handler.act(entries=[ENTRY], body={"is_enabled": False})
+    assert len([call for call in fake.calls if call[0] == "deactivate"]) == 1
 
 
 def test_a_failed_activation_is_a_typed_failed_state(subject):
@@ -218,11 +227,10 @@ def test_a_failed_activation_is_a_typed_failed_state(subject):
     assert row["state"] == "failed"
     assert row["code"] == "switch_failed"
     assert row["params"] == {"detail": "cc-switch refused"}
-    assert store.ai_granted() == {}
 
 
 def test_restore_puts_the_tools_back_and_keeps_the_choice(subject):
-    handler, store, fake = subject
+    handler, _store, fake = subject
     handler.update_credential(CREDENTIAL)
     handler.act(entries=[ENTRY], body={"is_enabled": True})
 
@@ -232,8 +240,7 @@ def test_restore_puts_the_tools_back_and_keeps_the_choice(subject):
     assert [call for call in fake.calls if call[0] == "deactivate"] == [
         ("deactivate", "http://hub:8080")
     ]
-    assert store.ai_granted() == {}
-    assert store.is_ai_enabled() is True
+    assert handler.state()["ai"]["is_enabled"] is True
     assert handler.state()["ai"]["is_active"] is False
 
 
@@ -249,7 +256,7 @@ def test_restore_after_shutdown_reactivates_on_the_next_credential(subject):
 
 
 def test_an_apply_without_the_toggle_is_refused(subject):
-    handler, store, fake = subject
+    handler, _store, fake = subject
 
     refused = handler.act(entries=[ENTRY], body={"tool_configs": {}})
 
@@ -257,10 +264,87 @@ def test_an_apply_without_the_toggle_is_refused(subject):
     assert fake.calls == []
 
 
+def test_a_fresh_handler_points_the_tools_nowhere(subject):
+    handler, _store, fake = subject
+
+    row = handler.state()["ai"]
+
+    assert row["is_enabled"] is False
+    assert row["is_active"] is False
+    assert fake.calls == []
+
+    handler.update_credential(CREDENTIAL)
+
+    assert not any(call[0] == "activate" for call in fake.calls)
+
+
+def test_the_toggle_of_a_previous_run_is_not_kept(subject, tmp_path):
+    handler, store, fake = subject
+    handler.update_credential(CREDENTIAL)
+    handler.act(entries=[ENTRY], body={"is_enabled": True})
+
+    fresh = AiServiceHandler(
+        store=store,
+        original_dir=str(tmp_path / "original"),
+        log=discard,
+        switcher_module=fake,
+        start_thread=run_inline,
+    )
+    fresh.update_credential(CREDENTIAL)
+
+    assert fresh.state()["ai"]["is_enabled"] is False
+    assert fresh.state()["ai"]["is_active"] is False
+
+
+def test_leftovers_of_an_unclean_exit_are_put_back(subject):
+    handler, _store, fake = subject
+    fake.active_apps = {"codex"}
+
+    handler.clear_leftovers()
+
+    assert [call for call in fake.calls if call[0] == "deactivate"] == [
+        ("deactivate", "")
+    ]
+
+
+def test_an_adopt_record_alone_is_a_leftover(subject, tmp_path):
+    handler, _store, fake = subject
+    original = tmp_path / "original"
+    original.mkdir()
+    (original / "claude.json").write_text("{}")
+
+    handler.clear_leftovers()
+
+    assert [call for call in fake.calls if call[0] == "deactivate"] == [
+        ("deactivate", "")
+    ]
+
+
+def test_a_clean_machine_has_nothing_to_put_back(subject):
+    handler, _store, fake = subject
+
+    handler.clear_leftovers()
+
+    assert fake.calls == []
+
+
+def test_a_machine_without_the_cli_is_not_asked(subject):
+    handler, _store, fake = subject
+    fake.has_cli = False
+    fake.active_apps = {"claude"}
+
+    handler.clear_leftovers()
+
+    assert fake.calls == []
+
+
 def test_the_key_never_reaches_the_store(subject, tmp_path):
     handler, _store, _fake = subject
     handler.update_credential(CREDENTIAL)
-    handler.act(entries=[ENTRY], body={"is_enabled": True})
+    handler.act(
+        entries=[ENTRY],
+        body={"is_enabled": True, "tool_configs": {"claude": {"default": "m1"}}},
+    )
 
     raw = (tmp_path / "state.json").read_text()
     assert "key-1" not in raw

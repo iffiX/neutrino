@@ -5,6 +5,10 @@ holds the socket to the hub, keeps the service handlers, and runs the window
 on the main thread. Closing the window hides it; the tray's Quit is what
 stops the resident. A second invocation finds the socket held, asks the
 running one to show its window, and exits.
+
+Every way out is the one way out: the tray's Quit, ``nclient quit``, and the
+signals a service manager, a terminal or a logout sends all run the same
+shutdown and then end the process.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -13,6 +17,7 @@ from __future__ import annotations
 
 import datetime
 import os
+import signal
 import sys
 import threading
 
@@ -25,7 +30,7 @@ from neutrino_client.constants import (
 from neutrino_client.control import client, routes
 from neutrino_client.control.page import control_page_html, window_icon_path
 from neutrino_client.control.server import ControlServer
-from neutrino_client.core.session import ClientSession
+from neutrino_client.core.session import ClientSession, end_process
 from neutrino_client.gui.bridge import GuiBridge
 from neutrino_client.gui.channel import InProcessChannel
 from neutrino_client.exceptions import (
@@ -60,6 +65,7 @@ def main(*, is_hidden: bool = False) -> int:
         return _show_running(socket_path)
     session.start()
     server.start()
+    _install_quit_signals(session, server)
     try:
         status = _open(platform.os_name, session, is_hidden=is_hidden)
     finally:
@@ -71,13 +77,6 @@ def main(*, is_hidden: bool = False) -> int:
 def _end(status: int) -> int:
     """End the process, whatever the window's runtime left running.
 
-    The shutdown above is what restores the machine, and it has already run
-    by the time this is called. What can still be standing is the window
-    runtime's own: on Windows the embedded browser's helper processes and
-    the threads .NET holds, none of which answer to this interpreter. A
-    resident that lingers there holds this person's socket and hands the
-    next install a file it cannot replace.
-
     Args:
         status: What the window's own run came to.
 
@@ -86,9 +85,34 @@ def _end(status: int) -> int:
     """
     if os.name != "nt":
         return status
-    sys.stdout.flush()
-    sys.stderr.flush()
-    os._exit(status)
+    end_process(status)
+    return status
+
+
+def _install_quit_signals(session, server) -> None:
+    """Quit on the signals that mean this process is being ended.
+
+    An installer, a package upgrade, ``systemctl --user stop`` and a logout
+    all send one; each is the person asking the client to stop.
+
+    Args:
+        session: The running session.
+        server: The control server serving beside it.
+    """
+
+    def on_signal(_number, _frame) -> None:
+        session.shutdown()
+        server.stop()
+        end_process()
+
+    for name in ("SIGTERM", "SIGINT", "SIGHUP"):
+        number = getattr(signal, name, None)
+        if number is None:
+            continue
+        try:
+            signal.signal(number, on_signal)
+        except (OSError, ValueError):
+            continue
 
 
 class ResidentLog:

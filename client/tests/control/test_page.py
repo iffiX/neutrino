@@ -299,6 +299,14 @@ def test_every_choice_the_page_offers_goes_through_the_one_picker():
         assert used in PAGE_JS
     # An open list must outlive the poll that would redraw it away.
     assert "if (openPicker) return false;" in PAGE_JS
+    # The list opens inside the field's own element, so a picker in a dialog
+    # works without the page redraw a dialog holds back.
+    assert "wrap.appendChild(list);" in PAGE_JS
+    assert "function closeEveryPicker()" in PAGE_JS
+    picker_body = PAGE_JS[
+        PAGE_JS.index("function picker(") : PAGE_JS.index("function closeEveryPicker()")
+    ]
+    assert "redraw()" not in picker_body
 
 
 def test_the_pickers_list_stops_at_five_rows_and_scrolls():

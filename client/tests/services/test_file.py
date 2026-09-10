@@ -1,8 +1,10 @@
 """The file service: the platform does the privileged part, typed refusals.
 
 The password is proven absent three ways: never on argv, never in the
-store, never in a state payload. Records are 0600 files of the person's
-own; a declined authorization is typed and not retried on the timer.
+store, never in a state payload. A record is the login and the path this
+person typed; what is attached is this run's own, so a record of an earlier
+run waits to be asked for. A declined authorization is typed and not retried
+on the timer.
 """
 
 import json
@@ -67,7 +69,7 @@ def test_a_creatable_path_is_made_and_mounted(service):
     call = platform.attach_calls[0]
     assert call["share_url"] == "//hub/media" and call["location"] == location
     record = store.mounts()[mount_record_id("share_media", location)]
-    assert record["is_enabled"] is True
+    assert record["path"] == location
     assert "password" not in record and "account" not in record
 
 
@@ -164,7 +166,7 @@ def test_a_gone_credentials_file_reports_and_waits(service):
     assert len(platform.attach_calls) == 1
 
 
-def test_the_reconcile_remounts_an_enabled_record(service):
+def test_the_reconcile_remounts_what_this_run_attached(service):
     subject, platform, _store, tmp_path = service
     location = str(tmp_path / "nas")
     assert attach(subject, path=location) == {}
@@ -187,8 +189,9 @@ def test_a_declined_authorization_is_typed_and_not_retried(service):
     row = subject.rows()[0]
     assert row["state"] == "failed" and row["code"] == "mount_not_authorized"
     assert len(platform.attach_calls) == 1
-    (record,) = store.mounts().values()
-    assert record["is_enabled"] is False
+
+    subject.reconcile()
+    assert len(platform.attach_calls) == 1
 
 
 def test_a_failing_mount_is_a_typed_failed_row(service):
@@ -212,7 +215,7 @@ def test_detach_keeps_the_record_and_the_login(service):
     assert subject.detach(record_id=record_id) == {}
 
     assert platform.detach_calls == [location]
-    assert store.mounts()[record_id]["is_enabled"] is False
+    assert record_id in store.mounts()
     assert os.path.isfile(platform.attach_calls[0]["credentials_path"])
     assert subject.rows()[0]["state"] == "detached"
 
@@ -258,13 +261,13 @@ def test_release_detaches_everything_and_keeps_the_records(service):
     subject.reconcile()
     assert len(platform.attached) == 2
 
-    subject.release()
-    subject.release()
+    assert subject.release() == 2
+    assert subject.release() == 0
 
     assert platform.attached == set()
     assert sorted(platform.detach_calls) == [str(tmp_path / "a"), str(tmp_path / "b")]
     assert len(store.mounts()) == 2
-    assert all(record["is_enabled"] for record in store.mounts().values())
+    assert [row["state"] for row in subject.rows()] == ["detached", "detached"]
 
 
 def test_act_mounts_and_unmounts_by_typed_entry(service):
@@ -289,7 +292,7 @@ def test_act_mounts_and_unmounts_by_typed_entry(service):
         subject.act(entries=[], body={"action": "unmount", "record_id": record_id})
         == {}
     )
-    assert store.mounts()[record_id]["is_enabled"] is False
+    assert subject.rows()[0]["state"] == "detached"
     assert (
         subject.act(entries=[], body={"action": "mount", "record_id": record_id}) == {}
     )
@@ -301,6 +304,58 @@ def test_act_mounts_and_unmounts_by_typed_entry(service):
         "code": "unknown_request",
         "params": {},
     }
+
+
+def test_a_record_of_an_earlier_run_is_not_mounted_by_itself(service, tmp_path):
+    """The store outlives the process; what was mounted does not."""
+    subject, platform, store, _tmp_path = service
+    location = str(tmp_path / "nas")
+    assert attach(subject, path=location) == {}
+    platform.attached.discard(location)
+
+    fresh = FileServiceHandler(
+        platform=platform,
+        store=store,
+        credentials_dir=str(tmp_path / "config" / "mount_credentials"),
+        log=discard,
+    )
+    fresh.reconcile()
+
+    assert len(platform.attach_calls) == 1
+    assert fresh.rows()[0]["state"] == "detached"
+
+    assert fresh.remount(record_id=fresh.rows()[0]["record_id"]) == {}
+    fresh.reconcile()
+    assert fresh.rows()[0]["state"] == "mounted"
+
+
+def test_leftovers_of_an_unclean_exit_are_detached(service, tmp_path):
+    subject, platform, store, _tmp_path = service
+    location = str(tmp_path / "nas")
+    assert attach(subject, path=location) == {}
+
+    fresh = FileServiceHandler(
+        platform=platform,
+        store=store,
+        credentials_dir=str(tmp_path / "config" / "mount_credentials"),
+        log=discard,
+    )
+    fresh.clear_leftovers()
+
+    assert platform.detach_calls == [location]
+    assert platform.attached == set()
+    assert fresh.rows()[0]["state"] == "detached"
+
+
+def test_a_clean_machine_has_no_mount_to_clear(service, tmp_path):
+    subject, platform, _store, _tmp_path = service
+    assert attach(subject, path=str(tmp_path / "nas")) == {}
+    subject.release()
+    platform.detach_calls.clear()
+
+    subject.clear_leftovers()
+
+    assert platform.detach_calls == []
 
 
 def test_the_rows_carry_no_account_field(service):
