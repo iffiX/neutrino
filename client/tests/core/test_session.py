@@ -16,6 +16,7 @@ import pytest
 
 import neutrino_client.core.session as session_module
 from neutrino_client import CLIENT_VERSION
+from neutrino_client.constants import CLIENT_BACKOFF_MAX_S
 from neutrino_client.core.channel import (
     GatewayRefused,
     GatewayRefusedDetail,
@@ -421,10 +422,6 @@ def test_a_replaced_socket_reconnects_quietly(bound, monkeypatch):
     [
         (GatewayRefused("401"), "hub_refused"),
         (GatewayUntrusted("pin"), "hub_untrusted"),
-        (
-            GatewayVersionRefused(hub_version="0.1.0", client_version="0.2.0"),
-            "client_newer_than_hub",
-        ),
     ],
 )
 def test_three_refusals_of_any_kind_unbind(
@@ -444,6 +441,26 @@ def test_three_refusals_of_any_kind_unbind(
     assert "gateway_url" not in json.loads(config_path.read_text())
     assert bound.last_error() == {"code": "self_unbound", "params": {"cause": cause}}
     assert released == ["ai", "file", "port", "rdp"]
+
+
+def test_a_hub_behind_this_client_never_unbinds_it(bound, monkeypatch, config_path):
+    socket_of(
+        monkeypatch,
+        [],
+        connect_error=GatewayVersionRefused(
+            hub_version="0.1.0", client_version="0.2.0"
+        ),
+    )
+    released = released_handlers(bound)
+
+    delays = [bound.run_once() for _ in range(5)]
+
+    assert bound.is_connected() is True
+    assert bound.connection_state() == "reconnecting"
+    assert "gateway_url" in json.loads(config_path.read_text())
+    assert bound.last_error()["code"] == "client_newer_than_hub"
+    assert released == []
+    assert delays[-1] == CLIENT_BACKOFF_MAX_S
 
 
 def test_a_close_the_hub_sends_refuses_the_same_way(bound, monkeypatch, config_path):

@@ -650,6 +650,15 @@ class ClientSession:
             Seconds until the next loop turn.
         """
         rejection = channel_error(error)
+        if isinstance(error, GatewayVersionRefused):
+            # A hub behind this client is not a hub that has forgotten it:
+            # the binding stays, the word stays on the window, and the
+            # client asks again once the hub has caught up.
+            with self._lock:
+                self._last_error = rejection
+                self._refusals = 0
+            self._log(f"{error}; asking again later")
+            return CLIENT_BACKOFF_MAX_S
         with self._lock:
             self._refusals += 1
             rejections = self._refusals
