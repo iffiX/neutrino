@@ -285,9 +285,37 @@ def test_everything_greys_while_the_hub_has_the_client_switched_off():
     assert 'disabled: "Switched off by the hub"' in PAGE_JS
 
 
-def test_the_browse_button_greys_where_mounts_are_drive_letters():
-    assert "(state.mount_location_shape || 'path') === 'path'" in PAGE_JS
-    assert "browse.disabled = !canBrowse" in PAGE_JS
+def test_every_choice_the_page_offers_goes_through_the_one_picker():
+    """One dropdown, five rows and a scroll, like the hub's own."""
+    assert "function picker(id, options, chosen, onPick, isDisabled)" in PAGE_JS
+    assert "createElement('select')" not in PAGE_JS
+    for used in (
+        "'mount_drive'",
+        "'codex_effort'",
+        "'codex_model'",
+        "'gemini_model'",
+        "'claude_' + slot",
+    ):
+        assert used in PAGE_JS
+    # An open list must outlive the poll that would redraw it away.
+    assert "if (openPicker) return false;" in PAGE_JS
+
+
+def test_the_pickers_list_stops_at_five_rows_and_scrolls():
+    assert ".picker_list" in PAGE_CSS
+    assert "overflow-y: auto" in PAGE_CSS
+    assert "max-height: 163px" in PAGE_CSS
+
+
+def test_a_drive_letter_mount_is_picked_from_the_free_letters():
+    """Where a mount is a drive letter there is no path to type or browse."""
+    assert "(state.mount_location_shape || 'path') === 'drive_letter'" in PAGE_JS
+    assert "function driveLetterLine(staged, state)" in PAGE_JS
+    assert "state.mount_location_choices" in PAGE_JS
+    assert "mount_drive_caption" in PAGE_JS
+    # The browser belongs to the path shape alone, and is never a dead button.
+    assert "browse.disabled" not in PAGE_JS
+    assert "function mountPathLine(staged)" in PAGE_JS
 
 
 # --- busy states spin ---
@@ -339,9 +367,31 @@ def test_a_refused_state_poll_renders_its_wording():
     )
 
 
-def test_the_page_waits_for_the_bridge_before_polling():
-    assert "bridgeReady().then(() => {" in PAGE_JS
-    assert "setInterval(poll, POLL_INTERVAL_MS);" in PAGE_JS
+def test_the_page_draws_from_pushed_state_and_never_polls():
+    """The resident pushes every change; the page asks once, for the first frame."""
+    assert "window.neutrinoState = (state) =>" in PAGE_JS
+    assert "bridgeReady().then(firstFrame);" in PAGE_JS
+    assert "setInterval" not in PAGE_JS
+    assert "POLL_INTERVAL" not in PAGE_JS
+
+
+def test_a_redraw_the_person_caused_always_happens():
+    assert "function redraw() {\n  if (lastState !== null) draw(lastState);" in PAGE_JS
+    # What arrived while a dialog or a picker was open is drawn once it closes.
+    assert "function settle() {" in PAGE_JS
+    assert PAGE_JS.count("settle();") >= 2
+
+
+def test_the_lanes_standing_greys_and_spins():
+    assert "const isWorking = work.state === 'working';" in PAGE_JS
+    assert "WORDS.ui.ai_switching" in PAGE_JS
+    assert "WORDS.ui.rdp_connecting" in PAGE_JS
+    assert "work.step === 'connecting:' + entry.id" in PAGE_JS
+    assert 'busy: "' in PAGE_JS
+
+
+def test_a_failed_switch_leaves_apply_live_for_the_same_ask_again():
+    assert "!(isDirty || work.code)" in PAGE_JS
 
 
 def test_a_sent_mount_password_is_cleared_from_the_stage():
@@ -354,3 +404,18 @@ def test_a_refused_link_is_worded_from_its_code():
 
 def test_the_page_offers_no_reassurance_prose():
     assert "the hub is never told it" not in PAGE_JS
+
+
+def test_windows_is_given_the_icon_it_can_actually_load(tmp_path, monkeypatch):
+    """Win32 loads an icon from an .ico and from nothing else."""
+    gui_dir = tmp_path / "gui"
+    gui_dir.mkdir()
+    (gui_dir / "neutrino_client.png").write_bytes(b"png")
+    (gui_dir / "neutrino_client.ico").write_bytes(b"ico")
+    monkeypatch.setattr(page, "GUI_DATA_DIR", gui_dir)
+
+    monkeypatch.setattr(page.os, "name", "nt")
+    assert page.window_icon_path().endswith("neutrino_client.ico")
+
+    monkeypatch.setattr(page.os, "name", "posix")
+    assert page.window_icon_path().endswith("neutrino_client.png")

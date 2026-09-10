@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Neutrino Client
-Comment=Use the services a Neutrino Hub publishes for you
-Exec=nclient gui --hidden
-Icon=neutrino_client
-Terminal=false
-NoDisplay=true
-X-GNOME-Autostart-enabled=true

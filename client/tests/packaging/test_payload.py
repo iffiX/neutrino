@@ -7,8 +7,11 @@ interpreter, which machines the packages are published for, and which
 licences the package owes.
 """
 
+import io
+import pathlib
 import subprocess
 import sys
+import zipfile
 
 import pytest
 
@@ -95,12 +98,21 @@ def test_the_staged_tree_carries_the_page_and_the_window_icon(tmp_path):
     assert (gui / "neutrino_client.png").is_file()
 
 
+def test_the_staged_tree_carries_an_icon_windows_can_load(tmp_path):
+    """A .png is not an icon to Win32; without the .ico the tray goes grey."""
+    staged = payload.stage_client_tree(tmp_path, "9.9.9")
+
+    icon = staged / "data" / "gui" / "neutrino_client.ico"
+    assert icon.is_file()
+    assert icon.read_bytes()[:4] == b"\x00\x00\x01\x00"
+
+
 def test_the_staged_tree_carries_the_desktop_entries_and_the_policy(tmp_path):
     staged = payload.stage_client_tree(tmp_path / "site-packages", "9.9.9")
 
     desktop = staged / "data" / "desktop"
     assert (desktop / "neutrino_client.desktop").is_file()
-    assert (desktop / "neutrino_client_autostart.desktop").is_file()
+    assert not (desktop / "neutrino_client_autostart.desktop").exists()
     assert (staged / "data" / "polkit" / "com.neutrino.client.mount.policy").is_file()
 
 
@@ -222,3 +234,36 @@ def test_the_bytecode_pass_compiles_the_carried_tree(tmp_path):
     written = list(library.rglob("*.pyc"))
     assert len(written) == 1
     assert written[0].name.startswith("module.cpython-")
+
+
+def test_a_wheels_console_scripts_are_not_carried(tmp_path, monkeypatch):
+    """pip writes launcher stubs beside the packages; none ship."""
+    wheel = io.BytesIO()
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("demo/__init__.py", "")
+        archive.writestr(
+            "demo-1.0.dist-info/METADATA",
+            "Metadata-Version: 2.1\nName: demo\nVersion: 1.0\n",
+        )
+        archive.writestr(
+            "demo-1.0.dist-info/WHEEL",
+            "Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: true\n"
+            "Tag: py3-none-any\n",
+        )
+        archive.writestr(
+            "demo-1.0.dist-info/entry_points.txt",
+            "[console_scripts]\ndemo = demo:main\n",
+        )
+        archive.writestr("demo-1.0.dist-info/RECORD", "")
+    monkeypatch.setattr(payload, "fetch", lambda url, digest, what: wheel.getvalue())
+    target = tmp_path / "lib"
+
+    payload.stage_wheels(
+        pathlib.Path(sys.executable),
+        target,
+        (("demo", "1.0", "https://example.invalid/demo-1.0-py3-none-any.whl", "0"),),
+    )
+
+    assert (target / "demo" / "__init__.py").is_file()
+    assert not (target / "bin").exists()
+    assert not (target / "Scripts").exists()

@@ -25,6 +25,8 @@ NOT_JOINED = "this person has joined no hub"
 # What each typed refusal or failure code says on this surface.
 CLIENT_CODE_WORDS = {
     "resident_not_running": "the client is not running; open it: nclient gui",
+    "busy": "the client is still handling the last request",
+    "crashed": "the last request failed on this machine",
     "root_refused": "nclient runs as a person, never as root",
     "bundle_missing": "this install carries no {binary}; reinstall the client",
     "mount_not_authorized": "mounting was not authorized on this machine",
@@ -88,6 +90,11 @@ CLIENT_STATE_WORDS = {
     "absent": "not installed",
     "failed": "failed",
     "unknown": "waiting for the client",
+}
+
+# The ai lane's step while it runs, shown in place of the row's standing.
+CLIENT_WORK_WORDS = {
+    "switching": "switching the tools",
 }
 
 # Where a mount record stands; failed records are worded by their code.

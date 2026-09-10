@@ -38,19 +38,26 @@ def _pump(source, destination) -> None:
         pass
 
 
+def _nobody() -> None:
+    """Nobody listening for changes."""
+
+
 class PortServiceHandler(ServiceTypeHandler):
     """Starts, stops and lists this machine's loopback port forwards."""
 
     service_type = "port"
 
-    def __init__(self, *, log=print):
+    def __init__(self, *, log=print, on_change=None):
         """
         Args:
             log: Callable used for progress messages.
+            on_change: Called after a forward starts or stops; None for
+                nobody listening.
         """
         self._log = log
         self._lock = threading.Lock()
         self._relays: dict = {}
+        self._on_change = on_change if on_change is not None else _nobody
 
     def act(self, *, entries: list, body: dict):
         """Connect or disconnect one published port's loopback forward.
@@ -136,6 +143,7 @@ class PortServiceHandler(ServiceTypeHandler):
                 }
             self._relays[entry_id] = relay
         self._log(f"forwarding {FORWARD_BIND_HOST}:{bound} to {host}:{port}")
+        self._on_change()
         return {}
 
     def stop(self, *, entry_id: str) -> dict:
@@ -152,6 +160,7 @@ class PortServiceHandler(ServiceTypeHandler):
         if relay is not None:
             relay.close()
             self._log(f"stopped forwarding to {relay.host}:{relay.port}")
+            self._on_change()
         return {}
 
 

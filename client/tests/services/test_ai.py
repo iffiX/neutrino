@@ -18,6 +18,12 @@ from neutrino_client.services.store import ClientServiceStore
 from neutrino_client.services.switcher import SwitcherError
 from tests.conftest import discard
 
+
+def run_inline(target):
+    """The lane's thread starter, running the job right here."""
+    target()
+
+
 ENTRY = {
     "id": "ai",
     "type": "ai",
@@ -75,7 +81,9 @@ class FakeSwitcher:
 def subject(tmp_path):
     store = ClientServiceStore(path=str(tmp_path / "state.json"))
     fake = FakeSwitcher()
-    handler = AiServiceHandler(store=store, log=discard, switcher_module=fake)
+    handler = AiServiceHandler(
+        store=store, log=discard, switcher_module=fake, start_thread=run_inline
+    )
     return handler, store, fake
 
 

@@ -5,6 +5,7 @@ refusal, never a guess. Every file operation is the standard library's own
 in this process, with no step-down anywhere.
 """
 
+import time
 import inspect
 
 import pytest
@@ -140,3 +141,92 @@ def test_the_contract_carries_no_account_or_step_down():
     assert "human_accounts" not in source
     assert "is_privileged" not in source
     assert "runuser" not in source
+
+
+from neutrino_client.platforms import base
+
+
+class Terminal:
+    """A scripted terminal: chunks to hand out, and what was typed in."""
+
+    def __init__(self, chunks):
+        self.chunks = list(chunks)
+        self.typed = b""
+
+    def read(self, wait_s):
+        if not self.chunks:
+            return b""
+        return self.chunks.pop(0)
+
+    def write(self, data):
+        self.typed += data
+
+
+def test_the_prompt_is_answered_once_even_when_it_arrives_in_pieces():
+    terminal = Terminal([b"Delete provider 'x'? (y", b"/N) ", b"more (y/N)", b"done"])
+
+    output = base.answer_on_prompt(
+        terminal.read,
+        terminal.write,
+        prompt="(y/N)",
+        answer="y\n",
+        deadline=time.monotonic() + 5,
+    )
+
+    assert terminal.typed == b"y\n"
+    assert output.endswith(b"done")
+
+
+def test_no_prompt_means_nothing_typed():
+    terminal = Terminal([b"already gone\n"])
+
+    base.answer_on_prompt(
+        terminal.read,
+        terminal.write,
+        prompt="(y/N)",
+        answer="y\n",
+        deadline=time.monotonic() + 5,
+    )
+
+    assert terminal.typed == b""
+
+
+def test_a_silent_terminal_is_left_at_the_deadline():
+    def never(wait_s):
+        return None
+
+    started = time.monotonic()
+    output = base.answer_on_prompt(
+        never, lambda data: None, prompt="?", answer="y", deadline=started + 0.2
+    )
+
+    assert output == b""
+    assert time.monotonic() - started < 2
+
+
+def test_the_contract_itself_has_no_terminal():
+    with pytest.raises(base.PlatformUnsupportedError):
+        base.ClientPlatform().run_answering(["x"], prompt="?", answer="y", timeout_s=1)
+
+
+def test_a_prompt_drawn_with_colours_and_cursor_moves_is_still_found():
+    drawn = (
+        b"\x1b[?25l\x1b[38;5;10m?\x1b[39m delete 'x'? (y\x1b[0m/N) \x1b[58C\x1b[?25h"
+    )
+    terminal = Terminal([drawn])
+
+    base.answer_on_prompt(
+        terminal.read,
+        terminal.write,
+        prompt="(y/N)",
+        answer="y",
+        deadline=time.monotonic() + 5,
+    )
+
+    assert terminal.typed == b"y"
+    assert base.plain_text(drawn) == b"? delete 'x'? (y/N) "
+
+
+def test_a_title_sequence_without_its_bell_swallows_nothing_past_the_next_escape():
+    drawn = b"\x1b]0;cc-switch\x1b[?25lAre you sure? (y/N) \x1b[?25h\x07"
+    assert b"(y/N)" in base.plain_text(drawn)

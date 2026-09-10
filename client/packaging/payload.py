@@ -358,6 +358,10 @@ def stage_wheels(
             run(base + tags + ["--target", str(target)] + binaries)
         if sources:
             run(base + ["--target", str(target)] + sources)
+    # A wheel's console scripts: the client runs none, and their launcher
+    # stubs are what antivirus heuristics flag.
+    for scripts in ("bin", "Scripts"):
+        shutil.rmtree(target / scripts, ignore_errors=True)
 
 
 def stage_licenses(tree: Path) -> None:

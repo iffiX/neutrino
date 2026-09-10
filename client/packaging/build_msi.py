@@ -7,17 +7,19 @@ lands on machines nobody has prepared, so the interpreter is python.org's
 embeddable build, pinned by hash, with the window's whole Python side
 vendored beside it.
 
-The client is a person's application, not a service: the installer registers
-a Run entry under the machine's own key so the window starts hidden with the
-session, puts a Start menu shortcut beside it, and adds the install to PATH
-so ``nclient`` works in a terminal.
+The client is a person's application, not a service and not an autostart: it
+runs when the person opens it. The installer puts a Start menu shortcut and
+adds the install to PATH so ``nclient`` works in a terminal.
 
 WebView2 is the one thing the machine may still lack. Windows 11 and any
 updated Windows 10 carry the Evergreen runtime; LTSC and Server editions do
 not, so Microsoft's bootstrapper travels in the package and runs when the
 runtime's registry key is absent.
 
-Needs WiX: ``dotnet tool install --global wix``.
+Needs WiX 6: ``dotnet tool install --global wix --version 6.0.2``, and its
+Util extension: ``wix extension add -g WixToolset.Util.wixext/6.0.2``. WiX 7
+refuses to build until a maintenance-fee EULA is accepted, and the
+extension's own 7 does not load in 6.
 
 Not pure: downloads an interpreter and wheels, writes a package tree, runs wix.
 """
@@ -156,16 +158,16 @@ WEBVIEW2_BOOTSTRAPPER_MAX_BYTES = 20 * 1024 * 1024
 WEBVIEW2_CLIENT_ID = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"  # scan: allow
 WEBVIEW2_REGISTRY_KEY = rf"SOFTWARE\Microsoft\EdgeUpdate\Clients\{WEBVIEW2_CLIENT_ID}"
 
+# The image a running resident wears in the process list. The window runs
+# under the carried interpreter, so that is the name an install must close.
+RESIDENT_IMAGE = "pythonw.exe"
+
+# The extension CloseApplication comes from, at the version this WiX loads.
+WIX_UTIL_EXTENSION = "WixToolset.Util.wixext/6.0.2"
+
 # The identity of the product across every version it ever ships as. Fixed:
 # changing it makes an upgrade install beside the old one instead of over it.
 UPGRADE_CODE = "0221A508-0A7E-4CFE-B517-B901D9318962"
-
-# The value the Run entry carries, which starts the window hidden with the
-# session, and the name it is registered under.
-RUN_ENTRY_NAME = "NeutrinoClient"
-RUN_ENTRY_VALUE = (
-    r'"[INSTALLFOLDER]python\pythonw.exe" -m neutrino_client.cli.entry gui --hidden'
-)
 
 CONSOLE_WRAPPER = """@echo off
 rem Run the client in a terminal, for `nclient status` and for reading errors.
@@ -175,7 +177,8 @@ rem Run the client in a terminal, for `nclient status` and for reading errors.
 # @NAME@ rather than str.format: the source is XML with braces of its own in
 # the property expressions.
 WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Package Name="Neutrino Client"
            Manufacturer="@PUBLISHER@"
            Version="@VERSION@"
@@ -185,6 +188,16 @@ WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
     <MajorUpgrade AllowSameVersionUpgrades="yes"
                   DowngradeErrorMessage="A newer Neutrino Client is already installed." />
     <MediaTemplate EmbedCab="yes" />
+
+    <!-- A resident still holding the install's files is what makes an
+         upgrade land half-applied, so it is asked to close and then ended. -->
+    <util:CloseApplication Id="CloseClientWindow"
+                           Target="@RESIDENT_IMAGE@"
+                           CloseMessage="yes"
+                           EndSessionMessage="yes"
+                           TerminateProcess="0"
+                           RebootPrompt="no"
+                           Property="CLIENTWINDOWRUNNING" />
     <Icon Id="ClientIcon" SourceFile="@ICON@" />
     <Property Id="ARPPRODUCTICON" Value="ClientIcon" />
 
@@ -210,15 +223,6 @@ WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
               Source="@BOOTSTRAPPER@"
               Name="@BOOTSTRAPPER_NAME@"
               KeyPath="yes" />
-      </Component>
-      <!-- The window starts hidden with the session and lives in the tray. -->
-      <Component Id="StartWithSession" Guid="*">
-        <RegistryValue Root="HKLM"
-                       Key="Software\Microsoft\Windows\CurrentVersion\Run"
-                       Name="@RUN_ENTRY_NAME@"
-                       Type="string"
-                       Value="@RUN_ENTRY_VALUE@"
-                       KeyPath="yes" />
       </Component>
       <Component Id="PathEntry" Guid="*">
         <Environment Id="ClientPath"
@@ -332,19 +336,23 @@ def _wix_source(staged: dict, version: str, publisher: str) -> str:
     """
     return (
         WIX_SOURCE.replace("@VERSION@", version)
-        # Every value lands inside an XML attribute; a publisher with an
-        # address in angle brackets is an ordinary name and must not become
-        # markup.
-        .replace("@PUBLISHER@", xml.sax.saxutils.escape(publisher))
+        # Every value lands inside a double-quoted XML attribute; a publisher
+        # with an address in angle brackets, or a command line that quotes its
+        # own path, is plain text there and must not become markup.
+        .replace("@PUBLISHER@", _attribute_text(publisher))
         .replace("@UPGRADE_CODE@", UPGRADE_CODE)
         .replace("@PAYLOAD@", str(staged["payload"]))
         .replace("@BOOTSTRAPPER@", str(staged["bootstrapper"]))
         .replace("@BOOTSTRAPPER_NAME@", WEBVIEW2_BOOTSTRAPPER_NAME)
         .replace("@ICON@", str(staged["icon"]))
-        .replace("@RUN_ENTRY_NAME@", RUN_ENTRY_NAME)
-        .replace("@RUN_ENTRY_VALUE@", xml.sax.saxutils.escape(RUN_ENTRY_VALUE))
         .replace("@WEBVIEW2_KEY@", WEBVIEW2_REGISTRY_KEY)
+        .replace("@RESIDENT_IMAGE@", RESIDENT_IMAGE)
     )
+
+
+def _attribute_text(value: str) -> str:
+    """Text safe inside a double-quoted XML attribute."""
+    return xml.sax.saxutils.escape(value, {'"': "&quot;"})
 
 
 def _lay_out(root: Path, version: str, machine: str, architecture: str) -> dict:
@@ -487,7 +495,8 @@ def _build(source: Path, target: Path, machine: str) -> None:
     if wix is None:
         raise SystemExit(
             "WiX is needed to build the Windows installer: "
-            "dotnet tool install --global wix"
+            "dotnet tool install --global wix --version 6.0.2 && "
+            f"wix extension add -g {WIX_UTIL_EXTENSION}"
         )
     result = subprocess.run(
         [
@@ -495,6 +504,8 @@ def _build(source: Path, target: Path, machine: str) -> None:
             "build",
             "-arch",
             MSI_PLATFORMS[machine],
+            "-ext",
+            WIX_UTIL_EXTENSION,
             "-out",
             str(target),
             str(source),

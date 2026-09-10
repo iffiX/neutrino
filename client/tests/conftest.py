@@ -144,6 +144,9 @@ class FakeClientPlatform(ClientPlatform):
         self.started = []
         self.start_error = None
         self.socket_path = ""
+        self.answered = []
+        self.on_answer = None
+        self.answer_error = None
 
     def control_socket_path(self) -> str:
         if self.socket_path:
@@ -204,6 +207,14 @@ class FakeClientPlatform(ClientPlatform):
         process = FakeProcess(list(argv))
         self.started.append(process)
         return process
+
+    def run_answering(self, argv: list, *, prompt, answer, timeout_s) -> tuple:
+        if self.answer_error is not None:
+            raise self.answer_error
+        self.answered.append((list(argv), prompt, answer))
+        if self.on_answer is not None:
+            self.on_answer(list(argv))
+        return 0, ""
 
 
 class FakeProcess:
@@ -285,6 +296,9 @@ class FakeSession:
     def suggest_mount_location(self) -> str:
         return ""
 
+    def mount_location_choices(self) -> list:
+        return []
+
     def is_connected(self) -> bool:
         return self.is_bound
 
@@ -327,6 +341,9 @@ class FakeSession:
 
     def request_show(self) -> None:
         self.shows += 1
+
+    def subscribe(self, watcher) -> None:
+        self.__dict__.setdefault("watchers", []).append(watcher)
 
     def service_action(self, service_type: str, body: dict) -> dict:
         self.service_calls.append((service_type, dict(body)))

@@ -36,6 +36,7 @@ def state_payload(session) -> dict:
         "platform": session.platform_tuple(),
         "mount_location_shape": session.mount_location_shape(),
         "mount_location_suggestion": session.suggest_mount_location(),
+        "mount_location_choices": session.mount_location_choices(),
         "home": session.home(),
         "is_connected": session.is_connected(),
         "connection_state": session.connection_state(),

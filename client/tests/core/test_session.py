@@ -11,6 +11,7 @@ runs its order once.
 
 import json
 import threading
+import time
 
 import pytest
 
@@ -646,3 +647,91 @@ def _ask_while(session, made, answer_for):
     if "error" in outcome:
         raise outcome["error"]
     return outcome["result"]
+
+
+def test_a_burst_of_changes_reaches_the_watchers_once(bound, monkeypatch):
+    monkeypatch.setattr(session_module, "ANNOUNCE_SETTLE_S", 0.05)
+    heard = []
+    done = threading.Event()
+
+    def watcher():
+        heard.append(1)
+        done.set()
+
+    bound.subscribe(watcher)
+
+    for _ in range(5):
+        bound.notify()
+
+    assert done.wait(timeout=5)
+    time.sleep(0.2)
+    assert heard == [1]
+
+
+def test_a_change_during_the_announcement_brings_one_more_round(bound, monkeypatch):
+    monkeypatch.setattr(session_module, "ANNOUNCE_SETTLE_S", 0.05)
+    heard = []
+    second = threading.Event()
+
+    def watcher():
+        heard.append(1)
+        if len(heard) == 1:
+            bound.notify()
+        else:
+            second.set()
+
+    bound.subscribe(watcher)
+    bound.notify()
+
+    assert second.wait(timeout=5)
+    time.sleep(0.2)
+    assert heard == [1, 1]
+
+
+def test_a_watcher_that_fails_does_not_stop_the_others(bound, monkeypatch):
+    monkeypatch.setattr(session_module, "ANNOUNCE_SETTLE_S", 0.01)
+    heard = threading.Event()
+
+    def broken():
+        raise RuntimeError("no window")
+
+    bound.subscribe(broken)
+    bound.subscribe(heard.set)
+    bound.notify()
+
+    assert heard.wait(timeout=5)
+
+
+def test_a_stop_during_a_turn_ends_the_loop_without_waiting_out_the_delay(bound):
+    """The stop lands while a turn runs; the wait after it must not sleep."""
+    import time
+
+    turns = []
+
+    def one_turn():
+        turns.append(1)
+        bound.shutdown()
+        return 60
+
+    bound.run_once = one_turn
+    started = time.monotonic()
+    bound.run_forever()
+
+    assert turns == [1]
+    assert time.monotonic() - started < 5
+
+
+def test_a_socket_that_ends_while_stopping_is_no_failure(bound, monkeypatch):
+    made = connected(bound, socket_of(monkeypatch, [WELCOME]))
+    bound._stop.set()
+
+    failure = bound._serve(made)
+
+    assert failure is None
+    assert bound.last_error() is None
+
+
+def test_the_handlers_announce_through_the_session(bound):
+    for service_type in ("port", "ai", "file", "rdp"):
+        handler = bound._services[service_type]
+        assert handler._on_change == bound.notify

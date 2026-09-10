@@ -17,23 +17,7 @@ import io
 import threading
 import time
 
-# One pipe instance per client, like one accepted socket per client.
-PIPE_BUFFER_BYTES = 64 * 1024
-PIPE_UNLIMITED_INSTANCES = 255
-PIPE_ACCESS_DUPLEX = 0x00000003
-FILE_FLAG_FIRST_PIPE_INSTANCE = 0x00080000
-PIPE_TYPE_BYTE = 0x00000000
-PIPE_WAIT = 0x00000000
-ERROR_PIPE_CONNECTED = 535
-ERROR_BROKEN_PIPE = 109
-ERROR_NO_DATA = 232
-GENERIC_READ = 0x80000000
-GENERIC_WRITE = 0x40000000
-OPEN_EXISTING = 3
-TOKEN_QUERY = 0x0008
-TOKEN_USER_CLASS = 1
-# As the unsigned value a c_void_p restype hands back.
-INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+from neutrino_client.platforms import win32
 
 # How long the accept loop waits after a failed ConnectNamedPipe before
 # trying again with a fresh instance.
@@ -74,52 +58,13 @@ class Win32PipeApi:
     """The Win32 named-pipe calls, one seam the tests replace whole."""
 
     def __init__(self):
-        self._kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        self._advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
-        # Handles are pointers: without these prototypes a 64-bit handle
-        # comes back truncated to an int.
-        self._kernel32.CreateNamedPipeW.restype = ctypes.c_void_p
-        self._kernel32.CreateFileW.restype = ctypes.c_void_p
-        self._kernel32.GetCurrentProcess.restype = ctypes.c_void_p
-        for name in (
-            "ConnectNamedPipe",
-            "FlushFileBuffers",
-            "DisconnectNamedPipe",
-            "CloseHandle",
-        ):
-            getattr(self._kernel32, name).argtypes = [ctypes.c_void_p]
-        self._kernel32.ConnectNamedPipe.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        self._kernel32.ReadFile.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_ulong,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-        ]
-        self._kernel32.WriteFile.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_char_p,
-            ctypes.c_ulong,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-        ]
-        self._kernel32.LocalFree.argtypes = [ctypes.c_void_p]
-        self._advapi32.OpenProcessToken.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_ulong,
-            ctypes.c_void_p,
-        ]
-        self._advapi32.GetTokenInformation.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_int,
-            ctypes.c_void_p,
-            ctypes.c_ulong,
-            ctypes.c_void_p,
-        ]
-        self._advapi32.ConvertSidToStringSidW.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-        ]
+        """
+        Raises:
+            OSError: When the libraries cannot be loaded.
+        """
+        libraries = win32.libraries()
+        self._kernel32 = libraries.kernel32
+        self._advapi32 = libraries.advapi32
         self._security = None
 
     def create_instance(self, pipe_name: str, *, is_first: bool = False) -> int:
@@ -136,20 +81,20 @@ class Win32PipeApi:
         Raises:
             OSError: When the pipe cannot be created.
         """
-        open_mode = PIPE_ACCESS_DUPLEX
+        open_mode = win32.PIPE_ACCESS_DUPLEX
         if is_first:
-            open_mode |= FILE_FLAG_FIRST_PIPE_INSTANCE
+            open_mode |= win32.FILE_FLAG_FIRST_PIPE_INSTANCE
         handle = self._kernel32.CreateNamedPipeW(
             pipe_name,
             open_mode,
-            PIPE_TYPE_BYTE | PIPE_WAIT,
-            PIPE_UNLIMITED_INSTANCES,
-            PIPE_BUFFER_BYTES,
-            PIPE_BUFFER_BYTES,
+            win32.PIPE_TYPE_BYTE | win32.PIPE_WAIT,
+            win32.PIPE_UNLIMITED_INSTANCES,
+            win32.PIPE_BUFFER_BYTES,
+            win32.PIPE_BUFFER_BYTES,
             0,
             ctypes.byref(self._security_attributes()),
         )
-        if not handle or handle == INVALID_HANDLE_VALUE:
+        if not handle or handle == win32.INVALID_HANDLE_VALUE:
             raise ctypes.WinError(ctypes.get_last_error())
         return handle
 
@@ -164,7 +109,7 @@ class Win32PipeApi:
         """
         if self._kernel32.ConnectNamedPipe(handle, None):
             return True
-        return ctypes.get_last_error() == ERROR_PIPE_CONNECTED
+        return ctypes.get_last_error() == win32.ERROR_PIPE_CONNECTED
 
     def open_client(self, pipe_name: str) -> int:
         """Open the pipe as a client.
@@ -180,14 +125,14 @@ class Win32PipeApi:
         """
         handle = self._kernel32.CreateFileW(
             pipe_name,
-            GENERIC_READ | GENERIC_WRITE,
+            win32.GENERIC_READ | win32.GENERIC_WRITE,
             0,
             None,
-            OPEN_EXISTING,
+            win32.OPEN_EXISTING,
             0,
             None,
         )
-        if not handle or handle == INVALID_HANDLE_VALUE:
+        if not handle or handle == win32.INVALID_HANDLE_VALUE:
             raise ctypes.WinError(ctypes.get_last_error())
         return handle
 
@@ -207,7 +152,10 @@ class Win32PipeApi:
             handle, buffer, size, ctypes.byref(read_count), None
         )
         if not ok:
-            if ctypes.get_last_error() in (ERROR_BROKEN_PIPE, ERROR_NO_DATA):
+            if ctypes.get_last_error() in (
+                win32.ERROR_BROKEN_PIPE,
+                win32.ERROR_NO_DATA,
+            ):
                 return b""
             raise ctypes.WinError(ctypes.get_last_error())
         return buffer.raw[: read_count.value]
@@ -252,25 +200,15 @@ class Win32PipeApi:
         """
         token = ctypes.c_void_p()
         ok = self._advapi32.OpenProcessToken(
-            self._kernel32.GetCurrentProcess(), TOKEN_QUERY, ctypes.byref(token)
+            self._kernel32.GetCurrentProcess(), win32.TOKEN_QUERY, ctypes.byref(token)
         )
         if not ok:
             raise ctypes.WinError(ctypes.get_last_error())
         try:
-            needed = ctypes.c_ulong(0)
-            self._advapi32.GetTokenInformation(
-                token, TOKEN_USER_CLASS, None, 0, ctypes.byref(needed)
-            )
-            buffer = ctypes.create_string_buffer(max(needed.value, 64))
-            ok = self._advapi32.GetTokenInformation(
-                token, TOKEN_USER_CLASS, buffer, len(buffer), ctypes.byref(needed)
-            )
-            if not ok:
-                raise ctypes.WinError(ctypes.get_last_error())
-            sid = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p)).contents.value
+            user = win32.TokenUser(advapi32=self._advapi32, token=token.value)
             string_sid = ctypes.c_wchar_p()
             if not self._advapi32.ConvertSidToStringSidW(
-                ctypes.c_void_p(sid), ctypes.byref(string_sid)
+                ctypes.c_void_p(user.sid), ctypes.byref(string_sid)
             ):
                 raise ctypes.WinError(ctypes.get_last_error())
             try:
@@ -289,17 +227,11 @@ class Win32PipeApi:
         if self._security is not None:
             return self._security
         convert = self._advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW
-        convert.argtypes = [
-            ctypes.c_wchar_p,
-            ctypes.c_ulong,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-        ]
         descriptor = ctypes.c_void_p()
         sddl = pipe_security_sddl(self.current_user_sid())
-        if not convert(sddl, 1, ctypes.byref(descriptor), None):
+        if not convert(sddl, win32.SDDL_REVISION_1, ctypes.byref(descriptor), None):
             raise ctypes.WinError(ctypes.get_last_error())
-        attributes = _SecurityAttributes()
+        attributes = win32.SecurityAttributes()
         attributes.nLength = ctypes.sizeof(attributes)
         attributes.lpSecurityDescriptor = descriptor
         attributes.bInheritHandle = 0
@@ -458,16 +390,6 @@ class ControlPipeHttpServer:
             pass
         finally:
             connection.close()
-
-
-class _SecurityAttributes(ctypes.Structure):
-    """The SECURITY_ATTRIBUTES a pipe instance is created with."""
-
-    _fields_ = [
-        ("nLength", ctypes.c_ulong),
-        ("lpSecurityDescriptor", ctypes.c_void_p),
-        ("bInheritHandle", ctypes.c_int),
-    ]
 
 
 class _PipeStream(io.RawIOBase):

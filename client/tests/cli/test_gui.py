@@ -233,3 +233,73 @@ def test_nothing_is_printed_for_a_person_to_copy(
     # The resident's own log goes to stderr and names no link or token.
     assert "neutrino://" not in streams.err
     assert "token" not in streams.err
+
+
+def test_the_windows_resident_ends_its_process_after_the_cleanup(monkeypatch):
+    """.NET threads and the browser's helpers do not answer to this one."""
+    monkeypatch.setattr(gui_cli.os, "name", "nt")
+    ended = []
+    monkeypatch.setattr(gui_cli.os, "_exit", lambda status: ended.append(status))
+
+    gui_cli._end(3)
+
+    assert ended == [3]
+
+
+def test_elsewhere_the_resident_just_returns(monkeypatch):
+    monkeypatch.setattr(gui_cli.os, "name", "posix")
+    monkeypatch.setattr(
+        gui_cli.os, "_exit", lambda status: pytest.fail("the process was killed")
+    )
+
+    assert gui_cli._end(0) == 0
+
+
+def test_the_window_is_pushed_the_state_after_every_change(
+    platform, sessions, monkeypatch
+):
+    pushed = []
+
+    def fake_shell(*, on_push_ready, **rest):
+        on_push_ready(pushed.append)
+
+    monkeypatch.setattr(gui_cli, "open_shell_window", fake_shell)
+
+    assert gui_cli.main() == 0
+
+    (session,) = sessions.made
+    (watcher,) = session.watchers
+    watcher()
+    assert pushed[0]["hostname"] == session.hostname()
+    assert "services" in pushed[0]
+
+
+def test_the_resident_writes_its_lines_to_a_file_and_turns_it(tmp_path):
+    path = tmp_path / "logs" / "client.log"
+    log = gui_cli.ResidentLog(path=str(path))
+
+    log("starting")
+    log("still here")
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert [line.split(" ", 1)[1] for line in lines] == ["starting", "still here"]
+
+    path.write_text("x" * gui_cli.CLIENT_LOG_KEEP_BYTES, encoding="utf-8")
+    log("after the turn")
+
+    assert (tmp_path / "logs" / "client.log.1").stat().st_size == (
+        gui_cli.CLIENT_LOG_KEEP_BYTES
+    )
+    assert path.read_text(encoding="utf-8").endswith("after the turn\n")
+
+
+def test_the_log_lives_beside_the_state(platform, sessions, monkeypatch):
+    seen = []
+    monkeypatch.setattr(gui_cli, "open_shell_window", lambda **kwargs: None)
+    monkeypatch.setattr(
+        gui_cli, "ResidentLog", lambda *, path: seen.append(path) or print
+    )
+
+    assert gui_cli.main() == 0
+
+    assert seen[0].endswith("client.log")

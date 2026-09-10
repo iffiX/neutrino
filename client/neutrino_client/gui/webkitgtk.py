@@ -37,6 +37,7 @@ def open_window(
     is_hidden: bool = False,
     on_quit=None,
     on_show_ready=None,
+    on_push_ready=None,
 ) -> None:
     """Open the window and run the GTK main loop until Quit ends it.
 
@@ -47,6 +48,8 @@ def open_window(
         icon_path: The window icon's file path, empty for none.
         is_hidden: Whether to start in the tray with no window shown.
         on_quit: Called when the person picks Quit, before the loop ends.
+        on_push_ready: Called with a callable that hands the page one
+            state payload; the page redraws from it without asking.
         on_show_ready: Called with a callable that brings the window up,
             safe to call from any thread.
 
@@ -79,6 +82,18 @@ def open_window(
 
     def answer(request: dict) -> None:
         GLib.idle_add(deliver, bridge.handle(request))
+
+    def deliver_state(state: dict) -> bool:
+        script = f"window.neutrinoState({json.dumps(state)})"
+        evaluate = getattr(view, "evaluate_javascript", None)
+        if evaluate is not None:
+            evaluate(script, -1, None, None, None, None)
+        else:
+            view.run_javascript(script, None, None, None)
+        return False
+
+    def push_state(state: dict) -> None:
+        GLib.idle_add(deliver_state, state)
 
     def on_message(_manager, message) -> None:
         request = json.loads(message.get_js_value().to_string())
@@ -117,6 +132,8 @@ def open_window(
         window.show_all()
     if on_show_ready is not None:
         on_show_ready(show_window)
+    if on_push_ready is not None:
+        on_push_ready(push_state)
     Gtk.main()
 
 

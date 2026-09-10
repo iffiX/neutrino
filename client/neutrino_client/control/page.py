@@ -11,6 +11,7 @@ while the person holds a text selection, a focused form field, or an open
 dialog.
 """
 
+import os
 import pathlib
 
 _PACKAGE_DIR = pathlib.Path(__file__).resolve().parent.parent
@@ -76,10 +77,16 @@ def window_icon_path() -> str:
         The packaged icon when the build copied one in, the repository's
         source icon in a checkout, empty otherwise.
     """
-    for path in (
-        GUI_DATA_DIR / "neutrino_client.png",
-        _PACKAGE_DIR.parent.parent / "images" / "icons" / "neutrino_256.png",
-    ):
+    names = ["neutrino_client.png"]
+    if os.name == "nt":
+        # Windows takes a window and tray icon from an .ico and from nothing
+        # else, so that one comes first where it exists.
+        names.insert(0, "neutrino_client.ico")
+    candidates = [GUI_DATA_DIR / name for name in names]
+    candidates.append(
+        _PACKAGE_DIR.parent.parent / "images" / "icons" / "neutrino_256.png"
+    )
+    for path in candidates:
         if path.is_file():
             return str(path)
     return ""

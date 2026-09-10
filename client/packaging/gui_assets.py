@@ -10,6 +10,8 @@ Not pure: copies files.
 import shutil
 from pathlib import Path
 
+import icons
+
 CLIENT_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = CLIENT_ROOT / "frontend"
 ICONS_DIR = CLIENT_ROOT.parent / "images" / "icons"
@@ -31,3 +33,6 @@ def stage_gui(package_dir: Path) -> None:
         if source.is_file():
             shutil.copyfile(source, gui_dir / source.name)
     shutil.copyfile(ICONS_DIR / "neutrino_256.png", gui_dir / "neutrino_client.png")
+    # Windows loads a window and tray icon from an .ico and from nothing
+    # else; a .png there leaves the stock grey application icon.
+    icons.write_ico(gui_dir / "neutrino_client.ico")

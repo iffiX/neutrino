@@ -89,7 +89,7 @@ class ControlServer:
                 return False
         try:
             if path.startswith(CLIENT_CONTROL_PIPE_PREFIX):
-                from neutrino_client.control.windows_pipe import ControlPipeHttpServer
+                from neutrino_client.platforms.windows_pipe import ControlPipeHttpServer
 
                 server = ControlPipeHttpServer(path, _ControlRequestHandler)
             else:

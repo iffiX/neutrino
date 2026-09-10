@@ -92,12 +92,12 @@ def test_the_deb_registers_no_unit_at_all(deb):
     assert not (deb / "DEBIAN/prerm").exists()
 
 
-def test_the_deb_lays_down_the_launcher_and_the_autostart_entry(deb):
+def test_the_deb_lays_down_the_launcher_and_no_autostart(deb):
     launcher = deb / "usr/share/applications/neutrino_client.desktop"
     autostart = deb / "etc/xdg/autostart/neutrino_client.desktop"
 
     assert "Exec=nclient gui\n" in launcher.read_text()
-    assert "Exec=nclient gui --hidden" in autostart.read_text()
+    assert not autostart.exists()
     assert launcher.stat().st_mode & 0o777 == 0o644
 
 
@@ -174,7 +174,7 @@ def test_the_rpm_lays_the_same_payload_under_the_same_prefix(rpm):
     assert (
         rpm / "usr/share/polkit-1/actions/com.neutrino.client.mount.policy"
     ).is_file()
-    assert (rpm / "etc/xdg/autostart/neutrino_client.desktop").is_file()
+    assert not (rpm / "etc/xdg/autostart/neutrino_client.desktop").exists()
 
 
 def test_the_rpm_registers_no_unit_either(rpm):
@@ -211,6 +211,10 @@ def test_the_rpm_files_list_names_everything_the_package_lays_down():
     assert "/usr/bin/nclient" in files
     assert "/usr/libexec/neutrino_client/mount_helper" in files
     assert "/usr/share/applications/neutrino_client.desktop" in files
-    assert "/etc/xdg/autostart/neutrino_client.desktop" in files
+    assert "/etc/xdg/autostart/neutrino_client.desktop" not in files
     assert "/usr/share/polkit-1/actions/com.neutrino.client.mount.policy" in files
     assert "/usr/share/doc/neutrino-client" in files
+
+
+def test_the_rpm_build_allows_the_viewers_upstream_runpath_and_nothing_else():
+    assert build_rpm.RPMBUILD_ENVIRONMENT == {"QA_RPATHS": "0x0002"}

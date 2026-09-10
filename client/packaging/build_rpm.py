@@ -15,6 +15,7 @@ Not pure: writes a package tree and runs rpmbuild.
 
 import argparse
 import shutil
+import os
 import subprocess
 import sys
 import tempfile
@@ -92,7 +93,6 @@ cp -a {staged}/. %{{buildroot}}/
 /usr/bin/nclient
 {helper}
 /usr/share/applications/{desktop}.desktop
-/etc/xdg/autostart/{desktop}.desktop
 /usr/share/icons/hicolor/*/apps/{desktop}.png
 /usr/share/polkit-1/actions/{action}.policy
 /usr/share/doc/{name}
@@ -129,6 +129,11 @@ exec {python}/bin/python3 -m neutrino_client.cli.entry "$@"
 MOUNT_HELPER = """#!/bin/sh
 exec {python}/bin/python3 -m neutrino_client.cli.mount_helper "$@"
 """
+
+
+# RustDesk's Flutter plugins carry the runpath of upstream's build tree;
+# rpm's check refuses a path that exists nowhere, and the loader ignores it.
+RPMBUILD_ENVIRONMENT = {"QA_RPATHS": "0x0002"}
 
 
 def main() -> int:
@@ -224,7 +229,7 @@ def _lay_out(staged: Path, version: str, architecture: str) -> None:
 
 
 def _lay_out_desktop(staged: Path) -> None:
-    """Install the launcher, the autostart entry and the icons.
+    """Install the launcher and the icons.
 
     Args:
         staged: The directory standing in for the filesystem root.
@@ -233,12 +238,6 @@ def _lay_out_desktop(staged: Path) -> None:
     payload.write(
         staged / f"usr/share/applications/{CLIENT_DESKTOP_NAME}.desktop",
         (desktop / f"{CLIENT_DESKTOP_NAME}.desktop").read_text(encoding="utf-8"),
-    )
-    payload.write(
-        staged / f"etc/xdg/autostart/{CLIENT_DESKTOP_NAME}.desktop",
-        (desktop / f"{CLIENT_DESKTOP_NAME}_autostart.desktop").read_text(
-            encoding="utf-8"
-        ),
     )
     for source, edge in (("neutrino_256.png", 256), ("neutrino_48.png", 48)):
         destination = (
@@ -280,6 +279,7 @@ def _build(
         ],
         capture_output=True,
         text=True,
+        env={**os.environ, **RPMBUILD_ENVIRONMENT},
     )
     if result.returncode != 0:
         raise SystemExit((result.stderr or result.stdout).strip())

@@ -18,6 +18,9 @@ const WORDS = {
     port_disconnect: "Disconnect",
     open: "Open",
     browse: "Browse…",
+    ai_switching: "switching the tools…",
+    rdp_connecting: "connecting…",
+    mount_drive_caption: "Appears as this drive in File Explorer",
     new_folder: "New folder",
     new_folder_name: "Name of the new folder:",
     choose: "Choose this folder",
@@ -28,7 +31,7 @@ const WORDS = {
     password_hint: "Share password",  // scan: allow
     path_hint: "Mount path",
     not_attached: "not mounted",
-    browse_drive_letter: "This machine mounts at a drive letter, typed as Z:",
+    mount_drive_label: "Drive",
     unmounting: "unmounting…",
     ai_enabled: "Enabled",
     ai_on: "the tools point at the hub",
@@ -77,6 +80,8 @@ const WORDS = {
     mountpoint_not_empty: "that folder is not empty",
     mountpoint_invalid: "give a folder under your home, like ~/nas/share",
     mountpoint_not_drive_letter: "give an unused drive letter, like N:",
+    busy: "still handling the last request",
+    crashed: "the last request failed on this machine",
     credentials_missing: "the saved login is gone; enter it again with Config",
     fs_refused: "this account may not use that folder",
     no_endpoint: "the hub has not granted you a key yet",
@@ -112,7 +117,6 @@ const WORDS = {
   },
 };
 
-const POLL_INTERVAL_MS = 1500;
 
 // Claude Code's four role slots and Codex's reasoning scale, as the client
 // stores them.
@@ -208,6 +212,7 @@ function bridgeReady() {
 
 function canRedraw() {
   if (openDialogs > 0) return false;
+  if (openPicker) return false;
   const selection = window.getSelection ? window.getSelection() : null;
   if (selection && selection.type === 'Range') return false;
   const active = document.activeElement;
@@ -225,19 +230,21 @@ function present(state) {
   draw(state);
 }
 
+// A redraw the person caused: it always happens, whatever is open.
 function redraw() {
-  if (lastState !== null && canRedraw()) draw(lastState);
+  if (lastState !== null) draw(lastState);
 }
 
-async function poll() {
-  if (pendingState !== null && canRedraw()) {
-    present(pendingState);
-    return;
-  }
-  const state = await api('/api/state');
+// The resident pushes every change of state here; nothing polls for it.
+window.neutrinoState = (state) => {
   if (!state) return;
   if (state.code) { renderHint(wordCode(state.code, state.params)); return; }
   present(state);
+};
+
+async function firstFrame() {
+  const state = await api('/api/state');
+  window.neutrinoState(state);
 }
 
 async function send(path, body) {
@@ -453,22 +460,30 @@ function drawPortsPanel(state, entries, title) {
 
 function drawDesktopsPanel(state, entries, title) {
   const card = panelCard(title, false);
+  const work = state.rdp_work || {};
+  const isWorking = work.state === 'working';
   for (const entry of entries) {
     const payload = entry.payload || {};
     const noteKey = 'rdp_' + entry.id;
     const viewer = (state.viewers || {})[entry.id] || {};
     const open = viewer.is_running ? ' — ' + WORDS.ui.rdp_open : '';
+    const isThisOne = work.step === 'connecting:' + entry.id;
     const row = entryRow(
       entry, (payload.host || '') + ':' + (payload.port || '') + open,
       serviceNotes[noteKey] || '');
     const connect = document.createElement('button');
-    connect.textContent = WORDS.ui.rdp_connect;
-    connect.disabled = !entry.is_healthy || isHeld(state);
+    if (isWorking && isThisOne) {
+      connect.innerHTML = '<span class="spin"></span>' + WORDS.ui.rdp_connecting;
+    } else {
+      connect.textContent = WORDS.ui.rdp_connect;
+    }
+    connect.disabled = isWorking || !entry.is_healthy || isHeld(state);
     connect.onclick = () => serviceAction('rdp',
       { action: 'connect', id: entry.id }, noteKey);
     row.appendChild(connect);
     card.appendChild(row);
   }
+  if (work.code) card.appendChild(errorLine(wordCode(work.code, work.params)));
   return card;
 }
 
@@ -495,15 +510,23 @@ function drawAiPanel(state, entries, title) {
   const card = panelCard(title, isDirty);
   const payload = entry.payload || {};
   const row = (state.ai || {});
+  const work = row.work || {};
+  const isWorking = work.state === 'working';
   const head = entryRow(entry, payload.endpoint || '', '');
   const config = document.createElement('button');
   config.className = 'ghost';
   config.textContent = WORDS.ui.config;
-  config.disabled = !entry.is_healthy || isHeld(state);
+  config.disabled = !entry.is_healthy || isHeld(state) || isWorking;
   config.onclick = () => openConfigDialog(payload.models || []);
   const apply = document.createElement('button');
-  apply.textContent = WORDS.ui.apply;
-  apply.disabled = !isDirty || !entry.is_healthy || isHeld(state);
+  if (isWorking) {
+    apply.innerHTML = '<span class="spin"></span>' + WORDS.ui.ai_switching;
+  } else {
+    apply.textContent = WORDS.ui.apply;
+  }
+  // A failed switch leaves Apply live: pressing it asks for the same again.
+  apply.disabled = isWorking || !(isDirty || work.code) || !entry.is_healthy ||
+    isHeld(state);
   apply.onclick = () => {
     serviceAction('ai', {
       is_enabled: aiStaged.is_enabled,
@@ -517,7 +540,7 @@ function drawAiPanel(state, entries, title) {
   const toggle = document.createElement('button');
   const isOn = !!aiStaged.is_enabled;
   toggle.className = isOn ? 'chip on' : 'chip';
-  toggle.disabled = !entry.is_healthy || isHeld(state);
+  toggle.disabled = !entry.is_healthy || isHeld(state) || isWorking;
   toggle.innerHTML = '<span class="dot ' + (row.is_active ? 'ok' : 'off') +
     '"></span>' + WORDS.ui.ai_enabled;
   toggle.onclick = () => {
@@ -536,26 +559,64 @@ function drawAiPanel(state, entries, title) {
 
   const notes = [];
   if (row.code) notes.push(wordCode(row.code, row.params));
+  if (work.code) notes.push(wordCode(work.code, work.params));
   if (serviceNotes.ai) notes.push(serviceNotes.ai);
   for (const text of notes) card.appendChild(errorLine(text));
   return card;
 }
 
-function modelSelect(models, chosen, onPick) {
-  const select = document.createElement('select');
-  const blank = document.createElement('option');
-  blank.value = '';
-  blank.textContent = '(' + WORDS.ui.gateway_default + ')';
-  select.appendChild(blank);
-  for (const model of models) {
-    const option = document.createElement('option');
-    option.value = model;
-    option.textContent = model;
-    select.appendChild(option);
+// Which picker is open, by the id the caller gave it. Kept outside the
+// element so a redraw finds it again.
+let openPicker = '';
+
+// The page's one dropdown: a field that opens a list of at most five rows
+// and scrolls past that, after the hub's own credential picker.
+function picker(id, options, chosen, onPick, isDisabled) {
+  const wrap = document.createElement('div');
+  wrap.className = 'picker';
+  const current = options.filter((option) => option.value === chosen)[0];
+  const field = document.createElement('button');
+  field.type = 'button';
+  field.className = 'picker_field';
+  field.disabled = !!isDisabled;
+  const label = document.createElement('span');
+  label.textContent = current ? current.label : (options[0] ? options[0].label : '');
+  const caret = document.createElement('span');
+  caret.className = 'caret';
+  caret.textContent = '▾';
+  field.appendChild(label);
+  field.appendChild(caret);
+  field.onclick = () => {
+    openPicker = openPicker === id ? '' : id;
+    redraw();
+  };
+  wrap.appendChild(field);
+  if (openPicker === id && !isDisabled) {
+    const list = document.createElement('div');
+    list.className = 'picker_list';
+    for (const option of options) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'picker_row' + (option.value === chosen ? ' on' : '');
+      row.textContent = option.label;
+      row.onclick = () => {
+        openPicker = '';
+        onPick(option.value);
+        redraw();
+        settle();
+      };
+      list.appendChild(row);
+    }
+    wrap.appendChild(list);
   }
-  select.value = models.indexOf(chosen) >= 0 ? chosen : '';
-  select.onchange = () => onPick(select.value);
-  return select;
+  return wrap;
+}
+
+function modelSelect(id, models, chosen, onPick) {
+  const options = [{ value: '', label: '(' + WORDS.ui.gateway_default + ')' }];
+  for (const model of models) options.push({ value: model, label: model });
+  const value = models.indexOf(chosen) >= 0 ? chosen : '';
+  return picker(id, options, value, onPick, false);
 }
 
 function openConfigDialog(models) {
@@ -592,33 +653,28 @@ function openConfigDialog(models) {
     sonnet: WORDS.ui.slot_sonnet, haiku: WORDS.ui.slot_haiku,
   };
   for (const slot of CLAUDE_SLOTS) {
-    field(slotLabels[slot], modelSelect(models, draft.claude[slot] || '',
+    field(slotLabels[slot], modelSelect('claude_' + slot, models,
+      draft.claude[slot] || '',
       (value) => { draft.claude[slot] = value; }));
   }
 
   toolTitle(WORDS.ui.tool_codex);
-  field(WORDS.ui.codex_model, modelSelect(models, draft.codex.model || '',
-    (value) => { draft.codex.model = value; }));
-  const effort = document.createElement('select');
-  const none = document.createElement('option');
-  none.value = '';
-  none.textContent = '(' + WORDS.ui.gateway_default + ')';
-  effort.appendChild(none);
-  for (const level of REASONING_EFFORTS) {
-    const option = document.createElement('option');
-    option.value = level;
-    option.textContent = level;
-    effort.appendChild(option);
-  }
-  effort.value = REASONING_EFFORTS.indexOf(
+  field(WORDS.ui.codex_model, modelSelect('codex_model', models,
+    draft.codex.model || '', (value) => { draft.codex.model = value; }));
+  const effortOptions = [
+    { value: '', label: '(' + WORDS.ui.gateway_default + ')' }];
+  for (const level of REASONING_EFFORTS)
+    effortOptions.push({ value: level, label: level });
+  const effortValue = REASONING_EFFORTS.indexOf(
     draft.codex.model_reasoning_effort) >= 0
     ? draft.codex.model_reasoning_effort : '';
-  effort.onchange = () => { draft.codex.model_reasoning_effort = effort.value; };
-  field(WORDS.ui.codex_effort, effort);
+  field(WORDS.ui.codex_effort, picker(
+    'codex_effort', effortOptions, effortValue,
+    (value) => { draft.codex.model_reasoning_effort = value; }, false));
 
   toolTitle(WORDS.ui.tool_gemini);
-  field(WORDS.ui.gemini_model, modelSelect(models, draft.gemini.model || '',
-    (value) => { draft.gemini.model = value; }));
+  field(WORDS.ui.gemini_model, modelSelect('gemini_model', models,
+    draft.gemini.model || '', (value) => { draft.gemini.model = value; }));
 
   const actions = document.createElement('div');
   actions.className = 'row';
@@ -650,9 +706,14 @@ function openDialog(overlay) {
   document.body.appendChild(overlay);
 }
 
+function settle() {
+  if (pendingState !== null && canRedraw()) present(pendingState);
+}
+
 function closeDialog(overlay) {
   openDialogs -= 1;
   overlay.remove();
+  settle();
 }
 
 // --- the Files panel: Config, then Mount / Unmount ---
@@ -666,6 +727,11 @@ function mountDefaultPath(payload, state) {
 }
 
 function drawFilesPanel(state, entries, title) {
+  // A form staged for an entry the catalog no longer carries is gone.
+  const present = new Set(entries.map((entry) => entry.id));
+  for (const id of Object.keys(fileStaged)) {
+    if (!present.has(id)) delete fileStaged[id];
+  }
   const isDirty = Object.keys(fileStaged).some(
     (id) => fileStaged[id] && fileStaged[id].is_open);
   const card = panelCard(title, isDirty);
@@ -802,6 +868,17 @@ function drawFileForm(entryId, staged, state) {
     line.appendChild(input);
     form.appendChild(line);
   }
+  if ((state.mount_location_shape || 'path') === 'drive_letter') {
+    form.appendChild(driveLetterLine(staged, state));
+  } else {
+    form.appendChild(mountPathLine(staged));
+  }
+  return form;
+}
+
+// A directory under the home, with a Browse button that lists it as this
+// person.
+function mountPathLine(staged) {
   const pathLine = document.createElement('div');
   pathLine.className = 'row';
   const path = document.createElement('input');
@@ -811,18 +888,35 @@ function drawFileForm(entryId, staged, state) {
   const browse = document.createElement('button');
   browse.className = 'ghost';
   browse.textContent = WORDS.ui.browse;
-  // Where a mount location is a drive letter there is no directory to pick.
-  const canBrowse = (state.mount_location_shape || 'path') === 'path';
-  browse.disabled = !canBrowse;
-  browse.title = canBrowse ? '' : WORDS.ui.browse_drive_letter;
   browse.onclick = () => openBrowser(staged.path, (chosen) => {
     staged.path = chosen;
     redraw();
   });
   pathLine.appendChild(path);
   pathLine.appendChild(browse);
-  form.appendChild(pathLine);
-  return form;
+  return pathLine;
+}
+
+// A drive letter picked from the ones still free, with a caption naming
+// where the share turns up.
+function driveLetterLine(staged, state) {
+  const wrap = document.createElement('div');
+  const letters = (state.mount_location_choices || []).slice();
+  if (staged.path && letters.indexOf(staged.path) < 0) letters.unshift(staged.path);
+  const options = letters.map((letter) => (
+    { value: letter, label: WORDS.ui.mount_drive_label + ' ' + letter }));
+  staged.path = staged.path || (letters[0] || '');
+  const select = picker('mount_drive', options, staged.path,
+    (value) => { staged.path = value; }, false);
+  const caption = document.createElement('div');
+  caption.className = 'feat';
+  const note = document.createElement('div');
+  note.className = 'note';
+  note.textContent = WORDS.ui.mount_drive_caption;
+  caption.appendChild(note);
+  wrap.appendChild(select);
+  wrap.appendChild(caption);
+  return wrap;
 }
 
 // --- the browse dialog, fed by the client as this person ---
@@ -914,7 +1008,4 @@ function openBrowser(startPath, onChoose) {
   browseTo(parentPath(startPath || '/'));
 }
 
-bridgeReady().then(() => {
-  poll();
-  setInterval(poll, POLL_INTERVAL_MS);
-});
+bridgeReady().then(firstFrame);

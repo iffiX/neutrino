@@ -16,8 +16,48 @@ Invoking a capability a platform does not have raises
 from __future__ import annotations
 
 import os
+import re
 import subprocess
+import time
 import webbrowser
+
+# A console tool started from the windowless resident would open a console
+# of its own; the flag is Windows' and zero anywhere else.
+CREATE_NO_WINDOW = 0x08000000
+
+
+def run_quietly(
+    command: list,
+    *,
+    input: "str | None" = None,
+    timeout_s: float,
+    encoding: "str | None" = None,
+) -> "subprocess.CompletedProcess":
+    """Run one tool with no console of its own, its output captured as text.
+
+    Args:
+        command: Argument vector.
+        input: Sent to standard input; None sends nothing.
+        timeout_s: How long the tool may take.
+        encoding: The output's encoding; None takes the locale's.
+
+    Returns:
+        The completed process.
+
+    Raises:
+        OSError: When the tool cannot be started.
+        subprocess.SubprocessError: When it times out or the run fails.
+    """
+    return subprocess.run(
+        command,
+        input=input,
+        capture_output=True,
+        text=True,
+        encoding=encoding,
+        errors="replace",
+        timeout=timeout_s,
+        creationflags=CREATE_NO_WINDOW if os.name == "nt" else 0,
+    )
 
 
 class PlatformUnsupportedError(RuntimeError):
@@ -205,6 +245,15 @@ class ClientPlatform:
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
             stream.write(f"username={username}\npassword={password}\n")
 
+    def mount_location_choices(self) -> list:
+        """The mount locations to offer as a fixed set, when there is one.
+
+        Returns:
+            Empty where a location is a free-form path; the drive letters
+            still open on a platform that mounts at one.
+        """
+        return []
+
     def suggest_mount_location(self) -> str:
         """A location to offer before the person types one.
 
@@ -251,6 +300,28 @@ class ClientPlatform:
         """
         webbrowser.open(url)
 
+    def run_answering(
+        self, argv: list, *, prompt: str, answer: str, timeout_s: float
+    ) -> tuple:
+        """Run a program on a terminal of its own and answer one prompt.
+
+        A tool that asks a question on its terminal and takes no flag in
+        its place is given a terminal, and the answer, here.
+
+        Args:
+            argv: Argument vector.
+            prompt: The text whose arrival is what the answer follows.
+            answer: The keystrokes to send, newline included.
+            timeout_s: How long the whole run may take.
+
+        Returns:
+            ``(returncode, output)``.
+
+        Raises:
+            PlatformUnsupportedError: Where no terminal can be made.
+        """
+        raise PlatformUnsupportedError("no terminal on this platform")
+
     def start_on_screen(self, argv: list) -> "subprocess.Popen":
         """Start a windowed program on this person's screen.
 
@@ -266,3 +337,57 @@ class ClientPlatform:
         return subprocess.Popen(
             argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
+
+
+def answer_on_prompt(
+    read, write, *, prompt: str, answer: str, deadline: float
+) -> bytes:
+    """Read a terminal until it ends, answering the prompt once it shows.
+
+    Args:
+        read: ``read(wait_s)`` -> bytes; empty at the end, None when nothing
+            arrived in time.
+        write: ``write(data)`` sends bytes to the terminal.
+        prompt: The text the answer follows.
+        answer: What to send once the prompt has shown.
+        deadline: A ``time.monotonic()`` value past which reading stops.
+
+    Returns:
+        Everything the terminal printed.
+    """
+    output = b""
+    marker = prompt.encode("utf-8")
+    is_answered = False
+    while time.monotonic() < deadline:
+        chunk = read(0.5)
+        if chunk is None:
+            continue
+        if not chunk:
+            break
+        output += chunk
+        if not is_answered and marker in plain_text(output):
+            write(answer.encode("utf-8"))
+            is_answered = True
+    return output
+
+
+# What a terminal weaves through its text: cursor moves and colours (CSI),
+# titles (OSC, ended by a bell or a string terminator, never spanning past
+# the next escape), and the two-byte escapes.
+TERMINAL_SEQUENCES = re.compile(
+    rb"\x1b\[[0-9;?]*[ -/]*[@-~]"
+    rb"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\\\)?"
+    rb"|\x1b[@-Z\\\\-_]"
+)
+
+
+def plain_text(output: bytes) -> bytes:
+    """A terminal's output with its control sequences taken out.
+
+    Args:
+        output: What the terminal printed.
+
+    Returns:
+        The text alone, so a prompt is found however it was drawn.
+    """
+    return TERMINAL_SEQUENCES.sub(b"", output)

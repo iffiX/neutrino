@@ -10,6 +10,7 @@ Closing the window hides it and leaves the client running; the tray icon
 brings it back and its Quit is what ends the loop.
 """
 
+import json
 from neutrino_client.constants import (
     CLIENT_GUI_WINDOW_HEIGHT,
     CLIENT_GUI_WINDOW_WIDTH,
@@ -29,6 +30,7 @@ def open_window(
     is_hidden: bool = False,
     on_quit=None,
     on_show_ready=None,
+    on_push_ready=None,
 ) -> None:
     """Open the window and block until Quit ends the loop.
 
@@ -42,6 +44,8 @@ def open_window(
         is_hidden: Whether to start in the tray with no window shown.
         on_quit: Called when the person picks Quit, before the loop ends.
         on_show_ready: Called with a callable that brings the window up.
+        on_push_ready: Called with a callable that hands the page one
+            state payload; the page redraws from it without asking.
 
     Raises:
         GuiShellUnavailableError: When the embedding library is not in this
@@ -64,7 +68,13 @@ def open_window(
         hidden=is_hidden,
     )
 
+    # The close button hides the window into the tray; the tray's Quit is
+    # the one close that may go through, or the loop never ends.
+    state = {"is_quitting": False}
+
     def on_closing() -> bool:
+        if state["is_quitting"]:
+            return True
         window.hide()
         return False
 
@@ -72,9 +82,13 @@ def open_window(
         window.show()
 
     def quit_window() -> None:
+        state["is_quitting"] = True
         if on_quit is not None:
             on_quit()
         window.destroy()
+
+    def push_state(state: dict) -> None:
+        window.evaluate_js(f"window.neutrinoState({json.dumps(state)})")
 
     window.events.closing += on_closing
     tray = WindowsTrayIcon(
@@ -83,6 +97,8 @@ def open_window(
     tray.start()
     if on_show_ready is not None:
         on_show_ready(show_window)
+    if on_push_ready is not None:
+        on_push_ready(push_state)
     try:
         webview.start(gui="edgechromium")
     finally:

@@ -17,6 +17,7 @@ import ssl
 import struct
 import subprocess
 import threading
+import time
 
 import pytest
 
@@ -133,6 +134,9 @@ class ScriptedSocket:
 
     def settimeout(self, timeout):
         self.timeout = timeout
+
+    def shutdown(self, how):
+        self.shut_how = how
 
     def close(self):
         self.is_closed = True
@@ -466,3 +470,70 @@ def test_the_silence_rule_is_the_open_sockets_timeout(tls_stub):
     with pytest.raises(GatewayUnreachable):
         made.recv()
     assert not made.is_open
+
+
+class BlockingSocket(ScriptedSocket):
+    """A socket whose one read blocks until the test lets it go."""
+
+    def __init__(self):
+        super().__init__(())
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def recv(self, size):
+        self.entered.set()
+        self.release.wait(timeout=5)
+        raise socket.timeout("silence")
+
+
+def test_a_read_in_progress_holds_the_socket_and_a_send_waits_its_turn():
+    made = scripted_client()
+    sock = BlockingSocket()
+    made._sock = sock
+    outcomes = []
+
+    def read():
+        try:
+            made.recv()
+        except GatewayUnreachable as error:
+            outcomes.append(error)
+
+    reader = threading.Thread(target=read)
+    reader.start()
+    assert sock.entered.wait(timeout=5)
+    sent = threading.Event()
+    sender = threading.Thread(target=lambda: (made.send_text("x"), sent.set()))
+    sender.start()
+
+    assert not sent.wait(timeout=0.3)
+
+    sock.release.set()
+    reader.join(timeout=5)
+    sender.join(timeout=5)
+    assert sent.is_set()
+    assert len(outcomes) == 1
+    assert [frame.payload for frame in sent_frames(made, sock)] == [b"x"]
+
+
+def test_waiting_for_a_frame_leaves_the_socket_free_to_send(tls_stub):
+    port, fingerprint = tls_stub
+    made = client_for(port, fingerprint)
+    made.connect()
+    outcomes = []
+
+    def read():
+        try:
+            made.recv()
+        except GatewayUnreachable as error:
+            outcomes.append(error)
+
+    reader = threading.Thread(target=read)
+    reader.start()
+    started = time.monotonic()
+
+    made.send_text("hello")
+
+    assert time.monotonic() - started < 1.0
+    reader.join(timeout=5)
+    assert not reader.is_alive()
+    assert len(outcomes) == 1

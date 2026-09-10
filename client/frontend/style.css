@@ -67,3 +67,23 @@ button:disabled { opacity: .4; cursor: not-allowed; border-color: #1f2937; }
                   background: none; color: #e6edf3;
                   font-family: ui-monospace, monospace; }
 .dirlist button:last-child { border-bottom: none; }
+
+/* The one dropdown, after the hub's credential picker: a field that opens a
+   list of at most five rows and scrolls past that. */
+.picker { position: relative; flex: 1; min-width: 0; }
+.picker_field { display: flex; align-items: center; justify-content: space-between;
+        gap: 8px; width: 100%; padding: 9px 12px; border: 1px solid #1f2937;
+        border-radius: 8px; background: #0a0e14; color: #e6edf3;
+        font-family: ui-monospace, monospace; font-size: 13px; cursor: pointer;
+        text-align: left; }
+.picker_field:disabled { opacity: .4; cursor: default; }
+.picker_field .caret { color: #8b96a5; font-size: 11px; }
+.picker_list { position: absolute; left: 0; right: 0; top: calc(100% + 4px);
+        z-index: 20; max-height: 163px; overflow-y: auto; padding: 4px;
+        border: 1px solid #1f2937; border-radius: 8px; background: #0a0e14;
+        box-shadow: 0 12px 28px -12px rgba(0,0,0,.9); }
+.picker_row { display: block; width: 100%; padding: 8px 10px; border: none;
+        border-radius: 6px; background: none; color: #e6edf3; cursor: pointer;
+        font-family: ui-monospace, monospace; font-size: 13px; text-align: left; }
+.picker_row:hover { background: rgba(34,211,238,.08); }
+.picker_row.on { background: rgba(34,211,238,.14); color: #22d3ee; }

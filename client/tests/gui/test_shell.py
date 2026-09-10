@@ -35,6 +35,7 @@ class FakeWebviewWindow:
         self.is_hidden = hidden
         self.is_destroyed = False
         self.events = FakeWindowEvents()
+        self.evaluated = []
 
     def hide(self) -> None:
         self.is_hidden = True
@@ -44,6 +45,9 @@ class FakeWebviewWindow:
 
     def destroy(self) -> None:
         self.is_destroyed = True
+
+    def evaluate_js(self, script: str) -> None:
+        self.evaluated.append(script)
 
 
 class FakeWindowEvents:
@@ -128,6 +132,7 @@ def test_each_platform_dispatches_to_its_own_shell(monkeypatch, os_name, module_
             "is_hidden": True,
             "on_quit": quit_it,
             "on_show_ready": show_ready,
+            "on_push_ready": None,
         }
     ]
 
@@ -246,10 +251,14 @@ def test_the_windows_tray_opens_the_window_again_and_quits_the_client(monkeypatc
 
     icon.on_open()
     assert window.is_hidden is False
+    # Before Quit, closing only hides; the loop must keep running.
+    assert window.events.closing.fire() == [False]
     icon.on_quit()
 
     assert stopped == [1]
     assert window.is_destroyed is True
+    # Quit is the one close that goes through, or the loop never ends.
+    assert window.events.closing.fire() == [True]
 
 
 def test_a_missing_pywebview_refuses_with_the_shells_own_code(monkeypatch):
@@ -334,23 +343,30 @@ class FakeContentManager:
 
 
 class FakeWebView:
-    """The view the page loads into."""
+    """The view the page loads into, and the scripts run in it."""
 
     def __init__(self):
         self.loaded = ()
+        self.scripts = []
 
     def load_html(self, html, base) -> None:
         self.loaded = (html, base)
+
+    def run_javascript(self, script, *_rest) -> None:
+        self.scripts.append(script)
 
 
 class FakeWebKit2:
     """The WebKit bindings the Linux shell reaches for."""
 
     UserContentManager = FakeContentManager
+    views: list = []
 
-    @staticmethod
-    def WebView(**kwargs):
-        return FakeWebView()
+    @classmethod
+    def WebView(cls, **kwargs):
+        view = FakeWebView()
+        cls.views.append(view)
+        return view
 
 
 def linux_toolkit(monkeypatch, *, indicator=None):
@@ -466,12 +482,9 @@ def test_the_name_the_window_wears_is_the_one_the_packages_install():
     launcher = desktop_dir / f"{CLIENT_DESKTOP_NAME}.desktop"
     autostart = desktop_dir / f"{CLIENT_DESKTOP_NAME}_autostart.desktop"
 
-    assert launcher.is_file() and autostart.is_file()
+    assert launcher.is_file() and not autostart.exists()
     assert f"Icon={CLIENT_DESKTOP_NAME}" in launcher.read_text(encoding="utf-8")
     assert "Exec=nclient gui\n" in launcher.read_text(encoding="utf-8")
-    text = autostart.read_text(encoding="utf-8")
-    assert "Exec=nclient gui --hidden" in text
-    assert "X-GNOME-Autostart-enabled=true" in text
 
 
 def test_the_polkit_policy_names_the_helper_and_the_active_seat():
@@ -488,3 +501,42 @@ def test_the_polkit_policy_names_the_helper_and_the_active_seat():
         'key="org.freedesktop.policykit.exec.path">'
         "/usr/libexec/neutrino_client/mount_helper<"
     ) in text
+
+
+def test_the_windows_window_pushes_state_into_the_page(monkeypatch):
+    fake = windows_toolkit(monkeypatch)
+    pushers = []
+
+    webview2.open_window(
+        title="t",
+        html="<html>",
+        bridge=None,
+        is_hidden=True,
+        on_push_ready=pushers.append,
+    )
+
+    (push,) = pushers
+    push({"is_connected": True})
+    assert fake.windows[0].evaluated == ['window.neutrinoState({"is_connected": true})']
+
+
+def test_the_linux_window_pushes_state_through_the_main_loop(monkeypatch):
+    FakeWebKit2.views = []
+    glib, _gtk = linux_toolkit(monkeypatch)
+    pushers = []
+
+    webkitgtk.open_window(
+        title="t",
+        html="<html>",
+        bridge=None,
+        is_hidden=True,
+        on_push_ready=pushers.append,
+    )
+
+    (push,) = pushers
+    push({"is_connected": False})
+    # The main loop ran the delivery, and the page got the state.
+    assert glib.idles
+    assert FakeWebKit2.views[0].scripts[-1] == (
+        'window.neutrinoState({"is_connected": false})'
+    )

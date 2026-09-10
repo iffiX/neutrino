@@ -1,9 +1,12 @@
 """The Windows platform behind the contract.
 
 The client runs in the person's own session, so a share is a drive mapping
-made right here with ``New-SmbMapping``, fed the login on standard input.
-The control channel is a named pipe of the person's own, whose peer identity
-comes from pipe impersonation and must be the same account.
+made by this process itself: a mapping belongs to the logon session that
+made it, and one made anywhere else is reachable by name yet drawn as
+disconnected in File Explorer. The login travels in a structure, on no
+argument vector. The control channel is a named pipe of the person's own,
+whose peer identity comes from pipe impersonation and must be the same
+account.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -20,23 +23,24 @@ from neutrino_client.constants import (
     CLIENT_CONTROL_PIPE_NAME_PREFIX,
     CLIENT_CONTROL_PIPE_PREFIX,
 )
+from neutrino_client.platforms import win32
 from neutrino_client.platforms.base import (
     ClientPlatform,
     PlatformUnsupportedError,
     ShareAttachError,
+    run_quietly,
 )
+from neutrino_client.platforms.windows_console import WindowsConsoleApi
+from neutrino_client.platforms.windows_identity import WindowsIdentityApi
 
 WINDOWS_CONFIG_DIR_NAME = "Neutrino Client"
 WINDOWS_MOUNT_TIMEOUT_S = 60
-# The last line a fully-run mapping script prints. PowerShell fed a script on
-# standard input can discard it silently and still exit zero, so a zero exit
-# without this marker is a failure, never a success.
-WINDOWS_MOUNT_SUCCESS_MARKER = "NEUTRINO_MOUNT_OK"
-CREATE_NO_WINDOW = 0x08000000
 
-# Win32 values, by their own names.
-TOKEN_QUERY = 0x0008
-TOKEN_USER_CLASS = 1
+# A share that File Explorer never hears about stands there as a disconnected
+# drive while every other program reaches it; the shell is told after a
+# mapping comes or goes.
+SHCNE_DRIVEADD = win32.SHCNE_DRIVEADD
+SHCNE_DRIVEREMOVED = win32.SHCNE_DRIVEREMOVED
 
 
 def _share_parts(share_url: str) -> "tuple[str, str]":
@@ -72,53 +76,6 @@ def _read_share_credentials(path: str) -> "tuple[str, str]":
     except OSError:
         pass
     return values["username"], values["password"]
-
-
-def _powershell_literal(value: str) -> str:
-    """A PowerShell single-quoted literal for one value."""
-    return "'" + value.replace("'", "''") + "'"
-
-
-def _mapping_script(
-    *, host: str, share: str, location: str, username: str, password: str
-) -> str:
-    """The PowerShell that stores the login and maps the share.
-
-    Fed on standard input, so the login is on no argument vector. The script
-    ends with a blank line, which is what closes a block PowerShell reads
-    from ``-Command -``; the success marker is the proof it ran.
-
-    Args:
-        host: The share's host.
-        share: The share name.
-        location: The drive letter the share appears at.
-        username: The share's own username.
-        password: The share's own password.
-
-    Returns:
-        The script text, closed by a trailing blank line.
-    """
-    remote = f"\\\\{host}\\{share}"
-    return (
-        f"$h = {_powershell_literal(host)}\n"
-        f"$u = {_powershell_literal(username)}\n"
-        f"$p = {_powershell_literal(password)}\n"
-        f"$remote = {_powershell_literal(remote)}\n"
-        f"$local = {_powershell_literal(location)}\n"
-        "try {\n"
-        "  cmdkey /add:$h /user:$u /pass:$p | Out-Null\n"
-        "  Remove-SmbMapping -LocalPath $local -Force "
-        "-ErrorAction SilentlyContinue | Out-Null\n"
-        "  New-SmbMapping -LocalPath $local -RemotePath $remote "
-        "-UserName $u -Password $p -Persistent $true -ErrorAction Stop | Out-Null\n"
-        f"  Write-Output '{WINDOWS_MOUNT_SUCCESS_MARKER}'\n"
-        "  exit 0\n"
-        "} catch {\n"
-        "  Write-Error $_\n"
-        "  exit 1\n"
-        "}\n"
-        "\n"
-    )
 
 
 def _pipe_safe_name(account: str) -> str:
@@ -213,16 +170,26 @@ class WindowsPlatform(ClientPlatform):
             return {"code": "mountpoint_not_empty", "params": {}}
         return None
 
+    def mount_location_choices(self) -> list:
+        """Every drive letter still open, from the top down.
+
+        Returns:
+            Free letters with their colon, e.g. ``["Z:", "Y:", ...]``.
+        """
+        return [
+            f"{letter}:"
+            for letter in "ZYXWVUTSRQPONMLKJIHGFE"
+            if not os.path.exists(f"{letter}:\\")
+        ]
+
     def suggest_mount_location(self) -> str:
         """The first unused drive letter, from the top down.
 
         Returns:
             A letter with its colon, or empty when every letter is taken.
         """
-        for letter in "ZYXWVUTSRQPONMLKJIHGFE":
-            if not os.path.exists(f"{letter}:\\"):
-                return f"{letter}:"
-        return ""
+        free = self.mount_location_choices()
+        return free[0] if free else ""
 
     def prepare_mount_location(self, *, location: str) -> "dict | None":
         """A drive letter needs no preparation."""
@@ -248,34 +215,31 @@ class WindowsPlatform(ClientPlatform):
         if not os.path.isfile(credentials_path):
             raise ShareAttachError("credentials_missing")
         username, password = _read_share_credentials(credentials_path)
-        script = _mapping_script(
-            host=host,
-            share=share,
-            location=location,
+        code = self._win32().add_connection(
+            local=location,
+            remote=f"\\\\{host}\\{share}",
             username=username,
             password=password,
         )
-        result = self._run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", "-"],
-            stdin=script,
-            failure_code="mount_failed",
-        )
-        if WINDOWS_MOUNT_SUCCESS_MARKER not in (result.stdout or ""):
-            detail = ((result.stdout or "") + (result.stderr or "")).strip()[-200:]
-            raise ShareAttachError("mount_failed", detail=detail)
+        if code != win32.NO_ERROR:
+            raise ShareAttachError("mount_failed", detail=win32.win_error(code))
+        self._announce_drive(location, SHCNE_DRIVEADD)
 
     def detach_share(self, *, location: str) -> None:
-        """Delete the mapping at a drive letter.
+        """Take the mapping at a drive letter down, in this session.
 
         Args:
             location: The mapped drive letter.
 
         Raises:
-            ShareAttachError: ``unmount_failed`` with the tool's own words.
+            ShareAttachError: ``unmount_failed`` with the Win32 error.
         """
-        self._run(
-            ["net", "use", location, "/delete", "/y"], failure_code="unmount_failed"
-        )
+        code = self._win32().cancel_connection(location)
+        # A letter only remembered from an earlier build is taken off the
+        # profile and answered as not connected: gone either way.
+        if code not in (win32.NO_ERROR, win32.ERROR_NOT_CONNECTED):
+            raise ShareAttachError("unmount_failed", detail=win32.win_error(code))
+        self._announce_drive(location, SHCNE_DRIVEREMOVED)
 
     def is_share_attached(self, *, location: str) -> bool:
         """Whether a mapping stands at a drive letter.
@@ -287,152 +251,161 @@ class WindowsPlatform(ClientPlatform):
             True when ``net use <drive>`` names a remote path.
         """
         try:
-            result = subprocess.run(
-                ["net", "use", location],
-                capture_output=True,
-                text=True,
-                timeout=WINDOWS_MOUNT_TIMEOUT_S,
-                creationflags=CREATE_NO_WINDOW if os.name == "nt" else 0,
+            result = run_quietly(
+                ["net", "use", location], timeout_s=WINDOWS_MOUNT_TIMEOUT_S
             )
         except (OSError, subprocess.SubprocessError):
             return False
-        return result.returncode == 0 and "\\\\" in (result.stdout or "")
+        return result.returncode == 0 and "\\" in (result.stdout or "")
 
-    def _run(self, command: list, *, stdin: str = "", failure_code: str):
-        """Run one tool in this session, its failure typed.
+    def run_answering(
+        self, argv: list, *, prompt: str, answer: str, timeout_s: float
+    ) -> tuple:
+        """Run a program on a pseudo console and answer one prompt.
 
         Args:
-            command: Argument vector.
-            stdin: Sent to standard input.
-            failure_code: The code a non-zero exit carries.
+            argv: Argument vector.
+            prompt: The text the answer follows.
+            answer: The keystrokes to send, newline included.
+            timeout_s: How long the whole run may take.
 
         Returns:
-            The completed process.
+            ``(returncode, output)``.
 
         Raises:
-            ShareAttachError: With the tool's own words on failure.
+            PlatformUnsupportedError: When no pseudo console can be made.
+        """
+        return self._win32().run_on_console(
+            argv, prompt=prompt, answer=answer, timeout_s=timeout_s
+        )
+
+    def _announce_drive(self, location: str, event: int) -> None:
+        """Tell the shell a drive letter came or went.
+
+        A share that File Explorer never hears about stands there as a
+        disconnected drive while every other program reaches it.
+
+        Args:
+            location: The drive letter, as ``Z:``.
+            event: ``SHCNE_DRIVEADD`` or ``SHCNE_DRIVEREMOVED``.
         """
         try:
-            result = subprocess.run(
-                command,
-                input=stdin,
-                capture_output=True,
-                text=True,
-                timeout=WINDOWS_MOUNT_TIMEOUT_S,
-                creationflags=CREATE_NO_WINDOW if os.name == "nt" else 0,
-            )
-        except (OSError, subprocess.SubprocessError) as error:
-            raise ShareAttachError(failure_code, detail=str(error)[:200])
-        if result.returncode != 0:
-            detail = (result.stderr or result.stdout or "").strip()[-200:]
-            raise ShareAttachError(failure_code, detail=detail)
-        return result
+            self._win32().notify_drive(location + "\\", event)
+        except OSError:
+            # The mapping stands either way; only the icon is at stake.
+            pass
 
     def _win32(self):
         """The Win32 seam, built on first use."""
         if self._win32_api is None:
-            self._win32_api = _Win32Api()
+            self._win32_api = _WindowsApi()
         return self._win32_api
 
 
-class _Win32Api:
-    """The Win32 pipe identity calls, one seam tests replace whole."""
+class _WindowsApi:
+    """The Win32 the Windows platform reaches, one seam tests replace whole.
+
+    Mount, the shell notification and the pseudo console run here; the pipe
+    identity is :class:`WindowsIdentityApi`, held so a peer's account is
+    read the one way it is read anywhere.
+    """
 
     def __init__(self):
-        self._kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        self._advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
-        self._kernel32.GetCurrentThread.restype = ctypes.c_void_p
-        self._kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
-        self._advapi32.ImpersonateNamedPipeClient.argtypes = [ctypes.c_void_p]
-        self._advapi32.OpenThreadToken.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_ulong,
-            ctypes.c_int,
-            ctypes.c_void_p,
-        ]
-        self._advapi32.GetTokenInformation.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_int,
-            ctypes.c_void_p,
-            ctypes.c_ulong,
-            ctypes.c_void_p,
-        ]
-        self._advapi32.LookupAccountSidW.argtypes = [
-            ctypes.c_wchar_p,
-            ctypes.c_void_p,
-            ctypes.c_wchar_p,
-            ctypes.c_void_p,
-            ctypes.c_wchar_p,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-        ]
+        self._identity = WindowsIdentityApi()
+        self._console = WindowsConsoleApi()
 
-    def impersonate_named_pipe_client(self, handle: int) -> None:
-        """Impersonate the pipe's client on this thread.
+    def add_connection(
+        self, *, local: str, remote: str, username: str, password: str
+    ) -> int:
+        """Map a share into this process's own logon session, not persisted.
+
+        The login travels in a structure rather than on any argument vector,
+        and the session is this one, which is what leaves the drive standing
+        for every program the person runs. It is not written to the profile:
+        the client remounts what it holds, so Windows need not, and a
+        persisted mapping is what File Explorer keeps drawing after it is
+        gone.
+
+        Args:
+            local: The drive letter, as ``Z:``.
+            remote: The share, as ``\\\\host\\share``.
+            username: The share's own username.
+            password: The share's own password.
+
+        Returns:
+            ``win32.NO_ERROR``, or the Win32 error number.
+        """
+        resource = win32.NetResource()
+        resource.dwType = win32.RESOURCETYPE_DISK
+        resource.lpLocalName = local
+        resource.lpRemoteName = remote
+        return int(
+            win32.libraries().mpr.WNetAddConnection2W(
+                ctypes.byref(resource), password, username, 0
+            )
+        )
+
+    def cancel_connection(self, local: str) -> int:
+        """Take a drive mapping down, and off the profile if remembered there.
+
+        Args:
+            local: The drive letter, as ``Z:``.
+
+        Returns:
+            ``win32.NO_ERROR``, or the Win32 error number.
+        """
+        return int(
+            win32.libraries().mpr.WNetCancelConnection2W(
+                local, win32.CONNECT_UPDATE_PROFILE, True
+            )
+        )
+
+    def notify_drive(self, path: str, event: int) -> None:
+        """Raise the shell's own drive-changed notification.
+
+        Args:
+            path: The drive's root, as ``Z:\\``.
+            event: ``win32.SHCNE_DRIVEADD`` or ``win32.SHCNE_DRIVEREMOVED``.
+        """
+        win32.libraries().shell32.SHChangeNotify(event, win32.SHCNF_PATHW, path, None)
+
+    def run_on_console(
+        self, argv: list, *, prompt: str, answer: str, timeout_s: float
+    ) -> tuple:
+        """Run a program on a pseudo console and answer one prompt.
+
+        Args:
+            argv: Argument vector.
+            prompt: The text the answer follows.
+            answer: The keystrokes to send, newline included.
+            timeout_s: How long the whole run may take.
+
+        Returns:
+            ``(returncode, output)``.
 
         Raises:
-            OSError: When impersonation is refused.
+            PlatformUnsupportedError: When the console API is not there.
         """
-        if not self._advapi32.ImpersonateNamedPipeClient(ctypes.c_void_p(handle)):
-            raise ctypes.WinError(ctypes.get_last_error())
+        return self._console.run(
+            argv, prompt=prompt, answer=answer, timeout_s=timeout_s
+        )
+
+    def impersonate_named_pipe_client(self, handle: int) -> None:
+        """Impersonate the pipe's client on this thread."""
+        self._identity.impersonate_named_pipe_client(handle)
 
     def revert_to_self(self) -> None:
         """Drop the impersonation. Best-effort."""
-        self._advapi32.RevertToSelf()
+        self._identity.revert_to_self()
 
     def open_thread_token(self) -> int:
-        """This thread's impersonation token, for querying.
-
-        Raises:
-            OSError: When the thread carries no token.
-        """
-        token = ctypes.c_void_p()
-        ok = self._advapi32.OpenThreadToken(
-            self._kernel32.GetCurrentThread(), TOKEN_QUERY, True, ctypes.byref(token)
-        )
-        if not ok:
-            raise ctypes.WinError(ctypes.get_last_error())
-        return token.value
+        """This thread's impersonation token, for querying."""
+        return self._identity.open_thread_token()
 
     def token_account(self, token: int) -> str:
-        """The account name a token belongs to.
-
-        Raises:
-            OSError: When the token's user cannot be read.
-        """
-        needed = ctypes.c_ulong(0)
-        self._advapi32.GetTokenInformation(
-            ctypes.c_void_p(token), TOKEN_USER_CLASS, None, 0, ctypes.byref(needed)
-        )
-        buffer = ctypes.create_string_buffer(max(needed.value, 64))
-        ok = self._advapi32.GetTokenInformation(
-            ctypes.c_void_p(token),
-            TOKEN_USER_CLASS,
-            buffer,
-            len(buffer),
-            ctypes.byref(needed),
-        )
-        if not ok:
-            raise ctypes.WinError(ctypes.get_last_error())
-        sid = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p)).contents.value
-        name = ctypes.create_unicode_buffer(256)
-        domain = ctypes.create_unicode_buffer(256)
-        name_size = ctypes.c_ulong(len(name))
-        domain_size = ctypes.c_ulong(len(domain))
-        use = ctypes.c_ulong(0)
-        ok = self._advapi32.LookupAccountSidW(
-            None,
-            ctypes.c_void_p(sid),
-            name,
-            ctypes.byref(name_size),
-            domain,
-            ctypes.byref(domain_size),
-            ctypes.byref(use),
-        )
-        if not ok:
-            raise ctypes.WinError(ctypes.get_last_error())
-        return name.value
+        """The account name a token belongs to."""
+        return self._identity.token_account(token)
 
     def close_handle(self, handle: int) -> None:
         """Close a handle. Best-effort."""
-        self._kernel32.CloseHandle(ctypes.c_void_p(handle))
+        self._identity.close_handle(handle)

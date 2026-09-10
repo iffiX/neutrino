@@ -96,6 +96,6 @@ class _ControlPipeHttpConnection(http.client.HTTPConnection):
 
     def connect(self) -> None:
         """Open the pipe instead of a host and port."""
-        from neutrino_client.control.windows_pipe import open_pipe_connection
+        from neutrino_client.platforms.windows_pipe import open_pipe_connection
 
         self.sock = open_pipe_connection(self._pipe_name)

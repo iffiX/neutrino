@@ -2,11 +2,13 @@
 
 wix is not run here — it needs Windows and the .NET tool — so what is
 asserted is the document the build writes: a product identity of its own, no
-service, the Run entry that starts the window hidden with the session, the
+service, no autostart Run entry, the
 PATH entry, the shortcut, and the bootstrapper chained only where the
 runtime's key is absent. The payload's own laying out is checked with the
 downloads faked.
 """
+
+import xml.etree.ElementTree
 
 import pytest
 
@@ -43,13 +45,37 @@ def test_the_installer_registers_no_service(source):
     assert "ServiceControl" not in source
 
 
-def test_the_run_entry_starts_the_window_hidden_with_the_session(source):
-    assert 'Name="NeutrinoClient"' in source
-    assert build_msi.RUN_ENTRY_VALUE.endswith("gui --hidden")
-    assert "pythonw.exe" in build_msi.RUN_ENTRY_VALUE
-    assert "neutrino_client.cli.entry" in build_msi.RUN_ENTRY_VALUE
-    assert r"Software\Microsoft\Windows\CurrentVersion\Run" in source
-    assert "gui --hidden" in source
+def test_the_source_is_well_formed_and_the_publisher_survives_its_brackets(source):
+    """A publisher with an address in angle brackets is text, not markup."""
+    root = xml.etree.ElementTree.fromstring(source)
+    assert (
+        root.find("{http://wixtoolset.org/schemas/v4/wxs}Package").get("Manufacturer")
+        == "iffiX <someone@example.com>"
+    )
+
+
+def test_a_running_resident_is_closed_before_its_files_are_replaced(source):
+    """An upgrade over a live resident is what lands half-applied."""
+    root = xml.etree.ElementTree.fromstring(source)
+    closes = list(
+        root.iter("{http://wixtoolset.org/schemas/v4/wxs/util}CloseApplication")
+    )
+    assert len(closes) == 1
+    assert closes[0].get("Target") == build_msi.RESIDENT_IMAGE
+    assert closes[0].get("RebootPrompt") == "no"
+    assert build_msi.RESIDENT_IMAGE.endswith(".exe")
+
+
+def test_the_build_loads_the_extension_that_element_comes_from():
+    assert build_msi.WIX_UTIL_EXTENSION.startswith("WixToolset.Util.wixext/")
+    assert "wix extension add" in build_msi.__doc__
+
+
+def test_the_installer_registers_no_autostart(source):
+    """The client runs when the person opens it, not with the session."""
+    assert r"Software\Microsoft\Windows\CurrentVersion\Run" not in source
+    assert "gui --hidden" not in source
+    assert not hasattr(build_msi, "RUN_ENTRY_VALUE")
 
 
 def test_the_install_goes_on_the_path(source):

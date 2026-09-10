@@ -47,7 +47,10 @@ OPEN_MESSAGES = (WM_LBUTTONUP, WM_LBUTTONDBLCLK)
 
 # The Win32 values the seam passes, spelled out rather than written inline.
 # A window parented here has no screen presence at all.
-HWND_MESSAGE = -3
+# A window with no size and no style is never drawn, but unlike a
+# message-only child it can take the foreground, which is what a popup menu
+# needs of its owner.
+WS_POPUP = 0x80000000
 NIM_ADD = 0
 NIM_DELETE = 2
 NIF_MESSAGE = 0x01
@@ -273,12 +276,27 @@ class _Win32TrayApi:
             ctypes.c_size_t,
             ctypes.c_ssize_t,
         )
+        # WPARAM and LPARAM are pointer-sized; left to ctypes' default they
+        # are passed as C ints and a 64-bit value overflows on the way.
+        self._user32.DefWindowProcW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint,
+            ctypes.c_size_t,
+            ctypes.c_ssize_t,
+        ]
+        self._user32.DefWindowProcW.restype = ctypes.c_ssize_t
+        self._user32.PostMessageW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint,
+            ctypes.c_size_t,
+            ctypes.c_ssize_t,
+        ]
         # Held so the trampoline the window keeps is not collected under it.
         self._procedure = None
         self._notify_data = None
 
     def create_window(self, *, title: str, on_event) -> int:
-        """Register a class and make the message-only window behind the icon.
+        """Register a class and make the unseen window behind the icon.
 
         Args:
             title: The window's title, which nobody sees.
@@ -309,13 +327,15 @@ class _Win32TrayApi:
             0,
             WINDOW_CLASS_NAME,
             title,
+            WS_POPUP,
             0,
             0,
             0,
             0,
-            0,
-            # HWND_MESSAGE: a window with no screen presence at all.
-            ctypes.c_void_p(HWND_MESSAGE),
+            # Top level, never shown: the menu the icon drops needs an owner
+            # the shell will put in the foreground, and a message-only child
+            # can never be one.
+            None,
             None,
             ctypes.c_void_p(window_class.hInstance),
             None,

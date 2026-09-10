@@ -367,6 +367,9 @@ def _ai_line(state: dict) -> str:
     failure = wording.word_code(str(row.get("code", "")), row.get("params"))
     if failure:
         standing = f"{standing}: {failure}"
+    work = row.get("work") or {}
+    if work.get("state") == "working":
+        standing = wording.CLIENT_WORK_WORDS.get(str(work.get("step", "")), "working")
     where = SERVICE_AI_ON if row.get("is_active") else SERVICE_AI_OFF
     switch = "on" if row.get("is_enabled") else "off"
     return f"{switch}  {where}  ({standing})"

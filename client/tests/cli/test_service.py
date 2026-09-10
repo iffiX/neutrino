@@ -385,6 +385,19 @@ def test_ai_show_prints_where_the_tools_point(stack, capsys):
     assert f"off  {service_cli.SERVICE_AI_OFF}" in out
 
 
+def test_ai_show_names_the_step_while_the_lane_works(stack, capsys):
+    stack.states["ai"]["work"] = {
+        "state": "working",
+        "step": "switching",
+        "code": "",
+        "params": {},
+    }
+
+    assert service_cli.main_ai_show() == 0
+
+    assert "(switching the tools)" in capsys.readouterr().out
+
+
 def test_ai_apply_hub_posts_the_toggle_and_the_merged_knobs(stack, capsys):
     code = service_cli.main_ai_apply(
         is_enabled=True,

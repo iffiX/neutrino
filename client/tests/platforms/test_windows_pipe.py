@@ -13,7 +13,7 @@ import threading
 import time
 
 from neutrino_client.control.server import ControlServer, _ControlRequestHandler
-from neutrino_client.control.windows_pipe import (
+from neutrino_client.platforms.windows_pipe import (
     ControlPipeHttpServer,
     PipeConnection,
     pipe_security_sddl,
@@ -191,7 +191,7 @@ def test_the_control_server_builds_the_pipe_transport_for_a_pipe_path():
         def control_socket_path(self):
             return PIPE_NAME
 
-    import neutrino_client.control.windows_pipe as windows_pipe
+    import neutrino_client.platforms.windows_pipe as windows_pipe
 
     original = windows_pipe.ControlPipeHttpServer
 

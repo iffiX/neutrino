@@ -83,3 +83,8 @@ CLIENT_PKEXEC_REFUSAL_EXIT_CODES = (126, 127)
 
 # How often enabled mount records that are not attached are remounted.
 CLIENT_MOUNT_RECHECK_INTERVAL_S = 60
+
+# The resident's own log, beside its state; one file, kept to a size, the
+# previous one beside it. A window process has no terminal to speak to.
+CLIENT_LOG_FILE_NAME = "client.log"
+CLIENT_LOG_KEEP_BYTES = 1024 * 1024

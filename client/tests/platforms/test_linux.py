@@ -235,3 +235,36 @@ def test_attachment_is_read_from_proc_mounts_with_escapes(monkeypatch, tmp_path)
 
     assert platform.is_share_attached(location="/home/alice/my nas")
     assert not platform.is_share_attached(location="/home/alice/other")
+
+
+def test_a_program_that_asks_gets_its_answer_on_a_terminal_of_its_own():
+    import sys
+
+    platform = LinuxPlatform()
+    code, output = platform.run_answering(
+        [sys.executable, "-c", "print('ok' if input('go? (y/N) ') == 'y' else 'no')"],
+        prompt="(y/N)",
+        answer="y\n",
+        timeout_s=20,
+    )
+
+    assert code == 0
+    assert "ok" in output
+
+
+def test_a_program_that_cannot_start_answers_127():
+    platform = LinuxPlatform()
+    code, _ = platform.run_answering(
+        ["/nonexistent/program"], prompt="?", answer="y\n", timeout_s=5
+    )
+    assert code == 127
+
+
+def test_without_a_pty_module_the_terminal_is_a_typed_refusal(monkeypatch):
+    import neutrino_client.platforms.linux as linux_module
+    from neutrino_client.platforms.base import PlatformUnsupportedError
+
+    monkeypatch.setattr(linux_module, "pty", None)
+
+    with pytest.raises(PlatformUnsupportedError):
+        LinuxPlatform().run_answering(["x"], prompt="?", answer="y", timeout_s=1)

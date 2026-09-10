@@ -23,6 +23,7 @@ import os
 import secrets
 import socket
 import threading
+import time
 import urllib.parse
 
 from neutrino_client import CLIENT_VERSION
@@ -64,6 +65,8 @@ CONNECTION_UNBOUND = "unbound"
 
 # How long a shutdown waits for the loop thread to come back.
 SHUTDOWN_JOIN_TIMEOUT_S = 5
+# How long a burst of changes is left to settle before the watchers hear.
+ANNOUNCE_SETTLE_S = 0.05
 ASK_ID_LENGTH = 8
 
 
@@ -129,12 +132,17 @@ class ClientSession:
         self._store = ClientServiceStore(
             path=os.path.join(config_dir, CLIENT_STATE_FILE_NAME)
         )
+        # Whoever draws the state, told after every change of it; the
+        # announcements of one burst are folded into one.
+        self._watchers: list = []
+        self._announce_lock = threading.Lock()
+        self._is_announcing = False
         self._services = {
             handler.service_type: handler
             for handler in (
                 WebServiceHandler(platform=self.platform),
-                PortServiceHandler(log=log),
-                AiServiceHandler(store=self._store, log=log),
+                PortServiceHandler(log=log, on_change=self.notify),
+                AiServiceHandler(store=self._store, log=log, on_change=self.notify),
                 FileServiceHandler(
                     platform=self.platform,
                     store=self._store,
@@ -142,8 +150,11 @@ class ClientSession:
                         config_dir, CLIENT_MOUNT_CREDENTIALS_DIR_NAME
                     ),
                     log=log,
+                    on_change=self.notify,
                 ),
-                RdpViewerHandler(platform=self.platform, ask=self.ask, log=log),
+                RdpViewerHandler(
+                    platform=self.platform, ask=self.ask, log=log, on_change=self.notify
+                ),
             )
         }
         # Set whenever the loop should stop waiting: a binding was written, or
@@ -234,9 +245,54 @@ class ClientSession:
         """What the platform offers as a mount location before one is typed."""
         return self.platform.suggest_mount_location()
 
+    def mount_location_choices(self) -> list:
+        """The fixed set of mount locations, when the platform has one."""
+        return self.platform.mount_location_choices()
+
     def mount_location_shape(self) -> str:
         """What a mount location is here: ``path`` or ``drive_letter``."""
         return self.platform.mount_location_shape
+
+    def subscribe(self, watcher) -> None:
+        """Be told after every change of the state the page draws.
+
+        Args:
+            watcher: Called with no arguments, on a thread of the session's.
+        """
+        with self._lock:
+            self._watchers.append(watcher)
+
+    def notify(self) -> None:
+        """Announce a change of state to every watcher, once per burst.
+
+        Changes arriving while the watchers are being told are folded into
+        the round that follows, so a burst of them costs one redraw.
+        """
+        with self._announce_lock:
+            if self._is_announcing:
+                self._is_pending_announcement = True
+                return
+            self._is_announcing = True
+            self._is_pending_announcement = False
+        threading.Thread(target=self._announce, daemon=True).start()
+
+    def _announce(self) -> None:
+        while True:
+            time.sleep(ANNOUNCE_SETTLE_S)
+            # Everything that arrived while settling is this round's.
+            with self._announce_lock:
+                self._is_pending_announcement = False
+            with self._lock:
+                watchers = list(self._watchers)
+            for watcher in watchers:
+                try:
+                    watcher()
+                except Exception as error:  # noqa: BLE001 - a watcher's own
+                    self._log(f"a state watcher failed: {error}")
+            with self._announce_lock:
+                if not self._is_pending_announcement:
+                    self._is_announcing = False
+                    return
 
     def service_states(self) -> dict:
         """Every service type's state, merged for the page payload."""
@@ -269,6 +325,7 @@ class ClientSession:
         self._load_connection()
         self._log("joined the hub")
         self.reconnect_soon()
+        self.notify()
 
     def disconnect(self) -> None:
         """Leave the hub and let go of everything it published.
@@ -289,6 +346,7 @@ class ClientSession:
         self._reset_binding_state()
         self._load_connection()
         self._log("left the hub")
+        self.notify()
 
     def reconnect_soon(self) -> None:
         """Cut the wait before the next connection attempt short."""
@@ -377,8 +435,10 @@ class ClientSession:
         """Hold the socket, or wait to be enrolled, until the resident stops."""
         self._log(f"neutrino_client {CLIENT_VERSION} starting on {self.hostname()}")
         while not self._stop.is_set():
-            delay = self.run_once()
+            # Cleared before the turn, so news that lands during it, the
+            # stop included, is still standing when the wait begins.
             self._news.clear()
+            delay = self.run_once()
             self._news.wait(timeout=delay)
 
     def run_once(self) -> int:
@@ -472,6 +532,7 @@ class ClientSession:
             self._last_error = None
             self._refusals = 0
         self._take_disabled(bool(welcome.get("is_disabled")))
+        self.notify()
 
     def _serve(self, client) -> "Exception | None":
         """Read frames until the socket ends.
@@ -492,7 +553,8 @@ class ClientSession:
                     failure = close_error(closed.code, closed.reason)
                 break
             except GatewayUnreachable as error:
-                failure = error
+                if not self._stop.is_set():
+                    failure = error
                 break
             try:
                 self._dispatch(kind, payload)
@@ -564,6 +626,7 @@ class ClientSession:
                 entry for entry in services if isinstance(entry, dict)
             ]
             self._catalog_hash = str(message.get("hash", "") or "")
+        self.notify()
 
     def _take_credential(self, credential) -> None:
         """Take the hub's AI grant, or put the tools back when it withdraws it.
@@ -623,6 +686,7 @@ class ClientSession:
         client.close()
         for pending in waiting:
             pending["event"].set()
+        self.notify()
 
     def _drop_socket(self) -> None:
         """End the socket from this side, when there is one."""
@@ -638,6 +702,7 @@ class ClientSession:
             delay = self._backoff_s
             self._backoff_s = min(self._backoff_s * 2, CLIENT_BACKOFF_MAX_S)
         self._log(f"hub socket failed: {error}; retrying in {delay}s")
+        self.notify()
         return delay
 
     def _on_rejected(self, error: Exception) -> int:

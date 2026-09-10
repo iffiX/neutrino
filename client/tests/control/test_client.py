@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-import neutrino_client.control.windows_pipe as windows_pipe
+import neutrino_client.platforms.windows_pipe as windows_pipe
 from neutrino_client.control import client
 
 

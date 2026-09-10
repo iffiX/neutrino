@@ -19,6 +19,7 @@ from __future__ import annotations
 import threading
 
 from neutrino_client.services import switcher
+from neutrino_client.services.worker import IF_BUSY_KEEP_ONE, ServiceWorker
 from neutrino_client.services.base import ServiceTypeHandler
 
 AI_CLAUDE_SLOTS = ("default", "opus", "sonnet", "haiku")
@@ -86,17 +87,37 @@ def resolved_configs(credential: dict, tool_configs: dict) -> dict:
     }
 
 
+# The one step the AI lane runs, in the page's vocabulary.
+AI_STEP_SWITCHING = "switching"
+
+
+def _nobody() -> None:
+    """Nobody listening for changes."""
+
+
 class AiServiceHandler(ServiceTypeHandler):
     """Commits the page's AI apply and keeps the tools converged on it."""
 
     service_type = "ai"
 
-    def __init__(self, *, store, log=print, switcher_module=None):
+    def __init__(
+        self,
+        *,
+        store,
+        log=print,
+        switcher_module=None,
+        on_change=None,
+        start_thread=None,
+    ):
         """
         Args:
             store: The :class:`~neutrino_client.services.store.ClientServiceStore`.
             log: Callable used for progress messages.
             switcher_module: The switcher to drive; None uses the real one.
+            on_change: Called after every change of standing; None for
+                nobody listening.
+            start_thread: The lane's thread starter; None uses a daemon
+                thread.
         """
         self._store = store
         self._log = log
@@ -104,6 +125,10 @@ class AiServiceHandler(ServiceTypeHandler):
         self._lock = threading.Lock()
         self._credential: dict = {}
         self._status: dict = self._steady(is_active=False)
+        self._on_change = on_change if on_change is not None else _nobody
+        self._worker = ServiceWorker(
+            name="ai", on_change=self._on_change, log=log, start_thread=start_thread
+        )
 
     def act(self, *, entries: list, body: dict):
         """Commit one apply: the toggle and the tool configs together.
@@ -117,12 +142,13 @@ class AiServiceHandler(ServiceTypeHandler):
         """
         if "is_enabled" not in body:
             return {"code": "unknown_request", "params": {}}
+        if self._worker.is_working:
+            return self._worker.submit(AI_STEP_SWITCHING, self.reconcile)
         tool_configs = body.get("tool_configs")
         if isinstance(tool_configs, dict):
             self._store.set_ai_tool_configs(clean_tool_configs(tool_configs))
         self._store.set_ai_enabled(bool(body.get("is_enabled")))
-        self.reconcile()
-        return {}
+        return self._worker.submit(AI_STEP_SWITCHING, self.reconcile)
 
     def state(self) -> dict:
         """This person's AI standing, for the state payload.
@@ -134,6 +160,7 @@ class AiServiceHandler(ServiceTypeHandler):
         with self._lock:
             status = dict(self._status)
         status["is_enabled"] = self._store.is_ai_enabled()
+        status["work"] = self._worker.status()
         return {"ai": status, "ai_tool_configs": self._store.ai_tool_configs()}
 
     def update_credential(self, credential: "dict | None") -> None:
@@ -145,7 +172,8 @@ class AiServiceHandler(ServiceTypeHandler):
         """
         with self._lock:
             self._credential = dict(credential) if isinstance(credential, dict) else {}
-        self.reconcile()
+        # The hub's word is never dropped: a lane at work runs it next.
+        self._worker.submit(AI_STEP_SWITCHING, self.reconcile, if_busy=IF_BUSY_KEEP_ONE)
 
     def reconcile(self) -> None:
         """Point the tools where the choice says, once, and record it."""
@@ -162,6 +190,7 @@ class AiServiceHandler(ServiceTypeHandler):
             status = self._failure("reconcile_failed", error)
         with self._lock:
             self._status = status
+        self._on_change()
 
     def restore(self) -> None:
         """Put the tools back the way activation found them."""

@@ -49,23 +49,32 @@ def _share_refusal(error: ShareAttachError) -> dict:
     return {"code": error.code, "params": params}
 
 
+def _nobody() -> None:
+    """Nobody listening for changes."""
+
+
 class FileServiceHandler(ServiceTypeHandler):
     """Mounts, unmounts, reports and remounts this person's shares."""
 
     service_type = "file"
 
-    def __init__(self, *, platform, store, credentials_dir: str, log=print):
+    def __init__(
+        self, *, platform, store, credentials_dir: str, log=print, on_change=None
+    ):
         """
         Args:
             platform: The machine's platform, behind the contract.
             store: The :class:`~neutrino_client.services.store.ClientServiceStore`.
             credentials_dir: Where the per-record credentials files live.
             log: Callable used for progress messages.
+            on_change: Called after every change a record's row would show;
+                None for nobody listening.
         """
         self._platform = platform
         self._store = store
         self._credentials_dir = credentials_dir
         self._log = log
+        self._on_change = on_change if on_change is not None else _nobody
         self._lock = threading.Lock()
         self._problems: dict = {}
         # Live step per record: queued, mounting.
@@ -197,6 +206,7 @@ class FileServiceHandler(ServiceTypeHandler):
             self._stages[record_id] = "queued"
             self._log(f"queued {_share_url(record)} for {location}")
         self._wakeup.set()
+        self._on_change()
         return {}
 
     def remount(self, *, record_id: str) -> dict:
@@ -222,6 +232,7 @@ class FileServiceHandler(ServiceTypeHandler):
             self._stages[record_id] = "queued"
             self._log(f"queued {_share_url(record)} again")
         self._wakeup.set()
+        self._on_change()
         return {}
 
     def detach(self, *, record_id: str) -> dict:
@@ -321,6 +332,12 @@ class FileServiceHandler(ServiceTypeHandler):
             self._wakeup.clear()
 
     def _remount(self, record_id: str, record: dict) -> None:
+        try:
+            self._mount_record(record_id, record)
+        finally:
+            self._on_change()
+
+    def _mount_record(self, record_id: str, record: dict) -> None:
         location = str(record.get("path", ""))
         try:
             if self._platform.is_share_attached(location=location):
@@ -343,6 +360,7 @@ class FileServiceHandler(ServiceTypeHandler):
             self._stages.pop(record_id, None)
             return
         self._stages[record_id] = "mounting"
+        self._on_change()
         try:
             self._platform.attach_share(
                 share_url=_share_url(record),

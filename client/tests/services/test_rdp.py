@@ -51,6 +51,20 @@ class FakeHub:
         return dict(self.reply)
 
 
+def failure_of(subject) -> dict:
+    """What the desktop lane refused last, as the state carries it."""
+    work = subject.state()["rdp_work"]
+    return {"code": work["code"], "params": work["params"]}
+
+
+IDLE_WORK = {"state": "idle", "step": "", "code": "", "params": {}}
+
+
+def run_inline(target):
+    """The lane's thread starter, running the job right here."""
+    target()
+
+
 @pytest.fixture
 def handler(monkeypatch):
     monkeypatch.setattr(bundled, "rustdesk_path", lambda: "/opt/rustdesk")
@@ -59,7 +73,9 @@ def handler(monkeypatch):
     lines = []
     platform = FakeClientPlatform()
     hub = FakeHub()
-    subject = RdpViewerHandler(platform=platform, ask=hub.ask, log=lines.append)
+    subject = RdpViewerHandler(
+        platform=platform, ask=hub.ask, log=lines.append, start_thread=run_inline
+    )
     return subject, platform, hub, lines
 
 
@@ -78,7 +94,10 @@ def test_connect_asks_the_hub_and_dials_the_viewer(handler):
         "--password",
         "hunter2",  # scan: allow
     ]
-    assert subject.state() == {"viewers": {"rdp_s9": {"is_running": True}}}
+    assert subject.state() == {
+        "viewers": {"rdp_s9": {"is_running": True}},
+        "rdp_work": IDLE_WORK,
+    }
 
 
 def test_the_password_reaches_no_log_and_no_state(handler):
@@ -104,10 +123,8 @@ def test_a_share_the_hub_no_longer_has_is_typed(handler):
     subject, platform, hub, _lines = handler
     hub.error = GatewayRefusedDetail(code="rdp_not_shared", params={})
 
-    assert subject.act(entries=[ENTRY], body=CONNECT_BODY) == {
-        "code": "rdp_not_shared",
-        "params": {},
-    }
+    assert subject.act(entries=[ENTRY], body=CONNECT_BODY) == {}
+    assert failure_of(subject) == {"code": "rdp_not_shared", "params": {}}
     assert platform.started == []
 
 
@@ -123,7 +140,8 @@ def test_a_hub_that_does_not_answer_is_typed(handler, error, code):
     subject, platform, hub, _lines = handler
     hub.error = error
 
-    assert subject.act(entries=[ENTRY], body=CONNECT_BODY)["code"] == code
+    assert subject.act(entries=[ENTRY], body=CONNECT_BODY) == {}
+    assert failure_of(subject)["code"] == code
     assert platform.started == []
 
 
@@ -131,7 +149,8 @@ def test_a_missing_viewer_is_a_bundle_refusal(handler, monkeypatch):
     subject, platform, hub, _lines = handler
     monkeypatch.setattr(bundled, "rustdesk_path", lambda: "")
 
-    assert subject.act(entries=[ENTRY], body=CONNECT_BODY) == {
+    assert subject.act(entries=[ENTRY], body=CONNECT_BODY) == {}
+    assert failure_of(subject) == {
         "code": "bundle_missing",
         "params": {"binary": "rustdesk"},
     }
@@ -160,10 +179,8 @@ def test_a_reply_with_no_address_is_refused_rather_than_dialled(handler):
     subject, platform, hub, _lines = handler
     hub.reply["host"] = ""
 
-    assert subject.act(entries=[ENTRY], body=CONNECT_BODY) == {
-        "code": "rdp_no_address",
-        "params": {},
-    }
+    assert subject.act(entries=[ENTRY], body=CONNECT_BODY) == {}
+    assert failure_of(subject) == {"code": "rdp_no_address", "params": {}}
     assert platform.started == []
 
 
@@ -171,10 +188,8 @@ def test_no_display_refuses_rather_than_opening_nothing(handler, monkeypatch):
     subject, platform, _hub, _lines = handler
     monkeypatch.setattr(rdp_module.os, "environ", {})
 
-    assert subject.act(entries=[ENTRY], body=CONNECT_BODY) == {
-        "code": "rdp_no_desktop",
-        "params": {},
-    }
+    assert subject.act(entries=[ENTRY], body=CONNECT_BODY) == {}
+    assert failure_of(subject) == {"code": "rdp_no_desktop", "params": {}}
     assert platform.started == []
 
 
@@ -182,9 +197,9 @@ def test_a_viewer_that_will_not_start_is_typed(handler):
     subject, platform, _hub, _lines = handler
     platform.start_error = OSError("no such binary")
 
-    refusal = subject.act(entries=[ENTRY], body=CONNECT_BODY)
+    assert subject.act(entries=[ENTRY], body=CONNECT_BODY) == {}
 
-    assert refusal["code"] == "rdp_launch_failed"
+    assert failure_of(subject)["code"] == "rdp_launch_failed"
 
 
 def test_close_all_terminates_every_viewer_and_is_idempotent(handler):
@@ -197,7 +212,7 @@ def test_close_all_terminates_every_viewer_and_is_idempotent(handler):
     subject.release()
 
     assert all(process.is_terminated for process in platform.started)
-    assert subject.state() == {"viewers": {}}
+    assert subject.state() == {"viewers": {}, "rdp_work": IDLE_WORK}
 
 
 def test_a_viewer_the_person_closed_leaves_the_state(handler):
@@ -205,7 +220,7 @@ def test_a_viewer_the_person_closed_leaves_the_state(handler):
     subject.act(entries=[ENTRY], body=CONNECT_BODY)
     platform.started[0].returncode = 0
 
-    assert subject.state() == {"viewers": {}}
+    assert subject.state() == {"viewers": {}, "rdp_work": IDLE_WORK}
 
 
 def test_the_default_port_is_dialled_by_bare_address():
@@ -244,3 +259,28 @@ def test_the_windows_viewer_needs_no_display(handler, monkeypatch):
 
     assert subject.act(entries=[ENTRY], body=CONNECT_BODY) == {}
     assert isinstance(platform.started[0], FakeProcess)
+
+
+def test_a_second_connect_while_one_is_in_flight_is_busy(monkeypatch):
+    """The lane runs one connect at a time; the page greys the row."""
+    monkeypatch.setattr(bundled, "rustdesk_path", lambda: "/opt/rustdesk")
+    monkeypatch.setattr(rdp_module.os, "environ", {"DISPLAY": ":0"})
+    monkeypatch.setattr(rdp_module.os, "name", "posix")
+    held = []
+    subject = RdpViewerHandler(
+        platform=FakeClientPlatform(),
+        ask=FakeHub().ask,
+        log=print,
+        start_thread=held.append,
+    )
+
+    assert subject.act(entries=[ENTRY], body=CONNECT_BODY) == {}
+    assert subject.state()["rdp_work"]["state"] == "working"
+    assert subject.state()["rdp_work"]["step"] == "connecting:rdp_s9"
+    assert subject.act(entries=[ENTRY], body=CONNECT_BODY) == {
+        "code": "busy",
+        "params": {"step": "connecting:rdp_s9"},
+    }
+
+    held[0]()
+    assert subject.state()["rdp_work"]["state"] == "idle"

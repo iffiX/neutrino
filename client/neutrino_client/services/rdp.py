@@ -21,6 +21,7 @@ from neutrino_client.core.channel import (
     GatewayUntrusted,
 )
 from neutrino_client.services.base import ServiceTypeHandler, find_entry
+from neutrino_client.services.worker import ServiceWorker
 
 RDP_ACTION_CONNECT = "connect"
 RDP_ASK_KIND = "rdp_connect"
@@ -70,24 +71,40 @@ def client_invocation(binary: str, peer: str, password: str) -> list:
     return [binary, "--connect", peer, "--password", password]
 
 
+# The one step the desktop lane runs, in the page's vocabulary.
+RDP_STEP_CONNECTING = "connecting"
+
+
+def _nobody() -> None:
+    """Nobody listening for changes."""
+
+
 class RdpViewerHandler(ServiceTypeHandler):
     """Opens the carried RustDesk viewer at desktops the fleet shares."""
 
     service_type = "rdp"
 
-    def __init__(self, *, platform, ask, log=print):
+    def __init__(self, *, platform, ask, log=print, on_change=None, start_thread=None):
         """
         Args:
             platform: The machine's platform, behind the contract.
             ask: Callable ``(kind, args) -> dict`` asking the hub over the
                 open socket; raises the channel's exceptions.
             log: Callable used for progress messages.
+            on_change: Called after every change of standing; None for
+                nobody listening.
+            start_thread: The lane's thread starter; None uses a daemon
+                thread.
         """
         self._platform = platform
         self._ask = ask
         self._log = log
         self._lock = threading.Lock()
         self._viewers: dict = {}
+        self._on_change = on_change if on_change is not None else _nobody
+        self._worker = ServiceWorker(
+            name="rdp", on_change=self._on_change, log=log, start_thread=start_thread
+        )
 
     def act(self, *, entries: list, body: dict):
         """Connect to one shared desktop.
@@ -104,6 +121,19 @@ class RdpViewerHandler(ServiceTypeHandler):
         entry = find_entry(entries, self.service_type, str(body.get("id", "")))
         if entry is None:
             return {"code": "unknown_request", "params": {}}
+        return self._worker.submit(
+            f"{RDP_STEP_CONNECTING}:{entry.get('id')}", lambda: self._open(entry)
+        )
+
+    def _open(self, entry: dict) -> dict:
+        """Ask the hub for the seat and start the viewer at it.
+
+        Args:
+            entry: The desktop's service entry.
+
+        Returns:
+            Empty when the viewer started, ``{"code", "params"}`` otherwise.
+        """
         binary = bundled.rustdesk_path()
         if not binary:
             return bundled.bundle_missing("rustdesk")
@@ -145,11 +175,8 @@ class RdpViewerHandler(ServiceTypeHandler):
         """
         with self._lock:
             self._prune()
-            return {
-                "viewers": {
-                    entry_id: {"is_running": True} for entry_id in self._viewers
-                }
-            }
+            viewers = {entry_id: {"is_running": True} for entry_id in self._viewers}
+        return {"viewers": viewers, "rdp_work": self._worker.status()}
 
     def release(self) -> None:
         """Close every viewer this resident opened."""

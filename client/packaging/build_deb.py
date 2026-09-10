@@ -8,7 +8,7 @@ it names no Python at all. That fixes it to one architecture: build it in a
 container of the machine it is for, the way the hub's package is built.
 
 The client is a person's application, not a service: the package installs a
-launcher and an autostart entry and registers no unit.
+launcher, no autostart entry, and registers no unit.
 
 Needs the development headers the window's bindings compile against, and
 `dpkg-deb` for both the build and the viewer it unpacks.
@@ -227,7 +227,7 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
 
 
 def _lay_out_desktop(tree: Path) -> None:
-    """Install the launcher, the autostart entry and the icons.
+    """Install the launcher and the icons.
 
     Args:
         tree: The directory to build under.
@@ -236,12 +236,6 @@ def _lay_out_desktop(tree: Path) -> None:
     payload.write(
         tree / f"usr/share/applications/{CLIENT_DESKTOP_NAME}.desktop",
         (desktop / f"{CLIENT_DESKTOP_NAME}.desktop").read_text(encoding="utf-8"),
-    )
-    payload.write(
-        tree / f"etc/xdg/autostart/{CLIENT_DESKTOP_NAME}.desktop",
-        (desktop / f"{CLIENT_DESKTOP_NAME}_autostart.desktop").read_text(
-            encoding="utf-8"
-        ),
     )
     for source, edge in (("neutrino_256.png", 256), ("neutrino_48.png", 48)):
         destination = (

@@ -33,6 +33,7 @@ def open_shell_window(
     is_hidden: bool = False,
     on_quit=None,
     on_show_ready=None,
+    on_push_ready=None,
 ):
     """Open the platform's window and block until its Quit ends the loop.
 
@@ -45,6 +46,8 @@ def open_shell_window(
         is_hidden: Whether to start in the tray with no window shown.
         on_quit: Called when the person picks Quit, before the loop ends.
         on_show_ready: Called with a callable that brings the window up.
+        on_push_ready: Called with a callable that hands the page one state
+            payload to redraw from.
 
     Raises:
         GuiShellUnavailableError: When the platform has no shell, or its
@@ -61,6 +64,7 @@ def open_shell_window(
         is_hidden=is_hidden,
         on_quit=on_quit,
         on_show_ready=on_show_ready,
+        on_push_ready=on_push_ready,
     )
 
 
