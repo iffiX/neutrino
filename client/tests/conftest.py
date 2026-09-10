@@ -243,6 +243,7 @@ class FakeSession:
         self.is_bound = True
         self.error_payload = None
         self.hub_version_value = "0.2.0"
+        self.connection_state_value = "connected"
         self.is_disabled_value = False
         self.states = {
             "forwards": {"svc_tcp": {"local_port": 5432, "is_active": True}},
@@ -286,6 +287,9 @@ class FakeSession:
 
     def is_connected(self) -> bool:
         return self.is_bound
+
+    def connection_state(self) -> str:
+        return self.connection_state_value if self.is_bound else "unbound"
 
     def gateway_url(self) -> str:
         return "https://hub.lan:8443" if self.is_bound else ""

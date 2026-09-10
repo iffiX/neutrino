@@ -634,7 +634,7 @@ class CliproxyApiUsageKey(CliproxyApiUsageTotals):
 
     key_id: str
     name: str
-    device_name: str | None = None
+    client_name: str | None = None
     first_seen_at: str = ""
     last_seen_at: str = ""
 
@@ -1270,7 +1270,7 @@ class DeviceEnrollmentView(BaseModel):
     expires_in_s: int
 
 
-class ClientEnroll(BaseModel):
+class AgentEnroll(BaseModel):
     """A machine introducing itself with an enrollment token."""
 
     enrollment_token: str
@@ -1284,12 +1284,73 @@ class ClientEnroll(BaseModel):
     mac_addresses: list[str] = Field(default_factory=list)
 
 
-class ClientEnrollReply(BaseModel):
+class AgentEnrollReply(BaseModel):
     """What the gateway hands back once a machine has joined."""
 
     token: str
     mac_address: str
     hub_version: str = ""
+
+
+class ClientEnroll(BaseModel):
+    """A person's client program introducing itself with an enrollment token."""
+
+    enrollment_token: str
+    hostname: str = ""
+    platform: dict = Field(default_factory=dict)
+    client_version: str = ""
+
+
+class ClientEnrollReply(BaseModel):
+    """What the hub hands back once a client has joined."""
+
+    token: str
+    client_id: str
+    hub_version: str = ""
+
+
+class ClientLeave(BaseModel):
+    """A client saying it is leaving; the token is all it needs to prove."""
+
+    token: str
+
+
+class ClientView(BaseModel):
+    """One enrolled client on the Clients page."""
+
+    id: str
+    name: str
+    hostname: str = ""
+    platform_os: str = ""
+    version: str = ""
+    is_online: bool = False
+    last_seen: str | None = None
+    is_disabled: bool = False
+
+
+class ClientListView(BaseModel):
+    """Every enrolled client."""
+
+    clients: list[ClientView] = Field(default_factory=list)
+
+
+class ClientEnrollmentRequest(BaseModel):
+    """Ask for a link a named client can join with."""
+
+    name: str = ""
+
+
+class ClientEnrollmentView(BaseModel):
+    """The link to paste into the client program."""
+
+    link: str
+    expires_at: str
+
+
+class ClientUpdate(BaseModel):
+    """The one switch a client record takes."""
+
+    is_disabled: bool
 
 
 class ClientPackageRequest(BaseModel):
@@ -1418,7 +1479,7 @@ class DeviceInstallOutputView(BaseModel):
     orders: list[DeviceInstallOrderView] = Field(default_factory=list)
 
 
-class ClientLeave(BaseModel):
+class AgentLeave(BaseModel):
     """An agent saying it is leaving; the token is all it needs to prove."""
 
     token: str

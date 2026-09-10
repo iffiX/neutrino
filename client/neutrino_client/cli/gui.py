@@ -1,9 +1,10 @@
-"""``nclient gui``: the resident, and its window.
+"""``nclient gui``: the resident, its tray icon, and its window.
 
 One process is the whole client: it binds this person's control socket,
-polls the hub, keeps the service handlers, and shows the window on the main
-thread. A second invocation finds the socket held, asks the running one to
-show its window, and exits.
+holds the socket to the hub, keeps the service handlers, and runs the window
+on the main thread. Closing the window hides it; the tray's Quit is what
+stops the resident. A second invocation finds the socket held, asks the
+running one to show its window, and exits.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -29,8 +30,7 @@ def main(*, is_hidden: bool = False) -> int:
     """Run the resident, or hand the ask to the one already running.
 
     Args:
-        is_hidden: Accepted for the launcher's autostart entry; the window
-            opens either way until the tray lands.
+        is_hidden: Whether to start in the tray with no window shown.
 
     Returns:
         Process exit status.
@@ -50,7 +50,7 @@ def main(*, is_hidden: bool = False) -> int:
     session.start()
     server.start()
     try:
-        return _open(platform.os_name, session)
+        return _open(platform.os_name, session, is_hidden=is_hidden)
     finally:
         session.shutdown()
         server.stop()
@@ -83,16 +83,21 @@ def _show_running(socket_path: str) -> int:
     return 1
 
 
-def _open(os_name: str, session) -> int:
+def _open(os_name: str, session, *, is_hidden: bool) -> int:
     """Open the platform's shell over the in-process channel.
 
     Args:
         os_name: The platform's ``os_name``.
         session: The running session.
+        is_hidden: Whether to start in the tray with no window shown.
 
     Returns:
         Process exit status.
     """
+
+    def register_show(show) -> None:
+        session.on_show = show
+
     try:
         open_shell_window(
             os_name=os_name,
@@ -100,6 +105,9 @@ def _open(os_name: str, session) -> int:
             html=control_page_html(),
             bridge=GuiBridge(channel=InProcessChannel(session=session)),
             icon_path=window_icon_path(),
+            is_hidden=is_hidden,
+            on_quit=session.shutdown,
+            on_show_ready=register_show,
         )
     except GuiShellUnavailableError as error:
         print(wording.word_code(error.code, error.params), file=sys.stderr)

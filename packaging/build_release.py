@@ -95,6 +95,38 @@ AGENT_BUILDS = {
     },
 }
 
+# What builds the client for each family, and what that family needs
+# installed first. The window's bindings are compiled here against the
+# family's own C libraries, and the viewer is unpacked out of upstream's .deb,
+# so both families need dpkg and readelf.
+CLIENT_BUILDS = {
+    "debian": {
+        "image": "debian:12",
+        "install": "apt-get -qq update >/dev/null 2>&1 && "
+        "apt-get -qq install -y python3 dpkg dpkg-dev binutils pkg-config "
+        "build-essential libgirepository1.0-dev libcairo2-dev ca-certificates "
+        ">/dev/null 2>&1",
+        "script": "build_deb.py",
+    },
+    "rhel": {
+        "image": "fedora:41",
+        "install": "dnf -q -y install python3 rpm-build dpkg binutils "
+        "pkgconf-pkg-config gcc gobject-introspection-devel cairo-devel "
+        "cairo-gobject-devel libffi-devel cpio >/dev/null 2>&1",
+        "script": "build_rpm.py",
+    },
+}
+
+CLIENT_CONTAINER_BUILD = (
+    "{install} && mkdir -p /build/client /build/images && "
+    "cp -r /src/client/neutrino_client /src/client/packaging "
+    "/src/client/frontend /src/client/pyproject.toml /build/client/ && "
+    "cp -r /src/images/icons /build/images/ && "
+    "cp -r /src/licenses /build/licenses && cd /build && "
+    "python3 client/packaging/{script} --output-dir /out "
+    "--architecture {architecture}"
+)
+
 AGENT_CONTAINER_BUILD = (
     "{install} && mkdir -p /build/agent /build/images && "
     "cp -r /src/agent/neutrino_agent /src/agent/packaging "
@@ -146,7 +178,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--only",
-        choices=("all", "hub", "agent", "checksums"),
+        choices=("all", "hub", "agent", "client", "checksums"),
         default="all",
         help="build one part of the release instead of everything",
     )
@@ -177,6 +209,23 @@ def main() -> int:
             _build_in_container(
                 AGENT_BUILDS[family],
                 AGENT_CONTAINER_BUILD,
+                output_dir,
+                arguments.architecture,
+                family,
+            )
+
+    if arguments.only in ("all", "client"):
+        for family in _families(arguments.families):
+            if family not in CLIENT_BUILDS:
+                print(f"  no client package for {family}")
+                continue
+            print(
+                f"building the client package for {family} "
+                f"{arguments.architecture} in {CLIENT_BUILDS[family]['image']}"
+            )
+            _build_in_container(
+                CLIENT_BUILDS[family],
+                CLIENT_CONTAINER_BUILD,
                 output_dir,
                 arguments.architecture,
                 family,
@@ -240,8 +289,8 @@ def _build_in_container(
     """Run one packaging build inside a container of its own family.
 
     Args:
-        build: The family's entry in :data:`HUB_BUILDS` or
-            :data:`AGENT_BUILDS`.
+        build: The family's entry in :data:`HUB_BUILDS`,
+            :data:`AGENT_BUILDS` or :data:`CLIENT_BUILDS`.
         script: The shell command template to run inside it.
         output_dir: Where the package should land.
         architecture: The architecture to build for, named the Debian way.

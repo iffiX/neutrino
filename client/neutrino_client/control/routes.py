@@ -38,6 +38,7 @@ def state_payload(session) -> dict:
         "mount_location_suggestion": session.suggest_mount_location(),
         "home": session.home(),
         "is_connected": session.is_connected(),
+        "connection_state": session.connection_state(),
         "gateway_url": session.gateway_url(),
         "hub_version": session.hub_version(),
         "is_disabled": session.is_disabled(),

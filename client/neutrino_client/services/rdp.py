@@ -1,9 +1,9 @@
 """The rdp service type: connecting to a desktop another machine shares.
 
-Connect asks the hub for the share's address and access password, then
-starts the carried RustDesk viewer at it. The password travels in the one
-reply and the one argument vector and lands in no log and no state. The
-viewer processes are tracked so a shutdown closes them.
+Connect asks the hub over the open socket for the share's address and access
+password, then starts the carried RustDesk viewer at it. The password travels
+in the one answer and the one argument vector and lands in no log and no
+state. The viewer processes are tracked so a shutdown closes them.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -15,7 +15,6 @@ import subprocess
 import threading
 
 from neutrino_client import bundled
-from neutrino_client.constants import CLIENT_RDP_CONNECT_PATH
 from neutrino_client.core.channel import (
     GatewayRefusedDetail,
     GatewayUnreachable,
@@ -24,6 +23,7 @@ from neutrino_client.core.channel import (
 from neutrino_client.services.base import ServiceTypeHandler, find_entry
 
 RDP_ACTION_CONNECT = "connect"
+RDP_ASK_KIND = "rdp_connect"
 RUSTDESK_DIRECT_PORT = 21118
 RDP_CLOSE_TIMEOUT_S = 5
 
@@ -75,16 +75,16 @@ class RdpViewerHandler(ServiceTypeHandler):
 
     service_type = "rdp"
 
-    def __init__(self, *, platform, post, log=print):
+    def __init__(self, *, platform, ask, log=print):
         """
         Args:
             platform: The machine's platform, behind the contract.
-            post: Callable ``(path, payload) -> dict`` posting to the hub
-                over the pinned channel; raises the channel's exceptions.
+            ask: Callable ``(kind, args) -> dict`` asking the hub over the
+                open socket; raises the channel's exceptions.
             log: Callable used for progress messages.
         """
         self._platform = platform
-        self._post = post
+        self._ask = ask
         self._log = log
         self._lock = threading.Lock()
         self._viewers: dict = {}
@@ -108,7 +108,7 @@ class RdpViewerHandler(ServiceTypeHandler):
         if not binary:
             return bundled.bundle_missing("rustdesk")
         try:
-            reply = self._post(CLIENT_RDP_CONNECT_PATH, {"id": entry.get("id")})
+            reply = self._ask(RDP_ASK_KIND, {"service_id": entry.get("id")})
         except GatewayRefusedDetail as error:
             return {"code": error.code, "params": dict(error.params)}
         except GatewayUntrusted:

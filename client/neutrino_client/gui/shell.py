@@ -1,10 +1,11 @@
 """One window seam, one shell per platform.
 
 Each shell embeds the platform's own web view, WebKitGTK on Linux and
-WebView2 on Windows, loads the page, and registers the message handler the
-page's bridge adapter posts to. The toolkit imports are guarded at call
-time, so a machine without one still imports the client, and opening the
-window there refuses with a typed code naming what to install.
+WebView2 on Windows, loads the page, registers the message handler the
+page's bridge adapter posts to, and puts an icon in the status area. The
+toolkit imports are guarded at call time, so a machine without one still
+imports the client, and opening the window there refuses with a typed code
+naming what to install.
 """
 
 
@@ -22,8 +23,18 @@ class GuiShellUnavailableError(Exception):
         self.params = dict(params or {})
 
 
-def open_shell_window(*, os_name: str, title: str, html: str, bridge, icon_path=""):
-    """Open the platform's window and block until it closes.
+def open_shell_window(
+    *,
+    os_name: str,
+    title: str,
+    html: str,
+    bridge,
+    icon_path="",
+    is_hidden: bool = False,
+    on_quit=None,
+    on_show_ready=None,
+):
+    """Open the platform's window and block until its Quit ends the loop.
 
     Args:
         os_name: The platform's ``os_name``.
@@ -31,6 +42,9 @@ def open_shell_window(*, os_name: str, title: str, html: str, bridge, icon_path=
         html: The page, as one document.
         bridge: The window's bridge.
         icon_path: The window icon's file path, empty for none.
+        is_hidden: Whether to start in the tray with no window shown.
+        on_quit: Called when the person picks Quit, before the loop ends.
+        on_show_ready: Called with a callable that brings the window up.
 
     Raises:
         GuiShellUnavailableError: When the platform has no shell, or its
@@ -39,7 +53,15 @@ def open_shell_window(*, os_name: str, title: str, html: str, bridge, icon_path=
     shell = _shell_for(os_name)
     if shell is None:
         raise GuiShellUnavailableError("unsupported_platform")
-    shell.open_window(title=title, html=html, bridge=bridge, icon_path=icon_path)
+    shell.open_window(
+        title=title,
+        html=html,
+        bridge=bridge,
+        icon_path=icon_path,
+        is_hidden=is_hidden,
+        on_quit=on_quit,
+        on_show_ready=on_show_ready,
+    )
 
 
 def _shell_for(os_name: str):

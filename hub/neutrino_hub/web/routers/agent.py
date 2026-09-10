@@ -16,6 +16,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from neutrino_hub import HUB_VERSION
+from neutrino_hub.modules.clients.constants import CLIENT_ENROLLMENT_KIND
 from neutrino_hub.modules.devices.agent_module_cache import AgentModuleFetchError
 from neutrino_hub.modules.devices.agent_package import AgentPackageFetchError
 from neutrino_hub.modules.devices.constants import (
@@ -27,9 +28,9 @@ from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.utils.version_number import parse_version
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.models import (
-    ClientEnroll,
-    ClientEnrollReply,
-    ClientLeave,
+    AgentEnroll,
+    AgentEnrollReply,
+    AgentLeave,
     ClientModulePackage,
     ClientPackageRequest,
 )
@@ -38,12 +39,12 @@ from neutrino_hub.web.panel_runtime import PanelRuntime
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
 
-@router.post("/enroll", response_model=ClientEnrollReply)
+@router.post("/enroll", response_model=AgentEnrollReply)
 def enroll(
-    request: ClientEnroll,
+    request: AgentEnroll,
     http_request: Request,
     runtime: PanelRuntime = Depends(get_runtime),
-) -> ClientEnrollReply:
+) -> AgentEnrollReply:
     """Let a machine introduce itself with an enrollment ticket.
 
     This is how a machine the gateway cannot reach — no SSH, or behind
@@ -69,7 +70,11 @@ def enroll(
     # Taken before it is judged: a ticket leaves the store in one step, so
     # two machines racing the same link cannot both spend it.
     ticket = runtime.enrollments.pop(request.enrollment_token, None)
-    if ticket is None or ticket["expires_at"] < time.time():
+    if (
+        ticket is None
+        or ticket.get("kind") == CLIENT_ENROLLMENT_KIND
+        or ticket["expires_at"] < time.time()
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="that enrollment link is unknown or has expired",
@@ -85,25 +90,34 @@ def enroll(
         runtime.client_platform[key] = dict(request.platform)
     if request.hostname:
         runtime.client_hostname[key] = request.hostname
-    peer_host = _peer_host(http_request)
-    if peer_host:
-        runtime.client_address[key] = peer_host
-    return ClientEnrollReply(token=token, mac_address=key, hub_version=HUB_VERSION)
+    address = peer_host(http_request)
+    if address:
+        runtime.client_address[key] = address
+    return AgentEnrollReply(token=token, mac_address=key, hub_version=HUB_VERSION)
 
 
-def version_refusal(client_version: str, wire: int) -> "dict | None":
-    """Judge whether an agent may talk to this hub at all.
+def version_refusal(
+    client_version: str,
+    wire: "int | None",
+    *,
+    code: str = "agent_newer_than_hub",
+    version_field: str = "agent_version",
+) -> "dict | None":
+    """Judge whether an agent or a client may talk to this hub at all.
 
     The two ship together and are supported only together, so a newer agent
     is not negotiated with. The generation catches what a version compare
     cannot: a same-version rebuild that changed the shapes on the wire.
 
     Args:
-        client_version: What the agent reported itself as.
-        wire: The generation the agent reported.
+        client_version: What the program reported itself as.
+        wire: The generation the agent reported; None for a client, which
+            carries none.
+        code: The refusal code for a newer program.
+        version_field: The params key the program's version is named under.
 
     Returns:
-        ``{"code", "params"}`` naming the refusal, or None when the agent
+        ``{"code", "params"}`` naming the refusal, or None when the program
         is admitted. A version that does not parse on either side refuses
         nothing.
     """
@@ -111,9 +125,11 @@ def version_refusal(client_version: str, wire: int) -> "dict | None":
     hub = parse_version(HUB_VERSION)
     if agent is not None and hub is not None and agent > hub:
         return {
-            "code": "agent_newer_than_hub",
-            "params": {"hub_version": HUB_VERSION, "agent_version": client_version},
+            "code": code,
+            "params": {"hub_version": HUB_VERSION, version_field: client_version},
         }
+    if wire is None:
+        return None
     if wire != AGENT_WIRE_GENERATION:
         return {
             "code": "agent_wire_stale",
@@ -122,7 +138,7 @@ def version_refusal(client_version: str, wire: int) -> "dict | None":
     return None
 
 
-def _peer_host(request: Request) -> str:
+def peer_host(request: Request) -> str:
     """Where a channel comes from, as this hub's own socket sees it.
 
     The one first-hand answer to where a machine is: a scan sees only the
@@ -140,7 +156,7 @@ def _peer_host(request: Request) -> str:
     return client.host if client is not None else ""
 
 
-def _reported_key(registry: DeviceRegistry, request: ClientEnroll) -> str:
+def _reported_key(registry: DeviceRegistry, request: AgentEnroll) -> str:
     """The record an unbound enrollment lands on.
 
     A machine that reports its MACs joins as the device a scan or an SSH
@@ -169,7 +185,7 @@ def _reported_key(registry: DeviceRegistry, request: ClientEnroll) -> str:
 
 
 @router.post("/leave")
-def leave(report: ClientLeave, runtime: PanelRuntime = Depends(get_runtime)) -> dict:
+def leave(report: AgentLeave, runtime: PanelRuntime = Depends(get_runtime)) -> dict:
     """Accept an agent's word that it is leaving.
 
     Called when someone disconnects a machine from its own agent window. The

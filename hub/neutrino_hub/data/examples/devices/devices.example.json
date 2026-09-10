@@ -13,10 +13,9 @@
         "key_id": "d9d20c004ab4b212",
         "login_id": null
       },
-      "_comment_client": "Written by the panel when the device enrolls. token_sha256 is the hash of the secret its agent authenticates the channel with; the raw token exists only on the device. ai_key_ids names the gateway client key generated for each activated account.",
+      "_comment_client": "Written by the panel when the device enrolls. token_sha256 is the hash of the secret its agent authenticates the channel with; the raw token exists only on the device.",
       "client": {
-        "token_sha256": null,
-        "ai_key_ids": {}
+        "token_sha256": null
       }
     }
   }

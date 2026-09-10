@@ -11,11 +11,6 @@ from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from neutrino_hub.modules.cliproxyapi.ops import (
-    CliproxyApiConfigApplier,
-    load_config as load_cliproxyapi_config,
-    save_config as save_cliproxyapi_config,
-)
 from neutrino_hub.modules.devices.agent_module_cache import (
     platform_keys,
     resolve_platform_entry,
@@ -308,8 +303,7 @@ def forget(mac_address: str, runtime: PanelRuntime = Depends(get_runtime)) -> di
 
     The SSH key it referenced is left in the registry: keys outlive the
     devices that use them, and the Credentials page is where they are
-    removed. The gateway client keys its accounts held are its alone, so
-    those are revoked with it.
+    removed.
 
     What is held in memory goes with the record. A command queued for a device
     that is forgotten would otherwise be delivered to whatever machine turns up
@@ -323,34 +317,10 @@ def forget(mac_address: str, runtime: PanelRuntime = Depends(get_runtime)) -> di
     Returns:
         An empty object.
     """
-    _revoke_device_ai_keys(mac_address)
     DeviceRegistry().forget(mac_address)
     runtime.forget_client_state(mac_address)
     runtime.events.publish(WEB_EVENT_DEVICES)
     return {}
-
-
-def _revoke_device_ai_keys(mac_address: str) -> None:
-    """Remove every gateway client key a device's accounts held.
-
-    Args:
-        mac_address: The device's MAC.
-    """
-    is_changed = False
-    with CONFIG_WRITE_LOCK:
-        held = set(DeviceRegistry().get(mac_address).client.ai_key_ids.values())
-        if held:
-            config = load_cliproxyapi_config()
-            remaining = [key for key in config.client_keys if key.id not in held]
-            if len(remaining) != len(config.client_keys):
-                config.client_keys = remaining
-                save_cliproxyapi_config(config)
-                is_changed = True
-    if is_changed:
-        try:
-            CliproxyApiConfigApplier().apply()
-        except ValueError:
-            return
 
 
 def _store_ssh_secrets(ssh: DeviceSshConfig | None) -> dict | None:
@@ -495,6 +465,34 @@ def _generate_enrollment_link(
             ``{"code": "agent_tls_missing"}`` when the channel has no
             certificate to pin.
     """
+    urls, fingerprint = enrollment_link_parts(runtime)
+    # One open invitation at a time: generating replaces whatever device link
+    # was out, so only the machine the link was just made for can join on it.
+    clear_enrollments(runtime, kind=None)
+    token = secrets.token_urlsafe(ENROLLMENT_TOKEN_BYTES)
+    runtime.enrollments[token] = {
+        "name": name.strip(),
+        "mac_address": (mac_address or "").lower() or None,
+        "expires_at": time.time() + ENROLLMENT_TTL_S,
+    }
+    return enrollment_link(urls, token, fingerprint), token
+
+
+def enrollment_link_parts(runtime: PanelRuntime) -> tuple[list, str]:
+    """What every enrollment link carries besides its ticket.
+
+    Args:
+        runtime: The shared runtime.
+
+    Returns:
+        The agent channel's URLs and the certificate fingerprint.
+
+    Raises:
+        HTTPException: 400 when no served network has an address, so there is
+            nothing for a machine to reach the panel at; 409 with
+            ``{"code": "agent_tls_missing"}`` when the channel has no
+            certificate to pin.
+    """
     urls = _agent_urls(runtime)
     if not urls:
         raise HTTPException(
@@ -508,25 +506,45 @@ def _generate_enrollment_link(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "agent_tls_missing"},
         ) from error
-    # One open invitation at a time: generating replaces whatever link was out,
-    # so only the machine the link was just made for can join on it.
-    runtime.enrollments.clear()
-    token = secrets.token_urlsafe(ENROLLMENT_TOKEN_BYTES)
-    runtime.enrollments[token] = {
-        "name": name.strip(),
-        "mac_address": (mac_address or "").lower() or None,
-        "expires_at": time.time() + ENROLLMENT_TTL_S,
-    }
+    return urls, fingerprint
+
+
+def enrollment_link(
+    urls: list, token: str, fingerprint: str, kind: "str | None" = None
+) -> str:
+    """The link a ticket rides in.
+
+    Args:
+        urls: The agent channel's URLs.
+        token: The ticket.
+        fingerprint: The certificate fingerprint the program pins.
+        kind: What kind of enrollment it is; None for a device.
+
+    Returns:
+        The ``neutrino://enroll/`` link.
+    """
+    body = {"urls": urls, "token": token, "fp": fingerprint}
+    if kind is not None:
+        body["kind"] = kind
     # The whole payload rides base64url, whose alphabet has no character a
     # shell splits or a URL escapes — the link pastes anywhere unquoted.
-    payload = (
-        base64.urlsafe_b64encode(
-            json.dumps({"urls": urls, "token": token, "fp": fingerprint}).encode()
-        )
-        .decode()
-        .rstrip("=")
-    )
-    return f"neutrino://enroll/{payload}", token
+    payload = base64.urlsafe_b64encode(json.dumps(body).encode()).decode()
+    return f"neutrino://enroll/{payload.rstrip('=')}"
+
+
+def clear_enrollments(runtime: PanelRuntime, *, kind: "str | None") -> None:
+    """Drop every open ticket of one kind.
+
+    Args:
+        runtime: The shared runtime.
+        kind: The ticket kind to drop; None drops the device tickets.
+    """
+    for token in [
+        token
+        for token, ticket in runtime.enrollments.items()
+        if ticket.get("kind") == kind
+    ]:
+        runtime.enrollments.pop(token, None)
 
 
 # What the drawer may ask of an agent's services: the page's own verbs and

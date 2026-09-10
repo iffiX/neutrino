@@ -1,8 +1,8 @@
 """``nclient status``: what this person is bound to, and whether it works.
 
 Three things break independently: the person never joined, the resident is
-not running, or the hub cannot be reached from here. This says which, on
-three lines: hub, resident, poll.
+not running, or the hub cannot be reached from here. This says which, on two
+lines: hub and resident.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -13,20 +13,19 @@ from neutrino_client import CLIENT_VERSION
 from neutrino_client.cli import wording
 from neutrino_client.control import client
 from neutrino_client.core import enrollment
+from neutrino_client.core.session import CONNECTION_CONNECTED, CONNECTION_UNBOUND
 from neutrino_client.platforms.base import PlatformUnsupportedError
 from neutrino_client.platforms.detect import detect_platform
 
 RESIDENT_RUNNING = "running"
 RESIDENT_NOT_RUNNING = "not running; open it: nclient gui"
-POLL_OK = "ok. The client polls every few seconds"
-POLL_NOT_POLLED = "not polled while the client is not running"
 
 
 def main() -> int:
     """Report the three things that break independently.
 
     Returns:
-        Process exit status: 0 when bound, running and polling cleanly, 1
+        Process exit status: 0 when bound, running and connected, 1
         otherwise.
     """
     print(f"neutrino-client {CLIENT_VERSION}")
@@ -36,11 +35,9 @@ def main() -> int:
     gateway_url = enrollment.load_config().get("gateway_url", "")
     if not gateway_url:
         print(f"hub        {wording.NOT_JOINED}")
-        print(f"resident   {RESIDENT_NOT_RUNNING}")
-        return 1
-    print(f"hub        {gateway_url}   connected")
+    else:
+        print(f"hub        {gateway_url}")
     print(f"resident   {RESIDENT_NOT_RUNNING}")
-    print(f"poll       {POLL_NOT_POLLED}")
     return 1
 
 
@@ -70,17 +67,28 @@ def _status_from_resident(state: dict) -> int:
         state: The page's state payload.
 
     Returns:
-        Process exit status: 0 when bound and polling cleanly, 1 otherwise.
+        Process exit status: 0 when bound and connected, 1 otherwise.
     """
-    if not state.get("is_connected"):
+    connection = str(state.get("connection_state", CONNECTION_UNBOUND))
+    if connection == CONNECTION_UNBOUND:
         print(f"hub        {wording.NOT_JOINED}")
         print(f"resident   {RESIDENT_RUNNING}")
         return 1
-    print(f"hub        {state.get('gateway_url', '')}   connected")
+    print(f"hub        {state.get('gateway_url', '')}   {connection}{_why(state)}")
     print(f"resident   {RESIDENT_RUNNING}")
+    return 0 if connection == CONNECTION_CONNECTED else 1
+
+
+def _why(state: dict) -> str:
+    """What the resident last had to say about the socket, if anything.
+
+    Args:
+        state: The page's state payload.
+
+    Returns:
+        The wording after a colon, empty when there is nothing to add.
+    """
     error = state.get("last_error")
-    if isinstance(error, dict) and error.get("code"):
-        print(f"poll       {wording.word_code(error['code'], error.get('params'))}")
-        return 1
-    print(f"poll       {POLL_OK}")
-    return 0
+    if not isinstance(error, dict) or not error.get("code"):
+        return ""
+    return f": {wording.word_code(str(error['code']), error.get('params'))}"

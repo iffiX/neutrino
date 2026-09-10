@@ -9,8 +9,10 @@ from fastapi.testclient import TestClient
 from neutrino_hub.modules.cliproxyapi import ops as cliproxyapi_ops
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier
 from neutrino_hub.modules.credentials.vault import VaultLockedError
+from neutrino_hub.modules.devices.agent_sessions import AgentSessionRegistry
+from neutrino_hub.modules.devices.constants import AGENT_SESSION_KIND_CLIENT
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
-from neutrino_hub.web.dependencies import require_session
+from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import cliproxyapi as cliproxyapi_router
 from tests.conftest import unlock_vault
 
@@ -19,6 +21,13 @@ CONFIG_RELATIVE = "cliproxyapi/cliproxyapi.json"
 
 def _inactive_service(self, name):
     return type("Service", (), {"is_active": False})()
+
+
+class FakeRuntime:
+    """Only what a key change reaches for: the client sockets, none open."""
+
+    def __init__(self):
+        self.client_sessions = AgentSessionRegistry(kind=AGENT_SESSION_KIND_CLIENT)
 
 
 @pytest.fixture
@@ -38,6 +47,7 @@ def client(monkeypatch, tmp_path):
     app = FastAPI()
     app.include_router(cliproxyapi_router.router)
     app.dependency_overrides[require_session] = lambda: None
+    app.dependency_overrides[get_runtime] = FakeRuntime
     with TestClient(app) as test_client:
         yield test_client
 

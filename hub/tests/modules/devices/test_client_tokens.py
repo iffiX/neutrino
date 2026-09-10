@@ -27,7 +27,7 @@ def test_only_the_hash_reaches_the_device_file(config_dir):
     assert client["token_sha256"] == hashlib.sha256(token.encode()).hexdigest()
     assert token not in (config_dir / "devices" / "devices.json").read_text()
     # Presence is runtime state: no version, no last-seen stamp on disk.
-    assert set(client) == {"token_sha256", "ai_key_ids"}
+    assert set(client) == {"token_sha256"}
 
 
 def test_the_raw_token_still_authenticates(config_dir):

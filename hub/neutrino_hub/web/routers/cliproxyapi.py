@@ -31,11 +31,13 @@ from neutrino_hub.modules.cliproxyapi.usage_store import (
 )
 from neutrino_hub.modules.ai.registry import AiProviderRegistry
 from neutrino_hub.modules.credentials.vault import VaultError, VaultLockedError
-from neutrino_hub.modules.devices.registry import DeviceRegistry
+from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.web.constants import WEB_JOURNAL_LINE_LIMIT
-from neutrino_hub.web.dependencies import require_session
+from neutrino_hub.web import client_channel
+from neutrino_hub.web.dependencies import get_runtime, require_session
+from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.models import (
     CliproxyApiAccountsView,
     CliproxyApiAccountView,
@@ -127,7 +129,7 @@ def usage(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"code": "unknown_key", "params": {"key_id": key_id}},
             )
-    device_names = _device_names()
+    client_names = _client_names()
     provider_rows = store.provider_rows(range_name, key_id=key_id)
     return CliproxyApiUsageView(
         range=range_name,
@@ -139,7 +141,7 @@ def usage(
             for entry in store.series(range_name, key_id=key_id)
         ],
         keys=[
-            CliproxyApiUsageKey(**row, device_name=device_names.get(row["key_id"]))
+            CliproxyApiUsageKey(**row, client_name=client_names.get(row["key_id"]))
             for row in key_rows
         ],
         providers=[
@@ -195,11 +197,17 @@ def generate_key(request: CliproxyApiKeyCreate) -> CliproxyApiStatusView:
 
 
 @router.delete("/keys/{key_id}", response_model=CliproxyApiStatusView)
-def delete_key(key_id: str) -> CliproxyApiStatusView:
+def delete_key(
+    key_id: str, runtime: PanelRuntime = Depends(get_runtime)
+) -> CliproxyApiStatusView:
     """Revoke a client key; whatever used it stops working now.
+
+    A key a client program holds is minted again and handed to it, so
+    revoking one here rotates it.
 
     Args:
         key_id: The key to revoke.
+        runtime: The shared runtime, whose client sockets are told.
 
     Returns:
         The state after the change.
@@ -217,15 +225,19 @@ def delete_key(key_id: str) -> CliproxyApiStatusView:
         config.client_keys = remaining
         save_config(config)
     _apply_quietly()
+    client_channel.push_ai(runtime)
     return _status()
 
 
 @router.put("", response_model=CliproxyApiStatusView)
-def update_settings(request: CliproxyApiSettingsUpdate) -> CliproxyApiStatusView:
+def update_settings(
+    request: CliproxyApiSettingsUpdate, runtime: PanelRuntime = Depends(get_runtime)
+) -> CliproxyApiStatusView:
     """Change the listen port.
 
     Args:
         request: The new settings.
+        runtime: The shared runtime, whose client sockets are told.
 
     Returns:
         The state after the change.
@@ -244,6 +256,7 @@ def update_settings(request: CliproxyApiSettingsUpdate) -> CliproxyApiStatusView
             ) from error
         save_config(config)
     _apply_quietly()
+    client_channel.push_ai(runtime)
     return _status()
 
 
@@ -491,13 +504,13 @@ def _key_view(key: CliproxyApiClientKey) -> CliproxyApiKeyView:
     )
 
 
-def _device_names() -> dict[str, str]:
-    """Client key id to the name of the device pair holding it, as of now."""
-    names = {}
-    for device in DeviceRegistry().all_stored():
-        for account, key_id in device.client.ai_key_ids.items():
-            names[key_id] = f"{device.name or device.mac_address}/{account}"
-    return names
+def _client_names() -> dict[str, str]:
+    """Client key id to the name of the client holding it, as of now."""
+    return {
+        client.ai_key_id: client.name
+        for client in ClientRegistry().all()
+        if client.ai_key_id
+    }
 
 
 def _usage_provider(record, row: dict) -> CliproxyApiUsageProvider:

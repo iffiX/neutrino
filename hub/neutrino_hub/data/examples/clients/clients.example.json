@@ -1,0 +1,18 @@
+{
+  "_comment": "The client programs enrolled with this hub, keyed by a uuid4 hex the panel assigns when a link is minted. The entry below is named with a leading underscore so it documents the shape without being read as a client. Written by the panel, never by hand: token_sha256 is the hash of the secret the program authenticates its channel with, the raw token exists only on that machine; hostname, platform and version are what the program last reported; ai_key_id names the gateway client key minted for it, revoked while it is disabled.",
+  "clients": {
+    "_example_3f1c2b9a8d7e4c6f9a0b1c2d3e4f5a6b": {
+      "name": "alice-laptop",
+      "token_sha256": null,
+      "hostname": "alice-laptop",
+      "platform": {
+        "os": "linux",
+        "arch": "amd64",
+        "family": "debian"
+      },
+      "version": "0.2.0",
+      "is_disabled": false,
+      "ai_key_id": null
+    }
+  }
+}

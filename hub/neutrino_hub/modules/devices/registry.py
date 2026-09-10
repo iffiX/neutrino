@@ -44,12 +44,9 @@ class DeviceClientInfo:
         token_sha256: SHA-256 hex of the shared secret the agent
             authenticates its channel with; the raw token exists only in
             the enroll reply and on the device.
-        ai_key_ids: The cliproxyapi client key generated for each of this
-            device's activated accounts, by account name.
     """
 
     token_sha256: str | None = None
-    ai_key_ids: dict = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict) -> "DeviceClientInfo":
@@ -61,10 +58,7 @@ class DeviceClientInfo:
         Returns:
             The parsed info.
         """
-        return cls(
-            token_sha256=data.get("token_sha256"),
-            ai_key_ids=data.get("ai_key_ids", {}),
-        )
+        return cls(token_sha256=data.get("token_sha256"))
 
     def to_dict(self) -> dict:
         """Serialize the persistent fields.
@@ -76,10 +70,7 @@ class DeviceClientInfo:
         Returns:
             A JSON-ready object.
         """
-        return {
-            "token_sha256": self.token_sha256,
-            "ai_key_ids": self.ai_key_ids,
-        }
+        return {"token_sha256": self.token_sha256}
 
 
 @dataclass
@@ -335,22 +326,6 @@ class DeviceRegistry:
         with _WRITE_LOCK:
             device = self._fresh(mac_address)
             device.client.token_sha256 = None
-            self._store(device)
-
-    def set_ai_key_id(self, mac_address: str, account: str, key_id: str | None) -> None:
-        """Remember which cliproxyapi client key one account on a device holds.
-
-        Args:
-            mac_address: The device's MAC.
-            account: The human account on the device.
-            key_id: The key's id, or None to forget the pair.
-        """
-        with _WRITE_LOCK:
-            device = self._fresh(mac_address)
-            if key_id is None:
-                device.client.ai_key_ids.pop(account, None)
-            else:
-                device.client.ai_key_ids[account] = key_id
             self._store(device)
 
     def _from_stored(self, mac_address: str, entry: dict) -> ManagedDevice:

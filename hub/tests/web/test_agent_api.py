@@ -207,6 +207,29 @@ def test_enrolling_with_a_ticket_issues_a_token(api):
     assert runtime.client_hostname[key] == "laptop"
 
 
+def test_a_client_ticket_cannot_enroll_an_agent(api):
+    client, runtime, _ = api
+    runtime.enrollments["c1"] = {
+        "kind": "client",
+        "name": "alice",
+        "client_id": "abc",
+        "expires_at": time.time() + 600,
+    }
+
+    response = client.post(
+        "/api/agent/enroll",
+        json={
+            "enrollment_token": "c1",
+            "device_id": "machine-1",
+            "client_version": "1.2.3",
+            "wire": AGENT_WIRE_GENERATION,
+        },
+    )
+
+    assert response.status_code == 401
+    assert "c1" not in runtime.enrollments
+
+
 def test_a_ticket_spent_twice_is_refused_the_second_time(api):
     client, runtime, _ = api
     ticket(runtime, "once")

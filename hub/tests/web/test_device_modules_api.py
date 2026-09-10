@@ -387,35 +387,3 @@ def test_a_lapsed_ticket_is_swept_when_the_next_one_is_generated(api, monkeypatc
     assert response.status_code == 200
     assert "stale" not in runtime.enrollments
     assert len(runtime.enrollments) == 1
-
-
-def test_forgetting_a_device_revokes_its_account_keys(api, monkeypatch, tmp_path):
-    """The cascade: every (device, account) gateway key dies with the record,
-    so a forgotten machine cannot keep spending against the gateway."""
-    from neutrino_hub.modules.cliproxyapi import ops as cliproxyapi_ops
-    from neutrino_hub.modules.cliproxyapi.config import CliproxyApiClientKey
-    from neutrino_hub.modules.cliproxyapi.ops import (
-        CliproxyApiConfigApplier,
-        load_config,
-        save_config,
-    )
-    from tests.conftest import unlock_vault
-
-    client, _ = api
-    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
-    unlock_vault(monkeypatch, tmp_path)
-    monkeypatch.setattr(cliproxyapi_ops, "UTILS_GENERATED_DIR", tmp_path / "generated")
-    monkeypatch.setattr(
-        CliproxyApiConfigApplier, "is_installed", property(lambda self: False)
-    )
-    monkeypatch.setattr(FakeRegistry, "forget", lambda self, mac: None, raising=False)
-    mine = CliproxyApiClientKey.generated("testbox/alice")
-    theirs = CliproxyApiClientKey.generated("other/bob")
-    config = load_config()
-    config.client_keys = [mine, theirs]
-    save_config(config)
-    FakeRegistry.device.client.ai_key_ids = {"alice": mine.id}
-
-    assert client.delete(f"/api/devices/{MAC}").status_code == 200
-
-    assert [key.id for key in load_config().client_keys] == [theirs.id]

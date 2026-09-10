@@ -18,6 +18,10 @@ AGENT_WIRE_GENERATION = 7
 # The agent channel's one socket, on the agent TLS port. An agent opens it
 # after enrolling and keeps it open; every stream the hub needs rides it.
 AGENT_WS_PATH = "/api/agent/ws"
+# What a session on the agent port is: a managed machine's agent, or a
+# person's client program. Each kind has a registry of its own.
+AGENT_SESSION_KIND_AGENT = "agent"
+AGENT_SESSION_KIND_CLIENT = "client"
 # How long a fresh socket may stay silent before its hello is due.
 AGENT_WS_HELLO_TIMEOUT_S = 10.0
 # How long the hub waits for an agent to answer an open before giving up

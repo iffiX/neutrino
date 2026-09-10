@@ -1,9 +1,11 @@
 """``nclient gui``: the resident, walked as the person invokes it.
 
-One process binds the socket, starts the session and the socket server,
-and opens the window on the main thread; when the window closes everything
-shuts down. A second invocation finds the socket held, asks the running one
-to show its window, and exits 0. Refusals are the wording tables' own.
+One process binds the socket, starts the session and the socket server, and
+runs the window on the main thread; when the loop ends everything shuts
+down. The tray's Quit reaches the session, and the window's own show is what
+a second invocation's ask lands on. That second invocation finds the socket
+held, asks the running one to show its window, and exits 0. Refusals are the
+wording tables' own.
 """
 
 import pytest
@@ -63,7 +65,7 @@ def test_the_resident_binds_starts_serves_and_shows_the_window(
 ):
     opened = []
 
-    def fake_shell(*, os_name, title, html, bridge, icon_path):
+    def fake_shell(*, os_name, title, html, bridge, icon_path, **rest):
         status, _state = client.request(
             socket_path=platform.control_socket_path(), method="GET", path="/api/state"
         )
@@ -85,6 +87,58 @@ def test_the_resident_binds_starts_serves_and_shows_the_window(
     assert window["reply"]["body"]["hostname"] == "box"
     assert session.started == 1
     assert session.shutdowns == 1
+
+
+def test_quit_shuts_the_resident_down_before_the_loop_ends(
+    platform, sessions, monkeypatch
+):
+    order = []
+
+    def fake_shell(*, on_quit, on_show_ready, **rest):
+        on_quit()
+        order.append("quit")
+
+    monkeypatch.setattr(gui_cli, "open_shell_window", fake_shell)
+
+    assert gui_cli.main() == 0
+
+    (session,) = sessions.made
+    assert order == ["quit"]
+    assert session.shutdowns >= 1
+
+
+def test_the_window_registers_the_show_the_resident_hands_asks_to(
+    platform, sessions, monkeypatch
+):
+    shown = []
+
+    def show() -> None:
+        shown.append(1)
+
+    def fake_shell(*, on_show_ready, **rest):
+        on_show_ready(show)
+
+    monkeypatch.setattr(gui_cli, "open_shell_window", fake_shell)
+
+    assert gui_cli.main() == 0
+
+    (session,) = sessions.made
+    session.on_show()
+    assert shown == [1]
+
+
+def test_hidden_reaches_the_shell(platform, sessions, monkeypatch):
+    asked = []
+
+    def fake_shell(*, is_hidden, **rest):
+        asked.append(is_hidden)
+
+    monkeypatch.setattr(gui_cli, "open_shell_window", fake_shell)
+
+    assert gui_cli.main(is_hidden=True) == 0
+    assert gui_cli.main() == 0
+
+    assert asked == [True, False]
 
 
 def test_a_second_invocation_posts_show_and_exits(platform, sessions, monkeypatch):

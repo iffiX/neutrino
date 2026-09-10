@@ -16,12 +16,12 @@ import "./ai_access_panel.css";
 /**
  * The keys machines reach the gateway with.
  *
- * A managed device is handed its own key over the agent channel, so what is
- * distributed by hand here is the rest: a phone, a tablet, a laptop nobody
- * enrolled. The gateway generates these keys rather than being given them, so
- * each is shown to its owner — masked in the list, and expanded once at the
- * top the moment it is generated, which is when somebody is holding the
- * machine that needs it.
+ * An enrolled client is handed its own key over its channel and is named on
+ * its row, so what is distributed by hand here is the rest: a phone, a
+ * tablet, a laptop nobody enrolled. The gateway generates these keys rather
+ * than being given them, so each is shown to its owner — masked in the list,
+ * and expanded once at the top the moment it is generated, which is when
+ * somebody is holding the machine that needs it.
  *
  * Generating and revoking write where they are pressed: a revocation never
  * waits behind an apply bar.
@@ -29,7 +29,7 @@ import "./ai_access_panel.css";
 
 const WORDING = {
   title: "Access",
-  hint: "Keys for machines no agent manages: a phone, a tablet, a laptop nobody enrolled. A managed device is handed its own key over the agent channel.",
+  hint: "Keys handed to clients are named after the client. Generate one by hand for a machine no client runs on.",
   endpoint: "Endpoint",
   copy: "Copy",
   copied: "Copied",
@@ -49,8 +49,8 @@ const WORDING = {
   revokeTitle: (name: string) => `Revoke ${name}`,
   revokeBody:
     "Whatever is using this key stops reaching the gateway at once, and needs a new one to get back in.",
-  revokeDeviceBody: (device: string) =>
-    `${device} stops reaching the gateway at once, and needs a new key to get back in.`,
+  revokeClientBody: (client: string) =>
+    `${client} stops reaching the gateway at once and is handed a new key.`,
   empty: "No keys yet",
   emptyHint: "Generate one for a machine that has no agent on it.",
 } as const;
@@ -63,7 +63,7 @@ interface AiAccessPanelProps {
   /** Where the keys are pointed, shown as the copy row above them. */
   endpoint: string;
   keys: CliproxyApiKeyView[];
-  /** The usage feed's per-key rows, for last-used and the owning device. */
+  /** The usage feed's per-key rows, for last-used and the owning client. */
   usageKeys: AiUsageKey[];
   /** The status view a generate or a revoke answered with. */
   onChanged: (view: CliproxyApiStatusView) => void;
@@ -128,13 +128,13 @@ export function AiAccessPanel({
     }
   };
 
-  const askRevoke = (value: CliproxyApiKeyView, deviceName: string | null) =>
+  const askRevoke = (value: CliproxyApiKeyView, clientName: string | null) =>
     confirm.ask({
       title: WORDING.revokeTitle(value.name),
       body:
-        deviceName === null
+        clientName === null
           ? WORDING.revokeBody
-          : WORDING.revokeDeviceBody(deviceName),
+          : WORDING.revokeClientBody(clientName),
       confirmLabel: WORDING.revoke,
       onConfirm: () => void handleRevoke(value.id),
     });
@@ -227,7 +227,7 @@ export function AiAccessPanel({
                 onRevoke={() =>
                   askRevoke(
                     value,
-                    usageByKeyId.get(value.id)?.device_name ?? null,
+                    usageByKeyId.get(value.id)?.client_name ?? null,
                   )
                 }
               />
@@ -296,7 +296,7 @@ function KeyRow({ value, usage, isBusy, onRevoke }: KeyRowProps) {
   const [isCopied, setIsCopied] = useState(false);
 
   const hasUsage = usage !== null && usage.requests > 0;
-  const deviceName = usage?.device_name ?? null;
+  const clientName = usage?.client_name ?? null;
 
   const handleCopy = async () => {
     try {
@@ -320,8 +320,8 @@ function KeyRow({ value, usage, isBusy, onRevoke }: KeyRowProps) {
             ? WORDING.used(formatTimeAgo(usage.last_seen_at))
             : WORDING.neverUsed}
         </span>
-        {deviceName !== null && (
-          <span className="ai_key_device mono">{deviceName}</span>
+        {clientName !== null && (
+          <span className="ai_key_device mono">{clientName}</span>
         )}
       </span>
       <span className="ai_key_actions">

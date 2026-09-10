@@ -34,6 +34,7 @@ from neutrino_hub.system.listening_ports import ListeningPortReader
 from neutrino_hub.web.constants import (
     WEB_DEFAULT_AGENT_LISTEN_PORT,
     WEB_EVENT_AI_USAGE,
+    WEB_EVENT_CLIENTS,
     WEB_EVENT_CONFIG,
     WEB_EVENT_DEVICES,
     WEB_EVENT_MODULE_ORDER,
@@ -57,6 +58,7 @@ from neutrino_hub.utils.json_file import (
 )
 from neutrino_hub.utils.subprocess_run import CommandError, run
 from neutrino_hub.web.auth import SessionStore, session_secret
+from neutrino_hub.web import client_channel
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.link_sampler import PanelLinkSampler
 from neutrino_hub.modules.devices.agent_module_cache import AgentModuleCache
@@ -75,6 +77,7 @@ from neutrino_hub.modules.devices.agent_sessions import (
 from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_ORDER_TIMEOUT_S,
     AGENT_MODULE_OUTPUT_LIMIT_BYTES,
+    AGENT_SESSION_KIND_CLIENT,
     AGENT_WS_CLOSE_UNKNOWN_TOKEN,
 )
 from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
@@ -123,6 +126,12 @@ class PanelRuntime:
         # Every managed machine's live socket, and the streams on it.
         self.agent_sessions = AgentSessionRegistry()
         self.agent_sessions.on_presence_change = self._publish_devices
+        # Every client program's live socket, keyed by client id.
+        self.client_sessions = AgentSessionRegistry(kind=AGENT_SESSION_KIND_CLIENT)
+        self.client_sessions.on_presence_change = self._publish_clients
+        # The address each client reaches this hub on, resolved when its
+        # socket opened; its catalog and its gateway URL are composed with it.
+        self.client_catalog_host: dict[str, str] = {}
         # Where each agent's channel comes from, as this hub's own socket
         # sees it, refreshed every report. A machine that moves is at its
         # new address the moment it reports from there.
@@ -138,7 +147,7 @@ class PanelRuntime:
             agent_sessions=self.agent_sessions,
             device_addresses=self.client_address,
             desired_states=self.desired_states,
-            on_fingerprint_change=self._publish_services,
+            on_fingerprint_change=self._services_changed,
         )
         self.device_catalog = DeviceCatalogCache(services=self.published_services)
         # The hub is the only thing that fetches and installs a module: one
@@ -655,9 +664,14 @@ class PanelRuntime:
         """Say an order on one device moved."""
         self.events.publish(WEB_EVENT_MODULE_ORDER, mac_address)
 
-    def _publish_services(self) -> None:
-        """Say the published service list composes differently."""
+    def _publish_clients(self) -> None:
+        """Say the client list moved."""
+        self.events.publish(WEB_EVENT_CLIENTS)
+
+    def _services_changed(self) -> None:
+        """Say the published list composes differently, and hand it on."""
         self.events.publish(WEB_EVENT_SERVICES)
+        client_channel.push_catalogs(self)
 
     def _publish_config_write(self, relative_path: str) -> None:
         """Say one file under ``config/`` was written."""

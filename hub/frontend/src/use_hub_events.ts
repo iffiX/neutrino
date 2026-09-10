@@ -37,6 +37,10 @@ export const HUB_EVENT_HELLO = "hello";
  * had an action started on it. */
 export const HUB_EVENT_DEVICES = "devices";
 
+/** The client list moved: a program connected or left, a client was created,
+ * switched, or deleted. */
+export const HUB_EVENT_CLIENTS = "clients";
+
 /** One machine's report says something new about what it runs. Keyed by MAC. */
 export const HUB_EVENT_DEVICE_REPORT = "device_report";
 

@@ -630,11 +630,11 @@ export interface AiUsageBucket extends AiUsageCounters {
   bucket: string;
 }
 
-/** One client key's usage; `device_name` when a device owns the key. */
+/** One client key's usage; `client_name` when a client program holds the key. */
 export interface AiUsageKey extends AiUsageCounters {
   key_id: string;
   name: string;
-  device_name: string | null;
+  client_name: string | null;
   first_seen_at: string;
   last_seen_at: string;
 }
@@ -811,6 +811,28 @@ export interface DeviceEnrollmentView {
   link: string;
   token: string;
   expires_in_s: number;
+}
+
+/** One enrolled client program on the Clients page. */
+export interface ClientView {
+  id: string;
+  name: string;
+  hostname: string;
+  platform_os: string;
+  version: string;
+  is_online: boolean;
+  last_seen: string | null;
+  is_disabled: boolean;
+}
+
+export interface ClientListView {
+  clients: ClientView[];
+}
+
+/** The link a named client joins with, and when it lapses. */
+export interface ClientEnrollmentView {
+  link: string;
+  expires_at: string;
 }
 
 export interface DeviceFileEntry {

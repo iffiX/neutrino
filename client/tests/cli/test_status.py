@@ -1,8 +1,8 @@
-"""``nclient status``: three lines that never lie about the machine.
+"""``nclient status``: two lines that never lie about the machine.
 
-The matrix is walked as the person types it: bound and unbound, the
-resident alive and dead. The running resident is asked first over its
-socket; the binding file answers only when nothing does.
+The matrix is walked as the person types it: bound and unbound, connected
+and reconnecting, the resident alive and dead. The running resident is asked
+first over its socket; the binding file answers only when nothing does.
 """
 
 import pytest
@@ -38,7 +38,7 @@ def resident(platform):
     server.stop()
 
 
-def test_bound_and_running_reads_from_the_resident(resident, config_path, capsys):
+def test_bound_and_connected_reads_from_the_resident(resident, config_path, capsys):
     bind(config_path, url=GATEWAY_URL)
 
     assert status_cli.main() == 0
@@ -47,7 +47,18 @@ def test_bound_and_running_reads_from_the_resident(resident, config_path, capsys
     assert f"neutrino-client {CLIENT_VERSION}" in out
     assert f"hub        {GATEWAY_URL}   connected" in out
     assert "resident   running" in out
-    assert f"poll       {status_cli.POLL_OK}" in out
+
+
+def test_a_reconnecting_socket_is_not_a_clean_status(resident, config_path, capsys):
+    bind(config_path, url=GATEWAY_URL)
+    resident.connection_state_value = "reconnecting"
+    resident.error_payload = {"code": "hub_unreachable", "params": {"detail": "down"}}
+
+    assert status_cli.main() == 1
+
+    out = capsys.readouterr().out
+    assert f"hub        {GATEWAY_URL}   reconnecting: down" in out
+    assert "resident   running" in out
 
 
 def test_bound_and_dead_reads_the_binding_file(platform, config_path, capsys):
@@ -56,9 +67,8 @@ def test_bound_and_dead_reads_the_binding_file(platform, config_path, capsys):
     assert status_cli.main() == 1
 
     out = capsys.readouterr().out
-    assert f"hub        {GATEWAY_URL}   connected" in out
+    assert f"hub        {GATEWAY_URL}" in out
     assert f"resident   {status_cli.RESIDENT_NOT_RUNNING}" in out
-    assert f"poll       {status_cli.POLL_NOT_POLLED}" in out
 
 
 def test_unbound_and_running_says_joined_nothing(resident, capsys):
@@ -69,7 +79,6 @@ def test_unbound_and_running_says_joined_nothing(resident, capsys):
     out = capsys.readouterr().out
     assert f"hub        {wording.NOT_JOINED}" in out
     assert "resident   running" in out
-    assert "poll" not in out
 
 
 def test_unbound_and_dead_says_both(platform, capsys):
@@ -78,7 +87,6 @@ def test_unbound_and_dead_says_both(platform, capsys):
     out = capsys.readouterr().out
     assert f"hub        {wording.NOT_JOINED}" in out
     assert f"resident   {status_cli.RESIDENT_NOT_RUNNING}" in out
-    assert "poll" not in out
 
 
 @pytest.mark.parametrize(
@@ -101,16 +109,17 @@ def test_unbound_and_dead_says_both(platform, capsys):
         ({"code": "client_disabled", "params": {}}, "switched this client off"),
     ],
 )
-def test_every_poll_refusal_is_worded(resident, config_path, capsys, error, fragment):
+def test_every_socket_refusal_is_worded(resident, config_path, capsys, error, fragment):
     bind(config_path, url=GATEWAY_URL)
+    resident.connection_state_value = "reconnecting"
     resident.error_payload = error
 
     assert status_cli.main() == 1
 
     out = capsys.readouterr().out
-    assert f"poll       " in out
+    assert "hub        " in out
     assert fragment in out
-    assert error["code"] not in out.split("poll")[1]
+    assert error["code"] not in out
 
 
 def test_a_resident_of_another_account_reads_as_none(platform, config_path, capsys):

@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from neutrino_hub.modules.cliproxyapi import accounts as accounts_module
 from neutrino_hub.modules.cliproxyapi.usage_store import CliproxyApiUsageStore
 from neutrino_hub.modules.credentials.vault import SecretVault
-from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice
+from neutrino_hub.modules.clients.registry import Client
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.web.dependencies import require_session
 from neutrino_hub.web.routers import ai as ai_router
@@ -59,17 +59,11 @@ class _Answer:
         return self._payload
 
 
-class StubDeviceRegistry:
-    """Serves one device that holds client key ``k1``."""
+class StubClientRegistry:
+    """Serves one client that holds gateway key ``k1``."""
 
-    def all_stored(self):
-        return [
-            ManagedDevice(
-                mac_address="aa:bb:cc:dd:ee:01",
-                name="laptop",
-                client=DeviceClientInfo(ai_key_ids={"me": "k1"}),
-            )
-        ]
+    def all(self):
+        return [Client(id="c1", name="laptop", ai_key_id="k1")]
 
 
 @pytest.fixture
@@ -87,7 +81,7 @@ def gateway(monkeypatch):
 def client(monkeypatch, tmp_path, gateway):
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
     unlock_vault(monkeypatch, tmp_path)
-    monkeypatch.setattr(cliproxyapi_router, "DeviceRegistry", StubDeviceRegistry)
+    monkeypatch.setattr(cliproxyapi_router, "ClientRegistry", StubClientRegistry)
     app = FastAPI()
     app.include_router(cliproxyapi_router.router)
     app.include_router(ai_router.router)
@@ -186,7 +180,7 @@ def test_usage_lands_on_keys_devices_and_providers(client):
     key = body["keys"][0]
     assert key["key_id"] == "k1"
     assert key["name"] == "laptop key"
-    assert key["device_name"] == "laptop/me"
+    assert key["client_name"] == "laptop"
     assert key["first_seen_at"].endswith("Z")
     providers = {entry["provider_id"]: entry for entry in body["providers"]}
     assert set(providers) == {provider_id}

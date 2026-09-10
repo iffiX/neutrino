@@ -24,6 +24,7 @@ import time
 from datetime import datetime, timezone
 
 from neutrino_hub.modules.devices.constants import (
+    AGENT_SESSION_KIND_AGENT,
     AGENT_WS_CHUNK_BYTES,
     AGENT_WS_CLOSE_REPLACED,
     AGENT_WS_OPEN_TIMEOUT_S,
@@ -201,10 +202,12 @@ class AgentStream:
 
 
 class AgentSession:
-    """One device's live channel and the streams on it.
+    """One machine's live channel and the streams on it.
 
     Attributes:
-        key: The device key.
+        key: The device key, or the client id.
+        kind: What is on the other end, one of the ``AGENT_SESSION_KIND_*``
+            values.
         hostname: What the machine called itself in its hello.
         platform: The platform tuple it reported.
         address: Where its channel comes from.
@@ -222,12 +225,14 @@ class AgentSession:
         key: str,
         websocket,
         loop: asyncio.AbstractEventLoop,
+        kind: str = AGENT_SESSION_KIND_AGENT,
         hostname: str = "",
         platform: "dict | None" = None,
         address: str = "",
         version: str = "",
     ):
         self.key = key.lower()
+        self.kind = kind
         self.hostname = hostname
         self.platform = dict(platform or {})
         self.address = address
@@ -452,16 +457,18 @@ class AgentSession:
 
 
 class AgentSessionRegistry:
-    """The live sessions, keyed by device.
+    """The live sessions of one kind, keyed by device or by client.
 
     Attributes:
+        kind: The one session kind this registry holds.
         loop: The loop the sessions are served on, known once one attaches.
         on_presence_change: Called with nothing whenever a device's channel
             opens or ends. The registry knows nothing of the panel; whoever
             wants to hear sets this.
     """
 
-    def __init__(self):
+    def __init__(self, kind: str = AGENT_SESSION_KIND_AGENT):
+        self.kind = kind
         self.loop: "asyncio.AbstractEventLoop | None" = None
         self.on_presence_change = None
         self._lock = threading.Lock()
@@ -475,7 +482,13 @@ class AgentSessionRegistry:
         Args:
             session: The session that just said hello. An older session
                 for the same device is closed with the replaced code.
+
+        Raises:
+            ValueError: When the session is of another kind than this
+                registry holds.
         """
+        if session.kind != self.kind:
+            raise ValueError(f"{session.kind} session in a {self.kind} registry")
         with self._lock:
             previous = self._sessions.get(session.key)
             self._sessions[session.key] = session
@@ -559,6 +572,11 @@ class AgentSessionRegistry:
         """Every device with a live channel."""
         with self._lock:
             return list(self._sessions)
+
+    def sessions(self) -> list:
+        """Every live session."""
+        with self._lock:
+            return list(self._sessions.values())
 
     def reports(self) -> dict:
         """The latest report of every online device, by key."""
@@ -702,6 +720,26 @@ class AgentSessionRegistry:
         """:meth:`run_order` for a caller outside the loop."""
         session = self._require(key)
         return session.call(self.run_order(key, order, on_line), timeout=timeout)
+
+    def send_json_from_thread(self, key: str, message: dict) -> bool:
+        """Hand one text frame to a session from outside the loop, not waiting.
+
+        Args:
+            key: The device or client.
+            message: The JSON object, ``type`` included.
+
+        Returns:
+            True when the frame was queued on a live session; False when
+            there is none. A socket that dies under the frame drops it.
+        """
+        session = self.get(key)
+        if session is None:
+            return False
+        try:
+            asyncio.run_coroutine_threadsafe(session.send_json(message), session.loop)
+        except RuntimeError:
+            return False
+        return True
 
     def close_from_thread(self, key: str, code: int, reason: str = "") -> None:
         """Close a device's socket from outside the loop, if it has one."""

@@ -25,6 +25,9 @@ from neutrino_hub.web.routers import (
     agent_ws,
     ai,
     auth,
+    client,
+    client_ws,
+    clients,
     cliproxyapi,
     credentials,
     dashboard,
@@ -51,6 +54,7 @@ API_ROUTERS = (
     nodes.router,
     devices.router,
     device_files.router,
+    clients.router,
     credentials.router,
     ai.router,
     cliproxyapi.router,
@@ -89,7 +93,7 @@ def create_app() -> FastAPI:
 
 
 def create_agent_app() -> FastAPI:
-    """Build the agent channel: the ``/api/agent`` routes and nothing else.
+    """Build the agent channel: the ``/api/agent`` and ``/api/client`` routes.
 
     Returns:
         The configured application, sharing the panel's runtime.
@@ -99,6 +103,8 @@ def create_agent_app() -> FastAPI:
     app.add_exception_handler(VaultLockedError, _vault_locked)
     app.include_router(agent.router)
     app.include_router(agent_ws.router)
+    app.include_router(client.router)
+    app.include_router(client_ws.router)
     return app
 
 

@@ -88,6 +88,10 @@ const FILTERED_EMPTY_HINT = "Try a different filter or clear the search.";
 const NO_DEVICES_TITLE = "No devices yet";
 const NO_DEVICES_HINT = "Run a LAN scan to discover what is connected.";
 
+const ENROLLMENT_TITLE = "Paste this link into the machine's own agent window.";
+const ENROLLMENT_HINT =
+  "Install the agent there, then paste the link into its window (`nagent gui`), or run `sudo nagent connect <link>` in its terminal; it pastes safely unquoted. It works for {minutes} minutes.";
+
 const DEVICE_LEGEND: DeviceLegendRow[] = [
   {
     label: "agent",
@@ -257,8 +261,10 @@ export function DevicesPage() {
 
       {enrollment !== null && (
         <DeviceEnrollmentNotice
-          enrollment={enrollment}
-          deviceName={null}
+          link={enrollment.link}
+          expiresInS={enrollment.expires_in_s}
+          title={ENROLLMENT_TITLE}
+          hint={ENROLLMENT_HINT}
           onDismiss={() => setEnrollment(null)}
         />
       )}

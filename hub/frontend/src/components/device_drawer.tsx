@@ -93,6 +93,10 @@ const GUIDANCE_HINTS: Record<DeviceUpgradePath, string> = {
   link: "Send it an enrollment link. The SSH installer needs Linux.",
 };
 
+const ENROLLMENT_TITLE = "Paste this link into the agent window on {name}.";
+const ENROLLMENT_HINT =
+  "Install the agent there, then paste the link into its window (`nagent gui`), or run `sudo nagent connect <link>` in its terminal; it pastes safely unquoted. It works for {minutes} minutes.";
+
 const VERSION_MISMATCH_TITLE =
   "This agent is a different version from the hub.";
 
@@ -511,8 +515,13 @@ export function DeviceDrawer({
             )}
             {enrollment !== null && (
               <DeviceEnrollmentNotice
-                enrollment={enrollment}
-                deviceName={device.name ?? device.mac_address}
+                link={enrollment.link}
+                expiresInS={enrollment.expires_in_s}
+                title={ENROLLMENT_TITLE.replace(
+                  "{name}",
+                  device.name ?? device.mac_address,
+                )}
+                hint={ENROLLMENT_HINT}
                 onDismiss={() => setEnrollment(null)}
               />
             )}

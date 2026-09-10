@@ -22,7 +22,7 @@ const WORDING = {
   headerCache: "Cache",
   headerFirstSeen: "First seen",
   headerLastSeen: "Last seen",
-  noDevice: "no device",
+  noClient: "no client",
   empty: "No key activity yet",
   emptyHint: "A key shows up here once its machine talks to the gateway.",
 } as const;
@@ -63,9 +63,9 @@ export function AiUsageKeys({ keys }: AiUsageKeysProps) {
               <td>
                 <div className="usage_name">{key.name}</div>
                 <span
-                  className={`usage_device ${key.device_name === null ? "faint" : ""}`}
+                  className={`usage_device ${key.client_name === null ? "faint" : ""}`}
                 >
-                  {key.device_name ?? WORDING.noDevice}
+                  {key.client_name ?? WORDING.noClient}
                 </span>
               </td>
               <td className="num">

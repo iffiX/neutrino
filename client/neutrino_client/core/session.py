@@ -1,34 +1,43 @@
-"""The resident itself: the binding, the poll loop, and the service handlers.
+"""The resident itself: the binding, the socket to the hub, and the services.
 
 One object owns everything the person's page and the hub both talk to. It
 runs whether or not the person belongs to a hub yet: an unbound resident
 still serves its page, waiting for a link.
 
-The hub publishes the service catalog and this person's AI credential; every
-choice about what to do with them is made here, one typed handler per
-service type. Errors are ``{"code", "params"}``, never an English sentence;
-every surface does its own wording.
+While bound, the resident holds one socket open to the hub and reconnects
+when it drops. The hub pushes what it publishes — the catalog, this person's
+AI credential, whether the client is switched off — and answers the asks a
+service handler sends up. Joining and leaving stay HTTP: both happen when
+there is no socket to carry them.
+
+Errors are ``{"code", "params"}``, never an English sentence; every surface
+does its own wording.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
 # client still imports on Python 3.9.
 from __future__ import annotations
 
+import json
 import os
+import secrets
 import socket
 import threading
+import urllib.parse
 
 from neutrino_client import CLIENT_VERSION
 from neutrino_client.constants import (
+    CLIENT_ASK_TIMEOUT_S,
     CLIENT_BACKOFF_MAX_S,
     CLIENT_BACKOFF_MIN_S,
+    CLIENT_HELLO_TIMEOUT_S,
     CLIENT_IDLE_POLL_INTERVAL_S,
     CLIENT_LEAVE_PATH,
     CLIENT_MOUNT_CREDENTIALS_DIR_NAME,
-    CLIENT_POLL_INTERVAL_S,
-    CLIENT_POLL_PATH,
     CLIENT_REFUSALS_BEFORE_UNBIND,
     CLIENT_STATE_FILE_NAME,
+    CLIENT_WS_CLOSE_REPLACED,
+    CLIENT_WS_PATH,
 )
 from neutrino_client.core import enrollment
 from neutrino_client.core.channel import (
@@ -39,6 +48,7 @@ from neutrino_client.core.channel import (
     GatewayUntrusted,
     GatewayVersionRefused,
 )
+from neutrino_client.core.ws_client import SocketClosed, WebSocketClient, close_error
 from neutrino_client.platforms.detect import detect_platform, platform_tuple
 from neutrino_client.services.ai import AiServiceHandler
 from neutrino_client.services.file import FileServiceHandler
@@ -46,6 +56,15 @@ from neutrino_client.services.port import PortServiceHandler
 from neutrino_client.services.rdp import RdpViewerHandler
 from neutrino_client.services.store import ClientServiceStore
 from neutrino_client.services.web import WebServiceHandler
+
+# How the three connection states are named to every surface.
+CONNECTION_CONNECTED = "connected"
+CONNECTION_RECONNECTING = "reconnecting"
+CONNECTION_UNBOUND = "unbound"
+
+# How long a shutdown waits for the loop thread to come back.
+SHUTDOWN_JOIN_TIMEOUT_S = 5
+ASK_ID_LENGTH = 8
 
 
 def channel_error(error: Exception) -> dict:
@@ -72,6 +91,25 @@ def channel_error(error: Exception) -> dict:
     if isinstance(error, GatewayRefused):
         return {"code": "hub_refused", "params": {}}
     return {"code": "hub_unreachable", "params": {"detail": str(error)}}
+
+
+def _decode(kind: str, payload) -> "dict | None":
+    """One text frame as an object, or None for anything else.
+
+    Args:
+        kind: ``text`` or ``binary``.
+        payload: The frame's payload.
+
+    Returns:
+        The decoded object, or None when the frame is not one.
+    """
+    if kind != "text":
+        return None
+    try:
+        message = json.loads(payload)
+    except (TypeError, ValueError):
+        return None
+    return message if isinstance(message, dict) else None
 
 
 class ClientSession:
@@ -105,16 +143,18 @@ class ClientSession:
                     ),
                     log=log,
                 ),
-                RdpViewerHandler(platform=self.platform, post=self.post, log=log),
+                RdpViewerHandler(platform=self.platform, ask=self.ask, log=log),
             )
         }
-        # Set whenever there is something new to do, so the loop polls then
-        # rather than at the end of its next interval.
+        # Set whenever the loop should stop waiting: a binding was written, or
+        # the resident is shutting down.
         self._news = threading.Event()
         self._stop = threading.Event()
         self._thread: "threading.Thread | None" = None
         self._is_shut_down = False
         self._channel = None
+        self._client: "WebSocketClient | None" = None
+        self._is_welcomed = False
         self._binding: tuple = ("", "", "")
         self._binding_stamp = 0
         self._backoff_s = CLIENT_BACKOFF_MIN_S
@@ -123,8 +163,12 @@ class ClientSession:
         self._services_list: list = []
         self._catalog_hash = ""
         self._hub_version = ""
+        self._client_id = ""
         self._is_disabled = False
+        self._was_disabled = False
         self._credential: dict = {}
+        # One entry per ask still waiting for its answer.
+        self._pending: dict = {}
         self.on_show = None
         self._load_connection()
 
@@ -145,7 +189,16 @@ class ClientSession:
     def is_connected(self) -> bool:
         """Whether this person belongs to a hub."""
         with self._lock:
-            return self._channel is not None
+            return bool(self._binding[0] and self._binding[1])
+
+    def connection_state(self) -> str:
+        """Where the hub socket stands: connected, reconnecting or unbound."""
+        with self._lock:
+            if not (self._binding[0] and self._binding[1]):
+                return CONNECTION_UNBOUND
+            return (
+                CONNECTION_CONNECTED if self._is_welcomed else CONNECTION_RECONNECTING
+            )
 
     def gateway_url(self) -> str:
         """The hub this person belongs to, empty when none."""
@@ -215,7 +268,7 @@ class ClientSession:
         self._reset_binding_state()
         self._load_connection()
         self._log("joined the hub")
-        self.poll_soon()
+        self.reconnect_soon()
 
     def disconnect(self) -> None:
         """Leave the hub and let go of everything it published.
@@ -231,13 +284,14 @@ class ClientSession:
             except (GatewayUnreachable, GatewayUntrusted) as error:
                 self._log(f"could not tell the hub we are leaving: {error}")
         enrollment.disconnect()
+        self._drop_socket()
         self._release()
         self._reset_binding_state()
         self._load_connection()
         self._log("left the hub")
 
-    def poll_soon(self) -> None:
-        """Cut the wait before the next poll short."""
+    def reconnect_soon(self) -> None:
+        """Cut the wait before the next connection attempt short."""
         self._news.set()
 
     def request_show(self) -> None:
@@ -263,37 +317,64 @@ class ClientSession:
             return {"code": "client_disabled", "params": {}}
         return handler.act(entries=self.service_entries(), body=body)
 
-    def post(self, path: str, payload: dict) -> dict:
-        """Post to the hub over the pinned channel.
+    def ask(self, kind: str, args: dict, timeout_s: float = CLIENT_ASK_TIMEOUT_S):
+        """Ask the hub one question over the socket and wait for its answer.
 
         Args:
-            path: The hub path.
-            payload: The body; the token is added.
+            kind: What is being asked, e.g. ``rdp_connect``.
+            args: The ask's own fields.
+            timeout_s: How long to wait for the answer.
 
         Returns:
-            The hub's reply.
+            The answer's ``result``.
 
         Raises:
-            GatewayUnreachable: When this person belongs to no hub, or the
-                channel's own exceptions otherwise.
+            GatewayRefusedDetail: When the hub answered with a code.
+            GatewayUnreachable: When there is no socket, the socket dies, or
+                no answer arrives in time.
         """
+        ask_id = secrets.token_hex(ASK_ID_LENGTH)
+        arrived = threading.Event()
         with self._lock:
-            channel = self._channel
-        if channel is None:
-            raise GatewayUnreachable("this person belongs to no hub")
-        return channel.post(path, payload)
+            client = self._client
+            if client is None or not self._is_welcomed:
+                raise GatewayUnreachable("this person's hub is not connected")
+            self._pending[ask_id] = {"event": arrived, "answer": None}
+        try:
+            client.send_text(
+                json.dumps(
+                    {"type": "ask", "id": ask_id, "kind": kind, "args": dict(args)}
+                )
+            )
+            if not arrived.wait(timeout=timeout_s):
+                raise GatewayUnreachable(f"the hub did not answer {kind} in time")
+            with self._lock:
+                answer = self._pending[ask_id]["answer"]
+        finally:
+            with self._lock:
+                self._pending.pop(ask_id, None)
+        if answer is None:
+            raise GatewayUnreachable("the hub socket closed before it answered")
+        code = str(answer.get("code", "") or "")
+        if code:
+            params = answer.get("params")
+            raise GatewayRefusedDetail(
+                code=code, params=params if isinstance(params, dict) else {}
+            )
+        result = answer.get("result")
+        return dict(result) if isinstance(result, dict) else {}
 
     # --- the loop ---
 
     def start(self) -> None:
-        """Start the handlers' reconciles and the poll loop on a thread."""
+        """Start the handlers' reconciles and the connection loop on a thread."""
         for handler in self._services.values():
             handler.start()
         self._thread = threading.Thread(target=self.run_forever, daemon=True)
         self._thread.start()
 
     def run_forever(self) -> None:
-        """Poll, or wait to be enrolled, until the resident is shut down."""
+        """Hold the socket, or wait to be enrolled, until the resident stops."""
         self._log(f"neutrino_client {CLIENT_VERSION} starting on {self.hostname()}")
         while not self._stop.is_set():
             delay = self.run_once()
@@ -301,50 +382,29 @@ class ClientSession:
             self._news.wait(timeout=delay)
 
     def run_once(self) -> int:
-        """Do one poll's worth of work.
+        """One connection's lifetime, or one idle turn while unbound.
 
         Returns:
-            How many seconds to wait before the next one: the normal
-            interval after a success, a backing-off delay after a failure,
-            and a short idle poll while the person belongs to no hub.
+            How many seconds to wait before the next one: the shortest delay
+            after a clean close, a backing-off delay after a broken wire, and
+            a short idle wait while the person belongs to no hub.
         """
         self._adopt_external_binding()
-        with self._lock:
-            channel = self._channel
-            catalog_hash = self._catalog_hash
-        if channel is None:
+        client = self._open_client()
+        if client is None:
             return CLIENT_IDLE_POLL_INTERVAL_S
-        payload = {
-            "hostname": self.hostname(),
-            "platform": self._platform_tuple,
-            "client_version": CLIENT_VERSION,
-            "catalog_hash": catalog_hash,
-        }
         try:
-            reply = channel.post(CLIENT_POLL_PATH, payload)
+            self._connect(client)
         except (GatewayRefused, GatewayUntrusted, GatewayVersionRefused) as error:
             return self._on_rejected(error)
         except GatewayUnreachable as error:
-            with self._lock:
-                self._last_error = channel_error(error)
-                delay = self._backoff_s
-                self._backoff_s = min(self._backoff_s * 2, CLIENT_BACKOFF_MAX_S)
-            self._log(f"poll failed: {error}; retrying in {delay}s")
-            return delay
-        with self._lock:
-            self._backoff_s = CLIENT_BACKOFF_MIN_S
-            self._last_error = None
-            self._refusals = 0
-        try:
-            self._apply_reply(reply)
-        except Exception as error:  # noqa: BLE001 - reported, never fatal
-            with self._lock:
-                self._last_error = {
-                    "code": "hub_reply_unreadable",
-                    "params": {"detail": str(error)[:200]},
-                }
-            self._log(f"could not apply the hub's reply: {error}")
-        return CLIENT_POLL_INTERVAL_S
+            return self._on_unreachable(error)
+        failure = self._serve(client)
+        if failure is None:
+            return CLIENT_BACKOFF_MIN_S
+        if isinstance(failure, (GatewayRefused, GatewayVersionRefused)):
+            return self._on_rejected(failure)
+        return self._on_unreachable(failure)
 
     def shutdown(self) -> None:
         """Let go of everything and stop the loop. Idempotent.
@@ -359,44 +419,226 @@ class ClientSession:
             self._is_shut_down = True
         self._stop.set()
         self._news.set()
+        self._drop_socket()
         self._release()
         thread = self._thread
         if thread is not None and thread is not threading.current_thread():
-            thread.join(timeout=CLIENT_POLL_INTERVAL_S)
+            thread.join(timeout=SHUTDOWN_JOIN_TIMEOUT_S)
         self._log("shut down")
 
-    def _apply_reply(self, reply: dict) -> None:
-        """Take one poll reply's worth of news.
+    def _open_client(self) -> "WebSocketClient | None":
+        """A socket for the current binding, or None while unbound."""
+        with self._lock:
+            gateway_url, token, fingerprint = self._binding
+        if not gateway_url or not token:
+            return None
+        parts = urllib.parse.urlsplit(gateway_url)
+        return WebSocketClient(
+            host=parts.hostname or "",
+            port=parts.port or 443,
+            path=CLIENT_WS_PATH,
+            fingerprint=fingerprint,
+            timeout_s=CLIENT_HELLO_TIMEOUT_S,
+        )
+
+    def _connect(self, client) -> None:
+        """Open the socket, say hello, and take the welcome.
 
         Args:
-            reply: ``{hub_version, is_disabled, catalog_hash, catalog, ai}``.
+            client: The unconnected socket.
+
+        Raises:
+            GatewayUntrusted: When the peer failed the fingerprint check.
+            GatewayRefused: When the hub does not know this token.
+            GatewayVersionRefused: When the hub refused this client as newer.
+            GatewayUnreachable: On any network error, or a first frame that
+                is not a welcome.
         """
-        is_disabled = bool(reply.get("is_disabled"))
-        catalog = reply.get("catalog")
-        if catalog is not None and not isinstance(catalog, dict):
-            raise TypeError(f"catalog is {type(catalog).__name__}, not an object")
-        credential = reply.get("ai")
+        client.connect()
+        try:
+            client.send_text(json.dumps(self._hello()))
+            welcome = self._take_welcome(client)
+        except SocketClosed as closed:
+            raise close_error(closed.code, closed.reason) from closed
+        except Exception:
+            client.close()
+            raise
         with self._lock:
-            was_disabled = self._is_disabled
+            self._client = client
+            self._is_welcomed = True
+            self._hub_version = str(welcome.get("hub_version", "") or "")
+            self._client_id = str(welcome.get("client_id", "") or "")
+            self._backoff_s = CLIENT_BACKOFF_MIN_S
+            self._last_error = None
+            self._refusals = 0
+        self._take_disabled(bool(welcome.get("is_disabled")))
+
+    def _serve(self, client) -> "Exception | None":
+        """Read frames until the socket ends.
+
+        Args:
+            client: The connected socket.
+
+        Returns:
+            What ended it, or None when a shutdown, a close from here, or
+            the hub replacing this socket did.
+        """
+        failure = None
+        while not self._stop.is_set():
+            try:
+                kind, payload = client.recv()
+            except SocketClosed as closed:
+                if closed.code != CLIENT_WS_CLOSE_REPLACED:
+                    failure = close_error(closed.code, closed.reason)
+                break
+            except GatewayUnreachable as error:
+                failure = error
+                break
+            try:
+                self._dispatch(kind, payload)
+            except Exception as error:  # noqa: BLE001 - reported, never fatal
+                with self._lock:
+                    self._last_error = {
+                        "code": "hub_reply_unreadable",
+                        "params": {"detail": str(error)[:200]},
+                    }
+                self._log(f"could not read a frame from the hub: {error}")
+        self._end_socket(client)
+        return failure
+
+    def _hello(self) -> dict:
+        """The first frame this client sends, within the hub's own grace."""
+        with self._lock:
+            token = self._binding[1]
+            catalog_hash = self._catalog_hash
+        return {
+            "type": "hello",
+            "kind": "client",
+            "token": token,
+            "client_version": CLIENT_VERSION,
+            "hostname": self.hostname(),
+            "platform": dict(self._platform_tuple),
+            "catalog_hash": catalog_hash,
+        }
+
+    def _take_welcome(self, client) -> dict:
+        """The hub's first frame, which is a welcome or the socket is wrong."""
+        kind, payload = client.recv()
+        message = _decode(kind, payload)
+        if message is None or message.get("type") != "welcome":
+            raise GatewayUnreachable("the hub's first frame is not a welcome")
+        return message
+
+    def _dispatch(self, kind: str, payload) -> None:
+        """Take one frame's worth of news.
+
+        Args:
+            kind: ``text`` or ``binary``.
+            payload: The frame's payload.
+
+        Raises:
+            TypeError: When a frame carries a field of the wrong shape.
+        """
+        message = _decode(kind, payload)
+        if message is None:
+            return
+        message_type = message.get("type")
+        if message_type == "catalog":
+            self._take_catalog(message)
+        elif message_type == "ai":
+            self._take_credential(message.get("credential"))
+        elif message_type == "disabled":
+            self._take_disabled(bool(message.get("is_disabled")))
+        elif message_type == "answer":
+            self._take_answer(message)
+        else:
+            self._log(f"ignoring a {message_type!r} frame from the hub")
+
+    def _take_catalog(self, message: dict) -> None:
+        """Replace the held catalog with the one the hub just sent."""
+        services = message.get("services")
+        if not isinstance(services, list):
+            raise TypeError("catalog services is not a list")
+        with self._lock:
+            self._services_list = [
+                entry for entry in services if isinstance(entry, dict)
+            ]
+            self._catalog_hash = str(message.get("hash", "") or "")
+
+    def _take_credential(self, credential) -> None:
+        """Take the hub's AI grant, or put the tools back when it withdraws it.
+
+        Args:
+            credential: ``{"base_url", "api_key", "model"}``, or None when
+                the hub granted nothing.
+        """
+        is_granted = isinstance(credential, dict) and bool(credential)
+        with self._lock:
+            self._credential = dict(credential) if is_granted else {}
+            held = dict(self._credential)
+            is_disabled = self._is_disabled
+        if is_disabled:
+            return
+        if is_granted:
+            self._services["ai"].update_credential(held)
+        else:
+            self._services["ai"].restore()
+
+    def _take_disabled(self, is_disabled: bool) -> None:
+        """Let go of everything once when the hub switches this client off."""
+        with self._lock:
+            was_disabled = self._was_disabled
             self._is_disabled = is_disabled
-            self._hub_version = str(reply.get("hub_version", ""))
-            if catalog is not None:
-                services = catalog.get("services") or []
-                if not isinstance(services, list):
-                    raise TypeError("catalog services is not a list")
-                self._services_list = [
-                    entry for entry in services if isinstance(entry, dict)
-                ]
-                self._catalog_hash = str(reply.get("catalog_hash", ""))
-            self._credential = dict(credential) if isinstance(credential, dict) else {}
+            self._was_disabled = is_disabled
             if is_disabled:
                 self._last_error = {"code": "client_disabled", "params": {}}
+            elif self._last_error and self._last_error.get("code") == "client_disabled":
+                self._last_error = None
+            credential = dict(self._credential)
         if is_disabled:
             if not was_disabled:
                 self._log("the hub switched this client off")
                 self._release()
             return
-        self._services["ai"].update_credential(self._credential)
+        if was_disabled and credential:
+            self._services["ai"].update_credential(credential)
+
+    def _take_answer(self, message: dict) -> None:
+        """Hand one answer to the ask that is waiting for it."""
+        ask_id = str(message.get("id", ""))
+        with self._lock:
+            pending = self._pending.get(ask_id)
+            if pending is None:
+                return
+            pending["answer"] = message
+        pending["event"].set()
+
+    def _end_socket(self, client) -> None:
+        """Close the socket and wake everything waiting on it."""
+        with self._lock:
+            if self._client is client:
+                self._client = None
+            self._is_welcomed = False
+            waiting = list(self._pending.values())
+        client.close()
+        for pending in waiting:
+            pending["event"].set()
+
+    def _drop_socket(self) -> None:
+        """End the socket from this side, when there is one."""
+        with self._lock:
+            client = self._client
+        if client is not None:
+            self._end_socket(client)
+
+    def _on_unreachable(self, error: Exception) -> int:
+        """Back off after a broken wire; the rejection count stands."""
+        with self._lock:
+            self._last_error = channel_error(error)
+            delay = self._backoff_s
+            self._backoff_s = min(self._backoff_s * 2, CLIENT_BACKOFF_MAX_S)
+        self._log(f"hub socket failed: {error}; retrying in {delay}s")
+        return delay
 
     def _on_rejected(self, error: Exception) -> int:
         """Take a definitive rejection for what it is, after a short grace.
@@ -414,7 +656,7 @@ class ClientSession:
             self._last_error = rejection
         if rejections < CLIENT_REFUSALS_BEFORE_UNBIND:
             self._log(f"{error}; asking again")
-            return CLIENT_POLL_INTERVAL_S
+            return CLIENT_BACKOFF_MIN_S
         enrollment.disconnect()
         self._release()
         self._reset_binding_state()
@@ -443,7 +685,9 @@ class ClientSession:
             self._services_list = []
             self._catalog_hash = ""
             self._hub_version = ""
+            self._client_id = ""
             self._is_disabled = False
+            self._was_disabled = False
             self._credential = {}
 
     def _load_connection(self) -> None:
@@ -476,6 +720,7 @@ class ClientSession:
         with self._lock:
             if self._binding == binding:
                 return
+        self._drop_socket()
         self._release()
         self._reset_binding_state()
         self._log("adopted the binding written on disk")

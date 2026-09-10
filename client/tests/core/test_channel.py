@@ -3,7 +3,7 @@
 The pin runs against a real TLS socket whose certificate is generated at
 test runtime with the ``openssl`` binary: the right fingerprint talks, the
 wrong one is refused before a single request byte is sent, and a bound
-client polling against the wrong certificate unbinds the way a refused
+client connecting against the wrong certificate unbinds the way a refused
 token does. The status mappings replace ``_request`` with a canned answer.
 """
 
@@ -147,7 +147,7 @@ def test_an_https_url_without_a_pin_sends_nothing(tls_server):
     assert RecordingHandler.requests == []
 
 
-def test_three_mismatched_polls_unbind_the_person(tls_server, config_path):
+def test_three_mismatched_connections_unbind_the_person(tls_server, config_path):
     url, _ = tls_server
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
@@ -169,7 +169,7 @@ def test_three_mismatched_polls_unbind_the_person(tls_server, config_path):
     assert RecordingHandler.requests == []
 
 
-def test_two_mismatched_polls_keep_the_binding(tls_server, config_path):
+def test_two_mismatched_connections_keep_the_binding(tls_server, config_path):
     url, _ = tls_server
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
@@ -186,20 +186,6 @@ def test_two_mismatched_polls_keep_the_binding(tls_server, config_path):
     assert "gateway_url" in json.loads(config_path.read_text())
     assert session.last_error()["code"] == "hub_untrusted"
     assert RecordingHandler.requests == []
-
-
-def test_the_pinned_session_polls(tls_server, config_path):
-    url, fingerprint = tls_server
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(
-        json.dumps({"gateway_url": url, "token": "tok", "fingerprint": fingerprint})
-    )
-    session = ClientSession(log=discard, platform=FakeClientPlatform())
-
-    session.run_once()
-
-    assert session.last_error() is None
-    assert len(RecordingHandler.requests) == 1
 
 
 def test_a_wrong_fingerprint_link_is_refused_at_enrollment(tls_server, config_path):

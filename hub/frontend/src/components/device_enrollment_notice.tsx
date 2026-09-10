@@ -1,52 +1,47 @@
 import { Icon } from "./icon";
 import { copyText } from "../copy_text";
-import type { DeviceEnrollmentView } from "../api_types";
 
 import "./device_enrollment_notice.css";
 
 /**
- * A generated enrollment link, with the machine it was generated for.
+ * A generated enrollment link, worded by whoever minted it.
  *
- * The same notice serves the page's "Add by link" button, which names no
- * machine, and a device's own drawer, which names it.
+ * The devices page and a device's drawer mint links for agents, the clients
+ * page for a person's program; each passes its own title and hint, and the
+ * hint's `{minutes}` is filled with how long the link lasts.
  */
 
-const ENROLLMENT_TITLE_ANY =
-  "Paste this link into the machine's own agent window.";
-
-const ENROLLMENT_TITLE_DEVICE =
-  "Paste this link into the agent window on {name}.";
-
-const ENROLLMENT_HINT =
-  "Install the agent there, then paste the link into its window (`nagent gui`), or run `sudo nagent connect <link>` in its terminal; it pastes safely unquoted. It works for {minutes} minutes.";
-
 interface DeviceEnrollmentNoticeProps {
-  enrollment: DeviceEnrollmentView;
-  /** The device the link is bound to, or null for a machine not in the list. */
-  deviceName: string | null;
+  link: string;
+  expiresInS: number;
+  title: string;
+  /** May carry `{minutes}`, filled with the link's remaining minutes. */
+  hint: string;
   onDismiss: () => void;
 }
 
 export function DeviceEnrollmentNotice({
-  enrollment,
-  deviceName,
+  link,
+  expiresInS,
+  title,
+  hint,
   onDismiss,
 }: DeviceEnrollmentNoticeProps) {
-  const minutes = Math.round(enrollment.expires_in_s / 60);
+  const minutes = Math.max(0, Math.round(expiresInS / 60));
   return (
     <div className="notice">
       <Icon name="link" size={15} />
       <div className="notice_body">
-        <strong>{enrollmentTitle(deviceName)}</strong>
+        <strong>{title}</strong>
         <span className="muted">
-          {ENROLLMENT_HINT.replace("{minutes}", String(minutes))}
+          {hint.replace("{minutes}", String(minutes))}
         </span>
         <div className="device_enrollment_link">
-          <code>{enrollment.link}</code>
+          <code>{link}</code>
           <button
             type="button"
             className="button button--small"
-            onClick={() => void copyText(enrollment.link)}
+            onClick={() => void copyText(link)}
           >
             <Icon name="file" size={13} />
             Copy
@@ -63,11 +58,4 @@ export function DeviceEnrollmentNotice({
       </div>
     </div>
   );
-}
-
-function enrollmentTitle(deviceName: string | null): string {
-  if (deviceName === null) {
-    return ENROLLMENT_TITLE_ANY;
-  }
-  return ENROLLMENT_TITLE_DEVICE.replace("{name}", deviceName);
 }

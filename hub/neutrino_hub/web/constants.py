@@ -125,6 +125,7 @@ WEB_PROXY_SCOPE_LAN_AND_HUB = "lan_and_hub"
 # hint: a type, the one thing it is about, and nothing else. The page that
 # draws that thing asks for it again.
 WEB_EVENT_DEVICES = "devices"
+WEB_EVENT_CLIENTS = "clients"
 WEB_EVENT_DEVICE_REPORT = "device_report"
 WEB_EVENT_MODULE_ORDER = "module_order"
 WEB_EVENT_SERVICES = "services"

@@ -1,9 +1,9 @@
 """The desktop viewer: the hub is asked, the viewer dialed, nothing kept.
 
-Connect asks the hub for the share's address and password, starts the
-carried viewer with ``--connect`` and ``--password``, and the password lands
-in no log line and no state payload. Every viewer opened is closed by
-``close_all``.
+Connect asks the hub over the open socket for the share's address and
+password, starts the carried viewer with ``--connect`` and ``--password``,
+and the password lands in no log line and no state payload. Every viewer
+opened is closed by ``close_all``.
 """
 
 import json
@@ -29,7 +29,7 @@ CONNECT_BODY = {"action": "connect", "id": "rdp_s9"}
 
 
 class FakeHub:
-    """The hub's rdp_connect answer, scripted."""
+    """The hub's answer to one ask, scripted."""
 
     def __init__(self, reply=None, error=None):
         self.reply = (
@@ -42,10 +42,10 @@ class FakeHub:
             }
         )
         self.error = error
-        self.posted = []
+        self.asked = []
 
-    def post(self, path, payload):
-        self.posted.append((path, dict(payload)))
+    def ask(self, kind, args):
+        self.asked.append((kind, dict(args)))
         if self.error is not None:
             raise self.error
         return dict(self.reply)
@@ -59,7 +59,7 @@ def handler(monkeypatch):
     lines = []
     platform = FakeClientPlatform()
     hub = FakeHub()
-    subject = RdpViewerHandler(platform=platform, post=hub.post, log=lines.append)
+    subject = RdpViewerHandler(platform=platform, ask=hub.ask, log=lines.append)
     return subject, platform, hub, lines
 
 
@@ -69,7 +69,7 @@ def test_connect_asks_the_hub_and_dials_the_viewer(handler):
     outcome = subject.act(entries=[ENTRY], body=CONNECT_BODY)
 
     assert outcome == {}
-    assert hub.posted == [("/api/client/rdp_connect", {"id": "rdp_s9"})]
+    assert hub.asked == [("rdp_connect", {"service_id": "rdp_s9"})]
     (process,) = platform.started
     assert process.argv == [
         "/opt/rustdesk",
@@ -135,7 +135,7 @@ def test_a_missing_viewer_is_a_bundle_refusal(handler, monkeypatch):
         "code": "bundle_missing",
         "params": {"binary": "rustdesk"},
     }
-    assert hub.posted == []
+    assert hub.asked == []
 
 
 def test_an_entry_nobody_published_is_refused(handler):
@@ -144,7 +144,7 @@ def test_an_entry_nobody_published_is_refused(handler):
     refusal = subject.act(entries=[ENTRY], body={"action": "connect", "id": "x"})
 
     assert refusal == {"code": "unknown_request", "params": {}}
-    assert hub.posted == []
+    assert hub.asked == []
 
 
 def test_an_action_the_handler_does_not_know_is_typed(handler):

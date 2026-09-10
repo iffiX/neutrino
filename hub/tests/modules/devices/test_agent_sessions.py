@@ -22,6 +22,8 @@ from neutrino_hub.modules.devices.agent_sessions import (
     StreamRefusedError,
 )
 from neutrino_hub.modules.devices.constants import (
+    AGENT_SESSION_KIND_AGENT,
+    AGENT_SESSION_KIND_CLIENT,
     AGENT_WS_CHUNK_BYTES,
     AGENT_WS_CLOSE_REPLACED,
 )
@@ -534,5 +536,65 @@ def test_a_thread_that_waits_too_long_gets_a_code_and_the_call_is_cancelled():
             await asyncio.sleep(0.01)
 
         assert outcome["code"] == "agent_never_reported"
+
+    run(scenario)
+
+
+# --- the two kinds ---
+
+
+def test_a_session_is_an_agent_unless_told_otherwise():
+    async def scenario():
+        assert session().kind == AGENT_SESSION_KIND_AGENT
+        made = AgentSession(
+            key="C1D2",
+            kind=AGENT_SESSION_KIND_CLIENT,
+            websocket=FakeWebSocket(),
+            loop=asyncio.get_running_loop(),
+        )
+        assert made.kind == AGENT_SESSION_KIND_CLIENT
+        assert made.key == "c1d2"
+
+    run(scenario)
+
+
+def test_a_client_registry_keys_clients_by_id_and_takes_no_agent():
+    async def scenario():
+        clients = AgentSessionRegistry(kind=AGENT_SESSION_KIND_CLIENT)
+        agents = AgentSessionRegistry()
+        socket = FakeWebSocket()
+        made = AgentSession(
+            key="c1",
+            kind=AGENT_SESSION_KIND_CLIENT,
+            websocket=socket,
+            loop=asyncio.get_running_loop(),
+            version="0.2.0",
+        )
+        await clients.attach(made)
+
+        assert clients.is_online("c1")
+        assert clients.sessions() == [made]
+        assert clients.version_of("c1") == "0.2.0"
+        assert not agents.is_online("c1")
+        with pytest.raises(ValueError):
+            await agents.attach(made)
+        with pytest.raises(ValueError):
+            await clients.attach(session())
+
+    run(scenario)
+
+
+def test_a_frame_from_a_thread_lands_on_the_session_without_waiting():
+    async def scenario():
+        registry = AgentSessionRegistry()
+        socket = FakeWebSocket()
+        made = session(socket=socket)
+        await registry.attach(made)
+
+        assert registry.send_json_from_thread(MAC, {"type": "catalog", "hash": "h"})
+        assert not registry.send_json_from_thread("11:22:33:44:55:66", {"type": "x"})
+        for _ in range(10):
+            await asyncio.sleep(0)
+        assert socket.sent("catalog") == [{"type": "catalog", "hash": "h"}]
 
     run(scenario)

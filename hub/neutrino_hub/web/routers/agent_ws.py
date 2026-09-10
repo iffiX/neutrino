@@ -48,7 +48,7 @@ async def agent_socket(websocket: WebSocket) -> None:
     """
     runtime = websocket.app.state.runtime
     await websocket.accept()
-    hello = await _read_hello(websocket)
+    hello = await read_hello(websocket)
     if hello is None:
         await websocket.close(code=AGENT_WS_CLOSE_BAD_HELLO, reason="bad_hello")
         return
@@ -60,7 +60,7 @@ async def agent_socket(websocket: WebSocket) -> None:
         await websocket.close(code=AGENT_WS_CLOSE_UNKNOWN_TOKEN, reason="unknown_token")
         return
     refusal = version_refusal(
-        str(hello.get("client_version", "") or ""), _wire(hello.get("wire"))
+        str(hello.get("client_version", "") or ""), wire_of(hello.get("wire"))
     )
     if refusal is not None:
         await websocket.close(code=AGENT_WS_CLOSE_REFUSED, reason=refusal["code"])
@@ -72,7 +72,7 @@ async def agent_socket(websocket: WebSocket) -> None:
         loop=asyncio.get_running_loop(),
         hostname=str(hello.get("hostname", "") or ""),
         platform=hello.get("platform") or {},
-        address=_peer_host(websocket),
+        address=peer_host(websocket),
         version=str(hello.get("client_version", "") or ""),
     )
     await runtime.agent_sessions.attach(session)
@@ -81,7 +81,7 @@ async def agent_socket(websocket: WebSocket) -> None:
             runtime,
             device,
             hello,
-            peer_host=_peer_host(websocket),
+            peer_host=peer_host(websocket),
             reached_host=websocket.url.hostname or "",
         )
         state_hash, desired = await asyncio.to_thread(runtime.desired_state_for, device)
@@ -124,7 +124,7 @@ async def _serve(websocket: WebSocket, runtime, session: AgentSession, device):
         if data is not None:
             session.dispatch_bytes(data)
             continue
-        decoded = _decode(message.get("text"))
+        decoded = decode_frame(message.get("text"))
         if decoded is None:
             continue
         kind = decoded.get("type")
@@ -165,7 +165,7 @@ def _is_panel_change(previous: dict, report: dict) -> bool:
     )
 
 
-async def _read_hello(websocket: WebSocket) -> "dict | None":
+async def read_hello(websocket: WebSocket) -> "dict | None":
     """The socket's first frame, which must be a hello in time.
 
     Args:
@@ -181,13 +181,13 @@ async def _read_hello(websocket: WebSocket) -> "dict | None":
         return None
     if message["type"] == "websocket.disconnect":
         return None
-    decoded = _decode(message.get("text"))
+    decoded = decode_frame(message.get("text"))
     if decoded is None or decoded.get("type") != "hello":
         return None
     return decoded
 
 
-def _decode(text: "str | None") -> "dict | None":
+def decode_frame(text: "str | None") -> "dict | None":
     """One text frame as the object it carries, or None."""
     if not text:
         return None
@@ -198,7 +198,7 @@ def _decode(text: "str | None") -> "dict | None":
     return decoded if isinstance(decoded, dict) else None
 
 
-def _wire(value) -> int:
+def wire_of(value) -> int:
     """The generation a hello names; anything unreadable reads as zero."""
     try:
         return int(value or 0)
@@ -206,7 +206,7 @@ def _wire(value) -> int:
         return 0
 
 
-def _peer_host(websocket: WebSocket) -> str:
+def peer_host(websocket: WebSocket) -> str:
     """Where the socket comes from, empty when the transport names none."""
     client = websocket.client
     return client.host if client is not None else ""
