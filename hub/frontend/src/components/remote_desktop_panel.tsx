@@ -313,6 +313,7 @@ function RustdeskCard({
       <button
         type="button"
         className="button button--ghost button--small remote_desktop_action"
+        disabled={!isShared}
         onClick={onResetSeatPassword}
       >
         {RUSTDESK_WORDING.reset}
