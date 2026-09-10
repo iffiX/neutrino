@@ -51,6 +51,9 @@ CLIENT_CONTROL_REQUEST_TIMEOUT_S = 5
 # launcher and icon under.
 CLIENT_GUI_WINDOW_TITLE = "Neutrino client"
 CLIENT_DESKTOP_NAME = "neutrino_client"
+# The tray menu, the same two words on every platform.
+CLIENT_TRAY_OPEN_LABEL = "Open"
+CLIENT_TRAY_QUIT_LABEL = "Quit"
 CLIENT_GUI_WINDOW_WIDTH = 760
 CLIENT_GUI_WINDOW_HEIGHT = 900
 

@@ -1,28 +1,20 @@
-"""The status-area icon: the same two entries, whichever way it is drawn.
+"""The Linux status-area icon: the same two entries, whichever way it is drawn.
 
-The GTK toolkit and the Win32 seam are both faked, so the indicator path,
-the status-icon fallback and the Windows message pump all run here with no
-desktop. What is pinned is the menu both Linux paths carry, which call each
-entry reaches, and the Windows icon's own lifetime: put up on start, taken
-down on stop, and every mouse event answered.
+The GTK toolkit is faked, so the indicator path and the status-icon fallback
+both run here with no desktop. What is pinned is the menu both paths carry
+and which call each entry reaches.
 """
 
 import pytest
 
-import neutrino_client.gui.tray as tray_module
-from neutrino_client.constants import CLIENT_DESKTOP_NAME
-from neutrino_client.gui.tray import (
-    TRAY_CALLBACK_MESSAGE,
-    TRAY_COMMAND_OPEN,
-    TRAY_COMMAND_QUIT,
-    TRAY_OPEN_LABEL,
-    TRAY_QUIT_LABEL,
-    WM_COMMAND,
-    WM_LBUTTONDBLCLK,
-    WM_LBUTTONUP,
-    WM_RBUTTONUP,
+import neutrino_client.gui.tray_linux as tray_module
+from neutrino_client.constants import (
+    CLIENT_DESKTOP_NAME,
+    CLIENT_TRAY_OPEN_LABEL,
+    CLIENT_TRAY_QUIT_LABEL,
+)
+from neutrino_client.gui.tray_linux import (
     LinuxTrayIcon,
-    WindowsTrayIcon,
 )
 
 
@@ -216,47 +208,6 @@ class FakeIndicatorModule:
         self.IndicatorStatus = IndicatorStatus
 
 
-class FakeWin32TrayApi:
-    """The Win32 seam, recorded rather than called.
-
-    Attributes:
-        added: Every icon put up.
-        removed: Every window an icon was taken down for.
-        menus: Every menu dropped.
-        chosen: What the next ``popup_menu`` returns.
-    """
-
-    def __init__(self, chosen: int = 0):
-        self.on_event = None
-        self.added = []
-        self.removed = []
-        self.menus = []
-        self.closed = []
-        self.chosen = chosen
-        self.is_pumping = False
-
-    def create_window(self, *, title: str, on_event) -> int:
-        self.title = title
-        self.on_event = on_event
-        return 4242
-
-    def add_icon(self, *, window: int, icon_path: str, tip: str) -> None:
-        self.added.append({"window": window, "icon_path": icon_path, "tip": tip})
-
-    def remove_icon(self, *, window: int) -> None:
-        self.removed.append(window)
-
-    def popup_menu(self, *, window: int, items: tuple) -> int:
-        self.menus.append({"window": window, "items": tuple(items)})
-        return self.chosen
-
-    def pump_messages(self, *, window: int) -> None:
-        self.is_pumping = True
-
-    def close_window(self, *, window: int) -> None:
-        self.closed.append(window)
-
-
 @pytest.fixture
 def clicks():
     """What the tray's two entries reach."""
@@ -282,27 +233,6 @@ def linux_tray(clicks, *, indicator=None, icon_path="/icons/x.png"):
     )
 
 
-def windows_tray(clicks, *, win32):
-    """A Windows tray over a fake Win32 seam."""
-
-    def on_open() -> None:
-        clicks["open"] += 1
-
-    def on_quit() -> None:
-        clicks["quit"] += 1
-
-    return WindowsTrayIcon(
-        title="Neutrino client",
-        icon_path="C:\\icons\\x.ico",
-        on_open=on_open,
-        on_quit=on_quit,
-        win32=win32,
-    )
-
-
-# --- Linux ---
-
-
 def test_the_indicator_carries_open_and_quit_and_nothing_else(clicks):
     indicator = FakeIndicatorModule()
 
@@ -314,8 +244,8 @@ def test_the_indicator_carries_open_and_quit_and_nothing_else(clicks):
     assert made.status == "active"
     assert made.title == "Neutrino client"
     assert [item.label for item in made.menu.items] == [
-        TRAY_OPEN_LABEL,
-        TRAY_QUIT_LABEL,
+        CLIENT_TRAY_OPEN_LABEL,
+        CLIENT_TRAY_QUIT_LABEL,
     ]
     assert made.menu.is_shown is True
     assert icon.is_shown is True
@@ -342,8 +272,8 @@ def test_without_the_typelib_the_status_icon_carries_the_same_menu(clicks, monke
     assert status_icon.file_path == "/icons/x.png"
     assert status_icon.tooltip == "Neutrino client"
     assert [item.label for item in icon._menu.items] == [
-        TRAY_OPEN_LABEL,
-        TRAY_QUIT_LABEL,
+        CLIENT_TRAY_OPEN_LABEL,
+        CLIENT_TRAY_QUIT_LABEL,
     ]
 
 
@@ -393,91 +323,3 @@ def test_a_toolkit_with_no_status_area_shows_nothing_and_does_not_fail(
 def test_the_indicator_bindings_are_absent_here():
     """The typelib is not in the test environment, and that is not a failure."""
     assert tray_module.load_indicator() is None
-
-
-# --- Windows ---
-
-
-def test_the_icon_goes_up_on_start_and_comes_down_on_stop(clicks):
-    win32 = FakeWin32TrayApi()
-    icon = windows_tray(clicks, win32=win32)
-
-    icon.start()
-    icon.stop()
-
-    assert win32.added == [
-        {"window": 4242, "icon_path": "C:\\icons\\x.ico", "tip": "Neutrino client"}
-    ]
-    assert win32.is_pumping is True
-    assert win32.removed == [4242]
-    assert win32.closed == [4242]
-
-
-def test_stopping_an_icon_that_never_went_up_does_nothing(clicks):
-    win32 = FakeWin32TrayApi()
-
-    windows_tray(clicks, win32=win32).stop()
-
-    assert win32.removed == []
-
-
-@pytest.mark.parametrize("message", [WM_LBUTTONUP, WM_LBUTTONDBLCLK])
-def test_a_click_on_the_icon_opens_the_window(clicks, message):
-    win32 = FakeWin32TrayApi()
-    icon = windows_tray(clicks, win32=win32)
-    icon.start()
-
-    win32.on_event(TRAY_CALLBACK_MESSAGE, 0, message)
-
-    assert clicks == {"open": 1, "quit": 0}
-    assert win32.menus == []
-
-
-def test_a_right_click_drops_the_menu_and_runs_what_was_chosen(clicks):
-    win32 = FakeWin32TrayApi(chosen=TRAY_COMMAND_QUIT)
-    icon = windows_tray(clicks, win32=win32)
-    icon.start()
-
-    win32.on_event(TRAY_CALLBACK_MESSAGE, 0, WM_RBUTTONUP)
-
-    assert win32.menus == [
-        {
-            "window": 4242,
-            "items": (
-                (TRAY_COMMAND_OPEN, TRAY_OPEN_LABEL),
-                (TRAY_COMMAND_QUIT, TRAY_QUIT_LABEL),
-            ),
-        }
-    ]
-    assert clicks == {"open": 0, "quit": 1}
-
-
-def test_a_dismissed_menu_runs_nothing(clicks):
-    win32 = FakeWin32TrayApi(chosen=0)
-    icon = windows_tray(clicks, win32=win32)
-    icon.start()
-
-    win32.on_event(TRAY_CALLBACK_MESSAGE, 0, WM_RBUTTONUP)
-
-    assert clicks == {"open": 0, "quit": 0}
-
-
-def test_a_menu_command_the_window_receives_runs_the_same_entries(clicks):
-    win32 = FakeWin32TrayApi()
-    icon = windows_tray(clicks, win32=win32)
-    icon.start()
-
-    win32.on_event(WM_COMMAND, TRAY_COMMAND_OPEN, 0)
-    win32.on_event(WM_COMMAND, TRAY_COMMAND_QUIT, 0)
-
-    assert clicks == {"open": 1, "quit": 1}
-
-
-def test_a_message_the_icon_does_not_know_is_ignored(clicks):
-    win32 = FakeWin32TrayApi()
-    icon = windows_tray(clicks, win32=win32)
-    icon.start()
-
-    win32.on_event(0x0001, 0, 0)
-
-    assert clicks == {"open": 0, "quit": 0}

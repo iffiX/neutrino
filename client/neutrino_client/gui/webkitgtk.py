@@ -23,7 +23,7 @@ from neutrino_client.constants import (
     CLIENT_GUI_WINDOW_WIDTH,
 )
 from neutrino_client.exceptions import GuiShellUnavailableError
-from neutrino_client.gui.tray import LinuxTrayIcon
+from neutrino_client.gui.tray_linux import LinuxTrayIcon
 
 # The distribution packages the import guard names when the C stack is
 # absent.

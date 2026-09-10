@@ -18,7 +18,7 @@ from neutrino_client.constants import (
 )
 from neutrino_client.exceptions import GuiShellUnavailableError
 from neutrino_client.gui.bridge import GuiWindowApi
-from neutrino_client.gui.tray import WindowsTrayIcon
+from neutrino_client.gui.tray_windows import WindowsTrayIcon
 
 WEBVIEW2_RUNTIME = "the Microsoft Edge WebView2 Runtime"
 

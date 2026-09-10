@@ -64,6 +64,7 @@ WM_DESTROY = 0x0002
 WM_CLOSE = 0x0010
 WM_COMMAND = 0x0111
 WM_USER = 0x0400
+WM_APP = 0x8000
 WM_LBUTTONUP = 0x0202
 WM_LBUTTONDBLCLK = 0x0203
 WM_RBUTTONUP = 0x0205
@@ -98,6 +99,26 @@ def win_error(code: int) -> str:
         return maker(code).strerror or f"error {code}"
     except (OSError, ValueError):
         return f"error {code}"
+
+
+def window_procedure_type():
+    """The WNDPROC signature a window procedure has to be wrapped in.
+
+    Returns:
+        The ctypes function type, stdcall, taking window, message, wparam
+        and lparam. WPARAM and LPARAM are pointer-sized, so a 64-bit value
+        reaches the procedure whole.
+
+    Raises:
+        AttributeError: Off Windows, where ctypes has no stdcall convention.
+    """
+    return ctypes.WINFUNCTYPE(
+        ctypes.c_ssize_t,
+        ctypes.c_void_p,
+        ctypes.c_uint,
+        ctypes.c_size_t,
+        ctypes.c_ssize_t,
+    )
 
 
 _LIBRARIES = None
@@ -164,6 +185,19 @@ class Point(ctypes.Structure):
     """A screen position."""
 
     _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+
+class Message(ctypes.Structure):
+    """One message taken off a thread's queue."""
+
+    _fields_ = [
+        ("hWnd", ctypes.c_void_p),
+        ("message", ctypes.c_uint),
+        ("wParam", ctypes.c_size_t),
+        ("lParam", ctypes.c_ssize_t),
+        ("time", ctypes.c_uint),
+        ("pt", Point),
+    ]
 
 
 class StartupInfo(ctypes.Structure):
