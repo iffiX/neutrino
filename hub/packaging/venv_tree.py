@@ -115,7 +115,7 @@ VENDOR_DIR = INSTALL_PREFIX / "bin"
 # Not beside the binary. The databases are replaced while the machine runs, so
 # they are state and live with the rest of it; every path that starts xray says
 # where they are. The layout and its reasoning are in
-# ../../docs/standard/design/files.md.
+# ../../skills/core-code-author/design/files.md.
 GEODATA_DIR = Path("/var/lib/neutrino/geodata")
 
 # The pins are the runtime modules' to state: the panel reports them and a
@@ -723,7 +723,7 @@ def panel_unit(documentation_url: str = "https://github.com/iffiX/neutrino") -> 
         .replace("Environment=PYTHONPATH=@REPO_ROOT@/hub\n", "")
         .replace("@PYTHON@", f"{PYTHON_DIR}/bin/python3")
         .replace(
-            "Documentation=file://@REPO_ROOT@/docs/standard/misc/config.md",
+            "Documentation=file://@REPO_ROOT@/skills/core-code-author/misc/config.md",
             f"Documentation={documentation_url}",
         )
     )

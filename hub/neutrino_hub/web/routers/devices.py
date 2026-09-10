@@ -1525,7 +1525,7 @@ def _is_version_mismatched(agent_version: "str | None") -> bool:
     """Whether an agent is a different version from this hub.
 
     The two are released together and supported only together
-    (docs/standard/agent_work_rule/release.md), so any difference means the
+    (skills/core-code-author/agent_work_rule/release.md), so any difference means the
     device needs its agent upgraded. A device that has never reported one is
     not a mismatch, only unknown.
 

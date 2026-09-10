@@ -851,7 +851,7 @@ def _step_users_and_dirs(reporter: InstallReporter) -> str:
             ]
         )
         is_changed = True
-    # The layout is in docs/standard/design/files.md: configuration under
+    # The layout is in skills/core-code-author/design/files.md: configuration under
     # /etc, everything a render produces or a service accumulates under
     # /var/lib, logs under /var/log.
     for directory in (

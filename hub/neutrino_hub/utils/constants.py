@@ -2,7 +2,7 @@
 
 Five roots, each answering one question about what is in it. The layout and
 the reasoning are in
-[design/files.md](../../../docs/standard/design/files.md); this is where it is
+[design/files.md](../../../skills/core-code-author/design/files.md); this is where it is
 written down for the code.
 """
 

@@ -3,7 +3,7 @@
 ``--dev`` moves the five roots under ``hub_dev_root/`` in the working copy, so
 deleting one directory undoes the hub. What it does not undo — the interface
 roles, the firewall, the service account — is in
-[design/install_and_dev.md](../../../docs/standard/design/install_and_dev.md).
+[design/install_and_dev.md](../../../skills/core-code-author/design/install_and_dev.md).
 
 This runs before anything imports ``utils.constants``, which resolves those
 roots against the environment as it is imported. That is why the variable's

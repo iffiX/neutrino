@@ -6,7 +6,7 @@ seccomp filters those directives need, and the effective capability set loses
 `CAP_SETUID` — measured on Debian 12, where `NoNewPrivileges` plus **any one**
 of the other directives is enough to lose it. Without them systemd applies no
 filter at all, which is why taking `NoNewPrivileges` out appears to fix it and
-is the one thing that must not be done ([../../../docs/standard/design/privilege.md](../../../docs/standard/design/privilege.md)).
+is the one thing that must not be done ([../../../skills/core-code-author/design/privilege.md](../../../skills/core-code-author/design/privilege.md)).
 
 Installing software is what runs into this. apt drops to the `_apt` account to
 fetch, cannot, and every download dies with `seteuid 42 failed`. A vendor's

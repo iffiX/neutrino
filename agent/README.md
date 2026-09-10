@@ -80,5 +80,5 @@ The agent runs as root, so the actions it will perform are a closed list in
 ## Working on this repo
 
 Read [`AGENTS.md`](../AGENTS.md) first — it indexes the standard and says
-which document settles what. [`docs/standard/`](../docs/standard/README.md)
+which document settles what. [`skills/core-code-author/`](../skills/core-code-author/SKILL.md)
 holds the detail.

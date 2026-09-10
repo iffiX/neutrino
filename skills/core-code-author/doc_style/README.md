@@ -7,7 +7,7 @@ Three kinds of document live in this repository, each written differently:
 - [usage_guide_style.md](usage_guide_style.md) — how to do a thing, for a
   stated level of reader. `misc/operations.md` is one.
 - [development_guide_style.md](development_guide_style.md) — how to change the
-  code. `AGENTS.md` and the rest of `docs/standard/` are these.
+  code. `AGENTS.md` and the rest of `skills/core-code-author/` are these.
 
 This page holds what all three obey, and how the two languages differ.
 

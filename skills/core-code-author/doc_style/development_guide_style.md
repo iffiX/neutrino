@@ -2,7 +2,7 @@
 
 A development guide is for somebody about to change the code: how to build it,
 where things live, what the rules are, how a change gets in. `AGENTS.md` and
-the rest of `docs/standard/` are these.
+the rest of `skills/core-code-author/` are these.
 
 It does not document configuration for operators, and it does not teach the
 tools. Assume the reader can use git and a shell. Rules shared with the other
@@ -20,7 +20,7 @@ narrowest: compiling, project structure, protocol wire formats, PR rules. Not
 one configuration field is documented there — that is the reference region's
 job, and the two never overlap.
 
-Ours divides the same way: `AGENTS.md` and `docs/standard/` say how to change
+Ours divides the same way: `AGENTS.md` and `skills/core-code-author/` say how to change
 the code; `misc/config.md` says what the fields are; `misc/operations.md` says
 how to run the box.
 

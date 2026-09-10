@@ -132,6 +132,6 @@ a credential with nothing to spend it on and somewhere to leak from.
 
 Root-requiring calls stay in `neutrino_hub/system/` and in each module's `ops` or `apply`
 layer, behind named operations. Renderers never touch the system
-([design/architecture.md](design/architecture.md)). Keeping that seam is what
+([design/architecture.md](architecture.md)). Keeping that seam is what
 makes a privileged helper possible later; spreading `systemctl` calls through
 routers is what would make it impossible.

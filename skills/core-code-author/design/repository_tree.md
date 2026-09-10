@@ -16,7 +16,8 @@ dependency is a thing that can be missing there.
 hub/                 The `neutrino_hub` distribution: the appliance.
 agent/               The `neutrino_agent` distribution: the device agent.
 packaging/           Building both, and driving a built one on a live box.
-docs/                This standard, the CLI reference, and nothing generated.
+docs/                This standard, the CLI reference, and the guide/ VitePress
+                     website. Generated site output is ignored.
 images/              Source artwork: icons/ the one icon source the packaging
                      builds copy from, original/ the raw artwork, web/ the
                      README's screenshots.
@@ -80,7 +81,11 @@ agent/
 `build_release.py` builds every artifact of a release. `integration/` is the
 part that cannot run anywhere else: scripts that drive a **built package on a
 live box**, deliberately outside `hub/tests` because pytest must stay runnable
-on a workstation with no root and no interfaces to break.
+on a workstation with no root and no interfaces to break. `integration_aws/`
+is the same idea for the platforms the pipeline VM cannot carry: it rents a
+Windows Server and a Mac by the hour, builds their installers there, and
+joins each to a rented Linux hub as a device. Its `state/` is one run's key
+and addresses, gitignored, and its `down.sh` is what stops the bill.
 
 ## The rules that shaped it
 

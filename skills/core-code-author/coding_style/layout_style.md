@@ -51,7 +51,7 @@ Library packages are purely functional. All execution verbosity lives in
 - `neutrino_hub/cli/` holds one file per tool, whose tunables are plain
   variables in commented config sections. `entry.py` dispatches, and each of
   the others is one `nhub` subcommand — the set lives in its `COMMANDS`
-  table and is documented in [docs/cli.md](../../cli.md).
+  table and is documented in [docs/cli.md](../../../docs/cli.md).
 - A new tool is a new `neutrino_hub/cli/<name>.py` and a new `nhub` subcommand,
   never a flag bolted onto an unrelated one.
 

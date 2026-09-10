@@ -8,7 +8,7 @@ readable in sysfs, so those cards are read through ``nvidia-smi`` when the
 driver has installed it.
 
 Stepping down to an account is ``runuser -u <account> --``, never ``sudo``;
-the reasoning is docs/standard/design/privilege.md.
+the reasoning is skills/core-code-author/design/privilege.md.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the

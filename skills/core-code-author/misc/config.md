@@ -74,7 +74,7 @@ nothing sealed is re-encrypted.
 
 ## First-run flow
 
-1. `sudo nhub setup` (see [../../cli.md](../../cli.md)). It prompts for the
+1. `sudo nhub setup` (see [../../cli.md](../../../docs/cli.md)). It prompts for the
    panel password, copies each missing `<name>.json` from its `.example.json`,
    renders everything and starts the panel.
 2. Add the proxy nodes on the panel's Proxy page, which decodes `ss://` and

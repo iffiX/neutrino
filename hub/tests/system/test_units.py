@@ -15,7 +15,7 @@ from neutrino_hub.system import units
 from neutrino_hub.system.units import SystemdUnitInstaller
 
 TEMPLATE = """[Unit]
-Documentation=file://@REPO_ROOT@/docs/standard/misc/config.md
+Documentation=file://@REPO_ROOT@/skills/core-code-author/misc/config.md
 
 [Service]
 WorkingDirectory=@REPO_ROOT@/hub

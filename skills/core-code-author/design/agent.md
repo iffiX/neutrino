@@ -579,7 +579,7 @@ is hardened separately because it crosses networks the panel never does.
 ## One version, enforced at the door
 
 The hub and the agent share a release version, with no compatibility window
-([../../memory.md](../../memory.md), "Versioning"). The channel enforces it:
+([../../memory.md](../../../docs/memory.md), "Versioning"). The channel enforces it:
 every enroll and heartbeat carries the agent's version, and every reply
 carries the hub's.
 

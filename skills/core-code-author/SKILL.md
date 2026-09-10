@@ -1,3 +1,14 @@
+---
+name: core-code-author
+description: The neutrino engineering standard. Read before writing or changing
+  any code in this repository, Python or TypeScript. Covers where a file goes,
+  naming, file and class layout, comments and docstrings, the exception table
+  each package keeps, config as the source of truth, the render and apply
+  split, the agent channel, the panel's API and UI rules, tests, commits and
+  releases. Use when writing a class, reviewing a diff, naming anything,
+  choosing an exception kind, or planning a change before implementing it.
+---
+
 # neutrino engineering standard
 
 This is the canonical engineering standard for the `neutrino` repository. It is
@@ -27,6 +38,9 @@ conventions explicit so nobody drifts.
    - [coding_style/python_style.md](coding_style/python_style.md) — file
      internal order, method order, black, Google docstrings, no helper lambdas,
      no shouting caps.
+   - [coding_style/exception_style.md](coding_style/exception_style.md) — Python's
+     own exceptions first, one exceptions table per package in one module,
+     never a kind declared elsewhere, `Raises:` on every public docstring.
    - [coding_style/comment_style.md](coding_style/comment_style.md) — comments,
      UI copy and commit messages: state the fact, no narrated reasoning.
    - [coding_style/typescript_style.md](coding_style/typescript_style.md) — the
@@ -118,7 +132,8 @@ conventions explicit so nobody drifts.
 
 ## How this standard reaches every agent
 
-The detail lives here, in `docs/standard/`, exactly once.
+The detail lives here, in `skills/core-code-author/`, exactly once; this
+file is the skill's `SKILL.md`, the index an agent loads first.
 
 - `AGENTS.md` (repo root) is the index every agent reads: what this repo is,
   the commands, the tree, and a table pointing at the document that settles

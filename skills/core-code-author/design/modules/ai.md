@@ -68,6 +68,44 @@ mapping is whatever the switch wrote).
 | Access | Client keys for machines no agent manages, plus the endpoint line; managed devices are keyed automatically over the agent channel |
 | Gateway port | `listen_port`, staged behind its own apply |
 
+## How a client points its tools at the gateway
+
+The client does not write a tool's configuration itself. It hands the hub
+to cc-switch as one more provider and lets cc-switch write Claude Code's
+`settings.json`, Codex's `config.toml` and Gemini's `.env`, in each tool's
+own format. What the client owns is the order of operations, because
+cc-switch replaces a tool's file whole when it switches and would otherwise
+drop what the person had in it.
+
+Before the hub is ever made current for a tool, the client hands cc-switch
+what the person already had, through cc-switch's own stores:
+
+| Step | cc-switch command | What it keeps |
+| --- | --- | --- |
+| List | `provider list` | cc-switch takes a configuration it has never seen into its store as the provider `default`, which is what switching back returns to |
+| MCP servers | `mcp import` | The tool's live MCP servers, which cc-switch then writes into every configuration it makes |
+| Shared settings | `config common extract` on the live file, then `config common set` | Claude's `permissions`, `hooks`, `statusLine`; Codex's `approval_policy`, `sandbox_mode`; Gemini's own variables |
+| The hub | `provider add --common-config` with the endpoint, key and model flags, then `use` | The hub's provider carries the shared settings, so both stand in the file at once |
+
+A common snippet the person already set is never replaced. cc-switch's
+extract counts the provider's own model as shared for Gemini (`GEMINI_MODEL`)
+and, defensively, Codex (`model`); the client takes those keys out of the
+snippet before saving it, or the snippet would override the hub's choice.
+
+Two things stay the client's own. Codex's reasoning effort has no flag in
+cc-switch's `provider add`, so a chosen effort is set as a top-level key of
+`config.toml` after the switch. And cc-switch's `provider delete` asks
+`(y/N)` on its terminal with no flag in the prompt's place, so the client
+runs it on a terminal of its own (a pty on Linux, a pseudo console on
+Windows) and answers `y`.
+
+The client records, per tool, which provider was current before the hub
+and whether the tool had a configuration file at all. Deactivating switches
+back to that provider and deletes the hub's entry; a tool that had no file
+has the one cc-switch made taken away again. What the adoption imported
+into cc-switch's MCP store and common snippet stays there afterwards: it is
+the person's own, in the place cc-switch keeps it.
+
 ## Metering
 
 The panel drains the management API's usage queue (a destructive pop; the
