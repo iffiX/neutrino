@@ -250,6 +250,23 @@ def test_a_tool_is_adopted_once_and_the_hub_added_with_its_snippet(
     assert cli.current["claude"] == "neutrino"
 
 
+def test_codex_is_pointed_at_the_versioned_path_the_responses_api_lives_under(
+    monkeypatch, tmp_path
+):
+    """Codex appends /responses itself; only /v1/responses exists on the hub."""
+    home_file(tmp_path, ".claude/settings.json", '{"env": {}}')
+    cli = Cli()
+    wire(monkeypatch, cli)
+
+    switcher.activate(base_url="http://hub:8317", api_key="k", tool_configs={})
+
+    for app, added in cli.added.items():
+        endpoint = added[added.index("--base-url") + 1]
+        assert endpoint == (
+            "http://hub:8317/v1" if app == "codex" else "http://hub:8317"
+        ), app
+
+
 def test_a_snippet_the_person_set_is_never_replaced(tmp_path, monkeypatch):
     home_file(tmp_path, ".claude/settings.json", "{}")
     cli = Cli(extracted='{"hooks": {"theirs": 1}}')
@@ -578,11 +595,17 @@ def test_a_rollback_that_fails_is_named_in_the_refusal(monkeypatch):
     assert str(caught.value) == "codex: no store; not put back: claude: kept"
 
 
-def test_every_tool_taking_it_is_the_note(monkeypatch):
-    monkeypatch.setattr(switcher, "_point_at_hub", lambda *args: None)
+def test_the_note_names_only_the_tools_switched_this_time(monkeypatch):
+    monkeypatch.setattr(switcher, "_point_at_hub", lambda *args: True)
     assert switcher.activate(base_url="http://hub", api_key="k") == (
         "claude, codex, gemini"
     )
+
+    monkeypatch.setattr(switcher, "_point_at_hub", lambda app, *args: app == "codex")
+    assert switcher.activate(base_url="http://hub", api_key="k") == "codex"
+
+    monkeypatch.setattr(switcher, "_point_at_hub", lambda *args: False)
+    assert switcher.activate(base_url="http://hub", api_key="k") == ""
 
 
 def test_deactivation_names_where_each_tool_went(monkeypatch):

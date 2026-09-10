@@ -5,6 +5,7 @@ embedding calls, the hide-on-close and the import-guard refusals all run
 without a display. macOS has no shell and is refused typed.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -401,6 +402,20 @@ def test_the_linux_window_wears_the_name_its_launcher_is_installed_under(monkeyp
     assert window.title == "Neutrino client"
     assert window.icon_path == "/icons/x.png"
     assert gtk.mains == 1
+
+
+def test_the_linux_window_turns_the_dmabuf_renderer_off_unless_told_otherwise(
+    monkeypatch,
+):
+    linux_toolkit(monkeypatch)
+    monkeypatch.delenv("WEBKIT_DISABLE_DMABUF_RENDERER", raising=False)
+
+    webkitgtk.open_window(title="t", html="<html>", bridge=None)
+    assert os.environ["WEBKIT_DISABLE_DMABUF_RENDERER"] == "1"
+
+    monkeypatch.setenv("WEBKIT_DISABLE_DMABUF_RENDERER", "0")
+    webkitgtk.open_window(title="t", html="<html>", bridge=None)
+    assert os.environ["WEBKIT_DISABLE_DMABUF_RENDERER"] == "0"
 
 
 def test_the_linux_window_shows_itself_unless_it_is_started_hidden(monkeypatch):

@@ -65,6 +65,9 @@ CLAUDE_SLOT_FLAGS = {
 
 # Codex's one knob cc-switch has no flag for, a top-level key of config.toml.
 CODEX_EFFORT_KEY = "model_reasoning_effort"
+# Codex asks for ``<base>/responses``; the gateway serves the Responses API
+# under ``/v1``. Claude Code and Gemini add their own versioned paths.
+TOOL_ENDPOINT_SUFFIXES = {"codex": "/v1"}
 
 # What cc-switch's extract leaves in a common snippet that is nonetheless the
 # provider's own: a snippet carrying these would override the hub's choice.
@@ -138,7 +141,8 @@ def activate(*, base_url: str, api_key: str, tool_configs: "dict | None" = None)
             a missing key leaves that choice to cc-switch.
 
     Returns:
-        A short message naming the tools that took it.
+        The tools switched this time, comma separated; empty when every
+        tool already stood on the hub as asked.
 
     Raises:
         ToolSwitchError: If cc-switch refuses for any tool; the tools switched
@@ -146,9 +150,11 @@ def activate(*, base_url: str, api_key: str, tool_configs: "dict | None" = None)
     """
     configs = tool_configs or {}
     done = []
+    switched = []
     for app in SWITCHER_APPS:
         try:
-            _point_at_hub(app, base_url, api_key, configs.get(app) or {})
+            if _point_at_hub(app, base_url, api_key, configs.get(app) or {}):
+                switched.append(app)
         except ToolSwitchError as error:
             undone = []
             for switched in done:
@@ -161,7 +167,7 @@ def activate(*, base_url: str, api_key: str, tool_configs: "dict | None" = None)
                 problem += "; not put back: " + "; ".join(undone)
             raise ToolSwitchError(problem[:300])
         done.append(app)
-    return ", ".join(done)
+    return ", ".join(switched)
 
 
 def deactivate(*, base_url: str = "") -> str:
@@ -219,7 +225,7 @@ def is_active_for(app: str) -> bool:
     return _current_provider(app) == SWITCHER_PROVIDER_ID
 
 
-def _point_at_hub(app: str, base_url: str, api_key: str, config: dict) -> None:
+def _point_at_hub(app: str, base_url: str, api_key: str, config: dict) -> bool:
     """Make the hub one tool's provider, the person's own settings kept.
 
     Args:
@@ -227,6 +233,10 @@ def _point_at_hub(app: str, base_url: str, api_key: str, config: dict) -> None:
         base_url: The hub's AI endpoint.
         api_key: This person's gateway key.
         config: The tool's staged choices.
+
+    Returns:
+        True when the tool was switched; False when it already stood on
+        the hub as asked.
 
     Raises:
         ToolSwitchError: If cc-switch refuses, or if Claude Code's settings
@@ -239,7 +249,7 @@ def _point_at_hub(app: str, base_url: str, api_key: str, config: dict) -> None:
     wanted = _wanted(app, base_url, api_key, config)
     if record.get("added") == wanted and is_active_for(app):
         _verify(app, base_url, api_key, config)
-        return
+        return False
 
     _drop_provider(app, record.get("previous", ""))
     arguments = [
@@ -250,7 +260,7 @@ def _point_at_hub(app: str, base_url: str, api_key: str, config: dict) -> None:
         "--name",
         SWITCHER_PROVIDER_NAME,
         "--base-url",
-        base_url,
+        _endpoint_for(app, base_url),
         "--api-key",
         api_key,
     ]
@@ -273,6 +283,7 @@ def _point_at_hub(app: str, base_url: str, api_key: str, config: dict) -> None:
     _verify(app, base_url, api_key, config)
     record["added"] = wanted
     _write_record(app, record)
+    return True
 
 
 def _refusal_words(error: "subprocess.CalledProcessError") -> str:
@@ -323,7 +334,7 @@ def _wanted(app: str, base_url: str, api_key: str, config: dict) -> dict:
         is never written down.
     """
     return {
-        "base_url": base_url,
+        "base_url": _endpoint_for(app, base_url),
         "key_digest": hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16],
         "flags": _model_flags(app, config),
         "effort": str(config.get(CODEX_EFFORT_KEY, "") or "") if app == "codex" else "",
@@ -562,6 +573,11 @@ def _current_provider(app: str) -> str:
         if stripped.startswith("ID:"):
             return stripped[3:].strip()
     return ""
+
+
+def _endpoint_for(app: str, base_url: str) -> str:
+    """The hub's endpoint as one tool's provider must carry it."""
+    return base_url.rstrip("/") + TOOL_ENDPOINT_SUFFIXES.get(app, "")
 
 
 def _model_flags(app: str, config: dict) -> list:

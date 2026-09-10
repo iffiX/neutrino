@@ -66,6 +66,8 @@ class FakeSwitcher:
             raise self.activate_error
         self.calls.append(("activate", base_url, api_key, tool_configs))
         default = (tool_configs or {}).get("claude", {}).get("default", "")
+        if self.active == (base_url, api_key, default):
+            return ""
         self.active = (base_url, api_key, default)
         return "claude"
 
@@ -179,14 +181,17 @@ def test_a_rotated_key_is_applied_again(subject):
     )
 
 
-def test_an_already_pointed_person_is_left_alone(subject):
+def test_an_already_pointed_person_is_looked_at_and_left_as_they_stand(subject):
+    """Every tool is asked each time, so an upgrade that changes one tool's
+    endpoint reaches a person whose Claude Code already stood on the hub."""
     handler, _store, fake = subject
     fake.active = ("http://hub:8080", "key-1", "m1")
     handler.update_credential(CREDENTIAL)
 
     handler.act(entries=[ENTRY], body={"is_enabled": True})
 
-    assert not any(call[0] == "activate" for call in fake.calls)
+    assert any(call[0] == "activate" for call in fake.calls)
+    assert fake.active == ("http://hub:8080", "key-1", "m1")
     assert handler.state()["ai"]["is_active"] is True
 
 

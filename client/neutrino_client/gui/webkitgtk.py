@@ -14,6 +14,7 @@ can refuse for.
 """
 
 import json
+import os
 import threading
 
 from neutrino_client.constants import (
@@ -27,6 +28,9 @@ from neutrino_client.gui.tray import LinuxTrayIcon
 # The distribution packages the import guard names when the C stack is
 # absent.
 WEBKITGTK_PACKAGES = "gir1.2-webkit2-4.1"
+# WebKit's dmabuf renderer aborts the whole process where EGL cannot open a
+# GBM display; the page needs nothing it offers.
+WEBKITGTK_RENDERER_ENVIRONMENT = {"WEBKIT_DISABLE_DMABUF_RENDERER": "1"}
 
 
 def open_window(
@@ -57,6 +61,8 @@ def open_window(
     Raises:
         GuiShellUnavailableError: When WebKitGTK 4.1 is not on the machine.
     """
+    for name, value in WEBKITGTK_RENDERER_ENVIRONMENT.items():
+        os.environ.setdefault(name, value)
     GLib, Gtk, WebKit2 = _toolkit()
     # WM_CLASS, which GTK otherwise takes from argv[0]. The desktop matches a
     # window to its launcher by this name.

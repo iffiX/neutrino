@@ -224,20 +224,20 @@ class AiServiceHandler(ServiceTypeHandler):
             }
         resolved = resolved_configs(credential, self._store.ai_tool_configs())
         default_model = resolved["claude"]["default"]
-        if not self._switcher.is_active(
-            base_url=base_url, api_key=api_key, model=default_model
-        ):
-            if self._switcher.find_cli() is None:
-                return {
-                    "state": "absent",
-                    "code": "bundle_missing",
-                    "params": {"binary": "cc-switch"},
-                    "is_active": False,
-                }
-            self._log("ai service: pointing the tools at the hub")
-            self._switcher.activate(
-                base_url=base_url, api_key=api_key, tool_configs=resolved
-            )
+        if self._switcher.find_cli() is None:
+            return {
+                "state": "absent",
+                "code": "bundle_missing",
+                "params": {"binary": "cc-switch"},
+                "is_active": False,
+            }
+        # Every tool is looked at each time: one whose provider must change
+        # is switched, the others are left as they stand.
+        switched = self._switcher.activate(
+            base_url=base_url, api_key=api_key, tool_configs=resolved
+        )
+        if switched:
+            self._log(f"ai service: pointed {switched} at the hub")
         self._store.set_ai_granted({"base_url": base_url, "model": default_model})
         return {"state": "installed", "code": "", "params": {}, "is_active": True}
 
