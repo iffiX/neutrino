@@ -111,7 +111,7 @@ fi
 
 %preun
 if [ "$1" = 0 ]; then
-    for unit in neutrino_hub_web neutrino_hub_router neutrino_hub_xray neutrino_hub_cliproxyapi neutrino_hub_netbird; do
+    for unit in neutrino_hub_web neutrino_hub_router neutrino_hub_xray neutrino_hub_cliproxyapi neutrino_hub_netbird neutrino_hub_easytier; do
         systemctl stop "${{unit}}.service" >/dev/null 2>&1 || true
         systemctl disable "${{unit}}.service" >/dev/null 2>&1 || true
     done

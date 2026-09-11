@@ -1,0 +1,76 @@
+.overlay_peers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  /* The row is a fixed grid so two peers can be compared straight down a
+     column; on a narrow panel the table scrolls rather than reflowing into
+     rows that no longer line up. */
+  overflow-x: auto;
+}
+
+.overlay_peer {
+  display: grid;
+  grid-template-columns:
+    minmax(190px, 1.4fr)
+    minmax(120px, 0.8fr)
+    68px
+    minmax(72px, 0.6fr)
+    72px
+    164px
+    58px;
+  column-gap: var(--space-3);
+  align-items: center;
+  min-width: 820px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.overlay_peer_name {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  overflow: hidden;
+}
+
+/* A long name gives way rather than pushing every column along the row. */
+.overlay_peer_label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overlay_peer_address {
+  color: var(--color-text-muted);
+}
+
+.overlay_peer_link {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.overlay_peer_detail,
+.overlay_peer_loss,
+.overlay_peer_traffic,
+.overlay_peer_latency {
+  color: var(--color-text-faint);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.overlay_peer_loss {
+  color: var(--color-warn);
+  text-align: right;
+}
+
+.overlay_peer_traffic {
+  color: var(--color-text-muted);
+  text-align: right;
+}
+
+.overlay_peer_latency {
+  text-align: right;
+}

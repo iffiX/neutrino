@@ -1189,6 +1189,10 @@ export interface NetbirdPeer {
   /** P2P when direct, Relayed when through a relay. */
   connection_type: string;
   latency_ms: number | null;
+  rx_bytes: number | null;
+  tx_bytes: number | null;
+  /** Seconds since the tunnel to this peer last shook hands. */
+  last_handshake_s: number | null;
 }
 
 export interface NetbirdView {
@@ -1204,6 +1208,83 @@ export interface NetbirdView {
   peers: NetbirdPeer[];
   /** The LAN networks whose routes belong on the management plane. */
   lan_subnets: string[];
+}
+
+/** One node on the EasyTier network, as this box sees it. */
+export interface EasyTierPeer {
+  hostname: string;
+  address: string;
+  /** local, direct, relayed or unknown. */
+  link: string;
+  /** The tunnel it is reached over, the engine's own word. */
+  protocol: string;
+  latency_ms: number | null;
+  /** Share of packets lost, 0 to 1. */
+  loss_ratio: number | null;
+  rx_bytes: number | null;
+  tx_bytes: number | null;
+  nat_type: string;
+  version: string;
+  is_connected: boolean;
+}
+
+/** This box on its own EasyTier network. */
+export interface EasyTierNode {
+  is_connected: boolean;
+  address: string;
+  hostname: string;
+  nat_type: string;
+}
+
+/** One network of this machine's own, offered for export. */
+export interface EasyTierSuggestedNetwork {
+  cidr: string;
+  interface: string;
+}
+
+export interface EasyTierView {
+  is_installed: boolean;
+  is_active: boolean;
+  version: string;
+  network_name: string;
+  is_secret_set: boolean;
+  /** This box's address on the overlay; empty means the engine assigns one. */
+  address: string;
+  hostname: string;
+  /** What this box connects to when it starts. */
+  peers: string[];
+  exported_networks: string[];
+  suggested_networks: EasyTierSuggestedNetwork[];
+  /** What another machine dials to reach this one. */
+  join_host: string;
+  node: EasyTierNode | null;
+  live_peers: EasyTierPeer[];
+}
+
+export interface EasyTierNetworkRequest {
+  network_name: string;
+  /** Empty keeps the secret already stored. */
+  network_secret: string;
+  address: string;
+  hostname: string;
+}
+
+export interface EasyTierPeersRequest {
+  peers: string[];
+}
+
+export interface EasyTierNetworksRequest {
+  exported_networks: string[];
+}
+
+export interface EasyTierSuggestion {
+  network_name: string;
+  network_secret: string;
+  address: string;
+}
+
+export interface EasyTierSecret {
+  network_secret: string;
 }
 
 export interface NetbirdJoinRequest {

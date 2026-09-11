@@ -85,7 +85,7 @@ def gateway(monkeypatch):
     stub = StubAuthFiles()
     monkeypatch.setattr(accounts_module.httpx, "request", stub.request)
     monkeypatch.setattr(
-        cliproxyapi_router, "read_management_key", lambda: "probe-management-key"
+        cliproxyapi_router, "resolve_management_key", lambda: "probe-management-key"
     )
     return stub
 

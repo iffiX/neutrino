@@ -1,11 +1,14 @@
+import { OVERLAY_LINK_DIRECT } from "./overlay_peers";
+import type { OverlayPeerRow } from "./overlay_peers";
 import { t, useLanguage } from "../i18n";
-import type { DeviceView, NetbirdView } from "../api_types";
+import type { DeviceView } from "../api_types";
 
 import "./network_diagram.css";
-import "./netbird_topology.css";
+import "./overlay_topology.css";
 
 /**
- * The overlay, drawn from this gateway's point of view.
+ * The overlay, drawn from this gateway's point of view, whichever engine
+ * runs it.
  *
  * Same three lanes as the Network diagram: peers on the left, the gateway in
  * the middle, the LAN it serves on the right. A star, not a mesh — the
@@ -34,15 +37,29 @@ const HEADER_HEIGHT = 30;
 const VERTICAL_PADDING = 16;
 const MAX_DEVICES = 8;
 
-interface NetbirdTopologyProps {
-  view: NetbirdView;
+interface OverlayTopologyProps {
+  /** What the left lane is called, the engine's own name. */
+  laneTitle: string;
+  /** What this gateway is called on the overlay. */
+  selfName: string;
+  /** Its address there. */
+  selfAddress: string;
+  /** The networks the right lane stands for. */
+  subnets: string[];
+  peers: OverlayPeerRow[];
   devices: DeviceView[];
 }
 
-export function NetbirdTopology({ view, devices }: NetbirdTopologyProps) {
+export function OverlayTopology({
+  laneTitle,
+  selfName,
+  selfAddress,
+  subnets,
+  peers,
+  devices,
+}: OverlayTopologyProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const peers = view.peers;
   // Everything online, plus the silent devices somebody cared enough to name;
   // unnamed neighbours that stopped answering are scan residue, not topology.
   const remembered = devices.filter(
@@ -74,7 +91,7 @@ export function NetbirdTopology({ view, devices }: NetbirdTopologyProps) {
 
   return (
     <svg
-      className="netbird_topology"
+      className="overlay_topology"
       viewBox={`0 0 ${VIEW_WIDTH} ${height}`}
       role="img"
       aria-label={t("ui.overlay.topology_label")}
@@ -85,7 +102,7 @@ export function NetbirdTopology({ view, devices }: NetbirdTopologyProps) {
         y={18}
         textAnchor="middle"
       >
-        {t("ui.overlay.topology_lane_overlay")}
+        {laneTitle}
       </text>
       <text
         className="diagram_lane_title"
@@ -101,7 +118,7 @@ export function NetbirdTopology({ view, devices }: NetbirdTopologyProps) {
         y={34}
         textAnchor="middle"
       >
-        {view.lan_subnets.join("  ")}
+        {subnets.join("  ")}
       </text>
 
       <line
@@ -124,22 +141,22 @@ export function NetbirdTopology({ view, devices }: NetbirdTopologyProps) {
         const y = rowY(index, leftRows) + NODE_HEIGHT / 2;
         const x = COLUMN_PEER + NODE_WIDTH;
         const midX = (x + COLUMN_GATEWAY) / 2;
-        const edgeClass = !peer.is_connected
+        const edgeClass = !peer.isConnected
           ? "topo_edge topo_edge--idle"
-          : peer.connection_type === "P2P"
+          : peer.link === OVERLAY_LINK_DIRECT
             ? "topo_edge topo_edge--direct"
             : "topo_edge topo_edge--relay";
-        const kind = !peer.is_connected
+        const kind = !peer.isConnected
           ? t("state.idle")
-          : peer.connection_type === "P2P"
+          : peer.link === OVERLAY_LINK_DIRECT
             ? t("state.direct")
             : t("state.relay");
         const latency =
-          peer.is_connected && peer.latency_ms !== null
-            ? `${peer.latency_ms} ms`
+          peer.isConnected && peer.latencyMs !== null
+            ? `${Math.round(peer.latencyMs)} ms`
             : null;
         return (
-          <g key={peer.fqdn}>
+          <g key={peer.key}>
             <path
               className={edgeClass}
               d={`M ${x} ${y} C ${midX} ${y}, ${midX} ${gatewayMidY}, ${COLUMN_GATEWAY} ${gatewayMidY}`}
@@ -189,7 +206,7 @@ export function NetbirdTopology({ view, devices }: NetbirdTopologyProps) {
 
       {/* Peers. */}
       {peers.map((peer, index) => (
-        <g key={peer.fqdn}>
+        <g key={peer.key}>
           <rect
             x={COLUMN_PEER}
             y={rowY(index, leftRows)}
@@ -197,7 +214,7 @@ export function NetbirdTopology({ view, devices }: NetbirdTopologyProps) {
             height={NODE_HEIGHT}
             rx={9}
             className={
-              peer.is_connected
+              peer.isConnected
                 ? "topo_peer_box topo_peer_box--on"
                 : "topo_peer_box"
             }
@@ -207,14 +224,14 @@ export function NetbirdTopology({ view, devices }: NetbirdTopologyProps) {
             x={COLUMN_PEER + 12}
             y={rowY(index, leftRows) + 19}
           >
-            {peer.fqdn.split(".")[0]}
+            {peer.name.split(".")[0]}
           </text>
           <text
             className="topo_node_detail"
             x={COLUMN_PEER + 12}
             y={rowY(index, leftRows) + 35}
           >
-            {peer.netbird_ip}
+            {peer.address}
           </text>
         </g>
       ))}
@@ -244,7 +261,7 @@ export function NetbirdTopology({ view, devices }: NetbirdTopologyProps) {
           y={gatewayY + 24}
           textAnchor="middle"
         >
-          {(view.fqdn.split(".")[0] || "gateway").toUpperCase()}
+          {(selfName.split(".")[0] || "gateway").toUpperCase()}
         </text>
         <text
           className="diagram_gateway_sub"
@@ -252,7 +269,7 @@ export function NetbirdTopology({ view, devices }: NetbirdTopologyProps) {
           y={gatewayY + 41}
           textAnchor="middle"
         >
-          {view.netbird_ip.split("/")[0]}
+          {selfAddress.split("/")[0]}
         </text>
       </g>
 

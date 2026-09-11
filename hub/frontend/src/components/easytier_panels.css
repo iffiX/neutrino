@@ -1,0 +1,64 @@
+.easytier_fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-3);
+}
+
+.easytier_rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.easytier_row,
+.easytier_choice {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.easytier_row_text {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.easytier_row > .button {
+  margin-left: auto;
+}
+
+.easytier_add {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.easytier_add .input {
+  flex: 1;
+  font-family: var(--font-mono);
+}
+
+/* A command is read whole or not at all, so it wraps instead of scrolling
+   out of sight, and the copy button sits where the eye ends up. */
+.easytier_command {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.easytier_command code {
+  flex: 1;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+}

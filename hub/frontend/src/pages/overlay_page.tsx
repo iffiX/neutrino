@@ -1,18 +1,23 @@
 import { useEffect, useState } from "react";
 import { copyText } from "../copy_text";
 
+import { EasyTierSection } from "../components/easytier_panels";
 import { ErrorPanel } from "../components/error_panel";
-import { NetbirdTopology } from "../components/netbird_topology";
 import { Icon } from "../components/icon";
 import { OverlayModePanel } from "../components/overlay_mode_panel";
+import { OverlayPeers } from "../components/overlay_peers";
+import type { OverlayPeerRow } from "../components/overlay_peers";
+import { OverlayTopology } from "../components/overlay_topology";
 import { PasswordInput } from "../components/password_input";
 import { StatusDot } from "../components/status_dot";
 import { apiPost, describeError } from "../api_client";
+import { formatDuration } from "../format_duration";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { HUB_EVENT_CONFIG } from "../use_hub_events";
 import type {
   DevicesResponse,
+  NetbirdPeer,
   NetbirdView,
   OverlayChoiceView,
 } from "../api_types";
@@ -30,6 +35,7 @@ import "./overlay_page.css";
 /** The engines by the key `config/` names them. */
 const PROVIDER_NONE = "none";
 const PROVIDER_NETBIRD = "netbird";
+const PROVIDER_EASYTIER = "easytier";
 
 /** The product's own name, which is the same in every language. */
 const NETBIRD_PRODUCT_NAME = "NetBird";
@@ -82,6 +88,8 @@ export function OverlayPage() {
       )}
 
       {choice.provider === PROVIDER_NETBIRD && <NetbirdSection />}
+
+      {choice.provider === PROVIDER_EASYTIER && <EasyTierSection />}
     </div>
   );
 }
@@ -173,7 +181,14 @@ function NetbirdSection() {
           <div className="settings_group_title">
             <h2>{t("ui.overlay.topology_title")}</h2>
           </div>
-          <NetbirdTopology view={view} devices={devices.data?.devices ?? []} />
+          <OverlayTopology
+            laneTitle={t("ui.overlay.topology_lane_overlay")}
+            selfName={view.fqdn}
+            selfAddress={view.netbird_ip}
+            subnets={view.lan_subnets}
+            peers={view.peers.map(netbirdRow)}
+            devices={devices.data?.devices ?? []}
+          />
         </section>
       )}
 
@@ -404,40 +419,36 @@ function PeersSection({ view }: { view: NetbirdView }) {
           {t("state.live")}
         </span>
       </div>
-      {view.peers.length === 0 ? (
-        <p className="field_hint">{t("ui.overlay.peers_empty")}</p>
-      ) : (
-        <div className="netbird_peers">
-          {view.peers.map((peer) => (
-            <div key={peer.fqdn} className="netbird_peer">
-              <span className="netbird_peer_name">
-                <StatusDot
-                  tone={peer.is_connected ? "ok" : "idle"}
-                  isPulsing={peer.is_connected}
-                />
-                {peer.fqdn}
-              </span>
-              <span className="netbird_peer_ip">{peer.netbird_ip}</span>
-              {peer.is_connected && (
-                <span
-                  className={`badge ${
-                    peer.connection_type === "P2P" ? "badge--ok" : "badge--warn"
-                  }`}
-                >
-                  {peer.connection_type === "P2P"
-                    ? t("state.direct")
-                    : t("state.relayed")}
-                </span>
-              )}
-              {peer.latency_ms !== null && (
-                <span className="netbird_peer_latency">
-                  {peer.latency_ms} ms
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      <OverlayPeers
+        peers={view.peers.map(netbirdRow)}
+        emptyHint={t("ui.overlay.peers_empty")}
+      />
     </section>
   );
+}
+
+/**
+ * One NetBird peer as the shared table draws it.
+ *
+ * The detail line is the handshake's age: NetBird reports no protocol, and
+ * how long ago a tunnel last spoke is what an idle row is actually saying.
+ */
+function netbirdRow(peer: NetbirdPeer): OverlayPeerRow {
+  return {
+    key: peer.fqdn,
+    name: peer.fqdn,
+    address: peer.netbird_ip,
+    link: peer.connection_type === "P2P" ? "direct" : "relayed",
+    detail:
+      peer.last_handshake_s === null
+        ? ""
+        : t("ui.overlay.peer_handshake", {
+            duration: formatDuration(peer.last_handshake_s),
+          }),
+    latencyMs: peer.latency_ms,
+    lossRatio: null,
+    rxBytes: peer.rx_bytes,
+    txBytes: peer.tx_bytes,
+    isConnected: peer.is_connected,
+  };
 }

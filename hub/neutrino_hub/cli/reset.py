@@ -45,6 +45,11 @@ RESET_COLLECTED_PATHS = (
     # The agent channel's certificate and key go with the fleet that pinned
     # them; the next setup generates a fresh identity for its own.
     "web/agent_tls",
+    # Sealed under the vault's data key, which this reset also clears: left
+    # behind, it is a file the next owner's vault cannot open, and the AI
+    # gateway's management API stays unreachable until somebody deletes it
+    # by hand.
+    "cliproxyapi/management_key.sealed",
 )
 # The secrets under /var/lib/neutrino that `all` clears for the same reason:
 # state a fresh box generates for itself, and the next owner must not inherit.

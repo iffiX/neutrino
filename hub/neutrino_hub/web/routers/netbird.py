@@ -8,12 +8,12 @@ a hand at a local shell has `netbird down`.
 """
 
 import asyncio
-import ipaddress
 import subprocess
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub.modules.netbird.ops import NetbirdEnroller, NetbirdStatusReader
+from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.utils.subprocess_run import command_failure_text
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import NetbirdJoinRequest, NetbirdPeerView, NetbirdView
@@ -32,14 +32,14 @@ def read_status(runtime: PanelRuntime = Depends(get_runtime)) -> NetbirdView:
         runtime: The shared runtime.
 
     Returns:
-        Enrollment, connectivity, peers, and the LAN subnets whose routes
-        belong on the management plane.
+        Enrollment, connectivity, peers, and the subnets whose routes belong
+        on the management plane.
     """
     state = NetbirdStatusReader().survey()
-    subnets = [
-        str(ipaddress.ip_network(interface.lan.cidr, strict=False))
-        for interface in runtime.network().lan_interfaces
-    ]
+    # Every network this machine is on, not only the ones it serves: a box
+    # that routes nothing is still a peer that can carry a route to its own
+    # subnet, and which peer routes what is the management plane's to decide.
+    subnets = [cidr for cidr, _ in runtime.network().local_networks(device_addresses())]
     return NetbirdView(
         is_installed=state.is_installed,
         is_active=runtime.services.status("netbird").is_active,

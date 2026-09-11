@@ -8,6 +8,7 @@ box running two is a box whose address depends on which came up last.
 
 from typing import Callable
 
+from neutrino_hub.modules.easytier.provisioner import EasyTierProvisioner
 from neutrino_hub.modules.netbird.provisioner import NetbirdProvisioner
 from neutrino_hub.modules.overlay.constants import (
     OVERLAY_ENGINES,
@@ -21,7 +22,10 @@ from neutrino_hub.utils.subprocess_run import run
 # What installs each engine. An engine the table names but nothing here
 # provisions is one this hub cannot run yet, and asking for it is refused
 # rather than half-done.
-OVERLAY_PROVISIONERS = {"netbird": NetbirdProvisioner}
+OVERLAY_PROVISIONERS = {
+    "netbird": NetbirdProvisioner,
+    "easytier": EasyTierProvisioner,
+}
 
 
 class OverlaySwitcher:

@@ -152,6 +152,22 @@ CLIPROXYAPI_SHA256 = {
 # management, signal and relay servers beside it in that repository are
 # AGPL-3.0 and are not carried. Its release names the machine the way this
 # project does, so the asset table is keyed by the normalized name.
+(
+    EASYTIER_VERSION,
+    EASYTIER_URL,
+    EASYTIER_MACHINES,
+    EASYTIER_SHA256,
+    EASYTIER_CORE,
+    EASYTIER_CLI,
+) = _runtime(
+    "neutrino_hub.modules.easytier.constants",
+    "EASYTIER_VERSION",
+    "EASYTIER_DOWNLOAD_URL",
+    "EASYTIER_ASSET_ARCHITECTURES",
+    "EASYTIER_SHA256",
+    "EASYTIER_CORE_NAME",
+    "EASYTIER_CLI_NAME",
+)
 NETBIRD_VERSION, NETBIRD_URL, NETBIRD_MACHINES, NETBIRD_SHA256, NETBIRD_BINARY = (
     _runtime(
         "neutrino_hub.modules.netbird.constants",
@@ -523,6 +539,31 @@ def stage_vendored(tree: Path, machine: str) -> None:
             # carried by stage_licenses from the checkout's own directory.
             bundle.extract(NETBIRD_BINARY, workdir)
         _install_binary(Path(workdir) / NETBIRD_BINARY, binaries / NETBIRD_BINARY)
+
+    payload = _fetch(
+        EASYTIER_URL.format(
+            version=EASYTIER_VERSION,
+            asset_arch=_machine_name(EASYTIER_MACHINES, normalized, "easytier"),
+        ),
+        EASYTIER_SHA256,
+        normalized,
+        "easytier",
+    )
+    with tempfile.TemporaryDirectory() as workdir:
+        archive = Path(workdir) / "easytier.zip"
+        archive.write_bytes(payload)
+        with zipfile.ZipFile(archive) as bundle:
+            # Two of the four: the web console beside them is a management
+            # plane for other people's nodes, which is what this overlay
+            # exists not to need.
+            for wanted in (EASYTIER_CORE, EASYTIER_CLI):
+                member = next(
+                    name
+                    for name in bundle.namelist()
+                    if name.rsplit("/", 1)[-1] == wanted
+                )
+                extracted = Path(bundle.extract(member, workdir))
+                _install_binary(extracted, binaries / wanted)
 
     geodata = tree / str(GEODATA_DIR).lstrip("/")
     geodata.mkdir(parents=True, exist_ok=True)

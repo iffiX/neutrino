@@ -1,0 +1,17 @@
+{
+  "_comment": "The EasyTier network this box is a member of, written by the Overlay page. A network is a name and a secret: every machine carrying both is on it, and the secret is also the key the traffic is encrypted under. So the secret is never here — it is sealed under the vault's data key in 'network_secret_sealed', and a backup of config/ carries a network nobody else can join.",
+  "network_name": "",
+  "network_secret_sealed": {},
+
+  "_comment_address": "This box's address on the overlay, with a prefix length. The panel generates one that none of this machine's own networks overlap. Empty means the engine picks, which is what a node that only forwards wants.",
+  "address": "",
+
+  "_comment_hostname": "What this box is called on the overlay. Empty uses the machine's own name.",
+  "hostname": "",
+
+  "_comment_peers": "What to connect to at startup, in the order they are tried. Decentralized means there is no server, so a node still needs the address of one machine already on the network: 'tcp://host:11010' and the other engine schemes, or a discovery address ('https://', 'txt://', 'srv://') that answers with addresses.",
+  "peers": [],
+
+  "_comment_exported_networks": "The networks this box makes reachable to the others, as CIDRs. The machines on the overlay reach these addresses through this one.",
+  "exported_networks": []
+}

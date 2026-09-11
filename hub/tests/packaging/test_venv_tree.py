@@ -167,6 +167,22 @@ def _tarball(name, payload):
     return buffer.getvalue()
 
 
+def _zipball_of(names):
+    """An archive carrying several members, as a release does.
+
+    Args:
+        names: Member name to contents.
+
+    Returns:
+        The archive's bytes.
+    """
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as bundle:
+        for name, payload in names.items():
+            bundle.writestr(name, payload)
+    return buffer.getvalue()
+
+
 def _zipball(name, payload):
     """A release zip holding one file, the way xray ships one.
 
@@ -197,6 +213,13 @@ def _served(monkeypatch):
         "xray": _zipball("xray", b"xray"),
         "cliproxyapi": _tarball("cli-proxy-api", b"gateway"),
         "netbird": _tarball("netbird", b"client"),
+        "easytier": _zipball_of(
+            {
+                "easytier-linux-x86_64/easytier-core": b"engine",
+                "easytier-linux-x86_64/easytier-web": b"console",
+                "easytier-linux-x86_64/easytier-cli": b"cli",
+            }
+        ),
     }
 
     def fake_fetch(url, hashes, machine, what):
@@ -233,6 +256,44 @@ def test_the_arm_package_carries_the_arm_client(tmp_path, monkeypatch):
     venv_tree.stage_vendored(tmp_path, "arm64")
 
     assert "linux_arm64.tar.gz" in dict(asked)["netbird"]
+
+
+def test_the_package_carries_the_easytier_engine_without_its_console(
+    tmp_path, monkeypatch
+):
+    """The web console beside them manages other people's nodes, which is what
+    this overlay exists not to need."""
+    asked = _served(monkeypatch)
+
+    venv_tree.stage_vendored(tmp_path, "amd64")
+
+    binaries = tmp_path / "opt" / "neutrino" / "bin"
+    assert (binaries / "easytier-core").read_bytes() == b"engine"
+    assert (binaries / "easytier-cli").read_bytes() == b"cli"
+    assert not (binaries / "easytier-web").exists()
+    assert (binaries / "easytier-core").stat().st_mode & 0o777 == 0o755
+    assert (
+        f"easytier-linux-x86_64-v{venv_tree.EASYTIER_VERSION}.zip"
+        in dict(asked)["easytier"]
+    )
+
+
+def test_the_arm_package_carries_the_arm_engine(tmp_path, monkeypatch):
+    asked = _served(monkeypatch)
+
+    venv_tree.stage_vendored(tmp_path, "arm64")
+
+    assert "easytier-linux-aarch64" in dict(asked)["easytier"]
+
+
+def test_the_easytier_pins_are_the_modules_own():
+    from neutrino_hub.modules.easytier import constants
+
+    assert venv_tree.EASYTIER_VERSION == constants.EASYTIER_VERSION
+    assert venv_tree.EASYTIER_URL == constants.EASYTIER_DOWNLOAD_URL
+    assert venv_tree.EASYTIER_SHA256 == constants.EASYTIER_SHA256
+    assert venv_tree.EASYTIER_MACHINES == constants.EASYTIER_ASSET_ARCHITECTURES
+    assert set(venv_tree.EASYTIER_SHA256) == {"amd64", "arm64"}
 
 
 def test_the_netbird_pins_are_the_modules_own():

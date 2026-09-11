@@ -7,6 +7,8 @@ box from outside, so a chooser that half-applies is a chooser that can strand
 a person.
 """
 
+from dataclasses import replace
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -123,13 +125,13 @@ def test_a_running_engine_reads_as_running(box):
     assert kinds[OVERLAY_NETBIRD]["title"] == "NetBird"
 
 
-def test_an_engine_this_hub_does_not_run_yet_says_so(box):
+def test_every_engine_this_hub_carries_is_offered(box):
     client, _ = box
 
     kinds = kinds_of(client.get("/api/overlay").json())
 
-    assert kinds[OVERLAY_EASYTIER]["is_integrated"] is False
-    assert kinds[OVERLAY_EASYTIER]["is_installed"] is False
+    assert kinds[OVERLAY_EASYTIER]["is_integrated"] is True
+    assert kinds[OVERLAY_EASYTIER]["title"] == "EasyTier"
 
 
 def test_no_overlay_reads_as_none(box):
@@ -189,8 +191,16 @@ def test_an_overlay_nobody_runs_is_refused(box):
     assert runtime.network().overlays[0].provider == OVERLAY_NETBIRD
 
 
-def test_an_engine_this_hub_does_not_run_yet_is_refused(box):
-    client, runtime = box
+def test_an_engine_this_hub_does_not_run_yet_is_refused(box, monkeypatch):
+    """An engine the table names but nothing provisions is offered and
+    refused, rather than half started."""
+    client, _ = box
+    engine = overlay_router.OVERLAY_ENGINES[OVERLAY_EASYTIER]
+    monkeypatch.setitem(
+        overlay_router.OVERLAY_ENGINES,
+        OVERLAY_EASYTIER,
+        replace(engine, is_integrated=False),
+    )
 
     response = client.put("/api/overlay", json={"provider": OVERLAY_EASYTIER})
 
@@ -199,6 +209,16 @@ def test_an_engine_this_hub_does_not_run_yet_is_refused(box):
     assert detail["code"] == "overlay_not_integrated"
     assert detail["params"] == {"title": "EasyTier"}
     assert FakeSwitcher.converged == []
+
+
+def test_switching_to_the_other_engine_writes_its_row(box):
+    client, runtime = box
+
+    payload = client.put("/api/overlay", json={"provider": OVERLAY_EASYTIER}).json()
+
+    assert payload["provider"] == OVERLAY_EASYTIER
+    assert runtime.network().overlays[0].provider == OVERLAY_EASYTIER
+    assert FakeSwitcher.converged == [OVERLAY_EASYTIER]
 
 
 def test_a_machine_with_no_build_of_the_engine_is_refused(box, monkeypatch):

@@ -145,7 +145,7 @@ def gateway(monkeypatch, tmp_path):
     stub = StubGateway()
     monkeypatch.setattr(accounts_module.httpx, "request", stub.request)
     monkeypatch.setattr(
-        cliproxyapi_router, "read_management_key", lambda: "probe-management-key"
+        cliproxyapi_router, "resolve_management_key", lambda: "probe-management-key"
     )
     return stub
 
@@ -305,7 +305,7 @@ def test_a_gateway_that_is_down_is_worded(client, gateway):
 
 def test_no_management_key_is_worded(client, monkeypatch):
     """Before the first apply there is no key, and every route needs one."""
-    monkeypatch.setattr(cliproxyapi_router, "read_management_key", lambda: "")
+    monkeypatch.setattr(cliproxyapi_router, "resolve_management_key", lambda: "")
     answer = client.get("/api/cliproxyapi/accounts")
     assert answer.status_code == 502
     assert answer.json()["detail"]["code"] == "management_key_missing"

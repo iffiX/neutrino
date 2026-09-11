@@ -56,6 +56,8 @@ def box(tmp_path, monkeypatch):
     )
     (config / "web/agent_tls").mkdir()
     (config / "web/agent_tls/certificate.pem").write_text("cert")
+    (config / "cliproxyapi").mkdir(exist_ok=True)
+    (config / "cliproxyapi/management_key.sealed").write_text("{}")
 
     state = config.parent / "state"
     state.mkdir()
@@ -202,3 +204,11 @@ def test_what_is_already_stopped_is_not_stopped_again(monkeypatch, box):
     reset._reset_all()
 
     assert asked == []
+
+
+def test_reset_all_forgets_the_key_sealed_under_the_data_key_it_clears(box):
+    """Left behind, it is a file the next owner's vault cannot open, and the
+    AI gateway's management API stays unreachable until somebody finds it."""
+    reset._reset_all()
+
+    assert not (box / "cliproxyapi/management_key.sealed").exists()

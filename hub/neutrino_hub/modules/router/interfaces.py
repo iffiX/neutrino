@@ -13,6 +13,7 @@ Pure: this module parses and shapes configuration. Making a role real —
 NetworkManager, routes, the firewall — is :mod:`neutrino_hub.modules.router.routes`.
 """
 
+import ipaddress
 from dataclasses import dataclass, field
 
 from neutrino_hub.modules.overlay.constants import OVERLAY_ENGINES
@@ -419,6 +420,21 @@ class RouterInterface:
         }
 
 
+def _network_of(cidr: str) -> str:
+    """The network an address with a prefix belongs to.
+
+    Args:
+        cidr: An address in CIDR form.
+
+    Returns:
+        The network in CIDR form, empty when the text is not one.
+    """
+    try:
+        return str(ipaddress.ip_network(cidr, strict=False))
+    except ValueError:
+        return ""
+
+
 @dataclass
 class RouterOverlay:
     """One overlay network this box is a member of.
@@ -553,6 +569,44 @@ class RouterNetworkConfig:
         return sorted(
             {overlay.peer_port for overlay in self.overlays if overlay.is_exposed}
         )
+
+    def local_networks(self, addresses: dict) -> list:
+        """Every network this machine is on, whatever shape it is.
+
+        Not the same question as which interfaces have the LAN role: a box
+        that routes nothing still sits on somebody's network, and that is the
+        network it can be reached on and can offer an overlay a route to. The
+        overlays' own devices are left out — they are the thing being offered
+        a route, not a route to offer.
+
+        Args:
+            addresses: Device name to address with its prefix, as
+                :func:`neutrino_hub.modules.router.link_status.device_addresses`
+                answers.
+
+        Returns:
+            ``(cidr, interface)`` pairs, the configured served networks first
+            and in configuration order, then whatever else this box holds an
+            address on.
+        """
+        overlays = set(self.overlay_device_names)
+        found: list = []
+        seen: set = set()
+        for interface in self.interfaces:
+            if not interface.is_lan or not interface.lan.address:
+                continue
+            cidr = _network_of(interface.lan.cidr)
+            if cidr and cidr not in seen:
+                seen.add(cidr)
+                found.append((cidr, interface.name))
+        for name, address in sorted(addresses.items()):
+            if name in overlays:
+                continue
+            cidr = _network_of(address)
+            if cidr and cidr not in seen:
+                seen.add(cidr)
+                found.append((cidr, name))
+        return found
 
     def overlay(self, provider: str) -> "RouterOverlay | None":
         """Find one overlay by provider.

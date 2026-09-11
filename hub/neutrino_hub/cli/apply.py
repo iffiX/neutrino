@@ -17,7 +17,12 @@ import argparse
 import json
 import subprocess
 import sys
+from socket import gethostname
 
+from neutrino_hub.modules.easytier.constants import EASYTIER_GENERATED_NAME
+from neutrino_hub.modules.easytier.ops import EasyTierConfigApplier
+from neutrino_hub.modules.easytier.ops import read_stored as read_easytier
+from neutrino_hub.modules.easytier.renderer import render_config as render_easytier
 from neutrino_hub.modules.netbird.ops import NetbirdInboundGate
 from neutrino_hub.modules.router.constants import (
     ROUTER_DNSMASQ_PATH,
@@ -59,7 +64,7 @@ from neutrino_hub.modules.xray.node_secrets import resolve_node_secrets
 
 # --- config ---
 DNSMASQ_SERVICE_NAME = SYSTEM_CORE_UNITS["dnsmasq"]
-COMPONENTS = ("router", "xray", "dnsmasq", "cliproxyapi")
+COMPONENTS = ("router", "xray", "dnsmasq", "cliproxyapi", "easytier")
 
 
 def main() -> int:
@@ -171,6 +176,12 @@ def _render(selected: tuple[str, ...]) -> dict:
             print("cliproxyapi: not installed, skipping")
         else:
             artifacts["cliproxyapi"] = gateway.render_with_stored_key()
+    if "easytier" in selected:
+        overlay = read_easytier()
+        if not overlay.is_configured:
+            print("easytier: no network configured, skipping")
+        else:
+            artifacts["easytier"] = overlay
     return artifacts
 
 
@@ -199,6 +210,16 @@ def _print_artifacts(artifacts: dict) -> None:
     if "cliproxyapi" in artifacts:
         print(f"\n--- {UTILS_GENERATED_DIR / CLIPROXYAPI_GENERATED_NAME} ---")
         print(artifacts["cliproxyapi"])
+    if "easytier" in artifacts:
+        # The rendered file carries the network secret, which is the key the
+        # whole network is encrypted under. A dry run prints what a person
+        # asked to see, not that.
+        print(f"\n--- {UTILS_GENERATED_DIR / EASYTIER_GENERATED_NAME} ---")
+        print(
+            render_easytier(
+                artifacts["easytier"], secret="<network secret>", hostname=gethostname()
+            )
+        )
 
 
 def _write(artifacts: dict) -> None:
@@ -249,6 +270,10 @@ def _apply(artifacts: dict) -> None:
         # motion the panel's apply runs, so neither path leaves the gateway
         # behind the stored configuration.
         print(CliproxyApiConfigApplier().apply())
+    if "easytier" in artifacts:
+        print(
+            EasyTierConfigApplier().apply(artifacts["easytier"], hostname=gethostname())
+        )
 
 
 if __name__ == "__main__":

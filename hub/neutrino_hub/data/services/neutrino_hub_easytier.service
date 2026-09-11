@@ -1,0 +1,21 @@
+[Unit]
+Description=Neutrino remote access (EasyTier)
+Documentation=https://easytier.cn
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Root: the engine opens the tunnel device and edits the routes.
+User=root
+# The engine the package carries, on the file the panel renders. That file
+# holds the network's secret, which is why it is root-only.
+ExecStart=/opt/neutrino/bin/easytier-core -c /var/lib/neutrino/generated/easytier.toml
+Restart=always
+RestartSec=5
+# A node keeps a socket per peer and per attempt; the vendor's own guidance
+# for anything that answers other machines is to lift the default 1024.
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target

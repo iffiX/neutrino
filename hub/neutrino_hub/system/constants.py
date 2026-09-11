@@ -30,6 +30,9 @@ SYSTEM_OPTIONAL_UNITS = {
     # the one the vendor's package generates. The name is spelled out because
     # system/ names units and never imports a module to be told one.
     "netbird": "neutrino_hub_netbird.service",
+    # The other overlay: a network of your own machines with no management
+    # plane at all, LGPL-3.0 and carried the same way.
+    "easytier": "neutrino_hub_easytier.service",
 }
 
 SYSTEM_MANAGED_UNITS = {**SYSTEM_CORE_UNITS, **SYSTEM_OPTIONAL_UNITS}

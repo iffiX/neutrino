@@ -1718,6 +1718,95 @@ class PodmanTagListView(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
+class EasyTierPeerView(BaseModel):
+    """One node on the EasyTier network, as this box sees it."""
+
+    hostname: str
+    address: str
+    link: str
+    protocol: str
+    latency_ms: float | None = None
+    loss_ratio: float | None = None
+    rx_bytes: int | None = None
+    tx_bytes: int | None = None
+    nat_type: str = ""
+    version: str = ""
+    is_connected: bool
+
+
+class EasyTierNodeView(BaseModel):
+    """This box on its own EasyTier network."""
+
+    is_connected: bool
+    address: str
+    hostname: str
+    nat_type: str = ""
+
+
+class EasyTierSuggestedNetwork(BaseModel):
+    """One network of this machine's own, offered for export."""
+
+    cidr: str
+    interface: str
+
+
+class EasyTierView(BaseModel):
+    """The EasyTier sections of the Overlay page."""
+
+    is_installed: bool
+    is_active: bool
+    version: str = ""
+    network_name: str = ""
+    is_secret_set: bool = False
+    address: str = ""
+    hostname: str = ""
+    peers: list[str] = Field(default_factory=list)
+    exported_networks: list[str] = Field(default_factory=list)
+    suggested_networks: list[EasyTierSuggestedNetwork] = Field(default_factory=list)
+    # What another machine puts after `-p` to reach this one, empty when this
+    # box has no address a peer could dial.
+    join_host: str = ""
+    node: EasyTierNodeView | None = None
+    live_peers: list[EasyTierPeerView] = Field(default_factory=list)
+
+
+class EasyTierNetworkRequest(BaseModel):
+    """The network this box is a member of."""
+
+    network_name: str = Field(min_length=1, max_length=64)
+    # Empty keeps the secret already stored, so a form that never showed it
+    # cannot blank it.
+    network_secret: str = ""
+    address: str = ""
+    hostname: str = ""
+
+
+class EasyTierPeersRequest(BaseModel):
+    """What this box connects to when it starts."""
+
+    peers: list[str] = Field(default_factory=list)
+
+
+class EasyTierNetworksRequest(BaseModel):
+    """The networks this box makes reachable to the others."""
+
+    exported_networks: list[str] = Field(default_factory=list)
+
+
+class EasyTierSuggestionView(BaseModel):
+    """A network nothing has stored yet, for the form to start from."""
+
+    network_name: str
+    network_secret: str
+    address: str
+
+
+class EasyTierSecretView(BaseModel):
+    """The network secret, for the person who has to paste it elsewhere."""
+
+    network_secret: str
+
+
 class OverlayKindView(BaseModel):
     """One overlay this hub knows about, as the chooser draws it."""
 
@@ -1752,6 +1841,11 @@ class NetbirdPeerView(BaseModel):
     is_connected: bool
     connection_type: str
     latency_ms: int | None = None
+    rx_bytes: int | None = None
+    tx_bytes: int | None = None
+    # Seconds since the tunnel to this peer last shook hands, which is how
+    # long ago it was certainly there.
+    last_handshake_s: int | None = None
 
 
 class NetbirdView(BaseModel):

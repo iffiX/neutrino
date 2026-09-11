@@ -44,8 +44,12 @@ def ensure_management_key(*, sealed_key_path: Path | None = None) -> bool:
             seal it under.
     """
     sealed_key_path = sealed_key_path or _sealed_key_path()
-    if sealed_key_path.is_file():
+    if sealed_key_path.is_file() and _is_openable(sealed_key_path):
         return False
+    # A sealed key that will not open was sealed under a data key this box no
+    # longer has. It is machine state with no value anywhere else, so it is
+    # minted again rather than left as a file that turns the management API
+    # off for good; the render that follows hands the gateway the new one.
     key = uuid.uuid4().hex + uuid.uuid4().hex
     sealed = seal_bytes(key.encode(), CLIPROXYAPI_MANAGEMENT_KEY_AAD)
     sealed_key_path.parent.mkdir(parents=True, exist_ok=True)
@@ -115,6 +119,28 @@ def resolve_management_key() -> str:
     except (OSError, ValueError):
         return ""
     return read_management_key()
+
+
+def _is_openable(sealed_key_path: Path) -> bool:
+    """Whether the stored key still decrypts under this box's data key.
+
+    Args:
+        sealed_key_path: The sealed key in ``config/``.
+
+    Returns:
+        True when it opens, False when it is missing, malformed, or sealed
+        under a data key this box no longer has.
+
+    Raises:
+        VaultLockedError: If there is no data key on this box at all, which
+            is a locked vault rather than a stale key.
+    """
+    try:
+        sealed = json.loads(sealed_key_path.read_text(encoding="utf-8"))
+        unseal_bytes(sealed, CLIPROXYAPI_MANAGEMENT_KEY_AAD)
+    except (OSError, ValueError):
+        return False
+    return True
 
 
 def _sealed_key_path() -> Path:

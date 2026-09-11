@@ -12,6 +12,7 @@ shell has ``netbird down``.
 
 import json
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 from neutrino_hub.modules.netbird.constants import (
@@ -41,6 +42,10 @@ class NetbirdPeer:
             relay — worth showing, because relayed is what a hostile network
             path looks like.
         latency_ms: Round trip to the peer, when known.
+        rx_bytes: Received from the peer over the tunnel, when known.
+        tx_bytes: Sent to it, when known.
+        last_handshake_s: Seconds since the tunnel last shook hands, which is
+            how long ago the peer was certainly there.
     """
 
     fqdn: str
@@ -48,6 +53,9 @@ class NetbirdPeer:
     is_connected: bool
     connection_type: str
     latency_ms: int | None
+    rx_bytes: int | None = None
+    tx_bytes: int | None = None
+    last_handshake_s: int | None = None
 
 
 @dataclass
@@ -115,6 +123,9 @@ class NetbirdStatusReader:
                         if isinstance(latency, (int, float)) and latency > 0
                         else None
                     ),
+                    rx_bytes=_counter(entry.get("transferReceived")),
+                    tx_bytes=_counter(entry.get("transferSent")),
+                    last_handshake_s=_age_s(entry.get("lastWireguardHandshake")),
                 )
             )
         peers.sort(key=lambda peer: (not peer.is_connected, peer.fqdn))
@@ -130,6 +141,41 @@ class NetbirdStatusReader:
             fqdn=status.get("fqdn", ""),
             peers=peers,
         )
+
+
+def _counter(value) -> "int | None":
+    """One traffic counter the daemon reported.
+
+    Args:
+        value: What the peer entry carried.
+
+    Returns:
+        The count, None when the daemon reported none.
+    """
+    return int(value) if isinstance(value, (int, float)) else None
+
+
+def _age_s(value) -> "int | None":
+    """How long ago a timestamp the daemon reported was.
+
+    Args:
+        value: An RFC 3339 timestamp, as the daemon writes them.
+
+    Returns:
+        Whole seconds since then, None when there is no timestamp or it never
+        happened.
+
+    """
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if moment.year <= 1971:
+        return None
+    seconds = (datetime.now(timezone.utc) - moment).total_seconds()
+    return int(seconds) if seconds >= 0 else 0
 
 
 class NetbirdInboundGate:

@@ -19,6 +19,11 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_UNIT,
 )
 from neutrino_hub.modules.cliproxyapi.provisioner import CliproxyApiProvisioner
+from neutrino_hub.modules.easytier.constants import (
+    EASYTIER_SUPPORTED_ARCHITECTURES,
+    EASYTIER_UNIT,
+)
+from neutrino_hub.modules.easytier.provisioner import EasyTierProvisioner
 from neutrino_hub.modules.netbird.constants import (
     NETBIRD_SUPPORTED_ARCHITECTURES,
     NETBIRD_UNIT,
@@ -58,6 +63,14 @@ MODULE_SPECS = {
             "(the client is in the package)"
         ),
         data_description="this machine's peer identity",
+    ),
+    "easytier": ModuleSpec(
+        unit=EASYTIER_UNIT,
+        provisioner=EasyTierProvisioner,
+        architectures=EASYTIER_SUPPORTED_ARCHITECTURES,
+        install_note="a peer to peer network of your own machines "
+        "(the engine is in the package)",
+        data_description="nothing; the network itself lives in config/",
     ),
     "cliproxyapi": ModuleSpec(
         unit=CLIPROXYAPI_UNIT,

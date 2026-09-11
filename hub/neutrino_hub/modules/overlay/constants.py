@@ -57,7 +57,7 @@ OVERLAY_ENGINES = {
         device_name="easytier",
         peer_port=11010,
         unit=OVERLAY_EASYTIER_UNIT,
-        is_integrated=False,
+        is_integrated=True,
     ),
 }
 

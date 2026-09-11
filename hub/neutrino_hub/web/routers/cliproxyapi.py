@@ -17,7 +17,7 @@ from neutrino_hub.modules.cliproxyapi.accounts import (
 )
 from neutrino_hub.modules.cliproxyapi.config import CliproxyApiClientKey
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_LOGIN_KINDS
-from neutrino_hub.modules.cliproxyapi.management_key import read_management_key
+from neutrino_hub.modules.cliproxyapi.management_key import resolve_management_key
 from neutrino_hub.modules.cliproxyapi.ops import (
     CliproxyApiConfigApplier,
     load_config,
@@ -398,9 +398,15 @@ def cancel_login(state: str) -> None:
 
 
 def _account_client() -> CliproxyApiAccountClient:
-    """A client aimed at this box's gateway, with the key it was rendered with."""
+    """A client aimed at this box's gateway, with the key it was rendered with.
+
+    Resolving rather than reading: a box whose working copy is gone still has
+    the sealed key beside its configuration, and a panel that refuses until
+    somebody runs an apply is a panel refusing over a file it can write
+    itself.
+    """
     return CliproxyApiAccountClient(
-        port=load_config().listen_port, management_key=read_management_key()
+        port=load_config().listen_port, management_key=resolve_management_key()
     )
 
 
