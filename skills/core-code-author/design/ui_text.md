@@ -2,7 +2,7 @@
 
 Every string a person reads in the panel: switch labels and descriptions,
 field hints, button text, error messages, empty states. Prose in `docs/` is
-governed by [../doc_style/](../doc_style/README.md); this page governs the
+governed by [../../doc-author/](../../doc-author/SKILL.md); this page governs the
 interface itself, where the reader is doing something rather than reading.
 
 The difference is the budget. A documentation page has as many sentences as

@@ -52,22 +52,22 @@ conventions explicit so nobody drifts.
    Xray-core documentation (106 Chinese pages, 107 English), so the rules come
    with measured frequencies, quoted passages and reusable sentence templates
    rather than opinions.
-   - [doc_style/README.md](doc_style/README.md) — which kind is which and where
+   - [doc-author/SKILL.md](../doc-author/SKILL.md) — which kind is which and where
      the boundary runs; the rules all three obey (open with a definition, never
      summarise, the filler word list that measures zero, say what is not true);
      the three warning levels and their ratio; what differs between writing
      Chinese and English.
-   - [doc_style/technical_guide_style.md](doc_style/technical_guide_style.md) —
+   - [doc-author/technical_guide_style.md](../doc-author/technical_guide_style.md) —
      reference pages: page shape, the six-step field entry, types written as
      literal unions, defaults that say what they do, answering "what if I leave
      it out", counter-examples on the boundary, skeleton code, and the template
      table.
-   - [doc_style/usage_guide_style.md](doc_style/usage_guide_style.md) — guides:
+   - [doc-author/usage_guide_style.md](../doc-author/usage_guide_style.md) — guides:
      the three reader levels and stating which one you are, why sentence length
      does not change but person does, one command per block for beginners,
      runnable configurations, translating config into a sentence, handing off
      instead of half-teaching.
-   - [doc_style/development_guide_style.md](doc_style/development_guide_style.md)
+   - [doc-author/development_guide_style.md](../doc-author/development_guide_style.md)
      — guides for people changing the code: commands marked REQUIRED, inline
      directory maps, stating a rule once and pointing at it thereafter, where
      first person is allowed, and how much personality is too much.

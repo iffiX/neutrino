@@ -6,12 +6,12 @@ the rest of `skills/core-code-author/` are these.
 
 It does not document configuration for operators, and it does not teach the
 tools. Assume the reader can use git and a shell. Rules shared with the other
-two kinds are in [README.md](README.md).
+two kinds are in [SKILL.md](SKILL.md).
 
 We take the [Xray-core documentation](https://xtls.github.io) as an excellent
 reference for technical writing, and this page is drawn from it: the quoted
 passages are theirs, and the frequencies are measured across 106 Chinese pages
-and 107 English ones. The corpus and method are in [README.md](README.md).
+and 107 English ones. The corpus and method are in [SKILL.md](SKILL.md).
 
 ## What belongs here, and what does not
 
@@ -70,7 +70,7 @@ See design/architecture.md.
 
 # GOOD
 - **Renderers are pure.** Effects belong in the apply layer.
-  ([design/architecture.md](../design/architecture.md))
+  ([design/architecture.md](../core-code-author/design/architecture.md))
 ```
 
 ## Name the constraint that will bite

@@ -5,12 +5,12 @@ through, in order, once. `misc/operations.md` is one.
 
 It does not list fields. When the reader needs the full set, link to the
 reference ([technical_guide_style.md](technical_guide_style.md)) and stop.
-Rules shared with the other two kinds are in [README.md](README.md).
+Rules shared with the other two kinds are in [SKILL.md](SKILL.md).
 
 We take the [Xray-core documentation](https://xtls.github.io) as an excellent
 reference for technical writing, and this page is drawn from it: the quoted
 passages are theirs, and the frequencies are measured across 106 Chinese pages
-and 107 English ones. The corpus and method are in [README.md](README.md).
+and 107 English ones. The corpus and method are in [SKILL.md](SKILL.md).
 
 ## Three levels, and a guide is exactly one
 

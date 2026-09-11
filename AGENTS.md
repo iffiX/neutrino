@@ -48,7 +48,7 @@ and leave this pointing at it.**
 | [design/repository_tree.md](skills/core-code-author/design/repository_tree.md) | Adding a directory to the source tree, or unsure what an existing one is for. |
 | [misc/config.md](skills/core-code-author/misc/config.md) | Touching `config/`: which files are secrets, how examples map to real ones. |
 | [misc/operations.md](skills/core-code-author/misc/operations.md) | Verifying an install, or running the appliance. |
-| [doc_style/](skills/core-code-author/doc_style/README.md) | Writing any `.md`: which of the three kinds you are writing, and how each is worded. |
+| [doc-author/](skills/doc-author/SKILL.md) | Writing any `.md`: which of the three kinds you are writing, and how each is worded. |
 | [agent_work_rule/release.md](skills/core-code-author/agent_work_rule/release.md) | Cutting a release: the tag, the changelog prefixes, and which package each platform installs. |
 
 ## Commands
@@ -106,6 +106,8 @@ agent/
 config/               Source of truth at runtime. Real files gitignored.
                       /etc/neutrino/config once installed.
 skills/core-code-author/        This standard. The single source of truth for rules.
+skills/doc-author/              How every .md is written: the three document kinds
+                      and the two registers.
 images/               Source artwork and README screenshots. Ships nowhere
                       directly — packaging copies images/icons in at build
                       time.
@@ -153,4 +155,4 @@ examples in the document named beside it.
   ([design/privilege.md](skills/core-code-author/design/privilege.md))
 - **Documents open with a definition and never end with a summary.** No
   "it should be noted", no recap section, no explaining what the reader knows.
-  ([doc_style/README.md](skills/core-code-author/doc_style/README.md))
+  ([doc-author/SKILL.md](skills/doc-author/SKILL.md))

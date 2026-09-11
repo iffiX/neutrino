@@ -1,3 +1,11 @@
+---
+name: doc-author
+description: How every .md in this repository is written. Three kinds of
+  document (reference, usage guide, development guide), what all three obey,
+  and how the English and Chinese registers differ. Use when writing or
+  reviewing any README, guide page, design page or docs site content.
+---
+
 # Documentation style
 
 Three kinds of document live in this repository, each written differently:
@@ -7,7 +15,7 @@ Three kinds of document live in this repository, each written differently:
 - [usage_guide_style.md](usage_guide_style.md) — how to do a thing, for a
   stated level of reader. `misc/operations.md` is one.
 - [development_guide_style.md](development_guide_style.md) — how to change the
-  code. `AGENTS.md` and the rest of `skills/core-code-author/` are these.
+  code. `AGENTS.md` and `skills/core-code-author/` are these.
 
 This page holds what all three obey, and how the two languages differ.
 
@@ -59,7 +67,7 @@ about two seconds for xray to restart...
 Whether `geosite:cn` and `geoip:cn` destinations bypass the proxy. Default
 `true`; `false` sends every destination through the balancer.
 
-Setting it up: [misc/operations.md](../misc/operations.md).
+Setting it up: [misc/operations.md](../core-code-author/misc/operations.md).
 ```
 
 ## Rules every document obeys
@@ -262,7 +270,7 @@ re-add any device whose SSH details were stored.
 ## English and Chinese
 
 Code is English only — comments, docstrings, commit messages
-([../coding_style/comment_style.md](../coding_style/comment_style.md)).
+([comment_style.md](../core-code-author/coding_style/comment_style.md)).
 Documentation is not: a page may exist in both languages, and user-facing
 guides are the most likely to need it.
 

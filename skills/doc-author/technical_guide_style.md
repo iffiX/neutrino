@@ -7,12 +7,12 @@ API reference we add.
 It does not teach. The moment a page starts explaining why somebody would want
 a setting, that is a usage guide ([usage_guide_style.md](usage_guide_style.md));
 link and stop. Rules shared with the other two kinds — open with a definition,
-no summary section, no filler — are in [README.md](README.md).
+no summary section, no filler — are in [SKILL.md](SKILL.md).
 
 We take the [Xray-core documentation](https://xtls.github.io) as an excellent
 reference for technical writing, and this page is drawn from it: the quoted
 passages are theirs, and the frequencies are measured across 106 Chinese pages
-and 107 English ones. The corpus and method are in [README.md](README.md).
+and 107 English ones. The corpus and method are in [SKILL.md](SKILL.md).
 
 ## Page shape
 

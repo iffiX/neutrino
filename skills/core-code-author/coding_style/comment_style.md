@@ -71,7 +71,7 @@ This rule stops at the code. UI copy and the messages people read are
 localised, so English is their source language, not their only one — write
 them so they can be translated: whole sentences, never assembled from
 fragments, and no idiom that has to be explained. Documentation has its own
-rule, in [../doc_style/README.md](../doc_style/README.md).
+rule, in [../../doc-author/SKILL.md](../../doc-author/SKILL.md).
 
 ## Rules
 
