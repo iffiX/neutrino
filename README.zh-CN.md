@@ -12,7 +12,7 @@
 [![agent](https://img.shields.io/badge/agent-Linux-555.svg)](#什么跑在哪里)
 [![client](https://img.shields.io/badge/client-Linux%20%C2%B7%20Windows-555.svg)](#什么跑在哪里)
 
-**[安装](#安装)** · **[文档](https://iffix.github.io/neutrino/zh-CN/)** · [展示](#一次发布处处可用) · [面板](#面板) · [缘起](#我为什么做它)
+**[安装](#安装)** · **[文档](https://neutrino.beyond-infinity.top/zh-CN/)** · [展示](#一次发布处处可用) · [面板](#面板) · [缘起](#我为什么做它)
 
 微子能穿透一切，却什么也不碰。<br/>
 障碍都还在，只是再也碍不着你了。
@@ -57,13 +57,13 @@ sudo nagent connect '<链接>'
 
 中枢的 rpm 和 Arch 包、客户端的 deb、rpm 和 msi，都在 [Releases](https://github.com/iffiX/neutrino/releases) 里。
 
-带截图的完整流程见[《快速上手》](https://iffix.github.io/neutrino/zh-CN/quick-start.html)。
+带截图的完整流程见[《快速上手》](https://neutrino.beyond-infinity.top/zh-CN/quick-start.html)。
 
 ## 文档
 
-- [快速上手](https://iffix.github.io/neutrino/zh-CN/quick-start.html)
-- [使用指南](https://iffix.github.io/neutrino/zh-CN/overview.html)
-- [命令行参考](https://iffix.github.io/neutrino/zh-CN/cli.html)
+- [快速上手](https://neutrino.beyond-infinity.top/zh-CN/quick-start.html)
+- [使用指南](https://neutrino.beyond-infinity.top/zh-CN/overview.html)
+- [命令行参考](https://neutrino.beyond-infinity.top/zh-CN/cli.html)
 
 ## 一次发布，处处可用
 

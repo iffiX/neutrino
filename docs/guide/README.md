@@ -28,8 +28,8 @@ npm run preview
 `.vitepress/dist/`. `preview` serves that directory on
 `http://127.0.0.1:4173/`.
 
-Deploying under a repository subpath needs the same base at build and preview
-time:
+Deploying under a repository subpath (no custom domain) needs the same base at
+build and preview time:
 
 ```bash
 NEUTRINO_DOCS_BASE=/neutrino/ npm run build
@@ -90,9 +90,14 @@ The three Pages steps (`configure-pages`, `upload-pages-artifact` and the
 `deploy` job) are gated on the repository variable `DOCS_PAGES_ENABLED`. Until
 it is set, `main` still builds and checks, and nothing is published.
 
+The site is published at `https://neutrino.beyond-infinity.top/`: a DNS CNAME
+from that name to `iffix.github.io`, and `public/CNAME` carrying the name so
+every deploy keeps it. With a custom domain the base path is `/`.
+
 To switch publishing on:
 
-1. `Settings → Pages → Build and deployment → Source`: `GitHub Actions`.
+1. `Settings → Pages → Build and deployment → Source`: `GitHub Actions`, and
+   `Custom domain`: `neutrino.beyond-infinity.top` with `Enforce HTTPS`.
 2. `Settings → Secrets and variables → Actions → Variables`: add
    `DOCS_PAGES_ENABLED` with the value `true`.
 3. Re-run the `docs` workflow on `main`.

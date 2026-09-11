@@ -15,7 +15,7 @@
 A neutrino passes through walls without touching them.<br/>
 The wall is still there. It just stops being yours.
 
-**[Install](#install)** · **[Documentation](https://iffix.github.io/neutrino/)** · [Showcase](#showcase) · [Panel](#the-panel) · [Why](#why-i-built-it)
+**[Install](#install)** · **[Documentation](https://neutrino.beyond-infinity.top/)** · [Showcase](#showcase) · [Panel](#the-panel) · [Why](#why-i-built-it)
 
 </div>
 
@@ -62,13 +62,13 @@ client window on that machine.
 
 The hub's `.rpm` and Arch package, and the client's `.msi`, are on
 [Releases](https://github.com/iffiX/neutrino/releases). The full walk with
-screenshots is the [Quick start](https://iffix.github.io/neutrino/quick-start.html).
+screenshots is the [Quick start](https://neutrino.beyond-infinity.top/quick-start.html).
 
 ## Documentation
 
-- [Quick start](https://iffix.github.io/neutrino/quick-start.html)
-- [Guides](https://iffix.github.io/neutrino/overview.html)
-- [CLI reference](https://iffix.github.io/neutrino/cli.html)
+- [Quick start](https://neutrino.beyond-infinity.top/quick-start.html)
+- [Guides](https://neutrino.beyond-infinity.top/overview.html)
+- [CLI reference](https://neutrino.beyond-infinity.top/cli.html)
 
 ## Showcase
 
