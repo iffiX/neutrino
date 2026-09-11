@@ -3,8 +3,9 @@
     python client/packaging/build_msi.py --output-dir dist/ --architecture x64
 
 The installer carries the client compiled: Nuitka turns the package, the
-interpreter it runs on and the window's Python side into one ``nclient.exe``
-and the libraries beside it. Windows ships no Python and the client lands on
+interpreter it runs on and the window's Python side into ``nclient.exe`` for
+a terminal and ``nclientw.exe`` for the shortcut, with the libraries beside
+them. Windows ships no Python and the client lands on
 machines nobody has prepared, so a carried interpreter was the alternative,
 and a tree of ``.pyc`` files and a ``python313.zip`` is what heuristic
 scanners flag; fifty-one files with no bytecode among them is what they do
@@ -71,9 +72,15 @@ BUILD_PYTHON_VERSION = (3, 13)
 # side. A build tool rather than something carried, so pinned by version.
 NUITKA_VERSION = "4.2.1"
 
-# What the compiled client is called, and what the resident wears in the
-# process list.
+# The compiled client, twice: one executable is a console program, for a
+# terminal, a script, a pipe or a shell with no console of its own, all of
+# which hand it their standard handles; the other is a windowed program, for
+# the shortcut and the installer, neither of which may open a console. One
+# executable cannot be both: a windowed one started with pipes but no console
+# loses the pipes, and a console one started from a shortcut opens a window.
+# The same split python.exe and pythonw.exe make.
 CLIENT_BINARY_NAME = "nclient.exe"
+CLIENT_WINDOWED_BINARY_NAME = "nclientw.exe"
 
 # The window backends pywebview carries for other platforms. Nuitka's own
 # pywebview plugin leaves them out; naming them here is what keeps a
@@ -187,10 +194,6 @@ WEBVIEW2_BOOTSTRAPPER_MAX_BYTES = 20 * 1024 * 1024
 WEBVIEW2_CLIENT_ID = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"  # scan: allow
 WEBVIEW2_REGISTRY_KEY = rf"SOFTWARE\Microsoft\EdgeUpdate\Clients\{WEBVIEW2_CLIENT_ID}"
 
-# The image a running resident wears in the process list, which is the name
-# an install must close.
-RESIDENT_IMAGE = CLIENT_BINARY_NAME
-
 # The person's own configuration, named the way the runtime names it. The
 # installer never writes here; it only offers to take it away at the end.
 CLIENT_CONFIG_DIR_NAME = "Neutrino Client"
@@ -210,12 +213,11 @@ UTIL_LIBRARY = {"amd64": "Wix4UtilCA_X64", "arm64": "Wix4UtilCA_A64"}
 # changing it makes an upgrade install beside the old one instead of over it.
 UPGRADE_CODE = "0221A508-0A7E-4CFE-B517-B901D9318962"
 
-# The quit, run as the person installing. The binary attaches to a console
-# when its parent has one and makes none otherwise, so a terminal reads
-# nclient's answers while the installer's custom action, which has no
-# console, opens no black window over the wizard. The ask itself is bounded
-# by the control socket's own timeout, so nothing here has to time it out.
-QUIT_COMMAND = f'"[INSTALLFOLDER]{CLIENT_BINARY_NAME}" quit'
+# The quit, run as the person installing, through the windowed program: an
+# installer's custom action has no console, and a console program started by
+# one opens a black window over the wizard. The ask itself is bounded by the
+# control socket's own timeout, so nothing here has to time it out.
+QUIT_COMMAND = f'"[INSTALLFOLDER]{CLIENT_WINDOWED_BINARY_NAME}" quit'
 
 # When the configuration goes. Unticking the box clears the property, and a
 # silent removal may set it to anything; what it is never equal to then is
@@ -270,14 +272,22 @@ WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
                   Return="ignore" />
 
     <!-- What still holds the install's files once the quit is done, and what
-         makes an upgrade land half-applied, so it is closed and then ended. -->
+         makes an upgrade land half-applied, so it is closed and then ended:
+         a resident from the shortcut, or one from a terminal. -->
     <util:CloseApplication Id="CloseClientWindow"
-                           Target="@RESIDENT_IMAGE@"
+                           Target="@RESIDENT_IMAGE_WINDOWED@"
                            CloseMessage="yes"
                            EndSessionMessage="yes"
                            TerminateProcess="0"
                            RebootPrompt="no"
                            Property="CLIENTWINDOWRUNNING" />
+    <util:CloseApplication Id="CloseClientConsole"
+                           Target="@RESIDENT_IMAGE_CONSOLE@"
+                           CloseMessage="yes"
+                           EndSessionMessage="yes"
+                           TerminateProcess="0"
+                           RebootPrompt="no"
+                           Property="CLIENTCONSOLERUNNING" />
     <Icon Id="ClientIcon" SourceFile="@ICON@" />
     <Property Id="ARPPRODUCTICON" Value="ClientIcon" />
 
@@ -333,7 +343,7 @@ WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
                   Directory="ProgramMenuFolder"
                   Name="Neutrino Client"
                   Description="Use the services a Neutrino Hub publishes for you"
-                  Target="[INSTALLFOLDER]@CLIENT_BINARY@"
+                  Target="[INSTALLFOLDER]@CLIENT_WINDOWED_BINARY@"
                   Arguments="gui"
                   WorkingDirectory="INSTALLFOLDER"
                   Icon="ClientIcon" />
@@ -580,8 +590,9 @@ def _wix_source(staged: dict, version: str, publisher: str, machine: str) -> str
         .replace("@BOOTSTRAPPER_NAME@", WEBVIEW2_BOOTSTRAPPER_NAME)
         .replace("@ICON@", str(staged["icon"]))
         .replace("@WEBVIEW2_KEY@", WEBVIEW2_REGISTRY_KEY)
-        .replace("@RESIDENT_IMAGE@", RESIDENT_IMAGE)
-        .replace("@CLIENT_BINARY@", CLIENT_BINARY_NAME)
+        .replace("@RESIDENT_IMAGE_WINDOWED@", CLIENT_WINDOWED_BINARY_NAME)
+        .replace("@RESIDENT_IMAGE_CONSOLE@", CLIENT_BINARY_NAME)
+        .replace("@CLIENT_WINDOWED_BINARY@", CLIENT_WINDOWED_BINARY_NAME)
         .replace("@LICENSE_RTF@", str(staged["license"]))
         .replace("@UTIL_LIBRARY@", UTIL_LIBRARY[machine])
         .replace("@QUIT_COMMAND@", _attribute_text(QUIT_COMMAND))
@@ -708,13 +719,53 @@ def _make_build_environment(venv: Path, machine: str) -> Path:
 
 
 def _compile(python: Path, tree: Path, build: Path, version: str) -> Path:
-    """Run Nuitka over the staged package.
+    """Run Nuitka over the staged package, once per subsystem.
+
+    The console program is the standalone directory; the windowed one is
+    compiled beside it from the same source and only its executable is
+    taken, since everything else the two need is the same.
+
+    Args:
+        python: The build environment's interpreter.
+        tree: The directory the staged ``neutrino_client`` package is in.
+        build: Where the compiler works.
+        version: The version stamped into the binaries' own properties.
+
+    Returns:
+        The standalone directory: both binaries and everything beside them.
+
+    Raises:
+        SystemExit: When the compiler refuses or writes no binary.
+    """
+    console = _compile_one(
+        python, tree, build / "console", version, CLIENT_BINARY_NAME, "force"
+    )
+    windowed = _compile_one(
+        python,
+        tree,
+        build / "windowed",
+        version,
+        CLIENT_WINDOWED_BINARY_NAME,
+        "disable",
+    )
+    shutil.copyfile(
+        windowed / CLIENT_WINDOWED_BINARY_NAME, console / CLIENT_WINDOWED_BINARY_NAME
+    )
+    return console
+
+
+def _compile_one(
+    python: Path, tree: Path, build: Path, version: str, name: str, console_mode: str
+) -> Path:
+    """One Nuitka standalone build.
 
     Args:
         python: The build environment's interpreter.
         tree: The directory the staged ``neutrino_client`` package is in.
         build: Where the compiler works.
         version: The version stamped into the binary's own properties.
+        name: What the binary is called.
+        console_mode: Nuitka's ``--windows-console-mode`` value.
 
     Returns:
         The standalone directory: the binary and everything beside it.
@@ -733,12 +784,12 @@ def _compile(python: Path, tree: Path, build: Path, version: str) -> Path:
         "--include-package=neutrino_client",
         "--include-package=webview",
         *(f"--nofollow-import-to={name}" for name in NUITKA_EXCLUDED_BACKENDS),
-        "--windows-console-mode=attach",
+        f"--windows-console-mode={console_mode}",
         f"--windows-icon-from-ico={icon}",
         "--product-name=Neutrino Client",
         f"--product-version={version}",
         f"--file-version={version}",
-        f"--output-filename={CLIENT_BINARY_NAME}",
+        f"--output-filename={name}",
         f"--output-dir={build}",
         str(entry),
     ]
@@ -747,8 +798,8 @@ def _compile(python: Path, tree: Path, build: Path, version: str) -> Path:
     if result.returncode != 0:
         raise SystemExit(f"nuitka exited {result.returncode}")
     dist = build / "entry.dist"
-    if not (dist / CLIENT_BINARY_NAME).is_file():
-        raise SystemExit(f"nuitka wrote no {CLIENT_BINARY_NAME} under {dist}")
+    if not (dist / name).is_file():
+        raise SystemExit(f"nuitka wrote no {name} under {dist}")
     return dist
 
 

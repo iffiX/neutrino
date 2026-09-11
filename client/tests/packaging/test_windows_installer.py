@@ -69,10 +69,12 @@ def test_a_running_resident_is_closed_before_its_files_are_replaced(source):
     """An upgrade over a live resident is what lands half-applied."""
     root = xml.etree.ElementTree.fromstring(source)
     closes = list(root.iter(UTIL + "CloseApplication"))
-    assert len(closes) == 1
-    assert closes[0].get("Target") == build_msi.RESIDENT_IMAGE
-    assert closes[0].get("RebootPrompt") == "no"
-    assert build_msi.RESIDENT_IMAGE.endswith(".exe")
+    # A resident from the shortcut wears one image, one from a terminal the
+    # other; both hold the files.
+    assert sorted(close.get("Target") for close in closes) == sorted(
+        [build_msi.CLIENT_WINDOWED_BINARY_NAME, build_msi.CLIENT_BINARY_NAME]
+    )
+    assert all(close.get("RebootPrompt") == "no" for close in closes)
 
 
 def test_a_running_resident_is_asked_to_quit_before_anything_ends_it(source):
@@ -94,11 +96,24 @@ def test_a_running_resident_is_asked_to_quit_before_anything_ends_it(source):
 
 
 def test_the_quit_opens_no_console_window_over_the_wizard(source):
-    """A custom action has no console; a binary that attaches to its
-    parent's and makes none otherwise opens nothing over the wizard."""
-    assert build_msi.QUIT_COMMAND == '"[INSTALLFOLDER]nclient.exe" quit'
+    """A custom action has no console, and a console program it starts opens
+    one; the windowed program opens nothing."""
+    assert build_msi.QUIT_COMMAND == '"[INSTALLFOLDER]nclientw.exe" quit'
     assert "powershell" not in build_msi.QUIT_COMMAND.lower()
-    assert "--windows-console-mode=attach" in inspect.getsource(build_msi._compile)
+
+
+def test_the_two_programs_are_the_two_subsystems():
+    """One executable cannot serve both: a windowed one started with pipes
+    but no console loses the pipes (Nuitka's attach mode clobbers the
+    inherited handles when AttachConsole fails), and a console one started
+    from a shortcut opens a window. The same split python.exe and pythonw.exe
+    make."""
+    assert build_msi.CLIENT_BINARY_NAME == "nclient.exe"
+    assert build_msi.CLIENT_WINDOWED_BINARY_NAME == "nclientw.exe"
+    source = inspect.getsource(build_msi._compile)
+    assert '"force"' in source
+    assert '"disable"' in source
+    assert "attach" not in inspect.getsource(build_msi._compile_one)
 
 
 def test_the_quit_runs_before_the_close_that_ends_what_did_not_answer(source):
@@ -279,9 +294,10 @@ def test_the_start_menu_shortcut_opens_the_window(source):
     shortcuts = list(root.iter(WXS + "Shortcut"))
 
     assert len(shortcuts) == 1
-    assert shortcuts[0].get("Target") == "[INSTALLFOLDER]nclient.exe"
+    # The windowed program: a shortcut to the console one would open a
+    # console beside the window.
+    assert shortcuts[0].get("Target") == "[INSTALLFOLDER]nclientw.exe"
     assert shortcuts[0].get("Arguments") == "gui"
-    assert build_msi.RESIDENT_IMAGE == build_msi.CLIENT_BINARY_NAME
 
 
 def test_the_bootstrapper_runs_only_where_the_runtime_key_is_absent(source):
@@ -325,15 +341,18 @@ def test_the_build_refuses_a_machine_this_is_not(monkeypatch):
 
 def test_the_compile_names_what_a_scanner_would_otherwise_find(monkeypatch, tmp_path):
     """Standalone, the package and its window backend included, the other
-    platforms' backends kept out so the plugin and the user agree, a console
-    attached rather than made, the icon and the version in the binary."""
+    platforms' backends kept out so the plugin and the user agree, the icon
+    and the version in the binary; twice, one subsystem each, with the
+    windowed executable taken into the console program's directory."""
     commands = []
 
     def fake_run(command, env=None):
         commands.append((command, env))
-        dist = tmp_path / "build" / "entry.dist"
+        build = Path(command[-2].split("=", 1)[1])
+        name = command[-3].split("=", 1)[1]
+        dist = build / "entry.dist"
         dist.mkdir(parents=True, exist_ok=True)
-        (dist / build_msi.CLIENT_BINARY_NAME).write_bytes(b"MZ")
+        (dist / name).write_bytes(b"MZ" + name.encode())
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(build_msi.subprocess, "run", fake_run)
@@ -343,18 +362,23 @@ def test_the_compile_names_what_a_scanner_would_otherwise_find(monkeypatch, tmp_
 
     dist = build_msi._compile(Path("python.exe"), tree, tmp_path / "build", "9.9.9")
 
-    command, environment = commands[0]
-    assert dist == tmp_path / "build" / "entry.dist"
-    assert command[:3] == ["python.exe", "-m", "nuitka"]
-    assert "--standalone" in command
-    assert "--include-package=neutrino_client" in command
-    assert "--include-package=webview" in command
-    for backend in build_msi.NUITKA_EXCLUDED_BACKENDS:
-        assert f"--nofollow-import-to={backend}" in command
-    assert "--windows-console-mode=attach" in command
-    assert "--product-version=9.9.9" in command
-    assert f"--output-filename={build_msi.CLIENT_BINARY_NAME}" in command
-    assert command[-1] == str(tree / "neutrino_client" / "cli" / "entry.py")
+    assert dist == tmp_path / "build" / "console" / "entry.dist"
+    assert (dist / "nclient.exe").read_bytes() == b"MZnclient.exe"
+    assert (dist / "nclientw.exe").read_bytes() == b"MZnclientw.exe"
+    (console, environment), (windowed, _) = commands
+    for command in (console, windowed):
+        assert command[:3] == ["python.exe", "-m", "nuitka"]
+        assert "--standalone" in command
+        assert "--include-package=neutrino_client" in command
+        assert "--include-package=webview" in command
+        for backend in build_msi.NUITKA_EXCLUDED_BACKENDS:
+            assert f"--nofollow-import-to={backend}" in command
+        assert "--product-version=9.9.9" in command
+        assert command[-1] == str(tree / "neutrino_client" / "cli" / "entry.py")
+    assert "--windows-console-mode=force" in console
+    assert "--output-filename=nclient.exe" in console
+    assert "--windows-console-mode=disable" in windowed
+    assert "--output-filename=nclientw.exe" in windowed
     assert environment["PYTHONPATH"] == str(tree)
 
 
