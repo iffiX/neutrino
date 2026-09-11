@@ -17,6 +17,7 @@
   "code.fs_refused": "此账户不能使用那个文件夹",
   "code.gui_webkitgtk_missing": "窗口需要 WebKitGTK，请安装：sudo apt install {packages}",
   "code.gui_webview2_missing": "窗口需要 {runtime}，请安装后再试",
+  "code.gui_wkwebview_missing": "窗口需要 pyobjc，请安装：pip install {packages}",
   "code.hub_refused": "hub 拒绝了此客户端的令牌",
   "code.hub_reply_unreadable": "客户端读不懂 hub 的应答",
   "code.hub_unreachable": "连接不上 hub",

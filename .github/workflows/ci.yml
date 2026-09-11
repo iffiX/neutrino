@@ -28,7 +28,7 @@ jobs:
       # nothing here contends with the runner's own resolver.
       - run: sudo apt-get install -y --no-install-recommends dnsmasq-base
 
-      - run: black --check hub agent
+      - run: black --check hub agent client
 
       # The scan reads what git would carry, so it needs the tree, not an
       # install. detect-secrets comes from the dev extra above.
@@ -40,6 +40,22 @@ jobs:
 
       - run: pytest -q
         working-directory: agent
+
+  client:
+    name: client tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      # 3.13 is what the client is compiled against on every platform.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - run: pip install -e client pytest
+
+      - run: pytest -q
+        working-directory: client
 
   agent_oldest_python:
     name: agent on Python 3.9

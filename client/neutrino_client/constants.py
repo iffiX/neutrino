@@ -72,6 +72,12 @@ CLIENT_BUNDLED_PATHS_WINDOWS = {
     "cc-switch": "bin\\cc-switch.exe",
     "rustdesk": "bin\\rustdesk.exe",
 }
+# Under the app bundle's Contents directory, beside the MacOS directory the
+# compiled package runs from.
+CLIENT_BUNDLED_PATHS_DARWIN = {
+    "cc-switch": "Resources/bin/cc-switch",
+    "rustdesk": "Resources/rustdesk/RustDesk.app/Contents/MacOS/RustDesk",
+}
 
 # The root helper a mount goes through on Linux, and the polkit action that
 # gates it.

@@ -2,11 +2,12 @@
 
 A fake toolkit stands in for each platform's web view, so the dispatch, the
 embedding calls, the hide-on-close and the import-guard refusals all run
-without a display. macOS has no shell and is refused typed.
+without a display.
 """
 
 import os
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ import pytest
 import neutrino_client.gui.tray_linux as tray_module
 import neutrino_client.gui.webkitgtk as webkitgtk
 import neutrino_client.gui.webview2 as webview2
+import neutrino_client.gui.wkwebview as wkwebview
 from neutrino_client.constants import (
     CLIENT_DEFAULT_LANGUAGE,
     CLIENT_DESKTOP_NAME,
@@ -26,6 +28,7 @@ from neutrino_client.gui.shell import open_shell_window
 from neutrino_client.words import word
 from tests.gui.test_bridge import FakeGuiChannel
 from tests.gui.test_tray_linux import FakeGtk
+from tests.gui.test_tray_macos import FakeAppKit, FakeNSObject, FakeStatusBar
 
 CLIENT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -102,11 +105,16 @@ class FakeWebviewModule:
 
 
 @pytest.mark.parametrize(
-    "os_name,module_name", [("linux", "webkitgtk"), ("windows", "webview2")]
+    "os_name,module_name",
+    [("linux", "webkitgtk"), ("windows", "webview2"), ("darwin", "wkwebview")],
 )
 def test_each_platform_dispatches_to_its_own_shell(monkeypatch, os_name, module_name):
     calls = []
-    module = {"webkitgtk": webkitgtk, "webview2": webview2}[module_name]
+    module = {
+        "webkitgtk": webkitgtk,
+        "webview2": webview2,
+        "wkwebview": wkwebview,
+    }[module_name]
 
     def record(**kwargs):
         calls.append(kwargs)
@@ -145,7 +153,7 @@ def test_each_platform_dispatches_to_its_own_shell(monkeypatch, os_name, module_
     ]
 
 
-@pytest.mark.parametrize("os_name", ["darwin", "plan9"])
+@pytest.mark.parametrize("os_name", ["freebsd", "plan9"])
 def test_a_platform_without_a_shell_refuses_typed(os_name):
     with pytest.raises(GuiShellUnavailableError) as caught:
         open_shell_window(
@@ -562,5 +570,390 @@ def test_the_linux_window_pushes_state_through_the_main_loop(monkeypatch):
     # The main loop ran the delivery, and the page got the state.
     assert glib.idles
     assert FakeWebKit2.views[0].scripts[-1] == (
+        'window.neutrinoState({"is_connected": false})'
+    )
+
+
+class FakeApplication(FakeNSObject):
+    """The one ``NSApplication``: its policy, delegate, icon and loop.
+
+    Attributes:
+        runs: How many times the loop was entered.
+        stops: How many times it was asked to end.
+    """
+
+    shared = None
+
+    @classmethod
+    def sharedApplication(cls):
+        if cls.shared is None:
+            cls.shared = cls.alloc().init()
+        return cls.shared
+
+    def init(self):
+        self.policy = None
+        self.delegate = None
+        self.icon = None
+        self.activations = 0
+        self.runs = 0
+        self.stops = 0
+        return self
+
+    def setActivationPolicy_(self, policy) -> None:
+        self.policy = policy
+
+    def setDelegate_(self, delegate) -> None:
+        self.delegate = delegate
+
+    def setApplicationIconImage_(self, image) -> None:
+        self.icon = image
+
+    def activateIgnoringOtherApps_(self, _flag) -> None:
+        self.activations += 1
+
+    def run(self) -> None:
+        self.runs += 1
+
+    def stop_(self, _sender) -> None:
+        self.stops += 1
+
+
+class FakeCocoaWindow(FakeNSObject):
+    """The ``NSWindow`` the macOS shell opens.
+
+    Attributes:
+        shows: How many times it was brought to the front.
+        hides: How many times it was ordered out.
+    """
+
+    made: list = []
+
+    def initWithContentRect_styleMask_backing_defer_(self, rect, mask, backing, defer):
+        self.rect = rect
+        self.mask = mask
+        self.title = ""
+        self.is_released_when_closed = True
+        self.content = None
+        self.delegate = None
+        self.shows = 0
+        self.hides = 0
+        self.is_centered = False
+        FakeCocoaWindow.made.append(self)
+        return self
+
+    def setTitle_(self, title: str) -> None:
+        self.title = title
+
+    def setReleasedWhenClosed_(self, flag: bool) -> None:
+        self.is_released_when_closed = flag
+
+    def setContentView_(self, view) -> None:
+        self.content = view
+
+    def setDelegate_(self, delegate) -> None:
+        self.delegate = delegate
+
+    def center(self) -> None:
+        self.is_centered = True
+
+    def makeKeyAndOrderFront_(self, _sender) -> None:
+        self.shows += 1
+
+    def orderOut_(self, _sender) -> None:
+        self.hides += 1
+
+
+class FakeContentController:
+    """WebKit's script message controller, with the handlers added."""
+
+    def __init__(self):
+        self.handlers = {}
+
+    def addScriptMessageHandler_name_(self, handler, name: str) -> None:
+        self.handlers[name] = handler
+
+
+class FakeWebViewConfiguration(FakeNSObject):
+    def init(self):
+        self.controller = FakeContentController()
+        return self
+
+    def userContentController(self):
+        return self.controller
+
+
+class FakeWKWebView(FakeNSObject):
+    """The view the page loads into, and the scripts run in it."""
+
+    made: list = []
+
+    def initWithFrame_configuration_(self, frame, configuration):
+        self.frame = frame
+        self.configuration = configuration
+        self.mask = 0
+        self.loaded = ()
+        self.scripts = []
+        FakeWKWebView.made.append(self)
+        return self
+
+    def setAutoresizingMask_(self, mask: int) -> None:
+        self.mask = mask
+
+    def loadHTMLString_baseURL_(self, html, base) -> None:
+        self.loaded = (html, base)
+
+    def evaluateJavaScript_completionHandler_(self, script, handler) -> None:
+        self.scripts.append(script)
+
+
+class FakeScriptMessage:
+    """What the page posted, as WebKit hands it over."""
+
+    def __init__(self, body: str):
+        self._body = body
+
+    def body(self):
+        return self._body
+
+
+class FakeOperationQueue:
+    """The main queue: every block run at once, and remembered.
+
+    Attributes:
+        blocks: Every block handed over, already run.
+    """
+
+    blocks: list = []
+
+    @classmethod
+    def mainQueue(cls):
+        return cls
+
+    @classmethod
+    def addOperationWithBlock_(cls, block) -> None:
+        cls.blocks.append(block)
+        block()
+
+
+class FakeCocoaAppKit(FakeAppKit):
+    """The AppKit the macOS shell reaches for, over the tray's own."""
+
+    NSApplication = FakeApplication
+    NSWindow = FakeCocoaWindow
+    NSApplicationActivationPolicyRegular = 0
+    NSWindowStyleMaskTitled = 1
+    NSWindowStyleMaskClosable = 2
+    NSWindowStyleMaskMiniaturizable = 4
+    NSWindowStyleMaskResizable = 8
+    NSBackingStoreBuffered = 2
+    NSViewWidthSizable = 2
+    NSViewHeightSizable = 16
+    NSTerminateNow = 1
+
+
+class FakeFoundation:
+    NSOperationQueue = FakeOperationQueue
+
+    @staticmethod
+    def NSMakeRect(x, y, width, height):
+        return (x, y, width, height)
+
+
+class FakeWebKit:
+    WKWebViewConfiguration = FakeWebViewConfiguration
+    WKWebView = FakeWKWebView
+
+
+def macos_toolkit(monkeypatch) -> FakeApplication:
+    """Put a fake Cocoa stack under the macOS shell.
+
+    Returns:
+        The one application, which the cases read back.
+    """
+    FakeApplication.shared = None
+    FakeCocoaWindow.made = []
+    FakeWKWebView.made = []
+    FakeOperationQueue.blocks = []
+    FakeStatusBar.items = []
+    monkeypatch.setattr(
+        wkwebview, "_toolkit", lambda: (FakeCocoaAppKit, FakeFoundation, FakeWebKit)
+    )
+    return FakeApplication.sharedApplication()
+
+
+def test_a_missing_pyobjc_refuses_naming_the_packages(monkeypatch):
+    monkeypatch.setitem(sys.modules, "AppKit", None)
+
+    with pytest.raises(GuiShellUnavailableError) as caught:
+        wkwebview.open_window(title="t", html="<html>", bridge=None)
+
+    assert caught.value.code == "gui_wkwebview_missing"
+    assert caught.value.params == {
+        "packages": "pyobjc-framework-Cocoa pyobjc-framework-WebKit"
+    }
+
+
+def test_the_macos_window_is_a_regular_app_with_the_page_in_a_web_view(monkeypatch):
+    app = macos_toolkit(monkeypatch)
+
+    wkwebview.open_window(
+        title="Neutrino client",
+        html="<html>page</html>",
+        bridge=None,
+        icon_path="/icons/x.png",
+    )
+
+    (window,) = FakeCocoaWindow.made
+    (view,) = FakeWKWebView.made
+    assert app.policy == FakeCocoaAppKit.NSApplicationActivationPolicyRegular
+    assert app.icon.path == "/icons/x.png"
+    assert app.runs == 1
+    assert window.title == "Neutrino client"
+    assert window.rect == (0, 0, 760, 900)
+    assert window.mask == 15
+    assert window.is_released_when_closed is False
+    assert window.content is view
+    assert window.is_centered is True
+    assert view.loaded == ("<html>page</html>", None)
+    assert view.mask == 18
+
+
+def test_the_macos_shell_registers_the_handler_the_page_posts_to(monkeypatch):
+    macos_toolkit(monkeypatch)
+    channel = FakeGuiChannel(reply={"hostname": "box"})
+
+    wkwebview.open_window(
+        title="t", html="<html>", bridge=GuiBridge(channel=channel), is_hidden=True
+    )
+
+    (view,) = FakeWKWebView.made
+    handlers = view.configuration.controller.handlers
+    assert list(handlers) == ["neutrino"]
+    handlers["neutrino"].userContentController_didReceiveScriptMessage_(
+        None,
+        FakeScriptMessage(
+            '{"id": 1, "method": "GET", "path": "/api/state", "body": null}'
+        ),
+    )
+    deadline = time.monotonic() + 5
+    while not view.scripts and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    assert channel.asked == [("GET", "/api/state", None)]
+    assert view.scripts == [
+        'window.neutrinoReply({"id": 1, "status": 200, "body": {"hostname": "box"}})'
+    ]
+    # The reply reached the page through the main queue, never off it.
+    assert len(FakeOperationQueue.blocks) == 1
+
+
+def test_the_macos_window_shows_itself_unless_it_is_started_hidden(monkeypatch):
+    macos_toolkit(monkeypatch)
+
+    wkwebview.open_window(title="t", html="<html>", bridge=None)
+    shown = FakeCocoaWindow.made[0].shows
+
+    wkwebview.open_window(title="t", html="<html>", bridge=None, is_hidden=True)
+
+    assert shown == 1
+    assert FakeCocoaWindow.made[1].shows == 0
+
+
+def test_closing_the_macos_window_hides_it_and_keeps_the_loop(monkeypatch):
+    app = macos_toolkit(monkeypatch)
+    wkwebview.open_window(title="t", html="<html>", bridge=None)
+    window = FakeCocoaWindow.made[0]
+
+    kept = window.delegate.windowShouldClose_(window)
+
+    assert kept is False
+    assert window.hides == 1
+    assert app.stops == 0
+
+
+def test_the_menu_bar_item_opens_the_window_again_and_quits_the_client(monkeypatch):
+    app = macos_toolkit(monkeypatch)
+    stopped = []
+
+    def on_quit() -> None:
+        stopped.append(1)
+
+    wkwebview.open_window(
+        title="t", html="<html>", bridge=None, is_hidden=True, on_quit=on_quit
+    )
+    window = FakeCocoaWindow.made[0]
+    (item,) = FakeStatusBar.items
+    opener, quitter = item.menu.items
+
+    opener.fire()
+    quitter.fire()
+
+    assert [entry.title for entry in item.menu.items] == [
+        word(CLIENT_DEFAULT_LANGUAGE, CLIENT_TRAY_OPEN_LABEL_KEY),
+        word(CLIENT_DEFAULT_LANGUAGE, CLIENT_TRAY_QUIT_LABEL_KEY),
+    ]
+    assert (window.shows, app.activations) == (1, 1)
+    assert stopped == [1]
+    assert app.stops == 1
+
+
+def test_the_dock_brings_the_macos_window_back_and_a_quit_from_it_shuts_down(
+    monkeypatch,
+):
+    app = macos_toolkit(monkeypatch)
+    stopped = []
+
+    def on_quit() -> None:
+        stopped.append(1)
+
+    wkwebview.open_window(
+        title="t", html="<html>", bridge=None, is_hidden=True, on_quit=on_quit
+    )
+    window = FakeCocoaWindow.made[0]
+
+    assert (
+        app.delegate.applicationShouldHandleReopen_hasVisibleWindows_(app, False)
+        is False
+    )
+    assert window.shows == 1
+    assert app.delegate.applicationShouldTerminate_(app) == 1
+    assert stopped == [1]
+
+
+def test_the_show_the_macos_shell_hands_back_brings_the_window_up(monkeypatch):
+    macos_toolkit(monkeypatch)
+    handed = []
+
+    wkwebview.open_window(
+        title="t",
+        html="<html>",
+        bridge=None,
+        is_hidden=True,
+        on_show_ready=handed.append,
+    )
+    (show,) = handed
+
+    show()
+
+    assert FakeCocoaWindow.made[0].shows == 1
+    assert len(FakeOperationQueue.blocks) == 1
+
+
+def test_the_macos_window_pushes_state_through_the_main_queue(monkeypatch):
+    macos_toolkit(monkeypatch)
+    pushers = []
+
+    wkwebview.open_window(
+        title="t",
+        html="<html>",
+        bridge=None,
+        is_hidden=True,
+        on_push_ready=pushers.append,
+    )
+
+    (push,) = pushers
+    push({"is_connected": False})
+    assert FakeOperationQueue.blocks
+    assert FakeWKWebView.made[0].scripts[-1] == (
         'window.neutrinoState({"is_connected": false})'
     )

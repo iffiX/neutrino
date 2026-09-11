@@ -1,13 +1,8 @@
-"""platforms.detect: the machine's tuple, and the class that answers for it.
-
-macOS is refused outright: the client does not run there yet.
-"""
-
-import pytest
+"""platforms.detect: the machine's tuple, and the class that answers for it."""
 
 import neutrino_client.platforms.detect as detect_module
-from neutrino_client.exceptions import PlatformUnsupportedError
 from neutrino_client.platforms.base import ClientPlatform
+from neutrino_client.platforms.darwin import DarwinPlatform
 from neutrino_client.platforms.detect import detect_platform
 from neutrino_client.platforms.linux import LinuxPlatform
 from neutrino_client.platforms.windows import WindowsPlatform
@@ -56,18 +51,20 @@ def test_each_os_is_answered_by_its_own_class(monkeypatch, tmp_path):
         ("linux", LinuxPlatform),
         ("linux2", LinuxPlatform),
         ("win32", WindowsPlatform),
+        ("darwin", DarwinPlatform),
         ("freebsd13", ClientPlatform),
     ):
         monkeypatch.setattr(detect_module.sys, "platform", reported)
         assert type(detect_platform()) is expected
 
 
-def test_macos_is_refused_typed(monkeypatch):
+def test_an_apple_silicon_mac_reads_as_darwin_arm64(monkeypatch):
     monkeypatch.setattr(detect_module.sys, "platform", "darwin")
     monkeypatch.setattr(detect_module.platform, "machine", lambda: "arm64")
 
-    with pytest.raises(PlatformUnsupportedError) as caught:
-        detect_platform()
-
-    assert caught.value.code == "unsupported_platform"
-    assert detect_module.platform_tuple()["os"] == "darwin"
+    assert detect_module.platform_tuple() == {
+        "os": "darwin",
+        "family": "",
+        "arch": "arm64",
+    }
+    assert detect_platform().os_name == "darwin"

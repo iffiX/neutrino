@@ -10,7 +10,9 @@
 
 source "$(dirname "$0")/../common.sh"
 
-MAC_TYPE="${MAC_TYPE:-mac-m4.metal}"
+# The M1: the cheapest Apple silicon host, and arm64 is the only macOS the
+# client is built for.
+MAC_TYPE="${MAC_TYPE:-mac2.metal}"
 ZONE="${ZONE:-us-east-1a}"
 # Amazon's own macOS images, newest first; arm64_mac is the Apple silicon one.
 MAC_AMI_FILTER="${MAC_AMI_FILTER:-amzn-ec2-macos-15*}"

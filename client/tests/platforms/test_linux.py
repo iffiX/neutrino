@@ -261,10 +261,10 @@ def test_a_program_that_cannot_start_answers_127():
 
 
 def test_without_a_pty_module_the_terminal_is_a_typed_refusal(monkeypatch):
-    import neutrino_client.platforms.linux as linux_module
+    import neutrino_client.platforms.base as base_module
     from neutrino_client.exceptions import PlatformUnsupportedError
 
-    monkeypatch.setattr(linux_module, "pty", None)
+    monkeypatch.setattr(base_module, "pty", None)
 
     with pytest.raises(PlatformUnsupportedError):
         LinuxPlatform().run_answering(["x"], prompt="?", answer="y", timeout_s=1)

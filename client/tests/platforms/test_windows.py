@@ -313,7 +313,7 @@ def test_a_mapped_drive_is_announced_to_the_shell(platform, monkeypatch):
     win32 = platform._win32()
     monkeypatch.setattr(windows_module.os.path, "isfile", lambda path: True)
     monkeypatch.setattr(
-        windows_module, "_read_share_credentials", lambda path: ("bob", "pw")
+        windows_module, "read_share_credentials", lambda path: ("bob", "pw")
     )
 
     platform.attach_share(

@@ -1,8 +1,8 @@
 # Runs on the Windows box. The installer is what ships, so it is what is
-# tested: install it, see the service register and run, see the agent answer
-# as unenrolled, join the hub the link names, see it heartbeat.
+# tested: install it, see the compiled client answer as unbound, join the hub
+# the link names, run the resident, see it connected.
 #
-# Exit codes of the agent are values here, not errors: unenrolled is 1.
+# Exit codes of the client are values here, not errors: unbound is 1.
 
 param(
     [Parameter(Mandatory = $true)][string]$Msi,
@@ -16,63 +16,59 @@ $ProgressPreference = 'SilentlyContinue'
 function Step($name) { Write-Host ""; Write-Host "== $name" }
 function Fail($why) { Write-Host "FAILED: $why"; exit 1 }
 
-# A console `nagent` left waiting by an earlier walk holds the interpreter
-# open, and the uninstaller's restart manager cannot close a process in
-# another session: it answers 1601 and removes nothing.
-Get-Process python -ErrorAction SilentlyContinue |
-    Where-Object { $_.Path -like "$env:ProgramFiles\Neutrino Agent\*" } |
-    Stop-Process -Force -ErrorAction SilentlyContinue
+$nclient = "$env:ProgramFiles\Neutrino Client\nclient.exe"
+
+# A resident left by an earlier walk holds the prefix open, and the
+# installer's own quit cannot reach one in another session.
+Get-Process nclient -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
 # Every build carries its own product code, so the previous install is
 # removed by the code the registry holds for it, never by the new file.
 $installed = Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' |
-    Where-Object { (Get-ItemProperty $_.PSPath).DisplayName -eq 'Neutrino Agent' }
+    Where-Object { (Get-ItemProperty $_.PSPath).DisplayName -eq 'Neutrino Client' }
 foreach ($product in $installed) {
     Step "remove the previous install $($product.PSChildName)"
     $remove = Start-Process msiexec -Wait -PassThru -ArgumentList '/x', $product.PSChildName, '/quiet', '/norestart', '/l*v', 'C:\neutrino\uninstall.log'
     if ($remove.ExitCode -ne 0) { Fail "msiexec /x exited $($remove.ExitCode); see C:\neutrino\uninstall.log" }
 }
-if (Get-Service -Name 'NeutrinoAgent' -ErrorAction SilentlyContinue) { Fail "the service outlived the uninstaller" }
+if (Test-Path "$env:ProgramFiles\Neutrino Client") { Fail "the prefix outlived the uninstaller" }
 
 Step "install $Msi"
 $install = Start-Process msiexec -Wait -PassThru -ArgumentList '/i', $Msi, '/quiet', '/norestart', '/l*v', 'C:\neutrino\install.log'
 if ($install.ExitCode -ne 0) { Fail "msiexec exited $($install.ExitCode); see C:\neutrino\install.log" }
+if (-not (Test-Path $nclient)) { Fail "no nclient.exe under Program Files" }
 
-Step "the service"
-$service = Get-CimInstance Win32_Service -Filter "Name='NeutrinoAgent'"
-if ($null -eq $service) { Fail "no NeutrinoAgent service registered" }
-$service | Format-List Name, State, StartMode, PathName
-if ($service.State -ne 'Running') { Fail "the service is $($service.State)" }
-if ($service.PathName -notlike '*run --windows-service*') { Fail "the service runs $($service.PathName)" }
+Step "what landed"
+$all = Get-ChildItem -Recurse -File "$env:ProgramFiles\Neutrino Client"
+Write-Host "files $($all.Count), .py $(($all | Where-Object Extension -eq '.py').Count), .pyc $(($all | Where-Object Extension -eq '.pyc').Count)"
+if (($all | Where-Object { $_.Extension -in '.py', '.pyc' }).Count -ne 0) { Fail "the payload carries Python source or bytecode" }
 
-$nagent = "$env:ProgramFiles\Neutrino Agent\nagent.cmd"
-# Uninstalling keeps the binding under ProgramData, the way a deb's remove
-# keeps /etc: a box from an earlier walk comes back already joined, and the
-# walk starts from unenrolled by leaving first.
-& $nagent status | Out-Null
-if ($LASTEXITCODE -eq 0) {
+# A removal keeps the binding, so a box from an earlier walk comes back
+# already joined; the walk starts from unbound by leaving first.
+& $nclient status | Out-Null
+if ($LASTEXITCODE -ne 1) {
     Step "leave the hub a previous walk joined"
-    & $nagent disconnect
-    if ($LASTEXITCODE -ne 0) { Fail "nagent disconnect exited $LASTEXITCODE" }
+    & $nclient quit | Out-Null
+    & $nclient disconnect
 }
 
-Step "status before joining (expects exit 1: unenrolled)"
-& $nagent status
-if ($LASTEXITCODE -ne 1) { Fail "nagent status exited $LASTEXITCODE, expected 1" }
+Step "status before joining (expects exit 1: unbound)"
+& $nclient status
+if ($LASTEXITCODE -ne 1) { Fail "nclient status exited $LASTEXITCODE, expected 1" }
 
 Step "join the hub"
-& $nagent connect $Link --yes
-if ($LASTEXITCODE -ne 0) { Fail "nagent connect exited $LASTEXITCODE" }
+& $nclient connect $Link --yes
+if ($LASTEXITCODE -ne 0) { Fail "nclient connect exited $LASTEXITCODE" }
 
-Step "status after joining (expects exit 0: heartbeat ok)"
+Step "run the resident"
+Start-Process -FilePath $nclient -ArgumentList 'gui', '--hidden'
+
+Step "status after joining (expects exit 0: bound, running, connected)"
 $ok = $false
 foreach ($try in 1..12) {
-    & $nagent status
+    & $nclient status
     if ($LASTEXITCODE -eq 0) { $ok = $true; break }
     Start-Sleep -Seconds 5
 }
-if (-not $ok) { Fail "the agent never reported a good heartbeat" }
-
-Step "the service, after joining"
-Get-CimInstance Win32_Service -Filter "Name='NeutrinoAgent'" | Format-List Name, State
+if (-not $ok) { Fail "the client never reported itself connected" }
 Write-Host "windows side passed"

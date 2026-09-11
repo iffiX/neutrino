@@ -7,8 +7,8 @@ from __future__ import annotations
 import platform
 import sys
 
-from neutrino_client.exceptions import PlatformUnsupportedError
 from neutrino_client.platforms.base import ClientPlatform
+from neutrino_client.platforms.darwin import DarwinPlatform
 from neutrino_client.platforms.linux import LinuxPlatform
 from neutrino_client.platforms.windows import WindowsPlatform
 
@@ -56,10 +56,6 @@ def detect_platform() -> ClientPlatform:
     Returns:
         A platform instance; an operating system the client does not know
         gets the base contract, which refuses every capability.
-
-    Raises:
-        PlatformUnsupportedError: On macOS, which the client does not run
-            on yet.
     """
     os_name = platform_tuple()["os"]
     if os_name == "linux":
@@ -67,7 +63,7 @@ def detect_platform() -> ClientPlatform:
     if os_name == "windows":
         return WindowsPlatform()
     if os_name == "darwin":
-        raise PlatformUnsupportedError("the client does not run on macOS yet")
+        return DarwinPlatform()
     return ClientPlatform()
 
 

@@ -5,7 +5,7 @@
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
-$env:PATH = "C:\Program Files\Python312;C:\Program Files\Python312\Scripts;C:\dotnet;$env:USERPROFILE\.dotnet\tools;$env:PATH"
+$env:PATH = "C:\Program Files\Python313;C:\Program Files\Python313\Scripts;C:\dotnet;$env:USERPROFILE\.dotnet\tools;$env:PATH"
 $env:DOTNET_ROOT = 'C:\dotnet'
 
 $src = 'C:\neutrino\src'

@@ -26,7 +26,12 @@ from neutrino_client.constants import (
 )
 from neutrino_client.platforms import win32
 from neutrino_client.exceptions import PlatformUnsupportedError, ShareAttachError
-from neutrino_client.platforms.base import ClientPlatform, run_quietly
+from neutrino_client.platforms.base import (
+    ClientPlatform,
+    read_share_credentials,
+    run_quietly,
+    share_parts,
+)
 from neutrino_client.platforms.windows_console import WindowsConsoleApi
 from neutrino_client.platforms.windows_identity import WindowsIdentityApi
 from neutrino_client.words import language_for_tag
@@ -39,41 +44,6 @@ WINDOWS_MOUNT_TIMEOUT_S = 60
 # mapping comes or goes.
 SHCNE_DRIVEADD = win32.SHCNE_DRIVEADD
 SHCNE_DRIVEREMOVED = win32.SHCNE_DRIVEREMOVED
-
-
-def _share_parts(share_url: str) -> "tuple[str, str]":
-    """The host and share a ``//host/name`` URL names.
-
-    Args:
-        share_url: The share URL.
-
-    Returns:
-        The host and the share name, either empty when unreadable.
-    """
-    trimmed = share_url.replace("\\", "/").strip("/")
-    host, _, share = trimmed.partition("/")
-    return host, share
-
-
-def _read_share_credentials(path: str) -> "tuple[str, str]":
-    """One credentials file's login.
-
-    Args:
-        path: The credentials file.
-
-    Returns:
-        The username and password, empty where unreadable.
-    """
-    values = {"username": "", "password": ""}
-    try:
-        with open(path, "r", encoding="utf-8") as stream:
-            for line in stream:
-                key, _, value = line.partition("=")
-                if key.strip() in values:
-                    values[key.strip()] = value.rstrip("\n")
-    except OSError:
-        pass
-    return values["username"], values["password"]
 
 
 def _pipe_safe_name(account: str) -> str:
@@ -223,12 +193,12 @@ class WindowsPlatform(ClientPlatform):
             ShareAttachError: ``credentials_missing`` without the file,
                 ``mount_failed`` with the tool's own words otherwise.
         """
-        host, share = _share_parts(share_url)
+        host, share = share_parts(share_url)
         if not host or not share:
             raise ShareAttachError("mount_failed", detail="unreadable share url")
         if not os.path.isfile(credentials_path):
             raise ShareAttachError("credentials_missing")
-        username, password = _read_share_credentials(credentials_path)
+        username, password = read_share_credentials(credentials_path)
         code = self._win32().add_connection(
             local=location,
             remote=f"\\\\{host}\\{share}",

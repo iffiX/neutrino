@@ -89,6 +89,12 @@ mint_link() {
         | python3 -c 'import json,sys; print(json.load(sys.stdin)["link"])'
 }
 
+# A person's link, for the client: the same five minutes, the same moment.
+mint_client_link() {
+    panel_post /api/clients/enrollment "{\"name\":\"$1\"}" \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin)["link"])'
+}
+
 # The join returns before the first beat lands, so the hub is given a minute
 # to have heard one rather than being read the instant the agent said yes.
 wait_device_online() {
@@ -119,6 +125,38 @@ PY
     echo "the hub never listed $name as online" >&2
     python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1])), indent=1)[:1500])' \
         "$STATE/devices.json" >&2
+    return 1
+}
+
+# The client's resident opens its socket to the hub once it runs; the hub
+# lists the person online when it has.
+wait_client_online() {
+    local name="$1" i
+    for ((i = 0; i < 12; i++)); do
+        panel_get /api/clients > "$STATE/clients.json"
+        if python3 - "$STATE/clients.json" "$name" <<'PY'
+import json, sys
+
+rows = json.load(open(sys.argv[1])).get("clients", [])
+found = [row for row in rows if row.get("name") == sys.argv[2]]
+if not found or not found[0].get("is_online"):
+    sys.exit(1)
+row = found[0]
+print("  name={name}  online={online}  platform={platform}  version={version}".format(
+    name=row["name"],
+    online=row.get("is_online"),
+    platform=row.get("platform_os"),
+    version=row.get("version"),
+))
+PY
+        then
+            return 0
+        fi
+        sleep 5
+    done
+    echo "the hub never listed the client $name as online" >&2
+    python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1])), indent=1)[:1500])' \
+        "$STATE/clients.json" >&2
     return 1
 }
 

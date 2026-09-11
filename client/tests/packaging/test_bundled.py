@@ -78,6 +78,29 @@ def unpacked_viewer(monkeypatch):
     return checked
 
 
+@pytest.fixture
+def attached_image(monkeypatch):
+    """``hdiutil attach`` replaced by an app bundle at the mountpoint, and
+    every hdiutil command recorded.
+
+    Returns:
+        The commands, in order.
+    """
+    commands = []
+
+    def run(command, cwd=None):
+        commands.append(list(command))
+        if command[1] == "attach":
+            app = payload.Path(command[-2]) / bundled.RUSTDESK_APP_NAME
+            binary = app / bundled.RUSTDESK_APP_BINARY
+            binary.parent.mkdir(parents=True)
+            binary.write_text("")
+            (app / "Contents" / "Info.plist").write_text("")
+
+    monkeypatch.setattr(bundled.payload, "run", run)
+    return commands
+
+
 # --- the pins ---
 
 
@@ -97,10 +120,21 @@ def test_windows_has_both_binaries_pinned():
         assert len(digest) == 64
 
 
+def test_apple_silicon_has_both_binaries_pinned():
+    for assets in (bundled.CC_SWITCH_ASSETS, bundled.RUSTDESK_ASSETS):
+        asset, digest = assets[("darwin", "aarch64")]
+        assert asset
+        assert len(digest) == 64
+        assert digest == digest.lower()
+    assert ("darwin", "x86_64") not in bundled.CC_SWITCH_ASSETS
+    assert ("darwin", "x86_64") not in bundled.RUSTDESK_ASSETS
+
+
 def test_the_linux_switcher_is_the_musl_build_and_windows_is_the_zip():
     assert bundled.CC_SWITCH_ASSETS[("linux", "x86_64")][0].endswith("-musl.tar.gz")
     assert bundled.CC_SWITCH_ASSETS[("linux", "aarch64")][0].endswith("-musl.tar.gz")
     assert bundled.CC_SWITCH_ASSETS[("windows", "x86_64")][0].endswith(".zip")
+    assert bundled.CC_SWITCH_ASSETS[("darwin", "aarch64")][0] == "darwin-arm64.tar.gz"
 
 
 def test_the_viewer_is_the_flutter_build_and_never_the_old_frontend():
@@ -108,6 +142,7 @@ def test_the_viewer_is_the_flutter_build_and_never_the_old_frontend():
         assert "sciter" not in suffix
     assert bundled.RUSTDESK_ASSETS[("linux", "x86_64")][0].endswith(".deb")
     assert bundled.RUSTDESK_ASSETS[("windows", "x86_64")][0].endswith(".exe")
+    assert bundled.RUSTDESK_ASSETS[("darwin", "aarch64")][0] == "-aarch64.dmg"
 
 
 def test_the_urls_name_the_versions_the_pins_are_for():
@@ -193,6 +228,53 @@ def test_the_windows_staging_puts_both_under_bin(tmp_path, downloads):
     assert (tmp_path / "bin" / "rustdesk.exe").read_bytes() == b"MZ"
 
 
+def test_the_macos_staging_puts_both_under_the_bundles_resources(
+    tmp_path, downloads, attached_image
+):
+    contents = tmp_path / "Neutrino Client.app" / "Contents"
+
+    bundled.stage_darwin_binaries(contents)
+
+    switcher = contents / "Resources" / "bin" / "cc-switch"
+    assert switcher.is_file()
+    assert switcher.stat().st_mode & 0o111
+    app = contents / "Resources" / "rustdesk" / "RustDesk.app"
+    assert (app / "Contents" / "MacOS" / "RustDesk").is_file()
+    assert (app / "Contents" / "Info.plist").is_file()
+    assert [url.rsplit("/", 1)[-1] for url in downloads] == [
+        "cc-switch-cli-v5.10.4-darwin-arm64.tar.gz",
+        "rustdesk-1.4.9-aarch64.dmg",
+    ]
+
+
+def test_the_disk_image_is_attached_read_only_and_detached_again(
+    tmp_path, downloads, attached_image
+):
+    bundled.stage_darwin_binaries(tmp_path / "Contents")
+
+    attach, detach = attached_image
+    assert attach[:5] == ["hdiutil", "attach", "-nobrowse", "-readonly", "-mountpoint"]
+    assert attach[-1].endswith("rustdesk-aarch64.dmg")
+    assert detach == ["hdiutil", "detach", attach[-2]]
+
+
+def test_a_disk_image_carrying_no_viewer_is_refused_and_still_detached(
+    tmp_path, downloads, monkeypatch
+):
+    commands = []
+
+    def run(command, cwd=None):
+        commands.append(list(command))
+
+    monkeypatch.setattr(bundled.payload, "run", run)
+
+    with pytest.raises(SystemExit) as refused:
+        bundled.stage_darwin_binaries(tmp_path / "Contents")
+
+    assert "RustDesk.app" in str(refused.value)
+    assert [command[1] for command in commands] == ["attach", "detach"]
+
+
 def test_an_archive_carrying_no_binary_is_refused(tmp_path, monkeypatch):
     def fetch(url, digest, what):
         return _tarball("something-else")
@@ -208,6 +290,7 @@ def test_an_archive_carrying_no_binary_is_refused(tmp_path, monkeypatch):
 def test_the_install_paths_are_the_ones_the_runtime_resolver_reads():
     """The build and ``neutrino_client.bundled`` name the same two paths."""
     from neutrino_client.constants import (
+        CLIENT_BUNDLED_PATHS_DARWIN,
         CLIENT_BUNDLED_PATHS_LINUX,
         CLIENT_BUNDLED_PATHS_WINDOWS,
         CLIENT_INSTALL_PREFIX_LINUX,
@@ -223,4 +306,11 @@ def test_the_install_paths_are_the_ones_the_runtime_resolver_reads():
     )
     assert CLIENT_BUNDLED_PATHS_WINDOWS["rustdesk"] == (
         f"bin\\{bundled.RUSTDESK_WINDOWS_BINARY_NAME}"
+    )
+    assert CLIENT_BUNDLED_PATHS_DARWIN["cc-switch"] == (
+        f"{bundled.DARWIN_RESOURCES_DIR}/{bundled.CC_SWITCH_INSTALL_PATH}"
+    )
+    assert CLIENT_BUNDLED_PATHS_DARWIN["rustdesk"] == (
+        f"{bundled.DARWIN_RESOURCES_DIR}/{bundled.RUSTDESK_INSTALL_DIR}/"
+        f"{bundled.RUSTDESK_APP_NAME}/{bundled.RUSTDESK_APP_BINARY}"
     )

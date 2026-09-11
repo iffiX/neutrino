@@ -74,6 +74,9 @@ CLIENT_CODE_WORDS = {
         "the window needs WebKitGTK; install it: sudo apt install {packages}"
     ),
     "gui_webview2_missing": "the window needs {runtime}; install it and try again",
+    "gui_wkwebview_missing": (
+        "the window needs pyobjc; install it: pip install {packages}"
+    ),
     "unknown_request": "the client does not know this request",
 }
 

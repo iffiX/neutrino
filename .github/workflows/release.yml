@@ -7,11 +7,6 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
-    inputs:
-      windows:
-        description: "also build the Windows installer (not part of a release yet)"
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -76,9 +71,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # The agent's packages carry an interpreter and compile the window's
-      # bindings, so each is built in a container of its family — and for
-      # arm64 that container runs under emulation on an x86-64 runner.
+      # The agent's packages carry an interpreter and unpack the RustDesk
+      # host for their machine, so each is built in a container of its
+      # family — and for arm64 that container runs under emulation on an
+      # x86-64 runner.
       - uses: docker/setup-qemu-action@v4
         if: matrix.architecture != 'amd64'
 
@@ -90,89 +86,143 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: agent_packages_${{ matrix.architecture }}
+          name: agent_${{ matrix.architecture }}
           path: |
             dist/*.deb
             dist/*.rpm
             dist/*.pkg.tar.zst
           if-no-files-found: error
 
-  # Not on a tag: a release is Linux until the installer has been walked on
-  # real Windows, and this job has yet to run on a runner at all. A manual
-  # run asks for it by name.
-  agent_windows:
-    name: agent installer (Windows)
-    if: github.event_name == 'workflow_dispatch' && inputs.windows
+  # The client is compiled, so each package is built on a machine of its own
+  # architecture: Nuitka under emulation is hours, and the arm runners are
+  # native.
+  client:
+    name: client .deb and .rpm (${{ matrix.architecture }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            runner: ubuntu-24.04
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+
+      - run: >
+          python3 packaging/build_release.py
+          --only client
+          --architecture ${{ matrix.architecture }}
+          --output-dir dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: client_${{ matrix.architecture }}
+          path: |
+            dist/*.deb
+            dist/*.rpm
+          if-no-files-found: error
+
+  # x64 only: cc-switch upstream publishes no Windows arm64 build, so there
+  # is nothing to carry for that machine.
+  client_windows:
+    name: client installer (Windows x64)
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v7
 
-      # WiX is a dotnet tool rather than part of the image.
-      - run: dotnet tool install --global wix
+      # The interpreter the client is compiled against; build_msi.py refuses
+      # any other minor.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
 
-      - run: python agent/packaging/build_msi.py --output-dir dist --architecture x64
+      # WiX is a dotnet tool rather than part of the image, and the two
+      # extensions the source loads are added beside it.
+      - run: dotnet tool install --global wix --version 6.0.2
+      - run: wix extension add -g WixToolset.Util.wixext/6.0.2
+      - run: wix extension add -g WixToolset.UI.wixext/6.0.2
 
-      # Built here too, and only built: nothing on an x86-64 runner can
-      # install it.
-      - run: python agent/packaging/build_msi.py --output-dir dist --architecture arm64
+      - run: python client/packaging/build_msi.py --output-dir dist --architecture x64
 
       # The installer is what ships, so it is run here rather than only
-      # compiled: whether the service registers and starts, whether the
-      # bundled interpreter finds the agent beside it, and whether
-      # uninstalling cleans up.
+      # compiled: whether the compiled client answers, whether the entry
+      # lands on PATH, and whether uninstalling takes the prefix whole.
       - name: Install it, use it, remove it
         shell: pwsh
         run: |
-          # A native command exiting non-zero is a value to test here, not an
-          # error to stop on: the agent reports an unenrolled machine that way.
           $ErrorActionPreference = 'Continue'
           $PSNativeCommandUseErrorActionPreference = $false
-
-          $msi = (Get-ChildItem dist\*-windows-amd64.msi)[0].FullName
+          $msi = (Get-ChildItem dist\*.msi)[0].FullName
           Start-Process msiexec -Wait -ArgumentList '/i',$msi,'/quiet','/norestart'
-
-          # A service that registers but cannot answer its manager reads as
-          # start-pending and then dies, so the state is the assertion.
-          $service = Get-CimInstance Win32_Service -Filter "Name='NeutrinoAgent'"
-          $service | Format-List Name, State, StartMode, PathName
-          if ($service.State -ne 'Running') {
-            throw "the service is $($service.State)"
-          }
-          if ($service.PathName -notlike '*run --windows-service*') {
-            throw "the service runs $($service.PathName)"
-          }
-
-          # Unenrolled, status says so and exits 1. Reaching that message
-          # means the bundled interpreter imported the agent beside it.
-          & "$env:ProgramFiles\Neutrino Agent\nagent.cmd" status
-          if ($LASTEXITCODE -ne 1) {
-            throw "nagent status exited $LASTEXITCODE, expected 1"
-          }
-
+          $nclient = "$env:ProgramFiles\Neutrino Client\nclient.exe"
+          if (-not (Test-Path $nclient)) { throw "no nclient.exe under Program Files" }
+          $version = & $nclient --version
+          if ($LASTEXITCODE -ne 0) { throw "nclient --version exited $LASTEXITCODE" }
+          Write-Host "nclient $version"
+          # Unbound, status says so and exits 1.
+          & $nclient status
+          if ($LASTEXITCODE -ne 1) { throw "nclient status exited $LASTEXITCODE, expected 1" }
+          $path = [Environment]::GetEnvironmentVariable('PATH', 'Machine')
+          if ($path -notlike '*Neutrino Client*') { throw 'the install is not on PATH' }
           Start-Process msiexec -Wait -ArgumentList '/x',$msi,'/quiet','/norestart'
-
-          if (Get-Service -Name 'NeutrinoAgent' -ErrorAction SilentlyContinue) {
-            throw 'the service outlived the uninstaller'
-          }
-
+          if (Test-Path "$env:ProgramFiles\Neutrino Client") { throw 'the prefix outlived the uninstaller' }
           exit 0
 
       - uses: actions/upload-artifact@v7
         with:
-          name: agent_windows
+          name: client_windows_x64
           path: dist/*.msi
+          if-no-files-found: error
+
+  # Apple silicon, which is what GitHub's macOS runners are.
+  client_macos:
+    name: client installer (macOS arm64)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - run: python3 client/packaging/build_pkg.py --output-dir dist --architecture arm64
+
+      - name: Install it, use it
+        run: |
+          set -e
+          sudo installer -pkg dist/*.pkg -target /
+          /usr/local/bin/nclient --version
+          # Unbound, status says so and exits 1.
+          if /usr/local/bin/nclient status; then echo "expected exit 1"; exit 1; fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: client_macos_arm64
+          path: dist/*.pkg
+          if-no-files-found: error
+
+  # One source archive: this tree at the commit, with the source of what the
+  # packages carry under copyleft beside it, at the tags the binaries were
+  # built from.
+  sources:
+    name: source archive
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - run: python3 packaging/build_release.py --only sources --output-dir dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sources
+          path: dist/*-source.tar.gz
           if-no-files-found: error
 
   draft:
     name: checksums and draft release
-    needs: [hub, agent, agent_windows]
-    # The Windows job is skipped on a tag, and a skipped need must not
-    # skip the release with it.
-    if: >-
-      always()
-      && needs.hub.result == 'success'
-      && needs.agent.result == 'success'
-      && (needs.agent_windows.result == 'success' || needs.agent_windows.result == 'skipped')
+    needs: [hub, agent, client, client_windows, client_macos, sources]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7

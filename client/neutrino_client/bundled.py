@@ -1,14 +1,17 @@
 """Where the binaries the client carries are installed.
 
 The packages put cc-switch and the RustDesk viewer beside the client: under
-``/opt/neutrino_client`` on Linux, next to the package on Windows. A
-checkout carries neither, and asking for one there is a typed refusal.
+``/opt/neutrino_client`` on Linux, next to the package on Windows, under
+the app bundle's ``Contents/Resources`` on macOS. A checkout carries
+neither, and asking for one there is a typed refusal.
 """
 
 import os
 import pathlib
+import sys
 
 from neutrino_client.constants import (
+    CLIENT_BUNDLED_PATHS_DARWIN,
     CLIENT_BUNDLED_PATHS_LINUX,
     CLIENT_BUNDLED_PATHS_WINDOWS,
     CLIENT_INSTALL_PREFIX_LINUX,
@@ -41,6 +44,9 @@ def bundled_path(binary: str) -> str:
     if os.name == "nt":
         relative = CLIENT_BUNDLED_PATHS_WINDOWS.get(binary, "")
         root = _PACKAGE_DIR.parent
+    elif sys.platform == "darwin":
+        relative = CLIENT_BUNDLED_PATHS_DARWIN.get(binary, "")
+        root = _PACKAGE_DIR.parent.parent
     else:
         relative = CLIENT_BUNDLED_PATHS_LINUX.get(binary, "")
         root = pathlib.Path(CLIENT_INSTALL_PREFIX_LINUX)

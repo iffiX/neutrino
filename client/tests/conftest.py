@@ -18,6 +18,7 @@ import pytest
 
 import neutrino_client.core.enrollment as enrollment
 from neutrino_client.platforms.base import ClientPlatform
+from neutrino_client.platforms.darwin import DarwinPlatform
 from neutrino_client.platforms.linux import LinuxPlatform
 from neutrino_client.platforms.windows import WindowsPlatform
 
@@ -86,7 +87,12 @@ def _isolated_person_paths(tmp_path, monkeypatch):
     def redirected(self) -> str:
         return config_dir
 
-    for platform_class in (ClientPlatform, LinuxPlatform, WindowsPlatform):
+    for platform_class in (
+        ClientPlatform,
+        DarwinPlatform,
+        LinuxPlatform,
+        WindowsPlatform,
+    ):
         monkeypatch.setattr(platform_class, "config_dir", redirected)
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime_dir))
     monkeypatch.setenv("HOME", str(tmp_path / "home"))

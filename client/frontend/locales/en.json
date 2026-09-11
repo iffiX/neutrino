@@ -17,6 +17,7 @@
   "code.fs_refused": "this account may not use that folder",
   "code.gui_webkitgtk_missing": "the window needs WebKitGTK; install it: sudo apt install {packages}",
   "code.gui_webview2_missing": "the window needs {runtime}; install it and try again",
+  "code.gui_wkwebview_missing": "the window needs pyobjc; install it: pip install {packages}",
   "code.hub_refused": "the hub refused this client's token",
   "code.hub_reply_unreadable": "the hub sent a reply this client could not read",
   "code.hub_unreachable": "the hub cannot be reached",

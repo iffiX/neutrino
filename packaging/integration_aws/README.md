@@ -1,9 +1,10 @@
 # Integration on AWS
 
 The platforms the pipeline VM on xenode cannot carry, driven on rented
-machines: a Windows Server building the installer and joining a Linux hub as
-a device, and a Mac doing the same for the pkg. Nothing here runs in CI; every
-script bills by the hour while it runs, and `down.sh` is the last word.
+machines: a Windows Server building the client's installer and joining a
+Linux hub as a person, and a Mac doing the same for the pkg. Nothing here
+runs in CI; every script bills by the hour while it runs, and `down.sh` is
+the last word.
 
 ## What is here
 
@@ -18,18 +19,18 @@ drive it from here.
 | `down.sh` | here | Terminates it all, releases any host, deletes the group and the keys, then prints `status.sh`. |
 | `linux/push_hub.sh` | here | Installs the hub deb, sets it up as a `server`, mints an enrollment link. |
 | `linux/hub_install.sh` | the hub | What `push_hub.sh` runs there. |
-| `windows/push.sh` | here | Toolchain, the tracked tree, `build_msi.py` for both architectures, the installers fetched into `dist/`. |
+| `windows/push.sh` | here | Toolchain, the tracked tree, `build_msi.py` for x64, the installer fetched into `dist/`. |
 | `windows/user_data.ps1` | Windows, first boot | OpenSSH keyed to the harness. |
-| `windows/toolchain.ps1` | Windows | Python, the .NET SDK, WiX at the release workflow's pin. |
+| `windows/toolchain.ps1` | Windows | The Python the client is compiled against, the .NET SDK, WiX and its two extensions at the release workflow's pin. |
 | `windows/build.ps1` | Windows | The build. |
-| `windows/test.sh` | here | Mints a link this minute, installs the msi, joins the hub, checks both ends: the agent's own status and the hub's device list. |
-| `windows/test.ps1` | Windows | What `test.sh` runs there: remove a previous install, install, leave any earlier binding, join, heartbeat. |
+| `windows/test.sh` | here | Mints a client link this minute, installs the msi, joins the hub, runs the resident, checks both ends: the client's own status and the hub's client list. |
+| `windows/test.ps1` | Windows | What `test.sh` runs there: remove a previous install, install, leave any earlier binding, join, run the resident, connected. |
 | `macos/up.sh` | here | Allocates a dedicated host and boots macOS on it. Its own script because allocating bills 24 hours the moment it happens. |
 | `macos/push.sh` | here | Toolchain, the tracked tree, `build_pkg.py`, the pkg fetched into `dist/`. |
-| `macos/toolchain.sh` | the Mac | A Python new enough for the build scripts; the image already carries the command line tools and Homebrew. |
+| `macos/toolchain.sh` | the Mac | The Python the client is compiled against; the image already carries the command line tools and Homebrew. |
 | `macos/build.sh` | the Mac | The build. |
-| `macos/test.sh` | here | Mints a link, installs the pkg, joins the hub, checks both ends. |
-| `macos/test_remote.sh` | the Mac | What `test.sh` runs there: install, the LaunchDaemon, leave any earlier binding, join, heartbeat. |
+| `macos/test.sh` | here | Mints a client link, installs the pkg, joins the hub, runs the resident, checks both ends. |
+| `macos/test_remote.sh` | the Mac | What `test.sh` runs there: install, leave any earlier binding, join, run the resident, connected. |
 
 `state/` holds the keys, the ids, the addresses, the panel password and the
 link. It is gitignored and belongs to one run. There are two keys because
@@ -64,7 +65,7 @@ licence.
 | --- | --- | --- | --- |
 | Hub | `t3.medium` | $0.0416 | under a dollar |
 | Windows | `t3.xlarge` | about $0.25 | about two dollars |
-| Mac | `mac-m4.metal` on a dedicated host | about $1.23 | **$29.52, because a host is billed for 24 hours however briefly it is used** |
+| Mac | `mac2.metal` (M1) on a dedicated host | $0.65 | **$15.60, because a host is billed for 24 hours however briefly it is used** |
 
 The Mac is the whole budget. It is allocated last, once the Windows walk has
 passed, and released by `down.sh` like everything else; releasing early

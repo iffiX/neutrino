@@ -1,7 +1,7 @@
 """One window seam, one shell per platform.
 
-Each shell embeds the platform's own web view, WebKitGTK on Linux and
-WebView2 on Windows, loads the page, registers the message handler the
+Each shell embeds the platform's own web view, WebKitGTK on Linux,
+WebView2 on Windows and WKWebView on macOS, loads the page, registers the message handler the
 page's bridge adapter posts to, and puts an icon in the status area. The
 window is built in the language it is opened with; a language picked later
 reaches the page at once and the tray at the next start. The
@@ -79,4 +79,8 @@ def _shell_for(os_name: str):
         from neutrino_client.gui import webview2
 
         return webview2
+    if os_name == "darwin":
+        from neutrino_client.gui import wkwebview
+
+        return wkwebview
     return None

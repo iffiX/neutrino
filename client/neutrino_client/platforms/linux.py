@@ -15,14 +15,6 @@ import shutil
 import socket
 import struct
 import subprocess
-import time
-
-try:
-    import pty
-    import select
-except ImportError:  # Windows has no pseudo-terminal of this kind.
-    pty = None
-    select = None
 
 try:
     import pwd
@@ -40,7 +32,7 @@ from neutrino_client.exceptions import (
     PlatformUnsupportedError,
     ShareAttachError,
 )
-from neutrino_client.platforms.base import ClientPlatform, answer_on_prompt
+from neutrino_client.platforms.base import ClientPlatform, run_on_pty
 
 CIFS_HELPER = "mount.cifs"
 CIFS_MOUNT_TIMEOUT_S = 120
@@ -189,40 +181,7 @@ class LinuxPlatform(ClientPlatform):
         Raises:
             PlatformUnsupportedError: Where this interpreter has no pty.
         """
-        if pty is None or select is None:
-            raise PlatformUnsupportedError("no pseudo-terminal on this platform")
-        pid, fd = pty.fork()
-        if pid == 0:
-            try:
-                os.execvp(argv[0], argv)
-            finally:
-                os._exit(127)
-
-        def read(wait_s: float):
-            ready, _, _ = select.select([fd], [], [], wait_s)
-            if not ready:
-                return None
-            try:
-                return os.read(fd, 4096)
-            except OSError:
-                # Linux answers EIO once the other side has gone: the end.
-                return b""
-
-        def write(data: bytes) -> None:
-            os.write(fd, data)
-
-        try:
-            output = answer_on_prompt(
-                read,
-                write,
-                prompt=prompt,
-                answer=answer,
-                deadline=time.monotonic() + timeout_s,
-            )
-        finally:
-            os.close(fd)
-        _, status = os.waitpid(pid, 0)
-        return os.waitstatus_to_exitcode(status), output.decode("utf-8", "replace")
+        return run_on_pty(argv, prompt=prompt, answer=answer, timeout_s=timeout_s)
 
     def _run_helper(self, arguments: list, *, failure_code: str) -> None:
         """Run the root helper under ``pkexec`` and judge its exit status.
