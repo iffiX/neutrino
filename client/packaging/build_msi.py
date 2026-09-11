@@ -8,12 +8,17 @@ embeddable build, pinned by hash, with the window's whole Python side
 vendored beside it.
 
 The client is a person's application, not a service and not an autostart: it
-runs when the person opens it. The installer puts a Start menu shortcut and
-adds the install to PATH so ``nclient`` works in a terminal.
+runs when the person opens it. The installer puts a Start menu shortcut down
+and asks two questions: whether the command belongs on PATH, and, when it is
+taking the client away again, whether the person's own configuration goes
+with it. Answered by nobody, the first is yes and the second is no, so a
+silent install is usable from a terminal and a silent removal leaves a
+binding behind rather than losing one.
 
 The client's services last only as long as it runs, so an upgrade or a
-removal asks the resident to quit before it takes its files, and an uninstall
-takes the person's own configuration with it.
+removal asks the resident to quit before it takes its files. That quit runs
+through the Util extension's quiet exec, which opens no console window for
+it.
 
 WebView2 is the one thing the machine may still lack. Windows 11 and any
 updated Windows 10 carry the Evergreen runtime; LTSC and Server editions do
@@ -166,16 +171,20 @@ WEBVIEW2_REGISTRY_KEY = rf"SOFTWARE\Microsoft\EdgeUpdate\Clients\{WEBVIEW2_CLIEN
 # under the carried interpreter, so that is the name an install must close.
 RESIDENT_IMAGE = "pythonw.exe"
 
-# How long a resident gets to release its services and exit before the close
-# below ends it.
-RESIDENT_QUIT_TIMEOUT_MS = 10000
+# The person's own configuration, named the way the runtime names it. The
+# installer never writes here; it only offers to take it away at the end.
+CLIENT_CONFIG_DIR_NAME = "Neutrino Client"
 
-# Where this person's own configuration lives, and where the installer
-# remembers that path so an uninstall can find it again. The folder is the
-# runtime's own; the key is the installer's.
-
-# The extension CloseApplication comes from, at the version this WiX loads.
+# The extensions this source needs, at the version this WiX loads: Util for
+# CloseApplication and the quiet exec, UI for the dialogs the two questions
+# are asked on.
 WIX_UTIL_EXTENSION = "WixToolset.Util.wixext/6.0.2"
+WIX_UI_EXTENSION = "WixToolset.UI.wixext/6.0.2"
+
+# The library the Util extension keeps its custom actions in, one per
+# machine. The removal below is declared against it rather than carrying a
+# program of its own.
+UTIL_LIBRARY = {"amd64": "Wix4UtilCA_X64", "arm64": "Wix4UtilCA_A64"}
 
 # The identity of the product across every version it ever ships as. Fixed:
 # changing it makes an upgrade install beside the old one instead of over it.
@@ -187,21 +196,42 @@ rem Run the client in a terminal, for `nclient status` and for reading errors.
 "%~dp0python\\python.exe" -m neutrino_client.cli.entry %*
 """
 
-# The quit, run as the person installing, and given a bounded wait: the
-# console wrapper is what carries the verb, and PowerShell is the one
-# interpreter every Windows has that can time a process out.
+# The quit, run as the person installing. Through the windowed interpreter
+# rather than the console one: an installer's custom action gets a console of
+# its own for a console program, and that console opens as a black window
+# over the wizard. The ask itself is bounded by the control socket's own
+# timeout, so nothing here has to time it out.
+#
+# `-B` because this one runs during a removal, after the files to take have
+# been counted: bytecode written now lands in a prefix on its way out, too
+# late to have been counted with it.
 QUIT_COMMAND = (
-    '"[SystemFolder]WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile '
-    '-Command "$resident = Start-Process -FilePath '
-    f"'[INSTALLFOLDER]{CONSOLE_WRAPPER_NAME}' -ArgumentList 'quit' "
-    "-WindowStyle Hidden -PassThru; "
-    f'$null = $resident.WaitForExit({RESIDENT_QUIT_TIMEOUT_MS})"'
+    '"[INSTALLFOLDER]python\\pythonw.exe" -B -m neutrino_client.cli.entry quit'
+)
+
+# When the configuration goes. Unticking the box clears the property, and a
+# silent removal may set it to anything; what it is never equal to then is
+# the one value that means keep. `NOT ISCONFIGKEPT` would not do: a property
+# set to "0" is a non-empty string, and the installer reads every non-empty
+# string as true.
+CONFIG_GOES_CONDITION = 'REMOVE~="ALL" AND ISCONFIGKEPT <> "1"'
+
+# The same reading for the entry on PATH: what a silent install says when it
+# wants none.
+PATH_DECLINED_CONDITION = 'ISPATHADDED <> "1"'
+
+# Taking the person's configuration away, when they said to. The path is
+# expanded while the installer still runs as them; the removal itself runs
+# without an account, so the expanded path travels to it as data.
+REMOVE_CONFIG_COMMAND = (
+    '"[SystemFolder]cmd.exe" /c ' f'rd /s /q "[AppDataFolder]{CLIENT_CONFIG_DIR_NAME}"'
 )
 
 # @NAME@ rather than str.format: the source is XML with braces of its own in
 # the property expressions.
 WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
      xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Package Name="Neutrino Client"
            Manufacturer="@PUBLISHER@"
@@ -212,6 +242,15 @@ WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
     <MajorUpgrade AllowSameVersionUpgrades="yes"
                   DowngradeErrorMessage="A newer Neutrino Client is already installed." />
     <MediaTemplate EmbedCab="yes" />
+
+    <!-- The two questions, and the answers nobody being there gives: a
+         silent install puts the command on PATH, and a silent removal keeps
+         the person's own configuration. -->
+    <Property Id="ISPATHADDED" Value="1" Secure="yes" />
+    <Property Id="ISCONFIGKEPT" Value="1" Secure="yes" />
+
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="@LICENSE_RTF@" />
 
     <!-- The client's services live only as long as the resident does, so it
          is asked to quit before its files are replaced or taken away. No
@@ -233,6 +272,16 @@ WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
                            Property="CLIENTWINDOWRUNNING" />
     <Icon Id="ClientIcon" SourceFile="@ICON@" />
     <Property Id="ARPPRODUCTICON" Value="ClientIcon" />
+
+    <!-- Read before costing, which is earlier than the prefix resolving, so
+         the removal above has a path at the moment it needs one. -->
+    <Property Id="NEUTRINOINSTALLDIR" Secure="yes">
+      <RegistrySearch Id="ClientInstallDir"
+                      Root="HKLM"
+                      Key="Software\Neutrino\Client"
+                      Name="InstallDir"
+                      Type="directory" />
+    </Property>
 
     <!-- The runtime records itself here; absent, the bootstrapper runs. -->
     <Property Id="WEBVIEW2INSTALLED" Secure="yes">
@@ -257,19 +306,20 @@ WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
               Name="@BOOTSTRAPPER_NAME@"
               KeyPath="yes" />
       </Component>
-      <Component Id="PathEntry" Guid="*">
-        <Environment Id="ClientPath"
-                     Name="PATH"
-                     Value="[INSTALLFOLDER]"
-                     Part="last"
-                     Action="set"
-                     System="yes" />
+      <!-- The prefix, whatever ended up in it. The carried interpreter
+           writes its bytecode beside the modules it runs, and a file the
+           install never laid down is one the uninstall does not know to
+           take; the path is recorded so the removal can still find it. -->
+      <Component Id="InstallFolderRecord" Guid="*">
         <RegistryValue Root="HKLM"
                        Key="Software\Neutrino\Client"
-                       Name="Path"
-                       Type="integer"
-                       Value="1"
+                       Name="InstallDir"
+                       Type="string"
+                       Value="[INSTALLFOLDER]"
                        KeyPath="yes" />
+        <util:RemoveFolderEx Id="PruneInstallFolder"
+                             On="uninstall"
+                             Property="NEUTRINOINSTALLDIR" />
       </Component>
       <Component Id="StartMenuShortcut" Guid="*">
         <Shortcut Id="ClientWindowShortcut"
@@ -289,12 +339,47 @@ WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
       </Component>
     </ComponentGroup>
 
+    <!-- Its own feature rather than a conditioned component: a feature's
+         state is what the installer remembers between putting the entry
+         there and taking it away again. -->
+    <ComponentGroup Id="PathOption" Directory="INSTALLFOLDER">
+      <Component Id="PathEntry" Guid="*">
+        <Environment Id="ClientPath"
+                     Name="PATH"
+                     Value="[INSTALLFOLDER]"
+                     Part="last"
+                     Action="set"
+                     System="yes" />
+        <RegistryValue Root="HKLM"
+                       Key="Software\Neutrino\Client"
+                       Name="Path"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
     <CustomAction Id="InstallWebView2"
                   FileRef="WebView2BootstrapperExe"
                   ExeCommand="/silent /install"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore" />
+
+    <!-- The configuration, when the person said to take it. The path is
+         expanded while the installer is still them; the removal runs with no
+         account at all, so the expanded path reaches it as data. -->
+    <CustomAction Id="SetRemoveClientConfig"
+                  Property="RemoveClientConfig"
+                  Value="@REMOVE_CONFIG_COMMAND@"
+                  Execute="immediate" />
+    <CustomAction Id="RemoveClientConfig"
+                  DllEntry="WixQuietExec"
+                  BinaryRef="@UTIL_LIBRARY@"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
     <InstallExecuteSequence>
       <!-- After costing, which resolves [INSTALLFOLDER], and before the
            extension's own close, which it schedules on InstallInitialize. -->
@@ -304,11 +389,111 @@ WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
       <Custom Action="InstallWebView2"
               After="InstallFiles"
               Condition="NOT WEBVIEW2INSTALLED AND NOT REMOVE" />
+      <Custom Action="SetRemoveClientConfig"
+              Before="RemoveClientConfig"
+              Condition="@CONFIG_GOES@" />
+      <Custom Action="RemoveClientConfig"
+              After="RemoveFiles"
+              Condition="@CONFIG_GOES@" />
     </InstallExecuteSequence>
 
-    <Feature Id="Main" Title="Neutrino Client" Level="1">
+    <Feature Id="Main" Title="Neutrino Client" Level="1" AllowAbsent="no">
       <ComponentGroupRef Id="Payload" />
     </Feature>
+    <Feature Id="PathFeature"
+             Title="Command line"
+             Description="Answer to nclient in a terminal"
+             Level="1">
+      <!-- The wizard drives this feature from its checkbox; the level is
+           what makes the same answer reachable from a silent install. -->
+      <Level Value="0" Condition="@PATH_DECLINED@" />
+      <ComponentGroupRef Id="PathOption" />
+    </Feature>
+
+    <UI>
+      <!-- Asked on the way in: whether the command belongs on PATH. -->
+      <Dialog Id="ClientOptionsDlg" Width="370" Height="270" Title="[ProductName] Setup">
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44"
+                 TabSkip="no" Text="!(loc.InstallDirDlgBannerBitmap)" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="230" Height="15"
+                 Transparent="yes" NoPrefix="yes"
+                 Text="{\WixUI_Font_Title}The command line" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="330" Height="15"
+                 Transparent="yes" NoPrefix="yes"
+                 Text="Whether a terminal on this machine answers to nclient." />
+        <Control Id="PathCheckBox" Type="CheckBox" X="20" Y="70" Width="330" Height="17"
+                 Property="ISPATHADDED" CheckBoxValue="1"
+                 Text="Add the Neutrino Client to PATH" />
+        <Control Id="PathNote" Type="Text" X="34" Y="90" Width="320" Height="40"
+                 NoPrefix="yes"
+                 Text="This changes the PATH every account on this machine reads. Without it the client still installs, opens and runs; only the nclient command goes unfound." />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17"
+                 Text="!(loc.WixUIBack)" />
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17"
+                 Default="yes" Text="!(loc.WixUINext)" />
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17"
+                 Cancel="yes" Text="!(loc.WixUICancel)" />
+      </Dialog>
+
+      <!-- Asked on the way out: whether the configuration stays behind. -->
+      <Dialog Id="ClientRemoveDlg" Width="370" Height="270" Title="[ProductName] Setup">
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44"
+                 TabSkip="no" Text="!(loc.InstallDirDlgBannerBitmap)" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="230" Height="15"
+                 Transparent="yes" NoPrefix="yes"
+                 Text="{\WixUI_Font_Title}Your configuration" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="330" Height="15"
+                 Transparent="yes" NoPrefix="yes"
+                 Text="What stays on this machine after the client is gone." />
+        <Control Id="ConfigCheckBox" Type="CheckBox" X="20" Y="70" Width="330" Height="17"
+                 Property="ISCONFIGKEPT" CheckBoxValue="1"
+                 Text="Keep my configuration" />
+        <Control Id="ConfigNote" Type="Text" X="34" Y="90" Width="320" Height="40"
+                 NoPrefix="yes"
+                 Text="The hub this machine is joined to and the preferences of the window, under %APPDATA%\Neutrino Client. Kept, installing the client again joins the same hub without a new link." />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17"
+                 Text="!(loc.WixUIBack)" />
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17"
+                 Default="yes" Text="!(loc.WixUINext)" />
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17"
+                 Cancel="yes" Text="!(loc.WixUICancel)" />
+      </Dialog>
+
+      <!-- Both dialogs are inserted into the set rather than replacing it, so
+           the orders here sit above the ones the set publishes itself. -->
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog"
+               Value="ClientOptionsDlg" Order="10" />
+      <Publish Dialog="ClientOptionsDlg" Control="Back" Event="NewDialog"
+               Value="InstallDirDlg" />
+      <Publish Dialog="ClientOptionsDlg" Control="Next" Event="AddLocal"
+               Value="PathFeature" Order="1" Condition="ISPATHADDED" />
+      <Publish Dialog="ClientOptionsDlg" Control="Next" Event="Remove"
+               Value="PathFeature" Order="1" Condition="NOT ISPATHADDED" />
+      <Publish Dialog="ClientOptionsDlg" Control="Next" Event="NewDialog"
+               Value="VerifyReadyDlg" Order="2" />
+      <Publish Dialog="ClientOptionsDlg" Control="Cancel" Event="SpawnDialog"
+               Value="CancelDlg" />
+
+      <Publish Dialog="MaintenanceTypeDlg" Control="RemoveButton" Event="NewDialog"
+               Value="ClientRemoveDlg" Order="10" />
+      <Publish Dialog="ClientRemoveDlg" Control="Back" Event="NewDialog"
+               Value="MaintenanceTypeDlg" />
+      <Publish Dialog="ClientRemoveDlg" Control="Next" Event="NewDialog"
+               Value="VerifyReadyDlg" />
+      <Publish Dialog="ClientRemoveDlg" Control="Cancel" Event="SpawnDialog"
+               Value="CancelDlg" />
+
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog"
+               Value="ClientOptionsDlg" Order="10"
+               Condition="WixUI_InstallMode = &quot;InstallCustom&quot;" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog"
+               Value="ClientRemoveDlg" Order="11"
+               Condition="WixUI_InstallMode = &quot;Remove&quot;" />
+    </UI>
   </Package>
 </Wix>
 """
@@ -349,7 +534,9 @@ def main() -> int:
         root = Path(workdir)
         staged = _lay_out(root, version, machine, arguments.architecture)
         source = root / "neutrino_client.wxs"
-        source.write_text(_wix_source(staged, version, arguments.publisher), "utf-8")
+        source.write_text(
+            _wix_source(staged, version, arguments.publisher, machine), "utf-8"
+        )
         if arguments.stage_only:
             print(f"staged {staged['payload']} and {source}")
             return 0
@@ -361,13 +548,15 @@ def main() -> int:
     return 0
 
 
-def _wix_source(staged: dict, version: str, publisher: str) -> str:
+def _wix_source(staged: dict, version: str, publisher: str, machine: str) -> str:
     """The installer's source with every value filled in.
 
     Args:
         staged: What :func:`_lay_out` wrote.
         version: The version being packaged.
         publisher: The Manufacturer field's value.
+        machine: ``amd64`` or ``arm64``, which picks the extension's own
+            pieces.
 
     Returns:
         The .wxs document.
@@ -385,7 +574,12 @@ def _wix_source(staged: dict, version: str, publisher: str) -> str:
         .replace("@ICON@", str(staged["icon"]))
         .replace("@WEBVIEW2_KEY@", WEBVIEW2_REGISTRY_KEY)
         .replace("@RESIDENT_IMAGE@", RESIDENT_IMAGE)
+        .replace("@LICENSE_RTF@", str(staged["license"]))
+        .replace("@UTIL_LIBRARY@", UTIL_LIBRARY[machine])
         .replace("@QUIT_COMMAND@", _attribute_text(QUIT_COMMAND))
+        .replace("@REMOVE_CONFIG_COMMAND@", _attribute_text(REMOVE_CONFIG_COMMAND))
+        .replace("@CONFIG_GOES@", _attribute_text(CONFIG_GOES_CONDITION))
+        .replace("@PATH_DECLINED@", _attribute_text(PATH_DECLINED_CONDITION))
     )
 
 
@@ -405,7 +599,7 @@ def _lay_out(root: Path, version: str, machine: str, architecture: str) -> dict:
 
     Returns:
         The paths the installer's source names: the payload directory, the
-        bootstrapper and the icon.
+        bootstrapper, the icon and the licence the first page shows.
     """
     installed = root / "payload"
     python_dir = installed / "python"
@@ -440,7 +634,45 @@ def _lay_out(root: Path, version: str, machine: str, architecture: str) -> dict:
     bootstrapper = root / WEBVIEW2_BOOTSTRAPPER_NAME
     bootstrapper.write_bytes(_fetch_bootstrapper())
     icon = icons.write_ico(root / "neutrino_client.ico")
-    return {"payload": installed, "bootstrapper": bootstrapper, "icon": icon}
+    license_rtf = _write_license_rtf(root / "license.rtf")
+    return {
+        "payload": installed,
+        "bootstrapper": bootstrapper,
+        "icon": icon,
+        "license": license_rtf,
+    }
+
+
+def _write_license_rtf(target: Path) -> Path:
+    """Write the project's licence as the rich text the first page reads.
+
+    The wizard's licence control takes RTF and nothing else, and the licence
+    in the checkout is plain text, so the one in the repository stays the
+    only copy and this is its wrapper.
+
+    Args:
+        target: Where to write it.
+
+    Returns:
+        The path written.
+
+    Raises:
+        SystemExit: When the checkout has no licence to show.
+    """
+    source = REPO_ROOT / "LICENSE"
+    if not source.is_file():
+        raise SystemExit(f"the installer shows a licence and there is none at {source}")
+    body = source.read_text(encoding="utf-8")
+    for character, escaped in (("\\", "\\\\"), ("{", "\\{"), ("}", "\\}")):
+        body = body.replace(character, escaped)
+    paragraphs = "\\par\n".join(body.splitlines())
+    target.write_text(
+        "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil\\fcharset0 Segoe UI;}}\n"
+        "\\fs18\n" + paragraphs + "\n}\n",
+        encoding="ascii",
+        errors="replace",
+    )
+    return target
 
 
 def _stage_licenses(installed: Path) -> None:
@@ -535,7 +767,8 @@ def _build(source: Path, target: Path, machine: str) -> None:
         raise SystemExit(
             "WiX is needed to build the Windows installer: "
             "dotnet tool install --global wix --version 6.0.2 && "
-            f"wix extension add -g {WIX_UTIL_EXTENSION}"
+            f"wix extension add -g {WIX_UTIL_EXTENSION} && "
+            f"wix extension add -g {WIX_UI_EXTENSION}"
         )
     result = subprocess.run(
         [
@@ -545,6 +778,8 @@ def _build(source: Path, target: Path, machine: str) -> None:
             MSI_PLATFORMS[machine],
             "-ext",
             WIX_UTIL_EXTENSION,
+            "-ext",
+            WIX_UI_EXTENSION,
             "-out",
             str(target),
             str(source),

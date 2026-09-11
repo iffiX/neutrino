@@ -2,10 +2,11 @@
 
 wix is not run here — it needs Windows and the .NET tool — so what is
 asserted is the document the build writes: a product identity of its own, no
-service, no autostart Run entry, the PATH entry, the shortcut, the quit that
-comes before anything ends a resident, the person's configuration going with
-the uninstall, and the bootstrapper chained only where the runtime's key is
-absent. The payload's own laying out is checked with the downloads faked.
+service, no autostart Run entry, the shortcut, the quit that comes before
+anything ends a resident and opens no window doing it, the two questions and
+what they answer to unasked, and the bootstrapper chained only where the
+runtime's key is absent. The payload's own laying out is checked with the
+downloads faked.
 """
 
 import xml.etree.ElementTree
@@ -30,8 +31,11 @@ def source():
         "payload": "C:\\build\\payload",
         "bootstrapper": "C:\\build\\MicrosoftEdgeWebview2Setup.exe",
         "icon": "C:\\build\\neutrino_client.ico",
+        "license": "C:\\build\\license.rtf",
     }
-    return build_msi._wix_source(staged, "9.9.9", "iffiX <someone@example.com>")
+    return build_msi._wix_source(
+        staged, "9.9.9", "iffiX <someone@example.com>", "amd64"
+    )
 
 
 def test_the_installer_has_a_product_identity_of_its_own(source):
@@ -78,13 +82,25 @@ def test_a_running_resident_is_asked_to_quit_before_anything_ends_it(source):
 
     assert len(quits) == 1
     command = quits[0].get("ExeCommand")
-    assert build_msi.CONSOLE_WRAPPER_NAME in command
-    assert "'quit'" in command
-    assert str(build_msi.RESIDENT_QUIT_TIMEOUT_MS) in command
+    assert command.endswith("quit")
     assert quits[0].get("Directory") == "INSTALLFOLDER"
     assert quits[0].get("Execute") == "immediate"
     # No resident to answer is not a failed install.
     assert quits[0].get("Return") == "ignore"
+
+
+def test_the_quit_writes_no_bytecode_into_a_prefix_on_its_way_out(source):
+    """The removal counts what it will take before this runs, so anything
+    written now is left behind."""
+    assert " -B " in build_msi.QUIT_COMMAND
+
+
+def test_the_quit_opens_no_console_window_over_the_wizard(source):
+    """A custom action running a console program is given a console, and it
+    opens over the wizard; the windowed interpreter is given none."""
+    assert "pythonw.exe" in build_msi.QUIT_COMMAND
+    assert "powershell" not in build_msi.QUIT_COMMAND.lower()
+    assert build_msi.CONSOLE_WRAPPER_NAME not in build_msi.QUIT_COMMAND
 
 
 def test_the_quit_runs_before_the_close_that_ends_what_did_not_answer(source):
@@ -102,18 +118,93 @@ def test_the_quit_runs_before_the_close_that_ends_what_did_not_answer(source):
     assert list(root.iter(UTIL + "CloseApplication"))
 
 
-def test_an_uninstall_leaves_the_persons_own_configuration_in_place(source):
-    """Uninstalling is a remove, not a purge: the binding and the preferences
-    stay for the next install."""
+def test_an_uninstall_keeps_the_persons_own_configuration_unless_asked(source):
+    """Uninstalling is a remove, not a purge, and the answer nobody gives is
+    the one that keeps a binding rather than losing it."""
     root = xml.etree.ElementTree.fromstring(source)
+    kept = [
+        setting
+        for setting in root.iter(WXS + "Property")
+        if setting.get("Id") == "ISCONFIGKEPT"
+    ]
 
-    assert list(root.iter(UTIL + "RemoveFolderEx")) == []
-    assert "AppDataFolder" not in source
+    assert len(kept) == 1
+    assert kept[0].get("Value") == "1"
+    removals = [
+        custom
+        for custom in root.iter(WXS + "Custom")
+        if custom.get("Action") == "RemoveClientConfig"
+    ]
+    assert len(removals) == 1
+    assert removals[0].get("Condition") == build_msi.CONFIG_GOES_CONDITION
+    assert 'REMOVE~="ALL"' in build_msi.CONFIG_GOES_CONDITION
 
 
-def test_the_build_loads_the_extension_that_element_comes_from():
+def test_a_kept_configuration_is_the_one_value_rather_than_a_true_reading():
+    """A property set to "0" is a non-empty string, which the installer reads
+    as true, so `NOT ISCONFIGKEPT` would take a configuration that was asked
+    to stay."""
+    assert 'ISCONFIGKEPT <> "1"' in build_msi.CONFIG_GOES_CONDITION
+    assert "NOT ISCONFIGKEPT" not in build_msi.CONFIG_GOES_CONDITION
+
+
+def test_the_person_is_asked_before_their_configuration_goes(source):
+    """A checkbox on a dialog of the removal's own, and the path it names."""
+    root = xml.etree.ElementTree.fromstring(source)
+    dialogs = {dialog.get("Id"): dialog for dialog in root.iter(WXS + "Dialog")}
+
+    assert "ClientRemoveDlg" in dialogs
+    boxes = [
+        control
+        for control in dialogs["ClientRemoveDlg"].iter(WXS + "Control")
+        if control.get("Type") == "CheckBox"
+    ]
+    assert [box.get("Property") for box in boxes] == ["ISCONFIGKEPT"]
+    assert build_msi.CLIENT_CONFIG_DIR_NAME in build_msi.REMOVE_CONFIG_COMMAND
+    assert "AppDataFolder" in build_msi.REMOVE_CONFIG_COMMAND
+
+
+def test_the_removal_runs_with_no_account_and_is_handed_the_path(source):
+    """[AppDataFolder] is the installing person's while the installer is
+    still them, so the expanded command travels as data to the deferred
+    half."""
+    root = xml.etree.ElementTree.fromstring(source)
+    actions = {
+        action.get("Id"): action
+        for action in root.iter(WXS + "CustomAction")
+        if action.get("Id") in ("SetRemoveClientConfig", "RemoveClientConfig")
+    }
+
+    assert actions["SetRemoveClientConfig"].get("Property") == "RemoveClientConfig"
+    assert actions["SetRemoveClientConfig"].get("Execute") == "immediate"
+    assert actions["RemoveClientConfig"].get("Execute") == "deferred"
+    assert actions["RemoveClientConfig"].get("Impersonate") == "no"
+    assert actions["RemoveClientConfig"].get("Return") == "ignore"
+
+
+def test_the_build_loads_the_extensions_those_elements_come_from():
     assert build_msi.WIX_UTIL_EXTENSION.startswith("WixToolset.Util.wixext/")
+    assert build_msi.WIX_UI_EXTENSION.startswith("WixToolset.UI.wixext/")
     assert "wix extension add" in build_msi.__doc__
+
+
+def test_the_prefix_goes_whole_including_what_the_install_never_laid_down(source):
+    """The carried interpreter writes bytecode beside the modules it runs,
+    and a file the installer did not track is one it would otherwise leave
+    in Program Files."""
+    root = xml.etree.ElementTree.fromstring(source)
+    prunes = list(root.iter(UTIL + "RemoveFolderEx"))
+
+    assert len(prunes) == 1
+    assert prunes[0].get("On") == "uninstall"
+    assert prunes[0].get("Property") == "NEUTRINOINSTALLDIR"
+    searches = [
+        setting
+        for setting in root.iter(WXS + "Property")
+        if setting.get("Id") == "NEUTRINOINSTALLDIR"
+    ]
+    assert len(searches) == 1
+    assert list(searches[0].iter(WXS + "RegistrySearch"))[0].get("Type") == "directory"
 
 
 def test_the_installer_registers_no_autostart(source):
@@ -123,11 +214,66 @@ def test_the_installer_registers_no_autostart(source):
     assert not hasattr(build_msi, "RUN_ENTRY_VALUE")
 
 
-def test_the_install_goes_on_the_path(source):
+def test_the_install_goes_on_the_path_when_it_is_asked_for(source):
     assert '<Environment Id="ClientPath"' in source
     assert 'Name="PATH"' in source
     assert 'Value="[INSTALLFOLDER]"' in source
     assert 'System="yes"' in source
+    root = xml.etree.ElementTree.fromstring(source)
+    asked = [
+        setting
+        for setting in root.iter(WXS + "Property")
+        if setting.get("Id") == "ISPATHADDED"
+    ]
+    assert len(asked) == 1
+    assert asked[0].get("Value") == "1"
+
+
+def test_the_path_entry_is_a_feature_so_its_answer_outlives_the_install(source):
+    """A component's condition is read again at uninstall, where the answer
+    is gone; a feature's state is what the installer itself remembers."""
+    root = xml.etree.ElementTree.fromstring(source)
+    features = {feature.get("Id"): feature for feature in root.iter(WXS + "Feature")}
+
+    assert "PathFeature" in features
+    groups = [
+        reference.get("Id")
+        for reference in features["PathFeature"].iter(WXS + "ComponentGroupRef")
+    ]
+    assert groups == ["PathOption"]
+    events = {
+        publish.get("Event")
+        for publish in root.iter(WXS + "Publish")
+        if publish.get("Dialog") == "ClientOptionsDlg"
+        and publish.get("Value") == "PathFeature"
+    }
+    assert events == {"AddLocal", "Remove"}
+
+
+def test_a_silent_install_can_decline_the_path_entry_too(source):
+    """The wizard drives the feature from its checkbox; a level condition is
+    what makes the same answer reachable with no wizard at all."""
+    root = xml.etree.ElementTree.fromstring(source)
+    features = {feature.get("Id"): feature for feature in root.iter(WXS + "Feature")}
+    levels = list(features["PathFeature"].iter(WXS + "Level"))
+
+    assert len(levels) == 1
+    assert levels[0].get("Value") == "0"
+    assert levels[0].get("Condition") == build_msi.PATH_DECLINED_CONDITION
+    assert 'ISPATHADDED <> "1"' in build_msi.PATH_DECLINED_CONDITION
+
+
+def test_the_person_is_asked_before_the_path_changes(source):
+    root = xml.etree.ElementTree.fromstring(source)
+    dialogs = {dialog.get("Id"): dialog for dialog in root.iter(WXS + "Dialog")}
+
+    assert "ClientOptionsDlg" in dialogs
+    boxes = [
+        control
+        for control in dialogs["ClientOptionsDlg"].iter(WXS + "Control")
+        if control.get("Type") == "CheckBox"
+    ]
+    assert [box.get("Property") for box in boxes] == ["ISPATHADDED"]
 
 
 def test_the_start_menu_shortcut_opens_the_window(source):

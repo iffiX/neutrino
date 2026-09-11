@@ -48,6 +48,11 @@ wix --version
 Write-Host "== WiX Util extension $wixVersion"
 wix extension add -g "WixToolset.Util.wixext/$wixVersion"
 
+# The wizard's own dialogs, which the two questions the installer asks are
+# inserted between.
+Write-Host "== WiX UI extension $wixVersion"
+wix extension add -g "WixToolset.UI.wixext/$wixVersion"
+
 # The next SSH session must find all of it too.
 $machinePath = [Environment]::GetEnvironmentVariable('PATH', 'Machine')
 foreach ($dir in @($pythonHome, "$pythonHome\Scripts", $dotnetHome, $toolsHome)) {
