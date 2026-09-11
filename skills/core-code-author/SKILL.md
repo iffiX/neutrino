@@ -116,8 +116,8 @@ conventions explicit so nobody drifts.
      is answerable for the change; one sentence of at most 30 words; no agent
      co-author trailers.
    - [agent_work_rule/release.md](agent_work_rule/release.md) — one tag builds
-     both packages; hub and agent share a version with no compatibility
-     window; changelog lines are `feature:` / `fix:` / `docs:` and nothing
+     all three packages; hub, agent and client share a version with no
+     compatibility window; changelog lines are `feature:` / `fix:` / `docs:` and nothing
      else; which file each platform installs.
 
 5. **Hygiene** — the anti-patterns to remove on sight.

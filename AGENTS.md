@@ -5,8 +5,8 @@ proxy routing (xray), a FastAPI + React control panel, NetBird remote access,
 an AI gateway (CLIProxyAPI), and Gitea, Samba, Podman and ZFS as modules. A
 device agent under `agent/` reconciles modules on managed LAN machines.
 
-Ships as two packages: `neutrino_hub` (this tree) and `neutrino_agent`
-(`agent/`).
+Ships as three packages: `neutrino_hub` (`hub/`), `neutrino_agent` (`agent/`)
+and `neutrino_client` (`client/`).
 
 Every agent working here — Claude Code, Codex, Cursor, or otherwise — follows
 the standard in [`skills/core-code-author/`](skills/core-code-author/SKILL.md). This file is the
@@ -39,8 +39,8 @@ and leave this pointing at it.**
 | [design/api.md](skills/core-code-author/design/api.md) | Adding or renaming a panel endpoint: `/api/<module>`, plural sub-resources, when a verb is allowed. |
 | [design/modules/network.md](skills/core-code-author/design/modules/network.md) | Touching the router layer: the three engines the hub drives, which modes own a machine's network and which touch nothing, and why it does not build on NetworkManager. |
 | [design/modules/ai.md](skills/core-code-author/design/modules/ai.md) | Touching the AI gateway: how a request routes, the gateway-owned model namespace, what each AI panel surface owns, metering. |
-| [design/agent.md](skills/core-code-author/design/agent.md) | Touching the agent or its channel: who may command it and in what scope, desired-state sync, the local control channel, the pinned TLS wire, the platform layer. |
-| [design/tests.md](skills/core-code-author/design/tests.md) | Writing or moving any test: the three blocks (agent / hub / integration), the mirror rule, what each area pins, what a change owes. |
+| [design/agent.md](skills/core-code-author/design/agent.md) | Touching the agent or its channel: the hub and root as its only authorities, desired-state sync, the desktop share, the root-only control socket, the pinned TLS wire, the Linux-only platform layer. |
+| [design/tests.md](skills/core-code-author/design/tests.md) | Writing or moving any test: the four blocks (agent / client / hub / integration), the mirror rule, what each area pins, what a change owes. |
 | [design/visual.md](skills/core-code-author/design/visual.md) | Touching panel CSS: what the accent and the glow may mean, button tiers, frames. |
 | [design/ui_behavior.md](skills/core-code-author/design/ui_behavior.md) | Touching panel pages or components: which idiom a screen reuses, per-panel apply bars, effect timing, ask before inventing an interaction. |
 | [design/class_design.md](skills/core-code-author/design/class_design.md) | Adding a class: one concept per class, explicit `__init__` kwargs. |
@@ -100,8 +100,14 @@ hub/
   frontend/           React + TypeScript source. Builds into data/frontend/.
   tests/
 agent/
-  neutrino_agent/     The device agent. Pure standard library, no dependencies.
-  frontend/           The agent window's page: plain HTML/CSS/JS, no toolchain.
+  neutrino_agent/     The device agent: Linux, root, headless. Pure standard
+                      library, no dependencies.
+  tests/
+client/
+  neutrino_client/    The client: a person's session on Linux, Windows or
+                      macOS; a tray and a window.
+  frontend/           The client window's page: plain HTML/CSS/JS, no toolchain.
+  packaging/          deb, rpm, msi and pkg builds of the compiled client.
   tests/
 config/               Source of truth at runtime. Real files gitignored.
                       /etc/neutrino/config once installed.

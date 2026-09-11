@@ -1,7 +1,7 @@
 # Releases
 
 A release is one tag, one version, and one set of packages built from it. The
-hub and the agent are versioned together and released together.
+hub, the agent and the client are versioned together and released together.
 
 Wording rules for the entries themselves are in
 [../coding_style/comment_style.md](../coding_style/comment_style.md); who may
@@ -9,15 +9,15 @@ commit and when is in [commit.md](commit.md).
 
 ## One version, no compatibility window
 
-The hub and the agent of the same version work together. Nothing else is
-supported, and no compatibility table is kept.
+The hub, the agent and the client of the same version work together. Nothing
+else is supported, and no compatibility table is kept.
 
 This is a deliberate choice, not an omission. The agent is small and installs
 in seconds, so upgrading it is cheaper than reasoning about which combinations
 work. A hub that sees an agent reporting a different version says so on the
 device card and offers to upgrade it; it does not try to interoperate.
 
-Both packages read their version from package metadata. It is never written
+Every package reads its version from package metadata. It is never written
 into the source twice.
 
 ## Tags
@@ -74,8 +74,8 @@ A release with nothing under a heading omits the heading.
 
 ## What goes in a release
 
-Two sections, so nobody downloads the wrong thing. Name the platform in words,
-not only in the filename.
+Three sections, one per package, so nobody downloads the wrong thing. Name the
+platform in words, not only in the filename.
 
 ### Hub
 
@@ -84,15 +84,17 @@ own Python environment and touches nothing the system installed; everything
 else it needs is named in the package's dependencies, so installing the file
 installs the appliance's prerequisites with it.
 
-There is no 32-bit ARM package. The boards that would need one — Allwinner H3,
-Raspberry Pi 2 and older — have no prebuilt wheels for the hub's dependencies,
-so the environment would have to be compiled from source under emulation.
+There is no 32-bit ARM package. The boards that would need one have no
+prebuilt wheels for the hub's dependencies, so the environment would have to
+be compiled from source under emulation. Arch Linux is x86-64 only; Arch Linux
+ARM is another project.
 
 | File | For |
 | --- | --- |
 | `neutrino-hub_<version>_amd64.deb` | Debian, Ubuntu, Raspberry Pi OS on x86-64 |
 | `neutrino-hub_<version>_arm64.deb` | Raspberry Pi 4/5, and other 64-bit ARM boards |
 | `neutrino-hub-<version>-1.x86_64.rpm` | Fedora, RHEL, AlmaLinux, Rocky |
+| `neutrino-hub-<version>-1.aarch64.rpm` | The same on ARM64 |
 | `neutrino-hub-<version>-1-x86_64.pkg.tar.zst` | Arch, EndeavourOS, Manjaro |
 
 ```bash
@@ -109,69 +111,76 @@ RHEL 9 and its rebuilds need EPEL enabled first, because `fail2ban`,
 sudo dnf install -y epel-release
 ```
 
-Enabling it in the same transaction does not work — the new repository's
-metadata is not read until the transaction that added it has finished — so it
+Enabling it in the same transaction does not work: the new repository's
+metadata is not read until the transaction that added it has finished, so it
 is its own line, and only on RHEL rebuilds. Fedora carries all three itself.
 
 ### Agent
 
-The agent runs on the machines the hub manages. Every package carries its own
-interpreter and the Python bindings its window draws through, so there is one
-per platform and machine and none of them asks for a Python.
+The agent runs on the Linux machines the hub manages, as root and headless:
+it draws no window and listens on nothing. Each package carries its own
+interpreter under `/opt/neutrino_agent` and the RustDesk host, and depends on
+no distribution package named `python`.
 
 | File | For |
 | --- | --- |
 | `neutrino-agent_<version>_amd64.deb` | Debian, Ubuntu, Raspberry Pi OS on x86-64 |
 | `neutrino-agent_<version>_arm64.deb` | The same on ARM64 |
-| `neutrino-agent-<version>-1.x86_64.rpm` | Fedora, RHEL, CentOS on x86-64 |
+| `neutrino-agent-<version>-1.x86_64.rpm` | Fedora, RHEL, AlmaLinux, Rocky |
 | `neutrino-agent-<version>-1.aarch64.rpm` | The same on ARM64 |
-| `neutrino-agent-<version>-amd64.msi` | Windows 10 or newer, x86-64 |
-| `neutrino-agent-<version>-arm64.msi` | The same on ARM64 |
-| `neutrino-agent-<version>.pkg` | macOS 12 or newer, one universal build for Intel and Apple Silicon |
 
-32-bit ARM is not published: no interpreter build is, and neither are the
-bindings. The `.pkg` is not built yet.
-
-The Linux packages install under `/opt/neutrino_agent`, not into
-site-packages: what is there is an interpreter of the agent's own, and
-`/usr/bin/nagent` and the unit run it. They depend on C libraries only —
-`gir1.2-webkit2-4.1` on the Debian family and `webkit2gtk4.1` on the RHEL
-family, each pulling the rest of the stack — and on no distribution package
-named `python`. A headless machine carries the web view too, deliberately: one
-package, one dependency field, no second build to choose between.
-
-The Windows installer carries python.org's embeddable interpreter, pinned by
-hash, and registers a real service: the agent's own entry answers the service
-control manager over a ctypes handshake, so nothing needs a wrapper binary.
-It also carries Microsoft's WebView2 bootstrapper and runs it when the
-machine's registry says the Evergreen runtime is absent, which is LTSC and
-Server editions.
-
-Each package is tens of megabytes where the old architecture-independent one
-was tens of kilobytes. That is what a window costs, and it is paid once per
-machine.
+There is no Windows or macOS agent: what a person's machine runs is the
+client. 32-bit ARM is not published, because no interpreter build is.
 
 ```bash
 sudo apt install ./neutrino-agent_<version>_amd64.deb
-nagent connect https://<hub-address>
+sudo nagent connect '<enrollment link from the Devices page>'
 ```
 
-Most people never download these: the hub fetches the right one and installs it
-over SSH from the Devices page.
+Most people never download these: the hub carries them, and installs the right
+one over SSH from the Devices page.
 
-### Source code
+### Client
 
-GitHub attaches `Source code (zip)` and `Source code (tar.gz)` to every release
-on its own. They are the tagged tree, and they are not what anybody should
-install from — building the hub package from source needs a Node toolchain for
-the panel and a matching build environment for the embedded Python. Point
-people at the packages above.
+The client runs in a person's own session, never as root, on Linux, Windows
+and macOS. It is compiled with Nuitka, so the packages carry no interpreter
+of their own; each carries cc-switch and the RustDesk viewer. The Linux
+packages depend on the WebKitGTK stack and the appindicator library for the
+window and the tray.
+
+| File | For |
+| --- | --- |
+| `neutrino-client_<version>_amd64.deb` | Debian, Ubuntu on x86-64 |
+| `neutrino-client_<version>_arm64.deb` | The same on ARM64 |
+| `neutrino-client-<version>-1.x86_64.rpm` | Fedora, RHEL, AlmaLinux, Rocky |
+| `neutrino-client-<version>-1.aarch64.rpm` | The same on ARM64 |
+| `neutrino-client-<version>-windows-amd64.msi` | Windows 10 or newer, x86-64 |
+| `neutrino-client-<version>-macos-arm64.pkg` | macOS on Apple silicon |
+
+Windows is x86-64 only: cc-switch publishes no Windows ARM64 build, so there
+is nothing to carry for that machine. macOS is Apple silicon only, which is
+what the build runner is.
+
+```bash
+sudo apt install ./neutrino-client_<version>_amd64.deb
+nclient connect '<client link from the Clients page>'
+```
+
+### Source archive
+
+`neutrino-<version>-source.tar.gz` is this tree at the tagged commit, with
+`third_party/` beside it holding the upstream archives of everything the
+packages carry, at the exact tags the binaries were built from: RustDesk,
+EasyTier, NetBird, Xray-core, CLIProxyAPI and cc-switch. It exists because
+some of those are copyleft and a binary release owes its source; it is not
+what anybody installs from. GitHub's own `Source code (zip)` and `(tar.gz)`
+carry the tree alone.
 
 ## Every asset carries a checksum
 
-`SHA256SUMS` is attached alongside the packages. The hub verifies it before
-installing an agent on a device, so a truncated or tampered download fails
-loudly rather than half-installing.
+`SHA256SUMS` is attached alongside the packages and covers every one of them.
+The hub verifies it before installing an agent on a device, so a truncated or
+tampered download fails loudly rather than half-installing.
 
 ## Building the packages
 
@@ -179,29 +188,33 @@ loudly rather than half-installing.
 python3 packaging/build_release.py --output-dir dist/
 ```
 
-One command, and it writes `SHA256SUMS` beside what it built. Both packages
-are built in containers now — the agent's as well, since it compiles the
-window's bindings against the family's own C libraries — so podman or docker
-is not optional for either.
+One command builds everything for the host's architecture and writes
+`SHA256SUMS` beside it. `--only` builds one part: `hub`, `agent`, `client`,
+`sources`, or `checksums` over a directory the parts were collected into,
+which is how the tag workflow splits the work across runners. `--families`
+chooses the distribution families; the agent and the client have no Arch
+package and say so rather than failing.
 
-`--architecture arm64` builds for the other architecture by running those
-containers under emulation; the host needs QEMU registered with binfmt_misc
-first. `--only` builds one part at a time — `hub`, `agent`, or `checksums`
-over a directory the parts were collected into — which is how the tag workflow
-splits the work across runners. `--families` chooses which; the agent has no
-Arch package and says so rather than failing.
+The hub and the agent are built in containers of the target family, because
+each carries an interpreter compiled against that family's C libraries, so
+podman or docker is not optional. `--architecture arm64` runs those containers
+under emulation; the host needs QEMU registered with binfmt_misc first.
+
+The client is compiled, and Nuitka under emulation takes hours, so its Linux
+packages are built on a machine of their own architecture. The Windows
+`.msi` needs Windows and WiX (`dotnet tool install --global wix`):
+`client/packaging/build_msi.py` builds it, and `--stage-only` writes and
+checks the whole payload without one. The macOS `.pkg` needs macOS:
+`client/packaging/build_pkg.py`.
 
 The agent packages a hub package carries are built inside the hub's own build
-container, for the hub's own machine, and land under
-`/var/lib/neutrino/agent_cache/` rather than inside the hub's Python tree.
-Beside them the build stamps `agent_packages.json`, which names every platform
-this release publishes an agent for, the file name it is published under, and
-the hash of each. The cached file carries that same name, so an asset in a
-release and the copy a hub hands out are one name in both places. A hub
+container and land under `/var/lib/neutrino/agent_cache/`, with
+`agent_packages.json` beside them naming every platform this release publishes
+an agent for, the file name each is published under, and its hash. A hub
 serving devices of a second architecture fetches that platform's package once
-from the release the manifest names; `--agent-package-url-base` is what stamps
-those URLs, and a build given none carries the entries it seeded and refuses
-the rest by name. A package dropped under `config/devices/packages` still wins
+from the release the manifest names; `--agent-package-url-base` stamps those
+URLs, and a build given none carries the entries it seeded and refuses the
+rest by name. A package dropped under `config/devices/packages` still wins
 over both.
 
 Two things bind a hub package to the machine that built it, and both are why
@@ -219,12 +232,6 @@ the container is not optional:
 Building the hub on a developer's own machine produces a package that installs
 only on machines like it. That is the mistake this container exists to stop.
 
-The Windows `.msi` needs Windows and WiX (`dotnet tool install --global
-wix`); `agent/packaging/build_msi.py` builds it, and `--stage-only` writes and
-checks the whole payload without one. The macOS `.pkg` needs macOS:
-`agent/packaging/build_pkg.py` expands python.org's universal2 framework,
-moves its install names off `/Library/Frameworks` and signs what it moved.
-
 ## The release itself
 
 Tagging is what triggers everything; nothing is built by hand.
@@ -235,10 +242,12 @@ git push origin v0.4.0
 ```
 
 `.github/workflows/release.yml` builds the hub and the agent for both
-architectures, and the Windows installer, generates `SHA256SUMS`, and opens a
-draft release. The Windows job installs what it built, runs the agent from it
-and uninstalls again, so a broken installer fails the build rather than the
-person who downloads it. Fill in the
+architectures in containers, the client's Linux packages on native runners of
+each architecture, the Windows installer, the macOS installer and the source
+archive, generates `SHA256SUMS` over all of it, and opens a draft release. The
+Windows job installs what it built, runs the client from it and uninstalls
+again; the macOS job installs its package and runs `nclient` from it; a broken
+installer fails the build rather than the person who downloads it. Fill in the
 changelog, check the section headings still match what shipped, and publish.
 
 Running the same workflow from the Actions tab builds the packages and attaches

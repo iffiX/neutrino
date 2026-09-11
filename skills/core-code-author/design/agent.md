@@ -1,414 +1,197 @@
 # The device agent
 
-The agent is the hub's presence on a managed machine: one service with the
-platform's highest privilege that executes the hub's orders, reports what
-is true, and answers to the people sitting at it — each within the scope
-their identity owns. Its own code is pure standard library; the package
-carries the interpreter that runs it and the bindings its window draws
-through, so it installs on a machine with no Python and touches none the
-machine already has. Running on whatever Python a device happened to have was
-a property this project had and gave up: a window needs bindings, and a
-machine's own interpreter is not a place to install them.
-Why the system is shaped this way is
-[architecture.md](architecture.md) ("The agent channel is pinned TLS",
-"Managed is a completed handshake"); this page is the agent's own design:
-who may command it, how state moves, how local people reach it, and where
-the platform seam runs.
+The agent is the hub's presence on a managed Linux machine: one root service
+that keeps one socket open to the hub, hosts what the hub asks it to host,
+reports what is true, and shares the machine's desktop when told. It draws no
+window and listens on no port. Its own code is pure standard library; the
+package carries the interpreter that runs it, so it installs on a machine
+with no Python and touches none the machine already has. Everything a person
+does with what the hub publishes belongs to the client, a separate package
+in that person's own session ([architecture.md](architecture.md), "The shape
+of the system"); this page is the agent's own design: who may command it, how
+state moves, how the machine's root reaches it, and where the platform seam
+runs.
 
 ## Who may tell the agent what
 
-Two authorities, and nothing else: the hub over the pinned channel, and the
-machine's own people over the local control channel. What each may touch is
-decided by which partition a thing belongs to and by who is asking — never
-by which door they used.
+Two authorities, and nothing else: the hub over the pinned socket, and the
+machine's own root over the local control socket. There is no third door and
+no per-account scope: an ordinary account on the machine talks to the client,
+never to the agent.
 
-**Modules and services.** Everything a managed machine offers splits in
-two, and the words mean the same thing on the hub's pages and the agent's:
-a module is what a machine has installed, a service is what the hub
-publishes.
+**Modules and services** are the two words that hold everywhere, on the
+hub's pages, in the agent, and in the client:
 
-- **Modules** are machine software the hub administers — a remote desktop,
-  the SSH server, cc-switch, a share's mount tooling. Everything that puts
-  software on a machine or takes it off is a module: a service never
-  installs anything as a side effect, so the Modules panel is the whole
-  answer to "what has the hub put here". The panel's device drawer
-  switches them; the agent's page shows them and lets a privileged caller
-  toggle them too. A local toggle is never applied locally: it rides up
-  with the next heartbeat, the hub decides, and the answer comes back as
-  an order, so the drawer and the page cannot disagree for longer than one
-  beat. **The agent never downloads a module**: the hub's cache fetches it
-  and its controller hands the bytes down, one order at a time per machine
-  ([architecture.md](architecture.md), "The hub installs; the agent is an
-  outpost") — and uninstall rides the same queue, so every module action
-  is ordered, exclusive, and leaves its output behind. One pair of verbs
-  everywhere: a module is **installed and uninstalled**, and the mechanics
-  are each platform's own. The SSH server's uninstall genuinely removes
-  the package on Linux and the capability on Windows; on macOS, whose
-  sealed system volume nothing may remove, install and uninstall drive
-  Remote Login on and off and no binary moves. A platform that carries a
-  module natively with nothing to switch (SMB mounting on Windows and
-  macOS) shows the row as **built in**, with no button.
-- **Services** are what the machine's people do with what the hub
-  publishes — pointing an account's AI tools at the gateway, mounting a
-  published share, opening a published link, forwarding a published port.
-  They are visible and decided **only on the machine**: the panel neither
-  renders nor controls them. The hub's part is the service list and, for
-  the ai type, the per-account credential; every other choice, and every
-  secret it takes, stays local. A service that needs software on the
-  machine **declares the modules it depends on** — the dependency is
-  declared, compared and worded, never resolved by the service installing
-  something itself.
+- **Modules** are software the hub administers on a machine: Samba, Gitea,
+  Podman, ZFS and the RustDesk host. The hub's Samba, Gitea, Containers and
+  ZFS pages pick the devices that host each, and that pick is the device's
+  desired state. **The agent never downloads a module**: the hub's cache
+  fetches it and the module controller hands the bytes down as one order,
+  one at a time per machine ([architecture.md](architecture.md), "The hub
+  installs; the agent is an outpost"). Uninstall rides the same queue, so
+  every module action is ordered, exclusive, and leaves its output behind.
+- **Services** are what the hub publishes and what a client consumes: a web
+  link, a port, the AI gateway, a share, a shared desktop. The agent composes
+  none of them and renders none of them. Its only part is the one entry a
+  machine declares for itself, its own desktop, described below.
 
-| Capability | Privileged | Ordinary account |
-| --- | --- | --- |
-| Read binding, status, modules, the service list | yes | yes |
-| Connect to a hub / disconnect | yes | no |
-| Install and uninstall modules | yes, as the panel does | no |
-| ai service: an account's tools | yes, any account | own account only |
-| file service: attach a share | yes, at any path | yes, where the account may write |
-| port service: forward | yes | yes — a forward is machine-wide and every scope sees it |
+| The hub may | Root on the machine may |
+| --- | --- |
+| Push desired state and open orders, commands and streams | Bind the machine to a hub, or unbind it |
+| Install and uninstall modules, and configure them | Ask for the desired state now (`nagent sync`) |
+| Reboot, shut down, reinstall the agent | Share the desktop and stop sharing it |
+| Read and set up a person's own AnyDesk or TeamViewer | Read the binding and status |
 
-A control the caller's scope does not own is **disabled, never hidden**:
-an ordinary account sees the Connect button and the module toggles greyed
-out, because a page that hides what privilege would show reads as broken
-rather than as locked.
+Root is uid 0. `nagent` refuses any other account; the one thing anybody may
+run is `nagent --version`.
 
-Privileged means the platform's own idea of administrative identity: uid 0
-on Linux and macOS, an elevated Administrators token on Windows — under UAC
-the same person's non-elevated shell is an ordinary account, which is the
-distinction UAC exists to draw.
+## One socket, everything on it
 
-## What the beat carries
+The agent opens one WebSocket to the hub over TLS pinned by the enrollment
+link's fingerprint, and reconnects when it drops. The hub never dials a
+machine; SSH exists only to install or reinstall an agent from the Devices
+page. Text frames are JSON, a binary frame is a stream id and its bytes.
 
-The agent beats every few seconds. Up goes what the machine is: hostname,
-agent version, metrics, the platform tuple, the machine's human accounts —
-the platform's own judgment of who is a person, root and system accounts
-never listed — each module's state, the most recent error worth showing,
-and any pending requests. Down comes the catalog when the agent's copy is
-stale (compared by `catalog_hash`, so a converged fleet is never
-re-shipped it), any order the controller has open for this machine, the
-device's operation stream, the AI credentials for accounts the hub has
-granted, queued commands, and the hub's version.
+Up: a `hello` when the socket opens, then a `report` every few seconds and
+at once when something changed: hostname, agent version, the platform
+tuple, metrics, each module's state, the most recent error worth showing,
+and the desktop declaration. Down: the desired state whenever the hub's
+copy differs from the hash the agent last applied, and every stream the hub
+opens. **The hub opens every stream**, and there are four kinds: an order
+(install this, uninstall that), a command (reboot, shut down, a module's own
+verbs, a person's remote desktop tool), a validation, and the two that carry
+bytes both ways, a shell and a file browser, each behind a credit window so
+a long transfer never starves the reader. An order runs in its own thread,
+one at a time, and closes with how it went; its output is one stream the
+hub holds and both the drawer and the machine's own log read line for line.
 
-**A click is one order, not a standing wish.** The hub keeps no record of
-what a machine "should" have: pressing a button creates one order, the
-order runs once, and what the machine reports afterwards is simply shown.
-Software somebody installs or removes by hand is displayed, never fought.
-Orders and failures live in the controller's memory; a hub restart forgets
-them, and the person asks again — before release, machinery whose only
-purpose is surviving a restart is refused outright
-([kill_on_sight.md](../kill_on_sight.md), "Unasked survival machinery").
+**Presence is memory only.** Online, version and last seen live in the hub's
+session registry; a hub restart forgets every machine until it reports again,
+and nothing about a socket reaches `config/`.
 
-**The catalog** is the hub's answer to "what exists for this machine", in
-two halves under one hash: the module manifests, and the service list.
-The list carries no secrets, ever; the one secret a service takes from
-the hub — an account's gateway key — travels only in that device's
-per-beat reply.
+**Desired state is one document per device.** The hub composes it from
+`config/devices/<dir>/`: `modules.json`, which modules are on; one file per
+module with its configuration; `rdp.json`, the sealed seat password; plus
+the catalog resolved for the machine's platform and what the hub knows about
+where it sits. It travels under one hash. The agent keeps a root-only copy,
+compares on connect and on every `state` frame, and applies what differs in
+one fixed module order: an enabled module that is installed is applied, an
+installed module that is disabled is stopped, a module that is not installed
+is left alone until an order installs it. The applied hash moves only once
+every enabled module applied, so a failed apply keeps asking for the same
+state until it takes. **Editing a module of an offline device is refused,
+never queued**: the person is told the machine is away, and asks again when
+it is back.
 
-**The service list is typed.** Every entry is
-`{id, type, title, payload, is_healthy, source, description, modules}`,
-and the five types are closed until a sixth earns its place:
+**The agent is handed conclusions, never a table to search.** The catalog it
+receives is already resolved for its platform; it carries no manifest logic
+and no version table. A module kind it has no runner for is `unsupported`,
+which is an older agent meeting a newer hub, and the version lock
+([../agent_work_rule/release.md](../agent_work_rule/release.md)) makes that a
+prompt to upgrade rather than a state to reason about.
 
-| type | payload | agent behavior |
-| --- | --- | --- |
-| `web` | url | Open |
-| `port` | host, port | Connect / Disconnect (a loopback forward) |
-| `ai` | endpoint, protocol, models[] | per-account configuration, applied together |
-| `file` | protocol, host, share | Config, then Mount / Unmount |
-| `rdp` | protocol, host, port | Connect (the local client, at that address) |
+**A click is one order, not a standing wish.** Pressing a button creates one
+order, the order runs once, and what the machine reports afterwards is
+simply shown. The agent keeps no retry policy and no memory of past
+failures: an order that failed is reported failed and never repeated,
+because deciding to try again is the hub's, and there it is a person's word,
+never a timer's. Software somebody installs or removes by hand is displayed,
+never fought. Orders and failures live in the controller's memory; a hub
+restart forgets them, and the person asks again. Before release, machinery
+whose only purpose is surviving a restart is refused outright
+([../kill_on_sight.md](../kill_on_sight.md), "Unasked survival machinery").
 
-Entries come from three sources and only three: a hub module declares its
-own (Gitea a web entry, Samba a file entry per share, the AI gateway an ai
-entry, the container runtime a port entry per published container port),
-live only while the module runs — health is the module's, never a second
-opinion; a person declares one by hand for something outside the hub,
-probed the way declared services are; or **a managed machine declares one
-for itself**, which only the `rdp` type is. `description` is the declarer's
-one line of provenance — "published by container mysql:8.0" — worded by
-whoever declared, so the types themselves stay general. A payload host that
-is the hub's own address (loopback included) is resolved per device at
-heartbeat time to the address that device actually reaches, the way the ai
-endpoint always was; a device-declared host is another machine's and is
-never rewritten.
-
-**Where a machine is comes from its channel.** The hub records the peer
-address of every beat and uses that wherever a device's own address is
-needed: the share it publishes, the LAN its catalog is composed for, the
-address the panel shows. A scan sees only the LANs this box serves, and a
-stored SSH host is a credential rather than a location, so neither is the
-answer: SSH installs the agent and drives power, nothing more. The record
-follows the machine, because a beat from a new address is the machine at
-that address.
-
-**The `device` source is the machine's own word, and it expires.** Only an
-agent can declare an rdp entry: the panel's form offers no such type and no
-hub module publishes one. The declaration rides the heartbeat as
-`{is_shared, share_id, port}`, the hub pairs it with the address it holds
-for that device — never one the beat names — and the entry lives in the
-panel's memory alone. It dies when the machine stops sharing, when the
-machine stops beating, and when the hub restarts; each time, the next beat
-from a machine that is still sharing puts it back. The access password a
-share is set up with is the machine's: it is never in the declaration,
-never in a backup, and the hub is never told it.
-
-**A service names the modules it needs.** `modules` lists the module names
-the entry cannot work without — an ai entry names `cc_switch`, a file
-entry names `samba_mount`, an rdp entry names `rustdesk`, web and port
-entries name nothing. The list is
-composed hub-side with the rest of the catalog, and every surface
-satisfies it the same one way: compare the names against the machine's
-reported module states. A service whose dependencies are not all on the
-machine renders **greyed but present**, its controls disabled, under a
-notice in the error color naming the missing modules and that installing
-them takes the privileged page. An ordinary caller can go no further; a
-privileged caller's notice carries one action that queues every missing
-module, in order, through the one install queue — nothing installs
-implicitly, and the Operation output shows the queue working.
-
-**Status is typed.** A module or service reports `state` plus
-`{code, params}` — never an English sentence — and every surface does its
-own wording. The agent's `last_error` crosses the wire the same way, so a
-device that is unhappy says why on the panel, not only on its own page.
-
-**Module states are one closed table.** Every module on every platform
-speaks the same six tokens — a surface that meets a token outside this
-table shows "waiting for the agent", which is the word for a machine that
-has not reported:
+**Status is typed.** A module reports `state` plus `{code, params}`, never an
+English sentence, and every surface does its own wording. The agent's
+`last_error` crosses the wire the same way, so a device that is unhappy says
+why on the panel. Module states are one closed table on every surface:
 
 | Steady | Transient | Shared |
 | --- | --- | --- |
 | `absent`, `installed` | `installing`, `uninstalling` | `failed`, `unsupported` |
 
-A module kind the agent has no runner for is `unsupported` — an older agent
-meeting a newer hub's catalog is a machine that cannot have it, not one that
-has not answered — and a row in that state offers no button on either surface.
-A row the platform carries natively is worded **built in** rather than
-installed, and `failed` is always accompanied by its `{code, params}`,
-worded from the surface's own table. Three invariants
-hold everywhere a state is drawn: every transient token is in the
-surface's busy set, or a row mid-step offers the opposite button; a
-surface's optimistic step (the state it paints the moment a person
-clicks) stands at most two minutes before the machine's own report — or
-its silence — takes over; and a new `code` lands with its wording in the
-same change, which the page's completeness test enforces.
+A surface that meets a token outside this table shows "waiting for the
+agent", the word for a machine that has not reported. Three invariants hold
+wherever a state is drawn: every transient token is in the surface's busy
+set, or a row mid-step offers the opposite button; a surface's optimistic
+step stands at most two minutes before the machine's own report, or its
+silence, takes over; and a new `code` lands with its wording in the same
+change, which the catalog completeness test enforces.
 
-## The agent's page
+## The desktop is the machine's own word
 
-Three sections under outer titles set in the hub's module-page style —
-**Status**, **Modules**, **Services** — in that order on the agent as on
-the hub. Status is one panel: the connection card, its controls greyed for
-an ordinary caller. Modules is one panel of rows, install/uninstall each,
-greyed likewise. **Every row is the same three lines** — its title, where
-its software comes from, and where it stands — with the description as the
-row's tooltip rather than a fourth line, and the rows in one order the hub
-decides so the drawer and the page cannot disagree: what the machine's own
-packages carry, then what this hub fetches from a public repository, then
-what a person installs from a vendor themselves, by title inside each. The
-middle line names a repository, a company, or `system`; where the hub
-conveys the bytes itself the name links to the exact source and the license
-follows it, which is the whole of what a copyleft license obliges — no copy
-of the source is kept here. Services is
-one panel per type — Web, Ports, AI, Files, Remote desktop, Remote
-desktops — and a panel with staged,
-unapplied edits lights its frame the way the hub's panels do; unhealthy
-entries render greyed with their state, never hidden. Remote desktop is
-the one panel that stands with no entry behind it: sharing is decided on
-the machine, so the panel is there whether or not the fleet publishes
-anything.
+Sharing a desktop is the one thing decided on the machine and reported
+upward rather than ordered down. `sudo nagent rdp start [--user <name>]`
+configures RustDesk for direct connection on port 21118, no rendezvous
+server and no relay, and `nagent rdp stop` withdraws it. With no `--user`
+the seat is `SUDO_USER`, else the one account at the screen.
 
-**A service that acts on accounts names them on its own panel.** AI's
-enabled users are a multi-select — one machine serves several people's
-tools; a mount and a share are single-select chips — a mount belongs to
-one home, a screen seats one person. The chip list is the scoped account
-list every state read already carries, so an ordinary caller is shown
-themselves and nobody else, and root or the hub is shown everyone; naming
-anyone else from an ordinary scope is refused, and naming an account the
-machine does not have is refused by name. The share's chip preselects the
-account at the screen, and a mount's the record's own.
+**The seat password is the hub's.** A machine reporting the RustDesk host
+installed is given one, generated once, sealed under the vault's data key in
+that device's `rdp.json`, and delivered inside the desired state. The agent
+sets it into RustDesk whenever it changed and keeps it in a root-only file
+so it knows what it already set; it enters neither the agent's store nor any
+report. The panel never shows it: the device drawer offers **Reset seat
+password**, which mints a new one and disconnects every viewer. A client
+that presses Connect asks the hub over its own socket, the hub unseals the
+password for that one answer, and the viewer is spawned with it.
 
-One **Operation output** panel closes the Modules section, and it is the
-same panel the hub's drawer shows: whenever an agent install, reinstall
-or uninstall, or a module install or uninstall, is running or has just
-run, the panel is present with that operation's stream. The hub holds the one per-device stream and both surfaces render
-it, so an operation started on either side appears on both, line for
-line — neither surface keeps a private log, and the two can no more
-disagree about what is running than the module rows can.
+**A share is declared only once it answers.** RustDesk's root service holds
+no port of its own; it spawns a second process into the session of whoever
+is logged in at the seat, and that process is what listens. So a machine
+with nobody logged in has nothing listening, which `rdp_nobody_seated`
+refuses in front of, and a Wayland session that has not granted screen
+capture reports `rdp_screen_not_allowed` rather than a desktop nobody can
+see. The declaration rides every report as `{share_id, port, viewers,
+attention}`; the hub pairs it with the address it holds for that device,
+never one the report names, and keeps it in memory alone. It dies when the
+machine stops sharing, stops reporting, or the hub restarts, and the next
+report from a machine still sharing puts it back.
 
-**The hub's drawer mirrors the page for a managed device**, in its own
-order — Modules, Operation output, Services, Remote desktop — and its
-Services block is operable: an ask there is the page's own verb, queued on
-the device's command channel and run by the agent in the privileged scope,
-with the typed refusal riding the result back for the drawer to word. The
-verb set is closed — the AI apply, a mount naming whom it is for, an
-unmount, a share naming its account and password, an unshare — and what
-cannot be asked from there is not offered: a port forward opens on the
-machine's own loopback. A share's access password rides inside the one
-ask, the way a mount's credentials do, and lands in a root-only file on
-the machine. The drawer's rows are the machine's last
-beat, which carries the mount records and the AI rows up beside the module
-report, credentials in none of it.
-
-The page redraws only when the payload actually changed, and never while
-the person holds a text selection, a focused form field, or an open
-dialog — a self-refresh that eats a selection is a bug, not a cadence.
-
-**Web.** One row per entry: title, url, description line, an Open button.
-
-**Ports.** Connect starts a relay from `127.0.0.1` — the entry's own port
-number when free, otherwise a free one the row names — and Disconnect
-closes it. A forward binds the loopback the whole machine shares, so it is
-machine state every scope sees.
-
-**AI.** Depends on the `cc_switch` module, so the panel stands behind the
-missing-modules notice until that is on the machine. One chips row of the
-machine's human accounts — a privileged caller sees them all, an ordinary
-caller exactly their own — beside a Config button and an Apply button. A chip stages whether that account's
-tools point at the gateway; Config stages what they point with, per tool
-and honestly per tool's own knobs: Claude Code's four role slots
-(default, opus, sonnet, haiku), Codex's one model and its reasoning
-effort, Gemini's one model — every choice drawn from the ai entry's
-`models[]`. Apply commits the staged set: the agent asks the hub for each
-targeted account's (device, account) key, writes the tools' own
-configuration, and puts an untargeted account's configuration back,
-revoking its pair's key. Keys per pair are what makes usage meter to the
-person; the AI page's Access panel lists them. Acting on an account that
-is empty or not among the reported ones is refused with
-`{"code": "no_target_user"}`, and the guard is symmetric — activation and
-deactivation check it alike. No chip is ever preselected: what the page
-stages is only ever what a person chose.
-
-**Files.** Config asks for the share's own username and password and a
-path — typed, or picked in the browse dialog the agent feeds, whose
-listing runs as the caller's identity, so an ordinary account browses only
-what it may write. Mount attaches, Unmount detaches. The panel depends on
-the `samba_mount` module — the mount tooling, `cifs-utils` on Linux —
-declared like every other dependency rather than installed on the way to
-a mount. The password becomes a root-only credentials file on this
-machine and never travels to the hub. A path under the asking account's
-home is ownership-mapped to that account;
-anywhere else follows the share's own permissions. What shape a location
-takes is the platform's own judgment — an absolute path on Linux and
-macOS, an unused drive letter on Windows — and a location off that shape
-is refused (`{"code": "mountpoint_invalid"}`). A mount point that is
-not an empty directory is refused (`{"code": "mountpoint_not_empty"}` —
-mounting over content hides it).
-
-**Remote desktop.** Share asks for an access password, checks the
-`rustdesk` module the way every dependency is checked, writes RustDesk's
-direct-connection configuration to every path the service and the desktop
-session read, and sets the password. Direct mode only: no rendezvous
-server and no relay, `direct-server` on port 21118, and reachability is the
-LAN's or the overlay's job. **One share per machine, owned by its
-account**: an ordinary caller shares their own seat and stops their own
-share, and the privileged scope controls anyone's — the mechanics run in
-the root daemon either way. The share is declared
-upward only once the direct port answers, so the fleet is never offered a
-desktop that cannot be reached. macOS says **waiting for approval** until
-then rather than claiming otherwise: screen recording there is one
-person's allowance in System Settings, and no configuration substitutes
-for it. Unshare closes the direct server in every file sharing opened and
-withdraws the declaration.
-
-**Which desktop a peer reaches is the seat's, never the caller's.** The
-privileged scope decides who may configure the share; it does not decide
-what is shown. RustDesk's root service holds no port of its own — it
-spawns a second process into the session of whoever is logged in at the
-seat, and that process is what listens on 21118. So sharing from a root
-shell shares the logged-in person's desktop, and a machine with nobody
-logged in has nothing listening at all, which is what `rdp_no_desktop`
-refuses in front of and what waiting for the port to answer would
-otherwise sit through. Setting the password is the same story from the
-other side: it travels over the service's own socket, which starts
-accepting after the platform's service control has already returned, so
-the call is repeated until it takes rather than reported as a refusal —
-nothing else the binary offers proves that socket is up.
-
-**Remote desktops.** One row per machine the fleet says is sharing, its
-own excluded, and Connect launches the local RustDesk client at that
-address. The password is not the hub's to pass on: whoever shared the
-machine tells whoever connects.
-
-Service choices are machine state: they live in the agent's own store,
-survive a hub restore untouched, and appear in no hub backup. The one
-secret a service on the machine keeps — a mount's login, a share's access
-password — lives in a root-only file beside the store, never in it.
+A person's own AnyDesk or TeamViewer is not a module. The agent detects what
+is there, brings a stopped daemon up, reads the id a peer connects to and
+sets the unattended password when the drawer asks, as the seated account for
+AnyDesk and as root for TeamViewer, because that is where each keeps its
+configuration.
 
 ## The local control channel
 
-Local access is one transport serving one API, and identity comes from the
-operating system, not from a password: **a control socket** — a Unix socket
-on Linux and macOS, a named pipe on Windows. Any local account may connect;
-the peer's identity is read from the kernel (`SO_PEERCRED`,
-`LOCAL_PEERCRED`, pipe impersonation), and the caller gets the scope that
-identity owns. Nothing a request carries can name a different caller.
-`nagent` talks here, and so does the agent's window. Connections persist
-between requests, so a handed-over connection keeps the scope its opener
-owned for its whole session.
+One Unix socket, 0600 under a 0700 directory, so the kernel refuses anyone
+but root before a request is read and no handler judges identity. `nagent`
+is its only client: `connect` binds the machine to the hub a link names,
+`disconnect` unbinds it, `status` reads the binding, `sync` asks the running
+service to fetch the desired state now, `rdp start` and `rdp stop` share and
+unshare the desktop, and `run` is what systemd starts. Connections persist
+between requests and each is served on its own thread. Every refusal is
+`{"code": ...}`; a handler exception never drops the connection, the caller
+gets `agent_internal` with the exception's class name and the traceback goes
+to the agent's log.
 
-`nagent gui` is how a person opens the agent's window: the invoking process
-connects to the socket — fixing the session's scope as whoever ran the
-command — and hands the connected descriptor to a window process running as
-the desktop user, `SUDO_USER` under sudo and the invoker otherwise, so no
-privileged GUI process exists. The window embeds the platform's own web
-view — WebKitGTK pinned to the 4.1 API on Linux, WebView2 on Windows,
-WKWebView on macOS — loads the page from the package's own files, and
-carries the page's requests over that one inherited connection through a
-message bridge: the shell forwards method, path and body, and nothing
-else the page says reaches the agent. Nothing is printed for a person to
-copy, and no browser is ever launched for the agent's own page — `service
-web open` still opens one, because a published remote URL is not the
-agent's page. A machine without its web view refuses with a typed code
-naming the package to install.
-
-Windows is the one deviation: the elevated invocation hosts the window
-itself and opens the pipe per request, the kernel reading the same
-identity on each one — elevation there is a token on the same desktop
-session, and a hand-off to a de-elevated process buys nothing a per-request
-kernel read does not already give.
-
-The desktop menu entry runs `nagent gui`, so a double-click lands in the
-clicking account's own scope; `sudo nagent gui` opens the privileged
-window. One page serves both — what it shows is the connection's scope.
+An agent that has never enrolled still answers here, waiting for a link.
+The binding, the applied desired state and what the machine decided for
+itself live in one root-owned store written atomically; secrets never enter
+it.
 
 ## Acting for an account
 
-The agent holds the platform's highest privilege, so reaching down to an
-account is the platform's own step: `runuser` on Linux, `su` on macOS —
-never `sudo`, for the same reason the hub bans it
-([privilege.md](privilege.md)). Windows has no general way to become
-another user without their password, so account work there is file work:
-the agent writes into the account's profile, where inherited ACLs make the
-files the account's own, and runs a process as an account only for the one
-that is logged on.
-
-That asymmetry sets a law for every feature: **prefer file-level operations
-— read, write, remove in the account's home — and treat running a process
-as the account as an optional capability.** A feature built on file
-operations works on all three platforms; one built on run-as works on two.
+The agent is root, so reaching down to an account is `runuser -u <account>
+--`, never `sudo`, for the reason the hub bans it
+([privilege.md](privilege.md)). Today that reach is one thing: the seat
+whose desktop is shared, whose RustDesk configuration lives in that
+account's own session. Everything else the agent does is root's own work.
 
 ## The platform layer
 
 `neutrino_agent/platforms/` holds one class per platform behind one
-contract, and a new platform is a new class — nothing above the seam
-changes. The contract names intents, not mechanisms:
-
-- enumerate human accounts; read a local caller's identity
-- read, write, remove a file as an account; run a process as an account
-- judge a proposed mount location; attach a share for an account at a
-  location, detach it, ask if attached
-- control the agent's own service; power actions; read metrics
-- install and remove a package of a given kind
-
-"Attach a share" rather than "mount" is deliberate: on Linux and macOS it
-is a root mount with ownership mapped to the account, on Windows it is
-stored credentials plus a per-session mapping, and one verb has to cover
-both. Each platform likewise owns its account floor (uid 1000 on Linux,
-501 on macOS, local profiles on Windows) — shared code never hardcodes a
-number.
-
-A platform advertises which capabilities it has, so surfaces grey out what
-a machine cannot do; invoking an absent one anyway is refused with
-`{"code": "unsupported_platform"}`, never guessed at.
+contract, and `linux.py` is the only implementation: the agent is Linux
+only, and Windows and macOS are the client's platforms. The contract names
+intents, not mechanisms: enumerate human accounts, resolve an account's
+home, run a process as an account, control the agent's own service, power
+actions, read host metrics, install and remove a package of a kind. Metrics
+come from `/proc` and `/sys` with nothing but the standard library; NVIDIA
+is the one exception, read through `nvidia-smi` where the driver installed
+it. A platform advertises the capabilities it has; invoking an absent one is
+refused with `{"code": "unsupported_platform"}`, never guessed at.
 
 ## Two ports, one process
 
@@ -465,7 +248,9 @@ The link is `neutrino://enroll/<base64url payload>` over one JSON object:
 ```
 
 `urls` carries every served address on the agent port, because only one of
-them is on the joining machine's network and neither end knows which. The
+them is on the joining machine's network and neither end knows which. A
+client link is the same object with `"kind": "client"`, minted on the Clients
+page; the client refuses a device link and the agent a client one. The
 base64url alphabet holds no character a shell splits or a URL escapes, so the
 link pastes anywhere unquoted.
 

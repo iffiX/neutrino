@@ -4,21 +4,28 @@ The load-bearing structural principles of this repo.
 
 ## The shape of the system
 
-One box runs the hub; every other machine runs at most the agent.
+One box runs the hub. A Linux machine the hub manages runs the agent, as
+root, headless. A person's own machine, Linux, Windows or macOS, runs the
+client in that person's session, never as root. The hub box runs its own
+agent too, and hosts no module itself.
 
 ```
 config/ ──render──▶ /var/lib/neutrino/generated/ ──apply──▶ the daemons:
   ▲                                              xray, dnsmasq, cliproxyapi,
-  │ every change is a write here                 nftables, hostapd, units
+  │ every change is a write here                 nftables, the overlay, units
   │
 web/ (FastAPI, root) ◀────── hub/frontend/ (browser, plain HTTP, password)
-  ▲
-  │ heartbeat over pinned TLS — report up, orders and services down
+  ▲                    ▲
+  │ one socket over    │ one socket over pinned TLS: the published
+  │ pinned TLS:        │ list and a gateway key down, asks up
+  │ reports up,        │
+  │ desired state      neutrino_client (a person's session, never root):
+  │ and orders down    a tray and a window; Open, Connect, Mount, Apply
   │
-neutrino_agent (root, stdlib only) ──── executes orders, serves its own page
-  ▲
-  │ loopback only
-agent's own page (the machine's owner, no password)
+neutrino_agent (root, stdlib only) ──── hosts modules, executes orders,
+  ▲                                     shares the desktop
+  │ root-only Unix socket
+nagent (root, on the machine)
 ```
 
 Inside the hub package the layers only reach downward:
@@ -35,11 +42,12 @@ Inside the hub package the layers only reach downward:
   by field name.
 - `cli/` — every entry point, one `nhub` subcommand each.
 
-The agent has no dependencies and opens no port toward the hub: it polls, so
-it survives restarts, sleep and NAT in between. It fetches nothing and
-decides nothing — what the hub "does" to a device is an order the agent
-executes, and what the machine's own people do with a service is the
-machine's ("The hub installs; the agent is an outpost").
+The agent has no dependencies and listens on nothing: it keeps one socket
+open to the hub and reconnects when it drops, so it survives restarts, sleep
+and NAT in between. It fetches nothing and decides nothing — what the hub
+"does" to a device is an order the agent executes ("The hub installs; the
+agent is an outpost"). What a person does with a published service is the
+client's, on that person's machine, and the agent has no part in it.
 
 ## config/ is the single source of truth
 
@@ -106,46 +114,50 @@ running.
 The mechanical placement rules are in
 [../coding_style/layout_style.md](../coding_style/layout_style.md).
 
-## Services are the machine's to take; modules are the hub's to install
+## Services are the person's to take; modules are the hub's to install
 
-Two different things reach a managed machine, and confusing them is what the
-Modules/Services split exists to prevent
+Two different things leave the hub, and confusing them is what the
+modules/services split exists to prevent
 ([agent.md](agent.md), "Who may tell the agent what").
 
-- **A module** is software the machine has. The hub administers it: the panel
-  decides, the hub fetches and installs, the agent executes. Nothing about a
-  module is the machine's own choice.
-- **A service** is something the hub publishes for the machine's people to
-  use: a share to mount, a link to open, a port to forward, the AI gateway to
-  point an account's tools at. The hub says what exists; the machine's own
-  people decide what to do with it, on the machine, and the panel does not
-  render those choices at all.
+- **A module** is software a managed machine hosts. The hub administers it:
+  the panel's Samba, Gitea, Containers and ZFS pages pick the devices, the
+  hub fetches and installs, the agent executes. Nothing about a module is the
+  machine's own choice.
+- **A service** is something the hub publishes for a person to use from
+  their own machine: a link to open, a port to forward, the AI gateway to
+  point their tools at, a share to mount, a desktop to view. The hub says
+  what exists; the client on that person's machine is where every choice is
+  made, and the panel does not render those choices at all.
 
-A service is anything the hub can publish: its own Samba shares, its Gitea,
-its AI gateway, a container's exposed port, and the services somebody
-declares on machines the hub does not run — a NAS's Samba, an HTTP server. A
-module declares its own services and they live only while it runs; a person
-declares the rest by hand and those are probed.
+A service is anything the hub can publish: a device's Samba shares, its
+Gitea, a container's published port, the hub's own AI gateway, a desktop a
+machine is sharing, and the services somebody declares by hand on machines
+the hub does not run. A module's entries live only while the module runs on
+an enabled device; a hand-declared entry is probed; a desktop entry is the
+machine's own word and lives only while it keeps reporting.
 
 ```
-module (gitea, samba, the AI gateway, the container runtime)
-  -> service entry   {id, type, title, payload, is_healthy, source, description}
-                     types: web | port | ai | file
-declared by hand
-  -> service entry   the same shape, probed rather than module-backed
+module on a device (samba, gitea, podman)   -> service entry
+the hub's AI gateway                        -> the one ai entry
+a machine sharing its desktop               -> an rdp entry, from its reports
+declared by hand (web, port, file)          -> the same shape, probed
+  service entry: {id, type, title, payload, is_healthy, source, description}
+  types: web | port | ai | file | rdp
 ```
 
-**The service list carries no secrets.** It is fleet-global and hashed, and
-every agent holds a copy. The one secret a service takes from the hub — an
-account's gateway key — is resolved per device when its heartbeat is answered
-and travels nowhere else. A payload host that is the hub's own is resolved
-per device into the address that device actually reaches.
+**The service list carries no secrets.** It is composed once, fingerprinted,
+and pushed to every client resolved for the address that client reaches the
+hub on. The two secrets a service takes from the hub travel one at a time:
+a client's gateway key rides its own socket, and a desktop's seat password
+is unsealed for the one answer to a Connect. The panel's Services page shows
+the four kinds it can declare or module-publish; a shared desktop appears
+only in the device drawer and on clients.
 
-**What a machine does with a service is the machine's state.** A mount's
-credentials, which accounts point at the AI gateway, which ports are
-forwarded: all of it lives in the agent's own store, survives a hub restore
-untouched, and appears in no hub backup. The hub never learns a share's
-password.
+**What a person does with a service is their machine's state.** A mount's
+login and path, which tools point at the gateway, which ports are
+forwarded: all of it lives in the client's own store on that machine, and
+appears in no hub backup.
 
 ## Managed is a completed handshake
 
@@ -172,10 +184,10 @@ that exist:
   a hub older than its agent turns it away. Each is a definitive rejection,
   not an unreachable hub, and the agent treats all three alike: after a few
   in a row it drops its binding, goes back to waiting for a link, and says
-  why on its own page. Only a hub that does not answer at all is retried
+  why in `nagent status`. Only a hub that does not answer at all is retried
   forever.
-- **The device lets go by leaving** — the agent's page, `nagent disconnect`,
-  or the package's own removal — which tells the hub first; the hub drops
+- **The device lets go by leaving** — `nagent disconnect` or the package's
+  own removal — which tells the hub first; the hub drops
   the token and keeps the name and credentials the owner typed.
 - A device that joins a different hub cannot tell the first one, which keeps
   a managed-and-quiet row until somebody forgets it there.

@@ -4,25 +4,32 @@ How the repository is arranged, and why each directory is the kind of thing it
 is. The rest of this standard governs what goes *inside* a package; this page
 governs the tree itself.
 
-## Two packages, one repository
+## Three packages, one repository
 
-The repository ships two distributions, and the split is the first thing to
-know about the tree: `hub/` is the appliance, `agent/` is what runs on the
-machines the appliance manages. They share no code. The agent is pure standard
-library, because it installs on a laptop somebody else administers and a
-dependency is a thing that can be missing there.
+The repository ships three distributions, and the split is the first thing to
+know about the tree: `hub/` is the appliance, `agent/` is what runs as root on
+the Linux machines the appliance manages, `client/` is what runs in a person's
+own session on Linux, Windows or macOS. They share no code. The agent is pure
+standard library, because it installs on a machine somebody else administers
+and a dependency is a thing that can be missing there.
 
 ```
 hub/                 The `neutrino_hub` distribution: the appliance.
 agent/               The `neutrino_agent` distribution: the device agent.
-packaging/           Building both, and driving a built one on a live box.
-docs/                This standard, the CLI reference, and the guide/ VitePress
-                     website. Generated site output is ignored.
+client/              The `neutrino_client` distribution: the tray and window.
+packaging/           Building every package, and driving a built one on a
+                     live box or a rented one.
+docs/                memory.md, the working copy's own notes (gitignored), and
+                     guide/, the VitePress documentation site. Generated site
+                     output is ignored.
+skills/              core-code-author/, this standard; doc-author/, how every
+                     .md is written.
 images/              Source artwork: icons/ the one icon source the packaging
-                     builds copy from, original/ the raw artwork, web/ the
-                     README's screenshots.
+                     builds copy from, original/ the raw artwork, web/ and
+                     screenshots/ the README's images, guide/ the site's.
 licenses/            The upstream licences of the software the packages carry.
-.github/workflows/   Continuous integration and the release build.
+.github/workflows/   Continuous integration, the release build, and the
+                     documentation site.
 ```
 
 ## Inside `hub/`
@@ -64,26 +71,56 @@ password hash and device keys. What each file may contain is documented by the
 
 ```
 agent/
-  neutrino_agent/    The agent: heartbeat, reconcile, feature installers, the
-                     window a person pastes an enrolment link into.
+  neutrino_agent/    The agent: the channel to the hub, desired-state sync,
+                     the modules it hosts, the streams the panel drives. No
+                     window; it listens on nothing.
+    core/            The one WebSocket to the hub, enrollment, the desired
+                     state store and engine, metrics, self-update.
+    control/         The root-only local socket `nagent` talks to.
+    streams/         Shell and file streams multiplexed over the channel.
+    modules/         What a machine can host: samba/, gitea/, podman/, zfs/,
+                     the RustDesk host, and the installers they share.
+    rdp/             Sharing this machine's desktop at the seat password the
+                     hub set.
+    platforms/       The OS layer; linux.py is the only implementation.
     exceptions.py    The package's one exception table; the channel kinds
                      are the copy the client keeps too.
-    data/            Ships inside the package: systemd/ its unit, desktop/
-                     its .desktop entry, gui/ the page and window icon the
-                     packaging builds copy in from agent/frontend/ and
-                     images/icons/.
+    data/            Ships inside the package: systemd/ its unit.
+  packaging/         Its .deb and .rpm builders and the payload both stage.
+  tests/
+```
+
+## Inside `client/`
+
+```
+client/
+  neutrino_client/   The client: one resident per person with a tray and a
+                     window; never root.
+    core/            The one WebSocket to the hub, enrollment, session.
+    control/         The local socket the window and `nclient` talk to, the
+                     page it serves, its routes.
+    gui/             The window and the tray, one file per toolkit:
+                     WebKitGTK, WebView2, WKWebView; tray_linux, tray_windows,
+                     tray_macos.
+    services/        One file per service kind: web, port, file, ai, rdp;
+                     the cc-switch driver and the worker that runs them.
+    platforms/       The OS layer: linux.py, windows.py, darwin.py and the
+                     Win32 helpers.
+    bundled.py       Where the carried tools (cc-switch, the RustDesk
+                     viewer) are found.
+    data/            Ships inside the package: desktop/ its .desktop entry,
+                     polkit/ the policy for the mount helper.
   frontend/          The window's page: plain HTML, CSS and JavaScript, no
                      framework and no node toolchain.
-  packaging/         Its own .deb, .rpm, .msi and .pkg builders, the payload
-                     every one of them stages, and the icon containers two
-                     of them need.
+  packaging/         The .deb, .rpm, .msi and .pkg builders, the payload
+                     every one of them stages, and the icon containers.
   tests/
 ```
 
 ## Inside `packaging/`
 
-`build_release.py` builds every artifact of a release. `integration/` is the
-part that cannot run anywhere else: scripts that drive a **built package on a
+`build_release.py` builds every artifact of a release, including the source
+archive. `integration/` is the part that cannot run anywhere else: scripts that drive a **built package on a
 live box**, deliberately outside `hub/tests` because pytest must stay runnable
 on a workstation with no root and no interfaces to break. `integration_aws/`
 is the same idea for the platforms the pipeline VM cannot carry: it rents a
