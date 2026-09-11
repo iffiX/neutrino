@@ -1,26 +1,29 @@
 """Staging the payload every client package carries.
 
-All three packagers ship the same thing — an interpreter, the client
-installed beside it, the window's page and icon, whatever the platform's web
-view needs on the Python side, and the binaries the client drives — and
-differ only in how their format wants that described. What they have in
-common lives here so it cannot drift three ways.
+All three packagers ship the same thing — the client compiled, with the
+interpreter it runs on and the window's Python side inside the binary, the
+page and icon beside it, and the binaries the client drives — and differ only
+in how their format wants that described. What they have in common lives
+here so it cannot drift three ways.
 
-The interpreter is carried rather than depended on, the hub package's own
-precedent. It is also what makes the window possible: the shells embed a web
-view through Python bindings, and a machine's own interpreter is not a place
-this project may install into. Everything Python the client runs therefore
-lives under :data:`INSTALL_PREFIX`, and a platform's C libraries — WebKitGTK,
+Compiled rather than carried as an interpreter, for two reasons that hold on
+every platform: a tree of bytecode beside an interpreter is what heuristic
+scanners flag and a binary is not, and the interpreter is the pinned one on
+every machine either way. The interpreter is still fetched, into the build
+directory alone: the shells embed a web view through Python bindings that
+are compiled against it in the packaging container, and Nuitka compiles the
+client against the same one. A platform's C libraries — WebKitGTK,
 WebView2 — are the only thing a package still names as a dependency.
 
 The client's own code stays pure standard library. Nothing here is imported
 by it; the bindings are imported by the shells alone, at the moment a window
 opens.
 
-Not pure: downloads interpreters and wheels, writes package trees.
+Not pure: downloads interpreters and wheels, compiles, writes package trees.
 """
 
 import hashlib
+import os
 import shutil
 import subprocess
 import sys
@@ -36,26 +39,33 @@ CLIENT_ROOT = Path(__file__).resolve().parent.parent
 REPO_ROOT = CLIENT_ROOT.parent
 PACKAGE_NAME = "neutrino-client"
 
-# Where the package's own environment lives, and the path its interpreter is
-# addressed by. It is staged at this path so nothing inside it has to be
-# rewritten afterwards. Its own root rather than a directory under the hub's
-# or the agent's: a machine may run all three.
+# Where the compiled client and everything beside it live. Its own root
+# rather than a directory under the hub's or the agent's: a machine may run
+# all three.
 INSTALL_PREFIX = Path("/opt/neutrino_client")
-PYTHON_DIR = INSTALL_PREFIX / "python"
 
-# The interpreter the Linux packages carry, pinned by hash. The same build the
-# hub's and the agent's packages carry, so one machine running several carries
-# copies of one thing rather than several different interpreters.
+# What the compiled client and the root helper are called. The helper's
+# directory is the path polkit pins, so its binary sits at that path and its
+# libraries beside it rather than behind a link pkexec would resolve.
+CLIENT_BINARY_NAME = "nclient"
+MOUNT_HELPER_BINARY_NAME = "mount_helper"
+
+# The compiler, at a version that built the client on both platforms. A
+# build tool rather than something carried, so pinned by version.
+NUITKA_VERSION = "4.2.1"
+
+# The interpreter the Linux client is compiled against, pinned by hash. The
+# same build the hub's and the agent's packages carry, and the same minor the
+# Windows build pins, so every package runs one Python.
 #
-# The interpreter itself needs no more than GLIBC 2.17. What the client's own
-# floor is comes from the bindings built beside it, which are compiled in the
-# packaging container against that container's glibc.
+# What the client's glibc floor is comes from the packaging container: the
+# bindings and the compiled client alike are built against its glibc.
 PYTHON_VERSION = "3.13.15"
 PYTHON_BUILD = "20260825"
 #
-# The stripped flavor of the same build. The bindings compiled beside it link
-# the platform's C libraries over their own ABI, so the symbols the flavor
-# drops are read by nothing the package installs.
+# The stripped flavor of the same build. The bindings compiled against it
+# link the platform's C libraries over their own ABI, so the symbols the
+# flavor drops are read by nothing the compile links.
 PYTHON_URL = (
     "https://github.com/astral-sh/python-build-standalone/releases/download/"
     "{build}/cpython-{version}+{build}-{machine}"
@@ -80,7 +90,7 @@ DEBIAN_ARCHITECTURES = {"x86_64": "amd64", "aarch64": "arm64"}
 RPM_ARCHITECTURES = {"x86_64": "x86_64", "aarch64": "aarch64"}
 
 # The Python side of the Linux window, built in the packaging container for
-# the interpreter above and vendored into the package. PyGObject links
+# the interpreter above and compiled into the client. PyGObject links
 # libgirepository over the C ABI, so the C libraries the package depends on
 # serve the copy built here; the distribution's own python3-gi is never
 # involved, because the client never runs the distribution's Python.
@@ -122,40 +132,6 @@ LINUX_GUI_BUILD_HEADERS = (
 # in the repository's own ``licenses/``.
 CARRIED_LICENSES = ("cc_switch.txt", "rustdesk.txt")
 
-# What the bytecode pass leaves alone: the standard library's own test suites
-# hold files that are deliberately unparseable, and nothing on a machine
-# imports them.
-BYTECODE_EXCLUDED = r"/(test|tests|idle_test)/"
-
-# What both maintainer scripts run over the prefix, given the paths their
-# package manager tracks. Configuration and state live under a person's own
-# home, which it never names.
-PRUNE_UNTRACKED = """# Everything under the package's own prefix that the package did not install,
-# and the directories that leaves empty. The tracked paths are read on
-# standard input, and an empty list removes nothing.
-prune_untracked() {
-    prefix="$1"
-    [ -d "$prefix" ] || return 0
-    tracked="$(mktemp)" || return 0
-    LC_ALL=C sort >"$tracked"
-    if [ ! -s "$tracked" ]; then
-        rm -f "$tracked"
-        return 0
-    fi
-    found="$(mktemp)" || { rm -f "$tracked"; return 0; }
-    find "$prefix" ! -type d -print | LC_ALL=C sort >"$found"
-    LC_ALL=C comm -23 "$found" "$tracked" | while IFS= read -r path; do
-        case "$path" in "$prefix"/*) rm -f "$path" ;; esac
-    done
-    find "$prefix" -type d -print | LC_ALL=C sort >"$found"
-    LC_ALL=C comm -23 "$found" "$tracked" | LC_ALL=C sort -r |
-        while IFS= read -r path; do
-            case "$path" in "$prefix"/*) rmdir "$path" 2>/dev/null || true ;; esac
-        done
-    rm -f "$tracked" "$found"
-}
-"""
-
 # What both maintainer scripts run before the files a resident is running
 # from are replaced or taken away. The client's services exist only while it
 # runs, so a resident that is asked to quit releases them itself.
@@ -164,9 +140,9 @@ stop_residents() {
     if ! command -v pkill >/dev/null 2>&1 || ! command -v pgrep >/dev/null 2>&1; then
         return 0
     fi
-    # The whole command line of a resident, so a shell whose own line
-    # mentions the module is never matched.
-    resident='^[^ ]*python[0-9.]* -m neutrino_client\.cli\.entry gui$'
+    # The whole command line of a resident, however the binary was named,
+    # so a shell whose own line mentions it is never matched.
+    resident='(^|/)nclient gui( --hidden)?$'
     pkill -TERM -f "$resident" >/dev/null 2>&1 || return 0
     waited=0
     while [ "$waited" -lt 10 ]; do
@@ -269,10 +245,10 @@ def stage_client_tree(parent: Path, package_version: str) -> Path:
 
 
 def stage_linux_interpreter(staged_python: Path, architecture: str) -> None:
-    """Unpack the pinned interpreter into a Linux package tree.
+    """Unpack the pinned interpreter into the build directory.
 
     Args:
-        staged_python: Where the interpreter belongs in the tree.
+        staged_python: Where the interpreter belongs.
         architecture: The architecture, named however the format names it.
 
     Raises:
@@ -300,7 +276,6 @@ def stage_linux_interpreter(staged_python: Path, architecture: str) -> None:
             else:
                 bundle.extractall(workdir)
         (Path(workdir) / "python").rename(staged_python)
-    trim_interpreter(staged_python)
 
 
 def stage_linux_gui_bindings(staged_python: Path) -> None:
@@ -423,115 +398,127 @@ def stage_licenses(tree: Path) -> None:
         (destination / name).chmod(0o644)
 
 
-def trim_interpreter(staged_python: Path) -> None:
-    """Take out of a staged interpreter what no package needs.
+def compile_linux(build: Path, architecture: str, package_version: str) -> dict:
+    """Compile the client and the root helper for a Linux package.
 
-    Tkinter draws no window here — the shells embed the platform's own web
-    view — and its libraries carry the rpath of the machine the interpreter
-    was built on, which rpmbuild rejects outright.
-
-    Args:
-        staged_python: The interpreter tree as staged.
-    """
-    library = staged_python / "lib"
-    for pattern in ("libtcl*.so*", "libtk*.so*", "tcl*", "tk*", "Tix*", "itcl*"):
-        for path in library.glob(pattern):
-            if path.is_dir():
-                shutil.rmtree(path, ignore_errors=True)
-            else:
-                path.unlink(missing_ok=True)
-    for pattern in ("tkinter", "turtledemo", "idlelib"):
-        for path in library.rglob(pattern):
-            shutil.rmtree(path, ignore_errors=True)
-    for path in library.rglob("_tkinter*.so"):
-        path.unlink(missing_ok=True)
-    for name in ("idle3", f"idle{PYTHON_VERSION[:4]}", "2to3"):
-        (staged_python / "bin" / name).unlink(missing_ok=True)
-
-
-def compile_bytecode(staged_python: Path, install_python: Path) -> None:
-    """Compile the carried interpreter's tree so the package ships its bytecode.
-
-    A ``.pyc`` the interpreter writes after the install is in no package's
-    file list, and a directory a later version drops cannot be removed over
-    one. Compiled here, every one of them is a file the package manager
-    installs and replaces.
+    The pinned interpreter is unpacked into the build directory, the window's
+    bindings are built into it, the compiler is installed beside them, and
+    two standalone programs come out: the client with the bindings inside
+    it, and the mount helper, which is standard library alone and small.
 
     Args:
-        staged_python: The interpreter tree as staged.
-        install_python: Where that tree is installed, which is the path
-            recorded in the bytecode.
+        build: The directory to work under.
+        architecture: The architecture, named however the format names it.
+        package_version: The version stamped into the client tree.
+
+    Returns:
+        ``{"client": dir, "helper": dir, "package": dir}``: the two
+        standalone directories, each holding its binary and what it loads,
+        and the staged package whose ``data`` the client reads at runtime.
 
     Raises:
-        SystemExit: When the interpreter cannot compile its own tree.
+        SystemExit: When a download is not what was pinned, the container
+            lacks what the bindings need, or a compile writes no binary.
     """
+    python_dir = build / "python"
+    stage_linux_interpreter(python_dir, architecture)
+    stage_linux_gui_bindings(python_dir)
+    python = python_dir / "bin" / "python3"
+    run([str(python), "-m", "pip", "install", "--quiet", f"nuitka=={NUITKA_VERSION}"])
+
+    tree = build / "tree"
+    package = stage_client_tree(tree, package_version)
+    client = _compile_standalone(
+        python,
+        tree,
+        package / "cli" / "entry.py",
+        build / "client",
+        CLIENT_BINARY_NAME,
+        (
+            "--include-package=neutrino_client",
+            "--include-module=gi",
+            "--include-module=cairo",
+        ),
+    )
+    helper = _compile_standalone(
+        python,
+        tree,
+        package / "cli" / "mount_helper.py",
+        build / "helper",
+        MOUNT_HELPER_BINARY_NAME,
+        (),
+    )
+    return {"client": client, "helper": helper, "package": package}
+
+
+def _compile_standalone(
+    python: Path, tree: Path, entry: Path, build: Path, name: str, includes: tuple
+) -> Path:
+    """One Nuitka standalone build.
+
+    Args:
+        python: The interpreter the program is compiled against.
+        tree: The directory the staged package is in, which the compiler
+            resolves the package from.
+        entry: The module that becomes the program.
+        build: Where the compiler works.
+        name: What the binary is called.
+        includes: What to include beyond what the entry imports itself.
+
+    Returns:
+        The standalone directory: the binary and everything it loads.
+
+    Raises:
+        SystemExit: When the compiler refuses or writes no binary.
+    """
+    command = [
+        str(python),
+        "-m",
+        "nuitka",
+        "--standalone",
+        "--assume-yes-for-downloads",
+        *includes,
+        f"--output-filename={name}",
+        f"--output-dir={build}",
+        str(entry),
+    ]
     result = subprocess.run(
-        [
-            str(staged_python / "bin" / "python3"),
-            "-m",
-            "compileall",
-            "-q",
-            "-f",
-            # The package manager sets its own mtimes, and a timestamp
-            # validated .pyc would be rejected and written again at runtime.
-            "--invalidation-mode",
-            "unchecked-hash",
-            "-x",
-            BYTECODE_EXCLUDED,
-            "-d",
-            str(install_python / "lib"),
-            str(staged_python / "lib"),
-        ],
+        command,
         capture_output=True,
         text=True,
+        env={**os.environ, "PYTHONPATH": str(tree)},
     )
     if result.returncode != 0:
         raise SystemExit(
-            f"compiling {staged_python} failed:\n"
-            f"{(result.stderr or result.stdout).strip()}"
+            f"compiling {entry.name} failed:\n{(result.stderr or result.stdout).strip()}"
         )
+    dist = build / f"{entry.stem}.dist"
+    if not (dist / name).is_file():
+        raise SystemExit(f"nuitka wrote no {name} under {dist}")
+    return dist
 
 
-def strip_build_paths(staged_python: Path, tree: Path) -> None:
-    """Point everything inside the staged interpreter at its installed path.
-
-    pip writes the staging path into the console scripts and the pkg-config
-    files it generates. Left alone, every one of them would name a directory
-    that exists only on the build machine.
-
-    Args:
-        staged_python: The interpreter tree as staged.
-        tree: The staging root, which is the prefix to remove.
-    """
-    staged_prefix = str(tree)
-    for path in staged_python.rglob("*"):
-        if not path.is_file() or path.is_symlink():
-            continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, OSError):
-            continue
-        if staged_prefix not in text:
-            continue
-        path.write_text(text.replace(staged_prefix, ""), encoding="utf-8")
-
-
-def site_packages_of(staged_python: Path) -> Path:
-    """The staged interpreter's site-packages directory.
+def lay_out_compiled(tree: Path, compiled: dict, helper_path: Path) -> None:
+    """Put the compiled programs where the package installs them.
 
     Args:
-        staged_python: The interpreter tree as staged.
-
-    Returns:
-        The directory third-party packages live in.
-
-    Raises:
-        SystemExit: When the tree has none, which means it was not unpacked.
+        tree: The package tree being staged.
+        compiled: What :func:`compile_linux` returned.
+        helper_path: The absolute path polkit pins the helper at; its
+            directory takes the helper's whole standalone directory.
     """
-    found = sorted((staged_python / "lib").glob("python*/site-packages"))
-    if not found:
-        raise SystemExit(f"no site-packages under {staged_python}")
-    return found[0]
+    prefix = tree / str(INSTALL_PREFIX).lstrip("/")
+    shutil.copytree(compiled["client"], prefix, dirs_exist_ok=True)
+    # Compiled modules keep a __file__ under the prefix, so the package's
+    # own data goes beside where that points.
+    shutil.copytree(
+        compiled["package"] / "data", prefix / compiled["package"].name / "data"
+    )
+    helper_dir = tree / str(helper_path.parent).lstrip("/")
+    shutil.copytree(compiled["helper"], helper_dir, dirs_exist_ok=True)
+    launcher = tree / "usr/bin" / CLIENT_BINARY_NAME
+    launcher.parent.mkdir(parents=True, exist_ok=True)
+    launcher.symlink_to(INSTALL_PREFIX / CLIENT_BINARY_NAME)
 
 
 def fetch(url: str, digest: str, what: str) -> bytes:

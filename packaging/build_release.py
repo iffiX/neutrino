@@ -97,22 +97,25 @@ AGENT_BUILDS = {
 
 # What builds the client for each family, and what that family needs
 # installed first. The window's bindings are compiled here against the
-# family's own C libraries, and the viewer is unpacked out of upstream's .deb,
-# so both families need dpkg and readelf.
+# family's own C libraries and the client is compiled around them, which
+# takes a C compiler, patchelf and the typelibs the window loads; the viewer
+# is unpacked out of upstream's .deb, so both families need dpkg and readelf.
 CLIENT_BUILDS = {
     "debian": {
         "image": "debian:12",
         "install": "apt-get -qq update >/dev/null 2>&1 && "
         "apt-get -qq install -y python3 dpkg dpkg-dev binutils pkg-config "
-        "build-essential libgirepository1.0-dev libcairo2-dev ca-certificates "
-        ">/dev/null 2>&1",
+        "build-essential patchelf ccache libgirepository1.0-dev libcairo2-dev "
+        "gir1.2-gtk-3.0 gir1.2-webkit2-4.1 gir1.2-ayatanaappindicator3-0.1 "
+        "ca-certificates >/dev/null 2>&1",
         "script": "build_deb.py",
     },
     "rhel": {
         "image": "fedora:41",
         "install": "dnf -q -y install python3 rpm-build dpkg binutils "
-        "pkgconf-pkg-config gcc gobject-introspection-devel cairo-devel "
-        "cairo-gobject-devel libffi-devel cpio >/dev/null 2>&1",
+        "pkgconf-pkg-config gcc patchelf ccache gobject-introspection-devel "
+        "cairo-devel cairo-gobject-devel libffi-devel gtk3 webkit2gtk4.1 "
+        "libayatana-appindicator-gtk3 cpio >/dev/null 2>&1",
         "script": "build_rpm.py",
     },
 }

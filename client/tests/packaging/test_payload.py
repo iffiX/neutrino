@@ -18,39 +18,6 @@ import pytest
 import payload
 
 
-def _carried_interpreter(root):
-    """A staged interpreter whose python3 is the one running the tests.
-
-    Args:
-        root: The staging directory.
-
-    Returns:
-        The staged interpreter tree.
-    """
-    staged_python = root / "opt" / "neutrino_client" / "python"
-    (staged_python / "bin").mkdir(parents=True)
-    (staged_python / "bin" / "python3").symlink_to(sys.executable)
-    return staged_python
-
-
-def _prune(prefix, listing):
-    """Run the maintainer scripts' own prune over a tree.
-
-    Args:
-        prefix: The prefix to prune.
-        listing: A file holding the paths the package manager tracks.
-    """
-    script = (
-        "set -e"
-        + "\n"
-        + payload.PRUNE_UNTRACKED
-        + f'prune_untracked "{prefix}" <"{listing}"\n'
-    )
-    result = subprocess.run(["sh", "-c", script], capture_output=True, text=True)
-
-    assert result.returncode == 0, result.stderr
-
-
 def test_the_machines_the_packages_are_published_for():
     """One machine, spelled several ways, and nothing else."""
     assert payload.machine_name("amd64") == "x86_64"
@@ -142,45 +109,110 @@ def test_no_bytecode_of_the_build_machines_own_is_carried(tmp_path):
     assert list(staged.rglob("*.pyc")) == []
 
 
-def test_a_carried_interpreter_loses_what_draws_no_window(tmp_path):
-    staged_python = _carried_interpreter(tmp_path)
-    library = staged_python / "lib" / "python3.13"
-    (library / "tkinter").mkdir(parents=True)
-    (library / "tkinter" / "__init__.py").write_text("")
-    (library / "idlelib").mkdir()
-    (staged_python / "lib" / "libtcl8.6.so").write_text("")
-    (library / "lib-dynload").mkdir()
-    (library / "lib-dynload" / "_tkinter.cpython-313.so").write_text("")
-    (staged_python / "bin" / "idle3").write_text("")
+def test_the_compile_is_two_standalone_programs_against_the_pinned_interpreter(
+    tmp_path, monkeypatch
+):
+    """The client with the window's bindings inside it, and the helper on
+    its own; both from the staged tree, both against the build's Python."""
+    commands = []
+    python = tmp_path / "build" / "python" / "bin" / "python3"
 
-    payload.trim_interpreter(staged_python)
+    def stage_interpreter(staged_python, architecture):
+        (staged_python / "bin").mkdir(parents=True)
+        (staged_python / "bin" / "python3").write_text("")
 
-    assert not (library / "tkinter").exists()
-    assert not (library / "idlelib").exists()
-    assert not (staged_python / "lib" / "libtcl8.6.so").exists()
-    assert not (library / "lib-dynload" / "_tkinter.cpython-313.so").exists()
-    assert not (staged_python / "bin" / "idle3").exists()
+    def run(command, *, cwd=None):
+        commands.append(("pip", command))
+
+    def fake_run(command, capture_output, text, env):
+        commands.append(("nuitka", command, env))
+        build = pathlib.Path(command[-2].split("=", 1)[1])
+        name = command[-3].split("=", 1)[1]
+        dist = build / (pathlib.Path(command[-1]).stem + ".dist")
+        dist.mkdir(parents=True, exist_ok=True)
+        (dist / name).write_text("")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(payload, "stage_linux_interpreter", stage_interpreter)
+    monkeypatch.setattr(payload, "stage_linux_gui_bindings", lambda staged: None)
+    monkeypatch.setattr(payload, "run", run)
+    monkeypatch.setattr(payload.subprocess, "run", fake_run)
+
+    compiled = payload.compile_linux(tmp_path / "build", "amd64", "9.9.9")
+
+    assert commands[0] == (
+        "pip",
+        [str(python), "-m", "pip", "install", "--quiet", "nuitka==4.2.1"],
+    )
+    client, helper = commands[1], commands[2]
+    assert client[1][:4] == [str(python), "-m", "nuitka", "--standalone"]
+    assert "--include-package=neutrino_client" in client[1]
+    assert "--include-module=gi" in client[1]
+    assert client[1][-1].endswith("neutrino_client/cli/entry.py")
+    assert client[2]["PYTHONPATH"] == str(tmp_path / "build" / "tree")
+    assert "--include-package=neutrino_client" not in helper[1]
+    assert helper[1][-1].endswith("neutrino_client/cli/mount_helper.py")
+    assert (compiled["client"] / "nclient").is_file()
+    assert (compiled["helper"] / "mount_helper").is_file()
+    assert (compiled["package"] / "data" / "gui" / "index.html").is_file()
 
 
-def test_the_build_machines_own_paths_are_taken_back_out(tmp_path):
-    staged_python = _carried_interpreter(tmp_path)
-    script = staged_python / "bin" / "something"
-    script.write_text(f"#!{tmp_path}/opt/neutrino_client/python/bin/python3\n")
+def test_a_compile_that_writes_no_binary_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        payload.subprocess,
+        "run",
+        lambda command, capture_output, text, env: subprocess.CompletedProcess(
+            command, 0, "", ""
+        ),
+    )
+    entry = tmp_path / "tree" / "neutrino_client" / "cli" / "entry.py"
+    entry.parent.mkdir(parents=True)
+    entry.write_text("")
 
-    payload.strip_build_paths(staged_python, tmp_path)
+    with pytest.raises(SystemExit) as refused:
+        payload._compile_standalone(
+            tmp_path / "python3",
+            tmp_path / "tree",
+            entry,
+            tmp_path / "out",
+            "nclient",
+            (),
+        )
 
-    assert script.read_text() == "#!/opt/neutrino_client/python/bin/python3\n"
+    assert "nclient" in str(refused.value)
 
 
-def test_site_packages_is_found_and_a_tree_without_one_is_refused(tmp_path):
-    staged_python = _carried_interpreter(tmp_path)
-    with pytest.raises(SystemExit):
-        payload.site_packages_of(staged_python)
+def test_the_compiled_programs_land_where_the_package_installs_them(tmp_path):
+    """The client under the prefix with its data beside where a compiled
+    module's __file__ points, a link on the path, and the helper's whole
+    directory at the path polkit pins."""
+    client = tmp_path / "client.dist"
+    (client / "gi").mkdir(parents=True)
+    (client / "nclient").write_text("")
+    helper = tmp_path / "helper.dist"
+    helper.mkdir()
+    (helper / "mount_helper").write_text("")
+    (helper / "libpython3.13.so.1.0").write_text("")
+    package = payload.stage_client_tree(tmp_path / "tree", "9.9.9")
+    tree = tmp_path / "pkg"
 
-    wanted = staged_python / "lib" / "python3.13" / "site-packages"
-    wanted.mkdir(parents=True)
+    payload.lay_out_compiled(
+        tree,
+        {"client": client, "helper": helper, "package": package},
+        pathlib.Path("/usr/libexec/neutrino_client/mount_helper"),
+    )
 
-    assert payload.site_packages_of(staged_python) == wanted
+    prefix = tree / "opt" / "neutrino_client"
+    assert (prefix / "nclient").is_file()
+    assert (prefix / "gi").is_dir()
+    assert (prefix / "neutrino_client" / "data" / "gui" / "index.html").is_file()
+    assert (tree / "usr/libexec/neutrino_client/mount_helper").is_file()
+    assert (tree / "usr/libexec/neutrino_client/libpython3.13.so.1.0").is_file()
+    launcher = tree / "usr/bin/nclient"
+    assert launcher.is_symlink()
+    assert pathlib.Path(launcher.readlink()) == pathlib.Path(
+        "/opt/neutrino_client/nclient"
+    )
 
 
 def test_the_licences_the_package_owes_are_staged(tmp_path):
@@ -202,50 +234,6 @@ def test_a_licence_the_checkout_does_not_have_is_refused_by_name(tmp_path, monke
         payload.stage_licenses(tmp_path)
 
     assert "nothing.txt" in str(refused.value)
-
-
-def test_the_prune_removes_what_the_package_did_not_install(tmp_path):
-    prefix = tmp_path / "opt" / "neutrino_client"
-    (prefix / "python" / "lib").mkdir(parents=True)
-    tracked = prefix / "python" / "lib" / "kept.py"
-    tracked.write_text("")
-    stray = prefix / "python" / "lib" / "stray.pyc"
-    stray.write_text("")
-    (prefix / "python" / "empty").mkdir()
-    listing = tmp_path / "listing"
-    listing.write_text(f"{prefix}\n{prefix / 'python'}\n{tracked}\n")
-
-    _prune(prefix, listing)
-
-    assert tracked.is_file()
-    assert not stray.exists()
-    assert not (prefix / "python" / "empty").exists()
-
-
-def test_an_empty_listing_removes_nothing(tmp_path):
-    prefix = tmp_path / "opt" / "neutrino_client"
-    prefix.mkdir(parents=True)
-    kept = prefix / "kept.py"
-    kept.write_text("")
-    listing = tmp_path / "listing"
-    listing.write_text("")
-
-    _prune(prefix, listing)
-
-    assert kept.is_file()
-
-
-def test_the_bytecode_pass_compiles_the_carried_tree(tmp_path):
-    staged_python = _carried_interpreter(tmp_path)
-    library = staged_python / "lib" / "python3.13"
-    library.mkdir(parents=True)
-    (library / "module.py").write_text("VALUE = 1\n")
-
-    payload.compile_bytecode(staged_python, payload.PYTHON_DIR)
-
-    written = list(library.rglob("*.pyc"))
-    assert len(written) == 1
-    assert written[0].name.startswith("module.cpython-")
 
 
 def test_a_wheels_console_scripts_are_not_carried(tmp_path, monkeypatch):

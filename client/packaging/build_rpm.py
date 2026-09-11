@@ -2,17 +2,19 @@
 
     python3 client/packaging/build_rpm.py --output-dir dist/ --architecture x86_64
 
-The same payload the .deb carries, under /opt/neutrino_client: its own
-interpreter, the window's bindings and the two binaries the client drives.
-That fixes the package to one architecture, so it is built in a container of
-the machine it is for.
+The same payload the .deb carries: the client compiled under
+/opt/neutrino_client with the window's bindings inside it, the root helper
+compiled beside the path polkit pins, and the two binaries the client
+drives. That fixes the package to one architecture and one glibc, so it is
+built in a container of the machine it is for.
 
 The same maintainer scripts too: every resident is asked to quit before its
-files are taken, and erasing the package takes each person's own
-configuration with it.
+files are taken, and erasing the package keeps each person's own
+configuration.
 
 Needs `rpmbuild`, from the `rpm` package on Debian family and `rpm-build` on
-RHEL family, and `dpkg` for the viewer it unpacks out of upstream's own .deb.
+RHEL family, a C compiler and patchelf for Nuitka, and `dpkg` for the viewer
+it unpacks out of upstream's own .deb.
 
 Not pure: writes a package tree and runs rpmbuild.
 """
@@ -71,22 +73,28 @@ BuildArch:      {architecture}
 {requires}
 Packager:       {packager}
 
-# The payload is prebuilt and carries its own interpreter, so none of
-# rpmbuild's opinions about Python belong to it: its shebangs name a path that
-# exists only once installed, and its .so files are not ours to strip.
+# The payload is prebuilt and compiled, so none of rpmbuild's opinions about
+# Python or about stripping belong to it: there is no bytecode to compile,
+# no shebang to mangle, and its .so files are not ours to strip.
 %global __brp_python_bytecompile %{{nil}}
 %global __brp_mangle_shebangs %{{nil}}
 %global __brp_strip %{{nil}}
 %global __brp_strip_static_archive %{{nil}}
 %global debug_package %{{nil}}
 
+# The interpreter's library travels in the package beside the binaries that
+# load it, so it is nothing to ask the machine for; the rest of what the
+# scan finds is the machine's, and stays a requirement.
+%global __requires_exclude ^libpython3\\.13\\.so
+
 %description
 A person's window onto the services a Neutrino Hub publishes for them: links,
 ports forwarded to this machine, shares mounted under their home, the AI
 gateway their tools point at, and desktops the fleet shares.
 
-Carries its own interpreter and the window's bindings, so it installs on a
-machine with no Python and touches none the machine already has.
+Compiled with its interpreter and the window's bindings inside, so it
+installs on a machine with no Python and touches none the machine already
+has.
 
 %install
 mkdir -p %{{buildroot}}
@@ -95,7 +103,7 @@ cp -a {staged}/. %{{buildroot}}/
 %files
 {prefix}
 /usr/bin/nclient
-{helper}
+{helper_dir}
 /usr/share/applications/{desktop}.desktop
 /usr/share/icons/hicolor/*/apps/{desktop}.png
 /usr/share/polkit-1/actions/{action}.policy
@@ -130,20 +138,6 @@ fi
 if [ "$1" = 0 ]; then
     rm -rf {prefix}
 fi
-
-%posttrans
-{prune}
-rpm -ql {name} | prune_untracked {prefix}
-"""
-
-WRAPPER = """#!/bin/sh
-# The client runs from the interpreter the package carries, never the system
-# one.
-exec {python}/bin/python3 -m neutrino_client.cli.entry "$@"
-"""
-
-MOUNT_HELPER = """#!/bin/sh
-exec {python}/bin/python3 -m neutrino_client.cli.mount_helper "$@"
 """
 
 
@@ -193,10 +187,9 @@ def main() -> int:
                 packager=arguments.packager,
                 staged=staged,
                 prefix=payload.INSTALL_PREFIX,
-                helper=CLIENT_MOUNT_HELPER_PATH,
+                helper_dir=str(Path(CLIENT_MOUNT_HELPER_PATH).parent),
                 desktop=CLIENT_DESKTOP_NAME,
                 action=CLIENT_MOUNT_POLKIT_ACTION,
-                prune=payload.PRUNE_UNTRACKED,
                 stop=payload.STOP_RESIDENTS,
             ),
             encoding="utf-8",
@@ -215,26 +208,12 @@ def _lay_out(staged: Path, version: str, architecture: str) -> None:
         version: The version being packaged.
         architecture: The rpm architecture name.
     """
-    staged_python = staged / str(payload.PYTHON_DIR).lstrip("/")
-    payload.stage_linux_interpreter(staged_python, architecture)
-    payload.stage_client_tree(payload.site_packages_of(staged_python), version)
-    payload.stage_linux_gui_bindings(staged_python)
-    payload.compile_bytecode(staged_python, payload.PYTHON_DIR)
-    payload.strip_build_paths(staged_python, staged)
+    compiled = payload.compile_linux(staged.parent / "build", architecture, version)
+    payload.lay_out_compiled(staged, compiled, Path(CLIENT_MOUNT_HELPER_PATH))
     bundled.stage_linux_binaries(staged, architecture)
     payload.stage_licenses(staged)
     _lay_out_desktop(staged)
 
-    payload.write(
-        staged / "usr/bin/nclient",
-        WRAPPER.format(python=payload.PYTHON_DIR),
-        is_executable=True,
-    )
-    payload.write(
-        staged / str(CLIENT_MOUNT_HELPER_PATH).lstrip("/"),
-        MOUNT_HELPER.format(python=payload.PYTHON_DIR),
-        is_executable=True,
-    )
     payload.write(
         staged / f"usr/share/polkit-1/actions/{CLIENT_MOUNT_POLKIT_ACTION}.policy",
         (

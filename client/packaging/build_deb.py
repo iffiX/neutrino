@@ -2,20 +2,22 @@
 
     python3 client/packaging/build_deb.py --output-dir dist/ --architecture amd64
 
-The package carries its own interpreter under /opt/neutrino_client, the
-window's bindings built beside it, and the two binaries the client drives, so
-it names no Python at all. That fixes it to one architecture: build it in a
-container of the machine it is for, the way the hub's package is built.
+The package carries the client compiled under /opt/neutrino_client, the
+window's bindings inside it, the root helper compiled beside the path polkit
+pins, and the two binaries the client drives, so it names no Python at all.
+That fixes it to one architecture and one glibc: build it in a container of
+the machine it is for, the way the hub's package is built.
 
 The client is a person's application, not a service: the package installs a
 launcher, no autostart entry, and registers no unit.
 
 The client's services last only as long as it runs, so the maintainer scripts
-ask every resident to quit before they take its files, and removing the
-package takes each person's own configuration with it.
+ask every resident to quit before they take its files; removing the package
+keeps each person's own configuration and purging it takes it.
 
-Needs the development headers the window's bindings compile against, and
-`dpkg-deb` for both the build and the viewer it unpacks.
+Needs the development headers the window's bindings compile against, a C
+compiler and patchelf for Nuitka, and `dpkg-deb` for both the build and the
+viewer it unpacks.
 
 Not pure: writes a package tree and runs dpkg-deb.
 """
@@ -83,20 +85,13 @@ Description: Neutrino client
  links, ports forwarded to this machine, shares mounted under their home,
  the AI gateway their tools point at, and desktops the fleet shares.
  .
- Carries its own interpreter and the window's bindings, so it installs on a
- machine with no Python and touches none the machine already has.
+ Compiled with its interpreter and the window's bindings inside, so it
+ installs on a machine with no Python and touches none the machine already
+ has.
 """
 
 POSTINST = """#!/bin/sh
 set -e
-
-{prune}
-if [ "$1" = configure ]; then
-    listing=/var/lib/dpkg/info/{package}.list
-    if [ -r "$listing" ]; then
-        prune_untracked {prefix} <"$listing"
-    fi
-fi
 
 if [ -d /usr/share/icons/hicolor ]; then
     gtk-update-icon-cache -f /usr/share/icons/hicolor >/dev/null 2>&1 || true
@@ -125,24 +120,14 @@ POSTRM = """#!/bin/sh
 set -e
 
 {wipe}
-# What dpkg leaves once its own files are gone: the bytecode the interpreter
-# wrote beside them, and what the people on this machine kept.
+# What dpkg leaves once its own files are gone: whatever else ended up under
+# the prefix, and what the people on this machine kept.
 if [ "$1" = remove ] || [ "$1" = purge ]; then
     rm -rf {prefix}
 fi
 if [ "$1" = purge ]; then
     wipe_personal_state
 fi
-"""
-
-WRAPPER = """#!/bin/sh
-# The client runs from the interpreter the package carries, never the system
-# one.
-exec {python}/bin/python3 -m neutrino_client.cli.entry "$@"
-"""
-
-MOUNT_HELPER = """#!/bin/sh
-exec {python}/bin/python3 -m neutrino_client.cli.mount_helper "$@"
 """
 
 
@@ -192,26 +177,12 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
         architecture: The Debian architecture name.
         maintainer: The Maintainer field's value.
     """
-    staged_python = tree / str(payload.PYTHON_DIR).lstrip("/")
-    payload.stage_linux_interpreter(staged_python, architecture)
-    payload.stage_client_tree(payload.site_packages_of(staged_python), version)
-    payload.stage_linux_gui_bindings(staged_python)
-    payload.compile_bytecode(staged_python, payload.PYTHON_DIR)
-    payload.strip_build_paths(staged_python, tree)
+    compiled = payload.compile_linux(tree.parent / "build", architecture, version)
+    payload.lay_out_compiled(tree, compiled, Path(CLIENT_MOUNT_HELPER_PATH))
     bundled.stage_linux_binaries(tree, architecture)
     payload.stage_licenses(tree)
     _lay_out_desktop(tree)
 
-    payload.write(
-        tree / "usr/bin/nclient",
-        WRAPPER.format(python=payload.PYTHON_DIR),
-        is_executable=True,
-    )
-    payload.write(
-        tree / str(CLIENT_MOUNT_HELPER_PATH).lstrip("/"),
-        MOUNT_HELPER.format(python=payload.PYTHON_DIR),
-        is_executable=True,
-    )
     payload.write(
         tree / f"usr/share/polkit-1/actions/{CLIENT_MOUNT_POLKIT_ACTION}.policy",
         (
@@ -229,15 +200,7 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
         maintainer=maintainer,
     )
     payload.write(tree / "DEBIAN/control", control)
-    payload.write(
-        tree / "DEBIAN/postinst",
-        POSTINST.format(
-            prune=payload.PRUNE_UNTRACKED,
-            package=PACKAGE_NAME,
-            prefix=payload.INSTALL_PREFIX,
-        ),
-        is_executable=True,
-    )
+    payload.write(tree / "DEBIAN/postinst", POSTINST, is_executable=True)
     payload.write(
         tree / "DEBIAN/prerm",
         PRERM.format(stop=payload.STOP_RESIDENTS),
