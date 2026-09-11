@@ -164,7 +164,9 @@ stop_residents() {
     if ! command -v pkill >/dev/null 2>&1 || ! command -v pgrep >/dev/null 2>&1; then
         return 0
     fi
-    resident='neutrino_client\.cli\.entry gui'
+    # The whole command line of a resident, so a shell whose own line
+    # mentions the module is never matched.
+    resident='^[^ ]*python[0-9.]* -m neutrino_client\.cli\.entry gui$'
     pkill -TERM -f "$resident" >/dev/null 2>&1 || return 0
     waited=0
     while [ "$waited" -lt 10 ]; do
