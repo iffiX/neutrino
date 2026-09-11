@@ -1,12 +1,13 @@
 import {
-  MONTH_LABELS,
-  WEEKDAY_LABELS,
   formatBucketLabel,
+  monthLabel,
   toHeatLevel,
   toWeekGroups,
   tokensOf,
+  weekdayLabels,
 } from "../ai_usage";
 import { formatCompact } from "../format_compact";
+import { t, useLanguage } from "../i18n";
 import type { AiUsageBucket, AiUsageRange } from "../api_types";
 
 import "./usage_grid.css";
@@ -24,21 +25,6 @@ import "./usage_grid.css";
  * scroll inside their own box so the page never scrolls sideways.
  */
 
-const WORDING = {
-  empty: "No requests yet",
-  emptyHint: "Cells fill in as machines talk to the gateway.",
-  less: "Less",
-  more: "More",
-  quiet: "quiet",
-  healthy: "healthy",
-  degraded: "degraded",
-  failing: "failing",
-  noRequests: "no requests",
-  tokensWord: "tokens",
-  okWord: "ok",
-  failedWord: "failed",
-} as const;
-
 // Above this share of failures a cell turns red instead of amber.
 const FAILING_SHARE = 0.5;
 
@@ -53,6 +39,8 @@ interface UsageGridProps {
 }
 
 export function UsageGrid({ series, range, mode }: UsageGridProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const hasTraffic = series.some((point) => point.requests > 0);
   if (series.length === 0 || !hasTraffic) {
     return <GridEmpty />;
@@ -78,8 +66,8 @@ export function UsageGrid({ series, range, mode }: UsageGridProps) {
 function GridEmpty() {
   return (
     <div className="usage_grid_empty">
-      <span>{WORDING.empty}</span>
-      <span className="faint">{WORDING.emptyHint}</span>
+      <span>{t("ui.usage.grid_empty")}</span>
+      <span className="faint">{t("ui.usage.grid_empty_hint")}</span>
     </div>
   );
 }
@@ -128,7 +116,7 @@ function MonthCalendar({ series, range, mode }: RowProps) {
   return (
     <div className="usage_grid_calendar">
       <div className="usage_grid_weekdays">
-        {WEEKDAY_LABELS.map((weekday, index) => (
+        {weekdayLabels().map((weekday, index) => (
           <span key={index} className="usage_grid_label">
             {weekday}
           </span>
@@ -208,19 +196,26 @@ function Cell({ point, range, mode, highest }: CellProps) {
     return (
       <span
         className={`usage_cell usage_cell--heat${level}`}
-        title={`${label} · ${formatCompact(tokens)} ${WORDING.tokensWord}`}
+        title={t("ui.usage.cell_tokens", {
+          label,
+          tokens: formatCompact(tokens),
+        })}
       />
     );
   }
   const state = healthStateOf(point);
-  const outcome =
-    point.requests === 0
-      ? WORDING.noRequests
-      : `${point.requests - point.failed} ${WORDING.okWord} · ${point.failed} ${WORDING.failedWord}`;
   return (
     <span
       className={`usage_cell usage_cell--${state}`}
-      title={`${label} · ${outcome}`}
+      title={
+        point.requests === 0
+          ? t("ui.usage.cell_quiet", { label })
+          : t("ui.usage.cell_health", {
+              label,
+              ok: point.requests - point.failed,
+              failed: point.failed,
+            })
+      }
     />
   );
 }
@@ -228,11 +223,11 @@ function Cell({ point, range, mode, highest }: CellProps) {
 function TokensLegend() {
   return (
     <div className="usage_grid_legend">
-      <span className="faint">{WORDING.less}</span>
+      <span className="faint">{t("ui.usage.less")}</span>
       {HEAT_LEVEL_STEPS.map((level) => (
         <span key={level} className={`usage_cell usage_cell--heat${level}`} />
       ))}
-      <span className="faint">{WORDING.more}</span>
+      <span className="faint">{t("ui.usage.more")}</span>
     </div>
   );
 }
@@ -241,13 +236,13 @@ function HealthLegend() {
   return (
     <div className="usage_grid_legend">
       <span className="usage_cell usage_cell--idle" />
-      <span className="faint">{WORDING.quiet}</span>
+      <span className="faint">{t("state.quiet")}</span>
       <span className="usage_cell usage_cell--ok" />
-      <span className="faint">{WORDING.healthy}</span>
+      <span className="faint">{t("state.healthy")}</span>
       <span className="usage_cell usage_cell--warn" />
-      <span className="faint">{WORDING.degraded}</span>
+      <span className="faint">{t("state.degraded")}</span>
       <span className="usage_cell usage_cell--error" />
-      <span className="faint">{WORDING.failing}</span>
+      <span className="faint">{t("state.failing")}</span>
     </div>
   );
 }
@@ -269,7 +264,7 @@ function monthLabelFor(column: (AiUsageBucket | null)[]): string {
     }
     const match = /^(\d{4})-(\d{2})-01/.exec(point.bucket);
     if (match !== null) {
-      return MONTH_LABELS[Number(match[2]) - 1] ?? "";
+      return monthLabel(Number(match[2]) - 1);
     }
   }
   return "";

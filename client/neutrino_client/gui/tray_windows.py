@@ -18,11 +18,6 @@ from __future__ import annotations
 import ctypes
 import threading
 
-from neutrino_client.constants import (
-    CLIENT_TRAY_OPEN_LABEL,
-    CLIENT_TRAY_QUIT_LABEL,
-)
-
 from neutrino_client.platforms import win32
 
 # What the tray's own window is registered as, and the message the shell
@@ -47,16 +42,30 @@ QUIT_MESSAGES = (win32.WM_CLOSE, win32.WM_QUERYENDSESSION, win32.WM_ENDSESSION)
 class WindowsTrayIcon:
     """The shell notification area, on a thread with its own message pump."""
 
-    def __init__(self, *, title: str, icon_path: str, on_open, on_quit, win32=None):
+    def __init__(
+        self,
+        *,
+        title: str,
+        open_label: str,
+        quit_label: str,
+        icon_path: str,
+        on_open,
+        on_quit,
+        win32=None,
+    ):
         """
         Args:
             title: The icon's tooltip.
+            open_label: What the menu's first item says.
+            quit_label: What the menu's second item says.
             icon_path: The ``.ico`` file, empty to use the stock icon.
             on_open: Called when the person asks for the window.
             on_quit: Called when the person asks the client to stop.
             win32: The Win32 seam; None builds the ctypes one.
         """
         self._title = title
+        self._open_label = open_label
+        self._quit_label = quit_label
         self._icon_path = icon_path
         self._on_open = on_open
         self._on_quit = on_quit
@@ -119,8 +128,8 @@ class WindowsTrayIcon:
         chosen = self._win32.popup_menu(
             window=self._window,
             items=(
-                (TRAY_COMMAND_OPEN, CLIENT_TRAY_OPEN_LABEL),
-                (TRAY_COMMAND_QUIT, CLIENT_TRAY_QUIT_LABEL),
+                (TRAY_COMMAND_OPEN, self._open_label),
+                (TRAY_COMMAND_QUIT, self._quit_label),
             ),
         )
         self._on_command(chosen)

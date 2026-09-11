@@ -21,22 +21,27 @@ export interface SetupInterface {
 /** One shape this machine can be set up as. */
 export interface SetupMode {
   key: string;
-  summary: string;
   port_count: number;
   is_wire_needed: boolean;
   /** Whether this mode sets the machine's addresses, or answers on what is
    * already there. */
   is_addressing_owned: boolean;
-  caution: string;
+  /** Whether this shape costs something the machine cannot be checked for. */
+  has_caution: boolean;
+}
+
+/** One thing installing a module does that is agreed to first. */
+export interface SetupConsent {
+  code: string;
+  params: Record<string, string | number>;
 }
 
 /** One optional module the first run can install. */
 export interface SetupService {
   name: string;
-  install_note: string;
   is_installed: boolean;
-  /** What installing it does beyond installing it, one sentence each. */
-  consents: string[];
+  /** What installing it does beyond installing it. */
+  consents: SetupConsent[];
 }
 
 /** What every question starts at. */
@@ -55,16 +60,18 @@ export interface SetupContext {
   modes: SetupMode[];
   services: SetupService[];
   defaults: SetupDefaults;
-  /** What the router screen says about the ports it does not ask for. */
-  router_note: string;
 }
 
 /** One installation step, as the terminal reports it. */
 export interface SetupStep {
-  description: string;
+  /** What the step is; the page words it from its own catalog. */
+  id: string;
+  /** The values that wording names. */
+  params: Record<string, string | number>;
   /** Three and no more: a step is running, it succeeded, or it did not.
    * "Already so" is a note beside a step that succeeded. */
   status: "running" | "done" | "failed";
+  /** What the step itself reported, in the terminal's own words. */
   note: string;
 }
 
@@ -100,6 +107,8 @@ export interface SetupProxyAnswers {
 
 /** Everything the wizard asks for. */
 export interface SetupAnswers {
+  /** The language the panel is drawn in, asked first. */
+  language: string;
   password: string;
   vault_passphrase: string;
   network: SetupNetworkAnswers;

@@ -14,6 +14,7 @@ import {
 } from "../device_level";
 import type { DeviceReach } from "../device_level";
 import { toDeviceMetrics, withDeviceMetrics } from "../device_metrics";
+import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import {
   HUB_EVENT_DEVICE_REPORT,
@@ -43,9 +44,9 @@ import "./devices_page.css";
 type DeviceFilter = "all" | "online" | "offline" | DeviceReach;
 
 interface DeviceLegendRow {
-  label: string;
+  labelKey: string;
   tone: string;
-  hint: string;
+  hintKey: string;
 }
 
 // What moves this list: a machine's channel opening or ending, a machine
@@ -55,67 +56,42 @@ const INVALIDATE_ON = [
   { type: HUB_EVENT_DEVICE_REPORT },
 ];
 
-const FILTER_LABELS: Record<DeviceFilter, string> = {
-  all: "All",
-  online: "Online",
-  offline: "Offline",
-  none: "Scanned only",
-  ssh: "SSH",
-  agent: "Agent",
+const FILTER_KEYS: Record<DeviceFilter, string> = {
+  all: "ui.devices.filter_all",
+  online: "ui.devices.filter_online",
+  offline: "ui.devices.filter_offline",
+  none: "ui.devices.filter_scanned",
+  ssh: "ui.devices.filter_ssh",
+  agent: "ui.devices.filter_agent",
 };
 
-// What the page says about itself, its two sections, and what each badge means.
-const PAGE_BADGE = "{managed} of {total} managed";
-
-const MANAGED_TITLE = "Managed devices";
-const MANAGED_HINT =
-  "Agents report in from these machines; vitals, modules and power are managed here.";
-const MANAGED_BADGE = "{reporting} of {total} reporting";
-const MANAGED_EMPTY_TITLE = "No managed devices yet";
-const MANAGED_EMPTY_HINT =
-  "Install the agent on a device below, or send it an enrollment link.";
-
-const UNMANAGED_TITLE = "Unmanaged devices";
-const UNMANAGED_HINT =
-  "No agent yet: install one over SSH, or send an enrollment link.";
-const UNMANAGED_BADGE = "{ssh} of {total} with SSH";
-const UNMANAGED_EMPTY_TITLE = "Every device is managed";
-const UNMANAGED_EMPTY_HINT = "Nothing here is waiting for an agent.";
-
-const FILTERED_EMPTY_TITLE = "No devices match";
-const FILTERED_EMPTY_HINT = "Try a different filter or clear the search.";
-
-const NO_DEVICES_TITLE = "No devices yet";
-const NO_DEVICES_HINT = "Run a LAN scan to discover what is connected.";
-
-const ENROLLMENT_TITLE = "Paste this link into the machine's own agent window.";
-const ENROLLMENT_HINT =
-  "Install the agent there, then paste the link into its window (`nagent gui`), or run `sudo nagent connect <link>` in its terminal; it pastes safely unquoted. It works for {minutes} minutes.";
-
+// What each badge on a tile means, listed under the filters.
 const DEVICE_LEGEND: DeviceLegendRow[] = [
   {
-    label: "agent",
+    labelKey: "state.agent",
     tone: "badge--ok",
-    hint: "Managed: reports its own vitals and takes modules from the hub.",
+    hintKey: "ui.devices.legend_agent",
   },
   {
-    label: "ssh",
+    labelKey: "state.ssh",
     tone: "badge--accent",
-    hint: "Unmanaged with credentials: one action installs the agent.",
+    hintKey: "ui.devices.legend_ssh",
   },
   {
-    label: "scanned",
+    labelKey: "state.scanned",
     tone: "",
-    hint: "Unmanaged with no credentials: send it an enrollment link.",
+    hintKey: "ui.devices.legend_scanned",
   },
   {
-    label: "offline",
+    labelKey: "state.offline",
     tone: "badge--warn",
-    hint: "Not answering. Its credentials keep working once it returns.",
+    hintKey: "ui.devices.legend_offline",
   },
 ];
 
 export function DevicesPage() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const resource = useApiResource<DevicesResponse>("/devices", {
     invalidateOn: INVALIDATE_ON,
   });
@@ -211,7 +187,7 @@ export function DevicesPage() {
   if (resource.error !== null && devices.length === 0) {
     return (
       <div className="page">
-        <h1>Devices</h1>
+        <h1>{t("ui.devices.title")}</h1>
         <ErrorPanel message={resource.error} onRetry={resource.reload} />
       </div>
     );
@@ -222,9 +198,9 @@ export function DevicesPage() {
       <div className="page_header">
         <div className="page_header_text">
           <div className="page_title_row">
-            <h1>Devices</h1>
+            <h1>{t("ui.devices.title")}</h1>
             <span className="badge">
-              {fill(PAGE_BADGE, {
+              {t("ui.devices.badge", {
                 managed: managedCount,
                 total: devices.length,
               })}
@@ -238,7 +214,7 @@ export function DevicesPage() {
             onClick={() => void handleEnrollmentLink()}
           >
             <Icon name="link" size={14} />
-            Add by link
+            {t("ui.devices.add_by_link")}
           </button>
           <button
             type="button"
@@ -247,7 +223,7 @@ export function DevicesPage() {
             disabled={isScanning}
           >
             <Icon name="search" size={14} />
-            {isScanning ? "Scanning…" : "Scan LAN"}
+            {isScanning ? t("ui.devices.scanning") : t("ui.devices.scan")}
           </button>
         </div>
       </div>
@@ -263,27 +239,27 @@ export function DevicesPage() {
         <DeviceEnrollmentNotice
           link={enrollment.link}
           expiresInS={enrollment.expires_in_s}
-          title={ENROLLMENT_TITLE}
-          hint={ENROLLMENT_HINT}
+          title={t("ui.devices.enrollment_title")}
+          hint={t("ui.devices.enrollment_hint")}
           onDismiss={() => setEnrollment(null)}
         />
       )}
 
       <div className="devices_filters">
-        {(Object.keys(FILTER_LABELS) as DeviceFilter[]).map((name) => (
+        {(Object.keys(FILTER_KEYS) as DeviceFilter[]).map((name) => (
           <button
             key={name}
             type="button"
             className={`devices_filter ${filter === name ? "devices_filter--active" : ""}`}
             onClick={() => setFilter(name)}
           >
-            {FILTER_LABELS[name]}
+            {t(FILTER_KEYS[name])}
             {name !== "all" && ` · ${countMatching(devices, name)}`}
           </button>
         ))}
         <input
           className="input devices_search"
-          placeholder="Filter by name, IP or MAC"
+          placeholder={t("ui.devices.search_placeholder")}
           value={search}
           onChange={(event) => setSearch(event.target.value)}
         />
@@ -291,9 +267,9 @@ export function DevicesPage() {
 
       <div className="devices_legend">
         {DEVICE_LEGEND.map((row) => (
-          <span key={row.label} className="devices_legend_item">
-            <span className={`badge ${row.tone}`}>{row.label}</span>
-            {row.hint}
+          <span key={row.labelKey} className="devices_legend_item">
+            <span className={`badge ${row.tone}`}>{t(row.labelKey)}</span>
+            {t(row.hintKey)}
           </span>
         ))}
       </div>
@@ -307,39 +283,51 @@ export function DevicesPage() {
         </div>
       ) : devices.length === 0 ? (
         <div className="placeholder">
-          <span>{NO_DEVICES_TITLE}</span>
-          <span className="faint">{NO_DEVICES_HINT}</span>
+          <span>{t("ui.devices.none_title")}</span>
+          <span className="faint">{t("ui.devices.none_hint")}</span>
         </div>
       ) : (
         <>
           <DeviceSection
-            title={MANAGED_TITLE}
-            hint={MANAGED_HINT}
-            badge={fill(MANAGED_BADGE, {
+            title={t("ui.devices.managed_title")}
+            hint={t("ui.devices.managed_hint")}
+            badge={t("ui.devices.managed_badge", {
               reporting: managedDevices.filter(
                 (device) => device.is_agent_online,
               ).length,
               total: managedDevices.length,
             })}
             devices={managedDevices}
-            emptyTitle={hasManaged ? FILTERED_EMPTY_TITLE : MANAGED_EMPTY_TITLE}
-            emptyHint={hasManaged ? FILTERED_EMPTY_HINT : MANAGED_EMPTY_HINT}
+            emptyTitle={t(
+              hasManaged
+                ? "ui.devices.filtered_empty_title"
+                : "ui.devices.managed_empty_title",
+            )}
+            emptyHint={t(
+              hasManaged
+                ? "ui.devices.filtered_empty_hint"
+                : "ui.devices.managed_empty_hint",
+            )}
             onOpen={setSelectedMac}
           />
           <DeviceSection
-            title={UNMANAGED_TITLE}
-            hint={UNMANAGED_HINT}
-            badge={fill(UNMANAGED_BADGE, {
+            title={t("ui.devices.unmanaged_title")}
+            hint={t("ui.devices.unmanaged_hint")}
+            badge={t("ui.devices.unmanaged_badge", {
               ssh: unmanagedDevices.filter((device) => device.has_ssh).length,
               total: unmanagedDevices.length,
             })}
             devices={unmanagedDevices}
-            emptyTitle={
-              hasUnmanaged ? FILTERED_EMPTY_TITLE : UNMANAGED_EMPTY_TITLE
-            }
-            emptyHint={
-              hasUnmanaged ? FILTERED_EMPTY_HINT : UNMANAGED_EMPTY_HINT
-            }
+            emptyTitle={t(
+              hasUnmanaged
+                ? "ui.devices.filtered_empty_title"
+                : "ui.devices.unmanaged_empty_title",
+            )}
+            emptyHint={t(
+              hasUnmanaged
+                ? "ui.devices.filtered_empty_hint"
+                : "ui.devices.unmanaged_empty_hint",
+            )}
             onOpen={setSelectedMac}
           />
         </>
@@ -406,15 +394,6 @@ function DeviceSection({
       )}
     </section>
   );
-}
-
-/** Put counts into a wording constant, by name. */
-function fill(wording: string, values: Record<string, number>): string {
-  let filled = wording;
-  for (const [name, value] of Object.entries(values)) {
-    filled = filled.replace(`{${name}}`, String(value));
-  }
-  return filled;
 }
 
 function matchesFilter(device: DeviceView, filter: DeviceFilter): boolean {

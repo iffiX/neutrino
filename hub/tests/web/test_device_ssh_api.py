@@ -117,7 +117,7 @@ def test_a_bogus_login_id_is_refused(api):
     assert refused.status_code == 400
     assert refused.json()["detail"] == {
         "code": "unknown_credential",
-        "field": "login_id",
+        "params": {"field": "login_id"},
     }
     assert not (tmp_path / "devices" / "devices.json").exists()
 
@@ -131,5 +131,5 @@ def test_a_login_id_offered_as_a_key_is_refused(api):
     assert refused.status_code == 400
     assert refused.json()["detail"] == {
         "code": "unknown_credential",
-        "field": "key_id",
+        "params": {"field": "key_id"},
     }

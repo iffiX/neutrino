@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { BalancerSettings, NodeView } from "./api_types";
 
 /**
@@ -57,23 +58,25 @@ export function diffNodeDraft(
 
   const parts: string[] = [];
   if (enabledIds.length > 0) {
-    parts.push(
-      `${enabledIds.length} ${pluralNodes(enabledIds.length)} enabled`,
-    );
+    parts.push(t("ui.proxy.draft_enabled", { count: enabledIds.length }));
   }
   if (disabledIds.length > 0) {
-    parts.push(
-      `${disabledIds.length} ${pluralNodes(disabledIds.length)} disabled`,
-    );
+    parts.push(t("ui.proxy.draft_disabled", { count: disabledIds.length }));
   }
   if (appliedBalancer.strategy !== draftBalancer.strategy) {
-    parts.push(`strategy → ${draftBalancer.strategy}`);
+    parts.push(
+      t("ui.proxy.draft_strategy", { strategy: draftBalancer.strategy }),
+    );
   }
   if (appliedBalancer.probe_url !== draftBalancer.probe_url) {
-    parts.push("probe URL changed");
+    parts.push(t("ui.proxy.draft_probe_url"));
   }
   if (appliedBalancer.probe_interval_s !== draftBalancer.probe_interval_s) {
-    parts.push(`probe interval → ${draftBalancer.probe_interval_s}s`);
+    parts.push(
+      t("ui.proxy.draft_probe_interval", {
+        seconds: draftBalancer.probe_interval_s,
+      }),
+    );
   }
 
   return {
@@ -98,8 +101,4 @@ export function isNodeChanged(
     original.is_enabled !== draftNode.is_enabled ||
     original.name !== draftNode.name
   );
-}
-
-function pluralNodes(count: number): string {
-  return count === 1 ? "node" : "nodes";
 }

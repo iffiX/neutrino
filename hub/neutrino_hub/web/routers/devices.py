@@ -361,7 +361,7 @@ def _is_stored_login(login_id: str) -> bool:
 def _refuse_unknown_credential(field: str) -> None:
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
-        detail={"code": "unknown_credential", "field": field},
+        detail={"code": "unknown_credential", "params": {"field": field}},
     )
 
 
@@ -490,15 +490,15 @@ def enrollment_link_parts(runtime: PanelRuntime) -> tuple[list, str]:
     urls = _agent_urls(runtime)
     if not urls:
         raise HTTPException(
-            status_code=400,
-            detail="no served network has an address for a machine to reach",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "no_reachable_address", "params": {}},
         )
     try:
         fingerprint = certificate_fingerprint()
     except (OSError, ValueError) as error:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "agent_tls_missing"},
+            detail={"code": "agent_tls_missing", "params": {}},
         ) from error
     return urls, fingerprint
 
@@ -629,13 +629,15 @@ def ask_service(
     key = device.mac_address.lower()
     if not runtime.agent_sessions.is_online(key):
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail={"code": "agent_offline"}
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "agent_offline", "params": {}},
         )
     body = dict(request.body)
     refused = _service_ask_refusal(service_type, body)
     if refused is not None:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail={"code": refused}
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": refused, "params": {}},
         )
     command_id = f"service-{service_type}-{secrets.token_hex(4)}"
     try:
@@ -744,7 +746,8 @@ def set_module(
     manifests = load_module_manifests()
     if module not in manifests:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="unknown module"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "module_unknown", "params": {"name": module}},
         )
     key = mac_address.lower()
     if request.is_enabled is not None:
@@ -807,7 +810,7 @@ def _require_mac(mac_address: str) -> None:
     if not re.match(DEVICE_MAC_PATTERN, mac_address):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"{mac_address!r} is not a MAC address",
+            detail={"code": "mac_address_invalid", "params": {"value": mac_address}},
         )
 
 
@@ -980,7 +983,8 @@ async def start_action(
         key = device.mac_address.lower()
         if not runtime.agent_sessions.is_online(key):
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail={"code": "agent_offline"}
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": "agent_offline", "params": {}},
             )
         stream = runtime.tasks.start(
             label=f"{action} {mac_address}",
@@ -1007,13 +1011,13 @@ async def start_action(
     if code == 0 and kernel and kernel != "Linux":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "unsupported_remote_install", "os": kernel},
+            detail={"code": "unsupported_remote_install", "params": {"os": kernel}},
         )
     packages = runtime.agent_packages
     if not packages.has_packages():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "agent_package_missing"},
+            detail={"code": "agent_package_missing", "params": {}},
         )
     # A ticket, not a heartbeat token: the install walks the same enrollment
     # path a pasted link does, and a failed install leaves any live agent
@@ -1279,7 +1283,8 @@ async def set_remote_desktop_password(
     key = DeviceRegistry().get(mac_address).mac_address.lower()
     if not runtime.agent_sessions.is_online(key):
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail={"code": "agent_offline"}
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "agent_offline", "params": {}},
         )
     stream = runtime.tasks.start(
         label=f"set {product} password {mac_address}",
@@ -1318,14 +1323,16 @@ def reset_seat_password(
     key = DeviceRegistry().get(mac_address).mac_address.lower()
     if not runtime.agent_sessions.is_online(key):
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail={"code": "agent_offline"}
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "agent_offline", "params": {}},
         )
     runtime.desired_states.reset_seat_password(key)
     try:
         runtime.push_desired_state(key)
     except AgentOfflineError as error:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail={"code": "agent_offline"}
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "agent_offline", "params": {}},
         ) from error
     except StreamRefusedError as error:
         raise HTTPException(

@@ -1,3 +1,5 @@
+import { t, useLanguage } from "../i18n";
+
 /**
  * Where a module stands on one device, in one word.
  *
@@ -7,11 +9,11 @@
  * every chip and leave the two that matter no louder than the rest.
  */
 
-const STATE_WORDING: Record<string, string> = {
-  installing: "installing…",
-  uninstalling: "uninstalling…",
-  failed: "failed",
-  unsupported: "not available here",
+const STATE_KEYS: Record<string, string> = {
+  installing: "ui.module_state.installing",
+  uninstalling: "ui.module_state.uninstalling",
+  failed: "ui.module_state.failed",
+  unsupported: "ui.module_state.unsupported",
 };
 
 // The tone each badged state wears. A state with no entry is drawn plain.
@@ -27,13 +29,15 @@ interface ModuleStateBadgeProps {
 }
 
 export function ModuleStateBadge({ state }: ModuleStateBadgeProps) {
-  const wording = STATE_WORDING[state];
-  if (wording === undefined) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
+  const key = STATE_KEYS[state];
+  if (key === undefined) {
     return null;
   }
   return (
     <span className={`badge ${STATE_TONES[state] ?? ""}`.trimEnd()}>
-      {wording}
+      {t(key)}
     </span>
   );
 }

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Icon } from "./icon";
+import { t, useLanguage } from "../i18n";
 import type { ProvisionConsentView } from "../api_types";
 import "./install_consent_modal.css";
 
@@ -15,9 +16,28 @@ import "./install_consent_modal.css";
  * entails and where it is about to land.
  */
 
-const DEFAULT_TITLE = "Installing {name} does more than install packages";
-const DEFAULT_CONFIRM_LABEL = "Install anyway";
-const CANCEL_LABEL = "Cancel";
+const DEFAULT_TITLE_KEY = "ui.install_consent.title";
+const DEFAULT_CONFIRM_KEY = "ui.install_consent.confirm";
+
+/** The codes this dialog words, each with its own title and sentence. */
+const CONSENT_KEYS: Record<string, { title: string; body: string }> = {
+  device_install: {
+    title: "ui.install_consent.device_install_title",
+    body: "ui.install_consent.device_install_body",
+  },
+  device_uninstall: {
+    title: "ui.install_consent.device_uninstall_title",
+    body: "ui.install_consent.device_uninstall_body",
+  },
+  kernel_module_build: {
+    title: "ui.install_consent.kernel_module_build_title",
+    body: "ui.install_consent.kernel_module_build_body",
+  },
+  third_party_repository: {
+    title: "ui.install_consent.third_party_repository_title",
+    body: "ui.install_consent.third_party_repository_body",
+  },
+};
 
 function describe(consent: ProvisionConsentView): {
   title: string;
@@ -25,55 +45,37 @@ function describe(consent: ProvisionConsentView): {
   extra?: string;
 } {
   const detail = consent.detail;
-  const devices = Array.isArray(detail.devices)
-    ? detail.devices.join(", ")
-    : "";
+  const keys = CONSENT_KEYS[consent.code];
+  if (keys === undefined) {
+    return {
+      title: consent.code.replace(/_/g, " "),
+      body: t("ui.install_consent.unknown_body"),
+      extra: JSON.stringify(detail),
+    };
+  }
+  const described = { title: t(keys.title), body: t(keys.body) };
   switch (consent.code) {
-    case "device_install":
-      return {
-        title: "It will be installed on these machines",
-        body:
-          "Each machine's agent fetches the packages and starts the " +
-          "service. A machine slow to answer keeps the step open until it " +
-          "does.",
-        extra: devices,
-      };
-    case "device_uninstall":
-      return {
-        title: "It will be removed from these machines",
-        body:
-          "The service stops and its packages go. What it wrote outside the " +
-          "packages stays on the machine.",
-        extra: devices,
-      };
     case "kernel_module_build":
       return {
-        title: "A kernel module will be compiled",
-        body:
-          "This distribution has no prebuilt module for the running kernel, " +
-          "so one is built here. It takes several minutes, and it has to be " +
-          "built again after every kernel upgrade.",
+        ...described,
         extra: [
           Array.isArray(detail.packages) ? detail.packages.join(", ") : null,
-          typeof detail.kernel === "string" ? `kernel ${detail.kernel}` : null,
+          typeof detail.kernel === "string"
+            ? t("ui.install_consent.kernel", { kernel: detail.kernel })
+            : null,
         ]
           .filter(Boolean)
           .join(" · "),
       };
     case "third_party_repository":
       return {
-        title: "A repository outside the distribution will be added",
-        body:
-          "This software is not in the distribution's own repositories, so " +
-          "packages will come from the address below and be trusted the way " +
-          "the distribution's own are.",
+        ...described,
         extra: typeof detail.repository === "string" ? detail.repository : "",
       };
     default:
       return {
-        title: consent.code.replace(/_/g, " "),
-        body: "This install does something the panel has no wording for yet.",
-        extra: JSON.stringify(detail),
+        ...described,
+        extra: Array.isArray(detail.devices) ? detail.devices.join(", ") : "",
       };
   }
 }
@@ -81,9 +83,9 @@ function describe(consent: ProvisionConsentView): {
 interface Props {
   name: string;
   consents: ProvisionConsentView[];
-  /** Names what is about to happen; `{name}` is filled with the module. */
-  title?: string;
-  confirmLabel?: string;
+  /** Names what is about to happen; the sentence carries `{name}`. */
+  titleKey?: string;
+  confirmKey?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -91,11 +93,13 @@ interface Props {
 export function InstallConsentModal({
   name,
   consents,
-  title = DEFAULT_TITLE,
-  confirmLabel = DEFAULT_CONFIRM_LABEL,
+  titleKey = DEFAULT_TITLE_KEY,
+  confirmKey = DEFAULT_CONFIRM_KEY,
   onConfirm,
   onCancel,
 }: Props) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -111,7 +115,7 @@ export function InstallConsentModal({
       className="consent_backdrop"
       role="dialog"
       aria-modal="true"
-      aria-label={`Install ${name}`}
+      aria-label={t("ui.install_consent.dialog_label", { name })}
       onClick={(event) => {
         if (event.target === event.currentTarget) {
           onCancel();
@@ -121,7 +125,7 @@ export function InstallConsentModal({
       <div className="consent_modal">
         <div className="consent_head">
           <Icon name="alert" size={16} />
-          <h2>{title.replace("{name}", name)}</h2>
+          <h2>{t(titleKey, { name })}</h2>
         </div>
         <div className="consent_body">
           {consents.map((consent) => {
@@ -137,14 +141,14 @@ export function InstallConsentModal({
         </div>
         <div className="consent_foot">
           <button type="button" className="button" onClick={onCancel}>
-            {CANCEL_LABEL}
+            {t("ui.install_consent.cancel")}
           </button>
           <button
             type="button"
             className="button button--primary"
             onClick={onConfirm}
           >
-            {confirmLabel}
+            {t(confirmKey)}
           </button>
         </div>
       </div>

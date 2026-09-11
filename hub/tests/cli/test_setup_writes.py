@@ -149,7 +149,9 @@ class _SilentReporter:
     def blank(self) -> None:
         pass
 
-    def start(self, description: str) -> None:
+    def start(
+        self, description: str, code: str = "", params: dict | None = None
+    ) -> None:
         pass
 
     def done(self, note: str = "") -> None:

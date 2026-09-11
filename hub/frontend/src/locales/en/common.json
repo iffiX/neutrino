@@ -1,0 +1,16 @@
+{
+  "code.agent_offline": "The agent is offline.",
+  "code.language_unknown": "This panel does not have that language.",
+  "state.connecting": "connecting",
+  "state.disabled": "disabled",
+  "state.installed": "installed",
+  "state.live": "live",
+  "state.no_address": "no address",
+  "state.not_used": "not used",
+  "state.nothing": "nothing",
+  "state.running": "running",
+  "state.stopped": "stopped",
+  "state.unused": "unused",
+  "state.wifi": "wifi",
+  "state.wired": "wired"
+}

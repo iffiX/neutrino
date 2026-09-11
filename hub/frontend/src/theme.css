@@ -60,10 +60,11 @@
 
   /* --- Typography --- */
   --font-sans:
-    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    sans-serif;
+    "Inter", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC",
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono:
-    "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+    "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, "PingFang SC",
+    "Microsoft YaHei", "Noto Sans CJK SC", monospace;
 
   /* --- Spacing scale --- */
   --space-1: 4px;

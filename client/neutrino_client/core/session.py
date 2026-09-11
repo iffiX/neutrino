@@ -32,6 +32,7 @@ from neutrino_client.constants import (
     CLIENT_ASK_TIMEOUT_S,
     CLIENT_BACKOFF_MAX_S,
     CLIENT_BACKOFF_MIN_S,
+    CLIENT_DEFAULT_LANGUAGE,
     CLIENT_HELLO_TIMEOUT_S,
     CLIENT_IDLE_POLL_INTERVAL_S,
     CLIENT_LEAVE_PATH,
@@ -287,6 +288,30 @@ class ClientSession:
     def mount_location_shape(self) -> str:
         """What a mount location is here: ``path`` or ``drive_letter``."""
         return self.platform.mount_location_shape
+
+    def language(self) -> str:
+        """The language every surface of this client words itself in.
+
+        The first run has none kept, and takes the machine's own; what it
+        takes is written back, so the answer never changes underfoot.
+
+        Returns:
+            One of ``CLIENT_LANGUAGES``.
+        """
+        kept = self._store.language()
+        if kept:
+            return kept
+        self._store.set_language(self.platform.system_language())
+        return self._store.language() or CLIENT_DEFAULT_LANGUAGE
+
+    def set_language(self, language: str) -> None:
+        """Keep the language every surface words itself in, and say so.
+
+        Args:
+            language: One of ``CLIENT_LANGUAGES``.
+        """
+        self._store.set_language(language)
+        self.notify()
 
     def subscribe(self, watcher) -> None:
         """Be told after every change of the state the page draws.

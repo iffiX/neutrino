@@ -22,12 +22,14 @@ import subprocess
 from neutrino_client.constants import (
     CLIENT_CONTROL_PIPE_NAME_PREFIX,
     CLIENT_CONTROL_PIPE_PREFIX,
+    CLIENT_DEFAULT_LANGUAGE,
 )
 from neutrino_client.platforms import win32
 from neutrino_client.exceptions import PlatformUnsupportedError, ShareAttachError
 from neutrino_client.platforms.base import ClientPlatform, run_quietly
 from neutrino_client.platforms.windows_console import WindowsConsoleApi
 from neutrino_client.platforms.windows_identity import WindowsIdentityApi
+from neutrino_client.words import language_for_tag
 
 WINDOWS_CONFIG_DIR_NAME = "Neutrino Client"
 WINDOWS_MOUNT_TIMEOUT_S = 60
@@ -99,6 +101,22 @@ class WindowsPlatform(ClientPlatform):
             self.home(), "AppData", "Roaming"
         )
         return os.path.join(root, WINDOWS_CONFIG_DIR_NAME)
+
+    def system_language(self) -> str:
+        """The language this account's Windows UI is in.
+
+        Returns:
+            One of ``CLIENT_LANGUAGES``; the default where Windows cannot
+            be asked.
+        """
+        try:
+            language_id = self._win32().user_ui_language_id()
+        except OSError:
+            return CLIENT_DEFAULT_LANGUAGE
+        primary = language_id & win32.LANGUAGE_PRIMARY_MASK
+        if primary == win32.LANGUAGE_PRIMARY_CHINESE:
+            return language_for_tag("zh")
+        return CLIENT_DEFAULT_LANGUAGE
 
     def control_socket_path(self) -> str:
         """This person's own named pipe."""
@@ -355,6 +373,18 @@ class _WindowsApi:
                 local, win32.CONNECT_UPDATE_PROFILE, True
             )
         )
+
+    def user_ui_language_id(self) -> int:
+        """The LANGID of the UI language this account signed in with.
+
+        Returns:
+            The LANGID Windows answers with.
+
+        Raises:
+            OSError: When kernel32 cannot be reached, which is every call
+                off Windows.
+        """
+        return int(win32.libraries().kernel32.GetUserDefaultUILanguage())
 
     def notify_drive(self, path: str, event: int) -> None:
         """Raise the shell's own drive-changed notification.

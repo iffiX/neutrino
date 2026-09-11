@@ -1,5 +1,6 @@
 import { AgentServicePage } from "../components/agent_service_page";
 import { ContainersPanels } from "../components/containers_panels";
+import { t, useLanguage } from "../i18n";
 
 /**
  * Containers, on whichever managed machine runs podman.
@@ -8,14 +9,13 @@ import { ContainersPanels } from "../components/containers_panels";
  * chips is containers_panels.tsx, pointed at the picked machine.
  */
 
-const WORDING = {
-  title: "Containers",
-  moduleName: "podman",
-};
+const MODULE_NAME = "podman";
 
 export function ContainersPage() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   return (
-    <AgentServicePage title={WORDING.title} moduleName={WORDING.moduleName}>
+    <AgentServicePage title={t("ui.containers.title")} moduleName={MODULE_NAME}>
       {(target) => (
         <ContainersPanels
           deviceId={target.deviceId}

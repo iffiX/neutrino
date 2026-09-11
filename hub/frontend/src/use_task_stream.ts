@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { websocketUrl } from "./api_client";
+import { t } from "./i18n";
 import type { StreamServerMessage } from "./api_types";
 
 /**
@@ -110,7 +111,7 @@ export function useTaskStream(taskId: string | null): TaskStreamState {
           return;
         }
         setIsRunning(false);
-        setError("The task stream closed before the task reported a result");
+        setError(t("ui.task.stream_closed"));
       };
 
       openTimer = window.setTimeout(() => {

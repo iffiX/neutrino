@@ -1,5 +1,6 @@
 import { Icon } from "./icon";
 import { Spinner } from "./spinner";
+import { t, useLanguage } from "../i18n";
 
 import "./apply_bar.css";
 
@@ -55,6 +56,8 @@ export function ApplyBar({
   onReset,
   onApply,
 }: ApplyBarProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   return (
     <div className="apply_bar">
       {warning !== undefined && isDirty && (
@@ -80,7 +83,7 @@ export function ApplyBar({
 
       <div className="apply_bar_row">
         <span className="field_hint">
-          {blockedHint ?? (isDirty ? hint : "Nothing changed here.")}
+          {blockedHint ?? (isDirty ? hint : t("ui.apply_bar.clean"))}
         </span>
         <div className="button_row">
           <button
@@ -89,7 +92,7 @@ export function ApplyBar({
             onClick={onReset}
             disabled={isBusy || !isDirty || blockedHint !== null}
           >
-            Reset
+            {t("ui.apply_bar.reset")}
           </button>
           <button
             type="button"
@@ -98,7 +101,7 @@ export function ApplyBar({
             disabled={isBusy || !isDirty || blockedHint !== null}
           >
             {isBusy ? <Spinner size={13} /> : <Icon name="check" size={14} />}
-            {isBusy ? "Applying…" : label}
+            {isBusy ? t("ui.apply_bar.applying") : label}
           </button>
         </div>
       </div>

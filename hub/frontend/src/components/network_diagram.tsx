@@ -1,4 +1,5 @@
 import { Icon } from "./icon";
+import { t, useLanguage } from "../i18n";
 import { isInSubnet } from "../ipv4_address";
 import type {
   DeviceView,
@@ -126,6 +127,8 @@ export function NetworkDiagram({
   selectedName,
   onSelect,
 }: NetworkDiagramProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const unused = network.interfaces.filter(
     (entry) =>
       entry.settings.role === "disabled" && entry.settings.vlan === null,
@@ -229,7 +232,7 @@ export function NetworkDiagram({
       className="network_diagram"
       viewBox={`0 0 ${VIEW_WIDTH} ${viewHeight}`}
       role="img"
-      aria-label="Network topology"
+      aria-label={t("ui.network.diagram_label")}
     >
       {/* The three lanes, and what each is for. */}
       <line
@@ -266,7 +269,7 @@ export function NetworkDiagram({
           rx={20}
         />
         <text x={COLUMN_CLOUD + CLOUD_WIDTH / 2} y={middle + 4}>
-          Internet
+          {t("ui.network.diagram_internet")}
         </text>
       </g>
 
@@ -446,7 +449,9 @@ export function NetworkDiagram({
             x={placed.x}
             y={placed.y + 4}
           >
-            +{placed.row.moreCount} more devices
+            {t("ui.network.diagram_more_devices", {
+              count: placed.row.moreCount,
+            })}
           </text>
         ),
       )}
@@ -720,6 +725,8 @@ function InterfaceNode({
   isSelected,
   onSelect,
 }: InterfaceNodeProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const { settings, link } = entry;
   const classNames = [
     "diagram_node",
@@ -742,7 +749,10 @@ function InterfaceNode({
           onSelect(settings.name);
         }
       }}
-      aria-label={`${settings.name}, role ${settings.role}`}
+      aria-label={t("ui.network.diagram_node_label", {
+        name: settings.name,
+        role: settings.role,
+      })}
     >
       <title>{planned?.reason ?? describe(entry)}</title>
       <rect
@@ -779,17 +789,17 @@ function describe(entry: InterfaceView): string {
   const { settings, link } = entry;
   if (settings.role === "disabled") {
     if (settings.vlan !== null) {
-      return "not configured yet";
+      return t("state.not_configured");
     }
-    return link.is_present ? "unused" : "not present";
+    return link.is_present ? t("state.unused") : t("state.not_present");
   }
   if (!link.is_up) {
-    return "link down";
+    return t("state.link_down");
   }
   if (settings.role === "split") {
-    return "vlan trunk";
+    return t("state.vlan_trunk");
   }
-  return link.ipv4_address ?? "no address";
+  return link.ipv4_address ?? t("state.no_address");
 }
 
 function plannedFor(network: NetworkView, name: string): PlannedUplink | null {

@@ -1,5 +1,6 @@
 import { Meter } from "./meter";
 import { PasswordInput } from "./password_input";
+import { t, useLanguage } from "../i18n";
 import { passwordShortfall, passwordStrength } from "../password_strength";
 import type { PasswordRules } from "../password_strength";
 
@@ -14,15 +15,12 @@ import "./password_field.css";
  * behave the same everywhere. Which rule set applies is the caller's.
  */
 
-const REPEAT_LABEL = "Again";
-const MISMATCH_SENTENCE = "They do not match.";
-
 interface PasswordFieldProps {
   label: string;
   /** The label over the repeat field; "Again" when not given. */
   repeatLabel?: string;
-  /** The requirement, said before anything is typed. */
-  hint: string;
+  /** The requirement, worded when the field draws. */
+  hint: () => string;
   value: string;
   repeated: string;
   rules: PasswordRules;
@@ -33,7 +31,7 @@ interface PasswordFieldProps {
 
 export function PasswordField({
   label,
-  repeatLabel = REPEAT_LABEL,
+  repeatLabel,
   hint,
   value,
   repeated,
@@ -42,6 +40,8 @@ export function PasswordField({
   onChange,
   onRepeatedChange,
 }: PasswordFieldProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const strength = passwordStrength(value, rules);
   const shortfall = value.length > 0 ? passwordShortfall(value, rules) : null;
 
@@ -64,14 +64,16 @@ export function PasswordField({
         {shortfall !== null ? (
           <span className="field_error">{shortfall}</span>
         ) : (
-          <span className="field_hint">{hint}</span>
+          <span className="field_hint">{hint()}</span>
         )}
       </label>
       <label className="field">
-        <span className="field_label">{repeatLabel}</span>
+        <span className="field_label">
+          {repeatLabel ?? t("ui.password.repeat")}
+        </span>
         <PasswordInput value={repeated} onChange={onRepeatedChange} />
         {repeated.length > 0 && repeated !== value && (
-          <span className="field_error">{MISMATCH_SENTENCE}</span>
+          <span className="field_error">{t("ui.password.mismatch")}</span>
         )}
       </label>
     </>

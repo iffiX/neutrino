@@ -5,6 +5,7 @@ import { PasswordInput } from "./password_input";
 import { SignalBars } from "./signal_bars";
 import { Spinner } from "./spinner";
 import { apiGet, apiPost, describeError } from "../api_client";
+import { t, useLanguage } from "../i18n";
 import type { NetworkView, WifiNetwork, WifiScan } from "../api_types";
 
 import "./wifi_scan_panel.css";
@@ -32,6 +33,8 @@ export function WifiScanPanel({
   joinedSsid,
   onJoined,
 }: WifiScanPanelProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [networks, setNetworks] = useState<WifiNetwork[] | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [selected, setSelected] = useState<WifiNetwork | null>(null);
@@ -92,13 +95,11 @@ export function WifiScanPanel({
       <div className="wifi_scan_header">
         <div className="wifi_scan_current">
           {joinedSsid === null ? (
-            <span className="muted">Not joined to any network.</span>
+            <span className="muted">{t("ui.network.wifi_not_joined")}</span>
           ) : (
             <>
               <Icon name="wifi" size={14} />
-              <span>
-                Joined <strong>{joinedSsid}</strong>
-              </span>
+              <span>{t("ui.network.wifi_joined", { ssid: joinedSsid })}</span>
             </>
           )}
         </div>
@@ -113,7 +114,9 @@ export function WifiScanPanel({
           ) : (
             <Icon name="search" size={13} />
           )}
-          {isScanning ? "Scanning…" : "Scan for networks"}
+          {isScanning
+            ? t("ui.network.wifi_scanning")
+            : t("ui.network.wifi_scan")}
         </button>
       </div>
 
@@ -125,11 +128,9 @@ export function WifiScanPanel({
       )}
 
       {networks === null ? (
-        <p className="field_hint">
-          Scan for networks; joining sets this interface to WAN.
-        </p>
+        <p className="field_hint">{t("ui.network.wifi_scan_hint")}</p>
       ) : networks.length === 0 ? (
-        <p className="field_hint">Nothing in range.</p>
+        <p className="field_hint">{t("ui.network.wifi_none_in_range")}</p>
       ) : (
         <ul className="wifi_scan_list">
           {networks.map((network) => (
@@ -144,15 +145,17 @@ export function WifiScanPanel({
                 <span className="wifi_scan_ssid">{network.ssid}</span>
                 <span className="wifi_scan_tags">
                   {network.security.trim().length === 0 ? (
-                    <span className="badge badge--warn">open</span>
+                    <span className="badge badge--warn">
+                      {t("ui.network.wifi_open")}
+                    </span>
                   ) : (
                     <span className="badge">{network.security}</span>
                   )}
                   {network.is_saved && !network.is_active && (
-                    <span className="badge">saved</span>
+                    <span className="badge">{t("state.saved")}</span>
                   )}
                   {network.is_active && (
-                    <span className="badge badge--ok">joined</span>
+                    <span className="badge badge--ok">{t("state.joined")}</span>
                   )}
                 </span>
                 {joiningSsid === network.ssid && <Spinner size={13} />}
@@ -162,12 +165,14 @@ export function WifiScanPanel({
                 <div className="wifi_scan_join">
                   <label className="field">
                     <span className="field_label">
-                      Passphrase for {network.ssid}
+                      {t("ui.network.wifi_passphrase_label", {
+                        ssid: network.ssid,
+                      })}
                     </span>
                     <PasswordInput
                       value={passphrase}
                       onChange={setPassphrase}
-                      placeholder="network passphrase"
+                      placeholder={t("ui.network.wifi_passphrase_placeholder")}
                       autoFocus
                     />
                   </label>
@@ -177,7 +182,7 @@ export function WifiScanPanel({
                       className="button button--ghost button--small"
                       onClick={() => setSelected(null)}
                     >
-                      Cancel
+                      {t("ui.network.wifi_cancel")}
                     </button>
                     <button
                       type="button"
@@ -190,7 +195,9 @@ export function WifiScanPanel({
                       ) : (
                         <Icon name="link" size={13} />
                       )}
-                      {joiningSsid === network.ssid ? "Joining…" : "Join"}
+                      {joiningSsid === network.ssid
+                        ? t("ui.network.wifi_joining")
+                        : t("ui.network.wifi_join")}
                     </button>
                   </div>
                 </div>

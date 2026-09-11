@@ -22,10 +22,11 @@ export type DevicePresence = "offline" | "seen" | "reporting";
 /** How a device reaches the managed state, or gets its agent back in step. */
 export type DeviceUpgradePath = "install" | "link";
 
-export const DEVICE_REACH_LABELS: Record<DeviceReach, string> = {
-  none: "No access",
-  ssh: "SSH",
-  agent: "Agent",
+/** What each reach is called, as catalog keys the caller words. */
+export const DEVICE_REACH_KEYS: Record<DeviceReach, string> = {
+  none: "ui.device_level.reach_none",
+  ssh: "ui.device_level.reach_ssh",
+  agent: "ui.device_level.reach_agent",
 };
 
 /** Whether the hub manages this device through its own agent. */

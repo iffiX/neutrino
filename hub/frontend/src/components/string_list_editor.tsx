@@ -2,6 +2,8 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 
 import { Icon } from "./icon";
+import { t, useLanguage } from "../i18n";
+
 import "./string_list_editor.css";
 
 /**
@@ -18,7 +20,9 @@ interface StringListEditorProps {
   values: string[];
   onChange: (values: string[]) => void;
   description?: string;
+  /** What the add field shows while empty; a plain invitation when not given. */
   placeholder?: string;
+  /** What stands in for an empty list; the proxy sentence when not given. */
   emptyText?: string;
 }
 
@@ -27,9 +31,11 @@ export function StringListEditor({
   values,
   onChange,
   description,
-  placeholder = "Add an entry",
-  emptyText = "No entries; everything goes through the proxy.",
+  placeholder,
+  emptyText,
 }: StringListEditorProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [draft, setDraft] = useState("");
 
   const handleAdd = (event: FormEvent) => {
@@ -58,7 +64,9 @@ export function StringListEditor({
 
       <div className="string_list_editor_chips">
         {values.length === 0 && (
-          <span className="string_list_editor_empty">{emptyText}</span>
+          <span className="string_list_editor_empty">
+            {emptyText ?? t("ui.list.empty")}
+          </span>
         )}
         {values.map((value) => (
           <span key={value} className="string_list_editor_chip">
@@ -66,7 +74,7 @@ export function StringListEditor({
             <button
               type="button"
               className="string_list_editor_remove"
-              aria-label={`Remove ${value}`}
+              aria-label={t("ui.list.remove", { name: value })}
               onClick={() => handleRemove(value)}
             >
               <Icon name="close" size={11} />
@@ -79,12 +87,12 @@ export function StringListEditor({
         <input
           className="input"
           value={draft}
-          placeholder={placeholder}
+          placeholder={placeholder ?? t("ui.list.add_placeholder")}
           onChange={(event) => setDraft(event.target.value)}
         />
         <button type="submit" className="button button--small">
           <Icon name="plus" size={13} />
-          Add
+          {t("ui.list.add")}
         </button>
       </form>
     </div>

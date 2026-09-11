@@ -1,0 +1,9 @@
+{
+  "ui.login.subtitle": "control panel",
+  "ui.login.password": "Panel password",
+  "ui.login.locked": "Locked after repeated failures.",
+  "ui.login.wrong_password": "Wrong password.",
+  "ui.login.api_unreachable": "Could not reach the gateway API: {detail}",
+  "ui.login.sign_in": "Sign in",
+  "ui.login.signing_in": "Signing in…"
+}

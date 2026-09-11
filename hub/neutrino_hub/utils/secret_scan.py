@@ -320,7 +320,35 @@ class SecretScanner:
         return SCAN_ALLOW_MARKER in line
 
 
-def is_worth_reporting(line: str, *, following: str = "") -> bool:
+# A word catalog line is ``"key": "sentence"``; the key names what the
+# sentence is about, so a key holding ``password`` is a label, never a value.
+CATALOG_DIRECTORY = "locales"
+
+
+def is_catalog_line(path: str, line: str) -> bool:
+    """Whether a line is a catalog entry whose value is prose, not a value.
+
+    Args:
+        path: The file's repository-relative path.
+        line: The line another tool flagged.
+
+    Returns:
+        True for a ``"key": "text"`` line in a ``locales/*.json`` file whose
+        text holds a space, a character outside ASCII, or is shorter than a
+        credential.
+    """
+    parts = path.split("/")
+    if CATALOG_DIRECTORY not in parts or not path.endswith(".json"):
+        return False
+    values = _quoted_values(line)
+    if len(values) != 2:
+        return False
+    text = values[1]
+    # Chinese prose carries no spaces; a credential is ASCII.
+    return " " in text or not text.isascii() or len(text) < SCAN_MIN_CREDENTIAL_LENGTH
+
+
+def is_worth_reporting(line: str, *, following: str = "", path: str = "") -> bool:
     """Whether another tool's finding on this line deserves a person's time.
 
     General-purpose scanners know many vendors' key formats and nothing about
@@ -337,11 +365,14 @@ def is_worth_reporting(line: str, *, following: str = "") -> bool:
         line: The line the other tool flagged.
         following: The line after it, which decides whether a ``BEGIN`` header
             introduces a key or merely mentions one.
+        path: The file it was found in; a word catalog's entries are prose.
 
     Returns:
         True when the line should still be shown.
     """
     if SCAN_ALLOW_MARKER in line or len(line) > SCAN_MAX_LINE_LENGTH:
+        return False
+    if path and is_catalog_line(path, line):
         return False
     if _PRIVATE_KEY_PATTERN.search(line):
         return bool(_BASE64_BODY_PATTERN.match(following.strip()))

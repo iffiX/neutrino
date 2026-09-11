@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 
 import { Icon } from "./icon";
+import { t, useLanguage } from "../i18n";
 import { NAV_ITEMS } from "../nav_items";
 import "./bottom_nav.css";
 
@@ -18,16 +19,19 @@ interface BottomNavProps {
 }
 
 export function BottomNav({ onLogout }: BottomNavProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
+  const signOut = t("ui.shell.sign_out");
   return (
-    <nav className="bottom_nav" aria-label="Main">
+    <nav className="bottom_nav" aria-label={t("ui.shell.nav_label")}>
       <div className="bottom_nav_items">
         {NAV_ITEMS.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
             end={item.path === "/"}
-            title={item.label}
-            aria-label={item.label}
+            title={t(item.labelKey)}
+            aria-label={t(item.labelKey)}
             className={({ isActive }) =>
               `bottom_nav_item ${isActive ? "bottom_nav_item--active" : ""}`
             }
@@ -39,8 +43,8 @@ export function BottomNav({ onLogout }: BottomNavProps) {
           type="button"
           className="bottom_nav_item bottom_nav_logout"
           onClick={onLogout}
-          title="Sign out"
-          aria-label="Sign out"
+          title={signOut}
+          aria-label={signOut}
         >
           <Icon name="logout" size={18} />
         </button>

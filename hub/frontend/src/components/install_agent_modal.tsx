@@ -6,6 +6,7 @@ import { Spinner } from "./spinner";
 import { StatusDot } from "./status_dot";
 import { VaultPicker } from "./vault_picker";
 import { ApiError, apiPost, describeError } from "../api_client";
+import { t, useLanguage } from "../i18n";
 import { stripAnsi } from "../strip_ansi";
 import { useTaskStream } from "../use_task_stream";
 import type {
@@ -25,39 +26,11 @@ import "./install_agent_modal.css";
  * the output below.
  */
 
-const WORDING = {
-  install: "Install the agent on {device}",
-  reinstall: "Reinstall the agent on {device}",
-  close: "Close",
-  host: "Host",
-  port: "Port",
-  portInvalid: "Port must be 1–65535.",
-  username: "Username",
-  credential: "Credential", // scan: allow
-  credentialHint: "How the hub signs in to install the agent.",
-  keyKind: "SSH key",
-  loginKind: "Password", // scan: allow
-  key: "SSH key",
-  keyHint: "The key the hub signs in with.",
-  login: "Login",
-  loginHint: "The stored password the hub signs in with.",
-  sudoPassword: "Sudo password", // scan: allow
-  sudoHint:
-    "The login whose password sudo is given on the device. Leave empty when the account has passwordless sudo.",
-  submit: "Install agent",
-  submitReinstall: "Reinstall agent",
-  running: "Installing…",
-  output: "Install output",
-  runningLabel: "installing",
-  doneLabel: "exit {code}",
-};
-
 // The {code, params} an install is refused with, worded.
-const INSTALL_ERROR_WORDING: Record<string, string> = {
-  agent_offline: "The machine is not answering, so nothing was started on it.",
-  unknown_credential: "That credential is no longer stored; pick another.",
-  agent_package_missing:
-    "This hub carries no agent package for the machine's platform.",
+const INSTALL_ERROR_KEYS: Record<string, string> = {
+  agent_offline: "ui.devices.agent_offline",
+  unknown_credential: "code.unknown_credential",
+  agent_package_missing: "code.agent_package_missing",
 };
 
 const DEFAULT_SSH_PORT = 22;
@@ -80,6 +53,8 @@ export function InstallAgentModal({
   onClose,
   onFinished,
 }: InstallAgentModalProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [host, setHost] = useState(device.ssh?.host ?? device.ipv4_address);
   const [port, setPort] = useState(
     String(device.ssh?.port ?? DEFAULT_SSH_PORT),
@@ -180,10 +155,9 @@ export function InstallAgentModal({
           <div className="install_modal_title">
             <Icon name="download" size={15} />
             <h2>
-              {(isReinstall ? WORDING.reinstall : WORDING.install).replace(
-                "{device}",
-                deviceName,
-              )}
+              {isReinstall
+                ? t("ui.install_agent.reinstall_title", { device: deviceName })
+                : t("ui.install_agent.install_title", { device: deviceName })}
             </h2>
           </div>
           <button
@@ -192,7 +166,7 @@ export function InstallAgentModal({
             onClick={onClose}
           >
             <Icon name="close" size={13} />
-            {WORDING.close}
+            {t("ui.install_agent.close")}
           </button>
         </div>
 
@@ -206,7 +180,7 @@ export function InstallAgentModal({
 
           <div className="field_grid">
             <label className="field">
-              <span className="field_label">{WORDING.host}</span>
+              <span className="field_label">{t("ui.install_agent.host")}</span>
               <input
                 className="input"
                 value={host}
@@ -214,7 +188,7 @@ export function InstallAgentModal({
               />
             </label>
             <label className="field">
-              <span className="field_label">{WORDING.port}</span>
+              <span className="field_label">{t("ui.install_agent.port")}</span>
               <input
                 className={`input ${isPortValid ? "" : "input--invalid"}`}
                 value={port}
@@ -222,11 +196,15 @@ export function InstallAgentModal({
                 onChange={(event) => setPort(event.target.value)}
               />
               {!isPortValid && (
-                <span className="field_error">{WORDING.portInvalid}</span>
+                <span className="field_error">
+                  {t("ui.install_agent.port_invalid")}
+                </span>
               )}
             </label>
             <label className="field">
-              <span className="field_label">{WORDING.username}</span>
+              <span className="field_label">
+                {t("ui.install_agent.username")}
+              </span>
               <input
                 className="input"
                 value={username}
@@ -234,7 +212,9 @@ export function InstallAgentModal({
               />
             </label>
             <label className="field">
-              <span className="field_label">{WORDING.credential}</span>
+              <span className="field_label">
+                {t("ui.install_agent.credential")}
+              </span>
               <select
                 className="select"
                 value={credentialKind}
@@ -242,10 +222,14 @@ export function InstallAgentModal({
                   setCredentialKind(event.target.value as CredentialKind)
                 }
               >
-                <option value="key">{WORDING.keyKind}</option>
-                <option value="login">{WORDING.loginKind}</option>
+                <option value="key">{t("ui.install_agent.kind_key")}</option>
+                <option value="login">
+                  {t("ui.install_agent.kind_login")}
+                </option>
               </select>
-              <span className="field_hint">{WORDING.credentialHint}</span>
+              <span className="field_hint">
+                {t("ui.install_agent.credential_hint")}
+              </span>
             </label>
           </div>
 
@@ -254,16 +238,16 @@ export function InstallAgentModal({
               kind="ssh_key"
               value={keyId}
               onChange={setKeyId}
-              label={WORDING.key}
-              hint={WORDING.keyHint}
+              label={t("ui.install_agent.key")}
+              hint={t("ui.install_agent.key_hint")}
             />
           ) : (
             <VaultPicker
               kind="login"
               value={loginId}
               onChange={setLoginId}
-              label={WORDING.login}
-              hint={WORDING.loginHint}
+              label={t("ui.install_agent.login")}
+              hint={t("ui.install_agent.login_hint")}
             />
           )}
 
@@ -271,14 +255,16 @@ export function InstallAgentModal({
             kind="login"
             value={sudoLoginId}
             onChange={setSudoLoginId}
-            label={WORDING.sudoPassword}
-            hint={WORDING.sudoHint}
+            label={t("ui.install_agent.sudo_password")}
+            hint={t("ui.install_agent.sudo_hint")}
           />
 
           {taskId !== null && (
             <div className="install_modal_log">
               <div className="install_modal_log_head">
-                <span className="section_label">{WORDING.output}</span>
+                <span className="section_label">
+                  {t("ui.install_agent.output")}
+                </span>
                 <StatusDot
                   tone={
                     task.isRunning
@@ -292,11 +278,10 @@ export function InstallAgentModal({
                   isPulsing={task.isRunning}
                   label={
                     task.isRunning
-                      ? WORDING.runningLabel
-                      : WORDING.doneLabel.replace(
-                          "{code}",
-                          String(task.exitCode ?? ""),
-                        )
+                      ? t("ui.install_agent.running_label")
+                      : t("ui.install_agent.done_label", {
+                          code: task.exitCode ?? "",
+                        })
                   }
                 />
               </div>
@@ -323,10 +308,10 @@ export function InstallAgentModal({
               <Icon name="download" size={14} />
             )}
             {task.isRunning
-              ? WORDING.running
+              ? t("ui.install_agent.running")
               : isReinstall
-                ? WORDING.submitReinstall
-                : WORDING.submit}
+                ? t("ui.install_agent.submit_reinstall")
+                : t("ui.install_agent.submit")}
           </button>
         </div>
       </div>
@@ -341,11 +326,13 @@ function describeInstallError(cause: unknown): string {
     if (cause.code === "unsupported_remote_install") {
       const detail = cause.detail as Record<string, unknown> | null;
       const os = String(detail?.os ?? "");
-      return `This machine reports ${os || "another OS"}; the SSH installer is for Linux. Send it an enrollment link instead.`;
+      return os.length === 0
+        ? t("ui.install_agent.unsupported_remote_install_unknown")
+        : t("code.unsupported_remote_install", { os });
     }
-    const wording = INSTALL_ERROR_WORDING[cause.code];
-    if (wording !== undefined) {
-      return wording;
+    const key = INSTALL_ERROR_KEYS[cause.code];
+    if (key !== undefined) {
+      return t(key);
     }
   }
   return describeError(cause);

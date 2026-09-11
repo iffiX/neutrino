@@ -225,7 +225,7 @@ def test_an_unsupported_machine_is_refused_before_anything_lands(installable_box
     response = client.post("/api/modules/narrow/install")
 
     assert response.status_code == 400
-    assert "never-built" in response.json()["detail"]
+    assert response.json()["detail"]["params"]["architectures"] == "never-built"
     assert FakeProvisioner.performed == []
 
 
@@ -276,7 +276,7 @@ def test_a_module_that_is_not_installed_cannot_be_started(box):
     response = opened.post("/api/modules/samba/action", json={"action": "start"})
 
     assert response.status_code == 400
-    assert "not installed" in response.json()["detail"]
+    assert response.json()["detail"]["code"] == "module_not_installed"
 
 
 def test_a_journal_longer_than_the_limit_is_refused(box):

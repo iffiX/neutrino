@@ -8,6 +8,7 @@ import {
   apiUpload,
   describeError,
 } from "../api_client";
+import { t, useLanguage } from "../i18n";
 import type { DeviceFileEntry, DeviceFileListView } from "../api_types";
 
 import "./file_browser.css";
@@ -21,33 +22,15 @@ import "./file_browser.css";
  * machine.
  */
 
-const WORDING = {
-  newFolder: "New folder",
-  create: "Create",
-  upload: "Upload",
-  folderName: "folder name",
-  rename: "Rename",
-  delete: "Delete",
-  deleteArmed: "Click again to delete",
-  download: "Download",
-  downloadArchive: "Download as tar.gz",
-  loading: "Loading…",
-  empty: "Empty directory",
-  uploading: "Uploading {name} ({index}/{total})…",
-  deleting: "Deleting {name} cannot be undone; the red check confirms it.",
-  root: "The agent reads and writes as root on this machine.",
-};
-
-// The {code, params} the files API refuses with, worded. A code with no entry
-// falls through to the API's own sentence.
-const FILE_ERROR_WORDING: Record<string, string> = {
-  agent_offline:
-    "The machine is not answering, so nothing was read or written.",
-  path_missing: "There is nothing at that path any more.",
-  path_invalid: "That path is not one this machine will open.",
-  file_exists: "Something of that name is already there.",
-  write_failed: "The machine could not write that.",
-  op_failed: "The machine could not do that.",
+// The codes the files API refuses with, and the sentence each is worded as. A
+// code with no entry falls through to the API's own sentence.
+const FILE_ERROR_KEYS: Record<string, string> = {
+  agent_offline: "ui.files.agent_offline",
+  path_missing: "code.path_missing",
+  path_invalid: "code.path_invalid",
+  file_exists: "code.file_exists",
+  write_failed: "code.write_failed",
+  op_failed: "code.op_failed",
 };
 
 // Where a browse starts. The agent has the whole filesystem.
@@ -59,6 +42,8 @@ interface FileBrowserProps {
 }
 
 export function FileBrowser({ basePath }: FileBrowserProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [listing, setListing] = useState<DeviceFileListView | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -137,10 +122,10 @@ export function FileBrowser({ basePath }: FileBrowserProps) {
         continue;
       }
       setUploadStatus(
-        fill(WORDING.uploading, {
+        t("ui.files.uploading", {
           name: file.name,
-          index: String(index + 1),
-          total: String(files.length),
+          index: index + 1,
+          total: files.length,
         }),
       );
       try {
@@ -223,7 +208,7 @@ export function FileBrowser({ basePath }: FileBrowserProps) {
             onClick={() => setNewFolderName("")}
           >
             <Icon name="plus" size={13} />
-            {WORDING.newFolder}
+            {t("ui.files.new_folder")}
           </button>
           <button
             type="button"
@@ -232,7 +217,7 @@ export function FileBrowser({ basePath }: FileBrowserProps) {
             onClick={() => fileInputRef.current?.click()}
           >
             <Icon name="upload" size={13} />
-            {WORDING.upload}
+            {t("ui.files.upload")}
           </button>
           <input
             ref={fileInputRef}
@@ -267,7 +252,7 @@ export function FileBrowser({ basePath }: FileBrowserProps) {
             <input
               className="input file_browser_inline_input"
               autoFocus
-              placeholder={WORDING.folderName}
+              placeholder={t("ui.files.folder_name")}
               value={newFolderName}
               onChange={(event) => setNewFolderName(event.target.value)}
               onKeyDown={(event) => {
@@ -285,15 +270,17 @@ export function FileBrowser({ basePath }: FileBrowserProps) {
               onClick={() => void handleMakeFolder()}
             >
               <Icon name="check" size={13} />
-              {WORDING.create}
+              {t("ui.files.create")}
             </button>
           </div>
         )}
 
         {isLoading ? (
-          <div className="file_browser_placeholder">{WORDING.loading}</div>
+          <div className="file_browser_placeholder">
+            {t("ui.files.loading")}
+          </div>
         ) : listing === null || listing.entries.length === 0 ? (
-          <div className="file_browser_placeholder">{WORDING.empty}</div>
+          <div className="file_browser_placeholder">{t("ui.files.empty")}</div>
         ) : (
           listing.entries.map((entry) => (
             <div key={entry.name} className="file_browser_row">
@@ -343,7 +330,9 @@ export function FileBrowser({ basePath }: FileBrowserProps) {
                     type="button"
                     className="file_browser_action"
                     title={
-                      entry.is_dir ? WORDING.downloadArchive : WORDING.download
+                      entry.is_dir
+                        ? t("ui.files.download_archive")
+                        : t("ui.files.download")
                     }
                     onClick={() => handleDownload(entry)}
                   >
@@ -353,7 +342,7 @@ export function FileBrowser({ basePath }: FileBrowserProps) {
                 <button
                   type="button"
                   className="file_browser_action"
-                  title={WORDING.rename}
+                  title={t("ui.files.rename")}
                   onClick={() => {
                     setRenameFrom(entry.name);
                     setRenameTo(entry.name);
@@ -366,7 +355,7 @@ export function FileBrowser({ basePath }: FileBrowserProps) {
                   <button
                     type="button"
                     className="file_browser_action file_browser_action--danger"
-                    title={WORDING.deleteArmed}
+                    title={t("ui.files.delete_armed")}
                     onClick={() => void handleDelete(entry)}
                   >
                     <Icon name="check" size={13} />
@@ -375,7 +364,7 @@ export function FileBrowser({ basePath }: FileBrowserProps) {
                   <button
                     type="button"
                     className="file_browser_action file_browser_action--danger"
-                    title={WORDING.delete}
+                    title={t("ui.files.delete")}
                     onClick={() => {
                       setDeleteName(entry.name);
                       setRenameFrom(null);
@@ -392,28 +381,19 @@ export function FileBrowser({ basePath }: FileBrowserProps) {
 
       <div className="file_browser_status">
         {deleteName !== null
-          ? fill(WORDING.deleting, { name: deleteName })
-          : WORDING.root}
+          ? t("ui.files.deleting", { name: deleteName })
+          : t("ui.files.root")}
       </div>
     </div>
   );
 }
 
-/** Put names and counts into a wording constant, by name. */
-function fill(wording: string, values: Record<string, string>): string {
-  let filled = wording;
-  for (const [name, value] of Object.entries(values)) {
-    filled = filled.replace(`{${name}}`, value);
-  }
-  return filled;
-}
-
 /** Wording for a refused file operation, from the code the API returned. */
 function describeFileError(cause: unknown): string {
   if (cause instanceof ApiError) {
-    const wording = FILE_ERROR_WORDING[cause.code];
-    if (wording !== undefined) {
-      return wording;
+    const key = FILE_ERROR_KEYS[cause.code];
+    if (key !== undefined) {
+      return t(key);
     }
   }
   return describeError(cause);

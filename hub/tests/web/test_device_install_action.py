@@ -196,7 +196,7 @@ def test_a_stale_sudo_login_is_refused(api, monkeypatch):
     assert refused.status_code == 400
     assert refused.json()["detail"] == {
         "code": "unknown_credential",
-        "field": "sudo_login_id",
+        "params": {"field": "sudo_login_id"},
     }
 
 
@@ -287,7 +287,7 @@ def test_a_stale_credential_id_is_refused_by_field(api, monkeypatch):
     assert refused.status_code == 400
     assert refused.json()["detail"] == {
         "code": "unknown_credential",
-        "field": "login_id",
+        "params": {"field": "login_id"},
     }
 
 
@@ -304,7 +304,7 @@ def test_a_non_linux_device_is_refused_before_any_task(api, monkeypatch):
     assert refused.status_code == 409
     assert refused.json()["detail"] == {
         "code": "unsupported_remote_install",
-        "os": "Darwin",
+        "params": {"os": "Darwin"},
     }
 
 
@@ -327,7 +327,7 @@ def test_a_hub_with_no_agent_package_refuses_with_a_code(api, monkeypatch):
     refused = install(client, login_id=stored_login())
 
     assert refused.status_code == 409
-    assert refused.json()["detail"] == {"code": "agent_package_missing"}
+    assert refused.json()["detail"] == {"code": "agent_package_missing", "params": {}}
 
 
 def test_the_install_ticket_binds_to_the_device(api, monkeypatch):
@@ -353,7 +353,7 @@ def test_a_reinstall_with_no_channel_is_409(api):
     )
 
     assert refused.status_code == 409
-    assert refused.json()["detail"] == {"code": "agent_offline"}
+    assert refused.json()["detail"] == {"code": "agent_offline", "params": {}}
 
 
 def test_a_reinstall_on_a_live_agent_runs_the_command_as_a_task(api):

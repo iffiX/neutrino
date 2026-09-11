@@ -1,3 +1,5 @@
+import { t, useLanguage } from "../i18n";
+
 import "./status_dot.css";
 
 /**
@@ -8,6 +10,13 @@ import "./status_dot.css";
  */
 
 export type StatusTone = "ok" | "warn" | "error" | "idle";
+
+const TONE_KEYS: Record<StatusTone, string> = {
+  ok: "ui.status_dot.ok",
+  warn: "ui.status_dot.warn",
+  error: "ui.status_dot.error",
+  idle: "ui.status_dot.idle",
+};
 
 interface StatusDotProps {
   tone: StatusTone;
@@ -22,7 +31,10 @@ export function StatusDot({
   isLarge = false,
   isPulsing,
 }: StatusDotProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const shouldPulse = isPulsing ?? tone === "ok";
+  const toneLabel = t(TONE_KEYS[tone]);
   const classNames = [
     "status_dot",
     `status_dot--${tone}`,
@@ -33,12 +45,12 @@ export function StatusDot({
     .join(" ");
 
   if (label === undefined) {
-    return <span className={classNames} role="img" aria-label={tone} />;
+    return <span className={classNames} role="img" aria-label={toneLabel} />;
   }
 
   return (
     <span className="status_label">
-      <span className={classNames} role="img" aria-label={tone} />
+      <span className={classNames} role="img" aria-label={toneLabel} />
       <span className="muted">{label}</span>
     </span>
   );

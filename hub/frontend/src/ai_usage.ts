@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type {
   AiUsageBucket,
   AiUsageCounters,
@@ -21,31 +22,43 @@ export const RANGE_BUCKET_DAYS: Record<AiUsageRange, number> = {
   year: 365,
 };
 
-export const MONTH_LABELS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-] as const;
+/** The short name of each month, January first. */
+const MONTH_KEYS = [
+  "ui.usage.month_jan",
+  "ui.usage.month_feb",
+  "ui.usage.month_mar",
+  "ui.usage.month_apr",
+  "ui.usage.month_may",
+  "ui.usage.month_jun",
+  "ui.usage.month_jul",
+  "ui.usage.month_aug",
+  "ui.usage.month_sep",
+  "ui.usage.month_oct",
+  "ui.usage.month_nov",
+  "ui.usage.month_dec",
+];
 
 /** Column headings for the month calendar, in the order the weeks run. */
-export const WEEKDAY_LABELS = [
-  "Su",
-  "Mo",
-  "Tu",
-  "We",
-  "Th",
-  "Fr",
-  "Sa",
-] as const;
+const WEEKDAY_KEYS = [
+  "ui.usage.weekday_su",
+  "ui.usage.weekday_mo",
+  "ui.usage.weekday_tu",
+  "ui.usage.weekday_we",
+  "ui.usage.weekday_th",
+  "ui.usage.weekday_fr",
+  "ui.usage.weekday_sa",
+];
+
+/** One month by its index, January being 0. */
+export function monthLabel(month: number): string {
+  const key = MONTH_KEYS[month];
+  return key === undefined ? "" : t(key);
+}
+
+/** The seven weekday headings, Sunday first. */
+export function weekdayLabels(): string[] {
+  return WEEKDAY_KEYS.map((key) => t(key));
+}
 
 const WEEKDAY_ROWS = 7;
 const HEAT_LEVELS = 4;
@@ -116,10 +129,14 @@ export function formatBucketLabel(bucket: string, range: AiUsageRange): string {
     return bucket;
   }
   if (range === "day") {
-    return `${String(date.getHours()).padStart(2, "0")}:00`;
+    return t("ui.usage.bucket_hour", {
+      hour: String(date.getHours()).padStart(2, "0"),
+    });
   }
-  const month = MONTH_LABELS[date.getMonth()] ?? "";
-  return `${month} ${date.getDate()}`;
+  return t("ui.usage.bucket_day", {
+    month: monthLabel(date.getMonth()),
+    day: date.getDate(),
+  });
 }
 
 /** Intensity step 0–4 for a heat cell, 0 meaning no activity. */

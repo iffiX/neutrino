@@ -1,0 +1,7 @@
+{
+  "ui.settings.language_title": "语言",
+  "ui.settings.language_hint": "面板显示所用的语言。",
+  "ui.settings.language_field": "语言",
+  "ui.settings.language_apply": "应用语言",
+  "ui.settings.language_apply_hint": "所有页面改用所选语言显示。"
+}

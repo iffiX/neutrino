@@ -5,6 +5,7 @@ import {
   isPrefixLength,
 } from "./ipv4_address";
 import { isMacAddress } from "./mac_address";
+import { t } from "./i18n";
 import type { InterfaceSettings } from "./api_types";
 
 /**
@@ -92,10 +93,10 @@ function validateLan(
   const { lan } = draft;
 
   if (!isIpv4Address(lan.address)) {
-    errors.lan_address = "Enter a valid IPv4 address, e.g. 192.168.100.1";
+    errors.lan_address = t("ui.network.error_lan_address");
   }
   if (!isPrefixLength(lan.prefix_len)) {
-    errors.lan_prefix_len = "Prefix length must be between 1 and 32.";
+    errors.lan_prefix_len = t("ui.network.error_prefix_len");
   }
 
   const isSubnetUsable =
@@ -110,48 +111,49 @@ function validateLan(
         isInSubnet(lan.address, other.address, other.prefixLength),
     );
     if (clash !== undefined) {
-      errors.lan_address = `Overlaps the network ${clash.name} serves (${clash.address}/${clash.prefixLength}).`;
+      errors.lan_address = t("ui.network.error_overlap", {
+        name: clash.name,
+        network: `${clash.address}/${clash.prefixLength}`,
+      });
     }
   }
 
   const upstream = lan.upstream_gateway ?? "";
   if (upstream.trim().length > 0) {
     if (!isIpv4Address(upstream)) {
-      errors.lan_upstream_gateway = "Enter a valid IPv4 address.";
+      errors.lan_upstream_gateway = t("ui.network.error_ipv4");
     } else if (
       isSubnetUsable &&
       !isInSubnet(upstream, lan.address, lan.prefix_len)
     ) {
-      errors.lan_upstream_gateway = "Must sit inside this network.";
+      errors.lan_upstream_gateway = t("ui.network.error_inside_network");
     } else if (upstream === lan.address) {
-      errors.lan_upstream_gateway =
-        "That is the gateway's own address; name the network's real router.";
+      errors.lan_upstream_gateway = t("ui.network.error_upstream_is_self");
     }
   }
 
   if (lan.is_dhcp_enabled) {
     if (!isIpv4Address(lan.dhcp_range_start)) {
-      errors.dhcp_range_start = "Enter a valid IPv4 address.";
+      errors.dhcp_range_start = t("ui.network.error_ipv4");
     } else if (
       isSubnetUsable &&
       !isInSubnet(lan.dhcp_range_start, lan.address, lan.prefix_len)
     ) {
-      errors.dhcp_range_start = "Must sit inside this network.";
+      errors.dhcp_range_start = t("ui.network.error_inside_network");
     }
 
     if (!isIpv4Address(lan.dhcp_range_end)) {
-      errors.dhcp_range_end = "Enter a valid IPv4 address.";
+      errors.dhcp_range_end = t("ui.network.error_ipv4");
     } else if (
       isSubnetUsable &&
       !isInSubnet(lan.dhcp_range_end, lan.address, lan.prefix_len)
     ) {
-      errors.dhcp_range_end = "Must sit inside this network.";
+      errors.dhcp_range_end = t("ui.network.error_inside_network");
     } else if (
       errors.dhcp_range_start === undefined &&
       !isOrderedRange(lan.dhcp_range_start, lan.dhcp_range_end)
     ) {
-      errors.dhcp_range_end =
-        "The end of the range must not precede its start.";
+      errors.dhcp_range_end = t("ui.network.error_range_order");
     }
 
     if (
@@ -161,24 +163,27 @@ function validateLan(
       isOrderedRange(lan.dhcp_range_start, lan.address) &&
       isOrderedRange(lan.address, lan.dhcp_range_end)
     ) {
-      errors.lan_address = "The gateway address must lie outside the pool.";
+      errors.lan_address = t("ui.network.error_address_in_pool");
     }
 
     if (!LEASE_TIME_PATTERN.test(lan.dhcp_lease_time.trim())) {
-      errors.dhcp_lease_time = "Use a dnsmasq duration such as 12h, 30m or 1d.";
+      errors.dhcp_lease_time = t("ui.network.error_lease_time");
     }
   }
 
   if (isWifi) {
     if (draft.wifi.ap_ssid.trim().length === 0) {
-      errors.ap_ssid = "Name the network this interface will publish.";
+      errors.ap_ssid = t("ui.network.error_ap_ssid");
     }
     const length = draft.wifi.ap_passphrase.length;
     if (
       length < AP_PASSPHRASE_MIN_LENGTH ||
       length > AP_PASSPHRASE_MAX_LENGTH
     ) {
-      errors.ap_passphrase = `WPA2 needs ${AP_PASSPHRASE_MIN_LENGTH} to ${AP_PASSPHRASE_MAX_LENGTH} characters.`;
+      errors.ap_passphrase = t("ui.network.error_ap_passphrase", {
+        min: AP_PASSPHRASE_MIN_LENGTH,
+        max: AP_PASSPHRASE_MAX_LENGTH,
+      });
     }
   }
 
@@ -191,19 +196,19 @@ function validateWan(draft: InterfaceSettings): InterfaceErrors {
 
   if (wan.method === "static") {
     if (!isIpv4Address(wan.address ?? "")) {
-      errors.wan_address = "Enter a valid IPv4 address.";
+      errors.wan_address = t("ui.network.error_ipv4");
     }
     if (!isPrefixLength(wan.prefix_len)) {
-      errors.wan_prefix_len = "Prefix length must be between 1 and 32.";
+      errors.wan_prefix_len = t("ui.network.error_prefix_len");
     }
     if (!isIpv4Address(wan.gateway ?? "")) {
-      errors.wan_gateway = "A static uplink needs a gateway address.";
+      errors.wan_gateway = t("ui.network.error_wan_gateway");
     } else if (
       errors.wan_address === undefined &&
       errors.wan_prefix_len === undefined &&
       !isInSubnet(wan.gateway ?? "", wan.address ?? "", wan.prefix_len)
     ) {
-      errors.wan_gateway = "The gateway must sit inside this subnet.";
+      errors.wan_gateway = t("ui.network.error_gateway_subnet");
     }
   }
 
@@ -212,7 +217,7 @@ function validateWan(draft: InterfaceSettings): InterfaceErrors {
     wan.cloned_mac.trim().length > 0 &&
     !isMacAddress(wan.cloned_mac)
   ) {
-    errors.wan_cloned_mac = "Enter a MAC such as aa:bb:cc:dd:ee:ff.";
+    errors.wan_cloned_mac = t("ui.network.error_mac");
   }
 
   return errors;

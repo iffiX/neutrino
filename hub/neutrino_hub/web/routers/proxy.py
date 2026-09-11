@@ -70,48 +70,38 @@ def update_settings(
     # a listener waiting for a node, not a contradiction to refuse.
     is_exit_needed = settings.is_proxy_enabled or settings.is_local_proxy_enabled
     if is_exit_needed and not runtime.node_list().enabled_nodes:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="no exit node is enabled, so there is nothing to proxy through",
-        )
-    for name, resolver in (
-        ("remote resolver", settings.remote_dns),
-        ("direct resolver", settings.direct_dns),
-    ):
+        raise _refusal("no_exit_node_enabled")
+    for resolver in (settings.remote_dns, settings.direct_dns):
         try:
             ipaddress.ip_address(resolver.address)
         except ValueError as error:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"{name}: {error}",
+            raise _refusal(
+                "resolver_address_invalid", address=resolver.address
             ) from error
         if not WEB_PORT_MIN <= resolver.port <= WEB_PORT_MAX:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"{name}: a port is {WEB_PORT_MIN} to {WEB_PORT_MAX}",
+            raise _refusal(
+                "port_out_of_range",
+                minimum=WEB_PORT_MIN,
+                maximum=WEB_PORT_MAX,
+                value=resolver.port,
             )
     seen = [entry.port for entry in settings.socks_ports]
     if len(set(seen)) != len(seen):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="two listeners cannot share a port",
-        )
+        raise _refusal("socks_ports_share_a_port")
     for entry in settings.socks_ports:
         if not WEB_PORT_MIN <= entry.port <= WEB_PORT_MAX:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"a port is {WEB_PORT_MIN} to {WEB_PORT_MAX}; "
-                f"{entry.port} is not",
+            raise _refusal(
+                "port_out_of_range",
+                minimum=WEB_PORT_MIN,
+                maximum=WEB_PORT_MAX,
+                value=entry.port,
             )
     # xray's own listeners are excluded: they are the ports this file already
     # asked for, and counting them would make every second save a conflict.
     held = runtime.listening_ports.ports(ignoring=XRAY_BINARY_NAME)
     for entry in settings.socks_ports:
         if entry.port in held:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"port {entry.port} is already in use on this box",
-            )
+            raise _refusal("port_already_in_use", value=entry.port)
     for entries, check in (
         (settings.direct_domains, check_direct_domain),
         (settings.direct_ips, check_direct_address),
@@ -120,8 +110,8 @@ def update_settings(
             try:
                 check(entry)
             except ValueError as error:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+                raise _refusal(
+                    "direct_rule_invalid", value=entry, detail=str(error)
                 ) from error
     write_config("xray/routing.json", settings.model_dump())
     runtime.is_config_dirty = True
@@ -151,3 +141,19 @@ async def apply(runtime: PanelRuntime = Depends(get_runtime)) -> ApplyResult:
     except (subprocess.SubprocessError, OSError, RuntimeError, ValueError) as error:
         return ApplyResult(is_applied=False, message=command_failure_text(error))
     return ApplyResult(is_applied=True, message=message)
+
+
+def _refusal(code: str, **params) -> HTTPException:
+    """One 400 carrying the name of what was refused.
+
+    Args:
+        code: What was refused.
+        params: The values the panel's sentence names.
+
+    Returns:
+        The exception to raise.
+    """
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={"code": code, "params": params},
+    )

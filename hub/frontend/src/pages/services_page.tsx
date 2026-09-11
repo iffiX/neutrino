@@ -11,6 +11,7 @@ import {
   apiPost,
   describeError,
 } from "../api_client";
+import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { HUB_EVENT_CONFIG, HUB_EVENT_SERVICES } from "../use_hub_events";
 import { useConfirm } from "../use_confirm";
@@ -33,53 +34,45 @@ import "./services_page.css";
  * list, resolved per caller, is what every device's catalog carries.
  */
 
-const PAGE_TITLE = "Services";
-const HEALTH_BADGE = "{healthy} of {total} healthy";
-const DECLARE_LABEL = "Declare service";
-
 const GROUP_ORDER: PublishedServiceType[] = ["web", "port", "ai", "file"];
-const GROUP_TITLES: Record<PublishedServiceType, string> = {
-  web: "Web",
-  port: "Ports",
-  ai: "AI",
-  file: "Files",
+const GROUP_TITLE_KEYS: Record<PublishedServiceType, string> = {
+  web: "ui.services.group_web",
+  port: "ui.services.group_port",
+  ai: "ui.services.group_ai",
+  file: "ui.services.group_file",
 };
-const GROUP_EMPTY = "Nothing published.";
 
 // One fixed word set per source: a module row is the module's own state, a
 // declared row is what the last probe measured.
-const MODULE_STATE_LABELS: Record<"ok" | "error", string> = {
-  ok: "serving",
-  error: "not serving",
+const MODULE_STATE_KEYS: Record<"ok" | "error", string> = {
+  ok: "ui.services.state_serving",
+  error: "state.not_serving",
 };
-const DECLARED_STATE_LABELS: Record<
+const DECLARED_STATE_KEYS: Record<
   "ok" | "error" | "idle" | "unchecked",
   string
 > = {
-  ok: "reachable",
-  error: "unreachable",
-  idle: "checking…",
-  unchecked: "not checked",
+  ok: "state.reachable",
+  error: "state.unreachable",
+  idle: "state.checking",
+  unchecked: "state.not_checked",
 };
 
 // The probe's detail_code, worded. A file service is measured against the
 // server's own list of exports, so a share that is not on it reads
 // differently from a server that never answered, and differently again from
 // a hub that has no client to ask with.
-const DECLARED_DETAIL_WORDING: Record<string, string> = {
-  connect_failed: "The host did not answer.",
-  server_error: "The server answered with an error.",
-  share_missing: "The server answers, but does not export this share.",
-  tool_missing:
-    "This hub has no smbclient to list shares with; install the Samba module.",
-  list_refused:
-    "The server refuses anonymous listing; type the share name by hand.",
-  share_unverified:
-    "The server answers but hides its shares from anonymous listing, so the name is not verified.",
+const DECLARED_DETAIL_KEYS: Record<string, string> = {
+  connect_failed: "code.connect_failed",
+  server_error: "code.server_error",
+  share_missing: "code.share_missing",
+  tool_missing: "code.tool_missing",
+  list_refused: "code.list_refused",
+  share_unverified: "code.share_unverified",
 };
-const SOURCE_LABELS: Record<PublishedService["source"], string> = {
-  module: "module",
-  declared: "declared",
+const SOURCE_KEYS: Record<PublishedService["source"], string> = {
+  module: "state.module",
+  declared: "ui.services.source_declared",
 };
 // Who published the row: the hub's own module in the accent, the operator's
 // own entry in the secondary. Health is the dot's and the state word's.
@@ -88,50 +81,31 @@ const SOURCE_TONES: Record<PublishedService["source"], string> = {
   declared: "badge--secondary",
 };
 
-const FORM_TITLE = "New declared service";
-const FIELD_NAME = "Name";
-const FIELD_KIND = "Kind";
-const FIELD_HOST = "Host";
-const FIELD_PORT = "Port";
-const FIELD_SCHEME = "Scheme";
-const FIELD_PATH = "Path";
-const FIELD_SHARES = "Shares";
-const FIELD_DESCRIPTION = "Description";
-const HOST_HINT =
-  "A loopback or hub-held host is served to each machine as the address it reaches the hub on.";
-const PORT_HINT_FILE = "Left blank, a file service gets 445.";
-const SHARES_HINT = "Each one is published as its own row.";
+/** The example a share field shows, which is a name rather than a word. */
 const SHARES_PLACEHOLDER = "media";
-const SHARES_EMPTY = "No shares. Scan the host, or type one.";
-const SCAN_LABEL = "Scan host";
-const SCANNING_LABEL = "Scanning…";
-const SCAN_EMPTY = "The host exports nothing to declare.";
-const SAVE_LABEL = "Declare";
-const SAVING_LABEL = "Declaring…";
-const CANCEL_LABEL = "Cancel";
-const TEST_LABEL = "Test";
-const DELETE_LABEL = "Delete";
-const DELETE_TITLE = "Delete {name}";
-const DELETE_BODY =
-  "The declaration is removed, every row it published with it; the machine it points at is untouched.";
 
-const KIND_LABELS: Record<DeclaredServiceCreate["kind"], string> = {
-  web: "Web",
-  port: "Port",
-  file: "File",
+/** The example a host field shows. */
+const HOST_PLACEHOLDER = "192.168.100.7";
+
+/** The port a file service takes when the field is left blank. */
+const FILE_PORT_PLACEHOLDER = "445";
+
+const KIND_KEYS: Record<DeclaredServiceCreate["kind"], string> = {
+  web: "ui.services.kind_web",
+  port: "ui.services.kind_port",
+  file: "ui.services.kind_file",
 };
 
 // The API's declared_service_invalid params.field, worded.
-const DECLARED_INVALID_WORDING: Record<string, string> = {
-  kind: "The kind is not one the hub knows.",
-  name: "The service needs a name.",
-  host: "The service needs a host.",
-  port: "The port is a number from 1 to 65535.",
-  scheme: "The scheme is http or https.",
-  path: "The path starts with a slash.",
-  shares: "The share needs a name.",
+const DECLARED_INVALID_KEYS: Record<string, string> = {
+  kind: "ui.services.invalid_kind",
+  name: "ui.services.invalid_name",
+  host: "ui.services.invalid_host",
+  port: "ui.services.invalid_port",
+  scheme: "ui.services.invalid_scheme",
+  path: "ui.services.invalid_path",
+  shares: "ui.services.invalid_shares",
 };
-const DECLARED_UNKNOWN_WORDING = "That service is already gone; reload.";
 
 // What moves this list: the hub composing it differently, and any write
 // under config/, since a module's own settings decide what it publishes.
@@ -141,6 +115,8 @@ const INVALIDATE_ON = [
 ];
 
 export function ServicesPage() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const resource = useApiResource<ServicesResponse>("/services", {
     invalidateOn: INVALIDATE_ON,
   });
@@ -161,7 +137,7 @@ export function ServicesPage() {
   if (resource.error !== null && resource.data === null) {
     return (
       <div className="page">
-        <h1>{PAGE_TITLE}</h1>
+        <h1>{t("ui.services.title")}</h1>
         <ErrorPanel message={resource.error} onRetry={resource.reload} />
       </div>
     );
@@ -170,7 +146,7 @@ export function ServicesPage() {
   if (resource.data === null) {
     return (
       <div className="page">
-        <h1>{PAGE_TITLE}</h1>
+        <h1>{t("ui.services.title")}</h1>
         <div className="skeleton" style={{ height: 420 }} />
       </div>
     );
@@ -184,9 +160,9 @@ export function ServicesPage() {
     <div className="page">
       <div className="page_header">
         <div className="page_title_row">
-          <h1>{PAGE_TITLE}</h1>
+          <h1>{t("ui.services.title")}</h1>
           <span className="badge">
-            {fill(HEALTH_BADGE, {
+            {t("ui.services.badge", {
               healthy: healthyCount,
               total: services.length,
             })}
@@ -200,7 +176,7 @@ export function ServicesPage() {
               onClick={() => setIsDeclaring(true)}
             >
               <Icon name="plus" size={14} />
-              {DECLARE_LABEL}
+              {t("ui.services.declare")}
             </button>
           </div>
         )}
@@ -235,13 +211,15 @@ interface ServiceGroupProps {
 }
 
 function ServiceGroup({ type, services, onChanged }: ServiceGroupProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   return (
     <section className="settings_group">
       <div className="settings_group_title">
-        <h2>{GROUP_TITLES[type]}</h2>
+        <h2>{t(GROUP_TITLE_KEYS[type])}</h2>
       </div>
       {services.length === 0 ? (
-        <p className="field_hint faint">{GROUP_EMPTY}</p>
+        <p className="field_hint faint">{t("ui.services.group_empty")}</p>
       ) : (
         <div className="published_rows">
           {services.map((service) => (
@@ -263,6 +241,8 @@ interface ServiceRowProps {
 }
 
 function ServiceRow({ service, onChanged }: ServiceRowProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const confirm = useConfirm();
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -277,14 +257,15 @@ function ServiceRow({ service, onChanged }: ServiceRowProps) {
   // judged, which is not the same as one still waiting for its first probe.
   const declaredState =
     tone === "idle" && service.detail_code !== null ? "unchecked" : tone;
-  const stateLabel =
+  const stateLabel = t(
     service.source === "module"
-      ? MODULE_STATE_LABELS[tone === "idle" ? "error" : tone]
-      : DECLARED_STATE_LABELS[declaredState];
-  const detail =
+      ? MODULE_STATE_KEYS[tone === "idle" ? "error" : tone]
+      : DECLARED_STATE_KEYS[declaredState],
+  );
+  const detailKey =
     service.detail_code === null
       ? undefined
-      : DECLARED_DETAIL_WORDING[service.detail_code];
+      : DECLARED_DETAIL_KEYS[service.detail_code];
 
   const handleProbe = async () => {
     if (service.record_id === null) {
@@ -323,9 +304,9 @@ function ServiceRow({ service, onChanged }: ServiceRowProps) {
 
   const handleDelete = () =>
     confirm.ask({
-      title: fill(DELETE_TITLE, { name: service.title }),
-      body: DELETE_BODY,
-      confirmLabel: DELETE_LABEL,
+      title: t("ui.services.delete_title", { name: service.title }),
+      body: t("ui.services.delete_body"),
+      confirmLabel: t("ui.services.delete"),
       onConfirm: () => void deleteRecord(),
     });
 
@@ -342,14 +323,14 @@ function ServiceRow({ service, onChanged }: ServiceRowProps) {
             {service.description}
           </span>
         )}
-        {detail !== undefined && (
-          <span className="published_row_detail">{detail}</span>
+        {detailKey !== undefined && (
+          <span className="published_row_detail">{t(detailKey)}</span>
         )}
         {error !== null && <span className="field_error">{error}</span>}
       </div>
       <span className="published_row_state">{stateLabel}</span>
       <span className={`badge ${SOURCE_TONES[service.source]}`}>
-        {SOURCE_LABELS[service.source]}
+        {t(SOURCE_KEYS[service.source])}
       </span>
       {service.record_id !== null && (
         <div className="published_row_actions">
@@ -360,7 +341,7 @@ function ServiceRow({ service, onChanged }: ServiceRowProps) {
             onClick={() => void handleProbe()}
           >
             <Icon name="bolt" size={13} />
-            {TEST_LABEL}
+            {t("ui.services.test")}
           </button>
           <button
             type="button"
@@ -369,7 +350,7 @@ function ServiceRow({ service, onChanged }: ServiceRowProps) {
             onClick={handleDelete}
           >
             <Icon name="trash" size={13} />
-            {DELETE_LABEL}
+            {t("ui.services.delete")}
           </button>
         </div>
       )}
@@ -384,6 +365,8 @@ interface DeclareFormProps {
 }
 
 function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [name, setName] = useState("");
   const [kind, setKind] = useState<DeclaredServiceCreate["kind"]>("web");
   const [host, setHost] = useState("");
@@ -419,13 +402,13 @@ function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
         ...found.shares.filter((entry) => !current.includes(entry)),
       ]);
       if (found.shares.length === 0) {
-        setScanNotice(SCAN_EMPTY);
+        setScanNotice(t("ui.services.scan_empty"));
       }
     } catch (cause: unknown) {
       // A refused anonymous listing is a degradation, not a failure: the
       // share name is simply typed by hand.
       if (scanFailureReason(cause) === "list_refused") {
-        setScanNotice(DECLARED_DETAIL_WORDING.list_refused ?? null);
+        setScanNotice(t("code.list_refused"));
       } else {
         setScanError(describeDeclaredError(cause));
       }
@@ -462,10 +445,10 @@ function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
 
   return (
     <div className="declared_form">
-      <div className="section_label">{FORM_TITLE}</div>
+      <div className="section_label">{t("ui.services.form_title")}</div>
       <div className="declared_form_row">
         <label className="field">
-          <span className="field_label">{FIELD_NAME}</span>
+          <span className="field_label">{t("ui.services.field_name")}</span>
           <input
             className="input"
             value={name}
@@ -474,7 +457,7 @@ function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
           />
         </label>
         <label className="field">
-          <span className="field_label">{FIELD_KIND}</span>
+          <span className="field_label">{t("ui.services.field_kind")}</span>
           <select
             className="input"
             value={kind}
@@ -482,10 +465,10 @@ function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
               setKind(event.target.value as DeclaredServiceCreate["kind"])
             }
           >
-            {(Object.keys(KIND_LABELS) as DeclaredServiceCreate["kind"][]).map(
+            {(Object.keys(KIND_KEYS) as DeclaredServiceCreate["kind"][]).map(
               (option) => (
                 <option key={option} value={option}>
-                  {KIND_LABELS[option]}
+                  {t(KIND_KEYS[option])}
                 </option>
               ),
             )}
@@ -494,34 +477,36 @@ function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
       </div>
       <div className="declared_form_row">
         <label className="field">
-          <span className="field_label">{FIELD_HOST}</span>
+          <span className="field_label">{t("ui.services.field_host")}</span>
           <input
             className="input"
             value={host}
-            placeholder="192.168.100.7"
+            placeholder={HOST_PLACEHOLDER}
             spellCheck={false}
             onChange={(event) => setHost(event.target.value)}
           />
-          <span className="field_hint">{HOST_HINT}</span>
+          <span className="field_hint">{t("ui.services.host_hint")}</span>
         </label>
         <label className="field">
-          <span className="field_label">{FIELD_PORT}</span>
+          <span className="field_label">{t("ui.services.field_port")}</span>
           <input
             className="input"
             value={port}
-            placeholder={kind === "file" ? "445" : ""}
+            placeholder={kind === "file" ? FILE_PORT_PLACEHOLDER : ""}
             inputMode="numeric"
             onChange={(event) => setPort(event.target.value)}
           />
           {kind === "file" && (
-            <span className="field_hint">{PORT_HINT_FILE}</span>
+            <span className="field_hint">
+              {t("ui.services.port_hint_file")}
+            </span>
           )}
         </label>
       </div>
       {kind === "web" && (
         <div className="declared_form_row">
           <label className="field">
-            <span className="field_label">{FIELD_SCHEME}</span>
+            <span className="field_label">{t("ui.services.field_scheme")}</span>
             <select
               className="input"
               value={scheme}
@@ -532,7 +517,7 @@ function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
             </select>
           </label>
           <label className="field">
-            <span className="field_label">{FIELD_PATH}</span>
+            <span className="field_label">{t("ui.services.field_path")}</span>
             <input
               className="input"
               value={path}
@@ -545,12 +530,12 @@ function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
       {kind === "file" && (
         <div className="declared_shares">
           <StringListEditor
-            label={FIELD_SHARES}
+            label={t("ui.services.field_shares")}
             values={shares}
             onChange={setShares}
-            description={SHARES_HINT}
+            description={t("ui.services.shares_hint")}
             placeholder={SHARES_PLACEHOLDER}
-            emptyText={SHARES_EMPTY}
+            emptyText={t("ui.services.shares_empty")}
           />
           <div className="declared_shares_scan">
             <button
@@ -560,7 +545,7 @@ function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
               onClick={() => void handleScan()}
             >
               <Icon name="refresh" size={12} />
-              {isScanning ? SCANNING_LABEL : SCAN_LABEL}
+              {isScanning ? t("ui.services.scanning") : t("ui.services.scan")}
             </button>
             {scanNotice !== null && (
               <span className="field_hint">{scanNotice}</span>
@@ -572,7 +557,9 @@ function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
         </div>
       )}
       <label className="field">
-        <span className="field_label">{FIELD_DESCRIPTION}</span>
+        <span className="field_label">
+          {t("ui.services.field_description")}
+        </span>
         <input
           className="input"
           value={description}
@@ -586,7 +573,7 @@ function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
           className="button button--ghost"
           onClick={onCancel}
         >
-          {CANCEL_LABEL}
+          {t("ui.services.cancel")}
         </button>
         <button
           type="button"
@@ -595,7 +582,7 @@ function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
           onClick={() => void handleSubmit()}
         >
           <Icon name="check" size={14} />
-          {isSaving ? SAVING_LABEL : SAVE_LABEL}
+          {isSaving ? t("ui.services.saving") : t("ui.services.save")}
         </button>
       </div>
     </div>
@@ -614,18 +601,6 @@ function payloadLine(service: PublishedService): string {
     return `//${service.payload.host ?? ""}/${service.payload.share ?? ""}`;
   }
   return `${service.payload.host ?? ""}:${service.payload.port ?? ""}`;
-}
-
-/** Put values into a wording constant, by name. */
-function fill(
-  wording: string,
-  values: Record<string, string | number>,
-): string {
-  let filled = wording;
-  for (const [name, value] of Object.entries(values)) {
-    filled = filled.replace(`{${name}}`, String(value));
-  }
-  return filled;
 }
 
 /** The reason inside a failed share scan, or null for any other failure. */
@@ -653,20 +628,20 @@ function describeDeclaredError(cause: unknown): string {
   ) {
     const detail = cause.detail as Record<string, unknown>;
     if (detail.code === "declared_service_unknown") {
-      return DECLARED_UNKNOWN_WORDING;
+      return t("code.declared_service_unknown");
     }
     if (detail.code === "declared_service_invalid") {
       const params = (detail.params ?? {}) as Record<string, unknown>;
-      const wording = DECLARED_INVALID_WORDING[String(params.field)];
-      if (wording !== undefined) {
-        return wording;
+      const key = DECLARED_INVALID_KEYS[String(params.field)];
+      if (key !== undefined) {
+        return t(key);
       }
     }
     if (detail.code === "share_scan_failed") {
       const params = (detail.params ?? {}) as Record<string, unknown>;
-      const wording = DECLARED_DETAIL_WORDING[String(params.reason)];
-      if (wording !== undefined) {
-        return wording;
+      const key = DECLARED_DETAIL_KEYS[String(params.reason)];
+      if (key !== undefined) {
+        return t(key);
       }
     }
   }

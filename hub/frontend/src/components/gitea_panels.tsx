@@ -6,6 +6,7 @@ import { Icon } from "./icon";
 import { PasswordInput } from "./password_input";
 import { ToggleSwitch } from "./toggle_switch";
 import { apiPost, apiPut, describeError } from "../api_client";
+import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import type {
   ApplyResult,
@@ -25,38 +26,6 @@ import "./gitea_panels.css";
  * its first administrator.
  */
 
-const WORDING = {
-  open: "Open Gitea",
-  notInstalled: "Gitea is not installed on this machine.",
-  accessTitle: "Access",
-  accessHint:
-    "What must agree with the hub. Repositories, accounts and everything " +
-    "else are managed in Gitea itself.",
-  portLabel: "Port",
-  rootUrlLabel: "Root URL",
-  rootUrlHint:
-    "Written into clone addresses. Leave empty to derive from the machine's " +
-    "address.",
-  registrationLabel: "Open registration",
-  registrationHint: "Whether visitors can create their own accounts.",
-  accessApplyLabel: "Apply access",
-  accessApplyHint: "Rewrites app.ini and restarts Gitea.",
-  adminTitle: "Administrator",
-  adminExists: "exists",
-  adminManaged:
-    "Accounts and repositories are managed in Gitea; reset the password here.",
-  adminCreate: "Create the first administrator.",
-  adminNotReady: " Start the service first.",
-  adminUsername: "username",
-  adminPassword: "password",
-  adminEmail: "email (optional)",
-  adminCreateButton: "Create administrator",
-  adminNewPassword: "new password", // scan: allow
-  adminSave: "Save",
-  adminReset: "Reset password",
-  offline: "The agent is offline",
-};
-
 interface GiteaPanelsProps {
   /** Where this machine's Gitea answers. */
   basePath: string;
@@ -64,6 +33,8 @@ interface GiteaPanelsProps {
 }
 
 export function GiteaPanels({ basePath, isEditable }: GiteaPanelsProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const resource = useApiResource<GiteaDeviceView>(basePath);
 
   const [draft, setDraft] = useState<GiteaConfigUpdate | null>(null);
@@ -129,7 +100,7 @@ export function GiteaPanels({ basePath, isEditable }: GiteaPanelsProps) {
       {!saved.is_installed && (
         <div className="notice notice--warn">
           <Icon name="alert" size={15} />
-          <div className="notice_body">{WORDING.notInstalled}</div>
+          <div className="notice_body">{t("ui.gitea.not_installed")}</div>
         </div>
       )}
 
@@ -137,7 +108,7 @@ export function GiteaPanels({ basePath, isEditable }: GiteaPanelsProps) {
         className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
       >
         <div className="settings_group_title">
-          <h2>{WORDING.accessTitle}</h2>
+          <h2>{t("ui.gitea.access_title")}</h2>
           {saved.version !== "" && (
             <span className="badge">v{saved.version}</span>
           )}
@@ -150,20 +121,20 @@ export function GiteaPanels({ basePath, isEditable }: GiteaPanelsProps) {
                 rel="noreferrer"
               >
                 <Icon name="server" size={14} />
-                {WORDING.open}
+                {t("ui.gitea.open")}
               </a>
             ) : (
               <button type="button" className="button button--primary" disabled>
                 <Icon name="server" size={14} />
-                {WORDING.open}
+                {t("ui.gitea.open")}
               </button>
             )}
           </div>
         </div>
-        <p className="field_hint">{WORDING.accessHint}</p>
+        <p className="field_hint">{t("ui.gitea.access_hint")}</p>
         <div className="gitea_fields">
           <label className="field">
-            <span className="field_label">{WORDING.portLabel}</span>
+            <span className="field_label">{t("ui.gitea.port")}</span>
             <input
               className="input"
               type="number"
@@ -179,16 +150,18 @@ export function GiteaPanels({ basePath, isEditable }: GiteaPanelsProps) {
             />
           </label>
           <label className="field gitea_field_url">
-            <span className="field_label">{WORDING.rootUrlLabel}</span>
+            <span className="field_label">{t("ui.gitea.root_url")}</span>
             <input
               className="input"
-              placeholder={`http://${window.location.hostname}:${draft.listen_port}/ (derived)`}
+              placeholder={t("ui.gitea.root_url_placeholder", {
+                url: `http://${window.location.hostname}:${draft.listen_port}/`,
+              })}
               value={draft.root_url}
               onChange={(event) =>
                 setDraft({ ...draft, root_url: event.target.value })
               }
             />
-            <span className="field_hint">{WORDING.rootUrlHint}</span>
+            <span className="field_hint">{t("ui.gitea.root_url_hint")}</span>
           </label>
         </div>
         <ToggleSwitch
@@ -196,15 +169,15 @@ export function GiteaPanels({ basePath, isEditable }: GiteaPanelsProps) {
           onChange={(isOn) =>
             setDraft({ ...draft, is_registration_enabled: isOn })
           }
-          label={WORDING.registrationLabel}
-          description={WORDING.registrationHint}
+          label={t("ui.gitea.registration")}
+          description={t("ui.gitea.registration_hint")}
         />
         <ApplyBar
           isDirty={isDirty}
           isBusy={isBusy}
-          label={WORDING.accessApplyLabel}
-          hint={WORDING.accessApplyHint}
-          blockedHint={isEditable ? null : WORDING.offline}
+          label={t("ui.gitea.access_apply")}
+          hint={t("ui.gitea.access_apply_hint")}
+          blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
           error={error}
           notice={notice}
           onReset={() =>
@@ -242,6 +215,8 @@ function AdminSection({
   adminUsernames,
   onChanged,
 }: AdminSectionProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const hasAdmin = adminUsernames.length > 0;
   const onCreated = onChanged;
   const [username, setUsername] = useState("");
@@ -271,14 +246,14 @@ function AdminSection({
   return (
     <section className="settings_group">
       <div className="settings_group_title">
-        <h2>{WORDING.adminTitle}</h2>
+        <h2>{t("ui.gitea.admin_title")}</h2>
         {hasAdmin && (
-          <span className="badge badge--ok">{WORDING.adminExists}</span>
+          <span className="badge badge--ok">{t("state.exists")}</span>
         )}
       </div>
       {hasAdmin ? (
         <>
-          <p className="field_hint">{WORDING.adminManaged}</p>
+          <p className="field_hint">{t("ui.gitea.admin_managed")}</p>
           {adminUsernames.map((name) => (
             <AdminRow
               key={name}
@@ -291,24 +266,25 @@ function AdminSection({
       ) : (
         <>
           <p className="field_hint">
-            {WORDING.adminCreate}
-            {!isReady && WORDING.adminNotReady}
+            {isReady
+              ? t("ui.gitea.admin_create")
+              : t("ui.gitea.admin_create_not_ready")}
           </p>
           <div className="gitea_admin_form">
             <input
               className="input"
-              placeholder={WORDING.adminUsername}
+              placeholder={t("ui.gitea.admin_username")}
               value={username}
               onChange={(event) => setUsername(event.target.value)}
             />
             <PasswordInput
               value={password}
               onChange={setPassword}
-              placeholder={WORDING.adminPassword}
+              placeholder={t("ui.gitea.admin_password")}
             />
             <input
               className="input"
-              placeholder={WORDING.adminEmail}
+              placeholder={t("ui.gitea.admin_email")}
               value={email}
               onChange={(event) => setEmail(event.target.value)}
             />
@@ -321,7 +297,7 @@ function AdminSection({
               onClick={() => void create()}
             >
               <Icon name="plus" size={14} />
-              {WORDING.adminCreateButton}
+              {t("ui.gitea.admin_create_button")}
             </button>
           </div>
           {error !== null && (
@@ -343,6 +319,8 @@ interface AdminRowProps {
 }
 
 function AdminRow({ basePath, name, onChanged }: AdminRowProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [isEditing, setIsEditing] = useState(false);
   const [password, setPassword] = useState("");
   const [isBusy, setIsBusy] = useState(false);
@@ -377,7 +355,7 @@ function AdminRow({ basePath, name, onChanged }: AdminRowProps) {
           <PasswordInput
             value={password}
             onChange={setPassword}
-            placeholder={WORDING.adminNewPassword}
+            placeholder={t("ui.gitea.admin_new_password")}
             autoFocus
           />
           <button
@@ -387,7 +365,7 @@ function AdminRow({ basePath, name, onChanged }: AdminRowProps) {
             onClick={() => void submit()}
           >
             <Icon name="check" size={13} />
-            {WORDING.adminSave}
+            {t("ui.gitea.admin_save")}
           </button>
         </div>
       )}
@@ -400,7 +378,7 @@ function AdminRow({ basePath, name, onChanged }: AdminRowProps) {
         }}
       >
         <Icon name="lock" size={12} />
-        {WORDING.adminReset}
+        {t("ui.gitea.admin_reset")}
       </button>
       {error !== null && (
         <div className="notice notice--error">

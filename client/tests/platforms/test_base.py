@@ -44,6 +44,21 @@ def test_the_config_dir_is_redirected_by_the_suite_and_the_base_refuses_without(
     assert ClientPlatform().config_dir().endswith("config")
 
 
+def test_the_machines_locale_is_what_the_first_start_takes(monkeypatch):
+    for name in ("LC_ALL", "LC_MESSAGES", "LANG"):
+        monkeypatch.delenv(name, raising=False)
+    platform = ClientPlatform()
+
+    assert platform.system_language() == "en"
+
+    monkeypatch.setenv("LANG", "zh_CN.UTF-8")
+    assert platform.system_language() == "zh-CN"
+    assert LinuxPlatform().system_language() == "zh-CN"
+
+    monkeypatch.setenv("LC_ALL", "en_GB.UTF-8")
+    assert platform.system_language() == "en"
+
+
 def test_the_posix_mount_location_judgment_wants_an_absolute_path():
     platform = ClientPlatform()
 

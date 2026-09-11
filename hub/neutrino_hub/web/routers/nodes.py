@@ -107,25 +107,19 @@ def update_balancer(
             never picks a node.
     """
     if settings.strategy not in XRAY_BALANCER_STRATEGIES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"unknown strategy {settings.strategy!r}",
-        )
+        raise _refusal("balancer_strategy_unknown", strategy=settings.strategy)
     if not (
         XRAY_PROBE_INTERVAL_MIN_S
         <= settings.probe_interval_s
         <= XRAY_PROBE_INTERVAL_MAX_S
     ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"the probe interval is {XRAY_PROBE_INTERVAL_MIN_S} to "
-            f"{XRAY_PROBE_INTERVAL_MAX_S} seconds",
+        raise _refusal(
+            "probe_interval_out_of_range",
+            minimum=XRAY_PROBE_INTERVAL_MIN_S,
+            maximum=XRAY_PROBE_INTERVAL_MAX_S,
         )
     if not settings.probe_url.startswith(("http://", "https://")):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="the probe URL has to be an http or https address",
-        )
+        raise _refusal("probe_url_invalid")
     node_list = runtime.node_list()
     node_list.strategy = settings.strategy
     node_list.probe_url = settings.probe_url
@@ -156,16 +150,11 @@ def add_node(
     try:
         node = parse_share_link(request.link)
     except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
-        ) from error
+        raise _refusal("share_link_unreadable", detail=str(error)) from error
 
     node_list = runtime.node_list()
     if any(existing.id == node.id for existing in node_list.nodes):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"{node.id} is already in the list",
-        )
+        raise _refusal("node_already_listed", node=node.id)
     # Sealed before the reference is written, so the file never names an
     # object that does not exist.
     store_node_secret(node)
@@ -207,7 +196,8 @@ def remove_node(
     remaining = [node for node in node_list.nodes if node.id != node_id]
     if len(remaining) == len(node_list.nodes):
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"no node {node_id!r}"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "node_unknown", "params": {"node": node_id}},
         )
     for node in node_list.nodes:
         if node.id == node_id:
@@ -314,5 +304,22 @@ def _find_node(node_list: XrayNodeList, node_id: str) -> XrayNodeConfig:
         if node.id == node_id:
             return node
     raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND, detail=f"unknown node {node_id!r}"
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail={"code": "node_unknown", "params": {"node": node_id}},
+    )
+
+
+def _refusal(code: str, **params) -> HTTPException:
+    """One 400 carrying the name of what was refused.
+
+    Args:
+        code: What was refused.
+        params: The values the panel's sentence names.
+
+    Returns:
+        The exception to raise.
+    """
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={"code": code, "params": params},
     )

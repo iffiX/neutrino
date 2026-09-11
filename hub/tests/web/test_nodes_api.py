@@ -160,7 +160,7 @@ def test_the_switch_cannot_be_turned_on_with_nothing_to_go_out_through(client):
     response = opened.put("/api/proxy", json=settings)
 
     assert response.status_code == 400
-    assert "exit node" in response.json()["detail"]
+    assert response.json()["detail"]["code"] == "no_exit_node_enabled"
 
 
 def test_two_listeners_cannot_share_a_port(client):
@@ -303,7 +303,10 @@ def test_a_listener_cannot_take_a_port_the_box_already_holds(client):
     response = opened.put("/api/proxy", json=settings)
 
     assert response.status_code == 400
-    assert "8080" in response.json()["detail"]
+    assert response.json()["detail"] == {
+        "code": "port_already_in_use",
+        "params": {"value": 8080},
+    }
 
 
 def test_a_free_port_is_still_accepted(client):
@@ -341,7 +344,7 @@ def test_the_hubs_own_switch_cannot_be_turned_on_with_nothing_to_go_out_through(
     response = opened.put("/api/proxy", json=settings)
 
     assert response.status_code == 400
-    assert "exit node" in response.json()["detail"]
+    assert response.json()["detail"]["code"] == "no_exit_node_enabled"
 
 
 def test_an_added_link_seals_its_secret_and_stores_the_reference(client):

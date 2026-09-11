@@ -12,129 +12,132 @@ import type { IconName } from "./components/icon";
  * itself included, since the hub box is one of them. Every page is always
  * listed: a page whose module is on no machine still says so, which is worth
  * more than a rail that changes shape underneath somebody.
+ *
+ * A row carries catalog keys rather than sentences, so the nav words itself
+ * at render and a language change re-words it.
  */
 
 export type NavGroup = "hub" | "agent";
 
 export interface NavItem {
   path: string;
-  label: string;
+  labelKey: string;
   icon: IconName;
-  description: string;
+  descriptionKey: string;
   group: NavGroup;
 }
 
 export const NAV_ITEMS: NavItem[] = [
   {
     path: "/",
-    label: "Dashboard",
+    labelKey: "ui.nav.dashboard",
     icon: "dashboard",
-    description: "Live throughput, exits and DNS",
+    descriptionKey: "ui.nav.dashboard_description",
     group: "hub",
   },
   {
     path: "/network",
-    label: "Network",
+    labelKey: "ui.nav.network",
     icon: "network",
-    description: "Interface roles, uplinks and DHCP",
+    descriptionKey: "ui.nav.network_description",
     group: "hub",
   },
   {
     path: "/overlay",
-    label: "Overlay",
+    labelKey: "ui.nav.overlay",
     icon: "mesh",
-    description: "Remote access to this gateway",
+    descriptionKey: "ui.nav.overlay_description",
     group: "hub",
   },
   {
     path: "/proxy",
-    label: "Proxy",
+    labelKey: "ui.nav.proxy",
     icon: "globe",
-    description: "Exit nodes, split routing and DNS",
+    descriptionKey: "ui.nav.proxy_description",
     group: "hub",
   },
   {
     path: "/ai",
-    label: "AI",
+    labelKey: "ui.nav.ai",
     icon: "sparkles",
-    description: "One endpoint for every AI tool",
+    descriptionKey: "ui.nav.ai_description",
     group: "hub",
   },
   {
     path: "/devices",
-    label: "Devices",
+    labelKey: "ui.nav.devices",
     icon: "devices",
-    description: "LAN hosts and remote actions",
+    descriptionKey: "ui.nav.devices_description",
     group: "hub",
   },
   {
     path: "/clients",
-    label: "Clients",
+    labelKey: "ui.nav.clients",
     icon: "laptop",
-    description: "Machines that reach the hub as clients",
+    descriptionKey: "ui.nav.clients_description",
     group: "hub",
   },
   {
     path: "/services",
-    label: "Services",
+    labelKey: "ui.nav.services",
     icon: "bolt",
-    description: "What the hub publishes to devices",
+    descriptionKey: "ui.nav.services_description",
     group: "hub",
   },
   {
     path: "/credentials",
-    label: "Credentials",
+    labelKey: "ui.nav.credentials",
     icon: "key",
-    description: "SSH keys and AI provider tokens",
+    descriptionKey: "ui.nav.credentials_description",
     group: "hub",
   },
   {
     path: "/settings",
-    label: "Settings",
+    labelKey: "ui.nav.settings",
     icon: "settings",
-    description: "Password, backup and versions",
+    descriptionKey: "ui.nav.settings_description",
     group: "hub",
   },
   {
     path: "/terminals",
-    label: "Terminals",
+    labelKey: "ui.nav.terminals",
     icon: "terminal",
-    description: "A shell on a managed machine",
+    descriptionKey: "ui.nav.terminals_description",
     group: "agent",
   },
   {
     path: "/files",
-    label: "Files",
+    labelKey: "ui.nav.files",
     icon: "folder",
-    description: "Browse and move files on a machine",
+    descriptionKey: "ui.nav.files_description",
     group: "agent",
   },
   {
     path: "/samba",
-    label: "Samba",
+    labelKey: "ui.nav.samba",
     icon: "hard_drive",
-    description: "Shares a machine serves over SMB",
+    descriptionKey: "ui.nav.samba_description",
     group: "agent",
   },
   {
     path: "/gitea",
-    label: "Gitea",
+    labelKey: "ui.nav.gitea",
     icon: "gitea",
-    description: "The private git server",
+    descriptionKey: "ui.nav.gitea_description",
     group: "agent",
   },
   {
     path: "/containers",
-    label: "Containers",
+    labelKey: "ui.nav.containers",
     icon: "cube",
-    description: "Containers a machine runs through podman",
+    descriptionKey: "ui.nav.containers_description",
     group: "agent",
   },
   {
     path: "/zfs",
-    label: "ZFS",
+    labelKey: "ui.nav.zfs",
     icon: "database",
-    description: "Pools, datasets and disk health",
+    descriptionKey: "ui.nav.zfs_description",
     group: "agent",
   },
 ];

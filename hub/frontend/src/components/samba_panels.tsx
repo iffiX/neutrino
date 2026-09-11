@@ -10,6 +10,7 @@ import { StatusDot } from "./status_dot";
 import { ToggleSwitch } from "./toggle_switch";
 import { apiPost, apiPut, describeError } from "../api_client";
 import { formatBytes } from "../format_bytes";
+import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
 import type {
@@ -37,56 +38,15 @@ import "./samba_panels.css";
  * means staged: reloading the page before applying forgets it.
  */
 
-const WORDING = {
-  sharesTitle: "Shares",
-  sharesEmpty: "No directories are exported.",
-  shareAdd: "Add share",
-  shareRemove: "Remove",
-  shareNew: "new share",
-  shareCopyTitle: "Copy the address",
-  shareNameLabel: "Name",
-  sharePathLabel: "Path",
-  shareCommentLabel: "Comment",
-  shareReadOnlyLabel: "Read only",
-  shareReadOnlyHint:
-    "Whether writing is refused for everyone, whoever they are.",
-  shareUsersLabel: "Who may use it",
-  shareUsersNone: "Every user; none are configured yet.",
-  shareUsersAll: "None picked: every user may use it.",
-  shareUsersPicked: "Only the picked users may use it.",
-  sharesApplyLabel: "Apply shares",
-  sharesApplyHint: "Saves shares and reloads the server.",
-  usersTitle: "Users",
-  usersHint:
-    "Accounts that may connect. Adding stages name and password together; " +
-    "replacing a password is removing the user and adding it again.",
-  userBadgeStaged: "created on apply",
-  userBadgePasswordStaged: "password set on apply", // scan: allow
-  userBadgeNoPassword: "no password yet", // scan: allow
-  userBadgeReady: "ready",
-  userRemove: "Remove",
-  userAdd: "Add user",
-  userNamePlaceholder: "new user name",
-  userPasswordPlaceholder: "password",
-  usersApplyLabel: "Apply users",
-  usersApplyHint:
-    "Creates accounts, sets staged passwords, revokes removed ones.",
-  passwordFailure: "password not set: {failures}", // scan: allow
-  passwordCodes: {
-    user_unknown: "the user is not applied on this machine yet",
-    state_not_settled: "the machine is still applying its configuration",
-    agent_offline: "the agent is offline",
-    command_failed: "{detail}",
-  } as Record<string, string>,
-  statusTitle: "Now serving",
-  statusLive: "live",
-  statusEmpty: "Nobody is connected.",
-  statusNoShare: "no share open",
-  statusUsed: "{used} of {total}",
-  offline: "The agent is offline",
-};
-
 type GroupName = "shares" | "users";
+
+/** The sentence keying each refusal the password endpoint returns. */
+const PASSWORD_ERROR_KEYS: Record<string, string> = {
+  user_unknown: "code.user_unknown",
+  state_not_settled: "code.state_not_settled",
+  agent_offline: "code.agent_offline",
+  command_failed: "code.command_failed",
+};
 
 const EMPTY_SHARE: SambaShare = {
   name: "",
@@ -109,6 +69,8 @@ export function SambaPanels({
   basePath,
   isEditable,
 }: SambaPanelsProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   // Sessions come and go as machines mount and unmount, which the machine's
   // own report says; the shares and users are a write like any other.
   const liveOn = [
@@ -183,14 +145,19 @@ export function SambaPanels({
         try {
           await apiPost(`${basePath}/users/${name}/password`, { password });
         } catch (cause: unknown) {
-          failures.push(`${name}: ${wordPasswordFailure(cause)}`);
+          failures.push(
+            t("ui.samba.password_failure_item", {
+              name,
+              reason: wordPasswordFailure(cause),
+            }),
+          );
         }
       }
       setPendingPasswords({});
       resource.reload();
       if (failures.length > 0) {
         setErrors({
-          [group]: fill(WORDING.passwordFailure, {
+          [group]: t("ui.samba.password_failure", {
             failures: failures.join("; "),
           }),
         });
@@ -250,7 +217,7 @@ export function SambaPanels({
     return <div className="skeleton" style={{ height: 420 }} />;
   }
 
-  const blockedHint = isEditable ? null : WORDING.offline;
+  const blockedHint = isEditable ? null : t("ui.modules.agent_offline");
 
   return (
     <>
@@ -258,10 +225,10 @@ export function SambaPanels({
         className={`settings_group ${isSharesDirty ? "settings_group--dirty" : ""}`}
       >
         <div className="settings_group_title">
-          <h2>{WORDING.sharesTitle}</h2>
+          <h2>{t("ui.samba.shares_title")}</h2>
         </div>
         {shares.length === 0 && (
-          <p className="field_hint">{WORDING.sharesEmpty}</p>
+          <p className="field_hint">{t("ui.samba.shares_empty")}</p>
         )}
         {shares.map((share, index) => (
           <ShareEditor
@@ -282,14 +249,14 @@ export function SambaPanels({
             onClick={() => setShares((current) => [...current, EMPTY_SHARE])}
           >
             <Icon name="plus" size={14} />
-            {WORDING.shareAdd}
+            {t("ui.samba.share_add")}
           </button>
         </div>
         <ApplyBar
           isDirty={isSharesDirty}
           isBusy={busyGroup === "shares"}
-          label={WORDING.sharesApplyLabel}
-          hint={WORDING.sharesApplyHint}
+          label={t("ui.samba.shares_apply")}
+          hint={t("ui.samba.shares_apply_hint")}
           blockedHint={blockedHint}
           error={errors.shares}
           notice={notice.shares}
@@ -304,9 +271,9 @@ export function SambaPanels({
         }`}
       >
         <div className="settings_group_title">
-          <h2>{WORDING.usersTitle}</h2>
+          <h2>{t("ui.samba.users_title")}</h2>
         </div>
-        <p className="field_hint">{WORDING.usersHint}</p>
+        <p className="field_hint">{t("ui.samba.users_hint")}</p>
         {users.map((name) => (
           <UserRow
             key={name}
@@ -319,7 +286,7 @@ export function SambaPanels({
         <div className="samba_add_user">
           <input
             className="input"
-            placeholder={WORDING.userNamePlaceholder}
+            placeholder={t("ui.samba.user_name_placeholder")}
             value={newUser}
             onChange={(event) => setNewUser(event.target.value)}
             onKeyDown={(event) => {
@@ -331,18 +298,18 @@ export function SambaPanels({
           <PasswordInput
             value={newPassword}
             onChange={setNewPassword}
-            placeholder={WORDING.userPasswordPlaceholder}
+            placeholder={t("ui.samba.user_password_placeholder")}
           />
           <button type="button" className="button" onClick={addUser}>
             <Icon name="plus" size={14} />
-            {WORDING.userAdd}
+            {t("ui.samba.user_add")}
           </button>
         </div>
         <ApplyBar
           isDirty={isUsersUnapplied}
           isBusy={busyGroup === "users"}
-          label={WORDING.usersApplyLabel}
-          hint={WORDING.usersApplyHint}
+          label={t("ui.samba.users_apply")}
+          hint={t("ui.samba.users_apply_hint")}
           blockedHint={blockedHint}
           error={errors.users}
           notice={notice.users}
@@ -401,13 +368,13 @@ function ShareEditor({
       <div className="samba_share_head">
         <span className="samba_share_title">
           <Icon name="nas" size={15} />
-          {share.name === "" ? WORDING.shareNew : share.name}
+          {share.name === "" ? t("ui.samba.share_new") : share.name}
         </span>
         {isLive && (
           <button
             type="button"
             className="samba_share_url"
-            title={WORDING.shareCopyTitle}
+            title={t("ui.samba.share_copy_title")}
             onClick={copyUrl}
           >
             {shareUrl}
@@ -420,12 +387,12 @@ function ShareEditor({
           onClick={onRemove}
         >
           <Icon name="trash" size={13} />
-          {WORDING.shareRemove}
+          {t("ui.samba.share_remove")}
         </button>
       </div>
       <div className="samba_share_fields">
         <label className="field">
-          <span className="field_label">{WORDING.shareNameLabel}</span>
+          <span className="field_label">{t("ui.samba.share_name")}</span>
           <input
             className="input"
             value={share.name}
@@ -433,7 +400,7 @@ function ShareEditor({
           />
         </label>
         <label className="field">
-          <span className="field_label">{WORDING.sharePathLabel}</span>
+          <span className="field_label">{t("ui.samba.share_path")}</span>
           <input
             className="input"
             placeholder="/srv/share"
@@ -442,7 +409,7 @@ function ShareEditor({
           />
         </label>
         <label className="field">
-          <span className="field_label">{WORDING.shareCommentLabel}</span>
+          <span className="field_label">{t("ui.samba.share_comment")}</span>
           <input
             className="input"
             value={share.comment}
@@ -453,13 +420,13 @@ function ShareEditor({
       <ToggleSwitch
         isOn={share.is_read_only}
         onChange={(isOn) => onChange({ is_read_only: isOn })}
-        label={WORDING.shareReadOnlyLabel}
-        description={WORDING.shareReadOnlyHint}
+        label={t("ui.samba.share_read_only")}
+        description={t("ui.samba.share_read_only_hint")}
       />
       <div className="field">
-        <span className="field_label">{WORDING.shareUsersLabel}</span>
+        <span className="field_label">{t("ui.samba.share_users")}</span>
         {userNames.length === 0 ? (
-          <span className="field_hint">{WORDING.shareUsersNone}</span>
+          <span className="field_hint">{t("ui.samba.share_users_none")}</span>
         ) : (
           <div className="samba_user_chips">
             <div className="samba_user_chip_list">
@@ -480,8 +447,8 @@ function ShareEditor({
             </div>
             <span className="field_hint">
               {share.valid_users.length === 0
-                ? WORDING.shareUsersAll
-                : WORDING.shareUsersPicked}
+                ? t("ui.samba.share_users_all")
+                : t("ui.samba.share_users_picked")}
             </span>
           </div>
         )}
@@ -512,19 +479,21 @@ function UserRow({ name, saved, hasPendingPassword, onRemove }: UserRowProps) {
           {name}
         </span>
         {!isApplied ? (
-          <span className="badge badge--accent">{WORDING.userBadgeStaged}</span>
+          <span className="badge badge--accent">
+            {t("ui.samba.user_staged")}
+          </span>
         ) : !saved.has_password ? (
           hasPendingPassword ? (
             <span className="badge badge--accent">
-              {WORDING.userBadgePasswordStaged}
+              {t("ui.samba.user_password_staged")}
             </span>
           ) : (
             <span className="badge badge--warn">
-              {WORDING.userBadgeNoPassword}
+              {t("ui.samba.user_no_password")}
             </span>
           )
         ) : (
-          <span className="badge badge--ok">{WORDING.userBadgeReady}</span>
+          <span className="badge badge--ok">{t("ui.samba.user_ready")}</span>
         )}
         <div className="samba_user_actions">
           <button
@@ -533,7 +502,7 @@ function UserRow({ name, saved, hasPendingPassword, onRemove }: UserRowProps) {
             onClick={onRemove}
           >
             <Icon name="trash" size={12} />
-            {WORDING.userRemove}
+            {t("ui.samba.user_remove")}
           </button>
         </div>
       </div>
@@ -549,11 +518,11 @@ function StatusSection({ status }: StatusSectionProps) {
   return (
     <section className="settings_group">
       <div className="settings_group_title">
-        <h2>{WORDING.statusTitle}</h2>
+        <h2>{t("ui.samba.status_title")}</h2>
         {/* Polled every second, so there is nothing for a button to add. */}
         <span className="badge">
           <StatusDot tone="ok" isPulsing />
-          {WORDING.statusLive}
+          {t("state.live")}
         </span>
       </div>
       {status === null ? (
@@ -561,7 +530,7 @@ function StatusSection({ status }: StatusSectionProps) {
       ) : (
         <>
           {status.sessions.length === 0 ? (
-            <p className="field_hint">{WORDING.statusEmpty}</p>
+            <p className="field_hint">{t("ui.samba.status_empty")}</p>
           ) : (
             <div className="samba_sessions">
               {status.sessions.map((session, index) => (
@@ -574,7 +543,7 @@ function StatusSection({ status }: StatusSectionProps) {
                     {session.hostname || session.remote_address}
                   </span>
                   <span className="samba_session_shares">
-                    {session.shares.join(", ") || WORDING.statusNoShare}
+                    {session.shares.join(", ") || t("ui.samba.status_no_share")}
                   </span>
                 </div>
               ))}
@@ -591,7 +560,7 @@ function StatusSection({ status }: StatusSectionProps) {
                     <div className="samba_disk_row">
                       <span>{disk.share}</span>
                       <span className="samba_disk_numbers">
-                        {fill(WORDING.statusUsed, {
+                        {t("ui.samba.status_used", {
                           used: formatBytes(used),
                           total: formatBytes(disk.total_bytes),
                         })}
@@ -614,30 +583,16 @@ function StatusSection({ status }: StatusSectionProps) {
   );
 }
 
-/** Put values into a wording constant, by name. */
-function fill(
-  wording: string,
-  values: Record<string, string | number>,
-): string {
-  let filled = wording;
-  for (const [name, value] of Object.entries(values)) {
-    filled = filled.replace(`{${name}}`, String(value));
-  }
-  return filled;
-}
-
 function wordPasswordFailure(cause: unknown): string {
   if (cause instanceof ApiError) {
-    const sentence = WORDING.passwordCodes[cause.code ?? ""];
-    if (sentence !== undefined) {
+    const key = PASSWORD_ERROR_KEYS[cause.code];
+    if (key !== undefined) {
       const detail = cause.detail;
       const params =
         typeof detail === "object" && detail !== null && "params" in detail
           ? ((detail as { params?: Record<string, unknown> }).params ?? {})
           : {};
-      return fill(sentence, {
-        detail: String(params.detail ?? cause.message),
-      });
+      return t(key, { detail: String(params.detail ?? cause.message) });
     }
   }
   return describeError(cause);

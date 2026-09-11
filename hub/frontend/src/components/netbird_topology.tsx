@@ -1,3 +1,4 @@
+import { t, useLanguage } from "../i18n";
 import type { DeviceView, NetbirdView } from "../api_types";
 
 import "./network_diagram.css";
@@ -39,6 +40,8 @@ interface NetbirdTopologyProps {
 }
 
 export function NetbirdTopology({ view, devices }: NetbirdTopologyProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const peers = view.peers;
   // Everything online, plus the silent devices somebody cared enough to name;
   // unnamed neighbours that stopped answering are scan residue, not topology.
@@ -74,7 +77,7 @@ export function NetbirdTopology({ view, devices }: NetbirdTopologyProps) {
       className="netbird_topology"
       viewBox={`0 0 ${VIEW_WIDTH} ${height}`}
       role="img"
-      aria-label="NetBird topology"
+      aria-label={t("ui.overlay.topology_label")}
     >
       <text
         className="diagram_lane_title"
@@ -82,7 +85,7 @@ export function NetbirdTopology({ view, devices }: NetbirdTopologyProps) {
         y={18}
         textAnchor="middle"
       >
-        NETBIRD OVERLAY
+        {t("ui.overlay.topology_lane_overlay")}
       </text>
       <text
         className="diagram_lane_title"
@@ -90,7 +93,7 @@ export function NetbirdTopology({ view, devices }: NetbirdTopologyProps) {
         y={18}
         textAnchor="middle"
       >
-        LAN
+        {t("ui.overlay.topology_lane_lan")}
       </text>
       <text
         className="topo_subnet"
@@ -127,10 +130,10 @@ export function NetbirdTopology({ view, devices }: NetbirdTopologyProps) {
             ? "topo_edge topo_edge--direct"
             : "topo_edge topo_edge--relay";
         const kind = !peer.is_connected
-          ? "idle"
+          ? t("state.idle")
           : peer.connection_type === "P2P"
-            ? "direct"
-            : "relay";
+            ? t("state.direct")
+            : t("state.relay");
         const latency =
           peer.is_connected && peer.latency_ms !== null
             ? `${peer.latency_ms} ms`
@@ -222,7 +225,7 @@ export function NetbirdTopology({ view, devices }: NetbirdTopologyProps) {
           y={laneTop + laneHeight / 2}
           textAnchor="middle"
         >
-          no peers yet
+          {t("ui.overlay.topology_no_peers")}
         </text>
       )}
 
@@ -290,7 +293,7 @@ export function NetbirdTopology({ view, devices }: NetbirdTopologyProps) {
           x={COLUMN_DEVICE + 12}
           y={rowY(rightRows - 1, rightRows) + NODE_HEIGHT / 2 + 4}
         >
-          +{hiddenCount} more devices
+          {t("ui.overlay.topology_more_devices", { count: hiddenCount })}
         </text>
       )}
       {remembered.length === 0 && (
@@ -300,7 +303,7 @@ export function NetbirdTopology({ view, devices }: NetbirdTopologyProps) {
           y={laneTop + laneHeight / 2}
           textAnchor="middle"
         >
-          no devices scanned yet
+          {t("ui.overlay.topology_no_devices")}
         </text>
       )}
     </svg>

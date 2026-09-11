@@ -148,6 +148,10 @@ class FakeClientPlatform(ClientPlatform):
         self.answered = []
         self.on_answer = None
         self.answer_error = None
+        self.language = "en"
+
+    def system_language(self) -> str:
+        return self.language
 
     def control_socket_path(self) -> str:
         if self.socket_path:
@@ -246,6 +250,7 @@ class FakeSession:
     def __init__(self, *, platform=None):
         self.platform = platform if platform is not None else FakeClientPlatform()
         self.connected_links = []
+        self.language_value = "en"
         self.connect_error = None
         self.is_disconnected = False
         self.service_calls = []
@@ -286,6 +291,12 @@ class FakeSession:
 
     def hostname(self) -> str:
         return "box"
+
+    def language(self) -> str:
+        return self.language_value
+
+    def set_language(self, language: str) -> None:
+        self.language_value = language
 
     def platform_tuple(self) -> dict:
         return {"os": "linux", "family": "debian", "arch": "amd64"}

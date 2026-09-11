@@ -98,6 +98,18 @@ def test_the_staged_tree_carries_the_page_and_the_window_icon(tmp_path):
     assert (gui / "neutrino_client.png").is_file()
 
 
+def test_the_staged_tree_carries_both_word_catalogs(tmp_path):
+    """Package data, or the window opens with nothing to say."""
+    staged = payload.stage_client_tree(tmp_path / "site-packages", "9.9.9")
+
+    locales = staged / "data" / "gui" / "locales"
+    assert sorted(path.name for path in locales.glob("*.json")) == [
+        "en.json",
+        "zh-CN.json",
+    ]
+    assert '"ui.tray.open"' in (locales / "en.json").read_text(encoding="utf-8")
+
+
 def test_the_staged_tree_carries_an_icon_windows_can_load(tmp_path):
     """A .png is not an icon to Win32; without the .ico the tray goes grey."""
     staged = payload.stage_client_tree(tmp_path, "9.9.9")

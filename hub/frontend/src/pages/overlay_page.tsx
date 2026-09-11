@@ -7,6 +7,7 @@ import { Icon } from "../components/icon";
 import { PasswordInput } from "../components/password_input";
 import { StatusDot } from "../components/status_dot";
 import { apiPost, describeError } from "../api_client";
+import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import type { DevicesResponse, NetbirdView } from "../api_types";
 
@@ -19,7 +20,12 @@ import "./overlay_page.css";
  * `netbird down`.
  */
 
+/** The overlay's own name, which is the same in every language. */
+const OVERLAY_BRAND_NAME = "NetBird";
+
 export function OverlayPage() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const resource = useApiResource<NetbirdView>("/netbird");
   const devices = useApiResource<DevicesResponse>("/devices");
 
@@ -39,7 +45,7 @@ export function OverlayPage() {
   if (resource.error !== null && view === null) {
     return (
       <div className="page">
-        <h1>NetBird</h1>
+        <h1>{OVERLAY_BRAND_NAME}</h1>
         <ErrorPanel message={resource.error} onRetry={resource.reload} />
       </div>
     );
@@ -48,7 +54,7 @@ export function OverlayPage() {
   if (view === null) {
     return (
       <div className="page">
-        <h1>NetBird</h1>
+        <h1>{OVERLAY_BRAND_NAME}</h1>
         <div className="skeleton" style={{ height: 320 }} />
       </div>
     );
@@ -58,14 +64,20 @@ export function OverlayPage() {
     <div className="page">
       <div className="page_header">
         <div className="page_title_row">
-          <h1>NetBird</h1>
+          <h1>{OVERLAY_BRAND_NAME}</h1>
           {view.is_installed &&
             (!view.is_enrolled ? (
-              <span className="badge badge--warn">not joined</span>
+              <span className="badge badge--warn">
+                {t("ui.overlay.badge_not_joined")}
+              </span>
             ) : view.is_management_connected ? (
-              <span className="badge badge--ok">connected</span>
+              <span className="badge badge--ok">
+                {t("ui.overlay.badge_connected")}
+              </span>
             ) : (
-              <span className="badge badge--error">management unreachable</span>
+              <span className="badge badge--error">
+                {t("ui.overlay.badge_unreachable")}
+              </span>
             ))}
           {view.version !== "" && (
             <span className="badge">v{view.version}</span>
@@ -79,7 +91,7 @@ export function OverlayPage() {
             rel="noreferrer"
           >
             <Icon name="link" size={14} />
-            Open console
+            {t("ui.overlay.open_console")}
           </a>
         </div>
       </div>
@@ -87,9 +99,7 @@ export function OverlayPage() {
       {!view.is_installed && (
         <div className="notice notice--warn">
           <Icon name="alert" size={15} />
-          <div className="notice_body">
-            Install NetBird from Services first.
-          </div>
+          <div className="notice_body">{t("ui.overlay.install_first")}</div>
         </div>
       )}
 
@@ -97,8 +107,7 @@ export function OverlayPage() {
         <div className="notice notice--error">
           <Icon name="alert" size={15} />
           <div className="notice_body">
-            Management plane unreachable. If behind a filter, enable &quot;Route
-            this gateway&apos;s own traffic&quot; on the Proxy page.
+            {t("ui.overlay.management_unreachable")}
           </div>
         </div>
       )}
@@ -106,7 +115,7 @@ export function OverlayPage() {
       {view.is_enrolled && (
         <section className="settings_group">
           <div className="settings_group_title">
-            <h2>Topology</h2>
+            <h2>{t("ui.overlay.topology_title")}</h2>
           </div>
           <NetbirdTopology view={view} devices={devices.data?.devices ?? []} />
         </section>
@@ -138,44 +147,46 @@ interface IdentitySectionProps {
 }
 
 function IdentitySection({ view, isReady, onJoined }: IdentitySectionProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [isReconfiguring, setIsReconfiguring] = useState(false);
   return (
     <section className="settings_group">
       <div className="settings_group_title">
-        <h2>This gateway on the overlay</h2>
+        <h2>{t("ui.overlay.identity_title")}</h2>
         <button
           type="button"
           className="button button--small netbird_reconfigure"
           onClick={() => setIsReconfiguring((current) => !current)}
         >
           <Icon name="refresh" size={12} />
-          Re-enroll
+          {t("ui.overlay.reenroll")}
         </button>
       </div>
       <div className="netbird_identity">
         <div className="netbird_fact">
-          <span className="field_label">Overlay address</span>
+          <span className="field_label">{t("ui.overlay.address_label")}</span>
           <span className="netbird_fact_value">
-            {view.netbird_ip || "assigning…"}
+            {view.netbird_ip || t("ui.overlay.address_assigning")}
           </span>
         </div>
         <div className="netbird_fact">
-          <span className="field_label">Name</span>
+          <span className="field_label">{t("ui.overlay.name_label")}</span>
           <span className="netbird_fact_value">{view.fqdn || "—"}</span>
         </div>
         <div className="netbird_fact">
-          <span className="field_label">Management</span>
+          <span className="field_label">
+            {t("ui.overlay.management_label")}
+          </span>
           <span className="netbird_fact_value">{view.management_url}</span>
         </div>
       </div>
-      <p className="field_hint">
-        Whether this box answers on the overlay is set under Network, Exposure.
-      </p>
+      <p className="field_hint">{t("ui.overlay.exposure_hint")}</p>
       {isReconfiguring && (
         <JoinForm
           isReady={isReady}
-          submitLabel="Re-enroll"
-          warning="Re-enrolling gives this gateway a new identity on the network. Afterwards, delete the old peer entry in the console."
+          submitLabel={t("ui.overlay.reenroll")}
+          warning={t("ui.overlay.reenroll_warning")}
           onJoined={() => {
             setIsReconfiguring(false);
             onJoined();
@@ -192,26 +203,26 @@ interface JoinSectionProps {
 }
 
 function JoinSection({ isReady, onJoined }: JoinSectionProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   return (
     <section className="settings_group">
       <div className="settings_group_title">
-        <h2>Join a network</h2>
+        <h2>{t("ui.overlay.join_title")}</h2>
       </div>
       <ol className="netbird_steps">
-        <li>
-          In the console, open <strong>Networks</strong> and press{" "}
-          <strong>Add Network</strong>.
-        </li>
-        <li>
-          On the new network, under <strong>Routing Peers</strong>, press{" "}
-          <strong>Add</strong> and choose <strong>Install NetBird</strong>.
-        </li>
-        <li>Copy the setup key it shows and paste it below.</li>
+        <li>{t("ui.overlay.join_step_network")}</li>
+        <li>{t("ui.overlay.join_step_peer")}</li>
+        <li>{t("ui.overlay.join_step_key")}</li>
       </ol>
       {!isReady && (
-        <p className="field_hint">Start the netbird service first.</p>
+        <p className="field_hint">{t("ui.overlay.service_first")}</p>
       )}
-      <JoinForm isReady={isReady} submitLabel="Join" onJoined={onJoined} />
+      <JoinForm
+        isReady={isReady}
+        submitLabel={t("ui.overlay.join")}
+        onJoined={onJoined}
+      />
     </section>
   );
 }
@@ -224,6 +235,8 @@ interface JoinFormProps {
 }
 
 function JoinForm({ isReady, submitLabel, warning, onJoined }: JoinFormProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [setupKey, setSetupKey] = useState("");
   const [managementUrl, setManagementUrl] = useState("");
   const [isBusy, setIsBusy] = useState(false);
@@ -258,11 +271,11 @@ function JoinForm({ isReady, submitLabel, warning, onJoined }: JoinFormProps) {
         <PasswordInput
           value={setupKey}
           onChange={setSetupKey}
-          placeholder="setup key, like AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
+          placeholder={t("ui.overlay.setup_key_placeholder")}
         />
         <input
           className="input"
-          placeholder="management URL (empty for netbird.io)"
+          placeholder={t("ui.overlay.management_url_placeholder")}
           value={managementUrl}
           onChange={(event) => setManagementUrl(event.target.value)}
         />
@@ -272,7 +285,7 @@ function JoinForm({ isReady, submitLabel, warning, onJoined }: JoinFormProps) {
           disabled={!isReady || isBusy || setupKey.trim() === ""}
           onClick={() => void join()}
         >
-          {isBusy ? "Joining…" : submitLabel}
+          {isBusy ? t("ui.overlay.joining") : submitLabel}
         </button>
       </div>
       {error !== null && (
@@ -286,6 +299,8 @@ function JoinForm({ isReady, submitLabel, warning, onJoined }: JoinFormProps) {
 }
 
 function RoutesSection({ view }: { view: NetbirdView }) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [copied, setCopied] = useState<string | null>(null);
 
   const copy = (subnet: string) => {
@@ -297,20 +312,16 @@ function RoutesSection({ view }: { view: NetbirdView }) {
   return (
     <section className="settings_group">
       <div className="settings_group_title">
-        <h2>LAN routes</h2>
+        <h2>{t("ui.overlay.routes_title")}</h2>
       </div>
-      <p className="field_hint">
-        In the console under <strong>Networks</strong>, add each subnet below as
-        a <strong>Resource</strong> of your network, and give it an{" "}
-        <strong>Access Control Policy</strong> so peers may use the route.
-      </p>
+      <p className="field_hint">{t("ui.overlay.routes_hint")}</p>
       <div className="netbird_subnets">
         {view.lan_subnets.map((subnet) => (
           <button
             key={subnet}
             type="button"
             className="netbird_subnet_chip"
-            title="Copy"
+            title={t("ui.overlay.copy")}
             onClick={() => copy(subnet)}
           >
             {subnet}
@@ -318,7 +329,7 @@ function RoutesSection({ view }: { view: NetbirdView }) {
           </button>
         ))}
         {view.lan_subnets.length === 0 && (
-          <span className="field_hint">No interface has the LAN role.</span>
+          <span className="field_hint">{t("ui.overlay.routes_empty")}</span>
         )}
       </div>
     </section>
@@ -326,19 +337,19 @@ function RoutesSection({ view }: { view: NetbirdView }) {
 }
 
 function PeersSection({ view }: { view: NetbirdView }) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   return (
     <section className="settings_group">
       <div className="settings_group_title">
-        <h2>Peers</h2>
+        <h2>{t("ui.overlay.peers_title")}</h2>
         <span className="badge">
           <StatusDot tone="ok" isPulsing />
-          live
+          {t("state.live")}
         </span>
       </div>
       {view.peers.length === 0 ? (
-        <p className="field_hint">
-          No peers yet. Log in on another device with the NetBird app.
-        </p>
+        <p className="field_hint">{t("ui.overlay.peers_empty")}</p>
       ) : (
         <div className="netbird_peers">
           {view.peers.map((peer) => (
@@ -357,7 +368,9 @@ function PeersSection({ view }: { view: NetbirdView }) {
                     peer.connection_type === "P2P" ? "badge--ok" : "badge--warn"
                   }`}
                 >
-                  {peer.connection_type === "P2P" ? "direct" : "relayed"}
+                  {peer.connection_type === "P2P"
+                    ? t("state.direct")
+                    : t("state.relayed")}
                 </span>
               )}
               {peer.latency_ms !== null && (

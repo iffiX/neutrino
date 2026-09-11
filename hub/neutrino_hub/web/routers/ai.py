@@ -8,6 +8,7 @@ serve. No key material passes through these routes in either direction.
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from neutrino_hub.modules.ai.constants import AI_PROVIDER_KINDS
 from neutrino_hub.modules.ai.registry import (
     AiProviderRecord,
     AiProviderRegistry,
@@ -110,9 +111,7 @@ def create_provider(request: AiProviderCreate) -> AiProviderView:
             models=[model.model_dump() for model in request.models],
         )
     except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
-        ) from error
+        raise _refused_provider(request.kind) from error
     return _provider_view(record)
 
 
@@ -154,13 +153,9 @@ def update_provider(provider_id: str, request: AiProviderUpdate) -> AiProviderVi
             **changes,
         )
     except KeyError as error:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="unknown provider"
-        ) from error
+        raise _unknown_provider(provider_id) from error
     except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
-        ) from error
+        raise _refused_provider(request.kind) from error
     return _provider_view(record)
 
 
@@ -180,10 +175,43 @@ def delete_provider(provider_id: str) -> dict:
     try:
         AiProviderRegistry().delete(provider_id)
     except KeyError as error:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="unknown provider"
-        ) from error
+        raise _unknown_provider(provider_id) from error
     return {}
+
+
+def _unknown_provider(provider_id: str) -> HTTPException:
+    """One 404 for an id no stored provider has.
+
+    Args:
+        provider_id: What was asked for.
+
+    Returns:
+        The exception to raise.
+    """
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail={"code": "provider_unknown", "params": {"provider": provider_id}},
+    )
+
+
+def _refused_provider(kind: str | None) -> HTTPException:
+    """One 400 for a provider the registry would not store.
+
+    Args:
+        kind: The kind the request carried, None when it carried none.
+
+    Returns:
+        The exception to raise.
+    """
+    if kind is not None and kind not in AI_PROVIDER_KINDS:
+        return HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "provider_kind_unknown", "params": {"kind": kind}},
+        )
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={"code": "provider_name_needed", "params": {}},
+    )
 
 
 def _require_stored_token(secret_id: str) -> None:

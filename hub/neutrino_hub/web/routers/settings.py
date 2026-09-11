@@ -39,7 +39,9 @@ from neutrino_hub.system.sandbox import outside_sandbox
 from neutrino_hub.utils.constants import is_dev_root_set
 from neutrino_hub.web.auth import hash_password, verify_password
 from neutrino_hub.web.constants import (
+    WEB_DEFAULT_LANGUAGE,
     WEB_DEFAULT_LISTEN_PORT,
+    WEB_LANGUAGES,
     WEB_PORT_MAX,
     WEB_PORT_MIN,
     WEB_RESTART_DELAY_S,
@@ -85,6 +87,11 @@ BACKUP_ERROR_UNRECOGNIZED = "backup_unrecognized"
 BACKUP_ERROR_CORRUPT = "backup_corrupt"
 BACKUP_ERROR_PASSPHRASE_NEEDED = "vault_passphrase_needed"
 BACKUP_ERROR_PASSPHRASE_WRONG = "vault_passphrase_wrong"
+BACKUP_ERROR_TOO_LARGE = "backup_too_large"
+BACKUP_ERROR_UNEXPECTED_PATH = "backup_unexpected_path"
+BACKUP_ERROR_UNEXPECTED_MEMBER = "backup_unexpected_member"
+# The 422 the page words when it is asked for a language nobody ships.
+SETTINGS_ERROR_LANGUAGE_UNKNOWN = "language_unknown"
 
 
 @router.get("", response_model=PanelSettings)
@@ -95,10 +102,11 @@ def read_settings(runtime: PanelRuntime = Depends(get_runtime)) -> PanelSettings
         runtime: The shared runtime.
 
     Returns:
-        The port the panel answers on.
+        The port the panel answers on and the language it is drawn in.
     """
     return PanelSettings(
-        listen_port=int(runtime.settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT))
+        listen_port=int(runtime.settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT)),
+        language=str(runtime.settings.get("language", WEB_DEFAULT_LANGUAGE)),
     )
 
 
@@ -108,35 +116,59 @@ def update_settings(
     background: BackgroundTasks,
     runtime: PanelRuntime = Depends(get_runtime),
 ) -> PanelSettings:
-    """Move the panel to another port.
+    """Write the panel's own settings.
 
-    The answer goes out first and the restart happens behind it, because the
-    process serving this request is the one being restarted: the browser is
-    told where to look before the socket it asked on closes.
+    A port change restarts the panel, and the answer goes out first with the
+    restart behind it: the process serving this request is the one being
+    restarted, so the browser is told where to look before the socket it
+    asked on closes.
 
     Args:
-        request: The port to answer on.
+        request: The port to answer on, and the language to draw in. A body
+            leaving the language out leaves it as it is.
         background: Where the restart is queued.
         runtime: The shared runtime.
 
     Returns:
-        The port the panel is moving to.
+        The port the panel is moving to and the language it is drawn in.
 
     Raises:
-        HTTPException: 400 when the port is not one a listener may take.
+        HTTPException: 400 when the port is not one a listener may take, 422
+            with ``language_unknown`` for a language this panel does not
+            ship.
     """
     if not WEB_PORT_MIN <= request.listen_port <= WEB_PORT_MAX:
-        raise _bad_request(
-            f"a port is {WEB_PORT_MIN} to {WEB_PORT_MAX}; {request.listen_port} is not"
+        raise _coded_bad_request(
+            "port_out_of_range",
+            minimum=WEB_PORT_MIN,
+            maximum=WEB_PORT_MAX,
+            value=request.listen_port,
+        )
+    if request.language not in WEB_LANGUAGES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "code": SETTINGS_ERROR_LANGUAGE_UNKNOWN,
+                "params": {"language": request.language},
+            },
         )
     settings = read_config(PANEL_SETTINGS_FILE)
-    if int(settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT)) == request.listen_port:
-        return request
-    settings["listen_port"] = request.listen_port
-    write_config(PANEL_SETTINGS_FILE, settings)
-    runtime.settings["listen_port"] = request.listen_port
-    background.add_task(_restart_panel)
-    return request
+    stored_language = str(settings.get("language", WEB_DEFAULT_LANGUAGE))
+    language = (
+        request.language if "language" in request.model_fields_set else stored_language
+    )
+    is_moving = (
+        int(settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT)) != request.listen_port
+    )
+    if is_moving or language != stored_language:
+        settings["listen_port"] = request.listen_port
+        settings["language"] = language
+        write_config(PANEL_SETTINGS_FILE, settings)
+        runtime.settings["listen_port"] = request.listen_port
+        runtime.settings["language"] = language
+    if is_moving:
+        background.add_task(_restart_panel)
+    return PanelSettings(listen_port=request.listen_port, language=language)
 
 
 def _restart_panel() -> None:
@@ -151,10 +183,6 @@ def _restart_panel() -> None:
         ["systemctl", "restart", "--no-block", SYSTEM_CORE_UNITS["web"]],
         is_checked=False,
     )
-
-
-def _bad_request(detail: str) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
 
 @router.put("/password", response_model=PasswordChangeResult)
@@ -310,9 +338,7 @@ async def restore(
         raise _coded_bad_request(BACKUP_ERROR_WRONG_EXTENSION)
     blob = await file.read(RESTORE_SIZE_LIMIT_BYTES + 1)
     if len(blob) > RESTORE_SIZE_LIMIT_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="backup is too large"
-        )
+        raise _coded_bad_request(BACKUP_ERROR_TOO_LARGE, limit=RESTORE_SIZE_LIMIT_BYTES)
     contents = _read_archive(blob)
     _check_manifest(contents)
     _check_digests(contents)
@@ -332,10 +358,7 @@ async def restore(
                     path=UTILS_CONFIG_DIR.parent, members=members, filter="data"
                 )
         except (tarfile.TarError, EOFError, OSError) as error:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"unreadable backup: {error}",
-            ) from error
+            raise _coded_bad_request(BACKUP_ERROR_CORRUPT) from error
         write_state_key(data_key)
     # The restored decisions are made true without another command: apply
     # runs as a streamed task the modal shows, and the panel restarts itself
@@ -502,16 +525,20 @@ def _unwrapped_key(contents: dict[str, bytes], vault_passphrase: str) -> bytes:
         raise _coded_bad_request(BACKUP_ERROR_CORRUPT) from error
 
 
-def _coded_bad_request(code: str) -> HTTPException:
+def _coded_bad_request(code: str, **params) -> HTTPException:
     """One 400 the panel turns into a sentence of its own.
 
     Args:
         code: The name the panel switches on.
+        params: The values that sentence names.
 
     Returns:
         The exception to raise.
     """
-    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"code": code})
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={"code": code, "params": params},
+    )
 
 
 def _renamed_member(member: tarfile.TarInfo) -> tarfile.TarInfo:
@@ -533,10 +560,7 @@ def _renamed_member(member: tarfile.TarInfo) -> tarfile.TarInfo:
     """
     root, _, rest = member.name.partition("/")
     if root != "config":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"unexpected path in backup: {member.name}",
-        )
+        raise _coded_bad_request(BACKUP_ERROR_UNEXPECTED_PATH, path=member.name)
     member.name = UTILS_CONFIG_DIR.name + (f"/{rest}" if rest else "")
     return member
 
@@ -559,18 +583,12 @@ def _checked_member(member: tarfile.TarInfo) -> tarfile.TarInfo:
             an ordinary file or directory.
     """
     if not (member.isreg() or member.isdir()):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"a backup holds only files and directories: {member.name}",
-        )
+        raise _coded_bad_request(BACKUP_ERROR_UNEXPECTED_MEMBER, path=member.name)
     destination = (UTILS_CONFIG_DIR.parent / member.name).resolve()
     if destination != UTILS_CONFIG_DIR and not destination.is_relative_to(
         UTILS_CONFIG_DIR
     ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"unexpected path in backup: {member.name}",
-        )
+        raise _coded_bad_request(BACKUP_ERROR_UNEXPECTED_PATH, path=member.name)
     return member
 
 

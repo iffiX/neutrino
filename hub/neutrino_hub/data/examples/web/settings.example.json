@@ -1,6 +1,8 @@
 {
   "_comment": "Web control panel settings. Copy to settings.json. `nhub setup` writes the argon2id hash below and `nhub reset password` replaces it; the plaintext is never stored.",
   "listen_port": 8080,
+  "_comment_language": "The language the panel is drawn in: en or zh-CN. `nhub setup` asks for it and the Settings page changes it.",
+  "language": "en",
   "_comment_agent": "The TLS port the /api/agent routes answer on, pinned by the fingerprint in every enrollment link.",
   "agent_listen_port": 8443,
   "admin_password_hash": "PLACEHOLDER_ARGON2ID_HASH",

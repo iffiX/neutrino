@@ -110,16 +110,30 @@ the controls that exist and omits the reassurance.
 
 ## Localization
 
-Not built. The panel is English-only today, and this section exists so that
-the strings being written now are the ones a translation can be made from,
-rather than something to rewrite first.
+The panel and the client page speak English and Simplified Chinese; the
+command lines stay English. Every word a surface shows comes from a catalog,
+never from a literal in a component.
+
+**One catalog format on both surfaces.** A flat JSON object per language,
+keys `ui.<area>.<thing>`, `state.<token>` and `code.<code>`, values whole
+sentences or labels with `{name}` placeholders. The hub keeps one file per
+page group under `hub/frontend/src/locales/<language>/`; the client keeps
+`client/frontend/locales/<language>.json`. `t(key, params)` reads the current
+language, falls back to English, then to the key itself. A key set differing
+between the two languages, a key used in the source but absent from English,
+or a backend code with no `code.<code>` entry fails the tests.
+
+**Where the language is chosen.** The hub's is a setting in
+`config/web/settings.json`, asked first by `nhub setup` and by the web setup
+page, changed later on the Settings page, and read before login through
+`GET /api/language`. The client's is a preference in its store, taken from the
+system locale on the first start and changed on its own page. Nothing is per
+browser.
 
 **The backend returns codes, not sentences.** An error a person reads is
 composed in the frontend from an identifier the API returned; a backend that
 returns `"port 8080 is already in use on this box"` has made itself the
-translation surface, and no amount of frontend work can undo that. Until the
-codes exist, backend messages are written as if they were the English rendering
-of one — short, factual, and free of anything that only makes sense in English.
+translation surface, and no amount of frontend work can undo that.
 
 **A translation is not a port of the structure.** Each language follows its own
 typographic authority, exactly as `docs/` does: Google's developer

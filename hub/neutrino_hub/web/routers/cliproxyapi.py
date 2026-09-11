@@ -126,7 +126,7 @@ def usage(
         if key_id not in known:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail={"code": "unknown_key", "params": {"key_id": key_id}},
+                detail={"code": "unknown_key", "params": {"key": key_id}},
             )
     client_names = _client_names()
     provider_rows = store.provider_rows(range_name, key_id=key_id)
@@ -219,7 +219,8 @@ def delete_key(
         remaining = [key for key in config.client_keys if key.id != key_id]
         if len(remaining) == len(config.client_keys):
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="unknown key"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"code": "unknown_key", "params": {"key": key_id}},
             )
         config.client_keys = remaining
         save_config(config)
@@ -251,7 +252,11 @@ def update_settings(
             config.validate()
         except ValueError as error:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": "gateway_settings_refused",
+                    "params": {"detail": str(error)},
+                },
             ) from error
         save_config(config)
     _apply_quietly()
@@ -273,7 +278,11 @@ def apply() -> CliproxyApiApplyResult:
         message = CliproxyApiConfigApplier().apply()
     except ValueError as error:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "gateway_settings_refused",
+                "params": {"detail": str(error)},
+            },
         ) from error
     return CliproxyApiApplyResult(message=message)
 

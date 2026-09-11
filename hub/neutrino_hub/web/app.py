@@ -34,6 +34,7 @@ from neutrino_hub.web.routers import (
     device_files,
     devices,
     gitea,
+    language,
     modules,
     netbird,
     network,
@@ -48,6 +49,7 @@ from neutrino_hub.web.routers import (
 
 API_ROUTERS = (
     auth.router,
+    language.router,
     dashboard.router,
     network.router,
     proxy.router,

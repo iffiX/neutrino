@@ -6,6 +6,7 @@ import {
 } from "../ai_usage";
 import { formatCompact } from "../format_compact";
 import { formatTimeAgo } from "../format_duration";
+import { t, useLanguage } from "../i18n";
 import type { AiUsageKey } from "../api_types";
 
 /**
@@ -14,29 +15,18 @@ import type { AiUsageKey } from "../api_types";
  * page.
  */
 
-const WORDING = {
-  headerKey: "Key",
-  headerRequests: "Requests",
-  headerSuccess: "Success",
-  headerTokens: "Tokens",
-  headerCache: "Cache",
-  headerFirstSeen: "First seen",
-  headerLastSeen: "Last seen",
-  noClient: "no client",
-  empty: "No key activity yet",
-  emptyHint: "A key shows up here once its machine talks to the gateway.",
-} as const;
-
 interface AiUsageKeysProps {
   keys: AiUsageKey[];
 }
 
 export function AiUsageKeys({ keys }: AiUsageKeysProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   if (keys.length === 0) {
     return (
       <div className="placeholder">
-        <span>{WORDING.empty}</span>
-        <span className="faint">{WORDING.emptyHint}</span>
+        <span>{t("ui.usage.keys_empty")}</span>
+        <span className="faint">{t("ui.usage.keys_empty_hint")}</span>
       </div>
     );
   }
@@ -48,13 +38,13 @@ export function AiUsageKeys({ keys }: AiUsageKeysProps) {
       <table className="usage_table">
         <thead>
           <tr>
-            <th>{WORDING.headerKey}</th>
-            <th className="num">{WORDING.headerRequests}</th>
-            <th className="num">{WORDING.headerSuccess}</th>
-            <th className="num">{WORDING.headerTokens}</th>
-            <th className="num">{WORDING.headerCache}</th>
-            <th>{WORDING.headerFirstSeen}</th>
-            <th>{WORDING.headerLastSeen}</th>
+            <th>{t("ui.usage.header_key")}</th>
+            <th className="num">{t("ui.usage.header_requests")}</th>
+            <th className="num">{t("ui.usage.header_success")}</th>
+            <th className="num">{t("ui.usage.header_tokens")}</th>
+            <th className="num">{t("ui.usage.header_cache")}</th>
+            <th>{t("ui.usage.header_first_seen")}</th>
+            <th>{t("ui.usage.header_last_seen")}</th>
           </tr>
         </thead>
         <tbody>
@@ -65,7 +55,7 @@ export function AiUsageKeys({ keys }: AiUsageKeysProps) {
                 <span
                   className={`usage_device ${key.client_name === null ? "faint" : ""}`}
                 >
-                  {key.client_name ?? WORDING.noClient}
+                  {key.client_name ?? t("ui.usage.no_client")}
                 </span>
               </td>
               <td className="num">

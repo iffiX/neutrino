@@ -10,6 +10,7 @@ import { StringListEditor } from "../components/string_list_editor";
 import { ToggleSwitch } from "../components/toggle_switch";
 import { apiPost, apiPut, describeError } from "../api_client";
 import { computeActiveExits, primaryExitTag } from "../active_exits";
+import { t, useLanguage } from "../i18n";
 import { describeProxy } from "../proxy_status";
 import type { ProxyTone } from "../proxy_status";
 import { useApiResource } from "../use_api_resource";
@@ -68,6 +69,8 @@ const GROUP_FIELDS: Record<GroupName, (keyof ProxySettings)[]> = {
 };
 
 export function ProxyPage() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const resource = useApiResource<ProxySettings>("/proxy");
   // The LAN scope only means something on a box that forwards a network, and
   // which boxes do is the network mode's answer.
@@ -173,7 +176,7 @@ export function ProxyPage() {
   if (resource.error !== null && resource.data === null) {
     return (
       <div className="page">
-        <h1>Proxy</h1>
+        <h1>{t("ui.proxy.title")}</h1>
         <ErrorPanel message={resource.error} onRetry={resource.reload} />
       </div>
     );
@@ -182,7 +185,7 @@ export function ProxyPage() {
   if (draft === null) {
     return (
       <div className="page">
-        <h1>Proxy</h1>
+        <h1>{t("ui.proxy.title")}</h1>
         <div className="skeleton" style={{ height: 420 }} />
       </div>
     );
@@ -204,7 +207,7 @@ export function ProxyPage() {
     <div className="page">
       <div className="page_header">
         <div className="page_title_row">
-          <h1>Proxy</h1>
+          <h1>{t("ui.proxy.title")}</h1>
           <span className={`badge ${BADGE_TONES[proxy.tone]}`}>
             {proxy.scope}
           </span>
@@ -222,12 +225,9 @@ export function ProxyPage() {
         className={`settings_group ${isGroupDirty("route") ? "settings_group--dirty" : ""}`}
       >
         <div className="settings_group_title">
-          <h2>Route</h2>
+          <h2>{t("ui.proxy.route_title")}</h2>
         </div>
-        <p className="field_hint">
-          Whose traffic goes through the exit nodes, and which destinations are
-          left out of it.
-        </p>
+        <p className="field_hint">{t("ui.proxy.route_hint")}</p>
 
         {/* Who goes through the proxy: the machines this box forwards for,
             and the box itself. Two independent answers to one question, so
@@ -236,25 +236,25 @@ export function ProxyPage() {
           isOn={draft.is_proxy_enabled}
           onChange={(isOn) => updateDraft({ is_proxy_enabled: isOn })}
           isDisabled={!isForwardingMode}
-          label="Send LAN traffic through the proxy"
+          label={t("ui.proxy.lan_toggle")}
           description={
             isForwardingMode
-              ? "Whether name resolution and connections from the LAN go through the proxy."
-              : "Whether name resolution and connections from the LAN go through the proxy. This box forwards no one's traffic in server mode, so there is no LAN to send."
+              ? t("ui.proxy.lan_toggle_description")
+              : t("ui.proxy.lan_toggle_description_server")
           }
         />
         <ToggleSwitch
           isOn={draft.is_local_proxy_enabled}
           onChange={(isOn) => updateDraft({ is_local_proxy_enabled: isOn })}
-          label="Send Neutrino Hub's own traffic through the proxy"
-          description="Whether name resolution and connections from Neutrino Hub itself go through the proxy. It works in any network mode, and independently of the LAN switch."
+          label={t("ui.proxy.local_toggle")}
+          description={t("ui.proxy.local_toggle_description")}
         />
 
         <ToggleSwitch
           isOn={draft.is_direct_fallback_enabled}
           onChange={(isOn) => updateDraft({ is_direct_fallback_enabled: isOn })}
-          label="Let traffic out directly when no exit node answers"
-          description="Whether traffic sent to the proxy leaves through the WAN when every enabled exit node is unreachable. Off, it fails instead, and so do the LAN's names, because they are resolved at the exit."
+          label={t("ui.proxy.fallback_toggle")}
+          description={t("ui.proxy.fallback_toggle_description")}
         />
 
         <div className="proxy_switches">
@@ -264,33 +264,32 @@ export function ProxyPage() {
             <div className="proxy_switch_head">
               <span className="proxy_switch_title">
                 <Icon name="globe" size={16} className="proxy_switch_icon" />
-                GeoIP split routing
+                {t("ui.proxy.geoip_title")}
               </span>
               <ToggleSwitch
                 isOn={draft.is_geoip_split_enabled}
                 onChange={(isOn) =>
                   updateDraft({ is_geoip_split_enabled: isOn })
                 }
-                label="GeoIP split routing"
+                label={t("ui.proxy.geoip_title")}
               />
             </div>
             <div className="proxy_switch_body">
-              <p>
-                Domains and IPs matching the direct lists below leave straight
-                out of the WAN. Everything else that is sent to the proxy goes
-                through the exit-node balancer. Turn this off to proxy
-                absolutely everything that is sent.
-              </p>
+              <p>{t("ui.proxy.geoip_body")}</p>
               <div className="proxy_switch_flow">
                 <span>LAN</span>
                 <span className="proxy_switch_flow_arrow">→</span>
-                <span className="badge badge--ok">direct list</span>
+                <span className="badge badge--ok">
+                  {t("ui.proxy.geoip_flow_direct")}
+                </span>
                 <span className="proxy_switch_flow_arrow">→</span>
                 <span>WAN</span>
                 <span className="proxy_switch_flow_arrow">·</span>
-                <span className="badge badge--accent">everything else</span>
+                <span className="badge badge--accent">
+                  {t("ui.proxy.geoip_flow_rest")}
+                </span>
                 <span className="proxy_switch_flow_arrow">→</span>
-                <span>exit node</span>
+                <span>{t("ui.proxy.geoip_flow_exit")}</span>
               </div>
             </div>
           </section>
@@ -300,13 +299,13 @@ export function ProxyPage() {
           <section className="proxy_subcard">
             <div className="card_header">
               <div className="card_title">
-                <h2>Direct domains</h2>
+                <h2>{t("ui.proxy.direct_domains_title")}</h2>
                 <span className="badge">{draft.direct_domains.length}</span>
               </div>
             </div>
             <StringListEditor
-              label="Domains that bypass the proxy"
-              description="xray rule syntax: geosite:cn, domain:example.com, keyword:baidu."
+              label={t("ui.proxy.direct_domains_label")}
+              description={t("ui.proxy.direct_domains_description")}
               placeholder="geosite:cn"
               values={draft.direct_domains}
               onChange={(values) => updateDraft({ direct_domains: values })}
@@ -316,13 +315,13 @@ export function ProxyPage() {
           <section className="proxy_subcard">
             <div className="card_header">
               <div className="card_title">
-                <h2>Direct IPs</h2>
+                <h2>{t("ui.proxy.direct_ips_title")}</h2>
                 <span className="badge">{draft.direct_ips.length}</span>
               </div>
             </div>
             <StringListEditor
-              label="IP ranges that bypass the proxy"
-              description="xray rule syntax: geoip:cn, geoip:private, 10.0.0.0/8."
+              label={t("ui.proxy.direct_ips_label")}
+              description={t("ui.proxy.direct_ips_description")}
               placeholder="geoip:cn"
               values={draft.direct_ips}
               onChange={(values) => updateDraft({ direct_ips: values })}
@@ -333,13 +332,13 @@ export function ProxyPage() {
         <section className="proxy_subcard">
           <div className="card_header">
             <div className="card_title">
-              <h2>DNS</h2>
+              <h2>{t("ui.proxy.dns_title")}</h2>
             </div>
           </div>
           <div className="proxy_dns_grid">
             <div className="field">
               <span className="field_label">
-                Remote resolver (proxied names)
+                {t("ui.proxy.remote_dns_label")}
               </span>
               <div className="proxy_dns_pair">
                 <input
@@ -360,12 +359,14 @@ export function ProxyPage() {
                   }
                 />
               </div>
-              <span className="field_hint">Resolved at the exit node.</span>
+              <span className="field_hint">
+                {t("ui.proxy.remote_dns_hint")}
+              </span>
             </div>
 
             <div className="field">
               <span className="field_label">
-                Direct resolver (bypassed names)
+                {t("ui.proxy.direct_dns_label")}
               </span>
               <div className="proxy_dns_pair">
                 <input
@@ -387,7 +388,7 @@ export function ProxyPage() {
                 />
               </div>
               <span className="field_hint">
-                Answers direct-list names, and all names while the proxy is off.
+                {t("ui.proxy.direct_dns_hint")}
               </span>
             </div>
           </div>
@@ -396,9 +397,9 @@ export function ProxyPage() {
         <ApplyBar
           isDirty={isGroupDirty("route")}
           isBusy={busyGroup === "route"}
-          label="Apply route"
-          hint="Rewrites the xray routing rules and reloads the proxy."
-          warning="Restarts the proxy; connections through it drop."
+          label={t("ui.proxy.apply_route")}
+          hint={t("ui.proxy.apply_route_hint")}
+          warning={t("ui.proxy.warning_restart")}
           error={errors.route ?? null}
           notice={notice.route ?? null}
           onReset={() => resetGroup("route")}

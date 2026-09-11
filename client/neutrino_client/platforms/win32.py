@@ -84,6 +84,11 @@ LR_DEFAULTSIZE = 0x0040
 IDI_APPLICATION = 32512
 NOTIFY_ICON_TIP_LENGTH = 128
 
+# The language a LANGID names: its low ten bits are the primary language,
+# and 0x04 is Chinese in every region Windows knows.
+LANGUAGE_PRIMARY_MASK = 0x3FF
+LANGUAGE_PRIMARY_CHINESE = 0x04
+
 
 def win_error(code: int) -> str:
     """What Windows calls one of its own error numbers.
@@ -360,6 +365,8 @@ class Win32Libraries:
             ctypes.c_void_p,
         ]
         self.kernel32.GetModuleHandleW.restype = ctypes.c_void_p
+        self.kernel32.GetUserDefaultUILanguage.restype = ctypes.c_ushort
+        self.kernel32.GetUserDefaultUILanguage.argtypes = []
         self.kernel32.CreatePipe.argtypes = [
             ctypes.POINTER(ctypes.c_void_p),
             ctypes.POINTER(ctypes.c_void_p),

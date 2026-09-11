@@ -124,7 +124,7 @@ async def update_options(
             does not have, 502 when the firewall reload fails.
     """
     if options.uplink_policy not in ROUTER_POLICIES:
-        raise _bad_request(f"unknown uplink policy {options.uplink_policy!r}")
+        raise _bad_request("uplink_policy_unknown", policy=options.uplink_policy)
     network = runtime.network()
     network.uplink_policy = options.uplink_policy
     network.is_inter_lan_allowed = options.is_inter_lan_allowed
@@ -166,7 +166,7 @@ async def update_mode(
             applying the new shape fails.
     """
     if request.mode not in ROUTER_MODES_KEYS:
-        raise _bad_request(f"no mode named {request.mode!r}")
+        raise _bad_request("network_mode_unknown", mode=request.mode)
     network = runtime.network()
     if request.mode == network.mode:
         return _build_view(runtime)
@@ -263,7 +263,7 @@ def _set_exposure(
     wanted = set(names)
     for name in wanted:
         if name not in present and network.interface(name) is None:
-            raise _bad_request(f"{name} is not an interface on this machine")
+            raise _bad_request("interface_not_on_machine", name=name)
         opened = network.interface_or_new(name)
         opened.is_exposed = True
         network.replace(opened)
@@ -298,7 +298,7 @@ async def update_interface(
             applying them fails.
     """
     if settings.name != name:
-        raise _bad_request("the interface in the path and the body must match")
+        raise _bad_request("interface_name_mismatch")
 
     network = runtime.network()
     saved = _to_interface(settings, network=network)
@@ -370,15 +370,12 @@ async def delete_interface(
     if interface is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"{name} is not a configured interface",
+            detail={"code": "interface_not_configured", "params": {"name": name}},
         )
     if interface.vlan is None:
-        raise _bad_request(f"{name} is a physical interface; only VLANs are removable")
+        raise _bad_request("interface_not_a_vlan", name=name)
     if interface.is_untagged:
-        raise _bad_request(
-            "the untagged main belongs to the split port; change the port's "
-            "role instead of removing it"
-        )
+        raise _bad_request("untagged_main_not_removable")
 
     parent = interface.vlan.parent
     network.remove(name)
@@ -436,7 +433,8 @@ async def forget_network(
     known = runtime.connections()
     if not known.remove(ssid):
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"no network named {ssid!r}"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "wifi_network_unknown", "params": {"ssid": ssid}},
         )
     runtime.write_connections(known)
     await asyncio.to_thread(_rerender_radios, runtime, known)
@@ -492,7 +490,9 @@ def scan_wifi(name: str, runtime: PanelRuntime = Depends(get_runtime)) -> WifiSc
     try:
         found = client.scan()
     except (subprocess.SubprocessError, OSError) as error:
-        raise _bad_gateway(command_failure_text(error)) from error
+        raise _bad_gateway(
+            "command_failed", detail=command_failure_text(error)
+        ) from error
     # Which networks are already known is the hub's own answer now, out of
     # `config/`, rather than a question put to whatever manager held them.
     known = runtime.connections()
@@ -545,7 +545,9 @@ async def join_wifi(
         await asyncio.to_thread(_join, runtime, name, request)
     except (subprocess.SubprocessError, OSError) as error:
         raise _bad_gateway(
-            f"could not join {request.ssid}: {command_failure_text(error)}"
+            "wifi_join_failed",
+            ssid=request.ssid,
+            detail=command_failure_text(error),
         ) from error
 
     network = runtime.network()
@@ -898,7 +900,9 @@ async def _apply(runtime: PanelRuntime, *, only: str | None) -> None:
         RuntimeError,
         ValueError,
     ) as error:
-        raise _bad_gateway(command_failure_text(error)) from error
+        raise _bad_gateway(
+            "command_failed", detail=command_failure_text(error)
+        ) from error
 
 
 def _to_settings(interface: RouterInterface) -> InterfaceSettings:
@@ -957,7 +961,7 @@ def _to_interface(
 def _require_wifi(name: str) -> None:
     link = RouterLinkStatus().link(name)
     if link.kind != LINK_KIND_WIFI:
-        raise _bad_request(f"{name} is not a wireless interface")
+        raise _bad_request("interface_not_wireless", name=name)
 
 
 def _require_present(
@@ -987,24 +991,22 @@ def _require_present(
         return
     if any(link.name == settings.name for link in status.all_links()):
         return
-    raise _bad_request(f"{settings.name} is not an interface on this machine")
+    raise _bad_request("interface_not_on_machine", name=settings.name)
 
 
 def _validate(
     settings: InterfaceSettings, *, link: LinkStatus, network: RouterNetworkConfig
 ) -> None:
     if settings.role not in ROUTER_ROLES:
-        raise _bad_request(f"unknown role {settings.role!r}")
+        raise _bad_request("interface_role_unknown", role=settings.role)
     stored = network.interface(settings.name)
     if stored is not None and stored.is_vlan != (settings.vlan is not None):
-        raise _bad_request(
-            f"{settings.name} cannot change between a physical port and a VLAN"
-        )
+        raise _bad_request("interface_kind_fixed", name=settings.name)
     if settings.vlan is not None:
         _validate_vlan(settings, network=network)
     elif settings.role == ROUTER_ROLE_SPLIT:
         if link.kind != LINK_KIND_ETHERNET:
-            raise _bad_request("only a wired port can be split into VLANs")
+            raise _bad_request("split_needs_wired_port")
     # Both blocks are checked whatever the role is live. Every interface keeps
     # all of them so that switching a port back and forth loses nothing, and
     # splitting one copies them verbatim onto the untagged main — so a value
@@ -1013,7 +1015,7 @@ def _validate(
     if settings.wan.cloned_mac and not re.match(
         ROUTER_MAC_PATTERN, settings.wan.cloned_mac
     ):
-        raise _bad_request(f"{settings.wan.cloned_mac!r} is not a MAC address")
+        raise _bad_request("cloned_mac_invalid", value=settings.wan.cloned_mac)
     if settings.role == ROUTER_ROLE_LAN:
         _validate_lan(settings, link=link, network=network)
     elif settings.role == ROUTER_ROLE_WAN:
@@ -1025,26 +1027,22 @@ def _validate_vlan(
 ) -> None:
     vlan = settings.vlan
     if settings.role == ROUTER_ROLE_SPLIT:
-        raise _bad_request("a VLAN cannot itself be split")
+        raise _bad_request("vlan_cannot_be_split")
     if vlan.id is None:
         if settings.name != f"{vlan.parent}.main":
-            raise _bad_request(
-                f"the untagged main is named after its trunk: {vlan.parent}.main"
-            )
+            raise _bad_request("untagged_main_name_fixed", name=f"{vlan.parent}.main")
     else:
         if not ROUTER_VLAN_ID_MIN <= vlan.id <= ROUTER_VLAN_ID_MAX:
             raise _bad_request(
-                f"the VLAN id must be between {ROUTER_VLAN_ID_MIN} "
-                f"and {ROUTER_VLAN_ID_MAX}"
+                "vlan_id_out_of_range",
+                minimum=ROUTER_VLAN_ID_MIN,
+                maximum=ROUTER_VLAN_ID_MAX,
             )
         if settings.name != f"{vlan.parent}.{vlan.id}":
-            raise _bad_request(
-                f"a VLAN interface is named after its trunk and id: "
-                f"{vlan.parent}.{vlan.id}"
-            )
+            raise _bad_request("vlan_name_fixed", name=f"{vlan.parent}.{vlan.id}")
     parent = network.interface(vlan.parent)
     if parent is None or not parent.is_split:
-        raise _bad_request(f"{vlan.parent} is not split, so it can carry no VLANs")
+        raise _bad_request("vlan_parent_not_split", parent=vlan.parent)
 
 
 def _validate_lan(
@@ -1055,15 +1053,12 @@ def _validate_lan(
     if lan.is_dhcp_enabled and not re.match(
         ROUTER_LEASE_TIME_PATTERN, lan.dhcp_lease_time.strip()
     ):
-        raise _bad_request(
-            f"{lan.dhcp_lease_time!r} is not a lease time; write it as 30m, "
-            f"12h, 7d or infinite"
-        )
+        raise _bad_request("dhcp_lease_time_invalid", value=lan.dhcp_lease_time)
     try:
         subnet = ipaddress.ip_network(f"{lan.address}/{lan.prefix_len}", strict=False)
         address = ipaddress.ip_address(lan.address)
     except ValueError as error:
-        raise _bad_request(str(error)) from error
+        raise _bad_request("lan_address_invalid", address=lan.address) from error
 
     # Two LANs on overlapping subnets would give clients on either one an
     # ambiguous route, and dnsmasq would hand out leases from whichever pool it
@@ -1077,75 +1072,76 @@ def _validate_lan(
             continue
         if subnet.overlaps(other_subnet):
             raise _bad_request(
-                f"{subnet} overlaps the network {other.name} already serves "
-                f"({other_subnet})"
+                "lan_subnet_overlaps",
+                subnet=str(subnet),
+                name=other.name,
+                other=str(other_subnet),
             )
 
     if lan.upstream_gateway:
         try:
             upstream = ipaddress.ip_address(lan.upstream_gateway)
         except ValueError as error:
-            raise _bad_request(f"upstream router: {error}") from error
-        if upstream not in subnet:
-            raise _bad_request(f"the upstream router must lie inside {subnet}")
-        if upstream == address:
             raise _bad_request(
-                "the upstream router cannot be the gateway's own address"
-            )
+                "upstream_gateway_invalid", address=lan.upstream_gateway
+            ) from error
+        if upstream not in subnet:
+            raise _bad_request("upstream_gateway_outside", subnet=str(subnet))
+        if upstream == address:
+            raise _bad_request("upstream_gateway_is_this_box")
 
     if lan.is_dhcp_enabled:
         try:
             start = ipaddress.ip_address(lan.dhcp_range_start)
             end = ipaddress.ip_address(lan.dhcp_range_end)
         except ValueError as error:
-            raise _bad_request(str(error)) from error
+            raise _bad_request(
+                "dhcp_range_invalid",
+                start=lan.dhcp_range_start,
+                end=lan.dhcp_range_end,
+            ) from error
         if start not in subnet or end not in subnet:
-            raise _bad_request(f"the DHCP range must lie inside {subnet}")
+            raise _bad_request("dhcp_range_outside", subnet=str(subnet))
         if start > end:
-            raise _bad_request("the DHCP range start must not be above its end")
+            raise _bad_request("dhcp_range_reversed")
         if start <= address <= end:
-            raise _bad_request("the gateway address must lie outside the DHCP range")
+            raise _bad_request("dhcp_range_holds_gateway")
 
     if link.kind == LINK_KIND_WIFI:
         if lan.upstream_gateway:
-            raise _bad_request(
-                "a published access point cannot be a side gateway; joining "
-                "an existing network over the radio is the WAN role"
-            )
+            raise _bad_request("access_point_cannot_be_side_gateway")
         if not link.is_ap_capable:
-            raise _bad_request(
-                f"{settings.name} cannot serve a network: its chipset has no "
-                f"access-point mode, so it can only join one"
-            )
+            raise _bad_request("interface_not_ap_capable", name=settings.name)
         if not settings.wifi.ap_ssid.strip():
-            raise _bad_request("an access point needs a network name")
+            raise _bad_request("access_point_needs_ssid")
         length = len(settings.wifi.ap_passphrase)
         if not AP_PASSPHRASE_MIN_LENGTH <= length <= AP_PASSPHRASE_MAX_LENGTH:
             raise _bad_request(
-                f"the access point passphrase must be "
-                f"{AP_PASSPHRASE_MIN_LENGTH} to {AP_PASSPHRASE_MAX_LENGTH} characters"
+                "access_point_passphrase_length",
+                minimum=AP_PASSPHRASE_MIN_LENGTH,
+                maximum=AP_PASSPHRASE_MAX_LENGTH,
             )
 
 
 def _validate_wan(settings: InterfaceSettings) -> None:
     wan = settings.wan
     if wan.intent not in ROUTER_INTENTS:
-        raise _bad_request(f"unknown uplink intent {wan.intent!r}")
+        raise _bad_request("uplink_intent_unknown", intent=wan.intent)
     if wan.method != ROUTER_WAN_METHOD_STATIC:
         return
     _require_prefix_len(wan.prefix_len)
     try:
         subnet = ipaddress.ip_network(f"{wan.address}/{wan.prefix_len}", strict=False)
     except ValueError as error:
-        raise _bad_request(f"static uplink address: {error}") from error
+        raise _bad_request("uplink_address_invalid", address=wan.address) from error
     if not wan.gateway:
-        raise _bad_request("a static uplink needs a gateway address")
+        raise _bad_request("uplink_gateway_needed")
     try:
         gateway = ipaddress.ip_address(wan.gateway)
     except ValueError as error:
-        raise _bad_request(f"static uplink gateway: {error}") from error
+        raise _bad_request("uplink_gateway_invalid", address=wan.gateway) from error
     if gateway not in subnet:
-        raise _bad_request(f"the gateway must lie inside {subnet}")
+        raise _bad_request("uplink_gateway_outside", subnet=str(subnet))
 
 
 def _require_prefix_len(prefix_len: int) -> None:
@@ -1163,14 +1159,40 @@ def _require_prefix_len(prefix_len: int) -> None:
     """
     if not ROUTER_PREFIX_LEN_MIN <= prefix_len <= ROUTER_PREFIX_LEN_MAX:
         raise _bad_request(
-            f"a prefix length is {ROUTER_PREFIX_LEN_MIN} to "
-            f"{ROUTER_PREFIX_LEN_MAX}; {prefix_len} is not"
+            "prefix_len_out_of_range",
+            minimum=ROUTER_PREFIX_LEN_MIN,
+            maximum=ROUTER_PREFIX_LEN_MAX,
+            value=prefix_len,
         )
 
 
-def _bad_request(detail: str) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+def _bad_request(code: str, **params) -> HTTPException:
+    """One 400 carrying the name of what happened.
+
+    Args:
+        code: What was refused.
+        params: The values the panel's sentence names.
+
+    Returns:
+        The exception to raise.
+    """
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={"code": code, "params": params},
+    )
 
 
-def _bad_gateway(detail: str) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
+def _bad_gateway(code: str, **params) -> HTTPException:
+    """One 502 carrying the name of what happened.
+
+    Args:
+        code: What was refused.
+        params: The values the panel's sentence names.
+
+    Returns:
+        The exception to raise.
+    """
+    return HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail={"code": code, "params": params},
+    )

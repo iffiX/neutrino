@@ -10,6 +10,7 @@ import { StatusDot } from "./status_dot";
 import { StringListEditor } from "./string_list_editor";
 import { ToggleSwitch } from "./toggle_switch";
 import { apiGet, apiPost, apiPut, describeError } from "../api_client";
+import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
 import type {
@@ -35,59 +36,6 @@ import "./containers_panels.css";
  * anything past the line works fine from a terminal.
  */
 
-const WORDING = {
-  notInstalled:
-    "The container engine is not installed on this machine. Enable podman " +
-    "for it above.",
-  liveTitle: "Running now",
-  liveBadge: "live",
-  liveEmpty: "No containers exist yet. Declared ones appear here after Apply.",
-  mirrorsTitle: "Registry mirrors",
-  mirrorsHint: "Tried in order before docker.io.",
-  mirrorAdd: "Add mirror",
-  mirrorsApplyLabel: "Apply mirrors",
-  mirrorsApplyHint: "Takes effect on the next pull; nothing restarts.",
-  declaredTitle: "Declared containers",
-  declaredHint: "Each becomes a systemd unit on the default network.",
-  containerAdd: "Add container",
-  containerNew: "new container",
-  containerRemove: "Remove",
-  containersApplyLabel: "Apply containers",
-  containersApplyHint: "First starts pull the image, which can take a while.",
-  containersApplyWarning:
-    "Edited containers will be recreated, and files outside volumes will be " +
-    "lost.",
-  applied: "Applied.",
-  nameLabel: "Name",
-  imageLabel: "Image tag",
-  tagPick: "Pick a tag",
-  tagLoading: "Loading tags…",
-  tagsEmpty: "No tags found. Type one, e.g. :latest.",
-  portsLabel: "Ports",
-  volumesLabel: "Volumes",
-  environmentLabel: "Environment",
-  commandLabel: "Command (optional)",
-  commandHint:
-    "Empty uses the image's command; base images need a long-running one.",
-  autostartLabel: "Start with the box",
-  autostartHint:
-    "Whether this container starts with the box. Off, it stays declared and " +
-    "starts only when asked.",
-  rowJournal: "Journal",
-  rowShell: "Shell",
-  rowRestart: "Restart",
-  rowStop: "Stop",
-  rowStart: "Start",
-  rowDeclared: "declared",
-  rowAdHoc: "ad hoc",
-  shellClose: "Close",
-  shellHint: "Shell inside the container.",
-  shellFailed:
-    "The shell failed (exit code {code}). What it printed stays until you " +
-    "close.",
-  offline: "The agent is offline",
-};
-
 const EMPTY_CONTAINER: PodmanContainer = {
   name: "",
   image: "",
@@ -111,6 +59,8 @@ export function ContainersPanels({
   basePath,
   isEditable,
 }: ContainersPanelsProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   // Containers start, stop and crash on their own schedule; the machine's
   // own report is what says so, and its settings are a write like any other.
   const resource = useApiResource<PodmanDeviceView>(basePath, {
@@ -175,7 +125,7 @@ export function ContainersPanels({
         setMirrorsError(result.message);
         return;
       }
-      setMirrorsNotice(WORDING.applied);
+      setMirrorsNotice(t("ui.containers.applied"));
     } catch (cause: unknown) {
       setMirrorsError(describeError(cause));
     } finally {
@@ -195,7 +145,7 @@ export function ContainersPanels({
         setError(result.message);
         return;
       }
-      setNotice(WORDING.applied);
+      setNotice(t("ui.containers.applied"));
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -228,19 +178,19 @@ export function ContainersPanels({
       {!saved.is_installed && (
         <div className="notice notice--warn">
           <Icon name="alert" size={15} />
-          <div className="notice_body">{WORDING.notInstalled}</div>
+          <div className="notice_body">{t("ui.containers.not_installed")}</div>
         </div>
       )}
 
       <section className="settings_group">
         <div className="settings_group_title">
-          <h2>{WORDING.liveTitle}</h2>
+          <h2>{t("ui.containers.live_title")}</h2>
           {saved.is_installed && (
             <span className="badge">podman {saved.version}</span>
           )}
           <span className="badge">
             <StatusDot tone="ok" isPulsing />
-            {WORDING.liveBadge}
+            {t("state.live")}
           </span>
         </div>
         {liveError !== null && (
@@ -250,7 +200,7 @@ export function ContainersPanels({
           </div>
         )}
         {saved.running.length === 0 ? (
-          <p className="field_hint">{WORDING.liveEmpty}</p>
+          <p className="field_hint">{t("ui.containers.live_empty")}</p>
         ) : (
           <div className="container_rows">
             {saved.running.map((state) => (
@@ -281,9 +231,9 @@ export function ContainersPanels({
         className={`settings_group ${isMirrorsDirty ? "settings_group--dirty" : ""}`}
       >
         <div className="settings_group_title">
-          <h2>{WORDING.mirrorsTitle}</h2>
+          <h2>{t("ui.containers.mirrors_title")}</h2>
         </div>
-        <p className="field_hint">{WORDING.mirrorsHint}</p>
+        <p className="field_hint">{t("ui.containers.mirrors_hint")}</p>
         {mirrors.map((mirror, index) => (
           <div key={index} className="mirror_row">
             <input
@@ -320,15 +270,15 @@ export function ContainersPanels({
             onClick={() => setMirrors((current) => [...current, ""])}
           >
             <Icon name="plus" size={14} />
-            {WORDING.mirrorAdd}
+            {t("ui.containers.mirror_add")}
           </button>
         </div>
         <ApplyBar
           isDirty={isMirrorsDirty}
           isBusy={isMirrorsBusy}
-          label={WORDING.mirrorsApplyLabel}
-          hint={WORDING.mirrorsApplyHint}
-          blockedHint={isEditable ? null : WORDING.offline}
+          label={t("ui.containers.mirrors_apply")}
+          hint={t("ui.containers.mirrors_apply_hint")}
+          blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
           error={mirrorsError}
           notice={mirrorsNotice}
           onReset={() => setMirrors(saved.mirrors)}
@@ -340,9 +290,9 @@ export function ContainersPanels({
         className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
       >
         <div className="settings_group_title">
-          <h2>{WORDING.declaredTitle}</h2>
+          <h2>{t("ui.containers.declared_title")}</h2>
         </div>
-        <p className="field_hint">{WORDING.declaredHint}</p>
+        <p className="field_hint">{t("ui.containers.declared_hint")}</p>
         {containers.map((container, index) => (
           <ContainerEditor
             key={index}
@@ -371,16 +321,16 @@ export function ContainersPanels({
             }
           >
             <Icon name="plus" size={14} />
-            {WORDING.containerAdd}
+            {t("ui.containers.container_add")}
           </button>
         </div>
         <ApplyBar
           isDirty={isDirty}
           isBusy={isBusy}
-          label={WORDING.containersApplyLabel}
-          hint={WORDING.containersApplyHint}
-          warning={WORDING.containersApplyWarning}
-          blockedHint={isEditable ? null : WORDING.offline}
+          label={t("ui.containers.containers_apply")}
+          hint={t("ui.containers.containers_apply_hint")}
+          warning={t("ui.containers.containers_apply_warning")}
+          blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
           error={error}
           notice={notice}
           onReset={() => setContainers(saved.containers)}
@@ -418,6 +368,8 @@ function ContainerEditor({
   onChange,
   onRemove,
 }: ContainerEditorProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [tags, setTags] = useState<string[] | null>(null);
   const [isLoadingTags, setIsLoadingTags] = useState(false);
 
@@ -440,7 +392,9 @@ function ContainerEditor({
       <div className="container_editor_head">
         <span className="container_editor_title">
           <Icon name="services" size={15} />
-          {container.name === "" ? WORDING.containerNew : container.name}
+          {container.name === ""
+            ? t("ui.containers.container_new")
+            : container.name}
         </span>
         <button
           type="button"
@@ -448,12 +402,12 @@ function ContainerEditor({
           onClick={onRemove}
         >
           <Icon name="trash" size={13} />
-          {WORDING.containerRemove}
+          {t("ui.containers.container_remove")}
         </button>
       </div>
       <div className="container_editor_fields">
         <label className="field">
-          <span className="field_label">{WORDING.nameLabel}</span>
+          <span className="field_label">{t("ui.containers.name")}</span>
           <input
             className="input"
             placeholder="redis"
@@ -462,7 +416,7 @@ function ContainerEditor({
           />
         </label>
         <label className="field">
-          <span className="field_label">{WORDING.imageLabel}</span>
+          <span className="field_label">{t("ui.containers.image")}</span>
           <input
             className="input"
             placeholder="redis:7"
@@ -481,10 +435,12 @@ function ContainerEditor({
             onClick={() => void loadTags()}
           >
             <Icon name="refresh" size={12} />
-            {isLoadingTags ? WORDING.tagLoading : WORDING.tagPick}
+            {isLoadingTags
+              ? t("ui.containers.tag_loading")
+              : t("ui.containers.tag_pick")}
           </button>
           {tags !== null && tags.length === 0 && (
-            <span className="field_hint">{WORDING.tagsEmpty}</span>
+            <span className="field_hint">{t("ui.containers.tags_empty")}</span>
           )}
           {tags !== null &&
             tags.map((tag) => (
@@ -509,21 +465,21 @@ function ContainerEditor({
       )}
       <div className="container_editor_lists">
         <StringListEditor
-          label={WORDING.portsLabel}
+          label={t("ui.containers.ports")}
           values={container.ports}
           onChange={(ports) => onChange({ ports })}
           placeholder="8080:80"
           emptyText="host_port:container_port"
         />
         <StringListEditor
-          label={WORDING.volumesLabel}
+          label={t("ui.containers.volumes")}
           values={container.volumes}
           onChange={(volumes) => onChange({ volumes })}
           placeholder="/srv/share:/data"
           emptyText="host_path:container_path"
         />
         <StringListEditor
-          label={WORDING.environmentLabel}
+          label={t("ui.containers.environment")}
           values={container.environment}
           onChange={(environment) => onChange({ environment })}
           placeholder="KEY=value"
@@ -531,20 +487,20 @@ function ContainerEditor({
         />
       </div>
       <label className="field">
-        <span className="field_label">{WORDING.commandLabel}</span>
+        <span className="field_label">{t("ui.containers.command")}</span>
         <input
           className="input"
           placeholder="python3 -m http.server 8000"
           value={container.command}
           onChange={(event) => onChange({ command: event.target.value })}
         />
-        <span className="field_hint">{WORDING.commandHint}</span>
+        <span className="field_hint">{t("ui.containers.command_hint")}</span>
       </label>
       <ToggleSwitch
         isOn={container.is_autostart}
         onChange={(isOn) => onChange({ is_autostart: isOn })}
-        label={WORDING.autostartLabel}
-        description={WORDING.autostartHint}
+        label={t("ui.containers.autostart")}
+        description={t("ui.containers.autostart_hint")}
       />
     </div>
   );
@@ -563,6 +519,8 @@ function ContainerRow({
   onShell,
   onJournal,
 }: ContainerRowProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   return (
     <div className="container_row">
       <span className="container_row_name">
@@ -575,9 +533,9 @@ function ContainerRow({
       <span className="container_row_image">{state.image}</span>
       <span className="container_row_status">{state.status}</span>
       {state.is_declared ? (
-        <span className="badge badge--accent">{WORDING.rowDeclared}</span>
+        <span className="badge badge--accent">{t("state.declared")}</span>
       ) : (
-        <span className="badge">{WORDING.rowAdHoc}</span>
+        <span className="badge">{t("state.ad_hoc")}</span>
       )}
       <div className="container_row_actions">
         <button
@@ -586,7 +544,7 @@ function ContainerRow({
           onClick={onJournal}
         >
           <Icon name="file" size={12} />
-          {WORDING.rowJournal}
+          {t("ui.containers.row_journal")}
         </button>
         {state.is_running ? (
           <>
@@ -596,7 +554,7 @@ function ContainerRow({
               onClick={onShell}
             >
               <Icon name="terminal" size={12} />
-              {WORDING.rowShell}
+              {t("ui.containers.row_shell")}
             </button>
             <button
               type="button"
@@ -604,7 +562,7 @@ function ContainerRow({
               onClick={() => onAction("restart")}
             >
               <Icon name="refresh" size={12} />
-              {WORDING.rowRestart}
+              {t("ui.containers.row_restart")}
             </button>
             <button
               type="button"
@@ -612,7 +570,7 @@ function ContainerRow({
               onClick={() => onAction("stop")}
             >
               <Icon name="stop" size={12} />
-              {WORDING.rowStop}
+              {t("ui.containers.row_stop")}
             </button>
           </>
         ) : (
@@ -622,7 +580,7 @@ function ContainerRow({
             onClick={() => onAction("start")}
           >
             <Icon name="play" size={12} />
-            {WORDING.rowStart}
+            {t("ui.containers.row_start")}
           </button>
         )}
       </div>
@@ -641,6 +599,8 @@ function ContainerShellModal({
   name,
   onClose,
 }: ContainerShellModalProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [failedCode, setFailedCode] = useState<number | null>(null);
   // A portal, so no ancestor may capture the fixed backdrop.
   return createPortal(
@@ -658,7 +618,7 @@ function ContainerShellModal({
               onClick={onClose}
             >
               <Icon name="close" size={13} />
-              {WORDING.shellClose}
+              {t("ui.containers.shell_close")}
             </button>
           </div>
         </div>
@@ -685,8 +645,8 @@ function ContainerShellModal({
           }
         >
           {failedCode !== null
-            ? WORDING.shellFailed.replace("{code}", String(failedCode))
-            : WORDING.shellHint}
+            ? t("ui.containers.shell_failed", { code: failedCode })
+            : t("ui.containers.shell_hint")}
         </div>
       </div>
     </div>,

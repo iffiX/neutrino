@@ -150,5 +150,5 @@ def test_a_hub_without_a_certificate_generates_no_ticket(monkeypatch):
     answer = client_for(runtime).post("/api/devices/enrollment", json={"name": ""})
 
     assert answer.status_code == 409
-    assert answer.json()["detail"] == {"code": "agent_tls_missing"}
+    assert answer.json()["detail"] == {"code": "agent_tls_missing", "params": {}}
     assert runtime.enrollments == {}

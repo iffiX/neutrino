@@ -101,6 +101,6 @@ def test_a_machine_with_no_channel_is_refused_and_keeps_its_password(api):
     answer = client.post(PATH)
 
     assert answer.status_code == 409
-    assert answer.json()["detail"] == {"code": "agent_offline"}
+    assert answer.json()["detail"] == {"code": "agent_offline", "params": {}}
     assert runtime.desired_states.seat_password(MAC) == before
     assert runtime.agent_sessions.pushes == []

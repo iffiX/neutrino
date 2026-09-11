@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { Icon } from "./icon";
+import { t, useLanguage } from "../i18n";
 
 import "./password_input.css";
 
@@ -35,6 +36,8 @@ export function PasswordInput({
   placeholder,
   autoFocus,
 }: PasswordInputProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [isRevealed, setIsRevealed] = useState(false);
   const isCssMasked = IS_CSS_MASK_SUPPORTED && !isRevealed;
 
@@ -59,8 +62,10 @@ export function PasswordInput({
         type="button"
         className="password_input_toggle"
         onClick={() => setIsRevealed((current) => !current)}
-        title={isRevealed ? "Hide" : "Show"}
-        aria-label={isRevealed ? "Hide password" : "Show password"}
+        title={isRevealed ? t("ui.password.hide") : t("ui.password.show")}
+        aria-label={
+          isRevealed ? t("ui.password.hide_aria") : t("ui.password.show_aria")
+        }
         tabIndex={-1}
       >
         <Icon name={isRevealed ? "eye_off" : "eye"} size={15} />

@@ -6,6 +6,7 @@ import { Icon } from "./icon";
 import { ZfsTopology } from "./zfs_topology";
 import { apiDelete, apiPost, describeError } from "../api_client";
 import { formatBytes } from "../format_bytes";
+import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
 import { useConfirm } from "../use_confirm";
@@ -23,22 +24,36 @@ import "./zfs_panels.css";
  * as uninstalling a module does.
  */
 
-const WORDING = {
-  notInstalled: "The ZFS tools are not installed",
-  notInstalledHint: "Enable the zfs module for this machine above.",
-  offline: "The agent is offline",
-};
-
 const LAYOUTS: {
   value: string;
-  label: string;
+  labelKey: string;
   minimum: number;
-  hint: string;
+  hintKey: string;
 }[] = [
-  { value: "single", label: "Single", minimum: 1, hint: "No redundancy" },
-  { value: "mirror", label: "Mirror", minimum: 2, hint: "Full copies" },
-  { value: "raidz1", label: "RAID-Z1", minimum: 3, hint: "Survives 1 disk" },
-  { value: "raidz2", label: "RAID-Z2", minimum: 4, hint: "Survives 2 disks" },
+  {
+    value: "single",
+    labelKey: "ui.zfs.layout_single",
+    minimum: 1,
+    hintKey: "ui.zfs.layout_single_hint",
+  },
+  {
+    value: "mirror",
+    labelKey: "ui.zfs.layout_mirror",
+    minimum: 2,
+    hintKey: "ui.zfs.layout_mirror_hint",
+  },
+  {
+    value: "raidz1",
+    labelKey: "ui.zfs.layout_raidz1",
+    minimum: 3,
+    hintKey: "ui.zfs.layout_raidz1_hint",
+  },
+  {
+    value: "raidz2",
+    labelKey: "ui.zfs.layout_raidz2",
+    minimum: 4,
+    hintKey: "ui.zfs.layout_raidz2_hint",
+  },
 ];
 
 const COMPRESSIONS = ["lz4", "zstd", "off"];
@@ -61,6 +76,8 @@ interface ZfsPanelsProps {
 }
 
 export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   // Resilvers and scrubs move on their own, which the machine's own report
   // says; the datasets are a write like any other.
   const zfs = useApiResource<ZfsDeviceView>(basePath, {
@@ -102,7 +119,7 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
 
   const act = async (scope: string, work: () => Promise<ZfsDeviceView>) => {
     if (!isEditable) {
-      setActionError({ scope, message: WORDING.offline });
+      setActionError({ scope, message: t("ui.modules.agent_offline") });
       return false;
     }
     setIsBusy(true);
@@ -169,8 +186,8 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
   if (!view.is_installed) {
     return (
       <div className="placeholder">
-        <span>{WORDING.notInstalled}</span>
-        <span className="faint">{WORDING.notInstalledHint}</span>
+        <span>{t("ui.zfs.not_installed")}</span>
+        <span className="faint">{t("ui.zfs.not_installed_hint")}</span>
       </div>
     );
   }
@@ -279,8 +296,10 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
         <div className="notice" key={candidate.name}>
           <Icon name="database" size={15} />
           <div className="notice_body">
-            Pool <span className="mono">{candidate.name}</span> (
-            {candidate.state.toLowerCase()}) found on attached disks.
+            {t("ui.zfs.import_found", {
+              name: candidate.name,
+              state: candidate.state.toLowerCase(),
+            })}
           </div>
           <button
             type="button"
@@ -292,7 +311,7 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
             }
             disabled={isBusy}
           >
-            Import
+            {t("ui.zfs.import")}
           </button>
         </div>
       ))}
@@ -306,7 +325,7 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
 
       <section className="settings_group">
         <div className="settings_group_title">
-          <h2>Topology</h2>
+          <h2>{t("ui.zfs.topology_title")}</h2>
         </div>
         <ZfsTopology
           pools={view.pools}
@@ -338,11 +357,11 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                     disabled={isBusy || availableDisks.length === 0}
                     title={
                       availableDisks.length === 0
-                        ? "No spare disk to replace with"
+                        ? t("ui.zfs.no_spare_replace")
                         : undefined
                     }
                   >
-                    Replace
+                    {t("ui.zfs.replace")}
                   </button>
                   {member.state === "OFFLINE" ? (
                     <button
@@ -358,7 +377,7 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                       }
                       disabled={isBusy}
                     >
-                      Online
+                      {t("ui.zfs.online")}
                     </button>
                   ) : (
                     <button
@@ -374,7 +393,7 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                       }
                       disabled={isBusy}
                     >
-                      Offline
+                      {t("ui.zfs.offline")}
                     </button>
                   )}
                 </>
@@ -388,7 +407,7 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                       setReplaceWith(event.target.value || null)
                     }
                   >
-                    <option value="">replacement disk…</option>
+                    <option value="">{t("ui.zfs.replacement_pick")}</option>
                     {availableDisks.map((disk) => (
                       <option key={disk.by_id} value={disk.by_id}>
                         {shortId(disk)} · {formatBytes(disk.size_bytes)}
@@ -401,7 +420,7 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                     onClick={() => void submitReplace()}
                     disabled={isBusy || replaceWith === null}
                   >
-                    Start resilver
+                    {t("ui.zfs.start_resilver")}
                   </button>
                   <button
                     type="button"
@@ -411,7 +430,7 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                       setReplaceWith(null);
                     }}
                   >
-                    Cancel
+                    {t("ui.zfs.cancel")}
                   </button>
                 </>
               )}
@@ -436,15 +455,12 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
 
       <section className="settings_group">
         <div className="settings_group_title">
-          <h2>Pools</h2>
+          <h2>{t("ui.zfs.pools_title")}</h2>
         </div>
         {view.pools.length === 0 ? (
           <div className="placeholder">
-            <span>No pools yet</span>
-            <span className="faint">
-              Pick spare disks and create one, or plug in disks that already
-              hold a pool.
-            </span>
+            <span>{t("ui.zfs.pools_empty")}</span>
+            <span className="faint">{t("ui.zfs.pools_empty_hint")}</span>
           </div>
         ) : (
           view.pools.map((pool) => (
@@ -464,13 +480,17 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                 </span>
                 {pool.capacity_percent >= 80 && (
                   <span className="badge badge--warn">
-                    {pool.capacity_percent}% full
+                    {t("ui.zfs.capacity_full", {
+                      percent: pool.capacity_percent,
+                    })}
                   </span>
                 )}
                 <span className="zfs_pool_numbers">
-                  {formatBytes(pool.allocated_bytes)} /{" "}
-                  {formatBytes(pool.size_bytes)} · {pool.fragmentation_percent}%
-                  frag
+                  {t("ui.zfs.pool_numbers", {
+                    allocated: formatBytes(pool.allocated_bytes),
+                    size: formatBytes(pool.size_bytes),
+                    frag: pool.fragmentation_percent,
+                  })}
                 </span>
                 <span className="zfs_member_actions_spacer" />
                 {pool.scan.kind !== null ? (
@@ -486,7 +506,7 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                     }
                     disabled={isBusy}
                   >
-                    Stop {pool.scan.kind}
+                    {t("ui.zfs.stop_scan", { kind: pool.scan.kind })}
                   </button>
                 ) : (
                   <button
@@ -501,7 +521,7 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                     }
                     disabled={isBusy}
                   >
-                    Scrub
+                    {t("ui.zfs.scrub")}
                   </button>
                 )}
                 <button
@@ -511,11 +531,11 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                   disabled={isBusy || availableDisks.length === 0}
                   title={
                     availableDisks.length === 0
-                      ? "No spare disks to grow with"
+                      ? t("ui.zfs.no_spare_grow")
                       : undefined
                   }
                 >
-                  Expand
+                  {t("ui.zfs.expand")}
                 </button>
                 <button
                   type="button"
@@ -536,8 +556,16 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
               <div className="zfs_pool_meta">
                 {pool.scan.kind !== null ? (
                   <span>
-                    {pool.scan.kind} {pool.scan.percent?.toFixed(1) ?? "?"}%
-                    {pool.scan.eta !== null && ` · ${pool.scan.eta} to go`}
+                    {pool.scan.eta === null
+                      ? t("ui.zfs.scan_progress", {
+                          kind: pool.scan.kind,
+                          percent: pool.scan.percent?.toFixed(1) ?? "?",
+                        })
+                      : t("ui.zfs.scan_progress_eta", {
+                          kind: pool.scan.kind,
+                          percent: pool.scan.percent?.toFixed(1) ?? "?",
+                          eta: pool.scan.eta,
+                        })}
                   </span>
                 ) : (
                   pool.scan.summary && <span>{pool.scan.summary}</span>
@@ -559,8 +587,7 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
               {destroyConfirm?.pool === pool.name && (
                 <div className="zfs_destroy_confirm">
                   <span>
-                    Destroying <span className="mono">{pool.name}</span> erases
-                    every dataset on it. Type the pool name to continue.
+                    {t("ui.zfs.destroy_warning", { name: pool.name })}
                   </span>
                   <input
                     className="input"
@@ -589,7 +616,7 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                       })
                     }
                   >
-                    Destroy pool
+                    {t("ui.zfs.destroy_pool")}
                   </button>
                 </div>
               )}
@@ -602,20 +629,17 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
             <div className="zfs_builder_head">
               <h3>
                 {builder.target === "new"
-                  ? "Create pool"
-                  : `Expand ${builder.target}`}
+                  ? t("ui.zfs.create_pool")
+                  : t("ui.zfs.expand_pool", { name: builder.target })}
               </h3>
             </div>
             {builder.target !== "new" && (
-              <p className="field_hint">
-                The new vdev joins the pool permanently; it cannot be removed
-                later.
-              </p>
+              <p className="field_hint">{t("ui.zfs.expand_note")}</p>
             )}
 
             {builder.target === "new" && (
               <label className="field zfs_builder_name">
-                <span className="field_label">Pool name</span>
+                <span className="field_label">{t("ui.zfs.pool_name")}</span>
                 <input
                   className="input"
                   value={builder.name}
@@ -630,8 +654,8 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
             <div className="zfs_builder_disks">
               <span className="section_label">
                 {builder.target === "new"
-                  ? "First vdev disks"
-                  : "New vdev disks"}
+                  ? t("ui.zfs.first_vdev_disks")
+                  : t("ui.zfs.new_vdev_disks")}
               </span>
               {availableDisks.map((disk) => (
                 <label className="zfs_builder_disk" key={disk.by_id}>
@@ -653,14 +677,16 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                     {disk.model && ` · ${disk.model}`}
                   </span>
                   {disk.fstype && (
-                    <span className="badge badge--warn">has {disk.fstype}</span>
+                    <span className="badge badge--warn">
+                      {t("ui.zfs.disk_has", { fstype: disk.fstype })}
+                    </span>
                   )}
                 </label>
               ))}
             </div>
 
             <div className="zfs_builder_layouts">
-              <span className="section_label">Vdev layout</span>
+              <span className="section_label">{t("ui.zfs.vdev_layout")}</span>
               <div className="zfs_layout_row">
                 {LAYOUTS.map((layout) => {
                   const isEnough = builder.devices.length >= layout.minimum;
@@ -676,11 +702,11 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                       title={
                         isEnough
                           ? undefined
-                          : `needs at least ${layout.minimum} disks`
+                          : t("ui.zfs.layout_needs", { count: layout.minimum })
                       }
                     >
-                      <strong>{layout.label}</strong>
-                      <span>{layout.hint}</span>
+                      <strong>{t(layout.labelKey)}</strong>
+                      <span>{t(layout.hintKey)}</span>
                     </button>
                   );
                 })}
@@ -692,9 +718,7 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
 
             {isWipeNeeded && (
               <label className="field zfs_builder_name">
-                <span className="field_label">
-                  Selected disks carry data; type wipe to erase them
-                </span>
+                <span className="field_label">{t("ui.zfs.wipe_label")}</span>
                 <input
                   className="input"
                   value={builder.wipeText}
@@ -729,7 +753,7 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                   onClick={() => void submitBuilder(true)}
                   disabled={isBusy}
                 >
-                  Add anyway
+                  {t("ui.zfs.add_anyway")}
                 </button>
               )}
               <button
@@ -737,7 +761,7 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                 className="button button--ghost"
                 onClick={() => setBuilder(null)}
               >
-                Cancel
+                {t("ui.zfs.cancel")}
               </button>
               <button
                 type="button"
@@ -745,7 +769,9 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                 onClick={() => void submitBuilder()}
                 disabled={isBusy || !isBuilderReady}
               >
-                {builder.target === "new" ? "Create pool" : "Add vdev"}
+                {builder.target === "new"
+                  ? t("ui.zfs.create_pool")
+                  : t("ui.zfs.add_vdev")}
               </button>
             </div>
           </div>
@@ -760,12 +786,12 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
               disabled={isBusy || availableDisks.length === 0}
               title={
                 availableDisks.length === 0
-                  ? "No spare disks to build from"
+                  ? t("ui.zfs.no_spare_build")
                   : undefined
               }
             >
               <Icon name="plus" size={14} />
-              Create pool
+              {t("ui.zfs.create_pool")}
             </button>
           </div>
         )}
@@ -773,7 +799,7 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
 
       <section className="settings_group">
         <div className="settings_group_title">
-          <h2>Datasets</h2>
+          <h2>{t("ui.zfs.datasets_title")}</h2>
         </div>
         {view.pools.length > 0 && (
           <>
@@ -796,12 +822,11 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                     }
                     onDestroy={() =>
                       confirm.ask({
-                        title: `Destroy ${dataset.name}`,
-                        body:
-                          "The dataset and every file on it are removed from " +
-                          "the pool. There is no snapshot to return to unless " +
-                          "one was taken.",
-                        confirmLabel: "Destroy",
+                        title: t("ui.zfs.dataset_destroy_title", {
+                          name: dataset.name,
+                        }),
+                        body: t("ui.zfs.dataset_destroy_body"),
+                        confirmLabel: t("ui.zfs.destroy"),
                         onConfirm: () =>
                           void act("datasets", () =>
                             apiPost<ZfsDeviceView>(
@@ -829,12 +854,14 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                 <div className="zfs_dataset_editor_head">
                   <span className="zfs_dataset_editor_title">
                     <Icon name="database" size={13} />
-                    new dataset
+                    {t("ui.zfs.dataset_new")}
                   </span>
                 </div>
                 <div className="zfs_dataset_fields">
                   <label className="field">
-                    <span className="field_label">Pool</span>
+                    <span className="field_label">
+                      {t("ui.zfs.dataset_pool")}
+                    </span>
                     <select
                       className="select"
                       value={datasetDraft.pool || view.pools[0]?.name || ""}
@@ -853,7 +880,9 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                     </select>
                   </label>
                   <label className="field">
-                    <span className="field_label">Name</span>
+                    <span className="field_label">
+                      {t("ui.zfs.dataset_name")}
+                    </span>
                     <input
                       className="input"
                       value={datasetDraft.name}
@@ -873,7 +902,9 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                     />
                   </label>
                   <label className="field">
-                    <span className="field_label">Mountpoint</span>
+                    <span className="field_label">
+                      {t("ui.zfs.dataset_mountpoint")}
+                    </span>
                     <input
                       className="input"
                       value={datasetDraft.mountpoint}
@@ -886,11 +917,13 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                       }
                     />
                     <span className="field_hint">
-                      Blank keeps the default /pool/name.
+                      {t("ui.zfs.mountpoint_hint")}
                     </span>
                   </label>
                   <label className="field">
-                    <span className="field_label">Compression</span>
+                    <span className="field_label">
+                      {t("ui.zfs.compression")}
+                    </span>
                     <select
                       className="select"
                       value={datasetDraft.compression}
@@ -909,7 +942,9 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                     </select>
                   </label>
                   <label className="field">
-                    <span className="field_label">Record size</span>
+                    <span className="field_label">
+                      {t("ui.zfs.record_size")}
+                    </span>
                     <select
                       className="select"
                       value={datasetDraft.recordsize}
@@ -928,17 +963,14 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                     </select>
                   </label>
                 </div>
-                <p className="field_hint">
-                  Small records suit databases and VM images; large ones suit
-                  media and archives.
-                </p>
+                <p className="field_hint">{t("ui.zfs.record_hint")}</p>
                 <div className="zfs_builder_actions">
                   <button
                     type="button"
                     className="button button--ghost"
                     onClick={() => setIsDatasetCreatorOpen(false)}
                   >
-                    Cancel
+                    {t("ui.zfs.cancel")}
                   </button>
                   <button
                     type="button"
@@ -946,7 +978,7 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                     onClick={() => void submitDatasetCreate()}
                     disabled={isBusy || datasetDraft.name.trim().length === 0}
                   >
-                    Create dataset
+                    {t("ui.zfs.create_dataset")}
                   </button>
                 </div>
               </div>
@@ -958,7 +990,7 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                   onClick={() => setIsDatasetCreatorOpen(true)}
                 >
                   <Icon name="plus" size={14} />
-                  Add dataset
+                  {t("ui.zfs.add_dataset")}
                 </button>
               </div>
             )}
@@ -1009,6 +1041,8 @@ function DatasetEditor({
   onUnshare,
   onDestroy,
 }: DatasetEditorProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const total = dataset.used_bytes + dataset.available_bytes;
   const usagePercent =
     total > 0 ? Math.round((dataset.used_bytes / total) * 100) : 0;
@@ -1025,14 +1059,16 @@ function DatasetEditor({
         <span className="zfs_member_actions_spacer" />
         {dataset.share !== null ? (
           <>
-            <span className="badge badge--accent">smb · {dataset.share}</span>
+            <span className="badge badge--accent">
+              {t("ui.zfs.share_badge", { share: dataset.share })}
+            </span>
             <button
               type="button"
               className="button button--ghost button--small"
               onClick={onUnshare}
               disabled={isBusy}
             >
-              Unshare
+              {t("ui.zfs.unshare")}
             </button>
           </>
         ) : (
@@ -1041,9 +1077,9 @@ function DatasetEditor({
             className="button button--small"
             onClick={onShare}
             disabled={isBusy || !isSambaReady}
-            title={isSambaReady ? undefined : "Install and start Samba first"}
+            title={isSambaReady ? undefined : t("ui.zfs.samba_not_ready")}
           >
-            Share
+            {t("ui.zfs.share")}
           </button>
         )}
         <button
@@ -1051,18 +1087,29 @@ function DatasetEditor({
           className="button button--ghost button--small"
           onClick={onDestroy}
           disabled={isBusy}
-          aria-label={`Destroy ${dataset.name}`}
+          aria-label={t("ui.zfs.dataset_destroy_title", {
+            name: dataset.name,
+          })}
         >
           <Icon name="trash" size={13} />
         </button>
       </div>
 
       <div className="zfs_dataset_stats">
-        compression {dataset.compression} · recordsize{" "}
-        {formatRecordsize(dataset.recordsize_bytes)} · usage {usagePercent}% ·{" "}
-        {formatBytes(dataset.used_bytes)} used
-        {dataset.compression !== "off" &&
-          ` · compression rate ${Math.max(0, savingsPercent)}%`}
+        {dataset.compression === "off"
+          ? t("ui.zfs.dataset_stats", {
+              compression: dataset.compression,
+              recordsize: formatRecordsize(dataset.recordsize_bytes),
+              usage: usagePercent,
+              used: formatBytes(dataset.used_bytes),
+            })
+          : t("ui.zfs.dataset_stats_rate", {
+              compression: dataset.compression,
+              recordsize: formatRecordsize(dataset.recordsize_bytes),
+              usage: usagePercent,
+              used: formatBytes(dataset.used_bytes),
+              rate: Math.max(0, savingsPercent),
+            })}
       </div>
     </div>
   );
@@ -1092,6 +1139,8 @@ function ShareModal({
   onCancel,
   onShare,
 }: ShareModalProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [selected, setSelected] = useState<string[]>([]);
 
   const toggleUser = (name: string) => {
@@ -1108,21 +1157,16 @@ function ShareModal({
         className="zfs_modal"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
-        aria-label={`Share ${dataset.name}`}
+        aria-label={t("ui.zfs.share_title", { name: dataset.name })}
       >
-        <h2>
-          Share <span className="mono">{dataset.name}</span>
-        </h2>
+        <h2>{t("ui.zfs.share_title", { name: dataset.name })}</h2>
         <p className="field_hint">
-          Exports {dataset.mountpoint} over SMB, read-write for the chosen
-          users.
+          {t("ui.zfs.share_lead", { mountpoint: dataset.mountpoint })}
         </p>
 
-        <span className="field_label">Who may use it</span>
+        <span className="field_label">{t("ui.samba.share_users")}</span>
         {users.length === 0 ? (
-          <span className="field_hint">
-            Every user; none are configured yet.
-          </span>
+          <span className="field_hint">{t("ui.samba.share_users_none")}</span>
         ) : (
           <div className="samba_user_chips">
             <div className="samba_user_chip_list">
@@ -1141,8 +1185,8 @@ function ShareModal({
             </div>
             <span className="field_hint">
               {selected.length === 0
-                ? "None picked: every user may use it, future ones included."
-                : "Only the picked users may use it."}
+                ? t("ui.zfs.share_users_all")
+                : t("ui.samba.share_users_picked")}
             </span>
           </div>
         )}
@@ -1160,7 +1204,7 @@ function ShareModal({
             className="button button--ghost"
             onClick={onCancel}
           >
-            Cancel
+            {t("ui.zfs.cancel")}
           </button>
           <button
             type="button"
@@ -1168,7 +1212,7 @@ function ShareModal({
             onClick={() => onShare(selected)}
             disabled={isBusy}
           >
-            Share
+            {t("ui.zfs.share")}
           </button>
         </div>
       </div>
@@ -1189,36 +1233,46 @@ function memberDetailRows(
 ): [string, string][] {
   const rows: [string, string][] = [];
   if (disk !== null) {
-    rows.push(["Device", disk.device]);
+    rows.push([t("ui.zfs.detail_device"), disk.device]);
     const bus = [disk.transport || null, disk.is_rotational ? "hdd" : "ssd"]
       .filter((part) => part !== null)
       .join(" · ");
-    rows.push(["Bus", bus]);
+    rows.push([t("ui.zfs.detail_bus"), bus]);
     if (disk.by_path !== null) {
-      rows.push(["Path", disk.by_path]);
+      rows.push([t("ui.zfs.detail_path"), disk.by_path]);
     }
     if (disk.model) {
-      rows.push(["Model", disk.model]);
+      rows.push([t("ui.zfs.detail_model"), disk.model]);
     }
     if (disk.serial) {
-      rows.push(["Serial", disk.serial]);
+      rows.push([t("ui.zfs.detail_serial"), disk.serial]);
     }
     if (disk.wwn !== null) {
-      rows.push(["WWN", disk.wwn]);
+      rows.push([t("ui.zfs.detail_wwn"), disk.wwn]);
     }
-    rows.push(["Size", formatBytes(disk.size_bytes)]);
+    rows.push([t("ui.zfs.detail_size"), formatBytes(disk.size_bytes)]);
     if (disk.smart_passed !== null) {
+      const result = disk.smart_passed
+        ? t("ui.zfs.smart_passed")
+        : t("ui.zfs.smart_failing");
       rows.push([
-        "SMART",
-        `${disk.smart_passed ? "passed" : "FAILING"}${
-          disk.temperature_c !== null ? ` · ${disk.temperature_c}°C` : ""
-        }`,
+        t("ui.zfs.detail_smart"),
+        disk.temperature_c === null
+          ? result
+          : t("ui.zfs.smart_with_temp", {
+              result,
+              temperature: disk.temperature_c,
+            }),
       ]);
     }
   }
   rows.push([
-    "Errors",
-    `${member.read_errors} read · ${member.write_errors} write · ${member.checksum_errors} cksum`,
+    t("ui.zfs.detail_errors"),
+    t("ui.zfs.errors_detail", {
+      read: member.read_errors,
+      write: member.write_errors,
+      checksum: member.checksum_errors,
+    }),
   ]);
   return rows;
 }
@@ -1226,12 +1280,12 @@ function memberDetailRows(
 /** zpool's refusals in plain words, for the amber confirm they become. */
 function friendlyForceReason(message: string): string {
   if (message.includes("mismatched replication")) {
-    return "This layout does not match the pool's existing vdevs: the pool would only be as safe as its weakest vdev. Add anyway?";
+    return t("ui.zfs.force_mismatched");
   }
   if (message.includes("in use") || message.includes("part of")) {
-    return "A chosen disk still carries traces of an earlier pool or filesystem; adding will overwrite them. Add anyway?";
+    return t("ui.zfs.force_in_use");
   }
-  return "zpool wants explicit confirmation for this combination. Add anyway?";
+  return t("ui.zfs.force_generic");
 }
 
 function shortId(disk: ZfsDisk): string {
@@ -1240,19 +1294,32 @@ function shortId(disk: ZfsDisk): string {
 
 function describeVdev(builder: Builder, disks: ZfsDisk[]): string {
   if (disks.length === 0) {
-    return "Pick the disks first; the layouts unlock by count.";
+    return t("ui.zfs.vdev_pick_first");
   }
   const smallest = Math.min(...disks.map((disk) => disk.size_bytes));
   const total = disks.reduce((sum, disk) => sum + disk.size_bytes, 0);
   switch (builder.layout) {
     case "single":
-      return `${disks.length} disk striped: ${formatBytes(total)} usable, no disk may fail.`;
+      return t("ui.zfs.vdev_single", {
+        count: disks.length,
+        usable: formatBytes(total),
+      });
     case "mirror":
-      return `${disks.length}-way mirror: ${formatBytes(smallest)} usable, survives ${disks.length - 1} failed disk(s).`;
+      return t("ui.zfs.vdev_mirror", {
+        count: disks.length,
+        usable: formatBytes(smallest),
+        failures: disks.length - 1,
+      });
     case "raidz1":
-      return `raidz1 over ${disks.length}: ~${formatBytes(smallest * Math.max(disks.length - 1, 0))} usable, survives 1 failed disk.`;
+      return t("ui.zfs.vdev_raidz1", {
+        count: disks.length,
+        usable: formatBytes(smallest * Math.max(disks.length - 1, 0)),
+      });
     case "raidz2":
-      return `raidz2 over ${disks.length}: ~${formatBytes(smallest * Math.max(disks.length - 2, 0))} usable, survives 2 failed disks.`;
+      return t("ui.zfs.vdev_raidz2", {
+        count: disks.length,
+        usable: formatBytes(smallest * Math.max(disks.length - 2, 0)),
+      });
     default:
       return "";
   }

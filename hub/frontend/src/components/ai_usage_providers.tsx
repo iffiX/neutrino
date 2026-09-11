@@ -10,6 +10,8 @@ import {
 } from "../ai_usage";
 import { formatCompact } from "../format_compact";
 import { formatTimeAgo } from "../format_duration";
+import { t, useLanguage } from "../i18n";
+import type { AiHealthState } from "../ai_usage";
 import type {
   AiProviderKind,
   AiUsageHealthBucket,
@@ -23,48 +25,20 @@ import type {
  * Styles live in ai_page.css beside the page.
  */
 
-const WORDING = {
-  allKinds: "All",
-  account: "account",
-  headerProvider: "Provider",
-  headerRequests: "Requests",
-  headerSuccess: "Success",
-  headerTokens: "Tokens",
-  headerCache: "Cache",
-  headerHealth: "Last 5h",
-  headerSeen: "Seen",
-  healthWords: {
-    healthy: "Healthy",
-    degraded: "Degraded",
-    quiet: "Quiet",
-  },
-  healthyPhrase: "no failures in 5h",
-  quietPhrase: "no requests in 5h",
-  degradedPhrase: (failed: number) => `${failed} failed in 5h`,
-  firstSeen: "first",
-  lastSeen: "last",
-  okWord: "ok",
-  failedWord: "failed",
-  noRequests: "no requests",
-  sort: "Sort",
-  size: "Size",
-  previous: "Previous",
-  next: "Next",
-  sortRequests: "Requests",
-  sortTokens: "Tokens",
-  sortSuccess: "Success rate",
-  sortName: "Name",
-  empty: "No provider activity yet",
-  emptyHint: "Rows appear once the gateway forwards a request.",
-} as const;
-
 type SortKey = "requests" | "tokens" | "success" | "name";
 
-const SORT_LABELS: Record<SortKey, string> = {
-  requests: WORDING.sortRequests,
-  tokens: WORDING.sortTokens,
-  success: WORDING.sortSuccess,
-  name: WORDING.sortName,
+/** What each health reading is called in the table. */
+const HEALTH_LABEL_KEYS: Record<AiHealthState, string> = {
+  healthy: "ui.usage.health_healthy",
+  degraded: "ui.usage.health_degraded",
+  quiet: "ui.usage.health_quiet",
+};
+
+const SORT_LABEL_KEYS: Record<SortKey, string> = {
+  requests: "ui.usage.sort_requests",
+  tokens: "ui.usage.sort_tokens",
+  success: "ui.usage.sort_success",
+  name: "ui.usage.sort_name",
 };
 
 const SORT_KEYS: SortKey[] = ["requests", "tokens", "success", "name"];
@@ -90,6 +64,8 @@ interface AiUsageProvidersProps {
 }
 
 export function AiUsageProviders({ providers }: AiUsageProvidersProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [kind, setKind] = useState<string>("all");
   const [sortKey, setSortKey] = useState<SortKey>("requests");
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0] ?? 10);
@@ -98,8 +74,8 @@ export function AiUsageProviders({ providers }: AiUsageProvidersProps) {
   if (providers.length === 0) {
     return (
       <div className="placeholder">
-        <span>{WORDING.empty}</span>
-        <span className="faint">{WORDING.emptyHint}</span>
+        <span>{t("ui.usage.providers_empty")}</span>
+        <span className="faint">{t("ui.usage.providers_empty_hint")}</span>
       </div>
     );
   }
@@ -126,7 +102,7 @@ export function AiUsageProviders({ providers }: AiUsageProvidersProps) {
             setPage(0);
           }}
         >
-          {WORDING.allKinds}
+          {t("ui.usage.all_kinds")}
           <span className="ai_chip_count">{providers.length}</span>
         </button>
         {kindsOf(providers).map((option) => {
@@ -157,13 +133,13 @@ export function AiUsageProviders({ providers }: AiUsageProvidersProps) {
         <table className="usage_table">
           <thead>
             <tr>
-              <th>{WORDING.headerProvider}</th>
-              <th className="num">{WORDING.headerRequests}</th>
-              <th className="num">{WORDING.headerSuccess}</th>
-              <th className="num">{WORDING.headerTokens}</th>
-              <th className="num">{WORDING.headerCache}</th>
-              <th>{WORDING.headerHealth}</th>
-              <th>{WORDING.headerSeen}</th>
+              <th>{t("ui.usage.header_provider")}</th>
+              <th className="num">{t("ui.usage.header_requests")}</th>
+              <th className="num">{t("ui.usage.header_success")}</th>
+              <th className="num">{t("ui.usage.header_tokens")}</th>
+              <th className="num">{t("ui.usage.header_cache")}</th>
+              <th>{t("ui.usage.header_health")}</th>
+              <th>{t("ui.usage.header_seen")}</th>
             </tr>
           </thead>
           <tbody>
@@ -176,7 +152,7 @@ export function AiUsageProviders({ providers }: AiUsageProvidersProps) {
 
       <div className="usage_table_foot">
         <label className="usage_table_control">
-          <span className="faint">{WORDING.sort}</span>
+          <span className="faint">{t("ui.usage.sort")}</span>
           <select
             className="select"
             value={sortKey}
@@ -187,13 +163,13 @@ export function AiUsageProviders({ providers }: AiUsageProvidersProps) {
           >
             {SORT_KEYS.map((option) => (
               <option key={option} value={option}>
-                {SORT_LABELS[option]}
+                {t(SORT_LABEL_KEYS[option])}
               </option>
             ))}
           </select>
         </label>
         <label className="usage_table_control">
-          <span className="faint">{WORDING.size}</span>
+          <span className="faint">{t("ui.usage.size")}</span>
           <select
             className="select"
             value={pageSize}
@@ -216,7 +192,7 @@ export function AiUsageProviders({ providers }: AiUsageProvidersProps) {
             disabled={currentPage === 0}
             onClick={() => setPage(currentPage - 1)}
           >
-            {WORDING.previous}
+            {t("ui.usage.previous")}
           </button>
           <span className="mono muted">
             {currentPage + 1}/{pageCount}
@@ -227,7 +203,7 @@ export function AiUsageProviders({ providers }: AiUsageProvidersProps) {
             disabled={currentPage >= pageCount - 1}
             onClick={() => setPage(currentPage + 1)}
           >
-            {WORDING.next}
+            {t("ui.usage.next")}
           </button>
         </div>
       </div>
@@ -243,10 +219,10 @@ function ProviderRow({ provider }: ProviderRowProps) {
   const reading = readHealth(provider.health);
   const phrase =
     reading.state === "quiet"
-      ? WORDING.quietPhrase
+      ? t("ui.usage.quiet_phrase")
       : reading.state === "healthy"
-        ? WORDING.healthyPhrase
-        : WORDING.degradedPhrase(reading.failed);
+        ? t("ui.usage.healthy_phrase")
+        : t("ui.usage.degraded_phrase", { failed: reading.failed });
 
   return (
     <tr>
@@ -255,7 +231,7 @@ function ProviderRow({ provider }: ProviderRowProps) {
         <span className="usage_kinds">
           <span className="badge">{provider.kind}</span>
           {provider.is_account === true && (
-            <span className="badge">{WORDING.account}</span>
+            <span className="badge">{t("ui.usage.account")}</span>
           )}
         </span>
       </td>
@@ -285,7 +261,7 @@ function ProviderRow({ provider }: ProviderRowProps) {
             <span
               className={`usage_health_word usage_health_word--${reading.state}`}
             >
-              {WORDING.healthWords[reading.state]}
+              {t(HEALTH_LABEL_KEYS[reading.state])}
             </span>
             <span className="faint">{phrase}</span>
           </div>
@@ -294,10 +270,14 @@ function ProviderRow({ provider }: ProviderRowProps) {
       <td>
         <div className="usage_seen mono">
           <span>
-            {WORDING.firstSeen} {formatTimeAgo(provider.first_seen_at)}
+            {t("ui.usage.seen_first", {
+              ago: formatTimeAgo(provider.first_seen_at),
+            })}
           </span>
           <span>
-            {WORDING.lastSeen} {formatTimeAgo(provider.last_seen_at)}
+            {t("ui.usage.seen_last", {
+              ago: formatTimeAgo(provider.last_seen_at),
+            })}
           </span>
         </div>
       </td>
@@ -332,16 +312,21 @@ function HealthBar({ health }: HealthBarProps) {
                 HEALTH_SLOT_MIN_PX,
                 Math.round((slot.requests / highest) * HEALTH_SLOT_MAX_PX),
               );
-        const outcome =
-          slot.requests === 0
-            ? WORDING.noRequests
-            : `${slot.requests - slot.failed} ${WORDING.okWord} · ${slot.failed} ${WORDING.failedWord}`;
+        const label = formatBucketLabel(slot.bucket, "day");
         return (
           <span
             key={slot.bucket}
             className={`usage_health_slot usage_health_slot--${state}`}
             style={{ height }}
-            title={`${formatBucketLabel(slot.bucket, "day")} · ${outcome}`}
+            title={
+              slot.requests === 0
+                ? t("ui.usage.cell_quiet", { label })
+                : t("ui.usage.cell_health", {
+                    label,
+                    ok: slot.requests - slot.failed,
+                    failed: slot.failed,
+                  })
+            }
           />
         );
       })}

@@ -13,6 +13,7 @@ import pytest
 from neutrino_hub.cli import wizard
 from neutrino_hub.exceptions import WizardAborted
 from neutrino_hub.modules.router.link_status import LinkStatus
+from neutrino_hub.web.constants import WEB_LANGUAGES
 
 VAULT_PASSPHRASE = "A-vault-passphrase-16!"  # scan: allow
 
@@ -94,6 +95,50 @@ def test_an_incomplete_document_is_refused(missing):
 
     with pytest.raises(WizardAborted, match=missing):
         wizard.from_document(document)
+
+
+def test_a_document_that_names_no_language_is_english():
+    """Every document written before there was a language screen still runs."""
+    answers = wizard.from_document(
+        {
+            "password": "a-long-enough-password",
+            "vault_passphrase": VAULT_PASSPHRASE,
+            "network": {"mode": "server", "lan": ["enp1s0"]},
+        }
+    )
+
+    assert answers.language == "en"
+
+
+def test_a_document_names_the_language_the_panel_is_drawn_in():
+    answers = wizard.from_document(
+        {
+            "password": "a-long-enough-password",
+            "vault_passphrase": VAULT_PASSPHRASE,
+            "language": "zh-CN",
+            "network": {"mode": "server", "lan": ["enp1s0"]},
+        }
+    )
+
+    assert answers.language == "zh-CN"
+
+
+def test_a_language_this_panel_does_not_ship_is_refused():
+    with pytest.raises(WizardAborted, match="fr"):
+        wizard.from_document(
+            {
+                "password": "a-long-enough-password",
+                "vault_passphrase": VAULT_PASSPHRASE,
+                "language": "fr",
+                "network": {"mode": "server", "lan": ["enp1s0"]},
+            }
+        )
+
+
+def test_the_language_is_the_first_thing_asked():
+    """The screens that follow are drawn in what it answers."""
+    assert wizard.WIZARD_TITLES[0] == "Language"
+    assert set(wizard.WIZARD_LANGUAGE_NAMES) == set(WEB_LANGUAGES)
 
 
 def test_a_mode_nobody_has_is_refused():

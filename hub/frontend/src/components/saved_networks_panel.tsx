@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Icon } from "./icon";
 import { Spinner } from "./spinner";
 import { apiDelete, apiGet, describeError } from "../api_client";
+import { t, useLanguage } from "../i18n";
 import { useConfirm } from "../use_confirm";
 import type { SavedNetwork, SavedNetworkList } from "../api_types";
 
@@ -20,6 +21,8 @@ import "./saved_networks_panel.css";
  */
 
 export function SavedNetworksPanel() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [networks, setNetworks] = useState<SavedNetwork[] | null>(null);
   const [forgetting, setForgetting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,9 +49,9 @@ export function SavedNetworksPanel() {
 
   const forget = (ssid: string) =>
     confirm.ask({
-      title: `Forget ${ssid}`,
-      body: "The passphrase is deleted and no radio joins this network again.",
-      confirmLabel: "Forget",
+      title: t("ui.network.saved_forget_title", { ssid }),
+      body: t("ui.network.saved_forget_body"),
+      confirmLabel: t("ui.network.saved_forget"),
       onConfirm: () => void forgetNow(ssid),
     });
 
@@ -74,11 +77,8 @@ export function SavedNetworksPanel() {
   return (
     <section className="settings_group saved_networks">
       <div className="settings_group_title">
-        <h2>Known networks</h2>
-        <p className="field_hint">
-          Every radio in the WAN role joins whichever of these it can see,
-          preferring the one highest in this list.
-        </p>
+        <h2>{t("ui.network.saved_title")}</h2>
+        <p className="field_hint">{t("ui.network.saved_hint")}</p>
       </div>
 
       {error !== null && (
@@ -100,18 +100,22 @@ export function SavedNetworksPanel() {
                 {!network.has_secret && (
                   <span
                     className="badge badge--warn"
-                    title="Its key was held somewhere this could not read. Pick it from a scan to type one."
+                    title={t("ui.network.saved_needs_passphrase_title")}
                   >
-                    needs a passphrase
+                    {t("ui.network.saved_needs_passphrase")}
                   </span>
                 )}
-                {network.is_hidden && <span className="badge">hidden</span>}
+                {network.is_hidden && (
+                  <span className="badge">{t("state.hidden")}</span>
+                )}
                 {network.source.startsWith("inherited:") && (
                   <span
                     className="badge"
-                    title={`Read from this machine's ${network.source.slice("inherited:".length)}`}
+                    title={t("ui.network.saved_inherited_title", {
+                      source: network.source.slice("inherited:".length),
+                    })}
                   >
-                    inherited
+                    {t("state.inherited")}
                   </span>
                 )}
               </span>
@@ -126,7 +130,7 @@ export function SavedNetworksPanel() {
                 ) : (
                   <Icon name="trash" size={13} />
                 )}
-                Forget
+                {t("ui.network.saved_forget")}
               </button>
             </li>
           ))}

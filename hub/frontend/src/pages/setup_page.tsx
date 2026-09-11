@@ -5,9 +5,16 @@ import { Icon } from "../components/icon";
 import { PasswordField } from "../components/password_field";
 import { ToggleSwitch } from "../components/toggle_switch";
 import {
-  PANEL_PASSWORD_HINT,
+  LANGUAGES,
+  LANGUAGE_NAMES,
+  setLanguage,
+  t,
+  useLanguage,
+} from "../i18n";
+import {
+  panelPasswordHint,
   PANEL_PASSWORD_RULES,
-  VAULT_PASSPHRASE_HINT,
+  vaultPassphraseHint,
   VAULT_PASSPHRASE_RULES,
   isPasswordAccepted,
 } from "../password_strength";
@@ -34,20 +41,27 @@ import "./setup_page.css";
  */
 
 /** The questions, in order. The counter and the heading both read from this. */
-const SCREENS = [
-  "A password for the panel, a passphrase for the vault",
-  "What is this machine for?",
-  "Which ports?",
-  "Going out through a proxy",
-  "What else to install on this box",
-  "Ready",
+const SCREEN_TITLES = [
+  "ui.setup.screen_language",
+  "ui.setup.screen_secrets",
+  "ui.setup.screen_shape",
+  "ui.setup.screen_ports",
+  "ui.setup.screen_proxy",
+  "ui.setup.screen_services",
+  "ui.setup.screen_ready",
 ] as const;
 
-/** What the first screen says the two secrets are for. */
-const SECRETS_LEAD =
-  "The password signs you into the panel. The passphrase seals every " +
-  "credential this box will hold, and restoring a backup asks for it again; " +
-  "keep it somewhere safe.";
+/** Which screen each answer is on, so no screen is a number at the call site. */
+const SCREEN_LANGUAGE = 0;
+const SCREEN_SECRETS = 1;
+const SCREEN_SHAPE = 2;
+const SCREEN_PORTS = 3;
+const SCREEN_PROXY = 4;
+const SCREEN_SERVICES = 5;
+const SCREEN_REVIEW = SCREEN_TITLES.length - 1;
+
+/** The product's own name, which is the same in every language. */
+const SETUP_BRAND_NAME = "Neutrino Hub";
 
 /** How often the running screen asks how far the steps have got. */
 const POLL_INTERVAL_MS = 700;
@@ -83,6 +97,8 @@ interface SetupPageProps {
 }
 
 export function SetupPage({ token, context }: SetupPageProps) {
+  // Redrawn when the language screen changes it.
+  const language = useLanguage();
   const [index, setIndex] = useState(-1);
   const [password, setPassword] = useState("");
   const [repeated, setRepeated] = useState("");
@@ -202,6 +218,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
       network.prefix_len = prefixLen;
     }
     const document: SetupAnswers = {
+      language,
       password,
       vault_passphrase: vaultPassphrase,
       network,
@@ -233,6 +250,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
     address,
     prefixLen,
     upstream,
+    language,
     password,
     vaultPassphrase,
     links,
@@ -276,8 +294,8 @@ export function SetupPage({ token, context }: SetupPageProps) {
   useEffect(() => {
     if (isRejected) {
       setState(null);
-      setIndex(SCREENS.length - 1);
-      setError(state?.message ?? "the answers were refused");
+      setIndex(SCREEN_REVIEW);
+      setError(state?.message ?? t("ui.setup.answers_refused"));
     }
   }, [isRejected, state]);
 
@@ -304,20 +322,15 @@ export function SetupPage({ token, context }: SetupPageProps) {
     return (
       <SetupFrame>
         <div className="setup_welcome">
-          <h1 className="setup_welcome_title">Neutrino Hub</h1>
-          <p className="setup_welcome_line">
-            Pour a coffee and sit back; this takes about a minute.
-          </p>
-          <p className="setup_welcome_note">
-            Nothing is written until the last screen confirms it, and Back steps
-            through the questions again.
-          </p>
+          <h1 className="setup_welcome_title">{SETUP_BRAND_NAME}</h1>
+          <p className="setup_welcome_line">{t("ui.setup.welcome_line")}</p>
+          <p className="setup_welcome_note">{t("ui.setup.welcome_note")}</p>
           <button
             type="button"
             className="button button--primary setup_begin"
             onClick={next}
           >
-            Set this box up
+            {t("ui.setup.start")}
             <Icon name="chevron_right" size={14} />
           </button>
         </div>
@@ -345,15 +358,15 @@ export function SetupPage({ token, context }: SetupPageProps) {
       )}
       <div className="setup_actions">
         <button type="button" className="button" onClick={back}>
-          Back
+          {t("ui.setup.back")}
         </button>
-        {index === SCREENS.length - 1 ? (
+        {index === SCREEN_REVIEW ? (
           <button
             type="button"
             className="button button--primary"
             onClick={() => void start()}
           >
-            Set this box up
+            {t("ui.setup.start")}
           </button>
         ) : (
           <button
@@ -361,12 +374,12 @@ export function SetupPage({ token, context }: SetupPageProps) {
             className="button button--primary"
             onClick={next}
             disabled={
-              (index === 0 && !isPasswordReady) ||
-              (index === 2 && !isPortsReady) ||
-              (index === 3 && !isProxyReady)
+              (index === SCREEN_SECRETS && !isPasswordReady) ||
+              (index === SCREEN_PORTS && !isPortsReady) ||
+              (index === SCREEN_PROXY && !isProxyReady)
             }
           >
-            Next
+            {t("ui.setup.next")}
           </button>
         )}
       </div>
@@ -376,16 +389,36 @@ export function SetupPage({ token, context }: SetupPageProps) {
   return (
     <SetupFrame
       step={index + 1}
-      total={SCREENS.length}
-      title={SCREENS[index]}
+      total={SCREEN_TITLES.length}
+      title={t(SCREEN_TITLES[index] ?? "")}
       actions={actions}
     >
-      {index === 0 && (
+      {index === SCREEN_LANGUAGE && (
         <div className="setup_body">
-          <p className="setup_lead">{SECRETS_LEAD}</p>
+          <p className="setup_lead">{t("ui.setup.language_lead")}</p>
+          <label className="field setup_field--narrow">
+            <span className="field_label">{t("ui.setup.language_label")}</span>
+            <select
+              className="select"
+              value={language}
+              onChange={(event) => setLanguage(event.target.value)}
+            >
+              {LANGUAGES.map((offered) => (
+                <option key={offered} value={offered}>
+                  {LANGUAGE_NAMES[offered]}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+
+      {index === SCREEN_SECRETS && (
+        <div className="setup_body">
+          <p className="setup_lead">{t("ui.setup.secrets_lead")}</p>
           <PasswordField
-            label="Panel password"
-            hint={PANEL_PASSWORD_HINT}
+            label={t("ui.setup.panel_password")}
+            hint={panelPasswordHint}
             value={password}
             repeated={repeated}
             rules={PANEL_PASSWORD_RULES}
@@ -394,8 +427,8 @@ export function SetupPage({ token, context }: SetupPageProps) {
             onRepeatedChange={setRepeated}
           />
           <PasswordField
-            label="Vault master passphrase"
-            hint={VAULT_PASSPHRASE_HINT}
+            label={t("ui.setup.vault_passphrase")}
+            hint={vaultPassphraseHint}
             value={vaultPassphrase}
             repeated={vaultRepeated}
             rules={VAULT_PASSPHRASE_RULES}
@@ -405,7 +438,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
         </div>
       )}
 
-      {index === 1 && (
+      {index === SCREEN_SHAPE && (
         <div className="setup_body">
           <div className="setup_modes">
             {context.modes.map((entry) => (
@@ -416,40 +449,42 @@ export function SetupPage({ token, context }: SetupPageProps) {
                 onClick={() => setMode(entry.key)}
               >
                 <span className="setup_mode_name">
-                  {entry.key.replace(/_/g, " ")}
+                  {t(`ui.setup.mode_${entry.key}`)}
                 </span>
-                <span className="setup_mode_summary">{entry.summary}</span>
+                <span className="setup_mode_summary">
+                  {t(`ui.setup.mode_summary_${entry.key}`)}
+                </span>
               </button>
             ))}
           </div>
-          {chosenMode?.caution && (
-            <p className="setup_warn">{chosenMode.caution}</p>
+          {chosenMode?.has_caution && (
+            <p className="setup_warn">
+              {t(`ui.setup.mode_caution_${chosenMode.key}`)}
+            </p>
           )}
         </div>
       )}
 
-      {index === 2 && isServer && (
+      {index === SCREEN_PORTS && isServer && (
         <div className="setup_body">
-          <p className="setup_lead">
-            No port is given a job. Every one of them keeps the address it has
-            and answers to begin with; the panel&apos;s Network page narrows
-            that afterwards.
-          </p>
+          <p className="setup_lead">{t("ui.setup.ports_server_lead")}</p>
           <PortList ports={context.interfaces} />
           <PortField
-            label="Panel answers on port"
+            label={t("ui.setup.panel_port")}
             value={listenPort}
             onChange={setListenPort}
           />
         </div>
       )}
 
-      {index === 2 && !isServer && (
+      {index === SCREEN_PORTS && !isServer && (
         <div className="setup_body">
-          {isRouter && <p className="setup_lead">{context.router_note}</p>}
+          {isRouter && (
+            <p className="setup_lead">{t("ui.setup.router_note")}</p>
+          )}
           {isRouter && (
             <PortChoice
-              label="Out to the internet"
+              label={t("ui.setup.port_wan")}
               ports={candidates}
               chosen={wan}
               onChoose={setWan}
@@ -458,12 +493,12 @@ export function SetupPage({ token, context }: SetupPageProps) {
           <PortChoice
             label={
               isRouter
-                ? "In to your devices"
+                ? t("ui.setup.port_lan")
                 : isOneArm
-                  ? "The one port, out and in"
+                  ? t("ui.setup.port_one_arm")
                   : isSideGateway
-                    ? "Port on that network"
-                    : "Port the panel answers on"
+                    ? t("ui.setup.port_side_gateway")
+                    : t("ui.setup.port_server")
             }
             ports={candidates}
             chosen={lan}
@@ -472,7 +507,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
           />
           {isOneArm && (
             <label className="field">
-              <span className="field_label">VLAN tag for your devices</span>
+              <span className="field_label">{t("ui.setup.vlan_tag")}</span>
               <input
                 className="input"
                 value={vlanId}
@@ -485,7 +520,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
           )}
           <div className="setup_row">
             <label className="field">
-              <span className="field_label">This box&apos;s address</span>
+              <span className="field_label">{t("ui.setup.address")}</span>
               <input
                 className="input"
                 value={address}
@@ -494,7 +529,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
               />
             </label>
             <label className="field setup_field--narrow">
-              <span className="field_label">Prefix length</span>
+              <span className="field_label">{t("ui.setup.prefix_len")}</span>
               <input
                 className="input"
                 value={prefixLen}
@@ -510,7 +545,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
           {isSideGateway && (
             <label className="field">
               <span className="field_label">
-                That network&apos;s own router
+                {t("ui.setup.upstream_gateway")}
               </span>
               <input
                 className="input"
@@ -521,30 +556,29 @@ export function SetupPage({ token, context }: SetupPageProps) {
             </label>
           )}
           <PortField
-            label="Panel answers on port"
+            label={t("ui.setup.panel_port")}
             value={listenPort}
             onChange={setListenPort}
           />
         </div>
       )}
 
-      {index === 3 && (
+      {index === SCREEN_PROXY && (
         <div className="setup_body">
           <p className="setup_lead">
-            Send {isServer ? "this box's own traffic" : "your devices' traffic"}{" "}
-            out through an exit node you own. Skipping is a real answer: a hub
-            is a hub without a proxy, and the Proxy page turns one on later
-            without any of this being redone.
+            {isServer
+              ? t("ui.setup.proxy_lead_server")
+              : t("ui.setup.proxy_lead_router")}
           </p>
           <ToggleSwitch
             isOn={isProxyWanted}
-            label="Set it up here"
+            label={t("ui.setup.proxy_enable")}
             onChange={setIsProxyWanted}
           />
           {isProxyWanted && (
             <>
               <div className="field">
-                <span className="field_label">Exit node links</span>
+                <span className="field_label">{t("ui.setup.links")}</span>
                 {links.map((link, position) => (
                   <div className="setup_link" key={position}>
                     {link.isEditing ? (
@@ -552,7 +586,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
                         className={`input ${link.detail !== "" ? "input--invalid" : ""}`}
                         value={link.value}
                         autoFocus={position > 0}
-                        placeholder="ss:// or vless://"
+                        placeholder={t("ui.setup.link_placeholder")}
                         onChange={(event) =>
                           replaceLink(position, {
                             ...link,
@@ -578,7 +612,9 @@ export function SetupPage({ token, context }: SetupPageProps) {
                     <button
                       type="button"
                       className="button button--ghost setup_link_drop"
-                      aria-label={`Remove link ${position + 1}`}
+                      aria-label={t("ui.setup.link_remove", {
+                        number: position + 1,
+                      })}
                       disabled={links.length === 1}
                       onClick={() =>
                         setLinks(links.filter((_, at) => at !== position))
@@ -599,12 +635,12 @@ export function SetupPage({ token, context }: SetupPageProps) {
                   onClick={() => setLinks([...links, emptyLink()])}
                 >
                   <Icon name="plus" size={14} />
-                  Add another
+                  {t("ui.setup.link_add")}
                 </button>
               </div>
               {isServer ? (
                 <PortField
-                  label="SOCKS port applications point at"
+                  label={t("ui.setup.socks_proxy_port")}
                   value={socksProxyPort}
                   onChange={setSocksProxyPort}
                 />
@@ -612,12 +648,12 @@ export function SetupPage({ token, context }: SetupPageProps) {
                 <>
                   <ToggleSwitch
                     isOn={isSocksDirect}
-                    label="Also publish a SOCKS port that bypasses the proxy"
+                    label={t("ui.setup.socks_direct_enable")}
                     onChange={setIsSocksDirect}
                   />
                   {isSocksDirect && (
                     <PortField
-                      label="SOCKS port for that"
+                      label={t("ui.setup.socks_direct_port")}
                       value={socksDirectPort}
                       onChange={setSocksDirectPort}
                     />
@@ -626,7 +662,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
               )}
               <ToggleSwitch
                 isOn={isLocalProxied}
-                label="Send this box's own traffic through it"
+                label={t("ui.setup.proxy_local")}
                 onChange={setIsLocalProxied}
               />
             </>
@@ -634,18 +670,13 @@ export function SetupPage({ token, context }: SetupPageProps) {
         </div>
       )}
 
-      {index === 4 && (
+      {index === SCREEN_SERVICES && (
         <div className="setup_body">
           {context.services.length === 0 ? (
-            <p className="setup_lead">
-              Nothing else runs on this machine&apos;s architecture.
-            </p>
+            <p className="setup_lead">{t("ui.setup.services_none")}</p>
           ) : (
             <>
-              <p className="setup_lead">
-                Installing only. What each one is for is a page of its own, once
-                the panel is up.
-              </p>
+              <p className="setup_lead">{t("ui.setup.services_lead")}</p>
               {context.services.map((service) => (
                 <div className="setup_service" key={service.name}>
                   <ToggleSwitch
@@ -659,10 +690,12 @@ export function SetupPage({ token, context }: SetupPageProps) {
                     label={service.name}
                     badge={
                       service.is_installed ? (
-                        <span className="badge badge--ok">installed</span>
+                        <span className="badge badge--ok">
+                          {t("state.installed")}
+                        </span>
                       ) : undefined
                     }
-                    description={service.install_note}
+                    description={t(`ui.setup.install_note_${service.name}`)}
                     onChange={(isOn) =>
                       setServices((current) =>
                         isOn
@@ -674,8 +707,13 @@ export function SetupPage({ token, context }: SetupPageProps) {
                   {services.includes(service.name) &&
                     service.consents.length > 0 && (
                       <ul className="setup_consents">
-                        {service.consents.map((sentence) => (
-                          <li key={sentence}>{sentence}</li>
+                        {service.consents.map((consent) => (
+                          <li key={consent.code}>
+                            {t(
+                              `ui.setup.consent_${consent.code}`,
+                              consent.params,
+                            )}
+                          </li>
                         ))}
                       </ul>
                     )}
@@ -686,13 +724,12 @@ export function SetupPage({ token, context }: SetupPageProps) {
         </div>
       )}
 
-      {index === 5 && (
+      {index === SCREEN_REVIEW && (
         <div className="setup_body">
           <p className="setup_lead">
-            This is what the box becomes. Confirming applies it:{" "}
             {ownsAddressing
-              ? "the ports change, the firewall loads and the services start."
-              : "the firewall loads and the services start. Every address on this machine is left as it is."}
+              ? t("ui.setup.review_lead_owned")
+              : t("ui.setup.review_lead_kept")}
           </p>
           {/* The same sentence the terminal says, and for the same reason:
               not whether this page is being read over one of these ports,
@@ -702,44 +739,68 @@ export function SetupPage({ token, context }: SetupPageProps) {
             <div className="notice notice--warn setup_notice">
               <Icon name="alert" size={15} />
               <div className="notice_body">
-                The initialization process will finish on its own, network might
-                be interrupted, please refresh and reconnect when interruption
-                happens. The panel will be at{" "}
-                <strong>
-                  http://{address}:{listenPort}
-                </strong>
-                , and the run is written to <code>{SETUP_LOG_PATH}</code>.
+                {t("ui.setup.interruption")}{" "}
+                {t("ui.setup.panel_will_be_at", {
+                  url: `http://${address}:${listenPort}`,
+                  path: SETUP_LOG_PATH,
+                })}
               </div>
             </div>
           )}
           <dl className="setup_review">
-            <Row name="Shape" value={mode.replace(/_/g, " ")} />
-            {isRouter && <Row name="Out to the internet" value={wan} />}
+            <Row
+              name={t("ui.setup.review_shape")}
+              value={mode.replace(/_/g, " ")}
+            />
+            <Row
+              name={t("ui.setup.review_language")}
+              value={LANGUAGE_NAMES[language]}
+            />
+            {isRouter && <Row name={t("ui.setup.port_wan")} value={wan} />}
             {isServer ? (
               <Row
-                name="Answers on"
+                name={t("ui.setup.review_answers_on")}
                 value={context.interfaces.map((port) => port.name).join(", ")}
               />
             ) : (
-              <Row name={isOneArm ? "Trunk" : "Served on"} value={lan} />
+              <Row
+                name={
+                  isOneArm
+                    ? t("ui.setup.review_trunk")
+                    : t("ui.setup.review_served_on")
+                }
+                value={lan}
+              />
             )}
-            {isOneArm && <Row name="VLAN tag" value={String(vlanId)} />}
+            {isOneArm && (
+              <Row name={t("ui.setup.review_vlan")} value={String(vlanId)} />
+            )}
             {!isServer && (
-              <Row name="This box" value={`${address}/${prefixLen}`} />
+              <Row
+                name={t("ui.setup.review_this_box")}
+                value={`${address}/${prefixLen}`}
+              />
             )}
-            <Row name="Panel port" value={String(listenPort)} />
-            {isSideGateway && <Row name="Its own router" value={upstream} />}
             <Row
-              name="Proxy"
+              name={t("ui.setup.review_panel_port")}
+              value={String(listenPort)}
+            />
+            {isSideGateway && (
+              <Row name={t("ui.setup.review_upstream")} value={upstream} />
+            )}
+            <Row
+              name={t("ui.setup.review_proxy")}
               value={
                 isProxyWanted && named.length > 0
                   ? named.join(", ")
-                  : "not used"
+                  : t("state.not_used")
               }
             />
             <Row
-              name="Also installing"
-              value={services.length > 0 ? services.join(", ") : "nothing"}
+              name={t("ui.setup.review_also_installing")}
+              value={
+                services.length > 0 ? services.join(", ") : t("state.nothing")
+              }
             />
           </dl>
         </div>
@@ -765,17 +826,13 @@ export function SetupPage({ token, context }: SetupPageProps) {
  * for something that does not exist.
  */
 export function SetupTokenMissing() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   return (
-    <SetupFrame title="This box is waiting to be set up">
+    <SetupFrame title={t("ui.setup.waiting_title")}>
       <div className="setup_body">
-        <p className="setup_lead">
-          Open the link the terminal printed. It carries a one-time token, and
-          the wizard does not answer without it.
-        </p>
-        <p className="field_hint">
-          The token is good for this run only. If the terminal has scrolled past
-          it, stop the run with Ctrl-C and start it again.
-        </p>
+        <p className="setup_lead">{t("ui.setup.waiting_lead")}</p>
+        <p className="field_hint">{t("ui.setup.waiting_hint")}</p>
       </div>
     </SetupFrame>
   );
@@ -809,7 +866,9 @@ function SetupFrame({
               <span className="setup_wordmark">NEUTRINO</span>
               <span className="setup_rule_line" />
               <span className="setup_counter">
-                {step === undefined ? "Setup" : `Config ${step}/${total}`}
+                {step === undefined
+                  ? t("ui.setup.counter_idle")
+                  : t("ui.setup.counter", { step, total: total ?? 0 })}
               </span>
             </div>
             {title !== undefined && <h2 className="setup_title">{title}</h2>}
@@ -833,6 +892,8 @@ function SetupRunning({
   isLost: boolean;
   fallbackUrl: string;
 }) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const isDone = state.state === "done";
   const isFailed = state.state === "failed";
   const panelUrl = state.panel_url || fallbackUrl;
@@ -883,16 +944,15 @@ function SetupRunning({
   return (
     <SetupFrame
       isLit={isLit}
-      title={isDone ? "This box is a gateway" : "Making it so"}
+      title={isDone ? t("ui.setup.done_title") : t("ui.setup.running_title")}
       actions={
         isDone ? (
           <div className="setup_handover">
             <p className="setup_lead">
-              The panel is starting. This page goes there in {remainingS}
-              {remainingS === 1 ? " second" : " seconds"}.
+              {t("ui.setup.handover", { seconds: remainingS })}
             </p>
             <a className="button button--primary" href={panelUrl}>
-              Open the panel
+              {t("ui.setup.open_panel")}
               <Icon name="chevron_right" size={14} />
             </a>
           </div>
@@ -903,27 +963,22 @@ function SetupRunning({
         {state.steps.map((step) => (
           <li
             className={`setup_step setup_step--${step.status}`}
-            key={step.description}
+            key={`${step.id}${step.params.name ?? ""}`}
           >
             <span className="setup_step_mark" />
-            <span className="setup_step_name">{step.description}</span>
+            <span className="setup_step_name">
+              {t(`ui.setup.step_${step.id}`, step.params)}
+            </span>
             <span className="setup_step_note">{step.note}</span>
           </li>
         ))}
       </ol>
-      {isFailed && (
-        <p className="setup_lead">
-          Nothing else will happen here. The terminal that started this has the
-          command output that explains it.
-        </p>
-      )}
+      {isFailed && <p className="setup_lead">{t("ui.setup.failed_lead")}</p>}
       {isLost && !isDone && (
         <div className="notice notice--warn setup_notice">
           <Icon name="alert" size={15} />
           <div className="notice_body">
-            This page is no longer on the same wire as the box; its ports are
-            being taken over, which is one of the steps. The work carries on
-            there. It will be at {panelUrl}.
+            {t("ui.setup.lost", { url: panelUrl })}
           </div>
         </div>
       )}
@@ -931,7 +986,7 @@ function SetupRunning({
         <div className="notice notice--error setup_notice">
           <Icon name="alert" size={15} />
           <div className="notice_body">
-            {state.message || "a step failed; the terminal has the output"}
+            {state.message || t("ui.setup.step_failed")}
           </div>
         </div>
       )}
@@ -966,13 +1021,15 @@ function PortChoice({
           >
             <span className="setup_port_name">{port.name}</span>
             <span className="setup_port_kind">
-              {port.is_wired ? "wired" : "wifi"}
+              {port.is_wired ? t("state.wired") : t("state.wifi")}
             </span>
             <span className="setup_port_address">
-              {port.ipv4_address || "no address"}
+              {port.ipv4_address || t("state.no_address")}
             </span>
             {port.has_route && (
-              <span className="setup_port_route">the way out today</span>
+              <span className="setup_port_route">
+                {t("ui.setup.way_out_today")}
+              </span>
             )}
           </button>
         ))}
@@ -985,19 +1042,21 @@ function PortChoice({
 function PortList({ ports }: { ports: SetupInterface[] }) {
   return (
     <div className="field">
-      <span className="field_label">This machine&apos;s ports</span>
+      <span className="field_label">{t("ui.setup.machine_ports")}</span>
       <div className="setup_ports">
         {ports.map((port) => (
           <div className="setup_port setup_port--read_only" key={port.name}>
             <span className="setup_port_name">{port.name}</span>
             <span className="setup_port_kind">
-              {port.is_wired ? "wired" : "wifi"}
+              {port.is_wired ? t("state.wired") : t("state.wifi")}
             </span>
             <span className="setup_port_address">
-              {port.ipv4_address || "no address"}
+              {port.ipv4_address || t("state.no_address")}
             </span>
             {port.has_route && (
-              <span className="setup_port_route">the way out today</span>
+              <span className="setup_port_route">
+                {t("ui.setup.way_out_today")}
+              </span>
             )}
           </div>
         ))}

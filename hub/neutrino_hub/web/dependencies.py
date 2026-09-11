@@ -34,7 +34,8 @@ def require_session(
     """
     if not runtime.sessions.is_valid(neutrino_session):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="not authenticated"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "not_authenticated", "params": {}},
         )
 
 

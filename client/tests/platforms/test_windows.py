@@ -18,13 +18,21 @@ from tests.conftest import completed
 class FakeWin32:
     """The identity seam, scripted."""
 
-    def __init__(self, *, account="Alice"):
+    def __init__(self, *, account="Alice", language_id=0x0409):
         self.account = account
+        self.language_id = language_id
         self.calls = []
         self.impersonate_error = None
         self.token_error = None
         self.connection_code = 0
         self.cancel_code = 0
+        self.language_error = None
+
+    def user_ui_language_id(self):
+        self.calls.append(("user_ui_language_id",))
+        if self.language_error is not None:
+            raise self.language_error
+        return self.language_id
 
     def notify_drive(self, path, event):
         self.calls.append(("notify_drive", path, event))
@@ -96,6 +104,31 @@ def test_a_pipe_name_carries_no_character_a_pipe_refuses(monkeypatch):
     assert (
         WindowsPlatform().control_socket_path() == "\\\\.\\pipe\\neutrino_client_a_b_c"
     )
+
+
+def test_the_windows_ui_language_is_what_the_first_start_takes():
+    """0x0804 is Chinese (Simplified); 0x0409 is English (United States)."""
+    chinese = WindowsPlatform(win32=FakeWin32(language_id=0x0804))
+    english = WindowsPlatform(win32=FakeWin32(language_id=0x0409))
+
+    assert chinese.system_language() == "zh-CN"
+    assert english.system_language() == "en"
+
+
+def test_every_chinese_region_reads_as_the_one_chinese_the_client_offers():
+    """0x0404 is Taiwan, 0x0C04 Hong Kong; the client offers one Chinese."""
+    for language_id in (0x0404, 0x0C04, 0x1004):
+        assert (
+            WindowsPlatform(win32=FakeWin32(language_id=language_id)).system_language()
+            == "zh-CN"
+        )
+
+
+def test_a_windows_that_cannot_be_asked_leaves_the_language_english():
+    win32 = FakeWin32()
+    win32.language_error = OSError("no kernel32 here")
+
+    assert WindowsPlatform(win32=win32).system_language() == "en"
 
 
 def test_the_config_dir_is_under_appdata(monkeypatch):

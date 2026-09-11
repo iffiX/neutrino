@@ -4,6 +4,7 @@ import { ApplyBar } from "./apply_bar";
 import { Icon } from "./icon";
 import type { IconName } from "./icon";
 import { apiPut, describeError } from "../api_client";
+import { t, useLanguage } from "../i18n";
 import { interruptionWarning } from "../network_warnings";
 import { useDraftSeeding } from "../use_draft_seeding";
 import type {
@@ -42,6 +43,8 @@ export function NetworkExposurePanel({
   network,
   onApplied,
 }: NetworkExposurePanelProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const applied = exposedNames(network);
   const appliedOverlays = exposedProviders(network);
   const [chosen, setChosen] = useState<string[]>(applied);
@@ -132,7 +135,7 @@ export function NetworkExposurePanel({
         exposed_overlays: chosenOverlays,
       };
       onApplied(await apiPut<NetworkView>("/network", options));
-      setNotice("Applied to the firewall.");
+      setNotice(t("ui.network.exposure_applied"));
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -145,12 +148,9 @@ export function NetworkExposurePanel({
       className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
     >
       <div className="settings_group_title">
-        <h2>Exposure</h2>
+        <h2>{t("ui.network.exposure_title")}</h2>
       </div>
-      <p className="field_hint">
-        The networks on which this box accepts connections to its own services:
-        the panel, SSH, DNS, the shares.
-      </p>
+      <p className="field_hint">{t("ui.network.exposure_hint")}</p>
 
       <div className="exposure_chips">
         {offered.map((entry) => (
@@ -174,8 +174,8 @@ export function NetworkExposurePanel({
       <ApplyBar
         isDirty={isDirty}
         isBusy={isBusy}
-        label="Apply exposure"
-        hint="Reloads the firewall input chain."
+        label={t("ui.network.apply_exposure")}
+        hint={t("ui.network.apply_exposure_hint")}
         warning={exposureWarning(closingNames, openedUplinks, cutOff)}
         error={error}
         notice={notice}
@@ -196,6 +196,8 @@ interface ExposureChipProps {
 }
 
 function ExposureChip({ entry, isOn, onToggle }: ExposureChipProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const { settings, link } = entry;
   return (
     <button
@@ -207,7 +209,7 @@ function ExposureChip({ entry, isOn, onToggle }: ExposureChipProps) {
       <Icon name={KIND_ICONS[link.kind] ?? "link"} size={14} />
       <span className="exposure_chip_name mono">{settings.name}</span>
       <span className="exposure_chip_state mono">
-        {link.ipv4_address ?? "no address"}
+        {link.ipv4_address ?? t("state.no_address")}
       </span>
       {settings.role !== "disabled" && (
         <span className="badge">{settings.role}</span>
@@ -223,6 +225,8 @@ interface OverlayChipProps {
 }
 
 function OverlayChip({ overlay, isOn, onToggle }: OverlayChipProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   return (
     <button
       type="button"
@@ -233,9 +237,9 @@ function OverlayChip({ overlay, isOn, onToggle }: OverlayChipProps) {
       <Icon name="mesh" size={14} />
       <span className="exposure_chip_name mono">{overlay.title}</span>
       <span className="exposure_chip_state mono">
-        {overlay.address === "" ? "not up" : overlay.address}
+        {overlay.address === "" ? t("state.not_up") : overlay.address}
       </span>
-      <span className="badge">overlay</span>
+      <span className="badge">{t("state.overlay")}</span>
     </button>
   );
 }
@@ -255,12 +259,12 @@ function exposureWarning(
     cutOff.length === 0 ? null : devicesCutOff(cutOff),
     closing.length === 0
       ? null
-      : `${closing.join(", ")} stops accepting connections.`,
+      : t("ui.network.warning_closing", { names: closing.join(", ") }),
     openedUplinks.length === 0
       ? null
-      : `${openedUplinks.map((entry) => entry.settings.name).join(", ")} faces ` +
-          "the internet, and exposing it accepts connections there on every " +
-          "port this box listens on.",
+      : t("ui.network.warning_uplink_exposed", {
+          names: openedUplinks.map((entry) => entry.settings.name).join(", "),
+        }),
   );
 }
 
@@ -269,8 +273,8 @@ function devicesCutOff(cutOff: { label: string; count: number }[]): string {
   const total = cutOff.reduce((sum, entry) => sum + entry.count, 0);
   const where = cutOff.map((entry) => entry.label).join(", ");
   return total === 1
-    ? `1 device reaches the hub on ${where}. Closing it ends its link.`
-    : `${total} devices reach the hub on ${where}. Closing it ends their link.`;
+    ? t("ui.network.warning_cut_off_one", { where })
+    : t("ui.network.warning_cut_off_many", { count: total, where });
 }
 
 function exposedNames(network: NetworkView): string[] {

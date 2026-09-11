@@ -21,9 +21,10 @@ import signal
 import sys
 import threading
 
+from neutrino_client import words
 from neutrino_client.cli import wording
 from neutrino_client.constants import (
-    CLIENT_GUI_WINDOW_TITLE,
+    CLIENT_GUI_WINDOW_TITLE_KEY,
     CLIENT_LOG_FILE_NAME,
     CLIENT_LOG_KEEP_BYTES,
 )
@@ -191,10 +192,12 @@ def _open(os_name: str, session, *, is_hidden: bool) -> int:
     def register_push(push) -> None:
         session.subscribe(lambda: push(routes.state_payload(session)))
 
+    language = session.language()
     try:
         open_shell_window(
             os_name=os_name,
-            title=CLIENT_GUI_WINDOW_TITLE,
+            title=words.word(language, CLIENT_GUI_WINDOW_TITLE_KEY),
+            language=language,
             html=control_page_html(),
             bridge=GuiBridge(channel=InProcessChannel(session=session)),
             icon_path=window_icon_path(),

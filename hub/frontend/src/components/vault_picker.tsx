@@ -12,7 +12,8 @@ import { createPortal } from "react-dom";
 import { Icon } from "./icon";
 import { PasswordInput } from "./password_input";
 import { apiPost, describeError } from "../api_client";
-import { PRIVATE_KEY_PLACEHOLDER } from "../private_key_placeholder";
+import { t, useLanguage } from "../i18n";
+import { privateKeyPlaceholder } from "../private_key_placeholder";
 import { useApiResource } from "../use_api_resource";
 import { HUB_EVENT_CONFIG } from "../use_hub_events";
 import type { HubEventMatch } from "../use_hub_events";
@@ -36,15 +37,8 @@ import "./vault_picker.css";
  * the row after them stores one more; nothing here reads a secret back.
  */
 
-const WORDING = {
-  cancel: "Cancel",
-  name: "Name",
-  saving: "Saving…",
-  loading: "Loading…",
-};
-
-/** What one kind of vault entry is called on this control. */
-interface VaultKindWording {
+/** What one kind of vault entry is called on this control, as catalog keys. */
+interface VaultKindKeys {
   empty: string;
   none: string;
   add: string;
@@ -54,34 +48,33 @@ interface VaultKindWording {
   save: string;
 }
 
-const KIND_WORDING: Record<VaultKind, VaultKindWording> = {
+const KIND_KEYS: Record<VaultKind, VaultKindKeys> = {
   ssh_key: {
-    empty: "No keys stored yet",
-    none: "No key chosen",
-    add: "Add SSH key",
-    namePlaceholder: "work laptop",
-    valueLabel: "Private key",
-    valueHint:
-      "Stored on the gateway readable only by root, and never shown again.",
-    save: "Save key",
+    empty: "ui.vault.key_empty",
+    none: "ui.vault.key_none",
+    add: "ui.vault.key_add",
+    namePlaceholder: "ui.vault.key_name_placeholder",
+    valueLabel: "ui.vault.key_value_label",
+    valueHint: "ui.vault.key_value_hint",
+    save: "ui.vault.key_save",
   },
   login: {
-    empty: "No logins stored yet",
-    none: "No login chosen",
-    add: "Add login",
-    namePlaceholder: "lab machines",
-    valueLabel: "Password", // scan: allow
-    valueHint: "Stored sealed on the gateway, and never shown again.",
-    save: "Save login",
+    empty: "ui.vault.login_empty",
+    none: "ui.vault.login_none",
+    add: "ui.vault.login_add",
+    namePlaceholder: "ui.vault.login_name_placeholder",
+    valueLabel: "ui.vault.login_value_label",
+    valueHint: "ui.vault.login_value_hint",
+    save: "ui.vault.login_save",
   },
   token: {
-    empty: "No tokens stored yet",
-    none: "No token chosen",
-    add: "Add token",
-    namePlaceholder: "Anthropic key",
-    valueLabel: "Token",
-    valueHint: "Stored sealed on the gateway, and never shown again.",
-    save: "Save token",
+    empty: "ui.vault.token_empty",
+    none: "ui.vault.token_none",
+    add: "ui.vault.token_add",
+    namePlaceholder: "ui.vault.token_name_placeholder",
+    valueLabel: "ui.vault.token_value_label",
+    valueHint: "ui.vault.token_value_hint",
+    save: "ui.vault.token_save",
   },
 };
 
@@ -147,6 +140,8 @@ export function VaultPicker({
   hint,
   isDisabled,
 }: VaultPickerProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const resource = useApiResource<VaultListResponse>(VAULT_PATHS[kind], {
     invalidateOn: VAULT_INVALIDATE_ON,
   });
@@ -164,7 +159,7 @@ export function VaultPicker({
   const entries = mergeEntries(toEntries(resource.data), storedEntries);
   const selected = entries.find((entry) => entry.id === value) ?? null;
   const rowCount = entries.length + 1;
-  const wording = KIND_WORDING[kind];
+  const keys = KIND_KEYS[kind];
 
   const close = useCallback(() => {
     setIsOpen(false);
@@ -331,7 +326,7 @@ export function VaultPicker({
             selected === null ? "vault_picker_value--none" : ""
           }`}
         >
-          {selected === null ? wording.none : entryLabel(selected)}
+          {selected === null ? t(keys.none) : entryLabel(selected)}
         </span>
       </button>
       {hint !== undefined && <span className="field_hint">{hint}</span>}
@@ -362,7 +357,7 @@ export function VaultPicker({
               <>
                 {entries.length === 0 && (
                   <span className="vault_picker_empty">
-                    {resource.isLoading ? WORDING.loading : wording.empty}
+                    {t(resource.isLoading ? "ui.vault.loading" : keys.empty)}
                   </span>
                 )}
                 <div
@@ -413,7 +408,7 @@ export function VaultPicker({
                     onClick={() => setIsAdding(true)}
                   >
                     <Icon name="plus" size={13} />
-                    {wording.add}
+                    {t(keys.add)}
                   </button>
                 </div>
               </>
@@ -432,12 +427,14 @@ interface VaultAddFormProps {
 }
 
 function VaultAddForm({ kind, onAdded, onCancel }: VaultAddFormProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [name, setName] = useState("");
   const [secret, setSecret] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const wording = KIND_WORDING[kind];
+  const keys = KIND_KEYS[kind];
   const isReady = name.trim().length > 0 && secret.trim().length > 0;
 
   const handleSubmit = async () => {
@@ -454,17 +451,17 @@ function VaultAddForm({ kind, onAdded, onCancel }: VaultAddFormProps) {
   return (
     <div className="vault_picker_form">
       <label className="field">
-        <span className="field_label">{WORDING.name}</span>
+        <span className="field_label">{t("ui.vault.name")}</span>
         <input
           className="input"
           value={name}
-          placeholder={wording.namePlaceholder}
+          placeholder={t(keys.namePlaceholder)}
           autoFocus
           onChange={(event) => setName(event.target.value)}
         />
       </label>
       <label className="field">
-        <span className="field_label">{wording.valueLabel}</span>
+        <span className="field_label">{t(keys.valueLabel)}</span>
         {kind === "ssh_key" ? (
           <textarea
             className="input input--key vault_picker_key"
@@ -472,13 +469,13 @@ function VaultAddForm({ kind, onAdded, onCancel }: VaultAddFormProps) {
             spellCheck={false}
             autoComplete="off"
             rows={5}
-            placeholder={PRIVATE_KEY_PLACEHOLDER}
+            placeholder={privateKeyPlaceholder()}
             onChange={(event) => setSecret(event.target.value)}
           />
         ) : (
           <PasswordInput value={secret} onChange={setSecret} />
         )}
-        <span className="field_hint">{wording.valueHint}</span>
+        <span className="field_hint">{t(keys.valueHint)}</span>
       </label>
       {error !== null && <span className="field_error">{error}</span>}
       <div className="vault_picker_form_actions">
@@ -487,7 +484,7 @@ function VaultAddForm({ kind, onAdded, onCancel }: VaultAddFormProps) {
           className="button button--ghost button--small"
           onClick={onCancel}
         >
-          {WORDING.cancel}
+          {t("ui.vault.cancel")}
         </button>
         <button
           type="button"
@@ -496,7 +493,7 @@ function VaultAddForm({ kind, onAdded, onCancel }: VaultAddFormProps) {
           onClick={() => void handleSubmit()}
         >
           <Icon name="check" size={13} />
-          {isSaving ? WORDING.saving : wording.save}
+          {isSaving ? t("ui.vault.saving") : t(keys.save)}
         </button>
       </div>
     </div>

@@ -17,7 +17,7 @@ SERVICES_PAGE_PATH = (
     Path(__file__).resolve().parents[2] / "frontend/src/pages/services_page.tsx"
 )
 
-WORDING_TABLE = "DECLARED_DETAIL_WORDING"
+WORDING_TABLE = "DECLARED_DETAIL_KEYS"
 
 
 def worded_codes(table: str) -> set[str]:

@@ -16,6 +16,15 @@ import asyncssh
 
 from neutrino_hub.exceptions import KeyMaterialError, VaultLockedError
 from neutrino_hub.modules.credentials.vault import SecretRecord, SecretVault
+from neutrino_hub.modules.devices.constants import (
+    DEVICE_KEY_ERROR_IS_PUBLIC,
+    DEVICE_KEY_ERROR_NO_BCRYPT,
+    DEVICE_KEY_ERROR_NOT_A_PRIVATE_KEY,
+    DEVICE_KEY_ERROR_NOTHING_PASTED,
+    DEVICE_KEY_ERROR_PASSPHRASE_NEEDED,
+    DEVICE_KEY_ERROR_PASSPHRASE_WRONG,
+    DEVICE_KEY_ERROR_UNREADABLE,
+)
 
 KEY_KIND = "ssh_key"
 PRIVATE_KEY_MARKER = "-----BEGIN"
@@ -141,7 +150,9 @@ class KeyRegistry:
         except VaultLockedError:
             raise
         except ValueError as error:
-            raise KeyMaterialError(str(error)) from error
+            raise KeyMaterialError(
+                DEVICE_KEY_ERROR_UNREADABLE, {"detail": str(error)}
+            ) from error
         return secret["private_key"], secret.get("passphrase")
 
     def has_key(self, key_id: str) -> bool:
@@ -158,37 +169,23 @@ class KeyRegistry:
     def _validate(self, private_key: str, passphrase: str | None):
         text = private_key.strip()
         if not text:
-            raise KeyMaterialError("no key was pasted")
+            raise KeyMaterialError(DEVICE_KEY_ERROR_NOTHING_PASTED)
         if text.startswith(PUBLIC_KEY_PREFIXES):
-            raise KeyMaterialError(
-                "that is a public key. The gateway authenticates as the device's "
-                "user, so it needs the matching private key — the file without "
-                "the .pub suffix, beginning with '-----BEGIN'."
-            )
+            raise KeyMaterialError(DEVICE_KEY_ERROR_IS_PUBLIC)
         if PRIVATE_KEY_MARKER not in text:
-            raise KeyMaterialError(
-                "this does not look like a private key; it should begin with "
-                "'-----BEGIN OPENSSH PRIVATE KEY-----' or similar"
-            )
+            raise KeyMaterialError(DEVICE_KEY_ERROR_NOT_A_PRIVATE_KEY)
         try:
             return asyncssh.import_private_key(text, passphrase=passphrase)
         except asyncssh.KeyEncryptionError as error:
             if "bcrypt" in str(error).lower():
-                raise KeyMaterialError(
-                    "this gateway cannot open encrypted keys: the bcrypt "
-                    "dependency is missing. Reinstall the panel environment, or "
-                    "add a key with no passphrase."
-                ) from error
-            raise KeyMaterialError(
-                "this key is passphrase-protected and the passphrase given does "
-                "not open it"
-            ) from error
+                raise KeyMaterialError(DEVICE_KEY_ERROR_NO_BCRYPT) from error
+            raise KeyMaterialError(DEVICE_KEY_ERROR_PASSPHRASE_WRONG) from error
         except asyncssh.KeyImportError as error:
             if "passphrase" in str(error).lower():
-                raise KeyMaterialError(
-                    "this key is passphrase-protected; enter its passphrase too"
-                ) from error
-            raise KeyMaterialError(f"the key could not be read: {error}") from error
+                raise KeyMaterialError(DEVICE_KEY_ERROR_PASSPHRASE_NEEDED) from error
+            raise KeyMaterialError(
+                DEVICE_KEY_ERROR_UNREADABLE, {"detail": str(error)}
+            ) from error
 
     def _algorithm_of(self, loaded) -> str:
         algorithm = loaded.algorithm

@@ -1,5 +1,6 @@
 import { Icon } from "./icon";
 import { copyText } from "../copy_text";
+import { t, useLanguage } from "../i18n";
 
 import "./device_enrollment_notice.css";
 
@@ -27,6 +28,8 @@ export function DeviceEnrollmentNotice({
   hint,
   onDismiss,
 }: DeviceEnrollmentNoticeProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const minutes = Math.max(0, Math.round(expiresInS / 60));
   return (
     <div className="notice">
@@ -44,12 +47,12 @@ export function DeviceEnrollmentNotice({
             onClick={() => void copyText(link)}
           >
             <Icon name="file" size={13} />
-            Copy
+            {t("ui.enrollment_notice.copy")}
           </button>
           <button
             type="button"
             className="button button--small button--ghost"
-            aria-label="Close"
+            aria-label={t("ui.enrollment_notice.close")}
             onClick={onDismiss}
           >
             <Icon name="close" size={13} />

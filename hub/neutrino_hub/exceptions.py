@@ -8,7 +8,17 @@ command that exited non-zero raises ``subprocess.CalledProcessError``.
 
 
 class KeyMaterialError(ValueError):
-    """Raised when pasted key material cannot be used."""
+    """Raised when pasted key material cannot be used.
+
+    Attributes:
+        code: Machine name of the refusal; the panel does the wording.
+        params: The values the refusal's sentence needs.
+    """
+
+    def __init__(self, code: str, params: dict | None = None):
+        super().__init__(code)
+        self.code = code
+        self.params = params or {}
 
 
 class PasswordRefusedError(ValueError):

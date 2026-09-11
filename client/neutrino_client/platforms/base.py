@@ -1,9 +1,9 @@
 """The contract every platform implements.
 
 The contract names intents, not mechanisms: where this person's configuration
-lives; where the control socket is and who its peer is; judge a proposed
-mount location; attach, detach and query a share at a location; open a link;
-start a windowed program. A new platform is a new class, and nothing above
+lives; which language this machine is set up in; where the control socket is
+and who its peer is; judge a proposed mount location; attach, detach and
+query a share at a location; open a link; start a windowed program. A new platform is a new class, and nothing above
 this seam changes. The client runs as the person, so every file operation is
 the standard library's own on the person's home.
 
@@ -21,10 +21,12 @@ import subprocess
 import time
 import webbrowser
 
+from neutrino_client.constants import CLIENT_DEFAULT_LANGUAGE
 from neutrino_client.exceptions import (
     ControlSocketUnavailableError,
     PlatformUnsupportedError,
 )
+from neutrino_client.words import language_for_tag
 
 # A console tool started from the windowless resident would open a console
 # of its own; the flag is Windows' and zero anywhere else.
@@ -91,6 +93,21 @@ class ClientPlatform:
     def home(self) -> str:
         """This person's home directory."""
         return os.path.expanduser("~")
+
+    def system_language(self) -> str:
+        """The language this machine is set up in, as the client names it.
+
+        The environment's own locale is the answer everywhere but Windows,
+        which keeps the UI language of its own.
+
+        Returns:
+            One of ``CLIENT_LANGUAGES``.
+        """
+        for name in ("LC_ALL", "LC_MESSAGES", "LANG"):
+            tag = os.environ.get(name, "")
+            if tag:
+                return language_for_tag(tag)
+        return CLIENT_DEFAULT_LANGUAGE
 
     def control_socket_path(self) -> str:
         """Where this person's control socket lives.

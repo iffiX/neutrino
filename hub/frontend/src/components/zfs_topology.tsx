@@ -1,5 +1,6 @@
-import type { ZfsDisk, ZfsPool, ZfsVdevMember } from "../api_types";
 import { formatBytes } from "../format_bytes";
+import { t, useLanguage } from "../i18n";
+import type { ZfsDisk, ZfsPool, ZfsVdevMember } from "../api_types";
 
 import "./network_diagram.css";
 import "./zfs_topology.css";
@@ -54,6 +55,8 @@ export function ZfsTopology({
   selectedMember,
   onSelectMember,
 }: ZfsTopologyProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const unassigned = disks.filter((disk) => disk.is_available);
   const diskByName = new Map<string, ZfsDisk>();
   for (const disk of disks) {
@@ -91,7 +94,7 @@ export function ZfsTopology({
       className="zfs_topology"
       viewBox={`0 0 ${VIEW_WIDTH} ${viewHeight}`}
       role="img"
-      aria-label="Storage topology"
+      aria-label={t("ui.zfs.topology_aria")}
     >
       {blocks.map(({ pool, top, height }) => (
         <PoolBlock
@@ -112,7 +115,7 @@ export function ZfsTopology({
             x={MARGIN}
             y={unassignedTop + 12}
           >
-            UNASSIGNED
+            {t("ui.zfs.unassigned")}
           </text>
           {unassigned.map((disk, index) => {
             const column = Math.floor(index / unassignedRows);
@@ -135,7 +138,7 @@ export function ZfsTopology({
 
       {pools.length === 0 && unassigned.length === 0 && (
         <text className="zfs_empty" x={VIEW_WIDTH / 2} y={viewHeight / 2}>
-          no pools and no spare disks
+          {t("ui.zfs.topology_empty")}
         </text>
       )}
     </svg>
@@ -213,12 +216,20 @@ function PoolBlock({
           rx={11}
         />
         <text className="zfs_node_name" x={POOL_X + 14} y={poolY - 12}>
-          Pool: {pool.name}
+          {t("ui.zfs.pool_node", { name: pool.name })}
         </text>
         <text className="zfs_node_detail" x={POOL_X + 14} y={poolY + 5}>
-          {formatBytes(pool.allocated_bytes)} / {formatBytes(pool.size_bytes)}
-          {pool.scan.kind !== null &&
-            ` · ${pool.scan.kind} ${pool.scan.percent?.toFixed(0) ?? "?"}%`}
+          {pool.scan.kind === null
+            ? t("ui.zfs.node_size", {
+                allocated: formatBytes(pool.allocated_bytes),
+                size: formatBytes(pool.size_bytes),
+              })
+            : t("ui.zfs.node_size_scan", {
+                allocated: formatBytes(pool.allocated_bytes),
+                size: formatBytes(pool.size_bytes),
+                kind: pool.scan.kind,
+                percent: pool.scan.percent?.toFixed(0) ?? "?",
+              })}
         </text>
         <rect
           className="zfs_capacity_track"
@@ -260,7 +271,9 @@ function PoolBlock({
             rx={9}
           />
           <text className="zfs_node_name" x={VDEV_X + 12} y={vdevY + 4}>
-            {vdev.layout === "single" ? "single" : vdev.name}
+            {vdev.layout === "single"
+              ? t("ui.zfs.vdev_single_name")
+              : vdev.name}
           </text>
         </g>
       ))}
@@ -381,7 +394,7 @@ function diskDetail(disk: ZfsDisk): string {
     parts.push(disk.model);
   }
   if (disk.fstype && disk.pool === null) {
-    parts.push(`has ${disk.fstype}`);
+    parts.push(t("ui.zfs.disk_has", { fstype: disk.fstype }));
   }
   return parts.join(" · ");
 }
@@ -391,9 +404,14 @@ function smartNote(disk: ZfsDisk): string {
     return "";
   }
   if (!disk.smart_passed) {
-    return "SMART FAILING";
+    return t("ui.zfs.smart_note_failing");
   }
-  return `SMART ok${disk.temperature_c !== null ? ` · ${disk.temperature_c}°C` : ""}`;
+  if (disk.temperature_c === null) {
+    return t("ui.zfs.smart_note_ok");
+  }
+  return t("ui.zfs.smart_note_ok_temp", {
+    temperature: disk.temperature_c,
+  });
 }
 
 function memberErrors(member: ZfsVdevMember): number {
@@ -402,11 +420,11 @@ function memberErrors(member: ZfsVdevMember): number {
 
 function memberNote(member: ZfsVdevMember, disk: ZfsDisk | undefined): string {
   if (member.is_resilvering) {
-    return "resilvering";
+    return t("state.resilvering");
   }
   const errors = memberErrors(member);
   if (errors > 0) {
-    return `${errors} errors`;
+    return t("ui.zfs.error_count", { count: errors });
   }
   if (stateTone(member.state) !== "ok") {
     return member.state.toLowerCase();

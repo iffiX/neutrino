@@ -131,7 +131,7 @@ def test_a_fresh_mount_must_say_whom_it_is_for(api):
     )
 
     assert answer.status_code == 400
-    assert answer.json()["detail"] == {"code": "no_target_user"}
+    assert answer.json()["detail"] == {"code": "no_target_user", "params": {}}
     assert runtime.agent_sessions.commands == []
 
 
@@ -185,7 +185,7 @@ def test_a_type_outside_the_verb_set_is_refused_typed(api):
     )
 
     assert answer.status_code == 400
-    assert answer.json()["detail"] == {"code": "unknown_request"}
+    assert answer.json()["detail"] == {"code": "unknown_request", "params": {}}
     assert runtime.agent_sessions.commands == []
 
 
@@ -198,5 +198,5 @@ def test_a_device_without_a_socket_takes_no_ask(api):
     )
 
     assert answer.status_code == 409
-    assert answer.json()["detail"] == {"code": "agent_offline"}
+    assert answer.json()["detail"] == {"code": "agent_offline", "params": {}}
     assert runtime.agent_sessions.commands == []

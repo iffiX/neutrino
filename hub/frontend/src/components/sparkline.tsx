@@ -1,3 +1,5 @@
+import { t, useLanguage } from "../i18n";
+
 import "./sparkline.css";
 
 /**
@@ -26,8 +28,10 @@ export function Sparkline({
   height = 20,
   isStretchy = false,
 }: SparklineProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   if (values.length < 2) {
-    return <span className="sparkline_empty">no probes</span>;
+    return <span className="sparkline_empty">{t("ui.sparkline.empty")}</span>;
   }
 
   const points = toPoints(values, width, height);

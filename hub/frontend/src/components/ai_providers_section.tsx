@@ -7,6 +7,7 @@ import { Icon } from "./icon";
 import { ToggleSwitch } from "./toggle_switch";
 import { VaultPicker } from "./vault_picker";
 import { apiDelete, apiPost, apiPut, describeError } from "../api_client";
+import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
 import type {
@@ -28,49 +29,6 @@ import "./ai_providers_section.css";
  * themselves — adding, editing and deleting a provider — write where they are
  * entered, the way every other record list in the panel does.
  */
-
-const WORDING = {
-  title: "Providers",
-  hint: "The endpoints the gateway forwards to, each keyed with a stored token. The list is the serving order: the first enabled provider answers first.",
-  addProvider: "Add provider",
-  newProvider: "New provider",
-  editProvider: (name: string) => `Edit ${name}`,
-  reorder: "Drag to reorder",
-  serving: "Serving",
-  notServing: "Not serving",
-  needsToken: "Needs a token before it can serve",
-  defaultEndpoint: "default endpoint",
-  noToken: "no key",
-  keyed: "keyed",
-  edit: "Edit",
-  delete: "Delete",
-  deleteTitle: (name: string) => `Delete ${name}`,
-  deleteBody:
-    "The provider is removed from this box; the token it was keyed with stays stored.",
-  empty: "No providers yet",
-  emptyHint:
-    "Add an API endpoint and token once, instead of pasting it into every machine.",
-  applyLabel: "Apply providers",
-  applyHintDrafts:
-    "Saves the serving order and which providers are enabled, then reloads the gateway.",
-  applyHintStale:
-    "The gateway is serving an older configuration; applying reloads it.",
-  applyWarning: "The gateway restarts, and requests in flight fail.",
-  fieldName: "Name",
-  fieldKind: "Kind",
-  fieldBaseUrl: "Base URL",
-  fieldModels: "Model aliases",
-  fieldToken: "API token",
-  baseUrlHint:
-    "Leave empty for the service's default; set it for a relay. Match the kind to the protocol the endpoint speaks, not to whose models are behind it: DeepSeek's /anthropic endpoint is Anthropic.",
-  modelsHint:
-    "One per line, real name first; add = alias when tools should see a different name. Devices are told to ask for the first one.",
-  tokenHint: "The stored token this endpoint is keyed with.",
-  namePlaceholder: "Anthropic direct",
-  cancel: "Cancel",
-  save: "Save provider",
-  saving: "Saving…",
-} as const;
 
 const AI_PROVIDERS_PATH = "/ai/providers";
 const CLIPROXYAPI_APPLY_PATH = "/cliproxyapi/apply";
@@ -97,11 +55,11 @@ const PROVIDER_URL_PLACEHOLDERS: Record<AiProviderKind, string> = {
  * vendor instead of by protocol is how an endpoint ends up being spoken to
  * in a language it does not answer.
  */
-const PROVIDER_KIND_LABELS: Record<AiProviderKind, string> = {
-  anthropic: "Anthropic — /v1/messages",
-  openai: "OpenAI — /v1/responses",
-  gemini: "Gemini — generateContent",
-  custom: "OpenAI-compatible — /chat/completions",
+const PROVIDER_KIND_LABEL_KEYS: Record<AiProviderKind, string> = {
+  anthropic: "ui.ai.kind_anthropic",
+  openai: "ui.ai.kind_openai",
+  gemini: "ui.ai.kind_gemini",
+  custom: "ui.ai.kind_custom",
 };
 
 /** One drag in flight, measured from the list as it stood when it started. */
@@ -131,6 +89,8 @@ export function AiProvidersSection({
   isServingStale,
   onApplied,
 }: AiProvidersSectionProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const resource = useApiResource<AiProvidersResponse>(AI_PROVIDERS_PATH);
   const [saved, setSaved] = useState<AiProviderView[]>([]);
   const [draft, setDraft] = useState<AiProviderView[]>([]);
@@ -302,7 +262,7 @@ export function AiProvidersSection({
       className={`settings_group ${hasDrafts ? "settings_group--dirty" : ""}`}
     >
       <div className="settings_group_title">
-        <h2>{WORDING.title}</h2>
+        <h2>{t("ui.ai.providers_title")}</h2>
         {!isAdding && (
           <button
             type="button"
@@ -310,11 +270,11 @@ export function AiProvidersSection({
             onClick={() => setIsAdding(true)}
           >
             <Icon name="plus" size={14} />
-            {WORDING.addProvider}
+            {t("ui.ai.add_provider")}
           </button>
         )}
       </div>
-      <p className="field_hint">{WORDING.hint}</p>
+      <p className="field_hint">{t("ui.ai.providers_hint")}</p>
 
       {resource.error !== null && (
         <ErrorPanel message={resource.error} onRetry={resource.reload} />
@@ -330,8 +290,10 @@ export function AiProvidersSection({
       {draft.length === 0 && !isAdding ? (
         <div className="keys_empty">
           <Icon name="nodes" size={22} />
-          <span className="keys_empty_title">{WORDING.empty}</span>
-          <span className="keys_empty_hint">{WORDING.emptyHint}</span>
+          <span className="keys_empty_title">{t("ui.ai.providers_empty")}</span>
+          <span className="keys_empty_hint">
+            {t("ui.ai.providers_empty_hint")}
+          </span>
         </div>
       ) : (
         <div className="ai_providers_list">
@@ -369,9 +331,13 @@ export function AiProvidersSection({
       <ApplyBar
         isDirty={hasDrafts || isServingStale}
         isBusy={isBusy}
-        label={WORDING.applyLabel}
-        hint={hasDrafts ? WORDING.applyHintDrafts : WORDING.applyHintStale}
-        warning={WORDING.applyWarning}
+        label={t("ui.ai.providers_apply")}
+        hint={
+          hasDrafts
+            ? t("ui.ai.providers_apply_hint")
+            : t("ui.ai.providers_apply_stale_hint")
+        }
+        warning={t("ui.ai.providers_apply_warning")}
         error={applyError}
         notice={applyNotice}
         onReset={handleReset}
@@ -388,6 +354,8 @@ interface ProviderFormProps {
 }
 
 function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [name, setName] = useState(initial?.name ?? "");
   const [kind, setKind] = useState<AiProviderKind>(
     initial?.kind ?? "anthropic",
@@ -433,21 +401,23 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
   return (
     <div className="keys_add">
       <div className="section_label">
-        {isEditing ? WORDING.editProvider(initial.name) : WORDING.newProvider}
+        {isEditing
+          ? t("ui.ai.edit_provider", { name: initial.name })
+          : t("ui.ai.new_provider")}
       </div>
       <div className="credentials_form_row">
         <label className="field">
-          <span className="field_label">{WORDING.fieldName}</span>
+          <span className="field_label">{t("ui.ai.field_name")}</span>
           <input
             className="input"
             value={name}
-            placeholder={WORDING.namePlaceholder}
+            placeholder={t("ui.ai.name_placeholder")}
             autoFocus
             onChange={(event) => setName(event.target.value)}
           />
         </label>
         <label className="field">
-          <span className="field_label">{WORDING.fieldKind}</span>
+          <span className="field_label">{t("ui.ai.field_kind")}</span>
           <select
             className="input"
             value={kind}
@@ -455,14 +425,14 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
           >
             {PROVIDER_KINDS.map((option) => (
               <option key={option} value={option}>
-                {PROVIDER_KIND_LABELS[option]}
+                {t(PROVIDER_KIND_LABEL_KEYS[option])}
               </option>
             ))}
           </select>
         </label>
       </div>
       <label className="field">
-        <span className="field_label">{WORDING.fieldBaseUrl}</span>
+        <span className="field_label">{t("ui.ai.field_base_url")}</span>
         <input
           className="input"
           value={baseUrl}
@@ -470,10 +440,10 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
           spellCheck={false}
           onChange={(event) => setBaseUrl(event.target.value)}
         />
-        <span className="field_hint">{WORDING.baseUrlHint}</span>
+        <span className="field_hint">{t("ui.ai.base_url_hint")}</span>
       </label>
       <label className="field">
-        <span className="field_label">{WORDING.fieldModels}</span>
+        <span className="field_label">{t("ui.ai.field_models")}</span>
         <textarea
           className="input"
           rows={3}
@@ -482,14 +452,14 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
           value={modelsText}
           onChange={(event) => setModelsText(event.target.value)}
         />
-        <span className="field_hint">{WORDING.modelsHint}</span>
+        <span className="field_hint">{t("ui.ai.models_hint")}</span>
       </label>
       <VaultPicker
         kind="token"
         value={secretId}
         onChange={setSecretId}
-        label={WORDING.fieldToken}
-        hint={WORDING.tokenHint}
+        label={t("ui.ai.field_token")}
+        hint={t("ui.ai.token_hint")}
       />
       {error !== null && <span className="field_error">{error}</span>}
       <div className="keys_add_actions">
@@ -498,7 +468,7 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
           className="button button--ghost"
           onClick={onCancel}
         >
-          {WORDING.cancel}
+          {t("ui.ai.cancel")}
         </button>
         <button
           type="button"
@@ -507,7 +477,7 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
           onClick={() => void handleSubmit()}
         >
           <Icon name="check" size={14} />
-          {isSaving ? WORDING.saving : WORDING.save}
+          {isSaving ? t("ui.ai.saving") : t("ui.ai.save_provider")}
         </button>
       </div>
     </div>
@@ -543,20 +513,24 @@ function ProviderRow({
   onEdit,
   onDeleted,
 }: ProviderRowProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const confirm = useConfirm();
 
   const hasToken = value.secret_id !== null;
   const endpoint =
-    value.base_url.length > 0 ? value.base_url : WORDING.defaultEndpoint;
-  const servingLabel = value.is_enabled ? WORDING.serving : WORDING.notServing;
+    value.base_url.length > 0 ? value.base_url : t("ui.ai.default_endpoint");
+  const servingLabel = value.is_enabled
+    ? t("ui.ai.serving_label")
+    : t("ui.ai.not_serving_label");
 
   const handleDelete = () =>
     confirm.ask({
-      title: WORDING.deleteTitle(value.name),
-      body: WORDING.deleteBody,
-      confirmLabel: WORDING.delete,
+      title: t("ui.ai.provider_delete_title", { name: value.name }),
+      body: t("ui.ai.provider_delete_body"),
+      confirmLabel: t("ui.ai.delete"),
       onConfirm: () => void deleteProvider(),
     });
 
@@ -583,7 +557,7 @@ function ProviderRow({
       <div className="ai_provider_line">
         <span
           className={`ai_provider_grip ${isReorderable ? "" : "ai_provider_grip--idle"}`}
-          title={isReorderable ? WORDING.reorder : undefined}
+          title={isReorderable ? t("ui.ai.reorder") : undefined}
           onPointerDown={isReorderable ? onGripDown : undefined}
           onPointerMove={onGripMove}
           onPointerUp={onGripUp}
@@ -598,7 +572,7 @@ function ProviderRow({
           className={`key_card_tag ${hasToken ? "key_card_tag--used" : ""}`}
         >
           <Icon name="lock" size={11} />
-          {hasToken ? WORDING.keyed : WORDING.noToken}
+          {hasToken ? t("state.keyed") : t("state.no_key")}
         </span>
         <span className="ai_provider_url mono" title={endpoint}>
           {endpoint}
@@ -607,7 +581,7 @@ function ProviderRow({
         <div className="ai_provider_actions">
           <span
             className="ai_provider_toggle"
-            title={hasToken ? servingLabel : WORDING.needsToken}
+            title={hasToken ? servingLabel : t("ui.ai.needs_token")}
           >
             <ToggleSwitch
               isOn={value.is_enabled}
@@ -623,7 +597,7 @@ function ProviderRow({
             onClick={onEdit}
           >
             <Icon name="edit" size={13} />
-            {WORDING.edit}
+            {t("ui.ai.edit")}
           </button>
           <button
             type="button"
@@ -632,7 +606,7 @@ function ProviderRow({
             onClick={handleDelete}
           >
             <Icon name="trash" size={13} />
-            {WORDING.delete}
+            {t("ui.ai.delete")}
           </button>
         </div>
       </div>

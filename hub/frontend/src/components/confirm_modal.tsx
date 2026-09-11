@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
 import { Icon } from "./icon";
+import { t, useLanguage } from "../i18n";
 
 import "./confirm_modal.css";
 
@@ -35,6 +36,8 @@ export function ConfirmModal({
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -65,7 +68,7 @@ export function ConfirmModal({
         <p className="confirm_body">{body}</p>
         <div className="confirm_foot">
           <button type="button" className="button" onClick={onCancel}>
-            Cancel
+            {t("ui.confirm.cancel")}
           </button>
           <button
             type="button"

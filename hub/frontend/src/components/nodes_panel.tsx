@@ -8,6 +8,7 @@ import { NodeCard } from "./node_card";
 import { apiDelete, apiPost, apiPut, describeError } from "../api_client";
 import { diffNodeDraft, isNodeChanged } from "../node_draft";
 import { formatBytes } from "../format_bytes";
+import { t, useLanguage } from "../i18n";
 import { nodeIdFromTag } from "../node_tag";
 import { useDraftSeeding } from "../use_draft_seeding";
 import { useApiResource } from "../use_api_resource";
@@ -48,10 +49,10 @@ const NODES_INVALIDATE_ON = [
   { type: HUB_EVENT_CONFIG },
 ];
 
-const STRATEGY_LABELS: Record<BalancerStrategy, string> = {
-  leastPing: "leastPing — lowest latency wins",
-  roundRobin: "roundRobin — cycle through nodes",
-  random: "random — pick per connection",
+const STRATEGY_LABEL_KEYS: Record<BalancerStrategy, string> = {
+  leastPing: "ui.proxy.strategy_least_ping",
+  roundRobin: "ui.proxy.strategy_round_robin",
+  random: "ui.proxy.strategy_random",
 };
 
 interface NodesPanelProps {
@@ -65,6 +66,8 @@ interface NodesPanelProps {
 }
 
 export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const resource = useApiResource<NodesResponse>("/proxy/nodes", {
     invalidateOn: NODES_INVALIDATE_ON,
   });
@@ -231,9 +234,9 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
 
   const handleRemoveNode = (node: NodeView) =>
     confirm.ask({
-      title: `Remove ${node.name}`,
-      body: "The exit node is deleted and its share link is not kept.",
-      confirmLabel: "Remove",
+      title: t("ui.proxy.node_remove_title", { name: node.name }),
+      body: t("ui.proxy.node_remove_body"),
+      confirmLabel: t("ui.proxy.node_remove_confirm"),
       onConfirm: () => void removeNode(node),
     });
 
@@ -319,12 +322,9 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
       className={`settings_group ${isUnapplied ? "settings_group--dirty" : ""}`}
     >
       <div className="settings_group_title">
-        <h2>Exit nodes</h2>
+        <h2>{t("ui.proxy.nodes_title")}</h2>
       </div>
-      <p className="field_hint">
-        Where proxied traffic leaves the internet. The balancer picks between
-        the enabled ones by the strategy below.
-      </p>
+      <p className="field_hint">{t("ui.proxy.nodes_hint")}</p>
 
       {actionError !== null && (
         <div className="notice notice--error">
@@ -336,7 +336,7 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
       <div className="nodes_toolbar">
         <div className="nodes_toolbar_group">
           <label className="field nodes_toolbar_field">
-            <span className="field_label">Balancer strategy</span>
+            <span className="field_label">{t("ui.proxy.strategy_label")}</span>
             <select
               className="select"
               value={draftBalancer?.strategy ?? "leastPing"}
@@ -345,16 +345,18 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
                 handleStrategyChange(event.target.value as BalancerStrategy)
               }
             >
-              {Object.entries(STRATEGY_LABELS).map(([strategy, label]) => (
+              {Object.entries(STRATEGY_LABEL_KEYS).map(([strategy, key]) => (
                 <option key={strategy} value={strategy}>
-                  {label}
+                  {t(key)}
                 </option>
               ))}
             </select>
           </label>
 
           <label className="field nodes_toolbar_field">
-            <span className="field_label">Probe interval (s)</span>
+            <span className="field_label">
+              {t("ui.proxy.probe_interval_label")}
+            </span>
             <input
               className="input"
               inputMode="numeric"
@@ -374,7 +376,7 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
             onClick={() => setIsAddOpen((open) => !open)}
           >
             <Icon name="plus" size={14} />
-            Add node
+            {t("ui.proxy.node_add")}
           </button>
           <button
             type="button"
@@ -383,7 +385,9 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
             disabled={testingIds.length > 0 || draftNodes.length === 0}
           >
             <Icon name="bolt" size={14} />
-            {testingIds.length > 0 ? "Testing…" : "Test all"}
+            {testingIds.length > 0
+              ? t("ui.proxy.node_testing_all")
+              : t("ui.proxy.node_test_all")}
           </button>
         </div>
       </div>
@@ -394,7 +398,9 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
           onSubmit={(event) => void handleAddNode(event)}
         >
           <label className="field">
-            <span className="field_label">Share link</span>
+            <span className="field_label">
+              {t("ui.proxy.share_link_label")}
+            </span>
             <input
               className="input"
               value={shareLink}
@@ -402,9 +408,7 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
               autoFocus
               onChange={(event) => setShareLink(event.target.value)}
             />
-            <span className="field_hint">
-              Paste the link as the provider gives it.
-            </span>
+            <span className="field_hint">{t("ui.proxy.share_link_hint")}</span>
           </label>
           <div className="button_row">
             <button
@@ -415,7 +419,7 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
                 setShareLink("");
               }}
             >
-              Cancel
+              {t("ui.proxy.node_add_cancel")}
             </button>
             <button
               type="submit"
@@ -423,18 +427,26 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
               disabled={isAdding || shareLink.trim().length === 0}
             >
               <Icon name="plus" size={14} />
-              {isAdding ? "Adding…" : "Add"}
+              {isAdding
+                ? t("ui.proxy.node_adding")
+                : t("ui.proxy.node_add_submit")}
             </button>
           </div>
         </form>
       )}
 
       <div className="nodes_summary">
-        <span>{enabledCount} enabled</span>
-        <span>{aliveCount} alive</span>
-        <span>{draftNodes.length} total</span>
-        <span>{formatBytes(totalTraffic)} moved</span>
-        <span>probe: {draftBalancer?.probe_url ?? "—"}</span>
+        <span>{t("ui.proxy.summary_enabled", { count: enabledCount })}</span>
+        <span>{t("ui.proxy.summary_alive", { count: aliveCount })}</span>
+        <span>{t("ui.proxy.summary_total", { count: draftNodes.length })}</span>
+        <span>
+          {t("ui.proxy.summary_moved", { bytes: formatBytes(totalTraffic) })}
+        </span>
+        <span>
+          {t("ui.proxy.summary_probe", {
+            url: draftBalancer?.probe_url ?? "—",
+          })}
+        </span>
       </div>
 
       {resource.isLoading && draftNodes.length === 0 ? (
@@ -445,10 +457,8 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
         </div>
       ) : draftNodes.length === 0 ? (
         <div className="placeholder">
-          <span>No nodes configured</span>
-          <span className="faint">
-            Add one with a share link from your provider.
-          </span>
+          <span>{t("ui.proxy.nodes_empty")}</span>
+          <span className="faint">{t("ui.proxy.nodes_empty_hint")}</span>
         </div>
       ) : (
         <div className="nodes_grid">
@@ -470,13 +480,13 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
       <ApplyBar
         isDirty={isUnapplied}
         isBusy={isApplying}
-        label="Apply nodes"
+        label={t("ui.proxy.apply_nodes")}
         hint={
           isSavedNotApplied
-            ? "Loads the exit nodes into the running proxy."
+            ? t("ui.proxy.apply_nodes_hint")
             : (diff?.summary ?? "")
         }
-        warning="Restarts the proxy; connections through it drop."
+        warning={t("ui.proxy.warning_restart")}
         notice={applyMessage}
         onReset={handleDiscard}
         onApply={() => void handleApply()}

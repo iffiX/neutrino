@@ -98,9 +98,7 @@ def journal(
     try:
         return JournalView(text=runtime.services.journal(name, line_count=lines))
     except KeyError as error:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
-        ) from error
+        raise _unknown_module(name) from error
 
 
 @router.get("/{name}/install_plan", response_model=ModuleInstallPlanView)
@@ -164,19 +162,17 @@ async def install(
     spec = _spec_or_404(name)
     if ANY_ARCHITECTURE not in spec.architectures:
         if machine_architecture() not in spec.architectures:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    f"{name} does not run on this machine "
-                    f"({machine_architecture()}); it runs on: "
-                    f"{', '.join(spec.architectures)}"
-                ),
+            raise _refusal(
+                "module_architecture_unsupported",
+                name=name,
+                architecture=machine_architecture(),
+                architectures=", ".join(spec.architectures),
             )
     is_consented = request.is_consented if request is not None else False
     if plan_for(spec.provisioner()).is_consent_needed and not is_consented:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"installing {name} here needs agreement that was not given",
+            detail={"code": "module_consent_needed", "params": {"name": name}},
         )
     # One at a time. Two installs of one module are two downloads writing one
     # path and two package managers on one lock: the second corrupts what the
@@ -217,10 +213,7 @@ async def uninstall(
     """
     spec = _spec_or_404(name)
     if name in SYSTEM_CORE_UNITS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(f"{name} is a core service and cannot be uninstalled"),
-        )
+        raise _refusal("core_module_kept", name=name)
     running = runtime.tasks.running(f"uninstall {name}")
     if running is not None:
         return TaskStarted(task_id=running.id)
@@ -250,38 +243,29 @@ def control(
             or a module that is not installed, 502 when systemd refuses.
     """
     if name in SYSTEM_CORE_UNITS and action in STOPPING_ACTIONS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(f"{name} is a core service and cannot be {action}ped"),
-        )
+        raise _refusal("core_module_always_running", name=name, action=action)
     try:
         state = runtime.services.status(name)
     except KeyError as error:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
-        ) from error
+        raise _unknown_module(name) from error
     if not state.is_installed:
         # Said here rather than let through: systemd's answer is "Unit
         # x.service does not exist", which reaches the page as an error about
         # a file when the thing to know is that the module is not installed.
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"{name} is not installed, so there is nothing to {action}",
-        )
+        raise _refusal("module_not_installed", name=name, action=action)
     try:
         runtime.services.control(name, action)
     except KeyError as error:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
-        ) from error
+        raise _unknown_module(name) from error
     except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
-        ) from error
+        raise _refusal("module_action_unknown", name=name, action=action) from error
     except (subprocess.SubprocessError, OSError) as error:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=command_failure_text(error),
+            detail={
+                "code": "command_failed",
+                "params": {"detail": command_failure_text(error)},
+            },
         ) from error
     return _to_view(runtime.services.status(name))
 
@@ -369,9 +353,40 @@ def _spec_or_404(name: str) -> ModuleSpec:
     if spec is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"{name} is not something the panel installs or removes",
+            detail={"code": "module_not_optional", "params": {"name": name}},
         )
     return spec
+
+
+def _unknown_module(name: str) -> HTTPException:
+    """One 404 for a name this box runs no unit for.
+
+    Args:
+        name: Panel-facing module name.
+
+    Returns:
+        The exception to raise.
+    """
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail={"code": "module_unknown", "params": {"name": name}},
+    )
+
+
+def _refusal(code: str, **params) -> HTTPException:
+    """One 400 carrying the name of what was refused.
+
+    Args:
+        code: What was refused.
+        params: The values the panel's sentence names.
+
+    Returns:
+        The exception to raise.
+    """
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={"code": code, "params": params},
+    )
 
 
 def _to_view(entry) -> ModuleView:

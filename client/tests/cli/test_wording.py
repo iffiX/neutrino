@@ -2,33 +2,32 @@
 
 The page and the terminal each word the client's typed codes in their own
 register; what they share is the list of codes, never the strings. Every
-code, state and cause the page's table carries must have a wording on the
-terminal surface too, plus the codes only the terminal can meet.
+code, state and cause the catalogs carry must have a wording on the
+terminal surface too, and every code the terminal words must be in the
+catalogs, so the two surfaces agree on one code set.
 """
 
 from neutrino_client.cli import wording
 from tests.control.test_page import (
     ATTACH_RENDERED_STATES,
-    CLI_ONLY_CODES,
     DETAIL_FALLBACK_CODES,
     MOUNT_BUSY_STATES,
+    catalog_keys,
     emitted_codes,
-    words_block,
 )
 
 
-def test_every_code_the_page_words_has_cli_words():
-    for code in list(words_block("codes")) + list(words_block("errors")):
+def test_every_code_the_catalogs_word_has_cli_words():
+    for code in catalog_keys("code."):
         worded = wording.word_code(code, {})
 
         assert worded not in ("", code), f"code {code} has no CLI wording"
 
 
-def test_every_code_only_the_terminal_meets_has_cli_words():
-    for code in CLI_ONLY_CODES:
-        worded = wording.word_code(code, {})
+def test_every_code_the_cli_words_is_in_the_catalogs():
+    missing = set(wording.CLIENT_CODE_WORDS) - catalog_keys("code.")
 
-        assert worded not in ("", code), f"code {code} has no CLI wording"
+    assert missing == set(), f"codes the catalogs do not carry: {sorted(missing)}"
 
 
 def test_every_emitted_code_has_cli_words():
@@ -45,8 +44,8 @@ def test_the_detail_codes_are_the_pages_own():
         assert wording.word_code(code, {"detail": "its own words"}) == "its own words"
 
 
-def test_every_state_the_page_words_has_cli_words():
-    for state in words_block("states"):
+def test_every_state_the_catalogs_word_has_cli_words():
+    for state in catalog_keys("state."):
         assert state in wording.CLIENT_STATE_WORDS, f"state {state} has no CLI wording"
 
 
@@ -57,8 +56,8 @@ def test_every_mount_record_state_has_cli_words():
         ), f"mount state {state} has no CLI wording"
 
 
-def test_every_unbind_cause_the_page_words_is_worded():
-    for cause in words_block("causes"):
+def test_every_unbind_cause_the_catalogs_word_is_worded():
+    for cause in catalog_keys("cause."):
         assert cause in wording.CLIENT_UNBIND_CAUSE_WORDS, f"cause {cause} has no words"
         worded = wording.word_code("self_unbound", {"cause": cause})
         assert wording.CLIENT_UNBIND_CAUSE_WORDS[cause] in worded

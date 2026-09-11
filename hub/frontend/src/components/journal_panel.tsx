@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import { StatusDot } from "./status_dot";
+import { t, useLanguage } from "../i18n";
 import { usePolledResource } from "../use_polled_resource";
 import type { ServiceJournal } from "../api_types";
 
@@ -15,13 +16,6 @@ import "./journal_panel.css";
  * the newest line in view, the same way `ai_journal_panel` does.
  */
 
-const WORDING = {
-  label: (lines: number) => `journal · last ${lines} lines`,
-  live: "live",
-  empty: "(no journal output)",
-  unavailable: "The journal is not readable yet.",
-} as const;
-
 const JOURNAL_LINES = 200;
 
 interface JournalPanelProps {
@@ -32,6 +26,8 @@ interface JournalPanelProps {
 }
 
 export function JournalPanel({ moduleName, path, isOpen }: JournalPanelProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const journalPath = path ?? `/modules/${moduleName ?? ""}/journal`;
   const journal = usePolledResource<ServiceJournal>(
     isOpen ? `${journalPath}?lines=${JOURNAL_LINES}` : null,
@@ -53,9 +49,11 @@ export function JournalPanel({ moduleName, path, isOpen }: JournalPanelProps) {
   return (
     <div className="journal_panel">
       <div className="journal_panel_head">
-        <span className="section_label">{WORDING.label(JOURNAL_LINES)}</span>
+        <span className="section_label">
+          {t("ui.journal.label", { lines: JOURNAL_LINES })}
+        </span>
         {text !== null && (
-          <StatusDot tone="ok" isPulsing label={WORDING.live} />
+          <StatusDot tone="ok" isPulsing label={t("state.live")} />
         )}
       </div>
 
@@ -63,11 +61,11 @@ export function JournalPanel({ moduleName, path, isOpen }: JournalPanelProps) {
         <div className="skeleton journal_panel_loading" />
       )}
       {text === null && !journal.isLoading && (
-        <span className="field_hint">{WORDING.unavailable}</span>
+        <span className="field_hint">{t("ui.journal.unavailable")}</span>
       )}
       {text !== null && (
         <pre ref={outputRef} className="journal_panel_output">
-          {text.trim().length > 0 ? text : WORDING.empty}
+          {text.trim().length > 0 ? text : t("ui.journal.empty")}
         </pre>
       )}
     </div>

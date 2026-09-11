@@ -4,6 +4,7 @@ import type { FormEvent } from "react";
 import { Icon } from "../components/icon";
 import { apiGet, describeError } from "../api_client";
 import { PasswordInput } from "../components/password_input";
+import { t, useLanguage } from "../i18n";
 import { useAuth } from "../use_auth";
 import type { AuthState } from "../api_types";
 
@@ -22,7 +23,14 @@ import "./login_page.css";
  * turns red. The owner clears it early with `nhub unlock` on the box.
  */
 
+/** The product's own name, which is the same in every language. */
+const LOGIN_BRAND_NAME = "Neutrino Hub";
+/** What the password field shows instead of a password. */
+const LOGIN_PASSWORD_PLACEHOLDER = "••••••••";
+
 export function LoginPage() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const { login, error: sessionError } = useAuth();
 
   const [password, setPassword] = useState("");
@@ -90,7 +98,7 @@ export function LoginPage() {
           startLockdown(state.lockout_remaining_s);
           setError(null);
         } else {
-          setError("Wrong password.");
+          setError(t("ui.login.wrong_password"));
         }
       }
     } catch (cause: unknown) {
@@ -114,8 +122,8 @@ export function LoginPage() {
             <Icon name="proxy" size={20} />
           </span>
           <span className="login_brand_text">
-            <span className="login_brand_name">Neutrino Hub</span>
-            <span className="login_brand_sub">control panel</span>
+            <span className="login_brand_name">{LOGIN_BRAND_NAME}</span>
+            <span className="login_brand_sub">{t("ui.login.subtitle")}</span>
           </span>
         </div>
 
@@ -125,9 +133,7 @@ export function LoginPage() {
             <span className="login_lockdown_clock">
               {formatCountdown(remainingS)}
             </span>
-            <span className="login_lockdown_text">
-              Locked after repeated failures.
-            </span>
+            <span className="login_lockdown_text">{t("ui.login.locked")}</span>
           </div>
         ) : (
           <form
@@ -135,11 +141,11 @@ export function LoginPage() {
             onSubmit={(event) => void handleSubmit(event)}
           >
             <label className="field">
-              <span className="field_label">Panel password</span>
+              <span className="field_label">{t("ui.login.password")}</span>
               <PasswordInput
                 value={password}
                 autoFocus
-                placeholder="••••••••"
+                placeholder={LOGIN_PASSWORD_PLACEHOLDER}
                 onChange={(next) => {
                   setError(null);
                   setPassword(next);
@@ -158,7 +164,7 @@ export function LoginPage() {
               <div className="notice notice--warn">
                 <Icon name="alert" size={15} />
                 <div className="notice_body">
-                  Could not reach the gateway API: {sessionError}
+                  {t("ui.login.api_unreachable", { detail: sessionError })}
                 </div>
               </div>
             )}
@@ -169,7 +175,7 @@ export function LoginPage() {
               disabled={isSubmitting || password.length === 0}
             >
               <Icon name="lock" size={14} />
-              {isSubmitting ? "Signing in…" : "Sign in"}
+              {isSubmitting ? t("ui.login.signing_in") : t("ui.login.sign_in")}
             </button>
           </form>
         )}

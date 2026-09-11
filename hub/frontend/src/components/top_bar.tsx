@@ -4,6 +4,7 @@ import { StatusDot } from "./status_dot";
 import type { StatusTone } from "./status_dot";
 import { computeActiveExits, primaryExitTag } from "../active_exits";
 import { formatCompact } from "../format_compact";
+import { t, useLanguage } from "../i18n";
 import { describeProxy } from "../proxy_status";
 import type { CliproxyApiStatusView, NetworkView } from "../api_types";
 import { NAV_ITEMS } from "../nav_items";
@@ -33,20 +34,31 @@ const SOCKET_TONES: Record<string, StatusTone> = {
   closed: "error",
 };
 
-const SOCKET_LABELS: Record<string, string> = {
-  open: "live",
-  connecting: "connecting",
-  closed: "offline",
+const SOCKET_KEYS: Record<string, string> = {
+  open: "state.live",
+  connecting: "state.connecting",
+  closed: "state.offline",
 };
 
 /** What each mode is called wherever a person reads it. */
-const MODE_LABELS: Record<string, string> = {
-  server: "server",
-  side_gateway: "side gateway",
-  router: "router",
+const MODE_KEYS: Record<string, string> = {
+  server: "state.server",
+  side_gateway: "state.side_gateway",
+  router: "state.router",
 };
 
+/** The chip keys the strip names, which are the API's own words. */
+const CHIP_NETWORK = "network";
+const CHIP_PROXY = "proxy";
+const CHIP_AI = "ai";
+const CHIP_DEVICES = "devices";
+
+/** What a chip shows when nothing has answered yet. */
+const CHIP_NOTHING = "—";
+
 export function TopBar() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const location = useLocation();
   const { frames, latestFrame, status } = useLiveStats();
   // The socket takes a moment to deliver its first frame. Reading the mode
@@ -69,10 +81,12 @@ export function TopBar() {
     <header className="top_bar">
       <div className="top_bar_page">
         <span className="top_bar_page_title">
-          {currentItem?.label ?? "Panel"}
+          {currentItem === undefined
+            ? t("ui.shell.page_fallback")
+            : t(currentItem.labelKey)}
         </span>
         <span className="top_bar_page_sub">
-          {currentItem?.description ?? ""}
+          {currentItem === undefined ? "" : t(currentItem.descriptionKey)}
         </span>
       </div>
 
@@ -83,38 +97,55 @@ export function TopBar() {
             isPulsing={status === "open"}
           />
           <span className="top_bar_chip_value">
-            {SOCKET_LABELS[status] ?? status}
+            {SOCKET_KEYS[status] === undefined
+              ? status
+              : t(SOCKET_KEYS[status])}
           </span>
         </span>
 
         <span className="top_bar_chip">
-          <span className="top_bar_chip_key">network</span>
-          <span className="top_bar_chip_value">
-            {mode === null ? "—" : (MODE_LABELS[mode] ?? mode)}
-          </span>
+          <span className="top_bar_chip_key">{CHIP_NETWORK}</span>
+          <span className="top_bar_chip_value">{describeMode(mode)}</span>
         </span>
 
         <span className={`top_bar_chip top_bar_chip--${proxy.tone}`}>
-          <span className="top_bar_chip_key">proxy</span>
+          <span className="top_bar_chip_key">{CHIP_PROXY}</span>
           <span className="top_bar_chip_value">{proxy.label}</span>
         </span>
 
         <span className="top_bar_chip">
-          <span className="top_bar_chip_key">ai</span>
+          <span className="top_bar_chip_key">{CHIP_AI}</span>
           <span className="top_bar_chip_value">{describeAi(ai.data)}</span>
         </span>
 
         <span className="top_bar_chip">
-          <span className="top_bar_chip_key">devices</span>
+          <span className="top_bar_chip_key">{CHIP_DEVICES}</span>
           <span className="top_bar_chip_value">
-            {agentCount === null
-              ? "—"
-              : `${agentCount} agent${agentCount === 1 ? "" : "s"}`}
+            {describeAgents(agentCount)}
           </span>
         </span>
       </div>
     </header>
   );
+}
+
+/** What the network chip says: the mode this machine is in. */
+function describeMode(mode: string | null): string {
+  if (mode === null) {
+    return CHIP_NOTHING;
+  }
+  const key = MODE_KEYS[mode];
+  return key === undefined ? mode : t(key);
+}
+
+/** What the devices chip says: how many machines report in. */
+function describeAgents(count: number | null): string {
+  if (count === null) {
+    return CHIP_NOTHING;
+  }
+  return count === 1
+    ? t("ui.shell.agents_one")
+    : t("ui.shell.agents", { count });
 }
 
 /**
@@ -126,18 +157,20 @@ export function TopBar() {
  */
 function describeAi(status: CliproxyApiStatusView | null): string {
   if (status === null) {
-    return "—";
+    return CHIP_NOTHING;
   }
   if (!status.is_installed) {
-    return "not installed";
+    return t("state.not_installed");
   }
   if (!status.is_active) {
-    return "stopped";
+    return t("state.stopped");
   }
   const tokensToday = status.tokens_today ?? 0;
   if (tokensToday > 0) {
-    return `${formatCompact(tokensToday)} tokens today`;
+    return t("ui.shell.ai_tokens_today", { count: formatCompact(tokensToday) });
   }
   const count = status.enabled_provider_count;
-  return `${count} provider${count === 1 ? "" : "s"}`;
+  return count === 1
+    ? t("ui.shell.ai_providers_one")
+    : t("ui.shell.ai_providers", { count });
 }

@@ -5,6 +5,7 @@ import { Icon } from "./icon";
 import { PasswordInput } from "./password_input";
 import { StatusDot } from "./status_dot";
 import { ApiError, apiGet, apiPost, describeError } from "../api_client";
+import { t, useLanguage } from "../i18n";
 import { stripAnsi } from "../strip_ansi";
 import { useConfirm } from "../use_confirm";
 import { useTaskStream } from "../use_task_stream";
@@ -29,81 +30,40 @@ import "./remote_desktop_panel.css";
  * report.
  */
 
-const WORDING = {
-  title: "Remote desktop",
-  reading: "Reading status…",
-  idLabel: "ID",
-  copyId: "Copy ID",
-  noId: "—",
-  notReached: "not reached",
-  notInstalled: "not installed",
-  running: "running",
-  stopped: "stopped",
-  noIdYet: "No id yet; assigned once the device connects to {product}.",
-  setPassword: "Set unattended password", // scan: allow
-  set: "Set",
-  passwordOnDevice: "Set the password in the {product} app on the device.", // scan: allow
-  notAsked:
-    "This device could not be asked, so what it is running is unknown: {reason}",
-  notOnDevice: "Not on this device.",
-};
+/** The label shown where a product reports no id. */
+const NO_ID = "—";
 
-const UNREACHABLE_WORDS: Record<string, string> = {
-  agent_offline: "the agent is offline",
-  stream_unknown: "this agent cannot answer",
-  agent_never_reported: "the agent did not answer in time",
-};
-
+/** The products' own names, which are the same in every language. */
 const PRODUCT_LABELS: Record<string, string> = {
   anydesk: "AnyDesk",
   teamviewer: "TeamViewer",
 };
 
-const RUSTDESK_WORDING = {
-  name: "RustDesk",
-  shared: "shared",
-  notSharing: "not sharing",
-  idLabel: "ID",
-  copyId: "Copy ID",
-  sharedBy: "Shared by {account}.",
-  oneViewer: "1 viewer",
-  viewers: "{count} viewers",
-  directPort: "Direct port {port}",
-  startHint: "Run sudo nagent rdp start on the machine to share its desktop.",
-  notReported: "Not reported by this machine.",
-  notInPackage: "Not in this agent's package.",
-  reset: "Reset seat password",
-  resetTitle: "Reset the seat password",
-  resetBody:
-    "The machine is given a new password at once. Every viewer connected now must connect again.",
-  resetConfirm: "Reset",
+const RUSTDESK_NAME = "RustDesk";
+
+/** A product that could not be asked, worded by the reason it gave. */
+const UNREACHABLE_KEYS: Record<string, string> = {
+  agent_offline: "ui.remote_desktop.not_asked_agent_offline",
+  stream_unknown: "ui.remote_desktop.not_asked_stream_unknown",
+  agent_never_reported: "ui.remote_desktop.not_asked_agent_never_reported",
 };
 
-// The {code, params} a reset is refused with, worded.
-const RESET_ERROR_WORDING: Record<string, string> = {
-  agent_offline: "The machine is not answering, so its password is unchanged.",
-};
-
-const ATTENTION_WORDS: Record<string, string> = {
-  rdp_nobody_seated: "Nobody is signed in at that machine's screen.",
-  rdp_screen_not_allowed:
-    "Allow screen sharing once at that machine's own screen.",
+const ATTENTION_KEYS: Record<string, string> = {
+  rdp_nobody_seated: "code.rdp_nobody_seated",
+  rdp_screen_not_allowed: "code.rdp_screen_not_allowed",
 };
 
 /** One count worded, so no sentence is assembled from fragments. */
 function viewerWords(count: number): string {
   return count === 1
-    ? RUSTDESK_WORDING.oneViewer
-    : RUSTDESK_WORDING.viewers.replace("{count}", String(count));
+    ? t("ui.remote_desktop.viewer_one")
+    : t("ui.remote_desktop.viewers", { count });
 }
 
 /** Wording for a refused reset, with the coded refusals spelled out. */
 function describeResetError(cause: unknown): string {
-  if (cause instanceof ApiError) {
-    const wording = RESET_ERROR_WORDING[cause.code];
-    if (wording !== undefined) {
-      return wording;
-    }
+  if (cause instanceof ApiError && cause.code === "agent_offline") {
+    return t("ui.remote_desktop.reset_agent_offline");
   }
   return describeError(cause);
 }
@@ -123,6 +83,8 @@ export function RemoteDesktopPanel({
   device,
   moduleRevision,
 }: RemoteDesktopPanelProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const confirm = useConfirm();
   const [status, setStatus] = useState<RemoteDesktopView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -169,9 +131,9 @@ export function RemoteDesktopPanel({
 
   const resetSeatPassword = () => {
     confirm.ask({
-      title: RUSTDESK_WORDING.resetTitle,
-      body: RUSTDESK_WORDING.resetBody,
-      confirmLabel: RUSTDESK_WORDING.resetConfirm,
+      title: t("ui.remote_desktop.reset_title"),
+      body: t("ui.remote_desktop.reset_body"),
+      confirmLabel: t("ui.remote_desktop.reset_confirm"),
       onConfirm: () => {
         setError(null);
         void apiPost(`/devices/${device.mac_address}/rdp/seat_password`).catch(
@@ -183,10 +145,10 @@ export function RemoteDesktopPanel({
 
   return (
     <div className="remote_desktop">
-      <div className="section_label">{WORDING.title}</div>
+      <div className="section_label">{t("ui.remote_desktop.title")}</div>
       {error !== null && <span className="field_error">{error}</span>}
       {status === null ? (
-        <span className="field_hint">{WORDING.reading}</span>
+        <span className="field_hint">{t("ui.remote_desktop.reading")}</span>
       ) : (
         <div className="remote_desktop_grid">
           <RustdeskCard
@@ -247,12 +209,12 @@ function RustdeskCard({
     return (
       <div className="remote_desktop_card">
         <div className="remote_desktop_card_head">
-          <span className="remote_desktop_card_name">
-            {RUSTDESK_WORDING.name}
-          </span>
-          <StatusDot tone="idle" label={RUSTDESK_WORDING.notSharing} />
+          <span className="remote_desktop_card_name">{RUSTDESK_NAME}</span>
+          <StatusDot tone="idle" label={t("state.not_sharing")} />
         </div>
-        <span className="field_hint">{RUSTDESK_WORDING.notInPackage}</span>
+        <span className="field_hint">
+          {t("ui.remote_desktop.not_in_package")}
+        </span>
       </div>
     );
   }
@@ -260,54 +222,50 @@ function RustdeskCard({
   return (
     <div className="remote_desktop_card">
       <div className="remote_desktop_card_head">
-        <span className="remote_desktop_card_name">
-          {RUSTDESK_WORDING.name}
-        </span>
+        <span className="remote_desktop_card_name">{RUSTDESK_NAME}</span>
         <StatusDot
           tone={isShared ? "ok" : "idle"}
-          label={
-            isShared ? RUSTDESK_WORDING.shared : RUSTDESK_WORDING.notSharing
-          }
+          label={t(isShared ? "state.shared" : "state.not_sharing")}
         />
       </div>
 
       {isReported ? (
         <div className="remote_desktop_id_row">
           <span className="remote_desktop_id_label">
-            {RUSTDESK_WORDING.idLabel}
+            {t("ui.remote_desktop.id_label")}
           </span>
           <span className="remote_desktop_id">{sessionId}</span>
           <button
             type="button"
             className="button button--ghost button--small"
             onClick={() => void copyText(sessionId)}
-            title={RUSTDESK_WORDING.copyId}
+            title={t("ui.remote_desktop.copy_id")}
           >
             <Icon name="link" size={12} />
           </button>
         </div>
       ) : (
-        <span className="field_hint">{RUSTDESK_WORDING.notReported}</span>
+        <span className="field_hint">
+          {t("ui.remote_desktop.not_reported")}
+        </span>
       )}
 
       {isShared && rdp !== null ? (
         <>
           <span className="muted">
-            {RUSTDESK_WORDING.sharedBy.replace("{account}", rdp.account)}{" "}
+            {t("ui.remote_desktop.shared_by", { account: rdp.account })}{" "}
             {viewerWords(rdp.connected_count)}
           </span>
           <span className="field_hint">
-            {RUSTDESK_WORDING.directPort.replace("{port}", String(rdp.port))}
+            {t("ui.remote_desktop.direct_port", { port: rdp.port })}
           </span>
         </>
       ) : (
-        <span className="field_hint">{RUSTDESK_WORDING.startHint}</span>
+        <span className="field_hint">{t("ui.remote_desktop.start_hint")}</span>
       )}
 
       {attention.length > 0 && (
-        <span className="field_error">
-          {ATTENTION_WORDS[attention] ?? attention}
-        </span>
+        <span className="field_error">{describeAttention(attention)}</span>
       )}
 
       <button
@@ -316,7 +274,7 @@ function RustdeskCard({
         disabled={!isShared}
         onClick={onResetSeatPassword}
       >
-        {RUSTDESK_WORDING.reset}
+        {t("ui.remote_desktop.reset")}
       </button>
     </div>
   );
@@ -350,12 +308,12 @@ function ProductCard({ status, macAddress, isBusy, onRun }: ProductCardProps) {
           }
           label={
             status.unreachable.length > 0
-              ? WORDING.notReached
+              ? t("state.not_reached")
               : !status.is_installed
-                ? WORDING.notInstalled
+                ? t("state.not_installed")
                 : status.is_running
-                  ? WORDING.running
-                  : WORDING.stopped
+                  ? t("state.running")
+                  : t("state.stopped")
           }
         />
       </div>
@@ -363,16 +321,18 @@ function ProductCard({ status, macAddress, isBusy, onRun }: ProductCardProps) {
       {status.is_installed ? (
         <>
           <div className="remote_desktop_id_row">
-            <span className="remote_desktop_id_label">{WORDING.idLabel}</span>
+            <span className="remote_desktop_id_label">
+              {t("ui.remote_desktop.id_label")}
+            </span>
             <span className="remote_desktop_id">
-              {status.session_id ?? WORDING.noId}
+              {status.session_id ?? NO_ID}
             </span>
             {status.session_id !== null && (
               <button
                 type="button"
                 className="button button--ghost button--small"
                 onClick={() => void copyText(status.session_id ?? "")}
-                title={WORDING.copyId}
+                title={t("ui.remote_desktop.copy_id")}
               >
                 <Icon name="link" size={12} />
               </button>
@@ -380,14 +340,14 @@ function ProductCard({ status, macAddress, isBusy, onRun }: ProductCardProps) {
           </div>
           {status.session_id === null && (
             <span className="field_hint">
-              {WORDING.noIdYet.replace("{product}", label)}
+              {t("ui.remote_desktop.no_id_yet", { product: label })}
             </span>
           )}
           {status.can_set_password ? (
             <div className="remote_desktop_pw">
               <PasswordInput
                 value={password}
-                placeholder={WORDING.setPassword}
+                placeholder={t("ui.remote_desktop.set_password")}
                 onChange={setPassword}
               />
               <button
@@ -396,25 +356,38 @@ function ProductCard({ status, macAddress, isBusy, onRun }: ProductCardProps) {
                 disabled={isBusy || password.length === 0}
                 onClick={() => onRun(`${base}/password`, { password })}
               >
-                {WORDING.set}
+                {t("ui.remote_desktop.set")}
               </button>
             </div>
           ) : (
             <span className="field_hint">
-              {WORDING.passwordOnDevice.replace("{product}", label)}
+              {t("ui.remote_desktop.password_on_device", { product: label })}
             </span>
           )}
         </>
       ) : status.unreachable.length > 0 ? (
         <span className="field_hint">
-          {WORDING.notAsked.replace(
-            "{reason}",
-            UNREACHABLE_WORDS[status.unreachable] ?? status.unreachable,
-          )}
+          {describeUnreachable(status.unreachable)}
         </span>
       ) : (
-        <span className="field_hint">{WORDING.notOnDevice}</span>
+        <span className="field_hint">
+          {t("ui.remote_desktop.not_on_device")}
+        </span>
       )}
     </div>
   );
+}
+
+/** Why a product could not be asked, or the bare reason where none is worded. */
+function describeUnreachable(reason: string): string {
+  const key = UNREACHABLE_KEYS[reason];
+  return key === undefined
+    ? t("ui.remote_desktop.not_asked", { reason })
+    : t(key);
+}
+
+/** What the machine needs a person to do at its own screen. */
+function describeAttention(attention: string): string {
+  const key = ATTENTION_KEYS[attention];
+  return key === undefined ? attention : t(key);
 }

@@ -9,6 +9,7 @@ because they hold, on purpose, exactly what the scanner is built to find.
 from neutrino_hub.utils.secret_scan import (
     SecretScanner,
     is_scannable,
+    is_catalog_line,
     is_worth_reporting,
     shannon_entropy,
 )
@@ -202,3 +203,23 @@ def test_a_mentioned_private_key_is_not_news_but_a_pasted_one_is():
 
 def test_a_long_unfamiliar_value_still_gets_through():
     assert is_worth_reporting(UNFAMILIAR_LINE) is True
+
+
+def test_a_catalog_label_about_a_password_is_prose_not_a_value():
+    line = '  "ui.login.password_label": "Panel password",'
+    assert is_catalog_line("hub/frontend/src/locales/en/login.json", line)
+    assert (
+        is_worth_reporting(line, path="hub/frontend/src/locales/en/login.json") is False
+    )
+    # The same shape outside a catalog, or a catalog value with no space and a
+    # credential's length, is still shown.
+    assert is_catalog_line("hub/neutrino_hub/data/examples/web.json", line) is False
+    long_value = '  "ui.login.password_label": "sk-ant-a-very-long-token-value-here",'  # scan: allow
+    assert (
+        is_catalog_line("hub/frontend/src/locales/en/login.json", long_value) is False
+    )
+
+
+def test_a_chinese_catalog_value_is_prose_without_a_space():
+    chinese = '  "ui.samba.password_failure": "密码未设置：{failures}",'
+    assert is_catalog_line("hub/frontend/src/locales/zh-CN/modules.json", chinese)

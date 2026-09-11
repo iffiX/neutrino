@@ -93,12 +93,18 @@ class InstallReporter:
         self._say(self._color("  " + "─" * max(len(text), 40), DIM))
         self._say()
 
-    def start(self, description: str) -> None:
+    def start(
+        self, description: str, code: str = "", params: dict | None = None
+    ) -> None:
         """Announce the next step.
 
         Args:
             description: What the step is about to do.
+            code: The step's name for a browser to word itself; the terminal
+                prints ``description`` either way.
+            params: The values that wording names.
         """
+        del code, params
         self._step_index += 1
         self._started_at = time.monotonic()
         counter = f"[{self._step_index}/{self._total_step_count}]"
@@ -197,16 +203,22 @@ class InstallSessionReporter(InstallReporter):
             log_path=log_path,
         )
         self._session = session
-        self._description = ""
+        self._code = ""
+        self._params: dict = {}
 
-    def start(self, description: str) -> None:
+    def start(
+        self, description: str, code: str = "", params: dict | None = None
+    ) -> None:
         """Announce the next step to both.
 
         Args:
             description: What the step is about to do.
+            code: The step's name, which is what the browser words.
+            params: The values that wording names.
         """
-        self._description = description
-        self._session.step(description, WEB_SETUP_STEP_RUNNING)
+        self._code = code or description
+        self._params = dict(params or {})
+        self._session.step(self._code, WEB_SETUP_STEP_RUNNING, params=self._params)
         super().start(description)
 
     def done(self, note: str = "") -> None:
@@ -216,7 +228,7 @@ class InstallSessionReporter(InstallReporter):
             note: Short detail, for example a version number or what was
                 already in place.
         """
-        self._session.step(self._description, WEB_SETUP_STEP_DONE, note)
+        self._session.step(self._code, WEB_SETUP_STEP_DONE, note, params=self._params)
         super().done(note)
 
     def failed(self, message: str) -> None:
@@ -225,7 +237,9 @@ class InstallSessionReporter(InstallReporter):
         Args:
             message: The error text to show under the step.
         """
-        self._session.step(self._description, WEB_SETUP_STEP_FAILED, message)
+        self._session.step(
+            self._code, WEB_SETUP_STEP_FAILED, message, params=self._params
+        )
         super().failed(message)
 
     def blank(self) -> None:

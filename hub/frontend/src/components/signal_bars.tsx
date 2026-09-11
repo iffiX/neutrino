@@ -1,3 +1,5 @@
+import { t, useLanguage } from "../i18n";
+
 import "./signal_bars.css";
 
 /**
@@ -15,9 +17,14 @@ interface SignalBarsProps {
 }
 
 export function SignalBars({ percent, isLabelled = false }: SignalBarsProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const filled = Math.max(1, Math.ceil((clamp(percent) / 100) * BAR_COUNT));
   return (
-    <span className="signal_bars" title={`${clamp(percent)}% signal`}>
+    <span
+      className="signal_bars"
+      title={t("ui.signal_bars.title", { percent: clamp(percent) })}
+    >
       <span className={`signal_bars_stack signal_bars_stack--${tone(percent)}`}>
         {Array.from({ length: BAR_COUNT }, (_, index) => (
           <span

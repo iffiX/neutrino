@@ -1,0 +1,16 @@
+{
+  "code.agent_offline": "agent 已离线。",
+  "code.language_unknown": "面板没有这种语言。",
+  "state.connecting": "连接中",
+  "state.disabled": "已停用",
+  "state.installed": "已安装",
+  "state.live": "实时",
+  "state.no_address": "无地址",
+  "state.not_used": "未使用",
+  "state.nothing": "无",
+  "state.running": "运行中",
+  "state.stopped": "已停止",
+  "state.unused": "未使用",
+  "state.wifi": "无线",
+  "state.wired": "有线"
+}

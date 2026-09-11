@@ -1,5 +1,6 @@
 import { ModuleStateBadge } from "./module_state_badge";
 import { StatusDot } from "./status_dot";
+import { t, useLanguage } from "../i18n";
 
 import "./device_chip_strip.css";
 
@@ -15,10 +16,6 @@ import "./device_chip_strip.css";
  * these chips is its agent's report, and there is nothing to act on until it
  * answers.
  */
-
-const WORDING = {
-  offline: "offline",
-};
 
 export interface DeviceChip {
   key: string;
@@ -45,11 +42,13 @@ export function DeviceChipStrip({
   onSelect,
   isMulti,
 }: DeviceChipStripProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   return (
     <div
       className="device_chip_strip"
       role={isMulti ? "group" : "tablist"}
-      aria-label="Devices"
+      aria-label={t("ui.device_chip_strip.label")}
     >
       {chips.map((chip) => {
         const isOn = isSelected(selected, chip.key);
@@ -76,7 +75,7 @@ export function DeviceChipStrip({
               )}
             </span>
             <span className="device_chip_host">
-              {chip.isOnline ? chip.hostname : WORDING.offline}
+              {chip.isOnline ? chip.hostname : t("state.offline")}
             </span>
           </button>
         );

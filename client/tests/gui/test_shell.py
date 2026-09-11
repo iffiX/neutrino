@@ -15,13 +15,15 @@ import neutrino_client.gui.tray_linux as tray_module
 import neutrino_client.gui.webkitgtk as webkitgtk
 import neutrino_client.gui.webview2 as webview2
 from neutrino_client.constants import (
+    CLIENT_DEFAULT_LANGUAGE,
     CLIENT_DESKTOP_NAME,
-    CLIENT_TRAY_OPEN_LABEL,
-    CLIENT_TRAY_QUIT_LABEL,
+    CLIENT_TRAY_OPEN_LABEL_KEY,
+    CLIENT_TRAY_QUIT_LABEL_KEY,
 )
 from neutrino_client.exceptions import GuiShellUnavailableError
 from neutrino_client.gui.bridge import GuiBridge
 from neutrino_client.gui.shell import open_shell_window
+from neutrino_client.words import word
 from tests.gui.test_bridge import FakeGuiChannel
 from tests.gui.test_tray_linux import FakeGtk
 
@@ -133,6 +135,7 @@ def test_each_platform_dispatches_to_its_own_shell(monkeypatch, os_name, module_
             "title": "Neutrino client",
             "html": "<html>",
             "bridge": "the bridge",
+            "language": CLIENT_DEFAULT_LANGUAGE,
             "icon_path": "/icons/x.png",
             "is_hidden": True,
             "on_quit": quit_it,
@@ -161,8 +164,10 @@ class FakeTrayIcon:
 
     made: list = []
 
-    def __init__(self, *, title, icon_path, on_open, on_quit):
+    def __init__(self, *, title, open_label, quit_label, icon_path, on_open, on_quit):
         self.title = title
+        self.open_label = open_label
+        self.quit_label = quit_label
         self.icon_path = icon_path
         self.on_open = on_open
         self.on_quit = on_quit
@@ -462,8 +467,8 @@ def test_the_linux_tray_opens_the_window_again_and_quits_the_client(monkeypatch)
     quitter.fire("activate")
 
     assert [item.label for item in window_menu(gtk).items] == [
-        CLIENT_TRAY_OPEN_LABEL,
-        CLIENT_TRAY_QUIT_LABEL,
+        word(CLIENT_DEFAULT_LANGUAGE, CLIENT_TRAY_OPEN_LABEL_KEY),
+        word(CLIENT_DEFAULT_LANGUAGE, CLIENT_TRAY_QUIT_LABEL_KEY),
     ]
     assert (window.shows, window.presents) == (1, 1)
     assert stopped == [1]

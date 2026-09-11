@@ -161,6 +161,27 @@ def test_quit_answers_first_and_shuts_the_resident_down(quit_without_ending):
     assert quit_without_ending == [1]
 
 
+def test_the_state_names_the_language_every_surface_words_itself_in():
+    session = FakeSession()
+    session.language_value = "zh-CN"
+
+    _status, state = routes.dispatch("GET", "/api/state", None, session)
+
+    assert state["language"] == "zh-CN"
+
+
+def test_picking_a_language_keeps_it_and_answers_the_new_state():
+    session = FakeSession()
+
+    status, state = routes.dispatch(
+        "POST", "/api/language", {"language": "zh-CN"}, session
+    )
+
+    assert status == 200
+    assert session.language_value == "zh-CN"
+    assert state["language"] == "zh-CN"
+
+
 def test_unknown_routes_and_methods_answer_a_code():
     session = FakeSession()
 

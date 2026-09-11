@@ -8,6 +8,7 @@ import { InstallConsentModal } from "./install_consent_modal";
 import { Spinner } from "./spinner";
 import { TabStrip } from "./tab_strip";
 import { ApiError, apiPut, describeError } from "../api_client";
+import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import {
   HUB_EVENT_CONFIG,
@@ -39,24 +40,6 @@ import "./agent_service_page.css";
  * the module is not standing on yet keeps its tab and says where it stands.
  */
 
-const WORDING = {
-  enabledTitle: "Enabled devices",
-  enabledHint:
-    "Machines running the agent. Picking one installs {module} on it; " +
-    "clearing one removes it.",
-  enabledApply: "Apply devices",
-  enabledApplying: "Applying…",
-  noDevices: "No machines run the agent",
-  noDevicesHint: "Install the agent on a machine from the Devices page.",
-  noActive: "{module} is on no machine yet",
-  noActiveHint: "Pick a machine above and apply.",
-  deviceAbsent: "{module} is not on {device} yet.",
-  offline: "The agent is offline",
-  deviceFailed: "The last step on {device} failed.",
-  consentTitle: "Applying {name} changes what these machines run",
-  consentConfirm: "Apply devices",
-};
-
 // What moves this list: a machine coming or going, its report saying the
 // module now stands somewhere else, an install changing state, and the
 // written set of machines the module is asked for on.
@@ -77,37 +60,30 @@ const FAILED_STATE = "failed";
 const IN_FLIGHT_STATES = ["installing", "uninstalling"];
 
 // The word a machine's tab wears while the module is not standing on it.
-const TAB_STATE_WORDING: Record<string, string> = {
-  installing: "installing",
-  uninstalling: "uninstalling",
-  failed: "failed",
-  unsupported: "unavailable",
+const TAB_STATE_KEYS: Record<string, string> = {
+  installing: "ui.agent_service.tab_installing",
+  uninstalling: "ui.agent_service.tab_uninstalling",
+  failed: "ui.agent_service.tab_failed",
+  unsupported: "ui.agent_service.tab_unsupported",
 };
 
 // What a picked machine says in place of the module's panels, by its state.
-const DEVICE_STATE_WORDING: Record<string, string> = {
-  installing: "Installing {module} on {device}…",
-  uninstalling: "Removing {module} from {device}…",
-  unsupported: "{device} cannot run {module}.",
-};
-
-// What a refused apply says, from the code the API returned.
-const APPLY_ERROR_WORDING: Record<string, string> = {
-  agent_offline: "{device} is not answering, so nothing was changed on it.",
+const DEVICE_STATE_KEYS: Record<string, string> = {
+  installing: "ui.agent_service.device_installing",
+  uninstalling: "ui.agent_service.device_uninstalling",
+  unsupported: "ui.agent_service.device_unsupported",
 };
 
 // What a machine's own failure says beside its chip.
-const DEVICE_ERROR_WORDING: Record<string, string> = {
-  unsupported_platform: "{device} cannot run this module.",
-  no_platform_build: "There is no build of this module for {device}.",
-  install_failed: "The install on {device} failed.",
-  uninstall_failed: "The uninstall on {device} failed.",
-  install_unconfirmed:
-    "The install on {device} finished, but the software cannot be found.",
-  uninstall_unconfirmed:
-    "The uninstall on {device} finished, but the software is still there.",
-  agent_never_reported: "{device} never said how it went.",
-  hub_unreachable: "{device} could not reach the hub for the download.",
+const DEVICE_ERROR_KEYS: Record<string, string> = {
+  unsupported_platform: "ui.agent_service.device_unsupported_platform",
+  no_platform_build: "code.no_platform_build",
+  install_failed: "code.install_failed",
+  uninstall_failed: "code.uninstall_failed",
+  install_unconfirmed: "code.install_unconfirmed",
+  uninstall_unconfirmed: "code.uninstall_unconfirmed",
+  agent_never_reported: "code.agent_never_reported",
+  hub_unreachable: "code.hub_unreachable",
 };
 
 /** The machine a module's own panels are pointed at. */
@@ -132,6 +108,8 @@ export function AgentServicePage({
   moduleName,
   children,
 }: AgentServicePageProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const resource = useApiResource<ModuleDevicesView>(`/${moduleName}`, {
     invalidateOn: INVALIDATE_ON,
   });
@@ -239,7 +217,7 @@ export function AgentServicePage({
         className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
       >
         <div className="settings_group_title">
-          <h2>{WORDING.enabledTitle}</h2>
+          <h2>{t("ui.agent_service.enabled_title")}</h2>
           <div className="agent_service_actions">
             <button
               type="button"
@@ -248,12 +226,14 @@ export function AgentServicePage({
               onClick={() => setIsConsentOpen(true)}
             >
               {isBusy ? <Spinner size={13} /> : <Icon name="check" size={14} />}
-              {isBusy ? WORDING.enabledApplying : WORDING.enabledApply}
+              {isBusy
+                ? t("ui.agent_service.applying")
+                : t("ui.agent_service.apply")}
             </button>
           </div>
         </div>
         <p className="field_hint">
-          {fill(WORDING.enabledHint, { module: moduleName })}
+          {t("ui.agent_service.enabled_hint", { module: moduleName })}
         </p>
         {applyError !== null && (
           <div className="notice notice--error">
@@ -263,8 +243,10 @@ export function AgentServicePage({
         )}
         {devices.length === 0 ? (
           <div className="placeholder">
-            <span>{WORDING.noDevices}</span>
-            <span className="faint">{WORDING.noDevicesHint}</span>
+            <span>{t("ui.agent_service.no_devices")}</span>
+            <span className="faint">
+              {t("ui.agent_service.no_devices_hint")}
+            </span>
           </div>
         ) : (
           <DeviceChipStrip
@@ -284,12 +266,12 @@ export function AgentServicePage({
 
       {enabledDevices.length === 0 ? (
         <div className="placeholder">
-          <span>{fill(WORDING.noActive, { module: moduleName })}</span>
-          <span className="faint">{WORDING.noActiveHint}</span>
+          <span>{t("ui.agent_service.no_active", { module: moduleName })}</span>
+          <span className="faint">{t("ui.agent_service.no_active_hint")}</span>
         </div>
       ) : (
         <TabStrip
-          label="Devices"
+          label={t("ui.agent_service.devices_label")}
           tabs={enabledDevices.map(toTab)}
           selected={selectedId}
           onSelect={setSelectedId}
@@ -311,7 +293,7 @@ export function AgentServicePage({
           {!selected.is_online && (
             <div className="notice notice--warn">
               <Icon name="alert" size={15} />
-              <div className="notice_body">{WORDING.offline}</div>
+              <div className="notice_body">{t("ui.agent_service.offline")}</div>
             </div>
           )}
           {children({
@@ -327,8 +309,8 @@ export function AgentServicePage({
         <InstallConsentModal
           name={moduleName}
           consents={consentsFor(addedDevices, removedDevices)}
-          title={WORDING.consentTitle}
-          confirmLabel={WORDING.consentConfirm}
+          titleKey="ui.agent_service.consent_title"
+          confirmKey="ui.agent_service.consent_confirm"
           onConfirm={() => void applyDevices()}
           onCancel={() => setIsConsentOpen(false)}
         />
@@ -339,10 +321,11 @@ export function AgentServicePage({
 
 /** One machine the module is asked for, as the tab strip wants it. */
 function toTab(device: ModuleDeviceView): StripTab {
+  const stateKey: string | undefined = TAB_STATE_KEYS[device.state];
   return {
     key: device.device_id,
     name: device.name,
-    tag: TAB_STATE_WORDING[device.state],
+    tag: stateKey === undefined ? undefined : t(stateKey),
     tagTone: IN_FLIGHT_STATES.includes(device.state) ? "warn" : "error",
     dotTone: device.is_online ? "ok" : "idle",
   };
@@ -390,10 +373,11 @@ function describeDeviceState(
     return describeDeviceCode(device);
   }
   if (!device.is_online) {
-    return WORDING.offline;
+    return t("ui.agent_service.offline");
   }
-  const wording = DEVICE_STATE_WORDING[device.state] ?? WORDING.deviceAbsent;
-  return fill(wording, { module: moduleName, device: device.name });
+  const key =
+    DEVICE_STATE_KEYS[device.state] ?? "ui.agent_service.device_absent";
+  return t(key, { module: moduleName, device: device.name });
 }
 
 /** A refused apply, worded from the code and the device it names. */
@@ -404,36 +388,28 @@ function describeApplyError(
   if (!(cause instanceof ApiError)) {
     return describeError(cause);
   }
-  const wording = APPLY_ERROR_WORDING[cause.code];
-  if (wording === undefined) {
+  if (cause.code !== "agent_offline") {
     return describeError(cause);
   }
   const detail = cause.detail as { params?: Record<string, unknown> } | null;
   const deviceId = detail?.params?.device_id;
   const named = devices.find((device) => device.device_id === deviceId);
-  return fill(wording, { device: named?.name ?? String(deviceId ?? "") });
+  return t("ui.agent_service.apply_agent_offline", {
+    device: named?.name ?? String(deviceId ?? ""),
+  });
 }
 
 /** One machine's own failure, worded from what its agent reported. */
 function describeDeviceCode(device: ModuleDeviceView): string {
-  const wording = DEVICE_ERROR_WORDING[device.code];
-  if (wording !== undefined) {
-    return fill(wording, { device: device.name });
+  const key = DEVICE_ERROR_KEYS[device.code];
+  if (key !== undefined) {
+    return t(key, { device: device.name });
   }
   if (device.code === "") {
-    return fill(WORDING.deviceFailed, { device: device.name });
+    return t("ui.agent_service.device_failed", { device: device.name });
   }
-  return `${device.name}: ${device.code}`;
-}
-
-/** Put values into a wording constant, by name. */
-function fill(
-  wording: string,
-  values: Record<string, string | number>,
-): string {
-  let filled = wording;
-  for (const [name, value] of Object.entries(values)) {
-    filled = filled.replace(`{${name}}`, String(value));
-  }
-  return filled;
+  return t("ui.agent_service.device_code", {
+    device: device.name,
+    code: device.code,
+  });
 }

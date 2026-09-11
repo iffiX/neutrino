@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ApplyBar } from "./apply_bar";
 import { Icon } from "./icon";
 import { apiPost, apiPut, describeError } from "../api_client";
+import { t, useLanguage } from "../i18n";
 import type { ApplyResult, ProxySettings, SocksPort } from "../api_types";
 
 import "./socks_ports_panel.css";
@@ -34,6 +35,8 @@ interface SocksPortsPanelProps {
 }
 
 export function SocksPortsPanel({ applied, onApplied }: SocksPortsPanelProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [ports, setPorts] = useState<SocksPort[]>(applied.socks_ports);
   const [draftPort, setDraftPort] = useState("");
   const [isBusy, setIsBusy] = useState(false);
@@ -87,12 +90,9 @@ export function SocksPortsPanel({ applied, onApplied }: SocksPortsPanelProps) {
       className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
     >
       <div className="settings_group_title">
-        <h2>Ports</h2>
+        <h2>{t("ui.proxy.ports_title")}</h2>
       </div>
-      <p className="field_hint">
-        SOCKS5 listeners, on every exposed interface. Each one either leaves
-        straight out the uplink or goes out through the exit nodes.
-      </p>
+      <p className="field_hint">{t("ui.proxy.ports_hint")}</p>
 
       {ports.length > 0 && (
         <ul className="socks_rows">
@@ -106,7 +106,7 @@ export function SocksPortsPanel({ applied, onApplied }: SocksPortsPanelProps) {
                   aria-pressed={!entry.is_proxied}
                   onClick={() => setPorts(retarget(ports, index, false))}
                 >
-                  Direct
+                  {t("ui.proxy.port_direct")}
                 </button>
                 <button
                   type="button"
@@ -114,18 +114,18 @@ export function SocksPortsPanel({ applied, onApplied }: SocksPortsPanelProps) {
                   aria-pressed={entry.is_proxied}
                   onClick={() => setPorts(retarget(ports, index, true))}
                 >
-                  Exit node
+                  {t("ui.proxy.port_exit")}
                 </button>
               </div>
               <span className="socks_row_note">
                 {entry.is_proxied
-                  ? "Split the way forwarded traffic is."
-                  : "Appears to come from this network."}
+                  ? t("ui.proxy.port_exit_note")
+                  : t("ui.proxy.port_direct_note")}
               </span>
               <button
                 type="button"
                 className="button button--ghost button--small"
-                aria-label={`Remove port ${entry.port}`}
+                aria-label={t("ui.proxy.port_remove", { port: entry.port })}
                 onClick={() => setPorts(ports.filter((_, at) => at !== index))}
               >
                 <Icon name="close" size={13} />
@@ -139,7 +139,7 @@ export function SocksPortsPanel({ applied, onApplied }: SocksPortsPanelProps) {
         <input
           className="input socks_add_port"
           value={draftPort}
-          placeholder="port"
+          placeholder={t("ui.proxy.port_placeholder")}
           inputMode="numeric"
           onChange={(event) => setDraftPort(event.target.value)}
           onKeyDown={(event) => {
@@ -156,7 +156,7 @@ export function SocksPortsPanel({ applied, onApplied }: SocksPortsPanelProps) {
           onClick={add}
         >
           <Icon name="plus" size={13} />
-          Add
+          {t("ui.proxy.port_add")}
         </button>
         {draftPort.length > 0 && problem !== null && (
           <span className="field_error">{problem}</span>
@@ -166,9 +166,9 @@ export function SocksPortsPanel({ applied, onApplied }: SocksPortsPanelProps) {
       <ApplyBar
         isDirty={isDirty}
         isBusy={isBusy}
-        label="Apply ports"
-        hint="Rewrites the xray inbounds and reloads the proxy."
-        warning="Restarts the proxy; connections through it drop."
+        label={t("ui.proxy.apply_ports")}
+        hint={t("ui.proxy.apply_ports_hint")}
+        warning={t("ui.proxy.warning_restart")}
         error={error}
         notice={notice}
         onReset={() => setPorts(applied.socks_ports)}
@@ -195,10 +195,10 @@ function validate(draft: string, ports: SocksPort[]): string | null {
   }
   const port = Number(draft);
   if (!Number.isInteger(port) || port < PORT_MIN || port > PORT_MAX) {
-    return `A port is ${PORT_MIN} to ${PORT_MAX}.`;
+    return t("ui.proxy.port_range", { min: PORT_MIN, max: PORT_MAX });
   }
   if (ports.some((entry) => entry.port === port)) {
-    return `Port ${port} is already listening.`;
+    return t("ui.proxy.port_taken", { port });
   }
   return null;
 }

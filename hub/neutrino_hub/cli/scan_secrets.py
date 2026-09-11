@@ -221,7 +221,9 @@ def _run_detect_secrets(paths: list) -> list:
         for entry in entries:
             number = entry.get("line_number", 0)
             line = _read_line(path, number)
-            if not is_worth_reporting(line, following=_read_line(path, number + 1)):
+            if not is_worth_reporting(
+                line, following=_read_line(path, number + 1), path=path
+            ):
                 continue
             findings.append(
                 SecretFinding(
@@ -274,7 +276,9 @@ def _run_gitleaks(paths: list) -> list:
             continue
         number = entry.get("StartLine", 0)
         line = _read_line(path, number)
-        if not is_worth_reporting(line, following=_read_line(path, number + 1)):
+        if not is_worth_reporting(
+            line, following=_read_line(path, number + 1), path=path
+        ):
             continue
         findings.append(
             SecretFinding(

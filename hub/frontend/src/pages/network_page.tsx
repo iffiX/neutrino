@@ -18,6 +18,7 @@ import { ToggleSwitch } from "../components/toggle_switch";
 import { UpstreamGatewayPanel } from "../components/upstream_gateway_panel";
 import { WifiScanPanel } from "../components/wifi_scan_panel";
 import { apiDelete, apiPut, describeError } from "../api_client";
+import { t, useLanguage } from "../i18n";
 import {
   isInterfaceDraftValid,
   validateInterface,
@@ -74,29 +75,57 @@ const NETWORK_INVALIDATE_ON = [
   { type: HUB_EVENT_CONFIG },
 ];
 
-const INTENT_OPTIONS: { value: UplinkIntent; label: string; hint: string }[] = [
+interface IntentOption {
+  value: UplinkIntent;
+  labelKey: string;
+  hintKey: string;
+}
+
+const INTENT_OPTIONS: IntentOption[] = [
   {
     value: "auto",
-    label: "Automatic",
-    hint: "Let the gateway place this uplink.",
+    labelKey: "ui.network.intent_auto",
+    hintKey: "ui.network.intent_auto_hint",
   },
   {
     value: "primary",
-    label: "Prefer this one",
-    hint: "Pin it ahead of the ranking.",
+    labelKey: "ui.network.intent_primary",
+    hintKey: "ui.network.intent_primary_hint",
   },
   {
     value: "backup_only",
-    label: "Backup only",
-    hint: "Use only when no other uplink is left.",
+    labelKey: "ui.network.intent_backup",
+    hintKey: "ui.network.intent_backup_hint",
   },
 ];
 
-const ROLE_OPTIONS: { value: InterfaceRole; label: string; hint: string }[] = [
-  { value: "wan", label: "WAN", hint: "An uplink to the internet" },
-  { value: "lan", label: "LAN", hint: "A network the gateway serves" },
-  { value: "split", label: "Split", hint: "A trunk sliced into VLANs" },
-  { value: "disabled", label: "Disabled", hint: "Left alone" },
+interface RoleOption {
+  value: InterfaceRole;
+  labelKey: string;
+  hintKey: string;
+}
+
+const ROLE_OPTIONS: RoleOption[] = [
+  {
+    value: "wan",
+    labelKey: "ui.network.role_wan",
+    hintKey: "ui.network.role_wan_hint",
+  },
+  {
+    value: "lan",
+    labelKey: "ui.network.role_lan",
+    hintKey: "ui.network.role_lan_hint",
+  },
+  {
+    value: "split",
+    labelKey: "ui.network.role_split",
+    hintKey: "ui.network.role_split_hint",
+  },
+  {
+    value: "disabled",
+    labelKey: "ui.network.role_disabled",
+    hintKey: "ui.network.role_disabled_hint",
+  },
 ];
 
 // What each kind of port is drawn as. A modem is the way out of a building
@@ -160,6 +189,8 @@ function interfacePayload(
 }
 
 export function NetworkPage() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const network = useApiResource<NetworkView>("/network", {
     invalidateOn: NETWORK_INVALIDATE_ON,
   });
@@ -377,8 +408,10 @@ export function NetworkPage() {
       network.setData(view);
       setNotice(
         isAddressChanging
-          ? `Applied. Reopen the panel at ${willBeLan ? `http://${draft.lan.address}` : "its new address"}.`
-          : `Applied to ${draft.name}.`,
+          ? willBeLan
+            ? t("ui.network.applied_reopen_at", { address: draft.lan.address })
+            : t("ui.network.applied_reopen_new")
+          : t("ui.network.applied_to", { name: draft.name }),
       );
     } catch (cause: unknown) {
       setSaveError(describeError(cause));
@@ -404,7 +437,7 @@ export function NetworkPage() {
     try {
       const view = await apiPut<NetworkView>("/network", options);
       network.setData(view);
-      setOptionsNotice("Applied to the whole gateway.");
+      setOptionsNotice(t("ui.network.applied_gateway"));
     } catch (cause: unknown) {
       setOptionsError(describeError(cause));
     } finally {
@@ -415,7 +448,7 @@ export function NetworkPage() {
   if (network.error !== null && network.data === null) {
     return (
       <div className="page">
-        <h1>Network</h1>
+        <h1>{t("ui.network.title")}</h1>
         <ErrorPanel message={network.error} onRetry={network.reload} />
       </div>
     );
@@ -425,7 +458,7 @@ export function NetworkPage() {
     <div className="page">
       <div className="page_header">
         <div className="page_title_row">
-          <h1>Network</h1>
+          <h1>{t("ui.network.title")}</h1>
         </div>
       </div>
 
@@ -445,7 +478,7 @@ export function NetworkPage() {
       {isRouting && network.data !== null && (
         <section className="settings_group network_topology">
           <div className="settings_group_title">
-            <h2>Topology</h2>
+            <h2>{t("ui.network.topology_title")}</h2>
           </div>
           <NetworkDiagram
             network={network.data}
@@ -466,7 +499,7 @@ export function NetworkPage() {
 
       {isRouting && (
         <TabStrip
-          label="Interfaces"
+          label={t("ui.network.interfaces_label")}
           tabs={interfaces.map(toInterfaceTab)}
           selected={selectedName}
           onSelect={setSelectedName}
@@ -481,7 +514,9 @@ export function NetworkPage() {
 
               <div className="network_form">
                 <div className="network_section">
-                  <span className="section_label">Role</span>
+                  <span className="section_label">
+                    {t("ui.network.role_label")}
+                  </span>
                   <div className="network_roles">
                     {ROLE_OPTIONS.filter(
                       (option) =>
@@ -508,9 +543,13 @@ export function NetworkPage() {
                           title={
                             isBlocked
                               ? isModem
-                                ? `${selected.settings.name} is a modem: the carrier gives it one address and nothing to serve`
-                                : `${selected.settings.name} has no access-point mode`
-                              : option.hint
+                                ? t("ui.network.role_blocked_modem", {
+                                    name: selected.settings.name,
+                                  })
+                                : t("ui.network.role_blocked_no_ap", {
+                                    name: selected.settings.name,
+                                  })
+                              : t(option.hintKey)
                           }
                         >
                           <span className="network_role_label">
@@ -521,12 +560,12 @@ export function NetworkPage() {
                                 className="network_role_ban"
                               />
                             )}
-                            {option.label}
+                            {t(option.labelKey)}
                           </span>
                           <span className="network_role_hint">
                             {isBlocked
-                              ? "No access-point mode on this card."
-                              : option.hint}
+                              ? t("ui.network.role_blocked_hint")
+                              : t(option.hintKey)}
                           </span>
                         </button>
                       );
@@ -566,18 +605,18 @@ export function NetworkPage() {
                 )}
                 {draft.role === "disabled" && (
                   <p className="field_hint">
-                    {draft.name} is unconfigured; nothing to set.
+                    {t("ui.network.unconfigured_hint", { name: draft.name })}
                   </p>
                 )}
 
                 <ApplyBar
                   isDirty={isDirty && isValid}
                   isBusy={isSaving}
-                  label={`Apply to ${draft.name}`}
+                  label={t("ui.network.apply_interface", { name: draft.name })}
                   hint={
                     isValid
-                      ? "Reconfigures this interface, then reloads the firewall and DHCP."
-                      : "Fix the highlighted fields first."
+                      ? t("ui.network.apply_interface_hint")
+                      : t("ui.network.fix_fields")
                   }
                   warning={warning}
                   error={saveError}
@@ -606,7 +645,7 @@ export function NetworkPage() {
                   className={`settings_group ${isGlobalDirty ? "settings_group--dirty" : ""}`}
                 >
                   <div className="settings_group_title">
-                    <h2>Routing behavior</h2>
+                    <h2>{t("ui.network.routing_title")}</h2>
                   </div>
                   <ToggleSwitch
                     isOn={options.uplink_policy === "balance"}
@@ -616,22 +655,22 @@ export function NetworkPage() {
                         uplink_policy: isOn ? "balance" : "failover",
                       })
                     }
-                    label="Spread traffic across uplinks"
-                    description="Whether connections are spread across the separate upstream lines. Two ports onto one line still count as one, so this only does something with two real connections."
+                    label={t("ui.network.balance_label")}
+                    description={t("ui.network.balance_description")}
                   />
                   <ToggleSwitch
                     isOn={options.is_inter_lan_allowed}
                     onChange={(isOn) =>
                       setOptions({ ...options, is_inter_lan_allowed: isOn })
                     }
-                    label="Networks reach each other"
-                    description="Whether devices on one of the gateway's networks can reach devices on another. Every network reaches the internet and the overlay either way."
+                    label={t("ui.network.inter_lan_label")}
+                    description={t("ui.network.inter_lan_description")}
                   />
                   <ApplyBar
                     isDirty={isGlobalDirty}
                     isBusy={isSavingOptions}
-                    label="Apply routing behavior"
-                    hint="Reloads the firewall and rebuilds the uplink routes."
+                    label={t("ui.network.apply_routing")}
+                    hint={t("ui.network.apply_routing_hint")}
                     error={optionsError}
                     notice={optionsNotice}
                     onReset={() => setOptions(optionsOf(network.data!))}
@@ -711,10 +750,11 @@ function interfaceWarning({
   return interruptionWarning(
     dropped.length === 0
       ? null
-      : `${dropped.join(", ")} and the networks they serve are removed.`,
+      : t("ui.network.warning_vlans_removed", { names: dropped.join(", ") }),
     isServedAddressChanging(selected, draft)
-      ? `The address ${selected.settings.name} serves is reassigned and its ` +
-          "leases are reissued."
+      ? t("ui.network.warning_address_reassigned", {
+          name: selected.settings.name,
+        })
       : null,
   );
 }
@@ -748,21 +788,29 @@ function toInterfaceTab(entry: InterfaceView): StripTab {
 }
 
 function LinkSummary({ entry }: { entry: InterfaceView }) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const { settings, link } = entry;
   const rows: [string, string][] = [
     [
-      "Kind",
+      t("ui.network.row_kind"),
       settings.vlan === null
         ? link.kind
         : settings.vlan.id === null
-          ? `untagged on ${settings.vlan.parent}`
-          : `vlan ${settings.vlan.id} on ${settings.vlan.parent}`,
+          ? t("ui.network.kind_untagged", { parent: settings.vlan.parent })
+          : t("ui.network.kind_vlan", {
+              id: settings.vlan.id,
+              parent: settings.vlan.parent,
+            }),
     ],
-    ["Address", link.ipv4_address ?? "none"],
-    ["MAC", link.mac_address ?? "unknown"],
+    [t("ui.network.row_address"), link.ipv4_address ?? t("state.none")],
+    [t("ui.network.row_mac"), link.mac_address ?? t("state.unknown")],
   ];
   if (settings.role === "wan") {
-    rows.splice(2, 0, ["Gateway", link.gateway ?? "none"]);
+    rows.splice(2, 0, [
+      t("ui.network.row_gateway"),
+      link.gateway ?? t("state.none"),
+    ]);
   }
   return (
     <div className="network_link_summary">
@@ -770,7 +818,7 @@ function LinkSummary({ entry }: { entry: InterfaceView }) {
         <h2 className="mono">{settings.name}</h2>
         <StatusDot
           tone={link.is_up ? "ok" : "error"}
-          label={link.is_up ? "link up" : "link down"}
+          label={link.is_up ? t("state.link_up") : t("state.link_down")}
         />
         {link.ssid !== null && (
           <span className="badge badge--accent">{link.ssid}</span>
@@ -800,11 +848,15 @@ interface FieldsProps {
 }
 
 function WanFields({ draft, errors, isWifi, update, onJoined }: FieldsProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   return (
     <>
       {isWifi && (
         <div className="network_section">
-          <span className="section_label">Network to join</span>
+          <span className="section_label">
+            {t("ui.network.wifi_join_label")}
+          </span>
           <WifiScanPanel
             interfaceName={draft.name}
             joinedSsid={draft.wifi.ssid.length > 0 ? draft.wifi.ssid : null}
@@ -814,12 +866,8 @@ function WanFields({ draft, errors, isWifi, update, onJoined }: FieldsProps) {
       )}
 
       <div className="network_section">
-        <span className="section_label">Priority</span>
-        <p className="field_hint">
-          The gateway ranks the uplinks itself, from which of them share one
-          upstream line, which are wired, and what each negotiated. Say
-          something here only where it would get that wrong.
-        </p>
+        <span className="section_label">{t("ui.network.priority_label")}</span>
+        <p className="field_hint">{t("ui.network.priority_hint")}</p>
         <div className="network_choice_row">
           {INTENT_OPTIONS.map((option) => (
             <button
@@ -829,8 +877,8 @@ function WanFields({ draft, errors, isWifi, update, onJoined }: FieldsProps) {
               onClick={() => update((next) => (next.wan.intent = option.value))}
               aria-pressed={draft.wan.intent === option.value}
             >
-              <strong>{option.label}</strong>
-              <span>{option.hint}</span>
+              <strong>{t(option.labelKey)}</strong>
+              <span>{t(option.hintKey)}</span>
             </button>
           ))}
         </div>
@@ -838,7 +886,9 @@ function WanFields({ draft, errors, isWifi, update, onJoined }: FieldsProps) {
 
       {!isWifi && (
         <div className="network_section">
-          <span className="section_label">Addressing</span>
+          <span className="section_label">
+            {t("ui.network.addressing_label")}
+          </span>
           <div className="network_choice_row">
             <button
               type="button"
@@ -846,8 +896,8 @@ function WanFields({ draft, errors, isWifi, update, onJoined }: FieldsProps) {
               onClick={() => update((next) => (next.wan.method = "dhcp"))}
               aria-pressed={draft.wan.method === "dhcp"}
             >
-              <strong>DHCP</strong>
-              <span>Take an address from the upstream network.</span>
+              <strong>{t("ui.network.method_dhcp")}</strong>
+              <span>{t("ui.network.method_dhcp_hint")}</span>
             </button>
             <button
               type="button"
@@ -855,15 +905,15 @@ function WanFields({ draft, errors, isWifi, update, onJoined }: FieldsProps) {
               onClick={() => update((next) => (next.wan.method = "static"))}
               aria-pressed={draft.wan.method === "static"}
             >
-              <strong>Static</strong>
-              <span>Set the address and gateway by hand.</span>
+              <strong>{t("ui.network.method_static")}</strong>
+              <span>{t("ui.network.method_static_hint")}</span>
             </button>
           </div>
 
           {draft.wan.method === "static" && (
             <div className="field_grid">
               <Field
-                label="Address"
+                label={t("ui.network.field_address")}
                 value={draft.wan.address ?? ""}
                 error={errors.wan_address}
                 onChange={(value) =>
@@ -871,7 +921,7 @@ function WanFields({ draft, errors, isWifi, update, onJoined }: FieldsProps) {
                 }
               />
               <Field
-                label="Prefix length"
+                label={t("ui.network.field_prefix_len")}
                 value={String(draft.wan.prefix_len)}
                 error={errors.wan_prefix_len}
                 onChange={(value) =>
@@ -879,7 +929,7 @@ function WanFields({ draft, errors, isWifi, update, onJoined }: FieldsProps) {
                 }
               />
               <Field
-                label="Gateway"
+                label={t("ui.network.field_gateway")}
                 value={draft.wan.gateway ?? ""}
                 error={errors.wan_gateway}
                 onChange={(value) =>
@@ -891,10 +941,10 @@ function WanFields({ draft, errors, isWifi, update, onJoined }: FieldsProps) {
 
           {(draft.vlan === null || draft.vlan.id === null) && (
             <Field
-              label="Clone MAC"
+              label={t("ui.network.field_cloned_mac")}
               value={draft.wan.cloned_mac ?? ""}
               error={errors.wan_cloned_mac}
-              hint="Leave blank to keep the hardware address."
+              hint={t("ui.network.field_cloned_mac_hint")}
               placeholder="aa:bb:cc:dd:ee:ff"
               onChange={(value) =>
                 update(
@@ -911,14 +961,16 @@ function WanFields({ draft, errors, isWifi, update, onJoined }: FieldsProps) {
 }
 
 function LanFields({ draft, errors, isWifi, update }: FieldsProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   return (
     <>
       {isWifi && (
         <div className="network_section">
-          <span className="section_label">Access point</span>
+          <span className="section_label">{t("ui.network.ap_label")}</span>
           <div className="field_grid">
             <Field
-              label="Network name"
+              label={t("ui.network.field_ap_ssid")}
               value={draft.wifi.ap_ssid}
               error={errors.ap_ssid}
               onChange={(value) =>
@@ -926,22 +978,26 @@ function LanFields({ draft, errors, isWifi, update }: FieldsProps) {
               }
             />
             <label className="field">
-              <span className="field_label">Passphrase</span>
+              <span className="field_label">
+                {t("ui.network.field_ap_passphrase")}
+              </span>
               <PasswordInput
                 value={draft.wifi.ap_passphrase}
                 onChange={(value) =>
                   update((next) => (next.wifi.ap_passphrase = value))
                 }
-                placeholder="8 to 63 characters"
+                placeholder={t("ui.network.field_ap_passphrase_placeholder")}
               />
               {errors.ap_passphrase === undefined ? (
-                <span className="field_hint">WPA2 only.</span>
+                <span className="field_hint">
+                  {t("ui.network.field_ap_passphrase_hint")}
+                </span>
               ) : (
                 <span className="field_error">{errors.ap_passphrase}</span>
               )}
             </label>
             <label className="field">
-              <span className="field_label">Band</span>
+              <span className="field_label">{t("ui.network.field_band")}</span>
               <select
                 className="select"
                 value={draft.wifi.ap_band}
@@ -949,8 +1005,8 @@ function LanFields({ draft, errors, isWifi, update }: FieldsProps) {
                   update((next) => (next.wifi.ap_band = event.target.value))
                 }
               >
-                <option value="bg">2.4 GHz — further, slower</option>
-                <option value="a">5 GHz — faster, shorter range</option>
+                <option value="bg">{t("ui.network.band_bg")}</option>
+                <option value="a">{t("ui.network.band_a")}</option>
               </select>
             </label>
           </div>
@@ -958,17 +1014,19 @@ function LanFields({ draft, errors, isWifi, update }: FieldsProps) {
       )}
 
       <div className="network_section">
-        <span className="section_label">Addressing</span>
+        <span className="section_label">
+          {t("ui.network.addressing_label")}
+        </span>
         <div className="field_grid">
           <Field
-            label="Gateway address"
+            label={t("ui.network.field_lan_address")}
             value={draft.lan.address}
             error={errors.lan_address}
-            hint="Clients get this as their gateway and resolver."
+            hint={t("ui.network.field_lan_address_hint")}
             onChange={(value) => update((next) => (next.lan.address = value))}
           />
           <Field
-            label="Prefix length"
+            label={t("ui.network.field_prefix_len")}
             value={String(draft.lan.prefix_len)}
             error={errors.lan_prefix_len}
             onChange={(value) =>
@@ -979,21 +1037,21 @@ function LanFields({ draft, errors, isWifi, update }: FieldsProps) {
       </div>
 
       <div className="network_section">
-        <span className="section_label">DHCP</span>
+        <span className="section_label">{t("ui.network.dhcp_label")}</span>
         <div className="network_toggles">
           <ToggleSwitch
             isOn={draft.lan.is_dhcp_enabled}
             onChange={(isOn) =>
               update((next) => (next.lan.is_dhcp_enabled = isOn))
             }
-            label="Allocate address on this network"
-            description="Whether this network hands out addresses. The gateway answers DNS on it either way."
+            label={t("ui.network.dhcp_toggle")}
+            description={t("ui.network.dhcp_toggle_description")}
           />
         </div>
         {draft.lan.is_dhcp_enabled && (
           <div className="field_grid">
             <Field
-              label="Range start"
+              label={t("ui.network.field_range_start")}
               value={draft.lan.dhcp_range_start}
               error={errors.dhcp_range_start}
               onChange={(value) =>
@@ -1001,7 +1059,7 @@ function LanFields({ draft, errors, isWifi, update }: FieldsProps) {
               }
             />
             <Field
-              label="Range end"
+              label={t("ui.network.field_range_end")}
               value={draft.lan.dhcp_range_end}
               error={errors.dhcp_range_end}
               onChange={(value) =>
@@ -1009,7 +1067,7 @@ function LanFields({ draft, errors, isWifi, update }: FieldsProps) {
               }
             />
             <Field
-              label="Lease time"
+              label={t("ui.network.field_lease_time")}
               value={draft.lan.dhcp_lease_time}
               error={errors.dhcp_lease_time}
               onChange={(value) =>
@@ -1038,6 +1096,8 @@ function VlanSection({
   onChange,
   onOpen,
 }: VlanSectionProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [idText, setIdText] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -1055,11 +1115,13 @@ function VlanSection({
   const handleAdd = () => {
     const id = Number(idText.trim());
     if (!Number.isInteger(id) || id < VLAN_ID_MIN || id > VLAN_ID_MAX) {
-      setError(`The VLAN id must be ${VLAN_ID_MIN} to ${VLAN_ID_MAX}.`);
+      setError(
+        t("ui.network.vlan_id_range", { min: VLAN_ID_MIN, max: VLAN_ID_MAX }),
+      );
       return;
     }
     if (ids.includes(id)) {
-      setError(`VLAN ${id} is already on this trunk.`);
+      setError(t("ui.network.vlan_id_taken", { id }));
       return;
     }
     setError(null);
@@ -1069,11 +1131,8 @@ function VlanSection({
 
   return (
     <div className="network_section">
-      <span className="section_label">VLANs</span>
-      <p className="field_hint">
-        Untagged traffic is the main interface; each VLAN rides tagged beside
-        it.
-      </p>
+      <span className="section_label">{t("ui.network.vlans_label")}</span>
+      <p className="field_hint">{t("ui.network.vlans_hint")}</p>
 
       <div className="network_vlan_rows">
         <div className="network_vlan_row" key="main">
@@ -1088,12 +1147,14 @@ function VlanSection({
           ) : (
             <span className="network_vlan_name mono">{parentName}.main</span>
           )}
-          <span className="badge">untagged</span>
+          <span className="badge">{t("state.untagged")}</span>
           <span className="network_vlan_summary">
             {main !== null ? (
               describeVlanChild(main)
             ) : (
-              <span className="badge badge--accent">created on apply</span>
+              <span className="badge badge--accent">
+                {t("ui.network.vlan_created_on_apply")}
+              </span>
             )}
           </span>
         </div>
@@ -1114,19 +1175,25 @@ function VlanSection({
                   {parentName}.{id}
                 </span>
               )}
-              <span className="badge">vlan {id}</span>
+              <span className="badge">
+                {t("ui.network.vlan_badge", { id })}
+              </span>
               <span className="network_vlan_summary">
                 {child !== undefined ? (
                   describeVlanChild(child)
                 ) : (
-                  <span className="badge badge--accent">new on apply</span>
+                  <span className="badge badge--accent">
+                    {t("ui.network.vlan_new_on_apply")}
+                  </span>
                 )}
               </span>
               <button
                 type="button"
                 className="button button--ghost button--small"
                 onClick={() => onChange(ids.filter((kept) => kept !== id))}
-                aria-label={`Remove ${parentName}.${id}`}
+                aria-label={t("ui.network.vlan_remove", {
+                  name: `${parentName}.${id}`,
+                })}
               >
                 <Icon name="close" size={13} />
               </button>
@@ -1139,7 +1206,7 @@ function VlanSection({
         <input
           className="input network_vlan_id"
           value={idText}
-          placeholder="vlan id"
+          placeholder={t("ui.network.vlan_id_placeholder")}
           inputMode="numeric"
           onChange={(event) => {
             setIdText(event.target.value);
@@ -1159,13 +1226,10 @@ function VlanSection({
           disabled={idText.trim().length === 0}
         >
           <Icon name="plus" size={13} />
-          Add
+          {t("ui.network.vlan_add")}
         </button>
       </div>
-      <p className="field_hint">
-        Each VLAN becomes its own interface, configured from its tab once
-        applied.
-      </p>
+      <p className="field_hint">{t("ui.network.vlans_footer")}</p>
 
       {error !== null && <span className="field_error">{error}</span>}
     </div>
@@ -1180,13 +1244,17 @@ function describeVlanChild(child: InterfaceView): string {
   const { settings } = child;
   if (settings.role === "wan") {
     return settings.wan.method === "static"
-      ? `WAN ${settings.wan.address ?? ""}`
-      : "WAN dhcp";
+      ? t("ui.network.vlan_child_wan_static", {
+          address: settings.wan.address ?? "",
+        })
+      : t("ui.network.vlan_child_wan_dhcp");
   }
   if (settings.role === "lan") {
-    return `LAN ${settings.lan.address}/${settings.lan.prefix_len}`;
+    return t("ui.network.vlan_child_lan", {
+      network: `${settings.lan.address}/${settings.lan.prefix_len}`,
+    });
   }
-  return "not configured yet";
+  return t("state.not_configured");
 }
 
 interface FieldProps {

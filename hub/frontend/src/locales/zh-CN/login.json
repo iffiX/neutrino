@@ -1,0 +1,9 @@
+{
+  "ui.login.subtitle": "控制面板",
+  "ui.login.password": "面板密码",
+  "ui.login.locked": "多次失败后已锁定。",
+  "ui.login.wrong_password": "密码不对。",
+  "ui.login.api_unreachable": "无法连接网关 API：{detail}",
+  "ui.login.sign_in": "登录",
+  "ui.login.signing_in": "正在登录…"
+}

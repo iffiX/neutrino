@@ -6,6 +6,7 @@ import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { ShellTerminal } from "../components/shell_terminal";
 import { StatusDot } from "../components/status_dot";
+import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { HUB_EVENT_DEVICES } from "../use_hub_events";
 import type { DeviceChip } from "../components/device_chip_strip";
@@ -31,21 +32,14 @@ import "./terminals_page.css";
  * offline leaves its tab standing until the shell itself ends.
  */
 
-const WORDING = {
-  title: "Terminals",
-  root: "root",
-  pick: "Which machine",
-  pickHint: "A new terminal opens on this machine.",
-  newTerminal: "New terminal",
-  noDevices: "No machine is answering",
-  noDevicesHint: "Install the agent on a machine from the Devices page.",
-  noTabs: "No terminals open",
-  noTabsHint: "Pick a machine above and open a terminal on it.",
-  close: "Close {title}",
-  keystrokes:
-    "Keystrokes go straight to the machine, Escape included. " +
-    "Close a terminal with the × on its tab.",
-  lost: "This session closed. The machine may have stopped answering.",
+/** The account every shell opens as, which is a name rather than a word. */
+const TERMINAL_ACCOUNT = "root";
+
+/** What one shell's state is called. */
+const STATE_KEYS: Record<TerminalState, string> = {
+  connecting: "state.connecting",
+  open: "state.open",
+  closed: "state.closed",
 };
 
 // What moves the list of machines: an agent's channel opening or ending.
@@ -64,6 +58,8 @@ interface ShellTab {
 }
 
 export function TerminalsPage() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const resource = useApiResource<DevicesOnlineResponse>("/devices/online", {
     invalidateOn: INVALIDATE_ON,
   });
@@ -133,7 +129,7 @@ export function TerminalsPage() {
   if (resource.error !== null && devices.length === 0) {
     return (
       <div className="page">
-        <h1>{WORDING.title}</h1>
+        <h1>{t("ui.terminals.title")}</h1>
         <ErrorPanel message={resource.error} onRetry={resource.reload} />
       </div>
     );
@@ -143,14 +139,14 @@ export function TerminalsPage() {
     <div className="page terminal_page">
       <div className="page_header">
         <div className="page_title_row">
-          <h1>{WORDING.title}</h1>
-          <span className="badge badge--warn">{WORDING.root}</span>
+          <h1>{t("ui.terminals.title")}</h1>
+          <span className="badge badge--warn">{TERMINAL_ACCOUNT}</span>
         </div>
       </div>
 
       <section className="settings_group">
         <div className="settings_group_title">
-          <h2>{WORDING.pick}</h2>
+          <h2>{t("ui.terminals.pick")}</h2>
           <div className="agent_service_actions">
             <button
               type="button"
@@ -159,17 +155,17 @@ export function TerminalsPage() {
               onClick={openTab}
             >
               <Icon name="plus" size={14} />
-              {WORDING.newTerminal}
+              {t("ui.terminals.new_terminal")}
             </button>
           </div>
         </div>
-        <p className="field_hint">{WORDING.pickHint}</p>
+        <p className="field_hint">{t("ui.terminals.pick_hint")}</p>
         {resource.isLoading && devices.length === 0 ? (
           <div className="skeleton" style={{ height: 48 }} />
         ) : devices.length === 0 ? (
           <div className="placeholder">
-            <span>{WORDING.noDevices}</span>
-            <span className="faint">{WORDING.noDevicesHint}</span>
+            <span>{t("ui.terminals.no_devices")}</span>
+            <span className="faint">{t("ui.terminals.no_devices_hint")}</span>
           </div>
         ) : (
           <DeviceChipStrip
@@ -183,8 +179,8 @@ export function TerminalsPage() {
 
       {tabs.length === 0 ? (
         <div className="placeholder">
-          <span>{WORDING.noTabs}</span>
-          <span className="faint">{WORDING.noTabsHint}</span>
+          <span>{t("ui.terminals.no_tabs")}</span>
+          <span className="faint">{t("ui.terminals.no_tabs_hint")}</span>
           <button
             type="button"
             className="button button--primary"
@@ -192,13 +188,17 @@ export function TerminalsPage() {
             onClick={openTab}
           >
             <Icon name="terminal" size={14} />
-            {WORDING.newTerminal}
+            {t("ui.terminals.new_terminal")}
           </button>
         </div>
       ) : (
         <section className="terminal_panel">
           <div className="terminal_panel_head">
-            <div className="terminal_tabs" role="tablist" aria-label="Shells">
+            <div
+              className="terminal_tabs"
+              role="tablist"
+              aria-label={t("ui.terminals.tabs_label")}
+            >
               {tabs.map((tab) => (
                 <div
                   key={tab.id}
@@ -218,8 +218,8 @@ export function TerminalsPage() {
                     type="button"
                     className="terminal_tab_close"
                     onClick={() => closeTab(tab.id)}
-                    title={WORDING.close.replace("{title}", tab.title)}
-                    aria-label={WORDING.close.replace("{title}", tab.title)}
+                    title={t("ui.terminals.close", { title: tab.title })}
+                    aria-label={t("ui.terminals.close", { title: tab.title })}
                   >
                     <Icon name="close" size={12} />
                   </button>
@@ -228,7 +228,10 @@ export function TerminalsPage() {
             </div>
             {activeState !== null && (
               <div className="terminal_panel_actions">
-                <StatusDot tone={toneFor(activeState)} label={activeState} />
+                <StatusDot
+                  tone={toneFor(activeState)}
+                  label={t(STATE_KEYS[activeState])}
+                />
               </div>
             )}
           </div>
@@ -246,7 +249,9 @@ export function TerminalsPage() {
           </div>
 
           <div className="terminal_panel_status">
-            {activeState === "closed" ? WORDING.lost : WORDING.keystrokes}
+            {activeState === "closed"
+              ? t("ui.terminals.lost")
+              : t("ui.terminals.keystrokes")}
           </div>
         </section>
       )}

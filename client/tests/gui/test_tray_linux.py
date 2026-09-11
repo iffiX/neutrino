@@ -9,13 +9,18 @@ import pytest
 
 import neutrino_client.gui.tray_linux as tray_module
 from neutrino_client.constants import (
+    CLIENT_DEFAULT_LANGUAGE,
     CLIENT_DESKTOP_NAME,
-    CLIENT_TRAY_OPEN_LABEL,
-    CLIENT_TRAY_QUIT_LABEL,
+    CLIENT_TRAY_OPEN_LABEL_KEY,
+    CLIENT_TRAY_QUIT_LABEL_KEY,
 )
 from neutrino_client.gui.tray_linux import (
     LinuxTrayIcon,
 )
+from neutrino_client.words import word
+
+TRAY_OPEN = word(CLIENT_DEFAULT_LANGUAGE, CLIENT_TRAY_OPEN_LABEL_KEY)
+TRAY_QUIT = word(CLIENT_DEFAULT_LANGUAGE, CLIENT_TRAY_QUIT_LABEL_KEY)
 
 
 class FakeSignalled:
@@ -225,6 +230,8 @@ def linux_tray(clicks, *, indicator=None, icon_path="/icons/x.png"):
 
     return LinuxTrayIcon(
         title="Neutrino client",
+        open_label=TRAY_OPEN,
+        quit_label=TRAY_QUIT,
         icon_path=icon_path,
         on_open=on_open,
         on_quit=on_quit,
@@ -244,8 +251,8 @@ def test_the_indicator_carries_open_and_quit_and_nothing_else(clicks):
     assert made.status == "active"
     assert made.title == "Neutrino client"
     assert [item.label for item in made.menu.items] == [
-        CLIENT_TRAY_OPEN_LABEL,
-        CLIENT_TRAY_QUIT_LABEL,
+        TRAY_OPEN,
+        TRAY_QUIT,
     ]
     assert made.menu.is_shown is True
     assert icon.is_shown is True
@@ -272,8 +279,8 @@ def test_without_the_typelib_the_status_icon_carries_the_same_menu(clicks, monke
     assert status_icon.file_path == "/icons/x.png"
     assert status_icon.tooltip == "Neutrino client"
     assert [item.label for item in icon._menu.items] == [
-        CLIENT_TRAY_OPEN_LABEL,
-        CLIENT_TRAY_QUIT_LABEL,
+        TRAY_OPEN,
+        TRAY_QUIT,
     ]
 
 
@@ -311,6 +318,8 @@ def test_a_toolkit_with_no_status_area_shows_nothing_and_does_not_fail(
 
     icon = LinuxTrayIcon(
         title="t",
+        open_label=TRAY_OPEN,
+        quit_label=TRAY_QUIT,
         icon_path="",
         on_open=lambda: None,
         on_quit=lambda: None,

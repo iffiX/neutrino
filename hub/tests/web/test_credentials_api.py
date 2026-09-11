@@ -113,7 +113,7 @@ def test_key_refusals(client):
         json={"name": "wrong file", "private_key": PUBLIC_KEY},
     )
     assert pasted_public_key.status_code == 400
-    assert "public key" in pasted_public_key.json()["detail"]
+    assert pasted_public_key.json()["detail"]["code"] == "key_is_public"
     assert client.delete("/api/credentials/ssh_keys/absent").status_code == 200
 
 

@@ -4,6 +4,11 @@ Anything a person changes lives in the client's own configuration directory;
 this file holds only what is wired into the protocol and the desktop.
 """
 
+# The languages every localized surface offers; anything else reads as the
+# default.
+CLIENT_LANGUAGES = ("en", "zh-CN")
+CLIENT_DEFAULT_LANGUAGE = "en"
+
 # The hub's client channel, on the pinned-TLS agent port. Joining and leaving
 # are HTTP; everything else rides the one socket.
 CLIENT_ENROLL_PATH = "/api/client/enroll"
@@ -47,13 +52,13 @@ CLIENT_CONTROL_PIPE_PREFIX = "\\\\.\\pipe\\"
 CLIENT_CONTROL_PIPE_NAME_PREFIX = "neutrino_client_"
 CLIENT_CONTROL_REQUEST_TIMEOUT_S = 5
 
-# The window ``nclient gui`` opens, and the name the packages install its
-# launcher and icon under.
-CLIENT_GUI_WINDOW_TITLE = "Neutrino client"
+# The name the packages install the launcher and the icon under.
 CLIENT_DESKTOP_NAME = "neutrino_client"
-# The tray menu, the same two words on every platform.
-CLIENT_TRAY_OPEN_LABEL = "Open"
-CLIENT_TRAY_QUIT_LABEL = "Quit"
+# What the window and the tray say, as catalog keys: the words themselves
+# are in the catalogs, in every language the client offers.
+CLIENT_GUI_WINDOW_TITLE_KEY = "ui.window.title"
+CLIENT_TRAY_OPEN_LABEL_KEY = "ui.tray.open"
+CLIENT_TRAY_QUIT_LABEL_KEY = "ui.tray.quit"
 CLIENT_GUI_WINDOW_WIDTH = 760
 CLIENT_GUI_WINDOW_HEIGHT = 900
 

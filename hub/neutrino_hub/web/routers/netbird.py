@@ -82,6 +82,9 @@ async def join(
     except (subprocess.SubprocessError, OSError) as error:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=command_failure_text(error),
+            detail={
+                "code": "overlay_join_failed",
+                "params": {"detail": command_failure_text(error)},
+            },
         ) from error
     return read_status(runtime)

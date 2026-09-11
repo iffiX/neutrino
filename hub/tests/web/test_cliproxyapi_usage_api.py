@@ -258,7 +258,7 @@ def test_the_key_filter_narrows_and_an_unknown_key_is_a_404(client):
     assert unknown.status_code == 404
     assert unknown.json()["detail"] == {
         "code": "unknown_key",
-        "params": {"key_id": "nope"},
+        "params": {"key": "nope"},
     }
 
 

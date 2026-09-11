@@ -112,6 +112,7 @@ Booleans are questions in all three: `is_`, `has_`
 | `/api/dashboard` | The summary, the traffic history, the DNS log |
 | `/api/devices` | Managed LAN machines, their modules and their files |
 | `/api/gitea` | The Gitea module |
+| `/api/language` | The language the panel is drawn in, read before there is a session |
 | `/api/modules` | Unit state, journals, install and uninstall |
 | `/api/netbird` | The overlay network |
 | `/api/network` | The mode, the interfaces and their roles, Wi-Fi, what answers where |

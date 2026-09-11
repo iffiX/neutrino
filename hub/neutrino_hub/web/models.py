@@ -6,6 +6,8 @@ so a rename here is a rename there.
 
 from pydantic import BaseModel, Field
 
+from neutrino_hub.web.constants import WEB_DEFAULT_LANGUAGE
+
 
 class LoginRequest(BaseModel):
     """Credentials submitted by the login form."""
@@ -1218,13 +1220,26 @@ class PasswordChangeResult(BaseModel):
 
 
 class PanelSettings(BaseModel):
-    """The panel's own network settings.
+    """The panel's own settings.
 
-    One field, and it is the one nowhere else can hold: every other service
-    settles its port in its own tab, and the panel is a service too.
+    Two fields, and they are the ones nowhere else can hold: every other
+    service settles its port in its own tab, and the language belongs to the
+    whole panel rather than to any one page.
+
+    Attributes:
+        listen_port: The TCP port the panel answers on.
+        language: The language the panel is drawn in. A write that leaves it
+            out leaves it as it is.
     """
 
     listen_port: int
+    language: str = WEB_DEFAULT_LANGUAGE
+
+
+class PanelLanguage(BaseModel):
+    """The language the panel is drawn in, before there is a session."""
+
+    language: str
 
 
 class AcknowledgementView(BaseModel):

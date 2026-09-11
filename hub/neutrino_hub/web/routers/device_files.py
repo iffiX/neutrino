@@ -293,7 +293,10 @@ async def _run_stream(
         await stream.close()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "agent_never_reported", "params": {}},
+            detail={
+                "code": "agent_never_reported",
+                "params": {"device": device_id},
+            },
         )
     _refuse_if_coded(info)
     return info

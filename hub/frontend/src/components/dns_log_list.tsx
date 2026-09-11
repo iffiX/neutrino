@@ -1,4 +1,5 @@
 import { formatLogClock } from "../format_duration";
+import { t, useLanguage } from "../i18n";
 import type { DnsLogEntry } from "../api_types";
 
 import "./dns_log_list.css";
@@ -16,12 +17,6 @@ import "./dns_log_list.css";
  * line up down the list whatever the tag says.
  */
 
-const WORDING = {
-  empty: "No DNS queries yet",
-  emptyHint: "Queries appear here as soon as a LAN client resolves a name.",
-  pending: "pending",
-} as const;
-
 /** Tags answered without an exit. Anything else is carried by one. */
 const DIRECT_TAGS = new Set([
   "direct",
@@ -36,11 +31,13 @@ interface DnsLogListProps {
 }
 
 export function DnsLogList({ entries }: DnsLogListProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   if (entries.length === 0) {
     return (
       <div className="placeholder">
-        <span>{WORDING.empty}</span>
-        <span className="faint">{WORDING.emptyHint}</span>
+        <span>{t("ui.dashboard.dns_empty")}</span>
+        <span className="faint">{t("ui.dashboard.dns_empty_hint")}</span>
       </div>
     );
   }
@@ -61,7 +58,7 @@ export function DnsLogList({ entries }: DnsLogListProps) {
               <span className="dns_log_client"> · {entry.client}</span>
             </span>
             <span className={outboundClassName(entry.outbound)}>
-              {entry.outbound ?? WORDING.pending}
+              {entry.outbound ?? t("state.pending")}
             </span>
           </div>
         ))}

@@ -12,9 +12,13 @@ brings it back and its Quit is what ends the loop.
 
 import json
 
+from neutrino_client import words
 from neutrino_client.constants import (
+    CLIENT_DEFAULT_LANGUAGE,
     CLIENT_GUI_WINDOW_HEIGHT,
     CLIENT_GUI_WINDOW_WIDTH,
+    CLIENT_TRAY_OPEN_LABEL_KEY,
+    CLIENT_TRAY_QUIT_LABEL_KEY,
 )
 from neutrino_client.exceptions import GuiShellUnavailableError
 from neutrino_client.gui.bridge import GuiWindowApi
@@ -28,6 +32,7 @@ def open_window(
     title: str,
     html: str,
     bridge,
+    language: str = CLIENT_DEFAULT_LANGUAGE,
     icon_path: str = "",
     is_hidden: bool = False,
     on_quit=None,
@@ -40,6 +45,7 @@ def open_window(
         title: The window title.
         html: The page, as one document.
         bridge: The window's bridge.
+        language: The language the tray menu is worded in.
         icon_path: The tray icon's file path, empty for the stock icon;
             pywebview windows take their own icon from the installed
             application.
@@ -92,7 +98,12 @@ def open_window(
 
     window.events.closing += on_closing
     tray = WindowsTrayIcon(
-        title=title, icon_path=icon_path, on_open=show_window, on_quit=quit_window
+        title=title,
+        open_label=words.word(language, CLIENT_TRAY_OPEN_LABEL_KEY),
+        quit_label=words.word(language, CLIENT_TRAY_QUIT_LABEL_KEY),
+        icon_path=icon_path,
+        on_open=show_window,
+        on_quit=quit_window,
     )
     tray.start()
     if on_show_ready is not None:

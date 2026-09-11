@@ -20,7 +20,12 @@ build-backend = "setuptools.build_meta"
 include = ["neutrino_client*"]
 
 [tool.setuptools.package-data]
-neutrino_client = ["data/desktop/*", "data/polkit/*", "data/gui/*"]
+neutrino_client = [
+    "data/desktop/*",
+    "data/polkit/*",
+    "data/gui/*",
+    "data/gui/locales/*",
+]
 
 [tool.black]
 line-length = 88

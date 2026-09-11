@@ -8,11 +8,9 @@
  * screen no matter which page triggered the call.
  */
 
-const API_PREFIX = "/api";
+import { hasWord, t } from "./i18n";
 
-/** What any endpoint answers while the credential vault is still sealed. */
-const VAULT_LOCKED_SENTENCE =
-  "The vault is locked; unlock it to use stored credentials.";
+const API_PREFIX = "/api";
 
 type UnauthorizedHandler = () => void;
 
@@ -25,6 +23,8 @@ export class ApiError extends Error {
   readonly detail: unknown;
   /** The name the API gave the failure, empty when it named none. */
   readonly code: string;
+  /** The values the failure carries for its sentence. */
+  readonly params: Record<string, string | number>;
 
   constructor(status: number, message: string, detail: unknown = null) {
     super(message);
@@ -33,6 +33,7 @@ export class ApiError extends Error {
     this.detail = detail;
     const detailRecord = asRecord(detail);
     this.code = typeof detailRecord?.code === "string" ? detailRecord.code : "";
+    this.params = asParams(detailRecord?.params);
   }
 
   /** Whether this error means the session is gone and login is required. */
@@ -105,7 +106,7 @@ export async function apiPostDownload(
       ...jsonBody(body),
     });
   } catch {
-    throw new ApiError(0, "Cannot reach the gateway API");
+    throw new ApiError(0, t("ui.api.unreachable"));
   }
   if (response.status === 401) {
     unauthorizedHandler?.();
@@ -128,14 +129,13 @@ export function websocketUrl(path: string): string {
 /** Human-readable message for anything thrown by the API layer. */
 export function describeError(error: unknown): string {
   if (error instanceof ApiError) {
-    return error.code === "vault_locked"
-      ? VAULT_LOCKED_SENTENCE
-      : error.message;
+    const key = "code." + error.code;
+    return error.code && hasWord(key) ? t(key, error.params) : error.message;
   }
   if (error instanceof Error) {
     return error.message;
   }
-  return "Unknown error";
+  return t("ui.api.unknown_error");
 }
 
 async function request<T>(path: string, init: RequestInit): Promise<T> {
@@ -146,7 +146,7 @@ async function request<T>(path: string, init: RequestInit): Promise<T> {
       ...init,
     });
   } catch {
-    throw new ApiError(0, "Cannot reach the gateway API");
+    throw new ApiError(0, t("ui.api.unreachable"));
   }
 
   if (response.status === 401) {
@@ -166,7 +166,7 @@ async function request<T>(path: string, init: RequestInit): Promise<T> {
   try {
     return JSON.parse(text) as T;
   } catch {
-    throw new ApiError(response.status, "Malformed response from the API");
+    throw new ApiError(response.status, t("ui.api.malformed"));
   }
 }
 
@@ -225,6 +225,17 @@ function readDetail(parsed: unknown): string {
     return record.message;
   }
   return "";
+}
+
+function asParams(value: unknown): Record<string, string | number> {
+  const record = asRecord(value);
+  const params: Record<string, string | number> = {};
+  if (record === null) return params;
+  for (const [name, item] of Object.entries(record)) {
+    if (typeof item === "string" || typeof item === "number")
+      params[name] = item;
+  }
+  return params;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

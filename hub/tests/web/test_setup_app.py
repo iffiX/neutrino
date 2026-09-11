@@ -70,18 +70,33 @@ def test_a_refused_document_sends_the_browser_back_to_the_questions(client, sess
 
 
 def test_a_step_moves_in_place_rather_than_twice(client, session):
-    session.step("Installing systemd units", "running")
-    session.step("Installing systemd units", "done", "wrote 5")
+    session.step("systemd_units", "running")
+    session.step("systemd_units", "done", "wrote 5")
 
     steps = client.get(f"/api/setup/state?token={session.token}").json()["steps"]
 
     assert steps == [
-        {"description": "Installing systemd units", "status": "done", "note": "wrote 5"}
+        {
+            "id": "systemd_units",
+            "params": {},
+            "status": "done",
+            "note": "wrote 5",
+        }
     ]
 
 
+def test_a_step_named_once_per_module_keeps_a_line_each(client, session):
+    """Two installs are two rows: the id is the same and the module is not."""
+    session.step("install_module", "done", params={"name": "netbird"})
+    session.step("install_module", "running", params={"name": "cliproxyapi"})
+
+    steps = client.get(f"/api/setup/state?token={session.token}").json()["steps"]
+
+    assert [step["params"]["name"] for step in steps] == ["netbird", "cliproxyapi"]
+
+
 def test_finishing_says_where_the_panel_will_be(client, session):
-    session.step("Starting services", "running")
+    session.step("start_services", "running")
     session.finish(panel_url="http://192.168.8.1:8080")
 
     state = client.get(f"/api/setup/state?token={session.token}").json()

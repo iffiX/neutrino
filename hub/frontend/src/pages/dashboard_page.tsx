@@ -21,6 +21,7 @@ import { computeActiveExits } from "../active_exits";
 import { formatByteRate, formatBytes } from "../format_bytes";
 import { formatCompact } from "../format_compact";
 import { formatDuration, formatLatency } from "../format_duration";
+import { t, useLanguage } from "../i18n";
 import { toHistorySeries, toTrafficSeries } from "../traffic_series";
 import { useApiResource } from "../use_api_resource";
 import { useDnsLogSocket } from "../use_dns_log_socket";
@@ -43,25 +44,8 @@ import "./dashboard_page.css";
  * one failure blanking the page.
  */
 
-/** The stat row's own copy: traffic first, then what the hub serves, then load. */
-const TILE_WORDING = {
-  download: "Download",
-  upload: "Upload",
-  dnsQueries: "DNS queries",
-  proxyExits: "Proxy exits",
-  aiTokens: "AI tokens",
-  devices: "Devices",
-  cpu: "CPU",
-  memory: "Memory",
-  uptime: "Uptime",
-  todayTotal: (total: string) => `today ${total}`,
-  probed: (count: number) => `${count} probed`,
-  inRecentLog: "in the recent log",
-  servedToday: "served today",
-  agentsReporting: "agents reporting",
-  noWanAddress: "no WAN address",
-  missing: "—",
-} as const;
+/** A reading the gateway has not reported at all, as opposed to a zero. */
+const MISSING_READING = "—";
 
 const HISTORY_DAYS = 30;
 const AXIS_STYLE = {
@@ -74,6 +58,8 @@ const LOAD_WARN_PERCENT = 70;
 const LOAD_ERROR_PERCENT = 90;
 
 export function DashboardPage() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const { frames, latestFrame, status } = useLiveStats();
   const summary = useApiResource<DashboardSummary>("/dashboard/summary");
   const history = useApiResource<TrafficHistoryResponse>(
@@ -101,7 +87,7 @@ export function DashboardPage() {
     <div className="page">
       <div className="page_header">
         <div className="page_header_text">
-          <h1>Dashboard</h1>
+          <h1>{t("ui.dashboard.title")}</h1>
         </div>
         <div className="page_actions">
           <StatusDot
@@ -114,10 +100,10 @@ export function DashboardPage() {
             }
             label={
               status === "open"
-                ? "streaming"
+                ? t("state.streaming")
                 : status === "connecting"
-                  ? "connecting"
-                  : "stats socket offline"
+                  ? t("state.connecting")
+                  : t("ui.dashboard.stats_offline")
             }
           />
         </div>
@@ -125,7 +111,7 @@ export function DashboardPage() {
 
       {summary.error !== null && (
         <ErrorPanel
-          title="Summary unavailable"
+          title={t("ui.dashboard.summary_unavailable")}
           message={summary.error}
           onRetry={summary.reload}
         />
@@ -135,63 +121,69 @@ export function DashboardPage() {
 
       <div className="stat_tile_grid dashboard_tiles">
         <StatTile
-          label={TILE_WORDING.download}
+          label={t("ui.dashboard.tile_download")}
           value={stats?.interface_rx_bytes_per_s ?? 0}
           format={formatByteRate}
           icon="arrow_down"
           tone="accent"
           detail={
             todaySample === null
-              ? TILE_WORDING.missing
-              : TILE_WORDING.todayTotal(formatBytes(todaySample.received_bytes))
+              ? MISSING_READING
+              : t("ui.dashboard.tile_today_total", {
+                  total: formatBytes(todaySample.received_bytes),
+                })
           }
         />
         <StatTile
-          label={TILE_WORDING.upload}
+          label={t("ui.dashboard.tile_upload")}
           value={stats?.interface_tx_bytes_per_s ?? 0}
           format={formatByteRate}
           icon="arrow_up"
           tone="secondary"
           detail={
             todaySample === null
-              ? TILE_WORDING.missing
-              : TILE_WORDING.todayTotal(formatBytes(todaySample.sent_bytes))
+              ? MISSING_READING
+              : t("ui.dashboard.tile_today_total", {
+                  total: formatBytes(todaySample.sent_bytes),
+                })
           }
         />
         <StatTile
-          label={TILE_WORDING.dnsQueries}
+          label={t("ui.dashboard.tile_dns_queries")}
           value={summary.data?.dns_query_count ?? 0}
           format={formatCount}
           icon="search"
           tone="accent"
-          detail={TILE_WORDING.inRecentLog}
+          detail={t("ui.dashboard.tile_in_recent_log")}
         />
         <StatTile
-          label={TILE_WORDING.proxyExits}
+          label={t("ui.dashboard.tile_proxy_exits")}
           value={activeExits.length}
           format={formatCount}
           icon="nodes"
           tone="ok"
-          detail={TILE_WORDING.probed(stats?.nodes.length ?? 0)}
+          detail={t("ui.dashboard.tile_probed", {
+            count: stats?.nodes.length ?? 0,
+          })}
         />
         <StatTile
-          label={TILE_WORDING.aiTokens}
+          label={t("ui.dashboard.tile_ai_tokens")}
           value={aiTokensToday ?? 0}
           format={aiTokensToday === null ? formatMissing : formatCompact}
           icon="sparkles"
           tone="secondary"
-          detail={TILE_WORDING.servedToday}
+          detail={t("ui.dashboard.tile_served_today")}
         />
         <StatTile
-          label={TILE_WORDING.devices}
+          label={t("ui.dashboard.tile_devices")}
           value={stats?.agent_device_count ?? 0}
           format={formatCount}
           icon="devices"
           tone="secondary"
-          detail={TILE_WORDING.agentsReporting}
+          detail={t("ui.dashboard.tile_agents_reporting")}
         />
         <StatTile
-          label={TILE_WORDING.cpu}
+          label={t("ui.dashboard.tile_cpu")}
           value={stats?.cpu_percent ?? 0}
           format={formatPercent}
           unit="%"
@@ -200,7 +192,7 @@ export function DashboardPage() {
           meterPercent={stats?.cpu_percent ?? 0}
         />
         <StatTile
-          label={TILE_WORDING.memory}
+          label={t("ui.dashboard.tile_memory")}
           value={stats?.memory_percent ?? 0}
           format={formatPercent}
           unit="%"
@@ -209,12 +201,12 @@ export function DashboardPage() {
           meterPercent={stats?.memory_percent ?? 0}
         />
         <StatTile
-          label={TILE_WORDING.uptime}
+          label={t("ui.dashboard.tile_uptime")}
           value={stats?.uptime_s ?? 0}
           format={formatDuration}
           icon="clock"
           tone="ok"
-          detail={stats?.wan_address ?? TILE_WORDING.noWanAddress}
+          detail={stats?.wan_address ?? t("ui.dashboard.tile_no_wan_address")}
         />
       </div>
 
@@ -223,13 +215,15 @@ export function DashboardPage() {
           <section className="card">
             <div className="card_header">
               <div className="card_title">
-                <h2>Live traffic</h2>
-                <span className="badge">last 2 min</span>
+                <h2>{t("ui.dashboard.live_traffic_title")}</h2>
+                <span className="badge">
+                  {t("ui.dashboard.live_traffic_window")}
+                </span>
               </div>
               <div className="dashboard_legend">
                 <span className="dashboard_legend_item">
                   <span className="dashboard_legend_swatch dashboard_legend_swatch--down" />
-                  <span className="muted">down</span>
+                  <span className="muted">{t("ui.dashboard.legend_down")}</span>
                   <span className="dashboard_legend_value">
                     {latestPoint === undefined
                       ? "—"
@@ -238,7 +232,7 @@ export function DashboardPage() {
                 </span>
                 <span className="dashboard_legend_item">
                   <span className="dashboard_legend_swatch dashboard_legend_swatch--up" />
-                  <span className="muted">up</span>
+                  <span className="muted">{t("ui.dashboard.legend_up")}</span>
                   <span className="dashboard_legend_value">
                     {latestPoint === undefined
                       ? "—"
@@ -250,9 +244,9 @@ export function DashboardPage() {
 
             {trafficSeries.length === 0 ? (
               <div className="placeholder">
-                <span>Waiting for the first stats frames</span>
+                <span>{t("ui.dashboard.live_empty")}</span>
                 <span className="faint">
-                  The gateway pushes a frame every two seconds on /ws/stats.
+                  {t("ui.dashboard.live_empty_hint")}
                 </span>
               </div>
             ) : (
@@ -313,7 +307,7 @@ export function DashboardPage() {
                     <Area
                       type="monotone"
                       dataKey="downlink_bytes_per_s"
-                      name="down"
+                      name={t("ui.dashboard.legend_down")}
                       stroke="#22d3ee"
                       strokeWidth={1.6}
                       fill="url(#fill_down)"
@@ -323,7 +317,7 @@ export function DashboardPage() {
                     <Area
                       type="monotone"
                       dataKey="uplink_bytes_per_s"
-                      name="up"
+                      name={t("ui.dashboard.legend_up")}
                       stroke="#a78bfa"
                       strokeWidth={1.6}
                       fill="url(#fill_up)"
@@ -339,23 +333,25 @@ export function DashboardPage() {
           <section className="card">
             <div className="card_header">
               <div className="card_title">
-                <h2>Traffic history</h2>
-                <span className="badge">last {HISTORY_DAYS} days · vnstat</span>
+                <h2>{t("ui.dashboard.history_title")}</h2>
+                <span className="badge">
+                  {t("ui.dashboard.history_window", { days: HISTORY_DAYS })}
+                </span>
               </div>
             </div>
 
             {history.error !== null ? (
               <ErrorPanel
-                title="History unavailable"
+                title={t("ui.dashboard.history_unavailable")}
                 message={history.error}
-                hint="vnstat may not have collected any data on this interface yet."
+                hint={t("ui.dashboard.history_unavailable_hint")}
                 onRetry={history.reload}
               />
             ) : historySeries.length === 0 ? (
               <div className="placeholder">
-                <span>No history yet</span>
+                <span>{t("ui.dashboard.history_empty")}</span>
                 <span className="faint">
-                  vnstat needs a day of samples before the chart fills in.
+                  {t("ui.dashboard.history_empty_hint")}
                 </span>
               </div>
             ) : (
@@ -383,14 +379,14 @@ export function DashboardPage() {
                     />
                     <Bar
                       dataKey="received_bytes"
-                      name="received"
+                      name={t("ui.dashboard.series_received")}
                       stackId="traffic"
                       fill="#22d3ee"
                       radius={[0, 0, 0, 0]}
                     />
                     <Bar
                       dataKey="sent_bytes"
-                      name="sent"
+                      name={t("ui.dashboard.series_sent")}
                       stackId="traffic"
                       fill="#a78bfa"
                       radius={[2, 2, 0, 0]}
@@ -406,15 +402,14 @@ export function DashboardPage() {
           <section className="card">
             <div className="card_header">
               <div className="card_title">
-                <h2>Active exits</h2>
+                <h2>{t("ui.dashboard.exits_title")}</h2>
               </div>
             </div>
             {activeExits.length === 0 ? (
               <div className="placeholder">
-                <span>No exit is carrying traffic</span>
+                <span>{t("ui.dashboard.exits_empty")}</span>
                 <span className="faint">
-                  Either the LAN is idle or every request is matching a direct
-                  rule.
+                  {t("ui.dashboard.exits_empty_hint")}
                 </span>
               </div>
             ) : (
@@ -435,7 +430,11 @@ export function DashboardPage() {
                         <span className="dashboard_exit_latency">
                           {formatLatency(exit.delayMs)}
                         </span>
-                        <span>{formatBytes(exit.totalBytes)} / 2 min</span>
+                        <span>
+                          {t("ui.dashboard.exit_window", {
+                            bytes: formatBytes(exit.totalBytes),
+                          })}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -447,12 +446,14 @@ export function DashboardPage() {
           <section className="card dashboard_dns_card">
             <div className="card_header dashboard_dns_head">
               <div className="card_title">
-                <h2>DNS queries</h2>
-                <span className="badge">newest first</span>
+                <h2>{t("ui.dashboard.dns_title")}</h2>
+                <span className="badge">{t("ui.dashboard.dns_order")}</span>
               </div>
               <StatusDot
                 tone={dnsLog.status === "open" ? "ok" : "warn"}
-                label={`${dnsLog.entries.length} held`}
+                label={t("ui.dashboard.dns_held", {
+                  count: dnsLog.entries.length,
+                })}
               />
             </div>
             <DnsLogList entries={dnsLog.entries} />
@@ -469,9 +470,8 @@ function formatCount(value: number): string {
   return Math.round(value).toLocaleString();
 }
 
-/** A reading the gateway has not reported at all, as opposed to a zero. */
 function formatMissing(): string {
-  return TILE_WORDING.missing;
+  return MISSING_READING;
 }
 
 function formatPercent(value: number): string {

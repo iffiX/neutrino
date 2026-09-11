@@ -12,6 +12,7 @@ import {
 } from "../api_client";
 import { copyText } from "../copy_text";
 import { formatDuration } from "../format_duration";
+import { t, useLanguage } from "../i18n";
 import { usePolledResource } from "../use_polled_resource";
 import { useConfirm } from "../use_confirm";
 import type { StatusTone } from "./status_dot";
@@ -38,52 +39,6 @@ import "./confirm_modal.css";
  * type at the provider — and the gateway says which of the two this build
  * offers for each service.
  */
-
-const WORDING = {
-  title: "Accounts",
-  hint: "Accounts and API keys serve the same models as one pool; the gateway picks between them.",
-  signIn: "Sign in",
-  noKinds: "This gateway offers no subscription sign-in.",
-  serving: "serving",
-  disabled: "disabled",
-  unavailable: "unavailable",
-  okCount: (count: number) => `${count} ok`,
-  failedCount: (count: number) => `${count} failed`,
-  delete: "Delete",
-  deleteTitle: (account: string) => `Delete ${account}`,
-  deleteBody:
-    "The account stops serving at once. Machines keep working through whatever other keys and accounts remain.",
-  empty: "No accounts yet",
-  emptyHint: "Sign in once and every machine shares it.",
-
-  signInTitle: "Sign in to a subscription",
-  signInWith: (provider: string) => `Sign in with ${provider}`,
-  pickHint: "Which subscription this box signs in to.",
-  continueWith: (provider: string) => `Continue with ${provider}`,
-  redirectHint:
-    "Open this address and sign in. The browser lands on a page that does not load; its address goes below.",
-  deviceHint: "Open this address and enter the code there.",
-  pasteLabel: "Address bar or code",
-  pastePlaceholder: "paste the address bar or the code here",
-  waiting: "waiting for the sign-in",
-  expiresIn: (left: string) => `Expires in ${left}`,
-  expired: "Expired",
-  finish: "Finish sign-in",
-  finishing: "Finishing…",
-  tryAgain: "Try again",
-  cancel: "Cancel",
-  copy: "Copy",
-  copied: "Copied",
-  failedPlain: "The sign-in did not finish.",
-
-  unknownAccount: "That account is no longer on this box.",
-  loginExpired: "This sign-in took too long and has expired.",
-  unsupportedKind: (provider: string) =>
-    `The gateway does not offer a ${provider} sign-in.`,
-  gatewayUnreachable: "The gateway is not answering, so it cannot be asked.",
-  managementKeyMissing:
-    "The gateway has no management key on this box, so its accounts cannot be reached.",
-} as const;
 
 const ACCOUNTS_PATH = "/cliproxyapi/accounts";
 const LOGINS_PATH = "/cliproxyapi/account_logins";
@@ -113,15 +68,17 @@ const PROVIDER_LABELS: Record<string, string> = {
   xai: "xAI",
 };
 
-/** The sentence for each error code the accounts endpoints return. */
-const ERROR_SENTENCES: Record<string, string> = {
-  unknown_account: WORDING.unknownAccount,
-  login_expired: WORDING.loginExpired,
-  gateway_unreachable: WORDING.gatewayUnreachable,
-  management_key_missing: WORDING.managementKeyMissing,
+/** The sentence keying each error code the accounts endpoints return. */
+const ERROR_KEYS: Record<string, string> = {
+  unknown_account: "code.unknown_account",
+  login_expired: "code.login_expired",
+  gateway_unreachable: "code.gateway_unreachable",
+  management_key_missing: "code.management_key_missing",
 };
 
 export function AiAccountsPanel() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const resource =
     usePolledResource<CliproxyApiAccountsResponse>(ACCOUNTS_PATH);
   const confirm = useConfirm();
@@ -157,28 +114,30 @@ export function AiAccountsPanel() {
 
   const askDelete = (account: CliproxyApiAccountView) =>
     confirm.ask({
-      title: WORDING.deleteTitle(accountLabel(account)),
-      body: WORDING.deleteBody,
-      confirmLabel: WORDING.delete,
+      title: t("ui.ai.account_delete_title", {
+        account: accountLabel(account),
+      }),
+      body: t("ui.ai.account_delete_body"),
+      confirmLabel: t("ui.ai.delete"),
       onConfirm: () => void handleDelete(account),
     });
 
   return (
     <section className="settings_group">
       <div className="settings_group_title">
-        <h2>{WORDING.title}</h2>
+        <h2>{t("ui.ai.accounts_title")}</h2>
         <button
           type="button"
           className="button button--primary credentials_section_action"
           disabled={!hasKinds || isBusy}
-          title={hasKinds ? undefined : WORDING.noKinds}
+          title={hasKinds ? undefined : t("ui.ai.no_login_kinds")}
           onClick={() => setIsSigningIn(true)}
         >
           <Icon name="plus" size={14} />
-          {WORDING.signIn}
+          {t("ui.ai.sign_in")}
         </button>
       </div>
-      <p className="field_hint">{WORDING.hint}</p>
+      <p className="field_hint">{t("ui.ai.accounts_hint")}</p>
 
       {resource.error !== null && (
         <ErrorPanel message={resource.error} onRetry={resource.reload} />
@@ -198,8 +157,8 @@ export function AiAccountsPanel() {
       {resource.data !== null &&
         (accounts.length === 0 ? (
           <div className="placeholder">
-            <span>{WORDING.empty}</span>
-            <span className="faint">{WORDING.emptyHint}</span>
+            <span>{t("ui.ai.accounts_empty")}</span>
+            <span className="faint">{t("ui.ai.accounts_empty_hint")}</span>
           </div>
         ) : (
           <div className="ai_accounts">
@@ -242,14 +201,14 @@ function AccountRow({ value, isBusy, onDelete }: AccountRowProps) {
       <span className="key_card_type">{providerLabel(value.provider)}</span>
       <span className="ai_account_label">{accountLabel(value)}</span>
       <span className="ai_account_counts">
-        <span>{WORDING.okCount(value.success_count)}</span>
+        <span>{t("ui.ai.count_ok", { count: value.success_count })}</span>
         <span>·</span>
         <span
           className={
             value.failed_count > 0 ? "ai_account_counts--failed" : undefined
           }
         >
-          {WORDING.failedCount(value.failed_count)}
+          {t("ui.ai.count_failed", { count: value.failed_count })}
         </span>
       </span>
       <span
@@ -265,7 +224,7 @@ function AccountRow({ value, isBusy, onDelete }: AccountRowProps) {
         onClick={onDelete}
       >
         <Icon name="trash" size={13} />
-        {WORDING.delete}
+        {t("ui.ai.delete")}
       </button>
     </div>
   );
@@ -292,6 +251,8 @@ function AccountLoginModal({
   onSignedIn,
   onDismiss,
 }: AccountLoginModalProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [login, setLogin] = useState<CliproxyApiLoginStartView | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
@@ -408,7 +369,7 @@ function AccountLoginModal({
       className="confirm_backdrop"
       role="dialog"
       aria-modal="true"
-      aria-label={WORDING.signInTitle}
+      aria-label={t("ui.ai.sign_in_title")}
       onClick={(event) => {
         if (event.target === event.currentTarget) {
           dismiss();
@@ -420,8 +381,10 @@ function AccountLoginModal({
           <Icon name="key" size={16} />
           <h2>
             {login === null
-              ? WORDING.signInTitle
-              : WORDING.signInWith(providerLabel(login.kind))}
+              ? t("ui.ai.sign_in_title")
+              : t("ui.ai.sign_in_with", {
+                  provider: providerLabel(login.kind),
+                })}
           </h2>
         </div>
 
@@ -440,7 +403,7 @@ function AccountLoginModal({
             </div>
           ) : login === null ? (
             <div className="ai_login_kinds">
-              <p className="field_hint">{WORDING.pickHint}</p>
+              <p className="field_hint">{t("ui.ai.sign_in_pick_hint")}</p>
               {kinds.map((kind) => (
                 <button
                   key={kind}
@@ -449,14 +412,16 @@ function AccountLoginModal({
                   disabled={isStarting}
                   onClick={() => void handleStart(kind)}
                 >
-                  {WORDING.continueWith(providerLabel(kind))}
+                  {t("ui.ai.continue_with", {
+                    provider: providerLabel(kind),
+                  })}
                 </button>
               ))}
             </div>
           ) : (
             <>
               <p className="ai_login_hint">
-                {isRedirect ? WORDING.redirectHint : WORDING.deviceHint}
+                {isRedirect ? t("ui.ai.redirect_hint") : t("ui.ai.device_hint")}
               </p>
 
               <div className="ai_login_url_row">
@@ -480,13 +445,13 @@ function AccountLoginModal({
 
               {isRedirect && (
                 <label className="field">
-                  <span className="field_label">{WORDING.pasteLabel}</span>
+                  <span className="field_label">{t("ui.ai.paste_label")}</span>
                   <input
                     className="input"
                     value={pasted}
                     autoFocus
                     spellCheck={false}
-                    placeholder={WORDING.pastePlaceholder}
+                    placeholder={t("ui.ai.paste_placeholder")}
                     onChange={(event) => setPasted(event.target.value)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" && isPasteReady) {
@@ -498,12 +463,18 @@ function AccountLoginModal({
               )}
 
               <div className="ai_login_waiting">
-                <StatusDot tone="warn" label={WORDING.waiting} isPulsing />
+                <StatusDot
+                  tone="warn"
+                  label={t("ui.ai.sign_in_waiting")}
+                  isPulsing
+                />
                 {secondsLeft !== null && (
                   <span className="ai_login_expiry mono">
                     {secondsLeft > 0
-                      ? WORDING.expiresIn(formatDuration(secondsLeft))
-                      : WORDING.expired}
+                      ? t("ui.ai.expires_in", {
+                          left: formatDuration(secondsLeft),
+                        })
+                      : t("ui.ai.expired")}
                   </span>
                 )}
               </div>
@@ -513,7 +484,7 @@ function AccountLoginModal({
 
         <div className="confirm_foot">
           <button type="button" className="button" onClick={dismiss}>
-            {WORDING.cancel}
+            {t("ui.ai.cancel")}
           </button>
           {failure !== null && (
             <button
@@ -523,7 +494,7 @@ function AccountLoginModal({
               onClick={handleRetry}
             >
               <Icon name="refresh" size={14} />
-              {WORDING.tryAgain}
+              {t("ui.ai.try_again")}
             </button>
           )}
           {failure === null && isRedirect && (
@@ -534,7 +505,7 @@ function AccountLoginModal({
               onClick={() => void handleFinish()}
             >
               <Icon name="check" size={14} />
-              {isFinishing ? WORDING.finishing : WORDING.finish}
+              {isFinishing ? t("ui.ai.finishing") : t("ui.ai.finish")}
             </button>
           )}
         </div>
@@ -568,7 +539,7 @@ function CopyButton({ value }: CopyButtonProps) {
       onClick={() => void handleCopy()}
     >
       <Icon name={isCopied ? "check" : "file"} size={13} />
-      {isCopied ? WORDING.copied : WORDING.copy}
+      {isCopied ? t("ui.ai.copied") : t("ui.ai.copy")}
     </button>
   );
 }
@@ -608,17 +579,17 @@ function describeAccount(account: CliproxyApiAccountView): {
   word: string;
 } {
   if (account.is_disabled) {
-    return { tone: "idle", word: WORDING.disabled };
+    return { tone: "idle", word: t("state.disabled") };
   }
   if (account.is_unavailable || account.status !== ACCOUNT_STATUS_ACTIVE) {
-    return { tone: "error", word: WORDING.unavailable };
+    return { tone: "error", word: t("state.unavailable") };
   }
-  return { tone: "ok", word: WORDING.serving };
+  return { tone: "ok", word: t("state.serving") };
 }
 
 /** A failed sign-in's own reason, or the plain sentence where it sent none. */
 function sentenceFor(message: string): string {
-  return message.length > 0 ? message : WORDING.failedPlain;
+  return message.length > 0 ? message : t("ui.ai.sign_in_failed");
 }
 
 /** The sentence for a failed call, from the code the API named it with. */
@@ -629,10 +600,11 @@ function wordError(cause: unknown): string {
   if (cause.code === "unsupported_kind") {
     const kind = readParam(cause.detail, "kind");
     if (kind.length > 0) {
-      return WORDING.unsupportedKind(providerLabel(kind));
+      return t("code.unsupported_kind", { provider: providerLabel(kind) });
     }
   }
-  return ERROR_SENTENCES[cause.code] ?? describeError(cause);
+  const key = ERROR_KEYS[cause.code];
+  return key === undefined ? describeError(cause) : t(key);
 }
 
 /** One value out of an error's `params`, empty where the API sent none. */

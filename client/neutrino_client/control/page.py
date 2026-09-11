@@ -4,15 +4,20 @@ The page is plain HTML, CSS and JavaScript under ``client/frontend/``, copied
 into ``neutrino_client/data/gui/`` by the packaging builds; a checkout with
 no built copy reads the source directory directly. The page renders two
 sections, Status and Services, and its requests ride the in-process channel
-over a message bridge.
+over a message bridge. The document carries both word catalogs inlined, the
+way the stylesheet and the script are, so the page words itself without
+asking for anything.
 
 The page redraws only when the state payload actually changed, and never
 while the person holds a text selection, a focused form field, or an open
 dialog.
 """
 
+import json
 import os
 import pathlib
+
+from neutrino_client import words
 
 _PACKAGE_DIR = pathlib.Path(__file__).resolve().parent.parent
 GUI_DATA_DIR = _PACKAGE_DIR / "data" / "gui"
@@ -20,6 +25,8 @@ GUI_SOURCE_DIR = _PACKAGE_DIR.parent / "frontend"
 
 GUI_STYLE_TAG = '<link rel="stylesheet" href="style.css">'
 GUI_SCRIPT_TAG = '<script src="app.js"></script>'
+GUI_WORDS_OPENING = '<script id="words" type="application/json">'
+GUI_WORDS_TAG = GUI_WORDS_OPENING + "{}</script>"
 
 
 def gui_dir() -> pathlib.Path:
@@ -54,14 +61,22 @@ def control_page_html() -> str:
     """The whole page as one document, for a shell's ``load_html``.
 
     Returns:
-        ``index.html`` with the stylesheet and the script inlined.
+        ``index.html`` with the stylesheet, the word catalogs and the script
+        inlined.
 
     Raises:
+        FileNotFoundError: When the word catalogs are not on this machine.
         ValueError: When ``index.html`` lacks the tags the assets replace.
     """
     document = gui_asset("index.html")
     for tag, opening, content, closing in (
         (GUI_STYLE_TAG, "<style>", gui_asset("style.css"), "</style>"),
+        (
+            GUI_WORDS_TAG,
+            GUI_WORDS_OPENING,
+            json.dumps(words.catalogs(), ensure_ascii=False),
+            "</script>",
+        ),
         (GUI_SCRIPT_TAG, "<script>", gui_asset("app.js"), "</script>"),
     ):
         if tag not in document:

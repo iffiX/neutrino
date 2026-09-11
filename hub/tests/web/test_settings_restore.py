@@ -277,7 +277,10 @@ def test_a_restore_without_a_passphrase_writes_nothing(client):
     response = upload_restore(opened, archive_bytes, "")
 
     assert response.status_code == 400
-    assert response.json()["detail"] == {"code": "vault_passphrase_needed"}
+    assert response.json()["detail"] == {
+        "code": "vault_passphrase_needed",
+        "params": {},
+    }
     assert list(config_dir.rglob("*")) == []
 
 
@@ -290,7 +293,7 @@ def test_a_wrong_passphrase_writes_nothing(client):
     response = upload_restore(opened, archive_bytes, "not the passphrase")
 
     assert response.status_code == 400
-    assert response.json()["detail"] == {"code": "vault_passphrase_wrong"}
+    assert response.json()["detail"] == {"code": "vault_passphrase_wrong", "params": {}}
     assert list(config_dir.rglob("*")) == []
     assert not (config_dir.parent / "state" / "vault.key").exists()
 
@@ -304,7 +307,7 @@ def test_a_wrong_file_extension_is_refused_by_name(client):
     response = upload_restore(opened, archive_bytes, PASSPHRASE, name="backup.bin")
 
     assert response.status_code == 400
-    assert response.json()["detail"] == {"code": "backup_wrong_extension"}
+    assert response.json()["detail"] == {"code": "backup_wrong_extension", "params": {}}
     assert list(config_dir.rglob("*")) == []
 
 
@@ -316,7 +319,7 @@ def test_a_foreign_tarball_is_refused_before_anything_is_read(client):
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == {"code": "backup_unrecognized"}
+    assert response.json()["detail"] == {"code": "backup_unrecognized", "params": {}}
     assert list(config_dir.rglob("*")) == []
 
 
@@ -332,7 +335,7 @@ def test_another_kind_or_version_is_refused(client):
     response = upload_restore(opened, forged, PASSPHRASE)
 
     assert response.status_code == 400
-    assert response.json()["detail"] == {"code": "backup_unrecognized"}
+    assert response.json()["detail"] == {"code": "backup_unrecognized", "params": {}}
 
 
 def test_a_tampered_member_fails_its_digest(client):
@@ -347,7 +350,7 @@ def test_a_tampered_member_fails_its_digest(client):
     response = upload_restore(opened, repacked(contents), PASSPHRASE)
 
     assert response.status_code == 400
-    assert response.json()["detail"] == {"code": "backup_corrupt"}
+    assert response.json()["detail"] == {"code": "backup_corrupt", "params": {}}
     assert list(config_dir.rglob("*")) == []
 
 
@@ -361,7 +364,7 @@ def test_a_member_the_digest_list_does_not_name_is_refused(client):
     response = upload_restore(opened, repacked(contents), PASSPHRASE)
 
     assert response.status_code == 400
-    assert response.json()["detail"] == {"code": "backup_corrupt"}
+    assert response.json()["detail"] == {"code": "backup_corrupt", "params": {}}
     assert list(config_dir.rglob("*")) == []
 
 
@@ -381,7 +384,7 @@ def test_an_archive_without_a_vault_store_is_refused(client):
     response = upload_restore(opened, repacked(contents), PASSPHRASE)
 
     assert response.status_code == 400
-    assert response.json()["detail"] == {"code": "backup_corrupt"}
+    assert response.json()["detail"] == {"code": "backup_corrupt", "params": {}}
     assert list(config_dir.rglob("*")) == []
 
 
@@ -394,5 +397,5 @@ def test_a_truncated_archive_writes_nothing(client):
     response = upload_restore(opened, archive_bytes[:60], PASSPHRASE)
 
     assert response.status_code == 400
-    assert response.json()["detail"] == {"code": "backup_unrecognized"}
+    assert response.json()["detail"] == {"code": "backup_unrecognized", "params": {}}
     assert list(config_dir.rglob("*")) == []

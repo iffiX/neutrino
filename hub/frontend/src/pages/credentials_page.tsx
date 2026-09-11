@@ -5,7 +5,8 @@ import { Icon } from "../components/icon";
 import { PasswordInput } from "../components/password_input";
 import { apiDelete, apiPost, describeError } from "../api_client";
 import { formatTimeAgo } from "../format_duration";
-import { PRIVATE_KEY_PLACEHOLDER } from "../private_key_placeholder";
+import { t, useLanguage } from "../i18n";
+import { privateKeyPlaceholder } from "../private_key_placeholder";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
 import type {
@@ -35,17 +36,22 @@ import "./credentials_page.css";
 
 const LOGINS_PATH = "/credentials/logins";
 const TOKENS_PATH = "/credentials/tokens";
+
+/** The examples the name fields show, which are names rather than words. */
+const KEY_NAME_PLACEHOLDER = "work laptop";
+const LOGIN_NAME_PLACEHOLDER = "lab machines";
+const LOGIN_USERNAME_PLACEHOLDER = "backup";
+const TOKEN_NAME_PLACEHOLDER = "Anthropic key";
+
 export function CredentialsPage() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   return (
     <div className="page credentials_page">
       <header className="page_header">
         <div>
-          <h1 className="page_title">Credentials</h1>
-          <p className="page_subtitle">
-            SSH keys and logins for reaching devices and services, tokens for
-            the APIs the box speaks to, and the AI endpoints handed to
-            devices&apos; tools.
-          </p>
+          <h1 className="page_title">{t("ui.credentials.title")}</h1>
+          <p className="page_subtitle">{t("ui.credentials.subtitle")}</p>
         </div>
       </header>
 
@@ -57,6 +63,8 @@ export function CredentialsPage() {
 }
 
 function SshKeysSection() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const resource = useApiResource<KeysResponse>("/credentials/ssh_keys");
   const [keys, setKeys] = useState<KeyView[]>([]);
   const [isAdding, setIsAdding] = useState(false);
@@ -80,7 +88,7 @@ function SshKeysSection() {
   return (
     <section className="settings_group">
       <div className="settings_group_title">
-        <h2>SSH keys</h2>
+        <h2>{t("ui.credentials.keys_title")}</h2>
         {!isAdding && (
           <button
             type="button"
@@ -88,7 +96,7 @@ function SshKeysSection() {
             onClick={() => setIsAdding(true)}
           >
             <Icon name="plus" size={14} />
-            Add key
+            {t("ui.credentials.add_key")}
           </button>
         )}
       </div>
@@ -104,9 +112,11 @@ function SshKeysSection() {
       {keys.length === 0 && !isAdding ? (
         <div className="keys_empty">
           <Icon name="key" size={22} />
-          <span className="keys_empty_title">No keys yet</span>
+          <span className="keys_empty_title">
+            {t("ui.credentials.keys_empty")}
+          </span>
           <span className="keys_empty_hint">
-            Add a key here, then pick it when you configure a device over SSH.
+            {t("ui.credentials.keys_empty_hint")}
           </span>
         </div>
       ) : (
@@ -121,6 +131,8 @@ function SshKeysSection() {
 }
 
 function LoginsSection() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const resource = useApiResource<LoginsResponse>(LOGINS_PATH);
   const [logins, setLogins] = useState<LoginView[]>([]);
   const [isAdding, setIsAdding] = useState(false);
@@ -144,7 +156,7 @@ function LoginsSection() {
   return (
     <section className="settings_group">
       <div className="settings_group_title">
-        <h2>Logins</h2>
+        <h2>{t("ui.credentials.logins_title")}</h2>
         {!isAdding && (
           <button
             type="button"
@@ -152,15 +164,11 @@ function LoginsSection() {
             onClick={() => setIsAdding(true)}
           >
             <Icon name="plus" size={14} />
-            Add login
+            {t("ui.credentials.add_login")}
           </button>
         )}
       </div>
-      <p className="field_hint">
-        A username and password pair, or a bare password. Used for a
-        device&apos;s SSH login and sudo prompt, and to sign in to declared
-        services.
-      </p>
+      <p className="field_hint">{t("ui.credentials.logins_hint")}</p>
 
       {resource.error !== null && (
         <ErrorPanel message={resource.error} onRetry={resource.reload} />
@@ -173,10 +181,11 @@ function LoginsSection() {
       {logins.length === 0 && !isAdding ? (
         <div className="keys_empty">
           <Icon name="lock" size={22} />
-          <span className="keys_empty_title">No logins yet</span>
+          <span className="keys_empty_title">
+            {t("ui.credentials.logins_empty")}
+          </span>
           <span className="keys_empty_hint">
-            Add a login here, then pick it wherever a device or service signs in
-            with a password.
+            {t("ui.credentials.logins_empty_hint")}
           </span>
         </div>
       ) : (
@@ -191,6 +200,8 @@ function LoginsSection() {
 }
 
 function TokensSection() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const resource = useApiResource<TokensResponse>(TOKENS_PATH);
   const [tokens, setTokens] = useState<TokenView[]>([]);
   const [isAdding, setIsAdding] = useState(false);
@@ -214,7 +225,7 @@ function TokensSection() {
   return (
     <section className="settings_group">
       <div className="settings_group_title">
-        <h2>Tokens</h2>
+        <h2>{t("ui.credentials.tokens_title")}</h2>
         {!isAdding && (
           <button
             type="button"
@@ -222,13 +233,11 @@ function TokensSection() {
             onClick={() => setIsAdding(true)}
           >
             <Icon name="plus" size={14} />
-            Add token
+            {t("ui.credentials.add_token")}
           </button>
         )}
       </div>
-      <p className="field_hint">
-        A single secret value under a name. An AI provider is keyed with one.
-      </p>
+      <p className="field_hint">{t("ui.credentials.tokens_hint")}</p>
 
       {resource.error !== null && (
         <ErrorPanel message={resource.error} onRetry={resource.reload} />
@@ -241,10 +250,11 @@ function TokensSection() {
       {tokens.length === 0 && !isAdding ? (
         <div className="keys_empty">
           <Icon name="key" size={22} />
-          <span className="keys_empty_title">No tokens yet</span>
+          <span className="keys_empty_title">
+            {t("ui.credentials.tokens_empty")}
+          </span>
           <span className="keys_empty_hint">
-            Store a token once, then reference it from AI providers instead of
-            pasting it again.
+            {t("ui.credentials.tokens_empty_hint")}
           </span>
         </div>
       ) : (
@@ -264,6 +274,8 @@ interface AddKeyFormProps {
 }
 
 function AddKeyForm({ onAdded, onCancel }: AddKeyFormProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [name, setName] = useState("");
   const [privateKey, setPrivateKey] = useState("");
   const [passphrase, setPassphrase] = useState("");
@@ -291,37 +303,35 @@ function AddKeyForm({ onAdded, onCancel }: AddKeyFormProps) {
 
   return (
     <div className="keys_add">
-      <div className="section_label">New key</div>
+      <div className="section_label">{t("ui.credentials.new_key")}</div>
       <label className="field">
-        <span className="field_label">Name</span>
+        <span className="field_label">{t("ui.credentials.name")}</span>
         <input
           className="input"
           value={name}
-          placeholder="work laptop"
+          placeholder={KEY_NAME_PLACEHOLDER}
           autoFocus
           onChange={(event) => setName(event.target.value)}
         />
       </label>
       <label className="field">
-        <span className="field_label">Private key</span>
+        <span className="field_label">{t("ui.credentials.private_key")}</span>
         <textarea
           className="input input--key"
           value={privateKey}
           spellCheck={false}
           autoComplete="off"
           rows={8}
-          placeholder={PRIVATE_KEY_PLACEHOLDER}
+          placeholder={privateKeyPlaceholder()}
           onChange={(event) => setPrivateKey(event.target.value)}
         />
-        <span className="field_hint">
-          Stored on the gateway readable only by root, and never shown again.
-        </span>
+        <span className="field_hint">{t("ui.credentials.key_hint")}</span>
       </label>
       <label className="field">
-        <span className="field_label">Key passphrase</span>
+        <span className="field_label">{t("ui.credentials.passphrase")}</span>
         <PasswordInput value={passphrase} onChange={setPassphrase} />
         <span className="field_hint">
-          Only if the key is encrypted. Leave blank otherwise.
+          {t("ui.credentials.passphrase_hint")}
         </span>
       </label>
       {error !== null && <span className="field_error">{error}</span>}
@@ -331,7 +341,7 @@ function AddKeyForm({ onAdded, onCancel }: AddKeyFormProps) {
           className="button button--ghost"
           onClick={onCancel}
         >
-          Cancel
+          {t("ui.credentials.cancel")}
         </button>
         <button
           type="button"
@@ -340,7 +350,7 @@ function AddKeyForm({ onAdded, onCancel }: AddKeyFormProps) {
           onClick={() => void handleSubmit()}
         >
           <Icon name="check" size={14} />
-          {isSaving ? "Saving…" : "Save key"}
+          {isSaving ? t("ui.credentials.saving") : t("ui.credentials.save_key")}
         </button>
       </div>
     </div>
@@ -353,15 +363,17 @@ interface KeyCardProps {
 }
 
 function KeyCard({ value, onDeleted }: KeyCardProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const confirm = useConfirm();
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
   const handleDelete = () =>
     confirm.ask({
-      title: `Delete ${value.name}`,
+      title: t("ui.credentials.delete_title", { name: value.name }),
       body: keyDeleteBody(value.device_count),
-      confirmLabel: "Delete",
+      confirmLabel: t("ui.credentials.delete"),
       onConfirm: () => void deleteKey(),
     });
 
@@ -392,7 +404,7 @@ function KeyCard({ value, onDeleted }: KeyCardProps) {
         {value.has_passphrase && (
           <span className="key_card_tag">
             <Icon name="lock" size={11} />
-            encrypted
+            {t("state.encrypted")}
           </span>
         )}
         <span
@@ -400,13 +412,13 @@ function KeyCard({ value, onDeleted }: KeyCardProps) {
             value.device_count > 0 ? "key_card_tag--used" : ""
           }`}
         >
-          {value.device_count === 0
-            ? "unused"
-            : `${value.device_count} device${value.device_count === 1 ? "" : "s"}`}
+          {deviceUsage(value.device_count)}
         </span>
         {value.created_at.length > 0 && (
           <span className="key_card_added">
-            added {formatTimeAgo(value.created_at)}
+            {t("ui.credentials.added", {
+              when: formatTimeAgo(value.created_at),
+            })}
           </span>
         )}
       </div>
@@ -421,7 +433,7 @@ function KeyCard({ value, onDeleted }: KeyCardProps) {
           onClick={handleDelete}
         >
           <Icon name="trash" size={13} />
-          Delete
+          {t("ui.credentials.delete")}
         </button>
       </div>
       {confirm.modal}
@@ -435,6 +447,8 @@ interface LoginFormProps {
 }
 
 function LoginForm({ onAdded, onCancel }: LoginFormProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -462,38 +476,36 @@ function LoginForm({ onAdded, onCancel }: LoginFormProps) {
 
   return (
     <div className="keys_add">
-      <div className="section_label">New login</div>
+      <div className="section_label">{t("ui.credentials.new_login")}</div>
       <div className="credentials_form_row">
         <label className="field">
-          <span className="field_label">Name</span>
+          <span className="field_label">{t("ui.credentials.name")}</span>
           <input
             className="input"
             value={name}
-            placeholder="lab machines"
+            placeholder={LOGIN_NAME_PLACEHOLDER}
             autoFocus
             onChange={(event) => setName(event.target.value)}
           />
         </label>
         <label className="field">
-          <span className="field_label">Username</span>
+          <span className="field_label">{t("ui.credentials.username")}</span>
           <input
             className="input"
             value={username}
-            placeholder="backup"
+            placeholder={LOGIN_USERNAME_PLACEHOLDER}
             spellCheck={false}
             onChange={(event) => setUsername(event.target.value)}
           />
           <span className="field_hint">
-            Leave blank to store a bare password.
+            {t("ui.credentials.username_hint")}
           </span>
         </label>
       </div>
       <label className="field">
-        <span className="field_label">Password</span>
+        <span className="field_label">{t("ui.credentials.password")}</span>
         <PasswordInput value={password} onChange={setPassword} />
-        <span className="field_hint">
-          Stored sealed on the gateway, and never shown again.
-        </span>
+        <span className="field_hint">{t("ui.credentials.sealed_hint")}</span>
       </label>
       {error !== null && <span className="field_error">{error}</span>}
       <div className="keys_add_actions">
@@ -502,7 +514,7 @@ function LoginForm({ onAdded, onCancel }: LoginFormProps) {
           className="button button--ghost"
           onClick={onCancel}
         >
-          Cancel
+          {t("ui.credentials.cancel")}
         </button>
         <button
           type="button"
@@ -511,7 +523,9 @@ function LoginForm({ onAdded, onCancel }: LoginFormProps) {
           onClick={() => void handleSubmit()}
         >
           <Icon name="check" size={14} />
-          {isSaving ? "Saving…" : "Save login"}
+          {isSaving
+            ? t("ui.credentials.saving")
+            : t("ui.credentials.save_login")}
         </button>
       </div>
     </div>
@@ -524,15 +538,17 @@ interface LoginCardProps {
 }
 
 function LoginCard({ value, onDeleted }: LoginCardProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const confirm = useConfirm();
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
   const handleDelete = () =>
     confirm.ask({
-      title: `Delete ${value.name}`,
+      title: t("ui.credentials.delete_title", { name: value.name }),
       body: loginDeleteBody(value.device_count),
-      confirmLabel: "Delete",
+      confirmLabel: t("ui.credentials.delete"),
       onConfirm: () => void deleteLogin(),
     });
 
@@ -566,11 +582,13 @@ function LoginCard({ value, onDeleted }: LoginCardProps) {
             value.device_count > 0 ? "key_card_tag--used" : ""
           }`}
         >
-          {loginUsage(value.device_count)}
+          {deviceUsage(value.device_count)}
         </span>
         {value.created_at.length > 0 && (
           <span className="key_card_added">
-            added {formatTimeAgo(value.created_at)}
+            {t("ui.credentials.added", {
+              when: formatTimeAgo(value.created_at),
+            })}
           </span>
         )}
       </div>
@@ -585,7 +603,7 @@ function LoginCard({ value, onDeleted }: LoginCardProps) {
           onClick={handleDelete}
         >
           <Icon name="trash" size={13} />
-          Delete
+          {t("ui.credentials.delete")}
         </button>
       </div>
       {confirm.modal}
@@ -599,6 +617,8 @@ interface TokenFormProps {
 }
 
 function TokenForm({ onAdded, onCancel }: TokenFormProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -624,23 +644,21 @@ function TokenForm({ onAdded, onCancel }: TokenFormProps) {
 
   return (
     <div className="keys_add">
-      <div className="section_label">New token</div>
+      <div className="section_label">{t("ui.credentials.new_token")}</div>
       <label className="field">
-        <span className="field_label">Name</span>
+        <span className="field_label">{t("ui.credentials.name")}</span>
         <input
           className="input"
           value={name}
-          placeholder="Anthropic key"
+          placeholder={TOKEN_NAME_PLACEHOLDER}
           autoFocus
           onChange={(event) => setName(event.target.value)}
         />
       </label>
       <label className="field">
-        <span className="field_label">Value</span>
+        <span className="field_label">{t("ui.credentials.value")}</span>
         <PasswordInput value={value} onChange={setValue} />
-        <span className="field_hint">
-          Stored sealed on the gateway, and never shown again.
-        </span>
+        <span className="field_hint">{t("ui.credentials.sealed_hint")}</span>
       </label>
       {error !== null && <span className="field_error">{error}</span>}
       <div className="keys_add_actions">
@@ -649,7 +667,7 @@ function TokenForm({ onAdded, onCancel }: TokenFormProps) {
           className="button button--ghost"
           onClick={onCancel}
         >
-          Cancel
+          {t("ui.credentials.cancel")}
         </button>
         <button
           type="button"
@@ -658,7 +676,9 @@ function TokenForm({ onAdded, onCancel }: TokenFormProps) {
           onClick={() => void handleSubmit()}
         >
           <Icon name="check" size={14} />
-          {isSaving ? "Saving…" : "Save token"}
+          {isSaving
+            ? t("ui.credentials.saving")
+            : t("ui.credentials.save_token")}
         </button>
       </div>
     </div>
@@ -671,15 +691,17 @@ interface TokenCardProps {
 }
 
 function TokenCard({ value, onDeleted }: TokenCardProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const confirm = useConfirm();
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
   const handleDelete = () =>
     confirm.ask({
-      title: `Delete ${value.name}`,
+      title: t("ui.credentials.delete_title", { name: value.name }),
       body: tokenDeleteBody(value.provider_count, value.node_count),
-      confirmLabel: "Delete",
+      confirmLabel: t("ui.credentials.delete"),
       onConfirm: () => void deleteToken(),
     });
 
@@ -715,7 +737,9 @@ function TokenCard({ value, onDeleted }: TokenCardProps) {
         </span>
         {value.created_at.length > 0 && (
           <span className="key_card_added">
-            added {formatTimeAgo(value.created_at)}
+            {t("ui.credentials.added", {
+              when: formatTimeAgo(value.created_at),
+            })}
           </span>
         )}
       </div>
@@ -730,7 +754,7 @@ function TokenCard({ value, onDeleted }: TokenCardProps) {
           onClick={handleDelete}
         >
           <Icon name="trash" size={13} />
-          Delete
+          {t("ui.credentials.delete")}
         </button>
       </div>
       {confirm.modal}
@@ -738,64 +762,74 @@ function TokenCard({ value, onDeleted }: TokenCardProps) {
   );
 }
 
-/** One count with its pluralized noun, e.g. "2 devices". */
-function countNoun(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
-}
-
 /** The usage tag's wording: unused, or how many devices hold it. */
-function loginUsage(deviceCount: number): string {
-  return deviceCount === 0 ? "unused" : countNoun(deviceCount, "device");
+function deviceUsage(deviceCount: number): string {
+  if (deviceCount === 0) {
+    return t("state.unused");
+  }
+  return deviceCount === 1
+    ? t("ui.credentials.usage_device_one")
+    : t("ui.credentials.usage_devices", { count: deviceCount });
 }
 
 /** The token usage tag's wording: which counts are nonzero, joined. */
 function tokenUsage(providerCount: number, nodeCount: number): string {
   const parts: string[] = [];
   if (providerCount > 0) {
-    parts.push(countNoun(providerCount, "provider"));
+    parts.push(
+      providerCount === 1
+        ? t("ui.credentials.usage_provider_one")
+        : t("ui.credentials.usage_providers", { count: providerCount }),
+    );
   }
   if (nodeCount > 0) {
-    parts.push(countNoun(nodeCount, "node"));
+    parts.push(
+      nodeCount === 1
+        ? t("ui.credentials.usage_node_one")
+        : t("ui.credentials.usage_nodes", { count: nodeCount }),
+    );
   }
-  return parts.length === 0 ? "unused" : parts.join(" · ");
+  return parts.length === 0 ? t("state.unused") : parts.join(" · ");
 }
 
 /** The delete confirmation's body for a key: who loses it. */
 function keyDeleteBody(deviceCount: number): string {
   if (deviceCount === 0) {
-    return "The private key is deleted from this box.";
+    return t("ui.credentials.key_delete_none");
   }
-  const verb = deviceCount === 1 ? "loses" : "lose";
-  return `${countNoun(deviceCount, "device")} ${verb} this key and will need a new one.`;
+  return deviceCount === 1
+    ? t("ui.credentials.key_delete_one")
+    : t("ui.credentials.key_delete_many", { count: deviceCount });
 }
 
 /** The delete confirmation's body for a login: who loses it. */
 function loginDeleteBody(deviceCount: number): string {
   if (deviceCount === 0) {
-    return "The login and its password are deleted from this box.";
+    return t("ui.credentials.login_delete_none");
   }
-  const verb = deviceCount === 1 ? "loses" : "lose";
-  return `${countNoun(deviceCount, "device")} ${verb} this login and will need a new one.`;
+  return deviceCount === 1
+    ? t("ui.credentials.login_delete_one")
+    : t("ui.credentials.login_delete_many", { count: deviceCount });
 }
 
-/** The delete confirmation's body for a token: who loses it. */
+/** The delete confirmation's body for a token: who loses it, one sentence each. */
 function tokenDeleteBody(providerCount: number, nodeCount: number): string {
-  const parts: string[] = [];
+  const sentences: string[] = [];
   if (providerCount > 0) {
-    parts.push(countNoun(providerCount, "provider"));
+    sentences.push(
+      providerCount === 1
+        ? t("ui.credentials.token_delete_provider_one")
+        : t("ui.credentials.token_delete_providers", { count: providerCount }),
+    );
   }
   if (nodeCount > 0) {
-    parts.push(countNoun(nodeCount, "node"));
+    sentences.push(
+      nodeCount === 1
+        ? t("ui.credentials.token_delete_node_one")
+        : t("ui.credentials.token_delete_nodes", { count: nodeCount }),
+    );
   }
-  if (parts.length === 0) {
-    return "The token is deleted from this box.";
-  }
-  const verb = providerCount + nodeCount === 1 ? "loses" : "lose";
-  const disabled =
-    nodeCount === 0
-      ? ""
-      : nodeCount === 1
-        ? " The node is disabled."
-        : " The nodes are disabled.";
-  return `${parts.join(" and ")} ${verb} this token and will need a new one.${disabled}`;
+  return sentences.length === 0
+    ? t("ui.credentials.token_delete_none")
+    : sentences.join(" ");
 }

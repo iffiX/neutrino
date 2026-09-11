@@ -1,3 +1,5 @@
+import { t, useLanguage } from "../i18n";
+
 import "./spinner.css";
 
 /**
@@ -14,13 +16,15 @@ interface SpinnerProps {
 }
 
 export function Spinner({ size = 14, label }: SpinnerProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   return (
     <span className="spinner_wrap">
       <span
         className="spinner"
         style={{ width: size, height: size }}
         role="status"
-        aria-label={label ?? "Working"}
+        aria-label={label ?? t("ui.spinner.working")}
       />
       {label !== undefined && <span className="muted">{label}</span>}
     </span>

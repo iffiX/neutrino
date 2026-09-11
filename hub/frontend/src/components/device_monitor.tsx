@@ -6,6 +6,7 @@ import { Icon } from "./icon";
 import { apiPost, describeError } from "../api_client";
 import { toDeviceMetrics } from "../device_metrics";
 import { formatDuration, formatTimeAgo } from "../format_duration";
+import { t, useLanguage } from "../i18n";
 import { HUB_EVENT_METRICS, useHubEvents } from "../use_hub_events";
 import type { HubEvent } from "../use_hub_events";
 import type { DeviceGpuInfo, DeviceView } from "../api_types";
@@ -30,6 +31,11 @@ const MAX_SAMPLES = 120;
 const CYAN = "#22d3ee";
 const VIOLET = "#a78bfa";
 
+/** The process table's columns, the abbreviations the agent reports under. */
+const COLUMN_PID = "pid";
+const COLUMN_CPU = "cpu%";
+const COLUMN_MEMORY = "mem%";
+
 interface MonitorSample {
   cpu: number | null;
   memory: number | null;
@@ -42,6 +48,8 @@ interface DeviceMonitorProps {
 }
 
 export function DeviceMonitor({ device }: DeviceMonitorProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const client = device.client;
   const hasSample = client !== null && client.cpu_percent !== null;
   const [samples, setSamples] = useState<MonitorSample[]>([]);
@@ -100,19 +108,31 @@ export function DeviceMonitor({ device }: DeviceMonitorProps) {
     <div className="device_monitor_wrap">
       <div className="device_monitor">
         <div className="device_monitor_head">
-          <span className="section_label">Live monitor</span>
+          <span className="section_label">{t("ui.device_monitor.title")}</span>
           {hasSample && client !== null && (
             <span className="device_monitor_meta">
               {client.uptime_s !== null && (
-                <span>up {formatDuration(client.uptime_s)}</span>
+                <span>
+                  {t("ui.device_monitor.uptime", {
+                    duration: formatDuration(client.uptime_s),
+                  })}
+                </span>
               )}
               {client.load_average.length === 3 && (
                 <span>
-                  load {client.load_average.map((v) => v.toFixed(2)).join(" ")}
+                  {t("ui.device_monitor.load", {
+                    load: client.load_average
+                      .map((value) => value.toFixed(2))
+                      .join(" "),
+                  })}
                 </span>
               )}
               {client.disk_percent !== null && (
-                <span>disk {Math.round(client.disk_percent)}%</span>
+                <span>
+                  {t("ui.device_monitor.disk", {
+                    percent: Math.round(client.disk_percent),
+                  })}
+                </span>
               )}
               {client.temperature_c !== null && (
                 <span>{Math.round(client.temperature_c)}°C</span>
@@ -126,22 +146,22 @@ export function DeviceMonitor({ device }: DeviceMonitorProps) {
             <Icon name="devices" size={22} />
             <span>
               {client !== null
-                ? "Waiting for the agent's first heartbeat."
-                : "Install the agent to see the live monitor."}
+                ? t("ui.device_monitor.waiting")
+                : t("ui.device_monitor.no_agent")}
             </span>
           </div>
         ) : (
           <div className="device_monitor_body">
             <div className="device_monitor_grid">
               <ChartPanel
-                title="CPU"
+                title={t("ui.device_monitor.cpu")}
                 value={formatPercent(client.cpu_percent)}
                 gradientPrefix={`mon_cpu_${device.mac_address}`}
                 data={samples.map((sample) => ({ a: sample.cpu }))}
                 series={[{ key: "a", color: CYAN }]}
               />
               <ChartPanel
-                title="Memory"
+                title={t("ui.device_monitor.memory")}
                 value={formatPercent(client.memory_percent)}
                 gradientPrefix={`mon_mem_${device.mac_address}`}
                 data={samples.map((sample) => ({ a: sample.memory }))}
@@ -179,11 +199,11 @@ export function DeviceMonitor({ device }: DeviceMonitorProps) {
                   </colgroup>
                   <thead>
                     <tr>
-                      <th className="num">pid</th>
-                      <th>user</th>
-                      <th>command</th>
-                      <th className="num">cpu%</th>
-                      <th className="num">mem%</th>
+                      <th className="num">{COLUMN_PID}</th>
+                      <th>{t("ui.device_monitor.column_user")}</th>
+                      <th>{t("ui.device_monitor.column_command")}</th>
+                      <th className="num">{COLUMN_CPU}</th>
+                      <th className="num">{COLUMN_MEMORY}</th>
                       <th className="kill" />
                     </tr>
                   </thead>
@@ -207,8 +227,8 @@ export function DeviceMonitor({ device }: DeviceMonitorProps) {
                             className={`device_monitor_kill ${pendingKillPid === process.pid ? "device_monitor_kill--armed" : ""}`}
                             title={
                               pendingKillPid === process.pid
-                                ? "Click again to kill"
-                                : "Kill process"
+                                ? t("ui.device_monitor.kill_again")
+                                : t("ui.device_monitor.kill")
                             }
                             onClick={() => void handleKill(process.pid)}
                           >
@@ -226,7 +246,9 @@ export function DeviceMonitor({ device }: DeviceMonitorProps) {
             )}
 
             <div className="device_monitor_footer">
-              sampled {formatTimeAgo(client.last_report_at)}
+              {t("ui.device_monitor.sampled", {
+                when: formatTimeAgo(client.last_report_at),
+              })}
             </div>
           </div>
         )}

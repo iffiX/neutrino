@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 
 import { Icon } from "../components/icon";
+import { t, useLanguage } from "../i18n";
 
 /**
  * The catch-all route.
@@ -10,13 +11,15 @@ import { Icon } from "../components/icon";
  * dressing a dead end up as an error.
  */
 export function NotFoundPage() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   return (
     <div className="page">
-      <h1>No such page</h1>
+      <h1>{t("ui.not_found.title")}</h1>
       <div>
         <Link className="button button--primary" to="/">
           <Icon name="dashboard" size={14} />
-          Back to the dashboard
+          {t("ui.not_found.back")}
         </Link>
       </div>
     </div>

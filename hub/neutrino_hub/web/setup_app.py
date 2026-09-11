@@ -136,26 +136,35 @@ class WebSetupSession:
             self._message = message
         self._answered.clear()
 
-    def step(self, description: str, status: str, note: str = "") -> None:
+    def step(
+        self, step_id: str, status: str, note: str = "", params: dict | None = None
+    ) -> None:
         """Record where the steps have got to.
 
         A step already listed is updated in place, so the browser sees one
         line move from running to its outcome rather than two lines.
 
         Args:
-            description: The step's name, as the terminal prints it.
+            step_id: The step's name, which the page words for itself.
             status: One of the ``WEB_SETUP_STEP_`` states.
             note: Short detail, the same one the terminal shows.
+            params: The values the page's wording names.
         """
+        values = dict(params or {})
         with self._lock:
             for entry in self._steps:
-                if entry["description"] == description:
+                if entry["id"] == step_id and entry["params"] == values:
                     entry["status"] = status
                     entry["note"] = note
                     break
             else:
                 self._steps.append(
-                    {"description": description, "status": status, "note": note}
+                    {
+                        "id": step_id,
+                        "params": values,
+                        "status": status,
+                        "note": note,
+                    }
                 )
             if status == WEB_SETUP_STEP_FAILED:
                 self._state = WEB_SETUP_STATE_FAILED

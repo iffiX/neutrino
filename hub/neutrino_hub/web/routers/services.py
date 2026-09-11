@@ -205,5 +205,5 @@ def _invalid(error: ServiceFieldInvalidError) -> HTTPException:
 def _unknown() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
-        detail={"code": SERVICES_ERROR_UNKNOWN},
+        detail={"code": SERVICES_ERROR_UNKNOWN, "params": {}},
     )

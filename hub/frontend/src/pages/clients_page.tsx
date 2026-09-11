@@ -7,6 +7,7 @@ import { StatusDot } from "../components/status_dot";
 import type { StatusTone } from "../components/status_dot";
 import { apiDelete, apiPost, apiPut, describeError } from "../api_client";
 import { formatTimeAgo } from "../format_duration";
+import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
 import { HUB_EVENT_CLIENTS } from "../use_hub_events";
@@ -27,37 +28,6 @@ import "./clients_page.css";
  * switch and the delete write at once.
  */
 
-const WORDING = {
-  title: "Clients",
-  badge: (online: number, total: number) => `${online} of ${total} online`,
-  newLink: "New client link",
-  namePlaceholder: "whose program this is, e.g. alice-laptop",
-  createLink: "Create link",
-  cancel: "Cancel",
-  enrollmentTitle: (name: string) =>
-    `Paste this link into the client program for ${name}.`,
-  enrollmentHint:
-    "Open the client, choose Join a hub, and paste the link. It works for {minutes} minutes.",
-  headerName: "Name",
-  headerHostname: "Hostname",
-  headerPlatform: "Platform",
-  headerVersion: "Version",
-  headerStatus: "Status",
-  headerLastSeen: "Last seen",
-  online: "online",
-  offline: "offline",
-  neverConnected: "never connected",
-  disabled: "disabled",
-  disable: "Disable",
-  enable: "Enable",
-  delete: "Delete",
-  deleteTitle: (name: string) => `Delete ${name}`,
-  deleteBody:
-    "Its gateway key is revoked and its program loses this hub; it needs a new link to come back.",
-  empty: "No clients yet",
-  emptyHint: "Create a link for a person's client program.",
-} as const;
-
 const CLIENTS_PATH = "/clients";
 const INVALIDATE_ON = [{ type: HUB_EVENT_CLIENTS }];
 
@@ -69,13 +39,18 @@ const PRESENCE_TONES: Record<ClientPresence, StatusTone> = {
   never: "idle",
 };
 
-const PRESENCE_LABELS: Record<ClientPresence, string> = {
-  online: WORDING.online,
-  offline: WORDING.offline,
-  never: WORDING.neverConnected,
+const PRESENCE_KEYS: Record<ClientPresence, string> = {
+  online: "state.online",
+  offline: "state.offline",
+  never: "state.never_connected",
 };
 
+/** What a column shows for a client that has not reported one. */
+const NOTHING = "—";
+
 export function ClientsPage() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const resource = useApiResource<ClientListView>(CLIENTS_PATH, {
     invalidateOn: INVALIDATE_ON,
   });
@@ -153,9 +128,9 @@ export function ClientsPage() {
 
   const askDelete = (client: ClientView) =>
     confirm.ask({
-      title: WORDING.deleteTitle(client.name),
-      body: WORDING.deleteBody,
-      confirmLabel: WORDING.delete,
+      title: t("ui.clients.delete_title", { name: client.name }),
+      body: t("ui.clients.delete_body"),
+      confirmLabel: t("ui.clients.delete"),
       onConfirm: () => void handleDelete(client),
     });
 
@@ -164,7 +139,7 @@ export function ClientsPage() {
   if (resource.error !== null && clients.length === 0) {
     return (
       <div className="page">
-        <h1>{WORDING.title}</h1>
+        <h1>{t("ui.clients.title")}</h1>
         <ErrorPanel message={resource.error} onRetry={resource.reload} />
       </div>
     );
@@ -175,9 +150,12 @@ export function ClientsPage() {
       <div className="page_header">
         <div className="page_header_text">
           <div className="page_title_row">
-            <h1>{WORDING.title}</h1>
+            <h1>{t("ui.clients.title")}</h1>
             <span className="badge">
-              {WORDING.badge(onlineCount, clients.length)}
+              {t("ui.clients.badge", {
+                online: onlineCount,
+                total: clients.length,
+              })}
             </span>
           </div>
         </div>
@@ -190,7 +168,7 @@ export function ClientsPage() {
               onClick={() => setIsNaming(true)}
             >
               <Icon name="link" size={14} />
-              {WORDING.newLink}
+              {t("ui.clients.new_link")}
             </button>
           )}
         </div>
@@ -207,7 +185,7 @@ export function ClientsPage() {
         <div className="clients_add">
           <input
             className="input"
-            placeholder={WORDING.namePlaceholder}
+            placeholder={t("ui.clients.name_placeholder")}
             value={name}
             autoFocus
             onChange={(event) => setName(event.target.value)}
@@ -226,7 +204,7 @@ export function ClientsPage() {
                 setName("");
               }}
             >
-              {WORDING.cancel}
+              {t("ui.clients.cancel")}
             </button>
             <button
               type="button"
@@ -235,7 +213,7 @@ export function ClientsPage() {
               onClick={() => void handleCreateLink()}
             >
               <Icon name="check" size={14} />
-              {WORDING.createLink}
+              {t("ui.clients.create_link")}
             </button>
           </div>
         </div>
@@ -245,8 +223,8 @@ export function ClientsPage() {
         <DeviceEnrollmentNotice
           link={enrollment.view.link}
           expiresInS={secondsUntil(enrollment.view.expires_at)}
-          title={WORDING.enrollmentTitle(enrollment.name)}
-          hint={WORDING.enrollmentHint}
+          title={t("ui.clients.enrollment_title", { name: enrollment.name })}
+          hint={t("ui.clients.enrollment_hint")}
           onDismiss={() => setEnrollment(null)}
         />
       )}
@@ -256,8 +234,8 @@ export function ClientsPage() {
           <div className="skeleton" style={{ height: 160 }} />
         ) : (
           <div className="placeholder">
-            <span>{WORDING.empty}</span>
-            <span className="faint">{WORDING.emptyHint}</span>
+            <span>{t("ui.clients.empty")}</span>
+            <span className="faint">{t("ui.clients.empty_hint")}</span>
           </div>
         )
       ) : (
@@ -265,12 +243,12 @@ export function ClientsPage() {
           <table className="clients_table">
             <thead>
               <tr>
-                <th>{WORDING.headerName}</th>
-                <th>{WORDING.headerHostname}</th>
-                <th>{WORDING.headerPlatform}</th>
-                <th>{WORDING.headerVersion}</th>
-                <th>{WORDING.headerStatus}</th>
-                <th>{WORDING.headerLastSeen}</th>
+                <th>{t("ui.clients.header_name")}</th>
+                <th>{t("ui.clients.header_hostname")}</th>
+                <th>{t("ui.clients.header_platform")}</th>
+                <th>{t("ui.clients.header_version")}</th>
+                <th>{t("ui.clients.header_status")}</th>
+                <th>{t("ui.clients.header_last_seen")}</th>
                 <th />
               </tr>
             </thead>
@@ -301,6 +279,8 @@ interface ClientRowProps {
 }
 
 function ClientRow({ client, isBusy, onToggle, onDelete }: ClientRowProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const presence = presenceOf(client);
   return (
     <tr className={client.is_disabled ? "clients_row--disabled" : ""}>
@@ -308,21 +288,23 @@ function ClientRow({ client, isBusy, onToggle, onDelete }: ClientRowProps) {
         <div className="clients_name">
           {client.name}
           {client.is_disabled && (
-            <span className="badge badge--warn">{WORDING.disabled}</span>
+            <span className="badge badge--warn">
+              {t("ui.clients.disabled")}
+            </span>
           )}
         </div>
       </td>
-      <td className="mono">{client.hostname || "—"}</td>
-      <td>{client.platform_os || "—"}</td>
-      <td className="mono">{client.version || "—"}</td>
+      <td className="mono">{client.hostname || NOTHING}</td>
+      <td>{client.platform_os || NOTHING}</td>
+      <td className="mono">{client.version || NOTHING}</td>
       <td>
         <StatusDot
           tone={PRESENCE_TONES[presence]}
-          label={PRESENCE_LABELS[presence]}
+          label={t(PRESENCE_KEYS[presence])}
         />
       </td>
       <td className="mono">
-        {client.is_online ? WORDING.online : formatTimeAgo(client.last_seen)}
+        {client.is_online ? t("state.online") : formatTimeAgo(client.last_seen)}
       </td>
       <td className="clients_actions">
         <button
@@ -331,7 +313,9 @@ function ClientRow({ client, isBusy, onToggle, onDelete }: ClientRowProps) {
           disabled={isBusy}
           onClick={onToggle}
         >
-          {client.is_disabled ? WORDING.enable : WORDING.disable}
+          {client.is_disabled
+            ? t("ui.clients.enable")
+            : t("ui.clients.disable")}
         </button>
         <button
           type="button"
@@ -340,7 +324,7 @@ function ClientRow({ client, isBusy, onToggle, onDelete }: ClientRowProps) {
           onClick={onDelete}
         >
           <Icon name="trash" size={13} />
-          {WORDING.delete}
+          {t("ui.clients.delete")}
         </button>
       </td>
     </tr>

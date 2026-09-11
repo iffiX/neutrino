@@ -201,7 +201,7 @@ def test_a_dhcp_pool_may_not_swallow_the_gateway_address(box):
     response = client.put("/api/network/interfaces/enp1s0", json=draft)
 
     assert response.status_code == 400
-    assert "outside the DHCP range" in response.json()["detail"]
+    assert response.json()["detail"]["code"] == "dhcp_range_holds_gateway"
 
 
 def test_a_dhcp_pool_must_lie_inside_its_own_network(box):
@@ -233,7 +233,7 @@ def test_two_served_networks_may_not_overlap(box):
     response = client.put("/api/network/interfaces/wlp3s0", json=draft)
 
     assert response.status_code == 400
-    assert "overlaps" in response.json()["detail"]
+    assert response.json()["detail"]["code"] == "lan_subnet_overlaps"
 
 
 def test_an_access_point_needs_a_usable_passphrase(box):
@@ -247,7 +247,10 @@ def test_an_access_point_needs_a_usable_passphrase(box):
     response = client.put("/api/network/interfaces/wlp3s0", json=draft)
 
     assert response.status_code == 400
-    assert "8 to 63" in response.json()["detail"]
+    assert response.json()["detail"] == {
+        "code": "access_point_passphrase_length",
+        "params": {"minimum": 8, "maximum": 63},
+    }
 
 
 def test_a_static_uplink_gateway_must_sit_in_its_own_subnet(box):
@@ -265,7 +268,7 @@ def test_a_static_uplink_gateway_must_sit_in_its_own_subnet(box):
     response = client.put("/api/network/interfaces/enp2s0", json=draft)
 
     assert response.status_code == 400
-    assert "must lie inside" in response.json()["detail"]
+    assert response.json()["detail"]["code"] == "uplink_gateway_outside"
 
 
 def test_a_static_uplink_without_a_gateway_is_refused(box):
@@ -299,7 +302,7 @@ def test_a_radio_without_access_point_mode_cannot_serve_a_network(box):
     response = client.put("/api/network/interfaces/wlp3s0", json=draft)
 
     assert response.status_code == 400
-    assert "access-point mode" in response.json()["detail"]
+    assert response.json()["detail"]["code"] == "interface_not_ap_capable"
     assert runtime.applied == []
 
 

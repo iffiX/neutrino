@@ -17,10 +17,14 @@ import json
 import os
 import threading
 
+from neutrino_client import words
 from neutrino_client.constants import (
+    CLIENT_DEFAULT_LANGUAGE,
     CLIENT_DESKTOP_NAME,
     CLIENT_GUI_WINDOW_HEIGHT,
     CLIENT_GUI_WINDOW_WIDTH,
+    CLIENT_TRAY_OPEN_LABEL_KEY,
+    CLIENT_TRAY_QUIT_LABEL_KEY,
 )
 from neutrino_client.exceptions import GuiShellUnavailableError
 from neutrino_client.gui.tray_linux import LinuxTrayIcon
@@ -38,6 +42,7 @@ def open_window(
     title: str,
     html: str,
     bridge,
+    language: str = CLIENT_DEFAULT_LANGUAGE,
     icon_path: str = "",
     is_hidden: bool = False,
     on_quit=None,
@@ -50,6 +55,7 @@ def open_window(
         title: The window title.
         html: The page, as one document.
         bridge: The window's bridge.
+        language: The language the tray menu is worded in.
         icon_path: The window icon's file path, empty for none.
         is_hidden: Whether to start in the tray with no window shown.
         on_quit: Called when the person picks Quit, before the loop ends.
@@ -130,6 +136,8 @@ def open_window(
     window.connect("delete-event", on_delete)
     LinuxTrayIcon(
         title=title,
+        open_label=words.word(language, CLIENT_TRAY_OPEN_LABEL_KEY),
+        quit_label=words.word(language, CLIENT_TRAY_QUIT_LABEL_KEY),
         icon_path=icon_path,
         on_open=show_window,
         on_quit=quit_window,

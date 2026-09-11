@@ -7,8 +7,7 @@
  * what keeps it worth reading.
  */
 
-/** The second sentence of every warning that can drop a session. */
-export const WARNING_INTERRUPTION = "Connectivity may be interrupted.";
+import { t } from "./i18n";
 
 /**
  * Compose a warning from the mechanisms that apply, or nothing when none do.
@@ -24,5 +23,5 @@ export function interruptionWarning(
   if (said.length === 0) {
     return undefined;
   }
-  return `${said.join(" ")} ${WARNING_INTERRUPTION}`;
+  return `${said.join(" ")} ${t("ui.network.warning_interruption")}`;
 }

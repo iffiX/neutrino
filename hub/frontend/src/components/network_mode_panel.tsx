@@ -4,6 +4,7 @@ import { ApplyBar } from "./apply_bar";
 import { Icon } from "./icon";
 import type { IconName } from "./icon";
 import { apiPut, describeError } from "../api_client";
+import { t, useLanguage } from "../i18n";
 import { interruptionWarning } from "../network_warnings";
 import { useDraftSeeding } from "../use_draft_seeding";
 import type { NetworkMode, NetworkModeKey, NetworkView } from "../api_types";
@@ -23,10 +24,10 @@ import "./network_mode_panel.css";
  * new shape cannot hold it.
  */
 
-const MODE_LABELS: Record<NetworkModeKey, string> = {
-  server: "Server",
-  side_gateway: "Side gateway",
-  router: "Router",
+const MODE_LABEL_KEYS: Record<NetworkModeKey, string> = {
+  server: "ui.network.mode_server",
+  side_gateway: "ui.network.mode_side_gateway",
+  router: "ui.network.mode_router",
 };
 
 const MODE_ICONS: Record<NetworkModeKey, IconName> = {
@@ -44,6 +45,8 @@ export function NetworkModePanel({
   network,
   onApplied,
 }: NetworkModePanelProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [chosen, setChosen] = useState<NetworkModeKey>(network.mode);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,11 +84,9 @@ export function NetworkModePanel({
       className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
     >
       <div className="settings_group_title">
-        <h2>Mode</h2>
+        <h2>{t("ui.network.mode_title")}</h2>
       </div>
-      <p className="field_hint">
-        What this machine is. Every section below it follows from the answer.
-      </p>
+      <p className="field_hint">{t("ui.network.mode_hint")}</p>
 
       <div className="mode_choices">
         {network.modes.map((mode) => (
@@ -101,9 +102,9 @@ export function NetworkModePanel({
           >
             <span className="mode_choice_head">
               <Icon name={MODE_ICONS[mode.key]} size={15} />
-              <strong>{MODE_LABELS[mode.key]}</strong>
+              <strong>{t(MODE_LABEL_KEYS[mode.key])}</strong>
               {mode.key === network.mode && (
-                <span className="badge">active</span>
+                <span className="badge">{t("state.active")}</span>
               )}
             </span>
             <span className="mode_choice_summary">{mode.summary}</span>
@@ -114,8 +115,8 @@ export function NetworkModePanel({
       <ApplyBar
         isDirty={isDirty}
         isBusy={isBusy}
-        label="Apply mode"
-        hint="Rewrites the interface roles and reloads the firewall."
+        label={t("ui.network.apply_mode")}
+        hint={t("ui.network.apply_mode_hint")}
         warning={handoverWarning(network, becoming)}
         error={error}
         onReset={() => setChosen(network.mode)}
@@ -142,7 +143,7 @@ function handoverWarning(
   }
   return interruptionWarning(
     becoming.is_addressing_owned
-      ? "Interface management passes to Neutrino and addresses are reassigned."
-      : "Interface management returns to this machine's network manager.",
+      ? t("ui.network.warning_addressing_taken")
+      : t("ui.network.warning_addressing_returned"),
   );
 }

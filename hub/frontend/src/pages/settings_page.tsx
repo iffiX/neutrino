@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 
+import { ApplyBar } from "../components/apply_bar";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { Spinner } from "../components/spinner";
@@ -12,18 +13,28 @@ import {
   describeError,
 } from "../api_client";
 import { formatDuration } from "../format_duration";
+import {
+  LANGUAGES,
+  LANGUAGE_NAMES,
+  asLanguage,
+  setLanguage,
+  t,
+  useLanguage,
+} from "../i18n";
+import { useApiResource } from "../use_api_resource";
 import { stripAnsi } from "../strip_ansi";
 import { useTaskStream } from "../use_task_stream";
 import { PasswordField } from "../components/password_field";
 import { PasswordInput } from "../components/password_input";
 import {
-  PANEL_PASSWORD_HINT,
+  panelPasswordHint,
   PANEL_PASSWORD_RULES,
   isPasswordAccepted,
 } from "../password_strength";
 import { usePolledResource } from "../use_polled_resource";
 import type {
   AboutInfo,
+  PanelSettings,
   PasswordChangeResult,
   RestoreResult,
 } from "../api_types";
@@ -55,6 +66,9 @@ const ABOUT_CREDITS_HINT =
 const ABOUT_CREDITS_SOURCE = "source";
 
 const NOT_A_BACKUP_SENTENCE = "This is not a Neutrino backup.";
+
+/** What the API answers when it is asked for a language nobody ships. */
+const LANGUAGE_UNKNOWN_CODE = "language_unknown";
 
 const RESTORE_ERROR_SENTENCES: Record<string, string> = {
   vault_passphrase_needed: "The vault master password is required to restore.",
@@ -344,6 +358,8 @@ export function SettingsPage() {
           )}
         </section>
 
+        <LanguagePanel />
+
         <section className="card">
           <div className="card_header">
             <div className="card_title">
@@ -366,7 +382,7 @@ export function SettingsPage() {
             <PasswordField
               label="New password"
               repeatLabel="Confirm new password"
-              hint={PANEL_PASSWORD_HINT}
+              hint={panelPasswordHint}
               value={newPassword}
               repeated={confirmPassword}
               rules={PANEL_PASSWORD_RULES}
@@ -474,6 +490,89 @@ export function SettingsPage() {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * The language every page is drawn in.
+ *
+ * One panel-wide answer, stored on the box rather than in this browser, so
+ * the terminal and the panel agree on what somebody chose at first run. The
+ * apply writes it and the page re-words itself where it stands.
+ */
+function LanguagePanel() {
+  const current = useLanguage();
+  const resource = useApiResource<PanelSettings>("/settings");
+  const [chosen, setChosen] = useState(current);
+  const [isBusy, setIsBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const applied = resource.data?.language ?? null;
+  const isDirty = applied !== null && chosen !== applied;
+
+  const apply = async () => {
+    if (resource.data === null) {
+      return;
+    }
+    setIsBusy(true);
+    setError(null);
+    try {
+      const saved = await apiPut<PanelSettings>("/settings", {
+        listen_port: resource.data.listen_port,
+        language: chosen,
+      });
+      resource.setData(saved);
+      setLanguage(saved.language);
+    } catch (cause: unknown) {
+      setError(
+        cause instanceof ApiError && cause.code === LANGUAGE_UNKNOWN_CODE
+          ? t("code.language_unknown")
+          : describeError(cause),
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  return (
+    <section className={`card ${isDirty ? "card--dirty" : ""}`}>
+      <div className="card_header">
+        <div className="card_title">
+          <h2>{t("ui.settings.language_title")}</h2>
+        </div>
+      </div>
+
+      <div className="settings_form">
+        <label className="field">
+          <span className="field_label">{t("ui.settings.language_field")}</span>
+          <select
+            className="select"
+            value={chosen}
+            onChange={(event) => {
+              setError(null);
+              setChosen(asLanguage(event.target.value));
+            }}
+          >
+            {LANGUAGES.map((language) => (
+              <option key={language} value={language}>
+                {LANGUAGE_NAMES[language]}
+              </option>
+            ))}
+          </select>
+          <span className="field_hint">{t("ui.settings.language_hint")}</span>
+        </label>
+
+        <ApplyBar
+          isDirty={isDirty}
+          isBusy={isBusy}
+          label={t("ui.settings.language_apply")}
+          hint={t("ui.settings.language_apply_hint")}
+          error={error}
+          onReset={() => setChosen(asLanguage(applied ?? current))}
+          onApply={() => void apply()}
+        />
+      </div>
+    </section>
   );
 }
 

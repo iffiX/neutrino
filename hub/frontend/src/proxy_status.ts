@@ -1,4 +1,5 @@
 import { nodeIdFromTag } from "./node_tag";
+import { t } from "./i18n";
 import type { StatsFrame } from "./api_types";
 
 /**
@@ -39,11 +40,11 @@ export interface ProxyStatus {
 
 const SINGLE_EXIT_STRATEGY = "leastPing";
 
-const SCOPE_WORDS: Record<string, string> = {
-  ports: "ports",
-  lan: "lan",
-  hub: "hub",
-  lan_and_hub: "lan+hub",
+const SCOPE_KEYS: Record<string, string> = {
+  ports: "state.ports",
+  lan: "state.lan",
+  hub: "state.hub",
+  lan_and_hub: "state.lan_and_hub",
 };
 
 /**
@@ -65,17 +66,21 @@ export function describeProxy(
     return { scope: "—", exit: "", label: "—", tone: "offline" };
   }
   if (frame.proxy_scope === "off") {
-    return { scope: "direct", exit: "", label: "direct", tone: "direct" };
+    const direct = t("state.direct");
+    return { scope: direct, exit: "", label: direct, tone: "direct" };
   }
   if (frame.proxy_scope === "unused") {
-    return { scope: "unused", exit: "", label: "unused", tone: "direct" };
+    const unused = t("state.unused");
+    return { scope: unused, exit: "", label: unused, tone: "direct" };
   }
-  const scope = SCOPE_WORDS[frame.proxy_scope] ?? frame.proxy_scope;
+  const scopeKey = SCOPE_KEYS[frame.proxy_scope];
+  const scope = scopeKey === undefined ? frame.proxy_scope : t(scopeKey);
   if (frame.enabled_node_count === 0) {
+    const noExit = t("state.no_exit");
     return {
       scope,
-      exit: "no exit",
-      label: `${scope} → no exit`,
+      exit: noExit,
+      label: `${scope} → ${noExit}`,
       tone: "offline",
     };
   }

@@ -200,7 +200,7 @@ def test_delete_removes_every_entry_of_the_record(box):
     assert removed.json()["services"] == []
     second = client.delete(f"/api/services/declared/{record_id}")
     assert second.status_code == 404
-    assert second.json()["detail"] == {"code": "declared_service_unknown"}
+    assert second.json()["detail"] == {"code": "declared_service_unknown", "params": {}}
 
 
 def test_probe_now_answers_the_refreshed_list(box):
@@ -215,7 +215,10 @@ def test_probe_now_answers_the_refreshed_list(box):
 
     missing = client.post("/api/services/declared/missing/probe")
     assert missing.status_code == 404
-    assert missing.json()["detail"] == {"code": "declared_service_unknown"}
+    assert missing.json()["detail"] == {
+        "code": "declared_service_unknown",
+        "params": {},
+    }
 
 
 @pytest.mark.parametrize(

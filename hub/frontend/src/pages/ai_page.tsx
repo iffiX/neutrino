@@ -13,6 +13,7 @@ import { StatusDot } from "../components/status_dot";
 import { apiPut, describeError } from "../api_client";
 import { copyText } from "../copy_text";
 import { formatCompact } from "../format_compact";
+import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { HUB_EVENT_AI_USAGE, HUB_EVENT_CONFIG } from "../use_hub_events";
 import type { AiUsageResponse, CliproxyApiStatusView } from "../api_types";
@@ -29,44 +30,6 @@ import "./ai_page.css";
  * apply. The activity tables read the same usage feed the dashboard
  * summarises.
  */
-
-const WORDING = {
-  title: "AI",
-  subtitle:
-    "One endpoint for every machine's AI tools; which provider answers is switched here.",
-  notInstalled: "The AI gateway is not installed",
-  notInstalledHint: "Install the cliproxyapi module from Services.",
-
-  activity: "Activity",
-  running: "running",
-  stopped: "stopped",
-  answering: "answering",
-  notAnswering: "not answering",
-  journal: "Journal",
-  serving: (message: string) => `Serving: ${message}`,
-  servingCount: (count: number) => `Serving ${count} models`,
-  copied: "copied",
-  copyModel: "Copy the name",
-  waitingProbe: "Waiting for the first probe.",
-  requestsToday: "requests today",
-  tokensToday: "tokens today",
-  viewProviders: "Providers",
-  viewKeys: "Keys",
-  usageWindow: "last 30 days",
-  usageUnavailable: "Usage unavailable",
-  usageUnavailableHint: "The gateway is not reporting usage on this box yet.",
-
-  gatewayPort: "Gateway port",
-  gatewayPortHint: "The TCP port the gateway answers on.",
-  port: "Port",
-  reachedAt: (origin: string) => `Reached at ${origin}.`,
-  movesTo: (origin: string) => `Moves to ${origin}.`,
-  portApplyLabel: "Apply gateway port",
-  portApplyHint: "Restarts the gateway on the new port.",
-  portApplyWarning:
-    "Every machine pointed at the old port stops reaching the gateway until its endpoint is changed too.",
-  portRangeHint: (low: number, high: number) => `A port is ${low} to ${high}.`,
-} as const;
 
 const PORT_MIN = 1;
 const PORT_MAX = 65535;
@@ -102,6 +65,8 @@ function toModelFamilies(models: string[]): ModelFamily[] {
 }
 
 export function AiPage() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const status = useApiResource<CliproxyApiStatusView>(STATUS_PATH, {
     invalidateOn: AI_INVALIDATE_ON,
   });
@@ -129,7 +94,7 @@ export function AiPage() {
   if (status.error !== null && view === null) {
     return (
       <div className="page">
-        <h1>{WORDING.title}</h1>
+        <h1>{t("ui.ai.title")}</h1>
         <ErrorPanel message={status.error} onRetry={status.reload} />
       </div>
     );
@@ -137,7 +102,7 @@ export function AiPage() {
   if (view === null) {
     return (
       <div className="page">
-        <h1>{WORDING.title}</h1>
+        <h1>{t("ui.ai.title")}</h1>
         <div className="skeleton" style={{ height: 240 }} />
       </div>
     );
@@ -145,10 +110,10 @@ export function AiPage() {
   if (!view.is_installed) {
     return (
       <div className="page">
-        <h1>{WORDING.title}</h1>
+        <h1>{t("ui.ai.title")}</h1>
         <div className="placeholder">
-          <span>{WORDING.notInstalled}</span>
-          <span className="faint">{WORDING.notInstalledHint}</span>
+          <span>{t("ui.ai.not_installed")}</span>
+          <span className="faint">{t("ui.ai.not_installed_hint")}</span>
         </div>
       </div>
     );
@@ -192,9 +157,9 @@ export function AiPage() {
       <header className="page_header">
         <div>
           <div className="page_title_row">
-            <h1 className="page_title">{WORDING.title}</h1>
+            <h1 className="page_title">{t("ui.ai.title")}</h1>
           </div>
-          <p className="page_subtitle">{WORDING.subtitle}</p>
+          <p className="page_subtitle">{t("ui.ai.subtitle")}</p>
         </div>
       </header>
 
@@ -202,21 +167,25 @@ export function AiPage() {
         <div className="card_header">
           <div className="ai_activity_head">
             <div className="card_title">
-              <h2>{WORDING.activity}</h2>
+              <h2>{t("ui.ai.activity")}</h2>
               <StatusDot
                 tone={view.is_active ? "ok" : "error"}
-                label={view.is_active ? WORDING.running : WORDING.stopped}
+                label={view.is_active ? t("state.running") : t("state.stopped")}
               />
               <StatusDot
                 tone={view.is_reachable ? "ok" : "warn"}
                 label={
-                  view.is_reachable ? WORDING.answering : WORDING.notAnswering
+                  view.is_reachable
+                    ? t("state.answering")
+                    : t("state.not_answering")
                 }
               />
             </div>
             {servedFamilies.length > 0 ? (
               <div className="ai_serving field_hint ai_probe">
-                <span>{WORDING.servingCount(servedModels.length)}</span>
+                <span>
+                  {t("ui.ai.serving_count", { count: servedModels.length })}
+                </span>
                 {servedFamilies.map((family) => (
                   <span key={family.name} className="badge">
                     {family.name}
@@ -239,10 +208,10 @@ export function AiPage() {
             ) : (
               <p className="field_hint ai_probe">
                 {view.is_reachable
-                  ? WORDING.serving(view.probe_message)
+                  ? t("ui.ai.serving", { message: view.probe_message })
                   : view.probe_message.length > 0
                     ? view.probe_message
-                    : WORDING.waitingProbe}
+                    : t("ui.ai.waiting_probe")}
               </p>
             )}
           </div>
@@ -254,14 +223,16 @@ export function AiPage() {
                     {formatCompact(view.requests_today ?? 0)}
                   </span>
                   <span className="ai_today_label">
-                    {WORDING.requestsToday}
+                    {t("ui.ai.requests_today")}
                   </span>
                 </span>
                 <span className="ai_today_item">
                   <span className="ai_today_value mono">
                     {formatCompact(view.tokens_today ?? 0)}
                   </span>
-                  <span className="ai_today_label">{WORDING.tokensToday}</span>
+                  <span className="ai_today_label">
+                    {t("ui.ai.tokens_today")}
+                  </span>
                 </span>
               </span>
             )}
@@ -274,7 +245,7 @@ export function AiPage() {
                 name={isJournalOpen ? "chevron_down" : "chevron_right"}
                 size={13}
               />
-              {WORDING.journal}
+              {t("ui.ai.journal")}
             </button>
           </div>
         </div>
@@ -290,10 +261,10 @@ export function AiPage() {
                       key={model}
                       type="button"
                       className="ai_model_pill mono"
-                      title={WORDING.copyModel}
+                      title={t("ui.ai.copy_model")}
                       onClick={() => void handleCopyModel(model)}
                     >
-                      {copiedModel === model ? WORDING.copied : model}
+                      {copiedModel === model ? t("ui.ai.copied") : model}
                     </button>
                   ))}
                 </div>
@@ -309,7 +280,7 @@ export function AiPage() {
               className={`ai_chip ${usageView === "providers" ? "ai_chip--on" : ""}`}
               onClick={() => setUsageView("providers")}
             >
-              {WORDING.viewProviders}
+              {t("ui.ai.view_providers")}
               {usage.data !== null && (
                 <span className="ai_chip_count">
                   {usage.data.providers.length}
@@ -321,14 +292,14 @@ export function AiPage() {
               className={`ai_chip ${usageView === "keys" ? "ai_chip--on" : ""}`}
               onClick={() => setUsageView("keys")}
             >
-              {WORDING.viewKeys}
+              {t("ui.ai.view_keys")}
               {usage.data !== null && (
                 <span className="ai_chip_count">{usage.data.keys.length}</span>
               )}
             </button>
           </div>
           <span className="ai_usage_window">
-            <span className="badge">{WORDING.usageWindow}</span>
+            <span className="badge">{t("ui.ai.usage_window")}</span>
           </span>
         </div>
 
@@ -342,8 +313,8 @@ export function AiPage() {
           <div className="skeleton" style={{ height: 180 }} />
         ) : (
           <div className="placeholder">
-            <span>{WORDING.usageUnavailable}</span>
-            <span className="faint">{WORDING.usageUnavailableHint}</span>
+            <span>{t("ui.ai.usage_unavailable")}</span>
+            <span className="faint">{t("ui.ai.usage_unavailable_hint")}</span>
           </div>
         )}
 
@@ -368,12 +339,12 @@ export function AiPage() {
         className={`settings_group ${isPortDirty ? "settings_group--dirty" : ""}`}
       >
         <div className="settings_group_title">
-          <h2>{WORDING.gatewayPort}</h2>
+          <h2>{t("ui.ai.gateway_port")}</h2>
         </div>
-        <p className="field_hint">{WORDING.gatewayPortHint}</p>
+        <p className="field_hint">{t("ui.ai.gateway_port_hint")}</p>
         <div className="field_grid">
           <label className="field">
-            <span className="field_label">{WORDING.port}</span>
+            <span className="field_label">{t("ui.ai.port")}</span>
             <input
               className="input"
               inputMode="numeric"
@@ -382,21 +353,21 @@ export function AiPage() {
             />
             <span className="field_hint">
               {isPortDirty
-                ? WORDING.movesTo(originWith(port ?? 0))
-                : WORDING.reachedAt(endpoint)}
+                ? t("ui.ai.port_moves_to", { origin: originWith(port ?? 0) })
+                : t("ui.ai.port_reached_at", { origin: endpoint })}
             </span>
           </label>
         </div>
         <ApplyBar
           isDirty={isPortDirty && isPortValid}
           isBusy={isBusy}
-          label={WORDING.portApplyLabel}
+          label={t("ui.ai.port_apply")}
           hint={
             isPortValid
-              ? WORDING.portApplyHint
-              : WORDING.portRangeHint(PORT_MIN, PORT_MAX)
+              ? t("ui.ai.port_apply_hint")
+              : t("ui.ai.port_range_hint", { low: PORT_MIN, high: PORT_MAX })
           }
-          warning={WORDING.portApplyWarning}
+          warning={t("ui.ai.port_apply_warning")}
           error={portError}
           onReset={() => setPort(view.listen_port)}
           onApply={() => void handleApplyPort()}

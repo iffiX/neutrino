@@ -4,6 +4,7 @@ import { ApplyBar } from "./apply_bar";
 import { Icon } from "./icon";
 import { Spinner } from "./spinner";
 import { apiPut, describeError } from "../api_client";
+import { t, useLanguage } from "../i18n";
 import { interruptionWarning } from "../network_warnings";
 import { useApiResource } from "../use_api_resource";
 import type { PanelSettings } from "../api_types";
@@ -32,6 +33,8 @@ const MOVE_TIMEOUT_MS = 30000;
 const MOVE_POLL_MS = 500;
 
 export function PanelPortPanel() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const resource = useApiResource<PanelSettings>("/settings");
   const [port, setPort] = useState<number | null>(null);
   const [isBusy, setIsBusy] = useState(false);
@@ -71,18 +74,18 @@ export function PanelPortPanel() {
       className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
     >
       <div className="settings_group_title">
-        <h2>Panel port</h2>
+        <h2>{t("ui.network.panel_port_title")}</h2>
       </div>
-      <p className="field_hint">
-        The TCP port this panel listens on, on every exposed interface.
-      </p>
+      <p className="field_hint">{t("ui.network.panel_port_hint")}</p>
 
       {resource.data === null ? (
         <div className="skeleton" style={{ height: 72 }} />
       ) : (
         <div className="field_grid">
           <label className="field">
-            <span className="field_label">Port</span>
+            <span className="field_label">
+              {t("ui.network.panel_port_field")}
+            </span>
             <input
               className="input"
               value={port === null ? "" : String(port)}
@@ -94,8 +97,12 @@ export function PanelPortPanel() {
             />
             <span className="field_hint">
               {isDirty
-                ? `Moves to ${originWith(port ?? 0)}.`
-                : `Reached at ${originWith(applied ?? 0)}.`}
+                ? t("ui.network.panel_port_moves_to", {
+                    origin: originWith(port ?? 0),
+                  })
+                : t("ui.network.panel_port_reached_at", {
+                    origin: originWith(applied ?? 0),
+                  })}
             </span>
           </label>
         </div>
@@ -104,13 +111,13 @@ export function PanelPortPanel() {
       <ApplyBar
         isDirty={isDirty && isValid(port)}
         isBusy={isBusy}
-        label="Apply panel port"
+        label={t("ui.network.apply_panel_port")}
         hint={
           isValid(port)
-            ? "Restarts the panel service and follows it to the new port."
-            : `A port is ${PORT_MIN} to ${PORT_MAX}.`
+            ? t("ui.network.apply_panel_port_hint")
+            : t("ui.network.port_range", { min: PORT_MIN, max: PORT_MAX })
         }
-        warning={interruptionWarning("The panel restarts on the new port.")}
+        warning={interruptionWarning(t("ui.network.warning_panel_restart"))}
         error={error}
         onReset={() => setPort(applied)}
         onApply={() => void apply()}
@@ -130,6 +137,8 @@ export function PanelPortPanel() {
  * arriving signed in.
  */
 function MovingOverlay({ port }: { port: number }) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const startedAt = useRef(Date.now());
   const [isLost, setIsLost] = useState(false);
 
@@ -162,14 +171,15 @@ function MovingOverlay({ port }: { port: number }) {
         <>
           <Icon name="alert" size={16} />
           <div className="panel_move_body">
-            No answer at {originWith(port)}. Open it again once the panel is
-            reachable from here.
+            {t("ui.network.panel_move_lost", { origin: originWith(port) })}
           </div>
         </>
       ) : (
         <>
           <Spinner />
-          <div className="panel_move_body">Moving to {originWith(port)}.</div>
+          <div className="panel_move_body">
+            {t("ui.network.panel_moving", { origin: originWith(port) })}
+          </div>
         </>
       )}
     </div>

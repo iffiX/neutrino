@@ -1,4 +1,5 @@
 import { Icon } from "./icon";
+import { t, useLanguage } from "../i18n";
 import "./error_panel.css";
 
 /**
@@ -17,20 +18,17 @@ interface ErrorPanelProps {
   onRetry?: () => void;
 }
 
-export function ErrorPanel({
-  title = "Could not load this view",
-  message,
-  hint = "The gateway API did not answer. It may be restarting.",
-  onRetry,
-}: ErrorPanelProps) {
+export function ErrorPanel({ title, message, hint, onRetry }: ErrorPanelProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   return (
     <div className="error_panel" role="alert">
       <div className="error_panel_head">
         <Icon name="alert" size={16} />
-        <span>{title}</span>
+        <span>{title ?? t("ui.error_panel.title")}</span>
       </div>
       <p className="error_panel_message">{message}</p>
-      <p className="error_panel_hint">{hint}</p>
+      <p className="error_panel_hint">{hint ?? t("ui.error_panel.hint")}</p>
       {onRetry !== undefined && (
         <button
           type="button"
@@ -38,7 +36,7 @@ export function ErrorPanel({
           onClick={onRetry}
         >
           <Icon name="refresh" size={13} />
-          Retry
+          {t("ui.error_panel.retry")}
         </button>
       )}
     </div>

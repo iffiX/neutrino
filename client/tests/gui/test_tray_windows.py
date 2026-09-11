@@ -8,7 +8,15 @@ taken for the Quit it is.
 
 import pytest
 
-from neutrino_client.constants import CLIENT_TRAY_OPEN_LABEL, CLIENT_TRAY_QUIT_LABEL
+from neutrino_client.constants import (
+    CLIENT_DEFAULT_LANGUAGE,
+    CLIENT_TRAY_OPEN_LABEL_KEY,
+    CLIENT_TRAY_QUIT_LABEL_KEY,
+)
+from neutrino_client.words import word
+
+TRAY_OPEN = word(CLIENT_DEFAULT_LANGUAGE, CLIENT_TRAY_OPEN_LABEL_KEY)
+TRAY_QUIT = word(CLIENT_DEFAULT_LANGUAGE, CLIENT_TRAY_QUIT_LABEL_KEY)
 
 from neutrino_client.gui.tray_windows import (
     TRAY_CALLBACK_MESSAGE,
@@ -85,6 +93,8 @@ def windows_tray(clicks, *, win32):
 
     return WindowsTrayIcon(
         title="Neutrino client",
+        open_label=TRAY_OPEN,
+        quit_label=TRAY_QUIT,
         icon_path="C:\\icons\\x.ico",
         on_open=on_open,
         on_quit=on_quit,
@@ -138,8 +148,8 @@ def test_a_right_click_drops_the_menu_and_runs_what_was_chosen(clicks):
         {
             "window": 4242,
             "items": (
-                (TRAY_COMMAND_OPEN, CLIENT_TRAY_OPEN_LABEL),
-                (TRAY_COMMAND_QUIT, CLIENT_TRAY_QUIT_LABEL),
+                (TRAY_COMMAND_OPEN, TRAY_OPEN),
+                (TRAY_COMMAND_QUIT, TRAY_QUIT),
             ),
         }
     ]

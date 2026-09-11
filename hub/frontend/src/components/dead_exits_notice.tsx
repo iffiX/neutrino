@@ -1,4 +1,5 @@
 import { Icon } from "./icon";
+import { t, useLanguage } from "../i18n";
 import { useLiveStats } from "../use_live_stats";
 
 /**
@@ -22,6 +23,8 @@ interface DeadExitsNoticeProps {
 export function DeadExitsNotice({
   isFallingBack = false,
 }: DeadExitsNoticeProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const { latestFrame } = useLiveStats();
   if (latestFrame === null) {
     return null;
@@ -39,8 +42,8 @@ export function DeadExitsNotice({
       <Icon name="alert" size={15} />
       <div className="notice_body">
         {isFallingBack
-          ? "Every enabled exit node is unreachable, so traffic sent to the proxy is leaving through the WAN instead, under this machine's own address."
-          : "Every enabled exit node is unreachable. Traffic sent to the proxy (the LAN's names included) fails until one answers."}
+          ? t("ui.proxy.dead_exits_fallback")
+          : t("ui.proxy.dead_exits")}
       </div>
     </div>
   );

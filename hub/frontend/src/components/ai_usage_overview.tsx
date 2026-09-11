@@ -11,6 +11,7 @@ import {
   tokensOf,
 } from "../ai_usage";
 import { formatCompact, formatSmallRate } from "../format_compact";
+import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { HUB_EVENT_AI_USAGE } from "../use_hub_events";
 import type { AiUsageRange, AiUsageResponse } from "../api_types";
@@ -22,43 +23,19 @@ import "./ai_usage_overview.css";
  * window, one range selector and key filter feeding every tile and grid.
  */
 
-const WORDING = {
-  title: "AI usage",
-  allKeys: "All keys",
-  requests: "Requests",
-  tokens: "Tokens",
-  rpm: "RPM",
-  tpm: "TPM",
-  cacheRate: "Cache rate",
-  dailyAverage: "Daily average",
-  requestsPerDay: "req/day",
-  tokensPerDay: "tokens/day",
-  lastHour: "last 60 min",
-  okWord: "ok",
-  failedWord: "failed",
-  cacheDetail: (read: string, write: string) =>
-    `cache read ${read} · write ${write}`,
-  cacheReadOf: (read: string, prompt: string) =>
-    `${read} of ${prompt} prompt tokens`,
-  tokensWord: "tokens",
-  tokenActivity: "Token activity",
-  requestHealth: "Request health",
-  noRequests: "No requests yet",
-  unavailable: "Usage unavailable",
-  unavailableHint: "The gateway is not reporting usage on this box yet.",
-} as const;
-
 // The collector says when what it metered moved.
 const USAGE_INVALIDATE_ON = [{ type: HUB_EVENT_AI_USAGE }];
 
-const RANGE_OPTIONS: { value: AiUsageRange; label: string }[] = [
-  { value: "day", label: "Day" },
-  { value: "week", label: "Week" },
-  { value: "month", label: "Month" },
-  { value: "year", label: "Year" },
+const RANGE_OPTIONS: { value: AiUsageRange; labelKey: string }[] = [
+  { value: "day", labelKey: "ui.usage.range_day" },
+  { value: "week", labelKey: "ui.usage.range_week" },
+  { value: "month", labelKey: "ui.usage.range_month" },
+  { value: "year", labelKey: "ui.usage.range_year" },
 ];
 
 export function AiUsageOverview() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const [range, setRange] = useState<AiUsageRange>("day");
   const [keyId, setKeyId] = useState("");
   const usage = useApiResource<AiUsageResponse>(usagePath(range, keyId), {
@@ -70,7 +47,7 @@ export function AiUsageOverview() {
     <section className="card">
       <div className="card_header ai_usage_head">
         <div className="card_title">
-          <h2>{WORDING.title}</h2>
+          <h2>{t("ui.usage.title")}</h2>
         </div>
         <div className="ai_usage_controls">
           <div className="ai_usage_ranges">
@@ -83,7 +60,7 @@ export function AiUsageOverview() {
                 }`}
                 onClick={() => setRange(option.value)}
               >
-                {option.label}
+                {t(option.labelKey)}
               </button>
             ))}
           </div>
@@ -92,7 +69,7 @@ export function AiUsageOverview() {
             value={keyId}
             onChange={(event) => setKeyId(event.target.value)}
           >
-            <option value="">{WORDING.allKeys}</option>
+            <option value="">{t("ui.usage.all_keys")}</option>
             {(data?.keys ?? []).map((key) => (
               <option key={key.key_id} value={key.key_id}>
                 {key.name}
@@ -107,8 +84,8 @@ export function AiUsageOverview() {
       )}
       {data === null && !usage.isLoading && (
         <div className="placeholder">
-          <span>{WORDING.unavailable}</span>
-          <span className="faint">{WORDING.unavailableHint}</span>
+          <span>{t("ui.usage.unavailable")}</span>
+          <span className="faint">{t("ui.usage.unavailable_hint")}</span>
         </div>
       )}
       {data !== null && <UsageBody data={data} />}
@@ -133,84 +110,93 @@ function UsageBody({ data }: UsageBodyProps) {
     <div className="ai_usage_body">
       <div className="ai_usage_tiles">
         <UsageTile
-          label={WORDING.requests}
+          label={t("ui.usage.requests")}
           tone="accent"
           value={formatCompact(totals.requests)}
           detail={
             hasTraffic ? (
               <>
                 <span className="ai_usage_ok">
-                  {formatCompact(totals.requests - totals.failed)}{" "}
-                  {WORDING.okWord}
+                  {t("ui.usage.count_ok", {
+                    count: formatCompact(totals.requests - totals.failed),
+                  })}
                 </span>
                 {" · "}
                 <span className={totals.failed > 0 ? "ai_usage_bad" : ""}>
-                  {formatCompact(totals.failed)} {WORDING.failedWord}
+                  {t("ui.usage.count_failed", {
+                    count: formatCompact(totals.failed),
+                  })}
                 </span>
                 {" · "}
                 {formatShare(successShareOf(totals))}
               </>
             ) : (
-              WORDING.noRequests
+              t("ui.usage.no_requests")
             )
           }
           spark={requestSeries}
         />
         <UsageTile
-          label={WORDING.tokens}
+          label={t("ui.usage.tokens")}
           tone="secondary"
           value={formatCompact(totalTokens)}
           detail={
             hasTraffic
-              ? WORDING.cacheDetail(
-                  formatCompact(totals.cache_read_tokens),
-                  formatCompact(totals.cache_write_tokens),
-                )
-              : WORDING.noRequests
+              ? t("ui.usage.cache_detail", {
+                  read: formatCompact(totals.cache_read_tokens),
+                  write: formatCompact(totals.cache_write_tokens),
+                })
+              : t("ui.usage.no_requests")
           }
           spark={tokenSeries}
         />
         <UsageTile
-          label={WORDING.rpm}
+          label={t("ui.usage.rpm")}
           tone="ok"
           value={formatSmallRate(data.rates.rpm)}
-          detail={WORDING.lastHour}
+          detail={t("ui.usage.last_hour")}
         />
         <UsageTile
-          label={WORDING.tpm}
+          label={t("ui.usage.tpm")}
           tone="ok"
           value={formatCompact(data.rates.tpm)}
-          detail={WORDING.lastHour}
+          detail={t("ui.usage.last_hour")}
         />
         <UsageTile
-          label={WORDING.cacheRate}
+          label={t("ui.usage.cache_rate")}
           tone="accent"
           value={formatShare(cacheShare)}
           detail={
             hasTraffic
-              ? WORDING.cacheReadOf(
-                  formatCompact(totals.cache_read_tokens),
-                  formatCompact(totals.input_tokens + totals.cache_read_tokens),
-                )
-              : WORDING.noRequests
+              ? t("ui.usage.cache_read_of", {
+                  read: formatCompact(totals.cache_read_tokens),
+                  prompt: formatCompact(
+                    totals.input_tokens + totals.cache_read_tokens,
+                  ),
+                })
+              : t("ui.usage.no_requests")
           }
         />
         <UsageTile
-          label={WORDING.dailyAverage}
+          label={t("ui.usage.daily_average")}
           tone="secondary"
           value={formatCompact(totals.requests / days)}
-          unit={WORDING.requestsPerDay}
-          detail={`${formatCompact(totalTokens / days)} ${WORDING.tokensPerDay}`}
+          unit={t("ui.usage.requests_per_day")}
+          detail={t("ui.usage.tokens_per_day", {
+            count: formatCompact(totalTokens / days),
+          })}
         />
       </div>
 
       <div className="ai_usage_charts">
         <div className="ai_usage_chart_box">
           <div className="ai_usage_chart_head">
-            <h3>{WORDING.tokenActivity}</h3>
+            <h3>{t("ui.usage.token_activity")}</h3>
             {hasTraffic && (
               <span className="mono muted">
-                {formatCompact(totalTokens)} {WORDING.tokensWord}
+                {t("ui.usage.tokens_total", {
+                  count: formatCompact(totalTokens),
+                })}
               </span>
             )}
           </div>
@@ -218,14 +204,17 @@ function UsageBody({ data }: UsageBodyProps) {
         </div>
         <div className="ai_usage_chart_box">
           <div className="ai_usage_chart_head">
-            <h3>{WORDING.requestHealth}</h3>
+            <h3>{t("ui.usage.request_health")}</h3>
             {hasTraffic && (
               <span className="mono">
                 <span className="ai_usage_ok">
                   {formatShare(successShareOf(totals))}
                 </span>{" "}
                 <span className="muted">
-                  · {formatCompact(totals.failed)} {WORDING.failedWord}
+                  {"· "}
+                  {t("ui.usage.count_failed", {
+                    count: formatCompact(totals.failed),
+                  })}
                 </span>
               </span>
             )}

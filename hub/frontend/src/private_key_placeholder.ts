@@ -1,3 +1,5 @@
+import { t } from "./i18n";
+
 /**
  * The placeholder shown in every "paste a private key" box.
  *
@@ -6,9 +8,6 @@
  * being displayed. This makes it unmistakable that the box is empty and what
  * belongs in it.
  */
-export const PRIVATE_KEY_PLACEHOLDER = `-----BEGIN OPENSSH PRIVATE KEY-----
-paste the whole private key here, including the BEGIN and END lines
------END OPENSSH PRIVATE KEY-----
-
-The private key file, not the .pub. Also accepts
-'-----BEGIN RSA PRIVATE KEY-----' and '-----BEGIN EC PRIVATE KEY-----'.`;
+export function privateKeyPlaceholder(): string {
+  return t("ui.vault.private_key_placeholder");
+}

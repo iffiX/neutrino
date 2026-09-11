@@ -36,6 +36,7 @@ def state_payload(session) -> dict:
     """
     state = {
         "version": CLIENT_VERSION,
+        "language": session.language(),
         "hostname": session.hostname(),
         "platform": session.platform_tuple(),
         "mount_location_shape": session.mount_location_shape(),
@@ -77,6 +78,9 @@ def dispatch(method: str, path: str, body: "dict | None", session):
     if method == "POST":
         if route == "/api/connect":
             return _connect(session, payload)
+        if route == "/api/language":
+            session.set_language(str(payload.get("language", "")))
+            return 200, state_payload(session)
         if route == "/api/disconnect":
             session.disconnect()
             return 200, state_payload(session)

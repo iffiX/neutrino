@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 
 import { Icon } from "./icon";
+import { t, useLanguage } from "../i18n";
 import { navItemsInGroup } from "../nav_items";
 import type { NavGroup, NavItem } from "../nav_items";
 import "./sidebar_nav.css";
@@ -17,9 +18,12 @@ import "./sidebar_nav.css";
  * the hub drives on a machine running the agent.
  */
 
-const GROUP_LABELS: Record<NavGroup, string> = {
-  hub: "Hub",
-  agent: "Agent",
+/** The product's own name, which is the same in every language. */
+const SIDEBAR_BRAND_NAME = "Neutrino Hub";
+
+const GROUP_KEYS: Record<NavGroup, string> = {
+  hub: "ui.shell.group_hub",
+  agent: "ui.shell.group_agent",
 };
 
 interface SidebarNavProps {
@@ -27,15 +31,17 @@ interface SidebarNavProps {
 }
 
 export function SidebarNav({ onLogout }: SidebarNavProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   return (
-    <nav className="sidebar_nav" aria-label="Main">
+    <nav className="sidebar_nav" aria-label={t("ui.shell.nav_label")}>
       <div className="sidebar_brand">
         <span className="sidebar_brand_mark">
           <Icon name="proxy" size={15} />
         </span>
         <span className="sidebar_brand_text">
-          <span className="sidebar_brand_name">Neutrino Hub</span>
-          <span className="sidebar_brand_sub">control panel</span>
+          <span className="sidebar_brand_name">{SIDEBAR_BRAND_NAME}</span>
+          <span className="sidebar_brand_sub">{t("ui.shell.brand_sub")}</span>
         </span>
       </div>
 
@@ -49,10 +55,10 @@ export function SidebarNav({ onLogout }: SidebarNavProps) {
           type="button"
           className="button button--ghost button--small sidebar_logout"
           onClick={onLogout}
-          title="Sign out"
+          title={t("ui.shell.sign_out")}
         >
           <Icon name="logout" size={14} />
-          <span className="sidebar_logout_label">Sign out</span>
+          <span className="sidebar_logout_label">{t("ui.shell.sign_out")}</span>
         </button>
       </div>
     </nav>
@@ -67,19 +73,19 @@ interface SidebarGroupProps {
 function SidebarGroup({ group, items }: SidebarGroupProps) {
   return (
     <div className="sidebar_group">
-      <div className="sidebar_group_label">{GROUP_LABELS[group]}</div>
+      <div className="sidebar_group_label">{t(GROUP_KEYS[group])}</div>
       {items.map((item) => (
         <NavLink
           key={item.path}
           to={item.path}
           end={item.path === "/"}
-          title={item.description}
+          title={t(item.descriptionKey)}
           className={({ isActive }) =>
             `sidebar_item ${isActive ? "sidebar_item--active" : ""}`
           }
         >
           <Icon name={item.icon} size={17} className="sidebar_item_icon" />
-          <span className="sidebar_item_label">{item.label}</span>
+          <span className="sidebar_item_label">{t(item.labelKey)}</span>
         </NavLink>
       ))}
     </div>

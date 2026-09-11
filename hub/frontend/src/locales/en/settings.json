@@ -1,0 +1,7 @@
+{
+  "ui.settings.language_title": "Language",
+  "ui.settings.language_hint": "The language this panel is drawn in.",
+  "ui.settings.language_field": "Language",
+  "ui.settings.language_apply": "Apply language",
+  "ui.settings.language_apply_hint": "Draws every page in the chosen language."
+}

@@ -124,23 +124,23 @@ def test_deleting_a_key_that_is_not_there_is_not_an_error(config_dir):
 
 
 def test_a_public_key_is_refused_by_name(config_dir):
-    with pytest.raises(KeyMaterialError, match="public key"):
+    with pytest.raises(KeyMaterialError, match="key_is_public"):
         KeyRegistry().add(name="pasted the wrong file", private_key=PUBLIC_KEY)
 
 
 def test_something_that_is_not_a_key_is_refused(config_dir):
-    with pytest.raises(KeyMaterialError, match="no key was pasted"):
+    with pytest.raises(KeyMaterialError, match="key_nothing_pasted"):
         KeyRegistry().add(name="empty", private_key="   ")
-    with pytest.raises(KeyMaterialError, match="does not look like a private key"):
+    with pytest.raises(KeyMaterialError, match="key_not_a_private_key"):
         KeyRegistry().add(name="prose", private_key=NOT_A_KEY)
 
 
 def test_an_encrypted_key_without_its_passphrase_says_so(config_dir):
     text, _ = generated_key(PASSPHRASE)
 
-    with pytest.raises(KeyMaterialError, match="enter its passphrase too"):
+    with pytest.raises(KeyMaterialError, match="key_passphrase_needed"):
         KeyRegistry().add(name="encrypted", private_key=text)
-    with pytest.raises(KeyMaterialError, match="does not open it"):
+    with pytest.raises(KeyMaterialError, match="key_passphrase_wrong"):
         KeyRegistry().add(name="encrypted", private_key=text, passphrase="wrong")
 
     assert KeyRegistry().list_records() == []

@@ -1,9 +1,10 @@
 """The one store for what this person typed once and keeps.
 
 The file is the person's own, mode 0600, under the client's configuration
-directory. It holds the AI tool choices and the mount records: a share's
-host, its login name and where it goes. Nothing about a service standing
-on is here; that is the running client's own and starts clean.
+directory. It holds the language this person reads, the AI tool choices and
+the mount records: a share's host, its login name and where it goes. Nothing
+about a service standing on is here; that is the running client's own and
+starts clean.
 
 Secrets never enter it: a mount's password lives in that record's own
 credentials file, and the gateway key arrives fresh in every poll reply.
@@ -20,6 +21,8 @@ from __future__ import annotations
 import json
 import os
 import threading
+
+from neutrino_client.constants import CLIENT_DEFAULT_LANGUAGE, CLIENT_LANGUAGES
 
 # What one mount record keeps; a record's other fields are dropped.
 STORE_MOUNT_KEYS = ("entry_id", "host", "share", "username", "path")
@@ -55,6 +58,18 @@ def _record(raw: dict) -> dict:
     return {key: raw[key] for key in STORE_MOUNT_KEYS if key in raw}
 
 
+def _language(raw) -> str:
+    """The kept language, empty where the file names none the client offers.
+
+    Args:
+        raw: What the file held under ``language``.
+
+    Returns:
+        One of ``CLIENT_LANGUAGES``, or empty.
+    """
+    return raw if raw in CLIENT_LANGUAGES else ""
+
+
 def _kept(data: dict) -> dict:
     """The store's own keys, whatever else the file carries.
 
@@ -62,13 +77,15 @@ def _kept(data: dict) -> dict:
         data: What the file held.
 
     Returns:
-        ``{"ai": {"tool_configs": {...}}, "mounts": {id: record}}``.
+        ``{"language": str, "ai": {"tool_configs": {...}},
+        "mounts": {id: record}}``.
     """
     ai = data.get("ai")
     mounts = data.get("mounts")
     ai = ai if isinstance(ai, dict) else {}
     mounts = mounts if isinstance(mounts, dict) else {}
     return {
+        "language": _language(data.get("language")),
         "ai": {"tool_configs": _tool_configs(ai.get("tool_configs"))},
         "mounts": {
             str(record_id): _record(record)
@@ -88,6 +105,27 @@ class ClientServiceStore:
         """
         self._path = path
         self._lock = threading.RLock()
+
+    def language(self) -> str:
+        """The language this person reads the window in.
+
+        Returns:
+            One of ``CLIENT_LANGUAGES``, or empty until one is set.
+        """
+        return self._read()["language"]
+
+    def set_language(self, language: str) -> None:
+        """Record the language this person reads the window in.
+
+        Args:
+            language: One of ``CLIENT_LANGUAGES``; anything else is kept as
+                the default.
+        """
+
+        def change(data: dict) -> None:
+            data["language"] = _language(language) or CLIENT_DEFAULT_LANGUAGE
+
+        self._mutate(change)
 
     def ai_tool_configs(self) -> dict:
         """The per-tool model choices this person keeps.

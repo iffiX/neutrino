@@ -5,6 +5,7 @@ import type { StatusTone } from "./status_dot";
 import { ToggleSwitch } from "./toggle_switch";
 import { formatBytes } from "../format_bytes";
 import { formatLatency } from "../format_duration";
+import { t, useLanguage } from "../i18n";
 import type { NodeView } from "../api_types";
 
 import "./node_card.css";
@@ -39,6 +40,8 @@ export function NodeCard({
   onTest,
   onRemove,
 }: NodeCardProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   // Three states, not two. A node nobody probed is not a node that answered
   // and is not a node that failed: only the enabled ones are probed, so a
   // disabled one arrives with no measurement at all and used to draw a red
@@ -96,16 +99,18 @@ export function NodeCard({
           <span
             className={`node_card_latency_value node_card_latency_value--${latencyTone}`}
           >
-            {isTesting ? "testing…" : formatLatency(node.delay_ms)}
+            {isTesting
+              ? t("ui.proxy.node_testing")
+              : formatLatency(node.delay_ms)}
           </span>
           <span className="node_card_latency_label">
             {!node.is_enabled
-              ? "not probed"
+              ? t("ui.proxy.node_not_probed")
               : isMeasured && node.is_alive
-                ? "last probe"
+                ? t("ui.proxy.node_last_probe")
                 : node.is_alive
-                  ? "no answer yet"
-                  : "unreachable"}
+                  ? t("ui.proxy.node_no_answer")
+                  : t("ui.proxy.node_unreachable")}
           </span>
         </div>
         <Sparkline values={probeHistory} tone={latencyTone} />
@@ -126,7 +131,11 @@ export function NodeCard({
         <ToggleSwitch
           isOn={node.is_enabled}
           onChange={onToggle}
-          label={node.is_enabled ? "Enabled" : "Disabled"}
+          label={
+            node.is_enabled
+              ? t("ui.proxy.node_enabled")
+              : t("ui.proxy.node_disabled")
+          }
         />
         <div className="button_row">
           <button
@@ -136,7 +145,7 @@ export function NodeCard({
             disabled={isTesting}
           >
             <Icon name="bolt" size={13} />
-            Test
+            {t("ui.proxy.node_test")}
           </button>
           {/* Removal takes effect at once rather than joining the draft: a
               node that is gone has no state left for the apply bar to describe. */}
@@ -144,8 +153,8 @@ export function NodeCard({
             type="button"
             className="button button--small button--danger"
             onClick={onRemove}
-            title={`Remove ${node.name}`}
-            aria-label={`Remove ${node.name}`}
+            title={t("ui.proxy.node_remove_title", { name: node.name })}
+            aria-label={t("ui.proxy.node_remove_title", { name: node.name })}
           >
             <Icon name="trash" size={13} />
           </button>

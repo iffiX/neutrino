@@ -87,7 +87,8 @@ def test_the_resident_binds_starts_serves_and_shows_the_window(
     window = opened[0]
     assert window["os_name"] == "linux"
     assert window["title"] == "Neutrino client"
-    assert "const WORDS" in window["html"]
+    assert "const CATALOGS" in window["html"]
+    assert '"ui.tray.open"' in window["html"]
     assert window["socket"] == 200
     assert window["reply"]["body"]["hostname"] == "box"
     assert session.started == 1

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 
+import { t, useLanguage } from "../i18n";
 import { usePolledResource } from "../use_polled_resource";
 import type { CliproxyApiJournalResponse } from "../api_types";
 
@@ -11,12 +12,6 @@ import "./journal_panel.css";
  * keeps the newest line in view.
  */
 
-const WORDING = {
-  label: (lines: number) => `journal · last ${lines} lines`,
-  empty: "(no journal output)",
-  unavailable: "The journal is not readable yet.",
-} as const;
-
 const JOURNAL_LINES = 200;
 
 interface AiJournalPanelProps {
@@ -24,6 +19,8 @@ interface AiJournalPanelProps {
 }
 
 export function AiJournalPanel({ isOpen }: AiJournalPanelProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const journal = usePolledResource<CliproxyApiJournalResponse>(
     isOpen ? `/cliproxyapi/journal?lines=${JOURNAL_LINES}` : null,
   );
@@ -44,18 +41,20 @@ export function AiJournalPanel({ isOpen }: AiJournalPanelProps) {
   return (
     <div className="journal_panel">
       <div className="journal_panel_head">
-        <span className="section_label">{WORDING.label(JOURNAL_LINES)}</span>
+        <span className="section_label">
+          {t("ui.ai.journal_label", { lines: JOURNAL_LINES })}
+        </span>
       </div>
 
       {lines === null && journal.isLoading && (
         <div className="skeleton journal_panel_loading" />
       )}
       {lines === null && !journal.isLoading && (
-        <span className="field_hint">{WORDING.unavailable}</span>
+        <span className="field_hint">{t("ui.ai.journal_unavailable")}</span>
       )}
       {lines !== null && (
         <pre ref={outputRef} className="journal_panel_output">
-          {lines.length > 0 ? lines.join("\n") : WORDING.empty}
+          {lines.length > 0 ? lines.join("\n") : t("ui.ai.journal_empty")}
         </pre>
       )}
     </div>

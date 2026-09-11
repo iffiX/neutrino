@@ -15,6 +15,10 @@ WEB_SESSION_COOKIE = "neutrino_session"
 WEB_SESSION_SECRET_PATH = UTILS_STATE_ROOT / "session.secret"
 WEB_SESSION_SECRET_BYTES = 32
 
+# The languages the panel is drawn in. Anything else reads as the first.
+WEB_LANGUAGES = ("en", "zh-CN")
+WEB_DEFAULT_LANGUAGE = "en"
+
 # What the panel listens on until somebody says otherwise. One value: setup
 # offers it, the unit serves on it, and an enrollment link points a device at
 # it, and three copies of it is how a device ends up sent to the wrong port.

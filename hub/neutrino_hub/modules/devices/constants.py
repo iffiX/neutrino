@@ -186,3 +186,13 @@ DEVICE_FILE_OP_TIMEOUT_S = 30.0
 
 # The user-tier remote desktops the agent reads and sets up.
 DEVICE_REMOTE_DESKTOP_PRODUCTS = ("anydesk", "teamviewer")
+
+# What the panel answers with when pasted key material cannot be used; the
+# wording is the panel's.
+DEVICE_KEY_ERROR_NOTHING_PASTED = "key_nothing_pasted"
+DEVICE_KEY_ERROR_IS_PUBLIC = "key_is_public"
+DEVICE_KEY_ERROR_NOT_A_PRIVATE_KEY = "key_not_a_private_key"
+DEVICE_KEY_ERROR_NO_BCRYPT = "key_encryption_unsupported"
+DEVICE_KEY_ERROR_PASSPHRASE_WRONG = "key_passphrase_wrong"
+DEVICE_KEY_ERROR_PASSPHRASE_NEEDED = "key_passphrase_needed"
+DEVICE_KEY_ERROR_UNREADABLE = "key_unreadable"

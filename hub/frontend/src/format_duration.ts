@@ -1,5 +1,7 @@
 /** Rendering elapsed times: uptimes, probe latencies, last-seen stamps. */
 
+import { t } from "./i18n";
+
 const SECONDS_PER_MINUTE = 60;
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
@@ -51,21 +53,22 @@ export function formatLatency(delayMs: number | null): string {
  *     has never been seen.
  *
  * Returns:
- *   A string such as `4m ago`, or `never` when there is nothing to show.
+ *   A string such as `4m ago`, or the word for never when there is nothing
+ *   to show.
  */
 export function formatTimeAgo(isoTimestamp: string | null): string {
   if (isoTimestamp === null) {
-    return "never";
+    return t("state.never");
   }
   const parsed = Date.parse(isoTimestamp);
   if (Number.isNaN(parsed)) {
-    return "unknown";
+    return t("state.unknown");
   }
   const elapsedS = Math.max(0, (Date.now() - parsed) / 1000);
   if (elapsedS < 10) {
-    return "just now";
+    return t("state.just_now");
   }
-  return `${formatDuration(elapsedS)} ago`;
+  return t("ui.duration.ago", { duration: formatDuration(elapsedS) });
 }
 
 /**

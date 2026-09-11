@@ -10,6 +10,7 @@
  * reasons.
  */
 
+import { t } from "./i18n";
 import type { MeterTone } from "./components/meter";
 
 /** What one password field refuses. Thresholds mirror the backend's. */
@@ -32,14 +33,12 @@ export const VAULT_PASSPHRASE_RULES: PasswordRules = {
 };
 
 /** The panel password's requirement, said under its field. */
-export const PANEL_PASSWORD_HINT =
-  `At least ${PANEL_PASSWORD_RULES.min_length} characters, and better for ` +
-  "mixing letters, numbers and symbols.";
+export const panelPasswordHint = (): string =>
+  t("ui.password.panel_hint", { count: PANEL_PASSWORD_RULES.min_length });
 
 /** The vault passphrase's requirement, said under its field. */
-export const VAULT_PASSPHRASE_HINT =
-  `At least ${VAULT_PASSPHRASE_RULES.min_length} characters, mixing ` +
-  "lowercase, uppercase, digits and symbols.";
+export const vaultPassphraseHint = (): string =>
+  t("ui.password.vault_hint", { count: VAULT_PASSPHRASE_RULES.min_length });
 
 export interface PasswordStrength {
   /** How full the bar is, 0 to 100. */
@@ -51,13 +50,13 @@ export interface PasswordStrength {
   is_allowed: boolean;
 }
 
-/** The character families a password can draw on, named for the shortfall
+/** The character families a password can draw on, keyed for the shortfall
  * sentence. */
-const FAMILIES: { pattern: RegExp; missing: string }[] = [
-  { pattern: /[a-z]/, missing: "a lowercase letter" },
-  { pattern: /[A-Z]/, missing: "an uppercase letter" },
-  { pattern: /[0-9]/, missing: "a digit" },
-  { pattern: /[^A-Za-z0-9]/, missing: "a symbol" },
+const FAMILIES: { pattern: RegExp; missingKey: string }[] = [
+  { pattern: /[a-z]/, missingKey: "ui.password.class_lowercase" },
+  { pattern: /[A-Z]/, missingKey: "ui.password.class_uppercase" },
+  { pattern: /[0-9]/, missingKey: "ui.password.class_digit" },
+  { pattern: /[^A-Za-z0-9]/, missingKey: "ui.password.class_symbol" },
 ];
 /** The most a password can score, which is what fills the bar. */
 const TOP_SCORE = 6;
@@ -65,21 +64,21 @@ const TOP_SCORE = 6;
 interface PasswordGrade {
   /** The highest score this grade covers. */
   top: number;
-  label: string;
+  labelKey: string;
   tone: MeterTone;
 }
 
 /** What a password that scores everything is called. */
 const STRONGEST: PasswordGrade = {
   top: TOP_SCORE,
-  label: "Strong",
+  labelKey: "ui.password.grade_strong",
   tone: "ok",
 };
 /** By rising score; the first grade the score fits inside wins. */
 const GRADES: PasswordGrade[] = [
-  { top: 2, label: "Weak", tone: "error" },
-  { top: 3, label: "Fair", tone: "warn" },
-  { top: 5, label: "Good", tone: "accent" },
+  { top: 2, labelKey: "ui.password.grade_weak", tone: "error" },
+  { top: 3, labelKey: "ui.password.grade_fair", tone: "warn" },
+  { top: 5, labelKey: "ui.password.grade_good", tone: "accent" },
   STRONGEST,
 ];
 
@@ -95,7 +94,7 @@ export function passwordStrength(
       // Short of the rule, so the bar shows a stub rather than nothing: an
       // empty bar beside characters that are plainly there reads as broken.
       percent: 10,
-      label: "Too short",
+      label: t("ui.password.grade_too_short"),
       tone: "error",
       is_allowed: false,
     };
@@ -106,7 +105,7 @@ export function passwordStrength(
   if (rules.is_every_class_needed && families < FAMILIES.length) {
     return {
       percent: 25,
-      label: "Too plain",
+      label: t("ui.password.grade_too_plain"),
       tone: "error",
       is_allowed: false,
     };
@@ -123,7 +122,7 @@ export function passwordStrength(
   const grade = GRADES.find((entry) => score <= entry.top) ?? STRONGEST;
   return {
     percent: Math.round((Math.min(score, TOP_SCORE) / TOP_SCORE) * 100),
-    label: grade.label,
+    label: t(grade.labelKey),
     tone: grade.tone,
     is_allowed: true,
   };
@@ -135,18 +134,18 @@ export function passwordShortfall(
   rules: PasswordRules,
 ): string | null {
   if (password.length < rules.min_length) {
-    return `Too short: ${rules.min_length} characters at the very least.`;
+    return t("ui.password.shortfall_length", { count: rules.min_length });
   }
   if (!rules.is_every_class_needed) {
     return null;
   }
   const missing = FAMILIES.filter(
     (family) => !family.pattern.test(password),
-  ).map((family) => family.missing);
+  ).map((family) => t(family.missingKey));
   if (missing.length === 0) {
     return null;
   }
-  return `Still needs ${joinNames(missing)}.`;
+  return t("ui.password.shortfall_classes", { names: joinNames(missing) });
 }
 
 /** Whether the password clears its rule and its repeat matches it. */
@@ -162,5 +161,8 @@ function joinNames(names: string[]): string {
   if (names.length === 1) {
     return names[0] ?? "";
   }
-  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  return [
+    names.slice(0, -1).join(t("ui.password.name_separator")),
+    names[names.length - 1],
+  ].join(t("ui.password.name_last_separator"));
 }

@@ -17,13 +17,14 @@ import {
 } from "../api_client";
 import { DEVICE_ICON_NAMES, toDeviceIconName } from "../device_icon";
 import {
-  DEVICE_REACH_LABELS,
+  DEVICE_REACH_KEYS,
   isDeviceManaged,
   toDeviceReach,
   toDevicePresence,
   toDeviceUpgradePath,
 } from "../device_level";
 import type { DeviceUpgradePath } from "../device_level";
+import { t, useLanguage } from "../i18n";
 import { useConfirm } from "../use_confirm";
 import { formatTimeAgo } from "../format_duration";
 import { stripAnsi } from "../strip_ansi";
@@ -50,86 +51,43 @@ import "./device_drawer.css";
  * bottom rather than into a toast, because an install is a thing you read.
  */
 
-const WORDING = {
-  close: "Close",
-  terminal: "Terminal",
-  files: "Files",
-  identity: "Identity",
-  displayName: "Display name",
-  icon: "Icon",
-  actions: "Actions",
-  wake: "Wake-on-LAN",
-  install: "Install agent",
-  reinstall: "Reinstall agent",
-  reboot: "Reboot",
-  shutdown: "Shut down",
-  actionBody:
-    "The machine is told to do this at once; anything unsaved on it is lost.",
-  getLink: "Get link",
-  output: "Action output",
-  commandResults: "Agent command results",
-  forget: "Forget device",
-  forgetBody: "The device and its saved credentials are deleted from this box.",
-  save: "Save device",
-  saving: "Saving…",
-  saved: "Saved.",
-  reporting: "reporting",
-  seen: "on the network",
-  offline: "offline",
-  seenAgo: "seen {when}",
-  unknownVendor: "unknown vendor",
-  running: "{action} · running",
-  finished: "{action} · exit {code}",
-};
-
 // Wording for the way this device becomes managed, or catches up with the hub.
-const GUIDANCE_TITLES: Record<DeviceUpgradePath, string> = {
-  install: "Install the agent to manage this device.",
-  link: "No credentials for this machine yet.",
+const GUIDANCE_TITLE_KEYS: Record<DeviceUpgradePath, string> = {
+  install: "ui.drawer.guidance_install_title",
+  link: "ui.drawer.guidance_link_title",
 };
 
-const GUIDANCE_HINTS: Record<DeviceUpgradePath, string> = {
-  install: "Install agent below asks for a login and runs the installer.",
-  link: "Send it an enrollment link. The SSH installer needs Linux.",
+const GUIDANCE_HINT_KEYS: Record<DeviceUpgradePath, string> = {
+  install: "ui.drawer.guidance_install_hint",
+  link: "ui.drawer.guidance_link_hint",
 };
 
-const ENROLLMENT_TITLE = "Paste this link into the agent window on {name}.";
-const ENROLLMENT_HINT =
-  "Install the agent there, then paste the link into its window (`nagent gui`), or run `sudo nagent connect <link>` in its terminal; it pastes safely unquoted. It works for {minutes} minutes.";
-
-const VERSION_MISMATCH_TITLE =
-  "This agent is a different version from the hub.";
-
-const VERSION_MISMATCH_HINTS: Record<DeviceUpgradePath, string> = {
-  install: "Reinstall it with the Reinstall agent action below.",
-  link: "Re-enroll it with a fresh link. The SSH installer needs Linux.",
+const VERSION_MISMATCH_HINT_KEYS: Record<DeviceUpgradePath, string> = {
+  install: "ui.drawer.version_mismatch_install_hint",
+  link: "ui.drawer.version_mismatch_link_hint",
 };
 
 // The agent's last_error {code, params}, worded. A code without an entry
 // shows as itself, because a failure hidden entirely is worse than a bare
 // code.
-const AGENT_ERROR_WORDING: Record<string, string> = {
-  unsupported_platform: "The agent asked for something its platform cannot do.",
-  update_failed: "The agent could not update itself.",
-  agent_package_missing:
-    "The hub has no agent package for this machine's platform.",
-  agent_package_fetch_failed:
-    "The hub could not fetch the agent package for this platform.",
-  agent_package_sha256_mismatch:
-    "What the hub fetched is not the agent package its manifest pins.",
-  agent_package_cache_unwritable:
-    "The hub could not write the agent package to its own disk.",
+const AGENT_ERROR_KEYS: Record<string, string> = {
+  unsupported_platform: "code.unsupported_platform",
+  update_failed: "code.update_failed",
+  agent_package_missing: "code.agent_package_missing",
+  agent_package_fetch_failed: "code.agent_package_fetch_failed",
+  agent_package_sha256_mismatch: "code.agent_package_sha256_mismatch",
+  agent_package_cache_unwritable: "code.agent_package_cache_unwritable",
 };
 
 // The {code, params} an action is refused with, worded.
-const ACTION_ERROR_WORDING: Record<string, string> = {
-  agent_offline: "The machine is not answering, so nothing was started on it.",
+const ACTION_ERROR_KEYS: Record<string, string> = {
+  agent_offline: "ui.devices.agent_offline",
 };
 
 /** One remote action, as the grid draws it. */
 interface DeviceAction {
   action: DeviceActionName;
-  label: string;
+  labelKey: string;
   icon: IconName;
   isDestructive: boolean;
 }
@@ -147,19 +105,19 @@ interface DeviceGuidance {
 const MANAGED_ACTIONS: DeviceAction[] = [
   {
     action: "reinstall_agent",
-    label: WORDING.reinstall,
+    labelKey: "ui.drawer.reinstall",
     icon: "download",
     isDestructive: false,
   },
   {
     action: "reboot",
-    label: WORDING.reboot,
+    labelKey: "ui.drawer.reboot",
     icon: "refresh",
     isDestructive: true,
   },
   {
     action: "shutdown",
-    label: WORDING.shutdown,
+    labelKey: "ui.drawer.shutdown",
     icon: "power",
     isDestructive: true,
   },
@@ -180,6 +138,8 @@ export function DeviceDrawer({
   onForgotten,
   onTaskFinished,
 }: DeviceDrawerProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const navigate = useNavigate();
   const [name, setName] = useState(device.name ?? "");
   const [icon, setIcon] = useState<IconName>(toDeviceIconName(device.icon));
@@ -256,7 +216,7 @@ export function DeviceDrawer({
       onSaved(
         await apiPut<DeviceView>(`/devices/${device.mac_address}`, annotation),
       );
-      setNotice(WORDING.saved);
+      setNotice(t("ui.drawer.saved"));
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -304,9 +264,12 @@ export function DeviceDrawer({
       return;
     }
     confirm.ask({
-      title: `${deviceAction.label} ${device.name ?? device.mac_address}`,
-      body: WORDING.actionBody,
-      confirmLabel: deviceAction.label,
+      title: t("ui.drawer.action_title", {
+        action: t(deviceAction.labelKey),
+        name: device.name ?? device.mac_address,
+      }),
+      body: t("ui.drawer.action_body"),
+      confirmLabel: t(deviceAction.labelKey),
       onConfirm: () => void runAction(deviceAction),
     });
   };
@@ -315,7 +278,7 @@ export function DeviceDrawer({
     setError(null);
     setNotice(null);
     setTaskId(null);
-    setRunningLabel(deviceAction.label);
+    setRunningLabel(t(deviceAction.labelKey));
     try {
       const started = await apiPost<TaskStarted>(
         `/devices/${device.mac_address}/action`,
@@ -330,9 +293,11 @@ export function DeviceDrawer({
 
   const handleForget = () =>
     confirm.ask({
-      title: `Forget ${device.name ?? device.mac_address}`,
-      body: WORDING.forgetBody,
-      confirmLabel: "Forget",
+      title: t("ui.drawer.forget_title", {
+        name: device.name ?? device.mac_address,
+      }),
+      body: t("ui.drawer.forget_body"),
+      confirmLabel: t("ui.drawer.forget_confirm"),
       onConfirm: () => void forgetDevice(),
     });
 
@@ -384,7 +349,7 @@ export function DeviceDrawer({
                   onClick={() => openPage("/terminals")}
                 >
                   <Icon name="terminal" size={13} />
-                  {WORDING.terminal}
+                  {t("ui.drawer.terminal")}
                 </button>
                 <button
                   type="button"
@@ -392,7 +357,7 @@ export function DeviceDrawer({
                   onClick={() => openPage("/files")}
                 >
                   <Icon name="folder" size={13} />
-                  {WORDING.files}
+                  {t("ui.drawer.files")}
                 </button>
               </>
             )}
@@ -400,7 +365,7 @@ export function DeviceDrawer({
               type="button"
               className="button button--ghost button--small"
               onClick={onClose}
-              aria-label={WORDING.close}
+              aria-label={t("ui.drawer.close")}
             >
               <Icon name="close" size={15} />
             </button>
@@ -413,27 +378,26 @@ export function DeviceDrawer({
               <span
                 className={`badge ${reach === "agent" ? "badge--ok" : reach === "ssh" ? "badge--accent" : ""}`}
               >
-                {DEVICE_REACH_LABELS[reach]}
+                {t(DEVICE_REACH_KEYS[reach])}
               </span>
               <span
                 className={`badge ${presence === "offline" ? "badge--warn" : "badge--ok"}`}
               >
                 {presence === "reporting"
-                  ? WORDING.reporting
+                  ? t("state.reporting")
                   : presence === "seen"
-                    ? WORDING.seen
-                    : WORDING.offline}
+                    ? t("state.on_the_network")
+                    : t("state.offline")}
               </span>
               <span className="badge">
                 {device.client?.hostname ??
-                  (device.vendor || WORDING.unknownVendor)}
+                  (device.vendor || t("ui.drawer.unknown_vendor"))}
               </span>
               {device.client !== null && !device.client.is_online && (
                 <span className="badge">
-                  {WORDING.seenAgo.replace(
-                    "{when}",
-                    formatTimeAgo(device.client.last_seen),
-                  )}
+                  {t("ui.drawer.seen_ago", {
+                    when: formatTimeAgo(device.client.last_seen),
+                  })}
                 </span>
               )}
             </div>
@@ -441,8 +405,7 @@ export function DeviceDrawer({
               <div className="notice notice--warn">
                 <Icon name="alert" size={15} />
                 <div className="notice_body">
-                  {AGENT_ERROR_WORDING[device.client.last_error.code] ??
-                    device.client.last_error.code}
+                  {describeAgentError(device.client.last_error.code)}
                 </div>
               </div>
             )}
@@ -456,9 +419,9 @@ export function DeviceDrawer({
           )}
 
           <div className="device_drawer_section">
-            <span className="section_label">{WORDING.identity}</span>
+            <span className="section_label">{t("ui.drawer.identity")}</span>
             <label className="field">
-              <span className="field_label">{WORDING.displayName}</span>
+              <span className="field_label">{t("ui.drawer.display_name")}</span>
               <input
                 className="input"
                 value={name}
@@ -467,7 +430,7 @@ export function DeviceDrawer({
               />
             </label>
             <div className="field">
-              <span className="field_label">{WORDING.icon}</span>
+              <span className="field_label">{t("ui.drawer.icon")}</span>
               <div className="device_drawer_icons">
                 {DEVICE_ICON_NAMES.map((option) => (
                   <button
@@ -491,7 +454,7 @@ export function DeviceDrawer({
           </div>
 
           <div className="device_drawer_section">
-            <span className="section_label">{WORDING.actions}</span>
+            <span className="section_label">{t("ui.drawer.actions")}</span>
             {guidance !== null && (
               <div className={`notice ${guidance.tone}`}>
                 <Icon name={guidance.icon} size={15} />
@@ -506,7 +469,7 @@ export function DeviceDrawer({
                         onClick={() => void handleEnrollmentLink()}
                       >
                         <Icon name="link" size={14} />
-                        {WORDING.getLink}
+                        {t("ui.drawer.get_link")}
                       </button>
                     </div>
                   )}
@@ -517,11 +480,10 @@ export function DeviceDrawer({
               <DeviceEnrollmentNotice
                 link={enrollment.link}
                 expiresInS={enrollment.expires_in_s}
-                title={ENROLLMENT_TITLE.replace(
-                  "{name}",
-                  device.name ?? device.mac_address,
-                )}
-                hint={ENROLLMENT_HINT}
+                title={t("ui.drawer.enrollment_title", {
+                  name: device.name ?? device.mac_address,
+                })}
+                hint={t("ui.drawer.enrollment_hint")}
                 onDismiss={() => setEnrollment(null)}
               />
             )}
@@ -532,7 +494,7 @@ export function DeviceDrawer({
                 onClick={() => void handleWakeOnLan()}
               >
                 <Icon name="bolt" size={14} />
-                {WORDING.wake}
+                {t("ui.drawer.wake")}
               </button>
               {isManaged ? (
                 MANAGED_ACTIONS.map((deviceAction) => (
@@ -544,7 +506,7 @@ export function DeviceDrawer({
                     onClick={() => handleAction(deviceAction)}
                   >
                     <Icon name={deviceAction.icon} size={14} />
-                    {deviceAction.label}
+                    {t(deviceAction.labelKey)}
                   </button>
                 ))
               ) : (
@@ -555,7 +517,7 @@ export function DeviceDrawer({
                   onClick={() => setIsInstallOpen(true)}
                 >
                   <Icon name="download" size={14} />
-                  {WORDING.install}
+                  {t("ui.drawer.install")}
                 </button>
               )}
             </div>
@@ -564,7 +526,7 @@ export function DeviceDrawer({
           {taskId !== null && (
             <div className="device_drawer_log">
               <div className="device_drawer_log_head">
-                <span className="section_label">{WORDING.output}</span>
+                <span className="section_label">{t("ui.drawer.output")}</span>
               </div>
               <div className="device_drawer_operation_line">
                 <StatusDot
@@ -606,7 +568,7 @@ export function DeviceDrawer({
               <div className="device_drawer_log">
                 <div className="device_drawer_log_head">
                   <span className="section_label">
-                    {WORDING.commandResults}
+                    {t("ui.drawer.command_results")}
                   </span>
                 </div>
                 {device.client.command_results.map((outcome) => (
@@ -614,7 +576,11 @@ export function DeviceDrawer({
                     <StatusDot
                       tone={outcome.exit_code === 0 ? "ok" : "error"}
                       isPulsing={false}
-                      label={`${outcome.id} · exit ${outcome.exit_code} · ${formatTimeAgo(outcome.finished_at)}`}
+                      label={t("ui.drawer.command_result", {
+                        id: outcome.id,
+                        code: outcome.exit_code,
+                        when: formatTimeAgo(outcome.finished_at),
+                      })}
                     />
                     {outcome.output.length > 0 && (
                       <span className="muted">{stripAnsi(outcome.output)}</span>
@@ -640,7 +606,7 @@ export function DeviceDrawer({
               onClick={() => handleForget()}
             >
               <Icon name="trash" size={13} />
-              {WORDING.forget}
+              {t("ui.drawer.forget")}
             </button>
           )}
           <button
@@ -650,7 +616,7 @@ export function DeviceDrawer({
             onClick={() => void handleSave()}
           >
             <Icon name="check" size={14} />
-            {isSaving ? WORDING.saving : WORDING.save}
+            {isSaving ? t("ui.drawer.saving") : t("ui.drawer.save")}
           </button>
         </div>
       </aside>
@@ -681,8 +647,8 @@ function toGuidance(device: DeviceView): DeviceGuidance | null {
     return {
       tone: "",
       icon: path === "link" ? "link" : "download",
-      title: GUIDANCE_TITLES[path],
-      hint: GUIDANCE_HINTS[path],
+      title: t(GUIDANCE_TITLE_KEYS[path]),
+      hint: t(GUIDANCE_HINT_KEYS[path]),
       hasEnrollmentLink: path === "link",
     };
   }
@@ -692,8 +658,8 @@ function toGuidance(device: DeviceView): DeviceGuidance | null {
   return {
     tone: "notice--warn",
     icon: "alert",
-    title: VERSION_MISMATCH_TITLE,
-    hint: VERSION_MISMATCH_HINTS[path],
+    title: t("ui.drawer.version_mismatch_title"),
+    hint: t(VERSION_MISMATCH_HINT_KEYS[path]),
     hasEnrollmentLink: path === "link",
   };
 }
@@ -704,24 +670,28 @@ function describeTask(
   isRunning: boolean,
   exitCode: number | null,
 ): string {
-  const action = label ?? "action";
+  const action = label ?? t("ui.drawer.task_action");
   if (isRunning) {
-    return WORDING.running.replace("{action}", action);
+    return t("ui.drawer.task_running", { action });
   }
   if (exitCode === null) {
     return action;
   }
-  return WORDING.finished
-    .replace("{action}", action)
-    .replace("{code}", String(exitCode));
+  return t("ui.drawer.task_finished", { action, code: exitCode });
+}
+
+/** One agent failure, worded, or the bare code where none is worded. */
+function describeAgentError(code: string): string {
+  const key = AGENT_ERROR_KEYS[code];
+  return key === undefined ? code : t(key);
 }
 
 /** Wording for a failed action, with the coded refusals spelled out. */
 function describeActionError(cause: unknown): string {
   if (cause instanceof ApiError) {
-    const wording = ACTION_ERROR_WORDING[cause.code];
-    if (wording !== undefined) {
-      return wording;
+    const key = ACTION_ERROR_KEYS[cause.code];
+    if (key !== undefined) {
+      return t(key);
     }
   }
   return describeError(cause);

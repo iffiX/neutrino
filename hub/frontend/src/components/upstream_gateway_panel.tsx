@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { ApplyBar } from "./apply_bar";
 import { apiPut, describeError } from "../api_client";
+import { t, useLanguage } from "../i18n";
 import { isIpv4Address } from "../ipv4_address";
 import type { InterfaceView, NetworkView } from "../api_types";
 
@@ -29,6 +30,8 @@ export function UpstreamGatewayPanel({
   network,
   onApplied,
 }: UpstreamGatewayPanelProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const joined =
     network.interfaces.find((entry) => entry.settings.role === "lan") ?? null;
   const applied = joined?.settings.lan.upstream_gateway ?? "";
@@ -61,7 +64,7 @@ export function UpstreamGatewayPanel({
           settings,
         ),
       );
-      setNotice(`Applied to ${settings.name}.`);
+      setNotice(t("ui.network.applied_to", { name: settings.name }));
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -74,19 +77,15 @@ export function UpstreamGatewayPanel({
       className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
     >
       <div className="settings_group_title">
-        <h2>Upstream gateway</h2>
+        <h2>{t("ui.network.upstream_title")}</h2>
       </div>
-      <p className="field_hint">
-        The router of the network this box forwards for. Devices reach the proxy
-        by naming this box as their gateway; the network&apos;s own router keeps
-        handing out its leases.
-      </p>
+      <p className="field_hint">{t("ui.network.upstream_hint")}</p>
 
       <JoinedSummary entry={joined} />
 
       <div className="field_grid">
         <label className="field">
-          <span className="field_label">Address</span>
+          <span className="field_label">{t("ui.network.field_address")}</span>
           <input
             className="input"
             value={gateway}
@@ -97,10 +96,12 @@ export function UpstreamGatewayPanel({
             }}
           />
           {isDirty && !isValid ? (
-            <span className="field_error">Not an IPv4 address.</span>
+            <span className="field_error">
+              {t("ui.network.error_not_ipv4")}
+            </span>
           ) : (
             <span className="field_hint">
-              Where this box sends what it forwards.
+              {t("ui.network.upstream_address_hint")}
             </span>
           )}
         </label>
@@ -109,8 +110,8 @@ export function UpstreamGatewayPanel({
       <ApplyBar
         isDirty={isDirty && isValid}
         isBusy={isBusy}
-        label="Apply upstream gateway"
-        hint="Rewrites the default route and reloads the firewall."
+        label={t("ui.network.apply_upstream")}
+        hint={t("ui.network.apply_upstream_hint")}
         error={error}
         notice={notice}
         onReset={() => setGateway(applied)}
@@ -122,10 +123,15 @@ export function UpstreamGatewayPanel({
 
 /** The port and what it holds, all of it read from the machine. */
 function JoinedSummary({ entry }: { entry: InterfaceView }) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const rows: [string, string][] = [
-    ["Interface", entry.settings.name],
-    ["Address", entry.link.ipv4_address ?? "none"],
-    ["Link", entry.link.is_up ? "up" : "down"],
+    [t("ui.network.row_interface"), entry.settings.name],
+    [t("ui.network.row_address"), entry.link.ipv4_address ?? t("state.none")],
+    [
+      t("ui.network.row_link"),
+      entry.link.is_up ? t("state.up") : t("state.down"),
+    ],
   ];
   return (
     <dl className="joined_rows">

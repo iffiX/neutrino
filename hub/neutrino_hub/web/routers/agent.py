@@ -76,7 +76,7 @@ def enroll(
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="that enrollment link is unknown or has expired",
+            detail={"code": "enrollment_link_spent", "params": {}},
         )
 
     registry = DeviceRegistry()
@@ -206,7 +206,8 @@ def leave(report: AgentLeave, runtime: PanelRuntime = Depends(get_runtime)) -> d
     device = registry.find_by_client_token(report.token)
     if device is None:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="unknown client token"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "client_token_unknown", "params": {}},
         )
     registry.forget_client(device.mac_address)
     runtime.forget_client_state(device.mac_address)
@@ -242,7 +243,8 @@ def package(
     device = DeviceRegistry().find_by_client_token(request.token)
     if device is None:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="unknown client token"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "client_token_unknown", "params": {}},
         )
     architecture = request.architecture or runtime.client_platform.get(
         device.mac_address, {}
@@ -289,7 +291,8 @@ def module_package(
     device = DeviceRegistry().find_by_client_token(request.token)
     if device is None:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="unknown client token"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "client_token_unknown", "params": {}},
         )
     try:
         artifact = runtime.agent_modules.artifact_for_key(

@@ -89,7 +89,8 @@ def create_key(request: KeyCreate) -> KeyView:
         )
     except KeyMaterialError as error:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": error.code, "params": error.params},
         ) from error
     return _key_view(record, _device_counts())
 
@@ -191,7 +192,8 @@ def create_login(request: LoginCreate) -> LoginView:
         raise
     except ValueError as error:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "login_refused", "params": {"detail": str(error)}},
         ) from error
     return _login_view(SecretVault(), record, _login_device_counts())
 
@@ -324,7 +326,8 @@ def create_token(request: TokenCreate) -> TokenView:
         raise
     except ValueError as error:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "token_refused", "params": {"detail": str(error)}},
         ) from error
     return _token_view(record, _provider_counts(), _node_counts())
 

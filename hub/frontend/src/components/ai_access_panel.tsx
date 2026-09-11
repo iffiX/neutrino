@@ -4,6 +4,7 @@ import { Icon } from "./icon";
 import { apiDelete, apiPost, describeError } from "../api_client";
 import { copyText } from "../copy_text";
 import { formatTimeAgo } from "../format_duration";
+import { t, useLanguage } from "../i18n";
 import { useConfirm } from "../use_confirm";
 import type {
   AiUsageKey,
@@ -27,34 +28,6 @@ import "./ai_access_panel.css";
  * waits behind an apply bar.
  */
 
-const WORDING = {
-  title: "Access",
-  hint: "Keys handed to clients are named after the client. Generate one by hand for a machine no client runs on.",
-  endpoint: "Endpoint",
-  copy: "Copy",
-  copied: "Copied",
-  generateKey: "Generate key",
-  generate: "Generate",
-  cancel: "Cancel",
-  namePlaceholder: "what will use it, e.g. laptop",
-  defaultKeyName: "device",
-  freshHint: "Paste it into the tool beside the endpoint above.",
-  copyKey: "Copy key",
-  dismiss: "Dismiss",
-  reveal: "Reveal",
-  hide: "Hide",
-  revoke: "Revoke",
-  neverUsed: "Never used",
-  used: (ago: string) => `Used ${ago}`,
-  revokeTitle: (name: string) => `Revoke ${name}`,
-  revokeBody:
-    "Whatever is using this key stops reaching the gateway at once, and needs a new one to get back in.",
-  revokeClientBody: (client: string) =>
-    `${client} stops reaching the gateway at once and is handed a new key.`,
-  empty: "No keys yet",
-  emptyHint: "Generate one for a machine that has no agent on it.",
-} as const;
-
 const KEYS_PATH = "/cliproxyapi/keys";
 const MASKED_KEY = "•".repeat(24);
 const COPIED_CLEAR_MS = 1600;
@@ -75,6 +48,8 @@ export function AiAccessPanel({
   usageKeys,
   onChanged,
 }: AiAccessPanelProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const confirm = useConfirm();
   const [isNaming, setIsNaming] = useState(false);
   const [name, setName] = useState("");
@@ -97,7 +72,7 @@ export function AiAccessPanel({
     try {
       const known = new Set(keys.map((key) => key.id));
       const next = await apiPost<CliproxyApiStatusView>(KEYS_PATH, {
-        name: name.trim() || WORDING.defaultKeyName,
+        name: name.trim() || t("ui.ai.key_default_name"),
       });
       const created = next.client_keys.find((key) => !known.has(key.id));
       onChanged(next);
@@ -130,19 +105,19 @@ export function AiAccessPanel({
 
   const askRevoke = (value: CliproxyApiKeyView, clientName: string | null) =>
     confirm.ask({
-      title: WORDING.revokeTitle(value.name),
+      title: t("ui.ai.revoke_title", { name: value.name }),
       body:
         clientName === null
-          ? WORDING.revokeBody
-          : WORDING.revokeClientBody(clientName),
-      confirmLabel: WORDING.revoke,
+          ? t("ui.ai.revoke_body")
+          : t("ui.ai.revoke_client_body", { client: clientName }),
+      confirmLabel: t("ui.ai.revoke"),
       onConfirm: () => void handleRevoke(value.id),
     });
 
   return (
     <section className="settings_group">
       <div className="settings_group_title">
-        <h2>{WORDING.title}</h2>
+        <h2>{t("ui.ai.access_title")}</h2>
         {!isNaming && (
           <button
             type="button"
@@ -151,13 +126,13 @@ export function AiAccessPanel({
             onClick={() => setIsNaming(true)}
           >
             <Icon name="plus" size={14} />
-            {WORDING.generateKey}
+            {t("ui.ai.generate_key")}
           </button>
         )}
       </div>
-      <p className="field_hint">{WORDING.hint}</p>
+      <p className="field_hint">{t("ui.ai.access_hint")}</p>
 
-      <CopyRow label={WORDING.endpoint} value={endpoint} />
+      <CopyRow label={t("ui.ai.endpoint")} value={endpoint} />
 
       {error !== null && (
         <div className="notice notice--error">
@@ -170,7 +145,7 @@ export function AiAccessPanel({
         <div className="ai_key_add">
           <input
             className="input"
-            placeholder={WORDING.namePlaceholder}
+            placeholder={t("ui.ai.key_name_placeholder")}
             value={name}
             autoFocus
             onChange={(event) => setName(event.target.value)}
@@ -189,7 +164,7 @@ export function AiAccessPanel({
                 setName("");
               }}
             >
-              {WORDING.cancel}
+              {t("ui.ai.cancel")}
             </button>
             <button
               type="button"
@@ -198,7 +173,7 @@ export function AiAccessPanel({
               onClick={() => void handleGenerate()}
             >
               <Icon name="check" size={14} />
-              {WORDING.generate}
+              {t("ui.ai.generate")}
             </button>
           </div>
         </div>
@@ -206,8 +181,8 @@ export function AiAccessPanel({
 
       {keys.length === 0 ? (
         <div className="placeholder">
-          <span>{WORDING.empty}</span>
-          <span className="faint">{WORDING.emptyHint}</span>
+          <span>{t("ui.ai.keys_empty")}</span>
+          <span className="faint">{t("ui.ai.keys_empty_hint")}</span>
         </div>
       ) : (
         <div className="ai_keys">
@@ -265,19 +240,19 @@ function FreshKeyRow({ value, onDismiss }: FreshKeyRowProps) {
           className="button button--ghost button--small"
           onClick={onDismiss}
         >
-          {WORDING.dismiss}
+          {t("ui.ai.dismiss")}
         </button>
       </div>
       <div className="ai_key_fresh_value mono">{value.key}</div>
       <div className="ai_key_fresh_foot">
-        <span className="field_hint">{WORDING.freshHint}</span>
+        <span className="field_hint">{t("ui.ai.fresh_key_hint")}</span>
         <button
           type="button"
           className="button button--primary"
           onClick={() => void handleCopy()}
         >
           <Icon name="file" size={14} />
-          {WORDING.copyKey}
+          {t("ui.ai.copy_key")}
         </button>
       </div>
     </div>
@@ -317,8 +292,8 @@ function KeyRow({ value, usage, isBusy, onRevoke }: KeyRowProps) {
       <span className="ai_key_meta">
         <span className="ai_key_used">
           {hasUsage
-            ? WORDING.used(formatTimeAgo(usage.last_seen_at))
-            : WORDING.neverUsed}
+            ? t("ui.ai.key_used", { ago: formatTimeAgo(usage.last_seen_at) })
+            : t("ui.ai.key_never_used")}
         </span>
         {clientName !== null && (
           <span className="ai_key_device mono">{clientName}</span>
@@ -328,8 +303,8 @@ function KeyRow({ value, usage, isBusy, onRevoke }: KeyRowProps) {
         <button
           type="button"
           className="ai_key_action"
-          title={isRevealed ? WORDING.hide : WORDING.reveal}
-          aria-label={isRevealed ? WORDING.hide : WORDING.reveal}
+          title={isRevealed ? t("ui.ai.hide") : t("ui.ai.reveal")}
+          aria-label={isRevealed ? t("ui.ai.hide") : t("ui.ai.reveal")}
           onClick={() => setIsRevealed((current) => !current)}
         >
           <Icon name={isRevealed ? "eye_off" : "eye"} size={13} />
@@ -337,8 +312,8 @@ function KeyRow({ value, usage, isBusy, onRevoke }: KeyRowProps) {
         <button
           type="button"
           className="ai_key_action"
-          title={isCopied ? WORDING.copied : WORDING.copy}
-          aria-label={isCopied ? WORDING.copied : WORDING.copy}
+          title={isCopied ? t("ui.ai.copied") : t("ui.ai.copy")}
+          aria-label={isCopied ? t("ui.ai.copied") : t("ui.ai.copy")}
           onClick={() => void handleCopy()}
         >
           <Icon name={isCopied ? "check" : "file"} size={13} />
@@ -346,8 +321,8 @@ function KeyRow({ value, usage, isBusy, onRevoke }: KeyRowProps) {
         <button
           type="button"
           className="ai_key_action ai_key_action--danger"
-          title={WORDING.revoke}
-          aria-label={WORDING.revoke}
+          title={t("ui.ai.revoke")}
+          aria-label={t("ui.ai.revoke")}
           disabled={isBusy}
           onClick={onRevoke}
         >
@@ -386,7 +361,7 @@ function CopyRow({ label, value }: CopyRowProps) {
         onClick={() => void handleCopy()}
       >
         <Icon name={isCopied ? "check" : "file"} size={13} />
-        {isCopied ? WORDING.copied : WORDING.copy}
+        {isCopied ? t("ui.ai.copied") : t("ui.ai.copy")}
       </button>
     </div>
   );

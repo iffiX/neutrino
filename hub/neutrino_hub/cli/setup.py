@@ -113,6 +113,11 @@ SETUP_USER_RUNTIME_ROOT = Path("/run/user")
 # The distribution's own unit. It ships an ExecReload, which is what a
 # newly written jail wants.
 SETUP_FAIL2BAN_UNIT = "fail2ban"
+# The steps outside :data:`CORE_STEPS`, named so a browser words them the way
+# it words the rest.
+SETUP_STEP_WRITE_ANSWERS = "write_answers"
+SETUP_STEP_INSTALL_MODULE = "install_module"
+SETUP_STEP_PANEL_PASSWORD = "panel_password"
 # Where the run is written down as well as printed. A first run
 # reconfigures the interface it is often watched over, so the terminal can
 # go away in the middle of one — this is where to read what happened.
@@ -176,7 +181,7 @@ def main() -> int:
         print(f"error: {error}", file=sys.stderr)
         return 1
 
-    steps = [step for step in CORE_STEPS if step[1] not in _skipped_steps()]
+    steps = [step for step in CORE_STEPS if step[2] not in _skipped_steps()]
     is_coloured = not os.environ.get("NO_COLOR") and sys.stdout.isatty()
     if server is None:
         reporter = InstallReporter(
@@ -418,13 +423,14 @@ def _panel_started_last(steps: list) -> list:
     return [
         (
             (
+                step_id,
                 description,
                 partial(_step_start_services, names=SETUP_SERVICES_BEFORE_PANEL),
             )
             if step is _step_start_services
-            else (description, step)
+            else (step_id, description, step)
         )
-        for description, step in steps
+        for step_id, description, step in steps
     ]
 
 
@@ -500,8 +506,8 @@ def _setup(
         "interrupted, please reconnect when interruption happens"
     )
     reporter.blank()
-    for description, step in steps:
-        reporter.start(description)
+    for step_id, description, step in steps:
+        reporter.start(description, code=step_id)
         try:
             note = step(reporter)
         except (subprocess.SubprocessError, OSError, ValueError) as error:
@@ -517,12 +523,12 @@ def _setup(
             # it fails the same ways and a traceback here says nothing. The
             # vault comes first: the steps after this seal material under its
             # data key.
-            reporter.start("Writing what you chose")
+            reporter.start("Writing what you chose", code=SETUP_STEP_WRITE_ANSWERS)
             try:
                 SecretVault().initialize(answers.vault_passphrase)
                 write_config("router/network.json", answers.network.to_dict())
                 _write_proxy(answers.proxy)
-                _write_listen_port(answers.listen_port)
+                _write_panel_settings(answers.listen_port, answers.language)
             except (
                 subprocess.SubprocessError,
                 OSError,
@@ -534,7 +540,11 @@ def _setup(
             reporter.done("vault, network, proxy and panel port")
 
     for name in answers.services:
-        reporter.start(f"Installing {name}")
+        reporter.start(
+            f"Installing {name}",
+            code=SETUP_STEP_INSTALL_MODULE,
+            params={"name": name},
+        )
         try:
             note = _install_service(name, reporter, is_consented=is_consented)
         except (
@@ -553,7 +563,7 @@ def _setup(
 
     # Last, because the settings file it writes into is one of the files the
     # steps above copy from its example.
-    reporter.start("Setting the panel password")
+    reporter.start("Setting the panel password", code=SETUP_STEP_PANEL_PASSWORD)
     store_password(answers.password)
     reporter.done("stored")
 
@@ -658,14 +668,16 @@ def _install_service(
     return result.message
 
 
-def _write_listen_port(port: int) -> None:
-    """Put the panel on the port that was asked for.
+def _write_panel_settings(port: int, language: str) -> None:
+    """Put the panel on the port and in the language that were asked for.
 
     Args:
         port: What the wizard collected.
+        language: The language the panel is drawn in.
     """
     settings = read_config("web/settings.json")
     settings["listen_port"] = port
+    settings["language"] = language
     write_config("web/settings.json", settings)
 
 
@@ -1164,19 +1176,23 @@ SETUP_STEPS_THE_BOX_SURVIVES = (_step_fail2ban, _step_cliproxyapi)
 # itself without: routing, the proxy core and the AI gateway. NetBird installs
 # itself from the panel's Modules page; what a device hosts is the agent's.
 CORE_STEPS = (
-    ("Checking the packages the hub needs", _step_required_packages),
-    ("Guarding SSH with fail2ban", _step_fail2ban),
-    ("Creating service user and directories", _step_users_and_dirs),
-    ("Preparing the Python environment", _step_python_env),
-    ("Installing xray-core and geodata", _step_xray_core),
-    ("Preparing config/ from examples", _step_config_files),
-    ("Generating the agent channel certificate", _step_agent_tls),
-    ("Installing systemd units", _step_systemd_units),
-    ("Applying the interface roles", _step_interfaces),
-    ("Rendering and applying configuration", _step_render_all),
-    ("Enabling services at boot", _step_enable_services),
-    ("Starting services", _step_start_services),
-    ("Installing the AI gateway", _step_cliproxyapi),
+    (
+        "required_packages",
+        "Checking the packages the hub needs",
+        _step_required_packages,
+    ),
+    ("fail2ban", "Guarding SSH with fail2ban", _step_fail2ban),
+    ("users_and_dirs", "Creating service user and directories", _step_users_and_dirs),
+    ("python_env", "Preparing the Python environment", _step_python_env),
+    ("xray_core", "Installing xray-core and geodata", _step_xray_core),
+    ("config_files", "Preparing config/ from examples", _step_config_files),
+    ("agent_tls", "Generating the agent channel certificate", _step_agent_tls),
+    ("systemd_units", "Installing systemd units", _step_systemd_units),
+    ("interfaces", "Applying the interface roles", _step_interfaces),
+    ("render_all", "Rendering and applying configuration", _step_render_all),
+    ("enable_services", "Enabling services at boot", _step_enable_services),
+    ("start_services", "Starting services", _step_start_services),
+    ("cliproxyapi", "Installing the AI gateway", _step_cliproxyapi),
 )
 
 if __name__ == "__main__":

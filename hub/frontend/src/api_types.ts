@@ -1036,6 +1036,13 @@ export interface RestoreResult {
 /** The panel's own settings. */
 export interface PanelSettings {
   listen_port: number;
+  /** The language the panel is drawn in. Left out of a write, it stays. */
+  language: string;
+}
+
+/** The language the panel is drawn in, answered before there is a session. */
+export interface PanelLanguage {
+  language: string;
 }
 
 /**

@@ -37,7 +37,11 @@ from neutrino_hub.system.constants import (
 from neutrino_hub.system.machine import machine_architecture
 from neutrino_hub.system.provisioning import plan_for
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
-from neutrino_hub.web.constants import WEB_DEFAULT_LISTEN_PORT
+from neutrino_hub.web.constants import (
+    WEB_DEFAULT_LANGUAGE,
+    WEB_DEFAULT_LISTEN_PORT,
+    WEB_LANGUAGES,
+)
 from neutrino_hub.utils.constants import UTILS_LOG_DIR
 from neutrino_hub.modules.router.modes import (
     ROUTER_MODES_BY_KEY,
@@ -66,6 +70,7 @@ WIZARD_BACK = "b"
 # One per screen, in order. The wordmark repeats; the title does not, because
 # the same five words five times teach nobody where they are.
 WIZARD_TITLES = (
+    "Language",
     "A password for the panel, and the vault passphrase",
     "What is this machine for?",
     "Which ports?",
@@ -96,6 +101,9 @@ WIZARD_SERVER_NOTE = (
     "which is what this machine was already doing; the panel's Network page "
     "narrows that."
 )
+# The languages the panel is drawn in, as the first screen lists them. The
+# screen asks in English, whatever it answers.
+WIZARD_LANGUAGE_NAMES = {"en": "English", "zh-CN": "Chinese (Simplified)"}
 WIZARD_ABORTED = "setup was aborted by user, nothing was written"
 # What a shell reports for a command somebody interrupted.
 WIZARD_STOPPED_STATUS = 130
@@ -145,6 +153,7 @@ class WizardAnswers:
             afterwards, so nothing here has to be asked twice.
         listen_port: The port the panel answers on. Asked whatever shape this
             box is, because every one of them answers somewhere.
+        language: The language the panel is drawn in.
     """
 
     password: str
@@ -153,6 +162,7 @@ class WizardAnswers:
     proxy: WizardProxy = field(default_factory=WizardProxy)
     services: tuple = ()
     listen_port: int = WEB_DEFAULT_LISTEN_PORT
+    language: str = WEB_DEFAULT_LANGUAGE
 
 
 # What an answers document may say, and which planner keyword each becomes.
@@ -175,6 +185,7 @@ WIZARD_DOCUMENT_KEYS = (
     "proxy",
     "services",
     "listen_port",
+    "language",
 )
 # A document need not answer the proxy screen; skipping it is what an
 # unanswered one means, exactly as it does on the screen.
@@ -238,6 +249,7 @@ def from_document(document: dict) -> WizardAnswers:
         proxy=_proxy_from(document.get("proxy", {}), network["mode"]),
         services=_services_from(document.get("services", [])),
         listen_port=_port_from(document.get("listen_port", WEB_DEFAULT_LISTEN_PORT)),
+        language=_language_from(document.get("language", WEB_DEFAULT_LANGUAGE)),
     )
 
 
@@ -275,6 +287,26 @@ def _port_from(given) -> int:
     if isinstance(given, int) and 1 <= given <= 65535:
         return given
     raise WizardAborted(f"{given!r} is not a port number")
+
+
+def _language_from(given) -> str:
+    """The language the panel is drawn in, read rather than asked for.
+
+    Args:
+        given: The document's ``language``, ``en`` when it has none.
+
+    Returns:
+        The language to draw the panel in.
+
+    Raises:
+        WizardAborted: When it is not a language this panel ships.
+    """
+    if given in WEB_LANGUAGES:
+        return str(given)
+    raise WizardAborted(
+        f"{given!r} is not a language this panel has; "
+        f"there is: {', '.join(WEB_LANGUAGES)}"
+    )
 
 
 def _services_from(given) -> tuple:
@@ -401,6 +433,7 @@ class SetupWizard:
         self._proxy = WizardProxy()
         self._services: list = []
         self._listen_port = WEB_DEFAULT_LISTEN_PORT
+        self._language = WEB_DEFAULT_LANGUAGE
 
     def run(self) -> WizardAnswers:
         """Ask every screen, and hand back what they answered.
@@ -413,6 +446,7 @@ class SetupWizard:
             SystemExit: When the person interrupts or standard input ends.
         """
         screens = (
+            self._ask_language,
             self._ask_password,
             self._ask_mode,
             self._ask_ports,
@@ -437,7 +471,19 @@ class SetupWizard:
             proxy=self._proxy,
             services=tuple(self._services),
             listen_port=self._listen_port,
+            language=self._language,
         )
+
+    def _ask_language(self) -> int:
+        """Which language the panel is drawn in; `nhub` itself stays English."""
+        codes = list(WEB_LANGUAGES)
+        for index, code in enumerate(codes, start=1):
+            self._say(f"  {index}  {code:<8}{WIZARD_LANGUAGE_NAMES[code]}")
+        answer = self._choose(codes, default=codes.index(self._language) + 1)
+        if answer is None:
+            return WIZARD_PREVIOUS
+        self._language = codes[answer]
+        return WIZARD_NEXT
 
     def _ask_password(self) -> bool:
         """The two secrets, each asked for twice."""
@@ -927,6 +973,7 @@ class SetupWizard:
                 self._say("                 this box's own traffic too")
         else:
             self._say("  proxy          off")
+        self._say(f"  language       {WIZARD_LANGUAGE_NAMES[self._language]}")
         if self._services:
             self._say(f"  also installing {', '.join(self._services)}")
         self._say("")
@@ -1079,7 +1126,9 @@ def context() -> dict:
 
     Returns:
         The ports, the modes they allow, the modules that could be installed,
-        and what each question starts at.
+        and what each question starts at. Every word a person reads is named
+        rather than written: the page words a mode, a module and a consent
+        from its own catalog.
 
     Raises:
         WizardAborted: When this machine has nothing to configure.
@@ -1106,21 +1155,19 @@ def context() -> dict:
         "modes": [
             {
                 "key": mode.key,
-                "summary": mode.summary,
                 "port_count": mode.port_count,
                 "is_wire_needed": mode.is_wire_needed,
                 "is_addressing_owned": mode.is_addressing_owned,
-                "caution": mode.caution,
+                "has_caution": bool(mode.caution),
             }
             for mode in modes_for(len(links), wired_count)
         ],
         "services": [
             {
                 "name": name,
-                "install_note": spec.install_note,
                 "is_installed": name in installed,
                 "consents": [
-                    _consent_sentence(consent)
+                    {"code": consent.code, "params": dict(consent.detail)}
                     for consent in plan_for(spec.provisioner()).consents
                 ],
             }
@@ -1138,7 +1185,6 @@ def context() -> dict:
             "socks_direct_port": XRAY_SOCKS_PORT,
             "listen_port": WEB_DEFAULT_LISTEN_PORT,
         },
-        "router_note": WIZARD_ROUTER_NOTE,
     }
 
 
