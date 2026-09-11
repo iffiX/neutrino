@@ -15,7 +15,6 @@ The bindings are pyobjc, compiled into the app bundle by the packaging
 build; a checkout without them refuses typed.
 """
 
-import functools
 import json
 import threading
 
@@ -95,7 +94,12 @@ def open_window(
     window.center()
 
     def on_main(callback, *arguments) -> None:
-        queue.addOperationWithBlock_(functools.partial(callback, *arguments))
+        # A block takes a function whose signature pyobjc can read; a partial
+        # is refused, so the call is closed over instead.
+        def run() -> None:
+            callback(*arguments)
+
+        queue.addOperationWithBlock_(run)
 
     def deliver(reply: dict) -> None:
         script = f"window.neutrinoReply({json.dumps(reply)})"

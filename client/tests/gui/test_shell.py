@@ -5,6 +5,7 @@ embedding calls, the hide-on-close and the import-guard refusals all run
 without a display.
 """
 
+import inspect
 import os
 import sys
 import time
@@ -843,8 +844,13 @@ def test_the_macos_shell_registers_the_handler_the_page_posts_to(monkeypatch):
     assert view.scripts == [
         'window.neutrinoReply({"id": 1, "status": 200, "body": {"hostname": "box"}})'
     ]
-    # The reply reached the page through the main queue, never off it.
+    # The reply reached the page through the main queue, never off it, as a
+    # block made from a function pyobjc can read the signature of: a
+    # functools.partial is refused with "Cannot create native callable".
     assert len(FakeOperationQueue.blocks) == 1
+    block = FakeOperationQueue.blocks[0]
+    assert inspect.isfunction(block)
+    assert inspect.signature(block).parameters == {}
 
 
 def test_the_macos_window_shows_itself_unless_it_is_started_hidden(monkeypatch):
