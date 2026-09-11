@@ -15,12 +15,21 @@ import pytest
 import neutrino_client.bundled as bundled
 from neutrino_client.services import switcher
 
+# The lookup itself, for the tests of the lookup.
+REAL_FIND_CLI = switcher.find_cli
+
 
 @pytest.fixture(autouse=True)
 def _own_platform(monkeypatch):
     from tests.conftest import FakeClientPlatform
 
     monkeypatch.setattr(switcher, "_PLATFORM", FakeClientPlatform())
+    # The delete runs the binary on a terminal rather than through _run, so
+    # a machine with no cc-switch at all still has one to name; the tests
+    # of the lookup itself patch what it reads.
+    monkeypatch.setattr(
+        switcher, "find_cli", lambda: "/opt/neutrino_client/bin/cc-switch"
+    )
 
 
 def wire(monkeypatch, cli):
@@ -35,6 +44,7 @@ def wire(monkeypatch, cli):
 
 
 def test_the_carried_cli_wins_over_the_path(monkeypatch):
+    monkeypatch.setattr(switcher, "find_cli", REAL_FIND_CLI)
     monkeypatch.setattr(
         bundled, "cc_switch_path", lambda: "/opt/neutrino_client/bin/cc-switch"
     )
@@ -44,6 +54,7 @@ def test_the_carried_cli_wins_over_the_path(monkeypatch):
 
 
 def test_the_path_answers_when_the_bundle_is_absent(monkeypatch):
+    monkeypatch.setattr(switcher, "find_cli", REAL_FIND_CLI)
     monkeypatch.setattr(bundled, "cc_switch_path", lambda: "")
     monkeypatch.setattr(switcher.shutil, "which", lambda name: "/usr/bin/cc-switch")
 
@@ -52,6 +63,7 @@ def test_the_path_answers_when_the_bundle_is_absent(monkeypatch):
 
 
 def test_no_cli_when_nothing_is_installed(monkeypatch):
+    monkeypatch.setattr(switcher, "find_cli", REAL_FIND_CLI)
     monkeypatch.setattr(bundled, "cc_switch_path", lambda: "")
     monkeypatch.setattr(switcher.shutil, "which", lambda name: None)
 
@@ -60,6 +72,7 @@ def test_no_cli_when_nothing_is_installed(monkeypatch):
 
 
 def test_the_cli_runs_as_this_person_with_no_step_down(monkeypatch):
+    monkeypatch.setattr(switcher, "find_cli", REAL_FIND_CLI)
     monkeypatch.setattr(bundled, "cc_switch_path", lambda: "/opt/cc-switch")
     recorded = []
 
