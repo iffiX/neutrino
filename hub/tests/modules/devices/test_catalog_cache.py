@@ -35,6 +35,8 @@ def port_entry() -> dict:
         "is_healthy": True,
         "source": "module",
         "description": "published by container web (nginx)",
+        "description_code": "container",
+        "description_params": {"image": "nginx"},
         "modules": [],
         "record_id": None,
     }

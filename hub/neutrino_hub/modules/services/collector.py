@@ -1,7 +1,10 @@
 """Composing the typed service list the hub publishes.
 
 Every entry is ``{id, type, title, payload, is_healthy, source, description,
-record_id, detail_code}`` with five types: web, port, ai, file, rdp. An
+description_code, description_params, record_id, detail_code}`` with five
+types: web, port, ai, file, rdp. ``description`` is the English provenance
+line and ``description_code`` names the same provenance for a page that
+words it itself, empty on a declared entry whose person wrote their own. An
 entry a device's module declares exists only while that device's agent
 reports the module serving and carries the module's own health; manual
 declarations carry their probe results; an rdp entry is a managed machine's
@@ -19,6 +22,12 @@ from urllib.parse import urlsplit, urlunsplit
 from neutrino_hub.modules.services.config import DeclaredService
 from neutrino_hub.modules.services.constants import (
     SERVICES_AI_DESCRIPTION,
+    SERVICES_DESCRIPTION_AI_GATEWAY,
+    SERVICES_DESCRIPTION_CONTAINER,
+    SERVICES_DESCRIPTION_DECLARED,
+    SERVICES_DESCRIPTION_DEVICE_SHARE,
+    SERVICES_DESCRIPTION_GITEA_MODULE,
+    SERVICES_DESCRIPTION_SAMBA_MODULE,
     SERVICES_AI_ID,
     SERVICES_AI_PROTOCOL,
     SERVICES_AI_TITLE,
@@ -53,6 +62,8 @@ CATALOG_ENTRY_FIELDS = (
     "is_healthy",
     "source",
     "description",
+    "description_code",
+    "description_params",
 )
 
 
@@ -136,6 +147,8 @@ class ServiceListCollector:
                 description=SERVICES_RDP_DESCRIPTION.format(
                     hostname=share.hostname or share.host
                 ),
+                description_code=SERVICES_DESCRIPTION_DEVICE_SHARE,
+                description_params={"device": share.hostname or share.host},
                 source=SERVICES_SOURCE_DEVICE,
             )
             for share in self._device_shares
@@ -157,6 +170,8 @@ class ServiceListCollector:
                     description=SERVICES_GITEA_DESCRIPTION.format(
                         host=device.get("host", "")
                     ),
+                    description_code=SERVICES_DESCRIPTION_GITEA_MODULE,
+                    description_params={"host": device.get("host", "")},
                 )
             )
         for record in self._declared_of(SERVICES_KIND_HTTP):
@@ -170,6 +185,7 @@ class ServiceListCollector:
                     payload={"url": url},
                     is_healthy=is_healthy,
                     description=record.description,
+                    description_code=_declared_code(record),
                     record_id=record.id,
                     detail_code=detail_code,
                 )
@@ -197,6 +213,8 @@ class ServiceListCollector:
                                 image=container.get("image", ""),
                                 host=host,
                             ),
+                            description_code=SERVICES_DESCRIPTION_CONTAINER,
+                            description_params={"image": container.get("image", "")},
                         )
                     )
         for record in self._declared_of(SERVICES_KIND_GENERIC_TCP):
@@ -209,6 +227,7 @@ class ServiceListCollector:
                     payload={"host": record.host, "port": record.port},
                     is_healthy=is_healthy,
                     description=record.description,
+                    description_code=_declared_code(record),
                     record_id=record.id,
                     detail_code=detail_code,
                 )
@@ -230,6 +249,7 @@ class ServiceListCollector:
                 },
                 is_healthy=self._is_ai_healthy,
                 description=SERVICES_AI_DESCRIPTION,
+                description_code=SERVICES_DESCRIPTION_AI_GATEWAY,
             )
         ]
 
@@ -253,6 +273,8 @@ class ServiceListCollector:
                         },
                         is_healthy=bool(samba.get("is_healthy")),
                         description=SERVICES_SAMBA_DESCRIPTION.format(host=host),
+                        description_code=SERVICES_DESCRIPTION_SAMBA_MODULE,
+                        description_params={"host": host},
                     )
                 )
         for record in self._declared_of(SERVICES_KIND_SAMBA):
@@ -270,6 +292,7 @@ class ServiceListCollector:
                         },
                         is_healthy=is_healthy,
                         description=record.description,
+                        description_code=_declared_code(record),
                         record_id=record.id,
                         detail_code=detail_code,
                     )
@@ -343,6 +366,18 @@ def catalog_entries(entries: list[dict]) -> list[dict]:
     return [{key: entry[key] for key in CATALOG_ENTRY_FIELDS} for entry in entries]
 
 
+def _declared_code(record: DeclaredService) -> str:
+    """The provenance code a declared record carries.
+
+    Args:
+        record: The declaration.
+
+    Returns:
+        The declared code, or nothing where the person wrote their own line.
+    """
+    return "" if record.description else SERVICES_DESCRIPTION_DECLARED
+
+
 def _device_id(device: dict) -> str:
     """One device's key as it appears inside an entry id."""
     return str(device.get("device_id", "")).lower().replace(":", "-")
@@ -356,6 +391,8 @@ def _entry(
     payload: dict,
     is_healthy: bool | None,
     description: str,
+    description_code: str = "",
+    description_params: dict | None = None,
     record_id: str | None = None,
     detail_code: str | None = None,
     source: str = "",
@@ -369,6 +406,8 @@ def _entry(
         "source": source
         or (SERVICES_SOURCE_DECLARED if record_id else SERVICES_SOURCE_MODULE),
         "description": description,
+        "description_code": description_code,
+        "description_params": description_params or {},
         "record_id": record_id,
         "detail_code": detail_code,
     }

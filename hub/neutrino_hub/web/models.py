@@ -303,10 +303,13 @@ class UpstreamLineView(BaseModel):
 
 
 class NetworkModeView(BaseModel):
-    """One mode, as the Mode panel lists it."""
+    """One mode, as the Mode panel lists it.
+
+    The key alone: what a mode is called and the line under it are the
+    panel's own words, in the panel's own language.
+    """
 
     key: str
-    summary: str
     is_addressing_owned: bool
 
 
@@ -1104,10 +1107,12 @@ class PublishedServiceView(BaseModel):
 
     ``payload`` is the type's own — a url for web, host and port for port,
     endpoint, protocol and models for ai, protocol, host and share for file.
-    ``record_id`` names the declared record behind a declared entry; a
-    module-declared entry carries None and is read-only. ``detail_code`` is
-    what that record's last probe measured, None on one that answered as
-    declared and on every module entry.
+    ``description`` is the English provenance line and ``description_code``
+    names the same provenance for the page to word itself, empty on a declared
+    entry whose person wrote their own line. ``record_id`` names the declared
+    record behind a declared entry; a module-declared entry carries None and
+    is read-only. ``detail_code`` is what that record's last probe measured,
+    None on one that answered as declared and on every module entry.
     """
 
     id: str
@@ -1117,6 +1122,8 @@ class PublishedServiceView(BaseModel):
     is_healthy: bool | None = None
     source: str
     description: str = ""
+    description_code: str = ""
+    description_params: dict = Field(default_factory=dict)
     record_id: str | None = None
     detail_code: str | None = None
 

@@ -30,6 +30,12 @@ const MODE_LABEL_KEYS: Record<NetworkModeKey, string> = {
   router: "ui.network.mode_router",
 };
 
+const MODE_SUMMARY_KEYS: Record<NetworkModeKey, string> = {
+  server: "ui.network.mode_summary_server",
+  side_gateway: "ui.network.mode_summary_side_gateway",
+  router: "ui.network.mode_summary_router",
+};
+
 const MODE_ICONS: Record<NetworkModeKey, IconName> = {
   server: "server",
   side_gateway: "link",
@@ -107,7 +113,9 @@ export function NetworkModePanel({
                 <span className="badge">{t("state.active")}</span>
               )}
             </span>
-            <span className="mode_choice_summary">{mode.summary}</span>
+            <span className="mode_choice_summary">
+              {t(MODE_SUMMARY_KEYS[mode.key])}
+            </span>
           </button>
         ))}
       </div>

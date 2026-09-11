@@ -35,6 +35,8 @@ ENTRY = {
     "is_healthy": True,
     "source": "module",
     "description": "",
+    "description_code": "gitea_module",
+    "description_params": {"host": "192.168.100.1"},
     "record_id": None,
     "detail_code": None,
 }
@@ -234,6 +236,8 @@ def test_the_welcome_then_the_catalog_then_the_credential(api):
         "is_healthy",
         "source",
         "description",
+        "description_code",
+        "description_params",
     }
     port = load_config().listen_port
     assert credential == {

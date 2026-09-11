@@ -187,6 +187,8 @@ async function serviceAction(type, body, noteKey) {
 function draw(state) {
   lastState = state;
   setLanguage(state.language);
+  document.title = t('ui.window.title');
+  document.querySelector('h1').textContent = t('ui.window.title');
   document.getElementById('ident').textContent =
     state.hostname + ' · ' + state.platform.os + '/' + state.platform.arch +
     ' · client ' + state.version;
@@ -339,10 +341,20 @@ function entryRow(entry, payloadText, extraNote) {
     '"></span>' +
     '<div class="body"><div class="title">' + entry.title + '</div>' +
     '<div class="note">' + payloadText + (note ? ' — ' + note : '') + '</div>' +
-    (entry.description
-      ? '<div class="note muted">' + entry.description + '</div>' : '') +
+    (describeEntry(entry)
+      ? '<div class="note muted">' + describeEntry(entry) + '</div>' : '') +
     '</div>';
   return row;
+}
+
+// Where an entry comes from, in this page's own words; an older hub sends
+// only the English sentence, which stands as it is.
+function describeEntry(entry) {
+  const code = entry.description_code;
+  if (code && hasWord('ui.description.' + code)) {
+    return t('ui.description.' + code, entry.description_params || {});
+  }
+  return entry.description || '';
 }
 
 // Every button greys while the hub has this client switched off.

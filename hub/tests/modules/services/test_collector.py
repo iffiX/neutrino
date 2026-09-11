@@ -369,6 +369,8 @@ def test_the_catalog_copy_drops_the_panel_only_fields():
         "is_healthy",
         "source",
         "description",
+        "description_code",
+        "description_params",
     }
 
 
@@ -441,3 +443,62 @@ def test_two_machines_sharing_publish_one_entry_each():
     )
 
     assert [entry["id"] for entry in entries] == ["rdp_s1", "rdp_s2"]
+
+
+# --- provenance: the English line, and the code a page words itself ---
+
+
+def test_every_composed_entry_names_where_it_came_from_in_a_code():
+    entries = collect(
+        device_modules=[
+            hosting(
+                gitea={"is_healthy": True, "url": f"http://{DEVICE_HOST}:3000/"},
+                samba={"is_healthy": True, "share_names": ["media"]},
+                podman={"containers": [container("web", ports=[8080])]},
+            )
+        ],
+        is_ai_served=True,
+        device_shares=[share()],
+    )
+
+    coded = {entry["id"]: entry for entry in entries}
+    assert coded["gitea_aa-bb-cc-dd-ee-ff"]["description_code"] == "gitea_module"
+    assert coded["gitea_aa-bb-cc-dd-ee-ff"]["description_params"] == {
+        "host": DEVICE_HOST
+    }
+    assert coded["samba_aa-bb-cc-dd-ee-ff_media"]["description_code"] == "samba_module"
+    assert coded["samba_aa-bb-cc-dd-ee-ff_media"]["description_params"] == {
+        "host": DEVICE_HOST
+    }
+    port_id = "podman_aa-bb-cc-dd-ee-ff_web_8080"
+    assert coded[port_id]["description_code"] == "container"
+    assert coded[port_id]["description_params"] == {"image": "docker.io/nginx:1.25"}
+    assert coded["ai"]["description_code"] == "ai_gateway"
+    assert coded["ai"]["description_params"] == {}
+    assert coded["rdp_s1"]["description_code"] == "device_share"
+    assert coded["rdp_s1"]["description_params"] == {"device": "workshop"}
+
+
+def test_a_declaration_with_its_own_line_keeps_it_and_carries_no_code():
+    entry = collect(declared_services=[declared("generic_tcp")], declared_healths={})[0]
+
+    assert entry["description"] == "the forge box"
+    assert entry["description_code"] == ""
+
+
+def test_a_declaration_with_no_line_of_its_own_says_it_was_declared():
+    entry = collect(
+        declared_services=[declared("generic_tcp", description="")],
+        declared_healths={},
+    )[0]
+
+    assert entry["description"] == ""
+    assert entry["description_code"] == "declared"
+    assert entry["description_params"] == {}
+
+
+def test_the_catalog_carries_the_code_and_its_params():
+    entry = catalog_entries(collect(device_shares=[share()]))[0]
+
+    assert entry["description_code"] == "device_share"
+    assert entry["description_params"] == {"device": "workshop"}

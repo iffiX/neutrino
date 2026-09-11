@@ -110,11 +110,30 @@ SERVICES_ANSWER_TIMEOUT_S = 2.0
 
 # The provenance line each module-declared entry carries. A description is
 # data the declarer words, so these live beside the entries they describe.
+# The English sentence still travels for a page too old to know the codes.
 SERVICES_GITEA_DESCRIPTION = "published by the gitea module on {host}"
 SERVICES_SAMBA_DESCRIPTION = "published by the samba module on {host}"
 SERVICES_AI_DESCRIPTION = "published by the AI gateway"
 SERVICES_PODMAN_DESCRIPTION = "published by container {name} ({image}) on {host}"
 SERVICES_RDP_DESCRIPTION = "shared from {hostname}"
+
+# Where an entry comes from, as the code a page words in its own language.
+# A declared record the person gave a line of their own carries that line and
+# no code, because those are already their words.
+SERVICES_DESCRIPTION_AI_GATEWAY = "ai_gateway"
+SERVICES_DESCRIPTION_CONTAINER = "container"
+SERVICES_DESCRIPTION_DECLARED = "declared"
+SERVICES_DESCRIPTION_DEVICE_SHARE = "device_share"
+SERVICES_DESCRIPTION_GITEA_MODULE = "gitea_module"
+SERVICES_DESCRIPTION_SAMBA_MODULE = "samba_module"
+SERVICES_DESCRIPTION_CODES = (
+    SERVICES_DESCRIPTION_AI_GATEWAY,
+    SERVICES_DESCRIPTION_CONTAINER,
+    SERVICES_DESCRIPTION_DECLARED,
+    SERVICES_DESCRIPTION_DEVICE_SHARE,
+    SERVICES_DESCRIPTION_GITEA_MODULE,
+    SERVICES_DESCRIPTION_SAMBA_MODULE,
+)
 
 SERVICES_GITEA_TITLE = "Gitea"
 SERVICES_AI_TITLE = "AI gateway"

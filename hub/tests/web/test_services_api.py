@@ -179,6 +179,36 @@ def test_a_device_hosted_share_is_a_read_only_row_at_the_devices_address(box):
     assert entry["payload"]["host"] == "192.168.100.7"
 
 
+def test_a_row_carries_the_code_its_provenance_is_worded_from(box):
+    client, runtime = box
+    store = DesiredStateStore()
+    store.set_enabled(MAC, "samba", True)
+    store.write(
+        MAC, "samba", {"shares": [{"name": "media", "path": "/srv"}], "users": []}
+    )
+    runtime.agent_sessions.report_by_key[MAC] = {
+        "modules": {"samba": {"state": "installed", "details": {"is_active": True}}}
+    }
+    declare(client, description="")
+
+    payload = client.get("/api/services").json()
+
+    coded = {entry["source"]: entry for entry in payload["services"]}
+    assert coded["module"]["description_code"] == "samba_module"
+    assert coded["module"]["description_params"] == {"host": "192.168.100.7"}
+    assert coded["declared"]["description_code"] == "declared"
+    assert coded["declared"]["description_params"] == {}
+
+
+def test_a_declaration_with_its_own_line_carries_no_code(box):
+    client, _ = box
+
+    entry = declare(client)[0]
+
+    assert entry["description"] == "the forge box"
+    assert entry["description_code"] == ""
+
+
 def test_a_hub_self_host_is_shown_as_the_panel_host(box):
     client, _ = box
     declare(client, host="127.0.0.1")

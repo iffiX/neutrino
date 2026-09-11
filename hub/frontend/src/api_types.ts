@@ -326,12 +326,10 @@ export interface UpstreamLine {
   members: PlannedUplink[];
 }
 
-/** One mode, as the Mode panel lists it. */
+/** One mode, as the Mode panel lists it; the panel words the key itself. */
 export interface NetworkMode {
   key: NetworkModeKey;
-  summary: string;
   is_addressing_owned: boolean;
-  caution: string;
 }
 
 export interface NetworkView {
@@ -985,7 +983,12 @@ export interface PublishedService {
   payload: PublishedServicePayload;
   is_healthy: boolean | null;
   source: "module" | "declared";
+  /** The English provenance line, shown where no code words it. */
   description: string;
+  /** Where the entry comes from, worded by the page; `""` on a declared
+   * entry whose person wrote their own line. */
+  description_code: string;
+  description_params: Record<string, string | number>;
   /** The device modules this entry cannot work without. */
   modules: string[];
   record_id: string | null;

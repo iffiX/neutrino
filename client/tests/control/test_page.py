@@ -490,3 +490,19 @@ def test_windows_is_given_the_icon_it_can_actually_load(tmp_path, monkeypatch):
 
     monkeypatch.setattr(page.os, "name", "posix")
     assert page.window_icon_path().endswith("neutrino_client.png")
+
+
+def test_an_entrys_origin_is_worded_from_its_code_with_the_sentence_as_fallback():
+    """The hub sends a description code; an older hub sends only English."""
+    assert "function describeEntry(entry)" in PAGE_JS
+    assert "hasWord('ui.description.' + code)" in PAGE_JS
+    assert "return entry.description || '';" in PAGE_JS
+    for code in (
+        "ai_gateway",
+        "container",
+        "declared",
+        "device_share",
+        "gitea_module",
+        "samba_module",
+    ):
+        assert code in catalog_keys("ui.description.")

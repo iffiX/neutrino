@@ -818,7 +818,6 @@ def _mode_views() -> list[NetworkModeView]:
     return [
         NetworkModeView(
             key=mode.key,
-            summary=mode.summary,
             is_addressing_owned=mode.is_addressing_owned,
         )
         for mode in (ROUTER_MODES_BY_KEY[key] for key in ROUTER_MODES_KEYS)

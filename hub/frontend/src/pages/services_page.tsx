@@ -70,6 +70,16 @@ const DECLARED_DETAIL_KEYS: Record<string, string> = {
   list_refused: "code.list_refused",
   share_unverified: "code.share_unverified",
 };
+// Where an entry comes from, as the hub names it. A declared entry whose
+// person wrote their own line carries no code, and that line stands.
+const DESCRIPTION_KEYS: Record<string, string> = {
+  ai_gateway: "ui.services.description_ai_gateway",
+  container: "ui.services.description_container",
+  declared: "ui.services.description_declared",
+  device_share: "ui.services.description_device_share",
+  gitea_module: "ui.services.description_gitea_module",
+  samba_module: "ui.services.description_samba_module",
+};
 const SOURCE_KEYS: Record<PublishedService["source"], string> = {
   module: "state.module",
   declared: "ui.services.source_declared",
@@ -318,9 +328,9 @@ function ServiceRow({ service, onChanged }: ServiceRowProps) {
           <span className="published_row_title">{service.title}</span>
           <span className="published_row_payload">{payloadLine(service)}</span>
         </div>
-        {service.description !== "" && (
+        {describeService(service) !== "" && (
           <span className="published_row_description">
-            {service.description}
+            {describeService(service)}
           </span>
         )}
         {detailKey !== undefined && (
@@ -587,6 +597,14 @@ function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
       </div>
     </div>
   );
+}
+
+/** Where an entry comes from, in this panel's words or the declarer's own. */
+function describeService(service: PublishedService): string {
+  const key = DESCRIPTION_KEYS[service.description_code];
+  return key === undefined
+    ? service.description
+    : t(key, service.description_params);
 }
 
 /** The payload, spelled the way its type reads. */

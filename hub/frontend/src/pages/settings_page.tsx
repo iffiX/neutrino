@@ -51,34 +51,14 @@ import "./settings_page.css";
  * download asks nothing and the restore asks for the vault master password.
  */
 
-const ABOUT_CARRIED_TITLE = "Carried software";
-const ABOUT_HOST_TITLE = "This machine";
-const ABOUT_PANEL = "Panel";
+// The components this hub carries are named by their projects, so these rows
+// keep their names in every language.
 const ABOUT_XRAY = "xray";
 const ABOUT_CLIPROXYAPI = "CLIProxyAPI";
 const ABOUT_PYTHON = "Python";
-const ABOUT_GEODATA = "Geodata";
-const ABOUT_KERNEL = "Kernel";
-const ABOUT_UPTIME = "Uptime";
-const ABOUT_CREDITS_TITLE = "Acknowledgements";
-const ABOUT_CREDITS_HINT =
-  "Open-source software this hub downloads and hands to managed machines.";
-const ABOUT_CREDITS_SOURCE = "source";
-
-const NOT_A_BACKUP_SENTENCE = "This is not a Neutrino backup.";
 
 /** What the API answers when it is asked for a language nobody ships. */
 const LANGUAGE_UNKNOWN_CODE = "language_unknown";
-
-const RESTORE_ERROR_SENTENCES: Record<string, string> = {
-  vault_passphrase_needed: "The vault master password is required to restore.",
-  vault_passphrase_wrong: "That is not this vault's master password.",
-  backup_unrecognized: NOT_A_BACKUP_SENTENCE,
-  backup_corrupt: "The backup is damaged; its checksum does not match.",
-  backup_wrong_extension: "Backups are .tar.gz files.",
-};
-
-const WRONG_FILE_SENTENCE = "Backups are .tar.gz files; that file is not one.";
 
 // Every backup is a tar.gz whose first member is its manifest, so a file that
 // is no backup is turned away before it is uploaded by streaming just the
@@ -144,6 +124,8 @@ async function readBackupManifest(file: File): Promise<BackupManifest | null> {
 }
 
 export function SettingsPage() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const about = usePolledResource<AboutInfo>("/settings/about");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -182,10 +164,10 @@ export function SettingsPage() {
         new_password: newPassword,
       });
       if (!result.is_changed) {
-        setPasswordError("The gateway refused the change.");
+        setPasswordError(t("ui.settings.password_refused"));
         return;
       }
-      setPasswordNotice("Password changed. Other sessions stay signed in.");
+      setPasswordNotice(t("ui.settings.password_changed"));
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
@@ -202,7 +184,7 @@ export function SettingsPage() {
     setBackupNotice(null);
     try {
       await apiPostDownload("/settings/backup", undefined, backupFilename());
-      setBackupNotice("Backup downloaded.");
+      setBackupNotice(t("ui.settings.backup_downloaded"));
     } catch (cause: unknown) {
       setBackupError(describeError(cause));
     } finally {
@@ -218,14 +200,14 @@ export function SettingsPage() {
     }
     if (!isBackupFilename(file.name)) {
       setBackupNotice(null);
-      setBackupError(WRONG_FILE_SENTENCE);
+      setBackupError(t("ui.settings.wrong_file"));
       return;
     }
     if (isManifestPeekSupported()) {
       const manifest = await readBackupManifest(file);
       if (manifest === null) {
         setBackupNotice(null);
-        setBackupError(NOT_A_BACKUP_SENTENCE);
+        setBackupError(t("ui.settings.not_a_backup"));
         return;
       }
     }
@@ -259,14 +241,7 @@ export function SettingsPage() {
       );
       setRestoreTaskId(result.task_id);
     } catch (cause: unknown) {
-      if (
-        cause instanceof ApiError &&
-        RESTORE_ERROR_SENTENCES[cause.code] !== undefined
-      ) {
-        setRestoreError(RESTORE_ERROR_SENTENCES[cause.code] ?? null);
-      } else {
-        setRestoreError(describeError(cause));
-      }
+      setRestoreError(describeError(cause));
     } finally {
       setIsRestoring(false);
     }
@@ -276,7 +251,7 @@ export function SettingsPage() {
     <div className="page">
       <div className="page_header">
         <div className="page_header_text">
-          <h1>Settings</h1>
+          <h1>{t("ui.settings.title")}</h1>
         </div>
       </div>
 
@@ -284,13 +259,13 @@ export function SettingsPage() {
         <section className="card">
           <div className="card_header">
             <div className="card_title">
-              <h2>About</h2>
+              <h2>{t("ui.settings.about_title")}</h2>
             </div>
           </div>
 
           {about.error !== null ? (
             <ErrorPanel
-              title="Version info unavailable"
+              title={t("ui.settings.about_unavailable")}
               message={about.error}
               onRetry={about.reload}
             />
@@ -298,9 +273,11 @@ export function SettingsPage() {
             <div className="skeleton" style={{ height: 250 }} />
           ) : (
             <div className="settings_about">
-              <div className="section_label">{ABOUT_CARRIED_TITLE}</div>
+              <div className="section_label">
+                {t("ui.settings.about_carried")}
+              </div>
               <AboutRow
-                label={ABOUT_PANEL}
+                label={t("ui.settings.about_panel")}
                 value={about.data.gateway_version}
               />
               <AboutRow label={ABOUT_XRAY} value={about.data.xray_version} />
@@ -313,19 +290,26 @@ export function SettingsPage() {
                 value={about.data.python_version}
               />
               <AboutRow
-                label={ABOUT_GEODATA}
+                label={t("ui.settings.about_geodata")}
                 value={about.data.geodata_version}
               />
-              <div className="section_label">{ABOUT_HOST_TITLE}</div>
-              <AboutRow label={ABOUT_KERNEL} value={about.data.kernel} />
+              <div className="section_label">{t("ui.settings.about_host")}</div>
               <AboutRow
-                label={ABOUT_UPTIME}
+                label={t("ui.settings.about_kernel")}
+                value={about.data.kernel}
+              />
+              <AboutRow
+                label={t("ui.settings.about_uptime")}
                 value={formatDuration(about.data.uptime_s)}
               />
               {about.data.acknowledgements.length > 0 && (
                 <>
-                  <div className="section_label">{ABOUT_CREDITS_TITLE}</div>
-                  <span className="field_hint">{ABOUT_CREDITS_HINT}</span>
+                  <div className="section_label">
+                    {t("ui.settings.about_credits")}
+                  </div>
+                  <span className="field_hint">
+                    {t("ui.settings.about_credits_hint")}
+                  </span>
                   {about.data.acknowledgements.map((credit) => (
                     <AboutRow
                       key={credit.name}
@@ -345,7 +329,7 @@ export function SettingsPage() {
                               target="_blank"
                               rel="noreferrer noopener"
                             >
-                              {ABOUT_CREDITS_SOURCE}
+                              {t("ui.settings.about_credits_source")}
                             </a>
                           </>
                         )
@@ -363,7 +347,7 @@ export function SettingsPage() {
         <section className="card">
           <div className="card_header">
             <div className="card_title">
-              <h2>Panel password</h2>
+              <h2>{t("ui.settings.password_title")}</h2>
             </div>
             <Icon name="lock" size={15} />
           </div>
@@ -373,15 +357,17 @@ export function SettingsPage() {
             onSubmit={(event) => void handleChangePassword(event)}
           >
             <label className="field">
-              <span className="field_label">Current password</span>
+              <span className="field_label">
+                {t("ui.settings.current_password")}
+              </span>
               <PasswordInput
                 value={currentPassword}
                 onChange={setCurrentPassword}
               />
             </label>
             <PasswordField
-              label="New password"
-              repeatLabel="Confirm new password"
+              label={t("ui.settings.new_password")}
+              repeatLabel={t("ui.settings.confirm_password")}
               hint={panelPasswordHint}
               value={newPassword}
               repeated={confirmPassword}
@@ -410,7 +396,9 @@ export function SettingsPage() {
                 disabled={isChangingPassword || !isPasswordValid}
               >
                 <Icon name="check" size={14} />
-                {isChangingPassword ? "Changing…" : "Change password"}
+                {isChangingPassword
+                  ? t("ui.settings.changing")
+                  : t("ui.settings.change_password")}
               </button>
             </div>
           </form>
@@ -419,17 +407,13 @@ export function SettingsPage() {
         <section className="card">
           <div className="card_header">
             <div className="card_title">
-              <h2>Configuration archive</h2>
+              <h2>{t("ui.settings.backup_title")}</h2>
             </div>
             <Icon name="download" size={15} />
           </div>
 
           <div className="settings_form">
-            <p className="muted">
-              Holds all of <span className="mono">config/</span>. The
-              credentials inside travel sealed under the vault master password,
-              which restoring asks for.
-            </p>
+            <p className="muted">{t("ui.settings.backup_hint")}</p>
 
             {backupError !== null && (
               <div className="notice notice--error">
@@ -452,7 +436,9 @@ export function SettingsPage() {
                 disabled={isBackingUp}
               >
                 <Icon name="download" size={14} />
-                {isBackingUp ? "Preparing…" : "Download backup"}
+                {isBackingUp
+                  ? t("ui.settings.preparing")
+                  : t("ui.settings.download_backup")}
               </button>
               <button
                 type="button"
@@ -461,7 +447,9 @@ export function SettingsPage() {
                 disabled={isRestoring}
               >
                 <Icon name="upload" size={14} />
-                {isRestoring ? "Restoring…" : "Restore from file"}
+                {isRestoring
+                  ? t("ui.settings.restoring")
+                  : t("ui.settings.restore_from_file")}
               </button>
               {restoreName !== null && (
                 <span className="settings_restore_name">{restoreName}</span>
@@ -609,23 +597,12 @@ interface RestoreArchiveModalProps {
 
 type RestorePhase = "ask" | "applying" | "failed" | "restarting";
 
-const RESTORE_FAILED_APPLY =
-  "The apply did not finish; the lines above say why. The files were " +
-  "restored; fix the cause and run it again from a terminal: sudo nhub apply";
-const RESTORE_FAILED_LOST =
-  "The panel did not come back on its own. The files were restored; run " +
-  "sudo nhub apply from a terminal, then reload this page.";
-
-const RESTORE_PHASE_HINTS: Record<
+const RESTORE_PHASE_HINT_KEYS: Record<
   Exclude<RestorePhase, "ask" | "failed">,
   string
 > = {
-  applying:
-    "Applying the restored configuration; this can take minutes when " +
-    "heavy services re-render.",
-  restarting:
-    "The panel is restarting; this page reloads by itself. Sign in with " +
-    "the restored password.",
+  applying: "ui.settings.restore_applying",
+  restarting: "ui.settings.restore_restarting",
 };
 
 function RestoreArchiveModal({
@@ -638,6 +615,8 @@ function RestoreArchiveModal({
   onCancel,
   onRestore,
 }: RestoreArchiveModalProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
   const task = useTaskStream(taskId);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [isLostAfterApply, setIsLostAfterApply] = useState(false);
@@ -698,7 +677,7 @@ function RestoreArchiveModal({
       className="confirm_backdrop"
       role="dialog"
       aria-modal="true"
-      aria-label={`Restore ${file.name}`}
+      aria-label={t("ui.settings.restore_title", { name: file.name })}
       onClick={(event) => {
         if (event.target === event.currentTarget && isDismissable) {
           onCancel();
@@ -708,25 +687,24 @@ function RestoreArchiveModal({
       <div className="confirm_modal">
         <div className="confirm_head">
           <Icon name="upload" size={16} />
-          <h2>Restore {file.name}</h2>
+          <h2>{t("ui.settings.restore_title", { name: file.name })}</h2>
         </div>
-        <p className="confirm_body">
-          Every file under config/ is overwritten by the archive&apos;s, the
-          configuration is applied, and the panel restarts on its own.
-        </p>
+        <p className="confirm_body">{t("ui.settings.restore_body")}</p>
 
         {phase === "ask" && (
           <>
             <div className="settings_restore_fields">
               <label className="field">
-                <span className="field_label">Vault master password</span>
+                <span className="field_label">
+                  {t("ui.settings.vault_password")}
+                </span>
                 <PasswordInput
                   value={passphrase}
                   onChange={onPassphrase}
                   autoFocus
                 />
                 <span className="field_hint">
-                  The master password of the vault this backup was taken from.
+                  {t("ui.settings.vault_password_hint")}
                 </span>
               </label>
               {error !== null && (
@@ -743,7 +721,7 @@ function RestoreArchiveModal({
                 onClick={onCancel}
                 disabled={isRestoring}
               >
-                Cancel
+                {t("ui.settings.cancel")}
               </button>
               <button
                 type="button"
@@ -751,7 +729,9 @@ function RestoreArchiveModal({
                 onClick={onRestore}
                 disabled={isRestoring || passphrase.length === 0}
               >
-                {isRestoring ? "Restoring…" : "Restore"}
+                {isRestoring
+                  ? t("ui.settings.restoring")
+                  : t("ui.settings.restore")}
               </button>
             </div>
           </>
@@ -772,17 +752,19 @@ function RestoreArchiveModal({
                 <div className="notice notice--error">
                   <Icon name="alert" size={15} />
                   <div className="notice_body">
-                    {isApplyFailed ? RESTORE_FAILED_APPLY : RESTORE_FAILED_LOST}
+                    {isApplyFailed
+                      ? t("ui.settings.restore_failed_apply")
+                      : t("ui.settings.restore_failed_lost")}
                   </div>
                 </div>
                 <div className="confirm_foot">
                   <button type="button" className="button" onClick={onCancel}>
-                    Close
+                    {t("ui.settings.close")}
                   </button>
                 </div>
               </>
             ) : (
-              <Spinner size={18} label={RESTORE_PHASE_HINTS[phase]} />
+              <Spinner size={18} label={t(RESTORE_PHASE_HINT_KEYS[phase])} />
             )}
           </div>
         )}
