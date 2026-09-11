@@ -5,8 +5,9 @@ refusal, never a guess. Every file operation is the standard library's own
 in this process, with no step-down anywhere.
 """
 
-import time
 import inspect
+import subprocess
+import time
 
 import pytest
 
@@ -147,6 +148,29 @@ def test_the_browser_and_the_screen_are_the_platforms(monkeypatch):
 
     assert opened == ["http://w/"]
     assert spawned[0][0] == ["/r", "--connect", "h"]
+    assert spawned[0][1]["stdin"] is subprocess.DEVNULL
+
+
+def test_a_tool_is_given_standard_handles_of_its_own(monkeypatch):
+    """A resident opened from a shortcut has none worth inheriting, and an
+    invalid one is refused as the child is made: WinError 6."""
+    runs = []
+
+    def fake_run(command, **kwargs):
+        runs.append(kwargs)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(base_module.subprocess, "run", fake_run)
+
+    base_module.run_quietly(["tool"], timeout_s=1)
+    base_module.run_quietly(["tool"], input="answer", timeout_s=1)
+
+    assert runs[0]["stdin"] is subprocess.DEVNULL
+    assert runs[0]["capture_output"] is True
+    # Text to send needs the pipe subprocess makes for it, and refuses a
+    # handle beside it.
+    assert runs[1]["stdin"] is None
+    assert runs[1]["input"] == "answer"
 
 
 def test_the_contract_carries_no_account_or_step_down():

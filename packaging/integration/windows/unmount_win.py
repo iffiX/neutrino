@@ -2,7 +2,7 @@
 # screenshot shows whether the drive is gone rather than a red cross.
 import os, sys, time, traceback
 
-sys.path.insert(0, r"C:\Program Files\Neutrino Client")
+sys.path.insert(0, r"C:\src\client")
 log = open(r"C:\out\unmount_win.txt", "w", encoding="utf-8")
 try:
     from neutrino_client.platforms.windows import WindowsPlatform

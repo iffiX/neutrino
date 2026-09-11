@@ -2,7 +2,7 @@
 # Explorer is opened so a screenshot can show the drive.
 import os, subprocess, sys, tempfile, time, traceback
 
-sys.path.insert(0, r"C:\Program Files\Neutrino Client")
+sys.path.insert(0, r"C:\src\client")
 log = open(r"C:\out\mount_win.txt", "w", encoding="utf-8")
 try:
     from neutrino_client.platforms.windows import WindowsPlatform

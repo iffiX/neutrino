@@ -1,7 +1,8 @@
 """What the Windows installer declares, read off its generated source.
 
-wix is not run here — it needs Windows and the .NET tool — so what is
-asserted is the document the build writes: a product identity of its own, no
+wix is not run here — it needs Windows and the .NET tool — and neither is
+the compiler, so what is asserted is the document the build writes and the
+command the compile is given: a product identity of its own, no
 service, no autostart Run entry, the shortcut, the quit that comes before
 anything ends a resident and opens no window doing it, the two questions and
 what they answer to unasked, and the bootstrapper chained only where the
@@ -9,7 +10,10 @@ runtime's key is absent. The payload's own laying out is checked with the
 downloads faked.
 """
 
+import inspect
+import subprocess
 import xml.etree.ElementTree
+from pathlib import Path
 
 import pytest
 
@@ -89,18 +93,12 @@ def test_a_running_resident_is_asked_to_quit_before_anything_ends_it(source):
     assert quits[0].get("Return") == "ignore"
 
 
-def test_the_quit_writes_no_bytecode_into_a_prefix_on_its_way_out(source):
-    """The removal counts what it will take before this runs, so anything
-    written now is left behind."""
-    assert " -B " in build_msi.QUIT_COMMAND
-
-
 def test_the_quit_opens_no_console_window_over_the_wizard(source):
-    """A custom action running a console program is given a console, and it
-    opens over the wizard; the windowed interpreter is given none."""
-    assert "pythonw.exe" in build_msi.QUIT_COMMAND
+    """A custom action has no console; a binary that attaches to its
+    parent's and makes none otherwise opens nothing over the wizard."""
+    assert build_msi.QUIT_COMMAND == '"[INSTALLFOLDER]nclient.exe" quit'
     assert "powershell" not in build_msi.QUIT_COMMAND.lower()
-    assert build_msi.CONSOLE_WRAPPER_NAME not in build_msi.QUIT_COMMAND
+    assert "--windows-console-mode=attach" in inspect.getsource(build_msi._compile)
 
 
 def test_the_quit_runs_before_the_close_that_ends_what_did_not_answer(source):
@@ -277,8 +275,13 @@ def test_the_person_is_asked_before_the_path_changes(source):
 
 
 def test_the_start_menu_shortcut_opens_the_window(source):
-    assert 'Name="Neutrino Client"' in source
-    assert "-m neutrino_client.cli.entry gui" in source
+    root = xml.etree.ElementTree.fromstring(source)
+    shortcuts = list(root.iter(WXS + "Shortcut"))
+
+    assert len(shortcuts) == 1
+    assert shortcuts[0].get("Target") == "[INSTALLFOLDER]nclient.exe"
+    assert shortcuts[0].get("Arguments") == "gui"
+    assert build_msi.RESIDENT_IMAGE == build_msi.CLIENT_BINARY_NAME
 
 
 def test_the_bootstrapper_runs_only_where_the_runtime_key_is_absent(source):
@@ -298,26 +301,75 @@ def test_the_package_is_named_for_the_platform_it_installs_on():
     assert payload.PACKAGE_NAME == "neutrino-client"
 
 
-def test_the_embeddable_interpreter_is_opened_to_the_client_beside_it(tmp_path):
-    python_dir = tmp_path / "python"
-    python_dir.mkdir()
-    (python_dir / "python313._pth").write_text("python313.zip\n.\n", encoding="utf-8")
+def test_the_build_refuses_another_interpreter_than_the_pinned_one(monkeypatch):
+    """What runs the script is what the client is compiled against."""
+    monkeypatch.setattr(build_msi.sys, "version_info", (3, 12, 4, "final", 0))
 
-    build_msi._open_import_path(python_dir)
-
-    assert (python_dir / "python313._pth").read_text().splitlines() == [
-        "python313.zip",
-        ".",
-        "..",
-        "..\\lib",
-    ]
-
-
-def test_an_interpreter_with_no_import_file_is_refused(tmp_path):
     with pytest.raises(SystemExit) as refused:
-        build_msi._open_import_path(tmp_path)
+        build_msi._check_build_machine("amd64")
 
-    assert "._pth" in str(refused.value)
+    assert "3.13" in str(refused.value)
+
+
+def test_the_build_refuses_a_machine_this_is_not(monkeypatch):
+    """The compile is native: an arm64 installer comes off an arm64 box."""
+    monkeypatch.setattr(build_msi.sys, "version_info", (3, 13, 7, "final", 0))
+    monkeypatch.setattr(build_msi.platform, "machine", lambda: "AMD64")
+
+    build_msi._check_build_machine("amd64")
+    with pytest.raises(SystemExit) as refused:
+        build_msi._check_build_machine("arm64")
+
+    assert "arm64" in str(refused.value)
+
+
+def test_the_compile_names_what_a_scanner_would_otherwise_find(monkeypatch, tmp_path):
+    """Standalone, the package and its window backend included, the other
+    platforms' backends kept out so the plugin and the user agree, a console
+    attached rather than made, the icon and the version in the binary."""
+    commands = []
+
+    def fake_run(command, env=None):
+        commands.append((command, env))
+        dist = tmp_path / "build" / "entry.dist"
+        dist.mkdir(parents=True, exist_ok=True)
+        (dist / build_msi.CLIENT_BINARY_NAME).write_bytes(b"MZ")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(build_msi.subprocess, "run", fake_run)
+    monkeypatch.setattr(build_msi.icons, "write_ico", lambda path: path)
+    tree = tmp_path / "tree"
+    (tree / "neutrino_client" / "cli").mkdir(parents=True)
+
+    dist = build_msi._compile(Path("python.exe"), tree, tmp_path / "build", "9.9.9")
+
+    command, environment = commands[0]
+    assert dist == tmp_path / "build" / "entry.dist"
+    assert command[:3] == ["python.exe", "-m", "nuitka"]
+    assert "--standalone" in command
+    assert "--include-package=neutrino_client" in command
+    assert "--include-package=webview" in command
+    for backend in build_msi.NUITKA_EXCLUDED_BACKENDS:
+        assert f"--nofollow-import-to={backend}" in command
+    assert "--windows-console-mode=attach" in command
+    assert "--product-version=9.9.9" in command
+    assert f"--output-filename={build_msi.CLIENT_BINARY_NAME}" in command
+    assert command[-1] == str(tree / "neutrino_client" / "cli" / "entry.py")
+    assert environment["PYTHONPATH"] == str(tree)
+
+
+def test_a_compile_that_writes_no_binary_is_refused(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        build_msi.subprocess,
+        "run",
+        lambda command, env=None: subprocess.CompletedProcess(command, 0),
+    )
+    monkeypatch.setattr(build_msi.icons, "write_ico", lambda path: path)
+
+    with pytest.raises(SystemExit) as refused:
+        build_msi._compile(Path("python.exe"), tmp_path, tmp_path / "build", "1")
+
+    assert build_msi.CLIENT_BINARY_NAME in str(refused.value)
 
 
 def test_the_licences_travel_beside_the_payload(tmp_path):
@@ -330,10 +382,13 @@ def test_the_licences_travel_beside_the_payload(tmp_path):
     ]
 
 
-def test_the_console_wrapper_runs_the_carried_interpreter():
-    assert build_msi.CONSOLE_WRAPPER_NAME == "nclient.cmd"
-    assert "python\\python.exe" in build_msi.CONSOLE_WRAPPER
-    assert "neutrino_client.cli.entry" in build_msi.CONSOLE_WRAPPER
+def test_the_payload_carries_no_wrapper_script_and_no_interpreter_of_its_own():
+    """The binary is the command; a .cmd beside a carried python.exe was
+    the shape before."""
+    assert not hasattr(build_msi, "CONSOLE_WRAPPER_NAME")
+    assert not hasattr(build_msi, "WINDOWS_PYTHON_URL")
+    assert build_msi.BUILD_PYTHON_VERSION == (3, 13)
+    assert build_msi.CLIENT_BINARY_NAME == "nclient.exe"
 
 
 def test_the_windows_wheels_are_pinned_to_the_file():
@@ -344,4 +399,3 @@ def test_the_windows_wheels_are_pinned_to_the_file():
         _name, _version, url, digest = build_msi.WINDOWS_CFFI[machine]
         assert machine in url
         assert len(digest) == 64
-        assert len(build_msi.WINDOWS_PYTHON_SHA256[machine]) == 64

@@ -16,7 +16,7 @@ public class Win {
     return true; }
 }
 "@
-$procs = Get-Process python, pythonw -ErrorAction SilentlyContinue
+$procs = Get-Process nclient -ErrorAction SilentlyContinue
 Write-Output ("client processes: " + (($procs | ForEach-Object { "$($_.ProcessName):$($_.Id)" }) -join ' '))
 [Win]::EnumWindows([Win+EnumProc]{ param($h, $l) [Win]::Cb($h, $l) }, [IntPtr]::Zero) | Out-Null
 $ids = $procs | ForEach-Object { $_.Id }

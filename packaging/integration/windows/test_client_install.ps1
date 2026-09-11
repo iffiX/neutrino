@@ -25,8 +25,8 @@ Get-ChildItem "C:\ProgramData\Microsoft\Windows\Start Menu\Programs" | Where-Obj
 Step "webview2"
 Get-ItemProperty "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" -ErrorAction SilentlyContinue | Select-Object pv | Out-String
 Step "nclient --version"
-& "$env:ProgramFiles\Neutrino Client\nclient.cmd" --version
+& "$env:ProgramFiles\Neutrino Client\nclient.exe" --version
 Write-Output "exit $LASTEXITCODE"
 Step "nclient status (unbound, no resident)"
-& "$env:ProgramFiles\Neutrino Client\nclient.cmd" status
+& "$env:ProgramFiles\Neutrino Client\nclient.exe" status
 Write-Output "exit $LASTEXITCODE"

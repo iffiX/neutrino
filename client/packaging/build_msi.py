@@ -2,10 +2,14 @@
 
     python client/packaging/build_msi.py --output-dir dist/ --architecture x64
 
-The installer carries its own Python. Windows ships none, and the client
-lands on machines nobody has prepared, so the interpreter is python.org's
-embeddable build, pinned by hash, with the window's whole Python side
-vendored beside it.
+The installer carries the client compiled: Nuitka turns the package, the
+interpreter it runs on and the window's Python side into one ``nclient.exe``
+and the libraries beside it. Windows ships no Python and the client lands on
+machines nobody has prepared, so a carried interpreter was the alternative,
+and a tree of ``.pyc`` files and a ``python313.zip`` is what heuristic
+scanners flag; fifty-one files with no bytecode among them is what they do
+not. The interpreter compiled in is the one running this script, so the
+build machine's Python is pinned to a minor here and checked.
 
 The client is a person's application, not a service and not an autostart: it
 runs when the person opens it. The installer puts a Start menu shortcut down
@@ -26,21 +30,26 @@ not, so Microsoft's bootstrapper travels in the package and runs when the
 runtime's registry key is absent.
 
 Needs WiX 6: ``dotnet tool install --global wix --version 6.0.2``, and its
-Util extension: ``wix extension add -g WixToolset.Util.wixext/6.0.2``. WiX 7
-refuses to build until a maintenance-fee EULA is accepted, and the
-extension's own 7 does not load in 6.
+Util and UI extensions: ``wix extension add -g WixToolset.Util.wixext/6.0.2``
+and the same for ``WixToolset.UI.wixext``. WiX 7 refuses to build until a
+maintenance-fee EULA is accepted, and the extension's own 7 does not load in
+6. Nuitka needs a C compiler and fetches MinGW-w64 itself when there is
+none; the build is native, so an arm64 installer is built on an arm64
+machine.
 
-Not pure: downloads an interpreter and wheels, writes a package tree, runs wix.
+Not pure: makes a virtual environment, downloads wheels and a compiler,
+compiles, writes a package tree, runs wix.
 """
 
 import argparse
+import os
+import platform
 import shutil
 import subprocess
 import sys
 import tempfile
 import urllib.request
 import xml.sax.saxutils
-import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -53,26 +62,37 @@ CLIENT_ROOT = payload.CLIENT_ROOT
 REPO_ROOT = payload.REPO_ROOT
 PACKAGE_NAME = payload.PACKAGE_NAME
 
-# The interpreter the installer carries, one build per machine. Pinned by
-# hash: a package that installs an unverified interpreter is not one to ship.
-WINDOWS_PYTHON_VERSION = "3.13.7"
-WINDOWS_PYTHON_URL = (
-    "https://www.python.org/ftp/python/{version}/python-{version}-embed-{machine}.zip"
-)
-WINDOWS_PYTHON_ABI = "cp313"
-WINDOWS_PYTHON_SHA256 = {
-    "amd64": "f6cca216a359be84797cabb54149ce5e062afb16cc7567eb7fc51cacb2d86b65",  # scan: allow
-    "arm64": "2ddcf25e71f7205e652ebb57439f22fd2bab37d7f5c9152dbe32867bf2c77a50",  # scan: allow
-}
+# The interpreter the client is compiled against is the one running this
+# script, so it is what the installer carries. One minor, checked, so a build
+# machine with another does not quietly ship a different Python.
+BUILD_PYTHON_VERSION = (3, 13)
 
-# What each name for the machine maps to: the interpreter download's own, and
-# the platform an msi declares.
+# The compiler, at a version that built the client and its window's Python
+# side. A build tool rather than something carried, so pinned by version.
+NUITKA_VERSION = "4.2.1"
+
+# What the compiled client is called, and what the resident wears in the
+# process list.
+CLIENT_BINARY_NAME = "nclient.exe"
+
+# The window backends pywebview carries for other platforms. Nuitka's own
+# pywebview plugin leaves them out; naming them here is what keeps a
+# following of the package from disagreeing with it.
+NUITKA_EXCLUDED_BACKENDS = (
+    "webview.platforms.android",
+    "webview.platforms.cocoa",
+    "webview.platforms.gtk",
+    "webview.platforms.qt",
+)
+
+# What each name for the machine maps to: the wheel's own, and the platform
+# an msi declares.
 WINDOWS_MACHINES = {"x86_64": "amd64", "aarch64": "arm64"}
 MSI_PLATFORMS = {"amd64": "x64", "arm64": "arm64"}
 
-# The window's Python side, pinned to the file. pywebview drives the WebView2
-# control through pythonnet, which reaches .NET through clr-loader and cffi;
-# the rest is what pywebview itself imports.
+# The window's Python side, pinned to the file and compiled in. pywebview
+# drives the WebView2 control through pythonnet, which reaches .NET through
+# clr-loader and cffi; the rest is what pywebview itself imports.
 WINDOWS_WHEELS = (
     (
         "pywebview",
@@ -167,9 +187,9 @@ WEBVIEW2_BOOTSTRAPPER_MAX_BYTES = 20 * 1024 * 1024
 WEBVIEW2_CLIENT_ID = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"  # scan: allow
 WEBVIEW2_REGISTRY_KEY = rf"SOFTWARE\Microsoft\EdgeUpdate\Clients\{WEBVIEW2_CLIENT_ID}"
 
-# The image a running resident wears in the process list. The window runs
-# under the carried interpreter, so that is the name an install must close.
-RESIDENT_IMAGE = "pythonw.exe"
+# The image a running resident wears in the process list, which is the name
+# an install must close.
+RESIDENT_IMAGE = CLIENT_BINARY_NAME
 
 # The person's own configuration, named the way the runtime names it. The
 # installer never writes here; it only offers to take it away at the end.
@@ -190,24 +210,12 @@ UTIL_LIBRARY = {"amd64": "Wix4UtilCA_X64", "arm64": "Wix4UtilCA_A64"}
 # changing it makes an upgrade install beside the old one instead of over it.
 UPGRADE_CODE = "0221A508-0A7E-4CFE-B517-B901D9318962"
 
-CONSOLE_WRAPPER_NAME = "nclient.cmd"
-CONSOLE_WRAPPER = """@echo off
-rem Run the client in a terminal, for `nclient status` and for reading errors.
-"%~dp0python\\python.exe" -m neutrino_client.cli.entry %*
-"""
-
-# The quit, run as the person installing. Through the windowed interpreter
-# rather than the console one: an installer's custom action gets a console of
-# its own for a console program, and that console opens as a black window
-# over the wizard. The ask itself is bounded by the control socket's own
-# timeout, so nothing here has to time it out.
-#
-# `-B` because this one runs during a removal, after the files to take have
-# been counted: bytecode written now lands in a prefix on its way out, too
-# late to have been counted with it.
-QUIT_COMMAND = (
-    '"[INSTALLFOLDER]python\\pythonw.exe" -B -m neutrino_client.cli.entry quit'
-)
+# The quit, run as the person installing. The binary attaches to a console
+# when its parent has one and makes none otherwise, so a terminal reads
+# nclient's answers while the installer's custom action, which has no
+# console, opens no black window over the wizard. The ask itself is bounded
+# by the control socket's own timeout, so nothing here has to time it out.
+QUIT_COMMAND = f'"[INSTALLFOLDER]{CLIENT_BINARY_NAME}" quit'
 
 # When the configuration goes. Unticking the box clears the property, and a
 # silent removal may set it to anything; what it is never equal to then is
@@ -306,10 +314,9 @@ WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
               Name="@BOOTSTRAPPER_NAME@"
               KeyPath="yes" />
       </Component>
-      <!-- The prefix, whatever ended up in it. The carried interpreter
-           writes its bytecode beside the modules it runs, and a file the
-           install never laid down is one the uninstall does not know to
-           take; the path is recorded so the removal can still find it. -->
+      <!-- The prefix, whatever ended up in it: a file the install never
+           laid down is one the uninstall does not know to take, and the
+           path is recorded so the removal can still find it. -->
       <Component Id="InstallFolderRecord" Guid="*">
         <RegistryValue Root="HKLM"
                        Key="Software\Neutrino\Client"
@@ -326,8 +333,8 @@ WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
                   Directory="ProgramMenuFolder"
                   Name="Neutrino Client"
                   Description="Use the services a Neutrino Hub publishes for you"
-                  Target="[INSTALLFOLDER]python\pythonw.exe"
-                  Arguments="-m neutrino_client.cli.entry gui"
+                  Target="[INSTALLFOLDER]@CLIENT_BINARY@"
+                  Arguments="gui"
                   WorkingDirectory="INSTALLFOLDER"
                   Icon="ClientIcon" />
         <RegistryValue Root="HKLM"
@@ -574,6 +581,7 @@ def _wix_source(staged: dict, version: str, publisher: str, machine: str) -> str
         .replace("@ICON@", str(staged["icon"]))
         .replace("@WEBVIEW2_KEY@", WEBVIEW2_REGISTRY_KEY)
         .replace("@RESIDENT_IMAGE@", RESIDENT_IMAGE)
+        .replace("@CLIENT_BINARY@", CLIENT_BINARY_NAME)
         .replace("@LICENSE_RTF@", str(staged["license"]))
         .replace("@UTIL_LIBRARY@", UTIL_LIBRARY[machine])
         .replace("@QUIT_COMMAND@", _attribute_text(QUIT_COMMAND))
@@ -600,34 +608,35 @@ def _lay_out(root: Path, version: str, machine: str, architecture: str) -> dict:
     Returns:
         The paths the installer's source names: the payload directory, the
         bootstrapper, the icon and the licence the first page shows.
+
+    Raises:
+        SystemExit: When this Python is not the pinned minor, when the
+            machine asked for is not this one, or when the compile writes
+            no binary.
     """
+    _check_build_machine(machine)
     installed = root / "payload"
-    python_dir = installed / "python"
-    python_dir.mkdir(parents=True)
+    installed.mkdir(parents=True)
 
-    archive = root / "python-embed.zip"
-    archive.write_bytes(
-        payload.fetch(
-            WINDOWS_PYTHON_URL.format(version=WINDOWS_PYTHON_VERSION, machine=machine),
-            WINDOWS_PYTHON_SHA256[machine],
-            "the interpreter",
-        )
-    )
-    with zipfile.ZipFile(archive) as bundle:
-        bundle.extractall(python_dir)
-    _open_import_path(python_dir)
+    # The package with its version stamped and its page beside it, which is
+    # what the compiler is pointed at; the checkout itself is never what
+    # ships.
+    tree = root / "tree"
+    package = payload.stage_client_tree(tree, version)
 
-    payload.stage_client_tree(installed, version)
-    payload.stage_wheels(
-        Path(sys.executable),
-        installed / "lib",
-        WINDOWS_WHEELS + (WINDOWS_CFFI[machine],),
-        platform_tag=f"win_{machine}",
-        abi_tag=WINDOWS_PYTHON_ABI,
-    )
+    python = _make_build_environment(root / "venv", machine)
+    dist = _compile(python, tree, root / "build", version)
+    for item in dist.iterdir():
+        if item.is_dir():
+            shutil.copytree(item, installed / item.name)
+        else:
+            shutil.copyfile(item, installed / item.name)
+    # Compiled modules keep a __file__ under the payload, so the package's
+    # own data goes beside where that points.
+    shutil.copytree(package / "data", installed / package.name / "data")
+
     bundled.stage_windows_binaries(installed, architecture)
     _stage_licenses(installed)
-    (installed / CONSOLE_WRAPPER_NAME).write_text(CONSOLE_WRAPPER, encoding="utf-8")
 
     # Named files the installer's source points at directly, kept out of the
     # payload directory so the file glob does not claim them twice.
@@ -641,6 +650,106 @@ def _lay_out(root: Path, version: str, machine: str, architecture: str) -> dict:
         "icon": icon,
         "license": license_rtf,
     }
+
+
+def _check_build_machine(machine: str) -> None:
+    """Refuse a build that would carry another interpreter than the pinned
+    one, or one for a machine this is not.
+
+    Args:
+        machine: ``amd64`` or ``arm64``, as asked for.
+
+    Raises:
+        SystemExit: On either mismatch.
+    """
+    if sys.version_info[:2] != BUILD_PYTHON_VERSION:
+        wanted = ".".join(str(part) for part in BUILD_PYTHON_VERSION)
+        raise SystemExit(
+            f"the client is compiled against Python {wanted}; "
+            f"this is {sys.version.split()[0]}"
+        )
+    here = WINDOWS_MACHINES.get(
+        payload.MACHINE_NAMES.get(platform.machine().lower(), ""), ""
+    )
+    if here != machine:
+        raise SystemExit(
+            f"an installer for {machine} is compiled on a {machine} machine; "
+            f"this one is {platform.machine()}"
+        )
+
+
+def _make_build_environment(venv: Path, machine: str) -> Path:
+    """A virtual environment holding the compiler and the window's Python
+    side at their pinned versions.
+
+    Args:
+        venv: Where to make it.
+        machine: ``amd64`` or ``arm64``, which picks the compiled wheel.
+
+    Returns:
+        The environment's interpreter.
+
+    Raises:
+        SystemExit: When a wheel is not what was pinned, or pip refuses.
+    """
+    payload.run([sys.executable, "-m", "venv", str(venv)])
+    python = venv / "Scripts" / "python.exe"
+    payload.run(
+        [str(python), "-m", "pip", "install", "--quiet", f"nuitka=={NUITKA_VERSION}"]
+    )
+    # Into the environment's own site-packages, which on Windows a venv
+    # keeps under Lib; pinned files by path rather than names pip resolves.
+    payload.stage_wheels(
+        python,
+        venv / "Lib" / "site-packages",
+        WINDOWS_WHEELS + (WINDOWS_CFFI[machine],),
+    )
+    return python
+
+
+def _compile(python: Path, tree: Path, build: Path, version: str) -> Path:
+    """Run Nuitka over the staged package.
+
+    Args:
+        python: The build environment's interpreter.
+        tree: The directory the staged ``neutrino_client`` package is in.
+        build: Where the compiler works.
+        version: The version stamped into the binary's own properties.
+
+    Returns:
+        The standalone directory: the binary and everything beside it.
+
+    Raises:
+        SystemExit: When the compiler refuses or writes no binary.
+    """
+    entry = tree / "neutrino_client" / "cli" / "entry.py"
+    icon = icons.write_ico(build.parent / "binary.ico")
+    command = [
+        str(python),
+        "-m",
+        "nuitka",
+        "--standalone",
+        "--assume-yes-for-downloads",
+        "--include-package=neutrino_client",
+        "--include-package=webview",
+        *(f"--nofollow-import-to={name}" for name in NUITKA_EXCLUDED_BACKENDS),
+        "--windows-console-mode=attach",
+        f"--windows-icon-from-ico={icon}",
+        "--product-name=Neutrino Client",
+        f"--product-version={version}",
+        f"--file-version={version}",
+        f"--output-filename={CLIENT_BINARY_NAME}",
+        f"--output-dir={build}",
+        str(entry),
+    ]
+    environment = dict(os.environ, PYTHONPATH=str(tree))
+    result = subprocess.run(command, env=environment)
+    if result.returncode != 0:
+        raise SystemExit(f"nuitka exited {result.returncode}")
+    dist = build / "entry.dist"
+    if not (dist / CLIENT_BINARY_NAME).is_file():
+        raise SystemExit(f"nuitka wrote no {CLIENT_BINARY_NAME} under {dist}")
+    return dist
 
 
 def _write_license_rtf(target: Path) -> Path:
@@ -723,31 +832,6 @@ def _fetch_bootstrapper() -> bytes:
             "a bootstrapper is"
         )
     return content
-
-
-def _open_import_path(python_dir: Path) -> None:
-    """Let the bundled interpreter see the client and the vendored packages.
-
-    The embeddable package resolves imports from its ``._pth`` file alone and
-    ignores PYTHONPATH, so everything beside it is invisible until the file
-    says otherwise.
-
-    Args:
-        python_dir: The extracted interpreter.
-
-    Raises:
-        SystemExit: If the file is not the shape this expects.
-    """
-    try:
-        path_file = next(python_dir.glob("python*._pth"))
-    except StopIteration:
-        raise SystemExit("the embeddable package carries no ._pth file")
-    lines = path_file.read_text(encoding="utf-8").splitlines()
-    if "." not in lines:
-        raise SystemExit(f"no '.' entry in {path_file.name} to add the rest beside")
-    at = lines.index(".") + 1
-    lines[at:at] = ["..", "..\\lib"]
-    path_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _build(source: Path, target: Path, machine: str) -> None:

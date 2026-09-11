@@ -42,6 +42,10 @@ def run_quietly(
 ) -> "subprocess.CompletedProcess":
     """Run one tool with no console of its own, its output captured as text.
 
+    Every standard handle is the tool's own: a resident opened from a
+    shortcut has none worth inheriting, and on Windows an invalid one is
+    refused at the moment the child is made rather than left alone.
+
     Args:
         command: Argument vector.
         input: Sent to standard input; None sends nothing.
@@ -58,6 +62,7 @@ def run_quietly(
     return subprocess.run(
         command,
         input=input,
+        stdin=None if input is not None else subprocess.DEVNULL,
         capture_output=True,
         text=True,
         encoding=encoding,
@@ -331,7 +336,10 @@ class ClientPlatform:
             OSError: When the program cannot be started.
         """
         return subprocess.Popen(
-            argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
 

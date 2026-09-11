@@ -14,11 +14,11 @@ public class W {
 }
 "@
 function Find { [W]::Found = [IntPtr]::Zero; [W]::Visible = $false; [W]::EnumWindows([W+EnumProc]{ param($h, $l) [W]::Cb($h, $l) }, [IntPtr]::Zero) | Out-Null; "window $([W]::Found) visible $([W]::Visible)" }
-$p = Get-Process pythonw | Select-Object -First 1
+$p = Get-Process nclient | Select-Object -First 1
 Write-Output "resident $($p.Id); before: $(Find)"
 [W]::PostMessageW([W]::Found, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
 Start-Sleep -Seconds 2
 Write-Output "after close: $(Find); resident alive $(-not $p.HasExited)"
-Start-Process "$env:ProgramFiles\Neutrino Client\python\pythonw.exe" -ArgumentList '-m neutrino_client.cli.entry gui'
+Start-Process "$env:ProgramFiles\Neutrino Client\nclient.exe" -ArgumentList 'gui'
 Start-Sleep -Seconds 4
-Write-Output "after second launch: $(Find); pythonw count $((Get-Process pythonw).Count)"
+Write-Output "after second launch: $(Find); nclient count $((Get-Process nclient).Count)"

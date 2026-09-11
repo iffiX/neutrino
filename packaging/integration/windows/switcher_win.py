@@ -1,9 +1,10 @@
-# The Linux verification, on Windows, under pythonw in the person's session.
+# The Linux verification, on Windows, under the machine's own pythonw in the
+# person's session, against the pushed source tree.
 # cc-switch finds the profile through the shell, not the environment, so the
 # real profile is used, with what was there put back afterwards.
 import json, os, pathlib, shutil, sys, time, traceback
 
-sys.path.insert(0, r"C:\Program Files\Neutrino Client")
+sys.path.insert(0, r"C:\src\client")
 log = open(r"C:\out\switcher_win.txt", "w", encoding="utf-8", buffering=1)
 home = pathlib.Path(os.environ["USERPROFILE"])
 backup = home / "switcher_backup"

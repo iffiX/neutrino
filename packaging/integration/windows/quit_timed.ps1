@@ -11,7 +11,7 @@ public class Q {
     var c = new StringBuilder(128); GetClassName(h, c, 128); if (c.ToString() == "NeutrinoClientTray") Tray = h; return true; }
 }
 "@
-$p = Get-Process pythonw | Select-Object -First 1
+$p = Get-Process nclient | Select-Object -First 1
 [Q]::Pid = $p.Id
 [Q]::EnumWindows([Q+EnumProc]{ param($h, $l) [Q]::Cb($h, $l) }, [IntPtr]::Zero) | Out-Null
 $t0 = Get-Date

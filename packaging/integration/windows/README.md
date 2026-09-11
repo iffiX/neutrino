@@ -14,11 +14,11 @@ box; this one exercises it where a screenshot can be taken.
 | `user_run.ps1` | Runs one script inside the signed-in person's session through a scheduled task and reads its output back. Copied to `C:\\user_run.ps1` first. One task name, so never two at once. |
 | `ui.ps1`, `ui_run.ps1` | Maximize the window, click, type, scroll, from a command list in `C:\\ui_cmds.txt`. The window is found by title through EnumWindows. |
 | `install_over_running.ps1` | Fetches `new_client.msi` from the share and installs it while a resident runs; the installer must close it. |
-| `test_client_install.ps1` | The install walk as SYSTEM: remove, install, what landed, `nclient.cmd --version`. |
+| `test_client_install.ps1` | The install walk as SYSTEM: remove, install, what landed, `nclient.exe --version`. |
 | `launch_gui.ps1` | Starts the resident in the person's session. |
 | `close_reopen.ps1`, `quit_timed.ps1`, `enum_win.ps1` | Close to the tray and reopen; Quit from the tray with the time it took; list the client's windows. |
-| `mount_win.*`, `unmount_win.*`, `explorer_shot.ps1` | Map and unmap a share through the platform layer under `pythonw`, with Explorer open for the screenshot. |
-| `switcher_win.*`, `ai_cycle.ps1` | The switcher on the real profile under `pythonw`, with the profile stashed and put back; the page and CLI switch on and off with timings and the busy refusal. |
+| `mount_win.*`, `unmount_win.*`, `explorer_shot.ps1` | Map and unmap a share through the platform layer, run by the machine's own `pythonw` against the source tree at `C:\src\client`, with Explorer open for the screenshot. |
+| `switcher_win.*`, `ai_cycle.ps1` | The switcher on the real profile, run the same way, with the profile stashed and put back; the page and CLI switch on and off with timings and the busy refusal. |
 | `log_tail.ps1` | The resident's log, and whether it carries a socket error. |
 
 ## Running it

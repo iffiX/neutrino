@@ -1,6 +1,7 @@
 # Runs on the Windows box. Everything build_msi.py needs and nothing else:
-# a Python to run it, the .NET SDK that hosts WiX, and WiX itself at the
-# version the release workflow pins. Each step is skipped when its result is
+# the Python the client is compiled against, the .NET SDK that hosts WiX,
+# and WiX itself at the version the release workflow pins. The compiler
+# fetches its own C toolchain. Each step is skipped when its result is
 # already there, so a rerun after a failure costs seconds.
 
 $ErrorActionPreference = 'Stop'
@@ -11,8 +12,8 @@ $root = 'C:\neutrino'
 $tools = "$root\tools"
 New-Item -Force -ItemType Directory -Path $tools | Out-Null
 
-$pythonVersion = '3.12.10'
-$pythonHome = 'C:\Program Files\Python312'
+$pythonVersion = '3.13.7'
+$pythonHome = 'C:\Program Files\Python313'
 $dotnetHome = 'C:\dotnet'
 $wixVersion = '6.0.2'
 $toolsHome = "$env:USERPROFILE\.dotnet\tools"

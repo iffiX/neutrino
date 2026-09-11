@@ -1,4 +1,4 @@
-$nc = "$env:ProgramFiles\Neutrino Client\nclient.cmd"
+$nc = "$env:ProgramFiles\Neutrino Client\nclient.exe"
 function Show { (& $nc service ai show 2>&1 | Out-String) -split "`n" | Select-Object -Skip 1 -First 1 }
 function WaitFor($needle, $t0) {
   for ($i = 0; $i -lt 300; $i++) {
