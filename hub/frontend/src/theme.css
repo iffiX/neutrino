@@ -692,3 +692,10 @@ textarea {
   gap: var(--space-3);
   align-items: center;
 }
+
+/* The Neutrino mark inside a brand box: the gradient N, the box's own border. */
+.brand_mark_image {
+  width: 70%;
+  height: 70%;
+  object-fit: contain;
+}

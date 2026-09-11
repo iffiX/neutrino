@@ -4,6 +4,7 @@ body { margin: 0; padding: 32px 20px; background: #0a0e14; color: #e6edf3;
 .wrap { max-width: 680px; margin: 0 auto; display: flex;
         flex-direction: column; gap: 24px; }
 h1 { margin: 0; font-size: 18px; letter-spacing: .02em; }
+.head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .sect { display: flex; flex-direction: column; gap: 12px; }
 .sect_title { margin: 0; font-size: 16px; font-weight: 600; }
 .sub { color: #8b96a5; font-size: 12px; font-family: ui-monospace, monospace; }

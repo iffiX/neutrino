@@ -12,5 +12,6 @@
   "state.stopped": "已停止",
   "state.unused": "未使用",
   "state.wifi": "无线",
-  "state.wired": "有线"
+  "state.wired": "有线",
+  "ui.brand.hub": "微子·中枢"
 }

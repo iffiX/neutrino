@@ -18,7 +18,7 @@
   "code.backup_too_large": "备份最大 {limit} 字节。",
   "code.backup_unexpected_member": "备份里只能有文件和目录，{path} 两者都不是。",
   "code.backup_unexpected_path": "这份备份里有 config 之外的路径：{path}。",
-  "code.backup_unrecognized": "这个文件不是 Neutrino Hub 的备份。",
+  "code.backup_unrecognized": "这个文件不是 微子·中枢 的备份。",
   "code.backup_wrong_extension": "这不是本面板导出的备份文件。",
   "code.balancer_strategy_unknown": "xray 没有名为 {strategy} 的策略。",
   "code.client_disabled": "这个客户端已停用。",

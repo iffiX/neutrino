@@ -261,10 +261,10 @@ def _point_at_hub(app: str, base_url: str, api_key: str, config: dict) -> bool:
         SWITCHER_PROVIDER_ID,
         "--name",
         SWITCHER_PROVIDER_NAME,
-        "--base-url",
-        _endpoint_for(app, base_url),
-        "--api-key",
-        api_key,
+        # Values joined with "=": a key or a model name may begin with a
+        # hyphen, which cc-switch would otherwise read as an option.
+        "--base-url=" + _endpoint_for(app, base_url),
+        "--api-key=" + api_key,
     ]
     arguments += _model_flags(app, config)
     if _common_snippet(app):
@@ -597,11 +597,11 @@ def _model_flags(app: str, config: dict) -> list:
         for slot, flag in CLAUDE_SLOT_FLAGS.items():
             model = str(config.get(slot, "") or "")
             if model:
-                flags += [flag, model]
+                flags.append(flag + "=" + model)
         return flags
     model = str(config.get("model", "") or "")
     if model:
-        flags += ["--model", model]
+        flags.append("--model=" + model)
     return flags
 
 

@@ -189,6 +189,9 @@ function draw(state) {
   setLanguage(state.language);
   document.title = t('ui.window.title');
   document.querySelector('h1').textContent = t('ui.window.title');
+  const settings = document.getElementById('settings');
+  settings.textContent = t('ui.settings');
+  settings.onclick = openSettingsDialog;
   document.getElementById('ident').textContent =
     state.hostname + ' · ' + state.platform.os + '/' + state.platform.arch +
     ' · client ' + state.version;
@@ -253,25 +256,44 @@ function drawConnection(state) {
     const refusal = state.error ? wordCode(state.error.code, state.error.params) : '';
     if (refusal || lastError) conn.appendChild(errorLine(refusal || lastError));
   }
-  conn.appendChild(languageRow());
   return conn;
 }
 
-// The words this window is in, changed here and kept by the client.
-function languageRow() {
-  const row = document.createElement('div');
-  row.className = 'feat';
-  row.innerHTML = '<div class="body"><div class="title">' + t('ui.language') +
-    '</div></div>';
+// The settings dialog: what this window keeps for itself, today the language.
+function openSettingsDialog() {
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  const modal = document.createElement('div');
+  modal.className = 'card modal';
+  const heading = document.createElement('div');
+  heading.className = 'panel_title';
+  heading.textContent = t('ui.settings_title');
+  modal.appendChild(heading);
+  const label = document.createElement('label');
+  label.textContent = t('ui.language');
+  modal.appendChild(label);
   const options = LANGUAGES.map(
     (code) => ({ value: code, label: t('ui.language_name.' + code) }));
-  const holder = document.createElement('div');
-  holder.style.display = 'flex';
-  holder.style.width = '180px';
-  holder.appendChild(picker('language', options, language,
-    (value) => send('/api/language', { language: value }), false));
-  row.appendChild(holder);
-  return row;
+  modal.appendChild(picker('language', options, language, (value) => {
+    send('/api/language', { language: value }).then(() => {
+      closeDialog(overlay);
+      redraw();
+    });
+  }, false));
+  const actions = document.createElement('div');
+  actions.className = 'row';
+  actions.style.marginTop = '8px';
+  const close = document.createElement('button');
+  close.className = 'ghost';
+  close.textContent = t('ui.close');
+  close.onclick = () => { closeDialog(overlay); redraw(); };
+  actions.appendChild(close);
+  modal.appendChild(actions);
+  overlay.appendChild(modal);
+  overlay.onclick = (event) => {
+    if (event.target === overlay) { closeDialog(overlay); redraw(); }
+  };
+  openDialog(overlay);
 }
 
 function errorLine(text) {

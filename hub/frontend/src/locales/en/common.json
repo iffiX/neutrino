@@ -12,5 +12,6 @@
   "state.stopped": "stopped",
   "state.unused": "unused",
   "state.wifi": "wifi",
-  "state.wired": "wired"
+  "state.wired": "wired",
+  "ui.brand.hub": "Neutrino Hub"
 }

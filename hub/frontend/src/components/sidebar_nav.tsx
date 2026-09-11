@@ -5,6 +5,7 @@ import { t, useLanguage } from "../i18n";
 import { navItemsInGroup } from "../nav_items";
 import type { NavGroup, NavItem } from "../nav_items";
 import "./sidebar_nav.css";
+import neutrinoMark from "../images/neutrino_mark.png";
 
 /**
  * The fixed left rail.
@@ -19,7 +20,6 @@ import "./sidebar_nav.css";
  */
 
 /** The product's own name, which is the same in every language. */
-const SIDEBAR_BRAND_NAME = "Neutrino Hub";
 
 const GROUP_KEYS: Record<NavGroup, string> = {
   hub: "ui.shell.group_hub",
@@ -37,10 +37,10 @@ export function SidebarNav({ onLogout }: SidebarNavProps) {
     <nav className="sidebar_nav" aria-label={t("ui.shell.nav_label")}>
       <div className="sidebar_brand">
         <span className="sidebar_brand_mark">
-          <Icon name="proxy" size={15} />
+          <img className="brand_mark_image" src={neutrinoMark} alt="" />
         </span>
         <span className="sidebar_brand_text">
-          <span className="sidebar_brand_name">{SIDEBAR_BRAND_NAME}</span>
+          <span className="sidebar_brand_name">{t("ui.brand.hub")}</span>
           <span className="sidebar_brand_sub">{t("ui.shell.brand_sub")}</span>
         </span>
       </div>

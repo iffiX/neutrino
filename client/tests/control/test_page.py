@@ -310,14 +310,16 @@ def test_the_desktops_panel_only_connects():
 # --- the language row on the Status card ---
 
 
-def test_the_status_card_carries_a_language_row():
-    body = PAGE_JS.split("function languageRow()")[1].split("\n}")[0]
+def test_the_header_button_opens_the_settings_dialog_with_the_language():
+    body = PAGE_JS.split("function openSettingsDialog()")[1].split("\n}")[0]
 
-    assert "conn.appendChild(languageRow());" in PAGE_JS
-    assert "t('ui.language')" in body
+    assert 'id="settings"' in PAGE_HTML
+    assert "settings.onclick = openSettingsDialog;" in PAGE_JS
+    assert "t('ui.settings_title')" in body
     assert "picker('language', options, language" in body
     assert "send('/api/language', { language: value })" in body
     assert "LANGUAGES.map(" in body
+    assert "languageRow" not in PAGE_JS
     assert EN_WORDS["ui.language"] == "Language"
     for language in CLIENT_LANGUAGES:
         assert EN_WORDS[f"ui.language_name.{language}"]

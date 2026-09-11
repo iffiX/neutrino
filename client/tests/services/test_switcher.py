@@ -123,6 +123,16 @@ def test_a_refusing_cli_reaches_the_page_as_its_words(tmp_path, monkeypatch):
     assert str(caught.value) == "no store"
 
 
+def flag_values(arguments) -> dict:
+    """The ``--flag=value`` pairs of a provider add, as a dict."""
+    return {
+        flag: value
+        for flag, value in (
+            argument.split("=", 1) for argument in arguments if "=" in argument
+        )
+    }
+
+
 class Cli:
     """cc-switch, scripted: a store per app, and every call made."""
 
@@ -169,19 +179,13 @@ class Cli:
                 and key[1] == switcher.SWITCHER_PROVIDER_ID
                 and self.writes_claude
             ):
-                arguments_added = self.added.get("claude", ())
+                given = flag_values(self.added.get("claude", ()))
                 env = {
-                    "ANTHROPIC_BASE_URL": arguments_added[
-                        arguments_added.index("--base-url") + 1
-                    ],
-                    "ANTHROPIC_AUTH_TOKEN": arguments_added[
-                        arguments_added.index("--api-key") + 1
-                    ],
+                    "ANTHROPIC_BASE_URL": given["--base-url"],
+                    "ANTHROPIC_AUTH_TOKEN": given["--api-key"],
                 }
-                if "--model" in arguments_added:
-                    env["ANTHROPIC_MODEL"] = arguments_added[
-                        arguments_added.index("--model") + 1
-                    ]
+                if "--model" in given:
+                    env["ANTHROPIC_MODEL"] = given["--model"]
                 switcher._write_text(".claude/settings.json", json.dumps({"env": env}))
             return ""
         if key[:2] == ("provider", "delete"):
@@ -243,9 +247,12 @@ def test_a_tool_is_adopted_once_and_the_hub_added_with_its_snippet(
         "--name",
         "Neutrino Hub",
     )
-    assert ("--base-url", "http://hub") == added[6:8]
-    assert ("--api-key", "k") == added[8:10]
-    assert ("--model", "m1", "--opus-model", "mo") == added[10:14]
+    assert added[6:10] == (
+        "--base-url=http://hub",
+        "--api-key=k",
+        "--model=m1",
+        "--opus-model=mo",
+    )
     assert added[-1] == "--common-config"
     assert cli.current["claude"] == "neutrino"
 
@@ -261,7 +268,7 @@ def test_codex_is_pointed_at_the_versioned_path_the_responses_api_lives_under(
     switcher.activate(base_url="http://hub:8317", api_key="k", tool_configs={})
 
     for app, added in cli.added.items():
-        endpoint = added[added.index("--base-url") + 1]
+        endpoint = flag_values(added)["--base-url"]
         assert endpoint == (
             "http://hub:8317/v1" if app == "codex" else "http://hub:8317"
         ), app
@@ -293,7 +300,7 @@ def test_a_tool_with_no_snippet_and_nothing_to_extract_gets_no_flag(
 
     assert cli.snippet["gemini"] == ""
     assert "--common-config" not in cli.added["gemini"]
-    assert ("--model", "g1") == cli.added["gemini"][-2:]
+    assert cli.added["gemini"][-1] == "--model=g1"
 
 
 def test_a_tool_without_a_file_is_not_adopted_and_is_remembered_as_such(
@@ -307,7 +314,7 @@ def test_a_tool_without_a_file_is_not_adopted_and_is_remembered_as_such(
     assert "mcp import" not in cli.made("codex")
     record = switcher._read_record("codex")
     assert (record["is_present"], record["previous"]) == (False, "")
-    assert record["added"]["flags"] == ["--model", "c1"]
+    assert record["added"]["flags"] == ["--model=c1"]
     assert "secret-key-value" not in json.dumps(record)
 
 

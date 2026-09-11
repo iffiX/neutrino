@@ -52,6 +52,7 @@
   "ui.browse": "浏览…",
   "ui.cancel": "取消",
   "ui.choose": "选择此文件夹",
+  "ui.close": "关闭",
   "ui.codex_effort": "推理强度",
   "ui.codex_model": "模型",
   "ui.config": "配置",
@@ -106,6 +107,8 @@
   "ui.section_services": "服务",
   "ui.section_status": "状态",
   "ui.services_wait_join": "加入 hub 后这里会出现服务。",
+  "ui.settings": "设置",
+  "ui.settings_title": "客户端设置",
   "ui.slot_default": "默认模型",
   "ui.slot_haiku": "Haiku 档位",
   "ui.slot_opus": "Opus 档位",
@@ -120,5 +123,5 @@
   "ui.unmounting": "正在卸载…",
   "ui.up": ".. 上一级",
   "ui.username_hint": "共享用户名",
-  "ui.window.title": "Neutrino 客户端"
+  "ui.window.title": "微子·客户端"
 }

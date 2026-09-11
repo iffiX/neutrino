@@ -9,6 +9,7 @@ import { useAuth } from "../use_auth";
 import type { AuthState } from "../api_types";
 
 import "./login_page.css";
+import neutrinoMark from "../images/neutrino_mark.png";
 
 /**
  * The gate in front of everything else.
@@ -24,7 +25,6 @@ import "./login_page.css";
  */
 
 /** The product's own name, which is the same in every language. */
-const LOGIN_BRAND_NAME = "Neutrino Hub";
 /** What the password field shows instead of a password. */
 const LOGIN_PASSWORD_PLACEHOLDER = "••••••••";
 
@@ -119,10 +119,14 @@ export function LoginPage() {
       <div className="login_card">
         <div className="login_brand">
           <span className="login_brand_mark">
-            <Icon name="proxy" size={20} />
+            {isLocked ? (
+              <Icon name="proxy" size={20} />
+            ) : (
+              <img className="brand_mark_image" src={neutrinoMark} alt="" />
+            )}
           </span>
           <span className="login_brand_text">
-            <span className="login_brand_name">{LOGIN_BRAND_NAME}</span>
+            <span className="login_brand_name">{t("ui.brand.hub")}</span>
             <span className="login_brand_sub">{t("ui.login.subtitle")}</span>
           </span>
         </div>
