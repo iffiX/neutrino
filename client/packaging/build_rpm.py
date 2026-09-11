@@ -127,10 +127,8 @@ if [ "$1" = 0 ]; then
 fi
 
 %postun
-{wipe}
 if [ "$1" = 0 ]; then
     rm -rf {prefix}
-    wipe_personal_state
 fi
 
 %posttrans
@@ -200,7 +198,6 @@ def main() -> int:
                 action=CLIENT_MOUNT_POLKIT_ACTION,
                 prune=payload.PRUNE_UNTRACKED,
                 stop=payload.STOP_RESIDENTS,
-                wipe=payload.WIPE_PERSONAL_STATE,
             ),
             encoding="utf-8",
         )

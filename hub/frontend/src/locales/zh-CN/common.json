@@ -1,5 +1,5 @@
 {
-  "code.agent_offline": "agent 已离线。",
+  "code.agent_offline": "被控端已离线。",
   "code.language_unknown": "面板没有这种语言。",
   "state.connecting": "连接中",
   "state.disabled": "已停用",

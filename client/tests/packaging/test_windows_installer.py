@@ -15,8 +15,6 @@ import pytest
 import build_msi
 import payload
 
-from neutrino_client.platforms.windows import WINDOWS_CONFIG_DIR_NAME
-
 # The agent's own upgrade code, which this one must not be.
 AGENT_UPGRADE_CODE = "9F4E4A1C-9C0B-4C0E-9E2E-6C5A2C7C1E33"
 
@@ -104,36 +102,13 @@ def test_the_quit_runs_before_the_close_that_ends_what_did_not_answer(source):
     assert list(root.iter(UTIL + "CloseApplication"))
 
 
-def test_an_uninstall_takes_the_persons_own_configuration_with_it(source):
-    """Uninstalling the client leaves nothing of it behind."""
+def test_an_uninstall_leaves_the_persons_own_configuration_in_place(source):
+    """Uninstalling is a remove, not a purge: the binding and the preferences
+    stay for the next install."""
     root = xml.etree.ElementTree.fromstring(source)
-    removals = list(root.iter(UTIL + "RemoveFolderEx"))
-    searches = [
-        search
-        for search in root.iter(WXS + "RegistrySearch")
-        if search.get("Id") == "ClientConfigDir"
-    ]
-    values = [
-        value
-        for value in root.iter(WXS + "RegistryValue")
-        if value.get("Name") == "ConfigDir"
-    ]
 
-    assert len(removals) == 1
-    assert removals[0].get("On") == "uninstall"
-    assert removals[0].get("Property") == "CLIENTCONFIGDIR"
-    # The extension reads the folder out of a property, which only a search
-    # fills in again at uninstall.
-    assert searches[0].get("Root") == "HKLM"
-    assert searches[0].get("Key") == build_msi.CLIENT_CONFIG_REGISTRY_KEY
-    assert len(values) == 1
-    assert values[0].get("Root") == "HKMU"
-    assert values[0].get("Value") == f"[AppDataFolder]{build_msi.CLIENT_CONFIG_FOLDER}"
-    assert '<StandardDirectory Id="AppDataFolder" />' in source
-
-
-def test_the_folder_the_uninstall_removes_is_the_one_the_client_writes():
-    assert build_msi.CLIENT_CONFIG_FOLDER == WINDOWS_CONFIG_DIR_NAME
+    assert list(root.iter(UTIL + "RemoveFolderEx")) == []
+    assert "AppDataFolder" not in source
 
 
 def test_the_build_loads_the_extension_that_element_comes_from():

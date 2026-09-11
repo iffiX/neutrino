@@ -316,8 +316,10 @@ def test_the_header_button_opens_the_settings_dialog_with_the_language():
     assert 'id="settings"' in PAGE_HTML
     assert "settings.onclick = openSettingsDialog;" in PAGE_JS
     assert "t('ui.settings_title')" in body
-    assert "picker('language', options, language" in body
-    assert "send('/api/language', { language: value })" in body
+    assert "picker('language', options, draft.language" in body
+    assert "send('/api/language', { language: draft.language })" in body
+    assert "t('ui.save')" in body and "t('ui.cancel')" in body
+    assert "ui.close" not in body
     assert "LANGUAGES.map(" in body
     assert "languageRow" not in PAGE_JS
     assert EN_WORDS["ui.language"] == "Language"

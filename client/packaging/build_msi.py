@@ -173,8 +173,6 @@ RESIDENT_QUIT_TIMEOUT_MS = 10000
 # Where this person's own configuration lives, and where the installer
 # remembers that path so an uninstall can find it again. The folder is the
 # runtime's own; the key is the installer's.
-CLIENT_CONFIG_FOLDER = "Neutrino Client"
-CLIENT_CONFIG_REGISTRY_KEY = r"Software\Neutrino Client"
 
 # The extension CloseApplication comes from, at the version this WiX loads.
 WIX_UTIL_EXTENSION = "WixToolset.Util.wixext/6.0.2"
@@ -236,16 +234,6 @@ WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
     <Icon Id="ClientIcon" SourceFile="@ICON@" />
     <Property Id="ARPPRODUCTICON" Value="ClientIcon" />
 
-    <!-- Where this person's configuration is, read back at uninstall out of
-         the record the install leaves. -->
-    <Property Id="CLIENTCONFIGDIR" Secure="yes">
-      <RegistrySearch Id="ClientConfigDir"
-                      Root="HKLM"
-                      Key="@CONFIG_KEY@"
-                      Name="ConfigDir"
-                      Type="raw" />
-    </Property>
-
     <!-- The runtime records itself here; absent, the bootstrapper runs. -->
     <Property Id="WEBVIEW2INSTALLED" Secure="yes">
       <RegistrySearch Id="WebView2Client"
@@ -260,7 +248,6 @@ WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
       <Directory Id="INSTALLFOLDER" Name="Neutrino Client" />
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder" />
-    <StandardDirectory Id="AppDataFolder" />
 
     <ComponentGroup Id="Payload" Directory="INSTALLFOLDER">
       <Files Include="@PAYLOAD@\**" />
@@ -283,17 +270,6 @@ WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
                        Type="integer"
                        Value="1"
                        KeyPath="yes" />
-      </Component>
-      <!-- Uninstalling the client takes this person's configuration with
-           it; the record is what tells the uninstall where it was. -->
-      <Component Id="ConfigDirRecord" Guid="*">
-        <RegistryValue Root="HKMU"
-                       Key="@CONFIG_KEY@"
-                       Name="ConfigDir"
-                       Type="string"
-                       Value="[AppDataFolder]@CONFIG_FOLDER@"
-                       KeyPath="yes" />
-        <util:RemoveFolderEx On="uninstall" Property="CLIENTCONFIGDIR" />
       </Component>
       <Component Id="StartMenuShortcut" Guid="*">
         <Shortcut Id="ClientWindowShortcut"
@@ -410,8 +386,6 @@ def _wix_source(staged: dict, version: str, publisher: str) -> str:
         .replace("@WEBVIEW2_KEY@", WEBVIEW2_REGISTRY_KEY)
         .replace("@RESIDENT_IMAGE@", RESIDENT_IMAGE)
         .replace("@QUIT_COMMAND@", _attribute_text(QUIT_COMMAND))
-        .replace("@CONFIG_KEY@", CLIENT_CONFIG_REGISTRY_KEY)
-        .replace("@CONFIG_FOLDER@", CLIENT_CONFIG_FOLDER)
     )
 
 

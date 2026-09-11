@@ -129,6 +129,8 @@ set -e
 # wrote beside them, and what the people on this machine kept.
 if [ "$1" = remove ] || [ "$1" = purge ]; then
     rm -rf {prefix}
+fi
+if [ "$1" = purge ]; then
     wipe_personal_state
 fi
 """

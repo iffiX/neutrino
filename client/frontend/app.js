@@ -259,8 +259,10 @@ function drawConnection(state) {
   return conn;
 }
 
-// The settings dialog: what this window keeps for itself, today the language.
+// The settings dialog: what this window keeps for itself, today the
+// language. Nothing is sent until Save.
 function openSettingsDialog() {
+  const draft = { language: language };
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
   const modal = document.createElement('div');
@@ -274,20 +276,26 @@ function openSettingsDialog() {
   modal.appendChild(label);
   const options = LANGUAGES.map(
     (code) => ({ value: code, label: t('ui.language_name.' + code) }));
-  modal.appendChild(picker('language', options, language, (value) => {
-    send('/api/language', { language: value }).then(() => {
-      closeDialog(overlay);
-      redraw();
-    });
-  }, false));
+  modal.appendChild(picker('language', options, draft.language,
+    (value) => { draft.language = value; }, false));
   const actions = document.createElement('div');
   actions.className = 'row';
   actions.style.marginTop = '8px';
-  const close = document.createElement('button');
-  close.className = 'ghost';
-  close.textContent = t('ui.close');
-  close.onclick = () => { closeDialog(overlay); redraw(); };
-  actions.appendChild(close);
+  const save = document.createElement('button');
+  save.textContent = t('ui.save');
+  save.onclick = () => {
+    closeDialog(overlay);
+    if (draft.language !== language) {
+      send('/api/language', { language: draft.language });
+    }
+    redraw();
+  };
+  const cancel = document.createElement('button');
+  cancel.className = 'ghost';
+  cancel.textContent = t('ui.cancel');
+  cancel.onclick = () => { closeDialog(overlay); redraw(); };
+  actions.appendChild(save);
+  actions.appendChild(cancel);
   modal.appendChild(actions);
   overlay.appendChild(modal);
   overlay.onclick = (event) => {

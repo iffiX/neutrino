@@ -83,7 +83,6 @@ def spec():
         action="com.neutrino.client.mount",
         prune=payload.PRUNE_UNTRACKED,
         stop=payload.STOP_RESIDENTS,
-        wipe=payload.WIPE_PERSONAL_STATE,
     )
 
 
@@ -200,17 +199,23 @@ def test_the_deb_asks_every_resident_to_quit_before_it_takes_their_files(deb):
     assert 'pkill -KILL -f "$resident"' in script
 
 
-def test_the_deb_takes_every_persons_own_directory_on_remove_and_purge(deb):
-    """Uninstalling the client leaves nothing of it behind."""
+def test_the_deb_keeps_every_persons_own_directory_on_remove_and_takes_it_on_purge(
+    deb,
+):
+    """A remove keeps the binding and the preferences; only a purge wipes them."""
     postrm = (deb / "DEBIAN/postrm").read_text()
+    kept, wiped = postrm.split('if [ "$1" = purge ]; then', 1)
 
-    assert '[ "$1" = remove ] || [ "$1" = purge ]' in postrm
-    assert "wipe_personal_state" in postrm
+    assert '[ "$1" = remove ] || [ "$1" = purge ]' in kept
+    assert (
+        "wipe_personal_state\n"
+        not in kept.split("wipe_personal_state() {", 1)[1].split("\n}\n", 1)[1]
+    )
+    assert "wipe_personal_state" in wiped
     assert "getent passwd" in postrm
     assert '[ "$uid" -ge 1000 ]' in postrm
     assert f'rm -rf "$home/.config/{CONFIG_DIR_NAME}"' in postrm
     assert f"rm -rf /root/.config/{CONFIG_DIR_NAME}" in postrm
-    assert f"rm -f /run/user/*/{CLIENT_CONTROL_SOCKET_NAME}" in postrm
 
 
 def test_the_bytecode_is_compiled_for_the_path_it_is_installed_at(tmp_path, carried):
@@ -261,16 +266,12 @@ def test_the_rpm_asks_every_resident_to_quit_before_it_takes_their_files(spec):
     assert "    stop_residents\n" in before_erase
 
 
-def test_the_rpm_takes_every_persons_own_directory_on_erase(spec):
-    """Uninstalling the client leaves nothing of it behind."""
+def test_the_rpm_keeps_every_persons_own_directory_on_erase(spec):
+    """An rpm erase is a remove; the person's own directory stays."""
     after_erase = spec.split("%postun\n")[1].split("%posttrans\n")[0]
 
-    assert "wipe_personal_state" in after_erase
-    assert "getent passwd" in after_erase
-    assert f'rm -rf "$home/.config/{CONFIG_DIR_NAME}"' in after_erase
-    assert f"rm -rf /root/.config/{CONFIG_DIR_NAME}" in after_erase
-    assert f"rm -f /run/user/*/{CLIENT_CONTROL_SOCKET_NAME}" in after_erase
-    assert f"rm -rf {payload.INSTALL_PREFIX}" in after_erase
+    assert "wipe_personal_state" not in after_erase
+    assert "rm -rf" in after_erase
 
 
 def test_the_rpm_files_list_names_everything_the_package_lays_down(spec):

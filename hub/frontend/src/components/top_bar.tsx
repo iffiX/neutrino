@@ -42,16 +42,16 @@ const SOCKET_KEYS: Record<string, string> = {
 
 /** What each mode is called wherever a person reads it. */
 const MODE_KEYS: Record<string, string> = {
-  server: "state.server",
-  side_gateway: "state.side_gateway",
-  router: "state.router",
+  server: "ui.shell.mode_server",
+  side_gateway: "ui.shell.mode_side_gateway",
+  router: "ui.shell.mode_router",
 };
 
 /** The chip keys the strip names, which are the API's own words. */
-const CHIP_NETWORK = "network";
-const CHIP_PROXY = "proxy";
-const CHIP_AI = "ai";
-const CHIP_DEVICES = "devices";
+const CHIP_NETWORK_KEY = "ui.shell.chip_network";
+const CHIP_PROXY_KEY = "ui.shell.chip_proxy";
+const CHIP_AI_KEY = "ui.shell.chip_ai";
+const CHIP_DEVICES_KEY = "ui.shell.chip_devices";
 
 /** What a chip shows when nothing has answered yet. */
 const CHIP_NOTHING = "—";
@@ -104,22 +104,22 @@ export function TopBar() {
         </span>
 
         <span className="top_bar_chip">
-          <span className="top_bar_chip_key">{CHIP_NETWORK}</span>
+          <span className="top_bar_chip_key">{t(CHIP_NETWORK_KEY)}</span>
           <span className="top_bar_chip_value">{describeMode(mode)}</span>
         </span>
 
         <span className={`top_bar_chip top_bar_chip--${proxy.tone}`}>
-          <span className="top_bar_chip_key">{CHIP_PROXY}</span>
+          <span className="top_bar_chip_key">{t(CHIP_PROXY_KEY)}</span>
           <span className="top_bar_chip_value">{proxy.label}</span>
         </span>
 
         <span className="top_bar_chip">
-          <span className="top_bar_chip_key">{CHIP_AI}</span>
+          <span className="top_bar_chip_key">{t(CHIP_AI_KEY)}</span>
           <span className="top_bar_chip_value">{describeAi(ai.data)}</span>
         </span>
 
         <span className="top_bar_chip">
-          <span className="top_bar_chip_key">{CHIP_DEVICES}</span>
+          <span className="top_bar_chip_key">{t(CHIP_DEVICES_KEY)}</span>
           <span className="top_bar_chip_value">
             {describeAgents(agentCount)}
           </span>
