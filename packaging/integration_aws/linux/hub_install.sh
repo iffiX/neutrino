@@ -25,7 +25,7 @@ cat > /tmp/answers.json <<JSON
   "network": { "mode": "server" }
 }
 JSON
-sudo nhub setup --yes --stdin < /tmp/answers.json > /tmp/setup.log 2>&1 \
+sudo nhub setup --stdin < /tmp/answers.json > /tmp/setup.log 2>&1 \
     || { tail -30 /tmp/setup.log; exit 1; }
 rm -f /tmp/answers.json
 grep -E "panel is at|enroll" /tmp/setup.log || true

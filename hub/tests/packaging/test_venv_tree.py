@@ -2,12 +2,18 @@
 
 Fetching an interpreter and installing the hub into it needs a build
 container; what is exercised here is what the staging does to a tree that is
-already there — the bytecode it compiles, the path that bytecode names, and
-the prune the maintainer scripts run afterwards.
+already there — the bytecode it compiles, the path that bytecode names, the
+prune the maintainer scripts run afterwards, and which vendored software lands
+under the prefix, with the pinned downloads answered locally.
 """
 
+import io
 import subprocess
 import sys
+import tarfile
+import zipfile
+
+import pytest
 
 import venv_tree
 
@@ -138,3 +144,136 @@ def test_the_prune_removes_nothing_when_the_file_list_is_empty(tmp_path):
     _prune(prefix, listing)
 
     assert (prefix / "carried").is_file()
+
+
+# --- What the package carries beside the hub ---------------------------------
+
+
+def _tarball(name, payload):
+    """A release tarball holding one file, the way every vendor ships one.
+
+    Args:
+        name: The file inside it.
+        payload: What that file holds.
+
+    Returns:
+        The archive's bytes.
+    """
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as bundle:
+        info = tarfile.TarInfo(name)
+        info.size = len(payload)
+        bundle.addfile(info, io.BytesIO(payload))
+    return buffer.getvalue()
+
+
+def _zipball(name, payload):
+    """A release zip holding one file, the way xray ships one.
+
+    Args:
+        name: The file inside it.
+        payload: What that file holds.
+
+    Returns:
+        The archive's bytes.
+    """
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as bundle:
+        bundle.writestr(name, payload)
+    return buffer.getvalue()
+
+
+def _served(monkeypatch):
+    """Every pinned download answered locally, and the URLs that were asked for.
+
+    Args:
+        monkeypatch: The fixture.
+
+    Returns:
+        The list the fetched URLs land in, keyed in order of the fetches.
+    """
+    asked = []
+    bodies = {
+        "xray": _zipball("xray", b"xray"),
+        "cliproxyapi": _tarball("cli-proxy-api", b"gateway"),
+        "netbird": _tarball("netbird", b"client"),
+    }
+
+    def fake_fetch(url, hashes, machine, what):
+        asked.append((what, url))
+        return bodies.get(what, b"database")
+
+    monkeypatch.setattr(venv_tree, "_fetch", fake_fetch)
+    return asked
+
+
+def test_the_package_carries_the_netbird_client_beside_the_others(
+    tmp_path, monkeypatch
+):
+    """Remote access is in the package rather than fetched from a vendor's
+    repository by the machine that wants it."""
+    asked = _served(monkeypatch)
+
+    venv_tree.stage_vendored(tmp_path, "amd64")
+
+    binary = tmp_path / "opt" / "neutrino" / "bin" / "netbird"
+    assert binary.read_bytes() == b"client"
+    assert binary.stat().st_mode & 0o777 == 0o755
+    assert (tmp_path / "opt" / "neutrino" / "bin" / "xray").is_file()
+    assert (tmp_path / "opt" / "neutrino" / "bin" / "cli-proxy-api").is_file()
+    url = dict(asked)["netbird"]
+    assert f"netbird_{venv_tree.NETBIRD_VERSION}_linux_amd64.tar.gz" in url
+
+
+def test_the_arm_package_carries_the_arm_client(tmp_path, monkeypatch):
+    """The asset table is keyed by this project's own machine names, which is
+    what the vendor's release happens to use too."""
+    asked = _served(monkeypatch)
+
+    venv_tree.stage_vendored(tmp_path, "arm64")
+
+    assert "linux_arm64.tar.gz" in dict(asked)["netbird"]
+
+
+def test_the_netbird_pins_are_the_modules_own():
+    """A version or a hash written twice is a package that carries something
+    other than what the panel reports."""
+    from neutrino_hub.modules.netbird import constants
+
+    assert venv_tree.NETBIRD_VERSION == constants.NETBIRD_VERSION
+    assert venv_tree.NETBIRD_URL == constants.NETBIRD_DOWNLOAD_URL
+    assert venv_tree.NETBIRD_SHA256 == constants.NETBIRD_SHA256
+    assert venv_tree.NETBIRD_MACHINES == constants.NETBIRD_ASSET_ARCHITECTURES
+    assert set(venv_tree.NETBIRD_SHA256) == {"amd64", "arm64"}
+
+
+def test_a_download_that_is_not_what_was_pinned_stops_the_build(monkeypatch):
+    """What a release serves is checked against the hash the hub states, so a
+    replaced asset fails the build rather than shipping."""
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *details):
+            return False
+
+        def read(self):
+            return b"something else"
+
+    monkeypatch.setattr(venv_tree.urllib.request, "urlopen", lambda *a, **k: Response())
+
+    with pytest.raises(SystemExit):
+        venv_tree._fetch(
+            "https://example.invalid/netbird.tar.gz",
+            venv_tree.NETBIRD_SHA256,
+            "amd64",
+            "netbird",
+        )
+
+
+def test_a_machine_nothing_is_pinned_for_stops_the_build():
+    """A package with no client in it is not a package with remote access
+    turned off."""
+    with pytest.raises(SystemExit):
+        venv_tree._machine_name(venv_tree.NETBIRD_MACHINES, "arm-6", "netbird")

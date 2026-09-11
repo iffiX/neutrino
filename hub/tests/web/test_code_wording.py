@@ -37,7 +37,9 @@ CODED_CALLS = frozenset(
 )
 # Codes that name a step of the first run rather than a refusal; the setup
 # page words those under ``ui.setup.step_``.
-STEP_CODES = frozenset({"install_module", "panel_password", "write_answers"})
+STEP_CODES = frozenset(
+    {"install_module", "local_agent", "panel_password", "write_answers"}
+)
 
 
 def string_constants() -> dict:

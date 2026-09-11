@@ -11,7 +11,6 @@ from neutrino_hub.exceptions import WizardAborted
 
 def test_the_context_offers_the_modes_the_screens_offer(monkeypatch):
     monkeypatch.setattr(wizard, "RouterLinkStatus", _one_wired_port)
-    monkeypatch.setattr(wizard, "_installed_names", set)
 
     context = wizard.context()
 
@@ -23,7 +22,6 @@ def test_the_context_offers_the_modes_the_screens_offer(monkeypatch):
 def test_the_context_names_what_each_port_is_doing(monkeypatch):
     """Which port to offer is decided from these, so they travel with it."""
     monkeypatch.setattr(wizard, "RouterLinkStatus", _one_wired_port)
-    monkeypatch.setattr(wizard, "_installed_names", set)
     port = wizard.context()["interfaces"][0]
 
     assert port == {

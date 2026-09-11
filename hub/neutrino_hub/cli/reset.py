@@ -53,9 +53,12 @@ RESET_COLLECTED_PATHS = (
 RESET_STATE_PATHS = ("session.secret", "vault.key", "agent_tls_key.pem")
 # Directories under the state root the hub filled itself. The module cache is
 # a cache in the strict sense, so handing the box back costs the next owner a
-# download and nothing else. `agent_cache` is not here: what the hub's own
-# package laid there is the package manager's to remove.
-RESET_STATE_DIRS = ("agent_module_cache",)
+# download and nothing else. The AI gateway's directory is the opposite kind:
+# the accounts somebody signed in with live there as refresh tokens, and a
+# box handed on with them is a box that keeps signing in as the last owner.
+# `agent_cache` is in neither list: what the hub's own package laid there is
+# the package manager's to remove.
+RESET_STATE_DIRS = ("agent_module_cache", "cliproxyapi")
 # Where every device's desired state lives, one directory per device. A
 # reset forgets them with the tokens: they describe machines the next owner
 # has not enrolled.

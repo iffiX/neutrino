@@ -19,7 +19,10 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_UNIT,
 )
 from neutrino_hub.modules.cliproxyapi.provisioner import CliproxyApiProvisioner
-from neutrino_hub.modules.netbird.constants import NETBIRD_SUPPORTED_ARCHITECTURES
+from neutrino_hub.modules.netbird.constants import (
+    NETBIRD_SUPPORTED_ARCHITECTURES,
+    NETBIRD_UNIT,
+)
 from neutrino_hub.modules.netbird.provisioner import NetbirdProvisioner
 
 
@@ -47,10 +50,13 @@ class ModuleSpec:
 
 MODULE_SPECS = {
     "netbird": ModuleSpec(
-        unit="netbird.service",
+        unit=NETBIRD_UNIT,
         provisioner=NetbirdProvisioner,
         architectures=NETBIRD_SUPPORTED_ARCHITECTURES,
-        install_note="remote access to this gateway from anywhere",
+        install_note=(
+            "remote access to this gateway from anywhere "
+            "(the client is in the package)"
+        ),
         data_description="this machine's peer identity",
     ),
     "cliproxyapi": ModuleSpec(

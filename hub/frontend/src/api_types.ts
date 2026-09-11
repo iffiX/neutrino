@@ -1153,6 +1153,33 @@ export interface GiteaAdminCreate {
   email: string;
 }
 
+// --- Overlay ---
+
+/** One overlay engine, as the Overlay page lists it. */
+export interface OverlayKindView {
+  /** What config/ names it by. */
+  key: string;
+  /** The product's own name; empty for the engine that is no engine. */
+  title: string;
+  /** Whether this hub can run it at all yet. */
+  is_integrated: boolean;
+  /** Whether there is a build of it for this machine. */
+  is_supported: boolean;
+  is_installed: boolean;
+  is_active: boolean;
+}
+
+export interface OverlayChoiceView {
+  /** What config/ names right now; the page below the chooser follows it. */
+  provider: string;
+  kinds: OverlayKindView[];
+}
+
+/** The overlay this box should run from now on. */
+export interface OverlayChoiceRequest {
+  provider: string;
+}
+
 // --- NetBird ---
 
 export interface NetbirdPeer {

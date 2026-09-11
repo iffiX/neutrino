@@ -16,6 +16,7 @@ from pathlib import Path
 
 from neutrino_hub.modules.netbird.constants import (
     NETBIRD_ACTIVE_PROFILE_PATH,
+    NETBIRD_BINARY_PATH,
     NETBIRD_BLOCK_INBOUND_KEY,
     NETBIRD_INBOUND_TIMEOUT_S,
     NETBIRD_LEGACY_CONFIG_PATH,
@@ -89,7 +90,7 @@ class NetbirdStatusReader:
             The reshaped state; ``is_installed`` False when the binary or the
             daemon is not there to ask.
         """
-        result = run(["netbird", "status", "--json"], is_checked=False)
+        result = run([str(NETBIRD_BINARY_PATH), "status", "--json"], is_checked=False)
         if not result.is_success:
             return NetbirdState(is_installed=False)
         try:
@@ -184,9 +185,13 @@ class NetbirdInboundGate:
         status = NetbirdStatusReader().survey()
         if not status.is_installed or not status.is_enrolled:
             return ""
-        run(["netbird", "down"], is_checked=False, timeout_s=30)
+        run([str(NETBIRD_BINARY_PATH), "down"], is_checked=False, timeout_s=30)
         run(
-            ["netbird", "up", f"--block-inbound={'true' if is_blocked else 'false'}"],
+            [
+                str(NETBIRD_BINARY_PATH),
+                "up",
+                f"--block-inbound={'true' if is_blocked else 'false'}",
+            ],
             timeout_s=NETBIRD_INBOUND_TIMEOUT_S,
         )
         return "overlay closed" if is_blocked else "overlay opened"
@@ -225,8 +230,8 @@ class NetbirdEnroller:
         """
         # Down first so a re-enrollment with a new key or plane succeeds;
         # harmless when not enrolled.
-        run(["netbird", "down"], is_checked=False, timeout_s=30)
-        command = ["netbird", "up", "--setup-key", setup_key]
+        run([str(NETBIRD_BINARY_PATH), "down"], is_checked=False, timeout_s=30)
+        command = [str(NETBIRD_BINARY_PATH), "up", "--setup-key", setup_key]
         if management_url:
             command += ["--management-url", management_url]
         run(command, timeout_s=JOIN_TIMEOUT_S)

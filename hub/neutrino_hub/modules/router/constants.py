@@ -7,6 +7,7 @@ in ``config/router/network.json`` instead.
 
 from pathlib import Path
 
+from neutrino_hub.modules.overlay.constants import OVERLAY_ENGINES, OVERLAY_NETBIRD
 from neutrino_hub.utils.constants import (
     UTILS_GENERATED_DIR,
     UTILS_RUNTIME_ROOT,
@@ -55,20 +56,18 @@ ROUTER_ROLES = (
     ROUTER_ROLE_DISABLED,
 )
 
-# The overlay networks this box can be a member of, keyed by who runs them.
-# Keyed by provider rather than by device name because the device is the
-# provider's to name: a configuration that stored `wt0` would render a
-# firewall for an interface that no longer exists the day somebody renamed
-# it, and match nothing, silently.
+# The overlay networks this box can be a member of, named by who runs them.
+# Named by provider rather than by device because the device is the provider's
+# to name: a configuration that stored `wt0` would render a firewall for an
+# interface that no longer exists the day somebody renamed it, and match
+# nothing, silently. Which of them the box runs is the overlay module's
+# question; what a row means here is what the firewall does about it.
 #
 # An overlay is not an interface entry. Switching modes rebuilds that list,
 # and an overlay riding in it would be dropped by a change that has nothing
 # to do with it.
-ROUTER_OVERLAY_NETBIRD = "netbird"
-ROUTER_OVERLAY_PROVIDERS = {
-    ROUTER_OVERLAY_NETBIRD: {"title": "NetBird", "device": "wt0", "port": 51820},
-}
-ROUTER_OVERLAY_KEYS = tuple(ROUTER_OVERLAY_PROVIDERS)
+ROUTER_OVERLAY_NETBIRD = OVERLAY_NETBIRD
+ROUTER_OVERLAY_KEYS = tuple(OVERLAY_ENGINES)
 
 # What a served or static address may be masked by. A /0 is not a network,
 # it is an on-link route for the whole internet, and `ip_network` accepts it

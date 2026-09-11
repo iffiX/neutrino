@@ -101,7 +101,7 @@ post_upgrade() {
 }
 
 pre_remove() {
-    for unit in neutrino_hub_web neutrino_hub_router neutrino_hub_xray neutrino_hub_cliproxyapi; do
+    for unit in neutrino_hub_web neutrino_hub_router neutrino_hub_xray neutrino_hub_cliproxyapi neutrino_hub_netbird; do
         systemctl stop "${unit}.service" >/dev/null 2>&1 || true
         systemctl disable "${unit}.service" >/dev/null 2>&1 || true
     done

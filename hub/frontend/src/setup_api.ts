@@ -30,20 +30,6 @@ export interface SetupMode {
   has_caution: boolean;
 }
 
-/** One thing installing a module does that is agreed to first. */
-export interface SetupConsent {
-  code: string;
-  params: Record<string, string | number>;
-}
-
-/** One optional module the first run can install. */
-export interface SetupService {
-  name: string;
-  is_installed: boolean;
-  /** What installing it does beyond installing it. */
-  consents: SetupConsent[];
-}
-
 /** What every question starts at. */
 export interface SetupDefaults {
   address: string;
@@ -58,7 +44,6 @@ export interface SetupDefaults {
 export interface SetupContext {
   interfaces: SetupInterface[];
   modes: SetupMode[];
-  services: SetupService[];
   defaults: SetupDefaults;
 }
 
@@ -113,7 +98,6 @@ export interface SetupAnswers {
   vault_passphrase: string;
   network: SetupNetworkAnswers;
   proxy?: SetupProxyAnswers;
-  services?: string[];
   listen_port?: number;
 }
 

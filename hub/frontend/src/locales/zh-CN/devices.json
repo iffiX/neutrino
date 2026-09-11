@@ -312,7 +312,7 @@
   "ui.nav.gitea_description": "私有 git 服务器",
   "ui.nav.network": "网络",
   "ui.nav.network_description": "接口角色、上行和 DHCP",
-  "ui.nav.overlay": "叠加网",
+  "ui.nav.overlay": "虚拟网",
   "ui.nav.overlay_description": "远程访问这台网关",
   "ui.nav.proxy": "代理",
   "ui.nav.proxy_description": "出口节点、分流和 DNS",

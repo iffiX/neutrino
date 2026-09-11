@@ -4,26 +4,92 @@ import { copyText } from "../copy_text";
 import { ErrorPanel } from "../components/error_panel";
 import { NetbirdTopology } from "../components/netbird_topology";
 import { Icon } from "../components/icon";
+import { OverlayModePanel } from "../components/overlay_mode_panel";
 import { PasswordInput } from "../components/password_input";
 import { StatusDot } from "../components/status_dot";
 import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
-import type { DevicesResponse, NetbirdView } from "../api_types";
+import { HUB_EVENT_CONFIG } from "../use_hub_events";
+import type {
+  DevicesResponse,
+  NetbirdView,
+  OverlayChoiceView,
+} from "../api_types";
 
 import "./overlay_page.css";
 
 /**
- * Remote access: enrollment, LAN route guidance, and live peers.
+ * How this box is reached from outside: which overlay it is on, and that
+ * overlay's own screen below the choice.
  *
- * No leave button — from abroad that is a lockout; a local shell has
- * `netbird down`.
+ * No leave button on the NetBird half — from abroad that is a lockout; a local
+ * shell has `netbird down`, and the chooser above is the deliberate way out.
  */
 
-/** The overlay's own name, which is the same in every language. */
-const OVERLAY_BRAND_NAME = "NetBird";
+/** The engines by the key `config/` names them. */
+const PROVIDER_NONE = "none";
+const PROVIDER_NETBIRD = "netbird";
+
+/** The product's own name, which is the same in every language. */
+const NETBIRD_PRODUCT_NAME = "NetBird";
+
+// What moves the choice: any write to the hub's own configuration.
+const OVERLAY_INVALIDATE_ON = [{ type: HUB_EVENT_CONFIG }];
 
 export function OverlayPage() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
+  const resource = useApiResource<OverlayChoiceView>("/overlay", {
+    invalidateOn: OVERLAY_INVALIDATE_ON,
+  });
+
+  const choice = resource.data;
+
+  if (resource.error !== null && choice === null) {
+    return (
+      <div className="page">
+        <h1>{t("ui.overlay.title")}</h1>
+        <ErrorPanel message={resource.error} onRetry={resource.reload} />
+      </div>
+    );
+  }
+
+  if (choice === null) {
+    return (
+      <div className="page">
+        <h1>{t("ui.overlay.title")}</h1>
+        <div className="skeleton" style={{ height: 320 }} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="page">
+      <div className="page_header">
+        <div className="page_title_row">
+          <h1>{t("ui.overlay.title")}</h1>
+        </div>
+      </div>
+
+      <OverlayModePanel choice={choice} onApplied={resource.setData} />
+
+      {choice.provider === PROVIDER_NONE && (
+        <div className="notice">
+          <Icon name="blocked" size={15} />
+          <div className="notice_body">{t("ui.overlay.none_body")}</div>
+        </div>
+      )}
+
+      {choice.provider === PROVIDER_NETBIRD && <NetbirdSection />}
+    </div>
+  );
+}
+
+/**
+ * NetBird: enrollment, LAN route guidance, and live peers.
+ */
+function NetbirdSection() {
   // Redrawn when the panel's language changes.
   useLanguage();
   const resource = useApiResource<NetbirdView>("/netbird");
@@ -43,28 +109,18 @@ export function OverlayPage() {
   const view = resource.data;
 
   if (resource.error !== null && view === null) {
-    return (
-      <div className="page">
-        <h1>{OVERLAY_BRAND_NAME}</h1>
-        <ErrorPanel message={resource.error} onRetry={resource.reload} />
-      </div>
-    );
+    return <ErrorPanel message={resource.error} onRetry={resource.reload} />;
   }
 
   if (view === null) {
-    return (
-      <div className="page">
-        <h1>{OVERLAY_BRAND_NAME}</h1>
-        <div className="skeleton" style={{ height: 320 }} />
-      </div>
-    );
+    return <div className="skeleton" style={{ height: 320 }} />;
   }
 
   return (
-    <div className="page">
-      <div className="page_header">
+    <>
+      <div className="overlay_product_header">
         <div className="page_title_row">
-          <h1>{OVERLAY_BRAND_NAME}</h1>
+          <h2>{NETBIRD_PRODUCT_NAME}</h2>
           {view.is_installed &&
             (!view.is_enrolled ? (
               <span className="badge badge--warn">
@@ -136,7 +192,7 @@ export function OverlayPage() {
 
       <RoutesSection view={view} />
       <PeersSection view={view} />
-    </div>
+    </>
   );
 }
 

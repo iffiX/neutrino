@@ -28,15 +28,6 @@ from neutrino_hub.utils.passwords import (
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
 from neutrino_hub.modules.xray.constants import XRAY_SOCKS_PORT
 from neutrino_hub.modules.xray.node_config import parse_share_link
-from neutrino_hub.modules.registry import MODULE_SPECS
-from neutrino_hub.system.constants import (
-    SYSTEM_CONSENT_KERNEL_MODULE_BUILD,
-    SYSTEM_CONSENT_THIRD_PARTY_REPOSITORY,
-    SYSTEM_CORE_UNITS,
-)
-from neutrino_hub.system.machine import machine_architecture
-from neutrino_hub.system.provisioning import plan_for
-from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.web.constants import (
     WEB_DEFAULT_LANGUAGE,
     WEB_DEFAULT_LISTEN_PORT,
@@ -148,9 +139,6 @@ class WizardAnswers:
         vault_passphrase: The vault master passphrase, already accepted.
         network: The interface roles the chosen mode describes.
         proxy: What the proxy screen answered.
-        services: The optional modules to install, by their registry name.
-            Installing is all this does: each is configured on its own page
-            afterwards, so nothing here has to be asked twice.
         listen_port: The port the panel answers on. Asked whatever shape this
             box is, because every one of them answers somewhere.
         language: The language the panel is drawn in.
@@ -160,7 +148,6 @@ class WizardAnswers:
     network: object
     vault_passphrase: str = ""
     proxy: WizardProxy = field(default_factory=WizardProxy)
-    services: tuple = ()
     listen_port: int = WEB_DEFAULT_LISTEN_PORT
     language: str = WEB_DEFAULT_LANGUAGE
 
@@ -183,7 +170,6 @@ WIZARD_DOCUMENT_KEYS = (
     "vault_passphrase",
     "network",
     "proxy",
-    "services",
     "listen_port",
     "language",
 )
@@ -247,7 +233,6 @@ def from_document(document: dict) -> WizardAnswers:
         vault_passphrase=document["vault_passphrase"],
         network=planned,
         proxy=_proxy_from(document.get("proxy", {}), network["mode"]),
-        services=_services_from(document.get("services", [])),
         listen_port=_port_from(document.get("listen_port", WEB_DEFAULT_LISTEN_PORT)),
         language=_language_from(document.get("language", WEB_DEFAULT_LANGUAGE)),
     )
@@ -307,31 +292,6 @@ def _language_from(given) -> str:
         f"{given!r} is not a language this panel has; "
         f"there is: {', '.join(WEB_LANGUAGES)}"
     )
-
-
-def _services_from(given) -> tuple:
-    """The optional modules a document asked for.
-
-    A document naming one has agreed to whatever installing it does: there is
-    nobody at a terminal to ask, and refusing to install what was written down
-    would be a different kind of surprise.
-
-    Args:
-        given: The document's ``services`` list, empty when it has none.
-
-    Returns:
-        The module names to install.
-
-    Raises:
-        WizardAborted: On a name no module answers to.
-    """
-    unknown = [name for name in given if name not in MODULE_SPECS]
-    if unknown:
-        raise WizardAborted(
-            f"no module called {', '.join(repr(name) for name in unknown)}; "
-            f"there is: {', '.join(sorted(MODULE_SPECS))}"
-        )
-    return tuple(given)
 
 
 def _proxy_from(given, mode: str) -> WizardProxy:
@@ -431,7 +391,6 @@ class SetupWizard:
         self._prefix_len = ROUTER_MODE_DEFAULT_PREFIX_LEN
         self._upstream = ""
         self._proxy = WizardProxy()
-        self._services: list = []
         self._listen_port = WEB_DEFAULT_LISTEN_PORT
         self._language = WEB_DEFAULT_LANGUAGE
 
@@ -451,7 +410,6 @@ class SetupWizard:
             self._ask_mode,
             self._ask_ports,
             self._ask_proxy,
-            self._ask_services,
             self._review,
         )
         index = 0
@@ -469,7 +427,6 @@ class SetupWizard:
             vault_passphrase=self._vault_passphrase,
             network=self._plan(),
             proxy=self._proxy,
-            services=tuple(self._services),
             listen_port=self._listen_port,
             language=self._language,
         )
@@ -869,78 +826,6 @@ class SetupWizard:
                 return int(answer)
             self._say("A port is a number from 1 to 65535.")
 
-    def _ask_services(self) -> int:
-        """Which optional modules to install, by number.
-
-        Installing only: what each of them is for is a page of its own, and
-        asking here for settings somebody has not seen the page for yet is
-        how a first run turns into an afternoon.
-        """
-        offered = _installable()
-        if not offered:
-            self._say("Nothing else runs on this machine's architecture.")
-            self._prompt("Press Enter to go on")
-            return WIZARD_NEXT
-        installed = _installed_names()
-        for index, (name, spec) in enumerate(offered, start=1):
-            mark = "  (installed)" if name in installed else ""
-            self._say(f"  {index}  {name:<10} {spec.install_note}{mark}")
-        self._say("")
-        self._say("Numbers separated by commas, or empty for none.")
-        answer = self._prompt("Install")
-        if answer == WIZARD_BACK:
-            return WIZARD_PREVIOUS
-        chosen = []
-        for piece in answer.replace(",", " ").split():
-            if not piece.isdigit() or not 1 <= int(piece) <= len(offered):
-                self._say(f"  {piece!r} is not one of 1 to {len(offered)}.")
-                return WIZARD_AGAIN
-            chosen.append(offered[int(piece) - 1])
-        wanted = []
-        for name, spec in chosen:
-            agreed = self._is_consented(name, spec)
-            if agreed is None:
-                return WIZARD_PREVIOUS
-            if agreed:
-                wanted.append(name)
-        self._services = wanted
-        return WIZARD_NEXT
-
-    def _is_consented(self, name: str, spec):
-        """Agree to what installing this would do beyond installing it.
-
-        Asked once per module and then moved past: declining one is a decision
-        about that module, not about the screen, so the rest are still asked.
-
-        The provisioner answers with a code and its values and never a
-        sentence, so the wording lives here and can be translated without
-        touching what it describes.
-
-        Args:
-            name: The module's registry name.
-            spec: Its entry in the registry.
-
-        Returns:
-            True when there was nothing to agree to or it was agreed to,
-            False when it was declined, None to step back.
-        """
-        plan = plan_for(spec.provisioner())
-        if not plan.is_consent_needed:
-            return True
-        self._say("")
-        self._say(f"{name}: installing it will")
-        for consent in plan.consents:
-            for index, line in enumerate(
-                textwrap.wrap(_consent_sentence(consent), width=WIZARD_TEXT_WIDTH - 4)
-            ):
-                self._say(f"    {'- ' if index == 0 else '  '}{line}")
-        answer = self._yes_no(f"Confirm {name}", default=False)
-        if answer is None:
-            return None
-        if not answer:
-            self._say(f"  {name} will not be installed.")
-        return answer
-
     def _review(self) -> int:
         """Everything chosen, and what saying yes to it does.
 
@@ -974,8 +859,6 @@ class SetupWizard:
         else:
             self._say("  proxy          off")
         self._say(f"  language       {WIZARD_LANGUAGE_NAMES[self._language]}")
-        if self._services:
-            self._say(f"  also installing {', '.join(self._services)}")
         self._say("")
         if ROUTER_MODES_BY_KEY[self._mode].is_addressing_owned:
             self._say("Saying yes here takes the interfaces over, replaces the")
@@ -1140,7 +1023,6 @@ def context() -> dict:
             "this machine has no network interface; a gateway needs at least one"
         )
     wired_count = sum(1 for link in links if not link.is_wifi)
-    installed = _installed_names()
     return {
         "interfaces": [
             {
@@ -1161,17 +1043,6 @@ def context() -> dict:
                 "has_caution": bool(mode.caution),
             }
             for mode in modes_for(len(links), wired_count)
-        ],
-        "services": [
-            {
-                "name": name,
-                "is_installed": name in installed,
-                "consents": [
-                    {"code": consent.code, "params": dict(consent.detail)}
-                    for consent in plan_for(spec.provisioner()).consents
-                ],
-            }
-            for name, spec in _installable()
         ],
         "password_rules": {
             "panel": PASSWORDS_PANEL_RULES.to_dict(),
@@ -1328,63 +1199,6 @@ def ask() -> WizardAnswers:
 def _wired_first(link) -> tuple:
     """Sort key putting wired ports above radios, then by name."""
     return (link.is_wifi, link.name)
-
-
-def _installable() -> list:
-    """The optional modules this machine can run, in registry order.
-
-    Core modules are left out: setup installs them, and offering to install
-    what is already being installed is a choice with one answer.
-
-    Returns:
-        Pairs of registry name and spec.
-    """
-    architecture = machine_architecture()
-    return [
-        (name, spec)
-        for name, spec in MODULE_SPECS.items()
-        if name not in SYSTEM_CORE_UNITS
-        and ("*" in spec.architectures or architecture in spec.architectures)
-    ]
-
-
-def _installed_names() -> set:
-    """Which optional modules this machine already has.
-
-    Marked rather than hidden: a list whose numbering changes with what is
-    installed is one nobody can be told to answer "1,5" to, and knowing a
-    thing is already there is the point of showing it.
-
-    Returns:
-        Registry names whose unit systemd knows about.
-    """
-    controller = SystemdServiceController()
-    names = set()
-    for name, _ in _installable():
-        try:
-            if controller.status(name).is_installed:
-                names.add(name)
-        except (KeyError, OSError):
-            continue
-    return names
-
-
-def _consent_sentence(consent) -> str:
-    """One line saying what a consent code means.
-
-    Args:
-        consent: What the provisioner returned.
-
-    Returns:
-        A sentence naming the act and the values it applies to.
-    """
-    if consent.code == SYSTEM_CONSENT_KERNEL_MODULE_BUILD:
-        kernel = consent.detail.get("kernel", "the running kernel")
-        return f"build a kernel module against {kernel}, which takes minutes"
-    if consent.code == SYSTEM_CONSENT_THIRD_PARTY_REPOSITORY:
-        repository = consent.detail.get("repository", "a third-party repository")
-        return f"add the repository {repository}"
-    return f"do something this version has no wording for: {consent.code}"
 
 
 def _is_address(text: str) -> bool:

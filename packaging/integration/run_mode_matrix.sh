@@ -52,7 +52,7 @@ phase "set up as a server"
 cat > /tmp/answers.json <<JSON
 { "password": "$PASSWORD", "vault_passphrase": "$VAULT_PASSPHRASE", "network": { "mode": "server" } }
 JSON
-nhub setup --yes --stdin < /tmp/answers.json > /tmp/setup.log 2>&1
+nhub setup --stdin < /tmp/answers.json > /tmp/setup.log 2>&1
 ran $?
 
 export NEUTRINO_PANEL_PASSWORD="$PASSWORD"

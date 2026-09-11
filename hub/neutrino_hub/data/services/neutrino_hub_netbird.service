@@ -1,0 +1,19 @@
+[Unit]
+Description=Neutrino remote access (NetBird)
+Documentation=https://docs.netbird.io
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Root: the daemon opens the tunnel device and edits the firewall, the routes
+# and the resolver.
+User=root
+# The client the package carries, under the hub's own prefix rather than the
+# vendor's /usr/bin. Logs go to the journal with the rest of the box's.
+ExecStart=/opt/neutrino/bin/netbird service run --log-file console
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

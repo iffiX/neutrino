@@ -114,3 +114,13 @@
   color: var(--color-accent);
   font-weight: 600;
 }
+
+/* The product's own header, under the page's own title: its name, what state
+   it is in, and the one link that leaves the panel for its console. */
+.overlay_product_header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-end;
+  justify-content: space-between;
+}

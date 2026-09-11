@@ -3,7 +3,11 @@
 import json
 
 from neutrino_hub.modules.netbird import ops
+from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
 from neutrino_hub.modules.netbird.ops import NetbirdStatusReader
+
+# The client the package carries, which is the only netbird this box drives.
+NETBIRD = str(NETBIRD_BINARY_PATH)
 
 
 class FakeResult:
@@ -95,8 +99,8 @@ def test_join_goes_down_first_so_reenrollment_works(monkeypatch):
         setup_key="KEY-2", management_url="https://mgmt.example.com"
     )
 
-    assert commands[0] == ["netbird", "down"]
-    assert commands[1] == ["netbird", "up", "--setup-key", "KEY-1"]
+    assert commands[0] == [NETBIRD, "down"]
+    assert commands[1] == [NETBIRD, "up", "--setup-key", "KEY-1"]
     assert commands[3][-2:] == ["--management-url", "https://mgmt.example.com"]
 
 
@@ -161,8 +165,8 @@ def test_closing_takes_the_session_down_first_and_states_the_value(
     note = gate.converge(is_blocked=True)
 
     assert ran == [
-        ["netbird", "down"],
-        ["netbird", "up", "--block-inbound=true"],
+        [NETBIRD, "down"],
+        [NETBIRD, "up", "--block-inbound=true"],
     ]
     assert note == "overlay closed"
 
@@ -173,7 +177,7 @@ def test_opening_states_the_value_too_because_the_flag_is_sticky(monkeypatch, tm
 
     note = gate.converge(is_blocked=False)
 
-    assert ran[-1] == ["netbird", "up", "--block-inbound=false"]
+    assert ran[-1] == [NETBIRD, "up", "--block-inbound=false"]
     assert note == "overlay opened"
 
 

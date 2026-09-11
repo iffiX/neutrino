@@ -39,9 +39,14 @@ from neutrino_hub.system.constants import (
     SYSTEM_XRAY_USER,
 )
 from neutrino_hub.modules.cliproxyapi.provisioner import CliproxyApiProvisioner
-from neutrino_hub.system.machine import machine_architecture, require_architecture
-from neutrino_hub.modules.registry import MODULE_SPECS
-from neutrino_hub.system.provisioning import plan_for
+from neutrino_hub.modules.devices.agent_package import AgentPackageCache
+from neutrino_hub.modules.overlay.config import provider_of
+from neutrino_hub.modules.overlay.ops import OverlaySwitcher
+from neutrino_hub.system.machine import (
+    distribution_family,
+    machine_architecture,
+    require_architecture,
+)
 from neutrino_hub.system.installation import (
     is_packaged,
     project_root,
@@ -116,8 +121,16 @@ SETUP_FAIL2BAN_UNIT = "fail2ban"
 # The steps outside :data:`CORE_STEPS`, named so a browser words them the way
 # it words the rest.
 SETUP_STEP_WRITE_ANSWERS = "write_answers"
-SETUP_STEP_INSTALL_MODULE = "install_module"
 SETUP_STEP_PANEL_PASSWORD = "panel_password"
+SETUP_STEP_LOCAL_AGENT = "local_agent"
+# Which agent package a family takes. The hub's package carries one of each
+# for its own machine, so this box is served without a download; a family
+# with no agent build gets none, and the step says so instead of failing the
+# run.
+SETUP_AGENT_PACKAGE_FAMILIES = {"debian": "deb", "rhel": "rpm", "suse": "rpm"}
+# Installing the package and joining the hub over the agent channel, which
+# includes the first handshake with a panel that has just started.
+SETUP_AGENT_JOIN_TIMEOUT_S = 120
 # Where the run is written down as well as printed. A first run
 # reconfigures the interface it is often watched over, so the terminal can
 # go away in the middle of one — this is where to read what happened.
@@ -157,11 +170,6 @@ def main() -> int:
         metavar="PATH",
         help="read every answer from this JSON file",
     )
-    parser.add_argument(
-        "--yes",
-        action="store_true",
-        help="agree to whatever installing the named modules entails",
-    )
     arguments = parser.parse_args()
 
     if os.geteuid() != 0:
@@ -185,7 +193,7 @@ def main() -> int:
     is_coloured = not os.environ.get("NO_COLOR") and sys.stdout.isatty()
     if server is None:
         reporter = InstallReporter(
-            total_step_count=len(steps) + 2,
+            total_step_count=len(steps) + 3,
             is_color_enabled=is_coloured,
             log_path=SETUP_LOG_PATH,
         )
@@ -193,15 +201,11 @@ def main() -> int:
         steps = _panel_started_last(steps)
         reporter = InstallSessionReporter(
             session=server.session,
-            total_step_count=len(steps) + 2,
+            total_step_count=len(steps) + 3,
             is_color_enabled=is_coloured,
             log_path=SETUP_LOG_PATH,
         )
-    # A document is a list of modules, not agreement to what installing them
-    # does. The wizard's own screens ask; a run that answers no questions has
-    # only this flag to ask with.
-    is_consented = arguments.yes or not (arguments.stdin or arguments.json)
-    return _setup(reporter, steps, answers, server=server, is_consented=is_consented)
+    return _setup(reporter, steps, answers, server=server)
 
 
 def _answers(arguments):
@@ -475,7 +479,6 @@ def _setup(
     answers,
     *,
     server=None,
-    is_consented: bool = True,
 ) -> int:
     """Run every step, then store the password and hand the box over.
 
@@ -539,28 +542,6 @@ def _setup(
                 return 1
             reporter.done("vault, network, proxy and panel port")
 
-    for name in answers.services:
-        reporter.start(
-            f"Installing {name}",
-            code=SETUP_STEP_INSTALL_MODULE,
-            params={"name": name},
-        )
-        try:
-            note = _install_service(name, reporter, is_consented=is_consented)
-        except (
-            subprocess.SubprocessError,
-            OSError,
-            ValueError,
-            RuntimeError,
-        ) as error:
-            # Reported as the failure it is, and then the run goes on: one
-            # optional module refusing is not a failed setup, because the
-            # gateway is already a gateway and the Services page can try
-            # again.
-            reporter.failed(f"not installed: {command_failure_text(error)}")
-            continue
-        reporter.done(note)
-
     # Last, because the settings file it writes into is one of the files the
     # steps above copy from its example.
     reporter.start("Setting the panel password", code=SETUP_STEP_PANEL_PASSWORD)
@@ -569,23 +550,27 @@ def _setup(
 
     panel_url = _panel_url()
     if server is not None:
-        return _hand_over(server, panel_url)
+        return _hand_over(server, panel_url, answers.password, reporter)
     _start_panel()
+    _install_local_agent(answers.password, reporter)
     link, note = _enrollment_link(answers.password)
     wizard.finish(panel_url=panel_url, link=link, note=note, joined=_joined_devices)
     return 0
 
 
-def _hand_over(server, panel_url: str) -> int:
+def _hand_over(server, panel_url: str, password: str, reporter) -> int:
     """Give the port back and start the panel the browser goes on to.
 
-    The enrollment link is not generated here: a browser that has the panel has
-    the Devices page, which is where links come from. The terminal is given
-    one only because it has nothing else.
+    The enrollment link is not generated for the person here: a browser that
+    has the panel has the Devices page, which is where links come from. The
+    terminal is given one only because it has nothing else. This machine's
+    own agent is joined either way, because a hub hosts nothing itself.
 
     Args:
         server: The browser wizard's server.
         panel_url: Where the panel will answer.
+        password: The panel password, to mint the local agent's link with.
+        reporter: Where the local agent step is reported.
 
     Returns:
         Process exit status.
@@ -599,6 +584,7 @@ def _hand_over(server, panel_url: str) -> int:
     time.sleep(0.3)
     server.stop()
     _start_panel()
+    _install_local_agent(password, reporter)
     print()
     print(f"  The panel is at   {panel_url}")
     print()
@@ -634,38 +620,51 @@ def _joined_devices() -> list:
     ]
 
 
-def _install_service(
-    name: str, reporter: InstallReporter, *, is_consented: bool = True
-) -> str:
-    """Install one optional module, as the panel's Services page would.
+def _install_local_agent(password: str, reporter) -> None:
+    """Put this machine's own agent on it, and join it to this hub.
+
+    The hub hosts no module itself: what a device runs, it runs through an
+    agent, and the box the hub is on is a device like the others. The package
+    is the one this hub hands out to the fleet, taken from its own cache, so
+    the machine needs no network for it and the two cannot be different
+    versions.
+
+    A failure here is said and the run goes on: the gateway is a gateway
+    without it, and the Devices page installs an agent on any machine,
+    including this one.
 
     Args:
-        name: The module's registry name.
-        reporter: Where the provisioner's progress lines go.
-        is_consented: Whether agreement was given for what installing entails.
-            The wizard's own screens collect it; a run reading a document has
-            it only from `--yes`.
-
-    Returns:
-        What the provisioner reported doing.
-
-    Raises:
-        ValueError: If installing this module needs agreement and none was
-            given.
+        password: The panel password, to mint the enrollment link with.
+        reporter: Where the step is reported.
     """
-    spec = MODULE_SPECS[name]
-    provisioner = spec.provisioner()
-    if plan_for(provisioner).is_consent_needed:
-        if not is_consented:
-            raise ValueError(
-                f"installing {name} here does more than install packages; "
-                f"re-run with --yes to agree to it"
-            )
-        result = provisioner.provision(is_consented=True, report=reporter.note)
-    else:
-        result = provisioner.provision(report=reporter.note)
-    run(["systemctl", "enable", "--now", spec.unit], is_checked=False)
-    return result.message
+    # A development root installs no packages and runs no units.
+    if is_dev_root_set():
+        return
+    reporter.start("Installing this machine's agent", code=SETUP_STEP_LOCAL_AGENT)
+    family = SETUP_AGENT_PACKAGE_FAMILIES.get(distribution_family(), "")
+    architecture = machine_architecture()
+    cache = AgentPackageCache()
+    if not family or not cache.serves(family=family, architecture=architecture):
+        reporter.failed("this hub carries no agent for this machine")
+        return
+    try:
+        package_manager.current().install(
+            (str(cache.package(family=family, architecture=architecture)),)
+        )
+        link, note = _enrollment_link(password)
+        if not link:
+            reporter.failed(note)
+            return
+        run(["nagent", "connect", link, "--yes"], timeout_s=SETUP_AGENT_JOIN_TIMEOUT_S)
+    except (
+        subprocess.SubprocessError,
+        OSError,
+        ValueError,
+        RuntimeError,
+    ) as error:
+        reporter.failed(command_failure_text(error))
+        return
+    reporter.done("installed and joined")
 
 
 def _write_panel_settings(port: int, language: str) -> None:
@@ -1138,6 +1137,30 @@ def _step_render_all(reporter: InstallReporter) -> str:
     return f"generated {UTILS_GENERATED_DIR}"
 
 
+def _step_overlay(reporter: InstallReporter) -> str:
+    """Run the overlay the configuration names, and stand the others down.
+
+    A box being set up may be carrying an engine from a life before this one,
+    and a configuration that names no overlay is a box nobody reaches from
+    outside. Making that true is this step; what it says is the record.
+
+    Args:
+        reporter: Where the engine's own progress lines go.
+
+    Returns:
+        What the engine reported, or that there is no overlay.
+
+    Raises:
+        subprocess.CalledProcessError: If installing or starting it fails.
+        NotImplementedError: For an engine this hub does not run yet.
+    """
+    network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
+    return (
+        OverlaySwitcher().converge(provider_of(network), report=reporter.note)
+        or "no overlay"
+    )
+
+
 def _step_enable_services(reporter: InstallReporter) -> str:
     controller = SystemdServiceController()
     enabled = []
@@ -1170,11 +1193,12 @@ def _step_start_services(
 # loud and the run goes on: hardening SSH and installing the AI gateway are
 # both worth having and neither is what makes this a gateway, and a first run
 # that stops at step two over one of them leaves a machine with nothing.
-SETUP_STEPS_THE_BOX_SURVIVES = (_step_fail2ban, _step_cliproxyapi)
+SETUP_STEPS_THE_BOX_SURVIVES = (_step_fail2ban, _step_overlay, _step_cliproxyapi)
 
 # Defined here, after the functions it names. Everything the appliance is not
-# itself without: routing, the proxy core and the AI gateway. NetBird installs
-# itself from the panel's Modules page; what a device hosts is the agent's.
+# itself without: routing, the proxy core and the AI gateway. An overlay is
+# chosen on the Overlay page or on the services screen; what a device hosts is
+# the agent's.
 CORE_STEPS = (
     (
         "required_packages",
@@ -1192,6 +1216,7 @@ CORE_STEPS = (
     ("render_all", "Rendering and applying configuration", _step_render_all),
     ("enable_services", "Enabling services at boot", _step_enable_services),
     ("start_services", "Starting services", _step_start_services),
+    ("overlay", "Setting the overlay", _step_overlay),
     ("cliproxyapi", "Installing the AI gateway", _step_cliproxyapi),
 )
 

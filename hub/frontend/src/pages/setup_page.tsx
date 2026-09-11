@@ -47,7 +47,6 @@ const SCREEN_TITLES = [
   "ui.setup.screen_shape",
   "ui.setup.screen_ports",
   "ui.setup.screen_proxy",
-  "ui.setup.screen_services",
   "ui.setup.screen_ready",
 ] as const;
 
@@ -57,7 +56,6 @@ const SCREEN_SECRETS = 1;
 const SCREEN_SHAPE = 2;
 const SCREEN_PORTS = 3;
 const SCREEN_PROXY = 4;
-const SCREEN_SERVICES = 5;
 const SCREEN_REVIEW = SCREEN_TITLES.length - 1;
 
 /** The product's own name, which is the same in every language. */
@@ -122,7 +120,6 @@ export function SetupPage({ token, context }: SetupPageProps) {
   const [socksDirectPort, setSocksDirectPort] = useState(
     context.defaults.socks_direct_port,
   );
-  const [services, setServices] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<SetupState | null>(null);
   // Consecutive polls that got no answer. Setting a box up from a browser on
@@ -233,9 +230,6 @@ export function SetupPage({ token, context }: SetupPageProps) {
         socks_direct_port: socksDirectPort,
       };
     }
-    if (services.length > 0) {
-      document.services = services;
-    }
     document.listen_port = listenPort;
     return document;
   }, [
@@ -259,7 +253,6 @@ export function SetupPage({ token, context }: SetupPageProps) {
     socksProxyPort,
     isSocksDirect,
     socksDirectPort,
-    services,
     listenPort,
   ]);
 
@@ -670,60 +663,6 @@ export function SetupPage({ token, context }: SetupPageProps) {
         </div>
       )}
 
-      {index === SCREEN_SERVICES && (
-        <div className="setup_body">
-          {context.services.length === 0 ? (
-            <p className="setup_lead">{t("ui.setup.services_none")}</p>
-          ) : (
-            <>
-              <p className="setup_lead">{t("ui.setup.services_lead")}</p>
-              {context.services.map((service) => (
-                <div className="setup_service" key={service.name}>
-                  <ToggleSwitch
-                    // Already there is already on, and not something this
-                    // screen can undo: it installs, and the panel's Services
-                    // page is what removes.
-                    isOn={
-                      service.is_installed || services.includes(service.name)
-                    }
-                    isDisabled={service.is_installed}
-                    label={service.name}
-                    badge={
-                      service.is_installed ? (
-                        <span className="badge badge--ok">
-                          {t("state.installed")}
-                        </span>
-                      ) : undefined
-                    }
-                    description={t(`ui.setup.install_note_${service.name}`)}
-                    onChange={(isOn) =>
-                      setServices((current) =>
-                        isOn
-                          ? [...current, service.name]
-                          : current.filter((name) => name !== service.name),
-                      )
-                    }
-                  />
-                  {services.includes(service.name) &&
-                    service.consents.length > 0 && (
-                      <ul className="setup_consents">
-                        {service.consents.map((consent) => (
-                          <li key={consent.code}>
-                            {t(
-                              `ui.setup.consent_${consent.code}`,
-                              consent.params,
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                </div>
-              ))}
-            </>
-          )}
-        </div>
-      )}
-
       {index === SCREEN_REVIEW && (
         <div className="setup_body">
           <p className="setup_lead">
@@ -794,12 +733,6 @@ export function SetupPage({ token, context }: SetupPageProps) {
                 isProxyWanted && named.length > 0
                   ? named.join(", ")
                   : t("state.not_used")
-              }
-            />
-            <Row
-              name={t("ui.setup.review_also_installing")}
-              value={
-                services.length > 0 ? services.join(", ") : t("state.nothing")
               }
             />
           </dl>

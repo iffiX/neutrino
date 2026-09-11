@@ -157,6 +157,9 @@ class _SilentReporter:
     def done(self, note: str = "") -> None:
         pass
 
+    def failed(self, note: str = "") -> None:
+        pass
+
 
 # --- a run that outlives the session watching it ---
 
@@ -201,72 +204,5 @@ def test_the_log_is_named_before_the_first_step(monkeypatch):
     assert any("will finish on its own" in line for line in said)
 
 
-def test_a_module_that_does_more_than_install_packages_needs_agreement(monkeypatch):
-    """An answers document names modules; it agrees to nothing. Without the
-    flag, a module used to add a vendor repository with nobody having said so."""
-    installed: list = []
-    monkeypatch.setattr(setup, "plan_for", lambda p: _Plan(is_consent_needed=True))
-    monkeypatch.setattr(
-        setup.MODULE_SPECS["netbird"], "provisioner", lambda: _Provisioner(installed)
-    )
-
-    with pytest.raises(ValueError) as refusal:
-        setup._install_service("netbird", _SilentReporter(), is_consented=False)
-
-    assert "--yes" in str(refusal.value)
-    assert installed == [], "the module was provisioned anyway"
-
-
-def test_the_flag_is_the_agreement(monkeypatch):
-    installed: list = []
-    monkeypatch.setattr(setup, "run", lambda command, **kwargs: None)
-    monkeypatch.setattr(setup, "plan_for", lambda p: _Plan(is_consent_needed=True))
-    monkeypatch.setattr(
-        setup.MODULE_SPECS["netbird"], "provisioner", lambda: _Provisioner(installed)
-    )
-
-    setup._install_service("netbird", _SilentReporter(), is_consented=True)
-
-    assert installed == ["provisioned"]
-
-
-def test_a_module_that_only_installs_packages_needs_no_agreement(monkeypatch):
-    installed: list = []
-    monkeypatch.setattr(setup, "run", lambda command, **kwargs: None)
-    monkeypatch.setattr(
-        setup,
-        "plan_for",
-        lambda provisioner: _Plan(is_consent_needed=False),
-    )
-    monkeypatch.setattr(
-        setup.MODULE_SPECS["netbird"],
-        "provisioner",
-        lambda: _Provisioner(installed),
-    )
-
-    setup._install_service("netbird", _SilentReporter(), is_consented=False)
-
-    assert installed == ["provisioned"]
-
-
-class _Plan:
-    def __init__(self, *, is_consent_needed: bool):
-        self.is_consent_needed = is_consent_needed
-
-
-class _Provisioner:
-    def __init__(self, log: list):
-        self._log = log
-
-    def provision(self, *, report=None, is_consented=False):
-        self._log.append("provisioned")
-        return _Result()
-
-
-class _Result:
-    message = "done"
-
-
 class _NoAnswers:
     password = "x"
-    services: tuple = ()

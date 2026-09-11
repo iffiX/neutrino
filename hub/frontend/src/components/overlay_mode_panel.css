@@ -1,0 +1,57 @@
+/* --- Which overlay this box is on --- */
+
+/* A grid rather than a row: three cards, each with a sentence under its name,
+   and a row would either wrap badly or squeeze the sentences to nothing. */
+.overlay_choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-3);
+}
+
+.overlay_choice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-base),
+    background var(--transition-base);
+}
+
+.overlay_choice:hover:not(:disabled) {
+  border-color: var(--color-accent);
+}
+
+.overlay_choice:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.overlay_choice--on {
+  border-color: var(--color-accent);
+  background: var(--color-accent-wash);
+  color: var(--color-text);
+}
+
+.overlay_choice_head {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--color-text);
+}
+
+.overlay_choice_summary {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.overlay_choice_blocked {
+  color: var(--color-text-faint);
+  font-size: 12px;
+}

@@ -121,7 +121,7 @@ export NEUTRINO_SETUP_MODE="$MODE"
 
 phase "set up as a $MODE"
 write_answers
-nhub setup --yes --stdin < /tmp/answers.json > /tmp/setup.log 2>&1
+nhub setup --stdin < /tmp/answers.json > /tmp/setup.log 2>&1
 ran $?
 
 phase "the machine is still its own"
@@ -142,7 +142,7 @@ ran $?
 
 phase "set up again, on the box that was just handed back"
 write_answers
-nhub setup --yes --stdin < /tmp/answers.json > /tmp/setup2.log 2>&1
+nhub setup --stdin < /tmp/answers.json > /tmp/setup2.log 2>&1
 ran $?
 
 # Last, and it leaves the box a router with a served network on whatever it

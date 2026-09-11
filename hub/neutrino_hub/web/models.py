@@ -1718,6 +1718,32 @@ class PodmanTagListView(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
+class OverlayKindView(BaseModel):
+    """One overlay this hub knows about, as the chooser draws it."""
+
+    key: str
+    # Empty for "none": the absence of an overlay is a word the panel has in
+    # every language, where a product's name is the same in all of them.
+    title: str
+    is_integrated: bool
+    is_supported: bool
+    is_installed: bool
+    is_active: bool
+
+
+class OverlayChoiceView(BaseModel):
+    """Which overlay this box runs, and what it could run instead."""
+
+    provider: str
+    kinds: list[OverlayKindView] = Field(default_factory=list)
+
+
+class OverlayChoiceRequest(BaseModel):
+    """The overlay this box should run from now on."""
+
+    provider: str
+
+
 class NetbirdPeerView(BaseModel):
     """One other machine on the overlay, as this box sees it."""
 

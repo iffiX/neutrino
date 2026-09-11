@@ -15,6 +15,7 @@ NetworkManager, routes, the firewall — is :mod:`neutrino_hub.modules.router.ro
 
 from dataclasses import dataclass, field
 
+from neutrino_hub.modules.overlay.constants import OVERLAY_ENGINES
 from neutrino_hub.modules.router.constants import (
     ROUTER_INTENT_AUTO,
     ROUTER_INTENT_BACKUP_ONLY,
@@ -24,7 +25,7 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_MODES_ADDRESSING_OWNED,
     ROUTER_MODES_KEYS,
     ROUTER_OVERLAY_KEYS,
-    ROUTER_OVERLAY_PROVIDERS,
+    ROUTER_OVERLAY_NETBIRD,
     ROUTER_POLICIES,
     ROUTER_POLICY_FAILOVER,
     ROUTER_ROLE_DISABLED,
@@ -428,7 +429,7 @@ class RouterOverlay:
 
     Attributes:
         provider: Who runs the overlay, one of
-            :data:`ROUTER_OVERLAY_PROVIDERS`.
+            :data:`ROUTER_OVERLAY_KEYS`.
         is_exposed: Whether this box answers on the overlay, and whether the
             served networks reach it. One switch for both, because closing an
             overlay means cutting it off rather than going quiet on it while
@@ -441,17 +442,17 @@ class RouterOverlay:
     @property
     def device_name(self) -> str:
         """The kernel interface the provider brings up."""
-        return str(ROUTER_OVERLAY_PROVIDERS[self.provider]["device"])
+        return OVERLAY_ENGINES[self.provider].device_name
 
     @property
     def title(self) -> str:
         """What the overlay is called where a person reads it."""
-        return str(ROUTER_OVERLAY_PROVIDERS[self.provider]["title"])
+        return OVERLAY_ENGINES[self.provider].title
 
     @property
     def peer_port(self) -> int:
         """The UDP port the overlay's own peers knock on."""
-        return int(ROUTER_OVERLAY_PROVIDERS[self.provider]["port"])
+        return OVERLAY_ENGINES[self.provider].peer_port
 
     @classmethod
     def from_dict(cls, data: dict) -> "RouterOverlay":
@@ -796,16 +797,13 @@ class RouterNetworkConfig:
         """
         policy = str(data.get("uplink_policy", ROUTER_POLICY_FAILOVER))
         mode = str(data.get("mode", ROUTER_MODE_ROUTER))
-        # A configuration written before overlays were a thing gets one entry
-        # per provider, exposed: that is what the firewall did unconditionally
-        # until now, so the day the new hub starts changes nothing about who
-        # can reach the box. Whoever first turns the switch off decides that.
+        # A configuration written before overlays were a thing gets the
+        # NetBird entry, exposed: that is what the firewall did unconditionally
+        # until now, and it was the only overlay a hub could run, so the day
+        # the new hub starts changes nothing about who can reach the box.
+        # Whoever first turns the switch off decides that.
         stored = data.get("overlays")
-        overlays = (
-            [{"provider": provider} for provider in ROUTER_OVERLAY_KEYS]
-            if stored is None
-            else stored
-        )
+        overlays = [{"provider": ROUTER_OVERLAY_NETBIRD}] if stored is None else stored
         return cls(
             mode=mode if mode in ROUTER_MODES_KEYS else ROUTER_MODE_ROUTER,
             interfaces=[
@@ -816,7 +814,7 @@ class RouterNetworkConfig:
             overlays=[
                 RouterOverlay.from_dict(entry)
                 for entry in overlays
-                if entry.get("provider") in ROUTER_OVERLAY_PROVIDERS
+                if entry.get("provider") in ROUTER_OVERLAY_KEYS
             ],
             uplink_policy=(
                 policy if policy in ROUTER_POLICIES else ROUTER_POLICY_FAILOVER

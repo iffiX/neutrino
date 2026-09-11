@@ -61,6 +61,8 @@ def box(tmp_path, monkeypatch):
     state.mkdir()
     (state / "session.secret").write_text("aa" * 32)
     (state / "vault.key").write_text("bb" * 32)
+    (state / "cliproxyapi/auth").mkdir(parents=True)
+    (state / "cliproxyapi/auth/claude-somebody.json").write_text("{}")
 
     monkeypatch.setattr(reset, "UTILS_CONFIG_DIR", config)
     monkeypatch.setattr(reset, "UTILS_EXAMPLES_DIR", examples)
@@ -88,6 +90,13 @@ def test_reset_all_forgets_the_keys_the_box_was_holding(box):
     assert not (box / "web/agent_tls").exists()
     assert not (box.parent / "state" / "session.secret").exists()
     assert not (box.parent / "state" / "vault.key").exists()
+
+
+def test_reset_all_forgets_the_accounts_somebody_signed_the_gateway_in_with(box):
+    """A refresh token left behind is the next owner signed in as the last."""
+    reset._reset_all()
+
+    assert not (box.parent / "state" / "cliproxyapi").exists()
 
 
 def test_reset_all_clears_the_password_so_setup_runs_again(box):

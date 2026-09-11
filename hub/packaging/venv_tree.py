@@ -148,6 +148,21 @@ CLIPROXYAPI_SHA256 = {
     "x86_64": CLIPROXYAPI_X86_64_SHA256,
     "aarch64": CLIPROXYAPI_AARCH64_SHA256,
 }
+# The NetBird client. Only the client travels: it is BSD-3-Clause, where the
+# management, signal and relay servers beside it in that repository are
+# AGPL-3.0 and are not carried. Its release names the machine the way this
+# project does, so the asset table is keyed by the normalized name.
+NETBIRD_VERSION, NETBIRD_URL, NETBIRD_MACHINES, NETBIRD_SHA256, NETBIRD_BINARY = (
+    _runtime(
+        "neutrino_hub.modules.netbird.constants",
+        "NETBIRD_VERSION",
+        "NETBIRD_DOWNLOAD_URL",
+        "NETBIRD_ASSET_ARCHITECTURES",
+        "NETBIRD_SHA256",
+        "NETBIRD_BINARY_NAME",
+    )
+)
+
 # The permissive v2fly databases, which are what these packages may carry. A
 # running machine fetches the fuller Loyalsoldier set for its own use; that one
 # is GPL-3.0, and a package carrying it would be distributing it.
@@ -490,6 +505,24 @@ def stage_vendored(tree: Path, machine: str) -> None:
         with tarfile.open(archive) as bundle:
             bundle.extract("cli-proxy-api", workdir)
         _install_binary(Path(workdir) / "cli-proxy-api", binaries / "cli-proxy-api")
+
+    payload = _fetch(
+        NETBIRD_URL.format(
+            version=NETBIRD_VERSION,
+            asset_arch=_machine_name(NETBIRD_MACHINES, normalized, "netbird"),
+        ),
+        NETBIRD_SHA256,
+        normalized,
+        "netbird",
+    )
+    with tempfile.TemporaryDirectory() as workdir:
+        archive = Path(workdir) / "netbird.tar.gz"
+        archive.write_bytes(payload)
+        with tarfile.open(archive) as bundle:
+            # Only the client: the licence files beside it in the release are
+            # carried by stage_licenses from the checkout's own directory.
+            bundle.extract(NETBIRD_BINARY, workdir)
+        _install_binary(Path(workdir) / NETBIRD_BINARY, binaries / NETBIRD_BINARY)
 
     geodata = tree / str(GEODATA_DIR).lstrip("/")
     geodata.mkdir(parents=True, exist_ok=True)

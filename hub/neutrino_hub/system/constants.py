@@ -25,10 +25,11 @@ SYSTEM_CORE_UNITS = {
 SYSTEM_OPTIONAL_UNITS = {
     # Remote access: a LAN-shaped network over the wide one. A gateway routes,
     # resolves and serves without it, so it is a capability rather than a
-    # premise — and it is AGPL-3.0, which is a licence about offering software
-    # over a network. Installed from the vendor by the machine that wants it,
-    # never carried in these packages.
-    "netbird": "netbird.service",
+    # premise. The client is BSD-3-Clause and travels in these packages, so
+    # this is the hub's own unit in front of the carried binary rather than
+    # the one the vendor's package generates. The name is spelled out because
+    # system/ names units and never imports a module to be told one.
+    "netbird": "neutrino_hub_netbird.service",
 }
 
 SYSTEM_MANAGED_UNITS = {**SYSTEM_CORE_UNITS, **SYSTEM_OPTIONAL_UNITS}
