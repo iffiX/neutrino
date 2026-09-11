@@ -1,0 +1,30 @@
+{
+  "name": "neutrino_docs",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "predev": "node .vitepress/prepare_assets.mjs",
+    "dev": "vitepress dev --host 127.0.0.1",
+    "prebuild": "node .vitepress/prepare_assets.mjs",
+    "build": "npm run typecheck && vitepress build",
+    "preview": "vitepress preview --host 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run format:check && npm run lint && npm run typecheck"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "^24.0.0",
+    "eslint": "10.10.0",
+    "prettier": "3.9.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.70.0",
+    "vitepress": "2.0.0-alpha.20"
+  }
+}

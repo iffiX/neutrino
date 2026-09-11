@@ -1,0 +1,7 @@
+node_modules/
+public/neutrino_64.png
+public/neutrino_512.png
+public/guide/
+.vitepress/dist/
+.vitepress/cache/
+.vitepress/.temp/

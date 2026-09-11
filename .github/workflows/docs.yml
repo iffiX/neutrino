@@ -1,0 +1,84 @@
+name: docs
+
+on:
+  pull_request:
+    paths:
+      - "docs/guide/**"
+      - "images/guide/**"
+      - "images/icons/**"
+      - "images/web/**"
+      - ".github/workflows/docs.yml"
+  push:
+    branches: [main]
+    paths:
+      - "docs/guide/**"
+      - "images/guide/**"
+      - "images/icons/**"
+      - "images/web/**"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: docs/guide
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: docs/guide/.nvmrc
+          cache: npm
+          cache-dependency-path: docs/guide/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - name: Read Pages configuration
+        id: pages
+        if: >-
+          github.event_name != 'pull_request'
+          && github.ref == 'refs/heads/main'
+          && vars.DOCS_PAGES_ENABLED == 'true'
+        uses: actions/configure-pages@v5
+      - name: Build website
+        run: npm run build
+        env:
+          NEUTRINO_DOCS_BASE: ${{ steps.pages.outputs.base_path || '/' }}
+      - name: Check repository subpath
+        if: github.event_name == 'pull_request'
+        run: npm run build
+        env:
+          NEUTRINO_DOCS_BASE: /neutrino/
+      - name: Upload website
+        if: >-
+          github.event_name != 'pull_request'
+          && github.ref == 'refs/heads/main'
+          && vars.DOCS_PAGES_ENABLED == 'true'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs/guide/.vitepress/dist
+
+  deploy:
+    if: >-
+      github.event_name != 'pull_request'
+      && github.ref == 'refs/heads/main'
+      && vars.DOCS_PAGES_ENABLED == 'true'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

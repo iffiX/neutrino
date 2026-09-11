@@ -1,0 +1,43 @@
+:root {
+  --vp-c-brand-1: #0e7490;
+  --vp-c-brand-2: #0891b2;
+  --vp-c-brand-3: #0e7490;
+  --vp-c-brand-soft: rgba(8, 145, 178, 0.12);
+  --vp-home-hero-name-color: var(--vp-c-brand-1);
+  --vp-font-family-base:
+    "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --vp-font-family-mono:
+    "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+.dark {
+  --vp-c-brand-1: #67e8f9;
+  --vp-c-brand-2: #22d3ee;
+  --vp-c-brand-3: #0e7490;
+  --vp-c-brand-soft: rgba(34, 211, 238, 0.12);
+}
+
+.VPHomeHero .image-src {
+  max-width: 280px;
+  max-height: 280px;
+}
+
+.vp-doc p,
+.vp-doc li {
+  line-height: 1.9;
+}
+
+.vp-doc h2 {
+  letter-spacing: 0.01em;
+}
+
+.vp-doc table {
+  font-size: 14px;
+}
+
+@media (max-width: 639px) {
+  .VPHomeHero .image-src {
+    max-width: 160px;
+    max-height: 160px;
+  }
+}

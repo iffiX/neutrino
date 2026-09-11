@@ -1,276 +1,217 @@
 <div align="center">
 
-<img src="images/web/banner.webp" width="100%" alt="Neutrino 横幅" />
+<img src="images/web/banner.webp" width="100%" alt="Neutrino" />
 
-# 家里一台常开的中枢，<br/>管住你的所有小玩意。
+# 家里一台常开的中枢，管住你的所有小玩意。
 
 [English](README.md) · **中文**
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-0a0e14?labelColor=0a0e14&color=22d3ee)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.0-0a0e14?labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases)
-[![Hub: Linux](https://img.shields.io/badge/hub-Linux%20x86--64%20%C2%B7%20ARM64-0a0e14?labelColor=0a0e14&color=a78bfa)](#兼容性)
-[![Agent: Linux](https://img.shields.io/badge/agent-Linux-0a0e14?labelColor=0a0e14&color=a78bfa)](#兼容性)
-[![Agent: Windows · macOS · under testing](https://img.shields.io/badge/agent%20Windows%20%C2%B7%20macOS-under%20testing-0a0e14?labelColor=0a0e14&color=d29922)](#兼容性)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![version](https://img.shields.io/badge/version-0.2.0-0891b2.svg)](https://github.com/iffiX/neutrino/releases)
+[![hub](https://img.shields.io/badge/hub-Linux%20x86--64%20%C2%B7%20ARM64-555.svg)](#什么跑在哪里)
+[![agent](https://img.shields.io/badge/agent-Linux-555.svg)](#什么跑在哪里)
+[![client](https://img.shields.io/badge/client-Linux%20%C2%B7%20Windows-555.svg)](#什么跑在哪里)
+
+**[安装](#安装)** · **[文档](https://iffix.github.io/neutrino/zh-CN/)** · [展示](#一次发布处处可用) · [面板](#面板) · [缘起](#我为什么做它)
 
 微子能穿透一切，却什么也不碰。<br/>
 障碍都还在，只是再也碍不着你了。
 
 </div>
 
-Neutrino（微子）是一个面向个人开发者的自托管管理工具。它运行在一台常开的 Linux 机器上，通过 Web 面板管理代理、远程访问、AI 网关、文件共享和自托管服务。
+微子是一套自托管的控制面，管你自己名下的机器：一个中枢、若干被控端、若干客户端。在中枢上发布一次，你每台机器的客户端窗口里就多一个按钮，打开、连接、配置加应用、挂载、连接。中枢可以是一台刷好的电视盒子或者树莓派，NAS、工作站和显卡机器各干各的活，装一个被控端就行。
 
-这台机器称为 **Hub**。其他电脑可以安装 **Agent**，向 Hub 上报运行状态并执行软件安装任务。你也可以在 Agent 窗口中挂载共享、打开服务、配置 AI 工具。Neutrino 使用 Xray、NetBird、CLIProxyAPI、Samba 等现有软件，存储和其他服务模块按需启用。
+中枢和被控端只跑在 Linux 上，客户端跑 Linux 和 Windows，macOS 这三个包都不支持。中枢自己不承载任何模块，三个包共用一个版本号。
 
-它是给一个人的 homelab 做的控制平面。写它时，我一直记着：这东西拿着每台受管机器的管理员权限。
+<div align="center">
 
-一块闲置的 64 位树莓派，就能先跑起来。
+<img src="images/web/one_click.webp" width="100%" alt="面板的服务页与客户端窗口" />
 
-[功能](#功能) · [安装](#安装) · [使用范围与权限](#使用范围与权限) · [文档](#文档)
+左边在中枢的服务页发布，右边是同一台机器上客户端窗口里的按钮。
 
-<a href="images/screenshots/dashboard.webp"><img src="images/screenshots/dashboard.webp" width="100%" alt="总览面板：流量、代理状态、DNS 查询和受管设备" /></a>
-
-## 它到底是什么
-
-Neutrino 把 Xray、ZFS、Gitea、Samba 等软件配成一个整体，再让其他机器用上它们提供的服务。
-
-|                  |                                                                                                                                                                                 |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **一份配置**     | `config/` 是唯一的配置来源。每次修改都经过「渲染、校验、应用」，面板和命令行走同一套流程。备份一个目录，就能保留 Hub 的配置；共享文件和服务数据另行备份。                       |
-| **一个面板**     | 网络、代理、AI、设备、凭据、存储、服务，都在同一个界面里，用同一套方式管理。                                                                                                    |
-| **一个 Agent**   | 用一条链接注册设备，就能看到你发布的共享、端口、网页、AI 入口和远程桌面。支持 Linux，Windows 和 macOS 为 **under testing**。                                                    |
-| **一个 AI 入口** | Claude 订阅、ChatGPT 订阅和 API key 集中在 Hub 上，每台机器的 Claude Code、Codex、Gemini CLI 都可以接到同一个地址。访问密钥按设备和本地账号分别签发，用量也在 Hub 上统计。      |
-| **一条退路**     | `nhub reset all` 先撤掉 Hub 的防火墙表和策略路由，重新启用原有的网络管理器，再重置配置。接口上的地址一个不删，避免 SSH 会话因地址被移除而中断。Hub 配置会被清空，执行前先备份。 |
-
-## 功能
-
-Hub 管理所在的主机，并与其他机器上的 Agent 通信。外出时，可以通过 NetBird 组建的虚拟网络访问 Hub 和家中的设备。
-
-<img src="images/web/architecture.svg" width="100%" alt="远程设备通过 NetBird 访问 Hub，Hub 连接设备、AI、存储和服务" />
-
-### 网络与远程访问
-
-Hub 支持路由器、旁路网关和服务器三种模式。路由器和网关模式可以接管其他设备的流量；服务器模式保留主机原有的网络配置。
-
-代理由 Xray 提供，支持节点导入、负载均衡、分流和 DNS 配置。你可以导入分享链接，选择哪些设备和目的地址走代理。全部节点不可用时，默认不会回退到直连。NetBird 通过 WireGuard 虚拟网络连接远程设备和家庭网络。
-
-<table>
-<tr>
-<td width="50%"><a href="images/screenshots/netbird.webp"><img src="images/screenshots/netbird.webp" width="100%" alt="NetBird 页面：虚拟网络中的对端和局域网设备" /></a></td>
-<td width="50%"><a href="images/screenshots/proxy.webp"><img src="images/screenshots/proxy.webp" width="100%" alt="代理页面：出口节点和路由设置" /></a></td>
-</tr>
-<tr>
-<td><b>NetBird：</b>对端拓扑、直连与中继状态。</td>
-<td><b>代理：</b>节点延迟、均衡策略和分流规则。</td>
-</tr>
-</table>
-
-### 设备管理
-
-扫描局域网、保存 SSH 凭据，从面板打开终端或 SFTP 文件浏览器。安装 Agent 的设备会定期上报 CPU、内存、磁盘、温度、GPU 和进程信息。面板也提供网络唤醒、电源操作，以及通过 RustDesk 直连的远程桌面。
-
-你可以为受管设备安装 SSH 服务、cc-switch、RustDesk 等工具。Hub 缓存下载的安装包，再交给 Agent 安装。安装任务由用户发起，手动安装的软件也会被识别和显示。
-
-<details>
-<summary>查看 Hub 终端和凭据页面</summary>
-
-<table>
-<tr>
-<td width="50%"><a href="images/screenshots/terminal.webp"><img src="images/screenshots/terminal.webp" width="100%" alt="Hub 主机的终端" /></a></td>
-<td width="50%"><a href="images/screenshots/credentials.webp"><img src="images/screenshots/credentials.webp" width="100%" alt="凭据页面：SSH 密钥、登录信息和令牌" /></a></td>
-</tr>
-<tr>
-<td><b>终端：</b>在浏览器中操作 Hub 主机。</td>
-<td><b>凭据：</b>管理 SSH 密钥、登录信息和 API 令牌。</td>
-</tr>
-</table>
-
-</details>
-
-### AI 网关
-
-Hub 运行 CLIProxyAPI，可以接入 Claude、ChatGPT 等订阅账号，也可以添加兼容 Anthropic、OpenAI 或 Gemini 协议的服务商 API key。网关提供统一访问地址和模型别名，面板按提供方和客户端密钥统计用量。
-
-在每台电脑的 Agent 中，可以选择哪些本地账号的 Claude Code、Codex 或 Gemini CLI 使用网关。访问密钥按设备和本地账号分别签发；取消激活后，会恢复工具原先保存的配置。
-
-<table>
-<tr>
-<td width="50%"><a href="images/screenshots/ai.webp"><img src="images/screenshots/ai.webp" width="100%" alt="AI 用量页面：请求数和 token 统计" /></a></td>
-<td width="50%"><a href="images/screenshots/ai_accounts.webp"><img src="images/screenshots/ai_accounts.webp" width="100%" alt="AI 提供方、订阅账号和网关密钥" /></a></td>
-</tr>
-<tr>
-<td><b>用量：</b>请求数、成功率、token 和缓存使用情况。</td>
-<td><b>账号：</b>上游提供方、订阅账号和客户端密钥。</td>
-</tr>
-</table>
-
-### 存储与服务
-
-可选模块提供 ZFS 池和数据集管理、磁盘健康检查、换盘操作和 Samba 共享。Hub 也可以运行 Gitea 和 Podman 容器。
-
-Hub 会向 Agent 发布服务列表，包括可打开的网页、可转发的端口和可挂载的共享。列表中也可以添加网络内其他机器提供的服务。
-
-<details>
-<summary>查看模块、服务、共享和容器页面</summary>
-
-<table>
-<tr>
-<td width="50%"><a href="images/screenshots/modules.webp"><img src="images/screenshots/modules.webp" width="100%" alt="Hub 上可安装的模块" /></a></td>
-<td width="50%"><a href="images/screenshots/services.webp"><img src="images/screenshots/services.webp" width="100%" alt="发布给受管设备的服务列表" /></a></td>
-</tr>
-<tr>
-<td><b>模块：</b>安装在 Hub 上的软件。</td>
-<td><b>服务：</b>发布给 Agent 的服务条目。</td>
-</tr>
-<tr>
-<td><a href="images/screenshots/samba.webp"><img src="images/screenshots/samba.webp" width="100%" alt="Samba 共享、用户和连接会话" /></a></td>
-<td><a href="images/screenshots/containers.webp"><img src="images/screenshots/containers.webp" width="100%" alt="Podman 容器及其运行状态" /></a></td>
-</tr>
-<tr>
-<td><b>Samba：</b>共享、用户和当前连接。</td>
-<td><b>容器：</b>Podman 容器及其运行状态。</td>
-</tr>
-</table>
-
-</details>
-
-<details>
-<summary>查看手机界面</summary>
-
-面板适配手机屏幕。下图依次为总览、代理、AI 和网络页面：
-
-<p align="center">
-<a href="images/screenshots/dashboard_portrait.webp"><img src="images/screenshots/dashboard_portrait.webp" width="200" alt="手机上的总览页面" /></a>
-<a href="images/screenshots/proxy_portrait.webp"><img src="images/screenshots/proxy_portrait.webp" width="200" alt="手机上的代理页面" /></a>
-<a href="images/screenshots/ai_portrait.webp"><img src="images/screenshots/ai_portrait.webp" width="200" alt="手机上的 AI 页面" /></a>
-<a href="images/screenshots/network_portrait.webp"><img src="images/screenshots/network_portrait.webp" width="200" alt="手机上的网络页面" /></a>
-</p>
-
-</details>
+</div>
 
 ## 安装
 
-### 兼容性
-
-| 组件  | 平台                                                                    | 架构          |
-| ----- | ----------------------------------------------------------------------- | ------------- |
-| Hub   | 使用 systemd、glibc 2.34 及以上的 Linux；提供 `.deb`、`.rpm` 和 Arch 包 | x86-64、ARM64 |
-| Agent | Linux；Windows、macOS **under testing**                                 | x86-64、ARM64 |
-
-两个安装包都自带 Python 运行环境。Hub 还包含 Xray 和 CLIProxyAPI，所需的系统依赖由包管理器安装。
-
-使用 64 位系统、配备 1 GB 内存的树莓派可以在关闭可选模块时运行核心服务。启用更多模块或增加负载后，需要相应增加内存。
-
-### Hub
-
-从 [Releases](https://github.com/iffiX/neutrino/releases) 下载对应系统的安装包。Debian 或 Ubuntu 上的安装方式如下，将 `<version>` 替换为下载的版本号；示例使用 x86-64（`amd64`）包。
+### 中枢
 
 ```bash
-sudo apt install "./neutrino-hub_<version>_amd64.deb"
-sudo nhub setup
+sudo apt install ./neutrino-hub_0.2.0_amd64.deb && sudo nhub setup
 ```
 
-在终端或浏览器中完成向导，然后访问 `http://<hub-address>:8080`，其中 `<hub-address>` 为 Hub 的地址。选择 `server` 模式可以保留主机现有的网络配置。
+向导一共六屏：语言、密码与口令、形态、网口、代理、就绪。选服务器形态时，机器上每个网口都保留现有地址，局域网不动。装完面板在 `http://<hub>:8080`。
 
-### Agent
+### 被控端
 
-在需要管理的电脑上安装 Agent。从 Hub 的「设备」页复制注册链接，粘贴到 Agent 窗口中。Debian 或 Ubuntu 上也可以通过命令行注册：
+在面板的设备页点「按链接添加」，链接五分钟内有效，然后在那台机器上运行：
 
 ```bash
-sudo apt install "./neutrino-agent_<version>_amd64.deb"
-sudo nagent connect 'neutrino://enroll/...'
+sudo nagent connect '<链接>'
 ```
 
-将示例链接替换为面板生成的链接。Windows 和 macOS Agent 目前为 **under testing**，原生安装包可从 Releases 下载。对于能够通过 SSH 访问的 Linux 机器，也可以从「设备」页远程安装并注册 Agent。
+也可以在设备抽屉里让中枢通过 SSH 把被控端装过去。
 
-## 使用范围与权限
+### 客户端
 
-Neutrino 面向一个人管理自己的设备。面板使用单一密码，没有独立的用户角色，也不支持高可用部署。Hub 离线时，由它提供的服务会停止。
+在面板的客户端页点「新建客户端链接」，把链接粘进客户端窗口。
 
-Hub 以 root 运行，Agent 服务也需要管理员权限来安装软件和管理设备。面板本身使用 HTTP，应通过可信的局域网或 NetBird 访问，不应直接暴露到公网。
+中枢的 rpm 和 Arch 包、客户端的 deb、rpm 和 msi，都在 [Releases](https://github.com/iffiX/neutrino/releases) 里。
 
-<img src="images/web/warning_zh.webp" width="100%" alt="不要将 Hub 暴露到公网、部署在不属于你的网络中，或接入不可信设备" />
-
-Hub 与 Agent 之间使用 TLS，Agent 根据注册链接中的证书指纹验证 Hub。注册链接五分钟过期，以原子操作消费；两台机器同时使用同一条链接，也只能有一台注册成功。Hub 凭据库中的凭据经过加密，恢复时需要初始化时设置的主密码。
-
-凭据库文件连自己装了什么都不说：名称、类型和内容一起加密，解密用的明文密钥不随配置备份导出。
-
-## 配置与备份
-
-Hub 的设置保存在 `config/` 中。面板和 `nhub apply` 使用同一套渲染、校验和应用流程。
-
-「设置」页可以导出配置备份。恢复凭据时需要主密码；共享文件、Git 仓库和容器数据需要另行备份。恢复后，AI 订阅账号需要重新登录。
-
-恢复时，在「设置」页上传配置备份并输入主密码。重置和凭据库相关命令见[命令参考](docs/cli.md)。
-
-## 我为什么做它
-
-我平时会用到工作站、笔记本和家里的几台小机器。Neutrino 最初是为这些机器写的，目前也用于自己的开发环境。
-
-<table>
-<tr valign="top">
-<td width="50%" align="center">
-<img src="images/web/panel_0.webp" width="220" alt="微子被挡在网络屏障前" />
-<p><b>最先卡住的，是连不上工具。</b></p>
-<p align="left">拉代码、下载依赖、连接 AI 服务，有时都要先配好代理。我不想每台机器都折腾一遍，就把代理和分流放到了 Hub 上。</p>
-</td>
-<td width="50%" align="center">
-<img src="images/web/panel_5.webp" width="220" alt="微子在外使用笔记本，与家中网络的连接断开" />
-<p><b>我出门旅行，工作站只能待家里。</b></p>
-<p align="left">家里的服务照常运行，我在外面却连不上。现在通过 NetBird 连回去，手机也能打开面板。</p>
-</td>
-</tr>
-<tr valign="top">
-<td align="center">
-<img src="images/web/panel_4.webp" width="220" alt="微子被多台电脑和缠绕的线缆包围" />
-<p><b>单台机器都不难伺候，全凑一块儿就难了。</b></p>
-<p align="left">工作站、笔记本、GPU 主机、树莓派，地址和登录方式各不相同。我想把它们放到同一页，看看谁在线，需要时直接开终端。</p>
-</td>
-<td align="center">
-<img src="images/web/panel_2.webp" width="220" alt="微子面对逐渐增加的硬盘，不确定该如何整理" />
-<p><b>数据是悄悄长起来的。</b></p>
-<p align="left">硬盘一块块添，文件越放越散，后来连找东西都费劲。现在把存储池和共享放在 Hub 上，其他机器挂载来用。</p>
-</td>
-</tr>
-<tr valign="top">
-<td align="center">
-<img src="images/web/panel_3.webp" width="220" alt="Git、SSH、文件和容器服务的入口分散在微子周围" />
-<p><b>每样东西都能用，只是各住各的。</b></p>
-<p align="left">Gitea 一个地址，容器一个端口，文件共享又在别处。把这些入口登记到 Hub，换台电脑也能找到同一张服务清单。</p>
-</td>
-<td align="center">
-<img src="images/web/panel_1.webp" width="220" alt="微子站在两个独立的 AI API 入口之间" />
-<p><b>我受够了到处复制同一把 key。</b></p>
-<p align="left">换台电脑，又要配一遍 AI 服务商和工具。现在账号集中放在 Hub 上，本地工具通过 Agent 接入网关。</p>
-</td>
-</tr>
-</table>
-
-项目目前为 0.1，由一个人维护。仓库包含 Debian、Ubuntu、Fedora 和 Arch 的虚拟机集成测试，以及 Linux、Windows、macOS 上的 Agent 测试。遇到问题可以提交 [Issue](https://github.com/iffiX/neutrino/issues)，附上系统、版本和出错步骤。
+带截图的完整流程见[《快速上手》](https://iffix.github.io/neutrino/zh-CN/quick-start.html)。
 
 ## 文档
 
-- [命令参考](docs/cli.md)
-- [Agent 安装与命令](agent/README.md)
+- [快速上手](https://iffix.github.io/neutrino/zh-CN/quick-start.html)
+- [使用指南](https://iffix.github.io/neutrino/zh-CN/overview.html)
+- [命令行参考](https://iffix.github.io/neutrino/zh-CN/cli.html)
+
+## 一次发布，处处可用
+
+不用再把同一把 API 密钥抄到每台机器上，不用再记住某个共享挂在哪个地址，不用每次手开一条 SSH 隧道，不用翻聊天记录找 RustDesk ID，也不用一台一台地配代理。
+
+| 面板     | 条目从哪来                       | 客户端上的按钮       |
+| -------- | -------------------------------- | -------------------- |
+| 网页     | Gitea 模块，或者手动声明         | 「打开」             |
+| 端口     | 容器发布的端口，或者手动声明     | 「连接」             |
+| AI       | AI 网关                          | 「配置」然后「应用」 |
+| 文件     | Samba 模块，或者手动声明         | 「挂载」             |
+| 远程桌面 | 面板上不用设，由那台机器自己共享 | 「连接」             |
+
+<div align="center">
+
+|                                                                                        |                                                                                               |                                                                                                |
+| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| <img src="images/screenshots/client_web.webp" width="100%" alt="客户端的网页面板" />   | <img src="images/screenshots/client_ports.webp" width="100%" alt="客户端的端口面板" />        | <img src="images/screenshots/client_ai.webp" width="100%" alt="客户端的 AI 面板" />            |
+| <img src="images/screenshots/client_files.webp" width="100%" alt="客户端的文件面板" /> | <img src="images/screenshots/client_desktops.webp" width="100%" alt="客户端的远程桌面面板" /> | <img src="images/screenshots/client_windows.webp" width="100%" alt="Windows 上的同一个窗口" /> |
+
+</div>
+
+- AI 密钥按客户端单独发放，用量按窗口计量，在面板的 AI 页看得到。
+- 「配置」通过 cc-switch 把机器上的三个 AI 命令行切到网关，关掉时把它们各自的配置还回去。
+- 共享在 Linux 上挂到家目录下，在 Windows 上挂成一个盘符，比如 `N:`。
+- 端口转发到本机的 `127.0.0.1:<端口>`，应用照着连就行。
+- 远程桌面那一次性的座位密码由中枢保管，界面上从不显示。
+- Linux 和 Windows 上是同一个窗口，同样五个面板。
+
+## 面板
+
+| 截图                                                                           | 这一页做的一件事               |
+| ------------------------------------------------------------------------------ | ------------------------------ |
+| <img src="images/screenshots/dashboard.webp" width="100%" alt="总览页" />      | 总览：中枢此刻在转发什么       |
+| <img src="images/screenshots/devices.webp" width="100%" alt="设备页" />        | 设备：用一条链接接入一台机器   |
+| <img src="images/screenshots/services.webp" width="100%" alt="服务页" />       | 服务：手动声明一个服务         |
+| <img src="images/screenshots/ai_accounts.webp" width="100%" alt="AI 账号页" /> | AI：订阅账号登录一次           |
+| <img src="images/screenshots/proxy.webp" width="100%" alt="代理页" />          | 代理：从分享链接加一个出口节点 |
+| <img src="images/screenshots/samba.webp" width="100%" alt="Samba 页" />        | Samba：发布一个共享            |
+
+<div align="center">
+
+|                                                                                            |                                                                                        |                                                                                     |                                                                                           |
+| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| <img src="images/screenshots/dashboard_portrait.webp" width="100%" alt="手机上的总览页" /> | <img src="images/screenshots/proxy_portrait.webp" width="100%" alt="手机上的代理页" /> | <img src="images/screenshots/ai_portrait.webp" width="100%" alt="手机上的 AI 页" /> | <img src="images/screenshots/services_portrait.webp" width="100%" alt="手机上的服务页" /> |
+
+</div>
+
+手机宽度下这几页照样能用，路上改一条规则不用开电脑。
+
+## 什么跑在哪里
+
+| 包                | 平台                | 身份                         | 干什么                                                                           |
+| ----------------- | ------------------- | ---------------------------- | -------------------------------------------------------------------------------- |
+| `neutrino-hub`    | Linux x86-64、ARM64 | root，面板加若干单元         | 路由（xray、nftables、dnsmasq）、AI 网关、虚拟网、发现、中转、客户端、凭据       |
+| `neutrino-agent`  | 只有 Linux          | root，无窗口，不监听任何端口 | 在一台机器上承载 Samba、Gitea、Podman、ZFS 和 RustDesk 主机，中枢这台也算        |
+| `neutrino-client` | Linux、Windows      | 登录用户，从不是 root        | 一个常驻进程、一个托盘和一个窗口：挂共享、开服务、转端口、连远程桌面、切 AI 工具 |
+
+三个包共用一个版本号，对不上时只会要求升级，不做协商。中枢自己不承载模块，所以那台机器可以很小。
+
+## 安全
+
+<div align="center">
+
+<img src="images/web/warning_zh.webp" width="100%" alt="安全" />
+
+</div>
+
+- 中枢和被控端以 root 运行，客户端从不是 root，它唯一一次提权是挂载共享用的 polkit 助手。
+- 面板走 HTTP，从局域网里访问它，或者从你自己的虚拟网上访问。
+- 接入链接五分钟过期且只能用一次，通道的 TLS 由链接里的指纹钉住，凭据保险库由初始化时那句口令封存。
+
+## 我为什么做它
+
+微子最初是给我自己的工作站、笔记本和家里几台小机器用的，现在是我的开发环境。
+
+<table>
+<tr valign="top">
+<td width="50%" align="center"><img src="images/web/panel_0.webp" width="220" alt="微子的狼面对一道网络屏障" /><p><b>最先卡住的，是连不上工具。</b></p></td>
+<td width="50%" align="center"><img src="images/web/panel_5.webp" width="220" alt="狼在外面用笔记本，连不回家里的网络" /><p><b>我出门旅行，工作站只能待家里。</b></p></td>
+</tr>
+<tr valign="top">
+<td align="center"><img src="images/web/panel_4.webp" width="220" alt="狼被一堆电脑和缠在一起的线包围" /><p><b>单台机器都不难伺候，全凑一块儿就难了。</b></p></td>
+<td align="center"><img src="images/web/panel_2.webp" width="220" alt="狼在整理越来越多的硬盘" /><p><b>数据是悄悄长起来的。</b></p></td>
+</tr>
+<tr valign="top">
+<td align="center"><img src="images/web/panel_3.webp" width="220" alt="Git、SSH、文件和容器的图标各自散落在狼周围" /><p><b>每样东西都能用，只是各住各的。</b></p></td>
+<td align="center"><img src="images/web/panel_1.webp" width="220" alt="狼夹在两个各自独立的 AI 接口之间" /><p><b>我受够了到处复制同一把 key。</b></p></td>
+</tr>
+</table>
+
+<details>
+<summary><b>架构</b></summary>
+
+<img src="images/web/architecture_zh.svg" width="100%" alt="架构" />
+
+**设计**
+
+- **唯一事实源**：`config/`；每次改动都是渲染、校验、应用；面板和 `nhub apply` 走同一条路；没有迁移
+- **中枢不承载模块**：Samba、Gitea、Podman、ZFS、RustDesk 跑在拥有磁盘或显卡的那台机器的被控端下
+- **一条通道**：被控端向中枢开一条 WebSocket，TLS 由接入链接的指纹钉住；中枢从不主动拨号；SSH 只用于安装
+- **期望状态**：每台设备一份文档，由 `config/` 组合；被控端连上后比对并应用差异；离线设备的改动被拒绝，不排队
+- **发布的服务**：模块产生的条目，加手动声明的条目，推给每个客户端
+- **一张虚拟网**：无、NetBird 或 EasyTier；这是 `config/router/network.json` 里的一行，防火墙也读它
+- **权限**：中枢和被控端是 root，客户端从不是；客户端唯一一次提权是挂载共享的 polkit 助手
+- **一个版本号**：三个包共用；对不上就要求升级
+
+**组件**
+
+- **中枢**：路由（xray、nftables、dnsmasq，三种模式）· AI 网关（CLIProxyAPI，按客户端发密钥，计量）· 虚拟网（NetBird 客户端、EasyTier 引擎）· 面板（FastAPI、React、`/ws/events`）· 保险库
+- **被控端**：samba · gitea · podman · zfs · RustDesk 主机 · 终端流与文件流
+- **客户端**：托盘与窗口 · 端口转发 · 挂载助手 · cc-switch · RustDesk 查看器
+
+</details>
+
+<details>
+<summary><b>开发</b></summary>
+
+**环境**：Python 3.12+、Node 24+、black、pytest。
+
+**命令**
+
+```bash
+pip install -e "hub[dev]"
+pip install -e agent
+pip install -e client
+black --check hub agent client
+cd hub && pytest -q
+cd hub/frontend && npm run build
+nhub apply --dry-run
+```
+
+**目录**
+
+- `hub/`：中枢包与面板前端
+- `agent/`：被控端包
+- `client/`：客户端包与它的窗口
+- `config/`：运行时的事实源，真文件不入库
+- `docs/`：文档站与项目记录
+- `packaging/`：三个包的打包线
+
+改代码前先读 [AGENTS.md](AGENTS.md)。
+
+</details>
 
 ## 致谢
 
-Neutrino 使用了以下项目：
-
-- [Xray-core](https://github.com/XTLS/Xray-core)：代理路由。
-- [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)：AI 网关。
-- [cpa-usage-keeper](https://github.com/Willxup/cpa-usage-keeper)：AI 用量页面的设计参考。
-- [NetBird](https://netbird.io)：基于 WireGuard 的远程访问。
-- [cc-switch](https://github.com/SaladDay/cc-switch-cli)：AI 工具配置。
-- [RustDesk](https://rustdesk.com)：远程桌面。
-- [Gitea](https://about.gitea.com)：Git 托管。
-- [Samba](https://www.samba.org)：文件共享。
-- [Podman](https://podman.io)：容器。
-- [OpenZFS](https://openzfs.org)：存储。
-- [dnsmasq](https://thekelleys.org.uk/dnsmasq/doc.html)：局域网 DHCP 和 DNS。
-- [hostapd](https://w1.fi/hostapd/)：Wi-Fi 接入点。
-- [v2fly geodata](https://github.com/v2fly)：路由数据库。
-
-Claude Code 和 ChatGPT 参与了实现、调试、设计讨论和文档编写。发布内容由作者审阅和维护。
+微子站在这些项目上：[Xray-core](https://github.com/XTLS/Xray-core)、[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)、[cpa-usage-keeper](https://github.com/Willxup/cpa-usage-keeper)、[NetBird](https://netbird.io)、[EasyTier](https://github.com/EasyTier/EasyTier)、[cc-switch](https://github.com/SaladDay/cc-switch-cli)、[RustDesk](https://rustdesk.com)、[Gitea](https://about.gitea.com)、[Samba](https://www.samba.org)、[Podman](https://podman.io)、[OpenZFS](https://openzfs.org)、[dnsmasq](https://thekelleys.org.uk/dnsmasq/doc.html)、[hostapd](https://w1.fi/hostapd/)，以及 [v2fly 的 geodata](https://github.com/v2fly)。Claude Code 和 ChatGPT 参与了编码，每个发布版本由作者本人过一遍。
 
 ## 许可证
 
@@ -278,7 +219,7 @@ Claude Code 和 ChatGPT 参与了实现、调试、设计讨论和文档编写�
 
 <div align="center">
 
-<img src="images/web/outro.webp" width="100%" alt="微子戴着耳机，在桌前使用笔记本电脑" />
+<img src="images/web/outro.webp" width="100%" alt="Neutrino" />
 
 # 让创造重新变得有趣。
 
