@@ -10,6 +10,9 @@ from dataclasses import dataclass
 
 from neutrino_hub.utils.subprocess_run import run
 
+# vnstat's mode letter, and the key its JSON lists that mode's buckets under.
+VNSTAT_BUCKET_KEYS = {"h": "hour", "d": "day", "m": "month"}
+
 
 @dataclass
 class TrafficSample:
@@ -60,6 +63,17 @@ class VnstatHistoryReader:
         """
         return self._read("h", hour_count)
 
+    def monthly(self, *, month_count: int = 12) -> list[TrafficSample]:
+        """Read monthly totals.
+
+        Args:
+            month_count: How many recent months to return.
+
+        Returns:
+            Samples oldest first.
+        """
+        return self._read("m", month_count)
+
     def _read(self, mode: str, count: int) -> list[TrafficSample]:
         result = run(
             ["vnstat", "--json", mode, str(count), "-i", self._interface],
@@ -75,17 +89,14 @@ class VnstatHistoryReader:
         interfaces = payload.get("interfaces", [])
         if not interfaces:
             return []
-        buckets = (
-            interfaces[0].get("traffic", {}).get("day" if mode == "d" else "hour", [])
-        )
+        buckets = interfaces[0].get("traffic", {}).get(VNSTAT_BUCKET_KEYS[mode], [])
         return [self._to_sample(bucket, mode) for bucket in buckets[-count:]]
 
     def _to_sample(self, bucket: dict, mode: str) -> TrafficSample:
         date = bucket.get("date", {})
-        label = (
-            f"{date.get('year', 0):04d}-{date.get('month', 0):02d}-"
-            f"{date.get('day', 0):02d}"
-        )
+        label = f"{date.get('year', 0):04d}-{date.get('month', 0):02d}"
+        if mode != "m":
+            label = f"{label}-{date.get('day', 0):02d}"
         if mode == "h":
             label = f"{label} {bucket.get('time', {}).get('hour', 0):02d}:00"
         return TrafficSample(

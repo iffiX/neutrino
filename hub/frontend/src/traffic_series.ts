@@ -13,6 +13,12 @@ import type { StatsFrame, TrafficSample } from "./api_types";
 const MIN_INTERVAL_S = 0.5;
 /** Matches WEB_STATS_PUSH_INTERVAL_S on the backend. */
 const NOMINAL_INTERVAL_S = 1;
+/** Matches XRAY_NODE_TAG_PREFIX and XRAY_DIRECT_TAG on the backend. */
+const NODE_TAG_PREFIX = "node_";
+const DIRECT_TAG = "direct";
+
+/** Which outbounds a live series counts: every one, the exits, or direct. */
+export type TrafficScope = "all" | "proxied" | "direct";
 
 export interface TrafficPoint {
   label: string;
@@ -31,12 +37,18 @@ export interface HistoryPoint {
  *
  * Args:
  *   frames: Retained stats frames, oldest first.
+ *   scope: Which outbounds count. `all` is the frame's own total; the other
+ *     two sum the exits or the direct outbound out of the frame's per-tag
+ *     counters.
  *
  * Returns:
  *   One point per interval between frames, so a window of n frames yields
  *   n - 1 points and an empty or single-frame window yields none.
  */
-export function toTrafficSeries(frames: StatsFrame[]): TrafficPoint[] {
+export function toTrafficSeries(
+  frames: StatsFrame[],
+  scope: TrafficScope = "all",
+): TrafficPoint[] {
   const points: TrafficPoint[] = [];
   for (let index = 1; index < frames.length; index += 1) {
     const previous = frames[index - 1];
@@ -48,24 +60,43 @@ export function toTrafficSeries(frames: StatsFrame[]): TrafficPoint[] {
       MIN_INTERVAL_S,
       elapsedSeconds(previous.timestamp, current.timestamp),
     );
+    const before = scopedTotals(previous, scope);
+    const now = scopedTotals(current, scope);
     points.push({
       label: formatClock(current.timestamp),
-      downlink_bytes_per_s: perSecond(
-        current.total_downlink_bytes,
-        previous.total_downlink_bytes,
-        intervalS,
-      ),
-      uplink_bytes_per_s: perSecond(
-        current.total_uplink_bytes,
-        previous.total_uplink_bytes,
-        intervalS,
-      ),
+      downlink_bytes_per_s: perSecond(now.downlink, before.downlink, intervalS),
+      uplink_bytes_per_s: perSecond(now.uplink, before.uplink, intervalS),
     });
   }
   return points;
 }
 
-/** Shape the vnstat history for the 30-day bar chart. */
+/** A frame's counters summed over the outbounds a scope names. */
+function scopedTotals(
+  frame: StatsFrame,
+  scope: TrafficScope,
+): { uplink: number; downlink: number } {
+  if (scope === "all") {
+    return {
+      uplink: frame.total_uplink_bytes,
+      downlink: frame.total_downlink_bytes,
+    };
+  }
+  const totals = { uplink: 0, downlink: 0 };
+  for (const outbound of frame.outbounds) {
+    const isCounted =
+      scope === "proxied"
+        ? outbound.tag.startsWith(NODE_TAG_PREFIX)
+        : outbound.tag === DIRECT_TAG;
+    if (isCounted) {
+      totals.uplink += outbound.uplink_bytes;
+      totals.downlink += outbound.downlink_bytes;
+    }
+  }
+  return totals;
+}
+
+/** Shape the vnstat history for the bar chart. */
 export function toHistorySeries(samples: TrafficSample[]): HistoryPoint[] {
   return samples.map((sample) => ({
     label: sample.label,

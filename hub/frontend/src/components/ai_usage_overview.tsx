@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
+import { RangeSwitch } from "./range_switch";
 import { Sparkline } from "./sparkline";
 import { UsageGrid } from "./usage_grid";
 import {
@@ -50,20 +51,14 @@ export function AiUsageOverview() {
           <h2>{t("ui.usage.title")}</h2>
         </div>
         <div className="ai_usage_controls">
-          <div className="ai_usage_ranges">
-            {RANGE_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={`ai_usage_range ${
-                  range === option.value ? "ai_usage_range--on" : ""
-                }`}
-                onClick={() => setRange(option.value)}
-              >
-                {t(option.labelKey)}
-              </button>
-            ))}
-          </div>
+          <RangeSwitch
+            options={RANGE_OPTIONS.map((option) => ({
+              value: option.value,
+              label: t(option.labelKey),
+            }))}
+            value={range}
+            onChange={setRange}
+          />
           <select
             className="select ai_usage_key_select"
             value={keyId}

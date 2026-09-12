@@ -38,6 +38,14 @@
   height: 210px;
 }
 
+.dashboard_controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: center;
+  justify-content: flex-end;
+}
+
 .dashboard_legend {
   display: flex;
   flex-wrap: wrap;

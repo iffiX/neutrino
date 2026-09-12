@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Area,
   AreaChart,
@@ -15,6 +16,7 @@ import { ChartTooltip } from "../components/chart_tooltip";
 import { DnsLogList } from "../components/dns_log_list";
 import { ErrorPanel } from "../components/error_panel";
 import { DeadExitsNotice } from "../components/dead_exits_notice";
+import { RangeSwitch } from "../components/range_switch";
 import { StatTile } from "../components/stat_tile";
 import { StatusDot } from "../components/status_dot";
 import { computeActiveExits } from "../active_exits";
@@ -27,9 +29,11 @@ import { useApiResource } from "../use_api_resource";
 import { useDnsLogSocket } from "../use_dns_log_socket";
 import { useLiveStats } from "../use_live_stats";
 import { HUB_EVENT_AI_USAGE, HUB_EVENT_CONFIG } from "../use_hub_events";
+import type { TrafficScope } from "../traffic_series";
 import type {
   CliproxyApiStatusView,
   DashboardSummary,
+  TrafficHistoryRange,
   TrafficHistoryResponse,
 } from "../api_types";
 
@@ -47,7 +51,20 @@ import "./dashboard_page.css";
 /** A reading the gateway has not reported at all, as opposed to a zero. */
 const MISSING_READING = "—";
 
-const HISTORY_DAYS = 30;
+const SCOPE_OPTIONS: { value: TrafficScope; labelKey: string }[] = [
+  { value: "all", labelKey: "ui.dashboard.scope_all" },
+  { value: "proxied", labelKey: "ui.dashboard.scope_proxied" },
+  { value: "direct", labelKey: "ui.dashboard.scope_direct" },
+];
+const HISTORY_RANGE_OPTIONS: {
+  value: TrafficHistoryRange;
+  labelKey: string;
+}[] = [
+  { value: "day", labelKey: "ui.usage.range_day" },
+  { value: "week", labelKey: "ui.usage.range_week" },
+  { value: "month", labelKey: "ui.usage.range_month" },
+  { value: "year", labelKey: "ui.usage.range_year" },
+];
 const AXIS_STYLE = {
   fill: "#5b6675",
   fontSize: 11,
@@ -61,9 +78,12 @@ export function DashboardPage() {
   // Redrawn when the panel's language changes.
   useLanguage();
   const { frames, latestFrame, status } = useLiveStats();
+  const [scope, setScope] = useState<TrafficScope>("all");
+  const [historyRange, setHistoryRange] =
+    useState<TrafficHistoryRange>("month");
   const summary = useApiResource<DashboardSummary>("/dashboard/summary");
   const history = useApiResource<TrafficHistoryResponse>(
-    `/dashboard/history?days=${HISTORY_DAYS}`,
+    `/dashboard/history?range=${historyRange}`,
   );
   const dnsLog = useDnsLogSocket();
   // The same status view the top bar reads. A gateway that is absent or has
@@ -72,7 +92,7 @@ export function DashboardPage() {
     invalidateOn: [{ type: HUB_EVENT_AI_USAGE }, { type: HUB_EVENT_CONFIG }],
   });
 
-  const trafficSeries = toTrafficSeries(frames);
+  const trafficSeries = toTrafficSeries(frames, scope);
   const latestPoint = trafficSeries[trafficSeries.length - 1];
   const historySeries = toHistorySeries(history.data?.samples ?? []);
   const activeExits = computeActiveExits(
@@ -80,7 +100,7 @@ export function DashboardPage() {
     summary.data?.active_exit_tags ?? [],
   );
   const stats = latestFrame ?? summary.data?.stats ?? null;
-  const todaySample = history.data?.samples.at(-1) ?? null;
+  const todaySample = history.data?.today ?? null;
   const aiTokensToday = ai.data?.tokens_today ?? null;
 
   return (
@@ -220,25 +240,37 @@ export function DashboardPage() {
                   {t("ui.dashboard.live_traffic_window")}
                 </span>
               </div>
-              <div className="dashboard_legend">
-                <span className="dashboard_legend_item">
-                  <span className="dashboard_legend_swatch dashboard_legend_swatch--down" />
-                  <span className="muted">{t("ui.dashboard.legend_down")}</span>
-                  <span className="dashboard_legend_value">
-                    {latestPoint === undefined
-                      ? "—"
-                      : formatByteRate(latestPoint.downlink_bytes_per_s)}
+              <div className="dashboard_controls">
+                <RangeSwitch
+                  options={SCOPE_OPTIONS.map((option) => ({
+                    value: option.value,
+                    label: t(option.labelKey),
+                  }))}
+                  value={scope}
+                  onChange={setScope}
+                />
+                <div className="dashboard_legend">
+                  <span className="dashboard_legend_item">
+                    <span className="dashboard_legend_swatch dashboard_legend_swatch--down" />
+                    <span className="muted">
+                      {t("ui.dashboard.legend_down")}
+                    </span>
+                    <span className="dashboard_legend_value">
+                      {latestPoint === undefined
+                        ? "—"
+                        : formatByteRate(latestPoint.downlink_bytes_per_s)}
+                    </span>
                   </span>
-                </span>
-                <span className="dashboard_legend_item">
-                  <span className="dashboard_legend_swatch dashboard_legend_swatch--up" />
-                  <span className="muted">{t("ui.dashboard.legend_up")}</span>
-                  <span className="dashboard_legend_value">
-                    {latestPoint === undefined
-                      ? "—"
-                      : formatByteRate(latestPoint.uplink_bytes_per_s)}
+                  <span className="dashboard_legend_item">
+                    <span className="dashboard_legend_swatch dashboard_legend_swatch--up" />
+                    <span className="muted">{t("ui.dashboard.legend_up")}</span>
+                    <span className="dashboard_legend_value">
+                      {latestPoint === undefined
+                        ? "—"
+                        : formatByteRate(latestPoint.uplink_bytes_per_s)}
+                    </span>
                   </span>
-                </span>
+                </div>
               </div>
             </div>
 
@@ -335,9 +367,17 @@ export function DashboardPage() {
               <div className="card_title">
                 <h2>{t("ui.dashboard.history_title")}</h2>
                 <span className="badge">
-                  {t("ui.dashboard.history_window", { days: HISTORY_DAYS })}
+                  {t("ui.dashboard.history_source")}
                 </span>
               </div>
+              <RangeSwitch
+                options={HISTORY_RANGE_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: t(option.labelKey),
+                }))}
+                value={historyRange}
+                onChange={setHistoryRange}
+              />
             </div>
 
             {history.error !== null ? (
@@ -365,6 +405,9 @@ export function DashboardPage() {
                       tickLine={false}
                       axisLine={{ stroke: "#1f2937" }}
                       minTickGap={24}
+                      tickFormatter={(label: string) =>
+                        formatHistoryTick(label, historyRange)
+                      }
                     />
                     <YAxis
                       tick={AXIS_STYLE}
@@ -486,4 +529,18 @@ function toLoadTone(percent: number): "ok" | "warn" | "error" {
     return "warn";
   }
   return "ok";
+}
+
+/**
+ * The part of a bucket's label that changes within the chosen window: the
+ * hour over a day, the day over a week or a month, the month over a year.
+ */
+function formatHistoryTick(label: string, range: TrafficHistoryRange): string {
+  if (range === "day") {
+    return label.slice(-5);
+  }
+  if (range === "year") {
+    return label;
+  }
+  return label.slice(5);
 }

@@ -112,8 +112,12 @@ export interface TrafficSample {
   sent_bytes: number;
 }
 
+export type TrafficHistoryRange = "day" | "week" | "month" | "year";
+
 export interface TrafficHistoryResponse {
+  range: TrafficHistoryRange;
   samples: TrafficSample[];
+  today: TrafficSample | null;
 }
 
 export interface OutboundTraffic {

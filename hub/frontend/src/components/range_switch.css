@@ -1,0 +1,32 @@
+.range_switch {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-bg);
+}
+
+.range_switch_option {
+  padding: 4px 12px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.range_switch_option:hover {
+  color: var(--color-text);
+}
+
+.range_switch_option--on,
+.range_switch_option--on:hover {
+  background: var(--color-accent-wash);
+  color: var(--color-accent);
+}

@@ -163,9 +163,11 @@ class TrafficSample(BaseModel):
 
 
 class TrafficHistory(BaseModel):
-    """A series of history buckets."""
+    """A series of history buckets, and the day so far beside it."""
 
+    range: str
     samples: list[TrafficSample]
+    today: TrafficSample | None = None
 
 
 class DnsLogEntry(BaseModel):
