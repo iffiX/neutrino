@@ -1,6 +1,6 @@
 [project]
 name = "neutrino-client"
-version = "0.2.0"
+version = "0.2.1"
 description = "The Neutrino client: a person's window onto the services a hub publishes"
 requires-python = ">=3.9"
 # Deliberately empty, and it stays that way. The client's own code is standard

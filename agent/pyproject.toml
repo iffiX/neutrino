@@ -1,6 +1,6 @@
 [project]
 name = "neutrino-agent"
-version = "0.2.0"
+version = "0.2.1"
 description = "The Neutrino device agent: keeps a managed machine's modules in the state its hub asks for"
 requires-python = ">=3.9"
 # Deliberately empty, and it stays that way: the agent's own code is
