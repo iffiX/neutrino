@@ -241,14 +241,6 @@ export function DashboardPage() {
                 </span>
               </div>
               <div className="dashboard_controls">
-                <RangeSwitch
-                  options={SCOPE_OPTIONS.map((option) => ({
-                    value: option.value,
-                    label: t(option.labelKey),
-                  }))}
-                  value={scope}
-                  onChange={setScope}
-                />
                 <div className="dashboard_legend">
                   <span className="dashboard_legend_item">
                     <span className="dashboard_legend_swatch dashboard_legend_swatch--down" />
@@ -271,6 +263,14 @@ export function DashboardPage() {
                     </span>
                   </span>
                 </div>
+                <RangeSwitch
+                  options={SCOPE_OPTIONS.map((option) => ({
+                    value: option.value,
+                    label: t(option.labelKey),
+                  }))}
+                  value={scope}
+                  onChange={setScope}
+                />
               </div>
             </div>
 
