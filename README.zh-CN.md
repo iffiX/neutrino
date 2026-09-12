@@ -4,7 +4,11 @@
 
 [English](README.md) · 简体中文
 
-[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![version](https://img.shields.io/badge/version-0.2.0-0891b2.svg)](https://github.com/iffiX/neutrino/releases) [![hub](https://img.shields.io/badge/hub-Linux%20x86--64%20%C2%B7%20ARM64-555.svg)](#什么跑在哪里) [![agent](https://img.shields.io/badge/agent-Linux-555.svg)](#什么跑在哪里) [![client](https://img.shields.io/badge/client-Linux%20%C2%B7%20Windows-555.svg)](#什么跑在哪里)
+[![License: MIT](https://img.shields.io/badge/license-MIT-0a0e14?labelColor=0a0e14&color=22d3ee)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.2.0-0a0e14?labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases)
+[![Hub: Linux](https://img.shields.io/badge/hub-Linux%20x86--64%20%C2%B7%20ARM64-0a0e14?labelColor=0a0e14&color=a78bfa)](#什么跑在哪里)
+[![Agent: Linux](https://img.shields.io/badge/agent-Linux-0a0e14?labelColor=0a0e14&color=a78bfa)](#什么跑在哪里)
+[![Client: Linux · Windows · macOS](https://img.shields.io/badge/client-Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-0a0e14?labelColor=0a0e14&color=a78bfa)](#什么跑在哪里)
 
 微子能穿透一切，却什么也不碰。<br/>
 障碍都还在，只是再也碍不着你了。
