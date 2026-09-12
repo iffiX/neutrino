@@ -82,7 +82,7 @@
   "ui.ai.new_provider": "新建提供方",
   "ui.ai.no_login_kinds": "这个网关不提供订阅登录。",
   "ui.ai.not_installed": "AI 网关未安装",
-  "ui.ai.not_installed_hint": "在「服务」页安装 cliproxyapi 模块。",
+  "ui.ai.not_installed_hint": "hub 包自带网关；运行 `sudo nhub apply` 可以恢复。",
   "ui.ai.not_serving_label": "未服务",
   "ui.ai.paste_label": "地址栏或验证码",
   "ui.ai.paste_placeholder": "把地址栏或验证码粘到这里",

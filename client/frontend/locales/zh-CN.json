@@ -59,6 +59,7 @@
   "ui.config_title": "AI 工具配置",
   "ui.connect": "连接",
   "ui.connected": "已连接",
+  "ui.reconnecting": "正在重新连接 hub",
   "ui.description.ai_gateway": "由 AI 网关发布",
   "ui.description.container": "由容器 {image} 发布",
   "ui.description.declared": "手动声明",

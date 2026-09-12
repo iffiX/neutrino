@@ -192,3 +192,33 @@ def test_a_terminal_is_asked_without_echo(monkeypatch):
 
     assert wording.ask_secret("Access password: ") == "typed"
     assert prompts == ["Access password: "]
+
+
+def test_an_action_waits_longer_than_a_read(monkeypatch):
+    """Sharing the desktop takes longer than the five seconds a read gets;
+    the CLI would otherwise drop the socket and call a working share
+    'not running'."""
+    from neutrino_agent.constants import (
+        AGENT_CONTROL_ACTION_TIMEOUT_S,
+        AGENT_CONTROL_REQUEST_TIMEOUT_S,
+    )
+
+    seen = []
+
+    def fake_request(*, socket_path, method, path, body=None, timeout_s):
+        seen.append((method, path, timeout_s))
+        return 200, {}
+
+    monkeypatch.setattr(wording.client, "request", fake_request)
+    monkeypatch.setattr(
+        wording,
+        "detect_platform",
+        lambda: type("P", (), {"control_socket_path": lambda self: "/s"})(),
+    )
+
+    wording.act("/api/rdp/start", {"user": "a"})
+    wording.request("GET", "/api/state")
+
+    assert seen[0] == ("POST", "/api/rdp/start", AGENT_CONTROL_ACTION_TIMEOUT_S)
+    assert seen[1] == ("GET", "/api/state", AGENT_CONTROL_REQUEST_TIMEOUT_S)
+    assert AGENT_CONTROL_ACTION_TIMEOUT_S > AGENT_CONTROL_REQUEST_TIMEOUT_S

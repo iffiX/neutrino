@@ -94,6 +94,11 @@ export function SocksPortsPanel({ applied, onApplied }: SocksPortsPanelProps) {
       </div>
       <p className="field_hint">{t("ui.proxy.ports_hint")}</p>
 
+      {ports.length === 0 && (
+        <div className="placeholder">
+          <span className="faint">{t("ui.proxy.ports_empty")}</span>
+        </div>
+      )}
       {ports.length > 0 && (
         <ul className="socks_rows">
           {ports.map((entry, index) => (

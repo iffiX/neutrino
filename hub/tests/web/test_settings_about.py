@@ -81,3 +81,30 @@ def test_an_absent_xray_binary_is_reported_not_blank(monkeypatch):
     payload = about_payload(monkeypatch, xray_stdout="")
 
     assert payload["xray_version"] == "not installed"
+
+
+def test_the_hub_credits_every_component_it_carries(monkeypatch):
+    """The binaries in the hub package first, at the exact tag each was
+    built from; the modules a manifest licenses after them."""
+    from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_VERSION
+    from neutrino_hub.modules.easytier.constants import EASYTIER_VERSION
+    from neutrino_hub.modules.netbird.constants import NETBIRD_VERSION
+    from neutrino_hub.modules.xray.constants import XRAY_VERSION
+
+    credits = settings_router._acknowledgements()
+    by_name = {credit.name: credit for credit in credits}
+
+    assert [credit.name for credit in credits[:4]] == [
+        "Xray-core",
+        "CLIProxyAPI",
+        "NetBird",
+        "EasyTier",
+    ]
+    assert by_name["Xray-core"].version == XRAY_VERSION
+    assert by_name["Xray-core"].corresponding_source.endswith(f"/tree/v{XRAY_VERSION}")
+    assert by_name["CLIProxyAPI"].version == CLIPROXYAPI_VERSION
+    assert by_name["NetBird"].version == NETBIRD_VERSION
+    assert by_name["NetBird"].license == "BSD-3-Clause"
+    assert by_name["EasyTier"].version == EASYTIER_VERSION
+    assert by_name["EasyTier"].license == "LGPL-3.0"
+    assert "Gitea" in by_name

@@ -19,6 +19,7 @@ h1 { margin: 0; font-size: 18px; letter-spacing: .02em; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .ok { background: #34d399; box-shadow: 0 0 10px -1px #34d399; }
 .off { background: #8b96a5; }
+.wait { background: #fbbf24; box-shadow: 0 0 10px -1px #fbbf24; }
 .bad { background: #fb7185; box-shadow: 0 0 10px -1px #fb7185; }
 input, select { padding: 9px 12px; border: 1px solid #1f2937;
         border-radius: 8px; background: #0a0e14; color: #e6edf3;

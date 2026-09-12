@@ -591,3 +591,15 @@ def test_both_socks_ports_are_asked_for_rather_than_fixed():
 
     assert answers.proxy.is_socks_direct_enabled
     assert answers.proxy.socks_direct_port == 1088
+
+
+def test_every_screen_has_the_title_it_is_drawn_with():
+    """One title per screen, in the order they are asked; a title with no
+    screen was a screen that is gone, and the review screen wore it."""
+    import inspect
+
+    source = inspect.getsource(wizard.SetupWizard.run)
+    screens = source.split("screens = (", 1)[1].split(")", 1)[0]
+    count = len([line for line in screens.splitlines() if "self._" in line])
+    assert count == len(wizard.WIZARD_TITLES)
+    assert wizard.WIZARD_TITLES[-1] == "Ready"

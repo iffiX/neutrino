@@ -415,6 +415,7 @@
   "ui.proxy.port_remove": "移除端口 {port}",
   "ui.proxy.port_taken": "端口 {port} 已经在监听了。",
   "ui.proxy.ports_hint": "在所有开放接口上的 SOCKS5 监听端口。每个端口要么直接从上行线路出去，要么走出口节点。",
+  "ui.proxy.ports_empty": "还没有 SOCKS5 监听端口。在下面添加一个。",
   "ui.proxy.ports_title": "端口",
   "ui.proxy.probe_interval_label": "探测间隔（秒）",
   "ui.proxy.remote_dns_hint": "在出口节点解析。",

@@ -223,8 +223,12 @@ function drawConnection(state) {
   if (state.is_connected) {
     const row = document.createElement('div');
     row.className = 'row';
-    const tone = state.is_disabled ? 'off' : 'ok';
-    const word = state.is_disabled ? t('ui.disabled') : t('ui.connected');
+    // Bound is not the same as reached: the socket may be down while the
+    // binding stands, and the page says which.
+    const isReaching = state.connection_state === 'reconnecting';
+    const tone = state.is_disabled ? 'off' : isReaching ? 'wait' : 'ok';
+    const word = state.is_disabled ? t('ui.disabled')
+      : isReaching ? t('ui.reconnecting') : t('ui.connected');
     const version = state.hub_version
       ? ' · ' + t('ui.hub_version', { version: state.hub_version }) : '';
     row.innerHTML = '<span class="dot ' + tone + '"></span><div style="flex:1"><div>' +

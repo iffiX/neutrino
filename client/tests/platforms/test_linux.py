@@ -215,14 +215,34 @@ def test_a_failed_unmount_carries_the_tools_words(monkeypatch):
 def test_the_tooling_is_the_helper_and_mount_cifs(monkeypatch, tmp_path):
     helper = tmp_path / "mount_helper"
     monkeypatch.setattr(linux_module, "CLIENT_MOUNT_HELPER_PATH", str(helper))
-    monkeypatch.setattr(linux_module.shutil, "which", lambda name: "/sbin/mount.cifs")
+    monkeypatch.setattr(
+        linux_module.shutil, "which", lambda name, path=None: "/sbin/mount.cifs"
+    )
     assert LinuxPlatform().has_mount_tooling() is False
 
     helper.write_text("")
     assert LinuxPlatform().has_mount_tooling() is True
 
-    monkeypatch.setattr(linux_module.shutil, "which", lambda name: None)
+    monkeypatch.setattr(linux_module.shutil, "which", lambda name, path=None: None)
     assert LinuxPlatform().has_mount_tooling() is False
+
+
+def test_mount_cifs_is_looked_for_where_debian_puts_it(monkeypatch, tmp_path):
+    """/usr/sbin is not on a person's PATH on Debian, and cifs-utils installs
+    there; the helper that runs it as root finds it either way."""
+    helper = tmp_path / "mount_helper"
+    helper.write_text("")
+    monkeypatch.setattr(linux_module, "CLIENT_MOUNT_HELPER_PATH", str(helper))
+    asked = []
+
+    def which(name, path=None):
+        asked.append(path)
+        return "/usr/sbin/mount.cifs"
+
+    monkeypatch.setattr(linux_module.shutil, "which", which)
+
+    assert LinuxPlatform().has_mount_tooling() is True
+    assert "/usr/sbin" in asked[0].split(":")
 
 
 def test_attachment_is_read_from_proc_mounts_with_escapes(monkeypatch, tmp_path):

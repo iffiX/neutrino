@@ -88,6 +88,9 @@ AGENT_STEP_DOWN_TIMEOUT_S = 120
 # 0600 under a 0700 directory, so only root reaches it.
 AGENT_CONTROL_SOCKET_PATH = "/run/neutrino_agent/agent.sock"
 AGENT_CONTROL_REQUEST_TIMEOUT_S = 5
+# An action the agent carries out before answering, such as sharing the
+# desktop, takes longer than a read; the CLI waits this long for one.
+AGENT_CONTROL_ACTION_TIMEOUT_S = 60
 
 # Where the machine keeps what it decided for itself, and the directory
 # holding the one secret that never enters it: the desktop's seat password,

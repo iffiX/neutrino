@@ -30,7 +30,7 @@ CLIENT_BACKOFF_MAX_S = 60
 CLIENT_WS_SILENCE_TIMEOUT_S = 45
 CLIENT_HELLO_TIMEOUT_S = 10
 # How long one ask waits for its answer.
-CLIENT_ASK_TIMEOUT_S = 30
+CLIENT_ASK_TIMEOUT_S = 15
 
 # What the hub's close codes mean.
 CLIENT_WS_CLOSE_BAD_HELLO = 4400

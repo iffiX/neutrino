@@ -35,6 +35,9 @@ from neutrino_client.exceptions import (
 from neutrino_client.platforms.base import ClientPlatform, run_on_pty
 
 CIFS_HELPER = "mount.cifs"
+# Where the distributions put it. A person's PATH on Debian carries no sbin
+# directory, and the helper that runs it as root finds it either way.
+CIFS_HELPER_PATH = "/sbin:/usr/sbin:/bin:/usr/bin"
 CIFS_MOUNT_TIMEOUT_S = 120
 PROC_MOUNTS_PATH = "/proc/mounts"
 # How /proc/mounts spells the characters a mount point may not carry plainly.
@@ -94,7 +97,7 @@ class LinuxPlatform(ClientPlatform):
         """Whether the root helper and ``mount.cifs`` are on this machine."""
         return (
             os.path.isfile(CLIENT_MOUNT_HELPER_PATH)
-            and shutil.which(CIFS_HELPER) is not None
+            and shutil.which(CIFS_HELPER, path=CIFS_HELPER_PATH) is not None
         )
 
     def attach_share(

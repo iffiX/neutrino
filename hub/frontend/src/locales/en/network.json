@@ -415,6 +415,7 @@
   "ui.proxy.port_remove": "Remove port {port}",
   "ui.proxy.port_taken": "Port {port} is already listening.",
   "ui.proxy.ports_hint": "SOCKS5 listeners, on every exposed interface. Each one either leaves straight out the uplink or goes out through the exit nodes.",
+  "ui.proxy.ports_empty": "No SOCKS5 listener yet. Add a port below.",
   "ui.proxy.ports_title": "Ports",
   "ui.proxy.probe_interval_label": "Probe interval (s)",
   "ui.proxy.remote_dns_hint": "Resolved at the exit node.",

@@ -66,7 +66,6 @@ WIZARD_TITLES = (
     "What is this machine for?",
     "Which ports?",
     "Going out through a proxy",
-    "What else to install on this box",
     "Ready",
 )
 # The screens that are not questions about the configuration, and so carry no

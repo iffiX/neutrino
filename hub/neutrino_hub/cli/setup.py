@@ -1,7 +1,6 @@
 """First run: everything the gateway needs, in one command.
 
     sudo nhub setup
-    printf '%s' "$PANEL_PASSWORD" | sudo nhub setup --password-stdin
 
 Runs once. A box that already has a panel password is a box somebody
 configured, and this refuses rather than landing on top of it; `nhub reset all`

@@ -16,7 +16,11 @@ import getpass
 import re
 import sys
 
-from neutrino_agent.constants import AGENT_SERVICE_NAME
+from neutrino_agent.constants import (
+    AGENT_CONTROL_ACTION_TIMEOUT_S,
+    AGENT_CONTROL_REQUEST_TIMEOUT_S,
+    AGENT_SERVICE_NAME,
+)
 from neutrino_agent.control import client
 from neutrino_agent.exceptions import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import detect_platform
@@ -193,7 +197,7 @@ def act(path: str, body: dict) -> "dict | None":
     Returns:
         The fresh state payload, or None after the refusal was printed.
     """
-    answer = request("POST", path, body)
+    answer = request("POST", path, body, timeout_s=AGENT_CONTROL_ACTION_TIMEOUT_S)
     if answer is None:
         return None
     _, reply = answer
@@ -206,13 +210,20 @@ def act(path: str, body: dict) -> "dict | None":
     return reply
 
 
-def request(method: str, path: str, body: "dict | None" = None):
+def request(
+    method: str,
+    path: str,
+    body: "dict | None" = None,
+    *,
+    timeout_s: int = AGENT_CONTROL_REQUEST_TIMEOUT_S,
+):
     """One request to the running agent over its control socket.
 
     Args:
         method: The HTTP method.
         path: The request path.
         body: Sent as JSON when given.
+        timeout_s: How long to wait for the answer.
 
     Returns:
         ``(status, reply)``, or None after the honest line was printed —
@@ -225,7 +236,11 @@ def request(method: str, path: str, body: "dict | None" = None):
         return None
     try:
         return client.request(
-            socket_path=socket_path, method=method, path=path, body=body
+            socket_path=socket_path,
+            method=method,
+            path=path,
+            body=body,
+            timeout_s=timeout_s,
         )
     except (OSError, ValueError):
         print(AGENT_NOT_RUNNING, file=sys.stderr)

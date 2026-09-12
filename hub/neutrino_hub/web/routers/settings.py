@@ -57,8 +57,14 @@ from neutrino_hub.web.models import (
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub import HUB_VERSION
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_VERSION
+from neutrino_hub.modules.easytier.constants import EASYTIER_VERSION
+from neutrino_hub.modules.netbird.constants import NETBIRD_VERSION
 from neutrino_hub.modules.devices.manifests import load_module_manifests
-from neutrino_hub.modules.xray.constants import XRAY_BINARY, XRAY_GEODATA
+from neutrino_hub.modules.xray.constants import (
+    XRAY_BINARY,
+    XRAY_GEODATA,
+    XRAY_VERSION,
+)
 
 router = APIRouter(
     prefix="/api/settings", tags=["settings"], dependencies=[Depends(require_session)]
@@ -625,18 +631,59 @@ def about() -> AboutView:
     )
 
 
-def _acknowledgements() -> list[AcknowledgementView]:
-    """Every module this hub conveys that names a license.
+# What the hub package itself carries, credited with the exact tag each
+# binary was built from. The agent and the client carry RustDesk and
+# cc-switch and credit those in their own packages.
+CARRIED_COMPONENTS = (
+    (
+        "Xray-core",
+        XRAY_VERSION,
+        "MPL-2.0",
+        "https://github.com/XTLS/Xray-core/tree/v{}",
+    ),
+    (
+        "CLIProxyAPI",
+        CLIPROXYAPI_VERSION,
+        "MIT",
+        "https://github.com/router-for-me/CLIProxyAPI/tree/v{}",
+    ),
+    (
+        "NetBird",
+        NETBIRD_VERSION,
+        "BSD-3-Clause",
+        "https://github.com/netbirdio/netbird/tree/v{}",
+    ),
+    (
+        "EasyTier",
+        EASYTIER_VERSION,
+        "LGPL-3.0",
+        "https://github.com/EasyTier/EasyTier/tree/v{}",
+    ),
+)
 
-    A manifest naming a ``license`` is software whose bytes this hub
-    fetches and hands on, so it is credited here with the exact source its
-    license obliges. A module the person installs themselves names none and
-    is credited in its own row and nowhere else.
+
+def _acknowledgements() -> list[AcknowledgementView]:
+    """Everything this hub conveys that names a license.
+
+    The components the hub package carries come first, with the exact tag
+    each binary was built from. Then every module manifest naming a
+    ``license``: software whose bytes this hub fetches and hands to a
+    machine. A module the person installs themselves names none and is
+    credited in its own row and nowhere else.
 
     Returns:
-        The acknowledgements, by module title.
+        The acknowledgements, the carried components first and then the
+        modules by title.
     """
-    credited = []
+    credited = [
+        AcknowledgementView(
+            name=name,
+            version=version,
+            license=license_name,
+            corresponding_source=source.format(version),
+        )
+        for name, version, license_name, source in CARRIED_COMPONENTS
+    ]
     for name, manifest in sorted(load_module_manifests().items()):
         license_name = str(manifest.get("license", "") or "")
         if not license_name:

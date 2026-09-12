@@ -76,7 +76,7 @@ def read_new_password(
             raise ValueError("the two passwords do not match")
     except EOFError as error:
         # Prompting with nothing to read from is an unattended run that forgot
-        # --password-stdin, and a traceback is no way to say so.
+        # --stdin, and a traceback is no way to say so.
         raise ValueError(
             "there is nothing to read a password from; use --stdin"
         ) from error

@@ -46,17 +46,25 @@ from neutrino_client.constants import (  # noqa: E402
 CLIENT_ROOT = payload.CLIENT_ROOT
 PACKAGE_NAME = payload.PACKAGE_NAME
 
-# The C stack the window loads through its own bindings, what a mount and its
-# authorization need, and what the RustDesk viewer the package carries loads:
-# upstream's own list, with the alternatives Debian's t64 transition split
-# names over.
+# What the window itself cannot open without: the C stack its bindings load,
+# and the authorization a mount goes through.
 RUNTIME_DEPENDENCIES = (
     "gir1.2-webkit2-4.1",
     "libgirepository-1.0-1",
+    "libgtk-3-0t64 | libgtk-3-0",
+    "polkitd | policykit-1",
+)
+
+# What one feature needs and the rest of the client does not: the tray
+# indicator, a share mount, and what the RustDesk viewer the package carries
+# loads (upstream's own list, with the alternatives Debian's t64 transition
+# split names over). Recommended rather than depended on: `apt` installs
+# them, `dpkg -i` still configures the package without them, and a feature
+# whose tooling is missing says so on its own row rather than keeping the
+# whole client from installing.
+RUNTIME_RECOMMENDATIONS = (
     "gir1.2-ayatanaappindicator3-0.1",
     "cifs-utils",
-    "polkitd | policykit-1",
-    "libgtk-3-0t64 | libgtk-3-0",
     "libxcb-randr0",
     "libxdo3 | libxdo4",
     "libxfixes3",
@@ -79,6 +87,7 @@ Section: net
 Priority: optional
 Architecture: {architecture}
 Depends: {depends}
+Recommends: {recommends}
 Maintainer: {maintainer}
 Description: Neutrino client
  A person's window onto the services a Neutrino Hub publishes for them:
@@ -197,6 +206,7 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
         version=version,
         architecture=architecture,
         depends=", ".join(RUNTIME_DEPENDENCIES),
+        recommends=", ".join(RUNTIME_RECOMMENDATIONS),
         maintainer=maintainer,
     )
     payload.write(tree / "DEBIAN/control", control)

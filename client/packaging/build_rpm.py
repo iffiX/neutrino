@@ -44,13 +44,17 @@ PACKAGE_NAME = payload.PACKAGE_NAME
 
 # The same C stack the .deb names, under the names the RHEL family gives
 # those libraries.
+# The same split the .deb makes: what the window cannot open without is
+# required, what one feature needs is recommended, and dnf installs both.
 RUNTIME_REQUIRES = (
     "webkit2gtk4.1",
     "gobject-introspection",
+    "gtk3",
+    "polkit",
+)
+RUNTIME_RECOMMENDS = (
     "libayatana-appindicator-gtk3",
     "cifs-utils",
-    "polkit",
-    "gtk3",
     "libxcb",
     "xdotool",
     "libXfixes",
@@ -71,6 +75,7 @@ License:        MIT
 URL:            https://github.com/iffiX/neutrino
 BuildArch:      {architecture}
 {requires}
+{recommends}
 Packager:       {packager}
 
 # The payload is prebuilt and compiled, so none of rpmbuild's opinions about
@@ -184,6 +189,9 @@ def main() -> int:
                 version=version,
                 architecture=architecture,
                 requires="\n".join(f"Requires:       {n}" for n in RUNTIME_REQUIRES),
+                recommends="\n".join(
+                    f"Recommends:     {n}" for n in RUNTIME_RECOMMENDS
+                ),
                 packager=arguments.packager,
                 staged=staged,
                 prefix=payload.INSTALL_PREFIX,

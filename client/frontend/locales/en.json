@@ -59,6 +59,7 @@
   "ui.config_title": "AI tool configuration",
   "ui.connect": "Connect",
   "ui.connected": "Connected",
+  "ui.reconnecting": "Reconnecting to the hub",
   "ui.description.ai_gateway": "published by the AI gateway",
   "ui.description.container": "published by container {image}",
   "ui.description.declared": "declared by hand",

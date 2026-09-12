@@ -82,7 +82,7 @@
   "ui.ai.new_provider": "New provider",
   "ui.ai.no_login_kinds": "This gateway offers no subscription sign-in.",
   "ui.ai.not_installed": "The AI gateway is not installed",
-  "ui.ai.not_installed_hint": "Install the cliproxyapi module from Services.",
+  "ui.ai.not_installed_hint": "The hub package carries it; run `sudo nhub apply` to put it back.",
   "ui.ai.not_serving_label": "Not serving",
   "ui.ai.paste_label": "Address bar or code",
   "ui.ai.paste_placeholder": "paste the address bar or the code here",
