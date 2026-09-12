@@ -406,6 +406,7 @@ def test_an_exit_named_by_hostname_is_resolved_at_the_direct_resolver():
 
     node = next(entry for entry in config["outbounds"] if entry["tag"] == "node_hk1")
     assert node["streamSettings"]["sockopt"]["domainStrategy"] == "UseIP"
+    assert config["dns"]["queryStrategy"] == "UseIPv4"
     assert config["dns"]["servers"][0] == {
         "address": "223.5.5.5",
         "port": 53,

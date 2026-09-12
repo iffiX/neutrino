@@ -106,6 +106,11 @@ XRAY_DNS_INTERNAL_TAG = "dns_internal"
 # whose upstream is the DNS inbound here, and a node reached through itself
 # is a loop.
 XRAY_NODE_DOMAIN_STRATEGY = "UseIP"
+# What xray's own resolver asks for: A records only. The router forwards
+# IPv4 only, and one record kind is one packet per name; asking for both at
+# once puts two packets on a new UDP flow within microseconds, and a NAT
+# router in front of the uplink was measured dropping the second.
+XRAY_DNS_QUERY_STRATEGY = "UseIPv4"
 
 # Statistics and handler API, loopback only.
 XRAY_API_LISTEN = "127.0.0.1"

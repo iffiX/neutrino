@@ -17,6 +17,7 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_DNS_INTERNAL_TAG,
     XRAY_DNS_LISTEN,
     XRAY_DNS_PORT,
+    XRAY_DNS_QUERY_STRATEGY,
     XRAY_DNS_TAG,
     XRAY_EGRESS_MARK,
     XRAY_NODE_DOMAIN_STRATEGY,
@@ -176,7 +177,7 @@ class XrayConfigRenderer:
         return {
             "tag": XRAY_DNS_INTERNAL_TAG,
             "servers": servers,
-            "queryStrategy": "UseIP",
+            "queryStrategy": XRAY_DNS_QUERY_STRATEGY,
         }
 
     @property
