@@ -163,3 +163,31 @@ def test_the_gateways_own_rewrite_of_the_file_leaves_nothing_stale(installed_box
 
 def test_a_box_without_the_gateway_is_never_stale(box):
     assert CliproxyApiConfigApplier().is_serving_stale is False
+
+
+def test_the_served_models_are_listed_by_name(monkeypatch):
+    """The gateway lists them in the order its providers registered; a
+    person picking one in the client reads them by name."""
+
+    class _Answer:
+        is_success = True
+        status_code = 200
+
+        def json(self):
+            return {
+                "data": [
+                    {"id": "gpt-5"},
+                    {"id": "claude-opus-5"},
+                    {"id": ""},
+                    {"id": "gemini-3-pro"},
+                ]
+            }
+
+    monkeypatch.setattr(ops.httpx, "get", lambda *args, **kwargs: _Answer())
+
+    is_answered, _, served = ops.CliproxyApiConfigApplier().probe(
+        port=8317, client_key="k"
+    )
+
+    assert is_answered
+    assert served == ["claude-opus-5", "gemini-3-pro", "gpt-5"]

@@ -222,7 +222,9 @@ class CliproxyApiConfigApplier:
             names = [entry.get("id", "") for entry in response.json().get("data", [])]
         except ValueError:
             return False, "answered with something that is not JSON", []
-        served = [name for name in names if name]
+        # Sorted, since the gateway lists them in the order its providers
+        # registered, and a person picking one reads them by name.
+        served = sorted(name for name in names if name)
         return True, "" if served else "no models served", served
 
     def render_with_stored_key(self) -> str:
