@@ -38,6 +38,7 @@ and leave this pointing at it.**
 | [coding_style/typescript_style.md](skills/core-code-author/coding_style/typescript_style.md) | Touching `hub/frontend/`: no `any`, `import type`, API types mirror the backend models. |
 | [design/api.md](skills/core-code-author/design/api.md) | Adding or renaming a panel endpoint: `/api/<module>`, plural sub-resources, when a verb is allowed. |
 | [design/modules/network.md](skills/core-code-author/design/modules/network.md) | Touching the router layer: the three engines the hub drives, which modes own a machine's network and which touch nothing, and why it does not build on NetworkManager. |
+| [design/modules/proxy.md](skills/core-code-author/design/modules/proxy.md) | Touching the proxy: the scopes and what each diverts, exit selection, where every lookup resolves, what an overlay member can do, the consequences of a dead exit. |
 | [design/modules/ai.md](skills/core-code-author/design/modules/ai.md) | Touching the AI gateway: how a request routes, the gateway-owned model namespace, what each AI panel surface owns, metering. |
 | [design/agent.md](skills/core-code-author/design/agent.md) | Touching the agent or its channel: the hub and root as its only authorities, desired-state sync, the desktop share, the root-only control socket, the pinned TLS wire, the Linux-only platform layer. |
 | [design/tests.md](skills/core-code-author/design/tests.md) | Writing or moving any test: the four blocks (agent / client / hub / integration), the mirror rule, what each area pins, what a change owes. |
