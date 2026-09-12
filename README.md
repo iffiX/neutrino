@@ -181,8 +181,8 @@ The three packages share one version number, and the panel marks an agent or a c
 <img src="images/web/warning_en.webp" width="100%" alt="Keep the hub on a network you own, and enroll only machines you trust" />
 
 - The hub and the agent run as root; the client runs as the person, and its one privileged step is a polkit helper that mounts a share.
-- The panel is plain HTTP on port 8080, for the LAN and the overlay.
-- An enrollment link is valid for five minutes and is consumed once. The agent and client channel pins the hub's TLS certificate by the fingerprint inside that link.
+- The panel is plain HTTP, for the LAN and the overlay: the password is not protected from someone reading the wire, so keep the panel on a network you own. It is protected from guessing: five free attempts, then each failure locks login for 30 s, 60 s, 5 min, an hour, a day; and fail2ban bans an address that hammers SSH on the same ladder.
+- Everything between the hub and its agents and clients is TLS. An enrollment link is valid for five minutes and is consumed once, and the channel pins the hub's certificate by the fingerprint inside that link, so a machine that joined speaks only to the hub it joined.
 - The vault is sealed under the passphrase set during setup.
 
 ## Why I built it
