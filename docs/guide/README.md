@@ -41,14 +41,20 @@ needs no rewrite rules.
 
 ## Locale layout
 
-English is the root locale; Simplified Chinese lives under `zh-CN/`.
+English is the root locale; Simplified Chinese lives under `zh-CN/`. Pages
+are grouped by component, and each group runs install, use, commands.
 
 ```text
 docs/guide/
   index.md                      English home
-  <page>.md                     English pages
-  zh-CN/index.md                Chinese home
-  zh-CN/<page>.md               Chinese pages
+  overview.md, quick-start.md   Start
+  hub/                          install, one page per panel page in sidebar
+                                order, cli (nhub)
+  agent/                        install, cli (nagent)
+  client/                       install, window, one page per client panel,
+                                cli (nclient)
+  reference/                    platforms, troubleshooting
+  zh-CN/                        the same tree in Chinese
   README.md                     this page, excluded from the build
   .vitepress/config.mts         site, locales, search, base path
   .vitepress/navigation.ts      sidebarEn / sidebarZh, navEn / navZh
@@ -56,12 +62,13 @@ docs/guide/
   .vitepress/prepare_assets.mjs copies images into public/ before a build
 ```
 
-The two locales carry the same filenames, the same heading count and the same
+The two locales carry the same paths, the same heading count and the same
 screenshot list. A page added to one is added to the other, and to both
 sidebars in `navigation.ts`.
 
-Neither language is a translation of the other. English follows the Google
-developer documentation style guide, Chinese follows 中文文案排版指北.
+Neither language is a translation of the other. Both are written under
+[`skills/doc-author/`](../../skills/doc-author/SKILL.md), each from its own
+register file.
 
 ## Where images come from
 

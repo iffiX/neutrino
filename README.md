@@ -10,79 +10,129 @@
 [![Version](https://img.shields.io/badge/version-0.2.0-0a0e14?labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases)
 [![Hub: Linux](https://img.shields.io/badge/hub-Linux%20x86--64%20%C2%B7%20ARM64-0a0e14?labelColor=0a0e14&color=a78bfa)](#what-runs-where)
 [![Agent: Linux](https://img.shields.io/badge/agent-Linux-0a0e14?labelColor=0a0e14&color=a78bfa)](#what-runs-where)
-[![Client: Linux · Windows](https://img.shields.io/badge/client-Linux%20%C2%B7%20Windows-0a0e14?labelColor=0a0e14&color=a78bfa)](#what-runs-where)
+[![Client: Linux · Windows · macOS](https://img.shields.io/badge/client-Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-0a0e14?labelColor=0a0e14&color=a78bfa)](#what-runs-where)
 
 A neutrino passes through walls without touching them.<br/>
 The wall is still there. It just stops being yours.
 
-**[Install](#install)** · **[Documentation](https://neutrino.beyond-infinity.top/)** · [Showcase](#showcase) · [Panel](#the-panel) · [Why](#why-i-built-it)
+**[Install](#install)** · **[Documentation](https://neutrino.beyond-infinity.top/)** · [What it does](#what-it-does) · [Panel](#the-panel) · [Why](#why-i-built-it)
 
 </div>
 
-Neutrino is a self-hosted control plane for one person's machines: a hub, an
-agent on each machine it manages, and a client in each person's session.
+## What it does
 
-Set a service up once on the hub and it is a button in every client window:
-Open, Connect, Config then Apply, Mount, Connect.
+In one line: the hub manages your machines and publishes the services they provide; a client on your LAN, or one that reaches the hub from outside through the overlay, gets the same services.
 
-The hub is a flashed TV box or a Pi; the NAS, the workstation and the GPU box
-keep their jobs and get an agent.
+Each part has its place. The hub runs on one always-on Linux box and handles the network, the overlay, the proxy and the AI gateway. The agent runs on every Linux machine you manage and provides that machine's shares, git server, containers, storage and desktop. The client runs on every computer you sit at and turns those services into buttons in a window.
+
+| What you can do                                                                                                           | Where           |
+| ------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| Pick the box's shape (server, side gateway, router), give each interface a role, choose the networks the panel listens on | **Network**     |
+| Join a NetBird network or create an EasyTier one, and reach the LAN through the box from outside                          | **Overlay**     |
+| Import exit nodes from `ss://` and `vless://` links, open SOCKS ports, split traffic by device and destination            | **Proxy**       |
+| Put API providers and subscription accounts behind one endpoint, with a key per client                                    | **AI**          |
+| Enroll a machine by link or over SSH, read its vitals, reboot or wake it, open its shared desktop                         | **Devices**     |
+| Make a link for a person's computer, then enable, disable or delete that client                                           | **Clients**     |
+| Read what is published, and declare a web address, a TCP port or an SMB share by hand                                     | **Services**    |
+| Store SSH keys, logins and tokens once, sealed in the vault, for the pages that sign in with them                         | **Credentials** |
+| Change the password and language, download or restore a backup, read the three versions                                   | **Settings**    |
 
 <a href="images/web/one_click.webp"><img src="images/web/one_click.webp" width="100%" alt="The Services page on the hub beside the client window, the same five entries on both" /></a>
 
-The Services page on the hub, and the client window on a laptop.
+## Supported platforms
+
+| Hub             | Versions                                                                                 | Architectures | Package        |
+| --------------- | ---------------------------------------------------------------------------------------- | ------------- | -------------- |
+| Debian family   | Debian 12 and newer, Ubuntu 24.04 and newer, Raspberry Pi OS 64-bit (bookworm and newer) | x86-64, ARM64 | `.deb`         |
+| Fedora and RHEL | Fedora 41 and newer; RHEL 9 family (AlmaLinux, Rocky) with EPEL                          | x86-64, ARM64 | `.rpm`         |
+| Arch family     | Arch, EndeavourOS, Manjaro                                                               | x86-64        | `.pkg.tar.zst` |
+
+| Agent           | Versions                                                            | Architectures | Package |
+| --------------- | ------------------------------------------------------------------- | ------------- | ------- |
+| Debian family   | Debian 12 and newer, Ubuntu 24.04 and newer, Raspberry Pi OS 64-bit | x86-64, ARM64 | `.deb`  |
+| Fedora and RHEL | Fedora 41 and newer; RHEL 9 family                                  | x86-64, ARM64 | `.rpm`  |
+
+| Client          | Versions                                                            | Architectures | Package |
+| --------------- | ------------------------------------------------------------------- | ------------- | ------- |
+| Debian family   | Debian 12 and newer, Ubuntu 24.04 and newer, with a desktop session | x86-64, ARM64 | `.deb`  |
+| Fedora and RHEL | Fedora 41 and newer; RHEL 9 family, with a desktop session          | x86-64, ARM64 | `.rpm`  |
+| Windows         | Windows 10 and 11                                                   | x86-64        | `.msi`  |
+| macOS           | Apple silicon                                                       | ARM64         | `.pkg`  |
 
 ## Install
 
-### Hub
+<details><summary><b>Hub · Debian, Ubuntu, Raspberry Pi OS</b></summary>
 
 ```bash
-sudo apt install ./neutrino-hub_0.2.0_amd64.deb && sudo nhub setup
+sudo apt install ./neutrino-hub_0.2.0_amd64.deb
+sudo nhub setup
 ```
 
-Setup asks six screens: Language, Secrets, Shape, Ports, Proxy, Ready. Server
-mode leaves every address on the box alone and tells no device to route
-through it. The panel is then at `http://<hub>:8080`.
-
-### Agent
-
-Open the Devices page, press "Add by link", and run the link on the machine
-within five minutes:
+`nhub setup` opens a six-screen wizard in your browser. When it finishes, the panel is at `http://<hub>:8080`, where `<hub>` is the box's address.
+</details>
+<details><summary><b>Hub · Fedora, RHEL, AlmaLinux, Rocky</b></summary>
 
 ```bash
+sudo dnf install ./neutrino-hub-0.2.0-1.x86_64.rpm
+sudo nhub setup
+```
+
+On RHEL, AlmaLinux and Rocky, run `sudo dnf install -y epel-release` first: fail2ban, arp-scan and vnstat come from EPEL. The wizard then runs as it does on Debian, and the panel is at `http://<hub>:8080`.
+</details>
+<details><summary><b>Hub · Arch, EndeavourOS, Manjaro</b></summary>
+
+```bash
+sudo pacman -U neutrino-hub-0.2.0-1-x86_64.pkg.tar.zst
+sudo nhub setup
+```
+
+Setup runs the same six-screen wizard, and the panel is at `http://<hub>:8080` afterwards.
+</details>
+<details><summary><b>Agent · Debian, Ubuntu, Raspberry Pi OS, Fedora, RHEL</b></summary>
+
+```bash
+sudo apt install ./neutrino-agent_0.2.0_amd64.deb      # Debian family
+sudo dnf install ./neutrino-agent-0.2.0-1.x86_64.rpm   # Fedora family
 sudo nagent connect '<link>'
 ```
 
-The device drawer installs the agent over SSH instead, if you prefer.
+`<link>` is what **Add by link** on the **Devices** page shows; it is valid for five minutes, and the machine then appears under **Managed devices**.
+</details>
+<details><summary><b>Client · Debian, Ubuntu, Fedora, RHEL</b></summary>
 
-### Client
+```bash
+sudo apt install ./neutrino-client_0.2.0_amd64.deb      # Debian family
+sudo dnf install ./neutrino-client-0.2.0-1.x86_64.rpm   # Fedora family
+nclient gui
+```
 
-Open the Clients page, press "New client link", and paste the link into the
-client window on that machine.
+Run the client from your own account, then paste the link from the **Clients** page into the window.
+</details>
+<details><summary><b>Client · Windows 10 and 11, macOS on Apple silicon</b></summary>
 
-The hub's `.rpm` and Arch package, and the client's `.msi`, are on
-[Releases](https://github.com/iffiX/neutrino/releases). The full walk with
-screenshots is the [Quick start](https://neutrino.beyond-infinity.top/quick-start.html).
+```bash
+msiexec /i neutrino-client-0.2.0-windows-amd64.msi                    # Windows
+sudo installer -pkg neutrino-client-0.2.0-macos-arm64.pkg -target /  # macOS
+```
+
+Opening the `.msi` from Explorer, or the `.pkg` from its context menu with **Open**, runs the same installer. The Windows installer offers to put `nclient` on `PATH`. The client then sits in the taskbar corner on Windows or in the menu bar on macOS.
+</details>
+
+Every file is on the [releases page](https://github.com/iffiX/neutrino/releases), and the site's install pages have the screenshots: [the hub](https://neutrino.beyond-infinity.top/hub/install.html), [the agent](https://neutrino.beyond-infinity.top/agent/install.html) and [the client](https://neutrino.beyond-infinity.top/client/install.html).
 
 ## Documentation
 
-- [Quick start](https://neutrino.beyond-infinity.top/quick-start.html)
-- [Guides](https://neutrino.beyond-infinity.top/overview.html)
-- [CLI reference](https://neutrino.beyond-infinity.top/cli.html)
+[Quick start](https://neutrino.beyond-infinity.top/quick-start.html) · [Overview](https://neutrino.beyond-infinity.top/overview.html) · [Troubleshooting](https://neutrino.beyond-infinity.top/reference/troubleshooting.html)
 
-## Showcase
+## The services
 
-Chores that stop: copying API keys onto every machine, remembering which
-address a share is at, opening an SSH tunnel by hand each time, hunting for a
-RustDesk ID, setting up a proxy per box.
-
-| Panel           | Set on the hub                      | Where the entry comes from                        | The client's button   |
-| --------------- | ----------------------------------- | ------------------------------------------------- | --------------------- |
-| Web             | a link                              | the Gitea module, or declared by hand             | "Open"                |
-| Ports           | a port                              | a container's published port, or declared by hand | "Connect"             |
-| AI              | providers and accounts              | the AI gateway                                    | "Config" then "Apply" |
-| Files           | a share                             | the Samba module, or declared by hand             | "Mount"               |
-| Remote desktops | nothing; the machine shares its own | `sudo nagent rdp start`                           | "Connect"             |
+| Client panel    | What the hub publishes         | Where the entry comes from                        | The button            |
+| --------------- | ------------------------------ | ------------------------------------------------- | --------------------- |
+| Web             | a link                         | the Gitea module, or declared by hand             | **Open**              |
+| Ports           | a TCP port                     | a container's published port, or declared by hand | **Connect**           |
+| AI              | the gateway endpoint and a key | the AI gateway on the hub                         | **Config**, **Apply** |
+| Files           | an SMB share                   | the Samba module, or declared by hand             | **Config**, **Mount** |
+| Remote desktops | a desktop the machine shares   | `sudo nagent rdp start` on that machine           | **Connect**           |
 
 <table>
 <tr valign="top">
@@ -97,65 +147,45 @@ RustDesk ID, setting up a proxy per box.
 </tr>
 </table>
 
-- AI keys are minted per client and metered on the hub.
-- "Config" points Claude Code, Codex and Gemini CLI at the gateway through cc-switch; off restores each tool's own configuration.
-- Files mount under your home directory on Linux, or on drive `N:` on Windows.
-- A forwarded port answers at `127.0.0.1:<port>` on the client's machine.
-- The remote desktop seat password is held by the hub and never shown.
-- Linux and Windows run the same client window.
-
 ## The panel
 
 <table>
 <tr valign="top">
-<td width="50%"><a href="images/screenshots/dashboard.webp"><img src="images/screenshots/dashboard.webp" width="100%" alt="Dashboard with throughput, exits and DNS queries" /></a><p>Dashboard: what the hub routes right now.</p></td>
-<td width="50%"><a href="images/screenshots/devices.webp"><img src="images/screenshots/devices.webp" width="100%" alt="Devices page listing managed and unmanaged machines" /></a><p>Devices: enroll a machine with a link.</p></td>
+<td width="50%"><a href="images/screenshots/dashboard.webp"><img src="images/screenshots/dashboard.webp" width="100%" alt="Dashboard with throughput, exits and DNS queries" /></a><p><b>Dashboard</b>: throughput, active exits and DNS queries.</p></td>
+<td width="50%"><a href="images/screenshots/proxy.webp"><img src="images/screenshots/proxy.webp" width="100%" alt="Proxy page with exit nodes and split routing" /></a><p><b>Proxy</b>: exit nodes and split routing.</p></td>
 </tr>
 <tr valign="top">
-<td><a href="images/screenshots/services.webp"><img src="images/screenshots/services.webp" width="100%" alt="Services page with the web, ports, AI and files groups" /></a><p>Services: declare a service by hand.</p></td>
-<td><a href="images/screenshots/ai_accounts.webp"><img src="images/screenshots/ai_accounts.webp" width="100%" alt="AI providers, subscription accounts and gateway keys" /></a><p>AI: sign in to a subscription once.</p></td>
+<td><a href="images/screenshots/ai_accounts.webp"><img src="images/screenshots/ai_accounts.webp" width="100%" alt="AI providers, subscription accounts and gateway keys" /></a><p><b>AI</b>: providers, accounts and keys.</p></td>
+<td><a href="images/screenshots/devices.webp"><img src="images/screenshots/devices.webp" width="100%" alt="Devices page listing managed and unmanaged machines" /></a><p><b>Devices</b>: managed and unmanaged machines.</p></td>
 </tr>
 <tr valign="top">
-<td><a href="images/screenshots/proxy.webp"><img src="images/screenshots/proxy.webp" width="100%" alt="Proxy page with exit nodes and split routing" /></a><p>Proxy: add an exit node from a share link.</p></td>
-<td><a href="images/screenshots/samba.webp"><img src="images/screenshots/samba.webp" width="100%" alt="Samba page with shares, users and sessions" /></a><p>Samba: publish a share.</p></td>
+<td><a href="images/screenshots/services.webp"><img src="images/screenshots/services.webp" width="100%" alt="Services page with the web, ports, AI and files groups" /></a><p><b>Services</b>: the four published groups.</p></td>
+<td><a href="images/screenshots/samba.webp"><img src="images/screenshots/samba.webp" width="100%" alt="Samba page with shares, users and sessions" /></a><p><b>Samba</b>: shares, users and sessions on one machine.</p></td>
 </tr>
 </table>
 
-<div align="center">
-
-<img src="images/screenshots/dashboard_portrait.webp" width="200" alt="Dashboard on a phone" /> <img src="images/screenshots/proxy_portrait.webp" width="200" alt="Proxy page on a phone" />
-<img src="images/screenshots/ai_portrait.webp" width="200" alt="AI page on a phone" /> <img src="images/screenshots/services_portrait.webp" width="200" alt="Services page on a phone" />
-
-</div>
-
-The panel is drawn for phone width too.
+<p align="center"><img src="images/screenshots/dashboard_portrait.webp" width="200" alt="Dashboard on a phone" /> <img src="images/screenshots/proxy_portrait.webp" width="200" alt="Proxy page on a phone" /> <img src="images/screenshots/ai_portrait.webp" width="200" alt="AI page on a phone" /> <img src="images/screenshots/services_portrait.webp" width="200" alt="Services page on a phone" /></p>
 
 ## What runs where
 
-| Package           | Platforms           | Runs as                            | Job                                                                            |
-| ----------------- | ------------------- | ---------------------------------- | ------------------------------------------------------------------------------ |
-| `neutrino-hub`    | Linux x86-64, ARM64 | root, panel and units              | Router, AI gateway, overlay, discovery, relay, clients, credentials            |
-| `neutrino-agent`  | Linux               | root, headless, listens on nothing | Samba, Gitea, Podman, ZFS and the RustDesk host on a machine                   |
-| `neutrino-client` | Linux, Windows      | a person's session, never root     | Mount a share, open a service, forward a port, view a desktop, switch AI tools |
+| Package           | Runs on                             | Runs as                            | Does                                                                                           |
+| ----------------- | ----------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `neutrino-hub`    | one Linux box, x86-64 or ARM64      | root, the panel and its units      | the router (xray, nftables, dnsmasq), the AI gateway, the overlay, devices, clients, the vault |
+| `neutrino-agent`  | every Linux machine the hub manages | root, headless, listens on nothing | Samba, Gitea, Podman, ZFS and the RustDesk host on that machine                                |
+| `neutrino-client` | Linux, Windows and macOS            | a person's session                 | the tray and the window: open, forward, mount, view a desktop, switch the AI tools             |
 
-One version for all three; a mismatch is asked to upgrade. The hub box can be
-small because it hosts nothing itself. macOS runs none of the three.
+The three packages share one version number, and the panel marks an agent or a client on another version for upgrade. The hub's own machine runs an agent too, as one device among the others. Every module runs under an agent on the machine that has the disk or the GPU, so the hub box stays small.
 
 ## Security
 
 <img src="images/web/warning_en.webp" width="100%" alt="Keep the hub on a network you own, and enroll only machines you trust" />
 
-- The hub and the agent run as root. The client never does, and its one
-  escalation is a polkit helper that mounts a share.
-- The panel is HTTP. Reach it over the LAN or over an overlay.
-- An enrollment link expires in five minutes and is consumed once, the agent
-  channel's TLS is pinned by the fingerprint inside that link, and the vault is
-  sealed under the passphrase set during setup.
+- The hub and the agent run as root; the client runs as the person, and its one privileged step is a polkit helper that mounts a share.
+- The panel is plain HTTP on port 8080, for the LAN and the overlay.
+- An enrollment link is valid for five minutes and is consumed once. The agent and client channel pins the hub's TLS certificate by the fingerprint inside that link.
+- The vault is sealed under the passphrase set during setup.
 
 ## Why I built it
-
-Neutrino started as a tool for my own workstation, laptop, and small machines
-at home. I use it for my development environment.
 
 <table>
 <tr valign="top">
@@ -172,34 +202,15 @@ at home. I use it for my development environment.
 </tr>
 </table>
 
-<details>
-<summary><b>Architecture</b></summary>
+<details><summary><b>Architecture and development</b></summary>
 
 <img src="images/web/architecture.svg" width="100%" alt="A remote machine reaches the hub over the overlay; the hub drives agents, AI, storage and services" />
 
-**Design**
-
-- **Single source of truth**: `config/`; every change is render, validate, apply; the panel and the CLI share the path; no migrations.
-- **Hub hosts nothing**: Samba, Gitea, Podman, ZFS and RustDesk run under the agent on the machine that owns the disk or the GPU.
-- **One channel**: the agent opens one WebSocket to the hub over TLS pinned by the enrollment link; the hub never dials; SSH only installs.
-- **Desired state**: one document per device composed from `config/`, diffed and applied on connect; an offline device is refused, not queued.
-- **Published services**: module entries plus hand-declared entries, pushed to every client.
-- **One overlay**: none, NetBird or EasyTier; one row in `config/router/network.json`, which the firewall reads too.
-- **Privilege**: hub and agent root, client never; the client's one escalation is a polkit mount helper.
-- **One version**: three packages; a mismatch is asked to upgrade.
-
-**Components**
-
-- **Hub**: router (xray, nftables, dnsmasq; server, side gateway, router) · AI gateway (CLIProxyAPI, per-client keys, metering) · overlay (NetBird client, EasyTier engine) · panel (FastAPI, React, `/ws/events`) · vault.
-- **Agent**: samba · gitea · podman · zfs · rustdesk host · terminal and file streams.
-- **Client**: tray and window · port forwarder · mount helper · cc-switch · RustDesk viewer.
-
-</details>
-
-<details>
-<summary><b>Development</b></summary>
-
-**Requirements**: Python 3.12+, Node 24+, black, pytest.
+| Component | Parts                                                                                                                                                                |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hub       | router (xray, nftables, dnsmasq) · AI gateway (CLIProxyAPI, a key per client, metering) · overlay (NetBird, EasyTier) · panel (FastAPI, React, `/ws/events`) · vault |
+| Agent     | samba · gitea · podman · zfs · RustDesk host · terminal and file streams                                                                                             |
+| Client    | tray and window · port forwarder · mount helper · cc-switch · RustDesk viewer                                                                                        |
 
 ```bash
 pip install -e "hub[dev]" && pip install -e agent && pip install -e client
@@ -209,28 +220,29 @@ cd hub/frontend && npm run build
 nhub apply --dry-run
 ```
 
-**Tree**: `hub/` the hub package and the panel · `agent/` the device agent ·
-`client/` the tray and window · `config/` the source of truth at runtime ·
-`docs/` the documentation site · `packaging/` the VM integration rig.
-Contributing standard: [AGENTS.md](AGENTS.md).
-
+Python 3.12 or newer, Node 24 or newer, black and pytest; `hub/`, `agent/` and `client/` are the three packages, `config/` the source of truth at runtime, `docs/` the site and `packaging/` the VM rig. The contributor standard is [AGENTS.md](AGENTS.md).
 </details>
 
 ## Acknowledgements
 
-Neutrino configures and carries work by others:
-[Xray-core](https://github.com/XTLS/Xray-core),
-[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI),
-[cpa-usage-keeper](https://github.com/Willxup/cpa-usage-keeper),
-[NetBird](https://netbird.io), [EasyTier](https://github.com/EasyTier/EasyTier),
-[cc-switch](https://github.com/SaladDay/cc-switch-cli),
-[RustDesk](https://rustdesk.com), [Gitea](https://about.gitea.com),
-[Samba](https://www.samba.org), [Podman](https://podman.io),
-[OpenZFS](https://openzfs.org),
-[dnsmasq](https://thekelleys.org.uk/dnsmasq/doc.html),
-[hostapd](https://w1.fi/hostapd/) and [v2fly geodata](https://github.com/v2fly).
-Claude Code and ChatGPT assisted with implementation, debugging, design and
-documentation; the author reviews every release.
+Neutrino configures and includes work by others:
+
+- [Xray-core](https://github.com/XTLS/Xray-core), the proxy core behind the Proxy page
+- [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI), the AI gateway
+- [cpa-usage-keeper](https://github.com/Willxup/cpa-usage-keeper), the usage metering beside it
+- [NetBird](https://netbird.io), one of the two overlay engines
+- [EasyTier](https://github.com/EasyTier/EasyTier), the other overlay engine
+- [cc-switch](https://github.com/SaladDay/cc-switch-cli), which points the AI tools at the gateway
+- [RustDesk](https://rustdesk.com), the remote desktop host and viewer
+- [Gitea](https://about.gitea.com), the git server a machine hosts
+- [Samba](https://www.samba.org), the SMB server a machine hosts
+- [Podman](https://podman.io), the container runtime a machine hosts
+- [OpenZFS](https://openzfs.org), the pools and datasets a machine hosts
+- [dnsmasq](https://thekelleys.org.uk/dnsmasq/doc.html), DHCP and DNS on the served networks
+- [hostapd](https://w1.fi/hostapd/), the access point on a wireless LAN
+- [v2fly geodata](https://github.com/v2fly), the direct lists for split routing
+
+Claude Code and ChatGPT assisted with implementation, debugging, design and documentation; the author reviews every release.
 
 ## License
 

@@ -48,7 +48,7 @@ and leave this pointing at it.**
 | [design/repository_tree.md](skills/core-code-author/design/repository_tree.md) | Adding a directory to the source tree, or unsure what an existing one is for. |
 | [misc/config.md](skills/core-code-author/misc/config.md) | Touching `config/`: which files are secrets, how examples map to real ones. |
 | [misc/operations.md](skills/core-code-author/misc/operations.md) | Verifying an install, or running the appliance. |
-| [doc-author/](skills/doc-author/SKILL.md) | Writing any `.md`: which of the three kinds you are writing, and how each is worded. |
+| [doc-author/](skills/doc-author/SKILL.md) | Writing any `.md`: the gate before drafting, the kind of page, the rules and budgets, each language's register, the checklist after. |
 | [agent_work_rule/release.md](skills/core-code-author/agent_work_rule/release.md) | Cutting a release: the tag, the changelog prefixes, and which package each platform installs. |
 
 ## Commands
@@ -112,8 +112,8 @@ client/
 config/               Source of truth at runtime. Real files gitignored.
                       /etc/neutrino/config once installed.
 skills/core-code-author/        This standard. The single source of truth for rules.
-skills/doc-author/              How every .md is written: the three document kinds
-                      and the two registers.
+skills/doc-author/              How every .md is written: the gate, the page kinds,
+                      the two registers, the checklist.
 images/               Source artwork and README screenshots. Ships nowhere
                       directly — packaging copies images/icons in at build
                       time.
@@ -160,5 +160,5 @@ examples in the document named beside it.
   under the unit's `NoNewPrivileges`.
   ([design/privilege.md](skills/core-code-author/design/privilege.md))
 - **Documents open with a definition and never end with a summary.** No
-  "it should be noted", no recap section, no explaining what the reader knows.
-  ([doc-author/SKILL.md](skills/doc-author/SKILL.md))
+  "note that", no recap section, no em dash inside a sentence, no verb a
+  machine does not perform. ([doc-author/SKILL.md](skills/doc-author/SKILL.md))

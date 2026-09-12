@@ -104,7 +104,7 @@ whole sentence. A swapped word keeps the shape.
 | Rhetorical self-answer | "The catch? ..." , "Why? Because" | state the fact |
 | Verb tricolon | "build, test, and deploy" as the default rhythm | the actual number of items |
 | Mic drop | "It matters." "Full stop." | delete |
-| Figurative verb | lives, owns, carries, earns, lands, surfaces, fires, clears | is in, has, includes, returns, appears |
+| Figurative verb | mints, rides, travels, lives, owns, carries, earns, lands, surfaces, fires, clears, ships (for a release), wires, stands (for exists), hands out, spins up, lights up, bakes in | generates, is sent, is in, has, includes, returns, appears, is released, exists, gives |
 | Unbaselined comparison | "significantly faster", "much lower" | the number, or delete the adverb |
 | Self reference | "as mentioned above", "as we'll see" | a link, or delete |
 
@@ -120,7 +120,7 @@ page. Reuse the shape and none of the words.
 | Example | Fits |
 | --- | --- |
 | `nhub apply --dry-run` renders every module and changes nothing on the system. | the first line of a reference entry |
-| At the end of this page, the agent on a managed machine reports to the hub. | the opening sentence of a how-to guide or quick start |
+| Once the agent is installed, the machine appears on the Devices page, and every step below happens there. | the opening of a how-to guide (each page writes its own; never this sentence on two pages) |
 | Before you start, the hub must be reachable from this machine. | a prerequisite line above a procedure |
 | In the **Network** panel, select **Apply**. | a step inside the interface |
 | If the box has one interface, skip this step. | a conditional step |

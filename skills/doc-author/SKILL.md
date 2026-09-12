@@ -67,7 +67,8 @@ a rule without one gets negotiated away under deadline.
 | A code block names its language, shows no `$` prompt, and shows output in a separate `text` block. | The reader copies the block; a prompt or mixed output breaks the paste. |
 | No em dash inside a sentence, in either language; a comma, a period or parentheses do the work. | The dash is the single strongest machine tell, and each authority here bans it. |
 | No security reassurance of the form "X never leaves the machine". | A claim stated as an absence is untestable by the reader and reads as marketing. |
-| Each sentence pattern from `english.md` or `chinese.md` appears at most once per page. | A pattern used twice is a template; used ten times it is the page. |
+| Each sentence pattern from `english.md` or `chinese.md` appears at most once per page, and no two pages of the site open with the same sentence shape. | A pattern used twice is a template; used ten times it is the page; the same opener on every page is a refrain the reader stops reading. |
+| An outline line is a note, never a sentence: the opening states the page's outcome in words written for this page. | A note expanded word for word reads as a note. |
 | The two languages share the outline and nothing else; each is written from its own register file, never from the other language's text. | A sentence carried across languages keeps the source language's clause order. |
 | Product terms are fixed: hub, agent, client in English; 微子, hub or 中枢, 被控端, 客户端 in Chinese; never 中微子. | One name per thing across thirty pages. |
 

@@ -1,40 +1,49 @@
 ---
 layout: home
-title: Documentation
+title: Neutrino
 hero:
   name: Neutrino
   text: One box at home. Every machine you own inherits it.
-  tagline: A hub on one Linux box, an agent on every machine it manages, a client in every session.
+  tagline: A hub on one Linux box, an agent on each machine it manages, and a client on each computer you sit at.
   image:
     src: /neutrino_512.png
     alt: Neutrino
   actions:
     - theme: brand
+      text: Install the hub
+      link: /hub/install
+    - theme: alt
       text: Quick start
       link: /quick-start
     - theme: alt
-      text: Guides
-      link: /network-modes
-    - theme: alt
-      text: CLI
-      link: /cli
+      text: The panel
+      link: /hub/network
 features:
-  - title: Quick start
-    details: A hub, a second machine and a mounted share, in ten minutes.
-    link: /quick-start
-  - title: Overview
-    details: Which machine runs which package, and which way the channel opens.
-    link: /overview
-  - title: Network modes
-    details: Server, side gateway and router, and what each one takes over.
-    link: /network-modes
+  - title: Network
+    details: The box's shape, each interface's role, DHCP and DNS on the served networks, and the networks the panel listens on.
+    link: /hub/network
   - title: Overlay
-    details: Reach the panel and the LAN from outside, with NetBird or EasyTier.
-    link: /overlay-netbird
-  - title: AI gateway
-    details: One endpoint your subscriptions and keys answer on, metered per client.
-    link: /ai-gateway
-  - title: CLI
-    details: Every nhub, nagent and nclient verb, with its flags.
-    link: /cli
+    details: A NetBird network or an EasyTier one, with the LAN reachable through the box from outside.
+    link: /hub/overlay-netbird
+  - title: Proxy
+    details: Exit nodes from share links, SOCKS ports, and traffic split by device and by destination.
+    link: /hub/proxy
+  - title: AI
+    details: API providers and subscription accounts behind one endpoint, a key per client, usage per key.
+    link: /hub/ai
+  - title: Devices
+    details: Machines enrolled by link or over SSH, their vitals, power actions and shared desktops.
+    link: /hub/devices
+  - title: Clients
+    details: A link for each person's computer, and the client that joins the hub with it.
+    link: /hub/clients
+  - title: Services
+    details: The entries the hub publishes, from modules or declared by hand, each with its button in the client window.
+    link: /hub/services
+  - title: Credentials
+    details: SSH keys, logins and tokens, stored once and sealed in the vault.
+    link: /hub/credentials
+  - title: Settings
+    details: The panel password and language, backup and restore, the hub, agent and client versions, the upgrade order and the reset commands.
+    link: /hub/settings
 ---

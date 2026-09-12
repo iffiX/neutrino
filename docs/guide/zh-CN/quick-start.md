@@ -4,210 +4,147 @@ title: 快速上手
 
 # 快速上手
 
-这一篇从零开始，装好一台中枢，接进第二台机器，装上客户端，发布一个共享并挂载它，大约十分钟。
-
-这一篇装的是服务器形态，机器上每个网口都保留现有地址，也不会有任何设备被要求经它路由。想让中枢接管整个网络的同学，请直接看[《网络模式》](./network-modes.md)。面板走 HTTP，请在局域网里或者自己的虚拟网上访问它。被控端只有 Linux 版，它没有窗口，只能在终端里接入。macOS 三个包都不支持，Windows 上只跑客户端。
+快速上手只走一条最短的路。hub 选服务器形态；第二台 Linux 机器用链接接入，做被控端；一台 Linux 电脑装客户端；最后发布一个共享并挂上。走完之后，一个共享出现在客户端的家目录下。服务器形态不改机器上的任何地址，也不让任何设备经它上网。
 
 ## 你需要什么
 
-- 一台装了 systemd 的 Linux 机器做中枢，x86-64 或者 ARM64，树莓派、电视盒子、旧笔记本都行。
-- 第二台 Linux 机器交给它管，下面叫 `studio`。
-- 一台跑客户端的笔记本，下面叫 `laptop`。
-- 三台在同一个网络里。
+- hub 装在一台常开的 64 位 Linux 机器上，这台机器带 systemd，能出网。树莓派、刷过系统的电视盒子或旧笔记本都行。本页叫它 `home-hub`。
+- 第二台 Linux 机器做被控端，本页叫它 `studio`。
+- 一台装桌面环境的 Linux 电脑跑客户端，本页叫它 `laptop`。
+- 三台机器在同一个网里，三个包同一个版本，都从 [Releases](https://github.com/iffiX/neutrino/releases) 下载。
 
-## 装中枢并初始化
+## 装 hub 并初始化
 
-**1. 在中枢那台机器上装包。**
+### 安装包并启动向导
 
-```bash
-sudo apt install ./neutrino-hub_0.2.0_amd64.deb
-```
+1. 在 `home-hub` 上安装包。
 
-预期：apt 报告安装完成，`nhub` 已经在 PATH 上。
+   ```bash
+   sudo apt install ./neutrino-hub_0.2.0_amd64.deb
+   ```
 
-**2. 运行初始化。**
+1. 启动向导。
 
-```bash
-sudo nhub setup
-```
+   ```bash
+   sudo nhub setup
+   ```
 
-预期：终端打印一条带一次性令牌的地址并等着你。机器上有浏览器的话，它会自己打开这个地址；按回车则改用终端里的同一套问题。
+   终端打印一个带一次性令牌的地址；这台机器有浏览器时，向导在浏览器里打开。
 
-![初始化向导的欢迎屏，写着这大约要一分钟](/guide/zh/setup_welcome.webp)
+1. 在浏览器里点 **开始配置这台机器**（Set this box up）。
 
-**3. 语言 [Language]。**选英文或者简体中文。
+![向导的欢迎页](/guide/zh/setup_welcome.webp)
 
-预期：屏幕顶上的计数器显示「配置 1/6」。
+### 回答六屏问题
 
-**4. 面板密码，以及保险库口令 [Secrets]。**填一个登录面板的密码，再填一句封存凭据的主口令。
+1. **语言**（Language）：选简体中文，点 **下一步**（Next）。
+1. **面板密码，以及保险库口令**（A password for the panel, a passphrase for the vault）：填一个面板密码和一个保险库主口令。
+1. **这台机器做什么？**（What is this machine for?）：选 **服务器**（Server）。
 
-预期：两个框都被接受，「下一步」可以按了。
+   ![形态屏，服务器已选中](/guide/zh/setup_shape.webp)
 
-![填面板密码和保险库主口令的一屏](/guide/zh/setup_secrets.webp)
+1. **用哪些网口？**（Which ports?）：面板端口保持 8080。
+1. **通过代理出网**（Going out through a proxy）：不勾选，直接下一步。
+1. **就绪**（Ready）：核对一遍，确认。
+
+   ![就绪屏](/guide/zh/setup_review.webp)
+
+1. 等步骤列表跑完，点 **打开面板**（Open the panel）。
+
+![初始化完成](/guide/zh/setup_done.webp)
 
 ::: warning
-保险库主口令封存这台机器保管的每一份凭据，恢复备份时还会再问一次，而机器上没有任何东西能把它找回来。口令丢了，备份里的凭据就打不开了。
-
-现在就把它记到密码管理器里，和面板密码分开存放，别只写在这台机器上。
-
+保险库主口令封存这台机器保管的每一份凭据，恢复备份时还要再输一次。这个口令在机器上没有备份，记在面板之外的地方。
 :::
 
-**5. 这台机器做什么 [Shape]。**选「服务器」。
+## 登录看一眼
 
-预期：这张卡底下的说明是「不做路由，在被访问的网口上应答。」
+1. 在浏览器里打开 `http://<hub-address>:8080`，其中 `<hub-address>` 是 `home-hub` 的地址。
 
-![选择机器形态的一屏，服务器卡片被选中](/guide/zh/setup_shape.webp)
+   ![登录页](/guide/zh/login.webp)
 
-**6. 用哪些网口 [Ports]。**面板端口保持 8080 不动。
+1. 在 **面板密码**（Panel password）里填第二屏设的密码，点 **登录**（Sign in）。
 
-预期：这一屏的说明是不给任何网口指定角色，每个网口都保留现有地址并照常应答。
+登录后是 **总览**（Dashboard）页。侧栏分两组：**Hub** 组十页，**被控端**（Agent）组六页。
 
-![网口一屏，面板端口是 8080](/guide/zh/setup_ports.webp)
+![总览页](/guide/zh/dashboard.webp)
 
-**7. 通过代理出网 [Proxy]。**跳过。
+## 接入第二台机器
 
-预期：不填任何链接，「下一步」照样可以按。跳过也是一种回答，之后在代理页随时打开。
+1. 打开 **设备**（Devices）页。`home-hub` 自己已经在 **已管理的设备**（Managed devices）里，因为初始化时装了它自己的被控端。
+1. 点 **用链接添加**（Add by link）。
 
-![代理一屏，出口节点链接留空](/guide/zh/setup_proxy.webp)
+   ![加入链接](/guide/zh/devices_enroll_link.webp)
 
-**8. 就绪 [Ready]。**看一遍这台机器将变成的样子，确认。
+1. 点通知里的 **复制**（Copy）。链接五分钟内有效。
+1. 在 `studio` 上安装被控端。
 
-预期：步骤一条条跑过去，最后一屏是「这台机器已是网关」。其间网络可能中断，中断了就刷新页面重连。
+   ```bash
+   sudo apt install ./neutrino-agent_0.2.0_amd64.deb
+   ```
 
-![确认屏，逐条列出形态、语言、应答网口和面板端口](/guide/zh/setup_review.webp)
+1. 在 `studio` 上用刚复制的链接接入。
 
-![完成屏，写着这台机器已是网关](/guide/zh/setup_done.webp)
+   ```bash
+   sudo nagent connect 'neutrino://enroll/PLACEHOLDER_LINK'
+   ```
 
-初始化最后会把这台机器自己的被控端也装上，中间不会问你要装哪些模块。
+   命令返回后几秒内，`studio` 出现在 **已管理的设备** 里。
 
-## 登录
-
-**1. 打开 `http://<hub>:8080`。**
-
-预期：登录页，上面是微子的标记和「控制面板」，一个「面板密码」输入框和一个「登录」按钮。
-
-![面板的登录页](/guide/zh/login.webp)
-
-**2. 用第 4 步那个面板密码登录。**
-
-预期：进入总览页。左边的导航分成两组，Hub 十页，被控端六页。
-
-![总览页，显示实时吞吐、出口和 DNS](/guide/zh/dashboard.webp)
-
-![左侧导航的两组，Hub 和被控端](/guide/zh/sidebar_groups.webp)
-
-面板走的是 HTTP，从局域网里访问它，或者从你自己的虚拟网上访问。
-
-## 接进第二台机器
-
-**1. 打开「设备」页。**
-
-预期：页面分成「已管理的设备」和「未管理的设备」两块，中枢自己那台已经在上面一块里。
-
-![设备页，已管理的设备里有中枢自己](/guide/zh/devices_managed.webp)
-
-**2. 点「用链接添加」。**
-
-预期：弹出一条 `neutrino://enroll/…` 的链接和一个「复制」按钮。这条链接五分钟内有效，而且同一时间只有一条，再生成一条旧的就作废。
-
-![接入链接的提示条，带复制按钮](/guide/zh/devices_enroll_link.webp)
-
-**3. 在 `studio` 上装被控端。**
-
-```bash
-sudo apt install ./neutrino-agent_0.2.0_amd64.deb
-```
-
-预期：包装好，服务起来了。
-
-**4. 在 `studio` 上用这条链接接入。**
-
-```bash
-sudo nagent connect 'neutrino://enroll/PLACEHOLDER_LINK'
-```
-
-预期：命令返回后几秒内，`studio` 出现在「已管理的设备」里，带一个在线的点。链接里带着通道地址、令牌和被控端要钉住的 TLS 指纹，所以它不用监听任何端口。
-
-::: tip
-不想挨个登机器的话，也可以让中枢通过 SSH 把被控端装过去：设备页点开那台机器的抽屉，用里面的「安装被控端」。做法见[《设备与远程桌面》](./devices-remote-desktop.md)。
-:::
+![两台已管理的设备](/guide/zh/devices_managed.webp)
 
 ## 装客户端
 
-**1. 在面板里打开「客户端」页，点「新建客户端链接」。**
+1. 在面板里打开 **客户端**（Clients）页，点 **新建客户端链接**（New client link）。
 
-预期：出现一个名字框，占位文字是「这是谁的程序，例如 alice-laptop」，旁边是「创建链接」。
+   ![新建客户端链接](/guide/zh/clients_create_link.webp)
 
-![客户端页，新建客户端链接的表单](/guide/zh/clients_create_link.webp)
+1. 名称填 `laptop`，点 **创建链接**（Create link），然后点 **复制**。
+1. 在 `laptop` 上安装客户端。
 
-**2. 名字填 `laptop`，点「创建链接」。**
+   ```bash
+   sudo apt install ./neutrino-client_0.2.0_amd64.deb
+   ```
 
-预期：弹出一条提示，让你把这条链接粘到 `laptop` 的客户端程序里，同样五分钟有效。
+1. 以你自己的账户打开窗口。
 
-![客户端接入链接的提示条](/guide/zh/clients_link_notice.webp)
+   ```bash
+   nclient gui
+   ```
 
-**3. 在 `laptop` 上装好客户端包，然后打开窗口。**
+   窗口标题是 **微子·客户端**（Neutrino client），状态卡写着 **未连接**（Not connected）。
 
-```bash
-nclient gui
-```
+   ![未连接的窗口](/guide/zh/client_disconnected.webp)
 
-预期：窗口打开，标题是「微子·客户端」，状态一栏写着「未连接」，下面一行提示粘贴 hub 客户端页面上的链接。这条命令前面不要加 `sudo`，客户端以你自己的身份运行，用 root 跑它会被拒绝。
+1. 把链接粘进输入框，点 **连接**（Connect）。
 
-![客户端窗口，未连接状态](/guide/zh/client_disconnected.webp)
+状态卡变成 **已连接**（Connected），带 hub 的版本号；下面是五个面板：网页、端口、AI、文件、远程桌面。
 
-**4. 把链接粘进输入框，点「连接」。**
+![已连接的窗口](/guide/zh/client_connected.webp)
 
-预期：状态变成「已连接」，后面跟着 hub 的版本号，旁边多了「断开」。下面的服务一栏画出五个面板：网页、端口、AI、文件、远程桌面。
-
-![客户端窗口，已连接并画出五个面板](/guide/zh/client_connected.webp)
-
-![面板的客户端页，laptop 在线](/guide/zh/clients_table.webp)
+::: tip
+`nclient` 以你的账户运行，前面不加 sudo。以 root 运行时它返回 `root_refused`。
+:::
 
 ## 发布一个共享并挂载
 
-**1. 在面板的被控端组里打开「Samba」页。**
+1. 在面板里打开 **Samba** 页，在 **已启用的设备**（Enabled devices）里勾选 `home-hub`，点 **应用设备**（Apply devices）。
+1. 在确认框里点 **应用设备**。安装完成后，页面下方出现这台机器的 Samba 面板。
+1. 在 **用户**（Users）里点 **添加用户**（Add user），用户名填 `alex`，密码任填一个，点 **应用用户**（Apply users）。
+1. 在 **共享**（Shares）里点 **添加共享**（Add share），名称填 `media`，路径填一个目录，点 **应用共享**（Apply shares）。
 
-预期：页面顶上是「已启用的设备」和一个设备选择器，下面写着这个模块还没装在任何机器上。Samba 跑在被控端下，也就是真正拿着磁盘的那台机器上，中枢自己不承载它。
+   ![一个共享](/guide/zh/samba_share.webp)
 
-**2. 勾上 `home-hub`，点「应用设备」。**
+1. 打开 **服务**（Services）页。`media` 在 **文件**（Files）组里，来源写着由 `home-hub` 上的 samba 模块发布。
 
-预期：先弹出一个安装确认框，列出要装的机器；确认后模块装上，页面开始显示这台机器自己的 Samba 面板。
+   ![服务页](/guide/zh/services_list.webp)
 
-**3. 在「用户」里点「添加用户」，名字填 `alex`，设一个密码，点「应用用户」。**
+1. 在 `laptop` 的客户端窗口里，在 **文件** 面板的 `media` 条目上点 **配置**（Config）。
 
-预期：这一行先标成待创建，应用之后账号就真的建好了。
+   ![挂载配置](/guide/zh/client_files_config.webp)
 
-**4. 在「共享」里点「添加共享」，名字填 `media`，选一个目录，点「应用共享」。**
+1. **共享用户名**（Share username）填 `alex`，**共享密码**（Share password）填它的密码，**挂载路径**（Mount path）保持默认，点 **挂载**（Mount）。
 
-预期：共享保存下来，服务重载，`media` 出现在共享列表里。
+按钮变成 **卸载**（Unmount），共享在 `~/nas/media`。
 
-![Samba 页，media 共享已经发布](/guide/zh/samba_share.webp)
-
-**5. 打开「服务」页。**
-
-预期：四组条目，网页、端口、AI、文件。`media` 在文件一组里，来源写的是由 `home-hub` 上的 samba 模块发布。
-
-![服务页，文件一组里有 media](/guide/zh/services_list.webp)
-
-**6. 回到 `laptop` 的客户端窗口，在文件面板上点「配置」。**
-
-预期：出现共享用户名、共享密码和挂载路径三个框，路径已经填好 `<home>/nas/media`。
-
-![客户端的文件配置表单](/guide/zh/client_files_config.webp)
-
-**7. 填 `alex` 和刚才那个密码，点「挂载」。**
-
-预期：按钮变成「卸载」，共享挂在 `~/nas/media` 下，文件管理器里直接能看到。
-
-![客户端的文件面板，共享已挂载](/guide/zh/client_files_mounted.webp)
-
-## 下一步
-
-- [《网络模式》](./network-modes.md)
-- [《用 NetBird 组网》](./overlay-netbird.md)、[《用 EasyTier 组网》](./overlay-easytier.md)
-- [《AI 网关》](./ai-gateway.md)
-- [《设备与远程桌面》](./devices-remote-desktop.md)
-- [《备份与恢复》](./backup-restore.md)
-
-至此，从装包到挂上共享的整条路就走完了。
+![已挂载的共享](/guide/zh/client_files_mounted.webp)
