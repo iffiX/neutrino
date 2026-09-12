@@ -265,6 +265,18 @@ class Agent:
         """Send the next report now rather than at the end of the interval."""
         self._news.set()
 
+    def _report_module_now(self, module: str) -> None:
+        """Read every module again and report at once, after a command took.
+
+        The hub answers the command's route from this report, so it goes
+        up whether or not the read found anything different.
+
+        Args:
+            module: The module the command belonged to.
+        """
+        self._engine.refresh_now()
+        self._news.set()
+
     def sync(self) -> dict:
         """Ask the hub for this machine's desired state.
 
@@ -637,7 +649,7 @@ class Agent:
                     reinstall=self._reinstall,
                     module_runners=self._engine.module_runners,
                     settle=self._desired.settle,
-                    on_module_changed=lambda module: self._engine.refresh_now(),
+                    on_module_changed=self._report_module_now,
                 )
             else:
                 self._channel = None

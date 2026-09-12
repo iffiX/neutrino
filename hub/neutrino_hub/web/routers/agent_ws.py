@@ -133,6 +133,7 @@ async def _serve(websocket: WebSocket, runtime, session: AgentSession, device):
             is_module_change = session.report.get("modules") != decoded.get("modules")
             session.record_report(decoded)
             await asyncio.to_thread(record_report, runtime, device, decoded)
+            session.note_report_recorded()
             if is_module_change:
                 runtime.published_services.schedule_refresh()
             if is_panel_change:

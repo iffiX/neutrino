@@ -24,6 +24,7 @@ from neutrino_hub.modules.devices.agent_module_controller import (
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_COMMAND_TIMEOUT_S,
+    DEVICE_MODULE_REPORT_WAIT_S,
     DEVICE_MODULE_VALIDATE_TIMEOUT_S,
 )
 from neutrino_hub.modules.devices.manifests import load_module_manifests
@@ -380,6 +381,10 @@ def run_command(
         action: The command's action on the wire.
         args: What the action takes.
 
+    The agent reports at once after a command that took, and the context
+    is read again from that report, so a view answered after this call
+    shows the machine as the command left it.
+
     Returns:
         What the agent closed with: ``{"exit_code", "code", "params",
         "output"}``.
@@ -390,6 +395,7 @@ def run_command(
             be asked.
     """
     require_online(context)
+    serial = runtime.agent_sessions.report_serial_of(context.key)
     try:
         info = runtime.agent_sessions.run_command_from_thread(
             context.key, action, dict(args), timeout=DEVICE_MODULE_COMMAND_TIMEOUT_S
@@ -410,6 +416,12 @@ def run_command(
             str(info.get("code") or CODE_COMMAND_FAILED),
             **params,
         )
+    runtime.agent_sessions.wait_for_report_from_thread(
+        context.key, serial, DEVICE_MODULE_REPORT_WAIT_S
+    )
+    context.state, context.code, context.params, context.details = module_status(
+        runtime, context.key, context.module
+    )
     return dict(info)
 
 

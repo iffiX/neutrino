@@ -256,6 +256,11 @@ class FakeAgentSessions:
         ended_at: When each device's last channel ended, by key.
         reported_at: When each device's last report arrived, by key.
         streams: Every stream opened, in order.
+        after_command: Called with ``(key, action, args)`` after a command
+            is recorded, standing in for what the machine's report says
+            afterwards.
+        report_serials: How many reports each device has sent, by key.
+        waited: Every wait for a report, ``(key, after_serial, timeout)``.
         scripts: Stream kind to a callable of the open's args answering
             ``(items, close_info)``: the items are delivered at once and
             the stream closed with the info, or left open when it is None.
@@ -277,6 +282,12 @@ class FakeAgentSessions:
         self.streams: list = []
         self.scripts: dict = {}
         self.refusal = None
+        # What the machine does behind a command, as a callable of
+        # ``(key, action, args)``: a test sets it to change the runtime's
+        # held report the way the agent's own report after the command would.
+        self.after_command = None
+        self.report_serials: dict = {}
+        self.waited: list = []
 
     async def open_stream(self, key, kind, args):
         from neutrino_hub.exceptions import StreamRefusedError
@@ -321,7 +332,17 @@ class FakeAgentSessions:
     ) -> dict:
         self._require(key)
         self.commands.append((key.lower(), action, dict(args or {})))
+        after = self.after_command
+        if after is not None:
+            after(key.lower(), action, dict(args or {}))
         return dict(self.outcomes.get(action, self.outcome))
+
+    def report_serial_of(self, key: str) -> int:
+        return self.report_serials.get(key.lower(), 0)
+
+    def wait_for_report_from_thread(self, key, after_serial, timeout) -> bool:
+        self.waited.append((key.lower(), after_serial, timeout))
+        return self.report_serials.get(key.lower(), 0) > after_serial
 
     def validate_from_thread(self, key, module, config, timeout=None) -> dict:
         self._require(key)

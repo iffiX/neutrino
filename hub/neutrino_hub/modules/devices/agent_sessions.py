@@ -221,8 +221,10 @@ class AgentSession:
         self.version = version
         self.report: dict = {}
         self.reported_at = ""
+        self.report_serial = 0
         self.state_hash = ""
         self.loop = loop
+        self._reported = asyncio.Event()
         self.opened_at = time.monotonic()
         self._websocket = websocket
         self._streams: dict[str, AgentStream] = {}
@@ -317,6 +319,34 @@ class AgentSession:
         platform = report.get("platform")
         if isinstance(platform, dict) and platform:
             self.platform = dict(platform)
+
+    def note_report_recorded(self) -> None:
+        """Count a report once everything read from it is in place.
+
+        Called on the loop after the report is recorded everywhere the
+        routes read, so a waiter woken here reads what the report said.
+        """
+        self.report_serial += 1
+        self._reported.set()
+        self._reported.clear()
+
+    async def wait_for_report(self, after_serial: int, timeout: float) -> bool:
+        """Wait for a report newer than the one counted.
+
+        Args:
+            after_serial: The serial the caller read before what it did.
+            timeout: How long to wait.
+
+        Returns:
+            True when a newer report was recorded, False when the wait ran
+            out or the channel closed.
+        """
+        while self.report_serial <= after_serial and not self._is_closed:
+            try:
+                await asyncio.wait_for(self._reported.wait(), timeout)
+            except asyncio.TimeoutError:
+                return False
+        return self.report_serial > after_serial
 
     def dispatch_text(self, message: dict) -> bool:
         """Route one stream message from the agent.
@@ -695,6 +725,42 @@ class AgentSessionRegistry:
         return session.call(
             self.run_command(key, action, args, on_line), timeout=timeout
         )
+
+    def report_serial_of(self, key: str) -> int:
+        """How many reports the device's live channel has counted.
+
+        Args:
+            key: The device.
+
+        Returns:
+            The count, 0 while it is offline.
+        """
+        session = self.get(key)
+        return session.report_serial if session is not None else 0
+
+    def wait_for_report_from_thread(
+        self, key: str, after_serial: int, timeout: float
+    ) -> bool:
+        """:meth:`AgentSession.wait_for_report` for a caller outside the loop.
+
+        Args:
+            key: The device.
+            after_serial: The serial read before what the caller did.
+            timeout: How long to wait.
+
+        Returns:
+            True when a newer report was recorded; False when the wait ran
+            out, the channel closed, or the device is offline.
+        """
+        session = self.get(key)
+        if session is None:
+            return False
+        try:
+            return session.call(
+                session.wait_for_report(after_serial, timeout), timeout=timeout + 1
+            )
+        except StreamRefusedError:
+            return False
 
     def run_order_from_thread(
         self, key: str, order: dict, on_line=None, timeout: "float | None" = None

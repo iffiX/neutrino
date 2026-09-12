@@ -180,6 +180,10 @@ DEVICE_GITEA_SECRET_NAMES = (
 # a command before answering that the machine never reported.
 DEVICE_MODULE_VALIDATE_TIMEOUT_S = 30.0
 DEVICE_MODULE_COMMAND_TIMEOUT_S = 120.0
+# How long a route waits, after a command took, for the report the agent
+# sends at once behind it. The agent's heartbeat is five seconds, so a
+# report arrives inside this even when the command changed nothing.
+DEVICE_MODULE_REPORT_WAIT_S = 6.0
 # How long a file listing or one small file operation may take on the
 # agent before the route answers that the machine never reported.
 DEVICE_FILE_OP_TIMEOUT_S = 30.0

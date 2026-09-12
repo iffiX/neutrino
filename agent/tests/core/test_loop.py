@@ -729,3 +729,17 @@ def test_an_unbound_agent_idles(config_path, monkeypatch):
     agent = Agent(log=lambda message: None)
 
     assert agent.run_once() == IDLE_POLL_INTERVAL_S
+
+
+def test_a_module_command_that_took_is_reported_at_once(config_path, monkeypatch):
+    """The hub answers the command's route from the report behind it, so
+    the report goes up whether or not the read found anything new."""
+    agent, _ = scripted_agent(config_path, monkeypatch, [[WELCOME]])
+    refreshed: list = []
+    monkeypatch.setattr(agent._engine, "refresh_now", lambda: refreshed.append(True))
+    agent._news.clear()
+
+    agent._operator._on_module_changed("zfs")
+
+    assert refreshed == [True]
+    assert agent._news.is_set()

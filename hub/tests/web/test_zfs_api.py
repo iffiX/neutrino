@@ -333,3 +333,32 @@ def test_an_offline_device_takes_no_verb(box):
 
     assert response.status_code == 409
     assert runtime.agent_sessions.commands == []
+
+
+def test_the_view_answered_after_a_destroy_is_the_report_after_it(box):
+    """The route waits for the report the agent sends behind the command
+    and reads the device again from it: the pool that was just destroyed
+    is gone from the answer, and the page draws that answer as it is."""
+    client, runtime = box
+    sessions = runtime.agent_sessions
+    sessions.report_serials[DEVICE] = 3
+
+    def machine_after(key, action, args):
+        runtime.report(
+            DEVICE,
+            "zfs",
+            "installed",
+            pools=[],
+            datasets=[],
+            disks=[DISK],
+            importable=[],
+        )
+        sessions.report_serials[DEVICE] = 4
+
+    sessions.after_command = machine_after
+
+    payload = client.delete(f"{BASE}/pools/tank").json()
+
+    assert sessions.waited == [(DEVICE, 3, 6.0)]
+    assert payload["pools"] == []
+    assert [disk["device"] for disk in payload["disks"]] == ["/dev/sdc"]

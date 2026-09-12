@@ -597,3 +597,42 @@ def test_a_frame_from_a_thread_lands_on_the_session_without_waiting():
         assert socket.sent("catalog") == [{"type": "catalog", "hash": "h"}]
 
     run(scenario)
+
+
+def test_a_wait_for_a_report_ends_with_the_next_one_counted():
+    async def scenario():
+        made = session()
+        made.note_report_recorded()
+        before = made.report_serial
+
+        async def report_later():
+            await asyncio.sleep(0.01)
+            made.record_report({"modules": {}})
+            made.note_report_recorded()
+
+        asyncio.create_task(report_later())
+        is_newer = await made.wait_for_report(before, timeout=2.0)
+
+        assert is_newer
+        assert made.report_serial == before + 1
+
+    asyncio.run(scenario())
+
+
+def test_a_wait_with_no_report_ends_at_its_timeout():
+    async def scenario():
+        made = session()
+
+        assert await made.wait_for_report(made.report_serial, timeout=0.02) is False
+
+    asyncio.run(scenario())
+
+
+def test_a_report_already_newer_than_the_serial_ends_the_wait_at_once():
+    async def scenario():
+        made = session()
+        made.note_report_recorded()
+
+        assert await made.wait_for_report(0, timeout=0.01)
+
+    asyncio.run(scenario())
