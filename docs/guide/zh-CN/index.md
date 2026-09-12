@@ -3,7 +3,7 @@ layout: home
 title: 微子
 hero:
   name: 微子
-  text: 家里一台常开的 hub（中枢），管住你的每台机器。
+  text: 家里一台常开的 hub，管住你的每台机器。
   tagline: 网络、虚拟网、代理和 AI 网关在一台机器上。被控端提供共享、git、容器、存储和桌面；客户端把它们变成窗口里的按钮。
   image:
     src: /neutrino_512.png
