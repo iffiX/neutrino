@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import threading
 
 from neutrino_client import bundled
@@ -62,9 +63,11 @@ def client_invocation(binary: str, peer: str, password: str) -> list:
 
     Raises:
         LookupError: When this process owns no display, so a spawn would
-            open a window nobody sees.
+            open a window nobody sees. Only Linux names its display in the
+            environment; Windows and macOS hand every process of a session
+            its screen.
     """
-    if os.name != "nt" and not (
+    if sys.platform.startswith("linux") and not (
         os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
     ):
         raise LookupError("no display to open a window on")

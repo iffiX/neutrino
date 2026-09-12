@@ -69,7 +69,7 @@ def run_inline(target):
 def handler(monkeypatch):
     monkeypatch.setattr(bundled, "rustdesk_path", lambda: "/opt/rustdesk")
     monkeypatch.setattr(rdp_module.os, "environ", {"DISPLAY": ":0"})
-    monkeypatch.setattr(rdp_module.os, "name", "posix")
+    monkeypatch.setattr(rdp_module.sys, "platform", "linux")
     lines = []
     platform = FakeClientPlatform()
     hub = FakeHub()
@@ -186,11 +186,27 @@ def test_a_reply_with_no_address_is_refused_rather_than_dialled(handler):
 
 def test_no_display_refuses_rather_than_opening_nothing(handler, monkeypatch):
     subject, platform, _hub, _lines = handler
+    monkeypatch.setattr(rdp_module.sys, "platform", "linux")
     monkeypatch.setattr(rdp_module.os, "environ", {})
 
     assert subject.act(entries=[ENTRY], body=CONNECT_BODY) == {}
     assert failure_of(subject) == {"code": "rdp_no_desktop", "params": {}}
     assert platform.started == []
+
+
+@pytest.mark.parametrize("platform_name", ["darwin", "win32"])
+def test_a_session_that_names_no_display_still_has_a_screen_off_linux(
+    handler, monkeypatch, platform_name
+):
+    """macOS and Windows hand every process of a session its screen; only
+    Linux says so in the environment."""
+    subject, platform, _hub, _lines = handler
+    monkeypatch.setattr(rdp_module.sys, "platform", platform_name)
+    monkeypatch.setattr(rdp_module.os, "environ", {})
+
+    assert subject.act(entries=[ENTRY], body=CONNECT_BODY) == {}
+    assert failure_of(subject)["code"] == ""
+    assert isinstance(platform.started[0], FakeProcess)
 
 
 def test_a_viewer_that_will_not_start_is_typed(handler):
@@ -230,7 +246,7 @@ def test_the_default_port_is_dialled_by_bare_address():
 
 
 def test_the_invocation_keeps_only_the_display_branch(monkeypatch):
-    monkeypatch.setattr(rdp_module.os, "name", "posix")
+    monkeypatch.setattr(rdp_module.sys, "platform", "linux")
     monkeypatch.setattr(rdp_module.os, "environ", {"WAYLAND_DISPLAY": "wayland-0"})
     assert client_invocation("/r", "h", "p") == [
         "/r",
@@ -244,7 +260,7 @@ def test_the_invocation_keeps_only_the_display_branch(monkeypatch):
     with pytest.raises(LookupError):
         client_invocation("/r", "h", "p")
 
-    monkeypatch.setattr(rdp_module.os, "name", "nt")
+    monkeypatch.setattr(rdp_module.sys, "platform", "win32")
     assert client_invocation("/r", "h", "p")[1] == "--connect"
 
     import inspect
@@ -252,20 +268,11 @@ def test_the_invocation_keeps_only_the_display_branch(monkeypatch):
     assert "runuser" not in inspect.getsource(rdp_module)
 
 
-def test_the_windows_viewer_needs_no_display(handler, monkeypatch):
-    subject, platform, _hub, _lines = handler
-    monkeypatch.setattr(rdp_module.os, "name", "nt")
-    monkeypatch.setattr(rdp_module.os, "environ", {})
-
-    assert subject.act(entries=[ENTRY], body=CONNECT_BODY) == {}
-    assert isinstance(platform.started[0], FakeProcess)
-
-
 def test_a_second_connect_while_one_is_in_flight_is_busy(monkeypatch):
     """The lane runs one connect at a time; the page greys the row."""
     monkeypatch.setattr(bundled, "rustdesk_path", lambda: "/opt/rustdesk")
     monkeypatch.setattr(rdp_module.os, "environ", {"DISPLAY": ":0"})
-    monkeypatch.setattr(rdp_module.os, "name", "posix")
+    monkeypatch.setattr(rdp_module.sys, "platform", "linux")
     held = []
     subject = RdpViewerHandler(
         platform=FakeClientPlatform(),
