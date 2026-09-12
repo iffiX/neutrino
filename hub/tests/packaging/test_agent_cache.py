@@ -104,3 +104,64 @@ def test_the_cache_directory_is_the_one_the_runtime_names():
     """Packaging follows the runtime here: a directory spelled twice is a
     package that seeds one place and a panel that reads another."""
     assert str(venv_tree.AGENT_PACKAGE_CACHE_DIR) == "/var/lib/neutrino/agent_cache"
+
+
+# --- seeding from packages a release already built ------------------------
+
+
+def test_a_release_seeds_every_machine_it_built_and_builds_nothing(
+    tmp_path, monkeypatch
+):
+    """The hub's own build makes the agent for one machine; a release hands
+    it both, so a hub of either architecture can enroll a device of either."""
+    prebuilt = tmp_path / "prebuilt"
+    prebuilt.mkdir()
+    for name in (
+        DEB_NAME,
+        RPM_NAME,
+        "neutrino-agent_0.1.0_arm64.deb",
+        "neutrino-agent-0.1.0-1.aarch64.rpm",
+        "SHA256SUMS",
+    ):
+        (prebuilt / name).write_bytes(name.encode())
+    monkeypatch.setenv(venv_tree.AGENT_PACKAGES_DIR_ENV, str(prebuilt))
+    monkeypatch.setattr(
+        venv_tree, "run", lambda *a, **k: pytest.fail("the agent was built")
+    )
+    tree = tmp_path / "tree"
+    staged_python = tree / "opt/neutrino/python"
+    (staged_python / "lib/python3.13/site-packages/neutrino_hub/data").mkdir(
+        parents=True
+    )
+
+    venv_tree.stage_agent_cache(tree, staged_python, "amd64")
+
+    cache = tree / str(venv_tree.AGENT_PACKAGE_CACHE_DIR).lstrip("/")
+    assert sorted(path.name for path in cache.iterdir()) == sorted(
+        [
+            DEB_NAME,
+            RPM_NAME,
+            "neutrino-agent_0.1.0_arm64.deb",
+            "neutrino-agent-0.1.0-1.aarch64.rpm",
+        ]
+    )
+    manifest = json.loads(
+        (
+            staged_python
+            / "lib/python3.13/site-packages/neutrino_hub/data"
+            / venv_tree.AGENT_PACKAGE_MANIFEST_NAME
+        ).read_text()
+    )
+    assert sorted(manifest) == ["deb-amd64", "deb-arm64", "rpm-amd64", "rpm-arm64"]
+
+
+def test_a_directory_with_no_agent_package_stops_the_build(tmp_path, monkeypatch):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    (empty / "SHA256SUMS").write_text("")
+    monkeypatch.setenv(venv_tree.AGENT_PACKAGES_DIR_ENV, str(empty))
+
+    with pytest.raises(SystemExit) as refused:
+        venv_tree.stage_agent_cache(tmp_path / "tree", tmp_path / "python", "amd64")
+
+    assert "no agent package" in str(refused.value)

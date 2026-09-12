@@ -12,8 +12,11 @@ permissions:
   contents: write
 
 jobs:
+  # After the agent: the hub seeds its cache with the agent packages of
+  # both machines rather than building the agent again for its own.
   hub:
     name: hub .deb, .rpm and Arch (${{ matrix.architecture }})
+    needs: [agent]
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -21,6 +24,12 @@ jobs:
         architecture: [amd64, arm64]
     steps:
       - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: agent_*
+          path: agent_packages
+          merge-multiple: true
 
       - uses: actions/setup-node@v7
         with:
@@ -48,6 +57,7 @@ jobs:
           --only hub
           --architecture ${{ matrix.architecture }}
           --output-dir dist
+          --agent-packages agent_packages
           ${{ startsWith(github.ref, 'refs/tags/')
               && format('--agent-package-url-base https://github.com/{0}/releases/download/{1}', github.repository, github.ref_name)
               || '' }}

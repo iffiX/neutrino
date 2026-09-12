@@ -205,6 +205,12 @@ AGENT_PACKAGE_MACHINE = _runtime(_AGENT_PACKAGE_MODULE, "package_architecture")
 # alone.
 AGENT_PACKAGE_URL_BASE_ENV = "NEUTRINO_AGENT_PACKAGE_URL_BASE"
 
+# A directory of agent packages already built, every family and machine the
+# release makes, seeded into the cache as they are. A release builds the agent
+# once per machine and hands the hub's builds the results; without it the
+# hub's build makes the agent for its own machine and seeds that alone.
+AGENT_PACKAGES_DIR_ENV = "NEUTRINO_AGENT_PACKAGES_DIR"
+
 # What every package declares it needs, read from the hub's own constants so a
 # dependency field and what a checkout installs cannot say different things.
 # `systemd` is added here rather than there: the hub drives it through
@@ -370,11 +376,12 @@ def stage_agent_cache(tree: Path, staged_python: Path, machine: str) -> None:
     cannot drift. The files land where an installed hub looks for them, so a
     Linux enrollment and a Linux self-update need no network at all.
 
-    The agent carries an interpreter and compiled bindings of its own, so what
-    is seeded is for this container's machine and no other. A hub serving
-    devices of a second architecture fetches those from the release the
-    manifest names, or is given them by hand under
-    ``config/devices/packages``.
+    A release hands this build the agent packages it made for every machine,
+    through :data:`AGENT_PACKAGES_DIR_ENV`, so a hub of either architecture
+    can enroll a device of either. A build given none makes the agent for its
+    own machine and seeds that alone; a hub serving the other architecture
+    then fetches it from the release the manifest names, or is given it by
+    hand under ``config/devices/packages``.
 
     The build container carries ``dpkg-dev``, ``rpm`` and the headers the
     agent's bindings compile against.
@@ -386,26 +393,38 @@ def stage_agent_cache(tree: Path, staged_python: Path, machine: str) -> None:
             it.
 
     Raises:
-        SystemExit: When a build writes a file whose platform cannot be read
-            from its name, which would seed the cache under a key nothing
-            asks for.
+        SystemExit: When a file's platform cannot be read from its name,
+            which would seed the cache under a key nothing asks for, or the
+            directory given holds no agent package at all.
     """
     cache = tree / str(AGENT_PACKAGE_CACHE_DIR).lstrip("/")
     cache.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as workdir:
         built = Path(workdir)
-        for script in ("build_deb.py", "build_rpm.py"):
-            run(
-                [
-                    str(staged_python / "bin" / "python3"),
-                    str(AGENT_ROOT / "packaging" / script),
-                    "--output-dir",
-                    str(built),
-                    "--architecture",
-                    machine,
-                ],
-                cwd=AGENT_ROOT,
+        prebuilt = _agent_packages_dir()
+        if prebuilt is not None:
+            found = sorted(
+                path
+                for path in prebuilt.iterdir()
+                if path.name.startswith("neutrino-agent")
             )
+            if not found:
+                raise SystemExit(f"no agent package under {prebuilt}")
+            for path in found:
+                shutil.copyfile(path, built / path.name)
+        else:
+            for script in ("build_deb.py", "build_rpm.py"):
+                run(
+                    [
+                        str(staged_python / "bin" / "python3"),
+                        str(AGENT_ROOT / "packaging" / script),
+                        "--output-dir",
+                        str(built),
+                        "--architecture",
+                        machine,
+                    ],
+                    cwd=AGENT_ROOT,
+                )
         manifest = agent_cache_entries(sorted(built.iterdir()), _agent_url_base())
         for path in sorted(built.iterdir()):
             key = AGENT_PLATFORM_KEY(*_agent_platform(path.name))
@@ -470,6 +489,12 @@ def _agent_platform(name: str) -> tuple:
 def _agent_url_base() -> str:
     """Where a release publishes the agent packages, empty for any other build."""
     return os.environ.get(AGENT_PACKAGE_URL_BASE_ENV, "").strip()
+
+
+def _agent_packages_dir() -> Path | None:
+    """The agent packages a release handed this build, None to build its own."""
+    given = os.environ.get(AGENT_PACKAGES_DIR_ENV, "").strip()
+    return Path(given) if given else None
 
 
 def stage_vendored(tree: Path, machine: str) -> None:

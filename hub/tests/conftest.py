@@ -12,6 +12,13 @@ one nobody dares run on the gateway.
 real validators where that is possible unprivileged — ``dnsmasq --test`` is —
 and marked ``needs_root`` where it is not, because ``nft -c`` needs to open a
 netlink socket. Those skip with a reason rather than failing.
+
+The first rule is enforced, not only stated: every test runs under a guard on
+``subprocess.run`` that refuses a program changing the machine — a
+``systemctl`` that starts, stops, enables or masks, an ``nft`` that loads or
+deletes, an ``ip`` that adds or removes, and everything polkit would ask a
+person to authorize. A test that reaches one fails naming the command, rather
+than stopping a unit on the developer's box or opening a password dialog.
 """
 
 import os
@@ -20,6 +27,107 @@ import subprocess
 import threading
 
 import pytest
+
+# What a test may run: the program, and the verbs of it that only read. A
+# program not listed here is refused outright; one listed is refused unless
+# the first word of it that is not an option is one of these.
+READ_ONLY_VERBS = {
+    "systemctl": {
+        "is-active",
+        "is-enabled",
+        "is-failed",
+        "show",
+        "status",
+        "cat",
+        "list-units",
+        "list-unit-files",
+    },
+    "ip": {
+        "addr",
+        "address",
+        "link",
+        "route",
+        "rule",
+        "neigh",
+        "-json",
+        "-4",
+        "-6",
+        "-d",
+        "-br",
+        "-brief",
+    },
+    "nft": {"-c", "--check", "list"},
+    "resolvectl": {"status", "query", "dns", "domain"},
+    "nmcli": {"-t", "-g", "device", "general", "connection", "-f", "--fields"},
+    "iw": {"dev", "list", "reg", "phy"},
+    "journalctl": set(),
+    "loginctl": {"list-sessions", "show-session", "list-users"},
+}
+REFUSED_PROGRAMS = {
+    "pkexec",
+    "sudo",
+    "runuser",
+    "su",
+    "mount",
+    "umount",
+    "apt-get",
+    "apt",
+    "dnf",
+    "pacman",
+    "useradd",
+    "usermod",
+    "userdel",
+    "groupadd",
+    "reboot",
+    "shutdown",
+    "poweroff",
+}
+MUTATING_IP_VERBS = {"add", "del", "delete", "replace", "change", "set", "flush"}
+
+_real_subprocess_run = subprocess.run
+
+
+def _refuses(command) -> str | None:
+    """Why a command must not run from a test, or None when it may."""
+    if not isinstance(command, (list, tuple)) or not command:
+        return None
+    program = os.path.basename(str(command[0]))
+    if program in REFUSED_PROGRAMS:
+        return f"{program} would ask for authorization or change the machine"
+    if program not in READ_ONLY_VERBS:
+        return None
+    words = [str(word) for word in command[1:]]
+    if program == "ip":
+        if any(word in MUTATING_IP_VERBS for word in words):
+            return "ip would change an address, a link, a route or a rule"
+        return None
+    if program == "journalctl":
+        return None
+    verbs = READ_ONLY_VERBS[program]
+    for word in words:
+        if word in verbs:
+            return None
+        if not word.startswith("-"):
+            return f"{program} {word} would change the machine"
+    return None
+
+
+@pytest.fixture(autouse=True)
+def _no_test_reaches_the_machine(monkeypatch):
+    """Refuse, by name, any command a test would run that changes the box."""
+
+    def guarded_run(command, *arguments, **keywords):
+        reason = _refuses(command)
+        if reason is not None:
+            test = os.environ.get("PYTEST_CURRENT_TEST", "a test")
+            raise AssertionError(
+                f"{test} reached the machine: {' '.join(map(str, command))} ({reason}); "
+                "stub the applier that ran it"
+            )
+        return _real_subprocess_run(command, *arguments, **keywords)
+
+    monkeypatch.setattr(subprocess, "run", guarded_run)
+
 
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.link_status import (

@@ -205,6 +205,8 @@ CONTAINER_BUILD = (
 # which is what makes a local build refuse a platform it did not make rather
 # than reach for a file nobody published.
 AGENT_PACKAGE_URL_BASE_ENV = "NEUTRINO_AGENT_PACKAGE_URL_BASE"
+# And what it reads to find agent packages already built, for every machine.
+AGENT_PACKAGES_DIR_ENV = "NEUTRINO_AGENT_PACKAGES_DIR"
 
 # The name each family gives the same machine.
 ARCHITECTURE_NAMES = {
@@ -241,6 +243,12 @@ def main() -> int:
         "--agent-package-url-base",
         default="",
         help="where a release publishes the agent packages the hub seeds",
+    )
+    parser.add_argument(
+        "--agent-packages",
+        default="",
+        help="a directory of agent packages already built, for every machine, "
+        "seeded into the hub's cache instead of building the hub's own",
     )
     arguments = parser.parse_args()
 
@@ -298,6 +306,7 @@ def main() -> int:
                 arguments.architecture,
                 family,
                 agent_package_url_base=arguments.agent_package_url_base,
+                agent_packages=arguments.agent_packages,
             )
 
     if arguments.only in ("all", "sources"):
@@ -338,6 +347,7 @@ def _build_in_container(
     family: str,
     *,
     agent_package_url_base: str = "",
+    agent_packages: str = "",
 ) -> None:
     """Run one packaging build inside a container of its own family.
 
@@ -351,6 +361,9 @@ def _build_in_container(
         agent_package_url_base: Where a release publishes the agent packages
             the hub's build seeds its cache with; nothing is stamped without
             it.
+        agent_packages: A directory of agent packages already built, mounted
+            into the container for the hub's build to seed from; empty has
+            the hub's build make its own machine's.
 
     Raises:
         SystemExit: If the architecture is not one the packages are published
@@ -375,6 +388,13 @@ def _build_in_container(
         if agent_package_url_base
         else []
     )
+    if agent_packages:
+        stamp += [
+            "-v",
+            f"{Path(agent_packages).resolve()}:/agent_packages:ro",
+            "-e",
+            f"{AGENT_PACKAGES_DIR_ENV}=/agent_packages",
+        ]
     # --network=host because this machine's own nftables rules are what a
     # container network would otherwise have to negotiate with.
     _run(

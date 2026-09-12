@@ -142,7 +142,7 @@ ROUTER_ROUTE_RULE_PRIORITY = 100
 ROUTER_NFT_PATH = UTILS_GENERATED_DIR / "router.nft"
 # One access point per wireless interface, so both the rendered files and the
 # systemd unit are named after the interface they serve.
-ROUTER_HOSTAPD_UNIT = "neutrino_hostapd@{interface}.service"
+ROUTER_HOSTAPD_UNIT = "neutrino_hub_hostapd@{interface}.service"
 
 
 def router_hostapd_config_path(interface: str):

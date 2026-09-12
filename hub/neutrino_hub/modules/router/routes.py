@@ -443,6 +443,11 @@ class RouterInterfaceApplier:
         return changes
 
     def _apply_lan(self, interface: RouterInterface) -> list[str]:
+        # A served network takes no lease, wired or wireless: the address is
+        # the one somebody chose, and it is what dnsmasq binds and nftables
+        # masquerades out of. A radio that was an uplink a moment ago still
+        # has its lease client running.
+        RouterDhcpClient(interface=interface.device_name).stop()
         if self._is_wifi(interface.name):
             radio = RouterWifiAccessPoint(interface=interface.name)
             is_changed = radio.publish(interface=interface)
@@ -455,9 +460,6 @@ class RouterInterfaceApplier:
 
         device = interface.device_name
         changes = self._ensure_vlan(interface)
-        # A served network takes no lease: the address is the one somebody
-        # chose, and it is what dnsmasq binds and nftables masquerades out of.
-        RouterDhcpClient(interface=device).stop()
         if links.set_address(device, interface.lan.cidr):
             changes.append(f"{interface.name} serving {interface.lan.cidr}")
         links.set_up(device)

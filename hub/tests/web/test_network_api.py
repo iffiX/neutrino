@@ -85,6 +85,10 @@ def box(monkeypatch):
     monkeypatch.setattr(
         network_router, "RouterLinkStatus", lambda: runtime.link_status()
     )
+    # Leaving a mode hands the machine back, which flushes the firewall and
+    # stops every unit: the machine here is a dictionary, and a test that
+    # wants to see the hand-back swaps this for a recorder of its own.
+    monkeypatch.setattr(network_router, "hand_back", lambda network: [])
 
     app = FastAPI()
     app.include_router(network_router.router)
@@ -410,6 +414,8 @@ def guest_box(monkeypatch):
     monkeypatch.setattr(
         network_router, "RouterLinkStatus", lambda: runtime.link_status()
     )
+    monkeypatch.setattr(network_router, "hand_back", lambda network: [])
+
     app = FastAPI()
     app.include_router(network_router.router)
     app.dependency_overrides[require_session] = lambda: None
