@@ -6,6 +6,7 @@ and a node that was probed and did not answer. The last is the only failure.
 """
 
 import socket
+import struct
 import time
 
 from neutrino_hub.modules.xray import node_probe
@@ -133,21 +134,69 @@ def test_a_probe_without_the_privilege_to_mark_still_probes(monkeypatch):
 
 
 def test_the_delay_is_the_connect_and_not_the_lookup(monkeypatch):
-    """The name resolves through whatever the box resolves with, which on a
-    box proxying its LAN is the proxy itself."""
+    """The name is resolved before the clock starts, at the direct resolver."""
     clock = iter([0.0, 0.5, 1.0, 1.07])
     monkeypatch.setattr(node_probe.time, "monotonic", lambda: next(clock))
+    asked: list = []
 
-    def slow_lookup(address, port, **keywords):
+    def slow_lookup(name, *, server, port=53, timeout_s=0):
+        asked.append((name, server, port))
         next(clock)
         next(clock)
-        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, port))]
+        return "203.0.113.10"
 
-    monkeypatch.setattr(node_probe.socket, "getaddrinfo", slow_lookup)
+    monkeypatch.setattr(node_probe, "resolve_direct", slow_lookup)
     monkeypatch.setattr(
         node_probe.socket, "socket", lambda *arguments: _RecordingSocket()
     )
+    named = XrayNodeConfig(
+        id="two",
+        name="two",
+        address="exit.example.net",
+        is_enabled=True,
+        protocol="shadowsocks",
+        port=5800,
+    )
 
-    result = XrayNodeProbe().probe(NODE)
+    result = XrayNodeProbe(resolver_of=lambda: ("223.5.5.5", 53)).probe(named)
 
+    assert asked == [("exit.example.net", "223.5.5.5", 53)]
     assert result.delay_ms == 70
+
+
+def test_a_name_is_never_asked_of_the_machines_own_resolver(monkeypatch):
+    """That resolver is the proxy on a box proxying its own names, and a
+    probe of an exit that waits on the exit measures nothing."""
+    monkeypatch.setattr(
+        node_probe.socket,
+        "getaddrinfo",
+        lambda *arguments, **keywords: (_ for _ in ()).throw(AssertionError("asked")),
+    )
+    named = XrayNodeConfig(
+        id="two",
+        name="two",
+        address="exit.example.net",
+        is_enabled=True,
+        protocol="shadowsocks",
+        port=5800,
+    )
+
+    result = XrayNodeProbe().probe(named)
+
+    assert result.is_alive is False
+
+
+def test_a_dns_answer_yields_its_first_a_record():
+    """A CNAME ahead of the address is skipped; the answer's names are
+    compression pointers back into the question."""
+    header = struct.pack("!HHHHHH", 7, 0x8180, 1, 2, 0, 0)
+    question = b"\x04exit\x07example\x03net\x00" + struct.pack("!HH", 1, 1)
+    cname = b"\xc0\x0c" + struct.pack("!HHIH", 5, 1, 60, 2) + b"\xc0\x0c"
+    a_record = (
+        b"\xc0\x0c" + struct.pack("!HHIH", 1, 1, 60, 4) + bytes([203, 0, 113, 10])
+    )
+
+    assert node_probe._first_a_record(header + question + cname + a_record) == (
+        "203.0.113.10"
+    )
+    assert node_probe._first_a_record(header + question) is None

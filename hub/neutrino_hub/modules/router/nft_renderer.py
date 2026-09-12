@@ -62,10 +62,12 @@ class RouterNftRenderer:
         self._overlay_ports = network.exposed_overlay_peer_ports
         self._side_lans = _side_lan_subnets(network)
         self._is_inter_lan_allowed = network.is_inter_lan_allowed
-        # Two independent scopes: what the box forwards, and the box itself.
-        # Neither implies the other, so a server can proxy its own traffic
-        # while forwarding nobody's.
+        # Three independent scopes: the networks the box serves, the overlay
+        # members using it as their exit node, and the box itself. None
+        # implies another, so a server can proxy its own traffic while
+        # forwarding nobody's.
         self._is_lan_proxy_enabled = routing.get("is_proxy_enabled", True)
+        self._is_overlay_proxy_enabled = routing.get("is_overlay_proxy_enabled", False)
         self._is_local_proxy_enabled = routing.get("is_local_proxy_enabled", False)
         self._xray_uid = xray_uid
         self._agent_port = agent_port
@@ -129,29 +131,34 @@ class RouterNftRenderer:
                 f"tproxy ip to {target} accept",
                 "",
             ]
-        if not self._is_lan_proxy_enabled:
+        diverted = self._diverted_interfaces
+        if not diverted:
             lines += [
-                "        # LAN traffic is not sent to the proxy: it is forwarded",
+                "        # Nothing forwarded is sent to the proxy: it is forwarded",
                 "        # and masqueraded like any router's.",
                 "    }\n",
             ]
             return "\n".join(lines)
-        if not self._lans:
-            lines += [
-                "        # No interface has the LAN role, so there is nothing to",
-                "        # divert into the proxy.",
-                "    }\n",
-            ]
-            return "\n".join(lines)
         lines += [
-            "        # Everything below is LAN traffic being proxied.",
-            f"        iifname != {_interface_set(self._lans)} return",
+            "        # Everything below is forwarded traffic being proxied: the",
+            "        # served networks, and the overlays whose members exit here.",
+            f"        iifname != {_interface_set(diverted)} return",
             "        ip daddr @reserved_v4 return",
             "        meta l4proto { tcp, udp } "
             f"tproxy ip to {target} meta mark set {hex(ROUTER_FWMARK_TPROXY)} accept",
             "    }\n",
         ]
         return "\n".join(lines)
+
+    @property
+    def _diverted_interfaces(self) -> list[str]:
+        """The interfaces whose forwarded traffic the proxy takes."""
+        names = []
+        if self._is_lan_proxy_enabled:
+            names += self._lans
+        if self._is_overlay_proxy_enabled:
+            names += self._exposed_overlays
+        return names
 
     def _render_output(self) -> str:
         if not self._is_local_proxy_enabled:
@@ -266,7 +273,7 @@ class RouterNftRenderer:
             "        ct state invalid drop",
             '        iifname "lo" accept',
         ]
-        if self._is_lan_proxy_enabled and self._lans:
+        if self._diverted_interfaces:
             lines += [
                 "        # What TPROXY diverted is xray's to take, from any served",
                 "        # network, exposed or not: the mark is set on the way in",

@@ -19,6 +19,13 @@ interface SparklineProps {
   height?: number;
   /** Fill the parent's width instead of rendering at natural size. */
   isStretchy?: boolean;
+  /**
+   * A value the vertical scale always includes. Without one the scale runs
+   * from the lowest value to the highest, so a series of near-equal
+   * measurements fills the glyph with noise; with `0`, a steady 70 ms reads
+   * as a level line and a 700 ms one as a high one.
+   */
+  baseline?: number;
 }
 
 export function Sparkline({
@@ -27,6 +34,7 @@ export function Sparkline({
   width = 68,
   height = 20,
   isStretchy = false,
+  baseline,
 }: SparklineProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -34,7 +42,7 @@ export function Sparkline({
     return <span className="sparkline_empty">{t("ui.sparkline.empty")}</span>;
   }
 
-  const points = toPoints(values, width, height);
+  const points = toPoints(values, width, height, baseline);
   const linePath = points
     .map((point, index) => `${index === 0 ? "M" : "L"}${point.x} ${point.y}`)
     .join(" ");
@@ -65,9 +73,11 @@ function toPoints(
   values: number[],
   width: number,
   height: number,
+  baseline?: number,
 ): { x: number; y: number }[] {
-  const lowest = Math.min(...values);
-  const highest = Math.max(...values);
+  const scaled = baseline === undefined ? values : [...values, baseline];
+  const lowest = Math.min(...scaled);
+  const highest = Math.max(...scaled);
   const span = highest - lowest || 1;
   const usableHeight = height - VERTICAL_PADDING * 2;
   const step = width / (values.length - 1);

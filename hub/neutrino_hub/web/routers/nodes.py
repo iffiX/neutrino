@@ -20,6 +20,7 @@ from neutrino_hub.web.models import (
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.modules.xray.constants import (
+    XRAY_SCOPE_SWITCHES,
     XRAY_BALANCER_STRATEGIES,
     XRAY_PROBE_INTERVAL_MAX_S,
     XRAY_PROBE_INTERVAL_MIN_S,
@@ -290,12 +291,10 @@ def _follow_the_nodes(node_list: XrayNodeList, runtime: PanelRuntime) -> None:
     if node_list.enabled_nodes:
         return
     routing = runtime.routing()
-    if not routing.get("is_proxy_enabled", True) and not routing.get(
-        "is_local_proxy_enabled", False
-    ):
+    if not any(routing.get(switch, False) for switch in XRAY_SCOPE_SWITCHES):
         return
-    routing["is_proxy_enabled"] = False
-    routing["is_local_proxy_enabled"] = False
+    for switch in XRAY_SCOPE_SWITCHES:
+        routing[switch] = False
     write_config("xray/routing.json", routing)
 
 

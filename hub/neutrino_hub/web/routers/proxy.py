@@ -1,11 +1,13 @@
 """The Proxy tab: the GeoIP split and the gateway's own routing.
 
 The switches here are the proxy's scopes, and each stands alone.
-``is_proxy_enabled`` sends the traffic this box forwards through the exit
-nodes; ``is_local_proxy_enabled`` sends the box's own traffic — including
-netbird, which is the way back in when the overlay cannot reach its management
-plane directly; ``is_geoip_split_enabled`` decides whether Chinese
-destinations skip the proxy for whatever is sent to it.
+``is_proxy_enabled`` sends the traffic this box forwards for the networks it
+serves through the exit nodes; ``is_overlay_proxy_enabled`` does the same for
+the overlay members using this box as their exit node;
+``is_local_proxy_enabled`` sends the box's own traffic — including netbird,
+which is the way back in when the overlay cannot reach its management plane
+directly; ``is_geoip_split_enabled`` decides whether Chinese destinations
+skip the proxy for whatever is sent to it.
 """
 
 import ipaddress
@@ -68,7 +70,11 @@ def update_settings(
     # The scopes that divert, not the listeners. A proxied port with no exit
     # is simply not published — the renderer already declines it — and that is
     # a listener waiting for a node, not a contradiction to refuse.
-    is_exit_needed = settings.is_proxy_enabled or settings.is_local_proxy_enabled
+    is_exit_needed = (
+        settings.is_proxy_enabled
+        or settings.is_overlay_proxy_enabled
+        or settings.is_local_proxy_enabled
+    )
     if is_exit_needed and not runtime.node_list().enabled_nodes:
         raise _refusal("no_exit_node_enabled")
     for resolver in (settings.remote_dns, settings.direct_dns):

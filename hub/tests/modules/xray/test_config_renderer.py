@@ -77,7 +77,7 @@ def test_the_proxy_on_balances_across_the_nodes():
 
     assert "balancers" in config["routing"]
     assert "node_hk1" in tags(config, "outbounds")
-    assert "observatory" in config
+    assert "burstObservatory" in config
 
 
 def test_the_proxy_off_sends_everything_straight_out():
@@ -103,7 +103,7 @@ def test_the_proxy_off_needs_no_nodes_at_all():
         routing={"is_proxy_enabled": False},
     ).render()
 
-    assert "observatory" not in config
+    assert "burstObservatory" not in config
     assert tags(config, "outbounds") == ["direct", "block"]
 
 
@@ -240,7 +240,7 @@ def test_a_proxied_port_outlives_the_lan_switch():
 
     balanced = next(r for r in config["routing"]["rules"] if r.get("balancerTag"))
     assert [i for i in config["inbounds"] if i["tag"] == "socks_1081_in"]
-    assert balanced["inboundTag"] == ["socks_1081_in"]
+    assert balanced["inboundTag"] == ["socks_1081_in", "dns_internal"]
 
 
 def test_a_proxied_port_is_not_published_without_an_exit():
@@ -276,7 +276,7 @@ def test_the_hub_scope_stands_alone():
         for r in config["routing"]["rules"]
         if r.get("inboundTag") == ["dns_in"] and r.get("outboundTag") == "direct"
     )
-    assert balanced["inboundTag"] == ["tproxy_in"]
+    assert balanced["inboundTag"] == ["tproxy_in", "dns_internal"]
     assert dns is not None
     assert "node_hk1" in tags(config, "outbounds")
 
@@ -354,7 +354,7 @@ def test_the_fallback_brings_the_observatory_with_it(strategy):
     ).render()
 
     assert config["routing"]["balancers"][0]["fallbackTag"] == "direct"
-    assert "observatory" in config
+    assert "burstObservatory" in config
 
 
 @pytest.mark.parametrize("strategy", ["roundRobin", "random"])
@@ -367,7 +367,7 @@ def test_without_the_fallback_those_strategies_need_no_observatory(strategy):
         routing={"is_proxy_enabled": True},
     ).render()
 
-    assert "observatory" not in config
+    assert "burstObservatory" not in config
 
 
 def test_a_dangling_reference_excludes_the_node():
@@ -376,7 +376,7 @@ def test_a_dangling_reference_excludes_the_node():
 
     assert "node_hk1" not in tags(config, "outbounds")
     assert "balancers" not in config["routing"]
-    assert "observatory" not in config
+    assert "burstObservatory" not in config
 
 
 # --- how an exit's own name is resolved ---------------------------------------
@@ -410,7 +410,7 @@ def test_an_exit_named_by_hostname_is_resolved_at_the_direct_resolver():
     assert config["dns"]["servers"][0] == {
         "address": "223.5.5.5",
         "port": 53,
-        "domains": ["full:exit.example.net"],
+        "domains": ["full:exit.example.net", "full:www.gstatic.com"],
         "skipFallback": True,
     }
 
@@ -432,10 +432,33 @@ def test_the_resolvers_own_queries_reach_the_direct_resolver_directly():
     assert rules.index(balancer_rule) == len(rules) - 1
 
 
-def test_an_exit_at_a_literal_address_needs_no_resolver_entry():
+def test_an_exit_at_a_literal_address_leaves_only_the_probe_host():
     config = render_with_exit("203.0.113.10")
 
-    assert config["dns"]["servers"] == ["1.1.1.1"]
+    assert config["dns"]["servers"][0]["domains"] == ["full:www.gstatic.com"]
+
+
+def test_the_resolvers_other_queries_follow_the_balancer():
+    """A query nothing routes goes to the first outbound, alive or not,
+    and the observatory ranks exits by what it resolved through it."""
+    config = render_with_exit("exit.example.net")
+
+    balanced = next(r for r in config["routing"]["rules"] if r.get("balancerTag"))
+    assert balanced["inboundTag"][-1] == "dns_internal"
+
+
+def test_the_overlay_scope_sends_the_transparent_inbound_to_the_balancer():
+    """An overlay whose members use this box as their exit node arrives on
+    the same transparent inbound the LAN does; dnsmasq is not its resolver,
+    so the DNS inbound answers directly while the LAN scope is off."""
+    config = render_with_exit(
+        "exit.example.net", is_proxy_enabled=False, is_overlay_proxy_enabled=True
+    )
+
+    balanced = next(r for r in config["routing"]["rules"] if r.get("balancerTag"))
+    assert balanced["inboundTag"][0] == "tproxy_in"
+    assert "dns_in" not in balanced["inboundTag"]
+    assert "node_hk1" in tags(config, "outbounds")
 
 
 def test_with_every_scope_off_the_exits_names_are_nobodys_to_resolve():

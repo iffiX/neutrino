@@ -5,6 +5,7 @@ object xray consumes. Validating and restarting is :mod:`neutrino_hub.modules.xr
 """
 
 import ipaddress
+import urllib.parse
 
 from neutrino_hub.modules.xray.constants import (
     XRAY_API_INBOUND_TAG,
@@ -22,6 +23,8 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_EGRESS_MARK,
     XRAY_NODE_DOMAIN_STRATEGY,
     XRAY_NODE_TAG_PREFIX,
+    XRAY_PROBE_SAMPLING,
+    XRAY_PROBE_TIMEOUT_S,
     XRAY_SOCKS_LISTEN,
     XRAY_SOCKS_TAG,
     XRAY_TPROXY_LISTEN,
@@ -72,7 +75,12 @@ class XrayConfigRenderer:
             node for node in node_list.enabled_nodes if node.has_secret_material
         ]
         has_exit = bool(self._renderable_nodes)
+        # The forwarded scopes read alike here: what the firewall diverts,
+        # LAN or overlay, arrives on the one transparent inbound.
         self._is_lan_proxied = routing.get("is_proxy_enabled", True) and has_exit
+        self._is_overlay_proxied = (
+            routing.get("is_overlay_proxy_enabled", False) and has_exit
+        )
         self._is_local_proxied = (
             routing.get("is_local_proxy_enabled", False) and has_exit
         )
@@ -110,8 +118,16 @@ class XrayConfigRenderer:
         """Whether any scope sends traffic to the balancer at all."""
         return bool(
             self._is_lan_proxied
+            or self._is_overlay_proxied
             or self._is_local_proxied
             or self._socks_tags(is_proxied=True)
+        )
+
+    @property
+    def _is_transparent_proxied(self) -> bool:
+        """Whether what the firewall diverts goes to the balancer."""
+        return bool(
+            self._is_lan_proxied or self._is_overlay_proxied or self._is_local_proxied
         )
 
     def render(self) -> dict:
@@ -145,7 +161,7 @@ class XrayConfigRenderer:
             "routing": self._render_routing(),
         }
         if self._is_anything_proxied and self._is_observatory_needed:
-            config["observatory"] = self._render_observatory()
+            config["burstObservatory"] = self._render_observatory()
         return config
 
     def _render_dns(self) -> dict:
@@ -161,16 +177,18 @@ class XrayConfigRenderer:
                     "skipFallback": True,
                 },
             )
-        if self._exit_hostnames and self._is_anything_proxied:
-            # An exit's own name is resolved at the direct resolver: the
-            # query for its address is the one query that cannot go through
-            # it.
+        own_names = self._exit_hostnames + self._probe_hostnames
+        if own_names and self._is_anything_proxied:
+            # The proxy's own names resolve at the direct resolver: an exit's
+            # address, and the host the observatory fetches through each
+            # exit to rank them. A lookup sent through an exit waits on the
+            # exit it is asking about.
             servers.insert(
                 0,
                 {
                     "address": direct.get("address", "223.5.5.5"),
                     "port": direct.get("port", 53),
-                    "domains": [f"full:{host}" for host in self._exit_hostnames],
+                    "domains": [f"full:{host}" for host in own_names],
                     "skipFallback": True,
                 },
             )
@@ -188,6 +206,16 @@ class XrayConfigRenderer:
             if not _is_ip_address(node.address) and node.address not in names:
                 names.append(node.address)
         return names
+
+    @property
+    def _probe_hostnames(self) -> list[str]:
+        """The observatory's probe host, when it is a name and is needed."""
+        if not self._is_observatory_needed:
+            return []
+        host = urllib.parse.urlsplit(self._node_list.probe_url).hostname or ""
+        if not host or _is_ip_address(host) or host in self._exit_hostnames:
+            return []
+        return [host]
 
     def _render_inbounds(self) -> list[dict]:
         inbounds = [
@@ -348,18 +376,20 @@ class XrayConfigRenderer:
                 }
             )
         balanced = self._socks_tags(is_proxied=True)
-        if self._is_lan_proxied:
-            balanced = [XRAY_TPROXY_TAG, XRAY_DNS_TAG] + balanced
+        direct_inbounds = []
+        # The transparent inbound carries whatever the firewall diverts: the
+        # LAN's traffic, an overlay's, or the hub's own. The DNS inbound is
+        # dnsmasq's upstream, and dnsmasq only asks it while the LAN scope is
+        # on; with that scope off it answers directly.
+        if self._is_transparent_proxied:
+            balanced = [XRAY_TPROXY_TAG] + balanced
         else:
-            # With the LAN scope off, whatever still reaches these inbounds
-            # leaves directly — the DNS inbound has to answer from somewhere,
-            # and the transparent inbound carries the hub's own traffic when
-            # that scope stands alone.
-            if self._is_local_proxied:
-                balanced = [XRAY_TPROXY_TAG] + balanced
-                direct_inbounds = [XRAY_DNS_TAG]
-            else:
-                direct_inbounds = [XRAY_TPROXY_TAG, XRAY_DNS_TAG]
+            direct_inbounds.append(XRAY_TPROXY_TAG)
+        if self._is_lan_proxied:
+            balanced = balanced + [XRAY_DNS_TAG]
+        else:
+            direct_inbounds.append(XRAY_DNS_TAG)
+        if direct_inbounds:
             rules.append(
                 {
                     "type": "field",
@@ -367,6 +397,11 @@ class XrayConfigRenderer:
                     "outboundTag": XRAY_DIRECT_TAG,
                 }
             )
+        if balanced:
+            # The resolver's other queries, for the names the split and the
+            # direct outbound resolve, go the way proxied traffic goes: an
+            # unrouted query would go to the first outbound, alive or not.
+            balanced = balanced + [XRAY_DNS_INTERNAL_TAG]
         if not balanced:
             # Nothing is sent to the balancer, so the split has nothing to
             # split and the lists are not read at all — which is what makes
@@ -428,10 +463,20 @@ class XrayConfigRenderer:
         return balancer
 
     def _render_observatory(self) -> dict:
+        """The observatory that ranks the exits, probing all of them at once.
+
+        The burst form, not the sequential one: that one sleeps the interval
+        between one exit and the next, so with six exits an exit that died
+        is noticed six intervals later.
+        """
         return {
             "subjectSelector": [XRAY_NODE_TAG_PREFIX],
-            "probeUrl": self._node_list.probe_url,
-            "probeInterval": f"{self._node_list.probe_interval_s}s",
+            "pingConfig": {
+                "destination": self._node_list.probe_url,
+                "interval": f"{self._node_list.probe_interval_s}s",
+                "timeout": f"{XRAY_PROBE_TIMEOUT_S}s",
+                "sampling": XRAY_PROBE_SAMPLING,
+            },
         }
 
     @property

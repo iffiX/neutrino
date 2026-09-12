@@ -99,11 +99,14 @@ class OutboundTrafficView(BaseModel):
 
 
 class NodeProbeView(BaseModel):
-    """Latest observatory probe for one node."""
+    """The latest reachability probe of one node."""
 
     tag: str
     is_alive: bool
     delay_ms: int | None = None
+    # When it was taken: a frame repeats the same probe for as long as it
+    # stands, and a chart of probes reads this to add each one once.
+    probed_at: str = ""
 
 
 class StatsFrame(BaseModel):
@@ -441,6 +444,7 @@ class ProxySettings(BaseModel):
     """The Proxy tab's switches and the routing lists behind them."""
 
     is_proxy_enabled: bool = True
+    is_overlay_proxy_enabled: bool = False
     is_direct_fallback_enabled: bool = False
     is_geoip_split_enabled: bool
     direct_domains: list[str]

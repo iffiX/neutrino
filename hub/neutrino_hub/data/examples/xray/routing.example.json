@@ -2,6 +2,9 @@
   "_comment_enabled": "is_proxy_enabled sends the traffic this box forwards - the networks it serves - through the exit nodes. false leaves forwarded traffic alone: the firewall stops diverting, LAN names resolve directly through direct_dns, and the box works as a plain router. It reads as nothing on a server, which forwards nobody. Every scope here needs an enabled exit node; switched on with none, it renders as off and the panel writes it back off.",
   "is_proxy_enabled": false,
 
+  "_comment_overlay": "is_overlay_proxy_enabled sends the traffic of overlay members that use this box as their exit node through the exit nodes, the way is_proxy_enabled does for the served networks. It reads only the overlay interfaces marked exposed on the Network page. Off, that traffic is forwarded and masqueraded like any router's. An overlay member cannot route through this box by setting a gateway; the overlay itself has to name this box its exit node.",
+  "is_overlay_proxy_enabled": false,
+
   "_comment_fallback": "is_direct_fallback_enabled decides what happens when every enabled exit node is unreachable. false (the default) fails: what was sent to the proxy does not go, and neither do the LAN names, because they are resolved at the exit. true lets that traffic out through the WAN instead, and gives dnsmasq the direct resolver as a second upstream behind xray, so names keep answering. Connectivity bought with the thing the proxy was for, which is why it is off unless somebody says otherwise.",
   "is_direct_fallback_enabled": false,
 

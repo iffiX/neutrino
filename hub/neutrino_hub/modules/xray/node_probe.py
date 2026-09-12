@@ -16,12 +16,21 @@ completes locally in no time at all, so every node reads alive at 0 ms
 whatever the node is doing. The mark is the same exemption xray stamps on its
 outbound sockets, and for the same reason — the connection xray makes to a
 node is direct, so the measurement of it has to be.
+
+A node's name is resolved here as well, at the direct resolver and under the
+same mark, never through the machine's own resolver: on a box whose names
+resolve through the proxy that resolver is the proxy, and a probe of an exit
+that waits on the exit is no measurement. The lookup finishes before the
+clock starts.
 """
 
 import socket
+import struct
 import time
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+import ipaddress
 
 from neutrino_hub.modules.xray.constants import XRAY_EGRESS_MARK
 from neutrino_hub.modules.xray.node_config import XrayNodeConfig
@@ -29,6 +38,13 @@ from neutrino_hub.modules.xray.node_config import XrayNodeConfig
 PROBE_TIMEOUT_S = 5.0
 PROBE_CACHE_TTL_S = 30.0
 PROBE_WORKER_LIMIT = 8
+# One plain query for A records, answered by the direct resolver.
+RESOLVE_TIMEOUT_S = 3.0
+DNS_TYPE_A = 1
+DNS_CLASS_IN = 1
+DNS_FLAG_RECURSION_DESIRED = 0x0100
+DNS_HEADER_LENGTH = 12
+DNS_ANSWER_LIMIT_BYTES = 512
 
 
 @dataclass
@@ -39,11 +55,14 @@ class NodeProbeResult:
         tag: The node's outbound tag.
         is_alive: Whether the connect succeeded within the timeout.
         delay_ms: Connect time in milliseconds, or None when it failed.
+        probed_at: When the measurement was taken, as an ISO stamp; empty
+            for a node that has not been probed.
     """
 
     tag: str
     is_alive: bool
     delay_ms: int | None
+    probed_at: str = ""
 
 
 class XrayNodeProbe:
@@ -54,13 +73,18 @@ class XrayNodeProbe:
     metered upstream, rude.
     """
 
-    def __init__(self, *, timeout_s: float = PROBE_TIMEOUT_S):
+    def __init__(self, *, timeout_s: float = PROBE_TIMEOUT_S, resolver_of=None):
         """
         Args:
             timeout_s: How long to wait for a connect before calling the node
                 unreachable.
+            resolver_of: Called with nothing, answers ``(address, port)`` of
+                the direct resolver a node's name is looked up at. None
+                resolves nothing: a node named by a hostname then reads
+                unreachable, and one at a literal address is probed as is.
         """
         self._timeout_s = timeout_s
+        self._resolver_of = resolver_of
         self._cache: dict[str, NodeProbeResult] = {}
         # None, not zero: `time.monotonic()` on Linux counts from boot, so a
         # panel that starts early in one is younger than the cache's own age
@@ -117,30 +141,155 @@ class XrayNodeProbe:
             does not resolve all read as unreachable rather than raising, since
             every one of them means the same thing to the operator.
         """
-        # Resolved before the clock starts: the lookup is the resolver's time,
-        # and on a box whose names resolve through the proxy it is several
-        # times the connect.
-        try:
-            addresses = socket.getaddrinfo(
-                node.address, node.port, type=socket.SOCK_STREAM
+        address = self._address_of(node)
+        if address is None:
+            return NodeProbeResult(
+                tag=node.tag, is_alive=False, delay_ms=None, probed_at=_now()
             )
-        except OSError:
-            return NodeProbeResult(tag=node.tag, is_alive=False, delay_ms=None)
         started_at = time.monotonic()
         try:
-            with _direct_connection(addresses, timeout_s=self._timeout_s):
+            with _direct_connection(address, node.port, timeout_s=self._timeout_s):
                 elapsed_ms = int((time.monotonic() - started_at) * 1000)
         except OSError:
-            return NodeProbeResult(tag=node.tag, is_alive=False, delay_ms=None)
-        return NodeProbeResult(tag=node.tag, is_alive=True, delay_ms=elapsed_ms)
+            return NodeProbeResult(
+                tag=node.tag, is_alive=False, delay_ms=None, probed_at=_now()
+            )
+        return NodeProbeResult(
+            tag=node.tag, is_alive=True, delay_ms=elapsed_ms, probed_at=_now()
+        )
+
+    def _address_of(self, node: XrayNodeConfig) -> "str | None":
+        """The address to connect to, resolved at the direct resolver.
+
+        Args:
+            node: The node.
+
+        Returns:
+            Its IPv4 address, or None when the name did not resolve.
+        """
+        if _is_ip_address(node.address):
+            return node.address
+        if self._resolver_of is None:
+            return None
+        try:
+            server, port = self._resolver_of()
+            return resolve_direct(node.address, server=server, port=int(port))
+        except (OSError, ValueError, TypeError):
+            return None
 
 
-def _direct_connection(addresses: list, *, timeout_s: float):
+def _now() -> str:
+    """The moment, as the frame carries it."""
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
+
+def resolve_direct(
+    name: str, *, server: str, port: int = 53, timeout_s: float = RESOLVE_TIMEOUT_S
+) -> "str | None":
+    """Ask one resolver for a name's IPv4 address, past the proxy.
+
+    Args:
+        name: The hostname.
+        server: The resolver's address.
+        port: Its port.
+        timeout_s: How long to wait for the answer.
+
+    Returns:
+        The first A record in the answer, or None when there is none.
+
+    Raises:
+        OSError: When the resolver does not answer in time.
+    """
+    query_id = int(time.monotonic_ns() & 0xFFFF)
+    question = b"".join(
+        bytes([len(label)]) + label.encode("idna")
+        for label in name.strip(".").split(".")
+    )
+    query = (
+        struct.pack("!HHHHHH", query_id, DNS_FLAG_RECURSION_DESIRED, 1, 0, 0, 0)
+        + question
+        + b"\x00"
+        + struct.pack("!HH", DNS_TYPE_A, DNS_CLASS_IN)
+    )
+    connection = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        _mark_as_egress(connection)
+        connection.settimeout(timeout_s)
+        connection.sendto(query, (server, port))
+        while True:
+            answer, _ = connection.recvfrom(DNS_ANSWER_LIMIT_BYTES)
+            if answer[:2] == query[:2]:
+                break
+    finally:
+        connection.close()
+    return _first_a_record(answer)
+
+
+def _first_a_record(message: bytes) -> "str | None":
+    """The first A record in a DNS answer.
+
+    Args:
+        message: The whole answer.
+
+    Returns:
+        Its address, or None when the answer holds no A record.
+    """
+    if len(message) < DNS_HEADER_LENGTH:
+        return None
+    _, _, question_count, answer_count, _, _ = struct.unpack(
+        "!HHHHHH", message[:DNS_HEADER_LENGTH]
+    )
+    offset = DNS_HEADER_LENGTH
+    for _ in range(question_count):
+        offset = _skip_name(message, offset) + 4
+    for _ in range(answer_count):
+        offset = _skip_name(message, offset)
+        if offset + 10 > len(message):
+            return None
+        record_type, _, _, length = struct.unpack(
+            "!HHIH", message[offset : offset + 10]
+        )
+        offset += 10
+        if record_type == DNS_TYPE_A and length == 4:
+            return socket.inet_ntoa(message[offset : offset + 4])
+        offset += length
+    return None
+
+
+def _skip_name(message: bytes, offset: int) -> int:
+    """Where the name at an offset ends, compression pointers included.
+
+    Args:
+        message: The whole answer.
+        offset: Where the name starts.
+
+    Returns:
+        The offset of what follows the name.
+    """
+    while offset < len(message):
+        length = message[offset]
+        if length == 0:
+            return offset + 1
+        if length & 0xC0 == 0xC0:
+            return offset + 2
+        offset += length + 1
+    return offset
+
+
+def _is_ip_address(address: str) -> bool:
+    try:
+        ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    return True
+
+
+def _direct_connection(address: str, port: int, *, timeout_s: float):
     """Open a TCP connection that the proxy will not divert.
 
     Args:
-        addresses: What ``getaddrinfo`` answered for the node, tried in
-            order.
+        address: The node's address, resolved.
+        port: Its port.
         timeout_s: How long to wait for the connect.
 
     Returns:
@@ -149,18 +298,16 @@ def _direct_connection(addresses: list, *, timeout_s: float):
     Raises:
         OSError: If nothing answers in time.
     """
-    error: OSError = OSError("no address to connect to")
-    for family, kind, protocol, _, sockaddr in addresses:
-        connection = socket.socket(family, kind, protocol)
-        try:
-            _mark_as_egress(connection)
-            connection.settimeout(timeout_s)
-            connection.connect(sockaddr)
-            return connection
-        except OSError as failure:
-            connection.close()
-            error = failure
-    raise error
+    family = socket.AF_INET6 if ":" in address else socket.AF_INET
+    connection = socket.socket(family, socket.SOCK_STREAM)
+    try:
+        _mark_as_egress(connection)
+        connection.settimeout(timeout_s)
+        connection.connect((address, port))
+    except OSError:
+        connection.close()
+        raise
+    return connection
 
 
 def _mark_as_egress(connection: socket.socket) -> None:

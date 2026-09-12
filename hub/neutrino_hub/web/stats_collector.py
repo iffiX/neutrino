@@ -109,7 +109,10 @@ class PanelStatsCollector:
             ],
             nodes=[
                 NodeProbeView(
-                    tag=probe.tag, is_alive=probe.is_alive, delay_ms=probe.delay_ms
+                    tag=probe.tag,
+                    is_alive=probe.is_alive,
+                    delay_ms=probe.delay_ms,
+                    probed_at=probe.probed_at,
                 )
                 for probe in probes
             ],

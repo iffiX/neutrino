@@ -40,7 +40,9 @@ import "./nodes_panel.css";
  * inventing a way to say it.
  */
 
-const PROBE_HISTORY_LENGTH = 12;
+// Probes, not frames: a frame repeats the standing probe every second, and
+// the glyph is a line through the last measurements taken.
+const PROBE_HISTORY_LENGTH = 20;
 
 // What moves this list: a node dying, coming back or moving traffic, which
 // the hub's own probe and stats cycle says; and any write to the node file.
@@ -80,6 +82,9 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
   const [probeHistory, setProbeHistory] = useState<Record<string, number[]>>(
     {},
   );
+  // The stamp of the last probe each series took, so a frame carrying the
+  // same probe again adds nothing.
+  const probedAtRef = useRef<Record<string, string>>({});
   const [testingIds, setTestingIds] = useState<string[]>([]);
   const [isApplying, setIsApplying] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -122,17 +127,28 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
     if (latestFrame === null) {
       return;
     }
+    const fresh: { nodeId: string; delayMs: number }[] = [];
+    for (const probe of latestFrame.nodes) {
+      // Probes arrive tagged `node_<id>`; the cards look themselves up by
+      // bare id, so the series has to be keyed the way it is read.
+      const nodeId = nodeIdFromTag(probe.tag);
+      if (nodeId === null || probe.delay_ms === null) {
+        continue;
+      }
+      if (probedAtRef.current[nodeId] === probe.probed_at) {
+        continue;
+      }
+      probedAtRef.current[nodeId] = probe.probed_at;
+      fresh.push({ nodeId, delayMs: probe.delay_ms });
+    }
+    if (fresh.length === 0) {
+      return;
+    }
     setProbeHistory((previous) => {
       const next: Record<string, number[]> = { ...previous };
-      for (const probe of latestFrame.nodes) {
-        // Probes arrive tagged `node_<id>`; the cards look themselves up by
-        // bare id, so the series has to be keyed the way it is read.
-        const nodeId = nodeIdFromTag(probe.tag);
-        if (nodeId === null || probe.delay_ms === null) {
-          continue;
-        }
+      for (const { nodeId, delayMs } of fresh) {
         const series = next[nodeId] ?? [];
-        next[nodeId] = [...series, probe.delay_ms].slice(-PROBE_HISTORY_LENGTH);
+        next[nodeId] = [...series, delayMs].slice(-PROBE_HISTORY_LENGTH);
       }
       return next;
     });

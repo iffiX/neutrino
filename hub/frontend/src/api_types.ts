@@ -130,6 +130,7 @@ export interface NodeProbe {
   tag: string;
   is_alive: boolean;
   delay_ms: number | null;
+  probed_at: string;
 }
 
 /**
@@ -138,8 +139,11 @@ export interface NodeProbe {
  * reach it; the forwarded network is diverted; the hub's own traffic is; or
  * both are.
  */
-export type ProxyScope =
-  "off" | "unused" | "ports" | "lan" | "hub" | "lan_and_hub";
+/**
+ * Whose traffic the proxy is taking: off, unused, ports, or the diverted
+ * scopes out of `lan`, `overlay` and `hub` joined with `+`.
+ */
+export type ProxyScope = string;
 
 export interface StatsFrame {
   /** ISO 8601 UTC stamp, as produced by `datetime.now(timezone.utc)`. */
@@ -423,8 +427,10 @@ export interface SocksPort {
 }
 
 export interface ProxySettings {
-  /** The master switch: off takes the proxy out of the path entirely. */
+  /** The served networks' switch: off leaves forwarded traffic alone. */
   is_proxy_enabled: boolean;
+  /** The overlays' switch, for members using this box as their exit node. */
+  is_overlay_proxy_enabled: boolean;
   is_direct_fallback_enabled: boolean;
   is_geoip_split_enabled: boolean;
   direct_domains: string[];

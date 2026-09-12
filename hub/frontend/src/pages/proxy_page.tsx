@@ -58,6 +58,7 @@ const BADGE_TONES: Record<ProxyTone, string> = {
 const GROUP_FIELDS: Record<GroupName, (keyof ProxySettings)[]> = {
   route: [
     "is_proxy_enabled",
+    "is_overlay_proxy_enabled",
     "is_local_proxy_enabled",
     "is_direct_fallback_enabled",
     "is_geoip_split_enabled",
@@ -242,6 +243,12 @@ export function ProxyPage() {
               ? t("ui.proxy.lan_toggle_description")
               : t("ui.proxy.lan_toggle_description_server")
           }
+        />
+        <ToggleSwitch
+          isOn={draft.is_overlay_proxy_enabled}
+          onChange={(isOn) => updateDraft({ is_overlay_proxy_enabled: isOn })}
+          label={t("ui.proxy.overlay_toggle")}
+          description={t("ui.proxy.overlay_toggle_description")}
         />
         <ToggleSwitch
           isOn={draft.is_local_proxy_enabled}

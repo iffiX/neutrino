@@ -66,6 +66,9 @@ XRAY_GEODATA = {
 # number from another era.
 XRAY_PROBE_INTERVAL_MIN_S = 5
 XRAY_PROBE_INTERVAL_MAX_S = 86400
+# One probe's patience, and how many recent probes an exit's delay averages.
+XRAY_PROBE_TIMEOUT_S = 5
+XRAY_PROBE_SAMPLING = 2
 
 # How much of the address digest a node's id carries. Eight hexadecimal
 # characters is short enough to read in a URL and long enough that two servers
@@ -141,3 +144,10 @@ XRAY_RULE_REGEXP_PREFIX = "regexp:"
 # take kills it a moment later, with the apply already reported as done.
 XRAY_RESTART_SETTLE_S = 1.0
 XRAY_RESTART_LOG_LINES = 5
+
+# The routing switches that send a scope to the exit nodes. Each stands
+# alone; every one needs an enabled exit, and with none they all read off.
+XRAY_SCOPE_LAN = "is_proxy_enabled"
+XRAY_SCOPE_OVERLAY = "is_overlay_proxy_enabled"
+XRAY_SCOPE_HUB = "is_local_proxy_enabled"
+XRAY_SCOPE_SWITCHES = (XRAY_SCOPE_LAN, XRAY_SCOPE_OVERLAY, XRAY_SCOPE_HUB)

@@ -43,9 +43,10 @@ const SINGLE_EXIT_STRATEGY = "leastPing";
 const SCOPE_KEYS: Record<string, string> = {
   ports: "state.ports",
   lan: "state.lan",
+  overlay: "state.overlay",
   hub: "state.hub",
-  lan_and_hub: "state.lan_and_hub",
 };
+const SCOPE_JOINER = "+";
 
 /**
  * Describe the current scope and exit.
@@ -73,8 +74,13 @@ export function describeProxy(
     const unused = t("state.unused");
     return { scope: unused, exit: "", label: unused, tone: "direct" };
   }
-  const scopeKey = SCOPE_KEYS[frame.proxy_scope];
-  const scope = scopeKey === undefined ? frame.proxy_scope : t(scopeKey);
+  const scope = frame.proxy_scope
+    .split(SCOPE_JOINER)
+    .map((part) => {
+      const key = SCOPE_KEYS[part];
+      return key === undefined ? part : t(key);
+    })
+    .join(SCOPE_JOINER);
   if (frame.enabled_node_count === 0) {
     const noExit = t("state.no_exit");
     return {

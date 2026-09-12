@@ -367,3 +367,26 @@ def test_the_mark_is_not_accepted_while_nothing_diverts():
     )
 
     assert f"meta mark {hex(ROUTER_FWMARK_TPROXY)} accept" not in ruleset
+
+
+def test_the_overlay_scope_diverts_the_exposed_overlay_beside_the_lan():
+    """An overlay whose members use this box as their exit node is taken the
+    way the served networks are, under a switch of its own."""
+    ruleset = render(
+        wan_entry("enp2s0"),
+        lan_entry("enp1s0", address="192.168.100.1"),
+        routing={"is_proxy_enabled": True, "is_overlay_proxy_enabled": True},
+    )
+
+    assert 'iifname != { "enp1s0", "wt0" } return' in ruleset
+
+
+def test_the_overlay_scope_alone_diverts_only_the_overlay():
+    ruleset = render(
+        wan_entry("enp2s0"),
+        lan_entry("enp1s0", address="192.168.100.1"),
+        routing={"is_proxy_enabled": False, "is_overlay_proxy_enabled": True},
+    )
+
+    assert 'iifname != { "wt0" } return' in ruleset
+    assert f"meta mark {hex(ROUTER_FWMARK_TPROXY)} accept" in ruleset

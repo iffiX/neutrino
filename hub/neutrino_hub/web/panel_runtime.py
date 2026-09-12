@@ -8,6 +8,7 @@ by itself.
 
 import asyncio
 import ipaddress
+import re
 import subprocess
 
 from neutrino_hub.modules.netbird.ops import NetbirdInboundGate
@@ -44,9 +45,10 @@ from neutrino_hub.web.constants import (
     WEB_EVENT_SERVICES,
     WEB_EVENT_TASK,
     WEB_PROXY_SCOPE_HUB,
+    WEB_PROXY_SCOPE_JOINER,
     WEB_PROXY_SCOPE_LAN,
-    WEB_PROXY_SCOPE_LAN_AND_HUB,
     WEB_PROXY_SCOPE_OFF,
+    WEB_PROXY_SCOPE_OVERLAY,
     WEB_PROXY_SCOPE_PORTS,
     WEB_PROXY_SCOPE_UNUSED,
 )
@@ -83,6 +85,7 @@ from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.web.task_stream import TaskStreamRegistry
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
 from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
+from neutrino_hub.modules.xray.constants import XRAY_SCOPE_SWITCHES
 from neutrino_hub.modules.xray.node_config import XrayNodeList
 from neutrino_hub.modules.xray.node_secrets import resolve_node_secrets
 from neutrino_hub.modules.xray.node_probe import XrayNodeProbe
@@ -115,7 +118,7 @@ class PanelRuntime:
         self.services = SystemdServiceController()
         self.listening_ports = ListeningPortReader()
         self.stats = XrayStatsClient()
-        self.node_probe = XrayNodeProbe()
+        self.node_probe = XrayNodeProbe(resolver_of=self._direct_resolver)
         self.declared_probe = DeclaredServiceProbe()
         self.served_models = CliproxyApiServedModelCache()
         # What each managed machine last said about sharing its desktop.
@@ -242,6 +245,11 @@ class PanelRuntime:
         """
         return read_config("xray/routing.json")
 
+    def _direct_resolver(self) -> tuple:
+        """The direct resolver, for the lookups the proxy makes for itself."""
+        direct = self.routing().get("direct_dns") or {}
+        return str(direct.get("address", "223.5.5.5")), int(direct.get("port", 53))
+
     def node_list(self) -> XrayNodeList:
         """Read the current node list.
 
@@ -278,27 +286,42 @@ class PanelRuntime:
             the best available answer.
         """
         routing = self.routing()
+        network = self.network()
         try:
             ruleset = ROUTER_NFT_PATH.read_text(encoding="utf-8")
         except OSError:
             is_lan_diverted = routing.get("is_proxy_enabled", True) and bool(
-                self.network().lan_interfaces
+                network.lan_interfaces
             )
+            is_overlay_diverted = routing.get(
+                "is_overlay_proxy_enabled", False
+            ) and bool(network.exposed_overlay_device_names)
             is_hub_diverted = bool(routing.get("is_local_proxy_enabled", False))
         else:
             # The hub's own diversion hairpins through loopback, which is the
-            # one tproxy statement naming that interface; the LAN's does not.
+            # one tproxy statement naming that interface; the forwarded one
+            # does not, and the interfaces it takes from are the set on the
+            # line before it.
             diversions = [
                 line for line in ruleset.splitlines() if "tproxy ip to" in line
             ]
-            is_lan_diverted = any('iifname "lo"' not in line for line in diversions)
+            is_forwarded = any('iifname "lo"' not in line for line in diversions)
+            taken = _diverted_interface_names(ruleset)
+            overlays = set(network.exposed_overlay_device_names)
+            is_overlay_diverted = is_forwarded and bool(taken & overlays)
+            is_lan_diverted = is_forwarded and (not taken or bool(taken - overlays))
             is_hub_diverted = any('iifname "lo"' in line for line in diversions)
-        if is_lan_diverted and is_hub_diverted:
-            return WEB_PROXY_SCOPE_LAN_AND_HUB
-        if is_lan_diverted:
-            return WEB_PROXY_SCOPE_LAN
-        if is_hub_diverted:
-            return WEB_PROXY_SCOPE_HUB
+        parts = [
+            word
+            for word, is_on in (
+                (WEB_PROXY_SCOPE_LAN, is_lan_diverted),
+                (WEB_PROXY_SCOPE_OVERLAY, is_overlay_diverted),
+                (WEB_PROXY_SCOPE_HUB, is_hub_diverted),
+            )
+            if is_on
+        ]
+        if parts:
+            return WEB_PROXY_SCOPE_JOINER.join(parts)
         is_port_proxied = any(
             entry.get("is_proxied") for entry in routing.get("socks_ports", [])
         )
@@ -306,6 +329,7 @@ class PanelRuntime:
             return WEB_PROXY_SCOPE_PORTS
         if (
             routing.get("is_proxy_enabled", True)
+            or routing.get("is_overlay_proxy_enabled", False)
             or routing.get("is_local_proxy_enabled", False)
             or is_port_proxied
         ):
@@ -583,12 +607,10 @@ class PanelRuntime:
             The routing options as they will be rendered.
         """
         routing = self.routing()
-        is_scoped = routing.get("is_proxy_enabled", True) or routing.get(
-            "is_local_proxy_enabled", False
-        )
+        is_scoped = any(routing.get(switch, False) for switch in XRAY_SCOPE_SWITCHES)
         if is_scoped and not node_list.enabled_nodes:
-            routing["is_proxy_enabled"] = False
-            routing["is_local_proxy_enabled"] = False
+            for switch in XRAY_SCOPE_SWITCHES:
+                routing[switch] = False
             write_config("xray/routing.json", routing)
         return routing
 
@@ -750,3 +772,19 @@ def generated_dir_exists() -> bool:
 
 
 __all__ = ["PanelRuntime", "generated_dir_exists"]
+
+
+def _diverted_interface_names(ruleset: str) -> set:
+    """The interfaces the applied ruleset diverts forwarded traffic from.
+
+    Args:
+        ruleset: The ruleset text as it was loaded.
+
+    Returns:
+        The names in the ``iifname != { ... } return`` statement ahead of
+        the forwarded tproxy, empty when there is none.
+    """
+    for line in ruleset.splitlines():
+        if "iifname !=" in line and line.strip().endswith("return"):
+            return set(re.findall(r'"([^"]+)"', line))
+    return set()

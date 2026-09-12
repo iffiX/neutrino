@@ -89,7 +89,7 @@ def test_both_diversions_read_as_both(monkeypatch, tmp_path):
         ruleset=LAN_DIVERSION + HUB_DIVERSION,
     )
 
-    assert runtime.proxy_scope() == "lan_and_hub"
+    assert runtime.proxy_scope() == "lan+hub"
 
 
 def test_the_hub_alone_reads_as_hub(monkeypatch, tmp_path):
@@ -160,3 +160,39 @@ def test_nothing_applied_yet_answers_from_the_configuration(monkeypatch, tmp_pat
     )
 
     assert runtime.proxy_scope() == "lan"
+
+
+OVERLAY_NETWORK = {
+    "mode": "router",
+    "interfaces": [
+        {"name": "enp2s0", "role": "wan"},
+        {"name": "enp1s0", "role": "lan", "lan": {"address": "192.168.100.1"}},
+    ],
+    "overlays": [{"provider": "netbird", "is_exposed": True}],
+}
+
+
+def test_the_diverted_overlay_reads_beside_the_lan(monkeypatch, tmp_path):
+    """The interfaces the forwarded tproxy takes from are the set on the
+    line before it; which of them are overlays is the network's to say."""
+    runtime = runtime_with(
+        monkeypatch,
+        tmp_path,
+        routing=routing(is_overlay_proxy_enabled=True),
+        ruleset='        iifname != { "enp1s0", "wt0" } return\n' + LAN_DIVERSION,
+        network=OVERLAY_NETWORK,
+    )
+
+    assert runtime.proxy_scope() == "lan+overlay"
+
+
+def test_the_overlay_alone_reads_as_overlay(monkeypatch, tmp_path):
+    runtime = runtime_with(
+        monkeypatch,
+        tmp_path,
+        routing=routing(is_proxy_enabled=False, is_overlay_proxy_enabled=True),
+        ruleset='        iifname != { "wt0" } return\n' + LAN_DIVERSION + HUB_DIVERSION,
+        network=OVERLAY_NETWORK,
+    )
+
+    assert runtime.proxy_scope() == "overlay+hub"

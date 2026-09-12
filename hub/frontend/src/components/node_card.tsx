@@ -113,7 +113,7 @@ export function NodeCard({
                   : t("ui.proxy.node_unreachable")}
           </span>
         </div>
-        <Sparkline values={probeHistory} tone={latencyTone} />
+        <Sparkline values={probeHistory} tone={latencyTone} baseline={0} />
       </div>
 
       <div className="node_card_traffic">
