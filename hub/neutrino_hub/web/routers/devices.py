@@ -380,9 +380,11 @@ def wake(mac_address: str, runtime: PanelRuntime = Depends(get_runtime)) -> WolR
     """
     # A magic packet reaches only its own broadcast domain, and which of the
     # gateway's networks the sleeping device is on is exactly what cannot be
-    # known while it is asleep. So send one to each; they are 102 bytes.
+    # known while it is asleep. So send one to each; they are 102 bytes. Not
+    # to an overlay: a tunnel has no broadcast domain, and its device refuses
+    # the packet rather than dropping it.
     targets = []
-    for cidr in _facing_cidrs(runtime):
+    for cidr in _facing_cidrs(runtime, is_overlay_included=False):
         try:
             subnet = ipaddress.ip_network(cidr, strict=False)
         except ValueError:
@@ -394,12 +396,16 @@ def wake(mac_address: str, runtime: PanelRuntime = Depends(get_runtime)) -> WolR
         )
 
     sent = []
+    failures = []
     for target in targets:
         try:
             send_magic_packet(mac_address, broadcast_address=target)
         except (ValueError, OSError) as error:
-            return WolResult(is_sent=False, message=str(error))
+            failures.append(f"{target}: {error}")
+            continue
         sent.append(target)
+    if not sent:
+        return WolResult(is_sent=False, message="; ".join(failures))
     return WolResult(
         is_sent=True,
         message=f"magic packet sent to {', '.join(sent)}",
@@ -836,7 +842,7 @@ def _agent_urls(runtime: PanelRuntime) -> list:
     return urls
 
 
-def _facing_cidrs(runtime: PanelRuntime) -> list:
+def _facing_cidrs(runtime: PanelRuntime, *, is_overlay_included: bool = True) -> list:
     """IPv4 CIDRs of the networks devices reach this hub on.
 
     A served network's address is configuration; an exposed port on a
@@ -847,6 +853,8 @@ def _facing_cidrs(runtime: PanelRuntime) -> list:
 
     Args:
         runtime: The shared runtime, for the network configuration.
+        is_overlay_included: Whether the exposed overlays' networks count;
+            they do for reaching the hub, not for a broadcast.
 
     Returns:
         CIDR strings in configuration order, the overlays last.
@@ -863,6 +871,8 @@ def _facing_cidrs(runtime: PanelRuntime) -> list:
         live = reader.link(interface.device_name).ipv4_address
         if live:
             cidrs.append(live)
+    if not is_overlay_included:
+        return cidrs
     addresses = device_addresses()
     for name in network.exposed_overlay_device_names:
         live = addresses.get(name, "")

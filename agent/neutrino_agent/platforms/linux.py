@@ -57,9 +57,13 @@ NVIDIA_SMI_COMMAND = (
 
 PROCESS_TOP_COUNT = 12
 
+# Forced: the panel's button means now. Without it systemd stops every unit
+# in order and waits out each one's stop timeout, which on a desktop can be
+# minutes; with one `--force` processes are ended and the filesystems still
+# synced and unmounted.
 POWER_COMMANDS = {
-    "reboot": ["systemctl", "reboot"],
-    "poweroff": ["systemctl", "poweroff"],
+    "reboot": ["systemctl", "reboot", "--force"],
+    "poweroff": ["systemctl", "poweroff", "--force"],
 }
 
 

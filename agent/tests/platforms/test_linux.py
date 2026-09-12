@@ -194,9 +194,9 @@ def test_linux_service_state_and_power_go_through_systemd(monkeypatch):
 
     result["stdout"] = "reboot scheduled"
     assert platform.power("reboot") == (0, "reboot scheduled")
-    assert commands[-1] == ["systemctl", "reboot"]
+    assert commands[-1] == ["systemctl", "reboot", "--force"]
     platform.power("poweroff")
-    assert commands[-1] == ["systemctl", "poweroff"]
+    assert commands[-1] == ["systemctl", "poweroff", "--force"]
     platform.start_agent_service()
     assert commands[-1] == ["systemctl", "enable", "--now", AGENT_SERVICE_NAME]
 
