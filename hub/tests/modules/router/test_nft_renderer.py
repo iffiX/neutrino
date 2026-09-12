@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from neutrino_hub.modules.router import nft_renderer
+from neutrino_hub.modules.router.constants import ROUTER_FWMARK_TPROXY
 from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
 
 from tests.conftest import (
@@ -342,3 +343,27 @@ def test_a_closed_uplink_does_not_answer_the_agent_port():
     )
 
     assert f'iifname {{ "enp2s0" }} tcp dport {AGENT_PORT} accept' not in ruleset
+
+
+def test_what_tproxy_diverted_is_accepted_from_a_closed_lan():
+    """The diverted packet is delivered to the input chain with the mark on
+    it; a served network nobody exposed has no other rule that takes it."""
+    ruleset = render(
+        wan_entry("enp2s0"),
+        lan_entry("wlp3s0", address="192.168.111.1", is_exposed=False),
+        routing={"is_proxy_enabled": True},
+    )
+
+    prerouting, input_chain = ruleset.split("chain input")
+    assert "tproxy ip to" in prerouting
+    assert f"meta mark {hex(ROUTER_FWMARK_TPROXY)} accept" in input_chain
+
+
+def test_the_mark_is_not_accepted_while_nothing_diverts():
+    ruleset = render(
+        wan_entry("enp2s0"),
+        lan_entry("wlp3s0", address="192.168.111.1", is_exposed=False),
+        routing={"is_proxy_enabled": False},
+    )
+
+    assert f"meta mark {hex(ROUTER_FWMARK_TPROXY)} accept" not in ruleset

@@ -265,8 +265,15 @@ class RouterNftRenderer:
             "        ct state established,related accept",
             "        ct state invalid drop",
             '        iifname "lo" accept',
-            "",
         ]
+        if self._is_lan_proxy_enabled and self._lans:
+            lines += [
+                "        # What TPROXY diverted is xray's to take, from any served",
+                "        # network, exposed or not: the mark is set on the way in",
+                "        # and on nothing else.",
+                f"        meta mark {hex(ROUTER_FWMARK_TPROXY)} accept",
+            ]
+        lines.append("")
         answering = self._exposed + self._exposed_overlays
         if answering:
             lines += [

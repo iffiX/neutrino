@@ -36,6 +36,7 @@ from neutrino_hub.modules.router.routes import (
     RouterInterfaceApplier,
     RouterRulesetApplier,
     lookup_xray_uid,
+    served_networks,
 )
 from neutrino_hub.modules.router.supplicant import (
     write_config as write_supplicant_config,
@@ -241,6 +242,7 @@ def _apply(artifacts: dict) -> None:
         RouterRulesetApplier().apply(
             artifacts["router"],
             is_forwarding=bool(network.lan_interfaces or network.wan_interfaces),
+            served=served_networks(network),
         )
         # Written after the load, never before: the panel reads this file to
         # say where traffic is going, and a ruleset that only reached the disk

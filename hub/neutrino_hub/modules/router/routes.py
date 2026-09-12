@@ -6,6 +6,7 @@ forwarding sysctls, the policy route TPROXY needs, and loading the nftables
 ruleset. The renderers stay pure so they can be tested without root.
 """
 
+import ipaddress
 import pwd
 import subprocess
 
@@ -745,10 +746,57 @@ class RouterDefaultRouteApplier:
         return is_removed
 
 
+def served_networks(network: RouterNetworkConfig) -> list[tuple[str, str]]:
+    """The networks the box serves, as the policy table names them.
+
+    Args:
+        network: The parsed router configuration.
+
+    Returns:
+        One (device, subnet) pair per LAN with an address, the subnet at its
+        network address. An unparsable address is skipped; validation
+        refuses it long before this.
+    """
+    pairs = []
+    for interface in network.lan_interfaces:
+        if not interface.lan.address:
+            continue
+        try:
+            subnet = ipaddress.ip_network(interface.lan.cidr, strict=False)
+        except ValueError:
+            continue
+        pairs.append((interface.device_name, str(subnet)))
+    return pairs
+
+
+def _table_routes(listing: str) -> set[tuple[str, str]]:
+    """The (subnet, device) routes in a table listing, the local one aside.
+
+    Args:
+        listing: What ``ip route show table N`` printed.
+
+    Returns:
+        One pair per unicast route.
+    """
+    found = set()
+    for line in listing.splitlines():
+        words = line.split()
+        if len(words) < 3 or words[0] == "local" or "dev" not in words:
+            continue
+        found.add((words[0], words[words.index("dev") + 1]))
+    return found
+
+
 class RouterRulesetApplier:
     """Applies forwarding, policy routing, and the nftables ruleset."""
 
-    def apply(self, ruleset: str, *, is_forwarding: bool = True) -> None:
+    def apply(
+        self,
+        ruleset: str,
+        *,
+        is_forwarding: bool = True,
+        served: list[tuple[str, str]] | None = None,
+    ) -> None:
         """Bring the whole routing state up.
 
         Order matters: the policy route must exist before the TPROXY rules are
@@ -764,6 +812,8 @@ class RouterRulesetApplier:
                 False leaves every forwarding sysctl exactly as the machine
                 had it — a server is somebody's machine, and `ip_forward` on
                 it is not the hub's to flip.
+            served: The networks the box serves, as (device, subnet) pairs;
+                what :func:`served_networks` answers.
 
         Raises:
             subprocess.CalledProcessError: If validation or any step fails.
@@ -771,7 +821,7 @@ class RouterRulesetApplier:
         is_diverting = "tproxy ip to" in ruleset
         self.enable_forwarding(is_forwarding=is_forwarding, is_diverting=is_diverting)
         if is_diverting:
-            self.apply_policy_route()
+            self.apply_policy_route(served or [])
         else:
             self.remove_policy_route()
         self.load_ruleset(ruleset)
@@ -841,8 +891,19 @@ class RouterRulesetApplier:
             is_checked=False,
         )
 
-    def apply_policy_route(self) -> None:
-        """Create the fwmark rule and the local default route, idempotently."""
+    def apply_policy_route(self, served: list[tuple[str, str]] | None = None) -> None:
+        """Create the fwmark rule and the policy table, idempotently.
+
+        The table holds the local default route diverted packets are
+        delivered by, and one route per served network naming its interface.
+        The kernel checks a diverted packet's source against this same table
+        when `src_valid_mark` is on, which an overlay client turns on for the
+        whole machine; with only the local route there, every address is
+        local, the check fails, and the packet is dropped as a martian.
+
+        Args:
+            served: The networks the box serves, as (device, subnet) pairs.
+        """
         mark = hex(ROUTER_FWMARK_TPROXY)
         table = str(ROUTER_ROUTE_TABLE)
         priority = str(ROUTER_ROUTE_RULE_PRIORITY)
@@ -878,6 +939,15 @@ class RouterRulesetApplier:
                     table,
                 ]
             )
+        wanted = {(subnet, device) for device, subnet in served or []}
+        present = _table_routes(routes)
+        for subnet, device in present - wanted:
+            run(
+                ["ip", "route", "del", subnet, "dev", device, "table", table],
+                is_checked=False,
+            )
+        for subnet, device in sorted(wanted - present):
+            run(["ip", "route", "replace", subnet, "dev", device, "table", table])
 
     def load_ruleset(self, ruleset: str) -> None:
         """Validate and then load an nftables ruleset.

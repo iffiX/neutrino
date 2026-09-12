@@ -21,6 +21,7 @@ from neutrino_hub.modules.router.routes import (
     RouterInterfaceApplier,
     RouterRulesetApplier,
     lookup_xray_uid,
+    served_networks,
 )
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiServedModelCache
 from neutrino_hub.modules.devices.catalog import DeviceCatalogCache
@@ -547,7 +548,11 @@ class PanelRuntime:
         except (subprocess.SubprocessError, OSError, RuntimeError) as error:
             xray_failure = command_failure_text(error)
 
-        RouterRulesetApplier().apply(nft_ruleset, is_forwarding=_is_forwarding(network))
+        RouterRulesetApplier().apply(
+            nft_ruleset,
+            is_forwarding=_is_forwarding(network),
+            served=served_networks(network),
+        )
         write_generated(ROUTER_NFT_PATH, nft_ruleset)
         write_generated(ROUTER_DNSMASQ_PATH, dnsmasq_config)
         run(["systemctl", "restart", DNSMASQ_SERVICE_NAME])
@@ -601,7 +606,11 @@ class PanelRuntime:
             network=network, routing=routing
         ).render()
 
-        RouterRulesetApplier().apply(nft_ruleset, is_forwarding=_is_forwarding(network))
+        RouterRulesetApplier().apply(
+            nft_ruleset,
+            is_forwarding=_is_forwarding(network),
+            served=served_networks(network),
+        )
         write_generated(ROUTER_NFT_PATH, nft_ruleset)
         write_generated(ROUTER_DNSMASQ_PATH, dnsmasq_config)
 
