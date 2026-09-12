@@ -97,6 +97,15 @@ XRAY_SOCKS_TAG = "socks_{port}_in"
 XRAY_DNS_LISTEN = "127.0.0.1"
 XRAY_DNS_PORT = 15353
 XRAY_DNS_TAG = "dns_in"
+# The tag xray's own resolver sends its queries under, so a routing rule can
+# name them. It resolves the exit nodes' hostnames, and that query cannot
+# travel through the exit it is asking about.
+XRAY_DNS_INTERNAL_TAG = "dns_internal"
+# How a node outbound resolves the address it dials: through xray's own
+# resolver, never the system's. The system resolver is the LAN's dnsmasq,
+# whose upstream is the DNS inbound here, and a node reached through itself
+# is a loop.
+XRAY_NODE_DOMAIN_STRATEGY = "UseIP"
 
 # Statistics and handler API, loopback only.
 XRAY_API_LISTEN = "127.0.0.1"

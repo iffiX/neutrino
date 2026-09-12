@@ -841,6 +841,107 @@ def test_forgetting_one_the_box_does_not_know_is_a_404(box):
     assert client.delete("/api/network/wifi_networks/never-seen").status_code == 404
 
 
+class FakeSupplicant:
+    """A radio's supplicant, started or not, answering a fixed scan."""
+
+    is_running = False
+    calls: list = []
+
+    def __init__(self, *, interface):
+        self.interface = interface
+
+    def start(self):
+        FakeSupplicant.calls.append("start")
+        FakeSupplicant.is_running = True
+
+    def wait_until_reachable(self):
+        FakeSupplicant.calls.append("wait")
+
+    def scan(self):
+        FakeSupplicant.calls.append("scan")
+        return [
+            {
+                "ssid": "home",
+                "signal_percent": 80,
+                "security": "WPA-PSK",
+                "is_enterprise": False,
+            }
+        ]
+
+    def joined_ssid(self):
+        return None
+
+
+@pytest.fixture
+def idle_radio(box, monkeypatch):
+    """The box's radio with no supplicant on it yet, and the scan recorded."""
+    FakeSupplicant.is_running = False
+    FakeSupplicant.calls = []
+    written: list = []
+    monkeypatch.setattr(network_router, "RouterWifiClient", FakeSupplicant)
+    monkeypatch.setattr(
+        network_router, "write_config", lambda name, known: written.append(name)
+    )
+    monkeypatch.setattr(
+        network_router,
+        "RouterWifiAccessPoint",
+        lambda *, interface: type("Idle", (), {"is_running": False})(),
+    )
+    return box, written
+
+
+def test_a_scan_on_a_radio_nobody_applied_starts_its_supplicant(idle_radio):
+    """The scan is offered while the uplink role is still a draft, and a
+    radio that has not been applied has no supplicant to run it."""
+    (client, _, _), written = idle_radio
+
+    payload = client.get("/api/network/interfaces/wlp3s0/wifi/scan").json()
+
+    assert FakeSupplicant.calls == ["start", "wait", "scan"]
+    assert written == ["wlp3s0"]
+    assert [entry["ssid"] for entry in payload["networks"]] == ["home"]
+
+
+def test_a_scan_on_a_running_supplicant_only_waits_for_its_answer(idle_radio):
+    (client, _, _), written = idle_radio
+    FakeSupplicant.is_running = True
+
+    client.get("/api/network/interfaces/wlp3s0/wifi/scan")
+
+    assert FakeSupplicant.calls == ["wait", "scan"]
+    assert written == []
+
+
+def test_a_radio_publishing_a_network_is_not_scanned(idle_radio, monkeypatch):
+    """Starting a supplicant there would take the radio off everyone on it."""
+    (client, _, _), written = idle_radio
+    monkeypatch.setattr(
+        network_router,
+        "RouterWifiAccessPoint",
+        lambda *, interface: type("Publishing", (), {"is_running": True})(),
+    )
+
+    response = client.get("/api/network/interfaces/wlp3s0/wifi/scan")
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "interface_publishing"
+    assert FakeSupplicant.calls == []
+
+
+def test_a_supplicant_that_does_not_come_up_is_a_502(idle_radio, monkeypatch):
+    (client, _, _), _ = idle_radio
+
+    def never(self):
+        raise TimeoutError("the supplicant on wlp3s0 did not start")
+
+    monkeypatch.setattr(FakeSupplicant, "wait_until_reachable", never)
+
+    response = client.get("/api/network/interfaces/wlp3s0/wifi/scan")
+
+    assert response.status_code == 502
+    assert "did not start" in response.json()["detail"]["params"]["detail"]
+
+
 def response_text(payload) -> str:
     import json
 

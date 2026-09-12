@@ -66,6 +66,7 @@
   "code.interface_not_configured": "{name} is not a configured interface.",
   "code.interface_not_on_machine": "{name} is not an interface on this machine.",
   "code.interface_not_wireless": "{name} is not a wireless interface.",
+  "code.interface_publishing": "{name} is publishing a network; apply it as an uplink first, then scan.",
   "code.interface_role_unknown": "This box has no interface role named {role}.",
   "code.invalid_range": "{range} is not a period this box keeps usage for.",
   "code.key_encryption_unsupported": "This box cannot open encrypted keys; add a key with no passphrase.",

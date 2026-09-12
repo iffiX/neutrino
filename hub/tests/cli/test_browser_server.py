@@ -55,6 +55,7 @@ def test_a_server_that_cannot_be_built_at_all_leaves_the_terminal_asking(
     def _refuse(**_):
         raise OSError("no sockets today")
 
+    monkeypatch.setattr(setup_cli, "_browser_port", lambda: 8080)
     monkeypatch.setattr(setup_cli, "WebSetupServer", _refuse)
 
     assert setup_cli._browser_server(WebSetupSession(context={})) is None

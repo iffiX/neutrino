@@ -178,6 +178,7 @@ def test_the_run_ignores_a_hang_up_once_it_starts_changing_the_machine(monkeypat
     monkeypatch.setattr(setup, "store_password", lambda password: None)
     monkeypatch.setattr(setup, "_panel_url", lambda: "http://192.168.8.1:8080")
     monkeypatch.setattr(setup, "_start_panel", lambda: None)
+    monkeypatch.setattr(setup, "_install_local_agent", lambda password, reporter: None)
     monkeypatch.setattr(setup, "_enrollment_link", lambda password: ("", ""))
     monkeypatch.setattr(setup.wizard, "finish", lambda **keywords: None)
 
@@ -195,6 +196,7 @@ def test_the_log_is_named_before_the_first_step(monkeypatch):
     monkeypatch.setattr(setup, "store_password", lambda password: None)
     monkeypatch.setattr(setup, "_panel_url", lambda: "http://192.168.8.1:8080")
     monkeypatch.setattr(setup, "_start_panel", lambda: None)
+    monkeypatch.setattr(setup, "_install_local_agent", lambda password, reporter: None)
     monkeypatch.setattr(setup, "_enrollment_link", lambda password: ("", ""))
     monkeypatch.setattr(setup.wizard, "finish", lambda **keywords: None)
 

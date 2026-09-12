@@ -33,6 +33,18 @@ SUPPLICANT_SCAN_TIMEOUT_S = 45
 # channel can take most of this.
 SUPPLICANT_JOIN_TIMEOUT_S = 40
 SUPPLICANT_POLL_INTERVAL_S = 1.0
+# How long a supplicant that was just asked for is given to open its control
+# socket. The unit brings the link up and execs the binary, a second or two
+# on a slow board.
+SUPPLICANT_START_TIMEOUT_S = 15
+# How long a scan's results are waited for. A radio that has just started
+# has no previous scan to answer with, and its first one takes a few
+# seconds of radio time.
+SUPPLICANT_SCAN_WAIT_S = 10
+
+# What `wpa_cli scan` answers when the radio is already scanning, which is
+# the same outcome as having asked for one.
+SUPPLICANT_ANSWER_BUSY = "FAIL-BUSY"
 
 # What `wpa_cli status` calls a finished association, and the states it passes
 # through on the way to failing.
@@ -124,6 +136,30 @@ class RouterWifiClient:
         """
         self._cli("reconfigure")
 
+    def wait_until_reachable(
+        self, *, timeout_s: int = SUPPLICANT_START_TIMEOUT_S
+    ) -> None:
+        """Wait for the supplicant on this radio to answer on its socket.
+
+        Immediate when it already does; otherwise the wait a `start` needs
+        before the first command, since the unit is only asked for.
+
+        Args:
+            timeout_s: How long to wait.
+
+        Raises:
+            TimeoutError: When nothing answers in time, which means the unit
+                did not start; its journal says why.
+        """
+        deadline = time.monotonic() + timeout_s
+        while not self.status():
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"the supplicant on {self._interface} did not start; "
+                    f"see `journalctl -u {self.unit}`"
+                )
+            time.sleep(SUPPLICANT_POLL_INTERVAL_S)
+
     def scan(self) -> list:
         """Ask the radio what it can see.
 
@@ -136,14 +172,21 @@ class RouterWifiClient:
             subprocess.CalledProcessError: When the radio will not scan,
                 which normally means the supplicant is not running on it.
         """
+        # A busy answer is a scan already running, which is what was asked.
         self._cli("scan", timeout_s=SUPPLICANT_SCAN_TIMEOUT_S)
         # The scan runs in the background and the results come from a second
         # call. Asking immediately returns the previous scan, which on a radio
-        # that has just started is nothing at all.
-        time.sleep(SUPPLICANT_POLL_INTERVAL_S)
-        result = self._cli("scan_results", timeout_s=SUPPLICANT_SCAN_TIMEOUT_S)
+        # that has just started is nothing at all, so an empty table is asked
+        # again until the scan has had its few seconds.
+        deadline = time.monotonic() + SUPPLICANT_SCAN_WAIT_S
+        while True:
+            time.sleep(SUPPLICANT_POLL_INTERVAL_S)
+            result = self._cli("scan_results", timeout_s=SUPPLICANT_SCAN_TIMEOUT_S)
+            rows = result.splitlines()[1:]
+            if rows or time.monotonic() >= deadline:
+                break
         strongest: dict[str, dict] = {}
-        for line in result.splitlines()[1:]:
+        for line in rows:
             found = _parse_scan_line(line)
             if found is None:
                 continue
@@ -236,6 +279,8 @@ class RouterWifiClient:
             is_checked=False,
         )
         text = result.stdout.strip()
+        if text == SUPPLICANT_ANSWER_BUSY:
+            return text
         if not result.is_success or text == "FAIL":
             raise subprocess.CalledProcessError(
                 result.exit_code or 1,

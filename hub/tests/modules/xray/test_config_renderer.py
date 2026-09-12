@@ -377,3 +377,71 @@ def test_a_dangling_reference_excludes_the_node():
     assert "node_hk1" not in tags(config, "outbounds")
     assert "balancers" not in config["routing"]
     assert "observatory" not in config
+
+
+# --- how an exit's own name is resolved ---------------------------------------
+
+
+def render_with_exit(address: str, **routing) -> dict:
+    """A render whose one node is at the given address."""
+    nodes = {**NODES, "nodes": [{**NODES["nodes"][0], "address": address}]}
+    node_list = XrayNodeList.from_dict(nodes)
+    for node in node_list.nodes:
+        node.password = "secret"
+    settings = {
+        "is_proxy_enabled": True,
+        "socks_ports": [],
+        "is_geoip_split_enabled": False,
+        "remote_dns": {"address": "1.1.1.1", "port": 53},
+        "direct_dns": {"address": "223.5.5.5", "port": 53},
+        **routing,
+    }
+    return XrayConfigRenderer(node_list=node_list, routing=settings).render()
+
+
+def test_an_exit_named_by_hostname_is_resolved_at_the_direct_resolver():
+    """The system resolver is the LAN's dnsmasq, whose upstream is this same
+    xray, so a node resolved there is a node reached through itself."""
+    config = render_with_exit("exit.example.net")
+
+    node = next(entry for entry in config["outbounds"] if entry["tag"] == "node_hk1")
+    assert node["streamSettings"]["sockopt"]["domainStrategy"] == "UseIP"
+    assert config["dns"]["servers"][0] == {
+        "address": "223.5.5.5",
+        "port": 53,
+        "domains": ["full:exit.example.net"],
+        "skipFallback": True,
+    }
+
+
+def test_the_resolvers_own_queries_reach_the_direct_resolver_directly():
+    """Whatever the split says about that address: the lookup of an exit's
+    name cannot wait on the exit."""
+    config = render_with_exit("exit.example.net", is_geoip_split_enabled=False)
+
+    rules = config["routing"]["rules"]
+    assert config["dns"]["tag"] == "dns_internal"
+    assert {
+        "type": "field",
+        "inboundTag": ["dns_internal"],
+        "ip": ["223.5.5.5"],
+        "outboundTag": "direct",
+    } in rules
+    balancer_rule = next(rule for rule in rules if "balancerTag" in rule)
+    assert rules.index(balancer_rule) == len(rules) - 1
+
+
+def test_an_exit_at_a_literal_address_needs_no_resolver_entry():
+    config = render_with_exit("203.0.113.10")
+
+    assert config["dns"]["servers"] == ["1.1.1.1"]
+
+
+def test_with_every_scope_off_the_exits_names_are_nobodys_to_resolve():
+    config = render_with_exit("exit.example.net", is_proxy_enabled=False)
+
+    assert config["dns"]["servers"] == ["1.1.1.1"]
+    assert not any(
+        rule.get("inboundTag") == ["dns_internal"]
+        for rule in config["routing"]["rules"]
+    )

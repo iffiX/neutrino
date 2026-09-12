@@ -62,6 +62,7 @@ from neutrino_hub.modules.router.supplicant import RouterWifiClient, write_confi
 from neutrino_hub.modules.router.wifi import (
     AP_PASSPHRASE_MAX_LENGTH,
     AP_PASSPHRASE_MIN_LENGTH,
+    RouterWifiAccessPoint,
 )
 from neutrino_hub.utils.subprocess_run import command_failure_text
 from neutrino_hub.web.dependencies import get_runtime, require_session
@@ -482,12 +483,13 @@ def scan_wifi(name: str, runtime: PanelRuntime = Depends(get_runtime)) -> WifiSc
         What the scan found, strongest first.
 
     Raises:
-        HTTPException: 400 when the interface is not wireless, 502 when the
-            scan fails.
+        HTTPException: 400 when the interface is not wireless or is
+            publishing a network, 502 when the scan fails.
     """
     _require_wifi(name)
     client = RouterWifiClient(interface=name)
     try:
+        _start_scanning_radio(runtime, name, client)
         found = client.scan()
     except (subprocess.SubprocessError, OSError) as error:
         raise _bad_gateway(
@@ -630,6 +632,34 @@ def _join(runtime: PanelRuntime, name: str, request: WifiJoinRequest) -> None:
     else:
         client.start()
     client.wait_for_association()
+
+
+def _start_scanning_radio(
+    runtime: PanelRuntime, name: str, client: RouterWifiClient
+) -> None:
+    """Have a radio's supplicant answering before it is asked to scan.
+
+    A scan is the supplicant's to run, and a radio that has not been applied
+    as an uplink has none: the panel offers the scan while the role is still
+    a draft. Starting one changes nothing the person can see, so it is done
+    here; a radio publishing a network is left alone, since the supplicant
+    would take the radio off everyone on it.
+
+    Args:
+        runtime: The shared runtime, for the networks the box knows.
+        name: The radio.
+        client: Its supplicant.
+
+    Raises:
+        HTTPException: 400 when the radio is publishing a network.
+        TimeoutError: When the supplicant does not answer in time.
+    """
+    if not client.is_running:
+        if RouterWifiAccessPoint(interface=name).is_running:
+            raise _bad_request("interface_publishing", name=name)
+        write_config(name, runtime.connections())
+        client.start()
+    client.wait_until_reachable()
 
 
 def _adopt_known_networks(runtime: PanelRuntime) -> None:

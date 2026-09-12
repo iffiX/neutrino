@@ -66,6 +66,7 @@
   "code.interface_not_configured": "{name} 不是已配置的接口。",
   "code.interface_not_on_machine": "这台机器上没有 {name} 这个接口。",
   "code.interface_not_wireless": "{name} 不是无线接口。",
+  "code.interface_publishing": "{name} 正在发布网络；先把它作为上行应用，再扫描。",
   "code.interface_role_unknown": "这台机器没有名为 {role} 的接口角色。",
   "code.invalid_range": "{range} 不是这台机器保留用量的时间范围。",
   "code.key_encryption_unsupported": "这台机器打不开加密的密钥，请换一个没有口令的密钥。",

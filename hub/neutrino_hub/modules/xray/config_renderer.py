@@ -4,6 +4,8 @@ Pure: this module turns the node list and routing options into the config
 object xray consumes. Validating and restarting is :mod:`neutrino_hub.modules.xray.apply`.
 """
 
+import ipaddress
+
 from neutrino_hub.modules.xray.constants import (
     XRAY_API_INBOUND_TAG,
     XRAY_API_LISTEN,
@@ -12,10 +14,12 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_BALANCER_TAG,
     XRAY_BLOCK_TAG,
     XRAY_DIRECT_TAG,
+    XRAY_DNS_INTERNAL_TAG,
     XRAY_DNS_LISTEN,
     XRAY_DNS_PORT,
     XRAY_DNS_TAG,
     XRAY_EGRESS_MARK,
+    XRAY_NODE_DOMAIN_STRATEGY,
     XRAY_NODE_TAG_PREFIX,
     XRAY_SOCKS_LISTEN,
     XRAY_SOCKS_TAG,
@@ -145,9 +149,9 @@ class XrayConfigRenderer:
 
     def _render_dns(self) -> dict:
         remote = self._routing.get("remote_dns", {})
+        direct = self._routing.get("direct_dns", {})
         servers: list = [remote.get("address", "1.1.1.1")]
         if self._is_geoip_split_enabled and self._is_anything_proxied:
-            direct = self._routing.get("direct_dns", {})
             servers.insert(
                 0,
                 {
@@ -156,7 +160,33 @@ class XrayConfigRenderer:
                     "skipFallback": True,
                 },
             )
-        return {"servers": servers, "queryStrategy": "UseIP"}
+        if self._exit_hostnames and self._is_anything_proxied:
+            # An exit's own name is resolved at the direct resolver: the
+            # query for its address is the one query that cannot go through
+            # it.
+            servers.insert(
+                0,
+                {
+                    "address": direct.get("address", "223.5.5.5"),
+                    "port": direct.get("port", 53),
+                    "domains": [f"full:{host}" for host in self._exit_hostnames],
+                    "skipFallback": True,
+                },
+            )
+        return {
+            "tag": XRAY_DNS_INTERNAL_TAG,
+            "servers": servers,
+            "queryStrategy": "UseIP",
+        }
+
+    @property
+    def _exit_hostnames(self) -> list[str]:
+        """The exit nodes addressed by name, in configuration order."""
+        names = []
+        for node in self._renderable_nodes:
+            if not _is_ip_address(node.address) and node.address not in names:
+                names.append(node.address)
+        return names
 
     def _render_inbounds(self) -> list[dict]:
         inbounds = [
@@ -243,7 +273,12 @@ class XrayConfigRenderer:
         return outbounds
 
     def _render_node_outbound(self, node: XrayNodeConfig) -> dict:
-        stream: dict = {"sockopt": {"mark": XRAY_EGRESS_MARK}}
+        stream: dict = {
+            "sockopt": {
+                "mark": XRAY_EGRESS_MARK,
+                "domainStrategy": XRAY_NODE_DOMAIN_STRATEGY,
+            }
+        }
         if node.protocol == SHADOWSOCKS_PROTOCOL:
             settings = {
                 "servers": [
@@ -289,6 +324,19 @@ class XrayConfigRenderer:
                 "outboundTag": XRAY_API_TAG,
             },
         ]
+        if self._is_anything_proxied:
+            # The direct resolver is reached directly, whatever the split
+            # says about its address: the exits' names are looked up there,
+            # and a lookup sent through an exit waits on its own answer.
+            direct = self._routing.get("direct_dns", {})
+            rules.append(
+                {
+                    "type": "field",
+                    "inboundTag": [XRAY_DNS_INTERNAL_TAG],
+                    "ip": [direct.get("address", "223.5.5.5")],
+                    "outboundTag": XRAY_DIRECT_TAG,
+                }
+            )
         direct_ports = self._socks_tags(is_proxied=False)
         if direct_ports:
             rules.append(
@@ -388,3 +436,19 @@ class XrayConfigRenderer:
     @property
     def _is_geoip_split_enabled(self) -> bool:
         return self._routing.get("is_geoip_split_enabled", True)
+
+
+def _is_ip_address(address: str) -> bool:
+    """Whether an address is a literal rather than a name to resolve.
+
+    Args:
+        address: A node's server address.
+
+    Returns:
+        True for an IPv4 or IPv6 literal.
+    """
+    try:
+        ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    return True
