@@ -117,33 +117,40 @@ class XrayNodeProbe:
             does not resolve all read as unreachable rather than raising, since
             every one of them means the same thing to the operator.
         """
+        # Resolved before the clock starts: the lookup is the resolver's time,
+        # and on a box whose names resolve through the proxy it is several
+        # times the connect.
+        try:
+            addresses = socket.getaddrinfo(
+                node.address, node.port, type=socket.SOCK_STREAM
+            )
+        except OSError:
+            return NodeProbeResult(tag=node.tag, is_alive=False, delay_ms=None)
         started_at = time.monotonic()
         try:
-            with _direct_connection(node.address, node.port, timeout_s=self._timeout_s):
+            with _direct_connection(addresses, timeout_s=self._timeout_s):
                 elapsed_ms = int((time.monotonic() - started_at) * 1000)
         except OSError:
             return NodeProbeResult(tag=node.tag, is_alive=False, delay_ms=None)
         return NodeProbeResult(tag=node.tag, is_alive=True, delay_ms=elapsed_ms)
 
 
-def _direct_connection(address: str, port: int, *, timeout_s: float):
+def _direct_connection(addresses: list, *, timeout_s: float):
     """Open a TCP connection that the proxy will not divert.
 
     Args:
-        address: The node's address.
-        port: Its port.
+        addresses: What ``getaddrinfo`` answered for the node, tried in
+            order.
         timeout_s: How long to wait for the connect.
 
     Returns:
         The connected socket, for use as a context manager.
 
     Raises:
-        OSError: If the name does not resolve, or nothing answers in time.
+        OSError: If nothing answers in time.
     """
-    error: OSError = OSError(f"no address for {address}")
-    for family, kind, protocol, _, sockaddr in socket.getaddrinfo(
-        address, port, type=socket.SOCK_STREAM
-    ):
+    error: OSError = OSError("no address to connect to")
+    for family, kind, protocol, _, sockaddr in addresses:
         connection = socket.socket(family, kind, protocol)
         try:
             _mark_as_egress(connection)

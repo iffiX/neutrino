@@ -130,3 +130,24 @@ def test_a_probe_without_the_privilege_to_mark_still_probes(monkeypatch):
     result = XrayNodeProbe().probe(NODE)
 
     assert result.is_alive
+
+
+def test_the_delay_is_the_connect_and_not_the_lookup(monkeypatch):
+    """The name resolves through whatever the box resolves with, which on a
+    box proxying its LAN is the proxy itself."""
+    clock = iter([0.0, 0.5, 1.0, 1.07])
+    monkeypatch.setattr(node_probe.time, "monotonic", lambda: next(clock))
+
+    def slow_lookup(address, port, **keywords):
+        next(clock)
+        next(clock)
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, port))]
+
+    monkeypatch.setattr(node_probe.socket, "getaddrinfo", slow_lookup)
+    monkeypatch.setattr(
+        node_probe.socket, "socket", lambda *arguments: _RecordingSocket()
+    )
+
+    result = XrayNodeProbe().probe(NODE)
+
+    assert result.delay_ms == 70
