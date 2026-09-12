@@ -1,9 +1,12 @@
 # Commits
 
 Rules for every commit in this repository, whoever or whatever wrote the
-change. Wording rules for the message text itself — state the fact, no
-narrated reasoning — are in
-[../coding_style/comment_style.md](../coding_style/comment_style.md).
+change. The message text follows two wording rules: state the fact with no
+narrated reasoning, from
+[../coding_style/comment_style.md](../coding_style/comment_style.md), and
+the English register of
+[../../doc-author/english.md](../../doc-author/english.md), the same one
+release notes are written in.
 
 ## The author is the person answerable for the code
 
@@ -23,9 +26,17 @@ The message is `<Title>: <what was done>.` — what the change is about, a
 colon, then one sentence naming the feature added or the change made. Thirty
 words is the ceiling; most commits need far fewer.
 
-The title is the area the change lives in, as a reader of the history would
-look for it: a module (`Devices`, `Podman`), a layer (`Hub`, `Agent`, `CLI`),
-or the thing itself (`Images`, `Commits`). One word wherever one will do.
+The title is the area of the change, as a reader of the history would look
+for it: a module (`Devices`, `Podman`), a layer (`Hub`, `Agent`, `CLI`), or
+the thing itself (`Images`, `Commits`). One word wherever one will do.
+
+The sentence uses the verbs a component performs: is, has, includes, installs,
+returns, rejects with a code. A component that carries, owns, lives, earns,
+lands, asks, refuses or decides is the figurative register
+`doc-author/english.md` bans, and the same list of banned words and sentence
+shapes applies to a commit message as to a page. A message that needs a
+`rather than` or a `never` is describing the old behaviour; describe the new
+one.
 
 Good:
 
