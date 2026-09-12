@@ -67,8 +67,10 @@ def main() -> int:
     subparsers.add_parser("quit", help="stop the running client")
     service_parser, service_kind_parsers = _add_service_parser(subparsers)
 
-    arguments = parser.parse_args()
+    arguments = parser.parse_args(_argv_without_launch_services())
     if not arguments.command:
+        if _is_opened_as_app():
+            return gui.main(is_hidden=False)
         parser.print_help()
         return 2
     if hasattr(os, "geteuid") and os.geteuid() == 0:
@@ -85,6 +87,36 @@ def main() -> int:
     if arguments.command == "service":
         return _run_service(arguments, service_parser, service_kind_parsers)
     return status.main()
+
+
+# What Launch Services passes a program it opens: a process serial number on
+# older macOS, nothing on newer ones.
+LAUNCH_SERVICES_ARGUMENT_PREFIX = "-psn_"
+
+
+def _is_opened_as_app() -> bool:
+    """Whether this process was opened as a macOS app bundle.
+
+    Returns:
+        True when the program runs from ``Contents/MacOS`` of a bundle, which
+        is what a click on the icon starts and what carries no verb.
+    """
+    return sys.platform == "darwin" and "/Contents/MacOS/" in os.path.realpath(
+        sys.argv[0]
+    )
+
+
+def _argv_without_launch_services() -> list:
+    """The arguments as given, less what Launch Services added.
+
+    Returns:
+        ``sys.argv[1:]`` without a process serial number.
+    """
+    return [
+        argument
+        for argument in sys.argv[1:]
+        if not argument.startswith(LAUNCH_SERVICES_ARGUMENT_PREFIX)
+    ]
 
 
 def _use_utf8_console() -> None:

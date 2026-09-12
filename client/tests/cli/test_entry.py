@@ -197,3 +197,34 @@ def test_other_platforms_leave_the_console_alone(monkeypatch):
     entry._use_utf8_console()
 
     assert out.reconfigured is None
+
+
+def test_a_click_on_the_app_icon_opens_the_window(monkeypatch):
+    """Launch Services starts the bundle's binary with no verb; a click on
+    the icon means the window, never the usage text."""
+    from neutrino_client.cli import entry
+
+    opened = []
+    monkeypatch.setattr(entry.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        entry.sys,
+        "argv",
+        ["/Applications/Neutrino Client.app/Contents/MacOS/nclient", "-psn_0_12345"],
+    )
+    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000, raising=False)
+    monkeypatch.setattr(
+        entry.gui, "main", lambda *, is_hidden: opened.append(is_hidden) or 0
+    )
+
+    assert entry.main() == 0
+    assert opened == [False]
+
+
+def test_a_bare_command_in_a_terminal_still_prints_the_usage(monkeypatch, capsys):
+    from neutrino_client.cli import entry
+
+    monkeypatch.setattr(entry.sys, "platform", "linux")
+    monkeypatch.setattr(entry.sys, "argv", ["/usr/bin/nclient"])
+
+    assert entry.main() == 2
+    assert "usage" in capsys.readouterr().out.lower()
