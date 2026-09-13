@@ -254,12 +254,13 @@ connection, ports in the hash, exactly as it spreads the direct-list traffic
 beside them. A `backup_only` uplink stays dark for the proxy for the same
 reason it stays dark for everything: the metric bands, not a proxy rule.
 
-Two limits are accepted rather than solved. The multipath route is rebuilt
-when something applies — a save, a boot — so an uplink that comes alive
-between applies carries nothing until the next one. And an uplink's health is
-carrier and an address, nothing more: a line that is up but going nowhere
-keeps its share until its carrier drops, because measuring throughput means
-probing, and a ranking that follows a probe flaps.
+An uplink that comes alive raises a link or address event, and the router
+unit rebuilds the multipath route on it. Two limits are accepted rather than
+solved. An uplink's health is carrier and an address, nothing more: a line
+that is up but going nowhere keeps its share until its carrier drops, because
+measuring throughput means probing, and a ranking that follows a probe flaps.
+And a change that raises no link, address, route or rule event, such as
+another tool rewriting nftables, stays until the next event or apply.
 
 ## What gets a role, and what does not
 
@@ -384,11 +385,25 @@ router mode stands down — one per radio it takes, rather than the machine-wide
 one that owns nothing.
 
 One thing NetworkManager gives away that this has to earn: **an address
-survives a reboot because something reapplies it.** Today that is a keyfile
-NetworkManager reads at boot, and `neutrino_hub_router.service` replays only
-the nftables ruleset and the default route. Addressing with `ip` means that
-unit replaying the interface roles too, in the slot it already holds —
-`After=network-pre.target`, before anything the hub serves.
+survives a reboot because something reapplies it.** That is
+`neutrino_hub_router.service`, a resident unit started after
+`network-pre.target` and before anything the hub serves. It applies the
+routing state from `config/` when it starts, and again on every link,
+address, route or rule event that moves what it tracks. Each step stands
+alone:
+
+| Result | Meaning |
+| --- | --- |
+| `applied` | the step changed the kernel |
+| `unchanged` | the kernel already matched |
+| `pending` | a precondition is missing, such as a port that is down or a lease not yet held, and the event that supplies it runs the step again |
+| `failed` | the kernel refused; the step is tried again on the next event or apply |
+
+A failed step keeps the kernel state it had, and the steps after it still
+run. The unit tells systemd it is ready once the firewall step has run,
+before any step that starts a unit ordered after it. Stopping it tears
+nothing down, so a restart leaves no gap in the firewall. Removing the
+package and `nhub reset all` hand the firewall back.
 
 ### Neither engine's configuration can be checked before it is applied
 
