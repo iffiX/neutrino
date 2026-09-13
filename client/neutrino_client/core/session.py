@@ -33,6 +33,7 @@ from neutrino_client.constants import (
     CLIENT_BACKOFF_MAX_S,
     CLIENT_BACKOFF_MIN_S,
     CLIENT_DEFAULT_LANGUAGE,
+    CLIENT_DEFAULT_THEME,
     CLIENT_HELLO_TIMEOUT_S,
     CLIENT_IDLE_POLL_INTERVAL_S,
     CLIENT_LEAVE_PATH,
@@ -311,6 +312,23 @@ class ClientSession:
             language: One of ``CLIENT_LANGUAGES``.
         """
         self._store.set_language(language)
+        self.notify()
+
+    def theme(self) -> str:
+        """The palette the window draws itself in.
+
+        Returns:
+            One of ``CLIENT_THEMES``; the default until one is picked.
+        """
+        return self._store.theme() or CLIENT_DEFAULT_THEME
+
+    def set_theme(self, theme: str) -> None:
+        """Keep the palette the window draws in, and say so.
+
+        Args:
+            theme: One of ``CLIENT_THEMES``.
+        """
+        self._store.set_theme(theme)
         self.notify()
 
     def subscribe(self, watcher) -> None:

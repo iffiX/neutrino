@@ -1,10 +1,10 @@
 """The one store for what this person typed once and keeps.
 
 The file is the person's own, mode 0600, under the client's configuration
-directory. It holds the language this person reads, the AI tool choices and
-the mount records: a share's host, its login name and where it goes. Nothing
-about a service standing on is here; that is the running client's own and
-starts clean.
+directory. It holds the language this person reads, the palette the window
+draws in, the AI tool choices and the mount records: a share's host, its
+login name and where it goes. Nothing about a service standing on is here;
+that is the running client's own and starts clean.
 
 Secrets never enter it: a mount's password lives in that record's own
 credentials file, and the gateway key arrives fresh in every poll reply.
@@ -22,7 +22,12 @@ import json
 import os
 import threading
 
-from neutrino_client.constants import CLIENT_DEFAULT_LANGUAGE, CLIENT_LANGUAGES
+from neutrino_client.constants import (
+    CLIENT_DEFAULT_LANGUAGE,
+    CLIENT_DEFAULT_THEME,
+    CLIENT_LANGUAGES,
+    CLIENT_THEMES,
+)
 
 # What one mount record keeps; a record's other fields are dropped.
 STORE_MOUNT_KEYS = ("entry_id", "host", "share", "username", "path")
@@ -70,6 +75,18 @@ def _language(raw) -> str:
     return raw if raw in CLIENT_LANGUAGES else ""
 
 
+def _theme(raw) -> str:
+    """The kept theme, empty where the file names none the client offers.
+
+    Args:
+        raw: What the file held under ``theme``.
+
+    Returns:
+        One of ``CLIENT_THEMES``, or empty.
+    """
+    return raw if raw in CLIENT_THEMES else ""
+
+
 def _kept(data: dict) -> dict:
     """The store's own keys, whatever else the file carries.
 
@@ -77,7 +94,7 @@ def _kept(data: dict) -> dict:
         data: What the file held.
 
     Returns:
-        ``{"language": str, "ai": {"tool_configs": {...}},
+        ``{"language": str, "theme": str, "ai": {"tool_configs": {...}},
         "mounts": {id: record}}``.
     """
     ai = data.get("ai")
@@ -86,6 +103,7 @@ def _kept(data: dict) -> dict:
     mounts = mounts if isinstance(mounts, dict) else {}
     return {
         "language": _language(data.get("language")),
+        "theme": _theme(data.get("theme")),
         "ai": {"tool_configs": _tool_configs(ai.get("tool_configs"))},
         "mounts": {
             str(record_id): _record(record)
@@ -124,6 +142,27 @@ class ClientServiceStore:
 
         def change(data: dict) -> None:
             data["language"] = _language(language) or CLIENT_DEFAULT_LANGUAGE
+
+        self._mutate(change)
+
+    def theme(self) -> str:
+        """The palette this person draws the window in.
+
+        Returns:
+            One of ``CLIENT_THEMES``, or empty until one is set.
+        """
+        return self._read()["theme"]
+
+    def set_theme(self, theme: str) -> None:
+        """Record the palette this person draws the window in.
+
+        Args:
+            theme: One of ``CLIENT_THEMES``; anything else is kept as the
+                default.
+        """
+
+        def change(data: dict) -> None:
+            data["theme"] = _theme(theme) or CLIENT_DEFAULT_THEME
 
         self._mutate(change)
 

@@ -182,6 +182,25 @@ def test_picking_a_language_keeps_it_and_answers_the_new_state():
     assert state["language"] == "zh-CN"
 
 
+def test_the_state_names_the_theme_the_window_draws_itself_in():
+    session = FakeSession()
+    session.theme_value = "light"
+
+    _status, state = routes.dispatch("GET", "/api/state", None, session)
+
+    assert state["theme"] == "light"
+
+
+def test_picking_a_theme_keeps_it_and_answers_the_new_state():
+    session = FakeSession()
+
+    status, state = routes.dispatch("POST", "/api/theme", {"theme": "light"}, session)
+
+    assert status == 200
+    assert session.theme_value == "light"
+    assert state["theme"] == "light"
+
+
 def test_unknown_routes_and_methods_answer_a_code():
     session = FakeSession()
 

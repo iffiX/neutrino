@@ -1,7 +1,7 @@
 """The person's preference store: atomic, 0600, and free of secrets.
 
-What the store keeps is what somebody typed: the language, the tool choices
-and the mount records. Nothing about a service standing on is in it, and a
+What the store keeps is what somebody typed: the language, the theme, the
+tool choices and the mount records. Nothing about a service standing on is in it, and a
 file an older build wrote reads without the keys it had.
 """
 
@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-from neutrino_client.constants import CLIENT_DEFAULT_LANGUAGE
+from neutrino_client.constants import CLIENT_DEFAULT_LANGUAGE, CLIENT_DEFAULT_THEME
 from neutrino_client.services.store import ClientServiceStore
 
 RECORD = {
@@ -42,6 +42,23 @@ def test_a_language_the_client_does_not_offer_is_kept_as_the_default(store):
     store.set_language("de")
 
     assert store.language() == CLIENT_DEFAULT_LANGUAGE
+
+
+def test_no_theme_is_kept_until_one_is_set(store):
+    assert store.theme() == ""
+
+
+def test_the_theme_round_trips(store, tmp_path):
+    store.set_theme("light")
+
+    assert store.theme() == "light"
+    assert json.loads((tmp_path / "state.json").read_text())["theme"] == "light"
+
+
+def test_a_theme_the_client_does_not_offer_is_kept_as_the_default(store):
+    store.set_theme("sepia")
+
+    assert store.theme() == CLIENT_DEFAULT_THEME
 
 
 def test_mount_records_round_trip(store):
@@ -84,6 +101,7 @@ def test_a_file_an_older_build_wrote_is_read_without_its_keys(tmp_path):
     written = json.loads(path.read_text())
     assert written == {
         "language": "",
+        "theme": "",
         "ai": {"tool_configs": {"claude": {"default": "m2"}}},
         "mounts": {"r1": RECORD},
     }

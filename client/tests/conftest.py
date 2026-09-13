@@ -257,6 +257,7 @@ class FakeSession:
         self.platform = platform if platform is not None else FakeClientPlatform()
         self.connected_links = []
         self.language_value = "en"
+        self.theme_value = "dark"
         self.connect_error = None
         self.is_disconnected = False
         self.service_calls = []
@@ -303,6 +304,12 @@ class FakeSession:
 
     def set_language(self, language: str) -> None:
         self.language_value = language
+
+    def theme(self) -> str:
+        return self.theme_value
+
+    def set_theme(self, theme: str) -> None:
+        self.theme_value = theme
 
     def platform_tuple(self) -> dict:
         return {"os": "linux", "family": "debian", "arch": "amd64"}

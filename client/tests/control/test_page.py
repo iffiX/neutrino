@@ -17,7 +17,7 @@ import re
 
 import neutrino_client
 from neutrino_client import words
-from neutrino_client.constants import CLIENT_LANGUAGES
+from neutrino_client.constants import CLIENT_LANGUAGES, CLIENT_THEMES
 from neutrino_client.control import page
 from neutrino_client.services.ai import AI_CLAUDE_SLOTS, AI_REASONING_EFFORTS
 
@@ -168,6 +168,7 @@ def test_every_key_the_page_asks_for_is_in_the_catalog():
     # What the page builds from a token, which no whole literal carries.
     built = {f"ui.mount_{state}" for state in MOUNT_BUSY_STATES}
     built |= {f"ui.language_name.{language}" for language in CLIENT_LANGUAGES}
+    built |= {f"ui.theme_name.{theme}" for theme in CLIENT_THEMES}
 
     missing = (asked_keys() | built) - set(EN_WORDS)
 
@@ -307,7 +308,7 @@ def test_the_desktops_panel_only_connects():
     assert "share" not in body
 
 
-# --- the language row on the Status card ---
+# --- the language and the theme on the settings dialog ---
 
 
 def test_the_header_button_opens_the_settings_dialog_with_the_language():
@@ -316,7 +317,7 @@ def test_the_header_button_opens_the_settings_dialog_with_the_language():
     assert 'id="settings"' in PAGE_HTML
     assert "settings.onclick = openSettingsDialog;" in PAGE_JS
     assert "t('ui.settings_title')" in body
-    assert "picker('language', options, draft.language" in body
+    assert "picker('language', languageOptions, draft.language" in body
     assert "send('/api/language', { language: draft.language })" in body
     assert "t('ui.save')" in body and "t('ui.cancel')" in body
     assert "ui.close" not in body
@@ -330,6 +331,33 @@ def test_the_header_button_opens_the_settings_dialog_with_the_language():
 def test_the_page_words_itself_in_the_language_the_state_names():
     assert "setLanguage(state.language);" in PAGE_JS
     assert "document.documentElement.lang = language;" in PAGE_JS
+
+
+def test_the_settings_dialog_carries_the_theme_after_the_language():
+    body = PAGE_JS.split("function openSettingsDialog()")[1].split("\n}")[0]
+
+    assert body.index("picker('language'") < body.index("picker('theme'")
+    assert "picker('theme', themeOptions, draft.theme" in body
+    assert "send('/api/theme', { theme: draft.theme })" in body
+    assert "THEMES.map(" in body
+    assert EN_WORDS["ui.theme"] == "Theme"
+    for theme in CLIENT_THEMES:
+        assert EN_WORDS[f"ui.theme_name.{theme}"]
+
+
+def test_the_page_draws_itself_in_the_theme_the_state_names():
+    assert "setTheme(state.theme);" in PAGE_JS
+    assert "const THEMES = ['system', 'dark', 'light'];" in PAGE_JS
+    assert list(CLIENT_THEMES) == ["system", "dark", "light"]
+    assert "document.documentElement.dataset.theme" in PAGE_JS
+    assert "window.matchMedia('(prefers-color-scheme: dark)')" in PAGE_JS
+
+
+def test_the_window_carries_both_palettes_and_starts_dark():
+    assert 'data-theme="dark"' in PAGE_HTML
+    assert '[data-theme="dark"] {' in PAGE_CSS
+    assert '[data-theme="light"] {' in PAGE_CSS
+    assert "html { color-scheme: var(--color-scheme); }" in PAGE_CSS
 
 
 # --- greyed, never hidden ---

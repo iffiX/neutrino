@@ -20,6 +20,7 @@ import neutrino_client.core.session as session_module
 from neutrino_client import CLIENT_VERSION
 from neutrino_client.constants import (
     CLIENT_BACKOFF_MAX_S,
+    CLIENT_DEFAULT_THEME,
     CLIENT_MOUNT_CREDENTIALS_DIR_NAME,
 )
 from neutrino_client.core.session import ClientSession
@@ -244,6 +245,23 @@ def test_a_picked_language_is_kept_and_the_watchers_are_told(bound):
     while not told and time.time() < deadline:
         time.sleep(0.01)
     assert told == [1]
+
+
+def test_a_picked_theme_is_kept_and_the_watchers_are_told(bound):
+    told = []
+    bound.subscribe(lambda: told.append(1))
+
+    bound.set_theme("light")
+
+    assert bound.theme() == "light"
+    deadline = time.time() + 2
+    while not told and time.time() < deadline:
+        time.sleep(0.01)
+    assert told == [1]
+
+
+def test_the_theme_is_the_default_until_one_is_picked(bound):
+    assert bound.theme() == CLIENT_DEFAULT_THEME
 
 
 def test_the_hello_carries_the_persons_facts_and_the_held_hash(bound, monkeypatch):

@@ -9,6 +9,11 @@ this file holds only what is wired into the protocol and the desktop.
 CLIENT_LANGUAGES = ("en", "zh-CN")
 CLIENT_DEFAULT_LANGUAGE = "en"
 
+# The palettes the window draws itself in; ``system`` follows the desktop's
+# own scheme, and anything else reads as the default.
+CLIENT_THEMES = ("system", "dark", "light")
+CLIENT_DEFAULT_THEME = "dark"
+
 # The hub's client channel, on the pinned-TLS agent port. Joining and leaving
 # are HTTP; everything else rides the one socket.
 CLIENT_ENROLL_PATH = "/api/client/enroll"

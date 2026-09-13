@@ -3,8 +3,15 @@
 const CATALOGS = JSON.parse(document.getElementById('words').textContent);
 const LANGUAGES = ['en', 'zh-CN'];
 const DEFAULT_LANGUAGE = 'en';
+const THEMES = ['system', 'dark', 'light'];
+const DEFAULT_THEME = 'dark';
 // What the page words itself in, until a pushed state names another.
 let language = DEFAULT_LANGUAGE;
+// What the page draws itself in, likewise.
+let theme = DEFAULT_THEME;
+// The desktop's own scheme, which 'system' resolves through.
+const DARK_SCHEME = window.matchMedia('(prefers-color-scheme: dark)');
+DARK_SCHEME.addEventListener('change', () => setTheme(theme));
 
 // Codes worded through their params' own detail text when they carry one.
 const DETAIL_CODES = [
@@ -45,6 +52,13 @@ function t(key, params) {
 function setLanguage(chosen) {
   language = LANGUAGES.indexOf(chosen) >= 0 ? chosen : DEFAULT_LANGUAGE;
   document.documentElement.lang = language;
+}
+
+// The palette every rule is drawn in; anything but the three reads as dark.
+function setTheme(chosen) {
+  theme = THEMES.indexOf(chosen) >= 0 ? chosen : DEFAULT_THEME;
+  document.documentElement.dataset.theme = theme === 'system'
+    ? (DARK_SCHEME.matches ? 'dark' : 'light') : theme;
 }
 
 function wordCode(code, params) {
@@ -187,6 +201,7 @@ async function serviceAction(type, body, noteKey) {
 function draw(state) {
   lastState = state;
   setLanguage(state.language);
+  setTheme(state.theme);
   document.title = t('ui.window.title');
   document.querySelector('h1').textContent = t('ui.window.title');
   const settings = document.getElementById('settings');
@@ -263,10 +278,10 @@ function drawConnection(state) {
   return conn;
 }
 
-// The settings dialog: what this window keeps for itself, today the
-// language. Nothing is sent until Save.
+// The settings dialog: what this window keeps for itself, the language and
+// the palette. Nothing is sent until Save.
 function openSettingsDialog() {
-  const draft = { language: language };
+  const draft = { language: language, theme: theme };
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
   const modal = document.createElement('div');
@@ -275,13 +290,20 @@ function openSettingsDialog() {
   heading.className = 'panel_title';
   heading.textContent = t('ui.settings_title');
   modal.appendChild(heading);
-  const label = document.createElement('label');
-  label.textContent = t('ui.language');
-  modal.appendChild(label);
-  const options = LANGUAGES.map(
+  const languageLabel = document.createElement('label');
+  languageLabel.textContent = t('ui.language');
+  modal.appendChild(languageLabel);
+  const languageOptions = LANGUAGES.map(
     (code) => ({ value: code, label: t('ui.language_name.' + code) }));
-  modal.appendChild(picker('language', options, draft.language,
+  modal.appendChild(picker('language', languageOptions, draft.language,
     (value) => { draft.language = value; }, false));
+  const themeLabel = document.createElement('label');
+  themeLabel.textContent = t('ui.theme');
+  modal.appendChild(themeLabel);
+  const themeOptions = THEMES.map(
+    (code) => ({ value: code, label: t('ui.theme_name.' + code) }));
+  modal.appendChild(picker('theme', themeOptions, draft.theme,
+    (value) => { draft.theme = value; }, false));
   const actions = document.createElement('div');
   actions.className = 'row';
   actions.style.marginTop = '8px';
@@ -291,6 +313,9 @@ function openSettingsDialog() {
     closeDialog(overlay);
     if (draft.language !== language) {
       send('/api/language', { language: draft.language });
+    }
+    if (draft.theme !== theme) {
+      send('/api/theme', { theme: draft.theme });
     }
     redraw();
   };
