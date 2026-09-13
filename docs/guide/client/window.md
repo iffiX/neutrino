@@ -36,11 +36,12 @@ The window, titled **Neutrino client**, has a **Status** section and a **Service
 ## Settings
 
 1. Select **Settings** at the top of the window.
-1. In the **Client settings** dialog, pick the **Language**, **English** or **中文**, and select **Save**.
+1. In the **Client settings** dialog, pick the **Language**, **English** or **中文**, and the **Theme**, **System**, **Dark** or **Light**.
+1. Select **Save**.
 
 ![The client settings dialog](/guide/en/client_settings_language.webp)
 
-The window's language is the client's own; the panel's language is set on the hub.
+The window's language and theme are the client's own; the panel's are set on the hub. **System** takes the colour scheme from the desktop.
 
 ## The tray
 

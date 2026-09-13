@@ -4,11 +4,11 @@ title: Settings
 
 # Settings
 
-The **Settings** page holds the password, the language, backup and restore, the versions, the upgrade order and the reset commands. This page takes them in that order.
+The **Settings** page holds the password, the language, the theme, backup and restore, the versions, the upgrade order and the reset commands. This page takes them in that order.
 
-## Password and language
+## Password, language and theme
 
-Under **Panel password**, fill **Current password**, **New password** and **Confirm new password**, and select **Change password**; other sessions stay signed in. Under **Language**, pick the language and select **Apply language**, and every page is drawn in it. The client window has a language of its own.
+Under **Panel password**, fill **Current password**, **New password** and **Confirm new password**, and select **Change password**; other sessions stay signed in. Under **Language**, pick the language and select **Apply language**, and every page is drawn in it. Under **Appearance**, pick **System**, **Dark** or **Light** and select **Apply theme**; **System** takes the colour scheme from the browser. The client window has a language and a theme of its own.
 
 ## Configuration archive
 

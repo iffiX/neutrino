@@ -4,7 +4,7 @@ title: 窗口
 
 # 窗口
 
-客户端窗口的标题是 **微子·客户端**（Neutrino client）。窗口分 **状态**（Status）和 **服务**（Services）两段：状态卡管连接和断开，服务区是五个面板。语言在设置对话框里改，托盘图标在窗口关掉后仍在。
+客户端窗口的标题是 **微子·客户端**（Neutrino client）。窗口分 **状态**（Status）和 **服务**（Services）两段：状态卡管连接和断开，服务区是五个面板。语言和主题在设置对话框里改，托盘图标在窗口关掉后仍在。
 
 ## 状态卡
 
@@ -36,7 +36,7 @@ title: 窗口
 
 ![客户端设置](/guide/zh/client_settings_language.webp)
 
-窗口顶部的 **设置**（Settings）打开 **客户端设置**（Client settings）对话框，里面只有 **语言**（Language）：English 或简体中文。选好点 **保存**（Save）。这个语言是客户端自己的，与面板的语言无关。
+窗口顶部的 **设置**（Settings）打开 **客户端设置**（Client settings）对话框，里面有 **语言**（Language）和 **主题**（Theme）。语言是 English 或简体中文；主题是 **跟随系统**（System）、**深色**（Dark）或 **浅色**（Light），跟随系统取桌面的配色。选好点 **保存**（Save）。语言和主题都是客户端自己的，与面板的无关。
 
 ## 托盘
 

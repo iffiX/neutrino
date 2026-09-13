@@ -4,13 +4,15 @@ title: 设置
 
 # 设置
 
-**设置**（Settings）页管面板密码、语言、配置存档和版本信息，各节是 **面板密码**（Panel password）、**语言**（Language）、**配置存档**（Configuration archive）和 **关于**（About）。升级和重置的命令也在这一页。
+**设置**（Settings）页管面板密码、语言、主题、配置存档和版本信息，各节是 **面板密码**（Panel password）、**语言**（Language）、**外观**（Appearance）、**配置存档**（Configuration archive）和 **关于**（About）。升级和重置的命令也在这一页。
 
-## 面板密码与语言
+## 面板密码、语言与主题
 
 改密码时，填 **当前密码**（Current password）、**新密码**（New password）和 **确认新密码**（Confirm new password），点 **修改密码**（Change password）。其他会话保持登录。忘了密码时在 hub 这台机器上运行 `sudo nhub reset password`，它设一个新密码并登出所有会话。
 
 **语言** 是面板显示所用的语言，两个选项：English 和简体中文。选好点 **应用语言**（Apply language），所有页面改用所选语言。
+
+**外观**（Appearance）里的 **主题**（Theme）有三个选项：**跟随系统**（System）、**深色**（Dark）和 **浅色**（Light）。跟随系统取浏览器的配色。选好点 **应用主题**（Apply theme）。
 
 ## 配置归档
 
