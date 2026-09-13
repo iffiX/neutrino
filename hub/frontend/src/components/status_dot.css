@@ -15,15 +15,15 @@
 }
 
 .status_dot--ok {
-  --status-dot-color: var(--color-ok);
+  --status-dot-color: var(--color-signal-ok);
 }
 
 .status_dot--warn {
-  --status-dot-color: var(--color-warn);
+  --status-dot-color: var(--color-signal-warn);
 }
 
 .status_dot--error {
-  --status-dot-color: var(--color-error);
+  --status-dot-color: var(--color-signal-error);
 }
 
 .status_dot--idle {

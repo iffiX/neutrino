@@ -62,6 +62,13 @@ token under it resolves from that file.
 - A token that carries text reaches 4.5:1 on `--color-surface` and on its own
   12% wash. That is what sets the light accents: cyan-700, emerald-700,
   amber-700 and rose-700, one step darker than the neon they stand in for.
+- A colour that carries no text is a token of its own and may sit brighter
+  than the accent that does: `--color-chart-down` / `--color-chart-up` for the
+  curves, `--color-signal-ok` / `-warn` / `-error` for the status dots. On dark
+  they are the accents themselves; on light they are a step lighter.
+- The committing button's glow is `--shadow-commit`, drawn by each theme: the
+  accent lit on dark, a tinted drop shadow with a top-edge highlight on light,
+  where a halo of a dark accent reads as a smudge.
 - Nothing outside CSS owns a colour. Recharts props take `var(--color-accent)`,
   and `terminalTheme()` resolves the terminal tokens through `themeToken()`
   when a terminal is created and again on a theme change.

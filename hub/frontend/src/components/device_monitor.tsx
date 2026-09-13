@@ -155,14 +155,14 @@ export function DeviceMonitor({ device }: DeviceMonitorProps) {
                 value={formatPercent(client.cpu_percent)}
                 gradientPrefix={`mon_cpu_${device.mac_address}`}
                 data={samples.map((sample) => ({ a: sample.cpu }))}
-                series={[{ key: "a", color: "var(--color-accent)" }]}
+                series={[{ key: "a", color: "var(--color-chart-down)" }]}
               />
               <ChartPanel
                 title={t("ui.device_monitor.memory")}
                 value={formatPercent(client.memory_percent)}
                 gradientPrefix={`mon_mem_${device.mac_address}`}
                 data={samples.map((sample) => ({ a: sample.memory }))}
-                series={[{ key: "a", color: "var(--color-accent-secondary)" }]}
+                series={[{ key: "a", color: "var(--color-chart-up)" }]}
               />
               {client.gpus.map((gpu, index) => (
                 <ChartPanel
@@ -176,8 +176,8 @@ export function DeviceMonitor({ device }: DeviceMonitorProps) {
                     b: sample.gpu_vram[index] ?? null,
                   }))}
                   series={[
-                    { key: "a", color: "var(--color-accent)" },
-                    { key: "b", color: "var(--color-accent-secondary)" },
+                    { key: "a", color: "var(--color-chart-down)" },
+                    { key: "b", color: "var(--color-chart-up)" },
                   ]}
                 />
               ))}

@@ -18,11 +18,11 @@
    * Only the unit of change carries a strong border or a glow; a nested box
    * that glows reads as something waiting to be applied.
    */
-  --color-bg: #f3f5f9;
-  --color-surface: #ffffff;
-  --color-elevated: #e9edf3;
-  --color-border: #dde3ea;
-  --color-border-strong: #c5ced9;
+  --color-bg: #e8ebf0;
+  --color-surface: #f6f7f9;
+  --color-elevated: #dde2e8;
+  --color-border: #cdd4dc;
+  --color-border-strong: #b4bfcb;
 
   /* --- Text --- */
   --color-text: #0f172a;
@@ -34,18 +34,27 @@
    * Each carries text on --color-surface and on its own 12% wash, so each
    * reaches 4.5:1 against both.
    */
-  --color-accent: #0e7490;
-  --color-accent-secondary: #7c3aed;
-  --color-ok: #047857;
-  --color-warn: #b45309;
-  --color-error: #be123c;
+  --color-accent: #0c6a84;
+  --color-accent-secondary: #6d28d9;
+  --color-ok: #046a4d;
+  --color-warn: #a34a07;
+  --color-error: #b10f38;
+
+  /* --- Signals: the status dots, which carry no text and so sit a step
+     brighter than the accents that do --- */
+  --color-signal-ok: #10b981;
+  --color-signal-warn: #f59e0b;
+  --color-signal-error: #ef4444;
 
   /* --- Scrims and shadows --- */
   --color-overlay: rgb(15 23 42 / 45%);
   --color-shadow: rgb(15 23 42 / 22%);
 
   /* --- Charts --- */
-  --color-chart-grid: #e3e8ef;
+  /* The curves are lighter than the accents: a line is read, not text. */
+  --color-chart-down: #81b4d0;
+  --color-chart-up: #ed9292;
+  --color-chart-grid: #d8dee6;
 
   /* --- Terminal ---
    *
@@ -53,13 +62,22 @@
    * stay plain values, and an alpha needs the rgba() spelling.
    */
   --color-terminal-black: #0f172a;
-  --color-terminal-selection: rgba(14, 116, 144, 0.25);
+  --color-terminal-selection: rgba(12, 106, 132, 0.25);
   --color-terminal-bright-accent: #0891b2;
   --color-terminal-bright-secondary: #8b5cf6;
   --color-terminal-bright-text: #6f7c8b;
 
   /* Native controls, scrollbars and form widgets. */
   --color-scheme: light;
+
+  /* The committing action's glow: lifted off the card on a tinted shadow,
+     with a highlight along its top edge. */
+  --shadow-commit:
+    0 6px 16px -8px color-mix(in srgb, var(--color-accent) 55%, transparent),
+    inset 0 1px 0 color-mix(in srgb, white 70%, transparent);
+  --shadow-commit-hover:
+    0 8px 20px -8px color-mix(in srgb, var(--color-accent) 65%, transparent),
+    inset 0 1px 0 color-mix(in srgb, white 70%, transparent);
 
   /* The blurred blobs behind the shell. */
   --shell-glow-opacity: 0.08;

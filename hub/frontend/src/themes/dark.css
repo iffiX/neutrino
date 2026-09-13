@@ -37,11 +37,18 @@
   --color-warn: #fbbf24;
   --color-error: #fb7185;
 
+  /* --- Signals: the status dots, which carry no text --- */
+  --color-signal-ok: var(--color-ok);
+  --color-signal-warn: var(--color-warn);
+  --color-signal-error: var(--color-error);
+
   /* --- Scrims and shadows --- */
   --color-overlay: rgb(5 8 12 / 72%);
   --color-shadow: rgb(0 0 0 / 90%);
 
   /* --- Charts --- */
+  --color-chart-down: var(--color-accent);
+  --color-chart-up: var(--color-accent-secondary);
   --color-chart-grid: #181c21;
 
   /* --- Terminal ---
@@ -57,6 +64,10 @@
 
   /* Native controls, scrollbars and form widgets. */
   --color-scheme: dark;
+
+  /* The committing action's glow: the accent, lit. */
+  --shadow-commit: 0 0 20px -8px var(--color-accent);
+  --shadow-commit-hover: 0 0 24px -6px var(--color-accent);
 
   /* The blurred blobs behind the shell. */
   --shell-glow-opacity: 0.1;

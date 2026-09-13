@@ -23,10 +23,6 @@
   --color-ok-wash: color-mix(in srgb, var(--color-ok) 12%, transparent);
   --color-warn-wash: color-mix(in srgb, var(--color-warn) 12%, transparent);
   --color-error-wash: color-mix(in srgb, var(--color-error) 12%, transparent);
-
-  /* --- Chart series --- */
-  --color-chart-down: var(--color-accent);
-  --color-chart-up: var(--color-accent-secondary);
 }
 
 :root {
@@ -301,20 +297,20 @@ textarea {
 }
 
 /* The glow is reserved for the one action a page or a section exists to
-   perform — the Apply that commits a form, the Save that ends an edit. It is
+   perform: the Apply that commits a form, the Save that ends an edit. It is
    what makes that button findable without reading; spending it on every
-   accent-coloured control would leave nothing to find. See
-   docs/standard/design/visual.md. */
+   accent-coloured control would leave nothing to find. Each theme draws it
+   its own way through --shadow-commit. See docs/standard/design/visual.md. */
 .page_actions .button--primary,
 .apply_bar .button--primary,
 .button--commit {
-  box-shadow: 0 0 20px -8px var(--color-accent);
+  box-shadow: var(--shadow-commit);
 }
 
 .page_actions .button--primary:hover:not(:disabled),
 .apply_bar .button--primary:hover:not(:disabled),
 .button--commit:hover:not(:disabled) {
-  box-shadow: 0 0 24px -6px var(--color-accent);
+  box-shadow: var(--shadow-commit-hover);
 }
 
 /* The affirmative twin of button--danger: installing something is the safe

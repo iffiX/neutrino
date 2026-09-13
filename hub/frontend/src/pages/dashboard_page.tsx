@@ -295,24 +295,24 @@ export function DashboardPage() {
                       >
                         <stop
                           offset="0%"
-                          stopColor="var(--color-accent)"
+                          stopColor="var(--color-chart-down)"
                           stopOpacity={0.42}
                         />
                         <stop
                           offset="100%"
-                          stopColor="var(--color-accent)"
+                          stopColor="var(--color-chart-down)"
                           stopOpacity={0}
                         />
                       </linearGradient>
                       <linearGradient id="fill_up" x1="0" y1="0" x2="0" y2="1">
                         <stop
                           offset="0%"
-                          stopColor="var(--color-accent-secondary)"
+                          stopColor="var(--color-chart-up)"
                           stopOpacity={0.34}
                         />
                         <stop
                           offset="100%"
-                          stopColor="var(--color-accent-secondary)"
+                          stopColor="var(--color-chart-up)"
                           stopOpacity={0}
                         />
                       </linearGradient>
@@ -343,7 +343,7 @@ export function DashboardPage() {
                       type="monotone"
                       dataKey="downlink_bytes_per_s"
                       name={t("ui.dashboard.legend_down")}
-                      stroke="var(--color-accent)"
+                      stroke="var(--color-chart-down)"
                       strokeWidth={1.6}
                       fill="url(#fill_down)"
                       isAnimationActive={false}
@@ -353,7 +353,7 @@ export function DashboardPage() {
                       type="monotone"
                       dataKey="uplink_bytes_per_s"
                       name={t("ui.dashboard.legend_up")}
-                      stroke="var(--color-accent-secondary)"
+                      stroke="var(--color-chart-up)"
                       strokeWidth={1.6}
                       fill="url(#fill_up)"
                       isAnimationActive={false}
@@ -432,14 +432,14 @@ export function DashboardPage() {
                       dataKey="received_bytes"
                       name={t("ui.dashboard.series_received")}
                       stackId="traffic"
-                      fill="var(--color-accent)"
+                      fill="var(--color-chart-down)"
                       radius={[0, 0, 0, 0]}
                     />
                     <Bar
                       dataKey="sent_bytes"
                       name={t("ui.dashboard.series_sent")}
                       stackId="traffic"
-                      fill="var(--color-accent-secondary)"
+                      fill="var(--color-chart-up)"
                       radius={[2, 2, 0, 0]}
                     />
                   </BarChart>
