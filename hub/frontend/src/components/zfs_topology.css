@@ -56,7 +56,9 @@
 .zfs_edge--live {
   stroke: var(--color-ok);
   stroke-dasharray: 5 7;
-  filter: drop-shadow(0 0 4px rgb(52 211 153 / 35%));
+  filter: drop-shadow(
+    0 0 4px color-mix(in srgb, var(--color-ok) 35%, transparent)
+  );
   animation: zfs_flow_upstream 1.6s linear infinite;
 }
 
@@ -75,7 +77,9 @@
   stroke: var(--color-warn);
   stroke-width: 1.6;
   stroke-dasharray: 5 7;
-  filter: drop-shadow(0 0 4px rgb(251 191 36 / 35%));
+  filter: drop-shadow(
+    0 0 4px color-mix(in srgb, var(--color-warn) 35%, transparent)
+  );
   animation: zfs_flow_upstream 1.2s linear infinite;
 }
 
@@ -96,17 +100,21 @@
 }
 
 .zfs_pool--ok rect {
-  stroke: rgb(52 211 153 / 55%);
+  stroke: color-mix(in srgb, var(--color-ok) 55%, transparent);
 }
 
 .zfs_pool--warn rect {
   stroke: var(--color-warn);
-  filter: drop-shadow(0 0 10px rgb(251 191 36 / 25%));
+  filter: drop-shadow(
+    0 0 10px color-mix(in srgb, var(--color-warn) 25%, transparent)
+  );
 }
 
 .zfs_pool--bad rect {
   stroke: var(--color-error);
-  filter: drop-shadow(0 0 10px rgb(248 113 113 / 30%));
+  filter: drop-shadow(
+    0 0 10px color-mix(in srgb, var(--color-error) 30%, transparent)
+  );
 }
 
 /* The same 3px meter every tile uses: border track, glowing fill. */

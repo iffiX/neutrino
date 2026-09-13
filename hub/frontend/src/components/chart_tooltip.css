@@ -6,7 +6,7 @@
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   background: var(--color-elevated);
-  box-shadow: 0 16px 40px -20px rgb(0 0 0 / 90%);
+  box-shadow: 0 16px 40px -20px var(--color-shadow);
 }
 
 .chart_tooltip_label {

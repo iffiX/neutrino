@@ -19,7 +19,8 @@
   grid-template-columns: 74px minmax(0, 1fr) 76px;
   align-items: center;
   padding: 6px var(--space-3);
-  border-bottom: 1px solid rgb(31 41 55 / 55%);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--color-border) 55%, transparent);
   font-family: var(--font-mono);
   font-size: 12px;
 }
@@ -63,13 +64,13 @@
 }
 
 .dns_log_outbound--proxy {
-  border-color: rgb(34 211 238 / 45%);
+  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
   background: var(--color-accent-wash);
   color: var(--color-accent);
 }
 
 .dns_log_outbound--direct {
-  border-color: rgb(52 211 153 / 40%);
+  border-color: color-mix(in srgb, var(--color-ok) 40%, transparent);
   background: var(--color-ok-wash);
   color: var(--color-ok);
 }

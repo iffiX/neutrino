@@ -4,8 +4,16 @@
   padding: var(--space-5) var(--space-4);
   overflow-x: auto;
   background:
-    radial-gradient(ellipse at 50% 0%, rgb(167 139 250 / 7%), transparent 60%),
-    radial-gradient(ellipse at 50% 100%, rgb(34 211 238 / 7%), transparent 60%),
+    radial-gradient(
+      ellipse at 50% 0%,
+      color-mix(in srgb, var(--color-accent-secondary) 7%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse at 50% 100%,
+      color-mix(in srgb, var(--color-accent) 7%, transparent),
+      transparent 60%
+    ),
     var(--color-surface);
 }
 

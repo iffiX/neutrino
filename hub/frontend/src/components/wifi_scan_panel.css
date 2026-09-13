@@ -64,7 +64,7 @@
 }
 
 .wifi_scan_row--active {
-  border-color: rgb(52 211 153 / 35%);
+  border-color: color-mix(in srgb, var(--color-ok) 35%, transparent);
   background: var(--color-ok-wash);
   cursor: default;
 }

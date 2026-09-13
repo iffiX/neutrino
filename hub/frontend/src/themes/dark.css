@@ -1,0 +1,62 @@
+/*
+ * The dark palette.
+ *
+ * A theme file holds one fixed set of colour tokens under its own
+ * `data-theme` attribute and never under `:root`, so a subtree can pin a
+ * theme while the rest of the document follows another.
+ */
+
+[data-theme="dark"] {
+  /* --- Surfaces ---
+   *
+   * Three steps, and nesting goes *down* them rather than up.
+   *
+   *   page                          --color-bg
+   *   a unit of change (framed)     --color-surface   + border, glows if dirty
+   *   its contents                  --color-bg        + quiet border
+   *   emphasis inside those         --color-elevated
+   *
+   * Only the unit of change carries a strong border or a glow; a nested box
+   * that glows reads as something waiting to be applied.
+   */
+  --color-bg: #0a0e14;
+  --color-surface: #111721;
+  --color-elevated: #161d2a;
+  --color-border: #1f2937;
+  --color-border-strong: #2b3648;
+
+  /* --- Text --- */
+  --color-text: #e6edf3;
+  --color-text-muted: #8b96a5;
+  --color-text-faint: #5b6675;
+
+  /* --- Accents --- */
+  --color-accent: #22d3ee;
+  --color-accent-secondary: #a78bfa;
+  --color-ok: #34d399;
+  --color-warn: #fbbf24;
+  --color-error: #fb7185;
+
+  /* --- Scrims and shadows --- */
+  --color-overlay: rgb(5 8 12 / 72%);
+  --color-shadow: rgb(0 0 0 / 90%);
+
+  /* --- Charts --- */
+  --color-chart-grid: #1a2230;
+
+  /* --- Terminal ---
+   *
+   * xterm resolves no custom property and parses the string itself: these
+   * stay plain values, and an alpha needs the rgba() spelling.
+   */
+  --color-terminal-selection: rgba(34, 211, 238, 0.25);
+  --color-terminal-bright-accent: #67e8f9;
+  --color-terminal-bright-secondary: #c4b5fd;
+  --color-terminal-bright-text: #ffffff;
+
+  /* Native controls, scrollbars and form widgets. */
+  --color-scheme: dark;
+
+  /* The blurred blobs behind the shell. */
+  --shell-glow-opacity: 0.16;
+}

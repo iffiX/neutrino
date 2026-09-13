@@ -19,7 +19,7 @@
 }
 
 .node_card--enabled {
-  border-color: rgb(34 211 238 / 28%);
+  border-color: color-mix(in srgb, var(--color-accent) 28%, transparent);
 }
 
 .node_card--enabled:hover {

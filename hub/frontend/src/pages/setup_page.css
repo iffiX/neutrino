@@ -140,10 +140,10 @@
 
 .setup_page--lit .setup_card {
   border-color: var(--color-border-strong);
-  background: rgb(17 23 33 / 92%);
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
   box-shadow:
-    0 0 0 1px rgb(34 211 238 / 12%),
-    0 40px 90px -40px rgb(0 0 0 / 95%);
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 12%, transparent),
+    0 40px 90px -40px var(--color-shadow);
 }
 
 /* --- the card --- */

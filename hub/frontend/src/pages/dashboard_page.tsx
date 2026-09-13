@@ -66,7 +66,7 @@ const HISTORY_RANGE_OPTIONS: {
   { value: "year", labelKey: "ui.usage.range_year" },
 ];
 const AXIS_STYLE = {
-  fill: "#5b6675",
+  fill: "var(--color-text-faint)",
   fontSize: 11,
   fontFamily: "ui-monospace",
 };
@@ -295,34 +295,37 @@ export function DashboardPage() {
                       >
                         <stop
                           offset="0%"
-                          stopColor="#22d3ee"
+                          stopColor="var(--color-accent)"
                           stopOpacity={0.42}
                         />
                         <stop
                           offset="100%"
-                          stopColor="#22d3ee"
+                          stopColor="var(--color-accent)"
                           stopOpacity={0}
                         />
                       </linearGradient>
                       <linearGradient id="fill_up" x1="0" y1="0" x2="0" y2="1">
                         <stop
                           offset="0%"
-                          stopColor="#a78bfa"
+                          stopColor="var(--color-accent-secondary)"
                           stopOpacity={0.34}
                         />
                         <stop
                           offset="100%"
-                          stopColor="#a78bfa"
+                          stopColor="var(--color-accent-secondary)"
                           stopOpacity={0}
                         />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid stroke="#1a2230" vertical={false} />
+                    <CartesianGrid
+                      stroke="var(--color-chart-grid)"
+                      vertical={false}
+                    />
                     <XAxis
                       dataKey="label"
                       tick={AXIS_STYLE}
                       tickLine={false}
-                      axisLine={{ stroke: "#1f2937" }}
+                      axisLine={{ stroke: "var(--color-border)" }}
                       minTickGap={44}
                     />
                     <YAxis
@@ -333,14 +336,14 @@ export function DashboardPage() {
                       tickFormatter={formatByteRate}
                     />
                     <Tooltip
-                      cursor={{ stroke: "#2b3648" }}
+                      cursor={{ stroke: "var(--color-border-strong)" }}
                       content={<ChartTooltip format={formatByteRate} />}
                     />
                     <Area
                       type="monotone"
                       dataKey="downlink_bytes_per_s"
                       name={t("ui.dashboard.legend_down")}
-                      stroke="#22d3ee"
+                      stroke="var(--color-accent)"
                       strokeWidth={1.6}
                       fill="url(#fill_down)"
                       isAnimationActive={false}
@@ -350,7 +353,7 @@ export function DashboardPage() {
                       type="monotone"
                       dataKey="uplink_bytes_per_s"
                       name={t("ui.dashboard.legend_up")}
-                      stroke="#a78bfa"
+                      stroke="var(--color-accent-secondary)"
                       strokeWidth={1.6}
                       fill="url(#fill_up)"
                       isAnimationActive={false}
@@ -398,12 +401,15 @@ export function DashboardPage() {
               <div className="dashboard_chart dashboard_chart--history">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={historySeries} margin={CHART_MARGIN}>
-                    <CartesianGrid stroke="#1a2230" vertical={false} />
+                    <CartesianGrid
+                      stroke="var(--color-chart-grid)"
+                      vertical={false}
+                    />
                     <XAxis
                       dataKey="label"
                       tick={AXIS_STYLE}
                       tickLine={false}
-                      axisLine={{ stroke: "#1f2937" }}
+                      axisLine={{ stroke: "var(--color-border)" }}
                       minTickGap={24}
                       tickFormatter={(label: string) =>
                         formatHistoryTick(label, historyRange)
@@ -417,21 +423,23 @@ export function DashboardPage() {
                       tickFormatter={formatBytes}
                     />
                     <Tooltip
-                      cursor={{ fill: "rgba(34, 211, 238, 0.06)" }}
+                      cursor={{
+                        fill: "color-mix(in srgb, var(--color-accent) 6%, transparent)",
+                      }}
                       content={<ChartTooltip format={formatBytes} />}
                     />
                     <Bar
                       dataKey="received_bytes"
                       name={t("ui.dashboard.series_received")}
                       stackId="traffic"
-                      fill="#22d3ee"
+                      fill="var(--color-accent)"
                       radius={[0, 0, 0, 0]}
                     />
                     <Bar
                       dataKey="sent_bytes"
                       name={t("ui.dashboard.series_sent")}
                       stackId="traffic"
-                      fill="#a78bfa"
+                      fill="var(--color-accent-secondary)"
                       radius={[2, 2, 0, 0]}
                     />
                   </BarChart>

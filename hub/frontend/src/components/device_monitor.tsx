@@ -28,9 +28,6 @@ import "./device_monitor.css";
 
 const MAX_SAMPLES = 120;
 
-const CYAN = "#22d3ee";
-const VIOLET = "#a78bfa";
-
 /** The process table's columns, the abbreviations the agent reports under. */
 const COLUMN_PID = "pid";
 const COLUMN_CPU = "cpu%";
@@ -158,14 +155,14 @@ export function DeviceMonitor({ device }: DeviceMonitorProps) {
                 value={formatPercent(client.cpu_percent)}
                 gradientPrefix={`mon_cpu_${device.mac_address}`}
                 data={samples.map((sample) => ({ a: sample.cpu }))}
-                series={[{ key: "a", color: CYAN }]}
+                series={[{ key: "a", color: "var(--color-accent)" }]}
               />
               <ChartPanel
                 title={t("ui.device_monitor.memory")}
                 value={formatPercent(client.memory_percent)}
                 gradientPrefix={`mon_mem_${device.mac_address}`}
                 data={samples.map((sample) => ({ a: sample.memory }))}
-                series={[{ key: "a", color: VIOLET }]}
+                series={[{ key: "a", color: "var(--color-accent-secondary)" }]}
               />
               {client.gpus.map((gpu, index) => (
                 <ChartPanel
@@ -179,8 +176,8 @@ export function DeviceMonitor({ device }: DeviceMonitorProps) {
                     b: sample.gpu_vram[index] ?? null,
                   }))}
                   series={[
-                    { key: "a", color: CYAN },
-                    { key: "b", color: VIOLET },
+                    { key: "a", color: "var(--color-accent)" },
+                    { key: "b", color: "var(--color-accent-secondary)" },
                   ]}
                 />
               ))}

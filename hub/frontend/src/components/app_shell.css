@@ -40,7 +40,7 @@
   height: 520px;
   border-radius: 50%;
   filter: blur(90px);
-  opacity: 0.16;
+  opacity: var(--shell-glow-opacity);
   pointer-events: none;
 }
 

@@ -4,7 +4,7 @@
   gap: var(--space-3);
   align-items: flex-start;
   padding: var(--space-5);
-  border: 1px solid rgb(251 113 133 / 35%);
+  border: 1px solid color-mix(in srgb, var(--color-error) 35%, transparent);
   border-radius: var(--radius-lg);
   background: var(--color-error-wash);
 }

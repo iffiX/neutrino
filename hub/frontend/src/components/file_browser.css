@@ -152,7 +152,7 @@
 }
 
 .file_browser_action--danger:hover {
-  background: rgb(255 66 82 / 12%);
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
   color: var(--color-error);
 }
 

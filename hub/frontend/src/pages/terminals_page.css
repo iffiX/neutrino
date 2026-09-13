@@ -24,7 +24,7 @@
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-lg);
   background: var(--color-surface);
-  box-shadow: 0 0 0 1px rgb(34 211 238 / 18%);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 18%, transparent);
 }
 
 .terminal_panel_head {

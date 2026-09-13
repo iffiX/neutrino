@@ -210,7 +210,7 @@
 }
 
 .device_monitor_kill--armed {
-  background: rgb(255 66 82 / 15%);
+  background: color-mix(in srgb, var(--color-error) 15%, transparent);
   color: var(--color-error);
 }
 

@@ -39,7 +39,7 @@
 }
 
 .device_tile--agent {
-  border-color: rgb(52 211 153 / 28%);
+  border-color: color-mix(in srgb, var(--color-ok) 28%, transparent);
 }
 
 /* Out of reach, not out of mind: a device the gateway still has credentials
@@ -73,7 +73,7 @@
 
 .device_tile--ssh .device_tile_icon,
 .device_tile--agent .device_tile_icon {
-  border-color: rgb(34 211 238 / 40%);
+  border-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
   color: var(--color-accent);
 }
 

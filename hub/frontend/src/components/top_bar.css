@@ -10,7 +10,7 @@
   min-height: var(--top-bar-height);
   padding: var(--space-2) var(--space-6);
   border-bottom: 1px solid var(--color-border);
-  background: rgb(10 14 20 / 88%);
+  background: color-mix(in srgb, var(--color-bg) 88%, transparent);
   backdrop-filter: blur(12px);
 }
 
@@ -63,7 +63,7 @@
 }
 
 .top_bar_chip--proxy {
-  border-color: rgb(34 211 238 / 45%);
+  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
   background: var(--color-accent-wash);
 }
 
@@ -88,7 +88,7 @@
 /* The proxy is switched off. Not an error and not an exit — the traffic is
    going out unproxied, on purpose, and the strip says which. */
 .top_bar_chip--direct {
-  border-color: rgb(251 191 36 / 45%);
+  border-color: color-mix(in srgb, var(--color-warn) 45%, transparent);
   background: var(--color-warn-wash);
   color: var(--color-warn);
 }

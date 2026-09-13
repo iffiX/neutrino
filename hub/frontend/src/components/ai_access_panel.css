@@ -98,7 +98,7 @@
 }
 
 .ai_key_action--danger:hover:not(:disabled) {
-  background: rgb(255 66 82 / 12%);
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
   color: var(--color-error);
 }
 

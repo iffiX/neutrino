@@ -1,63 +1,35 @@
 /*
- * Neon-terminal theme for the neutrino panel.
+ * The panel's shared tokens and primitives.
  *
- * Every colour in the app is defined here as a custom property, so retheming
- * is a single-file edit. Below the tokens live the element resets and the
+ * Every colour token lives in themes/<name>.css, one file per theme. Here are
+ * the tokens a theme does not change (type, spacing, shape, motion, layout),
+ * the washes derived from a theme's colours, the element resets, and the
  * shared primitives (cards, buttons, inputs, badges, animations) that every
  * page composes; anything specific to one component lives next to it in its
  * own stylesheet.
  */
 
-:root {
-  /* --- Surfaces ---
-   *
-   * Three steps, and nesting goes *down* them rather than up. On a near-black
-   * theme there is no headroom upward: two steps lighter and everything is
-   * grey, and the neon accents lose the contrast they exist for. Going darker
-   * inward also puts the emphasis where it belongs — the frame is the unit of
-   * change, and contents that were lighter than their container would
-   * outshout it.
-   *
-   *   page                          --color-bg
-   *   a unit of change (framed)     --color-surface   + border, glows if dirty
-   *   its contents                  --color-bg        + quiet border
-   *   emphasis inside those         --color-elevated
-   *
-   * The alternation is what keeps a third level legible without a fourth
-   * colour. Only the unit of change carries a strong border or a glow; a
-   * nested box that glows reads as something waiting to be applied.
-   */
-  --color-bg: #0a0e14;
-  --color-surface: #111721;
-  --color-elevated: #161d2a;
-  --color-border: #1f2937;
-  --color-border-strong: #2b3648;
-
-  /* --- Text --- */
-  --color-text: #e6edf3;
-  --color-text-muted: #8b96a5;
-  --color-text-faint: #5b6675;
-
-  /* --- Accents --- */
-  --color-accent: #22d3ee;
-  --color-accent-secondary: #a78bfa;
-  --color-ok: #34d399;
-  --color-warn: #fbbf24;
-  --color-error: #fb7185;
-
+/* Declared on the themed element rather than :root: a custom property
+   resolves its var() where it is declared, so a subtree pinned to another
+   theme mixes these from its own accents. */
+[data-theme] {
   /* --- Translucent accent washes, for fills and glows --- */
-  --color-accent-wash: rgb(34 211 238 / 12%);
-  --color-accent-secondary-wash: rgb(167 139 250 / 12%);
-  --color-ok-wash: rgb(52 211 153 / 12%);
-  --color-warn-wash: rgb(251 191 36 / 12%);
-  --color-error-wash: rgb(251 113 133 / 12%);
-  --color-overlay: rgb(5 8 12 / 72%);
+  --color-accent-wash: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  --color-accent-secondary-wash: color-mix(
+    in srgb,
+    var(--color-accent-secondary) 12%,
+    transparent
+  );
+  --color-ok-wash: color-mix(in srgb, var(--color-ok) 12%, transparent);
+  --color-warn-wash: color-mix(in srgb, var(--color-warn) 12%, transparent);
+  --color-error-wash: color-mix(in srgb, var(--color-error) 12%, transparent);
 
   /* --- Chart series --- */
   --color-chart-down: var(--color-accent);
   --color-chart-up: var(--color-accent-secondary);
-  --color-chart-grid: #1a2230;
+}
 
+:root {
   /* --- Typography --- */
   --font-sans:
     "Inter", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC",
@@ -103,6 +75,11 @@ html,
 body,
 #root {
   height: 100%;
+}
+
+/* Native controls, scrollbars and form widgets follow the theme. */
+html {
+  color-scheme: var(--color-scheme);
 }
 
 body {
@@ -320,7 +297,7 @@ textarea {
 }
 
 .button--primary:hover:not(:disabled) {
-  background: rgb(34 211 238 / 20%);
+  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
 }
 
 /* The glow is reserved for the one action a page or a section exists to
@@ -348,7 +325,7 @@ textarea {
 }
 
 .button--ok:hover:not(:disabled) {
-  background: rgb(52 211 153 / 12%);
+  background: var(--color-ok-wash);
   border-color: var(--color-ok);
   color: var(--color-ok);
 }
@@ -370,7 +347,7 @@ textarea {
 }
 
 .button--warn:hover:not(:disabled) {
-  background: rgb(251 191 36 / 10%);
+  background: color-mix(in srgb, var(--color-warn) 10%, transparent);
   border-color: var(--color-warn);
   color: var(--color-warn);
 }
@@ -556,19 +533,19 @@ textarea {
 }
 
 .notice--warn {
-  border-color: rgb(251 191 36 / 40%);
+  border-color: color-mix(in srgb, var(--color-warn) 40%, transparent);
   background: var(--color-warn-wash);
   color: var(--color-warn);
 }
 
 .notice--error {
-  border-color: rgb(251 113 133 / 40%);
+  border-color: color-mix(in srgb, var(--color-error) 40%, transparent);
   background: var(--color-error-wash);
   color: var(--color-error);
 }
 
 .notice--ok {
-  border-color: rgb(52 211 153 / 40%);
+  border-color: color-mix(in srgb, var(--color-ok) 40%, transparent);
   background: var(--color-ok-wash);
   color: var(--color-ok);
 }

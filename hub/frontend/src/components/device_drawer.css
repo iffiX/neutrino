@@ -18,7 +18,7 @@
   width: min(540px, 100%);
   border-left: 1px solid var(--color-border-strong);
   background: var(--color-surface);
-  box-shadow: -30px 0 80px -40px rgb(0 0 0 / 90%);
+  box-shadow: -30px 0 80px -40px var(--color-shadow);
   animation: slide_in_right 220ms ease both;
 }
 
@@ -53,7 +53,7 @@
   place-items: center;
   width: 40px;
   height: 40px;
-  border: 1px solid rgb(34 211 238 / 40%);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
   border-radius: var(--radius-md);
   background: var(--color-accent-wash);
   color: var(--color-accent);

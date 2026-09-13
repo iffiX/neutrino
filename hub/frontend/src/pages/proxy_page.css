@@ -19,7 +19,7 @@
    group has changes waiting", which is the only thing that should pull the
    eye across the page. */
 .proxy_switch_card--on {
-  border-color: rgb(34 211 238 / 35%);
+  border-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
 }
 
 .proxy_switch_head {

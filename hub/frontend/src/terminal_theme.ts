@@ -3,29 +3,37 @@
  *
  * Shared so the SSH session on a device and the shell on the gateway look like
  * the same program, and so neither looks pasted in next to the rest of the
- * panel — the colours are the theme's own tokens, resolved.
+ * panel. xterm takes colour strings rather than custom properties, so the
+ * tokens are resolved when a terminal is created.
  */
 
-export const TERMINAL_THEME = {
-  background: "#0a0e14",
-  foreground: "#e6edf3",
-  cursor: "#22d3ee",
-  cursorAccent: "#0a0e14",
-  selectionBackground: "rgba(34, 211, 238, 0.25)",
-  black: "#111721",
-  red: "#fb7185",
-  green: "#34d399",
-  yellow: "#fbbf24",
-  blue: "#22d3ee",
-  magenta: "#a78bfa",
-  cyan: "#22d3ee",
-  white: "#e6edf3",
-  brightBlack: "#5b6675",
-  brightRed: "#fb7185",
-  brightGreen: "#34d399",
-  brightYellow: "#fbbf24",
-  brightBlue: "#67e8f9",
-  brightMagenta: "#c4b5fd",
-  brightCyan: "#67e8f9",
-  brightWhite: "#ffffff",
-};
+import type { ITheme } from "@xterm/xterm";
+
+import { themeToken } from "./theme";
+
+/** Read the active theme's terminal colours. */
+export function terminalTheme(): ITheme {
+  return {
+    background: themeToken("--color-bg"),
+    foreground: themeToken("--color-text"),
+    cursor: themeToken("--color-accent"),
+    cursorAccent: themeToken("--color-bg"),
+    selectionBackground: themeToken("--color-terminal-selection"),
+    black: themeToken("--color-surface"),
+    red: themeToken("--color-error"),
+    green: themeToken("--color-ok"),
+    yellow: themeToken("--color-warn"),
+    blue: themeToken("--color-accent"),
+    magenta: themeToken("--color-accent-secondary"),
+    cyan: themeToken("--color-accent"),
+    white: themeToken("--color-text"),
+    brightBlack: themeToken("--color-text-faint"),
+    brightRed: themeToken("--color-error"),
+    brightGreen: themeToken("--color-ok"),
+    brightYellow: themeToken("--color-warn"),
+    brightBlue: themeToken("--color-terminal-bright-accent"),
+    brightMagenta: themeToken("--color-terminal-bright-secondary"),
+    brightCyan: themeToken("--color-terminal-bright-accent"),
+    brightWhite: themeToken("--color-terminal-bright-text"),
+  };
+}

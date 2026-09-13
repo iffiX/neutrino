@@ -23,8 +23,8 @@
   border-radius: var(--radius-lg);
   background: var(--color-surface);
   box-shadow:
-    0 0 0 1px rgb(251 191 36 / 18%),
-    0 30px 80px -30px rgb(0 0 0 / 90%);
+    0 0 0 1px color-mix(in srgb, var(--color-warn) 18%, transparent),
+    0 30px 80px -30px var(--color-shadow);
 }
 
 .confirm_head {

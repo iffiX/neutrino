@@ -8,6 +8,7 @@ import type { PanelLanguage } from "./api_types";
 
 import "./fonts.css";
 import "./theme.css";
+import "./themes/dark.css";
 
 const container = document.getElementById("root");
 if (container === null) {

@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 
-import { TERMINAL_THEME } from "../terminal_theme";
+import { terminalTheme } from "../terminal_theme";
 import { websocketUrl } from "../api_client";
 
 import "@xterm/xterm/css/xterm.css";
@@ -75,7 +75,7 @@ export function ShellTerminal({
       cursorBlink: true,
       // No convertEol: the far end allocates a pty, so its output already ends
       // lines with CRLF. Converting again would double-space everything.
-      theme: TERMINAL_THEME,
+      theme: terminalTheme(),
       scrollback: TERMINAL_SCROLLBACK_LINES,
     });
     const fitAddon = new FitAddon();

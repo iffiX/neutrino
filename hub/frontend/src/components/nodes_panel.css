@@ -56,11 +56,11 @@
   padding: var(--space-3) var(--space-5);
   border: 1px solid var(--color-accent);
   border-radius: var(--radius-lg);
-  background: rgb(22 29 42 / 96%);
+  background: color-mix(in srgb, var(--color-elevated) 96%, transparent);
   backdrop-filter: blur(10px);
   box-shadow:
-    0 0 0 1px rgb(34 211 238 / 25%),
-    0 20px 50px -25px rgb(0 0 0 / 95%);
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 25%, transparent),
+    0 20px 50px -25px var(--color-shadow);
   animation: fade_in_up 220ms ease both;
 }
 

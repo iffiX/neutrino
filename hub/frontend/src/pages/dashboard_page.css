@@ -91,14 +91,14 @@
   gap: var(--space-3);
   align-items: center;
   padding: var(--space-2) var(--space-4);
-  border: 1px solid rgb(34 211 238 / 32%);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 32%, transparent);
   border-radius: var(--radius-pill);
   background: var(--color-accent-wash);
   box-shadow: 0 0 24px -16px var(--color-accent);
 }
 
 .dashboard_exit--dead {
-  border-color: rgb(251 113 133 / 35%);
+  border-color: color-mix(in srgb, var(--color-error) 35%, transparent);
   background: var(--color-error-wash);
   box-shadow: none;
 }
