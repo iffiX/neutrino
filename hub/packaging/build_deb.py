@@ -80,6 +80,11 @@ systemctl daemon-reload || true
 if [ "$1" = configure ] && [ -n "$2" ]; then
     nhub apply >/dev/null 2>&1 ||
         echo "  Run 'sudo nhub apply' to pick up this version."
+    # The router unit is resident, so restarting it is what moves the box
+    # onto this version. It stops without tearing the firewall down.
+    if systemctl is-enabled --quiet neutrino_hub_router.service 2>/dev/null; then
+        systemctl restart neutrino_hub_router.service >/dev/null 2>&1 || true
+    fi
     # And the panel, because it is the process running the code this package
     # just replaced. `nhub apply` re-renders what the modules produce and
     # restarts what consumes it, but the panel serves itself: without this it
@@ -105,6 +110,10 @@ if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
         systemctl stop "${unit}.service" >/dev/null 2>&1 || true
         systemctl disable "${unit}.service" >/dev/null 2>&1 || true
     done
+    # The router unit stops without tearing anything down, so removing the
+    # package is where the firewall and the policy route go.
+    nft delete table inet neutrino >/dev/null 2>&1 || true
+    ip rule del fwmark 0x1 lookup 100 >/dev/null 2>&1 || true
 fi
 """
 

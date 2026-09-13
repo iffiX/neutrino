@@ -1,18 +1,26 @@
 [Unit]
-Description=Neutrino Hub routing state (forwarding, policy route, nftables)
+Description=Neutrino Hub routing state (forwarding, policy route, nftables, interfaces)
 Documentation=file://@REPO_ROOT@/docs/standard/misc/config.md
 After=network-pre.target
 Wants=network-pre.target
 Before=neutrino_hub_xray.service neutrino_hub_dnsmasq.service
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
+# Resident: it applies the routing state when it starts, reports ready once
+# the firewall step has run, and applies again on every link, address, route
+# or rule change. It stops without tearing anything down, so a restart leaves
+# no gap; removing the package and `nhub reset all` hand the firewall back.
+Type=notify
+NotifyAccess=main
+# The stop reaches this process alone; it ends its `ip monitor` itself.
+KillMode=mixed
 WorkingDirectory=@REPO_ROOT@
 Environment=PYTHONPATH=@REPO_ROOT@
-ExecStart=@PYTHON@ -m neutrino_hub.cli.entry apply --only router
-ExecStop=-/usr/sbin/nft delete table inet neutrino
-ExecStop=-/usr/sbin/ip rule del fwmark 0x1 lookup 100
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@PYTHON@ -m neutrino_hub.cli.entry run --only-router
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=60
 
 [Install]
 WantedBy=multi-user.target

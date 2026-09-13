@@ -140,6 +140,36 @@ ROUTER_ROUTE_TABLE = 100
 ROUTER_ROUTE_RULE_PRIORITY = 100
 
 ROUTER_NFT_PATH = UTILS_GENERATED_DIR / "router.nft"
+# What a ruleset says when it diverts into the proxy.
+ROUTER_NFT_DIVERT_MARKER = "tproxy ip to"
+
+# --- the resident reconciler ---
+# The one lock every writer of the routing state takes, so the resident unit
+# and an apply never interleave.
+ROUTER_LOCK_PATH = UTILS_RUNTIME_ROOT / "router.lock"
+# How long an apply waits for another to finish, and how often it looks.
+ROUTER_LOCK_TIMEOUT_S = 60.0
+ROUTER_LOCK_POLL_S = 0.2
+# What the resident unit watches: every change the routing state depends on.
+ROUTER_MONITOR_COMMAND = ("ip", "-o", "monitor", "link", "address", "route", "rule")
+# A burst of events is one pass: it starts after this much quiet, and after
+# the cap however busy the kernel is.
+ROUTER_DEBOUNCE_QUIET_S = 1.0
+ROUTER_DEBOUNCE_MAX_S = 5.0
+# How often the resident loop looks for a stop while it waits.
+ROUTER_WAIT_POLL_S = 0.5
+# Who asked for a pass.
+ROUTER_TRIGGER_APPLY = "apply"
+ROUTER_TRIGGER_EVENT = "event"
+# One step's outcome, and why it waits or failed.
+ROUTER_STEP_APPLIED = "applied"
+ROUTER_STEP_UNCHANGED = "unchanged"
+ROUTER_STEP_PENDING = "pending"
+ROUTER_STEP_FAILED = "failed"
+ROUTER_CODE_COMMAND_FAILED = "command_failed"
+ROUTER_CODE_POLICY_ROUTE_MISSING = "policy_route_missing"
+ROUTER_CODE_INTERFACE_DOWN = "interface_down"
+ROUTER_CODE_LEASE_PENDING = "lease_pending"
 # One access point per wireless interface, so both the rendered files and the
 # systemd unit are named after the interface they serve.
 ROUTER_HOSTAPD_UNIT = "neutrino_hub_hostapd@{interface}.service"
@@ -233,6 +263,7 @@ ROUTER_STACK_RECORD_PATH = UTILS_STATE_ROOT / "stood_down.json"
 # reads them by name rather than through the panel's runtime.
 ROUTER_NETWORK_FILE = "router/network.json"
 ROUTER_CONNECTIONS_FILE = "router/connections.json"
+ROUTER_ROUTING_FILE = "xray/routing.json"
 ROUTER_DHCP_STATE_DIR = UTILS_STATE_ROOT / "dhcpcd"
 
 

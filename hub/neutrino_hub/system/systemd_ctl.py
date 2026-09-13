@@ -5,13 +5,87 @@ class, so the set of units either can touch is exactly
 :data:`neutrino_hub.system.constants.SYSTEM_MANAGED_UNITS`.
 """
 
+import os
+import socket
 from dataclasses import dataclass
 
 from neutrino_hub.utils.subprocess_run import run
 
-from neutrino_hub.system.constants import SYSTEM_MANAGED_UNITS
+from neutrino_hub.system.constants import (
+    SYSTEM_MANAGED_UNITS,
+    SYSTEM_NOTIFY_READY,
+    SYSTEM_NOTIFY_SOCKET_ENV,
+    SYSTEM_UNIT_STATE_FAILED,
+    SYSTEM_UNIT_STATE_INACTIVE,
+)
 
 ALLOWED_ACTIONS = ("start", "stop", "restart", "enable", "disable")
+
+
+def unit_state(unit: str) -> str:
+    """What systemd says one unit is doing now.
+
+    Args:
+        unit: The unit's name.
+
+    Returns:
+        ``active``, ``activating``, ``inactive``, ``failed`` or another word
+        systemd prints; ``inactive`` for a unit it does not know.
+    """
+    result = run(["systemctl", "is-active", unit], is_checked=False)
+    return result.stdout.strip() or SYSTEM_UNIT_STATE_INACTIVE
+
+
+def is_unit_startable(state: str, *, is_failed_restarted: bool) -> bool:
+    """Whether a unit in this state is one to start.
+
+    A unit systemd is starting or restarting is systemd's to finish.
+
+    Args:
+        state: What :func:`unit_state` answered.
+        is_failed_restarted: Whether a failed unit counts. A person's apply
+            restarts one; an event leaves it.
+
+    Returns:
+        True for an inactive unit, and for a failed one when asked.
+    """
+    if state == SYSTEM_UNIT_STATE_INACTIVE:
+        return True
+    return is_failed_restarted and state == SYSTEM_UNIT_STATE_FAILED
+
+
+def take_notify_address() -> str:
+    """Take systemd's notify socket out of this process's environment.
+
+    Under `NotifyAccess=main` systemd refuses a message from a child, and
+    every child started afterwards no longer inherits the socket.
+
+    Returns:
+        The socket's address; empty when no unit started this process.
+    """
+    return os.environ.pop(SYSTEM_NOTIFY_SOCKET_ENV, "")
+
+
+def notify_ready(address: str) -> bool:
+    """Tell systemd this unit is ready, when a unit started it.
+
+    Args:
+        address: The socket `take_notify_address` returned.
+
+    Returns:
+        True when systemd was told; False with no unit to tell.
+
+    Raises:
+        OSError: When the socket systemd named cannot be reached.
+    """
+    if not address:
+        return False
+    if address.startswith("@"):
+        address = "\0" + address[1:]
+    with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as connection:
+        connection.connect(address)
+        connection.sendall(SYSTEM_NOTIFY_READY)
+    return True
 
 
 @dataclass

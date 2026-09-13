@@ -31,6 +31,7 @@ from neutrino_hub.modules.router.constants import (
 )
 from neutrino_hub.modules.router.hostapd_renderer import RouterHostapdRenderer
 from neutrino_hub.modules.router.supplicant import RouterWifiClient
+from neutrino_hub.system.systemd_ctl import is_unit_startable, unit_state
 
 # WPA2 permits 8 to 63 characters. An access point with no passphrase would put
 # an open route into the LAN, so the gateway does not offer one.
@@ -62,7 +63,12 @@ class RouterWifiAccessPoint:
             ["systemctl", "is-active", "--quiet", self.unit], is_checked=False
         ).is_success
 
-    def publish(self, *, interface) -> bool:
+    @property
+    def state(self) -> str:
+        """What systemd says this radio's access point unit is doing now."""
+        return unit_state(self.unit)
+
+    def publish(self, *, interface, is_failed_restarted: bool = True) -> bool:
         """Bring up an access point on this interface, and serve it ourselves.
 
         hostapd runs the radio; the address is put on by the unit; the
@@ -73,6 +79,9 @@ class RouterWifiAccessPoint:
             interface: The interface holding the LAN role, carrying the
                 access-point settings under ``wifi`` and the address under
                 ``lan``.
+            is_failed_restarted: Whether an access point whose unit failed is
+                restarted when nothing about it changed. An apply restarts it;
+                an event leaves a failed or restarting unit to systemd.
 
         Returns:
             True when the access point had to be reconfigured or restarted,
@@ -99,7 +108,9 @@ class RouterWifiAccessPoint:
         is_changed |= _write_if_changed(
             router_hostapd_address_path(self._interface), renderer.render_address()
         )
-        if not is_changed and self.is_running:
+        if not is_changed and not is_unit_startable(
+            self.state, is_failed_restarted=is_failed_restarted
+        ):
             return False
 
         self._release_radio()

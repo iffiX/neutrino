@@ -21,6 +21,7 @@ from neutrino_hub.modules.router.constants import (
     router_supplicant_config_path,
 )
 from neutrino_hub.utils.json_file import write_generated
+from neutrino_hub.system.systemd_ctl import unit_state
 from neutrino_hub.utils.subprocess_run import run
 
 # --- config ---
@@ -108,6 +109,11 @@ class RouterWifiClient:
         return run(
             ["systemctl", "is-active", "--quiet", self.unit], is_checked=False
         ).is_success
+
+    @property
+    def state(self) -> str:
+        """What systemd says this radio's supplicant unit is doing now."""
+        return unit_state(self.unit)
 
     def start(self) -> None:
         """Ask for the supplicant on this radio, and keep it started.

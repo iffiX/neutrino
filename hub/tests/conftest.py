@@ -85,6 +85,7 @@ REFUSED_PROGRAMS = {
 MUTATING_IP_VERBS = {"add", "del", "delete", "replace", "change", "set", "flush"}
 
 _real_subprocess_run = subprocess.run
+_real_popen = subprocess.Popen
 
 
 def _refuses(command) -> str | None:
@@ -98,6 +99,8 @@ def _refuses(command) -> str | None:
         return None
     words = [str(word) for word in command[1:]]
     if program == "ip":
+        if "monitor" in words:
+            return "ip monitor would run until something killed it"
         if any(word in MUTATING_IP_VERBS for word in words):
             return "ip would change an address, a link, a route or a rule"
         return None
@@ -126,7 +129,30 @@ def _no_test_reaches_the_machine(monkeypatch):
             )
         return _real_subprocess_run(command, *arguments, **keywords)
 
+    class GuardedPopen(_real_popen):
+        """The same guard for a process started without `run`."""
+
+        def __init__(self, command, *arguments, **keywords):
+            reason = _refuses(command)
+            if reason is not None:
+                test = os.environ.get("PYTEST_CURRENT_TEST", "a test")
+                raise AssertionError(
+                    f"{test} reached the machine: "
+                    f"{' '.join(map(str, command))} ({reason}); "
+                    "stub what started it"
+                )
+            super().__init__(command, *arguments, **keywords)
+
     monkeypatch.setattr(subprocess, "run", guarded_run)
+    monkeypatch.setattr(subprocess, "Popen", GuardedPopen)
+
+
+@pytest.fixture(autouse=True)
+def _router_lock_in_a_test_directory(tmp_path, monkeypatch):
+    """Point the routing-state lock where a test may create it."""
+    from neutrino_hub.modules.router import controller
+
+    monkeypatch.setattr(controller, "ROUTER_LOCK_PATH", tmp_path / "router.lock")
 
 
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig

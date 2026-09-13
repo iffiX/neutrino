@@ -5,6 +5,7 @@
     sudo nhub run --only-xray
     sudo nhub run --only-cliproxyapi
     sudo nhub run --only-dnsmasq
+    sudo nhub run --only-router       # keeps the routing state as configured
     sudo nhub run --only-supplicant --interface wlp3s0
     sudo nhub run --only-dhcpcd --interface enp2s0
     sudo nhub --dev run               # all of them, plus the frontend dev server
@@ -23,10 +24,13 @@ import argparse
 import asyncio
 import os
 import pwd
+import queue
 import shutil
 import signal
 import subprocess
 import sys
+import threading
+import time
 
 import uvicorn
 
@@ -40,11 +44,21 @@ from neutrino_hub.modules.devices.constants import (
     AGENT_WS_PING_TIMEOUT_S,
 )
 from neutrino_hub.modules.router.constants import (
+    ROUTER_DEBOUNCE_MAX_S,
+    ROUTER_DEBOUNCE_QUIET_S,
     ROUTER_DNSMASQ_PATH,
+    ROUTER_STEP_APPLIED,
+    ROUTER_STEP_UNCHANGED,
     ROUTER_SUPPLICANT_CONTROL_DIR,
+    ROUTER_TRIGGER_EVENT,
+    ROUTER_WAIT_POLL_S,
     router_dhcp_config_path,
     router_supplicant_config_path,
 )
+from neutrino_hub.modules.router.controller import RouterStateController, router_lock
+from neutrino_hub.modules.router.link_monitor import RouterLinkMonitor, link_fingerprint
+from neutrino_hub.system.systemd_ctl import notify_ready, take_notify_address
+from neutrino_hub.utils.subprocess_run import command_failure_text
 from neutrino_hub.modules.xray.constants import (
     XRAY_ASSET_DIR,
     XRAY_ASSET_ENV,
@@ -113,7 +127,15 @@ def main() -> int:
         help="which interface, for the per-interface engines",
     )
     group = parser.add_mutually_exclusive_group()
-    for name in ("web", "xray", "cliproxyapi", "dnsmasq", "supplicant", "dhcpcd"):
+    for name in (
+        "web",
+        "xray",
+        "cliproxyapi",
+        "dnsmasq",
+        "supplicant",
+        "dhcpcd",
+        "router",
+    ):
         group.add_argument(
             f"--only-{name}",
             dest="only",
@@ -136,6 +158,10 @@ def main() -> int:
         if arguments.only == "supplicant":
             return _exec_supplicant(arguments.interface)
         return _exec_dhcpcd(arguments.interface)
+    if arguments.only == "router":
+        # Before the set-up check, which it makes itself: the unit is ordered
+        # before others, and exiting 1 would restart it forever.
+        return _serve_router()
     if not _is_set_up():
         print(
             f"error: nothing is configured under {UTILS_CONFIG_DIR}; "
@@ -484,6 +510,180 @@ def _stop(children: list) -> None:
             child.wait(timeout=CHILD_STOP_TIMEOUT_S)
         except subprocess.TimeoutExpired:
             child.kill()
+
+
+def _serve_router() -> int:
+    """Keep the routing state what `config/` says, from boot until stopped.
+
+    One pass at start, then another whenever `ip monitor` reports a change
+    that moves the link fingerprint. systemd hears READY once the firewall
+    step has run, or at once when another apply holds the lock, so no unit
+    ordered after this one waits on a cable or a lease.
+
+    Returns:
+        0 when stopped; 1 when the kernel's event stream cannot be read.
+    """
+    stopping = threading.Event()
+
+    def stop(signum, frame) -> None:
+        stopping.set()
+
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    readiness = _Readiness()
+    if not _is_set_up():
+        readiness.send()
+        print("router: nothing is configured, so there is nothing to keep", flush=True)
+        return 0
+
+    changes: queue.Queue = queue.Queue()
+    monitor = RouterLinkMonitor(
+        on_change=lambda: changes.put(True), on_gone=lambda: changes.put(False)
+    )
+    try:
+        # Before the first pass, so a change during it is not missed.
+        monitor.start()
+    except OSError as error:
+        readiness.send()
+        print(f"router: ip monitor did not start: {error}", file=sys.stderr, flush=True)
+        return 1
+    controller = RouterStateController(
+        agent_port_of=_configured_agent_port,
+        trigger=ROUTER_TRIGGER_EVENT,
+        on_base_ready=readiness.send,
+    )
+    log = _StepLog()
+    try:
+        _reconcile_resident(controller, log, readiness, stopping, is_first=True)
+        fingerprint = link_fingerprint()
+        while not stopping.is_set():
+            try:
+                change = changes.get(timeout=ROUTER_WAIT_POLL_S)
+            except queue.Empty:
+                continue
+            if not change or not _settle(changes, stopping):
+                print("router: ip monitor stopped", file=sys.stderr, flush=True)
+                return 1
+            if stopping.is_set():
+                break
+            current = link_fingerprint()
+            if current == fingerprint:
+                continue
+            _reconcile_resident(controller, log, readiness, stopping, is_first=False)
+            fingerprint = link_fingerprint()
+        return 0
+    finally:
+        monitor.stop()
+
+
+def _reconcile_resident(
+    controller: RouterStateController,
+    log: "_StepLog",
+    readiness: "_Readiness",
+    stopping: threading.Event,
+    *,
+    is_first: bool,
+) -> None:
+    """Run one pass as the resident unit, and journal what moved.
+
+    The first pass tries the lock once. Another apply holding it is applying
+    the same state, so systemd hears READY at once and the pass runs when the
+    lock is free. Every wait looks for a stop in between.
+
+    Args:
+        controller: The pass.
+        log: Where the steps are journaled.
+        readiness: What tells systemd this unit is ready.
+        stopping: Set when the unit is stopping.
+        is_first: Whether this is the pass at start.
+    """
+    timeout_s = 0.0 if is_first else ROUTER_WAIT_POLL_S
+    while not stopping.is_set():
+        try:
+            with router_lock(timeout_s=timeout_s):
+                results = controller.reconcile_locked()
+        except TimeoutError:
+            readiness.send()
+            timeout_s = ROUTER_WAIT_POLL_S
+            continue
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+            readiness.send()
+            print(f"router: {command_failure_text(error)}", file=sys.stderr, flush=True)
+            return
+        readiness.send()
+        log.record(results)
+        return
+
+
+def _settle(changes: queue.Queue, stopping: threading.Event) -> bool:
+    """Wait for a burst of changes to go quiet.
+
+    Args:
+        changes: What the monitor reports: True for a change, False when it
+            stopped.
+        stopping: Set when the unit is stopping.
+
+    Returns:
+        False when the monitor stopped during the burst, True otherwise.
+    """
+    deadline = time.monotonic() + ROUTER_DEBOUNCE_MAX_S
+    while not stopping.is_set():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return True
+        try:
+            change = changes.get(timeout=min(ROUTER_DEBOUNCE_QUIET_S, remaining))
+        except queue.Empty:
+            return True
+        if not change:
+            return False
+    return True
+
+
+class _Readiness:
+    """Tells systemd this unit is ready, once."""
+
+    def __init__(self):
+        self._address = take_notify_address()
+        self._is_sent = False
+
+    def send(self) -> None:
+        """Say READY the first time; say nothing again."""
+        if self._is_sent:
+            return
+        self._is_sent = True
+        try:
+            notify_ready(self._address)
+        except OSError as error:
+            print(
+                f"router: systemd was not told it is ready: {error}",
+                file=sys.stderr,
+                flush=True,
+            )
+
+
+class _StepLog:
+    """Journals each step when what it reports changes."""
+
+    def __init__(self):
+        self._last: dict[str, tuple] = {}
+
+    def record(self, results: list) -> None:
+        """Print the steps that changed something or changed what they say.
+
+        Args:
+            results: One pass's results.
+        """
+        for result in results:
+            said = (result.state, result.code, result.detail)
+            previous = self._last.get(result.name)
+            self._last[result.name] = said
+            if result.state == ROUTER_STEP_APPLIED:
+                print(f"router: {result.describe()}", flush=True)
+            elif said != previous and not (
+                previous is None and result.state == ROUTER_STEP_UNCHANGED
+            ):
+                print(f"router: {result.describe()}", flush=True)
 
 
 def _configured_port() -> int:

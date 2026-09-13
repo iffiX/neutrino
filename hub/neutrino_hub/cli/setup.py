@@ -29,6 +29,7 @@ from pathlib import Path
 from neutrino_hub.exceptions import WizardAborted
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
+from neutrino_hub.modules.router.controller import router_lock
 from neutrino_hub.modules.router.routes import RouterInterfaceApplier
 from neutrino_hub.system.constants import (
     SYSTEM_CHECKOUT_PACKAGES,
@@ -1108,7 +1109,8 @@ def _step_interfaces(reporter: InstallReporter) -> str:
         return "nothing configured"
     if not network.is_addressing_owned:
         return "this machine addresses its own interfaces"
-    changes = RouterInterfaceApplier(network=network).apply_all()
+    with router_lock():
+        changes = RouterInterfaceApplier(network=network).apply_all()
     if not changes:
         return "already as configured"
     for change in changes:

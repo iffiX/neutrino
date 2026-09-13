@@ -23,21 +23,16 @@ from neutrino_hub.modules.easytier.constants import EASYTIER_GENERATED_NAME
 from neutrino_hub.modules.easytier.ops import EasyTierConfigApplier
 from neutrino_hub.modules.easytier.ops import read_stored as read_easytier
 from neutrino_hub.modules.easytier.renderer import render_config as render_easytier
-from neutrino_hub.modules.netbird.ops import NetbirdInboundGate
 from neutrino_hub.modules.router.constants import (
     ROUTER_DNSMASQ_PATH,
     ROUTER_NFT_PATH,
-    ROUTER_OVERLAY_NETBIRD,
+    ROUTER_STEP_UNCHANGED,
 )
+from neutrino_hub.modules.router.controller import RouterStateController, failure_text
 from neutrino_hub.modules.router.dnsmasq_renderer import RouterDnsmasqRenderer
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
-from neutrino_hub.modules.router.routes import (
-    RouterInterfaceApplier,
-    RouterRulesetApplier,
-    lookup_xray_uid,
-    served_networks,
-)
+from neutrino_hub.modules.router.routes import lookup_xray_uid
 from neutrino_hub.modules.router.supplicant import (
     write_config as write_supplicant_config,
 )
@@ -237,33 +232,16 @@ def _apply(artifacts: dict) -> None:
     if "xray" in artifacts:
         # _write already validated and installed the config.
         XrayConfigApplier().restart()
+    router_failure = ""
     if "router" in artifacts:
-        network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
-        RouterRulesetApplier().apply(
-            artifacts["router"],
-            is_forwarding=bool(network.lan_interfaces or network.wan_interfaces),
-            served=served_networks(network),
-        )
-        # Written after the load, never before: the panel reads this file to
-        # say where traffic is going, and a ruleset that only reached the disk
-        # is where traffic was about to go.
-        write_generated(ROUTER_NFT_PATH, artifacts["router"])
-        # Rebuilt every time rather than only when the config changes: an
-        # address the hub set does not survive a reboot by itself, and a next
-        # hop whose uplink has since gone away is a black hole. Applying the
-        # whole thing is what brings the box back as configured — this runs
-        # from `neutrino_hub_router.service`, before anything it serves.
-        for change in RouterInterfaceApplier(network=network).apply_all():
-            print(change)
-        # An overlay's own daemon puts an accept for its interface back into
-        # this chain seconds after any reload, so the exposure switch has to
-        # reach it too or a closed overlay is only closed on paper.
-        for overlay in network.overlays:
-            if overlay.provider != ROUTER_OVERLAY_NETBIRD:
-                continue
-            note = NetbirdInboundGate().converge(is_blocked=not overlay.is_exposed)
-            if note:
-                print(f"{overlay.title}: {note}")
+        # The same pass the resident router unit and the panel run, under the
+        # same lock; every step is tried, and the failures are raised once
+        # the other components have been applied too.
+        results = RouterStateController(agent_port_of=_agent_port).reconcile()
+        for result in results:
+            if result.state != ROUTER_STEP_UNCHANGED:
+                print(result.describe())
+        router_failure = failure_text(results)
     if "dnsmasq" in artifacts:
         run(["systemctl", "restart", DNSMASQ_SERVICE_NAME])
     if "cliproxyapi" in artifacts:
@@ -276,6 +254,8 @@ def _apply(artifacts: dict) -> None:
         print(
             EasyTierConfigApplier().apply(artifacts["easytier"], hostname=gethostname())
         )
+    if router_failure:
+        raise RuntimeError(router_failure)
 
 
 if __name__ == "__main__":

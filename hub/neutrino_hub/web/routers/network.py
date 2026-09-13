@@ -58,6 +58,7 @@ from neutrino_hub.modules.router.routes import (
     hand_back,
     remove_vlan_device,
 )
+from neutrino_hub.modules.router.controller import router_lock
 from neutrino_hub.modules.router.supplicant import RouterWifiClient, write_config
 from neutrino_hub.modules.router.wifi import (
     AP_PASSPHRASE_MAX_LENGTH,
@@ -175,18 +176,53 @@ async def update_mode(
     is_leaving = network.is_addressing_owned
     network.mode = request.mode
     orphaned = _retune_roles(network, runtime=runtime)
-    if is_leaving and not network.is_addressing_owned:
-        # Before the new shape is applied, and read from the interfaces it is
-        # about to stop driving.
-        await asyncio.to_thread(hand_back, network)
-    if network.is_addressing_owned and not is_leaving:
-        _adopt_known_networks(runtime)
-    _adopt_live_addressing(network)
-    runtime.write_network(network)
-    for name in orphaned:
-        await asyncio.to_thread(remove_vlan_device, name)
+    await asyncio.to_thread(
+        _become, runtime, network, is_leaving=is_leaving, orphaned=orphaned
+    )
     await _apply(runtime, only=None)
     return _build_view(runtime)
+
+
+def _become(
+    runtime: PanelRuntime,
+    network: RouterNetworkConfig,
+    *,
+    is_leaving: bool,
+    orphaned: list,
+) -> None:
+    """Hand the old shape back and write the new one, as the one writer.
+
+    Under the router lock, so the resident router unit cannot apply the old
+    configuration between the hand-back and the write.
+
+    Args:
+        runtime: The shared runtime.
+        network: The configuration in its new mode.
+        is_leaving: Whether the old mode addressed the machine.
+        orphaned: VLAN devices the new mode has no place for.
+    """
+    with router_lock():
+        if is_leaving and not network.is_addressing_owned:
+            # Before the new shape is applied, and read from the interfaces
+            # it is about to stop driving.
+            hand_back(network)
+        if network.is_addressing_owned and not is_leaving:
+            _adopt_known_networks(runtime)
+        _adopt_live_addressing(network)
+        runtime.write_network(network)
+        for name in orphaned:
+            remove_vlan_device(name)
+
+
+def _remove_vlan_devices(names: list) -> None:
+    """Take VLAN devices off the box, as the one writer of the routing state.
+
+    Args:
+        names: The VLAN interfaces.
+    """
+    with router_lock():
+        for name in names:
+            remove_vlan_device(name)
 
 
 def _retune_roles(network: RouterNetworkConfig, *, runtime: PanelRuntime) -> list[str]:
@@ -340,8 +376,8 @@ async def update_interface(
     if saved.is_wan and saved.wan.is_pinned_primary:
         network.keep_single_primary(name)
     runtime.write_network(network)
-    for child_name in orphaned:
-        await asyncio.to_thread(remove_vlan_device, child_name)
+    if orphaned:
+        await asyncio.to_thread(_remove_vlan_devices, orphaned)
     await _apply(runtime, only=name)
     return _build_view(runtime)
 
@@ -381,7 +417,7 @@ async def delete_interface(
     parent = interface.vlan.parent
     network.remove(name)
     runtime.write_network(network)
-    await asyncio.to_thread(remove_vlan_device, name)
+    await asyncio.to_thread(_remove_vlan_devices, [name])
     only = parent if network.interface(parent) is not None else None
     await _apply(runtime, only=only)
     return _build_view(runtime)
@@ -625,12 +661,15 @@ def _join(runtime: PanelRuntime, name: str, request: WifiJoinRequest) -> None:
         )
     runtime.write_connections(known)
 
-    write_config(name, known)
     client = RouterWifiClient(interface=name)
-    if client.is_running:
-        client.reconfigure()
-    else:
-        client.start()
+    # The association wait is outside: it takes up to a minute and writes
+    # nothing.
+    with router_lock():
+        write_config(name, known)
+        if client.is_running:
+            client.reconfigure()
+        else:
+            client.start()
     client.wait_for_association()
 
 

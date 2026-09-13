@@ -19,13 +19,14 @@ import subprocess
 import shutil
 import sys
 
-from neutrino_hub.cli.stop import stop_everything
+from neutrino_hub.cli.stop import stop, stop_everything
 from neutrino_hub.cli.password import (
     clear_password,
     read_new_password,
     store_password,
 )
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
+from neutrino_hub.modules.router.controller import router_lock
 from neutrino_hub.modules.router.routes import hand_back
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.utils.json_file import read_config
@@ -141,7 +142,12 @@ def _reset_all() -> int:
     Returns:
         Process exit status.
     """
-    network = _hand_back_network()
+    # The panel and the router unit first. The panel's dnsmasq restart starts
+    # the router unit again, and a running router unit applies the old
+    # configuration on the next link event, taking back what is handed back.
+    stop(["web", "router"])
+    with router_lock():
+        network = _hand_back_network()
     collected = _forget_collected()
     restored = _restore_examples()
     clear_password()

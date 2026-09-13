@@ -37,6 +37,16 @@ SYSTEM_OPTIONAL_UNITS = {
 
 SYSTEM_MANAGED_UNITS = {**SYSTEM_CORE_UNITS, **SYSTEM_OPTIONAL_UNITS}
 
+# What `systemctl is-active` prints for the states a caller acts on. A unit
+# systemd is restarting after a failure reads as activating.
+SYSTEM_UNIT_STATE_ACTIVE = "active"
+SYSTEM_UNIT_STATE_ACTIVATING = "activating"
+SYSTEM_UNIT_STATE_INACTIVE = "inactive"
+SYSTEM_UNIT_STATE_FAILED = "failed"
+# Where systemd names the socket a `Type=notify` unit reports readiness on.
+SYSTEM_NOTIFY_SOCKET_ENV = "NOTIFY_SOCKET"
+SYSTEM_NOTIFY_READY = b"READY=1"
+
 # What a provisioner can ask agreement for. The panel words each of these;
 # nothing here or below it writes a sentence, so they can be translated and
 # these stay facts.

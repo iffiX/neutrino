@@ -8,6 +8,7 @@ Not pure: talks to systemd.
 """
 
 from neutrino_hub.modules.router.constants import ROUTER_DHCP_UNIT
+from neutrino_hub.system.systemd_ctl import unit_state
 from neutrino_hub.utils.subprocess_run import run
 
 
@@ -39,6 +40,11 @@ class RouterDhcpClient:
         return run(
             ["systemctl", "is-active", "--quiet", self.unit], is_checked=False
         ).is_success
+
+    @property
+    def state(self) -> str:
+        """What systemd says this client's unit is doing now."""
+        return unit_state(self.unit)
 
     def start(self) -> None:
         """Ask for the client, and keep it started across reboots."""

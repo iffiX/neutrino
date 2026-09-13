@@ -160,6 +160,11 @@ def _record_calls(monkeypatch) -> list:
     monkeypatch.setattr(
         routes.RouterDhcpClient, "is_running", property(lambda self: False)
     )
+    monkeypatch.setattr(
+        routes.RouterDhcpClient, "state", property(lambda self: "inactive")
+    )
+    monkeypatch.setattr(routes.links, "await_lease", lambda device, **keywords: False)
+    monkeypatch.setattr(routes.links, "has_lease", lambda device: False)
     monkeypatch.setattr(routes.resolver, "point_at", answer("resolver"))
 
     # A list, because the applier adds what it returns to its own changes.

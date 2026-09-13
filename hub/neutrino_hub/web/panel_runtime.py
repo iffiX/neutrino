@@ -11,18 +11,13 @@ import ipaddress
 import re
 import subprocess
 
-from neutrino_hub.modules.netbird.ops import NetbirdInboundGate
 from neutrino_hub.modules.router.dnsmasq_renderer import RouterDnsmasqRenderer
 from neutrino_hub.modules.router.connections import RouterConnectionSet
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
-from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
-from neutrino_hub.modules.router.routes import (
-    RouterDefaultRouteApplier,
-    RouterInterfaceApplier,
-    RouterRulesetApplier,
-    lookup_xray_uid,
-    served_networks,
+from neutrino_hub.modules.router.controller import (
+    RouterStateController,
+    failure_text,
 )
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiServedModelCache
 from neutrino_hub.modules.devices.catalog import DeviceCatalogCache
@@ -94,7 +89,6 @@ from neutrino_hub.modules.xray.stats_client import XrayStatsClient
 from neutrino_hub.modules.router.constants import (
     ROUTER_DNSMASQ_PATH,
     ROUTER_NFT_PATH,
-    ROUTER_OVERLAY_NETBIRD,
 )
 
 DNSMASQ_SERVICE_NAME = SYSTEM_CORE_UNITS["dnsmasq"]
@@ -553,12 +547,6 @@ class PanelRuntime:
             node_list=node_list,
             routing=routing,
         ).render()
-        nft_ruleset = RouterNftRenderer(
-            network=network,
-            routing=routing,
-            xray_uid=lookup_xray_uid(),
-            agent_port=self._agent_port(),
-        ).render()
         dnsmasq_config = RouterDnsmasqRenderer(
             network=network, routing=routing
         ).render()
@@ -572,20 +560,17 @@ class PanelRuntime:
         except (subprocess.SubprocessError, OSError, RuntimeError) as error:
             xray_failure = command_failure_text(error)
 
-        RouterRulesetApplier().apply(
-            nft_ruleset,
-            is_forwarding=_is_forwarding(network),
-            served=served_networks(network),
-        )
-        write_generated(ROUTER_NFT_PATH, nft_ruleset)
+        results = self._router_controller().reconcile()
         write_generated(ROUTER_DNSMASQ_PATH, dnsmasq_config)
         run(["systemctl", "restart", DNSMASQ_SERVICE_NAME])
-        _converge_overlays(network)
 
         if xray_failure:
             raise RuntimeError(
                 f"{xray_failure}. The firewall and DNS were applied without it."
             )
+        router_failure = failure_text(results)
+        if router_failure:
+            raise RuntimeError(router_failure)
 
         self.is_config_dirty = False
         return (
@@ -616,51 +601,30 @@ class PanelRuntime:
 
     def _apply_network_blocking(self, only: str | None) -> str:
         network = self.network()
-        routing = self.routing()
-
-        nft_ruleset = RouterNftRenderer(
-            network=network,
-            routing=routing,
-            xray_uid=lookup_xray_uid(),
-            agent_port=self._agent_port(),
-        ).render()
         dnsmasq_config = RouterDnsmasqRenderer(
-            network=network, routing=routing
+            network=network, routing=self.routing()
         ).render()
-
-        RouterRulesetApplier().apply(
-            nft_ruleset,
-            is_forwarding=_is_forwarding(network),
-            served=served_networks(network),
-        )
-        write_generated(ROUTER_NFT_PATH, nft_ruleset)
-        write_generated(ROUTER_DNSMASQ_PATH, dnsmasq_config)
 
         # The interface must carry its new address before dnsmasq is told to
         # bind it, or the restart fails with nothing to listen on. This is also
         # the step that drops the connection the request arrived on, when a LAN
         # address is what changed.
-        applier = RouterInterfaceApplier(network=network)
-        if only is None:
-            changes = applier.apply_all()
-        else:
-            interface = network.interface(only)
-            if interface is None:
-                raise ValueError(f"{only!r} is not a configured interface")
-            changes = applier.apply(interface)
-            changes += RouterDefaultRouteApplier(network=network).apply()
-            # The same tail the whole-network apply ends with. A LAN given
-            # its role from the page is still the address this box resolves
-            # at, and leaving it out is how a router ends up asking whatever
-            # its uplink handed it.
-            changes += applier.apply_resolver()
+        results = self._router_controller().reconcile(only=only)
+        write_generated(ROUTER_DNSMASQ_PATH, dnsmasq_config)
         run(["systemctl", "restart", DNSMASQ_SERVICE_NAME])
-        changes += _converge_overlays(network)
+        changes = [line for result in results for line in result.changes]
         changes += self._push_desired_states()
+        router_failure = failure_text(results)
+        if router_failure:
+            raise RuntimeError(router_failure)
 
         self.is_config_dirty = False
         summary = "; ".join(changes) if changes else "no interface change"
         return f"applied network ({summary})"
+
+    def _router_controller(self) -> RouterStateController:
+        """The one pass every apply of the routing state runs."""
+        return RouterStateController(agent_port_of=self._agent_port)
 
     def _push_desired_states(self) -> list[str]:
         """Hand every online device the state the network now composes.
@@ -715,51 +679,6 @@ class PanelRuntime:
     def _publish_task(self, task_id: str) -> None:
         """Say a background job started or finished."""
         self.events.publish(WEB_EVENT_TASK, task_id)
-
-
-def _converge_overlays(network: RouterNetworkConfig) -> list[str]:
-    """Tell each overlay's own daemon what the exposure switch says.
-
-    Rendering the rules is not enough for an overlay. NetBird's client puts an
-    accept for its interface back at the top of this hub's input chain within
-    seconds of any reload, so a closed overlay that was only rendered stays
-    open, and the switch reads as a lie. Its own setting is what holds, and it
-    is set here for the same reason the ruleset is loaded here.
-
-    Args:
-        network: The parsed router configuration.
-
-    Returns:
-        Notes for the apply summary, empty when every daemon already agreed.
-        A daemon that refuses is reported rather than raised: the ruleset is
-        already loaded by this point, and the overlay's own state is not what
-        the rest of the network depends on.
-    """
-    notes = []
-    for overlay in network.overlays:
-        if overlay.provider != ROUTER_OVERLAY_NETBIRD:
-            continue
-        try:
-            note = NetbirdInboundGate().converge(is_blocked=not overlay.is_exposed)
-        except (subprocess.SubprocessError, OSError) as error:
-            notes.append(f"{overlay.title} not set: {command_failure_text(error)}")
-            continue
-        if note:
-            notes.append(f"{overlay.title}: {note}")
-    return notes
-
-
-def _is_forwarding(network: RouterNetworkConfig) -> bool:
-    """Whether any interface holds a role that routes.
-
-    Args:
-        network: The parsed router configuration.
-
-    Returns:
-        True when something forwards, which is what earns the forwarding
-        sysctls; a box with no roles is somebody's machine and keeps its own.
-    """
-    return bool(network.lan_interfaces or network.wan_interfaces)
 
 
 def generated_dir_exists() -> bool:

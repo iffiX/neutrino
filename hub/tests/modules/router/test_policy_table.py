@@ -3,14 +3,24 @@
 It holds the local default route and one route per served network naming
 its interface: the kernel checks a diverted packet's source against this
 table when `src_valid_mark` is on, and with only the local route there every
-source is a martian.
+source is a martian. A route needs its interface up, so a port that is down
+waits for the event that raises it, and the other ports get theirs.
 """
 
 from neutrino_hub.modules.router import routes
-from neutrino_hub.modules.router.constants import ROUTER_ROUTE_TABLE
+from neutrino_hub.modules.router.constants import (
+    ROUTER_CODE_INTERFACE_DOWN,
+    ROUTER_ROUTE_TABLE,
+    ROUTER_STEP_APPLIED,
+    ROUTER_STEP_PENDING,
+    ROUTER_STEP_UNCHANGED,
+)
 from neutrino_hub.modules.router.routes import RouterRulesetApplier, served_networks
 
 from tests.conftest import lan_entry, network_config, wan_entry
+
+TABLE = str(ROUTER_ROUTE_TABLE)
+LOCAL_ONLY = "local default dev lo scope host\n"
 
 
 class Recorder:
@@ -28,6 +38,13 @@ class Recorder:
         if command[:3] == ["ip", "route", "show"]:
             return _Ran(self.table)
         return _Ran("")
+
+    def route_changes(self) -> list[list[str]]:
+        return [
+            command
+            for command in self.commands
+            if command[:2] == ["ip", "route"] and command[2] != "show"
+        ]
 
 
 class _Ran:
@@ -52,60 +69,98 @@ def test_the_served_networks_are_named_at_their_network_address():
 
 
 def test_each_served_network_gets_a_route_in_the_policy_table(monkeypatch):
-    recorder = Recorder(
-        rules=f"100:\tfrom all fwmark 0x1 lookup {ROUTER_ROUTE_TABLE}",
-        table="local default dev lo scope host\n",
-    )
+    recorder = Recorder(table=LOCAL_ONLY)
     monkeypatch.setattr(routes, "run", recorder)
 
-    RouterRulesetApplier().apply_policy_route(
-        [("enp1s0", "192.168.110.0/24"), ("wlp3s0", "192.168.111.0/24")]
+    results = RouterRulesetApplier().sync_served_routes(
+        [("enp1s0", "192.168.110.0/24"), ("wlp3s0", "192.168.111.0/24")],
+        admin_up={"enp1s0", "wlp3s0"},
     )
 
-    table = str(ROUTER_ROUTE_TABLE)
-    assert [c for c in recorder.commands if c[:3] == ["ip", "route", "replace"]] == [
-        ["ip", "route", "replace", "192.168.110.0/24", "dev", "enp1s0", "table", table],
-        ["ip", "route", "replace", "192.168.111.0/24", "dev", "wlp3s0", "table", table],
+    assert recorder.route_changes() == [
+        ["ip", "route", "replace", "192.168.110.0/24", "dev", "enp1s0", "table", TABLE],
+        ["ip", "route", "replace", "192.168.111.0/24", "dev", "wlp3s0", "table", TABLE],
     ]
-    assert not any(c[:3] == ["ip", "route", "add"] for c in recorder.commands)
+    assert [result.state for result in results] == [ROUTER_STEP_APPLIED] * 2
+
+
+def test_a_port_that_is_down_waits_and_the_others_get_theirs(monkeypatch):
+    """The boot this was written after: the route for a LAN port still down
+    was refused, and every step behind it was skipped with it."""
+    recorder = Recorder(table=LOCAL_ONLY)
+    monkeypatch.setattr(routes, "run", recorder)
+
+    results = RouterRulesetApplier().sync_served_routes(
+        [("enp1s0", "192.168.110.0/24"), ("wlp3s0", "192.168.111.0/24")],
+        admin_up={"enp1s0"},
+    )
+
+    assert recorder.route_changes() == [
+        ["ip", "route", "replace", "192.168.110.0/24", "dev", "enp1s0", "table", TABLE]
+    ]
+    waiting = results[-1]
+    assert waiting.name == "served_route wlp3s0"
+    assert (waiting.state, waiting.code) == (
+        ROUTER_STEP_PENDING,
+        ROUTER_CODE_INTERFACE_DOWN,
+    )
+
+
+def test_a_route_already_there_is_left_as_it_is(monkeypatch):
+    recorder = Recorder(table=LOCAL_ONLY + "192.168.110.0/24 dev enp1s0 scope link\n")
+    monkeypatch.setattr(routes, "run", recorder)
+
+    results = RouterRulesetApplier().sync_served_routes(
+        [("enp1s0", "192.168.110.0/24")], admin_up={"enp1s0"}
+    )
+
+    assert recorder.route_changes() == []
+    assert [result.state for result in results] == [ROUTER_STEP_UNCHANGED]
 
 
 def test_a_network_no_longer_served_leaves_the_table(monkeypatch):
     recorder = Recorder(
-        rules=f"100:\tfrom all fwmark 0x1 lookup {ROUTER_ROUTE_TABLE}",
         table=(
-            "local default dev lo scope host\n"
-            "192.168.110.0/24 dev enp1s0 scope link\n"
-            "192.168.111.0/24 dev wlp3s0 scope link\n"
-        ),
+            LOCAL_ONLY
+            + "192.168.110.0/24 dev enp1s0 scope link\n"
+            + "192.168.111.0/24 dev wlp3s0 scope link\n"
+        )
     )
     monkeypatch.setattr(routes, "run", recorder)
 
-    RouterRulesetApplier().apply_policy_route([("enp1s0", "192.168.110.0/24")])
+    RouterRulesetApplier().sync_served_routes(
+        [("enp1s0", "192.168.110.0/24")], admin_up={"enp1s0"}
+    )
 
-    table = str(ROUTER_ROUTE_TABLE)
-    changes = [
-        c for c in recorder.commands if c[:2] == ["ip", "route"] and c[2] != "show"
+    assert recorder.route_changes() == [
+        ["ip", "route", "del", "192.168.111.0/24", "dev", "wlp3s0", "table", TABLE]
     ]
-    assert changes == [
-        ["ip", "route", "del", "192.168.111.0/24", "dev", "wlp3s0", "table", table]
-    ]
+
+
+def test_the_policy_route_leaves_the_served_routes_alone(monkeypatch):
+    """It runs before the interfaces are applied, and a served route it
+    deleted would drop diverted traffic until they were."""
+    recorder = Recorder(table=LOCAL_ONLY + "192.168.110.0/24 dev enp1s0 scope link\n")
+    monkeypatch.setattr(routes, "run", recorder)
+
+    changes = RouterRulesetApplier().ensure_policy_route()
+
+    assert recorder.route_changes() == []
+    assert ["ip", "rule", "add", "fwmark", "0x1", "lookup", TABLE, "pref", "100"] in (
+        recorder.commands
+    )
+    assert changes == [f"fwmark 0x1 looks up table {TABLE}"]
 
 
 def test_the_local_route_is_added_once(monkeypatch):
-    recorder = Recorder(rules="", table="")
+    recorder = Recorder(rules=f"100:\tfrom all fwmark 0x1 lookup {TABLE}", table="")
     monkeypatch.setattr(routes, "run", recorder)
+    local = ["ip", "route", "add", "local", "default", "dev", "lo", "table", TABLE]
 
-    RouterRulesetApplier().apply_policy_route([])
+    RouterRulesetApplier().ensure_policy_route()
+    assert local in recorder.commands
 
-    assert [
-        "ip",
-        "route",
-        "add",
-        "local",
-        "default",
-        "dev",
-        "lo",
-        "table",
-        str(ROUTER_ROUTE_TABLE),
-    ] in recorder.commands
+    recorder.commands.clear()
+    recorder.table = LOCAL_ONLY
+    assert RouterRulesetApplier().ensure_policy_route() == []
+    assert local not in recorder.commands

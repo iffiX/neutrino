@@ -71,6 +71,7 @@ def box(tmp_path, monkeypatch):
     monkeypatch.setattr(reset, "UTILS_STATE_ROOT", state)
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", config)
     monkeypatch.setattr(reset, "stop_everything", lambda: 0)
+    monkeypatch.setattr(reset, "stop", lambda names: 0)
     return config
 
 
@@ -204,6 +205,23 @@ def test_what_is_already_stopped_is_not_stopped_again(monkeypatch, box):
     reset._reset_all()
 
     assert asked == []
+
+
+def test_the_router_unit_stops_before_the_network_is_handed_back(monkeypatch, box):
+    """A running router unit applies the old configuration on the next link
+    event, taking back what the reset hands back; the panel's dnsmasq restart
+    starts it again, so the panel goes with it."""
+    order: list = []
+    monkeypatch.setattr(
+        reset, "stop", lambda names: order.append(("stop", tuple(names))) or 0
+    )
+    monkeypatch.setattr(
+        reset, "_hand_back_network", lambda: order.append(("hand_back",)) or []
+    )
+
+    reset._reset_all()
+
+    assert order == [("stop", ("web", "router")), ("hand_back",)]
 
 
 def test_reset_all_forgets_the_key_sealed_under_the_data_key_it_clears(box):

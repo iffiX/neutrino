@@ -308,6 +308,19 @@ def await_lease(interface: str, *, timeout_s: int = LINKS_LEASE_TIMEOUT_S) -> bo
     return False
 
 
+def has_lease(interface: str) -> bool:
+    """Whether the lease client has put an address on an interface.
+
+    Args:
+        interface: The uplink.
+
+    Returns:
+        True when a leased address is there now.
+    """
+    leased, _ = _addresses_by_origin(interface)
+    return bool(leased)
+
+
 def retire_carried(interfaces: tuple) -> list[str]:
     """Let go of the addresses the handover carried, once a lease has replaced
     them.

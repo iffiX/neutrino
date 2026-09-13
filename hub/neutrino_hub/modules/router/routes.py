@@ -22,7 +22,12 @@ from neutrino_hub.modules.router.supplicant import (
     write_config as write_supplicant_config,
 )
 from neutrino_hub.modules.router.constants import (
+    ROUTER_CODE_INTERFACE_DOWN,
+    ROUTER_CODE_LEASE_PENDING,
     ROUTER_CONNECTIONS_FILE,
+    ROUTER_STEP_PENDING,
+    ROUTER_STEP_UNCHANGED,
+    ROUTER_TRIGGER_APPLY,
     router_dhcp_config_path,
     ROUTER_FWMARK_TPROXY,
     ROUTER_METRIC_BALANCE,
@@ -39,7 +44,11 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_WAN_METHOD_STATIC,
 )
 from neutrino_hub.modules.router.interfaces import RouterInterface, RouterNetworkConfig
-from neutrino_hub.modules.router.link_status import LINK_KIND_WIFI, RouterLinkStatus
+from neutrino_hub.modules.router.link_status import (
+    LINK_KIND_WIFI,
+    RouterLinkStatus,
+    admin_up_interfaces,
+)
 from neutrino_hub.modules.router.uplink_plan import (
     MEDIUM_WIRED,
     MEDIUM_WIRELESS,
@@ -48,6 +57,12 @@ from neutrino_hub.modules.router.uplink_plan import (
     plan_uplinks,
 )
 from neutrino_hub.modules.router.wifi import RouterWifiAccessPoint
+from neutrino_hub.modules.router.steps import RouterStepResult, run_step
+from neutrino_hub.system.constants import (
+    SYSTEM_UNIT_STATE_ACTIVATING,
+    SYSTEM_UNIT_STATE_ACTIVE,
+)
+from neutrino_hub.system.systemd_ctl import is_unit_startable
 
 XRAY_SERVICE_USER = "xray"
 
@@ -236,10 +251,21 @@ class RouterInterfaceApplier:
     change. Saving a page that changes nothing must therefore change nothing.
     """
 
-    def __init__(self, *, network: RouterNetworkConfig):
+    def __init__(
+        self,
+        *,
+        network: RouterNetworkConfig,
+        trigger: str = ROUTER_TRIGGER_APPLY,
+        is_lease_awaited: bool = True,
+    ):
         """
         Args:
             network: The parsed router configuration.
+            trigger: ``apply`` for a person or a command, ``event`` for the
+                resident router unit. Only an apply starts an engine unit that
+                failed; an event leaves a failed or restarting one to systemd.
+            is_lease_awaited: Whether a DHCP uplink waits for its lease. False
+                looks once and reports the uplink pending.
         """
         self._network = network
         self._status = RouterLinkStatus()
@@ -248,6 +274,10 @@ class RouterInterfaceApplier:
         self._kinds = {link.name: link.kind for link in self._status.all_links()}
         self._plan = build_uplink_plan(network=network, status=self._status)
         self._is_takeover_checked = False
+        self._is_failed_restarted = trigger == ROUTER_TRIGGER_APPLY
+        self._is_lease_awaited = is_lease_awaited
+        # What the interface being applied waits for, as (code, detail).
+        self._waiting: list[tuple[str, str]] = []
 
     def apply_all(self) -> list[str]:
         """Apply every interface's role, then rebuild the default route.
@@ -266,19 +296,40 @@ class RouterInterfaceApplier:
         box still answerable rather than stranded behind a half-configured
         uplink.
 
+        Every step is tried whether or not one before it failed; see
+        :meth:`apply_steps`.
+
         Returns:
             One line per change actually made; empty when nothing differed.
+
+        Raises:
+            subprocess.CalledProcessError: For the first step that failed,
+                once every step has been tried.
         """
-        order = {
-            ROUTER_ROLE_DISABLED: 0,
-            ROUTER_ROLE_SPLIT: 1,
-            ROUTER_ROLE_LAN: 2,
-            ROUTER_ROLE_WAN: 3,
-        }
-        ordered = sorted(
-            self._network.interfaces,
-            key=lambda interface: order.get(interface.role, 3),
-        )
+        results = self.apply_steps()
+        for result in results:
+            if result.is_failed:
+                raise subprocess.CalledProcessError(
+                    1, [result.name], stderr=result.detail
+                )
+        return [line for result in results for line in result.changes]
+
+    def apply_steps(self, only: str | None = None) -> list[RouterStepResult]:
+        """Apply the roles as separate steps, none of them stopping another.
+
+        Args:
+            only: Apply just this interface's role. The default route and the
+                resolver are rebuilt whatever this is: the panel saves one
+                interface at a time, and a step only the whole-network apply
+                takes is a step the panel never takes.
+
+        Returns:
+            One result per interface, then the default route and the resolver;
+            empty when no interface holds a role.
+
+        Raises:
+            ValueError: When ``only`` names no configured interface.
+        """
         if not any(not interface.is_disabled for interface in self._network.interfaces):
             # Nothing holds a role, so there is nothing to make true. Not the
             # same as "disable every interface": a machine that has just been
@@ -287,12 +338,60 @@ class RouterInterfaceApplier:
             # with it. Roles are given one at a time below this panel, and
             # each is applied as it is given.
             return []
-        changes = self._take_over()
-        for interface in ordered:
-            changes += self.apply(interface)
-        changes += RouterDefaultRouteApplier(network=self._network).apply()
-        changes += self.apply_resolver()
-        return changes
+        if only is None:
+            targets = self._ordered()
+            results = [run_step("takeover", self._take_over)]
+        else:
+            interface = self._network.interface(only)
+            if interface is None:
+                raise ValueError(f"{only!r} is not a configured interface")
+            targets = [interface]
+            results = []
+        for interface in targets:
+            results.append(self._apply_step(interface))
+        results.append(
+            run_step(
+                "default_route",
+                lambda: RouterDefaultRouteApplier(network=self._network).apply(),
+            )
+        )
+        results.append(run_step("resolver", self.apply_resolver))
+        return results
+
+    def _ordered(self) -> list[RouterInterface]:
+        """Every interface in the order :meth:`apply_all` explains."""
+        order = {
+            ROUTER_ROLE_DISABLED: 0,
+            ROUTER_ROLE_SPLIT: 1,
+            ROUTER_ROLE_LAN: 2,
+            ROUTER_ROLE_WAN: 3,
+        }
+        return sorted(
+            self._network.interfaces,
+            key=lambda interface: order.get(interface.role, 3),
+        )
+
+    def _apply_step(self, interface: RouterInterface) -> RouterStepResult:
+        """One interface's role as a step, pending when it waits on something.
+
+        Args:
+            interface: The interface.
+
+        Returns:
+            Its result.
+        """
+        self._waiting = []
+        result = run_step(f"interface {interface.name}", lambda: self.apply(interface))
+        if self._waiting and not result.is_failed:
+            code, detail = self._waiting[0]
+            return RouterStepResult(
+                name=result.name,
+                state=ROUTER_STEP_PENDING,
+                code=code,
+                detail=detail,
+                changes=result.changes,
+            )
+        return result
 
     def _take_over(self) -> list[str]:
         """Stand the machine's own manager down, once, before the first role.
@@ -451,13 +550,20 @@ class RouterInterfaceApplier:
         RouterDhcpClient(interface=interface.device_name).stop()
         if self._is_wifi(interface.name):
             radio = RouterWifiAccessPoint(interface=interface.name)
-            is_changed = radio.publish(interface=interface)
-            if not is_changed:
+            is_changed = radio.publish(
+                interface=interface, is_failed_restarted=self._is_failed_restarted
+            )
+            if is_changed:
+                return [
+                    f"{interface.name} publishing {interface.wifi.ap_ssid} "
+                    f"on {interface.lan.cidr}"
+                ]
+            # hostapd outlives its radio going down, and publishes again once
+            # the radio is back up.
+            if interface.name in admin_up_interfaces():
                 return []
-            return [
-                f"{interface.name} publishing {interface.wifi.ap_ssid} "
-                f"on {interface.lan.cidr}"
-            ]
+            links.set_up(interface.name)
+            return [f"{interface.name} up"]
 
         device = interface.device_name
         changes = self._ensure_vlan(interface)
@@ -518,11 +624,14 @@ class RouterInterfaceApplier:
         # nothing — an uplink that never gets an address at all.
         is_rewritten = _write_dhcp_config(device, metric)
         client = RouterDhcpClient(interface=device)
-        if client.is_running and is_rewritten:
+        if is_rewritten:
             client.restart()
-        elif not client.is_running:
+            changes.append(f"{interface.name} uplink taking a lease at metric {metric}")
+        elif is_unit_startable(
+            client.state, is_failed_restarted=self._is_failed_restarted
+        ):
             client.start()
-        changes.append(f"{interface.name} uplink taking a lease at metric {metric}")
+            changes.append(f"{interface.name} uplink taking a lease at metric {metric}")
         # And then let go of the address the handover carried, here rather
         # than at the end of some longer run: an interface is reconfigured in
         # one place, and a machine left holding an address it has no lease for
@@ -531,8 +640,19 @@ class RouterInterfaceApplier:
         # Only once a lease has actually arrived. Without one the carried
         # address is all this interface has, and taking it off would put the
         # uplink down rather than move it.
-        if links.await_lease(device):
+        if self._is_lease_awaited:
+            is_leased = links.await_lease(device)
+        else:
+            is_leased = links.has_lease(device)
+        if is_leased:
             changes += links.retire_carried((device,))
+            return changes
+        if not self._is_lease_awaited:
+            # The lease arriving is an address event, and the pass it starts
+            # is the one that retires the carried address.
+            self._waiting.append(
+                (ROUTER_CODE_LEASE_PENDING, f"{interface.name} has no lease yet")
+            )
             return changes
         # Said rather than left to be worked out from a port that is up and
         # carries nothing. With IPv4LL off there is no invented address and no
@@ -553,13 +673,27 @@ class RouterInterfaceApplier:
             One line saying what it is doing, or nothing when there is nothing
             to say.
         """
-        RouterWifiAccessPoint(interface=interface.name).unpublish()
+        # Only an access point that is up: taking one down clears the radio's
+        # addresses, and on an uplink that is its lease.
+        access_point = RouterWifiAccessPoint(interface=interface.name)
+        if access_point.state in (
+            SYSTEM_UNIT_STATE_ACTIVE,
+            SYSTEM_UNIT_STATE_ACTIVATING,
+        ):
+            access_point.unpublish()
         # Same reason as the lease client: the supplicant reads its file at
         # exec, and one started before anything wrote it holds no networks.
-        write_supplicant_config(interface.name, _known_networks())
+        is_changed = write_supplicant_config(interface.name, _known_networks())
         client = RouterWifiClient(interface=interface.name)
-        if client.is_running:
-            client.reconfigure()
+        state = client.state
+        if state == SYSTEM_UNIT_STATE_ACTIVE:
+            # Re-reading makes the radio reassociate, so only for a new file.
+            if is_changed:
+                client.reconfigure()
+            return []
+        if not is_changed and not is_unit_startable(
+            state, is_failed_restarted=self._is_failed_restarted
+        ):
             return []
         client.start()
         if not interface.wifi.ssid:
@@ -787,44 +921,29 @@ def _table_routes(listing: str) -> set[tuple[str, str]]:
     return found
 
 
+def _add_policy_route(subnet: str, device: str) -> list[str]:
+    """Route one served network through its port in the policy table.
+
+    Raises:
+        subprocess.CalledProcessError: If the kernel refuses the route.
+    """
+    table = str(ROUTER_ROUTE_TABLE)
+    run(["ip", "route", "replace", subnet, "dev", device, "table", table])
+    return [f"{subnet} on {device} in table {table}"]
+
+
+def _delete_policy_route(subnet: str, device: str) -> list[str]:
+    """Take one route no served network names out of the policy table."""
+    table = str(ROUTER_ROUTE_TABLE)
+    run(
+        ["ip", "route", "del", subnet, "dev", device, "table", table],
+        is_checked=False,
+    )
+    return [f"{subnet} on {device} left table {table}"]
+
+
 class RouterRulesetApplier:
     """Applies forwarding, policy routing, and the nftables ruleset."""
-
-    def apply(
-        self,
-        ruleset: str,
-        *,
-        is_forwarding: bool = True,
-        served: list[tuple[str, str]] | None = None,
-    ) -> None:
-        """Bring the whole routing state up.
-
-        Order matters: the policy route must exist before the TPROXY rules are
-        loaded, otherwise diverted packets have nowhere to go and the first
-        connections after a reload are dropped.
-
-        Args:
-            ruleset: Rendered nftables ruleset text. What it contains decides
-                what the kernel is asked for: the TPROXY plumbing is only set
-                up when something in it diverts, so a box that forwards and
-                proxies nothing gets its rules loaded and nothing else.
-            is_forwarding: Whether any interface holds a role that routes.
-                False leaves every forwarding sysctl exactly as the machine
-                had it — a server is somebody's machine, and `ip_forward` on
-                it is not the hub's to flip.
-            served: The networks the box serves, as (device, subnet) pairs;
-                what :func:`served_networks` answers.
-
-        Raises:
-            subprocess.CalledProcessError: If validation or any step fails.
-        """
-        is_diverting = "tproxy ip to" in ruleset
-        self.enable_forwarding(is_forwarding=is_forwarding, is_diverting=is_diverting)
-        if is_diverting:
-            self.apply_policy_route(served or [])
-        else:
-            self.remove_policy_route()
-        self.load_ruleset(ruleset)
 
     def enable_forwarding(self, *, is_forwarding: bool, is_diverting: bool) -> None:
         """Turn on the sysctls the loaded ruleset actually needs.
@@ -891,22 +1010,22 @@ class RouterRulesetApplier:
             is_checked=False,
         )
 
-    def apply_policy_route(self, served: list[tuple[str, str]] | None = None) -> None:
-        """Create the fwmark rule and the policy table, idempotently.
+    def ensure_policy_route(self) -> list[str]:
+        """Create the fwmark rule and the local route diverted packets use.
 
-        The table holds the local default route diverted packets are
-        delivered by, and one route per served network naming its interface.
-        The kernel checks a diverted packet's source against this same table
-        when `src_valid_mark` is on, which an overlay client turns on for the
-        whole machine; with only the local route there, every address is
-        local, the check fails, and the packet is dropped as a martian.
+        Both name nothing but loopback, so neither waits on an interface.
+        The served networks' routes are :meth:`sync_served_routes`.
 
-        Args:
-            served: The networks the box serves, as (device, subnet) pairs.
+        Returns:
+            One line per piece added; empty when both were there.
+
+        Raises:
+            subprocess.CalledProcessError: If the kernel refuses either.
         """
         mark = hex(ROUTER_FWMARK_TPROXY)
         table = str(ROUTER_ROUTE_TABLE)
         priority = str(ROUTER_ROUTE_RULE_PRIORITY)
+        changes = []
 
         existing = run(["ip", "rule", "show"], is_checked=False).stdout
         if f"fwmark {mark} lookup {table}" not in existing:
@@ -923,6 +1042,7 @@ class RouterRulesetApplier:
                     priority,
                 ]
             )
+            changes.append(f"fwmark {mark} looks up table {table}")
 
         routes = run(["ip", "route", "show", "table", table], is_checked=False).stdout
         if "local default" not in routes:
@@ -939,15 +1059,72 @@ class RouterRulesetApplier:
                     table,
                 ]
             )
-        wanted = {(subnet, device) for device, subnet in served or []}
-        present = _table_routes(routes)
-        for subnet, device in present - wanted:
-            run(
-                ["ip", "route", "del", subnet, "dev", device, "table", table],
-                is_checked=False,
+            changes.append(f"table {table} delivers locally")
+        return changes
+
+    def sync_served_routes(
+        self, served: list[tuple[str, str]], *, admin_up: set
+    ) -> list[RouterStepResult]:
+        """One route per served network in the policy table, naming its port.
+
+        The kernel checks a diverted packet's source against this table when
+        `src_valid_mark` is on, which an overlay client turns on for the whole
+        machine. With only the local route there, every source is local and
+        the packet is dropped as a martian. A route needs its interface up, so
+        one that is down is pending until the event that raises it.
+
+        Args:
+            served: (device, subnet) pairs, what :func:`served_networks`
+                answers.
+            admin_up: The interfaces that are administratively up.
+
+        Returns:
+            One result per served network, and one per stale route removed.
+        """
+        table = str(ROUTER_ROUTE_TABLE)
+        listing = run(["ip", "route", "show", "table", table], is_checked=False)
+        present = _table_routes(listing.stdout)
+        wanted = {(subnet, device) for device, subnet in served}
+        results = []
+        for subnet, device in sorted(present - wanted):
+            results.append(
+                run_step(
+                    f"served_route {device}",
+                    lambda subnet=subnet, device=device: _delete_policy_route(
+                        subnet, device
+                    ),
+                )
             )
-        for subnet, device in sorted(wanted - present):
-            run(["ip", "route", "replace", subnet, "dev", device, "table", table])
+        for device, subnet in served:
+            name = f"served_route {device}"
+            if (subnet, device) in present:
+                results.append(RouterStepResult(name=name, state=ROUTER_STEP_UNCHANGED))
+            elif device not in admin_up:
+                results.append(
+                    RouterStepResult(
+                        name=name,
+                        state=ROUTER_STEP_PENDING,
+                        code=ROUTER_CODE_INTERFACE_DOWN,
+                        detail=f"{device} is down",
+                    )
+                )
+            else:
+                results.append(
+                    run_step(
+                        name,
+                        lambda subnet=subnet, device=device: _add_policy_route(
+                            subnet, device
+                        ),
+                    )
+                )
+        return results
+
+    def is_table_loaded(self) -> bool:
+        """Whether the kernel holds the hub's nftables table."""
+        return run(
+            ["nft", "list", "table", ROUTER_NFT_FAMILY, ROUTER_NFT_TABLE],
+            is_checked=False,
+        ).is_success
 
     def load_ruleset(self, ruleset: str) -> None:
         """Validate and then load an nftables ruleset.

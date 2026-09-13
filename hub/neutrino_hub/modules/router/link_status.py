@@ -356,6 +356,25 @@ def device_addresses() -> dict[str, str]:
     return found
 
 
+def admin_up_interfaces() -> set[str]:
+    """The interfaces that are administratively up.
+
+    Up here is the flag `ip link set up` sets, cable or not: the kernel wants
+    it of an interface before it takes a route naming it.
+
+    Returns:
+        Their names.
+    """
+    result = run(["ip", "-json", "link", "show"], is_checked=False)
+    if not result.is_success:
+        return set()
+    return {
+        str(entry.get("ifname", ""))
+        for entry in json.loads(result.stdout or "[]")
+        if "UP" in entry.get("flags", [])
+    }
+
+
 def _first_ipv4(entry: dict) -> str | None:
     for address in entry.get("addr_info", []):
         if address.get("family") == "inet":
