@@ -3,6 +3,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 
 import { terminalTheme } from "../terminal_theme";
+import { useTheme } from "../theme";
 import { websocketUrl } from "../api_client";
 
 import "@xterm/xterm/css/xterm.css";
@@ -52,6 +53,8 @@ export function ShellTerminal({
   onStateChange,
 }: ShellTerminalProps) {
   const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const terminalRef = useRef<Terminal | null>(null);
+  const theme = useTheme();
   // The one way to remeasure, shared with the visibility effect below so a tab
   // coming back into view goes through the same guard as every other resize.
   const remeasureRef = useRef<() => void>(() => {});
@@ -78,6 +81,7 @@ export function ShellTerminal({
       theme: terminalTheme(),
       scrollback: TERMINAL_SCROLLBACK_LINES,
     });
+    terminalRef.current = terminal;
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(surface);
@@ -175,9 +179,17 @@ export function ShellTerminal({
       dataSubscription.dispose();
       socket.close();
       terminal.dispose();
+      terminalRef.current = null;
       remeasureRef.current = () => {};
     };
   }, [socketPath]);
+
+  // A shell already open takes the new palette where it stands.
+  useEffect(() => {
+    if (terminalRef.current !== null) {
+      terminalRef.current.options.theme = terminalTheme();
+    }
+  }, [theme]);
 
   // Becoming visible again means the surface has a size for the first time
   // since it was hidden, so it has to be measured before it draws.

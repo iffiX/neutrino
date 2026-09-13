@@ -46,12 +46,14 @@ from neutrino_hub.web.routers import (
     samba,
     services,
     settings,
+    theme,
     zfs,
 )
 
 API_ROUTERS = (
     auth.router,
     language.router,
+    theme.router,
     dashboard.router,
     network.router,
     proxy.router,

@@ -21,6 +21,7 @@ import {
   t,
   useLanguage,
 } from "../i18n";
+import { THEMES, asTheme, getThemeChoice, setThemeChoice } from "../theme";
 import { useApiResource } from "../use_api_resource";
 import { stripAnsi } from "../strip_ansi";
 import { useTaskStream } from "../use_task_stream";
@@ -59,6 +60,9 @@ const ABOUT_PYTHON = "Python";
 
 /** What the API answers when it is asked for a language nobody ships. */
 const LANGUAGE_UNKNOWN_CODE = "language_unknown";
+
+/** What the API answers when it is asked for a theme it does not have. */
+const THEME_UNKNOWN_CODE = "theme_unknown";
 
 // Every backup is a tar.gz whose first member is its manifest, so a file that
 // is no backup is turned away before it is uploaded by streaming just the
@@ -344,6 +348,8 @@ export function SettingsPage() {
 
         <LanguagePanel />
 
+        <AppearancePanel />
+
         <section className="card">
           <div className="card_header">
             <div className="card_title">
@@ -557,6 +563,90 @@ function LanguagePanel() {
           hint={t("ui.settings.language_apply_hint")}
           error={error}
           onReset={() => setChosen(asLanguage(applied ?? current))}
+          onApply={() => void apply()}
+        />
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The palette every page is drawn in.
+ *
+ * One panel-wide answer, stored on the box beside the language, so a browser
+ * that has never been here is met in the palette somebody chose. `system`
+ * hands the choice to the browser's own scheme.
+ */
+function AppearancePanel() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
+  const resource = useApiResource<PanelSettings>("/settings");
+  const [chosen, setChosen] = useState(getThemeChoice());
+  const [isBusy, setIsBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const applied = resource.data?.theme ?? null;
+  const isDirty = applied !== null && chosen !== applied;
+
+  const apply = async () => {
+    if (resource.data === null) {
+      return;
+    }
+    setIsBusy(true);
+    setError(null);
+    try {
+      const saved = await apiPut<PanelSettings>("/settings", {
+        listen_port: resource.data.listen_port,
+        theme: chosen,
+      });
+      resource.setData(saved);
+      setThemeChoice(saved.theme);
+    } catch (cause: unknown) {
+      setError(
+        cause instanceof ApiError && cause.code === THEME_UNKNOWN_CODE
+          ? t("code.theme_unknown")
+          : describeError(cause),
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  return (
+    <section className={`card ${isDirty ? "card--dirty" : ""}`}>
+      <div className="card_header">
+        <div className="card_title">
+          <h2>{t("ui.settings.theme_title")}</h2>
+        </div>
+      </div>
+
+      <div className="settings_form">
+        <label className="field">
+          <span className="field_label">{t("ui.settings.theme_field")}</span>
+          <select
+            className="select"
+            value={chosen}
+            onChange={(event) => {
+              setError(null);
+              setChosen(asTheme(event.target.value));
+            }}
+          >
+            {THEMES.map((theme) => (
+              <option key={theme} value={theme}>
+                {t(`ui.settings.theme_name.${theme}`)}
+              </option>
+            ))}
+          </select>
+          <span className="field_hint">{t("ui.settings.theme_hint")}</span>
+        </label>
+
+        <ApplyBar
+          isDirty={isDirty}
+          isBusy={isBusy}
+          label={t("ui.settings.theme_apply")}
+          hint={t("ui.settings.theme_apply_hint")}
+          error={error}
+          onReset={() => setChosen(asTheme(applied ?? getThemeChoice()))}
           onApply={() => void apply()}
         />
       </div>

@@ -164,6 +164,7 @@
   "code.stream_open_timeout": "这台机器没有及时打开 {kind} 通道。",
   "code.stream_refused": "这台机器拒绝打开该通道。",
   "code.stream_unknown": "这个通道已经关闭。",
+  "code.theme_unknown": "面板没有这种主题。",
   "code.token_refused": "这个令牌存不下：{detail}",
   "code.token_value_needed": "令牌需要填值。",
   "code.tool_missing": "这个 hub 没有 smbclient 可用来列出共享，请安装 Samba 模块。",

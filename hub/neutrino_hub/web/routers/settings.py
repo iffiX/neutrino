@@ -41,10 +41,12 @@ from neutrino_hub.web.auth import hash_password, verify_password
 from neutrino_hub.web.constants import (
     WEB_DEFAULT_LANGUAGE,
     WEB_DEFAULT_LISTEN_PORT,
+    WEB_DEFAULT_THEME,
     WEB_LANGUAGES,
     WEB_PORT_MAX,
     WEB_PORT_MIN,
     WEB_RESTART_DELAY_S,
+    WEB_THEMES,
 )
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
@@ -96,8 +98,10 @@ BACKUP_ERROR_PASSPHRASE_WRONG = "vault_passphrase_wrong"
 BACKUP_ERROR_TOO_LARGE = "backup_too_large"
 BACKUP_ERROR_UNEXPECTED_PATH = "backup_unexpected_path"
 BACKUP_ERROR_UNEXPECTED_MEMBER = "backup_unexpected_member"
-# The 422 the page words when it is asked for a language nobody ships.
+# The 422s the page words when it is asked for a language or a theme nobody
+# ships.
 SETTINGS_ERROR_LANGUAGE_UNKNOWN = "language_unknown"
+SETTINGS_ERROR_THEME_UNKNOWN = "theme_unknown"
 
 
 @router.get("", response_model=PanelSettings)
@@ -108,11 +112,13 @@ def read_settings(runtime: PanelRuntime = Depends(get_runtime)) -> PanelSettings
         runtime: The shared runtime.
 
     Returns:
-        The port the panel answers on and the language it is drawn in.
+        The port the panel answers on, and the language and the palette it is
+        drawn in.
     """
     return PanelSettings(
         listen_port=int(runtime.settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT)),
         language=str(runtime.settings.get("language", WEB_DEFAULT_LANGUAGE)),
+        theme=str(runtime.settings.get("theme", WEB_DEFAULT_THEME)),
     )
 
 
@@ -130,18 +136,20 @@ def update_settings(
     asked on closes.
 
     Args:
-        request: The port to answer on, and the language to draw in. A body
-            leaving the language out leaves it as it is.
+        request: The port to answer on, and the language and the palette to
+            draw in. A body leaving one of those out leaves it as it is.
         background: Where the restart is queued.
         runtime: The shared runtime.
 
     Returns:
-        The port the panel is moving to and the language it is drawn in.
+        The port the panel is moving to, and the language and the palette it
+        is drawn in.
 
     Raises:
         HTTPException: 400 when the port is not one a listener may take, 422
             with ``language_unknown`` for a language this panel does not
-            ship.
+            ship, and 422 with ``theme_unknown`` for a theme it does not
+            have.
     """
     if not WEB_PORT_MIN <= request.listen_port <= WEB_PORT_MAX:
         raise _coded_bad_request(
@@ -158,23 +166,37 @@ def update_settings(
                 "params": {"language": request.language},
             },
         )
+    if request.theme not in WEB_THEMES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "code": SETTINGS_ERROR_THEME_UNKNOWN,
+                "params": {"theme": request.theme},
+            },
+        )
     settings = read_config(PANEL_SETTINGS_FILE)
     stored_language = str(settings.get("language", WEB_DEFAULT_LANGUAGE))
     language = (
         request.language if "language" in request.model_fields_set else stored_language
     )
+    stored_theme = str(settings.get("theme", WEB_DEFAULT_THEME))
+    theme = request.theme if "theme" in request.model_fields_set else stored_theme
     is_moving = (
         int(settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT)) != request.listen_port
     )
-    if is_moving or language != stored_language:
+    if is_moving or language != stored_language or theme != stored_theme:
         settings["listen_port"] = request.listen_port
         settings["language"] = language
+        settings["theme"] = theme
         write_config(PANEL_SETTINGS_FILE, settings)
         runtime.settings["listen_port"] = request.listen_port
         runtime.settings["language"] = language
+        runtime.settings["theme"] = theme
     if is_moving:
         background.add_task(_restart_panel)
-    return PanelSettings(listen_port=request.listen_port, language=language)
+    return PanelSettings(
+        listen_port=request.listen_port, language=language, theme=theme
+    )
 
 
 def _restart_panel() -> None:

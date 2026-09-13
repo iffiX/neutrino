@@ -19,6 +19,10 @@ WEB_SESSION_SECRET_BYTES = 32
 WEB_LANGUAGES = ("en", "zh-CN")
 WEB_DEFAULT_LANGUAGE = "en"
 
+# The palettes the panel is drawn in. `system` follows the browser's scheme.
+WEB_THEMES = ("system", "dark", "light")
+WEB_DEFAULT_THEME = "dark"
+
 # What the panel listens on until somebody says otherwise. One value: setup
 # offers it, the unit serves on it, and an enrollment link points a device at
 # it, and three copies of it is how a device ends up sent to the wrong port.

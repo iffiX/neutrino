@@ -1,6 +1,7 @@
 {
   "code.agent_offline": "被控端已离线。",
   "code.language_unknown": "面板没有这种语言。",
+  "code.theme_unknown": "面板没有这种主题。",
   "state.connecting": "连接中",
   "state.disabled": "已停用",
   "state.installed": "已安装",

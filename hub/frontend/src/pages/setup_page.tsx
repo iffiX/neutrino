@@ -787,7 +787,10 @@ function SetupFrame({
   children: ReactNode;
 }) {
   return (
-    <div className={`setup_page ${isLit ? "setup_page--lit" : ""}`}>
+    <div
+      className={`setup_page ${isLit ? "setup_page--lit" : ""}`}
+      data-theme="dark"
+    >
       <div className="setup_backdrop">
         <div className="setup_orb setup_orb--cyan" />
         <div className="setup_orb setup_orb--violet" />

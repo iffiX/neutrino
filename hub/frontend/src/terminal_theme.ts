@@ -19,7 +19,7 @@ export function terminalTheme(): ITheme {
     cursor: themeToken("--color-accent"),
     cursorAccent: themeToken("--color-bg"),
     selectionBackground: themeToken("--color-terminal-selection"),
-    black: themeToken("--color-surface"),
+    black: themeToken("--color-terminal-black"),
     red: themeToken("--color-error"),
     green: themeToken("--color-ok"),
     yellow: themeToken("--color-warn"),

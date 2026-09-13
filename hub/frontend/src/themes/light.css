@@ -1,0 +1,66 @@
+/*
+ * The light palette.
+ *
+ * The token names are the contract: this file answers every one dark.css
+ * answers, in the same order, so a diff shows a token a theme forgot.
+ */
+
+[data-theme="light"] {
+  /* --- Surfaces ---
+   *
+   * The same three steps, alternating around white instead of black.
+   *
+   *   page                          --color-bg
+   *   a unit of change (framed)     --color-surface   + border, glows if dirty
+   *   its contents                  --color-bg        + quiet border
+   *   emphasis inside those         --color-elevated
+   *
+   * Only the unit of change carries a strong border or a glow; a nested box
+   * that glows reads as something waiting to be applied.
+   */
+  --color-bg: #f3f5f9;
+  --color-surface: #ffffff;
+  --color-elevated: #e9edf3;
+  --color-border: #dde3ea;
+  --color-border-strong: #c5ced9;
+
+  /* --- Text --- */
+  --color-text: #0f172a;
+  --color-text-muted: #5b6675;
+  --color-text-faint: #7b8794;
+
+  /* --- Accents ---
+   *
+   * Each carries text on --color-surface and on its own 12% wash, so each
+   * reaches 4.5:1 against both.
+   */
+  --color-accent: #0e7490;
+  --color-accent-secondary: #7c3aed;
+  --color-ok: #047857;
+  --color-warn: #b45309;
+  --color-error: #be123c;
+
+  /* --- Scrims and shadows --- */
+  --color-overlay: rgb(15 23 42 / 45%);
+  --color-shadow: rgb(15 23 42 / 22%);
+
+  /* --- Charts --- */
+  --color-chart-grid: #e3e8ef;
+
+  /* --- Terminal ---
+   *
+   * xterm resolves no custom property and parses the string itself: these
+   * stay plain values, and an alpha needs the rgba() spelling.
+   */
+  --color-terminal-black: #0f172a;
+  --color-terminal-selection: rgba(14, 116, 144, 0.25);
+  --color-terminal-bright-accent: #0891b2;
+  --color-terminal-bright-secondary: #8b5cf6;
+  --color-terminal-bright-text: #6f7c8b;
+
+  /* Native controls, scrollbars and form widgets. */
+  --color-scheme: light;
+
+  /* The blurred blobs behind the shell. */
+  --shell-glow-opacity: 0.08;
+}

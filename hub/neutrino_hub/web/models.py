@@ -6,7 +6,7 @@ so a rename here is a rename there.
 
 from pydantic import BaseModel, Field
 
-from neutrino_hub.web.constants import WEB_DEFAULT_LANGUAGE
+from neutrino_hub.web.constants import WEB_DEFAULT_LANGUAGE, WEB_DEFAULT_THEME
 
 
 class LoginRequest(BaseModel):
@@ -1235,24 +1235,33 @@ class PasswordChangeResult(BaseModel):
 class PanelSettings(BaseModel):
     """The panel's own settings.
 
-    Two fields, and they are the ones nowhere else can hold: every other
-    service settles its port in its own tab, and the language belongs to the
-    whole panel rather than to any one page.
+    Three fields, and they are the ones nowhere else can hold: every other
+    service settles its port in its own tab, and the language and the theme
+    belong to the whole panel rather than to any one page.
 
     Attributes:
         listen_port: The TCP port the panel answers on.
         language: The language the panel is drawn in. A write that leaves it
             out leaves it as it is.
+        theme: The palette the panel is drawn in. A write that leaves it out
+            leaves it as it is.
     """
 
     listen_port: int
     language: str = WEB_DEFAULT_LANGUAGE
+    theme: str = WEB_DEFAULT_THEME
 
 
 class PanelLanguage(BaseModel):
     """The language the panel is drawn in, before there is a session."""
 
     language: str
+
+
+class PanelTheme(BaseModel):
+    """The palette the panel is drawn in, before there is a session."""
+
+    theme: str
 
 
 class AcknowledgementView(BaseModel):

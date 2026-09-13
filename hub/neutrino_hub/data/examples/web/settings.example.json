@@ -3,6 +3,8 @@
   "listen_port": 8080,
   "_comment_language": "The language the panel is drawn in: en or zh-CN. `nhub setup` asks for it and the Settings page changes it.",
   "language": "en",
+  "_comment_theme": "The palette the panel is drawn in: system, dark or light. `system` follows the browser's scheme. The Settings page changes it.",
+  "theme": "dark",
   "_comment_agent": "The TLS port the /api/agent routes answer on, pinned by the fingerprint in every enrollment link.",
   "agent_listen_port": 8443,
   "admin_password_hash": "PLACEHOLDER_ARGON2ID_HASH",
