@@ -1,7 +1,8 @@
 # Visual style
 
-The panel is dark, dense, and mostly monochrome so that the few coloured
-things mean something. These are the rules that keep that true.
+The panel is dense and mostly monochrome, in a dark palette or a light one,
+so that the few coloured things mean something. These are the rules that keep
+that true in both.
 
 ## The glow is for the committing action
 
@@ -38,6 +39,38 @@ from `.button--commit` where a footer's save button needs it by name.
 A button that removes something is red-outlined whether it says Uninstall,
 Deactivate or Delete. A button with no outline reads as one that cannot be
 pressed, so only disabled controls lose theirs.
+
+## Two palettes on one token contract
+
+A theme is one file, `hub/frontend/src/themes/<name>.css`, holding one fixed
+set of colour tokens under `[data-theme="<name>"]` and never under `:root`.
+The token names are the contract: `light.css` answers every token `dark.css`
+answers, in the same order, so a diff shows one a theme forgot. `<html
+data-theme>` carries the palette the page is drawn in; a subtree that pins its
+own (`setup_page.tsx`, always dark) sets the attribute on its root, and every
+token under it resolves from that file.
+
+- A derived colour is a `color-mix` of a token:
+  `color-mix(in srgb, var(--color-accent) 45%, transparent)`. A colour literal
+  outside `themes/` is a bug, with two exceptions that are not token meanings:
+  the login lockout's alarm grid and the setup wizard's brand gradient, both on
+  surfaces pinned dark.
+- A token that references another token (the washes, the chart aliases) is
+  declared on `[data-theme]`, not `:root`: a custom property resolves its
+  `var()` where it is declared, and a pinned subtree mixes them from its own
+  accents.
+- A token that carries text reaches 4.5:1 on `--color-surface` and on its own
+  12% wash. That is what sets the light accents: cyan-700, emerald-700,
+  amber-700 and rose-700, one step darker than the neon they stand in for.
+- Nothing outside CSS owns a colour. Recharts props take `var(--color-accent)`,
+  and `terminalTheme()` resolves the terminal tokens through `themeToken()`
+  when a terminal is created and again on a theme change.
+- The client window's `style.css` uses the same token names and values, in two
+  blocks of its own.
+
+The choice between the palettes is `system`, `dark` or `light`, kept on the
+box beside the language and applied from the Appearance card in Settings;
+`system` follows the browser's scheme.
 
 ## Motion is for what is happening now
 
