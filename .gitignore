@@ -22,6 +22,9 @@ config/devices/known_hosts
 # runs on. Kept beside the code and out of the history.
 docs/memory.md
 
+# Drafts written on this machine before they have a place in the tree.
+tmp-docs/
+
 # The appliance a working copy runs against under `--dev`. Deleting it is how
 # a development hub goes back to nothing; design/install_and_dev.md.
 hub_dev_root/
