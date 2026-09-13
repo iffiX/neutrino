@@ -166,6 +166,20 @@ Every file is on the [releases page](https://github.com/iffiX/neutrino/releases)
 
 <p align="center"><img src="images/screenshots/dashboard_portrait.webp" width="200" alt="Dashboard on a phone" /> <img src="images/screenshots/proxy_portrait.webp" width="200" alt="Proxy page on a phone" /> <img src="images/screenshots/ai_portrait.webp" width="200" alt="AI page on a phone" /> <img src="images/screenshots/services_portrait.webp" width="200" alt="Services page on a phone" /></p>
 
+The panel has a dark palette and a light one. The choice is in Settings, and `System` follows the browser.
+
+<details><summary><b>Dark</b></summary>
+
+<a href="images/screenshots/dark.webp"><img src="images/screenshots/dark.webp" width="100%" alt="The Network page in the dark palette" /></a>
+
+</details>
+
+<details><summary><b>Light</b></summary>
+
+<a href="images/screenshots/light.webp"><img src="images/screenshots/light.webp" width="100%" alt="The Network page in the light palette" /></a>
+
+</details>
+
 ## What runs where
 
 | Package           | Runs on                             | Runs as                            | Does                                                                                           |

@@ -199,6 +199,20 @@ sudo installer -pkg neutrino-client-0.2.0-macos-arm64.pkg -target /
 
 手机宽度下这几页照样能用。
 
+面板有深色和浅色两套配色，在设置里选；选"跟随系统"就跟着浏览器走。
+
+<details><summary><b>深色</b></summary>
+
+<a href="images/screenshots/dark.webp"><img src="images/screenshots/dark.webp" width="100%" alt="深色配色下的网络页" /></a>
+
+</details>
+
+<details><summary><b>浅色</b></summary>
+
+<a href="images/screenshots/light.webp"><img src="images/screenshots/light.webp" width="100%" alt="浅色配色下的网络页" /></a>
+
+</details>
+
 ## 什么跑在哪里
 
 | 包                | 装在哪                                | 以什么身份运行       | 干什么                                                                 |
