@@ -19,11 +19,11 @@
    * Only the unit of change carries a strong border or a glow; a nested box
    * that glows reads as something waiting to be applied.
    */
-  --color-bg: #0a0e14;
-  --color-surface: #111721;
-  --color-elevated: #161d2a;
-  --color-border: #1f2937;
-  --color-border-strong: #2b3648;
+  --color-bg: #070809;
+  --color-surface: #0e1013;
+  --color-elevated: #15181c;
+  --color-border: #1c2026;
+  --color-border-strong: #2a3038;
 
   /* --- Text --- */
   --color-text: #e6edf3;
@@ -42,14 +42,14 @@
   --color-shadow: rgb(0 0 0 / 90%);
 
   /* --- Charts --- */
-  --color-chart-grid: #1a2230;
+  --color-chart-grid: #181c21;
 
   /* --- Terminal ---
    *
    * xterm resolves no custom property and parses the string itself: these
    * stay plain values, and an alpha needs the rgba() spelling.
    */
-  --color-terminal-black: #111721;
+  --color-terminal-black: #0e1013;
   --color-terminal-selection: rgba(34, 211, 238, 0.25);
   --color-terminal-bright-accent: #67e8f9;
   --color-terminal-bright-secondary: #c4b5fd;
@@ -59,5 +59,5 @@
   --color-scheme: dark;
 
   /* The blurred blobs behind the shell. */
-  --shell-glow-opacity: 0.16;
+  --shell-glow-opacity: 0.1;
 }

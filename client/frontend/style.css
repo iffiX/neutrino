@@ -1,9 +1,9 @@
 /* The two palettes, on the panel's own token names. Every rule below draws
    in tokens, and a derived colour is a color-mix of one. */
 [data-theme="dark"] {
-  --color-bg: #0a0e14;
-  --color-surface: #111721;
-  --color-border: #1f2937;
+  --color-bg: #070809;
+  --color-surface: #0e1013;
+  --color-border: #1c2026;
   --color-text: #e6edf3;
   --color-text-muted: #8b96a5;
   --color-accent: #22d3ee;
