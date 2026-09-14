@@ -134,6 +134,35 @@ def test_the_carried_interpreter_loses_what_draws_no_window(tmp_path):
     assert (tmp_path / "bin" / "python3").is_file()
 
 
+def test_the_carried_interpreter_loses_the_installer_and_the_shared_build(tmp_path):
+    """The interpreter is linked statically and the agent is copied into the
+    tree rather than installed, so both are weight no device reads."""
+    library = tmp_path / "lib"
+    site_packages = library / "python3.13" / "site-packages"
+    site_packages.mkdir(parents=True)
+    (library / "libpython3.13.so.1.0").write_bytes(b"")
+    (library / "libpython3.so").write_bytes(b"")
+    (library / "python3.13" / "ensurepip").mkdir()
+    (site_packages / "pip").mkdir()
+    (site_packages / "pip-26.2.1.dist-info").mkdir()
+    (library / "python3.13" / "asyncio").mkdir()
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "pip3").write_text("")
+    (tmp_path / "bin" / "python3").write_text("")
+
+    payload.trim_interpreter(tmp_path)
+
+    assert not (library / "libpython3.13.so.1.0").exists()
+    assert not (library / "libpython3.so").exists()
+    assert not (library / "python3.13" / "ensurepip").exists()
+    assert not (site_packages / "pip").exists()
+    assert not (site_packages / "pip-26.2.1.dist-info").exists()
+    assert not (tmp_path / "bin" / "pip3").exists()
+    assert site_packages.is_dir()
+    assert (library / "python3.13" / "asyncio").is_dir()
+    assert (tmp_path / "bin" / "python3").is_file()
+
+
 def test_the_staging_path_is_taken_out_of_everything_it_was_written_into(tmp_path):
     """pip writes the staging path into what it generates; left alone every
     one of those names a directory that exists only on the build machine."""

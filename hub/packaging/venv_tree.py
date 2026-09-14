@@ -265,6 +265,10 @@ def _package_lists():
     }, packages_for
 
 
+# What the interpreter carries to install with, dropped once the hub is in the
+# tree: an installed package is replaced whole, never installed into.
+INTERPRETER_INSTALLER = ("pip", "ensurepip", "setuptools", "pkg_resources")
+
 # What the bytecode pass leaves alone: the standard library's own test suites
 # hold files that are deliberately unparseable, and nothing on a box imports
 # them.
@@ -345,6 +349,7 @@ def build_environment(tree: Path, version: str, machine: str) -> None:
     finally:
         stamp.unlink(missing_ok=True)
 
+    trim_interpreter(staged_python)
     compile_bytecode(staged_python, PYTHON_DIR)
     strip_build_paths(staged_python, tree)
     stage_agent_cache(tree, staged_python, machine)
@@ -774,10 +779,41 @@ def strip_build_paths(staged_python: Path, tree: Path) -> None:
             continue
         path.write_text(text.replace(staged_prefix, ""), encoding="utf-8")
 
-    # The package runs one entry point; the interpreter's own idle and
-    # documentation tooling is not it.
+
+def trim_interpreter(staged_python: Path) -> None:
+    """Take out of the staged interpreter what the installed package never runs.
+
+    It runs once the hub is installed into the tree, since installing is what
+    the interpreter's own installer is for and nothing installs into the tree
+    again: a package manager replaces the whole of it.
+
+    Args:
+        staged_python: The interpreter tree as staged.
+    """
+    library = staged_python / "lib"
+
+    # The interpreter is linked statically, which `readelf -d bin/python3`
+    # states by naming no libpython. The shared build beside it is 30 MB that
+    # only an embedder loads, and nothing in the package embeds one.
+    for path in library.glob("libpython*.so*"):
+        path.unlink(missing_ok=True)
+
+    for parent in (*library.glob("python*"), *library.glob("python*/site-packages")):
+        for path in parent.iterdir():
+            # A dist-info directory carries the version in its name.
+            if path.name.split("-")[0] not in INTERPRETER_INSTALLER:
+                continue
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                path.unlink(missing_ok=True)
+
+    # The package runs one entry point; the interpreter's own installer, idle
+    # and documentation tooling is not it.
     for name in ("idle3", f"idle{PYTHON_VERSION[:4]}", "2to3"):
         (staged_python / "bin" / name).unlink(missing_ok=True)
+    for path in (staged_python / "bin").glob("pip*"):
+        path.unlink(missing_ok=True)
 
     _drop_tk(staged_python)
 

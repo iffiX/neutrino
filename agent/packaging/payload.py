@@ -118,6 +118,10 @@ MACHINE_NAMES = {
 DEBIAN_ARCHITECTURES = {"x86_64": "amd64", "aarch64": "arm64"}
 RPM_ARCHITECTURES = {"x86_64": "x86_64", "aarch64": "aarch64"}
 
+# What the interpreter carries to install with, which the package drops: the
+# agent is copied into the tree, and an installed package is replaced whole.
+INTERPRETER_INSTALLER = ("pip", "ensurepip", "setuptools", "pkg_resources")
+
 # What the bytecode pass leaves alone: the standard library's own test suites
 # hold files that are deliberately unparseable, and nothing on a device
 # imports them.
@@ -351,8 +355,27 @@ def trim_interpreter(staged_python: Path) -> None:
             shutil.rmtree(path, ignore_errors=True)
     for path in library.rglob("_tkinter*.so"):
         path.unlink(missing_ok=True)
+
+    # The interpreter is linked statically, which `readelf -d bin/python3`
+    # states by naming no libpython. The shared build beside it is 30 MB that
+    # only an embedder loads, and nothing in the package embeds one.
+    for path in library.glob("libpython*.so*"):
+        path.unlink(missing_ok=True)
+
+    for parent in (*library.glob("python*"), *library.glob("python*/site-packages")):
+        for path in parent.iterdir():
+            # A dist-info directory carries the version in its name.
+            if path.name.split("-")[0] not in INTERPRETER_INSTALLER:
+                continue
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                path.unlink(missing_ok=True)
+
     for name in ("idle3", f"idle{PYTHON_VERSION[:4]}", "2to3"):
         (staged_python / "bin" / name).unlink(missing_ok=True)
+    for path in (staged_python / "bin").glob("pip*"):
+        path.unlink(missing_ok=True)
 
 
 def compile_bytecode(staged_python: Path, install_python: Path) -> None:

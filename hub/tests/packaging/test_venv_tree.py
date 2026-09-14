@@ -338,3 +338,34 @@ def test_a_machine_nothing_is_pinned_for_stops_the_build():
     turned off."""
     with pytest.raises(SystemExit):
         venv_tree._machine_name(venv_tree.NETBIRD_MACHINES, "arm-6", "netbird")
+
+
+def test_the_carried_interpreter_loses_the_installer_and_the_shared_build(tmp_path):
+    """The interpreter is linked statically and nothing installs into the
+    tree after the build, so both are weight no package reads."""
+    staged_python = tmp_path / "opt" / "neutrino" / "python"
+    library = staged_python / "lib"
+    site_packages = library / "python3.13" / "site-packages"
+    site_packages.mkdir(parents=True)
+    (library / "libpython3.13.so.1.0").write_bytes(b"")
+    (library / "libpython3.so").write_bytes(b"")
+    (library / "python3.13" / "ensurepip").mkdir()
+    (site_packages / "pip").mkdir()
+    (site_packages / "pip-26.2.1.dist-info").mkdir()
+    (site_packages / "neutrino_hub").mkdir()
+    (library / "python3.13" / "asyncio").mkdir()
+    (staged_python / "bin").mkdir(parents=True)
+    (staged_python / "bin" / "pip3").write_text("")
+    (staged_python / "bin" / "python3").write_text("")
+
+    venv_tree.trim_interpreter(staged_python)
+
+    assert not (library / "libpython3.13.so.1.0").exists()
+    assert not (library / "libpython3.so").exists()
+    assert not (library / "python3.13" / "ensurepip").exists()
+    assert not (site_packages / "pip").exists()
+    assert not (site_packages / "pip-26.2.1.dist-info").exists()
+    assert not (staged_python / "bin" / "pip3").exists()
+    assert (site_packages / "neutrino_hub").is_dir()
+    assert (library / "python3.13" / "asyncio").is_dir()
+    assert (staged_python / "bin" / "python3").is_file()
