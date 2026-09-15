@@ -47,7 +47,8 @@ export function WifiScanPanel({
     setError(null);
     try {
       const result = await apiGet<WifiScan>(
-        `/network/interfaces/${interfaceName}/wifi/scan`,
+        "/hub/network/interface/wifi/scan",
+        { name: interfaceName },
       );
       setNetworks(result.networks);
     } catch (cause: unknown) {
@@ -62,8 +63,8 @@ export function WifiScanPanel({
     setError(null);
     try {
       const view = await apiPost<NetworkView>(
-        `/network/interfaces/${interfaceName}/wifi/join`,
-        { ssid: network.ssid, passphrase: secret },
+        "/hub/network/interface/wifi/join",
+        { name: interfaceName, ssid: network.ssid, passphrase: secret },
       );
       onJoined(view);
       setSelected(null);

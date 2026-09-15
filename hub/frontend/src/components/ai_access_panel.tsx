@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { Icon } from "./icon";
-import { apiDelete, apiPost, describeError } from "../api_client";
+import { apiPost, describeError } from "../api_client";
 import { copyText } from "../copy_text";
 import { formatTimeAgo } from "../format_duration";
 import { t, useLanguage } from "../i18n";
@@ -28,7 +28,7 @@ import "./ai_access_panel.css";
  * waits behind an apply bar.
  */
 
-const KEYS_PATH = "/cliproxyapi/keys";
+const KEY_ADD_PATH = "/hub/ai/gateway/key/add";
 const MASKED_KEY = "•".repeat(24);
 const COPIED_CLEAR_MS = 1600;
 
@@ -71,7 +71,7 @@ export function AiAccessPanel({
     setError(null);
     try {
       const known = new Set(keys.map((key) => key.id));
-      const next = await apiPost<CliproxyApiStatusView>(KEYS_PATH, {
+      const next = await apiPost<CliproxyApiStatusView>(KEY_ADD_PATH, {
         name: name.trim() || t("ui.ai.key_default_name"),
       });
       const created = next.client_keys.find((key) => !known.has(key.id));
@@ -91,7 +91,9 @@ export function AiAccessPanel({
     setError(null);
     try {
       onChanged(
-        await apiDelete<CliproxyApiStatusView>(`${KEYS_PATH}/${keyId}`),
+        await apiPost<CliproxyApiStatusView>("/hub/ai/gateway/key/remove", {
+          key_id: keyId,
+        }),
       );
       if (freshKeyId === keyId) {
         setFreshKeyId(null);

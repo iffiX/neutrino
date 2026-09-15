@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
 import { ZfsTopology } from "./zfs_topology";
-import { apiDelete, apiPost, describeError } from "../api_client";
+import { apiPath, apiPost, describeError } from "../api_client";
 import { formatBytes } from "../format_bytes";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
@@ -70,7 +70,7 @@ interface Builder {
 interface ZfsPanelsProps {
   /** The machine whose pools these are. */
   deviceId: string;
-  /** Where this machine's ZFS answers. */
+  /** Where ZFS answers: `/agent/module/zfs`. */
   basePath: string;
   isEditable: boolean;
 }
@@ -80,12 +80,15 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
   useLanguage();
   // Resilvers and scrubs move on their own, which the machine's own report
   // says; the datasets are a write like any other.
-  const zfs = useApiResource<ZfsDeviceView>(basePath, {
-    invalidateOn: [
-      { type: HUB_EVENT_DEVICE_REPORT, key: deviceId },
-      { type: HUB_EVENT_CONFIG },
-    ],
-  });
+  const zfs = useApiResource<ZfsDeviceView>(
+    apiPath(basePath, { device_id: deviceId }),
+    {
+      invalidateOn: [
+        { type: HUB_EVENT_DEVICE_REPORT, key: deviceId },
+        { type: HUB_EVENT_CONFIG },
+      ],
+    },
+  );
 
   const [selectedMember, setSelectedMember] = useState<{
     pool: string;
@@ -227,14 +230,16 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
     };
     const isDone = await act("builder", () =>
       builder.target === "new"
-        ? apiPost<ZfsDeviceView>(`${basePath}/pools`, {
+        ? apiPost<ZfsDeviceView>(`${basePath}/pool/create`, {
+            device_id: deviceId,
             ...body,
             name: builder.name.trim(),
           })
-        : apiPost<ZfsDeviceView>(
-            `${basePath}/pools/${builder.target}/expand`,
-            body,
-          ),
+        : apiPost<ZfsDeviceView>(`${basePath}/pool/expand`, {
+            device_id: deviceId,
+            name: builder.target,
+            ...body,
+          }),
     );
     if (isDone) {
       setBuilder(null);
@@ -246,13 +251,12 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
       return;
     }
     const isDone = await act("member", () =>
-      apiPost<ZfsDeviceView>(
-        `${basePath}/pools/${selectedMember.pool}/replace`,
-        {
-          old_device: selectedMember.device,
-          new_device: replaceWith,
-        },
-      ),
+      apiPost<ZfsDeviceView>(`${basePath}/pool/replace`, {
+        device_id: deviceId,
+        name: selectedMember.pool,
+        old_device: selectedMember.device,
+        new_device: replaceWith,
+      }),
     );
     if (isDone) {
       setIsReplacing(false);
@@ -267,7 +271,8 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
       return;
     }
     const isDone = await act("datasets", () =>
-      apiPost<ZfsDeviceView>(`${basePath}/datasets`, {
+      apiPost<ZfsDeviceView>(`${basePath}/dataset/create`, {
+        device_id: deviceId,
         pool,
         name: datasetDraft.name.trim(),
         compression: datasetDraft.compression,
@@ -306,7 +311,10 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
             className="button button--small"
             onClick={() =>
               void act("import", () =>
-                apiPost<ZfsDeviceView>(`${basePath}/import/${candidate.name}`),
+                apiPost<ZfsDeviceView>(`${basePath}/pool/import`, {
+                  device_id: deviceId,
+                  name: candidate.name,
+                }),
               )
             }
             disabled={isBusy}
@@ -369,10 +377,11 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                       className="button button--small"
                       onClick={() =>
                         void act("member", () =>
-                          apiPost<ZfsDeviceView>(
-                            `${basePath}/pools/${selectedMember.pool}/online`,
-                            { device: selectedMember.device },
-                          ),
+                          apiPost<ZfsDeviceView>(`${basePath}/pool/online`, {
+                            device_id: deviceId,
+                            name: selectedMember.pool,
+                            device: selectedMember.device,
+                          }),
                         )
                       }
                       disabled={isBusy}
@@ -385,10 +394,11 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                       className="button button--small"
                       onClick={() =>
                         void act("member", () =>
-                          apiPost<ZfsDeviceView>(
-                            `${basePath}/pools/${selectedMember.pool}/offline`,
-                            { device: selectedMember.device },
-                          ),
+                          apiPost<ZfsDeviceView>(`${basePath}/pool/offline`, {
+                            device_id: deviceId,
+                            name: selectedMember.pool,
+                            device: selectedMember.device,
+                          }),
                         )
                       }
                       disabled={isBusy}
@@ -499,9 +509,10 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                     className="button button--small"
                     onClick={() =>
                       void act(`pool:${pool.name}`, () =>
-                        apiPost<ZfsDeviceView>(
-                          `${basePath}/pools/${pool.name}/scrub/stop`,
-                        ),
+                        apiPost<ZfsDeviceView>(`${basePath}/pool/scrub/stop`, {
+                          device_id: deviceId,
+                          name: pool.name,
+                        }),
                       )
                     }
                     disabled={isBusy}
@@ -514,9 +525,10 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                     className="button button--small"
                     onClick={() =>
                       void act(`pool:${pool.name}`, () =>
-                        apiPost<ZfsDeviceView>(
-                          `${basePath}/pools/${pool.name}/scrub`,
-                        ),
+                        apiPost<ZfsDeviceView>(`${basePath}/pool/scrub`, {
+                          device_id: deviceId,
+                          name: pool.name,
+                        }),
                       )
                     }
                     disabled={isBusy}
@@ -606,9 +618,10 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                     disabled={isBusy || destroyConfirm.text !== pool.name}
                     onClick={() =>
                       void act(`pool:${pool.name}`, () =>
-                        apiDelete<ZfsDeviceView>(
-                          `${basePath}/pools/${pool.name}`,
-                        ),
+                        apiPost<ZfsDeviceView>(`${basePath}/pool/destroy`, {
+                          device_id: deviceId,
+                          name: pool.name,
+                        }),
                       ).then((isDone) => {
                         if (isDone) {
                           setDestroyConfirm(null);
@@ -815,7 +828,8 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                     onShare={() => setShareTarget(dataset)}
                     onUnshare={() =>
                       void act("datasets", () =>
-                        apiPost<ZfsDeviceView>(`${basePath}/datasets/unshare`, {
+                        apiPost<ZfsDeviceView>(`${basePath}/dataset/unshare`, {
+                          device_id: deviceId,
                           dataset: dataset.name,
                         }),
                       )
@@ -830,8 +844,9 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                         onConfirm: () =>
                           void act("datasets", () =>
                             apiPost<ZfsDeviceView>(
-                              `${basePath}/datasets/destroy`,
+                              `${basePath}/dataset/destroy`,
                               {
+                                device_id: deviceId,
                                 dataset: dataset.name,
                               },
                             ),
@@ -1007,7 +1022,8 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
           onCancel={() => setShareTarget(null)}
           onShare={(users) =>
             void act("share", () =>
-              apiPost<ZfsDeviceView>(`${basePath}/datasets/share`, {
+              apiPost<ZfsDeviceView>(`${basePath}/dataset/share`, {
+                device_id: deviceId,
                 dataset: shareTarget.name,
                 users,
               }),

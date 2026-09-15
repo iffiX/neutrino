@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import { StatusDot } from "./status_dot";
+import { apiPath } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { usePolledResource } from "../use_polled_resource";
 import type { ServiceJournal } from "../api_types";
@@ -19,18 +20,16 @@ import "./journal_panel.css";
 const JOURNAL_LINES = 200;
 
 interface JournalPanelProps {
-  moduleName?: string;
-  /** Overrides the module path for journals living on another router. */
-  path?: string;
+  /** The journal's own path, below `/api`, with whatever names its subject. */
+  path: string;
   isOpen: boolean;
 }
 
-export function JournalPanel({ moduleName, path, isOpen }: JournalPanelProps) {
+export function JournalPanel({ path, isOpen }: JournalPanelProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const journalPath = path ?? `/modules/${moduleName ?? ""}/journal`;
   const journal = usePolledResource<ServiceJournal>(
-    isOpen ? `${journalPath}?lines=${JOURNAL_LINES}` : null,
+    isOpen ? apiPath(path, { lines: JOURNAL_LINES }) : null,
   );
   const outputRef = useRef<HTMLPreElement | null>(null);
 

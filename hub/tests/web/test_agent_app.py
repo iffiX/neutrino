@@ -48,23 +48,29 @@ def api_paths(app) -> set:
     return {path for path in app.openapi()["paths"] if path.startswith("/api/")}
 
 
-CHANNEL_PREFIXES = ("/api/agent/", "/api/client/")
+# The wire's HTTP routes on the agent port; its sockets are outside openapi.
+WIRE_PATHS = {
+    "/api/agent/enroll",
+    "/api/agent/leave",
+    "/api/agent/package",
+    "/api/agent/module_package",
+    "/api/client/enroll",
+    "/api/client/leave",
+}
 
 
-def test_the_agent_app_serves_only_agent_and_client_routes(factories):
+def test_the_agent_app_serves_only_the_wire(factories):
     paths = api_paths(factories.create_agent_app())
 
-    assert paths
-    assert all(path.startswith(CHANNEL_PREFIXES) for path in paths)
-    assert any(path.startswith("/api/client/") for path in paths)
+    assert paths == WIRE_PATHS
 
 
-def test_the_panel_app_serves_no_agent_or_client_routes(factories):
+def test_the_panel_app_serves_no_wire_route(factories):
     paths = api_paths(factories.create_app())
 
     assert paths
-    assert not any(path.startswith(CHANNEL_PREFIXES) for path in paths)
-    assert "/api/clients" in paths
+    assert not paths & WIRE_PATHS
+    assert "/api/hub/client" in paths
 
 
 def test_both_apps_share_one_runtime(factories):

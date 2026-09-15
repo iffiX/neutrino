@@ -89,7 +89,7 @@ export function useHubEventChannel(): SocketStatus {
       isGreeted = false;
     };
   }, []);
-  return useReconnectingSocket("/ws/events", receive);
+  return useReconnectingSocket("/ws/hub/event", receive);
 }
 
 /**

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 
+import { apiPath } from "../api_client";
 import { DeviceChipStrip } from "../components/device_chip_strip";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
@@ -60,7 +61,7 @@ interface ShellTab {
 export function TerminalsPage() {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const resource = useApiResource<DevicesOnlineResponse>("/devices/online", {
+  const resource = useApiResource<DevicesOnlineResponse>("/hub/device/online", {
     invalidateOn: INVALIDATE_ON,
   });
   const [searchParams] = useSearchParams();
@@ -240,7 +241,9 @@ export function TerminalsPage() {
             {tabs.map((tab) => (
               <ShellTerminal
                 key={tab.id}
-                socketPath={`/ws/agent_shell/${tab.deviceId}`}
+                socketPath={apiPath("/ws/agent/terminal", {
+                  device_id: tab.deviceId,
+                })}
                 isVisible={tab.id === activeId}
                 onExit={() => closeTab(tab.id)}
                 onStateChange={(state) => noteState(tab.id, state)}

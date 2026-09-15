@@ -5,7 +5,7 @@ import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { StatusDot } from "../components/status_dot";
 import type { StatusTone } from "../components/status_dot";
-import { apiDelete, apiPost, apiPut, describeError } from "../api_client";
+import { apiPost, describeError } from "../api_client";
 import { formatTimeAgo } from "../format_duration";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
@@ -28,7 +28,7 @@ import "./clients_page.css";
  * switch and the delete write at once.
  */
 
-const CLIENTS_PATH = "/clients";
+const CLIENTS_PATH = "/hub/client";
 const INVALIDATE_ON = [{ type: HUB_EVENT_CLIENTS }];
 
 type ClientPresence = "online" | "offline" | "never";
@@ -81,7 +81,7 @@ export function ClientsPage() {
     setError(null);
     try {
       const view = await apiPost<ClientEnrollmentView>(
-        `${CLIENTS_PATH}/enrollment`,
+        `${CLIENTS_PATH}/enrollment/create`,
         { name: wanted },
       );
       setEnrollment({ name: wanted, view });
@@ -98,11 +98,9 @@ export function ClientsPage() {
     setIsBusy(true);
     setError(null);
     try {
-      const next = await apiPut<ClientListView>(
-        `${CLIENTS_PATH}/${client.id}`,
-        {
-          is_disabled: !client.is_disabled,
-        },
+      const next = await apiPost<ClientListView>(
+        `${CLIENTS_PATH}/${client.is_disabled ? "enable" : "disable"}`,
+        { client_id: client.id },
       );
       resource.setData(next);
     } catch (cause: unknown) {
@@ -117,7 +115,9 @@ export function ClientsPage() {
     setError(null);
     try {
       resource.setData(
-        await apiDelete<ClientListView>(`${CLIENTS_PATH}/${client.id}`),
+        await apiPost<ClientListView>(`${CLIENTS_PATH}/remove`, {
+          client_id: client.id,
+        }),
       );
     } catch (cause: unknown) {
       setError(describeError(cause));

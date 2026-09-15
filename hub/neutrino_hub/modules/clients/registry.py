@@ -184,6 +184,18 @@ class ClientRegistry:
             entry.update(changes)
             self._write_stored()
 
+    def rename(self, client_id: str, name: str) -> None:
+        """Give a client a new name.
+
+        Args:
+            client_id: The client.
+            name: What the person calls it now.
+
+        Raises:
+            KeyError: When there is no such client.
+        """
+        self._update(client_id, {"name": name.strip()})
+
     def set_disabled(self, client_id: str, is_disabled: bool) -> None:
         """Switch a client off or on.
 

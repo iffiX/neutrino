@@ -46,7 +46,7 @@ const OVERLAY_INVALIDATE_ON = [{ type: HUB_EVENT_CONFIG }];
 export function OverlayPage() {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const resource = useApiResource<OverlayChoiceView>("/overlay", {
+  const resource = useApiResource<OverlayChoiceView>("/hub/overlay", {
     invalidateOn: OVERLAY_INVALIDATE_ON,
   });
 
@@ -100,8 +100,8 @@ export function OverlayPage() {
 function NetbirdSection() {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const resource = useApiResource<NetbirdView>("/netbird");
-  const devices = useApiResource<DevicesResponse>("/devices");
+  const resource = useApiResource<NetbirdView>("/hub/overlay/netbird");
+  const devices = useApiResource<DevicesResponse>("/hub/device");
 
   // Peers connect and drop on their own schedule.
   const reload = resource.reload;
@@ -317,7 +317,7 @@ function JoinForm({ isReady, submitLabel, warning, onJoined }: JoinFormProps) {
     setIsBusy(true);
     setError(null);
     try {
-      await apiPost("/netbird/join", {
+      await apiPost("/hub/overlay/netbird/join", {
         setup_key: setupKey.trim(),
         management_url: managementUrl.trim(),
       });

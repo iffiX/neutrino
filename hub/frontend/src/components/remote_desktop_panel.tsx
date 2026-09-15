@@ -95,7 +95,9 @@ export function RemoteDesktopPanel({
     setError(null);
     try {
       setStatus(
-        await apiGet<RemoteDesktopView>(`/devices/${device.id}/remote_desktop`),
+        await apiGet<RemoteDesktopView>("/hub/device/remote_desktop", {
+          device_id: device.id,
+        }),
       );
     } catch (cause: unknown) {
       setError(describeError(cause));
@@ -134,9 +136,9 @@ export function RemoteDesktopPanel({
       confirmLabel: t("ui.remote_desktop.reset_confirm"),
       onConfirm: () => {
         setError(null);
-        void apiPost(`/devices/${device.id}/rdp/seat_password`).catch(
-          (cause: unknown) => setError(describeResetError(cause)),
-        );
+        void apiPost("/hub/device/desktop/seat_password/reset", {
+          device_id: device.id,
+        }).catch((cause: unknown) => setError(describeResetError(cause)));
       },
     });
   };
@@ -288,7 +290,6 @@ interface ProductCardProps {
 function ProductCard({ status, deviceId, isBusy, onRun }: ProductCardProps) {
   const [password, setPassword] = useState("");
   const label = PRODUCT_LABELS[status.product] ?? status.product;
-  const base = `/devices/${deviceId}/remote_desktop/${status.product}`;
 
   return (
     <div className="remote_desktop_card">
@@ -352,7 +353,13 @@ function ProductCard({ status, deviceId, isBusy, onRun }: ProductCardProps) {
                 type="button"
                 className="button button--small"
                 disabled={isBusy || password.length === 0}
-                onClick={() => onRun(`${base}/password`, { password })}
+                onClick={() =>
+                  onRun("/hub/device/remote_desktop/password/set", {
+                    device_id: deviceId,
+                    product: status.product,
+                    password,
+                  })
+                }
               >
                 {t("ui.remote_desktop.set")}
               </button>

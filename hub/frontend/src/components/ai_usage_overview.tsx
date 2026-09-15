@@ -11,6 +11,7 @@ import {
   successShareOf,
   tokensOf,
 } from "../ai_usage";
+import { apiPath } from "../api_client";
 import { formatCompact, formatSmallRate } from "../format_compact";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
@@ -264,6 +265,8 @@ function UsageTile({
 }
 
 function usagePath(range: AiUsageRange, keyId: string): string {
-  const filter = keyId.length > 0 ? `&key_id=${encodeURIComponent(keyId)}` : "";
-  return `/cliproxyapi/usage?range=${range}${filter}`;
+  return apiPath("/hub/ai/gateway/usage", {
+    range,
+    key_id: keyId.length > 0 ? keyId : undefined,
+  });
 }

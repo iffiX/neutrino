@@ -22,7 +22,7 @@ from neutrino_hub.modules.devices.agent_package import AgentPackageCache
 from neutrino_hub.modules.devices.constants import AGENT_WIRE_GENERATION
 from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice
 from neutrino_hub.web.dependencies import get_runtime
-from neutrino_hub.web.routers import agent as agent_router
+from neutrino_hub.web.routers import agent_http as agent_router
 from tests.conftest import FakeChannelSessions
 
 DEVICE = "device-one"

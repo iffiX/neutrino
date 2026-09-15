@@ -1,9 +1,10 @@
 """Assembling the FastAPI applications.
 
-One process, two applications: the panel serves its API and the built
-frontend on plain HTTP, and the agent channel serves the ``/api/agent``
-routes alone on its own TLS port. Both share one runtime, which is where the
-enrollment tickets the panel generates and the reports the agents post meet.
+One process, two applications: the panel serves its API, grouped as the
+sidebar is under ``/api/hub`` and ``/api/agent``, and the built frontend on
+plain HTTP, and the agent channel serves the wire routes alone on its own
+TLS port. Both share one runtime, which is where the enrollment tickets the
+panel generates and the reports the agents post meet.
 
 The frontend is a single-page app: any panel path that is not an API route, a
 websocket, or a real file falls through to ``index.html``.
@@ -20,60 +21,58 @@ from neutrino_hub.web.constants import WEB_FRONTEND_DIST_DIR
 from neutrino_hub.web.origin_guard import OriginGuardMiddleware
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.usage_collector import PanelUsageCollector
-from neutrino_hub.web.routers import (
-    agent,
-    agent_ws,
-    ai,
-    auth,
-    client,
-    client_ws,
-    clients,
-    cliproxyapi,
-    credentials,
-    dashboard,
-    device_files,
-    devices,
-    easytier,
-    gitea,
-    language,
-    modules,
-    netbird,
-    network,
-    nodes,
-    overlay,
-    podman,
-    proxy,
-    samba,
-    services,
-    settings,
-    theme,
-    zfs,
+from neutrino_hub.web.routers import agent_http, agent_ws, client, client_ws
+from neutrino_hub.web.routers.agent import (
+    file,
+    module,
+    module_gitea,
+    module_podman,
+    module_samba,
+    module_zfs,
 )
+from neutrino_hub.web.routers.hub import (
+    ai,
+    ai_gateway,
+    auth,
+    credential,
+    dashboard,
+    device,
+    display,
+    network,
+    overlay,
+    overlay_easytier,
+    overlay_netbird,
+    proxy,
+    proxy_node,
+    service,
+    setting,
+)
+from neutrino_hub.web.routers.hub import client as hub_client
 
+# The hub group in sidebar order, then the agent group.
 API_ROUTERS = (
     auth.router,
-    language.router,
-    theme.router,
+    display.router,
     dashboard.router,
     network.router,
-    proxy.router,
-    nodes.router,
-    devices.router,
-    device_files.router,
-    clients.router,
-    credentials.router,
-    ai.router,
-    cliproxyapi.router,
-    samba.router,
-    gitea.router,
-    podman.router,
     overlay.router,
-    easytier.router,
-    netbird.router,
-    zfs.router,
-    modules.router,
-    services.router,
-    settings.router,
+    overlay_netbird.router,
+    overlay_easytier.router,
+    proxy.router,
+    proxy_node.router,
+    ai.router,
+    ai_gateway.router,
+    device.router,
+    hub_client.router,
+    service.router,
+    credential.router,
+    setting.router,
+    file.router,
+    module.router,
+    module_samba.router,
+    module_gitea.router,
+    module_podman.router,
+    module_zfs.router,
 )
 
 _shared_runtime = None
@@ -109,7 +108,7 @@ def create_agent_app() -> FastAPI:
     app = FastAPI(title="Neutrino Hub Agent Channel", docs_url=None, redoc_url=None)
     app.state.runtime = _runtime()
     app.add_exception_handler(VaultLockedError, _vault_locked)
-    app.include_router(agent.router)
+    app.include_router(agent_http.router)
     app.include_router(agent_ws.router)
     app.include_router(client.router)
     app.include_router(client_ws.router)

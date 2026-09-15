@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 
+import { apiPath } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { usePolledResource } from "../use_polled_resource";
 import type { CliproxyApiJournalResponse } from "../api_types";
@@ -22,7 +23,9 @@ export function AiJournalPanel({ isOpen }: AiJournalPanelProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const journal = usePolledResource<CliproxyApiJournalResponse>(
-    isOpen ? `/cliproxyapi/journal?lines=${JOURNAL_LINES}` : null,
+    isOpen
+      ? apiPath("/hub/ai/gateway/journal", { lines: JOURNAL_LINES })
+      : null,
   );
   const outputRef = useRef<HTMLPreElement | null>(null);
 

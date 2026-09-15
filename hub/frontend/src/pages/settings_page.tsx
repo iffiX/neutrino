@@ -7,8 +7,8 @@ import { Icon } from "../components/icon";
 import { Spinner } from "../components/spinner";
 import {
   ApiError,
+  apiPost,
   apiPostDownload,
-  apiPut,
   apiUpload,
   describeError,
 } from "../api_client";
@@ -130,7 +130,7 @@ async function readBackupManifest(file: File): Promise<BackupManifest | null> {
 export function SettingsPage() {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const about = usePolledResource<AboutInfo>("/settings/about");
+  const about = usePolledResource<AboutInfo>("/hub/setting/about");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [currentPassword, setCurrentPassword] = useState("");
@@ -163,10 +163,13 @@ export function SettingsPage() {
     setPasswordError(null);
     setPasswordNotice(null);
     try {
-      const result = await apiPut<PasswordChangeResult>("/settings/password", {
-        current_password: currentPassword,
-        new_password: newPassword,
-      });
+      const result = await apiPost<PasswordChangeResult>(
+        "/hub/setting/password/set",
+        {
+          current_password: currentPassword,
+          new_password: newPassword,
+        },
+      );
       if (!result.is_changed) {
         setPasswordError(t("ui.settings.password_refused"));
         return;
@@ -187,7 +190,7 @@ export function SettingsPage() {
     setBackupError(null);
     setBackupNotice(null);
     try {
-      await apiPostDownload("/settings/backup", undefined, backupFilename());
+      await apiPostDownload("/hub/setting/backup", undefined, backupFilename());
       setBackupNotice(t("ui.settings.backup_downloaded"));
     } catch (cause: unknown) {
       setBackupError(describeError(cause));
@@ -239,7 +242,7 @@ export function SettingsPage() {
     setBackupNotice(null);
     try {
       const result = await apiUpload<RestoreResult>(
-        "/settings/restore",
+        "/hub/setting/restore",
         restoreFile,
         { vault_passphrase: restorePassphrase },
       );
@@ -498,7 +501,7 @@ export function SettingsPage() {
 function HubNamePanel() {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const resource = useApiResource<PanelSettings>("/settings");
+  const resource = useApiResource<PanelSettings>("/hub/setting");
   const [name, setName] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -520,7 +523,7 @@ function HubNamePanel() {
     setIsBusy(true);
     setError(null);
     try {
-      const saved = await apiPut<PanelSettings>("/settings", {
+      const saved = await apiPost<PanelSettings>("/hub/setting/set", {
         listen_port: resource.data.listen_port,
         hub_name: trimmed,
       });
@@ -583,7 +586,7 @@ function HubNamePanel() {
  */
 function LanguagePanel() {
   const current = useLanguage();
-  const resource = useApiResource<PanelSettings>("/settings");
+  const resource = useApiResource<PanelSettings>("/hub/setting");
   const [chosen, setChosen] = useState(current);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -598,7 +601,7 @@ function LanguagePanel() {
     setIsBusy(true);
     setError(null);
     try {
-      const saved = await apiPut<PanelSettings>("/settings", {
+      const saved = await apiPost<PanelSettings>("/hub/setting/set", {
         listen_port: resource.data.listen_port,
         language: chosen,
       });
@@ -667,7 +670,7 @@ function LanguagePanel() {
 function AppearancePanel() {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const resource = useApiResource<PanelSettings>("/settings");
+  const resource = useApiResource<PanelSettings>("/hub/setting");
   const [chosen, setChosen] = useState(getThemeChoice());
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -682,7 +685,7 @@ function AppearancePanel() {
     setIsBusy(true);
     setError(null);
     try {
-      const saved = await apiPut<PanelSettings>("/settings", {
+      const saved = await apiPost<PanelSettings>("/hub/setting/set", {
         listen_port: resource.data.listen_port,
         theme: chosen,
       });

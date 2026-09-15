@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 
-import { websocketUrl } from "./api_client";
+import { apiPath, websocketUrl } from "./api_client";
 import { t } from "./i18n";
 import type { StreamServerMessage } from "./api_types";
 
 /**
- * Follow one device action to completion over `/ws/task/{task_id}`.
+ * Follow one device action to completion over `/ws/hub/task`.
  *
  * A socket that closes without a result is not a finished task: the panel
  * restarting drops every socket it holds while the jobs behind them carry on.
@@ -88,7 +88,9 @@ export function useTaskStream(taskId: string | null): TaskStreamState {
     };
 
     const open = () => {
-      const thisSocket = new WebSocket(websocketUrl(`/ws/task/${taskId}`));
+      const thisSocket = new WebSocket(
+        websocketUrl(apiPath("/ws/hub/task", { task_id: taskId })),
+      );
       socket = thisSocket;
       let isSettled = false;
 

@@ -5,7 +5,7 @@ import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
 import { PasswordInput } from "./password_input";
 import { ToggleSwitch } from "./toggle_switch";
-import { apiPost, apiPut, describeError } from "../api_client";
+import { apiPath, apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import type {
@@ -27,17 +27,29 @@ import "./gitea_panels.css";
  */
 
 interface GiteaPanelsProps {
-  /** Where this machine's Gitea answers. */
+  /** The machine whose Gitea this is. */
+  deviceId: string;
+  /** Where Gitea answers: `/agent/module/gitea`. */
   basePath: string;
   isEditable: boolean;
 }
 
-export function GiteaPanels({ basePath, isEditable }: GiteaPanelsProps) {
+/** The Access group as the form holds it, before it names its machine. */
+type GiteaAccessDraft = Omit<GiteaConfigUpdate, "device_id">;
+
+export function GiteaPanels({
+  deviceId,
+  basePath,
+  isEditable,
+}: GiteaPanelsProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const resource = useApiResource<GiteaDeviceView>(basePath);
+  const resource = useApiResource<GiteaDeviceView>(
+    apiPath(basePath, { device_id: deviceId }),
+  );
 
-  const [draft, setDraft] = useState<GiteaConfigUpdate | null>(null);
+  // The form's own fields; the machine they are written to is the page's.
+  const [draft, setDraft] = useState<GiteaAccessDraft | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -68,8 +80,13 @@ export function GiteaPanels({ basePath, isEditable }: GiteaPanelsProps) {
     setError(null);
     setNotice(null);
     try {
-      await apiPut<GiteaDeviceView>(basePath, draft);
-      const result = await apiPost<ApplyResult>(`${basePath}/apply`);
+      await apiPost<GiteaDeviceView>(`${basePath}/set`, {
+        device_id: deviceId,
+        ...draft,
+      });
+      const result = await apiPost<ApplyResult>(`${basePath}/apply`, {
+        device_id: deviceId,
+      });
       resource.reload();
       if (!result.is_applied) {
         setError(result.message);
@@ -192,6 +209,7 @@ export function GiteaPanels({ basePath, isEditable }: GiteaPanelsProps) {
       </section>
 
       <AdminSection
+        deviceId={deviceId}
         basePath={basePath}
         isReady={saved.is_installed && saved.is_active}
         adminUsernames={saved.admin_usernames}
@@ -202,6 +220,7 @@ export function GiteaPanels({ basePath, isEditable }: GiteaPanelsProps) {
 }
 
 interface AdminSectionProps {
+  deviceId: string;
   basePath: string;
   /** Whether the server is installed and running, which the CLI needs. */
   isReady: boolean;
@@ -210,6 +229,7 @@ interface AdminSectionProps {
 }
 
 function AdminSection({
+  deviceId,
   basePath,
   isReady,
   adminUsernames,
@@ -229,7 +249,8 @@ function AdminSection({
     setIsBusy(true);
     setError(null);
     try {
-      await apiPost(`${basePath}/admin`, {
+      await apiPost(`${basePath}/admin/add`, {
+        device_id: deviceId,
         username,
         password,
         // Gitea insists on an address even where no mail will ever be sent.
@@ -257,6 +278,7 @@ function AdminSection({
           {adminUsernames.map((name) => (
             <AdminRow
               key={name}
+              deviceId={deviceId}
               basePath={basePath}
               name={name}
               onChanged={onChanged}
@@ -313,12 +335,13 @@ function AdminSection({
 }
 
 interface AdminRowProps {
+  deviceId: string;
   basePath: string;
   name: string;
   onChanged: () => void;
 }
 
-function AdminRow({ basePath, name, onChanged }: AdminRowProps) {
+function AdminRow({ deviceId, basePath, name, onChanged }: AdminRowProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const [isEditing, setIsEditing] = useState(false);
@@ -333,7 +356,11 @@ function AdminRow({ basePath, name, onChanged }: AdminRowProps) {
     setIsBusy(true);
     setError(null);
     try {
-      await apiPost(`${basePath}/admin/${name}/password`, { password });
+      await apiPost(`${basePath}/admin/password/set`, {
+        device_id: deviceId,
+        username: name,
+        password,
+      });
       setIsEditing(false);
       setPassword("");
       onChanged();

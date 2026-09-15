@@ -8,8 +8,8 @@
  * so a missing translation is a visible key rather than a blank screen.
  *
  * The language is panel-wide and lives on the box: the page reads it from
- * `/api/language` before its first render and `setLanguage` moves every open
- * screen at once.
+ * `/api/hub/display` before its first render and `setLanguage` moves every
+ * open screen at once.
  */
 
 import { useSyncExternalStore } from "react";

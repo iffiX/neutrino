@@ -18,9 +18,6 @@ export type NetworkModeKey = "server" | "side_gateway" | "router";
 
 export type DeviceAuthMethod = "key" | "password";
 
-export type DeviceActionName =
-  "install_client" | "reinstall_agent" | "reboot" | "shutdown";
-
 /** One remote-desktop product's state on a device. */
 export interface RemoteDesktopStatus {
   product: "anydesk" | "teamviewer";
@@ -408,6 +405,7 @@ export interface WifiScan {
 }
 
 export interface WifiJoinRequest {
+  name: string;
   ssid: string;
   passphrase: string | null;
 }
@@ -903,6 +901,7 @@ export interface DeviceView {
 }
 
 export interface DeviceAnnotation {
+  device_id: string;
   name?: string;
   icon?: string;
   ssh?: DeviceSshConfig | null;
@@ -917,10 +916,6 @@ export interface DeviceWolResult {
   message: string;
 }
 
-export interface DeviceActionRequest {
-  action: DeviceActionName;
-}
-
 /**
  * What installing the agent over SSH needs.
  *
@@ -928,8 +923,8 @@ export interface DeviceActionRequest {
  * stored login. `sudo_login_id` is the stored login whose password sudo is
  * given on the device, and null where sudo asks for none.
  */
-export interface DeviceInstallRequest {
-  action: "install_client";
+export interface DeviceAgentInstallRequest {
+  device_id: string;
   host: string;
   port: number;
   username: string;
@@ -938,7 +933,7 @@ export interface DeviceInstallRequest {
   sudo_login_id: string | null;
 }
 
-/** The job an action started, followed on `/ws/task/{task_id}`. */
+/** The job an action started, followed on `/ws/hub/task`. */
 export interface TaskStarted {
   task_id: string;
 }
@@ -1072,13 +1067,12 @@ export interface PanelSettings {
   hub_name: string;
 }
 
-/** The language the panel is drawn in, answered before there is a session. */
-export interface PanelLanguage {
+/**
+ * The language and the palette the panel is drawn in, answered before there
+ * is a session.
+ */
+export interface PanelDisplay {
   language: string;
-}
-
-/** The palette the panel is drawn in, answered before there is a session. */
-export interface PanelTheme {
   theme: string;
 }
 
@@ -1176,12 +1170,14 @@ export interface GiteaSettings {
 export interface GiteaDeviceView extends GiteaSettings, ModuleDeviceState {}
 
 export interface GiteaConfigUpdate {
+  device_id: string;
   listen_port: number;
   root_url: string;
   is_registration_enabled: boolean;
 }
 
 export interface GiteaAdminCreate {
+  device_id: string;
   username: string;
   password: string;
   email: string;
@@ -1366,12 +1362,12 @@ export interface PodmanDeviceView extends PodmanSettings, ModuleDeviceState {}
 
 // --- Websocket frames ---
 
-/** Client to server on `/ws/agent_shell/{device_id}`. */
+/** Client to server on `/ws/agent/terminal`. */
 export type TerminalClientMessage =
   | { type: "input"; data: string }
   | { type: "resize"; cols: number; rows: number };
 
-/** Server to client on a shell socket and on `/ws/task/{task_id}`. */
+/** Server to client on a shell socket and on `/ws/hub/task`. */
 export type StreamServerMessage =
   | { type: "output"; data: string }
   | { type: "exit"; code: number }

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { ApplyBar } from "./apply_bar";
 import { Icon } from "./icon";
-import { apiPost, apiPut, describeError } from "../api_client";
+import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import type { ApplyResult, ProxySettings, SocksPort } from "../api_types";
 
@@ -67,11 +67,11 @@ export function SocksPortsPanel({ applied, onApplied }: SocksPortsPanelProps) {
     setError(null);
     setNotice(null);
     try {
-      const saved = await apiPut<ProxySettings>("/proxy", {
+      const saved = await apiPost<ProxySettings>("/hub/proxy/set", {
         ...applied,
         socks_ports: ports,
       });
-      const result = await apiPost<ApplyResult>("/proxy/apply");
+      const result = await apiPost<ApplyResult>("/hub/proxy/apply");
       onApplied(saved);
       if (result.is_applied) {
         setNotice(result.message);

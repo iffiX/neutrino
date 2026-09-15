@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { ApplyBar } from "./apply_bar";
 import { Icon } from "./icon";
 import type { IconName } from "./icon";
-import { apiPut, describeError } from "../api_client";
+import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { interruptionWarning } from "../network_warnings";
 import { useDraftSeeding } from "../use_draft_seeding";
@@ -77,7 +77,9 @@ export function NetworkModePanel({
     setIsBusy(true);
     setError(null);
     try {
-      onApplied(await apiPut<NetworkView>("/network/mode", { mode: chosen }));
+      onApplied(
+        await apiPost<NetworkView>("/hub/network/mode/set", { mode: chosen }),
+      );
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {

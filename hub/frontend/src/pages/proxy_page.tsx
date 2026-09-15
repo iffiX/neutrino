@@ -8,7 +8,7 @@ import { NodesPanel } from "../components/nodes_panel";
 import { SocksPortsPanel } from "../components/socks_ports_panel";
 import { StringListEditor } from "../components/string_list_editor";
 import { ToggleSwitch } from "../components/toggle_switch";
-import { apiPost, apiPut, describeError } from "../api_client";
+import { apiPost, describeError } from "../api_client";
 import { computeActiveExits, primaryExitTag } from "../active_exits";
 import { t, useLanguage } from "../i18n";
 import { describeProxy } from "../proxy_status";
@@ -72,10 +72,10 @@ const GROUP_FIELDS: Record<GroupName, (keyof ProxySettings)[]> = {
 export function ProxyPage() {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const resource = useApiResource<ProxySettings>("/proxy");
+  const resource = useApiResource<ProxySettings>("/hub/proxy");
   // The LAN scope only means something on a box that forwards a network, and
   // which boxes do is the network mode's answer.
-  const network = useApiResource<NetworkView>("/network");
+  const network = useApiResource<NetworkView>("/hub/network");
   const { frames, latestFrame } = useLiveStats();
 
   const [draft, setDraft] = useState<ProxySettings | null>(null);
@@ -125,8 +125,8 @@ export function ProxyPage() {
       for (const field of GROUP_FIELDS[group]) {
         Object.assign(payload, { [field]: draft[field] });
       }
-      const saved = await apiPut<ProxySettings>("/proxy", payload);
-      const result = await apiPost<ApplyResult>("/proxy/apply");
+      const saved = await apiPost<ProxySettings>("/hub/proxy/set", payload);
+      const result = await apiPost<ApplyResult>("/hub/proxy/apply");
       resource.setData(saved);
       setDraft((current) =>
         current === null ? saved : { ...current, ...saved },

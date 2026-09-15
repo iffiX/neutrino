@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { ApplyBar } from "./apply_bar";
 import { Icon } from "./icon";
 import { Spinner } from "./spinner";
-import { apiPut, describeError } from "../api_client";
+import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { interruptionWarning } from "../network_warnings";
 import { useApiResource } from "../use_api_resource";
@@ -35,7 +35,7 @@ const MOVE_POLL_MS = 500;
 export function PanelPortPanel() {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const resource = useApiResource<PanelSettings>("/settings");
+  const resource = useApiResource<PanelSettings>("/hub/setting");
   const [port, setPort] = useState<number | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +57,7 @@ export function PanelPortPanel() {
     setIsBusy(true);
     setError(null);
     try {
-      const saved = await apiPut<PanelSettings>("/settings", {
+      const saved = await apiPost<PanelSettings>("/hub/setting/set", {
         listen_port: port,
       });
       resource.setData(saved);
@@ -152,7 +152,7 @@ function MovingOverlay({ port }: { port: number }) {
       }
       // no-cors: the answer is unreadable across origins, and it does not
       // need reading — a response at all is the panel being back.
-      void fetch(`${destination}/api/auth/session`, {
+      void fetch(`${destination}/api/hub/auth/session`, {
         mode: "no-cors",
         cache: "no-store",
       })

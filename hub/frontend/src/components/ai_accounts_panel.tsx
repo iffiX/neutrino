@@ -3,13 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
 import { StatusDot } from "./status_dot";
-import {
-  ApiError,
-  apiDelete,
-  apiPost,
-  apiPut,
-  describeError,
-} from "../api_client";
+import { ApiError, apiPath, apiPost, describeError } from "../api_client";
 import { copyText } from "../copy_text";
 import { formatDuration } from "../format_duration";
 import { t, useLanguage } from "../i18n";
@@ -40,8 +34,8 @@ import "./confirm_modal.css";
  * offers for each service.
  */
 
-const ACCOUNTS_PATH = "/cliproxyapi/accounts";
-const LOGINS_PATH = "/cliproxyapi/account_logins";
+const ACCOUNTS_PATH = "/hub/ai/gateway/account";
+const LOGIN_PATH = "/hub/ai/gateway/account_login";
 
 /** A sign-in is watched while somebody waits on it; the list is not. */
 const LOGIN_POLL_INTERVAL_MS = 2000;
@@ -101,8 +95,9 @@ export function AiAccountsPanel() {
     setError(null);
     try {
       setData(
-        await apiDelete<CliproxyApiAccountsResponse>(
-          `${ACCOUNTS_PATH}/${encodeURIComponent(account.name)}`,
+        await apiPost<CliproxyApiAccountsResponse>(
+          "/hub/ai/gateway/account/remove",
+          { name: account.name },
         ),
       );
     } catch (cause: unknown) {
@@ -265,7 +260,7 @@ function AccountLoginModal({
   const statePath =
     login === null || failure !== null
       ? null
-      : `${LOGINS_PATH}/${encodeURIComponent(login.state)}`;
+      : apiPath(LOGIN_PATH, { state: login.state });
   const watched = usePolledResource<CliproxyApiLoginStateView>(
     statePath,
     LOGIN_POLL_INTERVAL_MS,
@@ -322,7 +317,12 @@ function AccountLoginModal({
     setFailure(null);
     setPasted("");
     try {
-      setLogin(await apiPost<CliproxyApiLoginStartView>(LOGINS_PATH, { kind }));
+      setLogin(
+        await apiPost<CliproxyApiLoginStartView>(
+          "/hub/ai/gateway/account_login/start",
+          { kind },
+        ),
+      );
     } catch (cause: unknown) {
       setError(wordError(cause));
     } finally {
@@ -337,9 +337,9 @@ function AccountLoginModal({
     setIsFinishing(true);
     setError(null);
     try {
-      const next = await apiPut<CliproxyApiLoginStateView>(
-        `${LOGINS_PATH}/${encodeURIComponent(login.state)}/code`,
-        { code: pasted.trim() },
+      const next = await apiPost<CliproxyApiLoginStateView>(
+        "/hub/ai/gateway/account_login/code/set",
+        { state: login.state, code: pasted.trim() },
       );
       if (next.status === "complete") {
         onSignedIn();
@@ -547,7 +547,7 @@ function CopyButton({ value }: CopyButtonProps) {
 /** Drop a sign-in nobody finished; it expires anyway if this never lands. */
 async function discardLogin(state: string): Promise<void> {
   try {
-    await apiDelete(`${LOGINS_PATH}/${encodeURIComponent(state)}`);
+    await apiPost("/hub/ai/gateway/account_login/stop", { state });
   } catch {
     // Nothing on screen waits on the cancel being accepted.
   }

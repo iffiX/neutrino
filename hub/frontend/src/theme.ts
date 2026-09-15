@@ -3,9 +3,9 @@
  *
  * A theme is one file of colour tokens under `[data-theme="<name>"]`, and the
  * choice between them is panel-wide and lives on the box: the page reads it
- * from `/api/theme` before its first render and `setThemeChoice` moves every
- * open screen at once. The `system` choice follows the browser's scheme, and
- * follows it again each time the browser changes it.
+ * from `/api/hub/display` before its first render and `setThemeChoice` moves
+ * every open screen at once. The `system` choice follows the browser's
+ * scheme, and follows it again each time the browser changes it.
  */
 
 import { useSyncExternalStore } from "react";

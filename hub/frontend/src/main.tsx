@@ -5,7 +5,7 @@ import { App } from "./app";
 import { apiGet } from "./api_client";
 import { LANGUAGE_DEFAULT, setLanguage } from "./i18n";
 import { THEME_DEFAULT, setThemeChoice } from "./theme";
-import type { PanelLanguage, PanelTheme } from "./api_types";
+import type { PanelDisplay } from "./api_types";
 
 import "./fonts.css";
 import "./theme.css";
@@ -18,35 +18,22 @@ if (container === null) {
 }
 
 /**
- * The language the box holds, or English.
+ * The language and the palette the box holds, or English and dark.
  *
  * Read before the first render, from the one route that answers without a
- * session. The wizard's own server has no such route, so a first run is in
- * English until its first screen says otherwise.
+ * session. A login card drawn in the other palette is a flash a session
+ * arrives too late to prevent. The wizard's own server has no such route, so
+ * a first run is in English until its first screen says otherwise.
  */
-async function panelLanguage(): Promise<string> {
+async function panelDisplay(): Promise<PanelDisplay> {
   try {
-    return (await apiGet<PanelLanguage>("/language")).language;
+    return await apiGet<PanelDisplay>("/hub/display");
   } catch {
-    return LANGUAGE_DEFAULT;
+    return { language: LANGUAGE_DEFAULT, theme: THEME_DEFAULT };
   }
 }
 
-/**
- * The theme the box holds, or dark.
- *
- * Read beside the language, and for the same reason: a login card drawn in
- * the other palette is a flash a session arrives too late to prevent.
- */
-async function panelTheme(): Promise<string> {
-  try {
-    return (await apiGet<PanelTheme>("/theme")).theme;
-  } catch {
-    return THEME_DEFAULT;
-  }
-}
-
-void Promise.all([panelLanguage(), panelTheme()]).then(([language, theme]) => {
+void panelDisplay().then(({ language, theme }) => {
   setLanguage(language);
   setThemeChoice(theme);
   createRoot(container).render(

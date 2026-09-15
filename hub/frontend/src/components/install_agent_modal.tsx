@@ -11,7 +11,7 @@ import { t, useLanguage } from "../i18n";
 import { stripAnsi } from "../strip_ansi";
 import { useTaskStream } from "../use_task_stream";
 import type {
-  DeviceInstallRequest,
+  DeviceAgentInstallRequest,
   DeviceView,
   TaskStarted,
 } from "../api_types";
@@ -118,8 +118,8 @@ export function InstallAgentModal({
   const handleSubmit = async () => {
     setError(null);
     setTaskId(null);
-    const request: DeviceInstallRequest = {
-      action: "install_client",
+    const request: DeviceAgentInstallRequest = {
+      device_id: device.id,
       host: host.trim(),
       port: Number(port),
       username: username.trim(),
@@ -129,7 +129,7 @@ export function InstallAgentModal({
     };
     try {
       const started = await apiPost<TaskStarted>(
-        `/devices/${device.id}/action`,
+        "/hub/device/agent/install",
         request,
       );
       setTaskId(started.task_id);

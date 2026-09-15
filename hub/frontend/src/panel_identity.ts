@@ -6,7 +6,7 @@ import type { AuthState } from "./api_types";
  *
  * A restart signs every session out and usually ships a new bundle, so a page
  * built by the old process must not keep running against the new one. Every
- * open tab probes `/api/auth/session` — it answers without a session and
+ * open tab probes `/api/hub/auth/session` — it answers without a session and
  * carries `panel_started_at`, a constant per server process. The first
  * successful read is remembered; a later read with a different value reloads
  * the page, which lands on login with the new bundle. A read that fails means
@@ -43,7 +43,7 @@ async function probePanelIdentity() {
   }
   let state: AuthState;
   try {
-    state = await apiGet<AuthState>("/auth/session");
+    state = await apiGet<AuthState>("/hub/auth/session");
   } catch {
     return;
   }

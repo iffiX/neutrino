@@ -10,7 +10,7 @@ import { ApplyBar } from "../components/apply_bar";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { StatusDot } from "../components/status_dot";
-import { apiPut, describeError } from "../api_client";
+import { apiPath, apiPost, describeError } from "../api_client";
 import { copyText } from "../copy_text";
 import { formatCompact } from "../format_compact";
 import { t, useLanguage } from "../i18n";
@@ -33,8 +33,8 @@ import "./ai_page.css";
 
 const PORT_MIN = 1;
 const PORT_MAX = 65535;
-const STATUS_PATH = "/cliproxyapi";
-const USAGE_PATH = "/cliproxyapi/usage?range=month";
+const STATUS_PATH = "/hub/ai/gateway";
+const USAGE_PATH = apiPath("/hub/ai/gateway/usage", { range: "month" });
 // What moves the gateway's own state and its numbers: the collector saying
 // the counters or the served list changed, and any write to its settings.
 const AI_INVALIDATE_ON = [
@@ -141,7 +141,7 @@ export function AiPage() {
     setPortError(null);
     try {
       status.setData(
-        await apiPut<CliproxyApiStatusView>(STATUS_PATH, {
+        await apiPost<CliproxyApiStatusView>("/hub/ai/gateway/set", {
           listen_port: port,
         }),
       );

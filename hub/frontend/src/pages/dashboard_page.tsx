@@ -20,6 +20,7 @@ import { RangeSwitch } from "../components/range_switch";
 import { StatTile } from "../components/stat_tile";
 import { StatusDot } from "../components/status_dot";
 import { computeActiveExits } from "../active_exits";
+import { apiPath } from "../api_client";
 import { formatByteRate, formatBytes } from "../format_bytes";
 import { formatCompact } from "../format_compact";
 import { formatDuration, formatLatency } from "../format_duration";
@@ -81,14 +82,14 @@ export function DashboardPage() {
   const [scope, setScope] = useState<TrafficScope>("all");
   const [historyRange, setHistoryRange] =
     useState<TrafficHistoryRange>("month");
-  const summary = useApiResource<DashboardSummary>("/dashboard/summary");
+  const summary = useApiResource<DashboardSummary>("/hub/dashboard/summary");
   const history = useApiResource<TrafficHistoryResponse>(
-    `/dashboard/history?range=${historyRange}`,
+    apiPath("/hub/dashboard/history", { range: historyRange }),
   );
   const dnsLog = useDnsLogSocket();
   // The same status view the top bar reads. A gateway that is absent or has
   // served nothing leaves the tile blank rather than reporting a failure.
-  const ai = useApiResource<CliproxyApiStatusView>("/cliproxyapi", {
+  const ai = useApiResource<CliproxyApiStatusView>("/hub/ai/gateway", {
     invalidateOn: [{ type: HUB_EVENT_AI_USAGE }, { type: HUB_EVENT_CONFIG }],
   });
 

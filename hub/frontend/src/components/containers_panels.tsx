@@ -9,7 +9,7 @@ import { ShellTerminal } from "./shell_terminal";
 import { StatusDot } from "./status_dot";
 import { StringListEditor } from "./string_list_editor";
 import { ToggleSwitch } from "./toggle_switch";
-import { apiGet, apiPost, apiPut, describeError } from "../api_client";
+import { apiGet, apiPath, apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
@@ -49,7 +49,7 @@ const EMPTY_CONTAINER: PodmanContainer = {
 interface ContainersPanelsProps {
   /** The machine this page's shells and journals reach. */
   deviceId: string;
-  /** Where this machine's podman answers. */
+  /** Where podman answers: `/agent/module/podman`. */
   basePath: string;
   isEditable: boolean;
 }
@@ -63,12 +63,15 @@ export function ContainersPanels({
   useLanguage();
   // Containers start, stop and crash on their own schedule; the machine's
   // own report is what says so, and its settings are a write like any other.
-  const resource = useApiResource<PodmanDeviceView>(basePath, {
-    invalidateOn: [
-      { type: HUB_EVENT_DEVICE_REPORT, key: deviceId },
-      { type: HUB_EVENT_CONFIG },
-    ],
-  });
+  const resource = useApiResource<PodmanDeviceView>(
+    apiPath(basePath, { device_id: deviceId }),
+    {
+      invalidateOn: [
+        { type: HUB_EVENT_DEVICE_REPORT, key: deviceId },
+        { type: HUB_EVENT_CONFIG },
+      ],
+    },
+  );
 
   const [containers, setContainers] = useState<PodmanContainer[]>([]);
   const [mirrors, setMirrors] = useState<string[]>([]);
@@ -116,10 +119,13 @@ export function ContainersPanels({
     setMirrorsError(null);
     setMirrorsNotice(null);
     try {
-      await apiPut<PodmanDeviceView>(`${basePath}/mirrors`, {
+      await apiPost<PodmanDeviceView>(`${basePath}/mirror/set`, {
+        device_id: deviceId,
         mirrors: filledMirrors,
       });
-      const result = await apiPost<ApplyResult>(`${basePath}/apply`);
+      const result = await apiPost<ApplyResult>(`${basePath}/apply`, {
+        device_id: deviceId,
+      });
       resource.reload();
       if (!result.is_applied) {
         setMirrorsError(result.message);
@@ -138,8 +144,13 @@ export function ContainersPanels({
     setError(null);
     setNotice(null);
     try {
-      await apiPut<PodmanDeviceView>(`${basePath}/containers`, { containers });
-      const result = await apiPost<ApplyResult>(`${basePath}/apply`);
+      await apiPost<PodmanDeviceView>(`${basePath}/container/set`, {
+        device_id: deviceId,
+        containers,
+      });
+      const result = await apiPost<ApplyResult>(`${basePath}/apply`, {
+        device_id: deviceId,
+      });
       resource.reload();
       if (!result.is_applied) {
         setError(result.message);
@@ -157,7 +168,8 @@ export function ContainersPanels({
     setLiveError(null);
     try {
       const updated = await apiPost<PodmanDeviceView>(
-        `${basePath}/containers/${name}/${action}`,
+        `${basePath}/container/${action}`,
+        { device_id: deviceId, name },
       );
       resource.setData(updated);
     } catch (cause: unknown) {
@@ -218,7 +230,10 @@ export function ContainersPanels({
                   }
                 />
                 <JournalPanel
-                  path={`${basePath}/containers/${state.name}/journal`}
+                  path={apiPath(`${basePath}/container/journal`, {
+                    device_id: deviceId,
+                    name: state.name,
+                  })}
                   isOpen={journalTarget === state.name}
                 />
               </div>
@@ -296,6 +311,7 @@ export function ContainersPanels({
         {containers.map((container, index) => (
           <ContainerEditor
             key={index}
+            deviceId={deviceId}
             basePath={basePath}
             container={container}
             onChange={(patch) =>
@@ -356,6 +372,7 @@ function imageBase(image: string): string {
 }
 
 interface ContainerEditorProps {
+  deviceId: string;
   basePath: string;
   container: PodmanContainer;
   onChange: (patch: Partial<PodmanContainer>) => void;
@@ -363,6 +380,7 @@ interface ContainerEditorProps {
 }
 
 function ContainerEditor({
+  deviceId,
   basePath,
   container,
   onChange,
@@ -376,9 +394,10 @@ function ContainerEditor({
   const loadTags = async () => {
     setIsLoadingTags(true);
     try {
-      const found = await apiGet<{ tags: string[] }>(
-        `${basePath}/tags?image=${encodeURIComponent(imageBase(container.image))}`,
-      );
+      const found = await apiGet<{ tags: string[] }>(`${basePath}/tag`, {
+        device_id: deviceId,
+        image: imageBase(container.image),
+      });
       setTags(found.tags);
     } catch {
       setTags([]);
@@ -624,7 +643,10 @@ function ContainerShellModal({
         </div>
         <div className="container_shell_surface">
           <ShellTerminal
-            socketPath={`/ws/agent_container/${deviceId}/${name}`}
+            socketPath={apiPath("/ws/agent/terminal", {
+              device_id: deviceId,
+              container: name,
+            })}
             onExit={(code) => {
               // A clean exit closes like every other terminal here; a
               // failing shell stays, because its last words are the

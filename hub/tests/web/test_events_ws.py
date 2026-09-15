@@ -32,7 +32,7 @@ from neutrino_hub.web.constants import (
     WEB_SESSION_COOKIE,
 )
 from neutrino_hub.web.events import PanelEventBus
-from neutrino_hub.web.routers import agent as agent_router
+from neutrino_hub.web.routers import agent_http as agent_router
 from neutrino_hub.web.routers import agent_ws
 from tests.conftest import StubDesiredStates, StubPublishedServices
 
@@ -169,7 +169,7 @@ def report(**fields) -> dict:
 
 def opened(client):
     """A panel event socket past its hello frame."""
-    socket = client.websocket_connect("/ws/events")
+    socket = client.websocket_connect("/ws/hub/event")
     socket.__enter__()
     assert socket.receive_json()["type"] == WEB_EVENT_HELLO
     return socket
@@ -206,7 +206,7 @@ def test_an_unauthenticated_socket_is_closed_on_the_policy_code(box):
     client.cookies.delete(WEB_SESSION_COOKIE)
 
     with pytest.raises(WebSocketDisconnect) as refusal:
-        with client.websocket_connect("/ws/events"):
+        with client.websocket_connect("/ws/hub/event"):
             pass
 
     assert refusal.value.code == POLICY_VIOLATION_CODE
@@ -215,7 +215,7 @@ def test_an_unauthenticated_socket_is_closed_on_the_policy_code(box):
 def test_the_socket_opens_with_a_hello_frame(box):
     client, _ = box
 
-    with client.websocket_connect("/ws/events") as socket:
+    with client.websocket_connect("/ws/hub/event") as socket:
         frame = socket.receive_json()
 
     assert frame["type"] == WEB_EVENT_HELLO

@@ -7,7 +7,7 @@ import { Icon } from "./icon";
 import { InstallConsentModal } from "./install_consent_modal";
 import { Spinner } from "./spinner";
 import { TabStrip } from "./tab_strip";
-import { ApiError, apiPut, describeError } from "../api_client";
+import { ApiError, apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import {
@@ -89,7 +89,7 @@ const DEVICE_ERROR_KEYS: Record<string, string> = {
 /** The machine a module's own panels are pointed at. */
 export interface ServiceTarget {
   deviceId: string;
-  /** Where this machine's module answers: `/<module>/devices/<id>`. */
+  /** Where the module answers: `/agent/module/<module>`. */
   basePath: string;
   isOnline: boolean;
   /** Whether anything here can be applied. Offline machines take no orders. */
@@ -98,7 +98,7 @@ export interface ServiceTarget {
 
 interface AgentServicePageProps {
   title: string;
-  /** The module's panel-facing name, which is also its API root. */
+  /** The module's panel-facing name, which is also its API segment. */
   moduleName: string;
   children: (target: ServiceTarget) => ReactNode;
 }
@@ -110,9 +110,10 @@ export function AgentServicePage({
 }: AgentServicePageProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const resource = useApiResource<ModuleDevicesView>(`/${moduleName}`, {
-    invalidateOn: INVALIDATE_ON,
-  });
+  const resource = useApiResource<ModuleDevicesView>(
+    `/agent/module/${moduleName}/device`,
+    { invalidateOn: INVALIDATE_ON },
+  );
 
   const [checkedIds, setCheckedIds] = useState<string[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -167,8 +168,8 @@ export function AgentServicePage({
     setApplyError(null);
     const request: ModuleDevicesRequest = { device_ids: checked };
     try {
-      const updated = await apiPut<ModuleDevicesView>(
-        `/${moduleName}/devices`,
+      const updated = await apiPost<ModuleDevicesView>(
+        `/agent/module/${moduleName}/device/set`,
         request,
       );
       setCheckedIds(null);
@@ -298,7 +299,7 @@ export function AgentServicePage({
           )}
           {children({
             deviceId: selected.device_id,
-            basePath: `/${moduleName}/devices/${selected.device_id}`,
+            basePath: `/agent/module/${moduleName}`,
             isOnline: selected.is_online,
             isEditable: selected.is_online,
           })}

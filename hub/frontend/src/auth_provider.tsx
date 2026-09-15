@@ -37,7 +37,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   useEffect(() => {
     let isCancelled = false;
-    apiGet<AuthState>("/auth/session")
+    apiGet<AuthState>("/hub/auth/session")
       .then((state) => {
         if (!isCancelled) {
           setIsAuthenticated(state.is_authenticated);
@@ -61,7 +61,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   const login = useCallback(async (password: string) => {
-    const state = await apiPost<AuthState>("/auth/login", { password });
+    const state = await apiPost<AuthState>("/hub/auth/login", { password });
     if (state.is_authenticated) {
       setIsAuthenticated(true);
       setError(null);
@@ -71,7 +71,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const logout = useCallback(async () => {
     try {
-      await apiPost<AuthState>("/auth/logout");
+      await apiPost<AuthState>("/hub/auth/logout");
     } finally {
       setIsAuthenticated(false);
     }

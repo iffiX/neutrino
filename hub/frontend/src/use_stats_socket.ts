@@ -5,13 +5,13 @@ import type { SocketStatus } from "./use_reconnecting_socket";
 import type { StatsFrame } from "./api_types";
 
 /**
- * The `/ws/stats` feed, kept as a rolling window of frames.
+ * The `/ws/hub/dashboard/stat` feed, kept as a rolling window of frames.
  *
  * The backend pushes a frame every second, so the default window of 120
  * frames is the last two minutes the dashboard chart draws.
  */
 
-const STATS_PATH = "/ws/stats";
+const STATS_PATH = "/ws/hub/dashboard/stat";
 const DEFAULT_FRAME_LIMIT = 120;
 
 export interface StatsSocketState {

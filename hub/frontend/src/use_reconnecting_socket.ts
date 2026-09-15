@@ -21,8 +21,9 @@ export type SocketStatus = "connecting" | "open" | "closed";
  * mounted.
  *
  * Args:
- *   path: An origin-relative websocket path such as `/ws/stats`. Passing null
- *     keeps the socket closed, which is how callers gate on a missing id.
+ *   path: An origin-relative websocket path such as `/ws/hub/event`. Passing
+ *     null keeps the socket closed, which is how callers gate on a missing
+ *     id.
  *   onMessage: Called with each parsed JSON frame. The latest callback is
  *     always used, so an inline arrow does not force a reconnect.
  *   onOpen: Called the moment the socket connects, before any frame reaches

@@ -8,13 +8,7 @@ import { DeviceEnrollmentNotice } from "./device_enrollment_notice";
 import { InstallAgentModal } from "./install_agent_modal";
 import { RemoteDesktopPanel } from "./remote_desktop_panel";
 import { StatusDot } from "./status_dot";
-import {
-  ApiError,
-  apiDelete,
-  apiPost,
-  apiPut,
-  describeError,
-} from "../api_client";
+import { ApiError, apiPost, describeError } from "../api_client";
 import { DEVICE_ICON_NAMES, toDeviceIconName } from "../device_icon";
 import {
   DEVICE_REACH_KEYS,
@@ -32,7 +26,6 @@ import { stripAnsi } from "../strip_ansi";
 import { HUB_EVENT_MODULE_ORDER, useHubEvents } from "../use_hub_events";
 import { useTaskStream } from "../use_task_stream";
 import type {
-  DeviceActionName,
   DeviceAnnotation,
   DeviceEnrollmentRequest,
   DeviceEnrollmentView,
@@ -84,6 +77,16 @@ const AGENT_ERROR_KEYS: Record<string, string> = {
 // The {code, params} an action is refused with, worded.
 const ACTION_ERROR_KEYS: Record<string, string> = {
   agent_offline: "ui.devices.agent_offline",
+};
+
+/** What the panel calls one remote action of a managed machine. */
+type DeviceActionName = "reinstall_agent" | "reboot" | "shutdown";
+
+// The route each action runs, below `/api`.
+const ACTION_PATHS: Record<DeviceActionName, string> = {
+  reinstall_agent: "/hub/device/agent/reinstall",
+  reboot: "/hub/device/reboot",
+  shutdown: "/hub/device/shutdown",
 };
 
 /** One remote action, as the grid draws it. */
@@ -211,10 +214,11 @@ export function DeviceDrawer({
     setNotice(null);
     try {
       const annotation: DeviceAnnotation = {
+        device_id: device.id,
         name: name.trim(),
         icon,
       };
-      onSaved(await apiPut<DeviceView>(`/devices/${device.id}`, annotation));
+      onSaved(await apiPost<DeviceView>("/hub/device/set", annotation));
       setNotice(t("ui.drawer.saved"));
     } catch (cause: unknown) {
       setError(describeError(cause));
@@ -232,7 +236,10 @@ export function DeviceDrawer({
         device_id: device.id,
       };
       setEnrollment(
-        await apiPost<DeviceEnrollmentView>("/devices/enrollment", request),
+        await apiPost<DeviceEnrollmentView>(
+          "/hub/device/enrollment/create",
+          request,
+        ),
       );
     } catch (cause: unknown) {
       setError(describeError(cause));
@@ -243,9 +250,9 @@ export function DeviceDrawer({
     setError(null);
     setNotice(null);
     try {
-      const result = await apiPost<DeviceWolResult>(
-        `/devices/${device.id}/wol`,
-      );
+      const result = await apiPost<DeviceWolResult>("/hub/device/wake", {
+        device_id: device.id,
+      });
       setNotice(result.message);
     } catch (cause: unknown) {
       setError(describeError(cause));
@@ -281,8 +288,8 @@ export function DeviceDrawer({
     setRunningLabel(t(deviceAction.labelKey));
     try {
       const started = await apiPost<TaskStarted>(
-        `/devices/${device.id}/action`,
-        { action: deviceAction.action },
+        ACTION_PATHS[deviceAction.action],
+        { device_id: device.id },
       );
       setTaskId(started.task_id);
     } catch (cause: unknown) {
@@ -304,7 +311,9 @@ export function DeviceDrawer({
   const forgetDevice = async () => {
     setError(null);
     try {
-      await apiDelete<Record<string, never>>(`/devices/${device.id}`);
+      await apiPost<Record<string, never>>("/hub/device/remove", {
+        device_id: device.id,
+      });
       onForgotten(device.id);
     } catch (cause: unknown) {
       setError(describeError(cause));

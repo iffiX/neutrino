@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from neutrino_hub.web.dependencies import get_runtime, require_session
-from neutrino_hub.web.routers import device_modules
+from neutrino_hub.web.routers.agent import module as device_modules
 from tests.conftest import FakeDeviceRegistry, FakeModuleRuntime, managed_device
 
 DEVICE = "device-one"

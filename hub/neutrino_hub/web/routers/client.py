@@ -23,7 +23,7 @@ from neutrino_hub.web.constants import WEB_EVENT_CLIENTS
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.models import ClientEnroll, ClientEnrollReply, ClientLeave
 from neutrino_hub.web.panel_runtime import PanelRuntime
-from neutrino_hub.web.routers.agent import version_refusal
+from neutrino_hub.web.routers.agent_http import version_refusal
 
 router = APIRouter(prefix="/api/client", tags=["client"])
 

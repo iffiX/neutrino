@@ -4,6 +4,7 @@ import { Icon } from "./icon";
 import {
   ApiError,
   apiGet,
+  apiPath,
   apiPost,
   apiUpload,
   describeError,
@@ -37,11 +38,11 @@ const FILE_ERROR_KEYS: Record<string, string> = {
 const ROOT_PATH = "/";
 
 interface FileBrowserProps {
-  /** Where this machine's files answer, below `/api`: `/devices/<id>/files`. */
-  basePath: string;
+  /** The machine whose files these are. */
+  deviceId: string;
 }
 
-export function FileBrowser({ basePath }: FileBrowserProps) {
+export function FileBrowser({ deviceId }: FileBrowserProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const [listing, setListing] = useState<DeviceFileListView | null>(null);
@@ -67,9 +68,10 @@ export function FileBrowser({ basePath }: FileBrowserProps) {
       setRenameFrom(null);
       setDeleteName(null);
       try {
-        const result = await apiGet<DeviceFileListView>(
-          `${basePath}?path=${encodeURIComponent(path)}`,
-        );
+        const result = await apiGet<DeviceFileListView>("/agent/file", {
+          device_id: deviceId,
+          path,
+        });
         setListing(result);
       } catch (cause: unknown) {
         setError(describeFileError(cause));
@@ -77,7 +79,7 @@ export function FileBrowser({ basePath }: FileBrowserProps) {
         setIsLoading(false);
       }
     },
-    [basePath],
+    [deviceId],
   );
 
   useEffect(() => {
@@ -99,10 +101,13 @@ export function FileBrowser({ basePath }: FileBrowserProps) {
     // files, because browsers strip a hidden-file name's leading dot from any
     // raw download; inside an archive the real name survives.
     const isArchive = entry.is_dir || entry.name.startsWith(".");
-    const endpoint = isArchive ? "download_dir" : "download";
-    const url =
-      `/api${basePath}/${endpoint}?path=` +
-      encodeURIComponent(joinPath(path, entry.name));
+    const endpoint = isArchive
+      ? "/agent/file/directory/download"
+      : "/agent/file/download";
+    const url = `/api${apiPath(endpoint, {
+      device_id: deviceId,
+      path: joinPath(path, entry.name),
+    })}`;
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = isArchive
@@ -129,7 +134,8 @@ export function FileBrowser({ basePath }: FileBrowserProps) {
         }),
       );
       try {
-        await apiUpload<Record<string, never>>(`${basePath}/upload`, file, {
+        await apiUpload<Record<string, never>>("/agent/file/upload", file, {
+          device_id: deviceId,
           path,
         });
       } catch (cause: unknown) {
@@ -149,7 +155,10 @@ export function FileBrowser({ basePath }: FileBrowserProps) {
     }
     setError(null);
     try {
-      await apiPost(`${basePath}/mkdir`, { path: joinPath(path, name) });
+      await apiPost("/agent/file/directory/create", {
+        device_id: deviceId,
+        path: joinPath(path, name),
+      });
       void load(path, true);
     } catch (cause: unknown) {
       setError(describeFileError(cause));
@@ -164,7 +173,8 @@ export function FileBrowser({ basePath }: FileBrowserProps) {
     }
     setError(null);
     try {
-      await apiPost(`${basePath}/rename`, {
+      await apiPost("/agent/file/rename", {
+        device_id: deviceId,
         path: joinPath(path, entry.name),
         new_path: joinPath(path, name),
       });
@@ -177,7 +187,10 @@ export function FileBrowser({ basePath }: FileBrowserProps) {
   const handleDelete = async (entry: DeviceFileEntry) => {
     setError(null);
     try {
-      await apiPost(`${basePath}/delete`, { path: joinPath(path, entry.name) });
+      await apiPost("/agent/file/remove", {
+        device_id: deviceId,
+        path: joinPath(path, entry.name),
+      });
       void load(path, true);
     } catch (cause: unknown) {
       setError(describeFileError(cause));

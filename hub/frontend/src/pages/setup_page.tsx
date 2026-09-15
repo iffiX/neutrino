@@ -866,7 +866,7 @@ function SetupRunning({
         }
         // The wizard held the panel's own port, so the panel is this page's
         // origin: a session probe answering means it is up.
-        fetch("/api/auth/session")
+        fetch("/api/hub/auth/session")
           .then(() => window.location.assign(panelUrl))
           .catch(() => {
             // Still starting; the next tick asks again.

@@ -52,9 +52,16 @@ class NodeView(BaseModel):
     downlink_bytes: int = 0
 
 
+class NodeRequest(BaseModel):
+    """A request naming one node."""
+
+    node_id: str
+
+
 class NodeUpdate(BaseModel):
     """Partial update to one node."""
 
+    node_id: str
     is_enabled: bool | None = None
     name: str | None = None
 
@@ -368,6 +375,12 @@ class NetworkOptions(BaseModel):
     exposed_overlays: list[str] | None = None
 
 
+class InterfaceRequest(BaseModel):
+    """A request naming one interface."""
+
+    name: str
+
+
 class NetworkModeRequest(BaseModel):
     """The mode to become. Nothing else: what each port is for is its own."""
 
@@ -391,10 +404,18 @@ class WifiScanView(BaseModel):
 
 
 class WifiJoinRequest(BaseModel):
-    """A network to join, with its passphrase if the gateway lacks one."""
+    """A network to join on one radio, with its passphrase if the gateway
+    lacks one."""
 
+    name: str
     ssid: str
     passphrase: str | None = None
+
+
+class WifiNetworkRequest(BaseModel):
+    """A request naming one saved wireless network."""
+
+    ssid: str
 
 
 class SavedNetworkView(BaseModel):
@@ -473,6 +494,12 @@ class KeyListView(BaseModel):
     keys: list[KeyView]
 
 
+class CredentialKeyRequest(BaseModel):
+    """A request naming one stored SSH key."""
+
+    key_id: str
+
+
 class KeyCreate(BaseModel):
     """A pasted key to store under a name."""
 
@@ -495,6 +522,12 @@ class LoginListView(BaseModel):
     """The Credentials page's login section."""
 
     logins: list[LoginView]
+
+
+class CredentialLoginRequest(BaseModel):
+    """A request naming one stored login."""
+
+    login_id: str
 
 
 class LoginCreate(BaseModel):
@@ -522,6 +555,12 @@ class TokenListView(BaseModel):
     """The Credentials page's token section."""
 
     tokens: list[TokenView]
+
+
+class CredentialTokenRequest(BaseModel):
+    """A request naming one stored token."""
+
+    token_id: str
 
 
 class TokenCreate(BaseModel):
@@ -573,10 +612,17 @@ class AiProviderOrderUpdate(BaseModel):
     provider_ids: list[str]
 
 
+class AiProviderRequest(BaseModel):
+    """A request naming one provider."""
+
+    provider_id: str
+
+
 class AiProviderUpdate(BaseModel):
     """Partial update to one provider; ``secret_id`` sent as null clears the
     reference, and left out keeps it."""
 
+    provider_id: str
     name: str | None = None
     kind: str | None = None
     base_url: str | None = None
@@ -693,6 +739,12 @@ class CliproxyApiJournalView(BaseModel):
     lines: list[str] = Field(default_factory=list)
 
 
+class CliproxyApiKeyRequest(BaseModel):
+    """A request naming one client key."""
+
+    key_id: str
+
+
 class CliproxyApiKeyCreate(BaseModel):
     """A client key to generate under a name."""
 
@@ -740,6 +792,18 @@ class CliproxyApiAccountsView(BaseModel):
     login_kinds: list[str] = Field(default_factory=list)
 
 
+class CliproxyApiAccountRequest(BaseModel):
+    """A request naming one signed-in account by its token file."""
+
+    name: str
+
+
+class CliproxyApiLoginRequest(BaseModel):
+    """A request naming one login flow by the handle its start returned."""
+
+    state: str
+
+
 class CliproxyApiLoginStart(BaseModel):
     """Which flow to begin."""
 
@@ -766,6 +830,7 @@ class CliproxyApiLoginView(BaseModel):
 class CliproxyApiLoginCode(BaseModel):
     """The code a redirect flow came back with, or the whole address."""
 
+    state: str
     code: str
 
 
@@ -957,26 +1022,32 @@ class DeviceListView(BaseModel):
     devices: list[DeviceView]
 
 
+class DeviceRequest(BaseModel):
+    """A request naming one device."""
+
+    device_id: str
+
+
 class DeviceAnnotation(BaseModel):
     """Partial update to one device."""
 
+    device_id: str
     name: str | None = None
     icon: str | None = None
     ssh: DeviceSshConfig | None = None
 
 
-class DeviceActionRequest(BaseModel):
-    """A long-running action to start on a device.
+class DeviceAgentInstallRequest(BaseModel):
+    """How to reach a machine over SSH to put the agent on it.
 
-    ``install_client`` carries how to reach the machine over SSH: exactly
-    one of a stored key, a stored login, or a password typed now, which
-    ``is_password_saved`` stores as a login. ``sudo_login_id`` names the
-    vault login whose password sudo is given on the device; empty for an
-    account with passwordless sudo. ``sudo_password`` is the same thing
+    Exactly one of a stored key, a stored login, or a password typed now,
+    which ``is_password_saved`` stores as a login. ``sudo_login_id`` names
+    the vault login whose password sudo is given on the device; empty for
+    an account with passwordless sudo. ``sudo_password`` is the same thing
     typed for one install.
     """
 
-    action: str
+    device_id: str
     host: str = ""
     port: int = 22
     username: str = ""
@@ -991,6 +1062,7 @@ class DeviceActionRequest(BaseModel):
 class DeviceProcessKill(BaseModel):
     """A process to end on a device."""
 
+    device_id: str
     pid: int
 
 
@@ -1014,12 +1086,14 @@ class DeviceFileListView(BaseModel):
 class DeviceFilePath(BaseModel):
     """A remote path to act on."""
 
+    device_id: str
     path: str
 
 
 class DeviceFileRename(BaseModel):
     """A remote path and where to move it."""
 
+    device_id: str
     path: str
     new_path: str
 
@@ -1059,8 +1133,10 @@ class RemoteDesktopView(BaseModel):
 
 
 class RemoteDesktopPassword(BaseModel):
-    """A password to set for unattended access."""
+    """A password to set for unattended access to one product on a device."""
 
+    device_id: str
+    product: str
     password: str
 
 
@@ -1070,47 +1146,11 @@ class TaskStarted(BaseModel):
     task_id: str
 
 
-class TaskView(BaseModel):
-    """One background job of this panel, and what it is doing."""
-
-    id: str
-    label: str
-
-
-class TaskListView(BaseModel):
-    """The background jobs still running."""
-
-    tasks: list[TaskView]
-
-
 class WolResult(BaseModel):
     """Outcome of sending a magic packet."""
 
     is_sent: bool
     message: str
-
-
-class ModuleView(BaseModel):
-    """One managed systemd unit.
-
-    ``is_core`` is what decides whether the panel offers to stop it. Core units
-    are what makes this a gateway rather than a computer, so they get status and
-    logs and no off switch.
-    """
-
-    name: str
-    unit: str
-    is_installed: bool
-    is_active: bool
-    is_enabled: bool
-    is_core: bool = True
-    # The install machinery: set only for modules the panel can install and
-    # remove. A module a machine cannot run says so up front, on the button.
-    is_installable: bool = False
-    is_machine_supported: bool = True
-    unsupported_reason: str | None = None
-    install_note: str = ""
-    data_description: str = ""
 
 
 class PublishedServiceView(BaseModel):
@@ -1158,6 +1198,12 @@ class DeclaredServiceCreate(BaseModel):
     description: str = ""
 
 
+class DeclaredServiceRequest(BaseModel):
+    """A request naming one declared service."""
+
+    service_id: str
+
+
 class ServiceShareListView(BaseModel):
     """What one SMB server exports, administrative shares dropped."""
 
@@ -1168,54 +1214,6 @@ class ServiceListView(BaseModel):
     """The Services tab payload: every published entry."""
 
     services: list[PublishedServiceView]
-
-
-class ModuleListView(BaseModel):
-    """The Modules tab payload."""
-
-    modules: list[ModuleView]
-
-
-class ProvisionConsentView(BaseModel):
-    """One thing installing would do that the person agrees to first.
-
-    ``code`` says what kind of consequence it is and ``detail`` carries the
-    values its sentence needs. The backend writes neither the sentence nor
-    the title: wording belongs to the panel, which is what lets it be
-    translated.
-    """
-
-    code: str
-    detail: dict
-
-
-class ModuleInstallPlanView(BaseModel):
-    """What installing a module on this machine would actually do."""
-
-    name: str
-    is_consent_needed: bool
-    consents: list[ProvisionConsentView]
-
-
-class ModuleInstallRequest(BaseModel):
-    """Whether the person has agreed to what the plan listed.
-
-    False is the ordinary case: a module whose plan asks nothing installs on
-    the press that started it.
-    """
-
-    is_consented: bool = False
-
-
-class ModuleUninstallRequest(BaseModel):
-    """How much of a module to take away.
-
-    Data is kept unless explicitly surrendered: uninstall-then-install must be
-    a round trip by default, and deleting repositories or shared files is a
-    decision, never a side effect.
-    """
-
-    is_data_kept: bool = True
 
 
 class JournalView(BaseModel):
@@ -1260,15 +1258,11 @@ class PanelSettings(BaseModel):
     hub_name: str = ""
 
 
-class PanelLanguage(BaseModel):
-    """The language the panel is drawn in, before there is a session."""
+class PanelDisplay(BaseModel):
+    """The language and the palette the panel is drawn in, before there is a
+    session."""
 
     language: str
-
-
-class PanelTheme(BaseModel):
-    """The palette the panel is drawn in, before there is a session."""
-
     theme: str
 
 
@@ -1391,10 +1385,17 @@ class ClientEnrollmentView(BaseModel):
     expires_at: str
 
 
-class ClientUpdate(BaseModel):
-    """The one switch a client record takes."""
+class ClientRequest(BaseModel):
+    """A request naming one client."""
 
-    is_disabled: bool
+    client_id: str
+
+
+class ClientUpdate(BaseModel):
+    """A client's new name."""
+
+    client_id: str
+    name: str
 
 
 class ClientPackageRequest(BaseModel):
@@ -1681,9 +1682,11 @@ class DeviceServicesView(BaseModel):
 
 
 class DeviceServiceAsk(BaseModel):
-    """One service action for a device's agent — the page's own verb, run
-    there in the privileged scope."""
+    """One service action for a device's agent, run there in the privileged
+    scope; ``body`` carries the action's own fields."""
 
+    device_id: str
+    service_type: str
     body: dict = Field(default_factory=dict)
 
 
@@ -1707,10 +1710,11 @@ class DeviceModuleListView(BaseModel):
     is_agent_online: bool = False
 
 
-class DeviceModuleUpdate(BaseModel):
-    """One click on one module: install it, or uninstall it."""
+class DeviceModuleRequest(BaseModel):
+    """A request naming one module on one device."""
 
-    is_enabled: bool | None = None
+    device_id: str
+    module: str
 
 
 class DeviceInstallOrderView(BaseModel):
@@ -1807,12 +1811,14 @@ class SambaSettingsView(BaseModel):
 class SambaShareListUpdate(BaseModel):
     """The Shares group being saved."""
 
+    device_id: str
     shares: list[SambaShareView]
 
 
 class SambaUserListUpdate(BaseModel):
     """The Users group being saved: names only, passwords are set apart."""
 
+    device_id: str
     users: list[str]
 
 
@@ -1820,6 +1826,8 @@ class SambaPasswordUpdate(BaseModel):
     """A new password for one user, which goes to Samba's store and nowhere
     else."""
 
+    device_id: str
+    name: str
     password: str = Field(min_length=1, max_length=128)
 
 
@@ -1878,6 +1886,7 @@ class GiteaDeviceView(ModuleDeviceFields, GiteaSettingsView):
 class GiteaConfigUpdate(BaseModel):
     """The Access group being saved."""
 
+    device_id: str
     listen_port: int
     root_url: str = ""
     is_registration_enabled: bool = False
@@ -1887,6 +1896,7 @@ class GiteaAdminCreate(BaseModel):
     """The first administrator, made from the panel because a Gitea with no
     accounts and registration off is a Gitea nobody can enter."""
 
+    device_id: str
     username: str = Field(min_length=1, max_length=39)
     password: str = Field(min_length=1, max_length=128)
     email: str = Field(min_length=3, max_length=254)
@@ -1896,6 +1906,8 @@ class GiteaPasswordUpdate(BaseModel):
     """A new password for an administrator — the recovery door, since a
     forgotten admin password cannot be fixed from inside Gitea."""
 
+    device_id: str
+    username: str
     password: str = Field(min_length=1, max_length=128)
 
 
@@ -1939,13 +1951,22 @@ class PodmanDeviceView(ModuleDeviceFields, PodmanSettingsView):
 class PodmanContainerListUpdate(BaseModel):
     """The declared-containers group being saved."""
 
+    device_id: str
     containers: list[PodmanContainerView]
 
 
 class PodmanMirrorListUpdate(BaseModel):
     """The registry-mirrors group being saved."""
 
+    device_id: str
     mirrors: list[str]
+
+
+class PodmanContainerRequest(BaseModel):
+    """A request naming one container on one device."""
+
+    device_id: str
+    name: str
 
 
 class PodmanTagListView(BaseModel):
@@ -2216,9 +2237,17 @@ class ZfsDeviceView(ModuleDeviceFields, ZfsView):
     """One device's storage picture."""
 
 
+class ZfsPoolRequest(BaseModel):
+    """A request naming one pool on one device."""
+
+    device_id: str
+    name: str
+
+
 class ZfsPoolCreate(BaseModel):
     """A new pool: one vdev, defaults decided by the module."""
 
+    device_id: str
     name: str
     layout: str
     devices: list[str] = Field(min_length=1)
@@ -2228,20 +2257,26 @@ class ZfsPoolCreate(BaseModel):
 class ZfsPoolExpand(BaseModel):
     """Another vdev for an existing pool; joining is permanent."""
 
+    device_id: str
+    name: str
     layout: str
     devices: list[str] = Field(min_length=1)
     is_forced: bool = False
 
 
 class ZfsDiskActionRequest(BaseModel):
-    """A member device to act on, as the topology names it."""
+    """A member device of one pool to act on, as the topology names it."""
 
+    device_id: str
+    name: str
     device: str
 
 
 class ZfsReplaceRequest(BaseModel):
-    """Swap a member disk for a fresh one."""
+    """Swap a member disk of one pool for a fresh one."""
 
+    device_id: str
+    name: str
     old_device: str
     new_device: str
 
@@ -2249,6 +2284,7 @@ class ZfsReplaceRequest(BaseModel):
 class ZfsDatasetCreate(BaseModel):
     """A new dataset. Its tunables are fixed at creation, for its lifetime."""
 
+    device_id: str
     pool: str
     name: str
     compression: str
@@ -2257,14 +2293,16 @@ class ZfsDatasetCreate(BaseModel):
 
 
 class ZfsDatasetRequest(BaseModel):
-    """A dataset named in full."""
+    """A dataset on one device, named in full."""
 
+    device_id: str
     dataset: str
 
 
 class ZfsShareRequest(BaseModel):
     """Expose a dataset over Samba to the named users, or to everyone."""
 
+    device_id: str
     dataset: str
     # Empty means every configured user, current and future — the same
     # meaning the Samba module gives an empty valid_users.

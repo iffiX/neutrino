@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { PasswordInput } from "../components/password_input";
-import { apiDelete, apiPost, describeError } from "../api_client";
+import { apiPost, describeError } from "../api_client";
 import { formatTimeAgo } from "../format_duration";
 import { t, useLanguage } from "../i18n";
 import { privateKeyPlaceholder } from "../private_key_placeholder";
@@ -34,8 +34,9 @@ import "./credentials_page.css";
  * at the new record, and deleting the old one.
  */
 
-const LOGINS_PATH = "/credentials/logins";
-const TOKENS_PATH = "/credentials/tokens";
+const KEYS_PATH = "/hub/credential/ssh_key";
+const LOGINS_PATH = "/hub/credential/login";
+const TOKENS_PATH = "/hub/credential/token";
 
 /** The examples the name fields show, which are names rather than words. */
 const KEY_NAME_PLACEHOLDER = "work laptop";
@@ -65,7 +66,7 @@ export function CredentialsPage() {
 function SshKeysSection() {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const resource = useApiResource<KeysResponse>("/credentials/ssh_keys");
+  const resource = useApiResource<KeysResponse>(KEYS_PATH);
   const [keys, setKeys] = useState<KeyView[]>([]);
   const [isAdding, setIsAdding] = useState(false);
 
@@ -288,7 +289,7 @@ function AddKeyForm({ onAdded, onCancel }: AddKeyFormProps) {
     setIsSaving(true);
     setError(null);
     try {
-      const created = await apiPost<KeyView>("/credentials/ssh_keys", {
+      const created = await apiPost<KeyView>(`${KEYS_PATH}/add`, {
         name: name.trim(),
         private_key: privateKey,
         passphrase: passphrase.length > 0 ? passphrase : null,
@@ -381,7 +382,7 @@ function KeyCard({ value, onDeleted }: KeyCardProps) {
     setIsBusy(true);
     setError(null);
     try {
-      await apiDelete(`/credentials/ssh_keys/${value.id}`);
+      await apiPost(`${KEYS_PATH}/remove`, { key_id: value.id });
       onDeleted(value.id);
     } catch (cause: unknown) {
       setError(describeError(cause));
@@ -461,7 +462,7 @@ function LoginForm({ onAdded, onCancel }: LoginFormProps) {
     setIsSaving(true);
     setError(null);
     try {
-      const created = await apiPost<LoginView>(LOGINS_PATH, {
+      const created = await apiPost<LoginView>(`${LOGINS_PATH}/add`, {
         name: name.trim(),
         username: username.trim().length > 0 ? username.trim() : null,
         password,
@@ -556,7 +557,7 @@ function LoginCard({ value, onDeleted }: LoginCardProps) {
     setIsBusy(true);
     setError(null);
     try {
-      await apiDelete(`${LOGINS_PATH}/${value.id}`);
+      await apiPost(`${LOGINS_PATH}/remove`, { login_id: value.id });
       onDeleted(value.id);
     } catch (cause: unknown) {
       setError(describeError(cause));
@@ -630,7 +631,7 @@ function TokenForm({ onAdded, onCancel }: TokenFormProps) {
     setIsSaving(true);
     setError(null);
     try {
-      const created = await apiPost<TokenView>(TOKENS_PATH, {
+      const created = await apiPost<TokenView>(`${TOKENS_PATH}/add`, {
         name: name.trim(),
         value,
       });
@@ -709,7 +710,7 @@ function TokenCard({ value, onDeleted }: TokenCardProps) {
     setIsBusy(true);
     setError(null);
     try {
-      await apiDelete(`${TOKENS_PATH}/${value.id}`);
+      await apiPost(`${TOKENS_PATH}/remove`, { token_id: value.id });
       onDeleted(value.id);
     } catch (cause: unknown) {
       setError(describeError(cause));

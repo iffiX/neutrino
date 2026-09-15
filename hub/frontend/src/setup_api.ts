@@ -113,6 +113,9 @@ export interface SetupLinkReading {
  * this one is the wizard's first call anyway. */
 const SETUP_PROBE_ROUTE = "context";
 
+/** Where the wizard's own server answers. */
+const SETUP_PATH = "/api/hub/setup";
+
 /** The token this page was opened with, `""` when it was opened without one. */
 export function setupToken(): string {
   return new URLSearchParams(window.location.search).get("token") ?? "";
@@ -129,7 +132,7 @@ export function setupToken(): string {
  */
 export async function isSetupWaiting(): Promise<boolean> {
   try {
-    const response = await fetch(`/api/setup/${SETUP_PROBE_ROUTE}`);
+    const response = await fetch(`${SETUP_PATH}/${SETUP_PROBE_ROUTE}`);
     // 404 is the panel, which has no such route. Anything else — 200 with a
     // good token, 403 without one — is the wizard's own server answering.
     return response.status !== 404;
@@ -151,14 +154,14 @@ export async function readSetupLink(
   token: string,
   link: string,
 ): Promise<SetupLinkReading> {
-  return call<SetupLinkReading>("link", token, { link });
+  return call<SetupLinkReading>("link/create", token, { link });
 }
 
 export async function sendSetupAnswers(
   token: string,
   answers: SetupAnswers,
 ): Promise<SetupState> {
-  return call<SetupState>("answers", token, answers);
+  return call<SetupState>("answer/set", token, answers);
 }
 
 async function call<T>(
@@ -167,7 +170,7 @@ async function call<T>(
   body?: unknown,
 ): Promise<T> {
   const response = await fetch(
-    `/api/setup/${route}?token=${encodeURIComponent(token)}`,
+    `${SETUP_PATH}/${route}?token=${encodeURIComponent(token)}`,
     body === undefined
       ? { method: "GET" }
       : {

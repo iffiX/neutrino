@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { ApplyBar } from "./apply_bar";
 import { Icon } from "./icon";
 import type { IconName } from "./icon";
-import { apiPut, describeError } from "../api_client";
+import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { interruptionWarning } from "../network_warnings";
 import { useDraftSeeding } from "../use_draft_seeding";
@@ -68,7 +68,9 @@ export function OverlayModePanel({ choice, onApplied }: OverlayModePanelProps) {
     setError(null);
     try {
       onApplied(
-        await apiPut<OverlayChoiceView>("/overlay", { provider: chosen }),
+        await apiPost<OverlayChoiceView>("/hub/overlay/set", {
+          provider: chosen,
+        }),
       );
     } catch (cause: unknown) {
       setError(describeError(cause));

@@ -98,8 +98,8 @@ from neutrino_hub.cli import wizard
 
 # --- config ---
 # What the panel is asked for, on loopback, once it is running.
-SETUP_LOGIN_PATH = "/api/auth/login"
-SETUP_ENROLLMENT_PATH = "/api/devices/enrollment"
+SETUP_LOGIN_PATH = "/api/hub/auth/login"
+SETUP_ENROLLMENT_PATH = "/api/hub/device/enrollment/create"
 SETUP_PANEL_TIMEOUT_S = 10
 # How long the panel gets to start listening before its link is given up on.
 SETUP_PANEL_WAIT_S = 30.0

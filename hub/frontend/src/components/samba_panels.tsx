@@ -8,7 +8,7 @@ import { Icon } from "./icon";
 import { PasswordInput } from "./password_input";
 import { StatusDot } from "./status_dot";
 import { ToggleSwitch } from "./toggle_switch";
-import { apiPost, apiPut, describeError } from "../api_client";
+import { apiPath, apiPost, describeError } from "../api_client";
 import { formatBytes } from "../format_bytes";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
@@ -59,7 +59,7 @@ const EMPTY_SHARE: SambaShare = {
 interface SambaPanelsProps {
   /** The machine whose Samba this is. */
   deviceId: string;
-  /** Where this machine's Samba answers. */
+  /** Where Samba answers: `/agent/module/samba`. */
   basePath: string;
   isEditable: boolean;
 }
@@ -77,12 +77,14 @@ export function SambaPanels({
     { type: HUB_EVENT_DEVICE_REPORT, key: deviceId },
     { type: HUB_EVENT_CONFIG },
   ];
-  const resource = useApiResource<SambaDeviceView>(basePath, {
-    invalidateOn: liveOn,
-  });
-  const status = useApiResource<SambaStatus>(`${basePath}/status`, {
-    invalidateOn: liveOn,
-  });
+  const resource = useApiResource<SambaDeviceView>(
+    apiPath(basePath, { device_id: deviceId }),
+    { invalidateOn: liveOn },
+  );
+  const status = useApiResource<SambaStatus>(
+    apiPath(`${basePath}/status`, { device_id: deviceId }),
+    { invalidateOn: liveOn },
+  );
 
   const [shares, setShares] = useState<SambaShare[]>([]);
   const [users, setUsers] = useState<string[]>([]);
@@ -127,9 +129,17 @@ export function SambaPanels({
     setNotice({});
     try {
       await (group === "shares"
-        ? apiPut<SambaDeviceView>(`${basePath}/shares`, { shares })
-        : apiPut<SambaDeviceView>(`${basePath}/users`, { users }));
-      const result = await apiPost<ApplyResult>(`${basePath}/apply`);
+        ? apiPost<SambaDeviceView>(`${basePath}/share/set`, {
+            device_id: deviceId,
+            shares,
+          })
+        : apiPost<SambaDeviceView>(`${basePath}/user/set`, {
+            device_id: deviceId,
+            users,
+          }));
+      const result = await apiPost<ApplyResult>(`${basePath}/apply`, {
+        device_id: deviceId,
+      });
       status.reload();
       if (!result.is_applied) {
         resource.reload();
@@ -143,7 +153,11 @@ export function SambaPanels({
           continue;
         }
         try {
-          await apiPost(`${basePath}/users/${name}/password`, { password });
+          await apiPost(`${basePath}/user/password/set`, {
+            device_id: deviceId,
+            name,
+            password,
+          });
         } catch (cause: unknown) {
           failures.push(
             t("ui.samba.password_failure_item", {

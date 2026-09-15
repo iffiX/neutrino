@@ -6,7 +6,7 @@ import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
 import { ToggleSwitch } from "./toggle_switch";
 import { VaultPicker } from "./vault_picker";
-import { apiDelete, apiPost, apiPut, describeError } from "../api_client";
+import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
@@ -30,8 +30,8 @@ import "./ai_providers_section.css";
  * entered, the way every other record list in the panel does.
  */
 
-const AI_PROVIDERS_PATH = "/ai/providers";
-const CLIPROXYAPI_APPLY_PATH = "/cliproxyapi/apply";
+const AI_PATH = "/hub/ai";
+const AI_GATEWAY_APPLY_PATH = "/hub/ai/gateway/apply";
 
 const PROVIDER_KINDS: AiProviderKind[] = [
   "anthropic",
@@ -91,7 +91,7 @@ export function AiProvidersSection({
 }: AiProvidersSectionProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const resource = useApiResource<AiProvidersResponse>(AI_PROVIDERS_PATH);
+  const resource = useApiResource<AiProvidersResponse>(AI_PATH);
   const [saved, setSaved] = useState<AiProviderView[]>([]);
   const [draft, setDraft] = useState<AiProviderView[]>([]);
   const [isAdding, setIsAdding] = useState(false);
@@ -230,16 +230,17 @@ export function AiProvidersSection({
     setApplyNotice(null);
     try {
       for (const provider of changedProviders) {
-        await apiPut<AiProviderView>(`${AI_PROVIDERS_PATH}/${provider.id}`, {
+        await apiPost<AiProviderView>("/hub/ai/provider/set", {
+          provider_id: provider.id,
           is_enabled: provider.is_enabled,
         });
       }
       if (isOrderDirty) {
-        await apiPut(`${AI_PROVIDERS_PATH}/order`, {
+        await apiPost("/hub/ai/provider/order/set", {
           provider_ids: draft.map((provider) => provider.id),
         });
       }
-      const result = await apiPost<{ message: string }>(CLIPROXYAPI_APPLY_PATH);
+      const result = await apiPost<{ message: string }>(AI_GATEWAY_APPLY_PATH);
       setApplyNotice(result.message);
       resource.reload();
       onApplied();
@@ -385,11 +386,11 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
         models: parseModels(modelsText),
       };
       const saved = isEditing
-        ? await apiPut<AiProviderView>(
-            `${AI_PROVIDERS_PATH}/${initial.id}`,
-            payload,
-          )
-        : await apiPost<AiProviderView>(AI_PROVIDERS_PATH, payload);
+        ? await apiPost<AiProviderView>("/hub/ai/provider/set", {
+            provider_id: initial.id,
+            ...payload,
+          })
+        : await apiPost<AiProviderView>("/hub/ai/provider/add", payload);
       onSaved(saved);
     } catch (cause: unknown) {
       setError(describeError(cause));
@@ -538,7 +539,7 @@ function ProviderRow({
     setIsBusy(true);
     setError(null);
     try {
-      await apiDelete(`${AI_PROVIDERS_PATH}/${value.id}`);
+      await apiPost("/hub/ai/provider/remove", { provider_id: value.id });
       onDeleted(value.id);
     } catch (cause: unknown) {
       setError(describeError(cause));

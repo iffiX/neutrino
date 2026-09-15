@@ -70,7 +70,7 @@ def test_without_a_session_the_socket_is_turned_away(api):
     client, _ = api
 
     with pytest.raises(WebSocketDisconnect) as refusal:
-        with client.websocket_connect(f"/ws/agent_shell/{MAC}"):
+        with client.websocket_connect(f"/ws/agent/terminal?device_id={MAC}"):
             pass
 
     assert refusal.value.code == POLICY_VIOLATION_CODE
@@ -80,7 +80,7 @@ def test_a_device_with_no_channel_is_turned_away_as_offline(api):
     client, runtime = api
     runtime.agent_sessions.online.clear()
 
-    socket = open_terminal(client, f"/ws/agent_shell/{MAC}")
+    socket = open_terminal(client, f"/ws/agent/terminal?device_id={MAC}")
     try:
         assert closed_with(socket) == (POLICY_VIOLATION_CODE, "agent_offline")
     finally:
@@ -91,7 +91,7 @@ def test_an_agents_refusal_closes_with_its_code(api):
     client, runtime = api
     runtime.agent_sessions.refusal = ("container_unknown", {"name": "kuma"})
 
-    socket = open_terminal(client, f"/ws/agent_container/{MAC}/kuma")
+    socket = open_terminal(client, f"/ws/agent/terminal?device_id={MAC}&container=kuma")
     try:
         assert closed_with(socket) == (INTERNAL_ERROR_CODE, "container_unknown")
     finally:
@@ -100,7 +100,7 @@ def test_an_agents_refusal_closes_with_its_code(api):
 
 def test_input_and_resizes_reach_the_stream_and_output_and_exit_come_back(api):
     client, runtime = api
-    socket = open_terminal(client, f"/ws/agent_shell/{MAC}")
+    socket = open_terminal(client, f"/ws/agent/terminal?device_id={MAC}")
     try:
         assert wait_until(lambda: runtime.agent_sessions.streams)
         stream = runtime.agent_sessions.streams[0]
@@ -124,7 +124,7 @@ def test_input_and_resizes_reach_the_stream_and_output_and_exit_come_back(api):
 
 def test_a_split_multibyte_character_is_joined_across_frames(api):
     client, runtime = api
-    socket = open_terminal(client, f"/ws/agent_shell/{MAC}")
+    socket = open_terminal(client, f"/ws/agent/terminal?device_id={MAC}")
     try:
         assert wait_until(lambda: runtime.agent_sessions.streams)
         stream = runtime.agent_sessions.streams[0]
@@ -140,7 +140,7 @@ def test_a_split_multibyte_character_is_joined_across_frames(api):
 
 def test_the_browser_closing_asks_the_agent_to_end_the_stream(api):
     client, runtime = api
-    socket = open_terminal(client, f"/ws/agent_shell/{MAC}")
+    socket = open_terminal(client, f"/ws/agent/terminal?device_id={MAC}")
     assert wait_until(lambda: runtime.agent_sessions.streams)
     stream = runtime.agent_sessions.streams[0]
 
@@ -151,7 +151,7 @@ def test_the_browser_closing_asks_the_agent_to_end_the_stream(api):
 
 def test_the_container_variant_opens_its_kind_with_the_name(api):
     client, runtime = api
-    socket = open_terminal(client, f"/ws/agent_container/{MAC}/kuma")
+    socket = open_terminal(client, f"/ws/agent/terminal?device_id={MAC}&container=kuma")
     try:
         assert wait_until(lambda: runtime.agent_sessions.streams)
         stream = runtime.agent_sessions.streams[0]

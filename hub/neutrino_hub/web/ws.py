@@ -42,7 +42,7 @@ DEFAULT_COLUMNS = 80
 DEFAULT_ROWS = 24
 
 
-@router.websocket("/ws/stats")
+@router.websocket("/ws/hub/dashboard/stat")
 async def stats_socket(websocket: WebSocket) -> None:
     """Push a statistics frame every second.
 
@@ -61,7 +61,7 @@ async def stats_socket(websocket: WebSocket) -> None:
         return
 
 
-@router.websocket("/ws/events")
+@router.websocket("/ws/hub/event")
 async def events_socket(websocket: WebSocket) -> None:
     """Push one frame per invalidation event, for as long as the panel is open.
 
@@ -85,7 +85,7 @@ async def events_socket(websocket: WebSocket) -> None:
         events.unsubscribe(queue)
 
 
-@router.websocket("/ws/dns_log")
+@router.websocket("/ws/hub/dashboard/dns_log")
 async def dns_log_socket(websocket: WebSocket) -> None:
     """Send the recent DNS queries, then follow the log.
 
@@ -111,13 +111,14 @@ async def dns_log_socket(websocket: WebSocket) -> None:
         return
 
 
-@router.websocket("/ws/task/{task_id}")
+@router.websocket("/ws/hub/task")
 async def task_socket(websocket: WebSocket, task_id: str) -> None:
     """Stream one background job's output.
 
     Args:
         websocket: The client socket.
-        task_id: Identifier returned when the job was started.
+        task_id: Identifier returned when the job was started, from the
+            query.
     """
     if not await _accept(websocket):
         return
@@ -133,33 +134,28 @@ async def task_socket(websocket: WebSocket, task_id: str) -> None:
         return
 
 
-@router.websocket("/ws/agent_shell/{device_id}")
-async def agent_shell_socket(websocket: WebSocket, device_id: str) -> None:
-    """Bridge a browser terminal to a root shell on a device, over its agent.
+@router.websocket("/ws/agent/terminal")
+async def terminal_socket(
+    websocket: WebSocket, device_id: str, container: str = ""
+) -> None:
+    """Bridge a browser terminal to a shell on a device, over its agent.
 
     Args:
         websocket: The client socket.
-        device_id: Which device to open the shell on.
+        device_id: Which device to open the shell on, from the query.
+        container: A container on the device to open the shell inside of,
+            from the query; empty opens a root shell on the device itself.
     """
+    if container:
+        await _serve_agent_stream(
+            websocket, device_id, STREAM_KIND_CONTAINER_SHELL, {"name": container}
+        )
+        return
     await _serve_agent_stream(
         websocket,
         device_id,
         STREAM_KIND_SHELL,
         {"cols": DEFAULT_COLUMNS, "rows": DEFAULT_ROWS},
-    )
-
-
-@router.websocket("/ws/agent_container/{device_id}/{name}")
-async def agent_container_socket(websocket: WebSocket, device_id: str, name: str):
-    """Bridge a browser terminal to a shell inside a container on a device.
-
-    Args:
-        websocket: The client socket.
-        device_id: Which device the container runs on.
-        name: The container.
-    """
-    await _serve_agent_stream(
-        websocket, device_id, STREAM_KIND_CONTAINER_SHELL, {"name": name}
     )
 
 

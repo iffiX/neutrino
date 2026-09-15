@@ -92,7 +92,7 @@ const DEVICE_LEGEND: DeviceLegendRow[] = [
 export function DevicesPage() {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const resource = useApiResource<DevicesResponse>("/devices", {
+  const resource = useApiResource<DevicesResponse>("/hub/device", {
     invalidateOn: INVALIDATE_ON,
   });
 
@@ -136,7 +136,7 @@ export function DevicesPage() {
     setIsScanning(true);
     setScanError(null);
     try {
-      const result = await apiPost<DevicesResponse>("/devices/scan");
+      const result = await apiPost<DevicesResponse>("/hub/device/scan");
       setDevices(result.devices);
     } catch (cause: unknown) {
       setScanError(describeError(cause));
@@ -149,7 +149,10 @@ export function DevicesPage() {
     setScanError(null);
     try {
       setEnrollment(
-        await apiPost<DeviceEnrollmentView>("/devices/enrollment", {}),
+        await apiPost<DeviceEnrollmentView>(
+          "/hub/device/enrollment/create",
+          {},
+        ),
       );
     } catch (cause: unknown) {
       setScanError(describeError(cause));

@@ -4,13 +4,7 @@ import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { StatusDot } from "../components/status_dot";
 import { StringListEditor } from "../components/string_list_editor";
-import {
-  ApiError,
-  apiDelete,
-  apiGet,
-  apiPost,
-  describeError,
-} from "../api_client";
+import { ApiError, apiGet, apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { HUB_EVENT_CONFIG, HUB_EVENT_SERVICES } from "../use_hub_events";
@@ -127,7 +121,7 @@ const INVALIDATE_ON = [
 export function ServicesPage() {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const resource = useApiResource<ServicesResponse>("/services", {
+  const resource = useApiResource<ServicesResponse>("/hub/service", {
     invalidateOn: INVALIDATE_ON,
   });
   const [services, setServices] = useState<PublishedService[]>([]);
@@ -285,7 +279,8 @@ function ServiceRow({ service, onChanged }: ServiceRowProps) {
     setError(null);
     try {
       const answer = await apiPost<ServicesResponse>(
-        `/services/declared/${service.record_id}/probe`,
+        "/hub/service/declaration/probe",
+        { service_id: service.record_id },
       );
       onChanged(answer.services);
     } catch (cause: unknown) {
@@ -302,8 +297,9 @@ function ServiceRow({ service, onChanged }: ServiceRowProps) {
     setIsBusy(true);
     setError(null);
     try {
-      const answer = await apiDelete<ServicesResponse>(
-        `/services/declared/${service.record_id}`,
+      const answer = await apiPost<ServicesResponse>(
+        "/hub/service/declaration/remove",
+        { service_id: service.record_id },
       );
       onChanged(answer.services);
     } catch (cause: unknown) {
@@ -404,9 +400,9 @@ function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
     setScanNotice(null);
     setScanError(null);
     try {
-      const found = await apiGet<ServiceSharesResponse>(
-        `/services/shares?host=${encodeURIComponent(host.trim())}`,
-      );
+      const found = await apiGet<ServiceSharesResponse>("/hub/service/share", {
+        host: host.trim(),
+      });
       setShares((current) => [
         ...current,
         ...found.shares.filter((entry) => !current.includes(entry)),
@@ -442,7 +438,7 @@ function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
     };
     try {
       const answer = await apiPost<ServicesResponse>(
-        "/services/declared",
+        "/hub/service/declaration/add",
         payload,
       );
       onSaved(answer.services);

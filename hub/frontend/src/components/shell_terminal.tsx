@@ -33,7 +33,7 @@ export type TerminalState = "connecting" | "open" | "closed";
 const TERMINAL_SCROLLBACK_LINES = 5000;
 
 interface ShellTerminalProps {
-  /** The websocket path to open, e.g. `/ws/agent_shell/<device_id>`. */
+  /** The websocket path to open, e.g. `/ws/agent/terminal?device_id=<id>`. */
   socketPath: string;
   /**
    * False keeps the terminal mounted but out of sight. Unmounting would close

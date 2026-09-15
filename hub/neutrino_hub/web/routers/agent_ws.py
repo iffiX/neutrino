@@ -29,7 +29,7 @@ from neutrino_hub.modules.devices.constants import (
 )
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.web.constants import WEB_EVENT_DEVICE_REPORT, WEB_EVENT_METRICS
-from neutrino_hub.web.routers.agent import version_refusal
+from neutrino_hub.web.routers.agent_http import version_refusal
 
 router = APIRouter(prefix="/api/agent")
 

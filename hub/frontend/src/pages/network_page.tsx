@@ -17,7 +17,7 @@ import type { StripTab } from "../components/tab_strip";
 import { ToggleSwitch } from "../components/toggle_switch";
 import { UpstreamGatewayPanel } from "../components/upstream_gateway_panel";
 import { WifiScanPanel } from "../components/wifi_scan_panel";
-import { apiDelete, apiPut, describeError } from "../api_client";
+import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import {
   isInterfaceDraftValid,
@@ -191,13 +191,13 @@ function interfacePayload(
 export function NetworkPage() {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const network = useApiResource<NetworkView>("/network", {
+  const network = useApiResource<NetworkView>("/hub/network", {
     invalidateOn: NETWORK_INVALIDATE_ON,
   });
   // The cheap list endpoint, no ARP sweep: the diagram only wants to draw
   // what is already known, and it draws what is there now rather than what
   // was there when the page opened.
-  const deviceList = useApiResource<DevicesResponse>("/devices", {
+  const deviceList = useApiResource<DevicesResponse>("/hub/device", {
     invalidateOn: DEVICE_INVALIDATE_ON,
   });
 
@@ -390,20 +390,20 @@ export function NetworkPage() {
     try {
       // The trunk goes first: a VLAN can only be created under a port that is
       // already split, and can only be removed while its entry still exists.
-      let view = await apiPut<NetworkView>(
-        `/network/interfaces/${draft.name}`,
+      let view = await apiPost<NetworkView>(
+        "/hub/network/interface/set",
         draft,
       );
       for (const id of vlanCreates) {
-        view = await apiPut<NetworkView>(
-          `/network/interfaces/${draft.name}.${id}`,
+        view = await apiPost<NetworkView>(
+          "/hub/network/interface/set",
           newVlanSettings(draft.name, id),
         );
       }
       for (const entry of vlanRemovals) {
-        view = await apiDelete<NetworkView>(
-          `/network/interfaces/${entry.settings.name}`,
-        );
+        view = await apiPost<NetworkView>("/hub/network/interface/remove", {
+          name: entry.settings.name,
+        });
       }
       network.setData(view);
       setNotice(
@@ -435,7 +435,7 @@ export function NetworkPage() {
     setOptionsError(null);
     setOptionsNotice(null);
     try {
-      const view = await apiPut<NetworkView>("/network", options);
+      const view = await apiPost<NetworkView>("/hub/network/set", options);
       network.setData(view);
       setOptionsNotice(t("ui.network.applied_gateway"));
     } catch (cause: unknown) {

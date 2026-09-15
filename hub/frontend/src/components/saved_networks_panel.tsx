@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { Icon } from "./icon";
 import { Spinner } from "./spinner";
-import { apiDelete, apiGet, describeError } from "../api_client";
+import { apiGet, apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { useConfirm } from "../use_confirm";
 import type { SavedNetwork, SavedNetworkList } from "../api_types";
@@ -32,7 +32,9 @@ export function SavedNetworksPanel() {
     let isCurrent = true;
     void (async () => {
       try {
-        const result = await apiGet<SavedNetworkList>("/network/wifi_networks");
+        const result = await apiGet<SavedNetworkList>(
+          "/hub/network/wifi_network",
+        );
         if (isCurrent) {
           setNetworks(result.networks);
         }
@@ -59,8 +61,9 @@ export function SavedNetworksPanel() {
     setForgetting(ssid);
     setError(null);
     try {
-      const result = await apiDelete<SavedNetworkList>(
-        `/network/wifi_networks/${encodeURIComponent(ssid)}`,
+      const result = await apiPost<SavedNetworkList>(
+        "/hub/network/wifi_network/leave",
+        { ssid },
       );
       setNetworks(result.networks);
     } catch (cause: unknown) {

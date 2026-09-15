@@ -24,7 +24,7 @@ from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.web.events import PanelEventBus
-from neutrino_hub.web.routers import agent as agent_router
+from neutrino_hub.web.routers import agent_http as agent_router
 from neutrino_hub.web.routers import agent_ws
 from tests.conftest import StubDesiredStates, StubPublishedServices
 

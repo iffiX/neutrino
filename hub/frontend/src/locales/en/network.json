@@ -53,7 +53,7 @@
   "ui.dashboard.legend_down": "down",
   "ui.dashboard.legend_up": "up",
   "ui.dashboard.live_empty": "Waiting for the first stats frames",
-  "ui.dashboard.live_empty_hint": "The gateway pushes a frame every two seconds on /ws/stats.",
+  "ui.dashboard.live_empty_hint": "The gateway pushes a frame every two seconds on /ws/hub/dashboard/stat.",
   "ui.dashboard.live_traffic_title": "Live traffic",
   "ui.dashboard.live_traffic_window": "last 2 min",
   "ui.dashboard.scope_all": "All",

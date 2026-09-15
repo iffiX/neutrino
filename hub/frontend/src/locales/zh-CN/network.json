@@ -53,7 +53,7 @@
   "ui.dashboard.legend_down": "下行",
   "ui.dashboard.legend_up": "上行",
   "ui.dashboard.live_empty": "正在等待第一批统计帧",
-  "ui.dashboard.live_empty_hint": "网关每两秒在 /ws/stats 上推送一帧。",
+  "ui.dashboard.live_empty_hint": "网关每两秒在 /ws/hub/dashboard/stat 上推送一帧。",
   "ui.dashboard.live_traffic_title": "实时流量",
   "ui.dashboard.live_traffic_window": "最近 2 分钟",
   "ui.dashboard.scope_all": "全部",

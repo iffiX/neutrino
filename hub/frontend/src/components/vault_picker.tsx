@@ -82,9 +82,9 @@ const KIND_KEYS: Record<VaultKind, VaultKindKeys> = {
 export type VaultKind = "ssh_key" | "login" | "token";
 
 const VAULT_PATHS: Record<VaultKind, string> = {
-  ssh_key: "/credentials/ssh_keys",
-  login: "/credentials/logins",
-  token: "/credentials/tokens",
+  ssh_key: "/hub/credential/ssh_key",
+  login: "/hub/credential/login",
+  token: "/hub/credential/token",
 };
 
 // The vault's one file: a credential stored anywhere in the panel writes it,
@@ -526,7 +526,7 @@ async function createEntry(
 ): Promise<VaultEntry> {
   if (kind === "ssh_key") {
     return toKeyEntry(
-      await apiPost<KeyView>(VAULT_PATHS.ssh_key, {
+      await apiPost<KeyView>(`${VAULT_PATHS.ssh_key}/add`, {
         name,
         private_key: secret,
         passphrase: null,
@@ -535,7 +535,7 @@ async function createEntry(
   }
   if (kind === "login") {
     return toLoginEntry(
-      await apiPost<LoginView>(VAULT_PATHS.login, {
+      await apiPost<LoginView>(`${VAULT_PATHS.login}/add`, {
         name,
         username: null,
         password: secret, // scan: allow
@@ -543,7 +543,10 @@ async function createEntry(
     );
   }
   return toTokenEntry(
-    await apiPost<TokenView>(VAULT_PATHS.token, { name, value: secret }),
+    await apiPost<TokenView>(`${VAULT_PATHS.token}/add`, {
+      name,
+      value: secret,
+    }),
   );
 }
 

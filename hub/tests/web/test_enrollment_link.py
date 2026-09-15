@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.dependencies import get_runtime, require_session
-from neutrino_hub.web.routers import devices as devices_router
+from neutrino_hub.web.routers.hub import device as devices_router
 
 FINGERPRINT = "cd" * 32
 
@@ -69,7 +69,9 @@ def test_the_link_points_at_the_agent_port_over_tls(fingerprinted):
         addresses=("192.168.8.1", "", "10.0.0.1"),
     )
 
-    answer = client_for(runtime).post("/api/devices/enrollment", json={"name": ""})
+    answer = client_for(runtime).post(
+        "/api/hub/device/enrollment/create", json={"name": ""}
+    )
 
     assert answer.status_code == 200
     payload = decoded(answer.json()["link"])
@@ -80,7 +82,9 @@ def test_the_link_points_at_the_agent_port_over_tls(fingerprinted):
 def test_the_agent_port_defaults_beside_the_panel_port(fingerprinted):
     runtime = FakeRuntime()
 
-    answer = client_for(runtime).post("/api/devices/enrollment", json={"name": ""})
+    answer = client_for(runtime).post(
+        "/api/hub/device/enrollment/create", json={"name": ""}
+    )
 
     assert decoded(answer.json()["link"])["urls"] == ["https://192.168.8.1:8443"]
 
@@ -101,7 +105,9 @@ def test_a_server_generates_from_its_exposed_ports_live_address(
 
     monkeypatch.setattr(devices_router, "RouterLinkStatus", FakeReader)
 
-    answer = client_for(runtime).post("/api/devices/enrollment", json={"name": ""})
+    answer = client_for(runtime).post(
+        "/api/hub/device/enrollment/create", json={"name": ""}
+    )
 
     assert answer.status_code == 200
     assert decoded(answer.json()["link"])["urls"] == ["https://192.168.100.7:8443"]
@@ -119,7 +125,9 @@ def test_the_link_carries_the_overlay_a_remote_machine_is_the_only_one_on(
         lambda: {"enp1s0": "192.168.8.1/24", "wt0": "100.88.178.129/16"},
     )
 
-    answer = client_for(runtime).post("/api/devices/enrollment", json={"name": ""})
+    answer = client_for(runtime).post(
+        "/api/hub/device/enrollment/create", json={"name": ""}
+    )
 
     assert decoded(answer.json()["link"])["urls"] == [
         "https://192.168.8.1:8443",
@@ -131,8 +139,8 @@ def test_generating_again_replaces_the_outstanding_ticket(fingerprinted):
     runtime = FakeRuntime()
     client = client_for(runtime)
 
-    first = client.post("/api/devices/enrollment", json={"name": "one"})
-    second = client.post("/api/devices/enrollment", json={"name": "two"})
+    first = client.post("/api/hub/device/enrollment/create", json={"name": "one"})
+    second = client.post("/api/hub/device/enrollment/create", json={"name": "two"})
 
     assert first.status_code == 200 and second.status_code == 200
     assert len(runtime.enrollments) == 1
@@ -147,7 +155,9 @@ def test_a_hub_without_a_certificate_generates_no_ticket(monkeypatch):
     monkeypatch.setattr(devices_router, "certificate_fingerprint", missing)
     runtime = FakeRuntime()
 
-    answer = client_for(runtime).post("/api/devices/enrollment", json={"name": ""})
+    answer = client_for(runtime).post(
+        "/api/hub/device/enrollment/create", json={"name": ""}
+    )
 
     assert answer.status_code == 409
     assert answer.json()["detail"] == {"code": "agent_tls_missing", "params": {}}

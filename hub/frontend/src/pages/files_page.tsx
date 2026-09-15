@@ -28,7 +28,7 @@ const DEVICE_QUERY = "device";
 export function FilesPage() {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const resource = useApiResource<DevicesOnlineResponse>("/devices/online", {
+  const resource = useApiResource<DevicesOnlineResponse>("/hub/device/online", {
     invalidateOn: INVALIDATE_ON,
   });
   const [searchParams] = useSearchParams();
@@ -101,7 +101,7 @@ export function FilesPage() {
       ) : (
         <FileBrowser
           key={selectedDevice.device_id}
-          basePath={`/devices/${selectedDevice.device_id}/files`}
+          deviceId={selectedDevice.device_id}
         />
       )}
     </div>

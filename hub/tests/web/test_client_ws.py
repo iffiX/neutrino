@@ -22,7 +22,7 @@ from neutrino_hub.modules.devices.agent_sessions import AgentSessionRegistry
 from neutrino_hub.modules.devices.constants import AGENT_SESSION_KIND_CLIENT
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.web import client_channel
-from neutrino_hub.web.routers import agent as agent_router
+from neutrino_hub.web.routers import agent_http as agent_router
 from neutrino_hub.web.routers import agent_ws, client_ws
 from tests.conftest import unlock_vault
 

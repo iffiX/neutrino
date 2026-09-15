@@ -19,10 +19,8 @@ import time
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
-from starlette.requests import Request
 from starlette.staticfiles import StaticFiles
 
-from neutrino_hub.modules.xray.node_config import parse_share_link
 from neutrino_hub.web.constants import (
     WEB_FRONTEND_DIST_DIR,
     WEB_SETUP_STATE_ASKING,
@@ -37,6 +35,7 @@ from neutrino_hub.web.constants import (
     WEB_SETUP_STOP_TIMEOUT_S,
     WEB_SETUP_TOKEN_BYTES,
 )
+from neutrino_hub.web.routers.hub.setup import setup_router
 
 
 class WebSetupSession:
@@ -305,54 +304,7 @@ def create_setup_app(session: WebSetupSession) -> FastAPI:
         The configured application.
     """
     app = FastAPI(title="Neutrino Hub setup", docs_url=None, redoc_url=None)
-
-    def _guard(request: Request):
-        """Whether this request carries the token the terminal printed."""
-        given = request.query_params.get("token", "")
-        return secrets.compare_digest(given, session.token)
-
-    @app.get("/api/setup/context")
-    def read_context(request: Request):
-        if not _guard(request):
-            return _denied()
-        return session.context()
-
-    @app.get("/api/setup/state")
-    def read_state(request: Request):
-        if not _guard(request):
-            return _denied()
-        return session.state()
-
-    @app.post("/api/setup/link")
-    async def read_link(request: Request):
-        """What the hub makes of one share link.
-
-        The browser has no parser of its own and must not grow one: a second
-        reading of the same link is a second thing to keep in step. It asks
-        instead, and gets back either the node's name or the reason there
-        isn't one.
-        """
-        if not _guard(request):
-            return _denied()
-        body = await request.json()
-        try:
-            node = parse_share_link(str(body.get("link", "")))
-        except (ValueError, TypeError) as error:
-            # A link somebody mistyped is an answer to give back, not a fault.
-            return {"name": "", "detail": str(error)}
-        return {"name": node.name or node.id, "detail": ""}
-
-    @app.post("/api/setup/answers")
-    async def write_answers(request: Request):
-        if not _guard(request):
-            return _denied()
-        document = await request.json()
-        if not isinstance(document, dict):
-            return JSONResponse(
-                status_code=400, content={"detail": "answers must be an object"}
-            )
-        session.answer(document)
-        return JSONResponse(status_code=202, content=session.state())
+    app.include_router(setup_router(session))
 
     @app.get("/api/{path:path}", include_in_schema=False)
     def unknown_api(path: str):
@@ -363,11 +315,6 @@ def create_setup_app(session: WebSetupSession) -> FastAPI:
 
     _mount_frontend(app)
     return app
-
-
-def _denied():
-    """The answer to a request with no token, or the wrong one."""
-    return JSONResponse(status_code=403, content={"detail": "setup token required"})
 
 
 def _mount_frontend(app: FastAPI) -> None:

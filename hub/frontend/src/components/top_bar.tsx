@@ -64,8 +64,8 @@ export function TopBar() {
   // The socket takes a moment to deliver its first frame. Reading the mode
   // once over HTTP as well means the strip names it immediately rather than
   // starting on a default that is wrong for most machines.
-  const network = useApiResource<NetworkView>("/network");
-  const ai = useApiResource<CliproxyApiStatusView>("/cliproxyapi");
+  const network = useApiResource<NetworkView>("/hub/network");
+  const ai = useApiResource<CliproxyApiStatusView>("/hub/ai/gateway");
 
   const currentItem = NAV_ITEMS.find((item) =>
     item.path === "/"

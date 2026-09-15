@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { ApplyBar } from "./apply_bar";
-import { apiPut, describeError } from "../api_client";
+import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { isIpv4Address } from "../ipv4_address";
 import type { InterfaceView, NetworkView } from "../api_types";
@@ -59,10 +59,7 @@ export function UpstreamGatewayPanel({
       const settings = structuredClone(joined.settings);
       settings.lan.upstream_gateway = gateway;
       onApplied(
-        await apiPut<NetworkView>(
-          `/network/interfaces/${settings.name}`,
-          settings,
-        ),
+        await apiPost<NetworkView>("/hub/network/interface/set", settings),
       );
       setNotice(t("ui.network.applied_to", { name: settings.name }));
     } catch (cause: unknown) {

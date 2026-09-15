@@ -5,7 +5,7 @@ import type { SocketStatus } from "./use_reconnecting_socket";
 import type { DnsLogEntry } from "./api_types";
 
 /**
- * The `/ws/dns_log` feed, kept newest-first and capped.
+ * The `/ws/hub/dashboard/dns_log` feed, kept newest-first and capped.
  *
  * dnsmasq on a busy LAN emits far more queries than anyone reads, so the hook
  * holds only the most recent slice. That cap is what keeps the dashboard list
@@ -19,7 +19,7 @@ import type { DnsLogEntry } from "./api_types";
  * shows up only as a list that reads backwards, so it is handled explicitly.
  */
 
-const DNS_LOG_PATH = "/ws/dns_log";
+const DNS_LOG_PATH = "/ws/hub/dashboard/dns_log";
 const DEFAULT_ENTRY_LIMIT = 200;
 
 export interface DnsLogSocketState {

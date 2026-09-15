@@ -5,7 +5,7 @@ import { ApplyBar } from "./apply_bar";
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
 import { NodeCard } from "./node_card";
-import { apiDelete, apiPost, apiPut, describeError } from "../api_client";
+import { apiPost, describeError } from "../api_client";
 import { diffNodeDraft, isNodeChanged } from "../node_draft";
 import { formatBytes } from "../format_bytes";
 import { t, useLanguage } from "../i18n";
@@ -70,7 +70,7 @@ interface NodesPanelProps {
 export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const resource = useApiResource<NodesResponse>("/proxy/nodes", {
+  const resource = useApiResource<NodesResponse>("/hub/proxy/node", {
     invalidateOn: NODES_INVALIDATE_ON,
   });
   const { latestFrame } = useLiveStats();
@@ -195,9 +195,9 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
     setActionError(null);
     setTestingIds((ids) => [...ids, nodeId]);
     try {
-      const result = await apiPost<NodeTestResult>(
-        `/proxy/nodes/${nodeId}/test`,
-      );
+      const result = await apiPost<NodeTestResult>("/hub/proxy/node/test", {
+        node_id: nodeId,
+      });
       applyTestResult(nodeId, result, setDraftNodes, setProbeHistory);
     } catch (cause: unknown) {
       setActionError(describeError(cause));
@@ -214,7 +214,9 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
       const results = await Promise.all(
         ids.map(async (nodeId) => ({
           nodeId,
-          result: await apiPost<NodeTestResult>(`/proxy/nodes/${nodeId}/test`),
+          result: await apiPost<NodeTestResult>("/hub/proxy/node/test", {
+            node_id: nodeId,
+          }),
         })),
       );
       for (const { nodeId, result } of results) {
@@ -236,7 +238,7 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
     setIsAdding(true);
     setActionError(null);
     try {
-      await apiPost<NodeView>("/proxy/nodes", { link });
+      await apiPost<NodeView>("/hub/proxy/node/add", { link });
       setShareLink("");
       setIsAddOpen(false);
       isListWrittenRef.current = true;
@@ -259,7 +261,9 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
   const removeNode = async (node: NodeView) => {
     setActionError(null);
     try {
-      await apiDelete<NodesResponse>(`/proxy/nodes/${node.id}`);
+      await apiPost<NodesResponse>("/hub/proxy/node/remove", {
+        node_id: node.id,
+      });
       isListWrittenRef.current = true;
       resource.reload();
       onNodesChanged();
@@ -287,16 +291,20 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
     try {
       for (const node of draftNodes) {
         if (isNodeChanged(applied.nodes, node)) {
-          await apiPut<NodeView>(`/proxy/nodes/${node.id}`, {
+          await apiPost<NodeView>("/hub/proxy/node/set", {
+            node_id: node.id,
             is_enabled: node.is_enabled,
             name: node.name,
           });
         }
       }
       if (diff.isBalancerChanged) {
-        await apiPut<BalancerSettings>("/proxy/balancer", draftBalancer);
+        await apiPost<BalancerSettings>(
+          "/hub/proxy/balancer/set",
+          draftBalancer,
+        );
       }
-      const result = await apiPost<ApplyResult>("/proxy/apply");
+      const result = await apiPost<ApplyResult>("/hub/proxy/apply");
       setApplyMessage(result.message);
       resource.reload();
       onNodesChanged();

@@ -70,7 +70,10 @@ export function DeviceMonitor({ device }: DeviceMonitorProps) {
     }
     setPendingKillPid(null);
     try {
-      await apiPost(`/devices/${device.id}/kill_process`, { pid });
+      await apiPost("/hub/device/process/kill", {
+        device_id: device.id,
+        pid,
+      });
     } catch (cause: unknown) {
       setKillError(describeError(cause));
     }

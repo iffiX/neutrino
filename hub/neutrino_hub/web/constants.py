@@ -10,6 +10,61 @@ from neutrino_hub.utils.constants import (
 
 WEB_FRONTEND_DIST_DIR = UTILS_DATA_DIR / "frontend"
 WEB_SESSION_COOKIE = "neutrino_session"
+
+# --- the shape of every path ---
+# A route is `/api/<group>/<page>/...` or `/ws/<group>/...`, grouped the way
+# the sidebar is; `/api/channel` is the agent port's own app. Every segment is
+# a singular `under_score` noun, and a write's last segment is one verb from
+# the closed table below (skills/core-code-author/design/protocol.md).
+WEB_PATH_PREFIX_HUB = "/api/hub/"
+WEB_PATH_PREFIX_AGENT = "/api/agent/"
+WEB_PATH_PREFIX_CHANNEL = "/api/channel"
+WEB_PATH_PREFIX_WS_HUB = "/ws/hub/"
+WEB_PATH_PREFIX_WS_AGENT = "/ws/agent/"
+WEB_PATH_VERBS = frozenset(
+    {
+        "set",
+        "add",
+        "remove",
+        "create",
+        "destroy",
+        "join",
+        "leave",
+        "start",
+        "stop",
+        "enable",
+        "disable",
+        "share",
+        "unshare",
+        "install",
+        "uninstall",
+        "login",
+        "logout",
+        "backup",
+        "restore",
+        "online",
+        "offline",
+        "download",
+        "upload",
+        "import",
+        "update",
+        "reset",
+        "apply",
+        "scan",
+        "test",
+        "probe",
+        "wake",
+        "reboot",
+        "shutdown",
+        "reinstall",
+        "restart",
+        "kill",
+        "rename",
+        "expand",
+        "replace",
+        "scrub",
+    }
+)
 # The session secret is state, not configuration: it is generated on the box and
 # a restore deliberately does not carry one in, so every session dies with it.
 WEB_SESSION_SECRET_PATH = UTILS_STATE_ROOT / "session.secret"

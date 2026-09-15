@@ -52,7 +52,7 @@ export function LoginPage() {
   // A page opened mid-lockout should show the countdown straight away.
   useEffect(() => {
     let isCancelled = false;
-    apiGet<AuthState>("/auth/session")
+    apiGet<AuthState>("/hub/auth/session")
       .then((state) => {
         if (!isCancelled && state.lockout_remaining_s > 0) {
           startLockdown(state.lockout_remaining_s);

@@ -18,6 +18,7 @@ export function GiteaPage() {
     <AgentServicePage title={WORDING.title} moduleName={WORDING.moduleName}>
       {(target) => (
         <GiteaPanels
+          deviceId={target.deviceId}
           basePath={target.basePath}
           isEditable={target.isEditable}
         />

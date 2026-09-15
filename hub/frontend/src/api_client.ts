@@ -52,24 +52,51 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler | null) {
   unauthorizedHandler = handler;
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
-  return request<T>(path, { method: "GET" });
+/** The values a read may carry beside its path. */
+export type ApiQuery = Record<string, string | number | boolean | undefined>;
+
+/**
+ * One path with its query appended, each value encoded.
+ *
+ * A hook that holds a path in state builds it with this, so the string it
+ * compares against stays a string; a socket path takes its identifier the
+ * same way. A path that already carries a query is appended to.
+ *
+ * Args:
+ *   path: The path the query hangs off.
+ *   query: The values to append; an undefined one is left out.
+ *
+ * Returns:
+ *   The path, with `?k=v` appended when the query carries anything.
+ */
+export function apiPath(path: string, query?: ApiQuery): string {
+  if (query === undefined) {
+    return path;
+  }
+  const parts = new URLSearchParams();
+  for (const [name, value] of Object.entries(query)) {
+    if (value !== undefined) {
+      parts.append(name, String(value));
+    }
+  }
+  const suffix = parts.toString();
+  if (suffix.length === 0) {
+    return path;
+  }
+  return `${path}${path.includes("?") ? "&" : "?"}${suffix}`;
+}
+
+export async function apiGet<T>(path: string, query?: ApiQuery): Promise<T> {
+  return request<T>(apiPath(path, query), { method: "GET" });
 }
 
 export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   return request<T>(path, { method: "POST", ...jsonBody(body) });
 }
 
-export async function apiPut<T>(path: string, body?: unknown): Promise<T> {
-  return request<T>(path, { method: "PUT", ...jsonBody(body) });
-}
-
-export async function apiDelete<T>(path: string): Promise<T> {
-  return request<T>(path, { method: "DELETE" });
-}
-
 /**
- * POST a multipart upload, used by the config restore form.
+ * POST a multipart upload, used by the config restore form and the Files
+ * page.
  *
  * `fields` carries the text parts that travel beside the file.
  */
