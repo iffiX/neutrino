@@ -8,7 +8,7 @@ A client link is how a person's computer joins the hub. On the **Clients** page 
 
 ## What a client is
 
-A client is one program on one computer, run by one person from a normal account; it consumes what the hub publishes and hosts nothing. The client runs on Linux, Windows and macOS, and rejects root with `root_refused`. Each link makes one client, so a computer that joins twice has two rows.
+A client is one program on one computer, run by one person from a normal account; it consumes what the hub publishes and hosts nothing. The client runs on Linux, Windows and macOS, and rejects root with `root_refused`. A computer that joins this hub again lands on the row it already had, under the name the new link carries.
 
 ## Links, enable, disable and delete
 

@@ -63,7 +63,7 @@ def join(
     link. The ticket then leaves the store in one step and is judged. An
     agent lands on the row the ticket names, else on the row whose
     ``machine_id`` it reports, else on a new one; a client lands on the row
-    its link was made for.
+    whose ``machine_id`` it reports, else on the row its link was made for.
 
     Args:
         request: The ticket and the peer's identity card.
@@ -222,16 +222,28 @@ def _join_agent(
 def _join_client(
     runtime: PanelRuntime, request: ChannelJoinRequest, ticket: dict
 ) -> tuple:
-    """Bind a person's program to the row its link was made for."""
+    """Bind a person's program to the row it had, else to its link's row.
+
+    A machine that already has a row lands back on it: the link's fresh row
+    goes, the old row takes the link's name and keeps its key, its switch
+    and everything it last reported.
+    """
     registry = ClientRegistry()
     client_id = str(ticket.get("client_id", ""))
     if registry.get(client_id) is None:
         raise _ticket_spent()
+    enrolled = registry.find_by_machine_id(request.machine_id)
+    if enrolled is not None and enrolled.id != client_id:
+        registry.forget(client_id)
+        runtime.forget_client(client_id)
+        client_id = enrolled.id
+        registry.rename(client_id, str(ticket.get("name") or "") or enrolled.name)
     registry.record_seen(
         client_id,
         hostname=request.name,
         platform=request.platform,
         version=version_of_software(request.software),
+        machine_id=request.machine_id,
     )
     token = registry.issue_token(client_id)
     runtime.events.publish(WEB_EVENT_CLIENTS)

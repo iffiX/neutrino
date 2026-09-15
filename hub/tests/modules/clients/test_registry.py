@@ -1,4 +1,5 @@
-"""The client records: created before they join, digest on disk, raw token once."""
+"""The client records: created before they join, digest on disk, raw token once,
+and the machine a row belongs to."""
 
 import hashlib
 import json
@@ -38,6 +39,7 @@ def test_create_makes_a_row_that_has_not_joined(config_dir):
         "name",
         "token_sha256",
         "hostname",
+        "machine_id",
         "platform",
         "version",
         "is_disabled",
@@ -95,6 +97,34 @@ def test_record_seen_writes_only_what_changed(config_dir):
         "0.2.0",
     )
     registry.record_seen("nobody", hostname="x", platform={}, version="")
+
+
+def test_a_row_is_found_by_the_machine_id_it_recorded(config_dir):
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+    registry.record_seen(
+        client_id, hostname="laptop", platform={}, version="", machine_id="m-1"
+    )
+
+    assert stored(config_dir)[client_id]["machine_id"] == "m-1"
+    found = ClientRegistry().find_by_machine_id("m-1")
+    assert found is not None and found.id == client_id
+    assert ClientRegistry().find_by_machine_id("m-2") is None
+
+
+def test_an_empty_machine_id_matches_no_row(config_dir):
+    registry = ClientRegistry()
+    registry.create("alice")
+
+    assert ClientRegistry().find_by_machine_id("") is None
+
+    client_id = registry.create("bob")
+    registry.record_seen(
+        client_id, hostname="", platform={}, version="", machine_id="m-1"
+    )
+    registry.record_seen(client_id, hostname="", platform={}, version="", machine_id="")
+
+    assert ClientRegistry().get(client_id).machine_id == "m-1"
 
 
 def test_the_switch_and_the_key_id_are_written_and_forget_removes_the_row(
