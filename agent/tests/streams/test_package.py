@@ -5,7 +5,8 @@ larger than one window proceeds past it, the file is handed over only
 once the hub's close named a ``sha256`` that matches, a mismatch is
 refused and leaves no file, a refusal from the hub passes its code
 through and leaves no file, and a socket that dropped mid-transfer leaves
-no file and is ``hub_unreachable``.
+no file and is ``hub_unreachable``. The one file a transfer leaves on
+purpose, the agent's own package, is removed by the start-up sweep.
 """
 
 import hashlib
@@ -13,7 +14,7 @@ import os
 
 from neutrino_agent.constants import AGENT_WS_CHUNK_BYTES, AGENT_WS_STREAM_CREDIT_BYTES
 from neutrino_agent.exceptions import GatewayUnreachable
-from neutrino_agent.streams.package import PackageStream
+from neutrino_agent.streams.package import PackageStream, remove_stale
 from tests.streams.fake_channel import FakeChannel
 
 
@@ -114,3 +115,24 @@ def test_the_landing_directory_is_made_root_only(tmp_path):
 
     assert "path" in outcome
     assert (os.stat(tmp_path / "packages").st_mode & 0o777) == 0o700
+
+
+# --- what the next start sweeps ---
+
+
+def test_the_sweep_removes_what_a_transfer_left(tmp_path):
+    directory = tmp_path / "packages"
+    directory.mkdir()
+    (directory / ".package.abc.part").write_bytes(b"installed me")
+    (directory / ".package.def.part").write_bytes(b"half")
+
+    remove_stale(str(directory))
+
+    assert leftovers(directory) == []
+    assert directory.is_dir()
+
+
+def test_the_sweep_of_a_directory_not_there_is_nothing(tmp_path):
+    remove_stale(str(tmp_path / "packages"))
+
+    assert not (tmp_path / "packages").exists()

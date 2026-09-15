@@ -34,7 +34,7 @@ from neutrino_agent.constants import (
     AGENT_DESIRED_STATE_NAME,
     AGENT_HEARTBEAT_INTERVAL_S,
     AGENT_HUB_SOFTWARE_PREFIX,
-    AGENT_PACKAGE_DIR_NAME,
+    AGENT_PACKAGE_DIR,
     AGENT_ROLE,
     AGENT_SOFTWARE_PREFIX,
     AGENT_STATE_NAME,
@@ -42,7 +42,6 @@ from neutrino_agent.constants import (
     PROTOCOL,
 )
 from neutrino_agent.core import enrollment, network, self_update
-from neutrino_agent.core.channel import BindingHttpClient
 from neutrino_agent.core.commands import DeviceOperator
 from neutrino_agent.core.desired_state import DesiredStateApplier, DesiredStateStore
 from neutrino_agent.core.engine import ModuleEngine
@@ -60,6 +59,8 @@ from neutrino_agent.exceptions import (
 )
 from neutrino_agent.platforms.detect import detect_platform
 from neutrino_agent.rdp.host import RdpShareHost
+from neutrino_agent.streams import STREAM_KIND_PACKAGE
+from neutrino_agent.streams.package import remove_stale
 
 # How often an unbound or a replaced agent looks again, which is only to
 # notice that its binding file has since been written.
@@ -134,6 +135,9 @@ class Agent:
         # data root, and so does the last desired state taken from the hub.
         data_dir = self._platform.agent_data_dir()
         self._data_dir = data_dir
+        # Where a package lands, a module's or this agent's own, until its
+        # digest is checked; the marks the engine keeps live beside it.
+        self._package_dir = AGENT_PACKAGE_DIR
         self._store = MachineStateStore(path=os.path.join(data_dir, AGENT_STATE_NAME))
         self._rdp = RdpShareHost(
             platform=self._platform,
@@ -150,14 +154,13 @@ class Agent:
             rdp=self._rdp,
             log=log,
             open_stream=self._open_stream,
-            package_dir=os.path.join(data_dir, AGENT_PACKAGE_DIR_NAME),
+            package_dir=self._package_dir,
         )
         # The share flow refuses before it configures anything when RustDesk
         # is not on the machine, which is what the engine's report answers.
         self._rdp.bind_modules(self._engine.report)
         self._backoff_s = AGENT_BACKOFF_MIN_S
         self._last_error: "dict | None" = None
-        self._channel = None
         self._operator = None
         self._session: "AgentSession | None" = None
         self._binding: dict = {}
@@ -308,6 +311,9 @@ class Agent:
     def run_forever(self) -> None:
         """Hold the socket, or wait to be enrolled, until the process stops."""
         self._log(f"neutrino_agent {AGENT_VERSION} starting on {hostname()}")
+        # A package the last process received and could not delete: the
+        # one that installed this agent, or one an install was mid-way on.
+        remove_stale(self._package_dir)
         # The desktop host runs on every machine this package installed on,
         # and reaches the LAN and nothing else from the first start.
         self._rdp.apply_baseline()
@@ -636,11 +642,6 @@ class Agent:
             self._binding = binding
             self._binding_stamp = enrollment.config_stamp()
             if binding:
-                self._channel = BindingHttpClient(
-                    gateway_url=binding["gateway_url"],
-                    fingerprint=binding["fingerprint"],
-                    token=binding["token"],
-                )
                 self._operator = DeviceOperator(
                     platform=self._platform,
                     reinstall=self._reinstall,
@@ -650,7 +651,6 @@ class Agent:
                     on_module_changed=self._report_module_now,
                 )
             else:
-                self._channel = None
                 self._operator = None
 
     def _drop_session(self) -> None:
@@ -693,9 +693,6 @@ class Agent:
                 return
             self._update_target = target
             self._update_error = None
-            channel = self._channel
-        if channel is None:
-            return
         kind = self_update.package_kind(self._engine.platform_tuple)
         if not kind:
             self._log("no reinstall: no package for this platform")
@@ -706,22 +703,8 @@ class Agent:
                 }
             return
         self._log("reinstalling from the hub's package")
-        try:
-            self_update.run_update(
-                channel,
-                kind=kind,
-                architecture=self._engine.platform_tuple.get("arch", ""),
-                data_dir=self._data_dir,
-            )
-        except (SelfUpdateError, GatewayUnreachable, GatewayUntrusted) as error:
-            code = (
-                str(error)
-                if isinstance(error, SelfUpdateError)
-                else "agent_update_fetch_failed"
-            )
-            with self._lock:
-                self._update_error = {"code": code, "params": {"target": target}}
-            self._log(f"reinstall failed: {error}")
+        if self._install_from_hub(target, kind):
+            self._log("reinstall launched; the service restarts")
 
     def _maybe_self_update(self, hub_software: str) -> None:
         """Update this agent when the hub runs a later release, once per target.
@@ -738,7 +721,6 @@ class Agent:
                 return
             self._update_target = hub_version
             self._update_error = None
-            channel = self._channel
         if is_dev_version(hub_version) or is_dev_version(AGENT_VERSION):
             self._log(f"no self-update: {AGENT_VERSION} or {hub_version} is a checkout")
             return
@@ -747,28 +729,53 @@ class Agent:
         if hub is None or agent is None:
             self._log(f"no self-update: cannot order {AGENT_VERSION} and {hub_version}")
             return
-        if agent >= hub or channel is None:
+        if agent >= hub:
             return
         kind = self_update.package_kind(self._engine.platform_tuple)
         if not kind:
             self._log(f"no self-update to {hub_version}: no package for this platform")
             return
         self._log(f"updating to {hub_version}")
+        if self._install_from_hub(hub_version, kind):
+            self._log(f"self-update to {hub_version} launched; the service restarts")
+
+    def _install_from_hub(self, target: str, kind: str) -> bool:
+        """Take this agent's package down a ``package {}`` stream and install it.
+
+        A transfer the socket dropped leaves the target unlatched, so the
+        next connection asks again; a package that did not match, a hub
+        that refused, and an install that could not be launched latch it
+        with their code.
+
+        Args:
+            target: What the attempt is latched under.
+            kind: ``deb`` or ``rpm``.
+
+        Returns:
+            True when the install was launched.
+        """
         try:
-            self_update.run_update(
-                channel,
-                kind=kind,
-                architecture=self._engine.platform_tuple.get("arch", ""),
-                data_dir=self._data_dir,
-            )
-        except (SelfUpdateError, GatewayUnreachable, GatewayUntrusted) as error:
-            code = (
-                str(error)
-                if isinstance(error, SelfUpdateError)
-                else channel_error(error)["code"]
-            )
+            channel = self._open_stream(STREAM_KIND_PACKAGE)
+            path = self_update.receive_package(channel, directory=self._package_dir)
+        except GatewayUnreachable as error:
             with self._lock:
-                self._update_error = {"code": code, "params": {"target": hub_version}}
-            self._log(f"self-update to {hub_version} failed: {error}")
-            return
-        self._log(f"self-update to {hub_version} launched; the service restarts")
+                self._update_target = ""
+                self._update_error = {
+                    "code": "hub_unreachable",
+                    "params": {"target": target},
+                }
+            self._log(f"update to {target} not fetched: {error}")
+            return False
+        except SelfUpdateError as error:
+            with self._lock:
+                self._update_error = {"code": str(error), "params": {"target": target}}
+            self._log(f"update to {target} refused: {error}")
+            return False
+        try:
+            self_update.run_update(path, kind=kind, data_dir=self._data_dir)
+        except SelfUpdateError as error:
+            with self._lock:
+                self._update_error = {"code": str(error), "params": {"target": target}}
+            self._log(f"update to {target} failed: {error}")
+            return False
+        return True

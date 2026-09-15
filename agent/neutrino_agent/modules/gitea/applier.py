@@ -182,8 +182,8 @@ class GiteaConfigApplier:
         return "started"
 
     def stop(self) -> None:
-        """Take the server down until the next apply."""
-        run(["systemctl", "disable", "--now", GITEA_UNIT], is_checked=False)
+        """Take the server down until the next apply; the unit stays enabled."""
+        run(["systemctl", "stop", GITEA_UNIT], is_checked=False)
 
     def _own_work_root(self) -> None:
         """Give the git account the work root and its ``.ssh``.

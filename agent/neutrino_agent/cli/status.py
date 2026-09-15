@@ -28,9 +28,6 @@ STATUS_UNBOUND = "this machine has joined no gateway"
 ERROR_WORDS = {
     "hub_untrusted": "what answers is not the hub this machine pinned",
     "hub_unreachable": "the hub cannot be reached",
-    "agent_update_fetch_failed": (
-        "self-update failed: the package could not be fetched from the hub"
-    ),
     "hub_reply_unreadable": "the hub sent a reply this agent could not read",
     "agent_package_missing": (
         "the hub has no agent package for this machine's platform"

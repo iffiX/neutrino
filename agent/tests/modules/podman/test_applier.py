@@ -127,7 +127,7 @@ def test_stop_all_takes_down_every_generated_unit_and_keeps_the_files(
 
     PodmanUnitApplier(directory=str(directory), suffix=".container").stop_all()
 
-    assert commands.calls == [["systemctl", "disable", "--now", "web.service"]]
+    assert commands.calls == [["systemctl", "stop", "web.service"]]
     assert (directory / "web.container").exists()
 
 

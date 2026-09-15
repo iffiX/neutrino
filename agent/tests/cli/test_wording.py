@@ -94,7 +94,6 @@ MODULE_CODES = (
 UPDATE_CODES = (
     "agent_package_digest_mismatch",
     "agent_update_launch_failed",
-    "agent_update_fetch_failed",
 )
 
 
@@ -183,6 +182,7 @@ def test_the_codes_that_left_with_the_old_wire_are_gone():
         "order_failed",
         "no_download_named",
         "module_digest_mismatch",
+        "agent_update_fetch_failed",
     ):
         assert not is_worded(code)
 

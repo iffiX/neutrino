@@ -134,14 +134,12 @@ def test_a_rejected_render_never_reaches_the_live_file(box):
     assert not (tmp_path / "etc/smb.conf").exists()
 
 
-def test_stop_disables_the_unit(box):
+def test_stop_stops_the_unit_and_leaves_it_enabled(box):
     commands, _ = box
 
     SambaConfigApplier(unit="smbd.service").stop()
 
-    assert commands.ran("systemctl") == [
-        (["systemctl", "disable", "--now", "smbd.service"], None)
-    ]
+    assert commands.ran("systemctl") == [(["systemctl", "stop", "smbd.service"], None)]
 
 
 def test_converge_creates_missing_accounts_and_retires_dropped_ones(box):

@@ -7,6 +7,11 @@ close, and checks the ``sha256`` the close's params carry against what
 landed. Only a file that matches is handed over; a mismatch, a refusal
 from the hub, or a socket that dropped mid-transfer leaves no file behind.
 
+A file is left behind on purpose in one case: the agent's own package
+outlives the process that received it, because the install restarts that
+process. The agent the install put on the machine clears the directory
+when it starts.
+
 Not pure: writes the file system.
 """
 
@@ -24,6 +29,10 @@ from neutrino_agent.exceptions import GatewayUnreachable
 
 PACKAGE_PREFIX = ".package."
 PACKAGE_SUFFIX = ".part"
+# What the stream answers when the bytes do not match the close's digest,
+# and when the socket went away under it.
+CODE_DIGEST_MISMATCH = "package_digest_mismatch"
+CODE_UNREACHABLE = "hub_unreachable"
 
 
 class PackageStream:
@@ -68,7 +77,7 @@ class PackageStream:
                 os.fsync(handle.fileno())
         except GatewayUnreachable:
             _unlink(path)
-            return _refusal("hub_unreachable")
+            return _refusal(CODE_UNREACHABLE)
         except OSError as error:
             _unlink(path)
             return _refusal("write_failed", path=path, detail=str(error)[:200])
@@ -79,10 +88,10 @@ class PackageStream:
         expected = str(params.get("sha256", "") or "")
         if not expected:
             _unlink(path)
-            return _refusal("hub_unreachable")
+            return _refusal(CODE_UNREACHABLE)
         if expected != digest.hexdigest():
             _unlink(path)
-            return _refusal("package_digest_mismatch")
+            return _refusal(CODE_DIGEST_MISMATCH)
         return {"path": path}
 
     def _take(self, handle, digest) -> tuple:
@@ -107,6 +116,20 @@ class PackageStream:
             handle.write(item[1])
             digest.update(item[1])
             self._channel.offer_credit(len(item[1]))
+
+
+def remove_stale(directory: str) -> None:
+    """Delete every file a package transfer left in the directory.
+
+    Args:
+        directory: Where packages land; one that is not there is left so.
+    """
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return
+    for name in names:
+        _unlink(os.path.join(directory, name))
 
 
 def _refusal(code: str, **params) -> dict:

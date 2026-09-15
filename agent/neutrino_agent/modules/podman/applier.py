@@ -193,7 +193,7 @@ class PodmanUnitApplier:
         """Stop every generated unit, leaving its file in place."""
         for file_name in self.generated_names():
             unit = f"{file_name[: -len(self._suffix)]}.service"
-            run(["systemctl", "disable", "--now", unit], is_checked=False)
+            run(["systemctl", "stop", unit], is_checked=False)
 
     def generated_names(self) -> list:
         """The rendered files this applier owns in its directory."""

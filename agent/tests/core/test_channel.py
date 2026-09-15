@@ -190,7 +190,6 @@ def test_a_wrong_pin_keeps_the_binding_and_names_the_changed_identity(
     delays = [agent.run_once() for _ in range(3)]
 
     assert delays == [AGENT_BACKOFF_MAX_S] * 3
-    assert agent._channel is not None
     assert enrollment.is_bound()
     assert agent.last_error() == {"code": "hub_untrusted", "params": {}}
     assert RecordingHandler.requests == []
@@ -230,7 +229,7 @@ def canned_client(status, data=b"", headers=None):
 
     Header names are lower-cased the way ``_request`` hands them up.
     """
-    made = BindingHttpClient(gateway_url="http://hub", token="tok")
+    made = BindingHttpClient(gateway_url="http://hub")
     named = {name.lower(): value for name, value in (headers or {}).items()}
 
     def request(method, url, *, body=None, headers=None):
@@ -302,58 +301,6 @@ def test_an_empty_success_body_reads_as_an_empty_object():
 
 def test_a_leave_ignores_the_reply_body():
     assert canned_client(200, b'{"anything": 1}').leave("d1", "t1") is None
-
-
-# --- the package download, until the package stream carries the bytes ---
-
-
-def test_post_download_writes_the_bytes_and_returns_the_checksum(tmp_path):
-    made = canned_client(200, b"pkg", headers={"X-Checksum-Sha256": "abc123"})
-    destination = tmp_path / "update.deb"
-
-    named = made.post_download("/api/agent/package", {}, str(destination))
-
-    assert named == "abc123"
-    assert destination.read_bytes() == b"pkg"
-
-
-def test_post_download_carries_the_token_in_its_body():
-    made = canned_client(200, b"pkg")
-    sent = {}
-
-    def request(method, url, *, body=None, headers=None):
-        sent["body"] = json.loads(body)
-        return 200, b"pkg", {}
-
-    made._request = request
-
-    made.post_download("/api/agent/package", {"family": "deb"}, "/dev/null")
-
-    assert sent["body"] == {"family": "deb", "token": "tok"}
-
-
-def test_post_download_without_a_checksum_header_returns_empty(tmp_path):
-    made = canned_client(200, b"pkg")
-    destination = tmp_path / "update.deb"
-
-    assert made.post_download("/api/agent/package", {}, str(destination)) == ""
-
-
-def test_post_download_an_unwritable_destination_raises_unreachable(tmp_path):
-    made = canned_client(200, b"pkg")
-    destination = tmp_path / "missing" / "update.deb"
-
-    with pytest.raises(GatewayUnreachable):
-        made.post_download("/api/agent/package", {}, str(destination))
-
-
-def test_post_download_a_coded_refusal_raises_the_detail(tmp_path):
-    with pytest.raises(GatewayRefusedDetail) as caught:
-        canned_client(404, refusal("agent_package_missing")).post_download(
-            "/api/agent/package", {}, str(tmp_path / "update.deb")
-        )
-
-    assert caught.value.code == "agent_package_missing"
 
 
 def test_a_dead_port_raises_unreachable():

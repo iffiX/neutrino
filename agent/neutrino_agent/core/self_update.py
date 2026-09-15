@@ -1,35 +1,38 @@
 """Updating this agent to the hub's own release.
 
-An agent whose welcome names a later ``software`` than its own pulls the
-hub's baked package over the pinned channel and installs it. The install runs in a transient systemd unit:
-installing the package restarts ``neutrino_agent.service``, which kills the
-process that asked for the update, so the process must not be the one
-running it. The unit writes what the package manager said and how it
-exited beside the agent's state, and the agent that install put on the
-machine reads it there and carries it up.
+An agent whose welcome names a later ``software`` than its own takes the
+hub's package down a ``package {}`` stream it opens, checks the digest the
+close named, and installs the file. The install runs in a transient
+systemd unit: installing the package restarts ``neutrino_agent.service``,
+which kills the process that asked for the update, so the process must not
+be the one running it. The unit writes what the package manager said and
+how it exited beside the agent's state, and the agent that install put on
+the machine reads it there and carries it up.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shlex
 import shutil
 import subprocess
-import tempfile
 
 from neutrino_agent.constants import (
-    AGENT_PACKAGE_PATH,
     AGENT_REINSTALL_LOG_NAME,
     AGENT_REINSTALL_OUTPUT_LIMIT_BYTES,
     AGENT_REINSTALL_RESULT_NAME,
     AGENT_UPDATE_LAUNCH_TIMEOUT_S,
     AGENT_UPDATE_UNIT,
 )
-from neutrino_agent.exceptions import SelfUpdateError
+from neutrino_agent.exceptions import GatewayUnreachable, SelfUpdateError
+from neutrino_agent.streams.package import (
+    CODE_DIGEST_MISMATCH,
+    CODE_UNREACHABLE,
+    PackageStream,
+)
 
 FAMILY_TO_PACKAGE_KIND = {"debian": "deb", "rhel": "rpm"}
 
@@ -60,11 +63,11 @@ def package_kind(platform: dict) -> str:
 
 
 def install_command(kind: str, path: str, *, data_dir: str) -> list:
-    """The detached command that installs a downloaded package. Pure.
+    """The detached command that installs a received package. Pure.
 
     Args:
         kind: ``deb`` or ``rpm``.
-        path: The downloaded package file.
+        path: The received package file.
         data_dir: The agent's data directory, where the unit writes the
             install's log and its result.
 
@@ -74,7 +77,7 @@ def install_command(kind: str, path: str, *, data_dir: str) -> list:
     """
     if kind == "deb":
         # dpkg installs a same-version file where apt would call it already
-        # newest, and the wire-stale path reinstalls exactly that; apt then
+        # newest, and the reinstall verb installs exactly that; apt then
         # settles anything dpkg named as missing.
         install = f"dpkg -i {path} || (apt-get -f install -y && dpkg -i {path})"
         setenv = ["--setenv=DEBIAN_FRONTEND=noninteractive"]
@@ -135,45 +138,59 @@ def clear_reinstall_result(data_dir: str) -> None:
         pass
 
 
-def run_update(channel, *, kind: str, architecture: str, data_dir: str) -> None:
-    """Fetch the hub's package over the pinned channel and install it detached.
+def receive_package(channel, *, directory: str) -> str:
+    """Take the agent's own package down a ``package {}`` stream.
 
     Args:
-        channel: The gateway channel the heartbeats use.
+        channel: The stream's channel, already opened as ``package {}``.
+        directory: Where the file lands.
+
+    Returns:
+        The path of the file whose digest matched the close's ``sha256``.
+
+    Raises:
+        SelfUpdateError: When the bytes do not match the digest the hub
+            named, as ``agent_package_digest_mismatch``, or the hub closed
+            the stream with a code, which is the message; no file remains.
+        GatewayUnreachable: When the socket went away mid-transfer; no
+            file remains.
+    """
+    received = PackageStream(channel, directory=directory).receive()
+    if "path" in received:
+        return received["path"]
+    code = received["code"]
+    if code == CODE_UNREACHABLE:
+        raise GatewayUnreachable("the package stream ended before its close")
+    if code == CODE_DIGEST_MISMATCH:
+        raise SelfUpdateError("agent_package_digest_mismatch")
+    raise SelfUpdateError(code)
+
+
+def run_update(package_path: str, *, kind: str, data_dir: str) -> None:
+    """Install a package whose digest was checked, detached from this process.
+
+    Args:
+        package_path: The package file :func:`receive_package` handed over.
+            It outlives this process: the install restarts the service,
+            and the agent that starts then clears the directory.
         kind: ``deb`` or ``rpm``.
-        architecture: This machine's, from the platform tuple. The package
-            carries an interpreter, so the hub has one per machine.
         data_dir: The agent's data directory, where the unit writes what
             the install did.
 
     Raises:
-        SelfUpdateError: When the digest does not match or the install cannot
-            be launched; the message names the failure code.
-        GatewayRefusedDetail: When the hub refused the fetch with a code.
-        GatewayUnreachable: When the package cannot be fetched.
-        GatewayUntrusted: When what answers is not the pinned hub.
+        SelfUpdateError: When the install cannot be launched, as
+            ``agent_update_launch_failed``; the file is deleted.
     """
-    handle, path = tempfile.mkstemp(prefix="neutrino_agent_update_", suffix=f".{kind}")
-    os.close(handle)
-    try:
-        named = channel.post_download(
-            AGENT_PACKAGE_PATH, {"family": kind, "architecture": architecture}, path
-        )
-        if not named or named != _sha256(path):
-            raise SelfUpdateError("agent_package_digest_mismatch")
-    except Exception:
-        os.unlink(path)
-        raise
     clear_reinstall_result(data_dir)
     try:
         subprocess.run(
-            install_command(kind, path, data_dir=data_dir),
+            install_command(kind, package_path, data_dir=data_dir),
             capture_output=True,
             timeout=AGENT_UPDATE_LAUNCH_TIMEOUT_S,
             check=True,
         )
     except (OSError, subprocess.SubprocessError) as error:
-        os.unlink(path)
+        os.unlink(package_path)
         raise SelfUpdateError("agent_update_launch_failed") from error
 
 
@@ -195,7 +212,7 @@ def _reporting_script(install: str, *, kind: str, path: str, data_dir: str) -> s
     Args:
         install: The package manager's own command line.
         kind: ``deb`` or ``rpm``.
-        path: The downloaded package file.
+        path: The received package file.
         data_dir: Where the log and the result are written.
 
     Returns:
@@ -220,16 +237,3 @@ def _reporting_script(install: str, *, kind: str, path: str, data_dir: str) -> s
             f"""printf '"}}\\n' >> {result}""",
         ]
     )
-
-
-def _sha256(path: str) -> str:
-    """The SHA-256 hex digest of a file.
-
-    Args:
-        path: The file to digest.
-
-    Returns:
-        The digest.
-    """
-    with open(path, "rb") as stream:
-        return hashlib.sha256(stream.read()).hexdigest()

@@ -50,8 +50,6 @@ AGENT_CODE_CHANNEL_REFUSED = "channel_refused"
 AGENT_CODE_REPLACED = "replaced"
 AGENT_CODE_BINDING_UNKNOWN = "binding_unknown"
 
-AGENT_PACKAGE_PATH = "/api/agent/package"
-
 # How much of a failed step's output a code's params carry. Enough to read
 # the package manager's own complaint, bounded so a verbose failure cannot
 # fill a report.
@@ -155,11 +153,16 @@ AGENT_RUSTDESK_BINARY_PATH = "/usr/lib/neutrino_agent/rustdesk/rustdesk"
 # before it runs against the configuration that state carries.
 AGENT_MODULE_COMMAND_SETTLE_S = 30.0
 
+# What this machine keeps about its own work, root-only: the configured
+# marks, and a package in transit.
+AGENT_VAR_DIR = "/var/lib/neutrino_agent"
 # Where the mark that the hub has configured a module lives, one root-only
 # file per module. Written on the first successful apply of the hub's
 # configuration, deleted on uninstall; it tells ``installed`` from
 # ``stopped`` and ``running``.
-AGENT_CONFIGURED_DIR = "/var/lib/neutrino_agent/configured"
-# Where a package coming down a stream lands until its digest is checked,
-# a directory under the agent's data dir.
-AGENT_PACKAGE_DIR_NAME = "packages"
+AGENT_CONFIGURED_DIR = AGENT_VAR_DIR + "/configured"
+# Where a package coming down a stream lands until its digest is checked.
+# A module's package is deleted once its install ran; the agent's own
+# outlives the process that received it, and the agent the install put
+# here clears the directory when it starts.
+AGENT_PACKAGE_DIR = AGENT_VAR_DIR + "/packages"

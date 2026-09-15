@@ -95,21 +95,18 @@ def _pinned_context() -> ssl.SSLContext:
 
 
 class BindingHttpClient:
-    """Joins and leaves over HTTP, and fetches a package until streams carry it."""
+    """Joins and leaves over HTTP; everything else rides the socket."""
 
-    def __init__(self, *, gateway_url: str, fingerprint: str = "", token: str = ""):
+    def __init__(self, *, gateway_url: str, fingerprint: str = ""):
         """
         Args:
             gateway_url: Base URL of the hub's agent port, without a trailing
                 slash.
             fingerprint: SHA-256 hex of the hub certificate's DER form.
                 Required for an ``https`` URL; ignored for plain ``http``.
-            token: The binding token, added to a package download's body
-                alone; joining carries a ticket and leaving names its own.
         """
         self._gateway_url = gateway_url.rstrip("/")
         self._fingerprint = fingerprint.strip().lower()
-        self._token = token
 
     def join(self, payload: dict) -> dict:
         """Spend a ticket for a binding.
@@ -146,32 +143,6 @@ class BindingHttpClient:
                 status with no code, or an unreadable reply.
         """
         self._post_json(CHANNEL_LEAVE_PATH, {"id": binding_id, "token": token})
-
-    def post_download(self, path: str, payload: dict, destination: str) -> str:
-        """Post a JSON body and write the bytes that come back to disk.
-
-        Args:
-            path: Path below the hub URL, starting with a slash.
-            payload: The body to send; the token is added.
-            destination: Local file to write.
-
-        Returns:
-            The reply's ``X-Checksum-Sha256`` value, empty when none came.
-
-        Raises:
-            GatewayUntrusted: When the hub's certificate is not the pinned
-                one; nothing was sent.
-            GatewayRefusedDetail: When the hub refused with a code.
-            GatewayUnreachable: On any network error, an error status with
-                no code, or a destination that cannot be written.
-        """
-        _, data, headers = self._post(path, {**payload, "token": self._token})
-        try:
-            with open(destination, "wb") as target:
-                target.write(data)
-        except OSError as error:
-            raise GatewayUnreachable(f"cannot save {path}: {error}") from error
-        return headers.get("x-checksum-sha256", "")
 
     def _post_json(self, path: str, payload: dict) -> dict:
         """One POST whose reply is a JSON object, or empty."""

@@ -1,13 +1,15 @@
-"""Self-update downward: the hub's baked package, verified, installed detached.
+"""Self-update downward: the package down a stream, verified, installed detached.
 
-A hub whose welcome names a later ``software`` makes the agent pull the hub's
-baked package and install it in a transient unit that outlives the process.
-Nothing here talks to a network: the socket is scripted, and the HTTP
-channel is replaced at the seam the download uses it through. The script
-the transient unit runs is run for real against package managers stubbed
-onto PATH, since what it writes is what the panel reads back.
+A hub whose welcome names a later ``software`` makes the agent open a
+``package {}`` stream, take the bytes into its package directory, check the
+digest the close named, and install the file in a transient unit that
+outlives the process. Nothing here talks to a network: the socket is
+scripted, and the hub's side of the stream is played by it. The script the
+transient unit runs is run for real against package managers stubbed onto
+PATH, since what it writes is what the panel reads back.
 """
 
+import functools
 import hashlib
 import json
 import os
@@ -17,38 +19,71 @@ import pytest
 
 import neutrino_agent.core.loop as loop_module
 import neutrino_agent.core.self_update as self_update
-from neutrino_agent.constants import AGENT_REINSTALL_OUTPUT_LIMIT_BYTES
-from neutrino_agent.exceptions import GatewayUnreachable
+from neutrino_agent.constants import (
+    AGENT_REINSTALL_OUTPUT_LIMIT_BYTES,
+    AGENT_WS_STREAM_CREDIT_BYTES,
+    AGENT_WS_STREAM_ID_BYTES,
+)
+from neutrino_agent.exceptions import GatewayUnreachable, SelfUpdateError
 from neutrino_agent.core.loop import Agent
 from tests.conftest import bind, discard
 from tests.core.test_loop import DROP_AFTER_REPORT, WELCOME, ClientScript
+from tests.core.test_session import ScriptedClient
+from tests.streams.fake_channel import FakeChannel
 
 PACKAGE_BYTES = b"!<arch>agent-package"
+PACKAGE_OPEN = {"type": "open", "stream": 1, "kind": "package"}
 
 
-class FakeChannel:
-    """Hands out package bytes the way the hub would."""
+def sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
-    def __init__(self, *, named_digest: str = "", has_checksum=True):
+
+class PackageHub(ScriptedClient):
+    """A scripted socket whose hub answers ``package {}`` with its bytes.
+
+    The bytes go down in two binary frames, then the close names the
+    digest; each knob below changes one thing about that answer.
+    """
+
+    def __init__(
+        self,
+        *,
+        named_digest: str = "",
+        has_digest: bool = True,
+        is_dropped: bool = False,
+        refusal: str = "",
+    ):
+        super().__init__()
         self.named_digest = named_digest
-        self.has_checksum = has_checksum
-        self.downloads = []
+        self.has_digest = has_digest
+        self.is_dropped = is_dropped
+        self.refusal = refusal
+        self.opened: list = []
 
-    def post_download(self, path, payload, destination):
-        self.downloads.append((path, dict(payload), destination))
-        with open(destination, "wb") as stream:
-            stream.write(PACKAGE_BYTES)
-        if not self.has_checksum:
-            return ""
-        return self.named_digest or hashlib.sha256(PACKAGE_BYTES).hexdigest()
+    def send_text(self, text: str) -> None:
+        super().send_text(text)
+        message = json.loads(text)
+        if message.get("type") == "open" and message.get("kind") == "package":
+            self.opened.append(message)
+            self._answer(message["stream"])
 
-
-class UnreachableDownloadChannel(FakeChannel):
-    """The package fetch never comes back."""
-
-    def post_download(self, path, payload, destination):
-        self.downloads.append((path, dict(payload), destination))
-        raise GatewayUnreachable("cannot reach gateway: gone")
+    def _answer(self, stream: int) -> None:
+        if self.refusal:
+            self.feed(
+                {"type": "close", "stream": stream, "code": self.refusal, "params": {}}
+            )
+            return
+        prefix = stream.to_bytes(AGENT_WS_STREAM_ID_BYTES, "big")
+        self.feed(prefix + PACKAGE_BYTES[:7])
+        if self.is_dropped:
+            self.feed(GatewayUnreachable("hung up mid-transfer"))
+            return
+        self.feed(prefix + PACKAGE_BYTES[7:])
+        params = {}
+        if self.has_digest:
+            params["sha256"] = self.named_digest or sha256(PACKAGE_BYTES)
+        self.feed({"type": "close", "stream": stream, "code": "", "params": params})
 
 
 @pytest.fixture
@@ -69,27 +104,41 @@ def welcomed_by(hub_version: str) -> list:
     return [dict(WELCOME, software=f"neutrino_hub/{hub_version}"), DROP_AFTER_REPORT]
 
 
-def bound_agent(config_path, monkeypatch, *, hub_version, named_digest=""):
-    """An agent whose every connection is welcomed by a hub of one version."""
+def bound_agent(config_path, monkeypatch, *, hub_version, **hub):
+    """An agent whose every connection is welcomed by a hub of one version,
+    and whose package stream that hub answers as the knobs say."""
     bind(config_path)
     monkeypatch.setattr("neutrino_agent.core.loop.AGENT_VERSION", "1.0.0")
     monkeypatch.setattr(self_update, "package_kind", lambda platform: "deb")
     script = ClientScript([], default=welcomed_by(hub_version))
+    script.client_class = functools.partial(PackageHub, **hub)
     monkeypatch.setattr(loop_module, "WebSocketClient", script)
     agent = Agent(log=discard)
-    agent._channel = FakeChannel(named_digest=named_digest)
     agent._script = script
     return agent
 
 
-def test_a_newer_hub_triggers_a_detached_install(config_path, monkeypatch, launched):
+def opened(agent) -> list:
+    """Every package open sent, across every connection."""
+    return [message for client in agent._script.clients for message in client.opened]
+
+
+def landed(tmp_path) -> list:
+    directory = tmp_path / "packages"
+    return sorted(os.listdir(directory)) if directory.is_dir() else []
+
+
+def test_a_newer_hub_takes_the_package_down_a_stream_and_installs_it_detached(
+    config_path, monkeypatch, launched, tmp_path
+):
     agent = bound_agent(config_path, monkeypatch, hub_version="9.9.9")
 
     agent.run_once()
 
-    path, payload, destination = agent._channel.downloads[0]
-    assert path == "/api/agent/package"
-    assert payload == {"family": "deb", "architecture": agent.platform()["arch"]}
+    assert opened(agent) == [PACKAGE_OPEN]
+    (name,) = landed(tmp_path)
+    path = str(tmp_path / "packages" / name)
+    assert (tmp_path / "packages" / name).read_bytes() == PACKAGE_BYTES
     launched_command = launched[0]
     assert launched_command[:4] == [
         "systemd-run",
@@ -99,13 +148,41 @@ def test_a_newer_hub_triggers_a_detached_install(config_path, monkeypatch, launc
     ]
     assert launched_command[4] == "--setenv=DEBIAN_FRONTEND=noninteractive"
     assert launched_command[5:7] == ["sh", "-c"]
-    assert f"dpkg -i {destination}" in launched_command[7]
+    assert f"dpkg -i {path}" in launched_command[7]
     assert "apt-get -f install -y" in launched_command[7]
     assert agent._update_error is None
-    os.unlink(destination)
 
 
-def test_a_digest_mismatch_installs_nothing(config_path, monkeypatch, launched):
+def test_credit_is_offered_at_the_open_and_again_as_each_piece_lands(
+    config_path, monkeypatch, launched
+):
+    agent = bound_agent(config_path, monkeypatch, hub_version="9.9.9")
+
+    agent.run_once()
+
+    credits = agent._script.clients[0].frames("credit")
+    assert [credit["stream"] for credit in credits] == [1, 1, 1]
+    assert [credit["bytes"] for credit in credits] == [
+        AGENT_WS_STREAM_CREDIT_BYTES,
+        7,
+        len(PACKAGE_BYTES) - 7,
+    ]
+
+
+def test_the_package_lands_in_the_agents_own_directory_root_only(
+    config_path, monkeypatch, launched, tmp_path
+):
+    agent = bound_agent(config_path, monkeypatch, hub_version="9.9.9")
+
+    agent.run_once()
+
+    assert (os.stat(tmp_path / "packages").st_mode & 0o777) == 0o700
+    assert len(landed(tmp_path)) == 1
+
+
+def test_a_digest_mismatch_installs_nothing_and_leaves_no_file(
+    config_path, monkeypatch, launched, tmp_path
+):
     agent = bound_agent(
         config_path, monkeypatch, hub_version="9.9.9", named_digest="0" * 64
     )
@@ -117,8 +194,7 @@ def test_a_digest_mismatch_installs_nothing(config_path, monkeypatch, launched):
         "code": "agent_package_digest_mismatch",
         "params": {"target": "9.9.9"},
     }
-    # The refused download is not left on disk.
-    assert not os.path.exists(agent._channel.downloads[0][2])
+    assert landed(tmp_path) == []
 
 
 def test_a_failed_target_is_not_retried(config_path, monkeypatch, launched):
@@ -129,8 +205,60 @@ def test_a_failed_target_is_not_retried(config_path, monkeypatch, launched):
     agent.run_once()
     agent.run_once()
 
-    assert len(agent._channel.downloads) == 1
+    assert len(opened(agent)) == 1
     assert launched == []
+
+
+def test_a_socket_dropped_mid_transfer_leaves_no_file_and_locks_no_target(
+    config_path, monkeypatch, launched, tmp_path
+):
+    agent = bound_agent(config_path, monkeypatch, hub_version="9.9.9", is_dropped=True)
+
+    agent.run_once()
+
+    assert launched == []
+    assert landed(tmp_path) == []
+    assert agent._update_target == ""
+    assert agent._update_error == {
+        "code": "hub_unreachable",
+        "params": {"target": "9.9.9"},
+    }
+
+    agent.run_once()
+
+    assert len(opened(agent)) == 2
+
+
+def test_a_close_that_names_no_digest_is_a_dropped_transfer(
+    config_path, monkeypatch, launched, tmp_path
+):
+    agent = bound_agent(config_path, monkeypatch, hub_version="9.9.9", has_digest=False)
+
+    agent.run_once()
+    agent.run_once()
+
+    assert launched == []
+    assert landed(tmp_path) == []
+    assert len(opened(agent)) == 2
+
+
+def test_a_hub_that_refuses_the_package_is_coded_and_latched(
+    config_path, monkeypatch, launched, tmp_path
+):
+    agent = bound_agent(
+        config_path, monkeypatch, hub_version="9.9.9", refusal="agent_package_missing"
+    )
+
+    agent.run_once()
+    agent.run_once()
+
+    assert launched == []
+    assert landed(tmp_path) == []
+    assert len(opened(agent)) == 1
+    assert agent._update_error == {
+        "code": "agent_package_missing",
+        "params": {"target": "9.9.9"},
+    }
 
 
 def test_a_matching_version_is_left_alone(config_path, monkeypatch, launched):
@@ -138,7 +266,7 @@ def test_a_matching_version_is_left_alone(config_path, monkeypatch, launched):
 
     agent.run_once()
 
-    assert agent._channel.downloads == []
+    assert opened(agent) == []
     assert launched == []
     assert agent._update_error is None
 
@@ -148,7 +276,7 @@ def test_an_older_hub_is_not_downgraded_to(config_path, monkeypatch, launched):
 
     agent.run_once()
 
-    assert agent._channel.downloads == []
+    assert opened(agent) == []
     assert launched == []
 
 
@@ -157,12 +285,12 @@ def test_an_unparseable_hub_version_updates_nothing(config_path, monkeypatch, la
 
     agent.run_once()
 
-    assert agent._channel.downloads == []
+    assert opened(agent) == []
     assert launched == []
     assert agent._update_error is None
 
 
-def test_a_launch_failure_is_coded_and_cleaned_up(config_path, monkeypatch):
+def test_a_launch_failure_is_coded_and_cleaned_up(config_path, monkeypatch, tmp_path):
     agent = bound_agent(config_path, monkeypatch, hub_version="9.9.9")
 
     def refuse_to_run(command, **kwargs):
@@ -175,23 +303,7 @@ def test_a_launch_failure_is_coded_and_cleaned_up(config_path, monkeypatch):
         "code": "agent_update_launch_failed",
         "params": {"target": "9.9.9"},
     }
-    assert not os.path.exists(agent._channel.downloads[0][2])
-
-
-def test_a_missing_checksum_header_refuses_the_install(
-    config_path, monkeypatch, launched
-):
-    agent = bound_agent(config_path, monkeypatch, hub_version="9.9.9")
-    agent._channel.has_checksum = False
-
-    agent.run_once()
-
-    assert launched == []
-    assert agent._update_error == {
-        "code": "agent_package_digest_mismatch",
-        "params": {"target": "9.9.9"},
-    }
-    assert not os.path.exists(agent._channel.downloads[0][2])
+    assert landed(tmp_path) == []
 
 
 def test_a_new_target_version_after_a_failure_is_tried(
@@ -203,13 +315,12 @@ def test_a_new_target_version_after_a_failure_is_tried(
 
     agent.run_once()
     agent._script.default = welcomed_by("9.9.10")
-    agent._channel.named_digest = ""
+    agent._script.client_class = PackageHub
     agent.run_once()
 
-    assert len(agent._channel.downloads) == 2
+    assert len(opened(agent)) == 2
     assert len(launched) == 1
     assert agent._update_error is None
-    os.unlink(agent._channel.downloads[1][2])
 
 
 def test_a_successful_target_is_not_relaunched(config_path, monkeypatch, launched):
@@ -218,25 +329,51 @@ def test_a_successful_target_is_not_relaunched(config_path, monkeypatch, launche
     agent.run_once()
     agent.run_once()
 
-    assert len(agent._channel.downloads) == 1
+    assert len(opened(agent)) == 1
     assert len(launched) == 1
-    os.unlink(agent._channel.downloads[0][2])
 
 
-def test_a_fetch_failure_is_coded_and_latched(config_path, monkeypatch, launched):
-    agent = bound_agent(config_path, monkeypatch, hub_version="9.9.9")
-    agent._channel = UnreachableDownloadChannel()
+# --- the stream's outcome, as the update reads it ---
 
-    agent.run_once()
-    agent.run_once()
 
-    assert launched == []
-    assert agent._update_error == {
-        "code": "hub_unreachable",
-        "params": {"target": "9.9.9"},
-    }
-    assert len(agent._channel.downloads) == 1
-    assert not os.path.exists(agent._channel.downloads[0][2])
+def stream_outcome(tmp_path, chunks, close):
+    channel = FakeChannel(stream_id=1)
+    for chunk in chunks:
+        channel.feed(("data", chunk))
+    channel.feed(("close", close[0], close[1]))
+    return self_update.receive_package(channel, directory=str(tmp_path / "packages"))
+
+
+def test_receive_package_hands_over_the_file_the_close_vouches_for(tmp_path):
+    path = stream_outcome(
+        tmp_path, [PACKAGE_BYTES], ("", {"sha256": sha256(PACKAGE_BYTES)})
+    )
+
+    assert path.startswith(str(tmp_path / "packages"))
+    with open(path, "rb") as stream:
+        assert stream.read() == PACKAGE_BYTES
+
+
+def test_receive_package_names_a_mismatch_with_the_agents_own_code(tmp_path):
+    with pytest.raises(SelfUpdateError) as caught:
+        stream_outcome(tmp_path, [PACKAGE_BYTES], ("", {"sha256": "0" * 64}))
+
+    assert str(caught.value) == "agent_package_digest_mismatch"
+    assert landed(tmp_path) == []
+
+
+def test_receive_package_passes_the_hubs_refusal_through(tmp_path):
+    with pytest.raises(SelfUpdateError) as caught:
+        stream_outcome(tmp_path, [], ("agent_package_missing", {}))
+
+    assert str(caught.value) == "agent_package_missing"
+
+
+def test_receive_package_raises_unreachable_for_a_stream_that_ended_early(tmp_path):
+    with pytest.raises(GatewayUnreachable):
+        stream_outcome(tmp_path, [PACKAGE_BYTES[:3]], ("", {}))
+
+    assert landed(tmp_path) == []
 
 
 def test_the_rpm_command_falls_back_to_yum_without_dnf(monkeypatch):
@@ -425,4 +562,3 @@ def test_a_launch_drops_the_result_of_the_reinstall_before_it(
 
     assert not stale.exists()
     assert len(launched) == 1
-    os.unlink(agent._channel.downloads[0][2])

@@ -319,8 +319,8 @@ class SambaConfigApplier:
         return "started"
 
     def stop(self) -> None:
-        """Take the server down until the next apply."""
-        run(["systemctl", "disable", "--now", self._unit], is_checked=False)
+        """Take the server down until the next apply; the unit stays enabled."""
+        run(["systemctl", "stop", self._unit], is_checked=False)
 
     def _ensure_share_directories(self, config: SambaConfig) -> None:
         for share in config.shares:
