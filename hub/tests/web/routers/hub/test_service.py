@@ -160,12 +160,12 @@ def test_the_list_folds_the_probe_health_in(box):
 def test_a_device_hosted_share_is_a_read_only_row_at_the_devices_address(box):
     client, runtime = box
     store = DesiredStateStore()
-    store.set_enabled(DEVICE, "samba", True)
+    store.set_want(DEVICE, "samba", "running")
     store.write(
         DEVICE, "samba", {"shares": [{"name": "media", "path": "/srv"}], "users": []}
     )
     runtime.agent_sessions.report_by_key[DEVICE] = {
-        "modules": {"samba": {"state": "installed", "details": {"is_active": True}}}
+        "modules": {"samba": {"state": "running", "details": {"is_active": True}}}
     }
 
     payload = client.get("/api/hub/service").json()
@@ -181,12 +181,12 @@ def test_a_device_hosted_share_is_a_read_only_row_at_the_devices_address(box):
 def test_a_row_carries_the_code_its_provenance_is_worded_from(box):
     client, runtime = box
     store = DesiredStateStore()
-    store.set_enabled(DEVICE, "samba", True)
+    store.set_want(DEVICE, "samba", "running")
     store.write(
         DEVICE, "samba", {"shares": [{"name": "media", "path": "/srv"}], "users": []}
     )
     runtime.agent_sessions.report_by_key[DEVICE] = {
-        "modules": {"samba": {"state": "installed", "details": {"is_active": True}}}
+        "modules": {"samba": {"state": "running", "details": {"is_active": True}}}
     }
     declare(client, description="")
 

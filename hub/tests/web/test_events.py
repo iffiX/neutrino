@@ -12,9 +12,9 @@ import threading
 
 from neutrino_hub.web.constants import (
     WEB_EVENT_CONFIG,
+    WEB_EVENT_DEVICE_REPORT,
     WEB_EVENT_DEVICES,
     WEB_EVENT_METRICS,
-    WEB_EVENT_MODULE_ORDER,
 )
 from neutrino_hub.web.events import PanelEventBus
 
@@ -76,7 +76,7 @@ def test_identical_events_inside_the_window_arrive_once():
         queue = bus.subscribe()
 
         for _ in range(5):
-            bus.publish(WEB_EVENT_MODULE_ORDER, "aa:bb:cc:dd:ee:ff")
+            bus.publish(WEB_EVENT_DEVICE_REPORT, "aa:bb:cc:dd:ee:ff")
 
         assert len(await settled(queue)) == 1
 
@@ -116,8 +116,8 @@ def test_another_key_of_the_same_type_is_its_own_event():
         bus = PanelEventBus()
         queue = bus.subscribe()
 
-        bus.publish(WEB_EVENT_MODULE_ORDER, "aa:bb:cc:dd:ee:ff")
-        bus.publish(WEB_EVENT_MODULE_ORDER, "aa:bb:cc:dd:ee:00")
+        bus.publish(WEB_EVENT_DEVICE_REPORT, "aa:bb:cc:dd:ee:ff")
+        bus.publish(WEB_EVENT_DEVICE_REPORT, "aa:bb:cc:dd:ee:00")
 
         assert [event["key"] for event in await settled(queue)] == [
             "aa:bb:cc:dd:ee:ff",

@@ -35,7 +35,7 @@ SSH_UNSUPPORTED_OS_STATUS = 95
 # Who puts a module on a machine. platform: the OS carries it and the hub
 # switches it. hub: the hub fetches an artifact and the agent installs it.
 # user: the person installs it themselves and the hub only detects and
-# manages it — no order ever installs or uninstalls a user-tier module.
+# manages it, so no ``want`` is ever written for a user-tier module.
 AGENT_MODULE_INSTALLER_TIERS = ("platform", "hub", "user")
 AGENT_MODULE_INSTALLER_USER = "user"
 
@@ -101,20 +101,6 @@ AGENT_MODULE_PACKAGE_MAGIC = {
     "zip_binary": (b"PK\x03\x04",),
     "binary": (b"\x7fELF",),
 }
-
-# How long one order may stand handed-down before the controller stops
-# waiting for the machine's word. An install can genuinely take minutes; an
-# agent that went away mid-order must not hold its device's lock for ever.
-AGENT_MODULE_ORDER_TIMEOUT_S = 30 * 60
-# How many finished orders a device keeps, so the drawer can still show the
-# install a person is asking about without holding every install ever run.
-AGENT_MODULE_ORDER_HISTORY = 12
-# What an agent reports back of a failed install. Enough to read the package
-# manager's own complaint, bounded so a verbose failure cannot fill a beat.
-AGENT_MODULE_OUTPUT_LIMIT_BYTES = 16 * 1024
-# How many lines of an operation's output the heartbeat reply carries, the
-# same tail the panel's journals show.
-AGENT_OPERATION_OUTPUT_LINES = 200
 
 # The modules a device hosts from the hub's desired state, in the order the
 # agent applies them. One file per module under the device's directory.

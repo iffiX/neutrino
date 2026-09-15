@@ -1,14 +1,19 @@
 """One desired state per device: what the hub wants a machine to host.
 
-``config/devices/<id>/`` holds ``modules.json``, which modules are on, one
+``config/devices/<id>/`` holds ``modules.json``, each module's ``want``, one
 file per module with its configuration, and ``rdp.json``, which seals the
 machine's seat password; ``<id>`` is the device's id. Composing a device's
 state gathers those with the install recipe resolved for its platform and
 the parts the hub knows about the machine, the address it sits at and the
 networks its shares answer, under one hash the agent compares against. The
 document is the ``state`` frame's sections: ``modules``, one entry
-``{want, config, install, uninstall}`` per module the device is to host,
+``{want, config, install, uninstall}`` per module ``modules.json`` names,
 and ``desktop`` with the seat password.
+
+A module the file does not name is not mentioned, and the agent leaves it
+as it is. A module the person uninstalled is named ``absent`` until the
+agent reports it absent, at which point the report path drops it from the
+file, so the hub holds no standing claim over software it took off.
 
 Reads take no lock; every write goes through ``write_config`` under the one
 config lock, re-reading inside it.
@@ -25,12 +30,11 @@ from neutrino_hub.modules.credentials.vault import (
     seal_bytes,
     unseal_bytes,
 )
-from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_STATE_RUNNING
+from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_WANTS
 from neutrino_hub.modules.devices.catalog import resolved_modules
 from neutrino_hub.modules.devices.constants import (
     DEVICE_GITEA_SECRET_NAMES,
     DEVICE_GITEA_SECRETS_FILE,
-    DEVICE_MODULE_NAMES,
     DEVICE_MODULES_FILE,
     DEVICE_PACKAGES_DIR_NAME,
     DEVICE_RDP_FILE,
@@ -90,13 +94,14 @@ class DesiredStateStore:
             write_config(self._path(key, f"{module}.json"), dict(config))
 
     def modules(self, key: str) -> dict:
-        """Which modules one device has on.
+        """What one device is asked for, module by module.
 
         Args:
             key: The device key.
 
         Returns:
-            Module name to ``{"is_enabled"}``, every hosted module present.
+            Module name to ``{"want"}``, for the modules ``modules.json``
+            names and no other.
         """
         try:
             stored = read_config(self._path(key, DEVICE_MODULES_FILE))
@@ -104,27 +109,60 @@ class DesiredStateStore:
             stored = {}
         held = stored.get("modules") if isinstance(stored, dict) else {}
         held = held if isinstance(held, dict) else {}
-        return {
-            name: {"is_enabled": bool((held.get(name) or {}).get("is_enabled"))}
-            for name in DEVICE_MODULE_NAMES
-        }
+        modules = {}
+        for name, entry in held.items():
+            want = str(entry.get("want", "") or "") if isinstance(entry, dict) else ""
+            if want in CHANNEL_MODULE_WANTS:
+                modules[str(name)] = {"want": want}
+        return modules
 
-    def set_enabled(self, key: str, module: str, is_enabled: bool) -> None:
-        """Switch one module on or off for one device.
+    def set_want(self, key: str, module: str, want: str) -> None:
+        """Write what one device is to make of one module.
 
         Args:
             key: The device key.
             module: The module name.
-            is_enabled: Whether the device should host it.
+            want: ``absent``, ``installed``, ``stopped`` or ``running``.
+
+        Raises:
+            ValueError: For a ``want`` outside those four.
+        """
+        if want not in CHANNEL_MODULE_WANTS:
+            raise ValueError(f"unknown want {want!r}")
+        with CONFIG_WRITE_LOCK:
+            modules = self.modules(key)
+            modules[module] = {"want": want}
+            write_config(self._path(key, DEVICE_MODULES_FILE), {"modules": modules})
+
+    def want_of(self, key: str, module: str) -> str:
+        """What one device is asked for on one module.
+
+        Args:
+            key: The device key.
+            module: The module name.
+
+        Returns:
+            The ``want``, empty for a module the file does not name.
+        """
+        return self.modules(key).get(module, {}).get("want", "")
+
+    def forget_module(self, key: str, module: str) -> bool:
+        """Stop naming one module in one device's state.
+
+        Args:
+            key: The device key.
+            module: The module name.
+
+        Returns:
+            True when the file named it and no longer does.
         """
         with CONFIG_WRITE_LOCK:
             modules = self.modules(key)
-            modules[module] = {"is_enabled": bool(is_enabled)}
+            if module not in modules:
+                return False
+            del modules[module]
             write_config(self._path(key, DEVICE_MODULES_FILE), {"modules": modules})
-
-    def is_enabled(self, key: str, module: str) -> bool:
-        """Whether one device hosts one module."""
-        return self.modules(key)[module]["is_enabled"]
+        return True
 
     def gitea_secrets(self, key: str) -> dict:
         """The machine secrets one device's Gitea signs with, made once.
@@ -208,8 +246,8 @@ class DesiredStateStore:
     ) -> tuple:
         """One device's whole desired state and its hash.
 
-        A module that is switched on is wanted ``running``; one that is not
-        is left out, so the agent leaves it as it is.
+        Every module ``modules.json`` names is sent with its ``want``; one it
+        does not name is left out, so the agent leaves it as it is.
 
         Args:
             key: The device key.
@@ -222,9 +260,7 @@ class DesiredStateStore:
         """
         resolved = resolved_modules(platform)
         modules = {}
-        for name, switch in self.modules(key).items():
-            if not switch["is_enabled"]:
-                continue
+        for name, entry in self.modules(key).items():
             config = self.read(key, name)
             if name == "samba":
                 config["allowed_subnets"] = list(allowed_subnets)
@@ -232,7 +268,7 @@ class DesiredStateStore:
                 config["address"] = address
                 config["secrets"] = self.gitea_secrets(key)
             modules[name] = {
-                "want": CHANNEL_MODULE_STATE_RUNNING,
+                "want": entry["want"],
                 "config": config,
                 **_recipes(resolved.get(name) or {}),
             }

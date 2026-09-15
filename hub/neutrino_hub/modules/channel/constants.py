@@ -38,14 +38,25 @@ CHANNEL_STREAM_PACKAGE = "package"
 CHANNEL_STREAM_LOG = "log"
 CHANNEL_STREAM_SERVICE = "service"
 CHANNEL_STREAM_DESKTOP = "desktop"
-# The kinds an agent of this release serves beside the table above.
-CHANNEL_STREAM_CONTAINER_SHELL = "container_shell"
-CHANNEL_STREAM_FILE_LIST = "file_list"
-CHANNEL_STREAM_FILE_DOWNLOAD = "file_download"
-CHANNEL_STREAM_FILE_UPLOAD = "file_upload"
-CHANNEL_STREAM_FILE_OP = "file_op"
-CHANNEL_STREAM_ORDER = "order"
-CHANNEL_STREAM_VALIDATE = "validate"
+
+# A ``shell`` inside a container names the module that runs it.
+CHANNEL_SHELL_CONTAINER_MODULE = "podman"
+
+# The operations a ``file`` stream's ``op`` names.
+CHANNEL_FILE_OP_LIST = "list"
+CHANNEL_FILE_OP_DOWNLOAD = "download"
+CHANNEL_FILE_OP_UPLOAD = "upload"
+CHANNEL_FILE_OP_RENAME = "rename"
+CHANNEL_FILE_OP_REMOVE = "remove"
+CHANNEL_FILE_OP_DIRECTORY_CREATE = "directory_create"
+CHANNEL_FILE_OP_DIRECTORY_DOWNLOAD = "directory_download"
+
+# The ``module`` a ``command`` names for the agent's own verbs, and the two
+# verbs the hub sends outside a module's router: a shell's later size, and
+# a configuration checked before it is stored, which every module answers.
+CHANNEL_COMMAND_MODULE_AGENT = "agent"
+CHANNEL_VERB_RESIZE = "resize"
+CHANNEL_VERB_VALIDATE = "validate"
 
 # The hub allots even stream ids from here; a peer's ids are odd.
 CHANNEL_FIRST_HUB_STREAM_ID = 0
@@ -89,6 +100,17 @@ CHANNEL_MODULE_STATE_FAILED = "failed"
 CHANNEL_MODULE_STATE_UNSUPPORTED = "unsupported"
 CHANNEL_MODULE_WANTS = (
     CHANNEL_MODULE_STATE_ABSENT,
+    CHANNEL_MODULE_STATE_INSTALLED,
+    CHANNEL_MODULE_STATE_STOPPED,
+    CHANNEL_MODULE_STATE_RUNNING,
+)
+# The wants under which the agent applies the hub's configuration.
+CHANNEL_MODULE_CONFIGURED_WANTS = (
+    CHANNEL_MODULE_STATE_STOPPED,
+    CHANNEL_MODULE_STATE_RUNNING,
+)
+# The states in which the software is on the machine.
+CHANNEL_MODULE_PRESENT_STATES = (
     CHANNEL_MODULE_STATE_INSTALLED,
     CHANNEL_MODULE_STATE_STOPPED,
     CHANNEL_MODULE_STATE_RUNNING,

@@ -1,13 +1,20 @@
 """The Modules page of a device, and one door for every module block.
 
-``/api/agent/module`` reads every module a device could host and queues an
-install or an uninstall. The file share, the git server, the container
-engine and ZFS are hosted by devices, one desired state per device per
-module under ``config/``, and each module's block is built here: the
-per-device read, the device list, the selection of which devices host the
-module, plus the helpers the block's own routes share: a configuration is
-checked on the agent before it is stored and pushed, and an imperative verb
-runs on the agent to its close and answers the device's fresh view.
+``/api/agent/module`` reads every module a device could host, each as its
+agent last reported it beside what the hub asks of it, and its four presses
+write one ``want`` each into ``config/devices/<id>/modules.json``: install
+``installed``, start ``running``, stop ``stopped``, uninstall ``absent``.
+The state is pushed at once, and what the machine reports afterwards is
+shown; an install's or an uninstall's lines arrive on a ``log`` stream the
+agent opens, which the list names by its task.
+
+The file share, the git server, the container engine and ZFS are hosted by
+devices, one desired state per device per module under ``config/``, and
+each module's block is built here: the per-device read, the device list,
+the selection of which devices host the module, plus the helpers the
+block's own routes share: a configuration is checked on the agent before
+it is stored and pushed, and an imperative verb runs on the agent to its
+close and answers the device's fresh view.
 
 Every refusal is ``{code, params}``; a device whose agent holds no socket
 cannot be edited or driven, and says so with ``agent_offline``.
@@ -21,17 +28,18 @@ from neutrino_hub.modules.devices.agent_module_cache import (
     platform_keys,
     resolve_platform_entry,
 )
-from neutrino_hub.modules.devices.agent_module_controller import (
-    ORDER_ACTION_INSTALL,
-    ORDER_ACTION_UNINSTALL,
-    ask_module,
-)
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.channel.constants import (
+    CHANNEL_MODULE_CONFIGURED_WANTS,
+    CHANNEL_MODULE_STATE_ABSENT,
+    CHANNEL_MODULE_STATE_INSTALLED,
+    CHANNEL_MODULE_STATE_RUNNING,
+    CHANNEL_MODULE_STATE_STOPPED,
     CHANNEL_STREAM_COMMAND,
-    CHANNEL_STREAM_VALIDATE,
+    CHANNEL_VERB_VALIDATE,
 )
 from neutrino_hub.modules.devices.constants import (
+    AGENT_MODULE_INSTALLER_USER,
     DEVICE_MODULE_COMMAND_TIMEOUT_S,
     DEVICE_MODULE_REPORT_WAIT_S,
     DEVICE_MODULE_VALIDATE_TIMEOUT_S,
@@ -40,6 +48,7 @@ from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
 from neutrino_hub.modules.services.constants import SERVICES_PUBLISHED_MODULES
 from neutrino_hub.system.machine import machine_id
+from neutrino_hub.web.channel_serve import module_task_label
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
     ApplyResult,
@@ -61,12 +70,11 @@ CODE_AGENT_OFFLINE = "agent_offline"
 CODE_DEVICE_UNKNOWN = "device_unknown"
 CODE_COMMAND_FAILED = "command_failed"
 CODE_MODULE_UNKNOWN = "module_unknown"
+CODE_MODULE_NOT_OPTIONAL = "module_not_optional"
+CODE_NO_PLATFORM_BUILD = "no_platform_build"
 
-# What the row draws while an order stands, before the machine reports it.
-ORDER_STEP_STATES = {
-    ORDER_ACTION_INSTALL: "installing",
-    ORDER_ACTION_UNINSTALL: "uninstalling",
-}
+# What a module reads as until its agent has said.
+STATE_UNKNOWN = "unknown"
 
 
 @dataclass
@@ -78,10 +86,12 @@ class DeviceModuleContext:
         device: The stored device.
         module: The module name.
         config: The module's stored configuration for this device.
-        is_enabled: Whether the device should host the module.
+        want: What the hub asks of the module here; empty when it asks
+            nothing.
         is_online: Whether its agent holds a socket.
         host: Where the device is.
         state: The module's state on the machine, as last reported.
+        is_active: Whether its unit runs, as last reported.
         code: Why it failed, typed.
         params: What the wording names.
         details: The live reads the last report carried.
@@ -91,10 +101,11 @@ class DeviceModuleContext:
     device: ManagedDevice
     module: str
     config: dict = field(default_factory=dict)
-    is_enabled: bool = False
+    want: str = ""
     is_online: bool = False
     host: str = ""
-    state: str = "unknown"
+    state: str = STATE_UNKNOWN
+    is_active: bool = False
     code: str = ""
     params: dict = field(default_factory=dict)
     details: dict = field(default_factory=dict)
@@ -110,6 +121,15 @@ class DeviceModuleContext:
             "params": dict(self.params),
         }
 
+    def observe(self, runtime: PanelRuntime) -> None:
+        """Read the module's state again from the device's latest report."""
+        observed = module_status(runtime, self.key, self.module)
+        self.state = observed["state"]
+        self.is_active = observed["is_active"]
+        self.code = observed["code"]
+        self.params = observed["params"]
+        self.details = observed["details"]
+
 
 @router.get("", response_model=DeviceModuleListView)
 def list_modules(
@@ -122,19 +142,19 @@ def list_modules(
         runtime: The shared runtime, for what the agent last reported.
 
     Returns:
-        The modules, unsupported ones included so the panel can say why.
+        The modules, unsupported ones included so the panel can say why,
+        each with what the hub asks of it and the task carrying its
+        install or uninstall lines, when one has run.
 
     Raises:
         HTTPException: 404 ``device_unknown`` when no device has the id.
     """
     device = _require_device(device_id)
     key = device.id
-    reported = runtime.device_modules.get(key, {})
     platform = runtime.device_platform.get(key, {})
     keys = platform_keys(platform)
     modules = []
     for name, manifest in load_module_manifests().items():
-        state, code, params, _ = module_status(runtime, key, name)
         platforms = manifest.get("platforms", {})
         _, entry = resolve_platform_entry(manifest, platform)
         modules.append(
@@ -151,9 +171,9 @@ def list_modules(
                 source=manifest.get("source", ""),
                 license=manifest.get("license", ""),
                 corresponding_source=manifest.get("corresponding_source", ""),
-                state=state,
-                code=code,
-                params=params,
+                want=runtime.desired_states.want_of(key, name),
+                task_id=module_task_id(runtime, key, name),
+                **module_status(runtime, key, name),
             )
         )
     return DeviceModuleListView(
@@ -167,43 +187,81 @@ def list_modules(
 def install_module(
     request: DeviceModuleRequest, runtime: PanelRuntime = Depends(get_runtime)
 ) -> DeviceModuleListView:
-    """Queue one install order for one module on a device.
-
-    A click is one order and nothing more: the hub records no standing
-    state, and what the machine reports afterwards is simply shown.
+    """Ask for one module's package on a device, and nothing configured.
 
     Args:
         request: The device and the module.
         runtime: The shared runtime.
 
     Returns:
-        The modules after the order was queued.
+        The modules after ``want: installed`` was written and pushed.
 
     Raises:
         HTTPException: 404 ``module_unknown`` for a module with no manifest,
-            404 ``device_unknown`` for an id no device has.
+            404 ``device_unknown`` for an id no device has, 400
+            ``module_not_optional`` for a module the person installs
+            themselves, 409 ``no_platform_build`` when the manifest offers
+            the device's platform nothing, 409 ``agent_offline`` when the
+            device has no socket.
     """
-    return _order_module(runtime, request, is_enabled=True)
+    return _set_want(runtime, request, CHANNEL_MODULE_STATE_INSTALLED)
+
+
+@router.post("/start", response_model=DeviceModuleListView)
+def start_module(
+    request: DeviceModuleRequest, runtime: PanelRuntime = Depends(get_runtime)
+) -> DeviceModuleListView:
+    """Ask for one module configured and running on a device.
+
+    Args:
+        request: The device and the module.
+        runtime: The shared runtime.
+
+    Returns:
+        The modules after ``want: running`` was written and pushed.
+
+    Raises:
+        HTTPException: As :func:`install_module`.
+    """
+    return _set_want(runtime, request, CHANNEL_MODULE_STATE_RUNNING)
+
+
+@router.post("/stop", response_model=DeviceModuleListView)
+def stop_module(
+    request: DeviceModuleRequest, runtime: PanelRuntime = Depends(get_runtime)
+) -> DeviceModuleListView:
+    """Ask for one module configured and stopped on a device.
+
+    Args:
+        request: The device and the module.
+        runtime: The shared runtime.
+
+    Returns:
+        The modules after ``want: stopped`` was written and pushed.
+
+    Raises:
+        HTTPException: As :func:`install_module`.
+    """
+    return _set_want(runtime, request, CHANNEL_MODULE_STATE_STOPPED)
 
 
 @router.post("/uninstall", response_model=DeviceModuleListView)
 def uninstall_module(
     request: DeviceModuleRequest, runtime: PanelRuntime = Depends(get_runtime)
 ) -> DeviceModuleListView:
-    """Queue one uninstall order for one module on a device.
+    """Ask for one module off a device; its data stays.
 
     Args:
         request: The device and the module.
         runtime: The shared runtime.
 
     Returns:
-        The modules after the order was queued.
+        The modules after ``want: absent`` was written and pushed.
 
     Raises:
-        HTTPException: 404 ``module_unknown`` for a module with no manifest,
-            404 ``device_unknown`` for an id no device has.
+        HTTPException: As :func:`install_module`.
     """
-    return _order_module(runtime, request, is_enabled=False)
+    return _set_want(runtime, request, CHANNEL_MODULE_STATE_ABSENT)
 
 
 def module_router(module: str, *, view_model, build_view) -> APIRouter:
@@ -267,16 +325,16 @@ def device_list(runtime: PanelRuntime, module: str) -> ModuleDeviceListView:
         if not device.is_managed:
             continue
         key = device.id
-        state, code, params, _ = module_status(runtime, key, module)
+        observed = module_status(runtime, key, module)
         row = ModuleDeviceView(
             device_id=key,
             name=device.name or runtime.device_hostname.get(key, "") or key,
             hostname=runtime.device_hostname.get(key, ""),
             is_online=runtime.agent_sessions.is_online(key),
-            is_enabled=runtime.desired_states.is_enabled(key, module),
-            state=state,
-            code=code,
-            params=params,
+            want=runtime.desired_states.want_of(key, module),
+            state=observed["state"],
+            code=observed["code"],
+            params=observed["params"],
         )
         is_hub = bool(own_machine) and device.machine_id == own_machine
         rows.append(((not is_hub, row.name.lower()), row))
@@ -289,7 +347,7 @@ def select_hosts(
 ) -> ModuleDeviceListView:
     """Make exactly these devices host the module.
 
-    A device newly on is ordered an install, one dropped an uninstall, and
+    A device newly on is wanted ``running``, one dropped ``absent``, and
     each changed device is handed its new state. A changed device whose
     agent is offline refuses the whole selection before anything is
     written.
@@ -318,24 +376,20 @@ def select_hosts(
     changed = [
         key
         for key in sorted(stored)
-        if (key in wanted) != runtime.desired_states.is_enabled(key, module)
+        if (key in wanted) != is_hosted(runtime, key, module)
     ]
     for key in changed:
         if not runtime.agent_sessions.is_online(key):
             raise _refusal(status.HTTP_409_CONFLICT, CODE_AGENT_OFFLINE, device_id=key)
-    manifest = load_module_manifests().get(module, {})
     for key in changed:
-        is_enabled = key in wanted
-        runtime.desired_states.set_enabled(key, module, is_enabled)
-        reported = runtime.device_modules.get(key, {}).get(module) or {}
-        ask_module(
-            controller=runtime.agent_module_orders,
-            device_id=key,
-            module=module,
-            manifest=manifest,
-            platform=runtime.device_platform.get(key, {}),
-            is_enabled=is_enabled,
-            reported_state=str(reported.get("state", "")),
+        runtime.desired_states.set_want(
+            key,
+            module,
+            (
+                CHANNEL_MODULE_STATE_RUNNING
+                if key in wanted
+                else CHANNEL_MODULE_STATE_ABSENT
+            ),
         )
         try:
             push_state(runtime, key)
@@ -344,6 +398,13 @@ def select_hosts(
     if changed:
         _recompose_published(runtime, module)
     return device_list(runtime, module)
+
+
+def is_hosted(runtime: PanelRuntime, key: str, module: str) -> bool:
+    """Whether the hub configures one module on one device."""
+    return (
+        runtime.desired_states.want_of(key, module) in CHANNEL_MODULE_CONFIGURED_WANTS
+    )
 
 
 def device_context(
@@ -369,27 +430,21 @@ def device_context(
             status.HTTP_404_NOT_FOUND, CODE_DEVICE_UNKNOWN, device_id=device_id
         )
     key = device.id
-    state, code, params, details = module_status(runtime, key, module)
-    return DeviceModuleContext(
+    context = DeviceModuleContext(
         key=key,
         device=device,
         module=module,
         config=runtime.desired_states.read(key, module),
-        is_enabled=runtime.desired_states.is_enabled(key, module),
+        want=runtime.desired_states.want_of(key, module),
         is_online=runtime.agent_sessions.is_online(key),
         host=runtime.device_address.get(key, ""),
-        state=state,
-        code=code,
-        params=params,
-        details=details,
     )
+    context.observe(runtime)
+    return context
 
 
-def module_status(runtime: PanelRuntime, key: str, module: str) -> tuple:
-    """Where one module stands on one device.
-
-    The machine answers for what is true; the controller answers for how
-    the last thing somebody asked for went.
+def module_status(runtime: PanelRuntime, key: str, module: str) -> dict:
+    """Where one module stands on one device, as its agent last reported.
 
     Args:
         runtime: The shared runtime.
@@ -397,25 +452,37 @@ def module_status(runtime: PanelRuntime, key: str, module: str) -> tuple:
         module: The module name.
 
     Returns:
-        ``(state, code, params, details)``.
+        ``{"state", "is_active", "code", "params", "details"}``; the state
+        is ``unknown`` until the agent has said.
     """
     reported = runtime.device_modules.get(key, {}).get(module) or {}
-    state = str(reported.get("state", "unknown") or "unknown")
-    code = str(reported.get("code") or "")
-    params = dict(reported.get("params") or {})
-    details = (
-        reported.get("details") if isinstance(reported.get("details"), dict) else {}
-    )
-    controller = runtime.agent_module_orders
-    open_order = controller.open_order_for(key, module)
-    failure = controller.failure_for(key, module)
-    if open_order is not None:
-        state = ORDER_STEP_STATES.get(open_order.action, state)
-    elif failure is not None:
-        state = "failed"
-        code = failure.code
-        params = dict(failure.params)
-    return state, code, params, dict(details)
+    details = reported.get("details")
+    return {
+        "state": str(reported.get("state", STATE_UNKNOWN) or STATE_UNKNOWN),
+        "is_active": bool(reported.get("is_active", False)),
+        "code": str(reported.get("code") or ""),
+        "params": dict(reported.get("params") or {}),
+        "details": dict(details) if isinstance(details, dict) else {},
+    }
+
+
+def module_task_id(runtime: PanelRuntime, key: str, module: str) -> str:
+    """The newest task carrying one module's install or uninstall lines.
+
+    Args:
+        runtime: The shared runtime, which holds the tasks.
+        key: The device.
+        module: The module name.
+
+    Returns:
+        The task id, running or finished, or empty when the agent has
+        opened no ``log`` stream for it since the panel started.
+    """
+    label = module_task_label(key, module)
+    for stream in reversed(runtime.tasks.streams()):
+        if stream.label == label:
+            return stream.id
+    return ""
 
 
 def require_online(context: DeviceModuleContext) -> None:
@@ -450,8 +517,12 @@ def store_config(runtime: PanelRuntime, context: DeviceModuleContext, config: di
     try:
         verdict = runtime.agent_sessions.run_stream_from_thread(
             context.key,
-            CHANNEL_STREAM_VALIDATE,
-            {"module": context.module, "config": dict(config)},
+            CHANNEL_STREAM_COMMAND,
+            {
+                "module": context.module,
+                "verb": CHANNEL_VERB_VALIDATE,
+                "config": dict(config),
+            },
             timeout=DEVICE_MODULE_VALIDATE_TIMEOUT_S,
         )
     except AgentOfflineError:
@@ -462,7 +533,8 @@ def store_config(runtime: PanelRuntime, context: DeviceModuleContext, config: di
         raise _refusal(status.HTTP_502_BAD_GATEWAY, error.code, **error.params)
     params = dict(verdict.get("params") or {})
     if verdict.get("code") or not params.get("is_valid"):
-        params.pop("is_valid", None)
+        for name in ("is_valid", "exit_code", "output", "result"):
+            params.pop(name, None)
         raise _refusal(
             status.HTTP_400_BAD_REQUEST,
             str(verdict.get("code") or "config_invalid"),
@@ -494,23 +566,23 @@ def push_state(runtime: PanelRuntime, key: str) -> None:
 
 
 def run_command(
-    runtime: PanelRuntime, context: DeviceModuleContext, action: str, args: dict
+    runtime: PanelRuntime, context: DeviceModuleContext, verb: str, args: dict
 ) -> dict:
-    """Run one module command on the device and wait for its close.
-
-    Args:
-        runtime: The shared runtime.
-        context: The device.
-        action: The command's action on the wire.
-        args: What the action takes.
+    """Run one of the module's verbs on the device and wait for its close.
 
     The agent reports at once after a command that took, and the context
     is read again from that report, so a view answered after this call
     shows the machine as the command left it.
 
+    Args:
+        runtime: The shared runtime.
+        context: The device.
+        verb: The verb, spelled without the module's name.
+        args: What the verb takes.
+
     Returns:
         The close's ``params``: ``{"exit_code", "output"}``, with ``result``
-        beside them for a command that reads.
+        beside them for a verb that reads.
 
     Raises:
         HTTPException: 409 ``agent_offline`` when the device has no socket,
@@ -523,7 +595,7 @@ def run_command(
         info = runtime.agent_sessions.run_stream_from_thread(
             context.key,
             CHANNEL_STREAM_COMMAND,
-            {"action": action, "args": dict(args)},
+            {"module": context.module, "verb": verb, **args},
             timeout=DEVICE_MODULE_COMMAND_TIMEOUT_S,
         )
     except AgentOfflineError:
@@ -536,6 +608,7 @@ def run_command(
     if info.get("code") or int(params.get("exit_code", 1) or 0) != 0:
         output = str(params.pop("output", "") or "").strip()
         params.pop("exit_code", None)
+        params.pop("result", None)
         if output and "detail" not in params:
             params["detail"] = output[-500:]
         raise _refusal(
@@ -546,44 +619,49 @@ def run_command(
     runtime.agent_sessions.wait_for_report_from_thread(
         context.key, serial, DEVICE_MODULE_REPORT_WAIT_S
     )
-    context.state, context.code, context.params, context.details = module_status(
-        runtime, context.key, context.module
-    )
+    context.observe(runtime)
     return params
 
 
-def _order_module(
-    runtime: PanelRuntime, request: DeviceModuleRequest, *, is_enabled: bool
+def _set_want(
+    runtime: PanelRuntime, request: DeviceModuleRequest, want: str
 ) -> DeviceModuleListView:
-    """Queue one order for one module on a device and answer the list.
+    """Write one module's ``want`` on one device, push it, and answer the list.
 
     Args:
         runtime: The shared runtime.
         request: The device and the module.
-        is_enabled: True to install, False to uninstall.
+        want: What the device is to make of the module.
 
     Returns:
-        The modules after the order was queued.
+        The modules after the write and the push.
 
     Raises:
         HTTPException: 404 ``module_unknown`` for a module with no manifest,
-            404 ``device_unknown`` for an id no device has.
+            404 ``device_unknown`` for an id no device has, 400
+            ``module_not_optional`` for a user-tier module, 409
+            ``no_platform_build`` when the manifest offers the device's
+            platform nothing, 409 ``agent_offline`` when the device has no
+            socket, 502 when the socket did not take the state in time.
     """
-    manifests = load_module_manifests()
+    manifest = load_module_manifests().get(request.module)
     module = request.module
-    if module not in manifests:
+    if manifest is None:
         raise _refusal(status.HTTP_404_NOT_FOUND, CODE_MODULE_UNKNOWN, name=module)
+    if str(manifest.get("installer", "")) == AGENT_MODULE_INSTALLER_USER:
+        raise _refusal(
+            status.HTTP_400_BAD_REQUEST, CODE_MODULE_NOT_OPTIONAL, name=module
+        )
     key = _require_device(request.device_id).id
-    reported = runtime.device_modules.get(key, {}).get(module) or {}
-    ask_module(
-        controller=runtime.agent_module_orders,
-        device_id=key,
-        module=module,
-        manifest=manifests[module],
-        platform=runtime.device_platform.get(key, {}),
-        is_enabled=is_enabled,
-        reported_state=str(reported.get("state", "")),
-    )
+    platform = runtime.device_platform.get(key, {})
+    _, entry = resolve_platform_entry(manifest, platform)
+    if entry is None and platform:
+        raise _refusal(status.HTTP_409_CONFLICT, CODE_NO_PLATFORM_BUILD, module=module)
+    if not runtime.agent_sessions.is_online(key):
+        raise _refusal(status.HTTP_409_CONFLICT, CODE_AGENT_OFFLINE, device_id=key)
+    runtime.desired_states.set_want(key, module, want)
+    push_state(runtime, key)
+    _recompose_published(runtime, module)
     return list_modules(request.device_id, runtime)
 
 

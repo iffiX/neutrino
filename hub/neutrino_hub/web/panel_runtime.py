@@ -34,7 +34,6 @@ from neutrino_hub.web.constants import (
     WEB_EVENT_CLIENTS,
     WEB_EVENT_CONFIG,
     WEB_EVENT_DEVICES,
-    WEB_EVENT_MODULE_ORDER,
     WEB_EVENT_NODES,
     WEB_EVENT_SERVICES,
     WEB_EVENT_TASK,
@@ -60,26 +59,14 @@ from neutrino_hub.web import channel_state
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.link_sampler import PanelLinkSampler
 from neutrino_hub.modules.devices.agent_module_cache import AgentModuleCache
-from neutrino_hub.modules.devices.agent_module_controller import (
-    ORDER_DONE,
-    ORDER_FAILED,
-    AgentModuleController,
-    AgentModuleOrder,
-)
 from neutrino_hub.modules.devices.agent_package import AgentPackageCache
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CODE_BINDING_UNKNOWN,
     CHANNEL_ROLE_AGENT,
     CHANNEL_ROLE_CLIENT,
-    CHANNEL_STREAM_ORDER,
 )
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
-from neutrino_hub.modules.devices.constants import (
-    AGENT_MODULE_ORDER_TIMEOUT_S,
-    AGENT_MODULE_OUTPUT_LIMIT_BYTES,
-)
-from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.web.task_stream import TaskStreamRegistry
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
 from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
@@ -149,20 +136,12 @@ class PanelRuntime:
             on_fingerprint_change=self._services_changed,
         )
         self.device_catalog = DeviceCatalogCache(services=self.published_services)
-        # The hub is the only thing that fetches and installs a module: one
-        # cache for the bytes, one lock per device, and one controller that
-        # is the single door every install goes through.
+        # The bytes a module's ``package`` stream serves, fetched once and
+        # kept; the agent installs them by the recipe its state carries.
         self.agent_modules = AgentModuleCache()
         # The hub's own agent packages, seeded by its package and topped up
         # from the release for a platform it was not built for.
         self.agent_packages = AgentPackageCache()
-        self.device_install_locks = DeviceInstallLocks()
-        self.agent_module_orders = AgentModuleController(
-            cache=self.agent_modules,
-            locks=self.device_install_locks,
-            dispatch=self._dispatch_order,
-            on_change=self._publish_module_order,
-        )
         self.is_config_dirty = False
         # Latest agent metrics, keyed by device id. Runtime only: these are
         # stale the moment the panel restarts, so they are never written to
@@ -474,7 +453,6 @@ class PanelRuntime:
         self.device_hub_host.pop(key, None)
         self.device_last_error.pop(key, None)
         self.device_shares.withdraw(key)
-        self.agent_module_orders.forget(key)
         self.desired_states.forget(key)
         self.agent_sessions.refuse_from_thread(key, CHANNEL_CODE_BINDING_UNKNOWN)
 
@@ -503,51 +481,6 @@ class PanelRuntime:
     def publish_ai_usage(self) -> None:
         """Say the AI gateway's counters or served list moved."""
         self.events.publish(WEB_EVENT_AI_USAGE)
-
-    def _dispatch_order(self, order: AgentModuleOrder) -> None:
-        """Run one module order over the device's socket, to its close.
-
-        Args:
-            order: The order the controller handed down; closed here with
-                the machine's word, or with ``agent_offline`` when it has
-                no channel.
-        """
-        controller = self.agent_module_orders
-
-        def collect(chunk: bytes) -> None:
-            order.output = (order.output + chunk.decode("utf-8", "replace"))[
-                -AGENT_MODULE_OUTPUT_LIMIT_BYTES:
-            ]
-
-        try:
-            info = self.agent_sessions.run_stream_from_thread(
-                order.device_id,
-                CHANNEL_STREAM_ORDER,
-                order.to_wire(),
-                on_chunk=collect,
-                timeout=AGENT_MODULE_ORDER_TIMEOUT_S,
-            )
-        except (AgentOfflineError, StreamRefusedError) as error:
-            controller.record_result(
-                device_id=order.device_id,
-                order_id=order.id,
-                state=ORDER_FAILED,
-                code=error.code,
-                params=dict(error.params),
-                output=order.output,
-            )
-            return
-        params = dict(info.get("params") or {})
-        output = str(params.pop("output", "") or "") or order.output
-        state = params.pop("state", None)
-        controller.record_result(
-            device_id=order.device_id,
-            order_id=order.id,
-            state=ORDER_DONE if state == ORDER_DONE else ORDER_FAILED,
-            code=str(info.get("code", "") or ""),
-            params=params,
-            output=output[-AGENT_MODULE_OUTPUT_LIMIT_BYTES:],
-        )
 
     def _apply_all_blocking(self) -> str:
         network = self.network()
@@ -670,10 +603,6 @@ class PanelRuntime:
         """Say the device list moved, and recompose what devices publish."""
         self.events.publish(WEB_EVENT_DEVICES)
         self.published_services.schedule_refresh()
-
-    def _publish_module_order(self, device_id: str) -> None:
-        """Say an order on one device moved."""
-        self.events.publish(WEB_EVENT_MODULE_ORDER, device_id)
 
     def _publish_clients(self) -> None:
         """Say the client list moved."""

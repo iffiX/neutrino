@@ -78,7 +78,7 @@ class StubSessions:
 def report(**modules) -> dict:
     return {
         "modules": {
-            name: {"state": "installed", "code": "", "params": {}, "details": details}
+            name: {"state": "running", "code": "", "params": {}, "details": details}
             for name, details in modules.items()
         }
     }
@@ -106,7 +106,7 @@ def cache(
 
 def hosting_samba() -> None:
     store = DesiredStateStore()
-    store.set_enabled(DEVICE, "samba", True)
+    store.set_want(DEVICE, "samba", "running")
     store.write(
         DEVICE, "samba", {"shares": [{"name": "media", "path": "/srv"}], "users": []}
     )
@@ -154,8 +154,8 @@ def test_a_module_that_is_on_but_not_installed_publishes_nothing(box):
 
 def test_a_devices_gitea_and_containers_come_from_its_report(box, monkeypatch):
     store = DesiredStateStore()
-    store.set_enabled(DEVICE, "gitea", True)
-    store.set_enabled(DEVICE, "podman", True)
+    store.set_want(DEVICE, "gitea", "running")
+    store.set_want(DEVICE, "podman", "running")
     monkeypatch.setattr(
         PublishedServiceCache, "_is_answering", lambda self, url: url.endswith(":3000/")
     )

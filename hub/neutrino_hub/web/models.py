@@ -476,6 +476,30 @@ class ProxySettings(BaseModel):
     direct_dns: DnsServerView
 
 
+class GeodataReleaseView(BaseModel):
+    """The release each of the two databases is taken from."""
+
+    geoip_version: str
+    geosite_version: str
+
+
+class GeodataView(GeodataReleaseView):
+    """Which release of each database the box loads, and where it came from.
+
+    ``latest`` is what the repositories publish now, which costs two requests
+    to GitHub: a scan fills it, and reading the page leaves it empty.
+    """
+
+    source: str
+    latest: GeodataReleaseView | None = None
+
+
+class ProxyView(ProxySettings):
+    """The Proxy page: its settings, and the databases the split runs on."""
+
+    geodata: GeodataView
+
+
 class KeyView(BaseModel):
     """One SSH key the gateway holds, without its material."""
 
@@ -1590,10 +1614,18 @@ class DeviceModuleView(BaseModel):
     # for software the hub does not hand on itself.
     license: str = ""
     corresponding_source: str = ""
+    # What the hub asks of the module here: ``absent``, ``installed``,
+    # ``stopped`` or ``running``; empty when it asks nothing.
+    want: str = ""
     state: str = "unknown"
+    is_active: bool = False
     # Why the state is what it is, when the agent said; the pages word it.
     code: str = ""
     params: dict = Field(default_factory=dict)
+    details: dict = Field(default_factory=dict)
+    # The task carrying the module's last install or uninstall lines, for
+    # the drawer to follow; empty when the agent has opened no log for it.
+    task_id: str = ""
 
 
 class DeviceServicesView(BaseModel):
@@ -1655,38 +1687,39 @@ class DeviceModuleRequest(BaseModel):
     module: str
 
 
-class DeviceInstallOrderView(BaseModel):
+class DeviceInstallTaskView(BaseModel):
     """One install on a device, as the drawer's install pane shows it."""
 
-    id: str
-    module: str
+    task_id: str
+    # The module installed or uninstalled; empty for the agent's own install.
+    module: str = ""
     # The module's own title, so a failure is read beside the thing it was.
     title: str = ""
-    action: str
-    state: str
-    code: str = ""
-    params: dict = Field(default_factory=dict)
-    # What the failing step printed, so a person reads the vendor's own
-    # words rather than only that something went wrong.
+    is_finished: bool = False
+    exit_code: int | None = None
+    # What the task printed, so a person reads the vendor's own words
+    # rather than only that something went wrong.
     output: str = ""
-    asked_at: str = ""
+    started_at: str = ""
     finished_at: str = ""
 
 
 class DeviceInstallOutputView(BaseModel):
-    """Every install this device has run, newest first."""
+    """Every install this device has run since the panel started, newest first."""
 
-    orders: list[DeviceInstallOrderView] = Field(default_factory=list)
+    tasks: list[DeviceInstallTaskView] = Field(default_factory=list)
 
 
 class ModuleDeviceView(BaseModel):
-    """One device on a module's page: whether it hosts the module, and how."""
+    """One device on a module's page: what the hub asks of the module there, and how it stands."""
 
     device_id: str
     name: str
     hostname: str = ""
     is_online: bool
-    is_enabled: bool
+    # ``absent``, ``installed``, ``stopped`` or ``running``; empty when the
+    # hub asks nothing of the module on this device.
+    want: str = ""
     state: str = "unknown"
     code: str = ""
     params: dict = Field(default_factory=dict)

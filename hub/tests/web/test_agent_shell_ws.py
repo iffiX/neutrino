@@ -2,9 +2,10 @@
 
 What these pin: the session gate, a device with no channel turned away
 with ``agent_offline``, an agent's refusal closing with its code, the
-browser's input and resizes reaching the stream, the stream's bytes
-becoming output frames and its close an exit frame, and the container
-variant opening its own kind with the container's name.
+browser's input reaching the stream and a resize opening one ``command
+{agent, resize}`` stream naming the shell, the stream's bytes becoming
+output frames and its close an exit frame, and the container variant
+opening the ``shell`` kind with the module and the container's name.
 """
 
 import time
@@ -94,7 +95,7 @@ def test_a_device_with_no_channel_is_turned_away_as_offline(api):
 def test_an_agents_refusal_closes_with_its_code(api):
     """The agent refuses by closing the stream with a code before any byte."""
     client, runtime = api
-    runtime.agent_sessions.scripts["container_shell"] = lambda args: (
+    runtime.agent_sessions.scripts["shell"] = lambda args: (
         [],
         {"code": "container_unknown", "params": {"name": "kuma"}},
     )
@@ -118,7 +119,15 @@ def test_input_and_resizes_reach_the_stream_and_output_and_exit_come_back(api):
         socket.send_json({"type": "resize", "cols": 132, "rows": 40})
         socket.send_json({"type": "input", "data": "ls\n"})
         assert wait_until(lambda: stream.sent_bytes() == b"ls\n")
-        assert stream.resizes == [(132, 40)]
+        _, resize = runtime.agent_sessions.streams
+        assert resize.kind == "command"
+        assert resize.args == {
+            "module": "agent",
+            "verb": "resize",
+            "shell": stream.id,
+            "cols": 132,
+            "rows": 40,
+        }
 
         stream.feed(("data", "total 0\r\n".encode()))
         assert socket.receive_json() == {"type": "output", "data": "total 0\r\n"}
@@ -157,13 +166,21 @@ def test_the_browser_closing_asks_the_agent_to_end_the_stream(api):
     assert wait_until(lambda: stream.is_close_asked)
 
 
-def test_the_container_variant_opens_its_kind_with_the_name(api):
+def test_the_container_variant_opens_a_shell_naming_the_module_and_the_container(
+    api,
+):
     client, runtime = api
     socket = open_terminal(client, f"/ws/agent/terminal?device_id={MAC}&container=kuma")
     try:
         assert wait_until(lambda: runtime.agent_sessions.streams)
         stream = runtime.agent_sessions.streams[0]
-        assert (stream.kind, stream.args) == ("container_shell", {"name": "kuma"})
+        assert stream.kind == "shell"
+        assert stream.args == {
+            "module": "podman",
+            "container": "kuma",
+            "cols": 80,
+            "rows": 24,
+        }
 
         stream.finish({"code": "", "params": {"exit_code": 0}})
         assert socket.receive_json() == {"type": "exit", "code": 0}

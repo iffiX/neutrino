@@ -14,7 +14,6 @@ import {
   HUB_EVENT_CONFIG,
   HUB_EVENT_DEVICE_REPORT,
   HUB_EVENT_DEVICES,
-  HUB_EVENT_MODULE_ORDER,
 } from "../use_hub_events";
 import type { DeviceChip } from "./device_chip_strip";
 import type { StripTab } from "./tab_strip";
@@ -41,17 +40,20 @@ import "./agent_service_page.css";
  */
 
 // What moves this list: a machine coming or going, its report saying the
-// module now stands somewhere else, an install changing state, and the
-// written set of machines the module is asked for on.
+// module now stands somewhere else, and the written set of machines the
+// module is asked for on.
 const INVALIDATE_ON = [
   { type: HUB_EVENT_DEVICES },
   { type: HUB_EVENT_DEVICE_REPORT },
-  { type: HUB_EVENT_MODULE_ORDER },
   { type: HUB_EVENT_CONFIG },
 ];
 
-// The state that makes a machine configurable: the module is really there.
-const INSTALLED_STATE = "installed";
+// The states that make a machine configurable: the module is really there.
+const PRESENT_STATES = ["installed", "stopped", "running"];
+
+// The wants under which the hub configures the module on a machine, which
+// is what a checked chip asks for.
+const HOSTED_WANTS = ["stopped", "running"];
 
 // The state that earns a machine a notice of its own, saying why.
 const FAILED_STATE = "failed";
@@ -124,7 +126,7 @@ export function AgentServicePage({
   const devices = resource.data?.devices ?? [];
   // Every machine the module is asked for, whatever state it stands in: a
   // machine keeps its tab while it installs.
-  const enabledDevices = devices.filter((device) => device.is_enabled);
+  const enabledDevices = devices.filter(isHosted);
   const enabledIds = enabledDevices.map((device) => device.device_id);
 
   // The draft follows the gateway until somebody edits it: an apply landing
@@ -146,10 +148,10 @@ export function AgentServicePage({
 
   const checked = checkedIds ?? enabledIds;
   const addedDevices = devices.filter(
-    (device) => checked.includes(device.device_id) && !device.is_enabled,
+    (device) => checked.includes(device.device_id) && !isHosted(device),
   );
   const removedDevices = devices.filter(
-    (device) => !checked.includes(device.device_id) && device.is_enabled,
+    (device) => !checked.includes(device.device_id) && isHosted(device),
   );
   const isDirty = addedDevices.length > 0 || removedDevices.length > 0;
 
@@ -279,7 +281,7 @@ export function AgentServicePage({
         />
       )}
 
-      {selected !== null && selected.state !== INSTALLED_STATE && (
+      {selected !== null && !PRESENT_STATES.includes(selected.state) && (
         <p
           className={`agent_service_state ${
             selected.state === FAILED_STATE ? "agent_service_state--error" : ""
@@ -289,7 +291,7 @@ export function AgentServicePage({
         </p>
       )}
 
-      {selected !== null && selected.state === INSTALLED_STATE && (
+      {selected !== null && PRESENT_STATES.includes(selected.state) && (
         <fieldset className="agent_service_body" disabled={!selected.is_online}>
           {!selected.is_online && (
             <div className="notice notice--warn">
@@ -320,6 +322,11 @@ export function AgentServicePage({
   );
 }
 
+/** Whether the hub configures the module on this machine. */
+function isHosted(device: ModuleDeviceView): boolean {
+  return HOSTED_WANTS.includes(device.want);
+}
+
 /** One machine the module is asked for, as the tab strip wants it. */
 function toTab(device: ModuleDeviceView): StripTab {
   const stateKey: string | undefined = TAB_STATE_KEYS[device.state];
@@ -339,7 +346,7 @@ function toChip(device: ModuleDeviceView): DeviceChip {
     label: device.name,
     hostname: device.hostname,
     isOnline: device.is_online,
-    isChecked: device.is_enabled,
+    isChecked: isHosted(device),
     state: device.state,
   };
 }

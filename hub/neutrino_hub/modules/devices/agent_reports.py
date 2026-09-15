@@ -5,28 +5,24 @@ every few seconds. Both land in the runtime's memory alone, which is what
 the panel reads: a machine's presence is true only while this hub runs.
 
 A report is read by its sections: ``machine``, ``network``, ``modules``,
-``desktop`` and ``error``. It writes two things. The seat password: a
+``desktop`` and ``error``. It writes three things. The seat password: a
 machine reporting the remote desktop host present is given one, sealed
-under the vault's data key, the first time it says so. And the MAC its
-socket runs on, noted on the device's row when it is new.
+under the vault's data key, the first time it says so. The MAC its socket
+runs on, noted on the device's row when it is new. And ``modules.json``: a
+module the hub wanted ``absent`` that the machine now reports absent is
+dropped from it, so the hub's state stops naming software it took off.
 """
 
 import ipaddress
 
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.channel.constants import (
+    CHANNEL_MODULE_PRESENT_STATES,
     CHANNEL_MODULE_STATE_ABSENT,
-    CHANNEL_MODULE_WANTS,
 )
 from neutrino_hub.modules.devices.constants import DEVICE_RDP_MODULE
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.constants import SERVICES_RDP_PORT
-
-# The states in which the machine has the desktop host and takes a seat
-# password.
-_HOST_PRESENT_STATES = tuple(
-    state for state in CHANNEL_MODULE_WANTS if state != CHANNEL_MODULE_STATE_ABSENT
-)
 
 
 def record_hello(
@@ -68,9 +64,10 @@ def record_report(runtime, device, report: dict, *, peer_host: str = "") -> None
     modules = report.get("modules")
     modules = dict(modules) if isinstance(modules, dict) else {}
     runtime.device_modules[key] = modules
-    # Software turning up on the machine anyway settles a standing failure.
-    runtime.agent_module_orders.note_reported_states(key, modules)
-    _ensure_seat_password(runtime, key, modules)
+    is_settled = _settle_absent(runtime, key, modules)
+    is_seated = _ensure_seat_password(runtime, key, modules)
+    if is_settled or is_seated:
+        _push_state(runtime, key)
     record_desktop_share(
         runtime,
         device,
@@ -178,27 +175,57 @@ def record_desktop_share(runtime, device, share: dict, host: str) -> None:
         runtime.published_services.schedule_refresh()
 
 
-def _ensure_seat_password(runtime, key: str, modules: dict) -> None:
+def _ensure_seat_password(runtime, key: str, modules: dict) -> bool:
     """Give a device its seat password once its agent hosts RustDesk.
 
     The password is the hub's to make, so a machine that reports the host
     present is handed one it never typed, and the state carrying it goes
     down the moment it exists. A locked vault seals nothing and the next
-    report tries again; a device that does not take the state is left for
-    the next push.
+    report tries again.
 
     Args:
         runtime: The shared runtime.
         key: The device.
         modules: The module states the report carries.
+
+    Returns:
+        True when a password was made, so the state is pushed again.
     """
     reported = modules.get(DEVICE_RDP_MODULE)
     if not isinstance(reported, dict):
-        return
-    if str(reported.get("state", "")) not in _HOST_PRESENT_STATES:
-        return
-    if not runtime.desired_states.ensure_seat_password(key):
-        return
+        return False
+    if str(reported.get("state", "")) not in CHANNEL_MODULE_PRESENT_STATES:
+        return False
+    return runtime.desired_states.ensure_seat_password(key)
+
+
+def _settle_absent(runtime, key: str, modules: dict) -> bool:
+    """Drop every module the hub wanted absent that the machine reports absent.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        modules: The module states the report carries.
+
+    Returns:
+        True when ``modules.json`` changed, so the state is pushed again
+        and the agent's copy stops naming the module.
+    """
+    is_changed = False
+    for name, status in modules.items():
+        if not isinstance(status, dict):
+            continue
+        if str(status.get("state", "")) != CHANNEL_MODULE_STATE_ABSENT:
+            continue
+        if runtime.desired_states.want_of(key, name) != CHANNEL_MODULE_STATE_ABSENT:
+            continue
+        if runtime.desired_states.forget_module(key, name):
+            is_changed = True
+    return is_changed
+
+
+def _push_state(runtime, key: str) -> None:
+    """Hand the device its state now; one that does not take it waits."""
     try:
         runtime.push_desired_state(key)
     except (AgentOfflineError, StreamRefusedError):

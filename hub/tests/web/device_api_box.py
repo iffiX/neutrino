@@ -1,19 +1,16 @@
 """The box the Devices page and a device's Modules page stand on.
 
 One stored, managed device under a registry that can adopt a scan row, a
-runtime holding the module order controller, and a module manifest of one
-hub-installed module.
+runtime holding the desired states and the tasks, and a module manifest of
+one hub-installed module.
 """
 
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from neutrino_hub.modules.devices.agent_module_cache import AgentModuleArtifact
-from neutrino_hub.modules.devices.agent_module_controller import AgentModuleController
-from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
+from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.registry import (
     DeviceClientInfo,
     ManagedDevice,
@@ -22,7 +19,8 @@ from neutrino_hub.modules.devices.registry import (
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.events import PanelEventBus
-from tests.conftest import FakeChannelSessions, holding_dispatch
+from neutrino_hub.web.task_stream import TaskStreamRegistry
+from tests.conftest import FakeChannelSessions, StubPublishedServices
 
 DEVICE = "device-one"
 FINGERPRINT = "ab" * 32
@@ -61,18 +59,10 @@ class BoxRegistry:
         return device
 
 
-class StubModuleCache:
-    """A cache that answers at once and never reaches a vendor."""
-
-    def artifact(self, *, name, manifest, platform):
-        return AgentModuleArtifact(
-            key=f"{name}-key", path=Path("/nonexistent"), digest="d", package_kind="deb"
-        )
-
-
 class BoxRuntime:
     def __init__(self):
         self.events = PanelEventBus()
+        self.tasks = TaskStreamRegistry()
         self.device_modules = {}
         self.device_platform = {}
         self.device_hostname = {}
@@ -83,14 +73,12 @@ class BoxRuntime:
         self.enrollments = {}
         self.device_shares = DeviceShareRegistry()
         self.agent_sessions = FakeChannelSessions()
-        self.agent_modules = StubModuleCache()
-        self.device_install_locks = DeviceInstallLocks()
-        # A dispatch that holds each order open briefly and never answers:
-        # the row shows the step, and no worker sits on a lock for long.
-        self.agent_module_orders = AgentModuleController(
-            cache=self.agent_modules,
-            locks=self.device_install_locks,
-            dispatch=holding_dispatch,
+        self.desired_states = DesiredStateStore()
+        self.published_services = StubPublishedServices()
+
+    def push_desired_state(self, key: str) -> None:
+        self.agent_sessions.push_state_from_thread(
+            key, {"hash": f"hash-{key}", "modules": {}}
         )
 
     def forget_device(self, device_id: str) -> None:
@@ -103,7 +91,6 @@ class BoxRuntime:
             self.pending,
         ):
             held.pop(device_id, None)
-        self.agent_module_orders.forget(device_id)
 
 
 def beating(seconds_ago: float) -> str:

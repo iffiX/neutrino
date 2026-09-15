@@ -11,6 +11,7 @@ Samba configuration.
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_PRESENT_STATES
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.models import (
     DeviceRequest,
@@ -36,6 +37,7 @@ from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.routers.agent.module import (
     DeviceModuleContext,
     device_context,
+    is_hosted,
     module_router,
     run_command,
     store_config,
@@ -43,8 +45,8 @@ from neutrino_hub.web.routers.agent.module import (
 
 MODULE = "zfs"
 SAMBA_MODULE = "samba"
-COMMAND_OP = "zfs_op"
-COMMAND_SCAN = "zfs_scan"
+COMMAND_OP = "op"
+COMMAND_SCAN = "scan"
 
 
 def device_view(runtime: PanelRuntime, context: DeviceModuleContext) -> ZfsDeviceView:
@@ -108,13 +110,13 @@ def device_view(runtime: PanelRuntime, context: DeviceModuleContext) -> ZfsDevic
     samba_status = runtime.device_modules.get(context.key, {}).get(SAMBA_MODULE) or {}
     samba_details = samba_status.get("details") or {}
     is_samba_ready = (
-        samba_status.get("state") == "installed"
-        and runtime.desired_states.is_enabled(context.key, SAMBA_MODULE)
+        samba_status.get("state") in CHANNEL_MODULE_PRESENT_STATES
+        and is_hosted(runtime, context.key, SAMBA_MODULE)
         and bool(samba_details.get("is_active"))
     )
     return ZfsDeviceView(
         **context.fields(),
-        is_installed=context.state == "installed",
+        is_installed=context.state in CHANNEL_MODULE_PRESENT_STATES,
         pools=pools,
         disks=[
             ZfsDiskView(**disk)

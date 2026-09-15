@@ -1,10 +1,11 @@
 """One desired state per device under config/, composed under one hash.
 
 What these pin: the directory a device id names, the module files and the
-switches beside them, a hash that moves only with the state, the composed
-shape the agent applies, the secrets a device's Gitea is handed once and
-kept, the fence and address the hub folds in, and the sweep that removes a
-directory no stored device names.
+wants beside them, a module the file does not name being mentioned nowhere,
+a hash that moves only with the state, the composed shape the agent
+applies, the secrets a device's Gitea is handed once and kept, the fence
+and address the hub folds in, and the sweep that removes a directory no
+stored device names.
 """
 
 import json
@@ -51,22 +52,46 @@ def test_module_files_land_under_the_devices_directory(config):
     assert store.read(DEVICE, "gitea") == {}
 
 
-def test_every_hosted_module_has_a_switch_off_by_default(config):
+def test_a_module_is_named_only_once_a_want_is_written_for_it(config):
     store = DesiredStateStore()
 
+    assert store.modules(DEVICE) == {}
+    assert store.want_of(DEVICE, "samba") == ""
+
+    store.set_want(DEVICE, "samba", "running")
+    store.set_want(DEVICE, "podman", "installed")
+
     assert store.modules(DEVICE) == {
-        "zfs": {"is_enabled": False},
-        "samba": {"is_enabled": False},
-        "gitea": {"is_enabled": False},
-        "podman": {"is_enabled": False},
+        "samba": {"want": "running"},
+        "podman": {"want": "installed"},
     }
-
-    store.set_enabled(DEVICE, "samba", True)
-
-    assert store.is_enabled(DEVICE, "samba") is True
-    assert store.is_enabled(DEVICE, "gitea") is False
+    assert store.want_of(DEVICE, "samba") == "running"
+    assert store.want_of(DEVICE, "gitea") == ""
     stored = json.loads((config / f"devices/{DEVICE}/modules.json").read_text())
-    assert stored["modules"]["samba"] == {"is_enabled": True}
+    assert stored["modules"]["samba"] == {"want": "running"}
+
+
+def test_a_want_outside_the_four_is_refused_and_one_on_disk_is_skipped(config):
+    store = DesiredStateStore()
+
+    with pytest.raises(ValueError):
+        store.set_want(DEVICE, "samba", "installing")
+
+    path = config / f"devices/{DEVICE}/modules.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"modules": {"samba": {"want": "nonsense"}}}))
+    assert store.modules(DEVICE) == {}
+
+
+def test_forgetting_a_module_stops_naming_it(config):
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "samba", "absent")
+    store.set_want(DEVICE, "gitea", "running")
+
+    assert store.forget_module(DEVICE, "samba") is True
+    assert store.forget_module(DEVICE, "samba") is False
+
+    assert store.modules(DEVICE) == {"gitea": {"want": "running"}}
 
 
 def test_the_hash_is_stable_and_moves_with_the_state():
@@ -75,15 +100,15 @@ def test_the_hash_is_stable_and_moves_with_the_state():
     assert len(state_hash({})) == 64
 
 
-def test_compose_is_the_modules_switched_on_with_their_recipes_and_the_desktop(
+def test_compose_is_every_named_module_with_its_want_and_recipes_and_the_desktop(
     config,
 ):
-    """A module switched on is wanted running, with its configuration and
-    the recipes resolved for the platform; one switched off is not
+    """A named module is sent with its want, its configuration and the
+    recipes resolved for the platform; one the file does not name is not
     mentioned, so the agent leaves it as it is."""
     store = DesiredStateStore()
-    store.set_enabled(DEVICE, "samba", True)
-    store.set_enabled(DEVICE, "gitea", True)
+    store.set_want(DEVICE, "samba", "running")
+    store.set_want(DEVICE, "gitea", "absent")
     store.write(
         DEVICE, "samba", {"shares": [{"name": "s", "path": "/srv"}], "users": []}
     )
@@ -108,7 +133,7 @@ def test_compose_is_the_modules_switched_on_with_their_recipes_and_the_desktop(
     }
     assert samba["uninstall"] == {"packages": ["samba"], "is_data_kept": True}
     gitea = desired["modules"]["gitea"]
-    assert gitea["want"] == "running"
+    assert gitea["want"] == "absent"
     assert gitea["config"]["listen_port"] == 3100
     assert gitea["config"]["address"] == "192.168.100.7"
     assert set(gitea["config"]["secrets"]) == {
@@ -127,7 +152,7 @@ def test_compose_is_the_same_twice_and_moves_with_a_write(config):
 
     first = store.compose(DEVICE, PLATFORM)
     again = store.compose(DEVICE, PLATFORM)
-    store.set_enabled(DEVICE, "podman", True)
+    store.set_want(DEVICE, "podman", "installed")
     changed = store.compose(DEVICE, PLATFORM)
 
     assert first[1] == again[1]
@@ -157,20 +182,20 @@ def test_the_seat_password_is_empty_until_rdp_json_exists(config):
 
 def test_forget_removes_the_devices_directory(config):
     store = DesiredStateStore()
-    store.set_enabled(DEVICE, "samba", True)
+    store.set_want(DEVICE, "samba", "running")
 
     store.forget(DEVICE)
 
     assert not (config / f"devices/{DEVICE}").exists()
-    assert store.modules(DEVICE)["samba"] == {"is_enabled": False}
+    assert store.modules(DEVICE) == {}
 
 
 def test_the_sweep_removes_a_directory_no_stored_id_names_and_keeps_the_rest(
     config,
 ):
     store = DesiredStateStore()
-    store.set_enabled(DEVICE, "samba", True)
-    store.set_enabled("aa-bb-cc-dd-ee-ff", "samba", True)
+    store.set_want(DEVICE, "samba", "running")
+    store.set_want("aa-bb-cc-dd-ee-ff", "samba", "running")
     (config / "devices" / "packages").mkdir()
     (config / "devices" / "devices.json").write_text("{}")
 

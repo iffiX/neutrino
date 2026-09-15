@@ -439,6 +439,25 @@ export interface ProxySettings {
   direct_dns: DnsServer;
 }
 
+/** The release each of the two databases is taken from. */
+export interface GeodataRelease {
+  geoip_version: string;
+  geosite_version: string;
+}
+
+/** Which release of each database the box loads, and where it came from. */
+export interface GeodataView extends GeodataRelease {
+  /** `package` for the carried copies, `release` for fetched ones. */
+  source: string;
+  /** What the repositories publish now; null until a scan asks them. */
+  latest: GeodataRelease | null;
+}
+
+/** The Proxy page: its settings, and the databases the split runs on. */
+export interface ProxyView extends ProxySettings {
+  geodata: GeodataView;
+}
+
 // --- Devices ---
 
 /** One SSH key the gateway holds, without its material. */
@@ -790,26 +809,26 @@ export interface DeviceClientInfo {
   rdp: DeviceRdp;
 }
 
-/** What one install on a device did, whatever asked for it. */
-export interface DeviceInstallOrderView {
-  id: string;
+/** One install on a device, whatever asked for it: the agent's own over
+ * SSH, or a module's install or uninstall whose lines its agent sent up. */
+export interface DeviceInstallTaskView {
+  task_id: string;
+  /** The module installed or uninstalled; empty for the agent's own install. */
   module: string;
   /** The module's own title, so a failure reads beside the thing it was. */
   title: string;
-  action: string;
-  state: string;
-  code: string;
-  params: Record<string, unknown>;
-  /** What the failing step printed, so a person reads the vendor's own
-   * words rather than only that something went wrong. */
+  is_finished: boolean;
+  exit_code: number | null;
+  /** What the task printed, so a person reads the vendor's own words
+   * rather than only that something went wrong. */
   output: string;
-  asked_at: string;
+  started_at: string;
   finished_at: string;
 }
 
-/** Every install this device has run, newest first. */
+/** Every install this device has run since the panel started, newest first. */
 export interface DeviceInstallOutputResponse {
-  orders: DeviceInstallOrderView[];
+  tasks: DeviceInstallTaskView[];
 }
 
 /** A link a machine can join the gateway with. */
@@ -957,8 +976,9 @@ export interface ModuleDeviceView extends ModuleDeviceState {
   device_id: string;
   name: string;
   hostname: string;
-  /** Whether the module is asked for on this device. */
-  is_enabled: boolean;
+  /** What the hub asks of the module here: absent, installed, stopped or
+   * running; empty when it asks nothing. */
+  want: string;
 }
 
 export interface ModuleDevicesView {
@@ -968,6 +988,44 @@ export interface ModuleDevicesView {
 /** The devices a module should be on; the hub installs and removes to match. */
 export interface ModuleDevicesRequest {
   device_ids: string[];
+}
+
+/** One module a device could run, as its agent last reported it beside
+ * what the hub asks of it. */
+export interface DeviceModuleView {
+  name: string;
+  title: string;
+  description: string;
+  kind: string;
+  /** platform, hub or user: who puts the module on the machine. */
+  installer: string;
+  is_supported: boolean;
+  is_native: boolean;
+  source: string;
+  license: string;
+  corresponding_source: string;
+  /** absent, installed, stopped or running; empty when the hub asks nothing. */
+  want: string;
+  state: string;
+  is_active: boolean;
+  code: string;
+  params: Record<string, unknown>;
+  details: Record<string, unknown>;
+  /** The task carrying the module's last install or uninstall lines, to
+   * follow on `/ws/hub/task`; empty when none has run. */
+  task_id: string;
+}
+
+export interface DeviceModuleListView {
+  modules: DeviceModuleView[];
+  is_agent_managed: boolean;
+  is_agent_online: boolean;
+}
+
+/** One module on one device, for the four presses under `/agent/module`. */
+export interface DeviceModuleRequest {
+  device_id: string;
+  module: string;
 }
 
 export interface ProvisionConsentView {

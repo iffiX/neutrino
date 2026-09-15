@@ -5,10 +5,11 @@ down; a client's carries its reports up and the published list down. Both
 loops read the same frames: a ``report`` is recorded, an ``open`` hands a
 peer-opened stream to its kind's handler, a ``close`` or a ``credit`` goes
 to the stream it names, and bytes go to theirs. The kinds a peer may open
-are ``package`` from an agent and ``service`` from a client.
+are ``package`` and ``log`` from an agent and ``service`` from a client.
 """
 
 import asyncio
+import codecs
 import functools
 import hashlib
 import json
@@ -20,6 +21,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_CHUNK_BYTES,
     CHANNEL_FRAME_OPEN,
     CHANNEL_FRAME_REPORT,
+    CHANNEL_STREAM_LOG,
     CHANNEL_STREAM_PACKAGE,
     CHANNEL_STREAM_SERVICE,
 )
@@ -38,6 +40,7 @@ from neutrino_hub.web.constants import (
     WEB_EVENT_CLIENTS,
     WEB_EVENT_DEVICE_REPORT,
     WEB_EVENT_METRICS,
+    WEB_TASK_LABEL_MODULE,
 )
 
 # What a report has to change before the panel refetches the device list.
@@ -61,6 +64,9 @@ async def serve_agent(
     sessions = runtime.agent_sessions
     sessions.stream_handlers.setdefault(
         CHANNEL_STREAM_PACKAGE, functools.partial(serve_package_stream, runtime)
+    )
+    sessions.stream_handlers.setdefault(
+        CHANNEL_STREAM_LOG, functools.partial(serve_log_stream, runtime)
     )
     await sessions.attach(session)
     try:
@@ -156,6 +162,59 @@ async def serve_package_stream(
         await stream.close("module_artifact_missing", {})
         return
     await stream.close("", {"sha256": digest.hexdigest()})
+
+
+async def serve_log_stream(
+    runtime, session: ChannelSession, stream: ChannelStream
+) -> None:
+    """Serve a ``log`` stream an agent opened: its lines become one task.
+
+    ``{module}`` names the module being installed or uninstalled. The task
+    runs under :data:`WEB_TASK_LABEL_MODULE`, which is how the module list
+    finds it for the panel to follow on ``/ws/hub/task``, and it ends with
+    the close: the module's ``state``, and the code when the operation
+    failed.
+
+    Args:
+        runtime: The shared runtime.
+        session: The agent's session.
+        stream: The stream, closed by the agent.
+    """
+    module = str(stream.args.get("module", "") or "")
+    runtime.tasks.start(
+        label=module_task_label(session.key, module), source=_log_lines(stream)
+    )
+    await stream.wait_closed()
+
+
+def module_task_label(device_id: str, module: str) -> str:
+    """The label a module's install or uninstall task runs under."""
+    return WEB_TASK_LABEL_MODULE.format(device_id=device_id, module=module)
+
+
+async def _log_lines(stream: ChannelStream):
+    """A log stream's lines as they arrive, then what it closed with.
+
+    Yields:
+        Each line, then a JSON line ``{"code", "params"}`` when the close
+        carries a code, then ``[<state>]`` for the module's state after
+        the operation.
+    """
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    while True:
+        item = await stream.recv()
+        if item is None:
+            break
+        text = decoder.decode(item[1])
+        if text:
+            yield text
+    info = stream.close_info or {}
+    params = dict(info.get("params") or {})
+    state = str(params.pop("state", "") or "")
+    if info.get("code"):
+        yield json.dumps({"code": info["code"], "params": params}) + "\n"
+    if state:
+        yield f"[{state}]\n"
 
 
 async def serve_service_stream(

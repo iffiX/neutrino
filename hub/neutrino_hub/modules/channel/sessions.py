@@ -128,17 +128,6 @@ class ChannelStream:
             self._credit -= size
             view = view[size:]
 
-    async def resize(self, cols: int, rows: int) -> None:
-        """Tell a shell stream its new size.
-
-        Args:
-            cols: Columns.
-            rows: Rows.
-        """
-        await self._session.send_json(
-            {"type": "resize", "stream": self.id, "cols": int(cols), "rows": int(rows)}
-        )
-
     async def close(self, code: str = "", params: "dict | None" = None) -> None:
         """End the stream from this side, with its result.
 

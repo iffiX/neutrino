@@ -780,7 +780,8 @@ def test_a_share_runs_with_its_account_and_password(service_api):
 
     assert answer.status_code == 200
     assert answer.json()["command_id"].startswith("service-rdp-")
-    ((_key, _action, args),) = runtime.agent_sessions.commands
+    ((_key, module, verb, args),) = runtime.agent_sessions.commands
+    assert (module, verb) == ("agent", "service")
     assert args == {
         "service_type": "rdp",
         "body": {"action": "share", "account": "pat", "password": "pw"},  # scan: allow
@@ -795,7 +796,7 @@ def test_an_unshare_is_the_paired_verb(service_api):
     )
 
     assert answer.status_code == 200
-    ((_key, _action, args),) = runtime.agent_sessions.commands
+    ((_key, _module, _verb, args),) = runtime.agent_sessions.commands
     assert args["body"] == {"action": "unshare"}
 
 
@@ -1196,20 +1197,20 @@ def test_a_reinstall_on_a_live_agent_runs_the_command_as_a_task(install_api):
         time.sleep(0.02)
     (stream,) = sessions.streams
     assert stream.kind == "command"
-    assert stream.args == {"action": "reinstall", "args": {}}
+    assert stream.args == {"module": "agent", "verb": "reinstall"}
 
 
-# --- reinstall follows the machine's record ---
+# --- reinstall follows the machine's reports ---
 
 
 class Session:
-    def __init__(self):
+    def __init__(self, reported_at: str = "now"):
         self.report = {}
-        self.reported_at = "now"
+        self.reported_at = reported_at
 
 
 class Presence:
-    """A sessions stand-in: each look hands out a scripted (session, record)."""
+    """A sessions stand-in: each look hands out a scripted (session, failure)."""
 
     def __init__(self, looks):
         self.looks = list(looks)
@@ -1221,9 +1222,13 @@ class Presence:
         }
 
     def get(self, key):
-        session, record = self.looks.pop(0) if len(self.looks) > 1 else self.looks[0]
+        session, failure = self.looks.pop(0) if len(self.looks) > 1 else self.looks[0]
         if session is not None:
-            session.report = {"last_reinstall": record} if record else {}
+            session.report = (
+                {"error": {"code": "reinstall_failed", "params": failure}}
+                if failure
+                else {}
+            )
         return session
 
     def version_of(self, key):
@@ -1241,14 +1246,7 @@ class _ClosedStream:
         return None
 
 
-RECORD = {
-    "package": "neutrino-agent_0.1.0_amd64.deb",
-    "kind": "deb",
-    "started_at": "2026-09-10T00:00:00Z",
-    "finished_at": "2026-09-10T00:00:04Z",
-    "exit_code": 0,
-    "output": "Unpacking neutrino-agent (0.1.0) over (0.1.0)\nSetting up neutrino-agent (0.1.0)\n",
-}
+FAILURE = {"exit_code": 1, "finished_at": "2026-09-10T00:00:04Z"}
 
 
 def drain_reinstall(monkeypatch, presence, **overrides):
@@ -1266,43 +1264,41 @@ def drain_reinstall(monkeypatch, presence, **overrides):
     return asyncio.run(drain())
 
 
-def test_reinstall_prints_the_record_the_returning_agent_carries(monkeypatch):
+def test_a_returning_agent_reporting_no_failure_was_reinstalled(monkeypatch):
     old, new = Session(), Session()
     lines = drain_reinstall(
-        monkeypatch, Presence([(old, None), (old, None), (old, None), (new, RECORD)])
+        monkeypatch, Presence([(old, None), (old, None), (old, None), (new, None)])
     )
 
     assert lines[0] == "reinstall launched\n"
     assert "agent 9.9.9 reconnected\n" in lines
-    assert "Setting up neutrino-agent (0.1.0)\n" in "".join(lines)
     assert lines[-1] == "[exit 0]\n"
 
 
 def test_a_failed_install_is_reported_on_the_socket_that_stayed(monkeypatch):
     old = Session()
-    failed = dict(RECORD, exit_code=1, output="dpkg: error: broken\n")
     lines = drain_reinstall(
-        monkeypatch, Presence([(old, None), (old, None), (old, failed)])
+        monkeypatch, Presence([(old, None), (old, None), (old, FAILURE)])
     )
 
     assert "agent 9.9.9 reconnected\n" not in lines
-    assert "dpkg: error: broken\n" in lines
-    assert lines[-1] == '{"code": "reinstall_failed", "params": {"exit_code": 1}}\n'
-
-
-def test_a_stale_record_from_before_the_launch_is_not_the_answer(monkeypatch):
-    old, new = Session(), Session()
-    lines = drain_reinstall(
-        monkeypatch,
-        Presence([(old, RECORD), (old, RECORD), (new, RECORD)]),
-        WEB_REINSTALL_REPORT_TIMEOUT_S=0.0,
+    assert lines[-1] == (
+        '{"code": "reinstall_failed", "params": '
+        '{"exit_code": 1, "finished_at": "2026-09-10T00:00:04Z"}}\n'
     )
 
-    assert lines[-1] == "reinstalled, no installer record from this agent\n"
 
-
-def test_an_old_agent_that_returns_without_a_record_is_named(monkeypatch):
+def test_a_failure_from_before_the_launch_is_not_the_answer(monkeypatch):
     old, new = Session(), Session()
+    lines = drain_reinstall(
+        monkeypatch, Presence([(old, FAILURE), (old, FAILURE), (new, None)])
+    )
+
+    assert lines[-1] == "[exit 0]\n"
+
+
+def test_an_agent_that_returns_and_never_reports_is_named(monkeypatch):
+    old, new = Session(), Session(reported_at="")
     lines = drain_reinstall(
         monkeypatch,
         Presence([(old, None), (old, None), (new, None)]),
@@ -1310,7 +1306,7 @@ def test_an_old_agent_that_returns_without_a_record_is_named(monkeypatch):
     )
 
     assert "agent 9.9.9 reconnected\n" in lines
-    assert lines[-1] == "reinstalled, no installer record from this agent\n"
+    assert lines[-1] == "reinstalled, no report from this agent\n"
 
 
 def test_nothing_reported_in_time_is_typed(monkeypatch):
@@ -1500,3 +1496,148 @@ def test_a_lapsed_ticket_is_swept_when_the_next_one_is_generated(box_api, monkey
     assert response.status_code == 200
     assert "stale" not in runtime.enrollments
     assert len(runtime.enrollments) == 1
+
+
+# --- the agent's verbs: each press is one command {module: agent, verb} ---
+
+
+def wait_for_streams(sessions, count: int) -> list:
+    deadline = time.monotonic() + 5
+    while len(sessions.streams) < count and time.monotonic() < deadline:
+        time.sleep(0.02)
+    return sessions.streams
+
+
+def test_killing_a_process_is_the_kill_verb(box_api):
+    client, runtime = box_api
+    runtime.agent_sessions.online.add(DEVICE)
+
+    answer = client.post(
+        f"{DEVICE_PATH}/process/kill", json={"device_id": DEVICE, "pid": 42}
+    )
+
+    assert answer.status_code == 200
+    assert runtime.agent_sessions.commands == [(DEVICE, "agent", "kill", {"pid": 42})]
+
+
+def test_a_process_the_machine_no_longer_has_is_404(box_api):
+    client, runtime = box_api
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.agent_sessions.outcomes["kill"] = {
+        "exit_code": 1,
+        "code": "process_missing",
+        "params": {"pid": 42},
+    }
+
+    answer = client.post(
+        f"{DEVICE_PATH}/process/kill", json={"device_id": DEVICE, "pid": 42}
+    )
+
+    assert answer.status_code == 404
+    assert answer.json()["detail"]["code"] == "process_missing"
+
+
+def test_the_remote_desktop_read_is_one_verb_per_product_answered_from_its_result(
+    box_api,
+):
+    client, runtime = box_api
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.agent_sessions.outcomes["remote_desktop_read"] = {
+        "exit_code": 0,
+        "result": {"is_installed": True, "is_running": False, "session_id": "1 2 3"},
+    }
+
+    answer = client.get(f"{DEVICE_PATH}/remote_desktop", params={"device_id": DEVICE})
+
+    assert answer.status_code == 200
+    anydesk = answer.json()["anydesk"]
+    assert (anydesk["is_installed"], anydesk["is_running"]) == (True, False)
+    assert anydesk["session_id"] == "1 2 3"
+    assert runtime.agent_sessions.commands == [
+        (DEVICE, "agent", "remote_desktop_read", {"product": "anydesk"}),
+        (DEVICE, "agent", "remote_desktop_read", {"product": "teamviewer"}),
+    ]
+
+
+def test_a_reboot_opens_the_reboot_verb_as_a_task(box_api):
+    client, runtime = box_api
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.agent_sessions.scripts["command"] = lambda args: (
+        [],
+        {"code": "", "params": {"exit_code": 0, "output": ""}},
+    )
+
+    started = client.post(f"{DEVICE_PATH}/reboot", json={"device_id": DEVICE})
+
+    assert started.status_code == 200
+    (stream,) = wait_for_streams(runtime.agent_sessions, 1)
+    assert stream.kind == "command"
+    assert stream.args == {"module": "agent", "verb": "reboot"}
+
+
+def test_setting_a_remote_desktop_password_opens_its_verb_as_a_task(box_api):
+    client, runtime = box_api
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.agent_sessions.scripts["command"] = lambda args: (
+        [],
+        {"code": "", "params": {"exit_code": 0, "output": ""}},
+    )
+
+    started = client.post(
+        f"{DEVICE_PATH}/remote_desktop/password/set",
+        json={
+            "device_id": DEVICE,
+            "product": "anydesk",
+            "password": "hunter2hunter2",  # scan: allow
+        },
+    )
+
+    assert started.status_code == 200
+    (stream,) = wait_for_streams(runtime.agent_sessions, 1)
+    assert stream.args == {
+        "module": "agent",
+        "verb": "remote_desktop_password_set",
+        "product": "anydesk",
+        "password": "hunter2hunter2",  # scan: allow
+    }
+
+
+# --- the install pane: every install task on the device, newest first ---
+
+
+def test_the_install_output_is_the_devices_install_tasks_newest_first(box_api):
+    import asyncio
+
+    from neutrino_hub.web.channel_serve import module_task_label
+
+    client, runtime = box_api
+
+    async def tasks():
+        async def lines(text: str):
+            yield text
+
+        runtime.tasks.start(
+            label=f"install_client {DEVICE}", source=lines("[installed]\n")
+        )
+        runtime.tasks.start(
+            label=module_task_label(DEVICE, "fakedesk"), source=lines("[failed]\n")
+        )
+        runtime.tasks.start(label="install_client other", source=lines("x"))
+        runtime.tasks.start(label=f"reboot {DEVICE}", source=lines("x"))
+        for _ in range(3):
+            await asyncio.sleep(0)
+
+    asyncio.run(tasks())
+
+    answer = client.get(f"{DEVICE_PATH}/install_output", params={"device_id": DEVICE})
+
+    assert answer.status_code == 200
+    tasks = answer.json()["tasks"]
+    assert [(task["module"], task["title"]) for task in tasks] == [
+        ("fakedesk", "FakeDesk"),
+        ("", ""),
+    ]
+    assert tasks[0]["output"] == "[failed]\n"
+    assert tasks[0]["is_finished"] is True
+    assert tasks[0]["exit_code"] == 0
+    assert tasks[1]["output"] == "[installed]\n"

@@ -5,7 +5,9 @@ id. A report is read by its sections: ``machine`` for the hostname, the
 platform, the accounts and the metrics; ``network`` for the link address,
 with the socket's peer standing in and being recorded when the report
 names none, and the MAC the socket runs on, noted on the device's row;
-``modules``, ``desktop`` and ``error``. The desktop share is recorded
+``modules``, where a module the hub wanted absent and the machine now
+reports absent is dropped from the device's file and the state pushed
+again; ``desktop`` and ``error``. The desktop share is recorded
 against the device the token resolved to, at the address the hub holds,
 and withdrawn when the machine stops or its socket ends.
 """
@@ -17,8 +19,6 @@ import pytest
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_AGENT
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.modules.devices import agent_reports
-from neutrino_hub.modules.devices.agent_module_controller import AgentModuleController
-from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from tests.conftest import StubDesiredStates, StubPublishedServices
@@ -42,9 +42,6 @@ class FakeRuntime:
         self.device_shares = DeviceShareRegistry()
         self.published_services = StubPublishedServices()
         self.desired_states = StubDesiredStates()
-        self.agent_module_orders = AgentModuleController(
-            cache=None, locks=DeviceInstallLocks()
-        )
         self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
         self.pushed: list = []
         self._lans = [
@@ -249,13 +246,44 @@ def test_a_report_without_an_error_clears_the_stored_one(box):
     assert DEVICE not in runtime.device_last_error
 
 
-def test_a_report_settles_a_standing_failure_when_the_software_turned_up(box):
+def test_a_module_wanted_absent_and_reported_absent_is_dropped_and_the_state_pushed(
+    box,
+):
     runtime, device = box
-    runtime.agent_module_orders._failures[(DEVICE, "rustdesk")] = "old-order"
+    runtime.desired_states.wants[(DEVICE, "samba")] = "absent"
+    runtime.desired_states.wants[(DEVICE, "gitea")] = "absent"
+    runtime.desired_states.wants[(DEVICE, "podman")] = "running"
 
-    agent_reports.record_report(runtime, device, report())
+    agent_reports.record_report(
+        runtime,
+        device,
+        report(
+            modules={
+                "samba": {"state": "absent"},
+                "gitea": {"state": "uninstalling"},
+                "podman": {"state": "absent"},
+            }
+        ),
+    )
 
-    assert runtime.agent_module_orders.failure_for(DEVICE, "rustdesk") is None
+    assert runtime.desired_states.forgotten == [(DEVICE, "samba")]
+    assert runtime.desired_states.want_of(DEVICE, "gitea") == "absent"
+    assert runtime.desired_states.want_of(DEVICE, "podman") == "running"
+    assert runtime.pushed == [DEVICE]
+
+
+def test_a_report_naming_nothing_absent_that_the_hub_wants_absent_pushes_nothing(
+    box,
+):
+    runtime, device = box
+    runtime.desired_states.wants[(DEVICE, "samba")] = "running"
+
+    agent_reports.record_report(
+        runtime, device, report(modules={"samba": {"state": "absent"}})
+    )
+
+    assert runtime.desired_states.forgotten == []
+    assert runtime.pushed == []
 
 
 def test_a_report_declaring_a_share_records_it_at_the_held_address(box):

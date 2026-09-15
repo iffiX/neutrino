@@ -1,11 +1,12 @@
-"""The file routes, each one stream on the device's agent.
+"""The file routes, each one ``file`` stream on the device's agent.
 
 What these pin: the seven routes' paths and shapes over scripted streams,
-the listing mapped from the agent's entries with directories first, a
-download streamed as it arrives with its size only in the close, an
-archive as gzip, an upload as one multipart file pushed through the stream
-with its size in the open, a device with no channel answered 409, and the
-agent's typed codes mapped to 400 and 404.
+each opened as ``file {op, path, ...}`` with its own ``op``, the listing
+mapped from the agent's entries with directories first, a download
+streamed as it arrives with its size only in the close, an archive as
+gzip, an upload as one multipart file pushed through the stream with its
+size in the open, a device with no channel answered 409, and the agent's
+typed codes mapped to 400 and 404.
 """
 
 import pytest
@@ -43,8 +44,9 @@ def refused(code: str, **params) -> dict:
     return {"code": code, "params": params}
 
 
-def opened(sessions, kind: str):
-    return [stream for stream in sessions.streams if stream.kind == kind]
+def opened(sessions) -> list:
+    """Every ``file`` stream the route opened, in order."""
+    return [stream for stream in sessions.streams if stream.kind == "file"]
 
 
 # --- listing ---
@@ -52,7 +54,7 @@ def opened(sessions, kind: str):
 
 def test_a_listing_is_the_agents_entries_directories_first(api):
     client, sessions = api
-    sessions.scripts["file_list"] = lambda args: (
+    sessions.scripts["file"] = lambda args: (
         [],
         done(
             path="/srv",
@@ -100,16 +102,16 @@ def test_a_listing_is_the_agents_entries_directories_first(api):
             },
         ],
     }
-    (stream,) = opened(sessions, "file_list")
-    assert stream.args == {"path": "/srv"}
+    (stream,) = opened(sessions)
+    assert stream.args == {"op": "list", "path": "/srv"}
 
 
 def test_no_path_lists_the_root(api):
     client, sessions = api
-    sessions.scripts["file_list"] = lambda args: ([], done(path="/", entries=[]))
+    sessions.scripts["file"] = lambda args: ([], done(path="/", entries=[]))
 
     assert client.get("/api/agent/file", params={"device_id": MAC}).status_code == 200
-    assert opened(sessions, "file_list")[0].args == {"path": "/"}
+    assert opened(sessions)[0].args == {"op": "list", "path": "/"}
 
 
 def test_a_device_with_no_channel_answers_409(api):
@@ -124,10 +126,7 @@ def test_a_device_with_no_channel_answers_409(api):
 
 def test_a_close_carrying_a_code_is_the_agents_refusal(api):
     client, sessions = api
-    sessions.scripts["file_list"] = lambda args: (
-        [],
-        refused("path_missing", path="/nope"),
-    )
+    sessions.scripts["file"] = lambda args: ([], refused("path_missing", path="/nope"))
 
     answer = client.get("/api/agent/file", params={"device_id": MAC, "path": "/nope"})
 
@@ -140,7 +139,7 @@ def test_a_close_carrying_a_code_is_the_agents_refusal(api):
 
 def test_each_code_answers_on_its_own_status(api):
     client, sessions = api
-    sessions.scripts["file_list"] = lambda args: ([], refused("op_failed", path="/x"))
+    sessions.scripts["file"] = lambda args: ([], refused("op_failed", path="/x"))
 
     answer = client.get("/api/agent/file", params={"device_id": MAC, "path": "/x"})
 
@@ -154,7 +153,7 @@ def test_each_code_answers_on_its_own_status(api):
 def test_a_file_download_streams_the_bytes_as_they_arrive(api):
     """The size arrives only in the close, so the body is chunked."""
     client, sessions = api
-    sessions.scripts["file_download"] = lambda args: (
+    sessions.scripts["file"] = lambda args: (
         [("data", b"abc"), ("data", b"def")],
         done(size=6),
     )
@@ -167,12 +166,12 @@ def test_a_file_download_streams_the_bytes_as_they_arrive(api):
     assert answer.content == b"abcdef"
     assert "content-length" not in answer.headers
     assert "a.bin" in answer.headers["content-disposition"]
-    assert opened(sessions, "file_download")[0].args == {"path": "/srv/a.bin"}
+    assert opened(sessions)[0].args == {"op": "download", "path": "/srv/a.bin"}
 
 
-def test_a_directory_download_is_an_archive_asked_for_as_one(api):
+def test_a_directory_download_is_an_archive_asked_for_as_its_own_op(api):
     client, sessions = api
-    sessions.scripts["file_download"] = lambda args: (
+    sessions.scripts["file"] = lambda args: (
         [("data", b"\x1f\x8b"), ("data", b"tar")],
         done(size=5),
     )
@@ -186,18 +185,15 @@ def test_a_directory_download_is_an_archive_asked_for_as_one(api):
     assert answer.content == b"\x1f\x8btar"
     assert answer.headers["content-type"] == "application/gzip"
     assert answer.headers["content-disposition"].endswith("dots.tar.gz")
-    assert opened(sessions, "file_download")[0].args == {
+    assert opened(sessions)[0].args == {
+        "op": "directory_download",
         "path": "/srv/.dots",
-        "is_archived": True,
     }
 
 
 def test_a_download_of_what_is_not_there_is_404(api):
     client, sessions = api
-    sessions.scripts["file_download"] = lambda args: (
-        [],
-        refused("path_missing", path="/srv/x"),
-    )
+    sessions.scripts["file"] = lambda args: ([], refused("path_missing", path="/srv/x"))
 
     answer = client.get(
         "/api/agent/file/download", params={"device_id": MAC, "path": "/srv/x"}
@@ -211,7 +207,7 @@ def test_a_download_of_what_is_not_there_is_404(api):
 
 def test_an_upload_is_one_file_pushed_through_the_stream(api):
     client, sessions = api
-    sessions.scripts["file_upload"] = lambda args: ([], done())
+    sessions.scripts["file"] = lambda args: ([], done())
 
     answer = client.post(
         "/api/agent/file/upload",
@@ -221,14 +217,14 @@ def test_an_upload_is_one_file_pushed_through_the_stream(api):
 
     assert answer.status_code == 200
     assert answer.json() == {}
-    (stream,) = opened(sessions, "file_upload")
-    assert stream.args == {"path": "/srv/in/photo.jpg", "size": 9}
+    (stream,) = opened(sessions)
+    assert stream.args == {"op": "upload", "path": "/srv/in/photo.jpg", "size": 9}
     assert stream.sent_bytes() == b"jpegbytes"
 
 
 def test_an_upload_the_agent_refuses_is_typed(api):
     client, sessions = api
-    sessions.scripts["file_upload"] = lambda args: (
+    sessions.scripts["file"] = lambda args: (
         [],
         refused("write_failed", path="/srv/in/a", detail="oversize"),
     )
@@ -259,10 +255,7 @@ def test_an_upload_naming_a_path_instead_of_a_file_name_is_refused(api):
 
 def test_an_upload_the_agent_closes_before_the_first_byte_is_typed(api):
     client, sessions = api
-    sessions.scripts["file_upload"] = lambda args: (
-        [],
-        refused("file_exists", path="/srv/a"),
-    )
+    sessions.scripts["file"] = lambda args: ([], refused("file_exists", path="/srv/a"))
 
     answer = client.post(
         "/api/agent/file/upload",
@@ -283,30 +276,30 @@ def test_an_upload_the_agent_closes_before_the_first_byte_is_typed(api):
         (
             "directory/create",
             {"path": "/srv/new"},
-            {"op": "mkdir", "path": "/srv/new"},
+            {"op": "directory_create", "path": "/srv/new"},
         ),
         (
             "rename",
             {"path": "/srv/a", "new_path": "/srv/b"},
             {"op": "rename", "path": "/srv/a", "new_path": "/srv/b"},
         ),
-        ("remove", {"path": "/srv/a"}, {"op": "delete", "path": "/srv/a"}),
+        ("remove", {"path": "/srv/a"}, {"op": "remove", "path": "/srv/a"}),
     ],
 )
-def test_each_operation_is_one_op_stream(api, route, body, args):
+def test_each_operation_is_one_file_stream_with_its_op(api, route, body, args):
     client, sessions = api
-    sessions.scripts["file_op"] = lambda opened_args: ([], done())
+    sessions.scripts["file"] = lambda opened_args: ([], done())
 
     answer = client.post(f"/api/agent/file/{route}", json={"device_id": MAC, **body})
 
     assert answer.status_code == 200
     assert answer.json() == {}
-    assert opened(sessions, "file_op")[0].args == args
+    assert opened(sessions)[0].args == args
 
 
 def test_an_operation_on_what_is_not_there_is_404(api):
     client, sessions = api
-    sessions.scripts["file_op"] = lambda args: ([], refused("path_missing", path="/x"))
+    sessions.scripts["file"] = lambda args: ([], refused("path_missing", path="/x"))
 
     answer = client.post(
         "/api/agent/file/remove", json={"device_id": MAC, "path": "/x"}

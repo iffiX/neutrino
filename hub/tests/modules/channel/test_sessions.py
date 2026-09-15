@@ -233,13 +233,9 @@ def test_a_close_from_this_side_carries_its_result_and_ends_the_stream():
         made = session(socket=socket)
         stream = await made.open_stream("shell", {"cols": 80, "rows": 24})
 
-        await stream.resize(120, 40)
         await stream.close("", {"done": True})
         await stream.close("again", {})
 
-        assert socket.sent("resize") == [
-            {"type": "resize", "stream": stream.id, "cols": 120, "rows": 40}
-        ]
         assert socket.sent("close") == [
             {"type": "close", "stream": stream.id, "code": "", "params": {"done": True}}
         ]

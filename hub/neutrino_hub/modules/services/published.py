@@ -21,6 +21,7 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_BINARY_PATH,
 )
 from neutrino_hub.modules.cliproxyapi.ops import load_config as load_cliproxyapi_config
+from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_CONFIGURED_WANTS
 from neutrino_hub.modules.devices.constants import DEVICE_MODULE_NAMES
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.router import link_status
@@ -264,9 +265,14 @@ class PublishedServiceCache:
 
     def _hosted(self, key: str, name: str, status) -> "dict | None":
         """One device's module as the list needs it, None while not served."""
-        if not isinstance(status, dict) or status.get("state") != "installed":
+        if not isinstance(status, dict):
             return None
-        if not self._desired_states.is_enabled(key, name):
+        if status.get("state") not in CHANNEL_MODULE_CONFIGURED_WANTS:
+            return None
+        if (
+            self._desired_states.want_of(key, name)
+            not in CHANNEL_MODULE_CONFIGURED_WANTS
+        ):
             return None
         details = (
             status.get("details") if isinstance(status.get("details"), dict) else {}

@@ -198,7 +198,6 @@ WEB_PROXY_SCOPE_JOINER = "+"
 WEB_EVENT_DEVICES = "devices"
 WEB_EVENT_CLIENTS = "clients"
 WEB_EVENT_DEVICE_REPORT = "device_report"
-WEB_EVENT_MODULE_ORDER = "module_order"
 WEB_EVENT_SERVICES = "services"
 WEB_EVENT_CONFIG = "config"
 WEB_EVENT_TASK = "task"
@@ -219,6 +218,12 @@ WEB_EVENT_QUEUE_LIMIT = 256
 WEB_EVENT_COALESCE_WINDOW_S = 0.1
 # How often the panel's live interface readings are sampled.
 WEB_LINK_SAMPLE_INTERVAL_S = 5.0
+
+# The labels the device tasks run under, so a page reopened part-way through
+# finds them again: the SSH install of the agent, and a module's install or
+# uninstall, whose lines the agent sends up a ``log`` stream.
+WEB_TASK_LABEL_AGENT_INSTALL = "install_client {device_id}"
+WEB_TASK_LABEL_MODULE = "module:{device_id}:{module}"
 
 # How long a reinstall task waits for the machine's record of the install
 # before it says nothing was reported.

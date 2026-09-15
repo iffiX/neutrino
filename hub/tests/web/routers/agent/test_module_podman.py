@@ -129,7 +129,7 @@ def test_a_container_is_driven_on_the_device_and_the_view_answers(box):
 
     assert response.status_code == 200
     assert runtime.agent_sessions.commands == [
-        (DEVICE, "podman_control", {"name": "web", "action": "restart"})
+        (DEVICE, "podman", "control", {"name": "web", "action": "restart"})
     ]
     assert response.json()["device_id"] == DEVICE
 
@@ -170,7 +170,7 @@ def test_the_journal_is_read_on_the_device(box):
 
     assert response.json() == {"text": "two\nthree"}
     assert runtime.agent_sessions.commands == [
-        (DEVICE, "podman_journal", {"name": "web"})
+        (DEVICE, "podman", "journal", {"name": "web"})
     ]
 
 

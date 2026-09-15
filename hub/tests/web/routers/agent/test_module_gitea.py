@@ -121,7 +121,12 @@ def test_the_first_admin_is_made_on_the_device(box):
 
     assert response.status_code == 200
     assert runtime.agent_sessions.commands == [
-        (DEVICE, "gitea_admin", {"username": "ann", "password": "pw", "email": "a@x"})
+        (
+            DEVICE,
+            "gitea",
+            "admin",
+            {"username": "ann", "password": "pw", "email": "a@x"},
+        )
     ]
     assert response.json()["device_id"] == DEVICE
 
@@ -159,7 +164,7 @@ def test_a_password_reset_rides_the_command(box):
 
     assert response.status_code == 200
     assert runtime.agent_sessions.commands == [
-        (DEVICE, "gitea_password", {"username": "ann", "password": "pw2"})
+        (DEVICE, "gitea", "password", {"username": "ann", "password": "pw2"})
     ]
 
 

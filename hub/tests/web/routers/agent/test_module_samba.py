@@ -168,7 +168,7 @@ def test_a_password_lands_only_on_a_configured_user(box):
     assert bad.status_code == 404
     assert bad.json()["detail"]["code"] == "user_unknown"
     assert runtime.agent_sessions.commands == [
-        (DEVICE, "samba_set_password", {"name": "ann", "password": "s3cret"})
+        (DEVICE, "samba", "set_password", {"name": "ann", "password": "s3cret"})
     ]
 
 

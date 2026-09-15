@@ -1,8 +1,9 @@
 """File transfer between the browser and a device, over the device's agent.
 
 The panel is the middleman: the browser never talks to the device, so this
-works from anywhere the panel does. Each request is one stream on the
-device's socket, and what the agent refuses comes back typed.
+works from anywhere the panel does. Each request is one ``file`` stream on
+the device's socket, its ``op`` naming the operation, and what the agent
+refuses comes back typed.
 """
 
 import asyncio
@@ -14,10 +15,14 @@ from fastapi.responses import StreamingResponse
 
 from neutrino_hub.exceptions import AgentOfflineError
 from neutrino_hub.modules.channel.constants import (
-    CHANNEL_STREAM_FILE_DOWNLOAD,
-    CHANNEL_STREAM_FILE_LIST,
-    CHANNEL_STREAM_FILE_OP,
-    CHANNEL_STREAM_FILE_UPLOAD,
+    CHANNEL_FILE_OP_DIRECTORY_CREATE,
+    CHANNEL_FILE_OP_DIRECTORY_DOWNLOAD,
+    CHANNEL_FILE_OP_DOWNLOAD,
+    CHANNEL_FILE_OP_LIST,
+    CHANNEL_FILE_OP_REMOVE,
+    CHANNEL_FILE_OP_RENAME,
+    CHANNEL_FILE_OP_UPLOAD,
+    CHANNEL_STREAM_FILE,
 )
 from neutrino_hub.modules.channel.sessions import ChannelStream
 from neutrino_hub.modules.devices.constants import DEVICE_FILE_OP_TIMEOUT_S
@@ -65,7 +70,7 @@ async def list_files(
         The resolved path and its entries, directories first.
     """
     info = await _run_stream(
-        runtime, device_id, CHANNEL_STREAM_FILE_LIST, {"path": path or ROOT_PATH}
+        runtime, device_id, {"op": CHANNEL_FILE_OP_LIST, "path": path or ROOT_PATH}
     )
     entries = [_entry_view(entry) for entry in info.get("entries") or []]
     entries.sort(key=_directories_first)
@@ -87,7 +92,7 @@ async def download_file(
         The file as an attachment, sized only when it is done.
     """
     stream = await _open(
-        runtime, device_id, CHANNEL_STREAM_FILE_DOWNLOAD, {"path": path}
+        runtime, device_id, {"op": CHANNEL_FILE_OP_DOWNLOAD, "path": path}
     )
     first = await _first_bytes(stream)
     name = posixpath.basename(path) or "download"
@@ -115,10 +120,7 @@ async def download_dir(
         The archive as an attachment, sized only when it is done.
     """
     stream = await _open(
-        runtime,
-        device_id,
-        CHANNEL_STREAM_FILE_DOWNLOAD,
-        {"path": path, "is_archived": True},
+        runtime, device_id, {"op": CHANNEL_FILE_OP_DIRECTORY_DOWNLOAD, "path": path}
     )
     first = await _first_bytes(stream)
     base = posixpath.basename(path.rstrip("/")) or "archive"
@@ -170,8 +172,11 @@ async def upload_file(
     stream = await _open(
         runtime,
         device_id,
-        CHANNEL_STREAM_FILE_UPLOAD,
-        {"path": posixpath.join(directory, name), "size": int(size)},
+        {
+            "op": CHANNEL_FILE_OP_UPLOAD,
+            "path": posixpath.join(directory, name),
+            "size": int(size),
+        },
     )
     try:
         while True:
@@ -205,8 +210,7 @@ async def make_dir(
     await _run_stream(
         runtime,
         body.device_id,
-        CHANNEL_STREAM_FILE_OP,
-        {"op": "mkdir", "path": body.path},
+        {"op": CHANNEL_FILE_OP_DIRECTORY_CREATE, "path": body.path},
     )
     return {}
 
@@ -228,8 +232,7 @@ async def rename_path(
     await _run_stream(
         runtime,
         body.device_id,
-        CHANNEL_STREAM_FILE_OP,
-        {"op": "rename", "path": body.path, "new_path": body.new_path},
+        {"op": CHANNEL_FILE_OP_RENAME, "path": body.path, "new_path": body.new_path},
     )
     return {}
 
@@ -248,10 +251,7 @@ async def delete_path(
         An empty acknowledgement.
     """
     await _run_stream(
-        runtime,
-        body.device_id,
-        CHANNEL_STREAM_FILE_OP,
-        {"op": "delete", "path": body.path},
+        runtime, body.device_id, {"op": CHANNEL_FILE_OP_REMOVE, "path": body.path}
     )
     return {}
 
@@ -276,23 +276,23 @@ def _directories_first(entry: DeviceFileEntryView) -> tuple:
     return (not entry.is_dir, entry.name.lower())
 
 
-async def _open(runtime: PanelRuntime, device_id: str, kind: str, args: dict):
-    """One stream on the device, or the offline refusal."""
+async def _open(runtime: PanelRuntime, device_id: str, args: dict):
+    """One ``file`` stream on the device, or the offline refusal."""
     try:
-        return await runtime.agent_sessions.open_stream(device_id, kind, args)
+        return await runtime.agent_sessions.open_stream(
+            device_id, CHANNEL_STREAM_FILE, args
+        )
     except AgentOfflineError as error:
         raise _offline(error)
 
 
-async def _run_stream(
-    runtime: PanelRuntime, device_id: str, kind: str, args: dict
-) -> dict:
-    """Open one stream, wait for its close, and refuse what it refused.
+async def _run_stream(runtime: PanelRuntime, device_id: str, args: dict) -> dict:
+    """Open one ``file`` stream, wait for its close, and refuse what it refused.
 
     Returns:
         The close's ``params``: the stream's result.
     """
-    stream = await _open(runtime, device_id, kind, args)
+    stream = await _open(runtime, device_id, args)
     try:
         info = await asyncio.wait_for(_collect(stream), DEVICE_FILE_OP_TIMEOUT_S)
     except asyncio.TimeoutError:

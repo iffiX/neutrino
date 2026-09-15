@@ -4,9 +4,11 @@ The test plays the peer over a socket past its hello. What these pin is
 the frame sequence both packages must match: a report recorded by id with
 its link address, the state pushed on the first report whose hash differs
 and never again while the hub's copy stands, a peer-opened ``package``
-stream served under credit with the sha256 in its close, a ``service``
-stream closed with the entry's material, an unknown kind closed
-``kind_unknown``, and a socket ending taking the binding offline.
+stream served under credit with the sha256 in its close, a ``log`` stream
+becoming the task the panel follows, ending with the module's state and
+the failure's code, a ``service`` stream closed with the entry's material,
+an unknown kind closed ``kind_unknown``, and a socket ending taking the
+binding offline.
 """
 
 import hashlib
@@ -25,13 +27,12 @@ from neutrino_hub.modules.channel.constants import (
 )
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.modules.clients.registry import ClientRegistry
-from neutrino_hub.modules.devices.agent_module_controller import AgentModuleController
-from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.web import channel_serve, identity
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.routers import channel as channel_router
+from neutrino_hub.web.task_stream import TaskStreamRegistry
 from tests.conftest import StubDesiredStates
 
 LINK_MAC = "aa:bb:cc:dd:ee:ff"
@@ -129,6 +130,7 @@ class _EmptyNetwork:
 class FakeRuntime:
     def __init__(self, tmp_path: Path):
         self.events = RecordingEvents()
+        self.tasks = TaskStreamRegistry()
         self.enrollments: dict = {}
         self.device_metrics = {}
         self.device_modules = {}
@@ -144,9 +146,6 @@ class FakeRuntime:
         self.published_services = StubPublishedServices()
         self.desired_states = SeatPasswords()
         self.served_models = StubServedModels()
-        self.agent_module_orders = AgentModuleController(
-            cache=None, locks=DeviceInstallLocks()
-        )
         self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
         self.client_sessions = ChannelSessionRegistry(CHANNEL_ROLE_CLIENT)
         self.package_path = tmp_path / "agent.deb"
@@ -468,6 +467,82 @@ def test_a_package_the_hub_cannot_produce_is_closed_with_the_typed_reason(api):
             "code": "module_unknown",
             "params": {"name": "nope"},
         }
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_log_stream_is_the_task_the_panel_follows_to_the_modules_state(api):
+    client, runtime = api
+    device_id, token = bound_device()
+    socket = welcomed(client, device_id, token)
+    try:
+        socket.send_json(report())
+        socket.receive_json()
+
+        socket.send_json(
+            {"type": "open", "stream": 1, "kind": "log", "module": "samba"}
+        )
+        assert socket.receive_json()["type"] == "credit"
+        socket.send_bytes((1).to_bytes(4, "big") + b"samba: installing\n")
+        socket.send_bytes((1).to_bytes(4, "big") + b"Setting up samba\n")
+        socket.send_json(
+            {
+                "type": "close",
+                "stream": 1,
+                "code": "",
+                "params": {"state": "installed"},
+            }
+        )
+
+        label = channel_serve.module_task_label(device_id, "samba")
+        assert wait_until(
+            lambda: any(
+                stream.label == label and stream.is_finished
+                for stream in runtime.tasks.streams()
+            )
+        )
+        (task,) = [s for s in runtime.tasks.streams() if s.label == label]
+        assert "".join(task.buffer) == (
+            "samba: installing\nSetting up samba\n[installed]\n"
+        )
+        assert task.exit_code == 0
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_log_stream_closed_with_a_code_ends_the_task_with_it(api):
+    client, runtime = api
+    device_id, token = bound_device()
+    socket = welcomed(client, device_id, token)
+    try:
+        socket.send_json(report())
+        socket.receive_json()
+
+        socket.send_json(
+            {"type": "open", "stream": 3, "kind": "log", "module": "samba"}
+        )
+        socket.receive_json()
+        socket.send_json(
+            {
+                "type": "close",
+                "stream": 3,
+                "code": "install_failed",
+                "params": {"state": "failed", "detail": "apt refused"},
+            }
+        )
+
+        label = channel_serve.module_task_label(device_id, "samba")
+        assert wait_until(
+            lambda: any(
+                stream.label == label and stream.is_finished
+                for stream in runtime.tasks.streams()
+            )
+        )
+        (task,) = [s for s in runtime.tasks.streams() if s.label == label]
+        assert "".join(task.buffer) == (
+            '{"code": "install_failed", "params": {"detail": "apt refused"}}\n'
+            "[failed]\n"
+        )
     finally:
         socket.__exit__(None, None, None)
 

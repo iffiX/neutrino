@@ -1,20 +1,28 @@
 """A device's Modules page, and the one door every module block goes through.
 
 The page: management is a completed handshake, so a failed install or a
-forgotten device never reads managed here, and a click is one order. The
-door: the device list carrying every stored device with an agent and the hub
-box's own first, a selection installing what is newly on and uninstalling
-what is dropped, a changed device with no socket refusing the whole
-selection before anything is written, the per-device read carrying the
-module's own fields beside the shared ones, a configuration checked on the
-agent before it is stored and pushed, and an imperative verb run on the
-agent and answering the fresh view.
+forgotten device never reads managed here; each row is what the agent last
+reported beside what the hub asks of it; the four presses write one
+``want`` each and push it, refuse an offline device before writing, and a
+user-tier module takes none; the task carrying a module's install lines is
+named on its row. The door: the device list carrying every stored device
+with an agent and the hub box's own first, a selection wanting what is
+newly on running and what is dropped absent, a changed device with no
+socket refusing the whole selection before anything is written, the
+per-device read carrying the module's own fields beside the shared ones, a
+configuration checked on the agent as the module's ``validate`` verb before
+it is stored and pushed, and a module verb run on the agent and answering
+the fresh view.
 """
+
+import asyncio
+import json
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.web.channel_serve import module_task_label
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import ModuleDeviceFields
 from neutrino_hub.web.routers.agent import module as device_modules
@@ -28,10 +36,21 @@ MODULE_PATH = "/api/agent/module"
 
 
 @pytest.fixture
-def api(monkeypatch):
+def api(monkeypatch, tmp_path):
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(
+        "neutrino_hub.modules.devices.desired_state.UTILS_CONFIG_DIR", tmp_path
+    )
     client, runtime = device_box(monkeypatch, device_modules)
     with client:
         yield client, runtime
+
+
+def modules_file(tmp_path) -> dict:
+    path = tmp_path / "devices" / DEVICE / "modules.json"
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text())["modules"]
 
 
 def test_an_agent_with_no_socket_is_not_online(api):
@@ -66,14 +85,35 @@ def test_an_agent_whose_socket_closed_is_not_online(api):
     assert not answer["is_agent_online"]
 
 
-def test_what_the_agent_reported_is_found_by_the_devices_id(api):
+def test_a_row_is_what_the_agent_reported_beside_what_the_hub_asks(api):
     client, runtime = api
     runtime.agent_sessions.online.add(DEVICE)
-    runtime.device_modules[DEVICE] = {"fakedesk": {"state": "installed"}}
+    runtime.device_modules[DEVICE] = {
+        "fakedesk": {
+            "state": "running",
+            "is_active": True,
+            "code": "",
+            "params": {},
+            "details": {"port": 21118},
+        }
+    }
+    runtime.desired_states.set_want(DEVICE, "fakedesk", "running")
 
-    answer = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()
+    row = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
 
-    assert answer["modules"][0]["state"] == "installed"
+    assert row["state"] == "running"
+    assert row["is_active"] is True
+    assert row["details"] == {"port": 21118}
+    assert row["want"] == "running"
+    assert row["task_id"] == ""
+
+
+def test_a_module_nobody_touched_reads_unknown_with_no_want(api):
+    client, _ = api
+
+    row = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
+
+    assert (row["state"], row["want"], row["is_active"]) == ("unknown", "", False)
 
 
 def test_the_manifest_kind_reaches_the_row_for_the_ssh_confirm(api, monkeypatch):
@@ -133,10 +173,11 @@ def test_the_installer_tier_reaches_the_row(api):
     assert answer["modules"][0]["installer"] == "hub"
 
 
-def test_a_user_tier_click_queues_nothing_and_the_row_keeps_its_state(api, monkeypatch):
+def test_a_user_tier_press_writes_nothing(api, monkeypatch, tmp_path):
     """user-tier rows never offer install or uninstall; a request arriving
-    anyway — an old page, a hand-built call — must order nothing."""
+    anyway, from an old page or a hand-built call, must write no want."""
     client, runtime = api
+    runtime.agent_sessions.online.add(DEVICE)
     monkeypatch.setattr(
         device_modules,
         "load_module_manifests",
@@ -149,44 +190,101 @@ def test_a_user_tier_click_queues_nothing_and_the_row_keeps_its_state(api, monke
             }
         },
     )
-    runtime.device_modules[DEVICE] = {"teamviewer": {"state": "absent"}}
+
+    refused = client.post(
+        f"{MODULE_PATH}/install", json={"device_id": DEVICE, "module": "teamviewer"}
+    )
+
+    assert refused.status_code == 400
+    assert refused.json()["detail"] == {
+        "code": "module_not_optional",
+        "params": {"name": "teamviewer"},
+    }
+    assert modules_file(tmp_path) == {}
+    assert runtime.agent_sessions.pushes == []
+
+
+@pytest.mark.parametrize(
+    "press, want",
+    [
+        ("install", "installed"),
+        ("start", "running"),
+        ("stop", "stopped"),
+        ("uninstall", "absent"),
+    ],
+)
+def test_each_press_writes_its_want_and_pushes_the_state(api, tmp_path, press, want):
+    client, runtime = api
+    runtime.agent_sessions.online.add(DEVICE)
 
     answer = client.post(
-        f"{MODULE_PATH}/install", json={"device_id": DEVICE, "module": "teamviewer"}
-    ).json()
+        f"{MODULE_PATH}/{press}", json={"device_id": DEVICE, "module": "fakedesk"}
+    )
 
-    assert answer["modules"][0]["installer"] == "user"
-    assert answer["modules"][0]["state"] == "absent"
-    assert runtime.agent_module_orders.open_order_for(DEVICE, "teamviewer") is None
+    assert answer.status_code == 200
+    assert answer.json()["modules"][0]["want"] == want
+    assert modules_file(tmp_path) == {"fakedesk": {"want": want}}
+    assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE]
 
 
-def test_a_click_queues_one_order_and_the_row_shows_the_step(api):
+def test_a_press_on_an_offline_device_is_refused_before_anything_is_written(
+    api, tmp_path
+):
     client, runtime = api
 
-    answer = client.post(
-        f"{MODULE_PATH}/install", json={"device_id": DEVICE, "module": "fakedesk"}
-    ).json()
+    refused = client.post(
+        f"{MODULE_PATH}/start", json={"device_id": DEVICE, "module": "fakedesk"}
+    )
 
-    assert answer["modules"][0]["state"] == "installing"
-    order = runtime.agent_module_orders.open_order_for(DEVICE, "fakedesk")
-    assert order is not None and order.action == "install"
-    unknown = client.post(
+    assert refused.status_code == 409
+    assert refused.json()["detail"]["code"] == "agent_offline"
+    assert modules_file(tmp_path) == {}
+
+
+def test_a_module_with_no_manifest_is_refused(api):
+    client, _ = api
+
+    refused = client.post(
         f"{MODULE_PATH}/install", json={"device_id": DEVICE, "module": "nonsense"}
     )
-    assert unknown.status_code == 404
+
+    assert refused.status_code == 404
+    assert refused.json()["detail"]["code"] == "module_unknown"
 
 
-def test_an_uninstall_queues_the_paired_order(api):
+def test_a_module_with_no_build_for_the_platform_is_refused(api, tmp_path):
     client, runtime = api
-    runtime.device_modules[DEVICE] = {"fakedesk": {"state": "installed"}}
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.device_platform[DEVICE] = {"os": "linux", "family": "arch", "arch": "x"}
 
-    answer = client.post(
-        f"{MODULE_PATH}/uninstall", json={"device_id": DEVICE, "module": "fakedesk"}
-    ).json()
+    refused = client.post(
+        f"{MODULE_PATH}/install", json={"device_id": DEVICE, "module": "fakedesk"}
+    )
 
-    assert answer["modules"][0]["state"] == "uninstalling"
-    order = runtime.agent_module_orders.open_order_for(DEVICE, "fakedesk")
-    assert order is not None and order.action == "uninstall"
+    assert refused.status_code == 409
+    assert refused.json()["detail"]["code"] == "no_platform_build"
+    assert modules_file(tmp_path) == {}
+
+
+def test_the_row_names_the_newest_task_carrying_the_modules_lines(api):
+    client, runtime = api
+    label = module_task_label(DEVICE, "fakedesk")
+
+    async def two_tasks():
+        async def one_line():
+            yield "installing\n"
+
+        runtime.tasks.start(label=label, source=one_line())
+        newest = runtime.tasks.start(label=label, source=one_line())
+        for _ in range(3):
+            await asyncio.sleep(0)
+        return newest.id
+
+    newest_id = asyncio.run(two_tasks())
+
+    row = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
+
+    assert row["task_id"] == newest_id
 
 
 # --- the one door every module block goes through ---
@@ -256,9 +354,9 @@ def box(monkeypatch, tmp_path):
 
 def test_the_list_carries_every_stored_device_with_an_agent_hub_box_first(box):
     client, runtime = box
-    runtime.report(LAPTOP, MODULE, "installed")
+    runtime.report(LAPTOP, MODULE, "running")
     runtime.report(OFFLINE, MODULE, "absent")
-    runtime.desired_states.set_enabled(LAPTOP, MODULE, True)
+    runtime.desired_states.set_want(LAPTOP, MODULE, "running")
 
     rows = client.get(f"{BLOCK_PATH}/device").json()["devices"]
 
@@ -269,13 +367,14 @@ def test_the_list_carries_every_stored_device_with_an_agent_hub_box_first(box):
         "name": "zed laptop",
         "hostname": "",
         "is_online": True,
-        "is_enabled": True,
-        "state": "installed",
+        "want": "running",
+        "state": "running",
         "code": "",
         "params": {},
     }
     assert by_id[OFFLINE]["is_online"] is False
     assert by_id[OFFLINE]["state"] == "absent"
+    assert by_id[OFFLINE]["want"] == ""
     assert by_id[HUB_BOX]["state"] == "unknown"
 
 
@@ -293,34 +392,45 @@ def test_a_device_that_never_completed_its_handshake_is_not_listed(box):
 # --- the selection ---
 
 
-def test_selecting_devices_switches_them_orders_installs_and_pushes(box):
+def test_selecting_devices_wants_them_running_and_pushes(box):
     client, runtime = box
     runtime.report(LAPTOP, MODULE, "absent")
 
     response = client.post(f"{BLOCK_PATH}/device/set", json={"device_ids": [LAPTOP]})
 
     assert response.status_code == 200
-    assert runtime.desired_states.is_enabled(LAPTOP, MODULE) is True
-    assert runtime.desired_states.is_enabled(HUB_BOX, MODULE) is False
-    order = runtime.agent_module_orders.open_order_for(LAPTOP, MODULE)
-    assert order is not None and order.action == "install"
+    assert runtime.desired_states.want_of(LAPTOP, MODULE) == "running"
+    assert runtime.desired_states.want_of(HUB_BOX, MODULE) == ""
     assert [push[0] for push in runtime.agent_sessions.pushes] == [LAPTOP]
     row = next(r for r in response.json()["devices"] if r["device_id"] == LAPTOP)
-    assert row["is_enabled"] is True
-    assert row["state"] == "installing"
+    assert row["want"] == "running"
     assert runtime.published_services.refreshes == 1
 
 
-def test_dropping_a_device_orders_an_uninstall(box):
+def test_dropping_a_device_wants_the_module_absent(box):
     client, runtime = box
-    runtime.desired_states.set_enabled(LAPTOP, MODULE, True)
-    runtime.report(LAPTOP, MODULE, "installed")
+    runtime.desired_states.set_want(LAPTOP, MODULE, "running")
+    runtime.report(LAPTOP, MODULE, "running")
 
     client.post(f"{BLOCK_PATH}/device/set", json={"device_ids": []})
 
-    assert runtime.desired_states.is_enabled(LAPTOP, MODULE) is False
-    order = runtime.agent_module_orders.open_order_for(LAPTOP, MODULE)
-    assert order is not None and order.action == "uninstall"
+    assert runtime.desired_states.want_of(LAPTOP, MODULE) == "absent"
+
+
+def test_a_device_wanted_installed_only_is_neither_checked_nor_touched(box):
+    """The page asks for the module configured; a device holding the package
+    alone is outside its set, and a selection that leaves it out leaves it."""
+    client, runtime = box
+    runtime.desired_states.set_want(LAPTOP, MODULE, "installed")
+
+    rows = client.post(
+        f"{BLOCK_PATH}/device/set", json={"device_ids": [HUB_BOX]}
+    ).json()["devices"]
+
+    assert runtime.desired_states.want_of(LAPTOP, MODULE) == "installed"
+    assert runtime.desired_states.want_of(HUB_BOX, MODULE) == "running"
+    assert [push[0] for push in runtime.agent_sessions.pushes] == [HUB_BOX]
+    assert next(r for r in rows if r["device_id"] == LAPTOP)["want"] == "installed"
 
 
 def test_a_changed_device_with_no_socket_refuses_the_whole_selection(box):
@@ -335,21 +445,20 @@ def test_a_changed_device_with_no_socket_refuses_the_whole_selection(box):
         "code": "agent_offline",
         "params": {"device_id": OFFLINE},
     }
-    assert runtime.desired_states.is_enabled(LAPTOP, MODULE) is False
-    assert runtime.agent_module_orders.open_order_for(LAPTOP, MODULE) is None
+    assert runtime.desired_states.want_of(LAPTOP, MODULE) == ""
     assert runtime.agent_sessions.pushes == []
 
 
 def test_an_offline_device_already_on_stays_on_untouched(box):
     client, runtime = box
-    runtime.desired_states.set_enabled(OFFLINE, MODULE, True)
+    runtime.desired_states.set_want(OFFLINE, MODULE, "running")
 
     response = client.post(
         f"{BLOCK_PATH}/device/set", json={"device_ids": [OFFLINE, LAPTOP]}
     )
 
     assert response.status_code == 200
-    assert runtime.desired_states.is_enabled(OFFLINE, MODULE) is True
+    assert runtime.desired_states.want_of(OFFLINE, MODULE) == "running"
     assert [push[0] for push in runtime.agent_sessions.pushes] == [LAPTOP]
 
 
@@ -370,7 +479,7 @@ def test_an_id_no_managed_device_answers_to_is_refused(box):
 def test_the_device_read_carries_the_shared_fields_beside_the_modules_own(box):
     client, runtime = box
     runtime.desired_states.write(LAPTOP, MODULE, {"users": ["ann"]})
-    runtime.report(LAPTOP, MODULE, "installed", sessions=[{"username": "ann"}])
+    runtime.report(LAPTOP, MODULE, "running", sessions=[{"username": "ann"}])
 
     payload = client.get(BLOCK_PATH, params={"device_id": LAPTOP}).json()
 
@@ -378,7 +487,7 @@ def test_the_device_read_carries_the_shared_fields_beside_the_modules_own(box):
         "device_id": LAPTOP,
         "host": "192.168.100.7",
         "is_online": True,
-        "state": "installed",
+        "state": "running",
         "code": "",
         "params": {},
         "users": ["ann"],
@@ -397,24 +506,17 @@ def test_an_offline_device_reads_its_configuration_with_the_flag_down(box):
     assert payload["sessions"] == 0
 
 
-def test_a_standing_failure_of_the_last_order_reads_on_the_row(box):
+def test_a_failure_the_agent_reported_reads_on_the_row(box):
     client, runtime = box
-    runtime.report(LAPTOP, MODULE, "absent")
-    runtime.agent_module_orders.ask(
-        device_id=LAPTOP,
-        module=MODULE,
-        manifest={"installer": "platform"},
-        platform={},
-        action="install",
-    )
-    order = runtime.agent_module_orders.open_order_for(LAPTOP, MODULE)
-    runtime.agent_module_orders.record_result(
-        device_id=LAPTOP,
-        order_id=order.id,
-        state="failed",
-        code="install_failed",
-        params={"detail": "apt refused"},
-    )
+    runtime.device_modules[LAPTOP] = {
+        MODULE: {
+            "state": "failed",
+            "is_active": False,
+            "code": "install_failed",
+            "params": {"detail": "apt refused"},
+            "details": {},
+        }
+    }
 
     payload = client.get(BLOCK_PATH, params={"device_id": LAPTOP}).json()
 
@@ -488,7 +590,7 @@ def test_an_offline_device_cannot_be_edited(box):
     assert runtime.agent_sessions.validations == []
 
 
-def test_a_command_runs_on_the_agent_to_its_close(box):
+def test_a_verb_runs_on_the_agent_under_the_modules_name_to_its_close(box):
     _, runtime = box
     runtime.agent_sessions.outcome = {
         "exit_code": 0,
@@ -498,17 +600,15 @@ def test_a_command_runs_on_the_agent_to_its_close(box):
     }
     context = device_modules.device_context(runtime, MODULE, LAPTOP)
 
-    info = device_modules.run_command(
-        runtime, context, "samba_set_password", {"name": "ann"}
-    )
+    info = device_modules.run_command(runtime, context, "set_password", {"name": "ann"})
 
     assert runtime.agent_sessions.commands == [
-        (LAPTOP, "samba_set_password", {"name": "ann"})
+        (LAPTOP, MODULE, "set_password", {"name": "ann"})
     ]
     assert info["output"] == "ok\n"
 
 
-def test_a_command_the_agent_fails_is_answered_with_its_code(box):
+def test_a_verb_the_agent_fails_is_answered_with_its_code(box):
     _, runtime = box
     runtime.agent_sessions.outcome = {
         "exit_code": 1,
@@ -519,13 +619,13 @@ def test_a_command_the_agent_fails_is_answered_with_its_code(box):
     context = device_modules.device_context(runtime, MODULE, LAPTOP)
 
     with pytest.raises(device_modules.HTTPException) as refused:
-        device_modules.run_command(runtime, context, "samba_set_password", {})
+        device_modules.run_command(runtime, context, "set_password", {})
 
     assert refused.value.status_code == 502
     assert refused.value.detail == {"code": "user_unknown", "params": {"user": "ghost"}}
 
 
-def test_a_failed_command_with_only_output_names_it_in_the_detail(box):
+def test_a_failed_verb_with_only_output_names_it_in_the_detail(box):
     _, runtime = box
     runtime.agent_sessions.outcome = {
         "exit_code": 2,
@@ -536,7 +636,7 @@ def test_a_failed_command_with_only_output_names_it_in_the_detail(box):
     context = device_modules.device_context(runtime, MODULE, LAPTOP)
 
     with pytest.raises(device_modules.HTTPException) as refused:
-        device_modules.run_command(runtime, context, "zfs_op", {})
+        device_modules.run_command(runtime, context, "op", {})
 
     assert refused.value.detail == {
         "code": "command_failed",
@@ -544,12 +644,12 @@ def test_a_failed_command_with_only_output_names_it_in_the_detail(box):
     }
 
 
-def test_a_command_on_an_offline_device_is_refused_before_it_is_sent(box):
+def test_a_verb_on_an_offline_device_is_refused_before_it_is_sent(box):
     _, runtime = box
     context = device_modules.device_context(runtime, MODULE, OFFLINE)
 
     with pytest.raises(device_modules.HTTPException) as refused:
-        device_modules.run_command(runtime, context, "samba_set_password", {})
+        device_modules.run_command(runtime, context, "set_password", {})
 
     assert refused.value.status_code == 409
     assert runtime.agent_sessions.commands == []

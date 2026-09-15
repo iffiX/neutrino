@@ -23,7 +23,7 @@ import { t, useLanguage } from "../i18n";
 import { useConfirm } from "../use_confirm";
 import { formatTimeAgo } from "../format_duration";
 import { stripAnsi } from "../strip_ansi";
-import { HUB_EVENT_MODULE_ORDER, useHubEvents } from "../use_hub_events";
+import { HUB_EVENT_DEVICE_REPORT, useHubEvents } from "../use_hub_events";
 import { useTaskStream } from "../use_task_stream";
 import type {
   DeviceAnnotation,
@@ -158,8 +158,8 @@ export function DeviceDrawer({
   const [enrollment, setEnrollment] = useState<DeviceEnrollmentView | null>(
     null,
   );
-  // Bumped whenever a module order on this machine moves, so the remote
-  // desktop panel reads again after software lands on it.
+  // Bumped whenever this machine's report says its modules moved, so the
+  // remote desktop panel reads again after software lands on it.
   const [moduleRevision, setModuleRevision] = useState(0);
   const confirm = useConfirm();
 
@@ -170,7 +170,7 @@ export function DeviceDrawer({
   const isManaged = isDeviceManaged(device);
   const isAgentOnline = isManaged && device.is_agent_online;
 
-  useHubEvents([{ type: HUB_EVENT_MODULE_ORDER, key: device.id }], () =>
+  useHubEvents([{ type: HUB_EVENT_DEVICE_REPORT, key: device.id }], () =>
     setModuleRevision((current) => current + 1),
   );
 

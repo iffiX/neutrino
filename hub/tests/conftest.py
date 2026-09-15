@@ -24,7 +24,6 @@ than stopping a unit on the developer's box or opening a password dialog.
 import os
 import secrets
 import subprocess
-import threading
 
 import pytest
 
@@ -203,7 +202,6 @@ class ScriptedChannelStream:
         kind: The stream kind it was opened as.
         args: What the open carried.
         sent: Every byte the route sent, in order.
-        resizes: Every ``(cols, rows)`` the route sent.
         close_info: ``{"code", "params"}`` once the stream closed.
         is_close_asked: Whether the route closed the stream from its side.
     """
@@ -215,7 +213,6 @@ class ScriptedChannelStream:
         self.kind = kind
         self.args = dict(args)
         self.sent: list = []
-        self.resizes: list = []
         self.close_info = None
         self.is_abandoned = False
         self.is_close_asked = False
@@ -238,9 +235,6 @@ class ScriptedChannelStream:
         if self._closed.is_set():
             raise AgentOfflineError("scripted")
         self.sent.append(bytes(data))
-
-    async def resize(self, cols: int, rows: int) -> None:
-        self.resizes.append((int(cols), int(rows)))
 
     async def close(self, code: str = "", params=None) -> None:
         self.is_close_asked = True
@@ -279,21 +273,21 @@ class FakeChannelSessions:
     """The live-socket registry as routes see it: who is online, what ran.
 
     Attributes:
-        commands: Every command run, ``(key, action, args)``.
+        commands: Every command run, ``(key, module, verb, args)``.
         validations: Every configuration checked, ``(key, module, config)``.
         pushes: Every state pushed, ``(key, hash, document)``.
         verdict: What a validate answers, ``{is_valid, code, params}``,
             composed into the close the way the agent composes it.
         outcome: What a command answers, ``{exit_code, code, params,
             output, result}``, composed the same way; ``outcomes`` by
-            action wins over it where set.
+            verb wins over it where set.
         versions: What each device's last hello named, by key.
         ended_at: When each device's last channel ended, by key.
         reported_at: When each device's last report arrived, by key.
         streams: Every stream opened, in order.
-        after_command: Called with ``(key, action, args)`` after a command
-            is recorded, standing in for what the machine's report says
-            afterwards.
+        after_command: Called with ``(key, module, verb, args)`` after a
+            command is recorded, standing in for what the machine's report
+            says afterwards.
         report_serials: How many reports each device has sent, by key.
         waited: Every wait for a report, ``(key, after_serial, timeout)``.
         scripts: Stream kind to a callable of the open's args answering
@@ -318,8 +312,9 @@ class FakeChannelSessions:
         self.streams: list = []
         self.scripts: dict = {}
         # What the machine does behind a command, as a callable of
-        # ``(key, action, args)``: a test sets it to change the runtime's
-        # held report the way the agent's own report after the command would.
+        # ``(key, module, verb, args)``: a test sets it to change the
+        # runtime's held report the way the agent's own report after the
+        # command would.
         self.after_command = None
         self.report_serials: dict = {}
         self.waited: list = []
@@ -361,22 +356,28 @@ class FakeChannelSessions:
     def run_stream_from_thread(
         self, key, kind, args, payload=None, on_chunk=None, timeout=None
     ) -> dict:
-        """A ``command`` or a ``validate`` stream, answered from the outcomes.
+        """A ``command`` stream, answered from the outcomes.
 
-        A command is recorded as ``(key, action, args)`` and closes with
-        the outcome for its action; a validate is recorded as
-        ``(key, module, config)`` and closes with the verdict.
+        A ``validate`` verb is recorded as ``(key, module, config)`` and
+        closes with the verdict; any other verb is recorded as ``(key,
+        module, verb, args)`` and closes with the outcome for the verb.
         """
         self._require(key)
-        if kind == "validate":
-            self.validations.append((key.lower(), args["module"], dict(args["config"])))
+        module = args["module"]
+        verb = args["verb"]
+        rest = {
+            name: value
+            for name, value in args.items()
+            if name not in ("module", "verb")
+        }
+        if verb == "validate":
+            self.validations.append((key.lower(), module, dict(rest["config"])))
             return _close_of(self.verdict, is_valid=bool(self.verdict.get("is_valid")))
-        action = args["action"]
-        self.commands.append((key.lower(), action, dict(args.get("args") or {})))
+        self.commands.append((key.lower(), module, verb, rest))
         after = self.after_command
         if after is not None:
-            after(key.lower(), action, dict(args.get("args") or {}))
-        outcome = self.outcomes.get(action, self.outcome)
+            after(key.lower(), module, verb, dict(rest))
+        outcome = self.outcomes.get(verb, self.outcome)
         result = {
             "exit_code": int(outcome.get("exit_code", 0)),
             "output": str(outcome.get("output", "") or ""),
@@ -424,16 +425,29 @@ class StubDesiredStates:
 
     Attributes:
         ensured: Every device a report asked a seat password for.
+        wants: ``(key, module)`` to the want held, what a report reads.
+        forgotten: Every ``(key, module)`` a report dropped from the file.
     """
 
     def __init__(self):
         self.ensured: list = []
+        self.wants: dict = {}
+        self.forgotten: list = []
 
     def ensure_seat_password(self, key: str) -> bool:
         key = key.lower()
         if key in self.ensured:
             return False
         self.ensured.append(key)
+        return True
+
+    def want_of(self, key: str, module: str) -> str:
+        return self.wants.get((key.lower(), module), "")
+
+    def forget_module(self, key: str, module: str) -> bool:
+        if self.wants.pop((key.lower(), module), None) is None:
+            return False
+        self.forgotten.append((key.lower(), module))
         return True
 
 
@@ -449,11 +463,6 @@ class StubPublishedServices:
 
     def schedule_refresh(self) -> None:
         self.refreshes += 1
-
-
-def holding_dispatch(order) -> None:
-    """A dispatch that keeps an order open for a moment and never answers."""
-    threading.Event().wait(2.0)
 
 
 class FakeModuleRuntime:
@@ -472,13 +481,11 @@ class FakeModuleRuntime:
             lan_addresses: This hub's own LAN addresses, for the hub-first
                 ordering.
         """
-        from neutrino_hub.modules.devices.agent_module_controller import (
-            AgentModuleController,
-        )
         from neutrino_hub.modules.devices.desired_state import DesiredStateStore
-        from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
+        from neutrino_hub.web.task_stream import TaskStreamRegistry
 
         self.devices = {device.id: device for device in devices}
+        self.tasks = TaskStreamRegistry()
         self.agent_sessions = FakeChannelSessions(online)
         self.published_services = StubPublishedServices()
         self.desired_states = DesiredStateStore()
@@ -487,9 +494,6 @@ class FakeModuleRuntime:
         self.device_hostname: dict = {}
         self.device_address: dict = {}
         self.lan_addresses = list(lan_addresses)
-        self.agent_module_orders = AgentModuleController(
-            cache=None, locks=DeviceInstallLocks(), dispatch=holding_dispatch
-        )
 
     def network(self):
         return _Network(self.lan_addresses)

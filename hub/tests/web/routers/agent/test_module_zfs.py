@@ -76,7 +76,7 @@ def box(monkeypatch, tmp_path):
         disks=[DISK],
         importable=[],
     )
-    runtime.desired_states.set_enabled(DEVICE, "samba", True)
+    runtime.desired_states.set_want(DEVICE, "samba", "running")
     runtime.desired_states.write(
         DEVICE,
         "samba",
@@ -199,7 +199,8 @@ def test_each_verb_runs_its_op_on_the_device_and_answers_the_view(
     assert response.status_code == 200, response.text
     assert (
         DEVICE,
-        "zfs_op",
+        "zfs",
+        "op",
         {"op": op, "args": args},
     ) in runtime.agent_sessions.commands
     assert response.json()["device_id"] == DEVICE
@@ -210,7 +211,7 @@ def test_a_scan_runs_the_smart_read(box):
 
     client.post(f"{BASE}/scan", json={"device_id": DEVICE})
 
-    assert runtime.agent_sessions.commands == [(DEVICE, "zfs_scan", {})]
+    assert runtime.agent_sessions.commands == [(DEVICE, "zfs", "scan", {})]
 
 
 def test_a_verb_the_agent_refuses_is_answered_with_its_code(box):
@@ -313,7 +314,8 @@ def test_destroying_a_pool_drops_the_shares_rooted_in_it_first(box):
     assert runtime.agent_sessions.validations[0][1] == "samba"
     assert runtime.agent_sessions.commands[-1] == (
         DEVICE,
-        "zfs_op",
+        "zfs",
+        "op",
         {"op": "destroy_pool", "args": {"name": "tank"}},
     )
 
@@ -354,7 +356,7 @@ def test_the_view_answered_after_a_destroy_is_the_report_after_it(box):
     sessions = runtime.agent_sessions
     sessions.report_serials[DEVICE] = 3
 
-    def machine_after(key, action, args):
+    def machine_after(key, module, verb, args):
         runtime.report(
             DEVICE,
             "zfs",

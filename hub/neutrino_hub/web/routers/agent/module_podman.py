@@ -32,8 +32,8 @@ from neutrino_hub.web.routers.agent.module import (
 )
 
 MODULE = "podman"
-COMMAND_CONTROL = "podman_control"
-COMMAND_JOURNAL = "podman_journal"
+COMMAND_CONTROL = "control"
+COMMAND_JOURNAL = "journal"
 CONTROL_START = "start"
 CONTROL_STOP = "stop"
 CONTROL_RESTART = "restart"

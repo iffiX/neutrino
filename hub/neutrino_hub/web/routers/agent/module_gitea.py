@@ -25,8 +25,8 @@ from neutrino_hub.web.routers.agent.module import (
 )
 
 MODULE = "gitea"
-COMMAND_ADMIN = "gitea_admin"
-COMMAND_PASSWORD = "gitea_password"
+COMMAND_ADMIN = "admin"
+COMMAND_PASSWORD = "password"  # scan: allow
 DEFAULT_PORT = 3000
 
 

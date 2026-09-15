@@ -24,8 +24,6 @@ from neutrino_hub.modules.channel.constants import (
 )
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.modules.clients.registry import ClientRegistry
-from neutrino_hub.modules.devices.agent_module_controller import AgentModuleController
-from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.web import identity
@@ -61,9 +59,6 @@ class FakeRuntime:
         self.device_shares = DeviceShareRegistry()
         self.published_services = StubPublishedServices()
         self.desired_states = StubDesiredStates()
-        self.agent_module_orders = AgentModuleController(
-            cache=None, locks=DeviceInstallLocks()
-        )
         self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
         self.client_sessions = ChannelSessionRegistry(CHANNEL_ROLE_CLIENT)
         self.forgotten: list = []

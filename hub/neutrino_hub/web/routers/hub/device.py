@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.channel.constants import (
+    CHANNEL_COMMAND_MODULE_AGENT,
     CHANNEL_ROLE_AGENT,
     CHANNEL_STREAM_COMMAND,
 )
@@ -38,6 +39,7 @@ from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.system.machine import machine_id
 from neutrino_hub import HUB_VERSION
 from neutrino_hub.web.agent_tls import certificate_fingerprint
+from neutrino_hub.web.channel_serve import module_task_label
 from neutrino_hub.web.constants import (
     WEB_REINSTALL_POLL_S,
     WEB_REINSTALL_REPORT_TIMEOUT_S,
@@ -45,6 +47,7 @@ from neutrino_hub.web.constants import (
     WEB_DEFAULT_AGENT_LISTEN_PORT,
     WEB_EVENT_DEVICES,
     WEB_EVENT_DEVICE_REPORT,
+    WEB_TASK_LABEL_AGENT_INSTALL,
 )
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
@@ -61,8 +64,8 @@ from neutrino_hub.web.models import (
     DeviceRdpView,
     DeviceEnrollmentRequest,
     DeviceEnrollmentView,
-    DeviceInstallOrderView,
     DeviceInstallOutputView,
+    DeviceInstallTaskView,
     DeviceProcessKill,
     DeviceRequest,
     DeviceServiceAsk,
@@ -82,11 +85,16 @@ router = APIRouter(
     prefix="/api/hub/device", tags=["device"], dependencies=[Depends(require_session)]
 )
 
-# The commands the agent runs over its socket for the page's power and
-# reinstall buttons, by what each is called on the wire.
-AGENT_COMMAND_REBOOT = "reboot"
-AGENT_COMMAND_SHUTDOWN = "shutdown"
-AGENT_COMMAND_REINSTALL = "reinstall"
+# The agent's own verbs this page opens a ``command {module: agent}`` for.
+AGENT_VERB_REBOOT = "reboot"
+AGENT_VERB_SHUTDOWN = "shutdown"
+AGENT_VERB_REINSTALL = "reinstall"
+AGENT_VERB_KILL = "kill"
+AGENT_VERB_REMOTE_DESKTOP_READ = "remote_desktop_read"
+AGENT_VERB_REMOTE_DESKTOP_PASSWORD_SET = "remote_desktop_password_set"  # scan: allow
+AGENT_VERB_SERVICE = "service"
+# The code the agent's report carries for a reinstall that did not take.
+CODE_REINSTALL_FAILED = "reinstall_failed"
 
 # The service types the page may ask an agent to share or unshare.
 SERVICE_ASK_TYPES = ("rdp",)
@@ -661,7 +669,9 @@ def _ask_service(
         runtime.agent_sessions.run_stream_from_thread(
             key,
             CHANNEL_STREAM_COMMAND,
-            _command_args("service", {"service_type": service_type, "body": body}),
+            _command_args(
+                AGENT_VERB_SERVICE, {"service_type": service_type, "body": body}
+            ),
         )
     except (AgentOfflineError, StreamRefusedError) as error:
         raise HTTPException(
@@ -678,26 +688,56 @@ def install_output(
     """Every install this device has run, whatever asked for it.
 
     One pane, because a person reading why something is not on a machine
-    should not have to know which surface started it.
+    should not have to know which surface started it: the agent's own
+    install over SSH, and each module's install or uninstall, whose lines
+    the agent sent up a ``log`` stream.
 
     Args:
         device_id: The device, from the query.
-        runtime: The shared runtime, which holds the controller.
+        runtime: The shared runtime, which holds the tasks.
 
     Returns:
-        The device's orders, newest first, each with the output its module
-        produced.
+        The device's install tasks since the panel started, newest first,
+        each with what it printed.
     """
     manifests = load_module_manifests()
-    return DeviceInstallOutputView(
-        orders=[
-            DeviceInstallOrderView(
-                title=manifests.get(order.module, {}).get("title", order.module),
-                **order.to_view(),
+    tasks = []
+    for stream in reversed(runtime.tasks.streams()):
+        module = _task_module(stream.label, device_id)
+        if module is None:
+            continue
+        tasks.append(
+            DeviceInstallTaskView(
+                task_id=stream.id,
+                module=module,
+                title=manifests.get(module, {}).get("title", module),
+                is_finished=stream.is_finished,
+                exit_code=stream.exit_code,
+                output="".join(stream.buffer),
+                started_at=stream.started_at,
+                finished_at=stream.finished_at,
             )
-            for order in runtime.agent_module_orders.orders(device_id)
-        ]
-    )
+        )
+    return DeviceInstallOutputView(tasks=tasks)
+
+
+def _task_module(label: str, device_id: str) -> "str | None":
+    """The module a task label names on one device.
+
+    Args:
+        label: The task's label.
+        device_id: The device.
+
+    Returns:
+        The module name, empty for the agent's own install, or None for a
+        task that is not an install on this device.
+    """
+    if label == WEB_TASK_LABEL_AGENT_INSTALL.format(device_id=device_id):
+        return ""
+    prefix = module_task_label(device_id, "")
+    if label.startswith(prefix):
+        return label[len(prefix) :]
+    return None
 
 
 def _require_device(registry: DeviceRegistry, device_id: str) -> ManagedDevice:
@@ -784,7 +824,7 @@ def kill_process(
             detail={"code": "kill_failed", "params": {"pid": request.pid}},
         )
     key = _require_device(DeviceRegistry(), request.device_id).id
-    info = _run_device_command(runtime, key, "kill_process", {"pid": request.pid})
+    info = _run_device_command(runtime, key, AGENT_VERB_KILL, {"pid": request.pid})
     code = str(info.get("code", "") or "")
     params = dict(info.get("params") or {})
     if code == "process_missing":
@@ -800,19 +840,19 @@ def kill_process(
     return {}
 
 
-def _command_args(action: str, args: "dict | None" = None) -> dict:
-    """What a ``command`` stream's open carries beside its kind."""
-    return {"action": action, "args": dict(args or {})}
+def _command_args(verb: str, args: "dict | None" = None) -> dict:
+    """What a ``command`` stream's open carries for one of the agent's verbs."""
+    return {"module": CHANNEL_COMMAND_MODULE_AGENT, "verb": verb, **dict(args or {})}
 
 
-def _run_device_command(runtime: PanelRuntime, key: str, action: str, args: dict):
-    """Run one command on a device's agent and wait for its close.
+def _run_device_command(runtime: PanelRuntime, key: str, verb: str, args: dict):
+    """Run one of the agent's verbs on a device and wait for its close.
 
     Args:
         runtime: The shared runtime.
         key: The device.
-        action: The command's action.
-        args: The action's arguments.
+        verb: The verb.
+        args: The verb's arguments.
 
     Returns:
         The close, ``{"code", "params"}``.
@@ -825,7 +865,7 @@ def _run_device_command(runtime: PanelRuntime, key: str, action: str, args: dict
         return runtime.agent_sessions.run_stream_from_thread(
             key,
             CHANNEL_STREAM_COMMAND,
-            _command_args(action, args),
+            _command_args(verb, args),
             timeout=DEVICE_MODULE_COMMAND_TIMEOUT_S,
         )
     except (AgentOfflineError, StreamRefusedError) as error:
@@ -851,7 +891,8 @@ async def install_agent(
         runtime: The shared runtime.
 
     Returns:
-        A task id the browser streams output from.
+        A task id the browser streams output from; the one already running
+        on this device, when an install is under way.
 
     Raises:
         HTTPException: 404 when no device has the id, 400 for an install
@@ -861,6 +902,10 @@ async def install_agent(
             hub carries no agent package.
     """
     device = _require_device(DeviceRegistry(), request.device_id)
+    label = WEB_TASK_LABEL_AGENT_INSTALL.format(device_id=device.id)
+    running = runtime.tasks.running(label)
+    if running is not None:
+        return TaskStarted(task_id=running.id)
     device, credentials = await asyncio.to_thread(_install_credentials, device, request)
     operator = DeviceSshOperator(credentials=credentials)
     # Pre-flight, refused before a task starts. A probe that failed — device
@@ -884,19 +929,12 @@ async def install_agent(
     link, _ = _generate_enrollment_link(
         runtime, name=device.name or "", device_id=device.id
     )
-    # Under the device's own install lock, which the module controller takes
-    # too: putting the agent on a machine and installing a module on it are
-    # two package managers on one machine, and only one may run.
     stream = runtime.tasks.start(
-        label=f"install_client {device.id}",
-        source=_locked_install(
-            runtime,
-            device.id,
-            operator.install_client(
-                packages=packages,
-                enrollment_link=link,
-                sudo_password=_sudo_material(request),
-            ),
+        label=label,
+        source=operator.install_client(
+            packages=packages,
+            enrollment_link=link,
+            sudo_password=_sudo_material(request),
         ),
     )
     runtime.events.publish(WEB_EVENT_DEVICES)
@@ -922,7 +960,7 @@ async def reinstall_agent(
     """
     key = _require_online(runtime, request.device_id)
     return _start_task(
-        runtime, f"{AGENT_COMMAND_REINSTALL} {key}", _reinstall_stream(runtime, key)
+        runtime, f"{AGENT_VERB_REINSTALL} {key}", _reinstall_stream(runtime, key)
     )
 
 
@@ -943,7 +981,7 @@ async def reboot(
         HTTPException: 404 when no device has the id, 409 with
             ``agent_offline`` when the device has no live agent.
     """
-    return _start_agent_command(runtime, request.device_id, AGENT_COMMAND_REBOOT)
+    return _start_agent_command(runtime, request.device_id, AGENT_VERB_REBOOT)
 
 
 @router.post("/shutdown", response_model=TaskStarted)
@@ -963,18 +1001,18 @@ async def shutdown(
         HTTPException: 404 when no device has the id, 409 with
             ``agent_offline`` when the device has no live agent.
     """
-    return _start_agent_command(runtime, request.device_id, AGENT_COMMAND_SHUTDOWN)
+    return _start_agent_command(runtime, request.device_id, AGENT_VERB_SHUTDOWN)
 
 
 def _start_agent_command(
-    runtime: PanelRuntime, device_id: str, action: str
+    runtime: PanelRuntime, device_id: str, verb: str
 ) -> TaskStarted:
-    """Run one command on a device's live agent as a task.
+    """Run one of the agent's verbs on a device's live agent as a task.
 
     Args:
         runtime: The shared runtime.
         device_id: The device.
-        action: The command's action on the wire.
+        verb: The verb.
 
     Returns:
         The task started.
@@ -985,7 +1023,7 @@ def _start_agent_command(
     """
     key = _require_online(runtime, device_id)
     return _start_task(
-        runtime, f"{action} {key}", _agent_command_stream(runtime, key, action)
+        runtime, f"{verb} {key}", _agent_command_stream(runtime, key, verb)
     )
 
 
@@ -1111,27 +1149,6 @@ def _sudo_material(request: DeviceAgentInstallRequest) -> "str | None":
     return request.sudo_password or None
 
 
-async def _locked_install(
-    runtime: PanelRuntime, device_id: str, source: AsyncIterator[str]
-) -> AsyncIterator[str]:
-    """Run an install stream while holding the device's install lock.
-
-    Args:
-        runtime: The shared runtime, which owns the locks.
-        device_id: The device.
-        source: The install's own output.
-
-    Yields:
-        A line saying it is waiting when something else holds the lock, then
-        everything the install produces.
-    """
-    if runtime.device_install_locks.is_held(device_id):
-        yield "[waiting for the install already running on this device]\n"
-    async with runtime.device_install_locks.hold_async(device_id):
-        async for chunk in source:
-            yield chunk
-
-
 @router.get("/remote_desktop", response_model=RemoteDesktopView)
 def remote_desktop_status(
     device_id: str, runtime: PanelRuntime = Depends(get_runtime)
@@ -1160,7 +1177,7 @@ def remote_desktop_status(
             info = runtime.agent_sessions.run_stream_from_thread(
                 key,
                 CHANNEL_STREAM_COMMAND,
-                _command_args("remote_desktop_status", {"product": product}),
+                _command_args(AGENT_VERB_REMOTE_DESKTOP_READ, {"product": product}),
                 timeout=DEVICE_MODULE_COMMAND_TIMEOUT_S,
             )
         except (AgentOfflineError, StreamRefusedError) as error:
@@ -1268,7 +1285,7 @@ async def set_remote_desktop_password(
         source=_agent_command_stream(
             runtime,
             key,
-            "remote_desktop_password",
+            AGENT_VERB_REMOTE_DESKTOP_PASSWORD_SET,
             {"product": product, "password": request.password},
         ),
     )
@@ -1322,22 +1339,22 @@ def reset_seat_password(
 
 
 async def _agent_command_stream(
-    runtime: PanelRuntime, key: str, action: str, args: "dict | None" = None
+    runtime: PanelRuntime, key: str, verb: str, args: "dict | None" = None
 ) -> AsyncIterator[str]:
-    """Run one command on a device's agent, streaming what it prints.
+    """Run one of the agent's verbs on a device, streaming what it prints.
 
     Args:
         runtime: The shared runtime, which holds the sockets.
         key: The device.
-        action: The command's action on the wire.
-        args: The action's arguments.
+        verb: The verb.
+        args: The verb's arguments.
 
     Yields:
         Each line the agent sends, then the close's output and its code.
     """
     try:
         stream = await runtime.agent_sessions.open_stream(
-            key, CHANNEL_STREAM_COMMAND, _command_args(action, args)
+            key, CHANNEL_STREAM_COMMAND, _command_args(verb, args)
         )
     except AgentOfflineError as error:
         yield json.dumps({"code": error.code, "params": dict(error.params)}) + "\n"
@@ -1360,26 +1377,26 @@ async def _agent_command_stream(
 
 
 async def _reinstall_stream(runtime: PanelRuntime, key: str) -> AsyncIterator[str]:
-    """Reinstall a device's agent and report what the installer said.
+    """Reinstall a device's agent and report how it went.
 
     The agent hands the package to a transient unit on the machine and
     closes the command; the unit runs the package manager, which replaces
-    and restarts the agent, and writes a record of how that went. The task
-    follows that record: the socket the returning agent opens carries it,
-    and an installer that failed without restarting anything reports it on
-    the socket that stayed.
+    and restarts the agent. The task follows the reports: the agent that
+    returns and reports no ``reinstall_failed`` error was reinstalled, and
+    an installer that failed without restarting anything reports that
+    error on the socket that stayed.
 
     Args:
         runtime: The shared runtime, which holds the sockets.
         key: The device.
 
     Yields:
-        The command's lines, the agent's return, then the installer's output
-        and its exit status, or a typed word when nothing was reported.
+        The command's lines, the agent's return, then its exit status or
+        the failure's code, or a typed word when nothing was reported.
     """
     before = runtime.agent_sessions.get(key)
-    before_record = _reinstall_record(before)
-    async for line in _agent_command_stream(runtime, key, "reinstall"):
+    before_failure = _reinstall_failure(before)
+    async for line in _agent_command_stream(runtime, key, AGENT_VERB_REINSTALL):
         if line.startswith("{"):
             yield line
             return
@@ -1392,44 +1409,40 @@ async def _reinstall_stream(runtime: PanelRuntime, key: str) -> AsyncIterator[st
         if session is not None and session is not before and reconnected_at is None:
             reconnected_at = loop.time()
             yield f"agent {runtime.agent_sessions.version_of(key)} reconnected\n"
-        record = _reinstall_record(session)
-        if record is not None and record != before_record:
-            for line in _reinstall_outcome(record):
-                yield line
+        failure = _reinstall_failure(session)
+        if failure is not None and failure != before_failure:
+            yield json.dumps({"code": CODE_REINSTALL_FAILED, "params": failure}) + "\n"
+            return
+        if reconnected_at is not None and session is not None and session.reported_at:
+            yield "[exit 0]\n"
             return
         if (
             reconnected_at is not None
             and loop.time() - reconnected_at > WEB_REINSTALL_REPORT_TIMEOUT_S
         ):
-            yield "reinstalled, no installer record from this agent\n"
+            yield "reinstalled, no report from this agent\n"
             return
         await asyncio.sleep(WEB_REINSTALL_POLL_S)
     yield json.dumps({"code": "reinstall_not_reported", "params": {}}) + "\n"
 
 
-def _reinstall_record(session) -> "dict | None":
-    """The reinstall record a session's last report carries, if any."""
+def _reinstall_failure(session) -> "dict | None":
+    """The ``reinstall_failed`` error a session's last report carries, if any.
+
+    Args:
+        session: The device's session, or None while it is offline.
+
+    Returns:
+        The error's params, ``{exit_code, finished_at}``, or None when the
+        report carries no such error.
+    """
     if session is None:
         return None
-    record = session.report.get("last_reinstall")
-    return dict(record) if isinstance(record, dict) and record else None
-
-
-def _reinstall_outcome(record: dict) -> list:
-    """The installer's output and status as task lines."""
-    lines = []
-    output = str(record.get("output", "") or "")
-    if output:
-        lines.append(output if output.endswith("\n") else output + "\n")
-    exit_code = int(record.get("exit_code", 0) or 0)
-    if exit_code:
-        lines.append(
-            json.dumps({"code": "reinstall_failed", "params": {"exit_code": exit_code}})
-            + "\n"
-        )
-    else:
-        lines.append(f"[exit {exit_code}]\n")
-    return lines
+    error = session.report.get("error")
+    if not isinstance(error, dict) or error.get("code") != CODE_REINSTALL_FAILED:
+        return None
+    params = error.get("params")
+    return dict(params) if isinstance(params, dict) else {}
 
 
 def _to_view(

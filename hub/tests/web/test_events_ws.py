@@ -17,8 +17,6 @@ from starlette.websockets import WebSocketDisconnect
 
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_AGENT, PROTOCOL
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
-from neutrino_hub.modules.devices.agent_module_controller import AgentModuleController
-from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.utils.json_file import set_config_write_hook, write_config
@@ -73,9 +71,6 @@ class FakeRuntime:
         self.desired_states = StubDesiredStates()
         self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
         self.agent_sessions.on_presence_change = self._publish_devices
-        self.agent_module_orders = AgentModuleController(
-            cache=None, locks=DeviceInstallLocks()
-        )
         self.desired = ("", {"modules": {}, "desktop": {}})
 
     def network(self):

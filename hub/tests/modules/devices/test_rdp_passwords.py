@@ -16,11 +16,9 @@ import pytest
 from neutrino_hub.modules.credentials.vault import seal_bytes
 from neutrino_hub.modules.devices import agent_reports
 from neutrino_hub.modules.devices import desired_state as desired_state_module
-from neutrino_hub.modules.devices.agent_module_controller import AgentModuleController
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_AGENT
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
-from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.modules.devices.registry import ManagedDevice
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from tests.conftest import StubPublishedServices, unlock_vault
@@ -44,9 +42,6 @@ class ReportingRuntime:
         self.device_last_error: dict = {}
         self.device_shares = DeviceShareRegistry()
         self.published_services = StubPublishedServices()
-        self.agent_module_orders = AgentModuleController(
-            cache=None, locks=DeviceInstallLocks()
-        )
         self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
         self.desired_states = DesiredStateStore()
         self.pushed: list = []

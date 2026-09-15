@@ -8,7 +8,9 @@ A terminal reaches a device through its agent: the browser's socket and the
 agent's shell stream are bridged here, frame for frame. The browser sends
 ``{"type": "input", "data"}`` and ``{"type": "resize", "cols", "rows"}``;
 it receives ``{"type": "output", "data"}`` and, once the shell is gone,
-``{"type": "exit", "code"}``.
+``{"type": "exit", "code"}``. A shell's first size rides its open; a later
+one is a ``command {agent, resize, shell, cols, rows}`` stream, closed by
+the agent as soon as it is applied.
 """
 
 import asyncio
@@ -20,8 +22,11 @@ from starlette.websockets import WebSocketState
 
 from neutrino_hub.exceptions import AgentOfflineError
 from neutrino_hub.modules.channel.constants import (
-    CHANNEL_STREAM_CONTAINER_SHELL,
+    CHANNEL_COMMAND_MODULE_AGENT,
+    CHANNEL_SHELL_CONTAINER_MODULE,
+    CHANNEL_STREAM_COMMAND,
     CHANNEL_STREAM_SHELL,
+    CHANNEL_VERB_RESIZE,
 )
 from neutrino_hub.web.constants import (
     WEB_EVENT_HELLO,
@@ -145,17 +150,14 @@ async def terminal_socket(
         container: A container on the device to open the shell inside of,
             from the query; empty opens a root shell on the device itself.
     """
+    args = {"cols": DEFAULT_COLUMNS, "rows": DEFAULT_ROWS}
     if container:
-        await _serve_agent_stream(
-            websocket, device_id, CHANNEL_STREAM_CONTAINER_SHELL, {"name": container}
-        )
-        return
-    await _serve_agent_stream(
-        websocket,
-        device_id,
-        CHANNEL_STREAM_SHELL,
-        {"cols": DEFAULT_COLUMNS, "rows": DEFAULT_ROWS},
-    )
+        args = {
+            "module": CHANNEL_SHELL_CONTAINER_MODULE,
+            "container": container,
+            **args,
+        }
+    await _serve_agent_stream(websocket, device_id, args)
 
 
 async def _pump_events(websocket: WebSocket, queue: asyncio.Queue) -> None:
@@ -178,27 +180,24 @@ async def _await_disconnect(websocket: WebSocket) -> None:
                 return
 
 
-async def _serve_agent_stream(
-    websocket: WebSocket, device_id: str, kind: str, args: dict
-) -> None:
+async def _serve_agent_stream(websocket: WebSocket, device_id: str, args: dict) -> None:
     """Run one agent shell stream over one browser socket.
 
     Args:
         websocket: The unaccepted client socket.
         device_id: The device.
-        kind: The stream kind to open.
-        args: What the kind takes.
+        args: What the ``shell`` open carries.
     """
     if not await _accept(websocket):
         return
     sessions = websocket.app.state.runtime.agent_sessions
     try:
-        stream = await sessions.open_stream(device_id, kind, args)
+        stream = await sessions.open_stream(device_id, CHANNEL_STREAM_SHELL, args)
     except AgentOfflineError as offline:
         await websocket.close(code=POLICY_VIOLATION_CODE, reason=offline.code)
         return
 
-    reader = asyncio.create_task(_read_input(websocket, stream))
+    reader = asyncio.create_task(_read_input(websocket, stream, sessions, device_id))
     pump = asyncio.create_task(_pump_stream(websocket, stream))
     # Whichever ends first decides the teardown: the reader ending means
     # the browser closed the terminal, the pump ending means the shell
@@ -243,7 +242,7 @@ async def _pump_stream(websocket: WebSocket, stream) -> None:
                 await websocket.send_json({"type": "output", "data": text})
 
 
-async def _read_input(websocket: WebSocket, stream) -> None:
+async def _read_input(websocket: WebSocket, stream, sessions, device_id: str) -> None:
     """Forward keystrokes and resizes until the browser goes away.
 
     Returns when the socket closes, which is how the caller learns the
@@ -252,6 +251,8 @@ async def _read_input(websocket: WebSocket, stream) -> None:
     Args:
         websocket: The client socket.
         stream: The live shell stream to drive.
+        sessions: The agents' sessions, which a resize opens its command on.
+        device_id: The device the shell runs on.
     """
     try:
         while True:
@@ -260,7 +261,10 @@ async def _read_input(websocket: WebSocket, stream) -> None:
             if kind == "input":
                 await stream.send_bytes(str(message.get("data", "")).encode("utf-8"))
             elif kind == "resize":
-                await stream.resize(
+                await _resize_shell(
+                    sessions,
+                    device_id,
+                    stream.id,
                     int(message.get("cols", DEFAULT_COLUMNS)),
                     int(message.get("rows", DEFAULT_ROWS)),
                 )
@@ -268,6 +272,32 @@ async def _read_input(websocket: WebSocket, stream) -> None:
         return
     except AgentOfflineError:
         return
+
+
+async def _resize_shell(sessions, device_id: str, shell_id: int, cols: int, rows: int):
+    """Tell the agent a shell's new size, on a command stream it closes itself.
+
+    Args:
+        sessions: The agents' sessions.
+        device_id: The device.
+        shell_id: The shell stream's id.
+        cols: Columns.
+        rows: Rows.
+
+    Raises:
+        AgentOfflineError: When the device has no channel.
+    """
+    await sessions.open_stream(
+        device_id,
+        CHANNEL_STREAM_COMMAND,
+        {
+            "module": CHANNEL_COMMAND_MODULE_AGENT,
+            "verb": CHANNEL_VERB_RESIZE,
+            "shell": shell_id,
+            "cols": cols,
+            "rows": rows,
+        },
+    )
 
 
 async def _accept(websocket: WebSocket) -> bool:

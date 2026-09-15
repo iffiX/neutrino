@@ -30,7 +30,7 @@ from neutrino_hub.web.routers.agent.module import (
 )
 
 MODULE = "samba"
-COMMAND_SET_PASSWORD = "samba_set_password"
+COMMAND_SET_PASSWORD = "set_password"
 
 
 def device_view(runtime: PanelRuntime, context: DeviceModuleContext) -> SambaDeviceView:

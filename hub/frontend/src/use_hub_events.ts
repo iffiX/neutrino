@@ -44,9 +44,6 @@ export const HUB_EVENT_CLIENTS = "clients";
 /** One machine's report says something new about what it runs. Keyed by MAC. */
 export const HUB_EVENT_DEVICE_REPORT = "device_report";
 
-/** An install or uninstall on one machine changed state. Keyed by MAC. */
-export const HUB_EVENT_MODULE_ORDER = "module_order";
-
 /** The published service list composes differently. */
 export const HUB_EVENT_SERVICES = "services";
 
