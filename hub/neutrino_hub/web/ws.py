@@ -26,9 +26,9 @@ from neutrino_hub.modules.devices.agent_sessions import (
 )
 from neutrino_hub.web.constants import (
     WEB_EVENT_HELLO,
-    WEB_SESSION_COOKIE,
     WEB_STATS_PUSH_INTERVAL_S,
 )
+from neutrino_hub.web.dependencies import session_cookie
 from neutrino_hub.web.dns_log import DnsLogReader
 from neutrino_hub.web.events import event_frame
 from neutrino_hub.web.stats_collector import PanelStatsCollector
@@ -271,7 +271,7 @@ async def _read_input(websocket: WebSocket, stream) -> None:
 
 async def _accept(websocket: WebSocket) -> bool:
     runtime = websocket.app.state.runtime
-    token = websocket.cookies.get(WEB_SESSION_COOKIE)
+    token = websocket.cookies.get(session_cookie(runtime))
     if not runtime.sessions.is_valid(token):
         await websocket.close(code=POLICY_VIOLATION_CODE, reason="not authenticated")
         return False

@@ -9,7 +9,10 @@ from neutrino_hub.utils.constants import (
 )
 
 WEB_FRONTEND_DIST_DIR = UTILS_DATA_DIR / "frontend"
-WEB_SESSION_COOKIE = "neutrino_session"
+# The session cookie carries the panel's port in its name, so two hubs behind
+# one hostname keep their own session instead of evicting each other's. The
+# name is composed in one place, ``web/dependencies.session_cookie``.
+WEB_SESSION_COOKIE_PREFIX = "neutrino_session_"
 
 # --- the shape of every path ---
 # A route is `/api/<group>/<page>/...` or `/ws/<group>/...`, grouped the way

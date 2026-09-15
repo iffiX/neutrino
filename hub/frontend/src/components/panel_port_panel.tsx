@@ -21,7 +21,8 @@ import "./panel_port_panel.css";
  *
  * Applying restarts the panel. The answer is written before the socket closes,
  * and this waits for the new port to answer and goes there — the address does
- * not change, so where to look is known exactly.
+ * not change, so where to look is known exactly. The session does not travel
+ * with it: the cookie is named after the port.
  */
 
 const PORT_MIN = 1;
@@ -133,8 +134,8 @@ export function PanelPortPanel() {
  *
  * Polling the new origin rather than counting seconds: a restart takes as long
  * as it takes, and the panel answering is the only thing that means it is
- * over. A session cookie is not scoped to a port, so arriving there is
- * arriving signed in.
+ * over. The session cookie is named after the port, so the new origin is
+ * arrived at signed out and its login page is what answers.
  */
 function MovingOverlay({ port }: { port: number }) {
   // Redrawn when the panel's language changes.

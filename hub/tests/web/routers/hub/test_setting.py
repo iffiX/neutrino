@@ -2,8 +2,9 @@
 
 Moving the port: the process serving the request is the one being restarted,
 so the write happens first and the restart is queued behind the response.
-The hub's name is written with the rest of the settings and lands in the
-identity file. Restore runs as root, so an archive is hostile input: what
+The port also names the session cookie, so a hub on another port of the
+same host cannot be signed in to with this one's. The hub's name is written
+with the rest of the settings and lands in the identity file. Restore runs as root, so an archive is hostile input: what
 these pin is that the destination is checked after the path resolves, and
 that a refused restore is one that changed nothing. About answers one
 version per carried component.
@@ -18,16 +19,19 @@ import tarfile
 from types import SimpleNamespace
 
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 import neutrino_hub.utils.json_file
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_VERSION
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.xray.constants import XRAY_GEODATA
+from neutrino_hub.web import auth as web_auth
 from neutrino_hub.web import identity
+from neutrino_hub.web.auth import SessionStore, hash_password
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.identity import ensure_hub_identity
+from neutrino_hub.web.routers.hub import auth as auth_router
 from neutrino_hub.web.routers.hub import setting as settings_router
 from neutrino_hub.web.routers.hub.setting import _checked_member, _renamed_member
 
@@ -99,6 +103,101 @@ def test_a_port_no_listener_can_take_is_refused(port_client, port):
     assert response.status_code == 400
     assert stored["listen_port"] == 8080
     assert restarts == []
+
+
+# --- the port names the session cookie, so two hubs on one host keep theirs ---
+
+PANEL_PORT = 9443
+PANEL_PASSWORD = "right"
+OTHER_PORT_COOKIE = "neutrino_session_8080"
+
+
+class CookieRuntime:
+    """A panel on its own port, with a real session store behind it."""
+
+    def __init__(self):
+        self.settings = {"listen_port": PANEL_PORT, "session_ttl_hours": 1}
+        self.sessions = SessionStore(
+            password_hash=hash_password(PANEL_PASSWORD), session_ttl_hours=1
+        )
+
+
+@pytest.fixture
+def cookie_client(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        web_auth, "WEB_LOGIN_LOCKOUT_STATE_PATH", tmp_path / "login_lockout.json"
+    )
+    runtime = CookieRuntime()
+    app = FastAPI()
+    app.include_router(auth_router.router)
+
+    @app.get("/api/hub/thing", dependencies=[Depends(require_session)])
+    def read_thing():
+        return {"read": True}
+
+    app.dependency_overrides[get_runtime] = lambda: runtime
+    with TestClient(app) as opened:
+        yield opened
+
+
+def signed_in_token(opened) -> str:
+    """Log in and hand back the token the cookie carries."""
+    response = opened.post("/api/hub/auth/login", json={"password": PANEL_PASSWORD})
+    assert response.json()["is_authenticated"] is True
+    token = response.cookies[f"neutrino_session_{PANEL_PORT}"]
+    opened.cookies.clear()
+    return token
+
+
+def test_the_login_cookie_is_named_after_the_panel_port(cookie_client):
+    response = cookie_client.post(
+        "/api/hub/auth/login", json={"password": PANEL_PASSWORD}
+    )
+
+    assert response.status_code == 200
+    assert f"neutrino_session_{PANEL_PORT}" in response.cookies
+    assert OTHER_PORT_COOKIE not in response.cookies
+
+
+def test_a_cookie_named_for_another_port_is_not_a_session(cookie_client):
+    token = signed_in_token(cookie_client)
+
+    response = cookie_client.get(
+        "/api/hub/thing", headers={"cookie": f"{OTHER_PORT_COOKIE}={token}"}
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "not_authenticated"
+
+
+def test_the_cookie_named_for_this_port_is_the_session(cookie_client):
+    token = signed_in_token(cookie_client)
+
+    response = cookie_client.get(
+        "/api/hub/thing",
+        headers={"cookie": f"neutrino_session_{PANEL_PORT}={token}"},
+    )
+
+    assert response.json() == {"read": True}
+
+
+def test_logout_clears_the_cookie_this_port_named(cookie_client):
+    token = signed_in_token(cookie_client)
+
+    response = cookie_client.post(
+        "/api/hub/auth/logout",
+        headers={"cookie": f"neutrino_session_{PANEL_PORT}={token}"},
+    )
+
+    assert response.json()["is_authenticated"] is False
+    assert f"neutrino_session_{PANEL_PORT}" in response.headers["set-cookie"]
+    assert (
+        cookie_client.get(
+            "/api/hub/thing",
+            headers={"cookie": f"neutrino_session_{PANEL_PORT}={token}"},
+        ).status_code
+        == 401
+    )
 
 
 # --- the hub's name, written with the rest and kept in the identity file ---

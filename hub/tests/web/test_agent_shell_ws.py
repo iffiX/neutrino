@@ -8,6 +8,7 @@ variant opening its own kind with the container's name.
 """
 
 import time
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -15,11 +16,13 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from neutrino_hub.web import ws
-from neutrino_hub.web.constants import WEB_SESSION_COOKIE
+from neutrino_hub.web.dependencies import session_cookie
 from tests.conftest import FakeChannelSessions
 
 MAC = "aa:bb:cc:dd:ee:ff"
 SESSION_TOKEN = "panel-session"
+# This panel answers on the default port, so its cookie is named for it.
+SESSION_COOKIE = session_cookie(SimpleNamespace(settings={}))
 POLICY_VIOLATION_CODE = 1008
 INTERNAL_ERROR_CODE = 1011
 
@@ -31,6 +34,7 @@ class StubSessions:
 
 class FakeRuntime:
     def __init__(self):
+        self.settings: dict = {}
         self.sessions = StubSessions()
         self.agent_sessions = FakeChannelSessions(online=[MAC])
 
@@ -61,7 +65,7 @@ def wait_until(predicate, timeout_s: float = 3.0) -> bool:
 
 
 def open_terminal(client, path: str):
-    socket = client.websocket_connect(path, cookies={WEB_SESSION_COOKIE: SESSION_TOKEN})
+    socket = client.websocket_connect(path, cookies={SESSION_COOKIE: SESSION_TOKEN})
     socket.__enter__()
     return socket
 

@@ -9,6 +9,7 @@ what they carry.
 """
 
 import hashlib
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -29,8 +30,8 @@ from neutrino_hub.web.constants import (
     WEB_EVENT_DEVICES,
     WEB_EVENT_HELLO,
     WEB_EVENT_METRICS,
-    WEB_SESSION_COOKIE,
 )
+from neutrino_hub.web.dependencies import session_cookie
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.routers import agent_http as agent_router
 from neutrino_hub.web.routers import agent_ws
@@ -39,6 +40,8 @@ from tests.conftest import StubDesiredStates, StubPublishedServices
 DEVICE = "device-one"
 AGENT_TOKEN = "device-token"
 SESSION_TOKEN = "panel-session"
+# This panel answers on the default port, so its cookie is named for it.
+SESSION_COOKIE = session_cookie(SimpleNamespace(settings={}))
 POLICY_VIOLATION_CODE = 1008
 
 
@@ -72,6 +75,7 @@ class FakeRuntime:
     """The runtime both sockets reach, wired to the bus as the panel's is."""
 
     def __init__(self):
+        self.settings: dict = {}
         self.events = PanelEventBus()
         self.sessions = StubSessions()
         self.device_metrics = {}
@@ -131,7 +135,7 @@ def box(monkeypatch, tmp_path):
     app.state.runtime = runtime
     set_config_write_hook(runtime._publish_config_write)
     with TestClient(app) as client:
-        client.cookies.set(WEB_SESSION_COOKIE, SESSION_TOKEN)
+        client.cookies.set(SESSION_COOKIE, SESSION_TOKEN)
         yield client, runtime
     set_config_write_hook(None)
 
@@ -203,7 +207,7 @@ def frames_until(panel, event_type: str) -> list:
 
 def test_an_unauthenticated_socket_is_closed_on_the_policy_code(box):
     client, _ = box
-    client.cookies.delete(WEB_SESSION_COOKIE)
+    client.cookies.delete(SESSION_COOKIE)
 
     with pytest.raises(WebSocketDisconnect) as refusal:
         with client.websocket_connect("/ws/hub/event"):

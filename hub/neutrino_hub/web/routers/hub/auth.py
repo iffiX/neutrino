@@ -2,10 +2,9 @@
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Cookie, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
 
-from neutrino_hub.web.constants import WEB_SESSION_COOKIE
-from neutrino_hub.web.dependencies import get_runtime
+from neutrino_hub.web.dependencies import get_runtime, session_cookie
 from neutrino_hub.web.models import LoginRequest, SessionView
 from neutrino_hub.web.panel_runtime import PanelRuntime
 
@@ -41,7 +40,7 @@ def login(
             lockout_remaining_s=runtime.sessions.lockout_remaining_s(),
         )
     response.set_cookie(
-        WEB_SESSION_COOKIE,
+        session_cookie(runtime),
         token,
         httponly=True,
         samesite="lax",
@@ -52,42 +51,45 @@ def login(
 
 @router.post("/logout", response_model=SessionView)
 def logout(
+    request: Request,
     response: Response,
     runtime: PanelRuntime = Depends(get_runtime),
-    neutrino_session: str | None = Cookie(default=None),
 ) -> SessionView:
     """End the caller's session.
 
     Args:
+        request: The incoming request, read for its session cookie.
         response: Response the cookie is cleared on.
         runtime: The shared runtime.
-        neutrino_session: The session cookie, when present.
 
     Returns:
         Always unauthenticated.
     """
-    if neutrino_session:
-        runtime.sessions.logout(neutrino_session)
-    response.delete_cookie(WEB_SESSION_COOKIE)
+    name = session_cookie(runtime)
+    token = request.cookies.get(name)
+    if token:
+        runtime.sessions.logout(token)
+    response.delete_cookie(name)
     return SessionView(is_authenticated=False)
 
 
 @router.get("/session", response_model=SessionView)
 def session(
+    request: Request,
     runtime: PanelRuntime = Depends(get_runtime),
-    neutrino_session: str | None = Cookie(default=None),
 ) -> SessionView:
     """Report whether the caller is logged in.
 
     Args:
+        request: The incoming request, read for its session cookie.
         runtime: The shared runtime.
-        neutrino_session: The session cookie, when present.
 
     Returns:
         The current authentication state.
     """
+    token = request.cookies.get(session_cookie(runtime))
     return SessionView(
-        is_authenticated=runtime.sessions.is_valid(neutrino_session),
+        is_authenticated=runtime.sessions.is_valid(token),
         lockout_remaining_s=runtime.sessions.lockout_remaining_s(),
         panel_started_at=AUTH_PANEL_STARTED_AT,
     )
