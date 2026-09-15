@@ -177,7 +177,6 @@
   "code.unknown_key": "There is no key {key}.",
   "code.unknown_login": "That login is not stored on this box.",
   "code.unknown_module": "The machine knows no module by that name.",
-  "code.unknown_request": "The machine does not answer that request.",
   "code.unknown_token": "That token is not stored on this box.",
   "code.unsupported_kind": "The gateway does not offer a {kind} sign-in.",
   "code.unsupported_platform": "The agent asked for something its platform cannot do.",

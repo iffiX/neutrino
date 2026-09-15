@@ -1651,21 +1651,6 @@ class DeviceServicesView(BaseModel):
     rdp: dict = Field(default_factory=dict)
 
 
-class DeviceServiceAsk(BaseModel):
-    """One service action for a device's agent, run there in the privileged
-    scope; ``body`` carries the action's own fields."""
-
-    device_id: str
-    service_type: str
-    body: dict = Field(default_factory=dict)
-
-
-class DeviceServiceAskStarted(BaseModel):
-    """The queued ask, findable later among the command results."""
-
-    command_id: str
-
-
 class DeviceModuleListView(BaseModel):
     """Every module a device could run, with its state.
 

@@ -963,7 +963,8 @@ export interface TaskStarted {
 export interface ModuleDeviceState {
   /** Whether the agent on this device is answering. */
   is_online: boolean;
-  /** installed, absent, installing, uninstalling, unsupported or failed. */
+  /** absent, installed, stopped, running, installing, uninstalling, failed
+   * or unsupported; unknown until the agent has reported. */
   state: string;
   /** Why the state is what it is; the panel words it. Empty when there is
    * nothing to say. */

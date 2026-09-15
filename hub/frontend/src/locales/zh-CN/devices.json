@@ -87,7 +87,7 @@
   "ui.clients.empty": "还没有客户端",
   "ui.clients.empty_hint": "为某个人的客户端程序创建一个链接。",
   "ui.clients.enable": "启用",
-  "ui.clients.enrollment_hint": "打开客户端，把链接粘贴到它的窗口，或者在终端里运行 `nclient connect <link>`。链接 {minutes} 分钟内有效。",
+  "ui.clients.enrollment_hint": "打开客户端，把链接粘贴到它的窗口，或者在终端里运行 `nclient join <link>`。链接 {minutes} 分钟内有效。",
   "ui.clients.enrollment_title": "把这个链接粘贴到 {name} 的客户端程序里。",
   "ui.clients.header_hostname": "主机名",
   "ui.clients.header_last_seen": "最后出现",

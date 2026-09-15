@@ -87,7 +87,7 @@
   "ui.clients.empty": "No clients yet",
   "ui.clients.empty_hint": "Create a link for a person's client program.",
   "ui.clients.enable": "Enable",
-  "ui.clients.enrollment_hint": "Open the client and paste the link into its window, or run `nclient connect <link>` in a terminal. It works for {minutes} minutes.",
+  "ui.clients.enrollment_hint": "Open the client and paste the link into its window, or run `nclient join <link>` in a terminal. It works for {minutes} minutes.",
   "ui.clients.enrollment_title": "Paste this link into the client program for {name}.",
   "ui.clients.header_hostname": "Hostname",
   "ui.clients.header_last_seen": "Last seen",

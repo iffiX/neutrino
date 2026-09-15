@@ -177,7 +177,6 @@
   "code.unknown_key": "没有 {key} 这个密钥。",
   "code.unknown_login": "这台机器上没有保存这份登录凭据。",
   "code.unknown_module": "这台机器不认识这个模块。",
-  "code.unknown_request": "这台机器不处理这个请求。",
   "code.unknown_token": "这台机器上没有保存这个令牌。",
   "code.unsupported_kind": "网关不提供 {kind} 登录。",
   "code.unsupported_platform": "被控端请求了它所在平台无法完成的操作。",
