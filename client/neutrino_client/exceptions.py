@@ -64,26 +64,32 @@ class GatewayRefused(PermissionError):
     """Raised when the hub answered but rejected this client's token."""
 
 
-class GatewayVersionRefused(GatewayRefused):
-    """Raised when the hub turned this client away as newer than itself.
+class GatewayProtocolRefused(GatewayRefused):
+    """Raised when the hub refused the protocol number this client speaks.
 
     Attributes:
-        hub_version: What the hub reported itself as.
-        client_version: What this client reported itself as.
+        code: ``protocol_too_old`` or ``protocol_too_new``.
+        peer: The number this client sent.
+        hub: The number the hub speaks.
+        minimum: The oldest number the hub still accepts.
     """
 
-    def __init__(self, *, hub_version: str, client_version: str):
+    def __init__(self, *, code: str, peer: int, hub: int, minimum: int):
         """
         Args:
-            hub_version: What the hub reported itself as.
-            client_version: What this client reported itself as.
+            code: ``protocol_too_old`` or ``protocol_too_new``.
+            peer: The number this client sent.
+            hub: The number the hub speaks.
+            minimum: The oldest number the hub still accepts.
         """
         super().__init__(
-            f"this client ({client_version}) is newer than the hub "
-            f"({hub_version}); update the hub first"
+            f"{code}: this client speaks protocol {peer}, the hub {hub} "
+            f"and accepts {minimum} and up"
         )
-        self.hub_version = hub_version
-        self.client_version = client_version
+        self.code = code
+        self.peer = peer
+        self.hub = hub
+        self.minimum = minimum
 
 
 class ShareAttachError(OSError):

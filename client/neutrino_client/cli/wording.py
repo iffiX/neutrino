@@ -52,9 +52,13 @@ CLIENT_CODE_WORDS = {
     "hub_untrusted": "what answers is not the hub this link pins",
     "hub_unreachable": "the hub cannot be reached",
     "hub_reply_unreadable": "the hub sent a reply this client could not read",
-    "client_newer_than_hub": (
-        "this client ({client_version}) is newer than the hub ({hub_version}); "
-        "update the hub first"
+    "protocol_too_old": (
+        "this client speaks protocol {peer}; the hub accepts {min} and up, "
+        "so update the client"
+    ),
+    "protocol_too_new": (
+        "this client speaks protocol {peer}; the hub speaks {hub}, "
+        "so update the hub first"
     ),
     "self_unbound": "{cause}; rejoin by pasting a fresh link from the hub",
     "no_endpoint": "the hub has not granted this person a key yet",
@@ -114,7 +118,6 @@ CLIENT_MOUNT_STATE_WORDS = {
 # What an unbind names as its cause.
 CLIENT_UNBIND_CAUSE_WORDS = {
     "hub_untrusted": "the hub's identity changed (it was reset or reinstalled)",
-    "client_newer_than_hub": "this client is newer than the hub",
     "hub_refused": "the hub no longer knows this client",
 }
 

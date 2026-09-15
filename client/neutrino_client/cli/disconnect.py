@@ -6,9 +6,7 @@ everything on its next poll.
 """
 
 from neutrino_client.cli import wording
-from neutrino_client.constants import CLIENT_LEAVE_PATH
 from neutrino_client.core import enrollment
-from neutrino_client.core.channel import GatewayHttpChannel
 from neutrino_client.exceptions import (
     GatewayRefused,
     GatewayUnreachable,
@@ -24,19 +22,15 @@ def main() -> int:
     Returns:
         Process exit status.
     """
-    config = enrollment.load_config()
-    if not (config.get("gateway_url") and config.get("token")):
+    held = enrollment.bindings()
+    if not held:
         print(wording.NOT_JOINED)
         return 1
-    channel = GatewayHttpChannel(
-        gateway_url=str(config.get("gateway_url", "")),
-        token=str(config.get("token", "")),
-        fingerprint=str(config.get("fingerprint", "")),
-    )
+    binding = held[0]
     try:
-        channel.post(CLIENT_LEAVE_PATH, {})
+        enrollment.leave(binding)
     except (GatewayRefused, GatewayUnreachable, GatewayUntrusted):
         pass
-    enrollment.disconnect()
+    enrollment.remove_binding(binding["id"])
     print(LEAVE_WORDS)
     return 0

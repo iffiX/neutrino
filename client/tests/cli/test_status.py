@@ -97,10 +97,17 @@ def test_unbound_and_dead_says_both(platform, capsys):
         ({"code": "hub_unreachable", "params": {"detail": "no route"}}, "no route"),
         (
             {
-                "code": "client_newer_than_hub",
-                "params": {"hub_version": "0.1.0", "client_version": "0.2.0"},
+                "code": "protocol_too_new",
+                "params": {"peer": 2, "hub": 1, "min": 1},
             },
-            "this client (0.2.0) is newer than the hub (0.1.0)",
+            "this client speaks protocol 2; the hub speaks 1",
+        ),
+        (
+            {
+                "code": "protocol_too_old",
+                "params": {"peer": 1, "hub": 3, "min": 2},
+            },
+            "this client speaks protocol 1; the hub accepts 2 and up",
         ),
         (
             {"code": "self_unbound", "params": {"cause": "hub_untrusted"}},

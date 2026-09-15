@@ -116,8 +116,8 @@ class Clock:
 
 
 def link_for(payload: dict) -> str:
-    """An enrollment link over one payload; ``kind`` defaults to client."""
-    body = {"kind": "client", **payload}
+    """An enrollment link over one payload; ``role`` defaults to client."""
+    body = {"role": "client", **payload}
     encoded = base64.urlsafe_b64encode(json.dumps(body).encode()).decode()
     return "neutrino://enroll/" + encoded.rstrip("=")
 
@@ -126,9 +126,22 @@ def discard(message: str) -> None:
     """Swallow the log lines."""
 
 
-def bind(path, url="http://127.0.0.1:9") -> None:
+BINDING = {
+    "id": "c1",
+    "name": "box",
+    "hub_id": "h1",
+    "hub_name": "home",
+    "gateway_url": "http://127.0.0.1:9",
+    "fingerprint": "",
+    "token": "tok",
+}
+
+
+def bind(path, url="http://127.0.0.1:9", fingerprint="") -> None:
+    """One binding on disk, the way ``client.json`` keeps it."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"gateway_url": url, "token": "tok"}))
+    binding = dict(BINDING, gateway_url=url, fingerprint=fingerprint)
+    path.write_text(json.dumps({"bindings": [binding], "exit_hub_id": "h1"}))
 
 
 class FakeClientPlatform(ClientPlatform):

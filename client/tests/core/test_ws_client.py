@@ -36,11 +36,11 @@ from neutrino_client.core.ws_client import (
     encode_frame,
 )
 from neutrino_client.exceptions import (
+    GatewayProtocolRefused,
     GatewayRefused,
     GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
-    GatewayVersionRefused,
     SocketClosed,
 )
 
@@ -251,10 +251,11 @@ def test_close_4401_is_a_refused_token():
 
 
 def test_close_4409_names_the_refusal():
-    newer = close_error(4409, "client_newer_than_hub")
+    newer = close_error(4409, "protocol_too_new")
     other = close_error(4409, "something_else")
 
-    assert isinstance(newer, GatewayVersionRefused)
+    assert isinstance(newer, GatewayProtocolRefused)
+    assert newer.code == "protocol_too_new"
     assert isinstance(other, GatewayRefusedDetail)
     assert other.code == "something_else"
 
@@ -421,8 +422,8 @@ def test_a_409_upgrade_carries_its_code(tls_stub):
     body = json.dumps(
         {
             "detail": {
-                "code": "client_newer_than_hub",
-                "params": {"hub_version": "0.1.0", "client_version": "0.2.0"},
+                "code": "protocol_too_old",
+                "params": {"peer": 1, "hub": 3, "min": 2},
             }
         }
     ).encode()
@@ -433,13 +434,11 @@ def test_a_409_upgrade_carries_its_code(tls_stub):
         + body
     )
 
-    with pytest.raises(GatewayVersionRefused) as refused:
+    with pytest.raises(GatewayProtocolRefused) as refused:
         client_for(port, fingerprint).connect()
 
-    assert (refused.value.hub_version, refused.value.client_version) == (
-        "0.1.0",
-        "0.2.0",
-    )
+    assert refused.value.code == "protocol_too_old"
+    assert (refused.value.peer, refused.value.hub, refused.value.minimum) == (1, 3, 2)
 
 
 def test_another_status_is_unreachable(tls_stub):

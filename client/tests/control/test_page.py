@@ -216,11 +216,7 @@ def test_the_detail_fallback_names_each_of_its_codes():
 
 
 def test_every_unbind_cause_has_a_word():
-    assert catalog_keys("cause.") == {
-        "hub_refused",
-        "hub_untrusted",
-        "client_newer_than_hub",
-    }
+    assert catalog_keys("cause.") == {"hub_refused", "hub_untrusted"}
 
 
 # --- the two sections and the five panels ---

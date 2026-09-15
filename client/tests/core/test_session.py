@@ -16,6 +16,7 @@ import time
 
 import pytest
 
+import neutrino_client.core.channel as channel
 import neutrino_client.core.session as session_module
 from neutrino_client import CLIENT_VERSION
 from neutrino_client.constants import (
@@ -25,11 +26,11 @@ from neutrino_client.constants import (
 )
 from neutrino_client.core.session import ClientSession
 from neutrino_client.exceptions import (
+    GatewayProtocolRefused,
     GatewayRefused,
     GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
-    GatewayVersionRefused,
     SocketClosed,
 )
 from neutrino_client.services.base import ServiceTypeHandler
@@ -388,7 +389,7 @@ def test_disabled_lets_go_of_everything_but_the_binding(
 
     assert bound.is_disabled() is True
     assert bound.is_connected() is True
-    assert "gateway_url" in json.loads(config_path.read_text())
+    assert len(json.loads(config_path.read_text())["bindings"]) == 1
     assert bound.last_error() == {"code": "client_disabled", "params": {}}
     assert released == ["ai", "file", "port", "rdp"]
     assert bound.service_action("port", {"id": "svc_tcp", "is_enabled": True}) == {
@@ -545,18 +546,19 @@ def test_three_refusals_of_any_kind_unbind(
 
     assert bound.is_connected() is False
     assert bound.connection_state() == "unbound"
-    assert "gateway_url" not in json.loads(config_path.read_text())
+    assert json.loads(config_path.read_text())["bindings"] == []
     assert bound.last_error() == {"code": "self_unbound", "params": {"cause": cause}}
     assert released == ["ai", "file", "port", "rdp"]
 
 
-def test_a_hub_behind_this_client_never_unbinds_it(bound, monkeypatch, config_path):
+@pytest.mark.parametrize("code", ["protocol_too_old", "protocol_too_new"])
+def test_a_hub_that_does_not_speak_this_protocol_never_unbinds(
+    bound, monkeypatch, config_path, code
+):
     socket_of(
         monkeypatch,
         [],
-        connect_error=GatewayVersionRefused(
-            hub_version="0.1.0", client_version="0.2.0"
-        ),
+        connect_error=GatewayProtocolRefused(code=code, peer=1, hub=2, minimum=2),
     )
     released = released_handlers(bound)
 
@@ -564,8 +566,11 @@ def test_a_hub_behind_this_client_never_unbinds_it(bound, monkeypatch, config_pa
 
     assert bound.is_connected() is True
     assert bound.connection_state() == "reconnecting"
-    assert "gateway_url" in json.loads(config_path.read_text())
-    assert bound.last_error()["code"] == "client_newer_than_hub"
+    assert len(json.loads(config_path.read_text())["bindings"]) == 1
+    assert bound.last_error() == {
+        "code": code,
+        "params": {"peer": 1, "hub": 2, "min": 2},
+    }
     assert released == []
     assert delays[-1] == CLIENT_BACKOFF_MAX_S
 
@@ -645,18 +650,32 @@ def test_disconnect_tells_the_hub_over_http_first_and_lets_go(
     posted = []
 
     def post(self, path, payload):
-        posted.append(path)
+        posted.append((path, payload))
         return {}
 
-    monkeypatch.setattr(session_module.GatewayHttpChannel, "post", post, raising=True)
+    monkeypatch.setattr(channel.GatewayHttpChannel, "post", post, raising=True)
     released = released_handlers(bound)
 
     bound.disconnect()
 
-    assert posted == ["/api/client/leave"]
+    assert posted == [("/api/channel/leave", {"id": "c1", "token": "tok"})]
     assert bound.is_connected() is False
-    assert "gateway_url" not in json.loads(config_path.read_text())
+    assert json.loads(config_path.read_text())["bindings"] == []
     assert released == ["ai", "file", "port", "rdp"]
+
+
+def test_disconnect_lets_go_when_the_hub_refuses_the_leave(
+    bound, monkeypatch, config_path
+):
+    def refuse(self, path, payload):
+        raise GatewayRefused("401")
+
+    monkeypatch.setattr(channel.GatewayHttpChannel, "post", refuse, raising=True)
+
+    bound.disconnect()
+
+    assert bound.is_connected() is False
+    assert json.loads(config_path.read_text())["bindings"] == []
 
 
 # --- the start, and the one way out ---

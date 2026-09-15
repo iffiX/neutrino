@@ -1,10 +1,11 @@
 """The one store for what this person typed once and keeps.
 
 The file is the person's own, mode 0600, under the client's configuration
-directory. It holds the language this person reads, the palette the window
-draws in, the AI tool choices and the mount records: a share's host, its
-login name and where it goes. Nothing about a service standing on is here;
-that is the running client's own and starts clean.
+directory. It holds this installation's id, the language this person
+reads, the palette the window draws in, the AI tool choices and the mount
+records: a share's host, its login name and where it goes. Nothing about a
+service standing on is here; that is the running client's own and starts
+clean.
 
 Secrets never enter it: a mount's password lives in that record's own
 credentials file, and the gateway key arrives fresh in every poll reply.
@@ -21,6 +22,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import uuid
 
 from neutrino_client.constants import (
     CLIENT_DEFAULT_LANGUAGE,
@@ -94,14 +96,16 @@ def _kept(data: dict) -> dict:
         data: What the file held.
 
     Returns:
-        ``{"language": str, "theme": str, "ai": {"tool_configs": {...}},
-        "mounts": {id: record}}``.
+        ``{"machine_id": str, "language": str, "theme": str,
+        "ai": {"tool_configs": {...}}, "mounts": {id: record}}``.
     """
     ai = data.get("ai")
     mounts = data.get("mounts")
     ai = ai if isinstance(ai, dict) else {}
     mounts = mounts if isinstance(mounts, dict) else {}
+    machine_id = data.get("machine_id")
     return {
+        "machine_id": machine_id if isinstance(machine_id, str) else "",
         "language": _language(data.get("language")),
         "theme": _theme(data.get("theme")),
         "ai": {"tool_configs": _tool_configs(ai.get("tool_configs"))},
@@ -123,6 +127,24 @@ class ClientServiceStore:
         """
         self._path = path
         self._lock = threading.RLock()
+
+    def machine_id(self) -> str:
+        """This installation's id, what a join names as ``machine_id``.
+
+        Returns:
+            A uuid4 hex string, generated on the first read and kept.
+        """
+        with self._lock:
+            kept = self._read()["machine_id"]
+            if kept:
+                return kept
+            made = uuid.uuid4().hex
+
+            def change(data: dict) -> None:
+                data["machine_id"] = made
+
+            self._mutate(change)
+            return made
 
     def language(self) -> str:
         """The language this person reads the window in.

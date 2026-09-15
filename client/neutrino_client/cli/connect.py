@@ -29,18 +29,22 @@ def main(link: str, *, is_forced: bool) -> int:
     if not link:
         print(wording.word_code("link_missing"), file=sys.stderr)
         return 1
-    bound_to = enrollment.load_config().get("gateway_url", "")
+    held = enrollment.bindings()
+    bound_to = held[0]["gateway_url"] if held else ""
     if bound_to and not is_forced:
         answer = input(f"this person is bound to {bound_to}; replace it? [y/N] ")
         if answer.strip().lower() not in ("y", "yes"):
             print("nothing changed")
             return 1
     try:
-        enrollment.enroll(link)
+        binding = enrollment.enroll(link)
     except enrollment.EnrollmentError as error:
         print(wording.word_code(error.code, error.params), file=sys.stderr)
         return 1
-    print(f"joined {enrollment.load_config().get('gateway_url', '')}")
+    for old in held:
+        if old["id"] != binding["id"]:
+            enrollment.remove_binding(old["id"])
+    print(f"joined {binding['gateway_url']}")
     if not is_resident_running():
         print(wording.word_code("resident_not_running"), file=sys.stderr)
     return 0

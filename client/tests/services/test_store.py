@@ -1,8 +1,10 @@
 """The person's preference store: atomic, 0600, and free of secrets.
 
-What the store keeps is what somebody typed: the language, the theme, the
-tool choices and the mount records. Nothing about a service standing on is in it, and a
-file an older build wrote reads without the keys it had.
+What the store keeps is what somebody typed, the language, the theme, the
+tool choices and the mount records, and the one thing it makes itself: the
+installation's id, generated on the first read and stable after. Nothing
+about a service standing on is in it, and a file an older build wrote reads
+without the keys it had.
 """
 
 import json
@@ -100,11 +102,39 @@ def test_a_file_an_older_build_wrote_is_read_without_its_keys(tmp_path):
 
     written = json.loads(path.read_text())
     assert written == {
+        "machine_id": "",
         "language": "",
         "theme": "",
         "ai": {"tool_configs": {"claude": {"default": "m2"}}},
         "mounts": {"r1": RECORD},
     }
+
+
+def test_the_machine_id_is_made_once_and_kept(store, tmp_path):
+    made = store.machine_id()
+
+    assert len(made) == 32 and int(made, 16) >= 0
+    assert store.machine_id() == made
+    assert ClientServiceStore(path=str(tmp_path / "state.json")).machine_id() == made
+    assert json.loads((tmp_path / "state.json").read_text())["machine_id"] == made
+
+
+def test_two_installs_have_two_machine_ids(tmp_path):
+    first = ClientServiceStore(path=str(tmp_path / "one.json")).machine_id()
+    second = ClientServiceStore(path=str(tmp_path / "two.json")).machine_id()
+
+    assert first != second
+
+
+def test_a_machine_id_of_another_shape_is_replaced(tmp_path):
+    path = tmp_path / "state.json"
+    path.write_text(json.dumps({"machine_id": 42}))
+    store = ClientServiceStore(path=str(path))
+
+    made = store.machine_id()
+
+    assert len(made) == 32
+    assert json.loads(path.read_text())["machine_id"] == made
 
 
 def test_passwords_never_reach_the_file(store, tmp_path):

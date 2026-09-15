@@ -36,7 +36,6 @@ from neutrino_client.constants import (
     CLIENT_DEFAULT_THEME,
     CLIENT_HELLO_TIMEOUT_S,
     CLIENT_IDLE_POLL_INTERVAL_S,
-    CLIENT_LEAVE_PATH,
     CLIENT_MOUNT_CREDENTIALS_DIR_NAME,
     CLIENT_ORIGINAL_DIR_NAME,
     CLIENT_REFUSALS_BEFORE_UNBIND,
@@ -46,14 +45,13 @@ from neutrino_client.constants import (
     CLIENT_WS_PATH,
 )
 from neutrino_client.core import enrollment
-from neutrino_client.core.channel import GatewayHttpChannel
 from neutrino_client.core.ws_client import WebSocketClient, close_error
 from neutrino_client.exceptions import (
+    GatewayProtocolRefused,
     GatewayRefused,
     GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
-    GatewayVersionRefused,
     SocketClosed,
 )
 from neutrino_client.platforms.detect import detect_platform, platform_tuple
@@ -115,13 +113,10 @@ def channel_error(error: Exception) -> dict:
         return {"code": error.code, "params": dict(error.params)}
     if isinstance(error, GatewayUntrusted):
         return {"code": "hub_untrusted", "params": {}}
-    if isinstance(error, GatewayVersionRefused):
+    if isinstance(error, GatewayProtocolRefused):
         return {
-            "code": "client_newer_than_hub",
-            "params": {
-                "hub_version": error.hub_version,
-                "client_version": error.client_version,
-            },
+            "code": error.code,
+            "params": {"peer": error.peer, "hub": error.hub, "min": error.minimum},
         }
     if isinstance(error, GatewayRefused):
         return {"code": "hub_refused", "params": {}}
@@ -200,10 +195,10 @@ class ClientSession:
         self._stop = threading.Event()
         self._thread: "threading.Thread | None" = None
         self._is_shut_down = False
-        self._channel = None
         self._client: "WebSocketClient | None" = None
         self._is_welcomed = False
-        self._binding: tuple = ("", "", "")
+        # The first binding on disk; empty while unbound.
+        self._binding: dict = {}
         self._binding_stamp = 0
         self._backoff_s = CLIENT_BACKOFF_MIN_S
         self._refusals = 0
@@ -237,12 +232,12 @@ class ClientSession:
     def is_connected(self) -> bool:
         """Whether this person belongs to a hub."""
         with self._lock:
-            return bool(self._binding[0] and self._binding[1])
+            return bool(self._binding)
 
     def connection_state(self) -> str:
         """Where the hub socket stands: connected, reconnecting or unbound."""
         with self._lock:
-            if not (self._binding[0] and self._binding[1]):
+            if not self._binding:
                 return CONNECTION_UNBOUND
             return (
                 CONNECTION_CONNECTED if self._is_welcomed else CONNECTION_RECONNECTING
@@ -251,7 +246,7 @@ class ClientSession:
     def gateway_url(self) -> str:
         """The hub this person belongs to, empty when none."""
         with self._lock:
-            return self._binding[0]
+            return self._binding.get("gateway_url", "")
 
     def hub_version(self) -> str:
         """What the hub last reported itself as."""
@@ -412,13 +407,13 @@ class ClientSession:
         person here.
         """
         with self._lock:
-            channel = self._channel
-        if channel is not None:
+            binding = dict(self._binding)
+        if binding:
             try:
-                channel.post(CLIENT_LEAVE_PATH, {})
-            except (GatewayUnreachable, GatewayUntrusted) as error:
+                enrollment.leave(binding)
+            except (GatewayRefused, GatewayUnreachable, GatewayUntrusted) as error:
                 self._log(f"could not tell the hub we are leaving: {error}")
-        enrollment.disconnect()
+            enrollment.remove_binding(binding["id"])
         self._drop_socket()
         self._release()
         self._reset_binding_state()
@@ -539,14 +534,14 @@ class ClientSession:
             return CLIENT_IDLE_POLL_INTERVAL_S
         try:
             self._connect(client)
-        except (GatewayRefused, GatewayUntrusted, GatewayVersionRefused) as error:
+        except (GatewayRefused, GatewayUntrusted) as error:
             return self._on_rejected(error)
         except GatewayUnreachable as error:
             return self._on_unreachable(error)
         failure = self._serve(client)
         if failure is None:
             return CLIENT_BACKOFF_MIN_S
-        if isinstance(failure, (GatewayRefused, GatewayVersionRefused)):
+        if isinstance(failure, GatewayRefused):
             return self._on_rejected(failure)
         return self._on_unreachable(failure)
 
@@ -574,15 +569,15 @@ class ClientSession:
     def _open_client(self) -> "WebSocketClient | None":
         """A socket for the current binding, or None while unbound."""
         with self._lock:
-            gateway_url, token, fingerprint = self._binding
-        if not gateway_url or not token:
+            binding = dict(self._binding)
+        if not binding:
             return None
-        parts = urllib.parse.urlsplit(gateway_url)
+        parts = urllib.parse.urlsplit(binding["gateway_url"])
         return WebSocketClient(
             host=parts.hostname or "",
             port=parts.port or 443,
             path=CLIENT_WS_PATH,
-            fingerprint=fingerprint,
+            fingerprint=binding["fingerprint"],
             timeout_s=CLIENT_HELLO_TIMEOUT_S,
         )
 
@@ -594,8 +589,8 @@ class ClientSession:
 
         Raises:
             GatewayUntrusted: When the peer failed the fingerprint check.
-            GatewayRefused: When the hub does not know this token.
-            GatewayVersionRefused: When the hub refused this client as newer.
+            GatewayRefused: When the hub does not know this token, or does
+                not speak this client's protocol.
             GatewayUnreachable: On any network error, or a first frame that
                 is not a welcome.
         """
@@ -656,7 +651,7 @@ class ClientSession:
     def _hello(self) -> dict:
         """The first frame this client sends, within the hub's own grace."""
         with self._lock:
-            token = self._binding[1]
+            token = self._binding.get("token", "")
             catalog_hash = self._catalog_hash
         return {
             "type": "hello",
@@ -800,10 +795,9 @@ class ClientSession:
             Seconds until the next loop turn.
         """
         rejection = channel_error(error)
-        if isinstance(error, GatewayVersionRefused):
-            # A hub behind this client is not a hub that has forgotten it:
-            # the binding stays, the word stays on the window, and the
-            # client asks again once the hub has caught up.
+        if isinstance(error, GatewayProtocolRefused):
+            # A hub that does not speak this number has not forgotten this
+            # client: the binding stays, and the client asks again later.
             with self._lock:
                 self._last_error = rejection
                 self._refusals = 0
@@ -816,7 +810,9 @@ class ClientSession:
         if rejections < CLIENT_REFUSALS_BEFORE_UNBIND:
             self._log(f"{error}; asking again")
             return CLIENT_BACKOFF_MIN_S
-        enrollment.disconnect()
+        with self._lock:
+            binding_id = self._binding.get("id", "")
+        enrollment.remove_binding(binding_id)
         self._release()
         self._reset_binding_state()
         self._load_connection()
@@ -893,19 +889,11 @@ class ClientSession:
             self._credential = {}
 
     def _load_connection(self) -> None:
-        config = enrollment.load_config()
-        gateway_url = config.get("gateway_url", "")
-        token = config.get("token", "")
-        fingerprint = config.get("fingerprint", "")
+        """Take the first binding on disk, or none."""
+        bindings = enrollment.bindings()
         with self._lock:
-            self._binding = (gateway_url, token, fingerprint)
+            self._binding = dict(bindings[0]) if bindings else {}
             self._binding_stamp = enrollment.config_stamp()
-            if gateway_url and token:
-                self._channel = GatewayHttpChannel(
-                    gateway_url=gateway_url, token=token, fingerprint=fingerprint
-                )
-            else:
-                self._channel = None
 
     def _adopt_external_binding(self) -> None:
         """Pick up a binding another process wrote.

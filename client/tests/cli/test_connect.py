@@ -14,9 +14,9 @@ import neutrino_client.core.enrollment as enrollment
 from neutrino_client.cli import wording
 from neutrino_client.control.server import ControlServer
 from neutrino_client.exceptions import (
+    GatewayProtocolRefused,
     GatewayRefused,
     GatewayUntrusted,
-    GatewayVersionRefused,
 )
 from tests.conftest import FakeClientPlatform, FakeSession, bind, discard, link_for
 
@@ -47,7 +47,7 @@ def joined_hub(monkeypatch):
     """A hub that accepts the enrollment; whether a resident runs is the test's."""
     platform = FakeClientPlatform()
     monkeypatch.setattr(wording, "detect_platform", lambda: platform)
-    answer_with(monkeypatch, reply={"token": "device-token", "client_id": "c1"})
+    answer_with(monkeypatch, reply={"id": "c1", "token": "device-token"})
     return platform
 
 
@@ -71,7 +71,7 @@ def test_a_fresh_join_stores_the_binding_and_names_the_hub(resident, capsys):
     streams = capsys.readouterr()
     assert f"joined {GATEWAY_URL}" in streams.out
     assert streams.err == ""
-    stored = enrollment.load_config()
+    (stored,) = enrollment.bindings()
     assert stored["gateway_url"] == GATEWAY_URL
     assert stored["token"] == "device-token"
 
@@ -82,7 +82,7 @@ def test_without_a_resident_the_join_hints_at_opening_one(joined_hub, capsys):
     streams = capsys.readouterr()
     assert f"joined {GATEWAY_URL}" in streams.out
     assert wording.word_code("resident_not_running") in streams.err
-    assert enrollment.load_config()["gateway_url"] == GATEWAY_URL
+    assert enrollment.bindings()[0]["gateway_url"] == GATEWAY_URL
 
 
 def test_an_existing_binding_is_kept_when_the_prompt_is_declined(
@@ -96,14 +96,14 @@ def test_an_existing_binding_is_kept_when_the_prompt_is_declined(
         return "n"
 
     monkeypatch.setattr(connect_cli, "input", answer_no, raising=False)
-    posted = answer_with(monkeypatch, reply={"token": "device-token"})
+    posted = answer_with(monkeypatch, reply={"id": "c2", "token": "device-token"})
 
     assert connect_cli.main(LINK, is_forced=False) == 1
 
     assert asked == [f"this person is bound to {OLD_GATEWAY_URL}; replace it? [y/N] "]
     assert "nothing changed" in capsys.readouterr().out
     assert posted == []
-    assert enrollment.load_config()["gateway_url"] == OLD_GATEWAY_URL
+    assert enrollment.bindings()[0]["gateway_url"] == OLD_GATEWAY_URL
 
 
 def test_yes_replaces_the_binding_without_asking(
@@ -111,11 +111,14 @@ def test_yes_replaces_the_binding_without_asking(
 ):
     bind(config_path, url=OLD_GATEWAY_URL)
     monkeypatch.setattr(connect_cli, "input", refuse_to_ask, raising=False)
+    answer_with(monkeypatch, reply={"id": "c2", "token": "device-token"})
 
     assert connect_cli.main(LINK, is_forced=True) == 0
 
     assert f"joined {GATEWAY_URL}" in capsys.readouterr().out
-    assert enrollment.load_config()["gateway_url"] == GATEWAY_URL
+    assert [binding["gateway_url"] for binding in enrollment.bindings()] == [
+        GATEWAY_URL
+    ]
 
 
 def test_an_empty_link_is_pasted_at_the_prompt(joined_hub, monkeypatch, capsys):
@@ -135,7 +138,7 @@ def test_an_empty_link_is_pasted_at_the_prompt(joined_hub, monkeypatch, capsys):
 
 def test_an_empty_prompt_gives_up_in_words(monkeypatch, capsys):
     monkeypatch.setattr(connect_cli, "input", lambda prompt: "   ", raising=False)
-    posted = answer_with(monkeypatch, reply={"token": "device-token"})
+    posted = answer_with(monkeypatch, reply={"id": "c1", "token": "device-token"})
 
     assert connect_cli.main("", is_forced=False) == 1
 
@@ -150,9 +153,7 @@ def test_an_empty_prompt_gives_up_in_words(monkeypatch, capsys):
         (
             "neutrino://enroll/"
             + __import__("base64")
-            .urlsafe_b64encode(
-                b'{"urls": ["http://h"], "token": "t", "kind": "device"}'
-            )
+            .urlsafe_b64encode(b'{"urls": ["http://h"], "token": "t", "role": "agent"}')
             .decode()
             .rstrip("="),
             "link_not_for_client",
@@ -160,13 +161,13 @@ def test_an_empty_prompt_gives_up_in_words(monkeypatch, capsys):
     ],
 )
 def test_an_unusable_link_is_worded_from_its_code(monkeypatch, capsys, link, code):
-    posted = answer_with(monkeypatch, reply={"token": "device-token"})
+    posted = answer_with(monkeypatch, reply={"id": "c1", "token": "device-token"})
 
     assert connect_cli.main(link, is_forced=False) == 1
 
     assert wording.word_code(code, {}) in capsys.readouterr().err
     assert posted == []
-    assert "gateway_url" not in enrollment.load_config()
+    assert enrollment.bindings() == []
 
 
 @pytest.mark.parametrize(
@@ -175,8 +176,12 @@ def test_an_unusable_link_is_worded_from_its_code(monkeypatch, capsys, link, cod
         (GatewayRefused("401"), "enroll_refused"),
         (GatewayUntrusted("pin"), "hub_untrusted"),
         (
-            GatewayVersionRefused(hub_version="0.1.0", client_version="0.2.0"),
-            "client_newer_than_hub",
+            GatewayProtocolRefused(code="protocol_too_new", peer=2, hub=1, minimum=1),
+            "protocol_too_new",
+        ),
+        (
+            GatewayProtocolRefused(code="protocol_too_old", peer=1, hub=3, minimum=2),
+            "protocol_too_old",
         ),
     ],
 )
@@ -189,6 +194,8 @@ def test_every_hub_refusal_is_worded_and_stores_nothing(
 
     err = capsys.readouterr().err
     assert err.strip() != code
-    assert "gateway_url" not in enrollment.load_config()
-    if code == "client_newer_than_hub":
-        assert "0.2.0" in err and "0.1.0" in err
+    assert enrollment.bindings() == []
+    if code == "protocol_too_new":
+        assert "protocol 2" in err and "speaks 1" in err
+    if code == "protocol_too_old":
+        assert "protocol 1" in err and "accepts 2" in err

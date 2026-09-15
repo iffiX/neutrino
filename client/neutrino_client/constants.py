@@ -14,10 +14,19 @@ CLIENT_DEFAULT_LANGUAGE = "en"
 CLIENT_THEMES = ("system", "dark", "light")
 CLIENT_DEFAULT_THEME = "dark"
 
-# The hub's client channel, on the pinned-TLS agent port. Joining and leaving
-# are HTTP; everything else rides the one socket.
-CLIENT_ENROLL_PATH = "/api/client/enroll"
-CLIENT_LEAVE_PATH = "/api/client/leave"
+# The protocol number this build speaks. The name has no package prefix:
+# one number has one name in every package.
+PROTOCOL = 1
+CLIENT_ROLE = "client"
+# What ``software`` reads in the join body and the hello, before the version.
+CLIENT_SOFTWARE_PREFIX = "neutrino_client/"
+# The refusals the hub answers a protocol number it does not speak with.
+CLIENT_PROTOCOL_REFUSAL_CODES = ("protocol_too_old", "protocol_too_new")
+
+# The hub's channel, on the pinned-TLS agent port. Joining and leaving are
+# HTTP; everything else rides the one socket.
+CLIENT_JOIN_PATH = "/api/channel/join"
+CLIENT_LEAVE_PATH = "/api/channel/leave"
 CLIENT_WS_PATH = "/api/client/ws"
 
 # How many rejections in a row the hub may answer with before the client drops

@@ -19,20 +19,17 @@ import struct
 import threading
 import time
 
-from neutrino_client import CLIENT_VERSION
 from neutrino_client.constants import (
     CLIENT_REQUEST_TIMEOUT_S,
     CLIENT_WS_CLOSE_REFUSED,
     CLIENT_WS_CLOSE_UNKNOWN_TOKEN,
     CLIENT_WS_SILENCE_TIMEOUT_S,
 )
-from neutrino_client.core.channel import error_detail, pinned_socket
+from neutrino_client.core.channel import error_detail, pinned_socket, refusal_error
 from neutrino_client.exceptions import (
     GatewayRefused,
-    GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
-    GatewayVersionRefused,
     SocketClosed,
 )
 
@@ -200,13 +197,9 @@ def close_error(code: int, reason: str) -> Exception:
 
 def _refusal(code: str, params: dict) -> Exception:
     """The channel error one refusal code word maps to."""
-    if code == "client_newer_than_hub":
-        return GatewayVersionRefused(
-            hub_version=str(params.get("hub_version", "")),
-            client_version=str(params.get("client_version", CLIENT_VERSION)),
-        )
-    if code:
-        return GatewayRefusedDetail(code=code, params=dict(params))
+    refusal = refusal_error(code, params)
+    if refusal is not None:
+        return refusal
     return GatewayUnreachable("hub refused the socket without a code")
 
 
@@ -265,7 +258,8 @@ class WebSocketClient:
         Raises:
             GatewayUntrusted: When the peer failed the fingerprint check.
             GatewayRefused: On a 401 or 403.
-            GatewayVersionRefused: On a 409 naming this client as too new.
+            GatewayProtocolRefused: On a 409 naming a protocol number the
+                hub does not speak.
             GatewayUnreachable: On any network error, another status, or a
                 handshake that does not check out.
         """

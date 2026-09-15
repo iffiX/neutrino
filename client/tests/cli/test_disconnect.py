@@ -18,16 +18,16 @@ def test_a_bound_person_leaves_and_says_so(monkeypatch, config_path, capsys):
     posted = []
 
     def post(self, path, payload):
-        posted.append(path)
+        posted.append((path, payload))
         return {}
 
     monkeypatch.setattr(channel.GatewayHttpChannel, "post", post)
 
     assert disconnect_cli.main() == 0
 
-    assert posted == ["/api/client/leave"]
+    assert posted == [("/api/channel/leave", {"id": "c1", "token": "tok"})]
     assert disconnect_cli.LEAVE_WORDS in capsys.readouterr().out
-    assert "gateway_url" not in enrollment.load_config()
+    assert enrollment.bindings() == []
 
 
 def test_an_unreachable_hub_does_not_hold_the_person(monkeypatch, config_path, capsys):
@@ -41,7 +41,7 @@ def test_an_unreachable_hub_does_not_hold_the_person(monkeypatch, config_path, c
     assert disconnect_cli.main() == 0
 
     assert disconnect_cli.LEAVE_WORDS in capsys.readouterr().out
-    assert "gateway_url" not in enrollment.load_config()
+    assert enrollment.bindings() == []
 
 
 def test_an_unbound_person_is_told_they_joined_nothing(capsys):

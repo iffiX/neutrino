@@ -15,13 +15,16 @@ import socket
 import ssl
 import urllib.parse
 
-from neutrino_client.constants import CLIENT_REQUEST_TIMEOUT_S
+from neutrino_client.constants import (
+    CLIENT_PROTOCOL_REFUSAL_CODES,
+    CLIENT_REQUEST_TIMEOUT_S,
+)
 from neutrino_client.exceptions import (
+    GatewayProtocolRefused,
     GatewayRefused,
     GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
-    GatewayVersionRefused,
 )
 
 
@@ -78,6 +81,37 @@ def error_detail(data: bytes) -> dict:
     return detail if isinstance(detail, dict) else {}
 
 
+def refusal_error(code: str, params: dict) -> "Exception | None":
+    """The typed error one ``{code, params}`` refusal maps to.
+
+    Args:
+        code: The hub's code.
+        params: Its parameters.
+
+    Returns:
+        A protocol refusal for the two admission codes, the typed detail for
+        any other code, and None for a refusal that names no code.
+    """
+    if code in CLIENT_PROTOCOL_REFUSAL_CODES:
+        return GatewayProtocolRefused(
+            code=code,
+            peer=_number(params.get("peer")),
+            hub=_number(params.get("hub")),
+            minimum=_number(params.get("min")),
+        )
+    if code:
+        return GatewayRefusedDetail(code=code, params=dict(params))
+    return None
+
+
+def _number(value) -> int:
+    """A protocol number as the wire carried it, 0 for anything else."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _pinned_context() -> ssl.SSLContext:
     """A client context that checks nothing itself; the pin does the judging."""
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -90,27 +124,23 @@ def _pinned_context() -> ssl.SSLContext:
 class GatewayHttpChannel:
     """Posts JSON to the hub and parses its replies."""
 
-    def __init__(self, *, gateway_url: str, token: str, fingerprint: str = ""):
+    def __init__(self, *, gateway_url: str, fingerprint: str = ""):
         """
         Args:
             gateway_url: Base URL of the hub's agent port, without a trailing
                 slash.
-            token: The token issued when this client enrolled.
             fingerprint: SHA-256 hex of the hub certificate's DER form.
                 Required for an ``https`` URL; ignored for plain ``http``.
         """
         self._gateway_url = gateway_url.rstrip("/")
-        self._token = token
         self._fingerprint = fingerprint.strip().lower()
 
     def post(self, path: str, payload: dict) -> dict:
         """Post a JSON body and return the JSON reply.
 
-        The token is added to every payload, so callers never repeat it.
-
         Args:
             path: Path below the hub URL, starting with a slash.
-            payload: The body to send.
+            payload: The body to send, as it is.
 
         Returns:
             The parsed reply, or an empty object when the reply has no body.
@@ -119,8 +149,8 @@ class GatewayHttpChannel:
             GatewayUntrusted: When the hub's certificate is not the pinned
                 one; nothing was sent.
             GatewayRefused: When the hub rejected this client's token.
-            GatewayVersionRefused: When the hub turned this client away as
-                newer than itself.
+            GatewayProtocolRefused: When the hub does not speak this
+                client's protocol number.
             GatewayRefusedDetail: When the hub refused with another code.
             GatewayUnreachable: On any network error, timeout, other HTTP
                 error status, or unparseable reply.
@@ -135,7 +165,7 @@ class GatewayHttpChannel:
             raise GatewayUnreachable(f"hub sent invalid JSON: {error}") from error
 
     def _post(self, path: str, payload: dict):
-        """One POST with the token added, its status already judged.
+        """One POST, its status already judged.
 
         Args:
             path: Path below the hub URL, starting with a slash.
@@ -148,11 +178,12 @@ class GatewayHttpChannel:
         Raises:
             GatewayUntrusted: When the peer failed the fingerprint check.
             GatewayRefused: On a 401 or 403.
-            GatewayVersionRefused: On a 409 naming this client as too new.
+            GatewayProtocolRefused: On a 409 naming a protocol number the
+                hub does not speak.
             GatewayRefusedDetail: On a 409 carrying another code.
             GatewayUnreachable: On any network error or other error status.
         """
-        body = json.dumps({**payload, "token": self._token}).encode("utf-8")
+        body = json.dumps(payload).encode("utf-8")
         status, data, headers = self._request(
             "POST",
             f"{self._gateway_url}{path}",
@@ -163,14 +194,11 @@ class GatewayHttpChannel:
             raise GatewayRefused(f"hub refused this client's token ({status})")
         if status == 409:
             detail = error_detail(data)
-            params = detail.get("params") or {}
-            if detail.get("code") == "client_newer_than_hub":
-                raise GatewayVersionRefused(
-                    hub_version=str(params.get("hub_version", "")),
-                    client_version=str(params.get("client_version", "")),
-                )
-            if detail.get("code"):
-                raise GatewayRefusedDetail(code=str(detail["code"]), params=params)
+            refusal = refusal_error(
+                str(detail.get("code", "") or ""), detail.get("params") or {}
+            )
+            if refusal is not None:
+                raise refusal
         if status >= 400:
             raise GatewayUnreachable(f"hub answered {status} for {path}")
         return status, data, headers

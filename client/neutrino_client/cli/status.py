@@ -32,7 +32,8 @@ def main() -> int:
     state = _local_state()
     if state is not None:
         return _status_from_resident(state)
-    gateway_url = enrollment.load_config().get("gateway_url", "")
+    held = enrollment.bindings()
+    gateway_url = held[0]["gateway_url"] if held else ""
     if not gateway_url:
         print(f"hub        {wording.NOT_JOINED}")
     else:

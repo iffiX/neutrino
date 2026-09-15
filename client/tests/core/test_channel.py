@@ -4,7 +4,9 @@ The pin runs against a real TLS socket whose certificate is generated at
 test runtime with the ``openssl`` binary: the right fingerprint talks, the
 wrong one is refused before a single request byte is sent, and a bound
 client connecting against the wrong certificate unbinds the way a refused
-token does. The status mappings replace ``_request`` with a canned answer.
+token does. The status mappings replace ``_request`` with a canned answer:
+a 409 naming a protocol number the hub does not speak is the typed
+protocol refusal with its three numbers.
 """
 
 import hashlib
@@ -19,16 +21,17 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 import neutrino_client.core.enrollment as enrollment
+from neutrino_client.constants import CLIENT_JOIN_PATH, CLIENT_LEAVE_PATH
 from neutrino_client.core.channel import GatewayHttpChannel
 from neutrino_client.core.session import ClientSession
 from neutrino_client.exceptions import (
+    GatewayProtocolRefused,
     GatewayRefused,
     GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
-    GatewayVersionRefused,
 )
-from tests.conftest import FakeClientPlatform, discard, link_for
+from tests.conftest import FakeClientPlatform, bind, discard, link_for
 
 WRONG_FINGERPRINT = "0" * 64
 
@@ -103,17 +106,17 @@ def tls_server(tmp_path):
         server.server_close()
 
 
-def test_the_pinned_fingerprint_talks(tls_server):
+def test_the_pinned_fingerprint_talks_and_sends_the_body_as_it_is(tls_server):
     url, fingerprint = tls_server
-    channel = GatewayHttpChannel(gateway_url=url, token="tok", fingerprint=fingerprint)
+    channel = GatewayHttpChannel(gateway_url=url, fingerprint=fingerprint)
 
-    reply = channel.post("/api/client/poll", {"hostname": "box"})
+    reply = channel.post(CLIENT_LEAVE_PATH, {"id": "c1", "token": "tok"})
 
     assert reply == {}
     assert len(RecordingHandler.requests) == 1
     path, body = RecordingHandler.requests[0]
-    assert path == "/api/client/poll"
-    assert json.loads(body)["token"] == "tok"
+    assert path == CLIENT_LEAVE_PATH
+    assert json.loads(body) == {"id": "c1", "token": "tok"}
 
 
 def test_the_pinned_connection_floors_at_tls_1_2():
@@ -127,41 +130,34 @@ def test_the_pinned_connection_floors_at_tls_1_2():
 
 def test_a_wrong_fingerprint_is_refused_before_anything_is_sent(tls_server):
     url, _ = tls_server
-    channel = GatewayHttpChannel(
-        gateway_url=url, token="tok", fingerprint=WRONG_FINGERPRINT
-    )
+    channel = GatewayHttpChannel(gateway_url=url, fingerprint=WRONG_FINGERPRINT)
 
     with pytest.raises(GatewayUntrusted):
-        channel.post("/api/client/poll", {"hostname": "box"})
+        channel.post(CLIENT_LEAVE_PATH, {"id": "c1", "token": "tok"})
 
     assert RecordingHandler.requests == []
 
 
 def test_an_https_url_without_a_pin_sends_nothing(tls_server):
     url, _ = tls_server
-    channel = GatewayHttpChannel(gateway_url=url, token="tok")
+    channel = GatewayHttpChannel(gateway_url=url)
 
     with pytest.raises(GatewayUntrusted):
-        channel.post("/api/client/poll", {"hostname": "box"})
+        channel.post(CLIENT_LEAVE_PATH, {"id": "c1", "token": "tok"})
 
     assert RecordingHandler.requests == []
 
 
 def test_three_mismatched_connections_unbind_the_person(tls_server, config_path):
     url, _ = tls_server
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(
-        json.dumps(
-            {"gateway_url": url, "token": "tok", "fingerprint": WRONG_FINGERPRINT}
-        )
-    )
+    bind(config_path, url=url, fingerprint=WRONG_FINGERPRINT)
     session = ClientSession(log=discard, platform=FakeClientPlatform())
 
     for _ in range(3):
         session.run_once()
 
     assert session.is_connected() is False
-    assert "gateway_url" not in json.loads(config_path.read_text())
+    assert json.loads(config_path.read_text())["bindings"] == []
     assert session.last_error() == {
         "code": "self_unbound",
         "params": {"cause": "hub_untrusted"},
@@ -171,19 +167,14 @@ def test_three_mismatched_connections_unbind_the_person(tls_server, config_path)
 
 def test_two_mismatched_connections_keep_the_binding(tls_server, config_path):
     url, _ = tls_server
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(
-        json.dumps(
-            {"gateway_url": url, "token": "tok", "fingerprint": WRONG_FINGERPRINT}
-        )
-    )
+    bind(config_path, url=url, fingerprint=WRONG_FINGERPRINT)
     session = ClientSession(log=discard, platform=FakeClientPlatform())
 
     for _ in range(2):
         session.run_once()
 
     assert session.is_connected() is True
-    assert "gateway_url" in json.loads(config_path.read_text())
+    assert len(json.loads(config_path.read_text())["bindings"]) == 1
     assert session.last_error()["code"] == "hub_untrusted"
     assert RecordingHandler.requests == []
 
@@ -197,12 +188,12 @@ def test_a_wrong_fingerprint_link_is_refused_at_enrollment(tls_server, config_pa
 
     assert refusal.value.code == "hub_untrusted"
     assert RecordingHandler.requests == []
-    assert "gateway_url" not in enrollment.load_config()
+    assert enrollment.bindings() == []
 
 
 def canned_channel(status, data=b"", headers=None):
     """A channel whose one answer is canned at the ``_request`` seam."""
-    made = GatewayHttpChannel(gateway_url="http://hub", token="tok")
+    made = GatewayHttpChannel(gateway_url="http://hub")
     named = {name.lower(): value for name, value in (headers or {}).items()}
 
     def request(method, url, *, body=None, headers=None):
@@ -215,24 +206,30 @@ def canned_channel(status, data=b"", headers=None):
 @pytest.mark.parametrize("status", [401, 403])
 def test_post_status_401_or_403_raises_refused(status):
     with pytest.raises(GatewayRefused):
-        canned_channel(status).post("/api/client/poll", {})
+        canned_channel(status).post(CLIENT_LEAVE_PATH, {})
 
 
-def test_post_409_client_newer_raises_version_refused_with_both_versions():
+@pytest.mark.parametrize("code", ["protocol_too_old", "protocol_too_new"])
+def test_post_409_naming_the_protocol_raises_the_refusal_with_its_numbers(code):
     body = json.dumps(
-        {
-            "detail": {
-                "code": "client_newer_than_hub",
-                "params": {"hub_version": "0.1.0", "client_version": "0.2.0"},
-            }
-        }
+        {"detail": {"code": code, "params": {"peer": 1, "hub": 3, "min": 2}}}
     ).encode()
 
-    with pytest.raises(GatewayVersionRefused) as caught:
-        canned_channel(409, body).post("/api/client/poll", {})
+    with pytest.raises(GatewayProtocolRefused) as caught:
+        canned_channel(409, body).post(CLIENT_JOIN_PATH, {})
 
-    assert caught.value.hub_version == "0.1.0"
-    assert caught.value.client_version == "0.2.0"
+    assert caught.value.code == code
+    assert (caught.value.peer, caught.value.hub, caught.value.minimum) == (1, 3, 2)
+    assert isinstance(caught.value, GatewayRefused)
+
+
+def test_a_protocol_refusal_without_numbers_reads_them_as_zero():
+    body = json.dumps({"detail": {"code": "protocol_too_new", "params": {}}}).encode()
+
+    with pytest.raises(GatewayProtocolRefused) as caught:
+        canned_channel(409, body).post(CLIENT_JOIN_PATH, {})
+
+    assert (caught.value.peer, caught.value.hub, caught.value.minimum) == (0, 0, 0)
 
 
 def test_post_409_with_another_code_raises_the_typed_detail():
@@ -241,7 +238,7 @@ def test_post_409_with_another_code_raises_the_typed_detail():
     ).encode()
 
     with pytest.raises(GatewayRefusedDetail) as caught:
-        canned_channel(409, body).post("/api/client/rdp_connect", {})
+        canned_channel(409, body).post(CLIENT_JOIN_PATH, {})
 
     assert caught.value.code == "rdp_not_shared"
     assert caught.value.params == {"id": "rdp_s9"}
@@ -253,22 +250,22 @@ def test_post_409_with_another_code_raises_the_typed_detail():
 )
 def test_post_409_without_a_code_raises_unreachable(body):
     with pytest.raises(GatewayUnreachable):
-        canned_channel(409, body).post("/api/client/poll", {})
+        canned_channel(409, body).post(CLIENT_JOIN_PATH, {})
 
 
 @pytest.mark.parametrize("status", [400, 404, 418, 500, 503])
 def test_post_other_error_statuses_raise_unreachable(status):
     with pytest.raises(GatewayUnreachable):
-        canned_channel(status).post("/api/client/poll", {})
+        canned_channel(status).post(CLIENT_JOIN_PATH, {})
 
 
 def test_post_invalid_json_in_a_success_raises_unreachable():
     with pytest.raises(GatewayUnreachable):
-        canned_channel(200, b"not json").post("/api/client/poll", {})
+        canned_channel(200, b"not json").post(CLIENT_JOIN_PATH, {})
 
 
 def test_post_an_empty_success_body_reads_as_an_empty_object():
-    assert canned_channel(200, b"  ").post("/api/client/poll", {}) == {}
+    assert canned_channel(200, b"  ").post(CLIENT_LEAVE_PATH, {}) == {}
 
 
 def test_post_a_dead_port_raises_unreachable():
@@ -276,7 +273,7 @@ def test_post_a_dead_port_raises_unreachable():
     probe.bind(("127.0.0.1", 0))
     port = probe.getsockname()[1]
     probe.close()
-    made = GatewayHttpChannel(gateway_url=f"http://127.0.0.1:{port}", token="tok")
+    made = GatewayHttpChannel(gateway_url=f"http://127.0.0.1:{port}")
 
     with pytest.raises(GatewayUnreachable):
-        made.post("/api/client/poll", {})
+        made.post(CLIENT_JOIN_PATH, {})
