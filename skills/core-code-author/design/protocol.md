@@ -214,9 +214,9 @@ The HTTP status names the class of the refusal:
 | Status | Class | Codes |
 | --- | --- | --- |
 | 400 | a body that does not validate | |
-| 401 | a missing session, or a dead ticket | `ticket_spent` |
+| 401 | a missing session, a dead ticket, or a token that names no binding | `ticket_spent`, `binding_unknown` |
 | 404 | an unknown member | `device_unknown` |
-| 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new` |
+| 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `role_mismatch` |
 
 Every surface words a code itself: the hub's catalogs are
 `hub/frontend/src/locales/<language>/codes.json` under `code.<code>`, the
@@ -335,7 +335,7 @@ the page's whole view.
 | `POST /api/hub/proxy/node/remove` | `{node_id}` | |
 | `POST /api/hub/proxy/node/test` | `{node_id}` | one latency probe |
 | `POST /api/hub/proxy/balancer/set` | the balancer's settings | |
-| `POST /api/hub/proxy/geodata/scan` | | reads the two latest releases from GitHub; returns `{installed, latest}` |
+| `POST /api/hub/proxy/geodata/scan` | | reads the two latest releases from GitHub; returns the read's `geodata` block with `latest` filled |
 | `POST /api/hub/proxy/geodata/update` | | fetches both files, checks their sha256, writes them atomically, restarts the xray unit; returns `TaskStarted`, output on `/ws/hub/task` |
 
 #### `/api/hub/ai`
@@ -495,7 +495,7 @@ the page's whole view.
 | Route | Parameters | Does |
 | --- | --- | --- |
 | `POST /api/channel/join` | `{ticket, role, protocol, machine_id, name, software, platform}` | `{id, token}` |
-| `POST /api/channel/leave` | `{id, token}` | removes the binding |
+| `POST /api/channel/leave` | `{id, token}` | removes the binding: a device's row keeps its place, a client's row is deleted |
 | `WS /api/channel/socket` | | the channel |
 
 ### The router files
@@ -528,15 +528,32 @@ A link is `neutrino://enroll/<base64url>` over one JSON object:
 
 `urls` is every exposed address on the agent port, because one of them is on
 the joining machine's network and neither end knows which. `role` is `agent`
-or `client`; the agent rejects a client link and the client a device link.
-The base64url alphabet has no character a shell splits or a URL escapes, so
-the link pastes anywhere unquoted.
+or `client`, read on the pasting side before the first request. A client
+rejects a device link with `link_not_for_client`, whose `params` name the
+link's `role`; an agent rejects a client link with a sentence and no code, as
+it does every other unusable link. The base64url alphabet has no character a
+shell splits or a URL escapes, so the link pastes anywhere unquoted.
 
 | Endpoint | Body | Returns |
 | --- | --- | --- |
 | `POST /api/channel/join` | `{ticket, role, protocol, machine_id, name, software, platform}` | `{id, token}`; admission by `protocol` runs first and a rejected protocol spends no ticket, then the ticket is spent |
-| `POST /api/channel/leave` | `{id, token}` | the binding removed |
+| `POST /api/channel/leave` | `{id, token}` | the binding removed: a device's row stays and drops its token, a client's row is deleted with its gateway key |
 | `WS /api/channel/socket` | | everything after |
+
+`machine_id` and `platform` are what the body says about the machine itself,
+and each role reads them somewhere else:
+
+| Field | An agent sends | A client sends |
+| --- | --- | --- |
+| `machine_id` | `/etc/machine-id`, else `/var/lib/dbus/machine-id`, else empty | a uuid4 hex generated on the first read of its state file and kept there |
+| `platform` | `{os, family, arch}`: `linux`, the distribution family `debian`, `rhel` or empty, and the architecture normalized to `amd64`, `arm64` or `armhf` | the same three keys, `os` one of `linux`, `windows` and `darwin`, and `family` empty off Linux |
+
+An agent's id is the operating system's, so a machine joining with a blank
+link is matched to the row it already had. A client's is one installation's,
+so the same person on two machines is two clients. The hub reads `family` to
+pick a package family and `arch` to pick the package itself, and an
+architecture outside the normalized set is the machine's own word and matches
+no branch.
 
 The join request names no network; the link a socket runs on comes from
 `getsockname()` and is in the first report. Joining and leaving have the same
@@ -591,10 +608,34 @@ and `kind` is the whole method vocabulary.
 
 | Concern | Rule |
 | --- | --- |
-| Ids | The hub opens streams with even ids, the agent and the client with odd ids, each side counting upward, so the two never collide. |
+| Ids | The hub opens its first stream at 0 and a peer its first at 1, each side stepping by 2, so the hub's ids are even, an agent's and a client's are odd, and the two never collide. |
 | Bytes | A binary frame is a big-endian u32 stream id, then the bytes. A stream's text output (an install log, a command's output) is its binary frames, one line each. |
 | Credit | `credit {stream, bytes}` grants the sender that many more bytes. A receiver grants as it consumes, so a long transfer starves nothing and a large package does not stall after the first window. |
 | Result | `close {stream, code, params}` ends a stream from either side. `params` is the result and the only place a result goes; a `code` makes the close a refusal. A stream one side closed gets no close back. |
+
+### The timings
+
+Every interval and every window the channel runs on is a constant in one of
+the three packages, named here so that changing one is a change to this table.
+
+| What it bounds | Hub | Agent | Client |
+| --- | --- | --- | --- |
+| a fresh socket's hello | `CHANNEL_HELLO_TIMEOUT_S` 10 | | `CLIENT_HELLO_TIMEOUT_S` 10, spent on connecting and the handshake |
+| a report while nothing changes | | `AGENT_HEARTBEAT_INTERVAL_S` 5 | `CLIENT_REPORT_INTERVAL_S` 30 |
+| keepalive | `CHANNEL_PING_INTERVAL_S` 20, `CHANNEL_PING_TIMEOUT_S` 20 | | |
+| silence before the socket is dead | | `AGENT_WS_SILENCE_TIMEOUT_S` 45 | `CLIENT_WS_SILENCE_TIMEOUT_S` 45 |
+| reconnect backoff | | `AGENT_BACKOFF_MIN_S` 5, doubled to `AGENT_BACKOFF_MAX_S` 60 | `CLIENT_BACKOFF_MIN_S` 5, doubled to `CLIENT_BACKOFF_MAX_S` 60 |
+| a stream's credit window | `CHANNEL_STREAM_CREDIT_BYTES` 1 MiB | `AGENT_WS_STREAM_CREDIT_BYTES` 1 MiB | grants none |
+| one binary frame | `CHANNEL_CHUNK_BYTES` 64 KiB | `AGENT_WS_CHUNK_BYTES` 64 KiB | sends none |
+| a stream waiting on credit | | `AGENT_WS_CREDIT_TIMEOUT_S` 60 | |
+| a stream waiting for its close | | | `CLIENT_STREAM_TIMEOUT_S` 15 |
+| a hub thread's call onto the loop | `CHANNEL_CALL_TIMEOUT_S` 15 | | |
+
+Every number is seconds except the two rows in bytes. The hub's ping interval
+is inside both silence windows, so a socket with nothing to say is kept open
+by the pings alone, and a peer that reaches its window closes and reconnects.
+A refused `hello` is retried at the backoff's maximum, the minute named under
+the binding.
 
 ### The sections
 
@@ -692,6 +733,41 @@ same stream that serves its own upgrade. An install's or an uninstall's output
 goes up a `log {module}` stream line by line, and the drawer shows it as it
 arrives.
 
+### The services section, one entry per published service
+
+The `services` section is the typed list a client is sent, and `type` decides
+what the entry's `payload` names:
+
+| `type` | `payload` | An entry is in the list while |
+| --- | --- | --- |
+| `web` | `{url}` | a device's Gitea module reports a URL, or an `http` record is declared |
+| `port` | `{host, port}` | a device's Podman container publishes a host port, or a `generic_tcp` record is declared |
+| `ai` | `{endpoint, protocol, models}`, `protocol` being `openai` | the AI gateway is installed and enabled |
+| `file` | `{protocol, host, share}`, `protocol` being `smb` | a device's Samba module reports the share, or a `samba` record is declared |
+| `rdp` | `{protocol, host, port, attention}`, `protocol` being `rustdesk` | a machine keeps reporting that it shares its desktop; `attention` is what somebody must do at that machine before a peer sees the desktop, as a code, empty when nothing is in the way |
+
+The five types are closed, `SERVICES_TYPES` in
+`modules/services/constants.py`; a sixth is a row here in the same change.
+`source` is `module`, `declared` or `device`. `is_healthy` is the module's own
+health, the declared record's last probe, or true for a share a machine is
+reporting now, and empty on a record no probe has reached.
+
+`description` is the English provenance line the composer writes, and
+`description_code` names the same provenance for a surface that words it in
+its own language:
+
+| `description_code` | `description_params` |
+| --- | --- |
+| `ai_gateway` | none |
+| `container` | `{image}` |
+| `declared` | none |
+| `device_share` | `{device}` |
+| `gitea_module` | `{host}` |
+| `samba_module` | `{host}` |
+
+A declared record whose person wrote a line of their own gets that line and an
+empty `description_code`, because those are already their words.
+
 ### The kinds
 
 The kind table is the one extension point of the channel. A module or a verb
@@ -704,7 +780,7 @@ is added without a change to the protocol; a kind is added by a row here.
 | agent, to the hub | `log` | `{module}`: opened for an install or an uninstall, output up as binary frames line by line, closed with `params: {state}` |
 | hub, to an agent | `command` | `{module, verb, ...args}`: `{agent, reboot}`, `{samba, reload}`, `{zfs, validate, config}`; an unknown kind is closed `kind_unknown` and an unknown verb `verb_unknown`, which the panel shows as `unsupported`; closed with `params: {exit_code, output, result}` |
 | agent, to the hub | `package` | `{module}` for a module's package bytes from the hub's cache, `{}` for the agent's own package; the close's `params` has the `sha256` |
-| client, to the hub | `service` | `{id}`; the close's `params` is the material: `{host, port, password}` for `rdp`, `{base_url, api_key, model}` for `ai`; a new service type adds no kind |
+| client, to the hub | `service` | `{id}`: one published entry. The close is the whole answer, its `params` the material that entry takes from the hub and its `code` the reason it takes none; a new service type adds no kind |
 | hub, to an agent | `desktop` | reserved and unimplemented: no arguments, the agent connects to the machine's RustDesk direct port 21118 and relays bytes both ways for `/ws/agent/desktop`; the name says the purpose, the mechanism is the port |
 
 Installing and uninstalling are no kind and no verb: they follow from `want`.
@@ -720,6 +796,30 @@ Installing and uninstalling are no kind and no verb: they follow from `want`.
 checks a configuration before it is saved. A terminal's first size is in its
 `open`; a later size is `open {kind: command, module: agent, verb: resize,
 shell: <id>, cols, rows}`, closed as soon as it is applied.
+
+### The service stream's close
+
+A `service` stream names one published entry by `id`, and the hub judges it
+for that client at that moment. The checks run in the order below and the
+first that fails gives the close its code:
+
+| `code` | Given when |
+| --- | --- |
+| `binding_unknown` | no client row has the id this socket is bound to |
+| `client_disabled` | that row is switched off on the Clients page |
+| `service_unknown` | the id names no entry in the list resolved for this client |
+| `rdp_not_shared` | the entry is an `rdp` one and its machine has stopped reporting the share |
+| `vault_locked` | the entry is the `ai` one and the vault is locked, so this client's gateway key cannot be opened or generated |
+
+`service_unknown` and `rdp_not_shared` put the id in `params` as
+`service_id`; the other three send empty params. A close with no code makes `params` the material, and what
+the material is follows from the type:
+
+| `type` | The material |
+| --- | --- |
+| `rdp` | `{host, port, password}`: where the desktop answers, and the seat password of the machine sharing it |
+| `ai` | `{base_url, api_key, model}`: the gateway on the address this client reaches it at, this client's own key, and the first model the gateway serves |
+| `web`, `port`, `file` | empty: the entry's `payload` is already everything the client needs |
 
 ### The rules the details settle
 
@@ -756,6 +856,20 @@ newer `software` than its own upgrades itself with the package the hub keeps.
 It stays as it is when the version does not parse or ends in `+dev`. The
 hub's `software` is always `neutrino_hub/{HUB_VERSION}`, and the client has no
 self-upgrade.
+
+### What a leave does to the binding
+
+`POST /api/channel/leave` is the peer's own word that it is going, answered
+401 `binding_unknown` when the token belongs to no binding with that id. What
+the hub keeps afterwards follows from the role:
+
+| Role | The row | What goes with the leave |
+| --- | --- | --- |
+| `agent` | kept in `devices.json`, with its name, its icon, its `machine_id`, its MACs, its stored credentials and its `config/devices/<id>/` | the token alone, so the machine is still on the Devices page and a new link binds it again |
+| `client` | deleted from the client list | the token and the client's gateway key, revoked in the same step |
+
+A device row is kept past the binding because the row is the hub's record of
+the machine; a client row is not, because the client is the binding.
 
 ### What a refusal does to the binding
 
