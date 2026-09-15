@@ -8,6 +8,10 @@ service handler needs from the hub comes down a ``service`` stream the
 session opens on request. The resident owns the handlers and the store; the
 session tells it what changed through its callbacks and never touches them.
 
+A ``refused`` frame ends the socket whenever it arrives, and says the same
+as one that arrives instead of the welcome: its code decides what becomes
+of the binding.
+
 Errors are ``{"code", "params"}``, never an English sentence; every surface
 does its own wording.
 """
@@ -96,16 +100,21 @@ def _decode(payload) -> "dict | None":
     return message if isinstance(message, dict) else None
 
 
-def _hello_refusal(message: dict) -> Exception:
-    """What a refused frame means: the hub turned this binding away."""
+def _refusal(message: dict) -> Exception:
+    """What a refused frame means: the hub turned this binding away.
+
+    Args:
+        message: The frame, wherever on the socket it arrived.
+
+    Returns:
+        The channel error its code maps to.
+    """
     code = str(message.get("code", "") or "")
     params = message.get("params")
     params = params if isinstance(params, dict) else {}
     if code in CLIENT_PROTOCOL_REFUSAL_CODES:
         return refusal_error(code, params)
-    return GatewayRefused(
-        f"hub refused this client's hello ({code})", code=code, params=params
-    )
+    return GatewayRefused(f"hub refused this client ({code})", code=code, params=params)
 
 
 def _nobody(*_args) -> None:
@@ -388,8 +397,9 @@ class ClientHubSession:
             client: The connected socket.
 
         Returns:
-            What ended it, or None when a stop, a close from here, or
-            another socket replacing this one did.
+            What ended it: the refusal a ``refused`` frame carried, the
+            error a close or a broken wire maps to, or None when a stop, a
+            close from here, or another socket replacing this one did.
         """
         failure = None
         ended = threading.Event()
@@ -415,6 +425,9 @@ class ClientHubSession:
                 break
             try:
                 self._dispatch(client, kind, payload)
+            except GatewayRefused as refused:
+                failure = refused
+                break
             except GatewayUnreachable as error:
                 if not self._stop.is_set():
                     failure = error
@@ -464,7 +477,7 @@ class ClientHubSession:
             raise GatewayUnreachable("the hub's first frame is not a welcome")
         message_type = message.get("type")
         if message_type == protocol.FRAME_REFUSED:
-            raise _hello_refusal(message)
+            raise _refusal(message)
         if message_type != protocol.FRAME_WELCOME:
             raise GatewayUnreachable("the hub's first frame is not a welcome")
         if message.get("role") != CLIENT_HUB_ROLE:
@@ -535,6 +548,8 @@ class ClientHubSession:
         Raises:
             TypeError: When a frame carries a field of the wrong shape.
             ValueError: When a binary frame is shorter than a stream id.
+            GatewayRefused: When the frame is a refusal; the protocol
+                refusals are their own kind.
             GatewayUnreachable: When the report a state calls for cannot
                 be sent.
         """
@@ -558,6 +573,9 @@ class ClientHubSession:
             self._log(f"dropping credit on stream {message.get('stream')}")
         elif message_type == protocol.FRAME_OPEN:
             self._refuse_open(client, message)
+        elif message_type == protocol.FRAME_REFUSED:
+            # The close 4000 behind it is never read: the socket ends here.
+            raise _refusal(message)
         else:
             self._log(f"ignoring a {message_type!r} frame from the hub")
 

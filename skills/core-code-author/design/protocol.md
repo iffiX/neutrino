@@ -720,7 +720,8 @@ because one package manager holds the machine-wide lock.
 
 Taking over a machine is automatic import. The first time **Configure** is
 pressed for a module whose hub-side configuration is empty, the panel calls
-`POST /api/agent/module/<name>/import {device_id}`. The hub turns the
+`POST /api/agent/module/<name>/import {device_id}` for a module that has an
+import (`samba`, `gitea`, `podman`; `zfs` has none). The hub turns the
 `details` of the machine's latest report into its own configuration, and the
 panel then opens the configuration section.
 
@@ -731,14 +732,14 @@ the whole file back.
 | Module | What `details` reports, and what import reads |
 | --- | --- |
 | Samba | `testparm -s` parsed into the global section and each share, `pdbedit -L` into the user list |
-| Podman | `podman ps -a --format json` and `podman inspect`: each container's image, ports, volumes, environment, and whether a unit exists |
+| Podman | `podman ps -a --format json` and `podman inspect`: each container's image, ports, volumes, environment, and whether a unit exists; the registry mirrors |
 | ZFS | pools, vdevs and datasets; there is no wanted pool list, so nothing is imported |
 | Gitea | the hub's own instance; a hand-installed one reports as running on its port and is not imported |
 
 Package bytes come to the agent down a `package {module}` stream it opens, the
 same stream that serves its own upgrade. An install's or an uninstall's output
-goes up a `log {module}` stream line by line, and the drawer shows it as it
-arrives.
+goes up a `log {module}` stream line by line, and the Modules page shows it
+under the module's tab as it arrives.
 
 ### The services section, one entry per published service
 
@@ -889,6 +890,11 @@ refusal behave this way.
 binding, because the row was removed on the panel. Only the hub holding the
 pinned certificate can say it, so the peer deletes its binding and is bound
 again only by a new link.
+
+A `refused` frame arrives at any point on an open socket, not only in answer
+to `hello`, and means there what it means at the handshake: the peer reads its
+code the same way, and the close 4000 behind it ends a refusal already
+recorded.
 
 | Close code | Meaning |
 | --- | --- |

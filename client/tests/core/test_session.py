@@ -7,8 +7,9 @@ a refused first frame, a state that replaces what was held and reaches the
 resident through the callbacks, the disabled switch told once, the report
 after every state and on the interval, a service stream correlated to its
 close, the one refusal that hands the binding back and the ones the binding
-survives, a replaced socket waiting for a person, the backoff after a
-broken wire, and a stop that closes the socket.
+survives, at the door and on a live socket alike, a replaced socket waiting
+for a person, the backoff after a broken wire, and a stop that closes the
+socket.
 """
 
 import json
@@ -771,6 +772,60 @@ def test_a_hub_that_does_not_speak_this_protocol_never_unbinds(
     }
     assert listener.events == []
     assert delays == [CLIENT_BACKOFF_MAX_S] * 5
+
+
+def live_refused(code: str, params=None) -> list:
+    """A hub that welcomes, pushes a state, then refuses and closes 4000."""
+    return [
+        WELCOME,
+        STATE,
+        {"type": "refused", "code": code, "params": dict(params or {})},
+        SocketClosed(4000, code),
+    ]
+
+
+def test_binding_unknown_on_a_live_socket_hands_the_binding_back_at_once(
+    bound, monkeypatch, config_path
+):
+    """The panel forgot this client while its socket was up: the refusal is
+    read where it arrives, and what the hub published goes with it."""
+    session, listener = bound
+    script = socket_of(monkeypatch, live_refused("binding_unknown", {"id": "c1"}))
+
+    delay = session.run_once()
+    session.run_once()
+
+    assert delay == CLIENT_IDLE_POLL_INTERVAL_S
+    assert listener.names() == ["services", "unbound"]
+    assert session.last_error() == {"code": "binding_unknown", "params": {"id": "c1"}}
+    assert session.service_entries() == []
+    # The session opens no more; the resident removes the binding.
+    assert len(script.made) == 1
+    assert len(json.loads(config_path.read_text())["bindings"]) == 1
+
+
+@pytest.mark.parametrize(
+    "code, params",
+    [
+        ("protocol_too_new", {"peer": 1, "hub": 2, "min": 2}),
+        ("ticket_spent", {"id": "c1"}),
+    ],
+)
+def test_a_refusal_on_a_live_socket_keeps_the_binding_and_records_its_code(
+    bound, monkeypatch, config_path, code, params
+):
+    """The close 4000 behind the frame is the end of a refusal already
+    recorded, so the code stays the hub's own."""
+    session, listener = bound
+    socket_of(monkeypatch, live_refused(code, params))
+
+    delays = [session.run_once() for _ in range(3)]
+
+    assert delays == [CLIENT_BACKOFF_MAX_S] * 3
+    assert session.connection_state() == "reconnecting"
+    assert len(json.loads(config_path.read_text())["bindings"]) == 1
+    assert session.last_error() == {"code": code, "params": params}
+    assert "unbound" not in listener.names()
 
 
 def test_a_close_4000_without_a_frame_is_hub_refused_and_keeps_the_binding(

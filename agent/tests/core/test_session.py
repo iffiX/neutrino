@@ -1,16 +1,16 @@
 """One connection to the hub, driven with a scripted socket client.
 
 What these pin: the protocol number this build speaks, the hello card and
-the welcome card, a refusal at the door raised with its code, a report on
-the interval and at once when something changed, the stream layer as
-protocol.md draws it: an even id from the hub served, odd ids counting up
-for the streams this side opens, a binary frame as a big-endian u32 id and
-bytes, a short or unaddressed frame dropped, no ``opened`` frame ever, the
-kind table as the whole vocabulary with ``order``, ``validate`` and
-``resize`` no kinds of it and a resize arriving as a command that names
-the shell stream, a close whose params are the result and whose code is a
-refusal, credit holding bytes back, and how the socket's end is reported
-to the loop that owns it.
+the welcome card, a refusal at the door raised with its code and one on a
+live socket ending it the same way, a report on the interval and at once
+when something changed, the stream layer as protocol.md draws it: an even
+id from the hub served, odd ids counting up for the streams this side
+opens, a binary frame as a big-endian u32 id and bytes, a short or
+unaddressed frame dropped, no ``opened`` frame ever, the kind table as the
+whole vocabulary with ``order``, ``validate`` and ``resize`` no kinds of it
+and a resize arriving as a command that names the shell stream, a close
+whose params are the result and whose code is a refusal, credit holding
+bytes back, and how the socket's end is reported to the loop that owns it.
 """
 
 import json
@@ -962,6 +962,50 @@ def test_serve_returns_what_ended_the_socket(closed, expected, code):
     assert isinstance(outcome["failure"], expected)
     assert getattr(outcome["failure"], "code", "") == code
     assert not session.is_open
+
+
+@pytest.mark.parametrize(
+    "code, params",
+    [
+        ("binding_unknown", {"id": "dev-1"}),
+        ("protocol_too_new", {"peer": 2, "hub": 1, "min": 1}),
+        ("somebody_new", {}),
+    ],
+)
+def test_a_refused_frame_on_a_live_socket_ends_serve_with_its_code(code, params):
+    """A refusal says the same mid-session as at the door, and the close
+    4000 behind it finds the code already recorded."""
+    client = ScriptedClient()
+    session, _, _ = make_session(client)
+    client.feed(welcome())
+    session.connect()
+    thread, outcome = serving(session)
+    client.wait_for("report")
+
+    client.feed({"type": "refused", "code": code, "params": params})
+    client.feed(SocketClosed(4000, code))
+    thread.join(timeout=3)
+
+    assert not thread.is_alive()
+    assert isinstance(outcome["failure"], GatewayRefusedDetail)
+    assert outcome["failure"].code == code
+    assert outcome["failure"].params == params
+    assert not session.is_open
+
+
+def test_a_refused_frame_on_a_live_socket_is_read_tolerantly():
+    client = ScriptedClient()
+    session, _, _ = make_session(client)
+    client.feed(welcome())
+    session.connect()
+    thread, outcome = serving(session)
+    client.wait_for("report")
+
+    client.feed({"type": "refused", "params": "words"})
+    thread.join(timeout=3)
+
+    assert outcome["failure"].code == "channel_refused"
+    assert outcome["failure"].params == {}
 
 
 def test_closing_from_here_ends_serve_with_no_failure():

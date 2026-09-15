@@ -7,6 +7,10 @@ A reader thread takes frames off the socket and dispatches them; the
 caller's thread runs the report loop; each stream the hub opens runs on a
 thread of its own so a long command never blocks the reader.
 
+A ``refused`` frame ends the socket whenever it arrives, and says the same
+as one that arrives instead of the welcome: the loop that owns the session
+reads its code and decides what becomes of the binding.
+
 A stream exists as soon as its open arrives, and its close is its result:
 ``{stream, code, params}``, with a code making it a refusal. The hub's
 streams number even, this side's odd. Every stream sits behind a
@@ -166,8 +170,9 @@ class AgentSession:
         """Report until the socket ends.
 
         Returns:
-            What ended it: the gateway error the close or the wire failure
-            maps to, or None when :meth:`close` ended it from here.
+            What ended it: the refusal a ``refused`` frame carried, the
+            gateway error the close or the wire failure maps to, or None
+            when :meth:`close` ended it from here.
         """
         while not self._is_closed.is_set():
             try:
@@ -239,11 +244,7 @@ class AgentSession:
         if message is None:
             raise GatewayUnreachable("the hub's first frame is not a welcome")
         if message.get("type") == "refused":
-            params = message.get("params")
-            raise GatewayRefusedDetail(
-                code=str(message.get("code", "") or "") or AGENT_CODE_CHANNEL_REFUSED,
-                params=dict(params) if isinstance(params, dict) else {},
-            )
+            raise _refusal(message)
         if message.get("type") != "welcome" or message.get("role") != AGENT_HUB_ROLE:
             raise GatewayUnreachable("the hub's first frame is not a hub's welcome")
         return message
@@ -322,6 +323,9 @@ class AgentSession:
             channel = self._channel(stream_id)
             if channel is not None:
                 channel._grant(message.get("bytes", 0))
+        elif message_type == "refused":
+            # The close 4000 behind it finds the refusal already recorded.
+            self._end(_refusal(message))
         else:
             self._log(f"ignoring a {message_type!r} frame from the hub")
 
@@ -390,6 +394,22 @@ class AgentSession:
             )
         except GatewayUnreachable:
             return
+
+
+def _refusal(message: dict) -> GatewayRefusedDetail:
+    """What one ``refused`` frame says, wherever on the socket it arrives.
+
+    Args:
+        message: The frame.
+
+    Returns:
+        The refusal, its code ``channel_refused`` when the frame named none.
+    """
+    params = message.get("params")
+    return GatewayRefusedDetail(
+        code=str(message.get("code", "") or "") or AGENT_CODE_CHANNEL_REFUSED,
+        params=dict(params) if isinstance(params, dict) else {},
+    )
 
 
 def _decode(kind: str, payload) -> "dict | None":

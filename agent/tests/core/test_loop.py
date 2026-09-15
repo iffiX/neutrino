@@ -2,8 +2,9 @@
 
 What these pin: the identity card the hello carries and the five sections
 of the report, with ``error`` the most recent of its three sources; what
-each refusal at the door does to the binding, with only ``binding_unknown``
-deleting it and a replaced socket waiting for a person; the binding file
+each refusal does to the binding, at the door and on a live socket alike,
+with only ``binding_unknown`` deleting it and a replaced socket waiting for
+a person; the binding file
 shared with the CLI; the self-update a welcome's ``software`` triggers and
 its once-per-target latch; ``sync`` sending a report now and what ``probe``
 does; and the wake flag cleared before a turn rather than after it.
@@ -524,7 +525,7 @@ def test_the_error_is_the_most_recent_of_its_three_sources(
     assert agent._report_payload()["error"] is None
 
 
-# --- refusals at the door, and what each does to the binding ---
+# --- refusals, and what each does to the binding ---
 
 
 def refused(code: str, params=None) -> list:
@@ -670,6 +671,60 @@ def test_a_refusal_after_the_welcome_keeps_the_binding(config_path, monkeypatch)
     assert agent._operator is not None
     assert enrollment_module.is_bound()
     assert agent.last_error()["code"] == "channel_refused"
+
+
+def live_refusal(code: str, params=None) -> list:
+    """A hub that welcomes, then refuses on the live socket and closes 4000."""
+    return [
+        WELCOME,
+        {"type": "refused", "code": code, "params": dict(params or {})},
+        SocketClosed(4000, code),
+    ]
+
+
+def test_binding_unknown_on_a_live_socket_unbinds_without_waiting(
+    config_path, monkeypatch
+):
+    """The panel forgot this device while its socket was up: the refusal
+    is read where it arrives, not at the next hello a minute later."""
+    agent, script = scripted_agent(
+        config_path, monkeypatch, [live_refusal("binding_unknown", {"id": BINDING_ID})]
+    )
+
+    assert agent.run_once() == IDLE_POLL_INTERVAL_S
+
+    assert not config_path.exists()
+    assert not enrollment_module.is_bound()
+    assert agent._operator is None
+    assert agent.last_error() == {
+        "code": "binding_unknown",
+        "params": {"id": BINDING_ID},
+    }
+
+    assert agent.run_once() == IDLE_POLL_INTERVAL_S
+    assert len(script.clients) == 1
+
+
+@pytest.mark.parametrize(
+    "code, params",
+    [
+        ("protocol_too_new", {"peer": 2, "hub": 1, "min": 1}),
+        ("somebody_new", {}),
+    ],
+)
+def test_a_refusal_on_a_live_socket_keeps_the_binding_and_records_its_code(
+    config_path, monkeypatch, code, params
+):
+    """The close 4000 behind the frame is the end of a refusal already
+    recorded, so the code stays the hub's own."""
+    agent, _ = scripted_agent(config_path, monkeypatch, [live_refusal(code, params)])
+
+    delay = agent.run_once()
+
+    assert delay == AGENT_BACKOFF_MAX_S
+    assert agent._operator is not None
+    assert enrollment_module.is_bound()
+    assert agent.last_error() == {"code": code, "params": params}
 
 
 def test_an_unreachable_hub_backs_off_and_a_welcome_resets_it(config_path, monkeypatch):
