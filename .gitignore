@@ -61,6 +61,8 @@ hub/neutrino_hub/data/frontend/
 
 # --- Build products ---
 /dist/
+# Packages downloaded from a CI build for a look, never a release.
+/tmp-dist/
 
 # --- Generated / local ---
 /etc/neutrino/
