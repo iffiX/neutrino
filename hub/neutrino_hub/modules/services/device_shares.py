@@ -29,7 +29,7 @@ class DeviceShare:
         share_id: What the declaring machine calls this share; the entry id
             is built from it, so the machine can tell its own entry from
             the rest of the fleet's.
-        mac_address: The machine that declared it.
+        device_id: The machine that declared it.
         hostname: What the machine calls itself, for the entry's title.
         host: The address the hub reaches that machine on.
         port: The port a direct connection lands on.
@@ -44,7 +44,7 @@ class DeviceShare:
     """
 
     share_id: str
-    mac_address: str
+    device_id: str
     hostname: str
     host: str
     port: int
@@ -71,7 +71,7 @@ class DeviceShareRegistry:
     def declare(
         self,
         *,
-        mac_address: str,
+        device_id: str,
         share_id: str,
         hostname: str,
         host: str,
@@ -84,7 +84,7 @@ class DeviceShareRegistry:
         """Record that one machine is sharing its desktop.
 
         Args:
-            mac_address: The machine.
+            device_id: The machine.
             share_id: What the machine calls this share.
             hostname: What the machine calls itself.
             host: The address the hub reaches it on.
@@ -95,13 +95,12 @@ class DeviceShareRegistry:
             connected_count: How many viewers the machine has right now.
             now: The monotonic reading to stamp with; None reads the clock.
         """
-        key = (mac_address or "").lower()
-        if not key or not share_id or not host:
+        if not device_id or not share_id or not host:
             return
         with self._lock:
-            self._shares[key] = DeviceShare(
+            self._shares[device_id] = DeviceShare(
                 share_id=str(share_id),
-                mac_address=key,
+                device_id=device_id,
                 hostname=str(hostname),
                 host=str(host),
                 port=int(port),
@@ -111,14 +110,14 @@ class DeviceShareRegistry:
                 declared_at=time.monotonic() if now is None else now,
             )
 
-    def withdraw(self, mac_address: str) -> None:
+    def withdraw(self, device_id: str) -> None:
         """Forget one machine's share, because it stopped sharing.
 
         Args:
-            mac_address: The machine.
+            device_id: The machine.
         """
         with self._lock:
-            self._shares.pop((mac_address or "").lower(), None)
+            self._shares.pop(device_id, None)
 
     def live(self, *, now: "float | None" = None) -> list:
         """Every share still standing, oldest declaration first.
@@ -151,6 +150,6 @@ class DeviceShareRegistry:
             share appearing or ageing out recomposes the list.
         """
         return tuple(
-            (share.share_id, share.mac_address, share.host, share.port)
+            (share.share_id, share.device_id, share.host, share.port)
             for share in self.live(now=now)
         )

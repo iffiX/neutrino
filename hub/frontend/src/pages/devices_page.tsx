@@ -99,7 +99,7 @@ export function DevicesPage() {
   const [devices, setDevices] = useState<DeviceView[]>([]);
   const [filter, setFilter] = useState<DeviceFilter>("all");
   const [search, setSearch] = useState("");
-  const [selectedMac, setSelectedMac] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   // A link a machine joins with, for the ones the gateway cannot reach first.
@@ -158,17 +158,13 @@ export function DevicesPage() {
 
   const handleSaved = (saved: DeviceView) => {
     setDevices((current) =>
-      current.map((device) =>
-        device.mac_address === saved.mac_address ? saved : device,
-      ),
+      current.map((device) => (device.id === saved.id ? saved : device)),
     );
   };
 
-  const handleForgotten = (macAddress: string) => {
-    setDevices((current) =>
-      current.filter((device) => device.mac_address !== macAddress),
-    );
-    setSelectedMac(null);
+  const handleForgotten = (deviceId: string) => {
+    setDevices((current) => current.filter((device) => device.id !== deviceId));
+    setSelectedId(null);
   };
 
   const visibleDevices = devices.filter(
@@ -182,7 +178,7 @@ export function DevicesPage() {
   const hasManaged = managedCount > 0;
   const hasUnmanaged = managedCount < devices.length;
   const selectedDevice =
-    devices.find((device) => device.mac_address === selectedMac) ?? null;
+    devices.find((device) => device.id === selectedId) ?? null;
 
   if (resource.error !== null && devices.length === 0) {
     return (
@@ -308,7 +304,7 @@ export function DevicesPage() {
                 ? "ui.devices.filtered_empty_hint"
                 : "ui.devices.managed_empty_hint",
             )}
-            onOpen={setSelectedMac}
+            onOpen={setSelectedId}
           />
           <DeviceSection
             title={t("ui.devices.unmanaged_title")}
@@ -328,7 +324,7 @@ export function DevicesPage() {
                 ? "ui.devices.filtered_empty_hint"
                 : "ui.devices.unmanaged_empty_hint",
             )}
-            onOpen={setSelectedMac}
+            onOpen={setSelectedId}
           />
         </>
       )}
@@ -337,9 +333,9 @@ export function DevicesPage() {
         <>
           <DeviceMonitor device={selectedDevice} />
           <DeviceDrawer
-            key={selectedDevice.mac_address}
+            key={selectedDevice.id}
             device={selectedDevice}
-            onClose={() => setSelectedMac(null)}
+            onClose={() => setSelectedId(null)}
             onSaved={handleSaved}
             onForgotten={handleForgotten}
             onTaskFinished={handleTaskFinished}
@@ -357,7 +353,7 @@ interface DeviceSectionProps {
   devices: DeviceView[];
   emptyTitle: string;
   emptyHint: string;
-  onOpen: (macAddress: string) => void;
+  onOpen: (deviceId: string) => void;
 }
 
 function DeviceSection({
@@ -385,9 +381,9 @@ function DeviceSection({
         <div className="devices_grid">
           {devices.map((device) => (
             <DeviceTile
-              key={device.mac_address}
+              key={device.id}
               device={device}
-              onOpen={() => onOpen(device.mac_address)}
+              onOpen={() => onOpen(device.id)}
             />
           ))}
         </div>
@@ -417,7 +413,7 @@ function matchesSearch(device: DeviceView, search: string): boolean {
   return [
     device.name ?? "",
     device.ipv4_address,
-    device.mac_address,
+    device.link_mac,
     device.vendor,
   ].some((field) => field.toLowerCase().includes(needle));
 }

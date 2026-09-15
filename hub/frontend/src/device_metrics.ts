@@ -64,7 +64,7 @@ export function toDeviceMetrics(event: HubEvent): DeviceMetrics | null {
  *
  * Args:
  *   devices: The list as it stands.
- *   macAddress: Whose vitals these are.
+ *   deviceId: Whose vitals these are.
  *   metrics: What arrived.
  *   reportedAt: When the report the vitals came from arrived.
  *
@@ -75,11 +75,11 @@ export function toDeviceMetrics(event: HubEvent): DeviceMetrics | null {
  */
 export function withDeviceMetrics(
   devices: DeviceView[],
-  macAddress: string,
+  deviceId: string,
   metrics: DeviceMetrics,
   reportedAt: string,
 ): DeviceView[] {
-  const held = devices.find((device) => device.mac_address === macAddress);
+  const held = devices.find((device) => device.id === deviceId);
   if (held === undefined || held.client === null) {
     return devices;
   }
@@ -89,7 +89,7 @@ export function withDeviceMetrics(
     last_report_at: reportedAt,
   };
   return devices.map((device) =>
-    device.mac_address === macAddress ? { ...device, client } : device,
+    device.id === deviceId ? { ...device, client } : device,
   );
 }
 

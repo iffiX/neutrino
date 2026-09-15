@@ -17,17 +17,17 @@ from neutrino_hub.web.constants import WEB_EVENT_DEVICE_REPORT
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
-from tests.conftest import FakeAgentSessions, unlock_vault
+from tests.conftest import FakeChannelSessions, unlock_vault
 
-MAC = "aa:bb:cc:dd:ee:ff"
-PATH = f"/api/devices/{MAC}/rdp/seat_password"
+DEVICE = "device-one"
+PATH = f"/api/devices/{DEVICE}/rdp/seat_password"
 
 
 class FakeRegistry:
     device: ManagedDevice
 
-    def get(self, mac_address: str) -> ManagedDevice:
-        return FakeRegistry.device
+    def get(self, device_id: str):
+        return FakeRegistry.device if device_id == FakeRegistry.device.id else None
 
 
 class FakeRuntime:
@@ -35,7 +35,7 @@ class FakeRuntime:
 
     def __init__(self, online=()):
         self.events = PanelEventBus()
-        self.agent_sessions = FakeAgentSessions(online)
+        self.agent_sessions = FakeChannelSessions(online)
         self.desired_states = DesiredStateStore()
 
     def push_desired_state(self, key: str) -> None:
@@ -50,7 +50,7 @@ def api(monkeypatch, tmp_path):
     monkeypatch.setattr(desired_state_module, "resolved_modules", lambda platform: {})
     unlock_vault(monkeypatch, tmp_path)
     FakeRegistry.device = ManagedDevice(
-        mac_address=MAC,
+        id=DEVICE,
         name="xenode",
         client=DeviceClientInfo(token_sha256="t" * 64),
     )
@@ -58,7 +58,7 @@ def api(monkeypatch, tmp_path):
     app = FastAPI()
     app.include_router(devices_router.router)
     app.dependency_overrides[require_session] = lambda: None
-    runtime = FakeRuntime(online=[MAC])
+    runtime = FakeRuntime(online=[DEVICE])
     app.dependency_overrides[get_runtime] = lambda: runtime
     with TestClient(app) as client:
         yield client, runtime
@@ -66,17 +66,17 @@ def api(monkeypatch, tmp_path):
 
 def test_a_reset_generates_a_password_and_pushes_the_state_carrying_it(api):
     client, runtime = api
-    runtime.desired_states.ensure_seat_password(MAC)
-    before = runtime.desired_states.seat_password(MAC)
+    runtime.desired_states.ensure_seat_password(DEVICE)
+    before = runtime.desired_states.seat_password(DEVICE)
 
     answer = client.post(PATH)
 
     assert answer.status_code == 200
     assert answer.json() == {}
-    after = runtime.desired_states.seat_password(MAC)
+    after = runtime.desired_states.seat_password(DEVICE)
     assert after != before
     key, _, desired = runtime.agent_sessions.pushes[-1]
-    assert key == MAC
+    assert key == DEVICE
     assert desired["rdp"] == {"seat_password": after}
 
 
@@ -89,18 +89,18 @@ def test_a_reset_tells_the_panel_the_device_moved(api):
 
     client.post(PATH)
 
-    assert (WEB_EVENT_DEVICE_REPORT, MAC) in events
+    assert (WEB_EVENT_DEVICE_REPORT, DEVICE) in events
 
 
 def test_a_machine_with_no_channel_is_refused_and_keeps_its_password(api):
     client, runtime = api
-    runtime.desired_states.ensure_seat_password(MAC)
-    before = runtime.desired_states.seat_password(MAC)
+    runtime.desired_states.ensure_seat_password(DEVICE)
+    before = runtime.desired_states.seat_password(DEVICE)
     runtime.agent_sessions.online.clear()
 
     answer = client.post(PATH)
 
     assert answer.status_code == 409
     assert answer.json()["detail"] == {"code": "agent_offline", "params": {}}
-    assert runtime.desired_states.seat_password(MAC) == before
+    assert runtime.desired_states.seat_password(DEVICE) == before
     assert runtime.agent_sessions.pushes == []

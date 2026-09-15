@@ -192,7 +192,7 @@ def unlock_vault(monkeypatch, tmp_path) -> bytes:
     return data_key
 
 
-class ScriptedAgentStream:
+class ScriptedChannelStream:
     """One stream as a route sees it, with the agent played by a test.
 
     Built on the loop the route runs on; a test on another thread drives it
@@ -268,7 +268,7 @@ class ScriptedAgentStream:
         return b"".join(self.sent)
 
 
-class FakeAgentSessions:
+class FakeChannelSessions:
     """The live-socket registry as routes see it: who is online, what ran.
 
     Attributes:
@@ -321,7 +321,7 @@ class FakeAgentSessions:
         self._require(key)
         if self.refusal is not None:
             raise StreamRefusedError(*self.refusal)
-        stream = ScriptedAgentStream(kind, dict(args))
+        stream = ScriptedChannelStream(kind, dict(args))
         self.streams.append(stream)
         script = self.scripts.get(kind)
         if script is not None:
@@ -449,14 +449,14 @@ class FakeModuleRuntime:
         from neutrino_hub.modules.devices.desired_state import DesiredStateStore
         from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 
-        self.devices = {device.mac_address.lower(): device for device in devices}
-        self.agent_sessions = FakeAgentSessions(online)
+        self.devices = {device.id: device for device in devices}
+        self.agent_sessions = FakeChannelSessions(online)
         self.published_services = StubPublishedServices()
         self.desired_states = DesiredStateStore()
-        self.client_modules: dict = {}
-        self.client_platform: dict = {}
-        self.client_hostname: dict = {}
-        self.client_address: dict = {}
+        self.device_modules: dict = {}
+        self.device_platform: dict = {}
+        self.device_hostname: dict = {}
+        self.device_address: dict = {}
         self.lan_addresses = list(lan_addresses)
         self.agent_module_orders = AgentModuleController(
             cache=None, locks=DeviceInstallLocks(), dispatch=holding_dispatch
@@ -470,7 +470,7 @@ class FakeModuleRuntime:
 
     def report(self, key: str, module: str, state: str = "installed", **details):
         """Let the runtime hold one module's last report for one device."""
-        self.client_modules.setdefault(key.lower(), {})[module] = {
+        self.device_modules.setdefault(key, {})[module] = {
             "state": state,
             "code": "",
             "params": {},
@@ -501,22 +501,31 @@ class FakeDeviceRegistry:
     def all_stored(self) -> list:
         return list(FakeDeviceRegistry.runtime.devices.values())
 
-    def get(self, mac_address: str):
-        from neutrino_hub.modules.devices.registry import ManagedDevice
-
-        key = mac_address.lower()
-        return FakeDeviceRegistry.runtime.devices.get(key) or ManagedDevice(
-            mac_address=key
-        )
+    def get(self, device_id: str):
+        return FakeDeviceRegistry.runtime.devices.get(device_id)
 
 
-def managed_device(mac_address: str, name: str = ""):
-    """A stored device the hub issued an agent token for."""
+def managed_device(
+    name: str = "", *, device_id: str = "", machine_id: str = "", link_mac: str = ""
+):
+    """A stored device the hub issued an agent token for, under a fresh id.
+
+    Args:
+        name: What the device is called.
+        device_id: The id to store it under; blank generates one.
+        machine_id: The machine's own id, when the case needs one.
+        link_mac: The MAC its agent last reported, when the case needs one.
+    """
+    from uuid import uuid4
+
     from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice
 
     return ManagedDevice(
-        mac_address=mac_address.lower(),
+        id=device_id or uuid4().hex,
         name=name or None,
+        machine_id=machine_id,
+        mac_addresses=[link_mac] if link_mac else [],
+        link_mac=link_mac,
         client=DeviceClientInfo(token_sha256="t"),
     )
 

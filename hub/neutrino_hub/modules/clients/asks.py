@@ -44,7 +44,7 @@ def answer_ask(ask: dict, *, is_disabled: bool, shares: list, seat_password_of) 
         ask: The decoded frame.
         is_disabled: Whether the asking client is switched off.
         shares: The live :class:`DeviceShare` records.
-        seat_password_of: Called with a device key; returns its seat
+        seat_password_of: Called with a device id; returns its seat
             password, empty when it has none.
 
     Returns:
@@ -74,7 +74,7 @@ def _rdp_connect(args: dict, shares: list, seat_password_of) -> dict:
                 "result": {
                     "host": share.host,
                     "port": share.port,
-                    "password": seat_password_of(share.mac_address),
+                    "password": seat_password_of(share.device_id),
                 }
             }
     return {"code": CLIENT_CODE_RDP_NOT_SHARED, "params": {"service_id": service_id}}

@@ -95,9 +95,7 @@ export function RemoteDesktopPanel({
     setError(null);
     try {
       setStatus(
-        await apiGet<RemoteDesktopView>(
-          `/devices/${device.mac_address}/remote_desktop`,
-        ),
+        await apiGet<RemoteDesktopView>(`/devices/${device.id}/remote_desktop`),
       );
     } catch (cause: unknown) {
       setError(describeError(cause));
@@ -107,7 +105,7 @@ export function RemoteDesktopPanel({
   useEffect(() => {
     void loadStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [device.mac_address, moduleRevision]);
+  }, [device.id, moduleRevision]);
 
   // When an install or password task finishes, re-read the status so a freshly
   // installed product shows its id without a manual refresh.
@@ -136,7 +134,7 @@ export function RemoteDesktopPanel({
       confirmLabel: t("ui.remote_desktop.reset_confirm"),
       onConfirm: () => {
         setError(null);
-        void apiPost(`/devices/${device.mac_address}/rdp/seat_password`).catch(
+        void apiPost(`/devices/${device.id}/rdp/seat_password`).catch(
           (cause: unknown) => setError(describeResetError(cause)),
         );
       },
@@ -158,13 +156,13 @@ export function RemoteDesktopPanel({
           />
           <ProductCard
             status={status.anydesk}
-            macAddress={device.mac_address}
+            deviceId={device.id}
             isBusy={task.isRunning}
             onRun={runTask}
           />
           <ProductCard
             status={status.teamviewer}
-            macAddress={device.mac_address}
+            deviceId={device.id}
             isBusy={task.isRunning}
             onRun={runTask}
           />
@@ -282,15 +280,15 @@ function RustdeskCard({
 
 interface ProductCardProps {
   status: RemoteDesktopStatus;
-  macAddress: string;
+  deviceId: string;
   isBusy: boolean;
   onRun: (path: string, body?: unknown) => void;
 }
 
-function ProductCard({ status, macAddress, isBusy, onRun }: ProductCardProps) {
+function ProductCard({ status, deviceId, isBusy, onRun }: ProductCardProps) {
   const [password, setPassword] = useState("");
   const label = PRODUCT_LABELS[status.product] ?? status.product;
-  const base = `/devices/${macAddress}/remote_desktop/${status.product}`;
+  const base = `/devices/${deviceId}/remote_desktop/${status.product}`;
 
   return (
     <div className="remote_desktop_card">

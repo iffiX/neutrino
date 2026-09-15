@@ -1,17 +1,24 @@
-"""Where a magic packet goes, and what one refusal means for the rest.
+"""Where a magic packet goes, whose MAC it carries, and what one refusal means.
 
 A packet is broadcast on every served network, because which one the
 sleeping device is on cannot be known while it sleeps. Never on an overlay: a
 tunnel has no broadcast domain, and its device refuses the packet outright,
-which must not stop the packet for the LAN.
+which must not stop the packet for the LAN. The packet names the MAC the
+device's agent most recently ran its socket on, and a device that has never
+reported one is refused.
 """
 
 import pytest
+from fastapi import HTTPException
 
+from neutrino_hub.modules.devices.registry import ManagedDevice
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.web.routers import devices as devices_router
 
 from tests.conftest import lan_entry, network_config, wan_entry
+
+DEVICE = "device-one"
+LINK_MAC = "aa:bb:cc:dd:ee:ff"
 
 
 class FakeRuntime:
@@ -20,6 +27,22 @@ class FakeRuntime:
 
     def network(self) -> RouterNetworkConfig:
         return self._network
+
+
+class FakeRegistry:
+    device: ManagedDevice
+
+    def get(self, device_id: str):
+        return FakeRegistry.device if device_id == FakeRegistry.device.id else None
+
+
+@pytest.fixture(autouse=True)
+def stored(monkeypatch):
+    """One stored device whose agent last ran on the LAN MAC."""
+    FakeRegistry.device = ManagedDevice(
+        id=DEVICE, name="box", mac_addresses=[LINK_MAC], link_mac=LINK_MAC
+    )
+    monkeypatch.setattr(devices_router, "DeviceRegistry", FakeRegistry)
 
 
 @pytest.fixture
@@ -43,14 +66,38 @@ def test_the_packet_goes_to_the_served_network_and_never_the_overlay(
     monkeypatch.setattr(
         devices_router,
         "send_magic_packet",
-        lambda mac, *, broadcast_address: sent.append(broadcast_address),
+        lambda mac, *, broadcast_address: sent.append((mac, broadcast_address)),
     )
 
-    result = devices_router.wake("aa:bb:cc:dd:ee:ff", runtime=gateway)
+    result = devices_router.wake(DEVICE, runtime=gateway)
 
     assert result.is_sent is True
-    assert sent == ["192.168.100.255"]
+    assert sent == [(LINK_MAC, "192.168.100.255")]
     assert "10.126.126" not in result.message
+
+
+def test_a_device_that_never_reported_a_mac_is_refused(gateway, monkeypatch):
+    FakeRegistry.device.link_mac = ""
+    monkeypatch.setattr(
+        devices_router, "send_magic_packet", lambda mac, *, broadcast_address: None
+    )
+
+    with pytest.raises(HTTPException) as refused:
+        devices_router.wake(DEVICE, runtime=gateway)
+
+    assert refused.value.status_code == 409
+    assert refused.value.detail == {
+        "code": "wol_no_mac",
+        "params": {"device_id": DEVICE},
+    }
+
+
+def test_an_unknown_device_is_refused_typed(gateway):
+    with pytest.raises(HTTPException) as refused:
+        devices_router.wake("nonsense", runtime=gateway)
+
+    assert refused.value.status_code == 404
+    assert refused.value.detail["code"] == "device_unknown"
 
 
 def test_the_overlay_still_counts_for_reaching_the_hub(gateway):
@@ -76,7 +123,7 @@ def test_one_domain_refusing_does_not_stop_the_others(monkeypatch):
 
     monkeypatch.setattr(devices_router, "send_magic_packet", send)
 
-    result = devices_router.wake("aa:bb:cc:dd:ee:ff", runtime=FakeRuntime(network))
+    result = devices_router.wake(DEVICE, runtime=FakeRuntime(network))
 
     assert result.is_sent is True
     assert result.message == "magic packet sent to 192.168.101.255"
@@ -91,7 +138,7 @@ def test_every_domain_refusing_is_the_failure_it_says(monkeypatch):
 
     monkeypatch.setattr(devices_router, "send_magic_packet", send)
 
-    result = devices_router.wake("aa:bb:cc:dd:ee:ff", runtime=FakeRuntime(network))
+    result = devices_router.wake(DEVICE, runtime=FakeRuntime(network))
 
     assert result.is_sent is False
     assert "192.168.100.255" in result.message

@@ -54,7 +54,7 @@ async def agent_socket(websocket: WebSocket) -> None:
         return
     registry = DeviceRegistry()
     device = await asyncio.to_thread(
-        registry.find_by_client_token, str(hello.get("token", ""))
+        registry.find_by_token, str(hello.get("token", ""))
     )
     if device is None:
         await websocket.close(code=AGENT_WS_CLOSE_UNKNOWN_TOKEN, reason="unknown_token")
@@ -67,7 +67,7 @@ async def agent_socket(websocket: WebSocket) -> None:
         return
 
     session = AgentSession(
-        key=device.mac_address,
+        key=device.id,
         websocket=websocket,
         loop=asyncio.get_running_loop(),
         hostname=str(hello.get("hostname", "") or ""),
@@ -89,7 +89,7 @@ async def agent_socket(websocket: WebSocket) -> None:
             {
                 "type": "welcome",
                 "hub_version": HUB_VERSION,
-                "device_id": device.mac_address,
+                "device_id": device.id,
                 "state_hash": state_hash,
             }
         )
@@ -137,11 +137,11 @@ async def _serve(websocket: WebSocket, runtime, session: AgentSession, device):
             if is_module_change:
                 runtime.published_services.schedule_refresh()
             if is_panel_change:
-                runtime.events.publish(WEB_EVENT_DEVICE_REPORT, device.mac_address)
+                runtime.events.publish(WEB_EVENT_DEVICE_REPORT, device.id)
             runtime.events.publish(
                 WEB_EVENT_METRICS,
-                device.mac_address,
-                data=dict(runtime.client_metrics.get(device.mac_address, {})),
+                device.id,
+                data=dict(runtime.device_metrics.get(device.id, {})),
             )
         elif kind == "state_request":
             state_hash, desired = await asyncio.to_thread(

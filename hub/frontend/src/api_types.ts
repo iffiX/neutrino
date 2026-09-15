@@ -815,6 +815,12 @@ export interface DeviceInstallOutputResponse {
 }
 
 /** A link a machine can join the gateway with. */
+/** Ask for a link a machine can join with, bound to a device or blank. */
+export interface DeviceEnrollmentRequest {
+  name: string;
+  device_id: string | null;
+}
+
 export interface DeviceEnrollmentView {
   link: string;
   token: string;
@@ -861,7 +867,10 @@ export interface DeviceOnlineView {
   device_id: string;
   name: string;
   hostname: string;
-  platform: string;
+  /** The platform tuple its agent reported: os, family, arch. */
+  platform: Record<string, string>;
+  /** Whether this is the hub box's own agent. */
+  is_hub: boolean;
 }
 
 /** The machines a terminal or a file browser can open on, hub box first. */
@@ -870,7 +879,13 @@ export interface DevicesOnlineResponse {
 }
 
 export interface DeviceView {
-  mac_address: string;
+  /** The binding id, or `scan:<mac>` for a scan row no device claims. */
+  id: string;
+  /** The machine's own id, as its agent reported it; empty until it joins. */
+  machine_id: string;
+  /** Every MAC the agent has reported on its link, and the most recent one. */
+  mac_addresses: string[];
+  link_mac: string;
   ipv4_address: string;
   name: string | null;
   icon: string | null;

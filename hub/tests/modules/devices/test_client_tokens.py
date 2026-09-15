@@ -15,53 +15,61 @@ def config_dir(tmp_path, monkeypatch):
     return tmp_path
 
 
-def stored_client(config_dir) -> dict:
+@pytest.fixture
+def device_id(config_dir) -> str:
+    return DeviceRegistry().create("box").id
+
+
+def stored_client(config_dir, device_id: str) -> dict:
     data = json.loads((config_dir / "devices" / "devices.json").read_text())
-    return data["devices"]["aa:bb:cc:dd:ee:01"]["client"]
+    return data["devices"][device_id]["client"]
 
 
-def test_only_the_hash_reaches_the_device_file(config_dir):
-    token = DeviceRegistry().issue_client_token("aa:bb:cc:dd:ee:01")
+def test_only_the_hash_reaches_the_device_file(config_dir, device_id):
+    token = DeviceRegistry().issue_token(device_id)
 
-    client = stored_client(config_dir)
+    client = stored_client(config_dir, device_id)
     assert client["token_sha256"] == hashlib.sha256(token.encode()).hexdigest()
     assert token not in (config_dir / "devices" / "devices.json").read_text()
     # Presence is runtime state: no version, no last-seen stamp on disk.
     assert set(client) == {"token_sha256"}
 
 
-def test_the_raw_token_still_authenticates(config_dir):
-    registry = DeviceRegistry()
-    token = registry.issue_client_token("aa:bb:cc:dd:ee:01")
+def test_the_raw_token_still_authenticates(config_dir, device_id):
+    token = DeviceRegistry().issue_token(device_id)
 
-    found = DeviceRegistry().find_by_client_token(token)
-    assert found is not None and found.mac_address == "aa:bb:cc:dd:ee:01"
-    assert DeviceRegistry().find_by_client_token("not-the-token") is None
+    found = DeviceRegistry().find_by_token(token)
+    assert found is not None and found.id == device_id
+    assert DeviceRegistry().find_by_token("not-the-token") is None
     # The stored hash itself must not open the door.
     assert (
-        DeviceRegistry().find_by_client_token(
-            hashlib.sha256(token.encode()).hexdigest()
-        )
+        DeviceRegistry().find_by_token(hashlib.sha256(token.encode()).hexdigest())
         is None
     )
 
 
-def test_a_reissued_token_invalidates_the_old_one(config_dir):
+def test_a_reissued_token_invalidates_the_old_one(config_dir, device_id):
     registry = DeviceRegistry()
-    old = registry.issue_client_token("aa:bb:cc:dd:ee:01")
-    new = registry.issue_client_token("aa:bb:cc:dd:ee:01")
+    old = registry.issue_token(device_id)
+    new = registry.issue_token(device_id)
 
-    assert DeviceRegistry().find_by_client_token(old) is None
-    assert DeviceRegistry().find_by_client_token(new) is not None
+    assert DeviceRegistry().find_by_token(old) is None
+    assert DeviceRegistry().find_by_token(new) is not None
 
 
-def test_forgetting_the_client_drops_the_hash(config_dir):
+def test_a_token_is_issued_to_stored_rows_only(config_dir):
+    with pytest.raises(KeyError):
+        DeviceRegistry().issue_token("nonsense")
+    with pytest.raises(KeyError):
+        DeviceRegistry().issue_token("scan:aa:bb:cc:dd:ee:ff")
+
+
+def test_dropping_the_token_keeps_the_row(config_dir, device_id):
     registry = DeviceRegistry()
-    registry.annotate("aa:bb:cc:dd:ee:01", {"name": "kept"})
-    token = registry.issue_client_token("aa:bb:cc:dd:ee:01")
+    token = registry.issue_token(device_id)
 
-    registry.forget_client("aa:bb:cc:dd:ee:01")
+    registry.drop_token(device_id)
 
-    assert stored_client(config_dir)["token_sha256"] is None
-    assert DeviceRegistry().find_by_client_token(token) is None
-    assert DeviceRegistry().get("aa:bb:cc:dd:ee:01").name == "kept"
+    assert stored_client(config_dir, device_id)["token_sha256"] is None
+    assert DeviceRegistry().find_by_token(token) is None
+    assert DeviceRegistry().get(device_id).name == "box"

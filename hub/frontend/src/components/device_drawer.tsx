@@ -19,6 +19,7 @@ import { DEVICE_ICON_NAMES, toDeviceIconName } from "../device_icon";
 import {
   DEVICE_REACH_KEYS,
   isDeviceManaged,
+  toDeviceLabel,
   toDeviceReach,
   toDevicePresence,
   toDeviceUpgradePath,
@@ -33,6 +34,7 @@ import { useTaskStream } from "../use_task_stream";
 import type {
   DeviceActionName,
   DeviceAnnotation,
+  DeviceEnrollmentRequest,
   DeviceEnrollmentView,
   DeviceView,
   DeviceWolResult,
@@ -127,7 +129,7 @@ interface DeviceDrawerProps {
   device: DeviceView;
   onClose: () => void;
   onSaved: (device: DeviceView) => void;
-  onForgotten: (macAddress: string) => void;
+  onForgotten: (deviceId: string) => void;
   onTaskFinished?: () => void;
 }
 
@@ -165,9 +167,8 @@ export function DeviceDrawer({
   const isManaged = isDeviceManaged(device);
   const isAgentOnline = isManaged && device.is_agent_online;
 
-  useHubEvents(
-    [{ type: HUB_EVENT_MODULE_ORDER, key: device.mac_address }],
-    () => setModuleRevision((current) => current + 1),
+  useHubEvents([{ type: HUB_EVENT_MODULE_ORDER, key: device.id }], () =>
+    setModuleRevision((current) => current + 1),
   );
 
   // An install's outcome — the agent appearing, the version catching up — is
@@ -213,9 +214,7 @@ export function DeviceDrawer({
         name: name.trim(),
         icon,
       };
-      onSaved(
-        await apiPut<DeviceView>(`/devices/${device.mac_address}`, annotation),
-      );
+      onSaved(await apiPut<DeviceView>(`/devices/${device.id}`, annotation));
       setNotice(t("ui.drawer.saved"));
     } catch (cause: unknown) {
       setError(describeError(cause));
@@ -228,11 +227,12 @@ export function DeviceDrawer({
     setError(null);
     setNotice(null);
     try {
+      const request: DeviceEnrollmentRequest = {
+        name: device.name ?? "",
+        device_id: device.id,
+      };
       setEnrollment(
-        await apiPost<DeviceEnrollmentView>("/devices/enrollment", {
-          name: device.name ?? "",
-          mac_address: device.mac_address,
-        }),
+        await apiPost<DeviceEnrollmentView>("/devices/enrollment", request),
       );
     } catch (cause: unknown) {
       setError(describeError(cause));
@@ -244,7 +244,7 @@ export function DeviceDrawer({
     setNotice(null);
     try {
       const result = await apiPost<DeviceWolResult>(
-        `/devices/${device.mac_address}/wol`,
+        `/devices/${device.id}/wol`,
       );
       setNotice(result.message);
     } catch (cause: unknown) {
@@ -266,7 +266,7 @@ export function DeviceDrawer({
     confirm.ask({
       title: t("ui.drawer.action_title", {
         action: t(deviceAction.labelKey),
-        name: device.name ?? device.mac_address,
+        name: toDeviceLabel(device),
       }),
       body: t("ui.drawer.action_body"),
       confirmLabel: t(deviceAction.labelKey),
@@ -281,7 +281,7 @@ export function DeviceDrawer({
     setRunningLabel(t(deviceAction.labelKey));
     try {
       const started = await apiPost<TaskStarted>(
-        `/devices/${device.mac_address}/action`,
+        `/devices/${device.id}/action`,
         { action: deviceAction.action },
       );
       setTaskId(started.task_id);
@@ -294,7 +294,7 @@ export function DeviceDrawer({
   const handleForget = () =>
     confirm.ask({
       title: t("ui.drawer.forget_title", {
-        name: device.name ?? device.mac_address,
+        name: toDeviceLabel(device),
       }),
       body: t("ui.drawer.forget_body"),
       confirmLabel: t("ui.drawer.forget_confirm"),
@@ -304,8 +304,8 @@ export function DeviceDrawer({
   const forgetDevice = async () => {
     setError(null);
     try {
-      await apiDelete<Record<string, never>>(`/devices/${device.mac_address}`);
-      onForgotten(device.mac_address);
+      await apiDelete<Record<string, never>>(`/devices/${device.id}`);
+      onForgotten(device.id);
     } catch (cause: unknown) {
       setError(describeError(cause));
     }
@@ -313,7 +313,7 @@ export function DeviceDrawer({
 
   const openPage = (path: string) => {
     onClose();
-    navigate(`${path}?device=${encodeURIComponent(device.mac_address)}`);
+    navigate(`${path}?device=${encodeURIComponent(device.id)}`);
   };
 
   // A portal, so the drawer escapes the page's stacking context — inside it,
@@ -333,10 +333,12 @@ export function DeviceDrawer({
                   tone={device.is_online ? "ok" : "idle"}
                   isPulsing={device.is_online}
                 />
-                {device.name ?? device.mac_address}
+                {toDeviceLabel(device)}
               </span>
               <span className="device_drawer_subtitle">
-                {device.ipv4_address} · {device.mac_address}
+                {[device.ipv4_address, device.link_mac]
+                  .filter((part) => part.length > 0)
+                  .join(" · ")}
               </span>
             </span>
           </div>
@@ -425,7 +427,9 @@ export function DeviceDrawer({
               <input
                 className="input"
                 value={name}
-                placeholder={device.mac_address}
+                placeholder={
+                  device.link_mac.length > 0 ? device.link_mac : device.id
+                }
                 onChange={(event) => setName(event.target.value)}
               />
             </label>
@@ -481,7 +485,7 @@ export function DeviceDrawer({
                 link={enrollment.link}
                 expiresInS={enrollment.expires_in_s}
                 title={t("ui.drawer.enrollment_title", {
-                  name: device.name ?? device.mac_address,
+                  name: toDeviceLabel(device),
                 })}
                 hint={t("ui.drawer.enrollment_hint")}
                 onDismiss={() => setEnrollment(null)}

@@ -62,7 +62,7 @@ def box(monkeypatch, tmp_path):
     return tmp_path
 
 
-MAC = "aa:bb:cc:dd:ee:ff"
+DEVICE = "device-one"
 
 
 class StubSessions:
@@ -106,21 +106,21 @@ def cache(
 
 def hosting_samba() -> None:
     store = DesiredStateStore()
-    store.set_enabled(MAC, "samba", True)
+    store.set_enabled(DEVICE, "samba", True)
     store.write(
-        MAC, "samba", {"shares": [{"name": "media", "path": "/srv"}], "users": []}
+        DEVICE, "samba", {"shares": [{"name": "media", "path": "/srv"}], "users": []}
     )
 
 
 def test_a_devices_samba_share_is_published_at_the_devices_address(box):
     hosting_samba()
-    sessions = StubSessions({MAC: report(samba={"is_active": True})})
+    sessions = StubSessions({DEVICE: report(samba={"is_active": True})})
 
     entries, fingerprint = cache(
-        StubUnits(), sessions=sessions, addresses={MAC: "192.168.100.7"}
+        StubUnits(), sessions=sessions, addresses={DEVICE: "192.168.100.7"}
     ).entries()
 
-    assert [e["id"] for e in entries] == ["samba_aa-bb-cc-dd-ee-ff_media"]
+    assert [e["id"] for e in entries] == ["samba_device-one_media"]
     assert entries[0]["payload"]["host"] == "192.168.100.7"
     assert entries[0]["is_healthy"] is True
     assert len(fingerprint) == 16
@@ -128,12 +128,12 @@ def test_a_devices_samba_share_is_published_at_the_devices_address(box):
 
 def test_a_module_that_is_installed_but_switched_off_publishes_nothing(box):
     DesiredStateStore().write(
-        MAC, "samba", {"shares": [{"name": "media", "path": "/srv"}], "users": []}
+        DEVICE, "samba", {"shares": [{"name": "media", "path": "/srv"}], "users": []}
     )
-    sessions = StubSessions({MAC: report(samba={"is_active": True})})
+    sessions = StubSessions({DEVICE: report(samba={"is_active": True})})
 
     entries, _ = cache(
-        StubUnits(), sessions=sessions, addresses={MAC: "10.0.0.7"}
+        StubUnits(), sessions=sessions, addresses={DEVICE: "10.0.0.7"}
     ).entries()
 
     assert entries == []
@@ -142,11 +142,11 @@ def test_a_module_that_is_installed_but_switched_off_publishes_nothing(box):
 def test_a_module_that_is_on_but_not_installed_publishes_nothing(box):
     hosting_samba()
     sessions = StubSessions(
-        {MAC: {"modules": {"samba": {"state": "absent", "details": {}}}}}
+        {DEVICE: {"modules": {"samba": {"state": "absent", "details": {}}}}}
     )
 
     entries, _ = cache(
-        StubUnits(), sessions=sessions, addresses={MAC: "10.0.0.7"}
+        StubUnits(), sessions=sessions, addresses={DEVICE: "10.0.0.7"}
     ).entries()
 
     assert entries == []
@@ -154,14 +154,14 @@ def test_a_module_that_is_on_but_not_installed_publishes_nothing(box):
 
 def test_a_devices_gitea_and_containers_come_from_its_report(box, monkeypatch):
     store = DesiredStateStore()
-    store.set_enabled(MAC, "gitea", True)
-    store.set_enabled(MAC, "podman", True)
+    store.set_enabled(DEVICE, "gitea", True)
+    store.set_enabled(DEVICE, "podman", True)
     monkeypatch.setattr(
         PublishedServiceCache, "_is_answering", lambda self, url: url.endswith(":3000/")
     )
     sessions = StubSessions(
         {
-            MAC: report(
+            DEVICE: report(
                 gitea={"is_running": True, "url": "http://192.168.100.7:3000/"},
                 podman={
                     "containers": [
@@ -178,15 +178,13 @@ def test_a_devices_gitea_and_containers_come_from_its_report(box, monkeypatch):
     )
 
     entries, _ = cache(
-        StubUnits(), sessions=sessions, addresses={MAC: "192.168.100.7"}
+        StubUnits(), sessions=sessions, addresses={DEVICE: "192.168.100.7"}
     ).entries()
 
     by_id = {e["id"]: e for e in entries}
-    assert by_id["gitea_aa-bb-cc-dd-ee-ff"]["is_healthy"] is True
-    assert by_id["gitea_aa-bb-cc-dd-ee-ff"]["payload"] == {
-        "url": "http://192.168.100.7:3000/"
-    }
-    assert by_id["podman_aa-bb-cc-dd-ee-ff_web_8080"]["payload"] == {
+    assert by_id["gitea_device-one"]["is_healthy"] is True
+    assert by_id["gitea_device-one"]["payload"] == {"url": "http://192.168.100.7:3000/"}
+    assert by_id["podman_device-one_web_8080"]["payload"] == {
         "host": "192.168.100.7",
         "port": 8080,
     }
@@ -222,10 +220,10 @@ def test_the_composition_is_cached_until_expired(box):
 def test_entries_for_resolves_the_hub_hosts_for_one_caller(box):
     """A module hosted on the hub box's own agent sits at a hub address."""
     hosting_samba()
-    sessions = StubSessions({MAC: report(samba={"is_active": True})})
+    sessions = StubSessions({DEVICE: report(samba={"is_active": True})})
 
     resolved = cache(
-        StubUnits(), sessions=sessions, addresses={MAC: "192.168.100.1"}
+        StubUnits(), sessions=sessions, addresses={DEVICE: "192.168.100.1"}
     ).entries_for("192.168.93.1")
 
     assert resolved[0]["payload"]["host"] == "192.168.93.1"
@@ -326,13 +324,13 @@ def worker() -> concurrent.futures.ThreadPoolExecutor:
 def test_a_scheduled_refresh_composes_the_list_with_nobody_reading_it(box):
     """A device's report changing what it hosts is on screen before a read."""
     hosting_samba()
-    sessions = StubSessions({MAC: report(samba={"is_active": True})})
+    sessions = StubSessions({DEVICE: report(samba={"is_active": True})})
     changes = ChangeCounter()
     executor = worker()
     held = cache(
         StubUnits(),
         sessions=sessions,
-        addresses={MAC: "192.168.100.7"},
+        addresses={DEVICE: "192.168.100.7"},
         on_fingerprint_change=changes,
         executor=executor,
     )
@@ -341,9 +339,7 @@ def test_a_scheduled_refresh_composes_the_list_with_nobody_reading_it(box):
     executor.shutdown(wait=True)
 
     assert changes.count == 1
-    assert [entry["id"] for entry in held.entries()[0]] == [
-        "samba_aa-bb-cc-dd-ee-ff_media"
-    ]
+    assert [entry["id"] for entry in held.entries()[0]] == ["samba_device-one_media"]
 
 
 def test_schedules_arriving_while_one_runs_are_answered_by_one_more(box):

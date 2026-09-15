@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from tests.conftest import FakeAgentSessions
+from tests.conftest import FakeChannelSessions
 
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.xray.stats_client import OutboundTraffic
@@ -12,7 +12,7 @@ from neutrino_hub.web import stats_collector
 from neutrino_hub.web.models import OutboundTrafficView, StatsFrame
 from neutrino_hub.web.stats_collector import PanelStatsCollector
 
-BEATING_MAC = "aa:bb:cc:dd:ee:01"
+BEATING_DEVICE = "device-one"
 UPLINK = "enp2s0"
 
 
@@ -77,7 +77,7 @@ class StubRuntime:
     def __init__(self, online=()):
         self.stats = StubStats()
         self.node_probe = StubNodeProbe()
-        self.agent_sessions = FakeAgentSessions(online)
+        self.agent_sessions = FakeChannelSessions(online)
         # Every node reading this collector published, newest last.
         self.node_readings: list = []
 
@@ -144,14 +144,15 @@ def config_dir(tmp_path, monkeypatch):
 
 def test_an_agent_holding_a_socket_counts_in_the_strip(config_dir):
     """The strip's DEVICES chip counts the agents with a live channel."""
-    runtime = StubRuntime(online=[BEATING_MAC])
+    runtime = StubRuntime(online=[BEATING_DEVICE])
 
     assert PanelStatsCollector(runtime=runtime).collect().agent_device_count == 1
 
 
 def test_an_agent_without_a_socket_leaves_the_count(config_dir):
     """A token alone is an offer, and a closed socket is not a live agent."""
-    DeviceRegistry().issue_client_token(BEATING_MAC)
+    registry = DeviceRegistry()
+    registry.issue_token(registry.create("box").id)
 
     assert PanelStatsCollector(runtime=StubRuntime()).collect().agent_device_count == 0
 

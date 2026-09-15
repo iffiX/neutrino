@@ -36,7 +36,7 @@ class FakeRuntime:
         self._status = status
         self._connections = RouterConnectionSet()
         self.applied: list[str | None] = []
-        self.client_address: dict[str, str] = {}
+        self.device_address: dict[str, str] = {}
 
     def network(self) -> RouterNetworkConfig:
         return RouterNetworkConfig.from_dict(self._config.to_dict())
@@ -516,7 +516,7 @@ def test_a_row_counts_the_devices_reaching_the_hub_across_it(box, monkeypatch):
     monkeypatch.setattr(
         network_router, "device_addresses", lambda: {"wt0": "100.88.178.129/16"}
     )
-    runtime.client_address = {
+    runtime.device_address = {
         "one": "100.88.4.9",
         "two": "100.88.7.2",
         "three": "192.168.100.40",

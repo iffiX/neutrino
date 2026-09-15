@@ -88,7 +88,6 @@
   "code.login_password_needed": "A login needs a password.",
   "code.login_refused": "That login cannot be stored: {detail}",
   "code.login_rejected": "That machine refused the login.",
-  "code.mac_address_invalid": "{value} is not a MAC address.",
   "code.management_key_missing": "The gateway has no management key on this box, so its accounts cannot be reached.",
   "code.module_action_unknown": "{action} is not something {name} can be asked to do.",
   "code.module_architecture_unsupported": "{name} runs on {architectures}; this machine is {architecture}.",
@@ -209,5 +208,6 @@
   "code.vlan_parent_not_split": "{parent} is not split, so it can carry no VLANs.",
   "code.wifi_join_failed": "{ssid} did not let this box in: {detail}",
   "code.wifi_network_unknown": "This box does not know a network named {ssid}.",
+  "code.wol_no_mac": "This device has never reported a MAC address, so there is nothing to wake.",
   "code.write_failed": "The machine could not write that."
 }

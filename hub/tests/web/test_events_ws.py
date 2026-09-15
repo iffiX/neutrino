@@ -36,7 +36,7 @@ from neutrino_hub.web.routers import agent as agent_router
 from neutrino_hub.web.routers import agent_ws
 from tests.conftest import StubDesiredStates, StubPublishedServices
 
-MAC = "aa:bb:cc:dd:ee:ff"
+DEVICE = "device-one"
 AGENT_TOKEN = "device-token"
 SESSION_TOKEN = "panel-session"
 POLICY_VIOLATION_CODE = 1008
@@ -51,7 +51,7 @@ class FakeRegistry:
     def reset(cls, device: ManagedDevice) -> None:
         cls.device = device
 
-    def find_by_client_token(self, token):
+    def find_by_token(self, token):
         stored = FakeRegistry.device.client.token_sha256
         presented = hashlib.sha256(token.encode()).hexdigest()
         return FakeRegistry.device if stored and stored == presented else None
@@ -74,14 +74,15 @@ class FakeRuntime:
     def __init__(self):
         self.events = PanelEventBus()
         self.sessions = StubSessions()
-        self.client_metrics = {}
-        self.client_modules = {}
-        self.client_platform = {}
-        self.client_hostname = {}
-        self.client_accounts = {}
-        self.client_address = {}
-        self.client_device_host = {}
-        self.client_last_error = {}
+        self.device_metrics = {}
+        self.device_modules = {}
+        self.device_platform = {}
+        self.device_hostname = {}
+        self.device_accounts = {}
+        self.device_interfaces = {}
+        self.device_address = {}
+        self.device_hub_host = {}
+        self.device_last_error = {}
         self.device_shares = DeviceShareRegistry()
         self.published_services = StubPublishedServices()
         self.desired_states = StubDesiredStates()
@@ -113,7 +114,7 @@ def box(monkeypatch, tmp_path):
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
     FakeRegistry.reset(
         ManagedDevice(
-            mac_address=MAC,
+            id=DEVICE,
             name="testbox",
             client=DeviceClientInfo(
                 token_sha256=hashlib.sha256(AGENT_TOKEN.encode()).hexdigest()
@@ -143,7 +144,6 @@ def hello(**fields) -> dict:
         "wire": AGENT_WIRE_GENERATION,
         "hostname": "box",
         "platform": {"os": "linux", "family": "debian", "arch": "amd64"},
-        "addresses": [{"mac": MAC, "address": "192.168.100.7"}],
         "accounts": ["alice"],
         "state_hash": "",
     }
@@ -156,7 +156,6 @@ def report(**fields) -> dict:
         "type": "report",
         "metrics": {"cpu_percent": 4.0},
         "platform": {"os": "linux", "family": "debian", "arch": "amd64"},
-        "addresses": [{"mac": MAC, "address": "192.168.100.7"}],
         "accounts": ["alice"],
         "modules": {"rustdesk": {"state": "installed", "code": "", "params": {}}},
         "state_hash": "",
@@ -249,7 +248,7 @@ def test_a_report_with_a_new_module_state_says_so_for_that_device(box):
     closed(agent, panel)
 
     assert frame["type"] == WEB_EVENT_DEVICE_REPORT
-    assert frame["key"] == MAC
+    assert frame["key"] == DEVICE
 
 
 def test_every_report_carries_the_machines_vitals(box):
@@ -262,7 +261,7 @@ def test_every_report_carries_the_machines_vitals(box):
     closed(agent, panel)
 
     metrics = frames[-1]
-    assert metrics["key"] == MAC
+    assert metrics["key"] == DEVICE
     assert metrics["data"] == {"cpu_percent": 91.0, "gpus": []}
 
 
@@ -290,9 +289,9 @@ def test_a_config_write_names_the_file_it_wrote(box):
     client, _ = box
     panel = opened(client)
 
-    write_config(f"devices/{MAC}/samba.json", {"is_enabled": True})
+    write_config(f"devices/{DEVICE}/samba.json", {"is_enabled": True})
     frame = panel.receive_json()
     closed(panel)
 
     assert frame["type"] == WEB_EVENT_CONFIG
-    assert frame["key"] == f"devices/{MAC}/samba.json"
+    assert frame["key"] == f"devices/{DEVICE}/samba.json"

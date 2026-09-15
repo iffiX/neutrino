@@ -1,10 +1,11 @@
 """What the hub keeps of a hello, a report, and a socket ending.
 
-A hello and a report land in the runtime's memory, and the seat password is
-the one thing either writes. The address is the one on the machine's
-identity MAC, the peer standing in when nothing matches; the desktop share
-is recorded against the device the token resolved to, at the address the
-hub holds, and withdrawn when the machine stops or its socket ends.
+A hello and a report land in the runtime's memory, keyed by the device's
+id. The address is the report's ``network.link.address``, the socket's peer
+standing in and being recorded when the report names none; the MAC the
+socket runs on is noted on the device's row. The desktop share is recorded
+against the device the token resolved to, at the address the hub holds, and
+withdrawn when the machine stops or its socket ends.
 """
 
 from types import SimpleNamespace
@@ -15,23 +16,25 @@ from neutrino_hub.modules.devices import agent_reports
 from neutrino_hub.modules.devices.agent_module_controller import AgentModuleController
 from neutrino_hub.modules.devices.agent_sessions import AgentSessionRegistry
 from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
-from neutrino_hub.modules.devices.registry import ManagedDevice
+from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from tests.conftest import StubDesiredStates, StubPublishedServices
 
-MAC = "aa:bb:cc:dd:ee:ff"
+DEVICE = "device-one"
+LINK_MAC = "aa:bb:cc:dd:ee:ff"
 
 
 class FakeRuntime:
     def __init__(self, lans=()):
-        self.client_metrics = {}
-        self.client_modules = {}
-        self.client_platform = {}
-        self.client_hostname = {}
-        self.client_accounts = {}
-        self.client_address = {}
-        self.client_device_host = {}
-        self.client_last_error = {}
+        self.device_metrics = {}
+        self.device_modules = {}
+        self.device_platform = {}
+        self.device_hostname = {}
+        self.device_accounts = {}
+        self.device_interfaces = {}
+        self.device_address = {}
+        self.device_hub_host = {}
+        self.device_last_error = {}
         self.device_shares = DeviceShareRegistry()
         self.published_services = StubPublishedServices()
         self.desired_states = StubDesiredStates()
@@ -53,10 +56,17 @@ class FakeRuntime:
 
 
 @pytest.fixture
-def box():
+def config_dir(tmp_path, monkeypatch):
+    """A `config/` of this test's own, so the row a report notes on is here."""
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    return tmp_path
+
+
+@pytest.fixture
+def box(config_dir):
     return (
         FakeRuntime(lans=[("192.168.100.1", "192.168.100.0/24")]),
-        ManagedDevice(mac_address=MAC, name="testbox"),
+        ManagedDevice(id=DEVICE, name="testbox"),
     )
 
 
@@ -68,7 +78,6 @@ def hello(**fields) -> dict:
         "wire": 5,
         "hostname": "box",
         "platform": {"os": "linux", "family": "debian", "arch": "amd64"},
-        "addresses": [],
         "accounts": ["alice"],
         "state_hash": "",
     }
@@ -76,12 +85,26 @@ def hello(**fields) -> dict:
     return body
 
 
+def network(address: str = "192.168.100.12", mac: str = LINK_MAC) -> dict:
+    """The ``network`` section a report carries."""
+    return {
+        "link": {"interface": "enp1s0", "mac": mac, "address": address},
+        "interfaces": [
+            {"name": "enp1s0", "mac": mac, "addresses": [address]},
+            {
+                "name": "docker0",
+                "mac": "02:42:00:00:00:01",
+                "addresses": ["172.17.0.1"],
+            },
+        ],
+    }
+
+
 def report(**fields) -> dict:
     body = {
         "type": "report",
         "metrics": {"cpu_percent": 4.0},
         "platform": {"os": "linux", "family": "debian", "arch": "amd64"},
-        "addresses": [],
         "accounts": ["alice", "bob"],
         "modules": {"rustdesk": {"state": "installed"}},
         "state_hash": "",
@@ -107,30 +130,11 @@ def test_a_hello_records_the_machine_in_memory(box):
         reached_host="192.168.100.1",
     )
 
-    assert runtime.client_platform[MAC]["arch"] == "amd64"
-    assert runtime.client_hostname[MAC] == "box"
-    assert runtime.client_accounts[MAC] == ["alice"]
-    assert runtime.client_address[MAC] == "192.168.100.7"
-    assert runtime.client_device_host[MAC] == "192.168.100.1"
-
-
-def test_the_address_is_the_one_on_the_identity_mac(box):
-    runtime, device = box
-
-    agent_reports.record_hello(
-        runtime,
-        device,
-        hello(
-            addresses=[
-                {"mac": "11:22:33:44:55:66", "address": "10.9.0.2"},
-                {"mac": MAC.upper(), "address": "192.168.100.12"},
-            ]
-        ),
-        peer_host="10.9.0.2",
-        reached_host="",
-    )
-
-    assert runtime.client_address[MAC] == "192.168.100.12"
+    assert runtime.device_platform[DEVICE]["arch"] == "amd64"
+    assert runtime.device_hostname[DEVICE] == "box"
+    assert runtime.device_accounts[DEVICE] == ["alice"]
+    assert runtime.device_address[DEVICE] == "192.168.100.7"
+    assert runtime.device_hub_host[DEVICE] == "192.168.100.1"
 
 
 def test_the_device_host_is_the_address_it_reached_off_any_served_lan(box):
@@ -145,7 +149,71 @@ def test_the_device_host_is_the_address_it_reached_off_any_served_lan(box):
     )
 
     # Off every served LAN, the address the machine connected to is the truth.
-    assert runtime.client_device_host[MAC] == "192.168.122.92"
+    assert runtime.device_hub_host[DEVICE] == "192.168.122.92"
+
+
+# --- the address ---
+
+
+def test_the_address_is_the_one_the_socket_leaves_by():
+    assert (
+        agent_reports.link_address(network("10.9.0.2"), "192.168.100.7") == "10.9.0.2"
+    )
+
+
+def test_the_peer_stands_in_when_the_report_names_no_address():
+    assert agent_reports.link_address({}, "192.168.100.7") == "192.168.100.7"
+    assert agent_reports.link_address(network(address=""), "10.9.0.2") == "10.9.0.2"
+    assert agent_reports.link_address({"link": "nonsense"}, "10.9.0.2") == "10.9.0.2"
+
+
+def test_a_report_records_the_link_address_and_the_interfaces(box):
+    runtime, device = box
+    runtime.device_address[DEVICE] = "192.168.100.7"
+
+    agent_reports.record_report(runtime, device, report(network=network("10.9.0.2")))
+
+    assert runtime.device_address[DEVICE] == "10.9.0.2"
+    assert [entry["name"] for entry in runtime.device_interfaces[DEVICE]] == [
+        "enp1s0",
+        "docker0",
+    ]
+
+
+def test_a_report_without_a_network_keeps_the_recorded_peer(box):
+    runtime, device = box
+    runtime.device_address[DEVICE] = "192.168.100.7"
+
+    agent_reports.record_report(runtime, device, report())
+
+    assert runtime.device_address[DEVICE] == "192.168.100.7"
+    assert DEVICE not in runtime.device_interfaces
+
+
+# --- the row ---
+
+
+def test_a_report_notes_the_link_mac_on_the_stored_row(box):
+    runtime, device = box
+    stored = DeviceRegistry().create("testbox")
+
+    agent_reports.record_report(runtime, stored, report(network=network()))
+
+    row = DeviceRegistry().get(stored.id)
+    assert row.mac_addresses == [LINK_MAC]
+    assert row.link_mac == LINK_MAC
+
+
+def test_a_report_naming_no_link_mac_writes_nothing(box, config_dir):
+    runtime, device = box
+    stored = DeviceRegistry().create("testbox")
+    path = config_dir / "devices" / "devices.json"
+    before = path.read_text()
+
+    agent_reports.record_report(runtime, stored, report(network=network(mac="")))
+    agent_reports.record_report(runtime, stored, report())
+
+    assert path.read_text() == before
 
 
 # --- report ---
@@ -153,7 +221,7 @@ def test_the_device_host_is_the_address_it_reached_off_any_served_lan(box):
 
 def test_a_report_lands_in_memory(box):
     runtime, device = box
-    runtime.client_address[MAC] = "192.168.100.7"
+    runtime.device_address[DEVICE] = "192.168.100.7"
 
     agent_reports.record_report(
         runtime,
@@ -161,10 +229,10 @@ def test_a_report_lands_in_memory(box):
         report(last_error={"code": "hub_unreachable", "params": {"detail": "x"}}),
     )
 
-    assert runtime.client_metrics[MAC] == {"cpu_percent": 4.0}
-    assert runtime.client_modules[MAC] == {"rustdesk": {"state": "installed"}}
-    assert runtime.client_accounts[MAC] == ["alice", "bob"]
-    assert runtime.client_last_error[MAC] == {
+    assert runtime.device_metrics[DEVICE] == {"cpu_percent": 4.0}
+    assert runtime.device_modules[DEVICE] == {"rustdesk": {"state": "installed"}}
+    assert runtime.device_accounts[DEVICE] == ["alice", "bob"]
+    assert runtime.device_last_error[DEVICE] == {
         "code": "hub_unreachable",
         "params": {"detail": "x"},
     }
@@ -172,26 +240,26 @@ def test_a_report_lands_in_memory(box):
 
 def test_a_report_without_an_error_clears_the_stored_one(box):
     runtime, device = box
-    runtime.client_last_error[MAC] = {"code": "mount_failed", "params": {}}
+    runtime.device_last_error[DEVICE] = {"code": "mount_failed", "params": {}}
 
     agent_reports.record_report(runtime, device, report())
 
-    assert MAC not in runtime.client_last_error
+    assert DEVICE not in runtime.device_last_error
 
 
 def test_a_report_settles_a_standing_failure_when_the_software_turned_up(box):
     runtime, device = box
-    runtime.agent_module_orders._failures[(MAC, "rustdesk")] = "old-order"
+    runtime.agent_module_orders._failures[(DEVICE, "rustdesk")] = "old-order"
 
     agent_reports.record_report(runtime, device, report())
 
-    assert runtime.agent_module_orders.failure_for(MAC, "rustdesk") is None
+    assert runtime.agent_module_orders.failure_for(DEVICE, "rustdesk") is None
 
 
 def test_a_report_declaring_a_share_records_it_at_the_held_address(box):
     runtime, device = box
-    runtime.client_address[MAC] = "192.168.100.7"
-    runtime.client_hostname[MAC] = "box"
+    runtime.device_address[DEVICE] = "192.168.100.7"
+    runtime.device_hostname[DEVICE] = "box"
 
     agent_reports.record_report(
         runtime,
@@ -208,8 +276,8 @@ def test_a_report_declaring_a_share_records_it_at_the_held_address(box):
     )
 
     (share,) = runtime.device_shares.live()
-    assert (share.mac_address, share.share_id, share.host, share.port) == (
-        MAC,
+    assert (share.device_id, share.share_id, share.host, share.port) == (
+        DEVICE,
         "s1",
         "192.168.100.7",
         21118,
@@ -221,7 +289,7 @@ def test_a_report_declaring_a_share_records_it_at_the_held_address(box):
 
 def test_a_share_that_names_no_account_or_viewers_carries_neither(box):
     runtime, device = box
-    runtime.client_address[MAC] = "192.168.100.7"
+    runtime.device_address[DEVICE] = "192.168.100.7"
 
     agent_reports.record_report(
         runtime, device, report(rdp={"is_shared": True, "share_id": "s1"})
@@ -239,7 +307,7 @@ def test_a_machine_reporting_the_host_installed_is_given_a_seat_password(box):
 
     agent_reports.record_report(runtime, device, report())
 
-    assert runtime.desired_states.ensured == [MAC]
+    assert runtime.desired_states.ensured == [DEVICE]
 
 
 def test_a_machine_whose_package_lacks_the_host_is_given_none(box):
@@ -255,7 +323,7 @@ def test_a_machine_whose_package_lacks_the_host_is_given_none(box):
 
 def test_a_report_that_stops_sharing_withdraws_the_share(box):
     runtime, device = box
-    runtime.client_address[MAC] = "192.168.100.7"
+    runtime.device_address[DEVICE] = "192.168.100.7"
     agent_reports.record_report(
         runtime, device, report(rdp={"is_shared": True, "share_id": "s1"})
     )
@@ -281,7 +349,7 @@ def test_a_share_with_no_address_to_pair_it_with_is_not_declared(box):
 
 def test_a_socket_ending_withdraws_the_share(box):
     runtime, device = box
-    runtime.client_address[MAC] = "192.168.100.7"
+    runtime.device_address[DEVICE] = "192.168.100.7"
     agent_reports.record_report(
         runtime, device, report(rdp={"is_shared": True, "share_id": "s1"})
     )

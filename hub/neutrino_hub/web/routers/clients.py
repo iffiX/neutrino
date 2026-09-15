@@ -18,6 +18,7 @@ from neutrino_hub.modules.clients.constants import (
     CLIENT_CODE_UNKNOWN,
     CLIENT_ENROLLMENT_KIND,
 )
+from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.clients.registry import Client, ClientRegistry
 from neutrino_hub.modules.devices.constants import AGENT_WS_CLOSE_UNKNOWN_TOKEN
 from neutrino_hub.web import client_channel
@@ -93,7 +94,7 @@ def create_enrollment(
     }
     runtime.events.publish(WEB_EVENT_CLIENTS)
     return ClientEnrollmentView(
-        link=enrollment_link(urls, token, fingerprint, kind=CLIENT_ENROLLMENT_KIND),
+        link=enrollment_link(urls, token, fingerprint, role=CHANNEL_ROLE_CLIENT),
         expires_at=datetime.fromtimestamp(expires_at, timezone.utc).isoformat(),
     )
 

@@ -275,7 +275,7 @@ def _directories_first(entry: DeviceFileEntryView) -> tuple:
 async def _open(runtime: PanelRuntime, device_id: str, kind: str, args: dict):
     """One stream on the device, or the coded refusal."""
     try:
-        return await runtime.agent_sessions.open_stream(device_id.lower(), kind, args)
+        return await runtime.agent_sessions.open_stream(device_id, kind, args)
     except AgentOfflineError as error:
         raise _offline(error)
     except StreamRefusedError as refused:

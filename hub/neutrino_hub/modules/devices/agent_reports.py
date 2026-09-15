@@ -4,9 +4,10 @@ An agent's socket opens with one ``hello`` and then carries a ``report``
 every few seconds. Both land in the runtime's memory alone, which is what
 the panel reads: a machine's presence is true only while this hub runs.
 
-The one thing a report writes is the seat password: a machine reporting the
+A report writes two things. The seat password: a machine reporting the
 remote desktop host installed is given one, sealed under the vault's data
-key, the first time it says so.
+key, the first time it says so. And the MAC its socket runs on, noted on
+the device's row when it is new.
 """
 
 import ipaddress
@@ -16,6 +17,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_STATE_INSTALLED,
     DEVICE_RDP_MODULE,
 )
+from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.constants import SERVICES_RDP_PORT
 
 
@@ -31,17 +33,17 @@ def record_hello(
         peer_host: Where the socket comes from.
         reached_host: The address the machine connected to.
     """
-    key = device.mac_address
+    key = device.id
     platform = hello.get("platform")
     if isinstance(platform, dict) and platform:
-        runtime.client_platform[key] = dict(platform)
+        runtime.device_platform[key] = dict(platform)
     hostname = str(hello.get("hostname", "") or "")
     if hostname:
-        runtime.client_hostname[key] = hostname
+        runtime.device_hostname[key] = hostname
     _record_machine(runtime, key, hello, peer_host=peer_host)
     _record_reinstall(runtime, key, hello)
-    runtime.client_device_host[key] = device_host(
-        runtime, runtime.client_address.get(key, ""), reached_host
+    runtime.device_hub_host[key] = device_host(
+        runtime, runtime.device_address.get(key, ""), reached_host
     )
 
 
@@ -53,31 +55,32 @@ def record_report(runtime, device, report: dict) -> None:
         device: The device the socket belongs to.
         report: The report message.
     """
-    key = device.mac_address
+    key = device.id
     metrics = report.get("metrics")
-    runtime.client_metrics[key] = dict(metrics) if isinstance(metrics, dict) else {}
+    runtime.device_metrics[key] = dict(metrics) if isinstance(metrics, dict) else {}
     modules = report.get("modules")
     modules = dict(modules) if isinstance(modules, dict) else {}
-    runtime.client_modules[key] = modules
+    runtime.device_modules[key] = modules
     # Software turning up on the machine anyway settles a standing failure.
     runtime.agent_module_orders.note_reported_states(key, modules)
     _ensure_seat_password(runtime, key, modules)
     platform = report.get("platform")
     if isinstance(platform, dict) and platform:
-        runtime.client_platform[key] = dict(platform)
+        runtime.device_platform[key] = dict(platform)
     _record_machine(runtime, key, report, peer_host="")
+    _note_link(device, report.get("network"))
     _record_reinstall(runtime, key, report)
-    record_rdp_share(
-        runtime, device, report.get("rdp") or {}, runtime.client_address.get(key, "")
+    record_desktop_share(
+        runtime, device, report.get("rdp") or {}, runtime.device_address.get(key, "")
     )
     error = report.get("last_error")
     if isinstance(error, dict) and error.get("code"):
-        runtime.client_last_error[key] = {
+        runtime.device_last_error[key] = {
             "code": str(error.get("code")),
             "params": dict(error.get("params") or {}),
         }
     else:
-        runtime.client_last_error.pop(key, None)
+        runtime.device_last_error.pop(key, None)
 
 
 def record_offline(runtime, device) -> None:
@@ -87,35 +90,23 @@ def record_offline(runtime, device) -> None:
         runtime: The shared runtime.
         device: The device whose socket ended.
     """
-    key = device.mac_address
-    record_rdp_share(runtime, device, {}, runtime.client_address.get(key, ""))
+    record_desktop_share(runtime, device, {}, runtime.device_address.get(device.id, ""))
 
 
-def device_address(reported: list, mac_address: str, peer_host: str) -> str:
-    """Where a machine is, out of everything it carries.
-
-    The address on the machine's identity MAC wins: the interface the hub
-    keys the device by. The connection's peer address stands in where
-    nothing matches.
+def link_address(network: dict, peer_host: str) -> str:
+    """Where a machine is: the address its socket leaves by, else the peer's.
 
     Args:
-        reported: The message's ``addresses``, ``[{"mac", "address"}]``.
-        mac_address: The device's identity MAC.
-        peer_host: Where the socket comes from.
+        network: The message's ``network`` section.
+        peer_host: Where the socket comes from, the fallback.
 
     Returns:
-        The address, empty when there is none to be had.
+        ``network.link.address`` when the message names one, else
+        ``peer_host``.
     """
-    wanted = mac_address.lower()
-    for entry in reported or []:
-        if not isinstance(entry, dict):
-            continue
-        if str(entry.get("mac", "")).lower() != wanted:
-            continue
-        address = str(entry.get("address", "") or "")
-        if address:
-            return address
-    return peer_host
+    link = network.get("link") if isinstance(network, dict) else None
+    address = str(link.get("address", "") or "") if isinstance(link, dict) else ""
+    return address or peer_host
 
 
 def device_host(runtime, device_ip: str, reached_host: str = "") -> str:
@@ -148,7 +139,7 @@ def device_host(runtime, device_ip: str, reached_host: str = "") -> str:
     return address or reached_host or fallback or "192.168.100.1"
 
 
-def record_rdp_share(runtime, device, share: dict, host: str) -> None:
+def record_desktop_share(runtime, device, share: dict, host: str) -> None:
     """Take one machine's word on whether its desktop is shared.
 
     Only a machine's own agent declares this, and only for itself: the
@@ -159,18 +150,18 @@ def record_rdp_share(runtime, device, share: dict, host: str) -> None:
     Args:
         runtime: The shared runtime.
         device: The device the token resolved to.
-        share: The message's ``rdp``.
+        share: The message's desktop declaration.
         host: Where this machine's channel comes from.
     """
-    key = device.mac_address
-    was_sharing = any(held.mac_address == key for held in runtime.device_shares.live())
+    key = device.id
+    was_sharing = any(held.device_id == key for held in runtime.device_shares.live())
     is_shared = bool(share.get("is_shared")) if isinstance(share, dict) else False
     share_id = str(share.get("share_id", "") or "") if is_shared else ""
     if is_shared and share_id and host:
         runtime.device_shares.declare(
-            mac_address=key,
+            device_id=key,
             share_id=share_id,
-            hostname=runtime.client_hostname.get(key, "") or device.name,
+            hostname=runtime.device_hostname.get(key, "") or device.name,
             host=host,
             port=int(share.get("port") or SERVICES_RDP_PORT),
             attention=str(share.get("attention", "") or ""),
@@ -232,14 +223,25 @@ def _record_reinstall(runtime, key: str, message: dict) -> None:
 
 
 def _record_machine(runtime, key: str, message: dict, *, peer_host: str) -> None:
-    """The accounts and the address a hello and a report both carry."""
+    """The accounts, the address and the interfaces a message carries."""
     accounts = message.get("accounts")
     if isinstance(accounts, list):
-        runtime.client_accounts[key] = [str(account) for account in accounts]
-    address = device_address(
-        message.get("addresses") or [],
-        key,
-        peer_host or runtime.client_address.get(key, ""),
-    )
+        runtime.device_accounts[key] = [str(account) for account in accounts]
+    network = message.get("network")
+    network = network if isinstance(network, dict) else {}
+    address = link_address(network, peer_host or runtime.device_address.get(key, ""))
     if address:
-        runtime.client_address[key] = address
+        runtime.device_address[key] = address
+    interfaces = network.get("interfaces")
+    if isinstance(interfaces, list):
+        runtime.device_interfaces[key] = [
+            dict(interface) for interface in interfaces if isinstance(interface, dict)
+        ]
+
+
+def _note_link(device, network) -> None:
+    """Put the MAC the socket runs on onto the device's row when it is new."""
+    link = network.get("link") if isinstance(network, dict) else None
+    mac = str(link.get("mac", "") or "") if isinstance(link, dict) else ""
+    if mac:
+        DeviceRegistry().note_machine(device.id, link_mac=mac)

@@ -7,8 +7,8 @@ from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import device_modules
 from tests.conftest import FakeDeviceRegistry, FakeModuleRuntime, managed_device
 
-DEVICE = "aa:bb:cc:dd:ee:ff"
-OFFLINE = "aa:bb:cc:dd:ee:00"
+DEVICE = "device-one"
+OFFLINE = "device-two"
 HOST = "192.168.100.7"
 
 
@@ -19,10 +19,13 @@ def module_box(monkeypatch, tmp_path, router):
         "neutrino_hub.modules.devices.desired_state.UTILS_CONFIG_DIR", tmp_path
     )
     runtime = FakeModuleRuntime(
-        devices=[managed_device(DEVICE, "box"), managed_device(OFFLINE, "attic")],
+        devices=[
+            managed_device("box", device_id=DEVICE),
+            managed_device("attic", device_id=OFFLINE),
+        ],
         online=[DEVICE],
     )
-    runtime.client_address = {DEVICE: HOST, OFFLINE: "192.168.100.9"}
+    runtime.device_address = {DEVICE: HOST, OFFLINE: "192.168.100.9"}
     FakeDeviceRegistry.runtime = runtime
     monkeypatch.setattr(device_modules, "DeviceRegistry", FakeDeviceRegistry)
     app = FastAPI()

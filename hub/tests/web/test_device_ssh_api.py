@@ -18,31 +18,35 @@ from neutrino_hub.modules.devices.key_registry import KeyRegistry
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
-from tests.conftest import FakeAgentSessions, unlock_vault
+from neutrino_hub.modules.devices.registry import DeviceRegistry
+from tests.conftest import FakeChannelSessions, unlock_vault
 
-MAC = "aa:bb:cc:dd:ee:ff"
 LOGIN_PASSWORD = "a-password"  # scan: allow
 
 
 class FakeRuntime:
     def __init__(self):
         self.events = PanelEventBus()
-        self.client_metrics = {}
-        self.client_address = {}
-        self.client_platform = {}
-        self.agent_sessions = FakeAgentSessions()
+        self.device_metrics = {}
+        self.device_address = {}
+        self.device_platform = {}
+        self.device_hostname = {}
+        self.device_last_error = {}
+        self.device_modules = {}
+        self.agent_sessions = FakeChannelSessions()
 
 
 @pytest.fixture
 def api(monkeypatch, tmp_path):
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
     unlock_vault(monkeypatch, tmp_path)
+    device_id = DeviceRegistry().create("xenode").id
     app = FastAPI()
     app.include_router(devices_router.router)
     app.dependency_overrides[require_session] = lambda: None
     app.dependency_overrides[get_runtime] = FakeRuntime
     with TestClient(app) as client:
-        yield client, tmp_path
+        yield client, tmp_path, device_id
 
 
 def stored_password(password: str) -> str:
@@ -60,9 +64,9 @@ def stored_key() -> str:
     return record.id
 
 
-def annotate(client, ssh: dict):
+def annotate(client, device_id: str, ssh: dict):
     return client.put(
-        f"/api/devices/{MAC}",
+        f"/api/devices/{device_id}",
         json={
             "name": "xenode",
             "ssh": {"host": "192.168.100.2", "port": 22, "username": "iffi", **ssh},
@@ -71,10 +75,10 @@ def annotate(client, ssh: dict):
 
 
 def test_valid_references_are_stored_and_echoed(api):
-    client, tmp_path = api
+    client, tmp_path, device_id = api
     login_id = stored_password(LOGIN_PASSWORD)
 
-    saved = annotate(client, {"auth": "password", "login_id": login_id})
+    saved = annotate(client, device_id, {"auth": "password", "login_id": login_id})
 
     assert saved.status_code == 200
     view = saved.json()["ssh"]
@@ -84,7 +88,7 @@ def test_valid_references_are_stored_and_echoed(api):
     assert "sudo_password" not in view
 
     stored = json.loads((tmp_path / "devices" / "devices.json").read_text())
-    block = stored["devices"][MAC]["ssh"]
+    block = stored["devices"][device_id]["ssh"]
     assert block == {
         "host": "192.168.100.2",
         "port": 22,
@@ -97,10 +101,10 @@ def test_valid_references_are_stored_and_echoed(api):
 
 
 def test_a_key_reference_is_stored_and_named(api):
-    client, _ = api
+    client, _, device_id = api
     key_id = stored_key()
 
-    saved = annotate(client, {"auth": "key", "key_id": key_id})
+    saved = annotate(client, device_id, {"auth": "key", "key_id": key_id})
 
     assert saved.status_code == 200
     view = saved.json()["ssh"]
@@ -110,23 +114,23 @@ def test_a_key_reference_is_stored_and_named(api):
 
 
 def test_a_bogus_login_id_is_refused(api):
-    client, tmp_path = api
+    client, _, device_id = api
 
-    refused = annotate(client, {"auth": "password", "login_id": "absent"})
+    refused = annotate(client, device_id, {"auth": "password", "login_id": "absent"})
 
     assert refused.status_code == 400
     assert refused.json()["detail"] == {
         "code": "unknown_credential",
         "params": {"field": "login_id"},
     }
-    assert not (tmp_path / "devices" / "devices.json").exists()
+    assert DeviceRegistry().get(device_id).ssh is None
 
 
 def test_a_login_id_offered_as_a_key_is_refused(api):
-    client, _ = api
+    client, _, device_id = api
     login_id = stored_password(LOGIN_PASSWORD)
 
-    refused = annotate(client, {"auth": "key", "key_id": login_id})
+    refused = annotate(client, device_id, {"auth": "key", "key_id": login_id})
 
     assert refused.status_code == 400
     assert refused.json()["detail"] == {

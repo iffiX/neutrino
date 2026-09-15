@@ -28,7 +28,8 @@ from neutrino_hub.web.routers import agent as agent_router
 from neutrino_hub.web.routers import agent_ws
 from tests.conftest import StubDesiredStates, StubPublishedServices
 
-MAC = "aa:bb:cc:dd:ee:ff"
+DEVICE = "device-one"
+LINK_MAC = "aa:bb:cc:dd:ee:ff"
 TOKEN = "device-token"
 
 
@@ -41,7 +42,7 @@ class FakeRegistry:
     def reset(cls, device: ManagedDevice) -> None:
         cls.device = device
 
-    def find_by_client_token(self, token):
+    def find_by_token(self, token):
         stored = FakeRegistry.device.client.token_sha256
         presented = hashlib.sha256(token.encode()).hexdigest()
         return FakeRegistry.device if stored and stored == presented else None
@@ -56,14 +57,15 @@ class FakeRuntime:
 
     def __init__(self):
         self.events = PanelEventBus()
-        self.client_metrics = {}
-        self.client_modules = {}
-        self.client_platform = {}
-        self.client_hostname = {}
-        self.client_accounts = {}
-        self.client_address = {}
-        self.client_device_host = {}
-        self.client_last_error = {}
+        self.device_metrics = {}
+        self.device_modules = {}
+        self.device_platform = {}
+        self.device_hostname = {}
+        self.device_accounts = {}
+        self.device_interfaces = {}
+        self.device_address = {}
+        self.device_hub_host = {}
+        self.device_last_error = {}
         self.device_shares = DeviceShareRegistry()
         self.published_services = StubPublishedServices()
         self.desired_states = StubDesiredStates()
@@ -87,10 +89,11 @@ class FakeRuntime:
 
 
 @pytest.fixture
-def api(monkeypatch):
+def api(monkeypatch, tmp_path):
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
     FakeRegistry.reset(
         ManagedDevice(
-            mac_address=MAC,
+            id=DEVICE,
             name="testbox",
             client=DeviceClientInfo(
                 token_sha256=hashlib.sha256(TOKEN.encode()).hexdigest()
@@ -117,7 +120,6 @@ def hello(**fields) -> dict:
         "wire": AGENT_WIRE_GENERATION,
         "hostname": "box",
         "platform": {"os": "linux", "family": "debian", "arch": "amd64"},
-        "addresses": [{"mac": MAC, "address": "192.168.100.7"}],
         "accounts": ["alice"],
         "state_hash": "",
     }
@@ -130,7 +132,16 @@ def report(**fields) -> dict:
         "type": "report",
         "metrics": {"cpu_percent": 4.0},
         "platform": {"os": "linux", "family": "debian", "arch": "amd64"},
-        "addresses": [{"mac": MAC, "address": "192.168.100.7"}],
+        "network": {
+            "link": {
+                "interface": "enp1s0",
+                "mac": LINK_MAC,
+                "address": "192.168.100.7",
+            },
+            "interfaces": [
+                {"name": "enp1s0", "mac": LINK_MAC, "addresses": ["192.168.100.7"]}
+            ],
+        },
         "accounts": ["alice", "bob"],
         "modules": {"rustdesk": {"state": "installed", "code": "", "params": {}}},
         "state_hash": "",
@@ -203,7 +214,7 @@ def test_an_unknown_token_closes_with_its_own_code(api):
     with client.websocket_connect("/api/agent/ws") as socket:
         socket.send_json(hello(token="nonsense"))  # scan: allow
         assert closed_with(socket) == (4401, "unknown_token")
-    assert not runtime.agent_sessions.is_online(MAC)
+    assert not runtime.agent_sessions.is_online(DEVICE)
 
 
 def test_another_wire_generation_is_refused_with_the_code_word(api):
@@ -212,10 +223,10 @@ def test_another_wire_generation_is_refused_with_the_code_word(api):
     with client.websocket_connect("/api/agent/ws") as socket:
         socket.send_json(hello(wire=1))
         assert closed_with(socket) == (4409, "agent_wire_stale")
-    assert not runtime.agent_sessions.is_online(MAC)
+    assert not runtime.agent_sessions.is_online(DEVICE)
     # A refusal is not a sighting: the device has no version and no stamp.
-    assert runtime.agent_sessions.version_of(MAC) == ""
-    assert runtime.agent_sessions.last_seen_at(MAC) is None
+    assert runtime.agent_sessions.version_of(DEVICE) == ""
+    assert runtime.agent_sessions.last_seen_at(DEVICE) is None
 
 
 def test_a_newer_agent_is_refused_with_the_code_word(api):
@@ -237,22 +248,22 @@ def test_a_good_hello_is_welcomed_and_puts_the_device_online(api):
         assert welcome == {
             "type": "welcome",
             "hub_version": "1.2.3",
-            "device_id": MAC,
+            "device_id": DEVICE,
             "state_hash": "",
         }
-        assert runtime.agent_sessions.is_online(MAC)
-        session = runtime.agent_sessions.get(MAC)
+        assert runtime.agent_sessions.is_online(DEVICE)
+        session = runtime.agent_sessions.get(DEVICE)
         assert (session.hostname, session.version) == ("box", "1.2.3")
-        assert runtime.client_hostname[MAC] == "box"
-        assert runtime.client_platform[MAC]["arch"] == "amd64"
-        assert runtime.client_accounts[MAC] == ["alice"]
-        # The address on the identity MAC, over the socket's own peer.
-        assert runtime.client_address[MAC] == "192.168.100.7"
-        assert runtime.client_device_host[MAC]
+        assert runtime.device_hostname[DEVICE] == "box"
+        assert runtime.device_platform[DEVICE]["arch"] == "amd64"
+        assert runtime.device_accounts[DEVICE] == ["alice"]
+        # A hello names no address, so the socket's own peer is recorded.
+        assert runtime.device_address[DEVICE] == "testclient"
+        assert runtime.device_hub_host[DEVICE]
         # The hello's version is held in memory; an online device has no
         # last-seen stamp.
-        assert runtime.agent_sessions.version_of(MAC) == "1.2.3"
-        assert runtime.agent_sessions.last_seen_at(MAC) is None
+        assert runtime.agent_sessions.version_of(DEVICE) == "1.2.3"
+        assert runtime.agent_sessions.last_seen_at(DEVICE) is None
     finally:
         socket.__exit__(None, None, None)
 
@@ -265,11 +276,11 @@ def test_the_socket_ending_takes_the_device_offline_and_stamps_it(api):
 
     socket.__exit__(None, None, None)
 
-    assert wait_until(lambda: not runtime.agent_sessions.is_online(MAC))
+    assert wait_until(lambda: not runtime.agent_sessions.is_online(DEVICE))
     # The detach stamps the device under the same lock that took it
     # offline, so the stamp is there the moment the device reads offline.
-    assert runtime.agent_sessions.last_seen_at(MAC)
-    assert runtime.agent_sessions.version_of(MAC) == "1.2.3"
+    assert runtime.agent_sessions.last_seen_at(DEVICE)
+    assert runtime.agent_sessions.version_of(DEVICE) == "1.2.3"
     assert wait_until(lambda: runtime.device_shares.live() == [])
 
 
@@ -290,7 +301,7 @@ def test_a_hello_carrying_a_reinstall_record_lands_before_any_report(api):
 
     socket, _ = welcomed(client, last_reinstall=REINSTALL_RESULT)
     try:
-        session = runtime.agent_sessions.get(MAC)
+        session = runtime.agent_sessions.get(DEVICE)
         assert session.report["last_reinstall"] == REINSTALL_RESULT
         assert session.reported_at == ""
     finally:
@@ -304,10 +315,11 @@ def test_a_report_carries_the_reinstall_record_on(api):
         socket.send_json(report(last_reinstall=REINSTALL_RESULT))
 
         assert wait_until(
-            lambda: runtime.agent_sessions.get(MAC).report.get("last_reinstall")
+            lambda: runtime.agent_sessions.get(DEVICE).report.get("last_reinstall")
         )
         assert (
-            runtime.agent_sessions.get(MAC).report["last_reinstall"] == REINSTALL_RESULT
+            runtime.agent_sessions.get(DEVICE).report["last_reinstall"]
+            == REINSTALL_RESULT
         )
     finally:
         socket.__exit__(None, None, None)
@@ -319,8 +331,8 @@ def test_a_report_without_a_reinstall_record_leaves_none_standing(api):
     try:
         socket.send_json(report())
 
-        assert wait_until(lambda: runtime.agent_sessions.get(MAC).reported_at)
-        assert "last_reinstall" not in runtime.agent_sessions.get(MAC).report
+        assert wait_until(lambda: runtime.agent_sessions.get(DEVICE).reported_at)
+        assert "last_reinstall" not in runtime.agent_sessions.get(DEVICE).report
     finally:
         socket.__exit__(None, None, None)
 
@@ -339,23 +351,28 @@ def test_a_report_lands_in_the_runtime_and_declares_the_share(api):
             )
         )
 
-        assert wait_until(lambda: MAC in runtime.client_metrics)
-        assert runtime.client_metrics[MAC] == {"cpu_percent": 4.0}
-        assert runtime.client_modules[MAC]["rustdesk"]["state"] == "installed"
-        assert runtime.client_accounts[MAC] == ["alice", "bob"]
-        assert runtime.client_last_error[MAC] == {
+        assert wait_until(lambda: runtime.agent_sessions.report_serial_of(DEVICE) > 0)
+        assert runtime.device_metrics[DEVICE] == {"cpu_percent": 4.0}
+        assert runtime.device_modules[DEVICE]["rustdesk"]["state"] == "installed"
+        assert runtime.device_accounts[DEVICE] == ["alice", "bob"]
+        assert runtime.device_last_error[DEVICE] == {
             "code": "hub_unreachable",
             "params": {},
         }
+        # The report's link address wins over the socket's peer.
+        assert runtime.device_address[DEVICE] == "192.168.100.7"
         (share,) = runtime.device_shares.live()
-        assert (share.share_id, share.host, share.port) == (
+        assert (share.device_id, share.share_id, share.host, share.port) == (
+            DEVICE,
             "s1",
             "192.168.100.7",
             21118,
         )
-        assert runtime.agent_sessions.get(MAC).report["metrics"] == {"cpu_percent": 4.0}
+        assert runtime.agent_sessions.get(DEVICE).report["metrics"] == {
+            "cpu_percent": 4.0
+        }
         # A report is not an ending: the device is still online, unstamped.
-        assert runtime.agent_sessions.last_seen_at(MAC) is None
+        assert runtime.agent_sessions.last_seen_at(DEVICE) is None
     finally:
         socket.__exit__(None, None, None)
 
@@ -419,7 +436,7 @@ def test_a_frame_that_is_no_object_is_ignored(api):
         socket.send_json({"type": "state_request"})
 
         assert socket.receive_json()["type"] == "state"
-        assert runtime.agent_sessions.is_online(MAC)
+        assert runtime.agent_sessions.is_online(DEVICE)
     finally:
         socket.__exit__(None, None, None)
 
@@ -435,7 +452,7 @@ def test_an_order_opened_from_a_thread_runs_to_the_machines_close(api):
 
     def hub_side():
         outcome["info"] = runtime.agent_sessions.run_order_from_thread(
-            MAC,
+            DEVICE,
             {"id": "o1", "module": "rustdesk", "action": "install"},
             on_line=lines.append,
             timeout=5.0,
@@ -482,7 +499,7 @@ def test_a_command_rides_the_same_way_and_closes_with_its_exit(api):
 
     def hub_side():
         outcome["info"] = runtime.agent_sessions.run_command_from_thread(
-            MAC, "reboot", timeout=5.0
+            DEVICE, "reboot", timeout=5.0
         )
 
     thread = threading.Thread(target=hub_side)
@@ -523,7 +540,7 @@ def test_a_refused_stream_carries_the_agents_code(api):
     def hub_side():
         try:
             runtime.agent_sessions.open_stream_from_thread(
-                MAC, "shell", {}, timeout=5.0
+                DEVICE, "shell", {}, timeout=5.0
             )
         except StreamRefusedError as refused:
             outcome["code"] = refused.code
@@ -558,7 +575,7 @@ def test_a_binary_frame_reaches_its_stream_and_credit_comes_back(api):
 
     def hub_side():
         stream = runtime.agent_sessions.open_stream_from_thread(
-            MAC, "file_download", {}, timeout=5.0
+            DEVICE, "file_download", {}, timeout=5.0
         )
         outcome["item"] = stream.recv_from_thread(timeout=5.0)
 
@@ -585,7 +602,7 @@ def test_a_device_with_no_socket_is_offline_to_a_thread(api):
     _, runtime = api
 
     with pytest.raises(AgentOfflineError):
-        runtime.agent_sessions.run_command_from_thread(MAC, "reboot")
+        runtime.agent_sessions.run_command_from_thread(DEVICE, "reboot")
 
 
 def test_a_second_socket_from_the_same_device_replaces_the_first(api):
@@ -595,12 +612,12 @@ def test_a_second_socket_from_the_same_device_replaces_the_first(api):
         second, _ = welcomed(client)
         try:
             assert closed_with(first) == (4410, "replaced")
-            assert runtime.agent_sessions.is_online(MAC)
+            assert runtime.agent_sessions.is_online(DEVICE)
         finally:
             second.__exit__(None, None, None)
     finally:
         first.__exit__(None, None, None)
-    assert wait_until(lambda: not runtime.agent_sessions.is_online(MAC))
+    assert wait_until(lambda: not runtime.agent_sessions.is_online(DEVICE))
 
 
 def test_the_welcome_state_hash_is_what_the_provider_says(api):

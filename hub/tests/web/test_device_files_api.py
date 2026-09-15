@@ -14,14 +14,14 @@ from fastapi.testclient import TestClient
 
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import device_files
-from tests.conftest import FakeAgentSessions
+from tests.conftest import FakeChannelSessions
 
 MAC = "aa:bb:cc:dd:ee:ff"
 
 
 class FakeRuntime:
     def __init__(self):
-        self.agent_sessions = FakeAgentSessions(online=[MAC])
+        self.agent_sessions = FakeChannelSessions(online=[MAC])
 
 
 @pytest.fixture

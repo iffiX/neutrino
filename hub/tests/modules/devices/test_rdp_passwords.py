@@ -24,8 +24,8 @@ from neutrino_hub.modules.devices.registry import ManagedDevice
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from tests.conftest import StubPublishedServices, unlock_vault
 
-MAC = "aa:bb:cc:dd:ee:ff"
-RDP_PATH = "devices/aa-bb-cc-dd-ee-ff/rdp.json"
+DEVICE = "device-one"
+RDP_PATH = f"devices/{DEVICE}/rdp.json"
 PLATFORM = {"os": "linux", "family": "debian", "arch": "amd64"}
 
 
@@ -33,13 +33,14 @@ class ReportingRuntime:
     """The report path, with a real store under a temporary config root."""
 
     def __init__(self):
-        self.client_metrics: dict = {}
-        self.client_modules: dict = {}
-        self.client_platform: dict = {}
-        self.client_hostname: dict = {}
-        self.client_accounts: dict = {}
-        self.client_address: dict = {}
-        self.client_last_error: dict = {}
+        self.device_metrics: dict = {}
+        self.device_modules: dict = {}
+        self.device_platform: dict = {}
+        self.device_hostname: dict = {}
+        self.device_accounts: dict = {}
+        self.device_interfaces: dict = {}
+        self.device_address: dict = {}
+        self.device_last_error: dict = {}
         self.device_shares = DeviceShareRegistry()
         self.published_services = StubPublishedServices()
         self.agent_module_orders = AgentModuleController(
@@ -85,7 +86,7 @@ def report(**fields) -> dict:
 
 def beat(runtime, **fields) -> None:
     agent_reports.record_report(
-        runtime, ManagedDevice(mac_address=MAC, name="testbox"), report(**fields)
+        runtime, ManagedDevice(id=DEVICE, name="testbox"), report(**fields)
     )
 
 
@@ -99,7 +100,7 @@ def test_the_first_installed_report_generates_one(config, monkeypatch, tmp_path)
 
     beat(runtime)
 
-    password = runtime.desired_states.seat_password(MAC)
+    password = runtime.desired_states.seat_password(DEVICE)
     assert len(password) == 22
     assert set(password) <= set(string.ascii_letters + string.digits)
 
@@ -111,7 +112,7 @@ def test_the_password_is_pushed_the_moment_it_exists(config, monkeypatch, tmp_pa
     beat(runtime)
     beat(runtime)
 
-    assert runtime.pushed == [MAC]
+    assert runtime.pushed == [DEVICE]
 
 
 def test_a_machine_that_needs_no_new_password_is_pushed_nothing(
@@ -131,12 +132,12 @@ def test_a_later_report_keeps_the_password_the_machine_already_has(
     unlock_vault(monkeypatch, tmp_path)
     runtime = ReportingRuntime()
     beat(runtime)
-    first = runtime.desired_states.seat_password(MAC)
+    first = runtime.desired_states.seat_password(DEVICE)
 
     beat(runtime)
     beat(runtime)
 
-    assert runtime.desired_states.seat_password(MAC) == first
+    assert runtime.desired_states.seat_password(DEVICE) == first
 
 
 def test_a_machine_whose_package_lacks_the_host_is_given_none(
@@ -148,7 +149,7 @@ def test_a_machine_whose_package_lacks_the_host_is_given_none(
     beat(runtime, modules={"rustdesk": {"state": "absent"}})
 
     assert not (config / RDP_PATH).exists()
-    assert runtime.desired_states.seat_password(MAC) == ""
+    assert runtime.desired_states.seat_password(DEVICE) == ""
 
 
 def test_a_locked_vault_leaves_it_for_the_next_report(
@@ -159,12 +160,12 @@ def test_a_locked_vault_leaves_it_for_the_next_report(
     beat(runtime)
 
     assert not (config / RDP_PATH).exists()
-    assert runtime.desired_states.seat_password(MAC) == ""
+    assert runtime.desired_states.seat_password(DEVICE) == ""
 
     unlock_vault(monkeypatch, tmp_path)
     beat(runtime)
 
-    assert runtime.desired_states.seat_password(MAC) != ""
+    assert runtime.desired_states.seat_password(DEVICE) != ""
 
 
 def test_what_lands_under_config_is_sealed_and_nowhere_in_plain_text(
@@ -172,9 +173,9 @@ def test_what_lands_under_config_is_sealed_and_nowhere_in_plain_text(
 ):
     unlock_vault(monkeypatch, tmp_path)
     store = DesiredStateStore()
-    store.ensure_seat_password(MAC)
+    store.ensure_seat_password(DEVICE)
 
-    password = store.seat_password(MAC)
+    password = store.seat_password(DEVICE)
 
     assert set(stored(config)) == {"seat_password_sealed"}
     assert set(stored(config)["seat_password_sealed"]) == {"nonce", "data"}
@@ -187,11 +188,11 @@ def test_what_lands_under_config_is_sealed_and_nowhere_in_plain_text(
 def test_compose_hands_the_machine_the_opened_password(config, monkeypatch, tmp_path):
     unlock_vault(monkeypatch, tmp_path)
     store = DesiredStateStore()
-    store.ensure_seat_password(MAC)
+    store.ensure_seat_password(DEVICE)
 
-    desired, _ = store.compose(MAC, PLATFORM)
+    desired, _ = store.compose(DEVICE, PLATFORM)
 
-    assert desired["rdp"] == {"seat_password": store.seat_password(MAC)}
+    assert desired["rdp"] == {"seat_password": store.seat_password(DEVICE)}
     assert desired["rdp"]["seat_password"] != ""
 
 
@@ -200,12 +201,12 @@ def test_a_seal_this_box_cannot_open_composes_empty(config, monkeypatch, tmp_pat
     and the next state it is pushed carries whatever this box can open."""
     unlock_vault(monkeypatch, tmp_path)
     store = DesiredStateStore()
-    (config / "devices/aa-bb-cc-dd-ee-ff").mkdir(parents=True)
+    (config / f"devices/{DEVICE}").mkdir(parents=True)
     (config / RDP_PATH).write_text(
         json.dumps({"seat_password_sealed": seal_bytes(b"other", b"wrong")})
     )
 
-    desired, _ = store.compose(MAC, PLATFORM)
+    desired, _ = store.compose(DEVICE, PLATFORM)
 
     assert desired["rdp"] == {"seat_password": ""}
 
@@ -213,10 +214,10 @@ def test_a_seal_this_box_cannot_open_composes_empty(config, monkeypatch, tmp_pat
 def test_a_reset_replaces_the_password(config, monkeypatch, tmp_path):
     unlock_vault(monkeypatch, tmp_path)
     store = DesiredStateStore()
-    store.ensure_seat_password(MAC)
-    first = store.seat_password(MAC)
+    store.ensure_seat_password(DEVICE)
+    first = store.seat_password(DEVICE)
 
-    store.reset_seat_password(MAC)
+    store.reset_seat_password(DEVICE)
 
-    assert store.seat_password(MAC) != first
+    assert store.seat_password(DEVICE) != first
     assert set(stored(config)) == {"seat_password_sealed"}

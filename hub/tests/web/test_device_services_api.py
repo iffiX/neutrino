@@ -13,16 +13,16 @@ from fastapi.testclient import TestClient
 from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
-from tests.conftest import FakeAgentSessions
+from tests.conftest import FakeChannelSessions
 
-MAC = "aa:bb:cc:dd:ee:ff"
+DEVICE = "device-one"
 
 
 class FakeRegistry:
     device: ManagedDevice
 
-    def get(self, mac_address: str) -> ManagedDevice:
-        return FakeRegistry.device
+    def get(self, device_id: str):
+        return FakeRegistry.device if device_id == FakeRegistry.device.id else None
 
 
 class StubCatalog:
@@ -42,18 +42,18 @@ class StubCatalog:
 
 class FakeRuntime:
     def __init__(self):
-        self.client_accounts = {}
-        self.client_address = {}
-        self.client_device_host = {}
-        self.client_platform = {}
+        self.device_accounts = {}
+        self.device_address = {}
+        self.device_hub_host = {}
+        self.device_platform = {}
         self.device_catalog = StubCatalog()
-        self.agent_sessions = FakeAgentSessions(online=[MAC])
+        self.agent_sessions = FakeChannelSessions(online=[DEVICE])
 
 
 @pytest.fixture
 def api(monkeypatch):
     FakeRegistry.device = ManagedDevice(
-        mac_address=MAC,
+        id=DEVICE,
         name="testbox",
         client=DeviceClientInfo(token_sha256="t" * 64),
     )
@@ -70,7 +70,7 @@ def api(monkeypatch):
 def test_a_device_that_never_beat_reads_empty_rather_than_erroring(api):
     client, _runtime = api
 
-    answer = client.get(f"/api/devices/{MAC}/services").json()
+    answer = client.get(f"/api/devices/{DEVICE}/services").json()
 
     assert answer == {
         "accounts": [],
@@ -86,11 +86,11 @@ def test_a_device_that_never_beat_reads_empty_rather_than_erroring(api):
 
 def test_the_view_is_the_devices_own_catalog(api):
     client, runtime = api
-    runtime.client_device_host[MAC] = "192.168.100.1"
-    runtime.client_platform[MAC] = {"os": "linux"}
-    runtime.client_accounts[MAC] = ["pat", "sam"]
+    runtime.device_hub_host[DEVICE] = "192.168.100.1"
+    runtime.device_platform[DEVICE] = {"os": "linux"}
+    runtime.device_accounts[DEVICE] = ["pat", "sam"]
 
-    answer = client.get(f"/api/devices/{MAC}/services").json()
+    answer = client.get(f"/api/devices/{DEVICE}/services").json()
 
     assert [entry["id"] for entry in answer["entries"]] == [
         "hub_share_media",
@@ -106,7 +106,7 @@ def test_an_ai_apply_runs_as_the_pages_own_verb(api):
     client, runtime = api
 
     answer = client.post(
-        f"/api/devices/{MAC}/services/ai",
+        f"/api/devices/{DEVICE}/services/ai",
         json={"body": {"targets": {"pat": True, "sam": False}}},
     )
 
@@ -115,7 +115,7 @@ def test_an_ai_apply_runs_as_the_pages_own_verb(api):
     assert command_id.startswith("service-ai-")
     assert runtime.agent_sessions.commands == [
         (
-            MAC,
+            DEVICE,
             "service",
             {"service_type": "ai", "body": {"targets": {"pat": True, "sam": False}}},
         )
@@ -126,7 +126,7 @@ def test_a_fresh_mount_must_say_whom_it_is_for(api):
     client, runtime = api
 
     answer = client.post(
-        f"/api/devices/{MAC}/services/file",
+        f"/api/devices/{DEVICE}/services/file",
         json={"body": {"action": "mount", "id": "hub_share_media", "path": "/mnt"}},
     )
 
@@ -139,7 +139,7 @@ def test_a_remount_by_record_needs_no_account(api):
     client, runtime = api
 
     answer = client.post(
-        f"/api/devices/{MAC}/services/file",
+        f"/api/devices/{DEVICE}/services/file",
         json={"body": {"action": "mount", "record_id": "r1"}},
     )
 
@@ -153,7 +153,7 @@ def test_a_share_runs_with_its_account_and_password(api):
     client, runtime = api
 
     answer = client.post(
-        f"/api/devices/{MAC}/services/rdp",
+        f"/api/devices/{DEVICE}/services/rdp",
         json={"body": {"action": "share", "account": "pat", "password": "pw"}},
     )
 
@@ -170,7 +170,7 @@ def test_an_unshare_is_within_the_verb_set(api):
     client, runtime = api
 
     answer = client.post(
-        f"/api/devices/{MAC}/services/rdp", json={"body": {"action": "unshare"}}
+        f"/api/devices/{DEVICE}/services/rdp", json={"body": {"action": "unshare"}}
     )
 
     assert answer.status_code == 200
@@ -181,7 +181,7 @@ def test_a_type_outside_the_verb_set_is_refused_typed(api):
     client, runtime = api
 
     answer = client.post(
-        f"/api/devices/{MAC}/services/web", json={"body": {"action": "open"}}
+        f"/api/devices/{DEVICE}/services/web", json={"body": {"action": "open"}}
     )
 
     assert answer.status_code == 400
@@ -194,7 +194,7 @@ def test_a_device_without_a_socket_takes_no_ask(api):
     runtime.agent_sessions.online.clear()
 
     answer = client.post(
-        f"/api/devices/{MAC}/services/ai", json={"body": {"targets": {"pat": True}}}
+        f"/api/devices/{DEVICE}/services/ai", json={"body": {"targets": {"pat": True}}}
     )
 
     assert answer.status_code == 409

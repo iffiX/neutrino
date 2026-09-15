@@ -193,7 +193,7 @@ export function OverlayTopology({
         const midX = (x + COLUMN_DEVICE) / 2;
         return (
           <path
-            key={device.mac_address}
+            key={device.id}
             className={
               device.is_online
                 ? "topo_lan_edge topo_lan_edge--on"
@@ -275,7 +275,7 @@ export function OverlayTopology({
 
       {/* LAN devices. */}
       {shown.map((device, index) => (
-        <g key={device.mac_address}>
+        <g key={device.id}>
           <rect
             x={COLUMN_DEVICE}
             y={rowY(index, rightRows)}

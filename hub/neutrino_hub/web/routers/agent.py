@@ -10,7 +10,6 @@ the one socket in ``agent_ws``.
 """
 
 import hashlib
-import re
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -18,10 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from neutrino_hub import HUB_VERSION
 from neutrino_hub.exceptions import AgentArtifactFetchError
 from neutrino_hub.modules.clients.constants import CLIENT_ENROLLMENT_KIND
-from neutrino_hub.modules.devices.constants import (
-    AGENT_WIRE_GENERATION,
-    DEVICE_MAC_PATTERN,
-)
+from neutrino_hub.modules.devices.constants import AGENT_WIRE_GENERATION
 from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.utils.version_number import parse_version
@@ -46,11 +42,11 @@ def enroll(
 ) -> AgentEnrollReply:
     """Let a machine introduce itself with an enrollment ticket.
 
-    This is how a machine the gateway cannot reach — no SSH, or behind
-    someone else's NAT — joins: its owner pastes a link into the agent's own
-    page and the machine comes to the gateway rather than the other way
-    round. A ticket generated for an already-known device binds to it; one
-    generated blank creates a device keyed by the machine's own id.
+    This is how a machine the gateway cannot reach, no SSH or behind
+    someone else's NAT, joins: its owner pastes a link into the agent's own
+    page and the machine comes to the gateway. A ticket generated for a
+    device names its row; a blank one lands on the row whose ``machine_id``
+    the machine reports, or creates one.
 
     Args:
         request: The ticket and what the machine says it is.
@@ -58,7 +54,7 @@ def enroll(
         runtime: The shared runtime, which holds the open tickets.
 
     Returns:
-        The heartbeat token and the key the device is stored under.
+        The heartbeat token and the id the device is stored under.
 
     Raises:
         HTTPException: 401 when the ticket is unknown or has expired, 409
@@ -80,19 +76,27 @@ def enroll(
         )
 
     registry = DeviceRegistry()
-    key = ticket.get("mac_address") or _reported_key(registry, request)
-    device = registry.get(key)
-    name = ticket.get("name") or device.name or request.hostname or key
-    registry.annotate(key, {"name": name})
-    token = registry.issue_client_token(key)
+    device = None
+    if ticket.get("device_id"):
+        device = registry.get(ticket["device_id"])
+    if device is None:
+        device = registry.find_by_machine_id(request.device_id)
+    name = ticket.get("name") or (device.name if device else None) or request.hostname
+    if device is None:
+        device = registry.create(name, machine_id=request.device_id)
+    else:
+        device = registry.annotate(device.id, {"name": name or device.name})
+        registry.note_machine(device.id, machine_id=request.device_id)
+    key = device.id
+    token = registry.issue_token(key)
     if request.platform:
-        runtime.client_platform[key] = dict(request.platform)
+        runtime.device_platform[key] = dict(request.platform)
     if request.hostname:
-        runtime.client_hostname[key] = request.hostname
+        runtime.device_hostname[key] = request.hostname
     address = peer_host(http_request)
     if address:
-        runtime.client_address[key] = address
-    return AgentEnrollReply(token=token, mac_address=key, hub_version=HUB_VERSION)
+        runtime.device_address[key] = address
+    return AgentEnrollReply(token=token, device_id=key, hub_version=HUB_VERSION)
 
 
 def version_refusal(
@@ -155,34 +159,6 @@ def peer_host(request: Request) -> str:
     return client.host if client is not None else ""
 
 
-def _reported_key(registry: DeviceRegistry, request: AgentEnroll) -> str:
-    """The record an unbound enrollment lands on.
-
-    A machine that reports its MACs joins as the device a scan or an SSH
-    setup already listed rather than as a second record, an already-stored
-    MAC winning over the rest. A machine reporting nothing usable — overlay
-    only, or another platform — is keyed by its machine id.
-
-    Args:
-        registry: The stored devices.
-        request: What the machine said it is.
-
-    Returns:
-        The key the device is stored under.
-    """
-    reported = [
-        address.lower()
-        for address in request.mac_addresses
-        if re.fullmatch(DEVICE_MAC_PATTERN, address or "")
-    ]
-    for address in reported:
-        if registry.get(address).is_stored:
-            return address
-    if reported:
-        return reported[0]
-    return f"id:{request.device_id[:24]}"
-
-
 @router.post("/leave")
 def leave(report: AgentLeave, runtime: PanelRuntime = Depends(get_runtime)) -> dict:
     """Accept an agent's word that it is leaving.
@@ -203,14 +179,14 @@ def leave(report: AgentLeave, runtime: PanelRuntime = Depends(get_runtime)) -> d
         HTTPException: 401 when the token matches no device.
     """
     registry = DeviceRegistry()
-    device = registry.find_by_client_token(report.token)
+    device = registry.find_by_token(report.token)
     if device is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "client_token_unknown", "params": {}},
         )
-    registry.forget_client(device.mac_address)
-    runtime.forget_client_state(device.mac_address)
+    registry.drop_token(device.id)
+    runtime.forget_device(device.id)
     return {}
 
 
@@ -240,14 +216,14 @@ def package(
             typed reason when the package cannot be produced — no build for
             that platform, or a release that did not serve what it pinned.
     """
-    device = DeviceRegistry().find_by_client_token(request.token)
+    device = DeviceRegistry().find_by_token(request.token)
     if device is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "client_token_unknown", "params": {}},
         )
-    architecture = request.architecture or runtime.client_platform.get(
-        device.mac_address, {}
+    architecture = request.architecture or runtime.device_platform.get(
+        device.id, {}
     ).get("arch", "")
     try:
         path = runtime.agent_packages.package(
@@ -288,7 +264,7 @@ def module_package(
             typed reason when the artifact cannot be produced — a key no
             manifest resolves to, or a fetch the vendor refused.
     """
-    device = DeviceRegistry().find_by_client_token(request.token)
+    device = DeviceRegistry().find_by_token(request.token)
     if device is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -298,7 +274,7 @@ def module_package(
         artifact = runtime.agent_modules.artifact_for_key(
             request.artifact_key,
             sources=load_module_manifests(),
-            platform=runtime.client_platform.get(device.mac_address, {}),
+            platform=runtime.device_platform.get(device.id, {}),
         )
         data = artifact.path.read_bytes()
     except AgentArtifactFetchError as error:

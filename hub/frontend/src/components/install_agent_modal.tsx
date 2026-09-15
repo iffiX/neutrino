@@ -6,6 +6,7 @@ import { Spinner } from "./spinner";
 import { StatusDot } from "./status_dot";
 import { VaultPicker } from "./vault_picker";
 import { ApiError, apiPost, describeError } from "../api_client";
+import { toDeviceLabel } from "../device_level";
 import { t, useLanguage } from "../i18n";
 import { stripAnsi } from "../strip_ansi";
 import { useTaskStream } from "../use_task_stream";
@@ -112,7 +113,7 @@ export function InstallAgentModal({
     isPortValid &&
     hasCredential &&
     !task.isRunning;
-  const deviceName = device.name ?? device.mac_address;
+  const deviceName = toDeviceLabel(device);
 
   const handleSubmit = async () => {
     setError(null);
@@ -128,7 +129,7 @@ export function InstallAgentModal({
     };
     try {
       const started = await apiPost<TaskStarted>(
-        `/devices/${device.mac_address}/action`,
+        `/devices/${device.id}/action`,
         request,
       );
       setTaskId(started.task_id);

@@ -102,7 +102,7 @@ def test_a_device_ticket_cannot_enroll_a_client_and_the_other_way_round(api):
     client, runtime, client_id = api
     runtime.enrollments["dev"] = {
         "name": "",
-        "mac_address": None,
+        "device_id": None,
         "expires_at": time.time() + 600,
     }
 

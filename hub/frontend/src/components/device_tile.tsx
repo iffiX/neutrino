@@ -6,6 +6,7 @@ import { t, useLanguage } from "../i18n";
 import { toDeviceIconName } from "../device_icon";
 import {
   isDeviceManaged,
+  toDeviceLabel,
   toDeviceReach,
   toDevicePresence,
   toDeviceUpgradePath,
@@ -87,7 +88,7 @@ export function DeviceTile({ device, onOpen }: DeviceTileProps) {
               isPulsing={presence === "reporting"}
             />
             <span className="device_tile_name_text">
-              {device.name ?? device.mac_address}
+              {toDeviceLabel(device)}
             </span>
           </span>
           <span className="device_tile_address">{device.ipv4_address}</span>
@@ -159,7 +160,7 @@ export function DeviceTile({ device, onOpen }: DeviceTileProps) {
 
       <div className="device_tile_footer">
         {isManaged ? (
-          <span className="mono">{device.mac_address}</span>
+          <span className="mono">{device.link_mac}</span>
         ) : (
           <span className="device_tile_path">
             <Icon name={UPGRADE_PATH_ICONS[upgradePath]} size={12} />

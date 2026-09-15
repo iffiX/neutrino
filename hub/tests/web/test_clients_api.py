@@ -94,7 +94,7 @@ def test_an_empty_hub_lists_no_clients(api):
     assert response.status_code == 200 and response.json() == {"clients": []}
 
 
-def test_a_link_creates_the_row_and_carries_the_client_kind(api):
+def test_a_link_creates_the_row_and_carries_the_client_role(api):
     client, runtime = api
 
     response = client.post("/api/clients/enrollment", json={"name": " alice "})
@@ -102,7 +102,7 @@ def test_a_link_creates_the_row_and_carries_the_client_kind(api):
     assert response.status_code == 200
     body = response.json()
     payload = decoded_link(body["link"])
-    assert payload["kind"] == "client" and payload["fp"] == FINGERPRINT
+    assert payload["role"] == "client" and payload["fp"] == FINGERPRINT
     assert payload["urls"] == ["https://192.168.100.1:8443"]
     ticket = runtime.enrollments[payload["token"]]
     rows = client.get("/api/clients").json()["clients"]
@@ -129,7 +129,7 @@ def test_a_link_creates_the_row_and_carries_the_client_kind(api):
 
 def test_a_blank_name_is_refused_and_a_new_link_replaces_only_client_tickets(api):
     client, runtime = api
-    runtime.enrollments["dev"] = {"name": "", "mac_address": None, "expires_at": 9e12}
+    runtime.enrollments["dev"] = {"name": "", "device_id": None, "expires_at": 9e12}
 
     refused = client.post("/api/clients/enrollment", json={"name": "  "})
     first = decoded_link(

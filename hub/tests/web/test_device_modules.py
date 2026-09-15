@@ -19,9 +19,10 @@ from neutrino_hub.web.models import ModuleDeviceFields
 from neutrino_hub.web.routers import device_modules
 from tests.conftest import FakeDeviceRegistry, FakeModuleRuntime, managed_device
 
-HUB_BOX = "aa:bb:cc:dd:ee:01"
-LAPTOP = "aa:bb:cc:dd:ee:02"
-OFFLINE = "aa:bb:cc:dd:ee:03"
+HUB_BOX = "1" * 32
+LAPTOP = "2" * 32
+OFFLINE = "3" * 32
+HUB_MACHINE = "machine-of-the-hub"
 MODULE = "samba"
 
 
@@ -46,24 +47,25 @@ def box(monkeypatch, tmp_path):
     )
     runtime = FakeModuleRuntime(
         devices=[
-            managed_device(LAPTOP, "zed laptop"),
-            managed_device(HUB_BOX, "hub box"),
-            managed_device(OFFLINE, "attic"),
+            managed_device("zed laptop", device_id=LAPTOP),
+            managed_device("hub box", device_id=HUB_BOX, machine_id=HUB_MACHINE),
+            managed_device("attic", device_id=OFFLINE),
         ],
         online=[HUB_BOX, LAPTOP],
         lan_addresses=["192.168.100.1"],
     )
-    runtime.client_address = {
+    runtime.device_address = {
         HUB_BOX: "192.168.100.1",
         LAPTOP: "192.168.100.7",
         OFFLINE: "192.168.100.9",
     }
-    runtime.client_platform = {
+    runtime.device_platform = {
         key: {"os": "linux", "family": "debian", "arch": "amd64"}
         for key in (HUB_BOX, LAPTOP, OFFLINE)
     }
     FakeDeviceRegistry.runtime = runtime
     monkeypatch.setattr(device_modules, "DeviceRegistry", FakeDeviceRegistry)
+    monkeypatch.setattr(device_modules, "machine_id", lambda: HUB_MACHINE)
     router = device_modules.module_router(
         MODULE, view_model=SampleView, build_view=sample_view
     )
@@ -107,13 +109,11 @@ def test_a_device_that_never_completed_its_handshake_is_not_listed(box):
     client, runtime = box
     from neutrino_hub.modules.devices.registry import ManagedDevice
 
-    runtime.devices["aa:bb:cc:dd:ee:09"] = ManagedDevice(
-        mac_address="aa:bb:cc:dd:ee:09"
-    )
+    runtime.devices["9" * 32] = ManagedDevice(id="9" * 32)
 
     rows = client.get(f"/api/{MODULE}").json()["devices"]
 
-    assert "aa:bb:cc:dd:ee:09" not in [row["device_id"] for row in rows]
+    assert "9" * 32 not in [row["device_id"] for row in rows]
 
 
 # --- the selection ---
@@ -182,9 +182,7 @@ def test_an_offline_device_already_on_stays_on_untouched(box):
 def test_an_id_no_managed_device_answers_to_is_refused(box):
     client, _ = box
 
-    response = client.put(
-        f"/api/{MODULE}/devices", json={"device_ids": ["11:22:33:44:55:66"]}
-    )
+    response = client.put(f"/api/{MODULE}/devices", json={"device_ids": ["nonsense"]})
 
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "device_unknown"
@@ -227,7 +225,7 @@ def test_a_standing_failure_of_the_last_order_reads_on_the_row(box):
     client, runtime = box
     runtime.report(LAPTOP, MODULE, "absent")
     runtime.agent_module_orders.ask(
-        mac_address=LAPTOP,
+        device_id=LAPTOP,
         module=MODULE,
         manifest={"installer": "platform"},
         platform={},
@@ -235,7 +233,7 @@ def test_a_standing_failure_of_the_last_order_reads_on_the_row(box):
     )
     order = runtime.agent_module_orders.open_order_for(LAPTOP, MODULE)
     runtime.agent_module_orders.record_result(
-        mac_address=LAPTOP,
+        device_id=LAPTOP,
         order_id=order.id,
         state="failed",
         code="install_failed",
@@ -254,7 +252,7 @@ def test_a_standing_failure_of_the_last_order_reads_on_the_row(box):
 def test_an_unknown_device_is_refused_typed(box):
     client, _ = box
 
-    response = client.get(f"/api/{MODULE}/devices/11:22:33:44:55:66")
+    response = client.get(f"/api/{MODULE}/devices/nonsense")
 
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "device_unknown"

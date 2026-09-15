@@ -30,6 +30,7 @@ from neutrino_hub.modules.devices.constants import (
 from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
 from neutrino_hub.modules.services.constants import SERVICES_PUBLISHED_MODULES
+from neutrino_hub.system.machine import machine_id
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
     ApplyResult,
@@ -143,26 +144,27 @@ def device_list(runtime: PanelRuntime, module: str) -> ModuleDeviceListView:
     Returns:
         The rows, the hub box's own first, then by name.
     """
+    own_machine = machine_id()
     rows = []
     for device in DeviceRegistry().all_stored():
         if not device.is_managed:
             continue
-        key = device.mac_address.lower()
+        key = device.id
         state, code, params, _ = module_status(runtime, key, module)
-        rows.append(
-            ModuleDeviceView(
-                device_id=key,
-                name=device.name or runtime.client_hostname.get(key, "") or key,
-                hostname=runtime.client_hostname.get(key, ""),
-                is_online=runtime.agent_sessions.is_online(key),
-                is_enabled=runtime.desired_states.is_enabled(key, module),
-                state=state,
-                code=code,
-                params=params,
-            )
+        row = ModuleDeviceView(
+            device_id=key,
+            name=device.name or runtime.device_hostname.get(key, "") or key,
+            hostname=runtime.device_hostname.get(key, ""),
+            is_online=runtime.agent_sessions.is_online(key),
+            is_enabled=runtime.desired_states.is_enabled(key, module),
+            state=state,
+            code=code,
+            params=params,
         )
-    rows.sort(key=_hub_first(runtime))
-    return ModuleDeviceListView(devices=rows)
+        is_hub = bool(own_machine) and device.machine_id == own_machine
+        rows.append(((not is_hub, row.name.lower()), row))
+    rows.sort(key=_row_order)
+    return ModuleDeviceListView(devices=[row for _, row in rows])
 
 
 def select_hosts(
@@ -188,9 +190,9 @@ def select_hosts(
             answers to, 409 ``agent_offline`` naming a changed device with
             no socket.
     """
-    wanted = {str(device_id).lower() for device_id in device_ids}
+    wanted = {str(device_id) for device_id in device_ids}
     stored = {
-        device.mac_address.lower(): device
+        device.id: device
         for device in DeviceRegistry().all_stored()
         if device.is_managed
     }
@@ -208,13 +210,13 @@ def select_hosts(
     for key in changed:
         is_enabled = key in wanted
         runtime.desired_states.set_enabled(key, module, is_enabled)
-        reported = runtime.client_modules.get(key, {}).get(module) or {}
+        reported = runtime.device_modules.get(key, {}).get(module) or {}
         ask_module(
             controller=runtime.agent_module_orders,
-            mac_address=key,
+            device_id=key,
             module=module,
             manifest=manifest,
-            platform=runtime.client_platform.get(key, {}),
+            platform=runtime.device_platform.get(key, {}),
             is_enabled=is_enabled,
             reported_state=str(reported.get("state", "")),
         )
@@ -235,7 +237,7 @@ def device_context(
     Args:
         runtime: The shared runtime.
         module: The module name.
-        device_id: The device key from the path.
+        device_id: The device id from the path.
 
     Returns:
         The context.
@@ -244,10 +246,12 @@ def device_context(
         HTTPException: 404 ``device_unknown`` when no managed device
             answers to the id.
     """
-    key = device_id.lower()
-    device = DeviceRegistry().get(key)
-    if not device.is_managed:
-        raise _refusal(status.HTTP_404_NOT_FOUND, CODE_DEVICE_UNKNOWN, device_id=key)
+    device = DeviceRegistry().get(device_id)
+    if device is None or not device.is_managed:
+        raise _refusal(
+            status.HTTP_404_NOT_FOUND, CODE_DEVICE_UNKNOWN, device_id=device_id
+        )
+    key = device.id
     state, code, params, details = module_status(runtime, key, module)
     return DeviceModuleContext(
         key=key,
@@ -256,7 +260,7 @@ def device_context(
         config=runtime.desired_states.read(key, module),
         is_enabled=runtime.desired_states.is_enabled(key, module),
         is_online=runtime.agent_sessions.is_online(key),
-        host=runtime.client_address.get(key, ""),
+        host=runtime.device_address.get(key, ""),
         state=state,
         code=code,
         params=params,
@@ -278,7 +282,7 @@ def module_status(runtime: PanelRuntime, key: str, module: str) -> tuple:
     Returns:
         ``(state, code, params, details)``.
     """
-    reported = runtime.client_modules.get(key, {}).get(module) or {}
+    reported = runtime.device_modules.get(key, {}).get(module) or {}
     state = str(reported.get("state", "unknown") or "unknown")
     code = str(reported.get("code") or "")
     params = dict(reported.get("params") or {})
@@ -436,17 +440,9 @@ def _recompose_published(runtime: PanelRuntime, module: str) -> None:
         runtime.published_services.schedule_refresh()
 
 
-def _hub_first(runtime: PanelRuntime):
-    """A sort key putting the hub box's own device first, then by name."""
-    own_addresses = {
-        interface.lan.address for interface in runtime.network().lan_interfaces
-    }
-
-    def key_of(row: ModuleDeviceView) -> tuple:
-        is_hub = runtime.client_address.get(row.device_id, "") in own_addresses
-        return (not is_hub, row.name.lower())
-
-    return key_of
+def _row_order(item: tuple) -> tuple:
+    """The sort key paired with each row: the hub box's own first, then by name."""
+    return item[0]
 
 
 def _refusal(status_code: int, code: str, **params) -> HTTPException:

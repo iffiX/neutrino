@@ -62,7 +62,7 @@ class StubUnits:
         )
 
 
-MAC = "aa:bb:cc:dd:ee:ff"
+DEVICE = "device-one"
 
 
 class StubSessions:
@@ -77,13 +77,13 @@ class FakeRuntime:
     def __init__(self, units: StubUnits):
         self.declared_probe = RecordingProbe()
         self.agent_sessions = StubSessions()
-        self.client_address = {MAC: "192.168.100.7"}
+        self.device_address = {DEVICE: "192.168.100.7"}
         self.published_services = PublishedServiceCache(
             declared_probe=self.declared_probe,
             served_models=StubServedModels(),
             units=units,
             agent_sessions=self.agent_sessions,
-            device_addresses=self.client_address,
+            device_addresses=self.device_address,
             desired_states=DesiredStateStore(),
         )
 
@@ -161,18 +161,18 @@ def test_the_list_folds_the_probe_health_in(box):
 def test_a_device_hosted_share_is_a_read_only_row_at_the_devices_address(box):
     client, runtime = box
     store = DesiredStateStore()
-    store.set_enabled(MAC, "samba", True)
+    store.set_enabled(DEVICE, "samba", True)
     store.write(
-        MAC, "samba", {"shares": [{"name": "media", "path": "/srv"}], "users": []}
+        DEVICE, "samba", {"shares": [{"name": "media", "path": "/srv"}], "users": []}
     )
-    runtime.agent_sessions.report_by_key[MAC] = {
+    runtime.agent_sessions.report_by_key[DEVICE] = {
         "modules": {"samba": {"state": "installed", "details": {"is_active": True}}}
     }
 
     payload = client.get("/api/services").json()
 
     entry = payload["services"][0]
-    assert entry["id"] == "samba_aa-bb-cc-dd-ee-ff_media"
+    assert entry["id"] == "samba_device-one_media"
     assert entry["source"] == "module"
     assert entry["record_id"] is None
     assert entry["is_healthy"] is True
@@ -182,11 +182,11 @@ def test_a_device_hosted_share_is_a_read_only_row_at_the_devices_address(box):
 def test_a_row_carries_the_code_its_provenance_is_worded_from(box):
     client, runtime = box
     store = DesiredStateStore()
-    store.set_enabled(MAC, "samba", True)
+    store.set_enabled(DEVICE, "samba", True)
     store.write(
-        MAC, "samba", {"shares": [{"name": "media", "path": "/srv"}], "users": []}
+        DEVICE, "samba", {"shares": [{"name": "media", "path": "/srv"}], "users": []}
     )
-    runtime.agent_sessions.report_by_key[MAC] = {
+    runtime.agent_sessions.report_by_key[DEVICE] = {
         "modules": {"samba": {"state": "installed", "details": {"is_active": True}}}
     }
     declare(client, description="")

@@ -1,9 +1,10 @@
 """One desired state per device under config/, composed under one hash.
 
-What these pin: the directory a device key becomes, the module files and
-the switches beside them, a hash that moves only with the state, the
-composed shape the agent applies, the secrets a device's Gitea is handed
-once and kept, and the fence and address the hub folds in.
+What these pin: the directory a device id names, the module files and the
+switches beside them, a hash that moves only with the state, the composed
+shape the agent applies, the secrets a device's Gitea is handed once and
+kept, the fence and address the hub folds in, and the sweep that removes a
+directory no stored device names.
 """
 
 import json
@@ -11,13 +12,9 @@ import json
 import pytest
 
 from neutrino_hub.modules.devices import desired_state as desired_state_module
-from neutrino_hub.modules.devices.desired_state import (
-    DesiredStateStore,
-    device_dir,
-    state_hash,
-)
+from neutrino_hub.modules.devices.desired_state import DesiredStateStore, state_hash
 
-MAC = "AA:BB:cc:dd:ee:ff"
+DEVICE = "device-one"
 PLATFORM = {"os": "linux", "family": "debian", "arch": "amd64"}
 
 
@@ -33,37 +30,32 @@ def config(monkeypatch, tmp_path):
     return tmp_path
 
 
-def test_a_device_key_becomes_a_directory_name():
-    assert device_dir(MAC) == "aa-bb-cc-dd-ee-ff"
-    assert device_dir("id:abc123") == "id-abc123"
-
-
 def test_module_files_land_under_the_devices_directory(config):
     store = DesiredStateStore()
 
-    store.write(MAC, "samba", {"shares": [], "users": ["ann"]})
+    store.write(DEVICE, "samba", {"shares": [], "users": ["ann"]})
 
-    path = config / "devices/aa-bb-cc-dd-ee-ff/samba.json"
+    path = config / f"devices/{DEVICE}/samba.json"
     assert json.loads(path.read_text())["users"] == ["ann"]
-    assert store.read(MAC, "samba") == {"shares": [], "users": ["ann"]}
-    assert store.read(MAC, "gitea") == {}
+    assert store.read(DEVICE, "samba") == {"shares": [], "users": ["ann"]}
+    assert store.read(DEVICE, "gitea") == {}
 
 
 def test_every_hosted_module_has_a_switch_off_by_default(config):
     store = DesiredStateStore()
 
-    assert store.modules(MAC) == {
+    assert store.modules(DEVICE) == {
         "zfs": {"is_enabled": False},
         "samba": {"is_enabled": False},
         "gitea": {"is_enabled": False},
         "podman": {"is_enabled": False},
     }
 
-    store.set_enabled(MAC, "samba", True)
+    store.set_enabled(DEVICE, "samba", True)
 
-    assert store.is_enabled(MAC, "samba") is True
-    assert store.is_enabled(MAC, "gitea") is False
-    stored = json.loads((config / "devices/aa-bb-cc-dd-ee-ff/modules.json").read_text())
+    assert store.is_enabled(DEVICE, "samba") is True
+    assert store.is_enabled(DEVICE, "gitea") is False
+    stored = json.loads((config / f"devices/{DEVICE}/modules.json").read_text())
     assert stored["modules"]["samba"] == {"is_enabled": True}
 
 
@@ -75,12 +67,14 @@ def test_the_hash_is_stable_and_moves_with_the_state():
 
 def test_compose_carries_every_module_the_rdp_seat_and_the_catalog(config):
     store = DesiredStateStore()
-    store.set_enabled(MAC, "samba", True)
-    store.write(MAC, "samba", {"shares": [{"name": "s", "path": "/srv"}], "users": []})
-    store.write(MAC, "gitea", {"listen_port": 3100, "root_url": ""})
+    store.set_enabled(DEVICE, "samba", True)
+    store.write(
+        DEVICE, "samba", {"shares": [{"name": "s", "path": "/srv"}], "users": []}
+    )
+    store.write(DEVICE, "gitea", {"listen_port": 3100, "root_url": ""})
 
     desired, digest = store.compose(
-        MAC, PLATFORM, address="192.168.100.7", allowed_subnets=["192.168.100.0/24"]
+        DEVICE, PLATFORM, address="192.168.100.7", allowed_subnets=["192.168.100.0/24"]
     )
 
     assert set(desired) == {"modules", "rdp", "catalog"}
@@ -107,10 +101,10 @@ def test_compose_carries_every_module_the_rdp_seat_and_the_catalog(config):
 def test_compose_is_the_same_twice_and_moves_with_a_write(config):
     store = DesiredStateStore()
 
-    first = store.compose(MAC, PLATFORM)
-    again = store.compose(MAC, PLATFORM)
-    store.set_enabled(MAC, "podman", True)
-    changed = store.compose(MAC, PLATFORM)
+    first = store.compose(DEVICE, PLATFORM)
+    again = store.compose(DEVICE, PLATFORM)
+    store.set_enabled(DEVICE, "podman", True)
+    changed = store.compose(DEVICE, PLATFORM)
 
     assert first[1] == again[1]
     assert changed[1] != first[1]
@@ -119,14 +113,14 @@ def test_compose_is_the_same_twice_and_moves_with_a_write(config):
 def test_gitea_secrets_are_generated_once_and_kept(config):
     store = DesiredStateStore()
 
-    first = store.gitea_secrets(MAC)
-    again = store.gitea_secrets(MAC)
+    first = store.gitea_secrets(DEVICE)
+    again = store.gitea_secrets(DEVICE)
 
     assert first == again
     assert all(len(value) >= 40 for value in first.values())
-    path = config / "devices/aa-bb-cc-dd-ee-ff/gitea_secrets.json"
+    path = config / f"devices/{DEVICE}/gitea_secrets.json"
     assert json.loads(path.read_text()) == first
-    assert store.gitea_secrets("11:22:33:44:55:66") != first
+    assert store.gitea_secrets("another-device") != first
 
 
 def test_the_seat_password_is_empty_until_rdp_json_exists(config):
@@ -134,14 +128,33 @@ def test_the_seat_password_is_empty_until_rdp_json_exists(config):
     ``test_rdp_passwords.py``'s case."""
     store = DesiredStateStore()
 
-    assert store.seat_password(MAC) == ""
+    assert store.seat_password(DEVICE) == ""
 
 
 def test_forget_removes_the_devices_directory(config):
     store = DesiredStateStore()
-    store.set_enabled(MAC, "samba", True)
+    store.set_enabled(DEVICE, "samba", True)
 
-    store.forget(MAC)
+    store.forget(DEVICE)
 
-    assert not (config / "devices/aa-bb-cc-dd-ee-ff").exists()
-    assert store.modules(MAC)["samba"] == {"is_enabled": False}
+    assert not (config / f"devices/{DEVICE}").exists()
+    assert store.modules(DEVICE)["samba"] == {"is_enabled": False}
+
+
+def test_the_sweep_removes_a_directory_no_stored_id_names_and_keeps_the_rest(
+    config,
+):
+    store = DesiredStateStore()
+    store.set_enabled(DEVICE, "samba", True)
+    store.set_enabled("aa-bb-cc-dd-ee-ff", "samba", True)
+    (config / "devices" / "packages").mkdir()
+    (config / "devices" / "devices.json").write_text("{}")
+
+    removed = store.forget_orphans({DEVICE})
+
+    assert removed == ["aa-bb-cc-dd-ee-ff"]
+    assert (config / f"devices/{DEVICE}/modules.json").exists()
+    assert (config / "devices" / "packages").is_dir()
+    assert (config / "devices" / "devices.json").exists()
+    assert not (config / "devices" / "aa-bb-cc-dd-ee-ff").exists()
+    assert store.forget_orphans({DEVICE}) == []

@@ -17,9 +17,10 @@ from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
-from tests.conftest import FakeAgentSessions
+from tests.conftest import FakeChannelSessions
 
-MAC = "aa:bb:cc:dd:ee:ff"
+DEVICE = "device-one"
+LINK_MAC = "aa:bb:cc:dd:ee:ff"
 
 
 class FakeRegistry:
@@ -30,10 +31,10 @@ class FakeRegistry:
     def merged(self, discovered: list) -> list:
         return [FakeRegistry.device]
 
-    def get(self, mac_address: str) -> ManagedDevice:
-        return FakeRegistry.device
+    def get(self, device_id: str):
+        return FakeRegistry.device if device_id == FakeRegistry.device.id else None
 
-    def annotate(self, mac_address: str, payload: dict) -> ManagedDevice:
+    def annotate(self, device_id: str, payload: dict) -> ManagedDevice:
         if "name" in payload:
             FakeRegistry.device.name = payload["name"]
         return FakeRegistry.device
@@ -52,14 +53,14 @@ class FakeScanner:
 class FakeRuntime:
     def __init__(self):
         self.events = PanelEventBus()
-        self.client_metrics = {}
-        self.client_address = {}
-        self.client_platform = {}
-        self.client_hostname = {}
-        self.client_last_error = {}
-        self.client_modules = {}
+        self.device_metrics = {}
+        self.device_address = {}
+        self.device_platform = {}
+        self.device_hostname = {}
+        self.device_last_error = {}
+        self.device_modules = {}
         self.device_shares = DeviceShareRegistry()
-        self.agent_sessions = FakeAgentSessions()
+        self.agent_sessions = FakeChannelSessions()
 
     def network(self):
         return _EmptyNetwork()
@@ -75,8 +76,11 @@ class _EmptyNetwork:
 @pytest.fixture
 def api(monkeypatch):
     FakeRegistry.device = ManagedDevice(
-        mac_address=MAC,
+        id=DEVICE,
         name="xenode",
+        machine_id="machine-xenode",
+        mac_addresses=[LINK_MAC, "11:22:33:44:55:66"],
+        link_mac=LINK_MAC,
         ipv4_address="192.168.100.2",
         client=DeviceClientInfo(token_sha256="t" * 64),
     )
@@ -91,9 +95,21 @@ def api(monkeypatch):
         yield client, runtime
 
 
+def test_a_device_carries_its_id_and_the_facts_its_agent_reported(api):
+    client, _ = api
+
+    device = client.get("/api/devices").json()["devices"][0]
+
+    assert device["id"] == DEVICE
+    assert device["machine_id"] == "machine-xenode"
+    assert device["mac_addresses"] == [LINK_MAC, "11:22:33:44:55:66"]
+    assert device["link_mac"] == LINK_MAC
+    assert "mac_address" not in device
+
+
 def test_a_managed_device_carries_the_platform_its_agent_reported(api):
     client, runtime = api
-    runtime.client_platform[MAC] = {
+    runtime.device_platform[DEVICE] = {
         "os": "linux",
         "family": "debian",
         "arch": "amd64",
@@ -119,30 +135,32 @@ def test_a_platform_nobody_has_reported_reads_as_unknown(api):
 def test_a_device_with_no_agent_has_no_client_block(api):
     client, runtime = api
     FakeRegistry.device.client = DeviceClientInfo()
-    runtime.client_platform[MAC] = {"os": "windows", "arch": "amd64"}
+    runtime.device_platform[DEVICE] = {"os": "windows", "arch": "amd64"}
 
     device = client.get("/api/devices").json()["devices"][0]
 
     assert device["client"] is None
 
 
-def test_the_platform_is_found_whatever_case_the_MAC_is_stored_in(api):
-    client, runtime = api
-    FakeRegistry.device.mac_address = MAC.upper()
-    runtime.client_platform[MAC] = {"os": "linux", "arch": "arm64"}
+def test_an_id_no_device_has_is_refused_typed(api):
+    client, _ = api
 
-    device = client.get("/api/devices").json()["devices"][0]
+    response = client.put("/api/devices/nonsense", json={"name": "x"})
 
-    assert device["client"]["platform_os"] == "linux"
+    assert response.status_code == 404
+    assert response.json()["detail"] == {
+        "code": "device_unknown",
+        "params": {"device_id": "nonsense"},
+    }
 
 
 def test_renaming_a_device_keeps_its_platform(api):
     """The page redraws the tile from this answer. Built without the platform,
     a managed tile loses its chip until the next poll."""
     client, runtime = api
-    runtime.client_platform[MAC] = {"os": "linux", "arch": "amd64"}
+    runtime.device_platform[DEVICE] = {"os": "linux", "arch": "amd64"}
 
-    answer = client.put(f"/api/devices/{MAC}", json={"name": "renamed"}).json()
+    answer = client.put(f"/api/devices/{DEVICE}", json={"name": "renamed"}).json()
 
     assert answer["name"] == "renamed"
     assert answer["client"]["platform_os"] == "linux"
@@ -150,8 +168,8 @@ def test_renaming_a_device_keeps_its_platform(api):
 
 def test_the_version_and_the_stamp_come_from_the_session_registry(api):
     client, runtime = api
-    runtime.agent_sessions.versions[MAC] = "0.3.0"
-    runtime.agent_sessions.ended_at[MAC] = "2026-01-01T00:00:00+00:00"
+    runtime.agent_sessions.versions[DEVICE] = "0.3.0"
+    runtime.agent_sessions.ended_at[DEVICE] = "2026-01-01T00:00:00+00:00"
 
     (device,) = client.get("/api/devices").json()["devices"]
 
@@ -178,7 +196,7 @@ def test_a_device_is_at_the_address_its_channel_comes_from(api):
     """SSH is for installing and power, never for locating: an agent joined
     by a link has no stored host and is no less reachable."""
     client, runtime = api
-    runtime.client_address[MAC] = "192.168.100.7"
+    runtime.device_address[DEVICE] = "192.168.100.7"
 
     (device,) = client.get("/api/devices").json()["devices"]
 
@@ -216,9 +234,9 @@ def test_the_ssh_block_carries_its_references_and_no_password_field(api):
 
 def test_a_device_sharing_its_desktop_carries_the_share_it_declared(api):
     client, runtime = api
-    runtime.client_modules[MAC] = {"rustdesk": {"state": "installed"}}
+    runtime.device_modules[DEVICE] = {"rustdesk": {"state": "installed"}}
     runtime.device_shares.declare(
-        mac_address=MAC,
+        device_id=DEVICE,
         share_id="s1",
         hostname="xenode",
         host="192.168.100.2",
@@ -242,7 +260,7 @@ def test_a_device_sharing_its_desktop_carries_the_share_it_declared(api):
 
 def test_a_device_sharing_nothing_says_so_without_a_port_or_an_account(api):
     client, runtime = api
-    runtime.client_modules[MAC] = {"rustdesk": {"state": "installed"}}
+    runtime.device_modules[DEVICE] = {"rustdesk": {"state": "installed"}}
 
     (device,) = client.get("/api/devices").json()["devices"]
 
@@ -260,13 +278,13 @@ def test_a_package_built_without_the_host_reads_unavailable(api):
     """Only a machine reporting the row absent says so. One nobody has heard
     from says nothing either way, and the card stands as it always did."""
     client, runtime = api
-    runtime.client_modules[MAC] = {"rustdesk": {"state": "absent"}}
+    runtime.device_modules[DEVICE] = {"rustdesk": {"state": "absent"}}
 
     (device,) = client.get("/api/devices").json()["devices"]
 
     assert device["client"]["rdp"]["is_available"] is False
 
-    runtime.client_modules[MAC] = {}
+    runtime.device_modules[DEVICE] = {}
 
     (device,) = client.get("/api/devices").json()["devices"]
 
@@ -276,7 +294,7 @@ def test_a_package_built_without_the_host_reads_unavailable(api):
 def test_another_machines_share_is_not_shown_on_this_device(api):
     client, runtime = api
     runtime.device_shares.declare(
-        mac_address="11:22:33:44:55:66",
+        device_id="another-device",
         share_id="s2",
         hostname="other",
         host="192.168.100.9",

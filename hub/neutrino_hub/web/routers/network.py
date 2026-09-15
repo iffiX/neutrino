@@ -741,7 +741,7 @@ def _reaching_addresses(runtime: PanelRuntime) -> list[str]:
     Returns:
         One address per connected device.
     """
-    return [address for address in runtime.client_address.values() if address]
+    return [address for address in runtime.device_address.values() if address]
 
 
 def _count_reaching(addresses: list[str], cidr: str) -> int:

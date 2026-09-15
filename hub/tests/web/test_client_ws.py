@@ -356,7 +356,7 @@ def test_a_toggle_pushes_the_switch_the_credential_and_the_catalog(api):
 def test_rdp_connect_is_answered_from_the_share_and_the_seat_password(api):
     client, runtime, _, token = api
     runtime.device_shares.declare(
-        mac_address=MAC,
+        device_id=MAC,
         share_id="s1",
         hostname="desk",
         host="192.168.100.7",

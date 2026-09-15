@@ -19,27 +19,44 @@ from fastapi.testclient import TestClient
 from neutrino_hub.modules.devices.agent_module_cache import AgentModuleArtifact
 from neutrino_hub.modules.devices.agent_module_controller import AgentModuleController
 from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
-from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice
+from neutrino_hub.modules.devices.registry import (
+    DeviceClientInfo,
+    ManagedDevice,
+    normalized_mac,
+)
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
-from tests.conftest import FakeAgentSessions, holding_dispatch
+from tests.conftest import FakeChannelSessions, holding_dispatch
 
-MAC = "aa:bb:cc:dd:ee:ff"
+DEVICE = "device-one"
 FINGERPRINT = "ab" * 32
 
 
 class FakeRegistry:
     device: ManagedDevice
 
-    def get(self, mac_address: str) -> ManagedDevice:
+    def get(self, device_id: str):
+        if device_id == FakeRegistry.device.id:
+            return FakeRegistry.device
+        if device_id.startswith("scan:") and normalized_mac(device_id[5:]):
+            return ManagedDevice(id=device_id, link_mac=device_id[5:])
+        return None
+
+    def adopt(self, device_id: str) -> ManagedDevice:
+        if device_id.startswith("scan:"):
+            FakeRegistry.adopted = ManagedDevice(
+                id="adopted-id", link_mac=device_id[5:]
+            )
+            return FakeRegistry.adopted
         return FakeRegistry.device
 
-    def annotate(self, mac_address: str, payload: dict) -> ManagedDevice:
+    def annotate(self, device_id: str, payload: dict) -> ManagedDevice:
+        device = self.adopt(device_id)
         if "name" in payload:
-            FakeRegistry.device.name = payload["name"]
-        return FakeRegistry.device
+            device.name = payload["name"]
+        return device
 
 
 class StubModuleCache:
@@ -54,16 +71,16 @@ class StubModuleCache:
 class FakeRuntime:
     def __init__(self):
         self.events = PanelEventBus()
-        self.client_modules = {}
-        self.client_platform = {}
-        self.client_hostname = {}
-        self.client_metrics = {}
-        self.client_address = {}
-        self.client_last_error = {}
+        self.device_modules = {}
+        self.device_platform = {}
+        self.device_hostname = {}
+        self.device_metrics = {}
+        self.device_address = {}
+        self.device_last_error = {}
         self.pending = {}
         self.enrollments = {}
         self.device_shares = DeviceShareRegistry()
-        self.agent_sessions = FakeAgentSessions()
+        self.agent_sessions = FakeChannelSessions()
         self.agent_modules = StubModuleCache()
         self.device_install_locks = DeviceInstallLocks()
         # A dispatch that holds each order open briefly and never answers:
@@ -74,18 +91,17 @@ class FakeRuntime:
             dispatch=holding_dispatch,
         )
 
-    def forget_client_state(self, mac_address: str) -> None:
-        key = mac_address.lower()
+    def forget_device(self, device_id: str) -> None:
         for held in (
-            self.client_modules,
-            self.client_platform,
-            self.client_metrics,
-            self.client_address,
-            self.client_last_error,
+            self.device_modules,
+            self.device_platform,
+            self.device_metrics,
+            self.device_address,
+            self.device_last_error,
             self.pending,
         ):
-            held.pop(key, None)
-        self.agent_module_orders.forget(key)
+            held.pop(device_id, None)
+        self.agent_module_orders.forget(device_id)
 
 
 def beating(seconds_ago: float) -> str:
@@ -96,7 +112,7 @@ def beating(seconds_ago: float) -> str:
 @pytest.fixture
 def api(monkeypatch):
     FakeRegistry.device = ManagedDevice(
-        mac_address=MAC,
+        id=DEVICE,
         name="testbox",
         client=DeviceClientInfo(token_sha256="t" * 64),
     )
@@ -125,7 +141,7 @@ def api(monkeypatch):
 def test_an_agent_with_no_socket_is_not_online(api):
     client, _ = api
 
-    answer = client.get(f"/api/devices/{MAC}/modules").json()
+    answer = client.get(f"/api/devices/{DEVICE}/modules").json()
 
     assert answer["is_agent_managed"]
     assert not answer["is_agent_online"]
@@ -133,9 +149,9 @@ def test_an_agent_with_no_socket_is_not_online(api):
 
 def test_an_agent_holding_a_socket_is_online(api):
     client, runtime = api
-    runtime.agent_sessions.online.add(MAC)
+    runtime.agent_sessions.online.add(DEVICE)
 
-    answer = client.get(f"/api/devices/{MAC}/modules").json()
+    answer = client.get(f"/api/devices/{DEVICE}/modules").json()
 
     assert answer["is_agent_online"]
 
@@ -145,24 +161,21 @@ def test_an_agent_whose_socket_closed_is_not_online(api):
     this device drew every module as absent while its remote desktop was
     plainly running."""
     client, runtime = api
-    runtime.agent_sessions.online.add(MAC)
-    runtime.agent_sessions.online.discard(MAC)
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.agent_sessions.online.discard(DEVICE)
 
-    answer = client.get(f"/api/devices/{MAC}/modules").json()
+    answer = client.get(f"/api/devices/{DEVICE}/modules").json()
 
     assert answer["is_agent_managed"]
     assert not answer["is_agent_online"]
 
 
-def test_what_the_agent_reported_is_found_whatever_case_the_MAC_is_asked_in(api):
-    """Everything else keys by the lowercased address; looking the runtime up
-    by the raw path segment finds nothing, and every module then reads as
-    waiting for an agent that is in fact answering."""
+def test_what_the_agent_reported_is_found_by_the_devices_id(api):
     client, runtime = api
-    runtime.agent_sessions.online.add(MAC)
-    runtime.client_modules[MAC] = {"fakedesk": {"state": "installed"}}
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.device_modules[DEVICE] = {"fakedesk": {"state": "installed"}}
 
-    answer = client.get(f"/api/devices/{MAC.upper()}/modules").json()
+    answer = client.get(f"/api/devices/{DEVICE}/modules").json()
 
     assert answer["modules"][0]["state"] == "installed"
 
@@ -181,7 +194,7 @@ def test_the_manifest_kind_reaches_the_row_for_the_ssh_confirm(api, monkeypatch)
         },
     )
 
-    answer = client.get(f"/api/devices/{MAC}/modules").json()
+    answer = client.get(f"/api/devices/{DEVICE}/modules").json()
 
     assert answer["modules"][0]["kind"] == "openssh"
 
@@ -203,19 +216,23 @@ def test_a_native_module_offers_nothing_where_the_platform_carries_it(api, monke
         },
     )
 
-    runtime.client_platform[MAC] = {"os": "windows", "family": "", "arch": "amd64"}
-    native = client.get(f"/api/devices/{MAC}/modules").json()["modules"][0]
+    runtime.device_platform[DEVICE] = {"os": "windows", "family": "", "arch": "amd64"}
+    native = client.get(f"/api/devices/{DEVICE}/modules").json()["modules"][0]
     assert native["is_native"] is True
 
-    runtime.client_platform[MAC] = {"os": "linux", "family": "debian", "arch": "amd64"}
-    package = client.get(f"/api/devices/{MAC}/modules").json()["modules"][0]
+    runtime.device_platform[DEVICE] = {
+        "os": "linux",
+        "family": "debian",
+        "arch": "amd64",
+    }
+    package = client.get(f"/api/devices/{DEVICE}/modules").json()["modules"][0]
     assert package["is_native"] is False
 
 
 def test_the_installer_tier_reaches_the_row(api):
     client, _ = api
 
-    answer = client.get(f"/api/devices/{MAC}/modules").json()
+    answer = client.get(f"/api/devices/{DEVICE}/modules").json()
 
     assert answer["modules"][0]["installer"] == "hub"
 
@@ -236,60 +253,64 @@ def test_a_user_tier_click_queues_nothing_and_the_row_keeps_its_state(api, monke
             }
         },
     )
-    runtime.client_modules[MAC] = {"teamviewer": {"state": "absent"}}
+    runtime.device_modules[DEVICE] = {"teamviewer": {"state": "absent"}}
 
     answer = client.put(
-        f"/api/devices/{MAC}/modules/teamviewer", json={"is_enabled": True}
+        f"/api/devices/{DEVICE}/modules/teamviewer", json={"is_enabled": True}
     ).json()
 
     assert answer["modules"][0]["installer"] == "user"
     assert answer["modules"][0]["state"] == "absent"
-    assert runtime.agent_module_orders.open_order_for(MAC, "teamviewer") is None
+    assert runtime.agent_module_orders.open_order_for(DEVICE, "teamviewer") is None
 
 
 def test_a_click_queues_one_order_and_the_row_shows_the_step(api):
     client, runtime = api
 
     answer = client.put(
-        f"/api/devices/{MAC}/modules/fakedesk", json={"is_enabled": True}
+        f"/api/devices/{DEVICE}/modules/fakedesk", json={"is_enabled": True}
     ).json()
 
     assert answer["modules"][0]["state"] == "installing"
-    order = runtime.agent_module_orders.open_order_for(MAC, "fakedesk")
+    order = runtime.agent_module_orders.open_order_for(DEVICE, "fakedesk")
     assert order is not None and order.action == "install"
     unknown = client.put(
-        f"/api/devices/{MAC}/modules/nonsense", json={"is_enabled": True}
+        f"/api/devices/{DEVICE}/modules/nonsense", json={"is_enabled": True}
     )
     assert unknown.status_code == 404
 
 
 def test_forgetting_a_device_drops_what_was_queued_for_it(api, monkeypatch):
-    """A command queued for a device that is forgotten would be delivered to
-    whatever machine turns up on that MAC next: enrol a rebuilt box and its
-    first heartbeat drains a shutdown nobody asked it for."""
+    """What is held for a forgotten device goes with its row."""
     client, runtime = api
     monkeypatch.setattr(FakeRegistry, "forget", lambda self, mac: None, raising=False)
-    runtime.pending[MAC] = ["shutdown"]
-    runtime.client_modules[MAC] = {"fakedesk": {"state": "installed"}}
+    runtime.pending[DEVICE] = ["shutdown"]
+    runtime.device_modules[DEVICE] = {"fakedesk": {"state": "installed"}}
 
-    assert client.delete(f"/api/devices/{MAC}").status_code == 200
+    assert client.delete(f"/api/devices/{DEVICE}").status_code == 200
 
     assert runtime.pending == {}
-    assert runtime.client_modules == {}
+    assert runtime.device_modules == {}
 
 
-@pytest.mark.parametrize(
-    "address", ["hello", "aa:bb:cc:dd:ee", "aa:bb:cc:dd:ee:ff:00", "", "12345"]
-)
-def test_a_device_has_to_be_addressed_by_a_MAC(api, address):
-    """Every part of a device is keyed by its address — the registry, the host
-    key store, the command queue, the magic packet — so a record stored under
-    something else is one none of them can act on."""
+@pytest.mark.parametrize("device_id", ["hello", "scan:nonsense", "", "12345"])
+def test_an_id_no_device_has_is_refused(api, device_id):
     client, _ = api
 
-    response = client.put(f"/api/devices/{address}", json={"name": "nonsense"})
+    response = client.put(f"/api/devices/{device_id}", json={"name": "nonsense"})
 
-    assert response.status_code in (400, 404, 405)
+    assert response.status_code in (404, 405)
+
+
+def test_renaming_a_scan_row_answers_the_device_it_became(api):
+    client, _ = api
+
+    answer = client.put("/api/devices/scan:aa:bb:cc:dd:ee:09", json={"name": "printer"})
+
+    assert answer.status_code == 200
+    assert answer.json()["id"] == "adopted-id"
+    assert answer.json()["name"] == "printer"
+    assert answer.json()["link_mac"] == "aa:bb:cc:dd:ee:09"
 
 
 def test_an_unknown_remote_desktop_product_is_refused_at_once(api):
@@ -300,7 +321,7 @@ def test_an_unknown_remote_desktop_product_is_refused_at_once(api):
     FakeRegistry.device.ssh = {"host": "10.0.0.5", "username": "me"}
 
     response = client.post(
-        f"/api/devices/{MAC}/remote_desktop/anydsk/password",
+        f"/api/devices/{DEVICE}/remote_desktop/anydsk/password",
         json={"password": "hunter2hunter2"},  # scan: allow
     )
 
@@ -311,10 +332,10 @@ def test_renaming_a_device_keeps_its_monitor_alive(api):
     """The page redraws the tile from this answer. Built with no metrics, it
     reads as a machine that went offline the moment somebody renamed it."""
     client, runtime = api
-    runtime.agent_sessions.online.add(MAC)
-    runtime.client_metrics[MAC] = {"cpu_percent": 12.5, "memory_percent": 40.0}
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.device_metrics[DEVICE] = {"cpu_percent": 12.5, "memory_percent": 40.0}
 
-    answer = client.put(f"/api/devices/{MAC}", json={"name": "renamed"}).json()
+    answer = client.put(f"/api/devices/{DEVICE}", json={"name": "renamed"}).json()
 
     assert answer["name"] == "renamed"
     assert answer["client"]["cpu_percent"] == 12.5
@@ -333,9 +354,8 @@ def test_a_link_that_cannot_be_built_generates_no_ticket(api, monkeypatch):
 
 
 def test_a_link_generated_for_a_device_binds_to_that_device(api, monkeypatch):
-    """The per-device link on an unmanaged card. Bound to the MAC, the machine
-    that pastes it joins as the device already on the page rather than as a
-    second record keyed by its own machine id."""
+    """The per-device link on an unmanaged card: the machine that pastes it
+    joins as the device already on the page."""
     client, runtime = api
     monkeypatch.setattr(
         devices_router, "_agent_urls", lambda runtime: ["http://192.168.8.1:8080"]
@@ -343,13 +363,46 @@ def test_a_link_generated_for_a_device_binds_to_that_device(api, monkeypatch):
 
     response = client.post(
         "/api/devices/enrollment",
-        json={"name": "xenode", "mac_address": MAC.upper()},
+        json={"name": "xenode", "device_id": DEVICE},
     )
 
     assert response.status_code == 200
     ticket = runtime.enrollments[response.json()["token"]]
-    assert ticket["mac_address"] == MAC
+    assert ticket["device_id"] == DEVICE
     assert ticket["name"] == "xenode"
+
+
+def test_a_link_generated_for_a_scan_row_stores_it_and_binds_to_the_new_row(
+    api, monkeypatch
+):
+    client, runtime = api
+    monkeypatch.setattr(
+        devices_router, "_agent_urls", lambda runtime: ["http://192.168.8.1:8080"]
+    )
+
+    response = client.post(
+        "/api/devices/enrollment",
+        json={"name": "", "device_id": "scan:aa:bb:cc:dd:ee:09"},
+    )
+
+    assert response.status_code == 200
+    ticket = runtime.enrollments[response.json()["token"]]
+    assert ticket["device_id"] == "adopted-id"
+
+
+def test_a_link_for_an_unknown_device_is_refused_typed(api, monkeypatch):
+    client, runtime = api
+    monkeypatch.setattr(
+        devices_router, "_agent_urls", lambda runtime: ["http://192.168.8.1:8080"]
+    )
+
+    response = client.post(
+        "/api/devices/enrollment", json={"name": "", "device_id": "nonsense"}
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "device_unknown"
+    assert runtime.enrollments == {}
 
 
 def test_the_link_is_one_shell_safe_token(api, monkeypatch):
@@ -373,6 +426,7 @@ def test_the_link_is_one_shell_safe_token(api, monkeypatch):
     assert payload["urls"] == ["http://192.168.8.1:8080", "http://10.0.0.1:8080"]
     assert payload["token"] == answer["token"]
     assert payload["fp"] == FINGERPRINT
+    assert payload["role"] == "agent"
 
 
 def test_a_lapsed_ticket_is_swept_when_the_next_one_is_generated(api, monkeypatch):

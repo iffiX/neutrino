@@ -908,8 +908,7 @@ class DeviceOnlineView(BaseModel):
     name: str
     hostname: str = ""
     platform: dict = Field(default_factory=dict)
-    # Whether this is the hub box's own agent: its address is one of the
-    # hub's own LAN addresses.
+    # Whether this is the hub box's own agent: its machine id is this box's.
     is_hub: bool = False
 
 
@@ -927,7 +926,13 @@ class DeviceView(BaseModel):
     SSH block and the agent say what could be done once it is.
     """
 
-    mac_address: str
+    # The binding id, or ``scan:<mac>`` for a scan row no device claims.
+    id: str
+    # The machine's own id, as its agent reported it; empty until it joins.
+    machine_id: str = ""
+    # Every MAC the agent has reported on its link, and the most recent one.
+    mac_addresses: list[str] = Field(default_factory=list)
+    link_mac: str = ""
     ipv4_address: str
     name: str | None = None
     icon: str | None = None
@@ -1299,7 +1304,7 @@ class DeviceEnrollmentRequest(BaseModel):
     """Ask the gateway for a link a machine can join with."""
 
     name: str = ""
-    mac_address: str | None = None
+    device_id: str | None = None
 
 
 class DeviceEnrollmentView(BaseModel):
@@ -1314,21 +1319,20 @@ class AgentEnroll(BaseModel):
     """A machine introducing itself with an enrollment token."""
 
     enrollment_token: str
+    # The machine's own id, which a blank ticket lands on.
     device_id: str
     hostname: str = ""
     client_version: str = ""
     wire: int = 0
     platform: dict = Field(default_factory=dict)
-    # Every MAC the machine's interfaces carry, so an unbound link still
-    # lands on the device a scan or an SSH setup already listed.
-    mac_addresses: list[str] = Field(default_factory=list)
 
 
 class AgentEnrollReply(BaseModel):
     """What the gateway hands back once a machine has joined."""
 
     token: str
-    mac_address: str
+    # The id the device is stored under.
+    device_id: str
     hub_version: str = ""
 
 

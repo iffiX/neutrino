@@ -11,7 +11,7 @@ from neutrino_hub.modules.services.device_shares import DeviceShare
 from neutrino_hub.modules.services.probe import DeclaredServiceHealth
 
 HUB = "192.168.100.1"
-DEVICE = "aa:bb:cc:dd:ee:ff"
+DEVICE = "device-one"
 DEVICE_HOST = "192.168.100.7"
 
 
@@ -83,7 +83,7 @@ def test_a_devices_gitea_publishes_one_web_entry_only_while_served():
             hosting(gitea={"is_healthy": True, "url": f"http://{DEVICE_HOST}:3000/"})
         ]
     )
-    assert [e["id"] for e in entries] == ["gitea_aa-bb-cc-dd-ee-ff"]
+    assert [e["id"] for e in entries] == ["gitea_device-one"]
     entry = entries[0]
     assert entry["type"] == "web"
     assert entry["payload"] == {"url": f"http://{DEVICE_HOST}:3000/"}
@@ -109,8 +109,8 @@ def test_a_devices_samba_publishes_one_file_entry_per_share_at_its_address():
         ]
     )
     assert [e["id"] for e in entries] == [
-        "samba_aa-bb-cc-dd-ee-ff_media",
-        "samba_aa-bb-cc-dd-ee-ff_backup",
+        "samba_device-one_media",
+        "samba_device-one_backup",
     ]
     entry = entries[0]
     assert entry["type"] == "file"
@@ -159,8 +159,8 @@ def test_a_devices_podman_publishes_one_port_entry_per_published_container_port(
         ]
     )
     assert [e["id"] for e in entries] == [
-        "podman_aa-bb-cc-dd-ee-ff_web_8080",
-        "podman_aa-bb-cc-dd-ee-ff_web_8443",
+        "podman_device-one_web_8080",
+        "podman_device-one_web_8443",
     ]
     entry = entries[0]
     assert entry["type"] == "port"
@@ -188,15 +188,15 @@ def test_two_devices_publish_their_own_entries_side_by_side():
         device_modules=[
             hosting(samba={"is_healthy": True, "share_names": ["media"]}),
             hosting(
-                device_id="11:22:33:44:55:66",
+                device_id="device-two",
                 host="192.168.100.8",
                 samba={"is_healthy": False, "share_names": ["media"]},
             ),
         ]
     )
     assert [e["id"] for e in entries] == [
-        "samba_aa-bb-cc-dd-ee-ff_media",
-        "samba_11-22-33-44-55-66_media",
+        "samba_device-one_media",
+        "samba_device-two_media",
     ]
     assert [e["payload"]["host"] for e in entries] == [DEVICE_HOST, "192.168.100.8"]
 
@@ -296,18 +296,10 @@ def test_resolution_substitutes_every_hub_self_host_for_the_caller_address():
 
     # A module hosted on the hub box's own agent sits at a hub address and
     # resolves like the hub's own.
-    assert (
-        resolved["gitea_aa-bb-cc-dd-ee-ff"]["payload"]["url"]
-        == "http://192.168.93.1:3000/"
-    )
-    assert (
-        resolved["samba_aa-bb-cc-dd-ee-ff_media"]["payload"]["host"] == "192.168.93.1"
-    )
+    assert resolved["gitea_device-one"]["payload"]["url"] == "http://192.168.93.1:3000/"
+    assert resolved["samba_device-one_media"]["payload"]["host"] == "192.168.93.1"
     assert resolved["ai"]["payload"]["endpoint"] == "http://192.168.93.1:8317"
-    assert (
-        resolved["podman_aa-bb-cc-dd-ee-ff_web_8080"]["payload"]["host"]
-        == "192.168.93.1"
-    )
+    assert resolved["podman_device-one_web_8080"]["payload"]["host"] == "192.168.93.1"
     # A loopback host in a declaration is the hub's own by definition.
     assert resolved["p1"]["payload"]["host"] == "192.168.93.1"
 
@@ -329,10 +321,9 @@ def test_resolution_leaves_a_device_host_alone():
         )
     }
 
-    assert resolved["samba_aa-bb-cc-dd-ee-ff_media"]["payload"]["host"] == DEVICE_HOST
+    assert resolved["samba_device-one_media"]["payload"]["host"] == DEVICE_HOST
     assert (
-        resolved["gitea_aa-bb-cc-dd-ee-ff"]["payload"]["url"]
-        == f"http://{DEVICE_HOST}:3000/"
+        resolved["gitea_device-one"]["payload"]["url"] == f"http://{DEVICE_HOST}:3000/"
     )
 
 
@@ -380,7 +371,7 @@ def test_the_catalog_copy_drops_the_panel_only_fields():
 def share(share_id="s1", host="192.168.100.5", hostname="workshop", port=21118):
     return DeviceShare(
         share_id=share_id,
-        mac_address="aa:bb:cc:dd:ee:ff",
+        device_id="device-one",
         hostname=hostname,
         host=host,
         port=port,
@@ -462,15 +453,13 @@ def test_every_composed_entry_names_where_it_came_from_in_a_code():
     )
 
     coded = {entry["id"]: entry for entry in entries}
-    assert coded["gitea_aa-bb-cc-dd-ee-ff"]["description_code"] == "gitea_module"
-    assert coded["gitea_aa-bb-cc-dd-ee-ff"]["description_params"] == {
+    assert coded["gitea_device-one"]["description_code"] == "gitea_module"
+    assert coded["gitea_device-one"]["description_params"] == {"host": DEVICE_HOST}
+    assert coded["samba_device-one_media"]["description_code"] == "samba_module"
+    assert coded["samba_device-one_media"]["description_params"] == {
         "host": DEVICE_HOST
     }
-    assert coded["samba_aa-bb-cc-dd-ee-ff_media"]["description_code"] == "samba_module"
-    assert coded["samba_aa-bb-cc-dd-ee-ff_media"]["description_params"] == {
-        "host": DEVICE_HOST
-    }
-    port_id = "podman_aa-bb-cc-dd-ee-ff_web_8080"
+    port_id = "podman_device-one_web_8080"
     assert coded[port_id]["description_code"] == "container"
     assert coded[port_id]["description_params"] == {"image": "docker.io/nginx:1.25"}
     assert coded["ai"]["description_code"] == "ai_gateway"

@@ -19,6 +19,8 @@ import subprocess
 import sys
 from socket import gethostname
 
+from neutrino_hub.modules.devices.desired_state import DesiredStateStore
+from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.easytier.constants import EASYTIER_GENERATED_NAME
 from neutrino_hub.modules.easytier.ops import EasyTierConfigApplier
 from neutrino_hub.modules.easytier.ops import read_stored as read_easytier
@@ -120,6 +122,13 @@ def main() -> int:
         print(f"error: the hub has no identity ({error})", file=sys.stderr)
 
     try:
+        removed = _forget_orphan_device_dirs()
+        if removed:
+            print(f"orphan device directories removed: {', '.join(removed)}")
+    except OSError as error:
+        print(f"error: device directories not swept ({error})", file=sys.stderr)
+
+    try:
         if ensure_management_key():
             print("AI gateway management key generated")
         write_working_key()
@@ -187,6 +196,12 @@ def _render(selected: tuple[str, ...]) -> dict:
         else:
             artifacts["easytier"] = overlay
     return artifacts
+
+
+def _forget_orphan_device_dirs() -> list:
+    """Delete every ``config/devices/`` directory no stored device names."""
+    stored = {device.id for device in DeviceRegistry().all_stored()}
+    return DesiredStateStore().forget_orphans(stored)
 
 
 def _agent_port() -> int:

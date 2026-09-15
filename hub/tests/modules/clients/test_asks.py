@@ -9,7 +9,7 @@ MAC = "aa:bb:cc:dd:ee:ff"
 def shares_with_one() -> list:
     registry = DeviceShareRegistry()
     registry.declare(
-        mac_address=MAC,
+        device_id=MAC,
         share_id="s1",
         hostname="desk",
         host="192.168.100.7",

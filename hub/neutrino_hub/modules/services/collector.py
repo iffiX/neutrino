@@ -150,6 +150,7 @@ class ServiceListCollector:
                 description_code=SERVICES_DESCRIPTION_DEVICE_SHARE,
                 description_params={"device": share.hostname or share.host},
                 source=SERVICES_SOURCE_DEVICE,
+                device_id=share.device_id,
             )
             for share in self._device_shares
         ]
@@ -172,6 +173,7 @@ class ServiceListCollector:
                     ),
                     description_code=SERVICES_DESCRIPTION_GITEA_MODULE,
                     description_params={"host": device.get("host", "")},
+                    device_id=_device_id(device),
                 )
             )
         for record in self._declared_of(SERVICES_KIND_HTTP):
@@ -215,6 +217,7 @@ class ServiceListCollector:
                             ),
                             description_code=SERVICES_DESCRIPTION_CONTAINER,
                             description_params={"image": container.get("image", "")},
+                            device_id=_device_id(device),
                         )
                     )
         for record in self._declared_of(SERVICES_KIND_GENERIC_TCP):
@@ -275,6 +278,7 @@ class ServiceListCollector:
                         description=SERVICES_SAMBA_DESCRIPTION.format(host=host),
                         description_code=SERVICES_DESCRIPTION_SAMBA_MODULE,
                         description_params={"host": host},
+                        device_id=_device_id(device),
                     )
                 )
         for record in self._declared_of(SERVICES_KIND_SAMBA):
@@ -379,8 +383,8 @@ def _declared_code(record: DeclaredService) -> str:
 
 
 def _device_id(device: dict) -> str:
-    """One device's key as it appears inside an entry id."""
-    return str(device.get("device_id", "")).lower().replace(":", "-")
+    """The id of the device one module entry is hosted on."""
+    return str(device.get("device_id", ""))
 
 
 def _entry(
@@ -396,6 +400,7 @@ def _entry(
     record_id: str | None = None,
     detail_code: str | None = None,
     source: str = "",
+    device_id: str = "",
 ) -> dict:
     return {
         "id": id,
@@ -410,6 +415,7 @@ def _entry(
         "description_params": description_params or {},
         "record_id": record_id,
         "detail_code": detail_code,
+        "device_id": device_id,
     }
 
 

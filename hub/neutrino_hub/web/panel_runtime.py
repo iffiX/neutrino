@@ -128,10 +128,10 @@ class PanelRuntime:
         # The address each client reaches this hub on, resolved when its
         # socket opened; its catalog and its gateway URL are composed with it.
         self.client_catalog_host: dict[str, str] = {}
-        # Where each agent's channel comes from, as this hub's own socket
-        # sees it, refreshed every report. A machine that moves is at its
-        # new address the moment it reports from there.
-        self.client_address: dict[str, str] = {}
+        # Where each device is, keyed by id: the address its socket leaves
+        # by, or the peer address when the report names none, refreshed
+        # every report.
+        self.device_address: dict[str, str] = {}
         # What each device should host, one directory per device under
         # config/, composed into the state its agent applies.
         self.desired_states = DesiredStateStore()
@@ -141,7 +141,7 @@ class PanelRuntime:
             units=self.services,
             device_shares=self.device_shares,
             agent_sessions=self.agent_sessions,
-            device_addresses=self.client_address,
+            device_addresses=self.device_address,
             desired_states=self.desired_states,
             on_fingerprint_change=self._services_changed,
         )
@@ -161,26 +161,30 @@ class PanelRuntime:
             on_change=self._publish_module_order,
         )
         self.is_config_dirty = False
-        # Latest agent metrics, keyed by MAC. Runtime only: these are stale the
-        # moment the panel restarts, so they are never written to config/.
-        self.client_metrics: dict[str, dict] = {}
-        # Latest per-module reconcile state an agent reported, keyed by MAC.
-        # Runtime only, for the same reason as the metrics.
-        self.client_modules: dict[str, dict] = {}
-        # The platform tuple an agent last reported, keyed by MAC, so the panel
-        # can show only the modules that platform can install.
-        self.client_platform: dict[str, dict] = {}
-        # The hostname each agent last reported, keyed by MAC. Runtime only,
-        # like the metrics.
-        self.client_hostname: dict[str, str] = {}
-        # The human accounts each agent last reported, keyed by MAC.
-        self.client_accounts: dict[str, list] = {}
+        # Latest agent metrics, keyed by device id. Runtime only: these are
+        # stale the moment the panel restarts, so they are never written to
+        # config/.
+        self.device_metrics: dict[str, dict] = {}
+        # Latest per-module reconcile state an agent reported, keyed by
+        # device id. Runtime only, for the same reason as the metrics.
+        self.device_modules: dict[str, dict] = {}
+        # The platform tuple an agent last reported, keyed by device id, so
+        # the panel can show only the modules that platform can install.
+        self.device_platform: dict[str, dict] = {}
+        # The hostname each agent last reported, keyed by device id. Runtime
+        # only, like the metrics.
+        self.device_hostname: dict[str, str] = {}
+        # The human accounts each agent last reported, keyed by device id.
+        self.device_accounts: dict[str, list] = {}
+        # The interfaces each agent last reported, keyed by device id:
+        # ``[{"name", "mac", "addresses"}]``.
+        self.device_interfaces: dict[str, list] = {}
         # The address each device reaches this hub on, resolved when its
         # socket opened; the services view composes the same catalog with it.
-        self.client_device_host: dict[str, str] = {}
-        # The most recent error each agent reported, keyed by MAC:
+        self.device_hub_host: dict[str, str] = {}
+        # The most recent error each agent reported, keyed by device id:
         # ``{"code", "params"}``.
-        self.client_last_error: dict[str, dict] = {}
+        self.device_last_error: dict[str, dict] = {}
         # Enrollment tickets a machine can join with, by token. Held in memory
         # and short-lived on purpose: a join secret that survives a restart is
         # a join secret lying around, and generating another takes one click.
@@ -410,11 +414,11 @@ class PanelRuntime:
         Returns:
             The hash and the state.
         """
-        key = (device if isinstance(device, str) else device.mac_address).lower()
+        key = device if isinstance(device, str) else device.id
         desired, state_hash = self.desired_states.compose(
             key,
-            self.client_platform.get(key, {}),
-            address=self.client_address.get(key, ""),
+            self.device_platform.get(key, {}),
+            address=self.device_address.get(key, ""),
             allowed_subnets=self.share_subnets(),
         )
         return state_hash, desired
@@ -448,7 +452,7 @@ class PanelRuntime:
         state_hash, desired = self.desired_state_for(key)
         self.agent_sessions.push_state_from_thread(key, state_hash, desired)
 
-    def forget_client_state(self, mac_address: str) -> None:
+    def forget_device(self, device_id: str) -> None:
         """Drop everything held in memory about one device.
 
         Called when the device is forgotten. Its socket, if one is open, is
@@ -456,17 +460,18 @@ class PanelRuntime:
         is gone.
 
         Args:
-            mac_address: The device's MAC.
+            device_id: The device.
         """
-        key = mac_address.lower()
-        self.client_metrics.pop(key, None)
-        self.client_hostname.pop(key, None)
-        self.client_modules.pop(key, None)
-        self.client_platform.pop(key, None)
-        self.client_accounts.pop(key, None)
-        self.client_address.pop(key, None)
-        self.client_device_host.pop(key, None)
-        self.client_last_error.pop(key, None)
+        key = device_id
+        self.device_metrics.pop(key, None)
+        self.device_hostname.pop(key, None)
+        self.device_modules.pop(key, None)
+        self.device_platform.pop(key, None)
+        self.device_accounts.pop(key, None)
+        self.device_interfaces.pop(key, None)
+        self.device_address.pop(key, None)
+        self.device_hub_host.pop(key, None)
+        self.device_last_error.pop(key, None)
         self.device_shares.withdraw(key)
         self.agent_module_orders.forget(key)
         self.desired_states.forget(key)
@@ -512,14 +517,14 @@ class PanelRuntime:
 
         try:
             info = self.agent_sessions.run_order_from_thread(
-                order.mac_address,
+                order.device_id,
                 order.to_wire(),
                 on_line=collect,
                 timeout=AGENT_MODULE_ORDER_TIMEOUT_S,
             )
         except (AgentOfflineError, StreamRefusedError) as error:
             controller.record_result(
-                mac_address=order.mac_address,
+                device_id=order.device_id,
                 order_id=order.id,
                 state=ORDER_FAILED,
                 code=error.code,
@@ -529,7 +534,7 @@ class PanelRuntime:
             return
         output = str(info.get("output", "") or "") or order.output
         controller.record_result(
-            mac_address=order.mac_address,
+            device_id=order.device_id,
             order_id=order.id,
             state=ORDER_DONE if info.get("state") == ORDER_DONE else ORDER_FAILED,
             code=str(info.get("code", "") or ""),
@@ -659,9 +664,9 @@ class PanelRuntime:
         self.events.publish(WEB_EVENT_DEVICES)
         self.published_services.schedule_refresh()
 
-    def _publish_module_order(self, mac_address: str) -> None:
+    def _publish_module_order(self, device_id: str) -> None:
         """Say an order on one device moved."""
-        self.events.publish(WEB_EVENT_MODULE_ORDER, mac_address)
+        self.events.publish(WEB_EVENT_MODULE_ORDER, device_id)
 
     def _publish_clients(self) -> None:
         """Say the client list moved."""

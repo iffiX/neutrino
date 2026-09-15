@@ -26,9 +26,9 @@ from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers import devices as devices_router
 from neutrino_hub.web.task_stream import TaskStreamRegistry
-from tests.conftest import FakeAgentSessions, unlock_vault
+from neutrino_hub.modules.devices.registry import DeviceRegistry
+from tests.conftest import FakeChannelSessions, unlock_vault
 
-MAC = "aa:bb:cc:dd:ee:ff"
 LOGIN_PASSWORD = "a-password"  # scan: allow
 TYPED_PASSWORD = "typed-now"  # scan: allow
 SUDO_PASSWORD = "a-sudo-password"  # scan: allow
@@ -41,11 +41,14 @@ class FakeRuntime:
         self.events = PanelEventBus()
         self.settings = {}
         self.tasks = TaskStreamRegistry()
-        self.client_metrics = {}
-        self.client_address = {}
-        self.client_platform = {}
+        self.device_metrics = {}
+        self.device_address = {}
+        self.device_platform = {}
+        self.device_hostname = {}
+        self.device_last_error = {}
+        self.device_modules = {}
         self.enrollments = {}
-        self.agent_sessions = FakeAgentSessions()
+        self.agent_sessions = FakeChannelSessions()
         self.agent_packages = AgentPackageCache(
             root=packages_dir / "agent_cache",
             manifest_path=packages_dir / "agent_packages.json",
@@ -60,6 +63,7 @@ class FakeRuntime:
 def api(monkeypatch, tmp_path):
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
     unlock_vault(monkeypatch, tmp_path)
+    device_id = DeviceRegistry().create("xenode").id
     app = FastAPI()
     app.include_router(devices_router.router)
     app.dependency_overrides[require_session] = lambda: None
@@ -67,7 +71,7 @@ def api(monkeypatch, tmp_path):
     FakeRuntime.instance = runtime
     app.dependency_overrides[get_runtime] = lambda: runtime
     with TestClient(app) as client:
-        yield client, tmp_path
+        yield client, tmp_path, device_id
 
 
 def stored_login() -> str:
@@ -123,7 +127,7 @@ def hub_carries_a_package(tmp_path, monkeypatch):
     monkeypatch.setattr(devices_router, "certificate_fingerprint", lambda: "ab" * 32)
 
 
-def install(client, **fields):
+def install(client, device_id: str, **fields):
     body = {
         "action": "install_client",
         "host": "192.168.100.2",
@@ -131,12 +135,12 @@ def install(client, **fields):
         "username": "iffi",
         **fields,
     }
-    return client.post(f"/api/devices/{MAC}/action", json=body)
+    return client.post(f"/api/devices/{device_id}/action", json=body)
 
 
-def stored_ssh(tmp_path) -> dict:
+def stored_ssh(tmp_path, device_id: str) -> dict:
     stored = json.loads((tmp_path / "devices" / "devices.json").read_text())
-    return stored["devices"][MAC]["ssh"]
+    return stored["devices"][device_id]["ssh"]
 
 
 def ready(monkeypatch, tmp_path):
@@ -149,15 +153,15 @@ def ready(monkeypatch, tmp_path):
 
 
 def test_a_stored_key_is_the_credential_and_the_block_records_it(api, monkeypatch):
-    client, tmp_path = api
+    client, tmp_path, device_id = api
     captured = ready(monkeypatch, tmp_path)
     key_id = stored_key()
 
-    started = install(client, key_id=key_id, sudo_password=SUDO_PASSWORD)
+    started = install(client, device_id, key_id=key_id, sudo_password=SUDO_PASSWORD)
 
     assert started.status_code == 200
     assert started.json()["task_id"]
-    assert stored_ssh(tmp_path) == {
+    assert stored_ssh(tmp_path, device_id) == {
         "host": "192.168.100.2",
         "port": 22,
         "username": "iffi",
@@ -172,26 +176,26 @@ def test_a_stored_key_is_the_credential_and_the_block_records_it(api, monkeypatc
 
 
 def test_the_sudo_login_is_opened_from_the_vault_and_referenced(api, monkeypatch):
-    client, tmp_path = api
+    client, tmp_path, device_id = api
     captured = ready(monkeypatch, tmp_path)
     key_id = stored_key()
     sudo_id = stored_login()
 
-    started = install(client, key_id=key_id, sudo_login_id=sudo_id)
+    started = install(client, device_id, key_id=key_id, sudo_login_id=sudo_id)
 
     assert started.status_code == 200
     assert captured["sudo_password"] == LOGIN_PASSWORD
-    assert stored_ssh(tmp_path)["sudo_login_id"] == sudo_id
+    assert stored_ssh(tmp_path, device_id)["sudo_login_id"] == sudo_id
     for path in tmp_path.rglob("*"):
         if path.is_file() and path.name != "vault.json":
             assert LOGIN_PASSWORD.encode() not in path.read_bytes()
 
 
 def test_a_stale_sudo_login_is_refused(api, monkeypatch):
-    client, tmp_path = api
+    client, tmp_path, device_id = api
     ready(monkeypatch, tmp_path)
 
-    refused = install(client, key_id=stored_key(), sudo_login_id="deadbeef")
+    refused = install(client, device_id, key_id=stored_key(), sudo_login_id="deadbeef")
 
     assert refused.status_code == 400
     assert refused.json()["detail"] == {
@@ -201,28 +205,30 @@ def test_a_stale_sudo_login_is_refused(api, monkeypatch):
 
 
 def test_a_stored_login_is_opened_from_the_vault(api, monkeypatch):
-    client, tmp_path = api
+    client, tmp_path, device_id = api
     captured = ready(monkeypatch, tmp_path)
     login_id = stored_login()
 
-    started = install(client, login_id=login_id)
+    started = install(client, device_id, login_id=login_id)
 
     assert started.status_code == 200
-    assert stored_ssh(tmp_path)["auth"] == "password"
-    assert stored_ssh(tmp_path)["login_id"] == login_id
+    assert stored_ssh(tmp_path, device_id)["auth"] == "password"
+    assert stored_ssh(tmp_path, device_id)["login_id"] == login_id
     assert captured["credentials"].password == LOGIN_PASSWORD
     assert captured["sudo_password"] is None
 
 
 def test_a_typed_password_is_used_and_stored_nowhere_unless_asked(api, monkeypatch):
-    client, tmp_path = api
+    client, tmp_path, device_id = api
     captured = ready(monkeypatch, tmp_path)
 
-    started = install(client, password=TYPED_PASSWORD, sudo_password=SUDO_PASSWORD)
+    started = install(
+        client, device_id, password=TYPED_PASSWORD, sudo_password=SUDO_PASSWORD
+    )
 
     assert started.status_code == 200
     assert captured["credentials"].password == TYPED_PASSWORD
-    block = stored_ssh(tmp_path)
+    block = stored_ssh(tmp_path, device_id)
     assert block["login_id"] is None and block["auth"] == "password"
     assert SecretVault().list_records(kind="login") == []
     for path in tmp_path.rglob("*"):
@@ -233,11 +239,12 @@ def test_a_typed_password_is_used_and_stored_nowhere_unless_asked(api, monkeypat
 
 
 def test_a_typed_password_saved_becomes_a_login_the_block_names(api, monkeypatch):
-    client, tmp_path = api
+    client, tmp_path, device_id = api
     captured = ready(monkeypatch, tmp_path)
 
     started = install(
         client,
+        device_id,
         password=TYPED_PASSWORD,
         is_password_saved=True,
         sudo_password=SUDO_PASSWORD,
@@ -250,7 +257,7 @@ def test_a_typed_password_saved_becomes_a_login_the_block_names(api, monkeypatch
         "username": "iffi",
         "password": TYPED_PASSWORD,
     }
-    assert stored_ssh(tmp_path)["login_id"] == record.id
+    assert stored_ssh(tmp_path, device_id)["login_id"] == record.id
     assert captured["credentials"].password == TYPED_PASSWORD
     for path in tmp_path.rglob("*"):
         if path.is_file():
@@ -268,21 +275,21 @@ def test_a_typed_password_saved_becomes_a_login_the_block_names(api, monkeypatch
     ],
 )
 def test_anything_but_one_credential_source_is_refused(api, monkeypatch, fields):
-    client, tmp_path = api
+    client, tmp_path, device_id = api
     ready(monkeypatch, tmp_path)
 
-    refused = install(client, **fields)
+    refused = install(client, device_id, **fields)
 
     assert refused.status_code == 400
     assert refused.json()["detail"]["code"] == "install_credentials_invalid"
-    assert not (tmp_path / "devices" / "devices.json").exists()
+    assert DeviceRegistry().get(device_id).ssh is None
 
 
 def test_a_stale_credential_id_is_refused_by_field(api, monkeypatch):
-    client, tmp_path = api
+    client, tmp_path, device_id = api
     ready(monkeypatch, tmp_path)
 
-    refused = install(client, login_id="absent")
+    refused = install(client, device_id, login_id="absent")
 
     assert refused.status_code == 400
     assert refused.json()["detail"] == {
@@ -295,11 +302,11 @@ def test_a_stale_credential_id_is_refused_by_field(api, monkeypatch):
 
 
 def test_a_non_linux_device_is_refused_before_any_task(api, monkeypatch):
-    client, tmp_path = api
+    client, tmp_path, device_id = api
     hub_carries_a_package(tmp_path, monkeypatch)
     probe_answers(monkeypatch, 0, "Darwin")
 
-    refused = install(client, login_id=stored_login())
+    refused = install(client, device_id, login_id=stored_login())
 
     assert refused.status_code == 409
     assert refused.json()["detail"] == {
@@ -309,22 +316,22 @@ def test_a_non_linux_device_is_refused_before_any_task(api, monkeypatch):
 
 
 def test_an_unanswered_probe_starts_the_task(api, monkeypatch):
-    client, tmp_path = api
+    client, tmp_path, device_id = api
     hub_carries_a_package(tmp_path, monkeypatch)
     probe_answers(monkeypatch, SSH_UNREACHABLE_STATUS, "Connection refused")
     capture_install(monkeypatch)
 
-    started = install(client, login_id=stored_login())
+    started = install(client, device_id, login_id=stored_login())
 
     assert started.status_code == 200
     assert started.json()["task_id"]
 
 
 def test_a_hub_with_no_agent_package_refuses_with_a_code(api, monkeypatch):
-    client, _ = api
+    client, _, device_id = api
     probe_answers(monkeypatch, 0, "Linux")
 
-    refused = install(client, login_id=stored_login())
+    refused = install(client, device_id, login_id=stored_login())
 
     assert refused.status_code == 409
     assert refused.json()["detail"] == {"code": "agent_package_missing", "params": {}}
@@ -332,24 +339,38 @@ def test_a_hub_with_no_agent_package_refuses_with_a_code(api, monkeypatch):
 
 def test_the_install_ticket_binds_to_the_device(api, monkeypatch):
     """The SSH install walks the same enrollment path a pasted link does."""
-    client, tmp_path = api
+    client, tmp_path, device_id = api
     ready(monkeypatch, tmp_path)
 
-    started = install(client, login_id=stored_login())
+    started = install(client, device_id, login_id=stored_login())
 
     assert started.status_code == 200
     tickets = list(FakeRuntime.instance.enrollments.values())
-    assert tickets and tickets[-1]["mac_address"] == MAC
+    assert tickets and tickets[-1]["device_id"] == device_id
+
+
+def test_installing_on_a_scan_row_stores_it_under_an_id_of_its_own(api, monkeypatch):
+    client, tmp_path, _ = api
+    ready(monkeypatch, tmp_path)
+
+    started = install(client, "scan:aa:bb:cc:dd:ee:09", login_id=stored_login())
+
+    assert started.status_code == 200
+    (adopted,) = [d for d in DeviceRegistry().all_stored() if d.name != "xenode"]
+    assert adopted.mac_addresses == ["aa:bb:cc:dd:ee:09"]
+    assert adopted.ssh["host"] == "192.168.100.2"
+    tickets = list(FakeRuntime.instance.enrollments.values())
+    assert tickets[-1]["device_id"] == adopted.id
 
 
 # --- the reinstall ---
 
 
 def test_a_reinstall_with_no_channel_is_409(api):
-    client, _ = api
+    client, _, device_id = api
 
     refused = client.post(
-        f"/api/devices/{MAC}/action", json={"action": "reinstall_agent"}
+        f"/api/devices/{device_id}/action", json={"action": "reinstall_agent"}
     )
 
     assert refused.status_code == 409
@@ -357,16 +378,16 @@ def test_a_reinstall_with_no_channel_is_409(api):
 
 
 def test_a_reinstall_on_a_live_agent_runs_the_command_as_a_task(api):
-    client, _ = api
+    client, _, device_id = api
     sessions = FakeRuntime.instance.agent_sessions
-    sessions.online.add(MAC)
+    sessions.online.add(device_id)
     sessions.scripts["command"] = lambda args: (
         [],
         {"exit_code": 0, "code": "", "params": {}, "output": "reinstall launched\n"},
     )
 
     started = client.post(
-        f"/api/devices/{MAC}/action", json={"action": "reinstall_agent"}
+        f"/api/devices/{device_id}/action", json={"action": "reinstall_agent"}
     )
 
     assert started.status_code == 200
@@ -381,9 +402,9 @@ def test_a_reinstall_on_a_live_agent_runs_the_command_as_a_task(api):
 
 
 def test_an_unknown_action_is_refused_typed(api):
-    client, _ = api
+    client, _, device_id = api
 
-    refused = client.post(f"/api/devices/{MAC}/action", json={"action": "dance"})
+    refused = client.post(f"/api/devices/{device_id}/action", json={"action": "dance"})
 
     assert refused.status_code == 400
     assert refused.json()["detail"]["code"] == "unknown_action"
@@ -454,7 +475,7 @@ def drain_reinstall(monkeypatch, presence, **overrides):
     runtime = SimpleNamespace(agent_sessions=presence)
 
     async def drain():
-        return [line async for line in devices_router._reinstall_stream(runtime, MAC)]
+        return [line async for line in devices_router._reinstall_stream(runtime, "dev")]
 
     return asyncio.run(drain())
 

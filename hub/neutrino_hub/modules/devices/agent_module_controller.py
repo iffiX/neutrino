@@ -70,7 +70,7 @@ class AgentModuleOrder:
 
     Attributes:
         id: What both sides address it by.
-        mac_address: The device.
+        device_id: The device.
         module: The module name.
         action: One of :data:`ORDER_ACTIONS`.
         state: Where the order stands.
@@ -86,7 +86,7 @@ class AgentModuleOrder:
     """
 
     id: str
-    mac_address: str
+    device_id: str
     module: str
     action: str
     state: str = ORDER_QUEUED
@@ -174,7 +174,7 @@ class AgentModuleController:
     def ask(
         self,
         *,
-        mac_address: str,
+        device_id: str,
         module: str,
         manifest: dict,
         platform: dict,
@@ -188,7 +188,7 @@ class AgentModuleController:
         makes pressing the button again work after a failure.
 
         Args:
-            mac_address: The device.
+            device_id: The device.
             module: The module name.
             manifest: Its manifest.
             platform: The tuple the agent reported.
@@ -208,7 +208,7 @@ class AgentModuleController:
             raise ValueError(f"unknown order action {action!r}")
         if str(manifest.get("installer", "")) == AGENT_MODULE_INSTALLER_USER:
             raise ValueError(f"module {module!r} is user-tier; it takes no order")
-        key = (mac_address or "").lower()
+        key = (device_id or "").lower()
         # The person has spoken again, so the last attempt's verdict is no
         # longer the answer to anything anybody is asking.
         self.clear_failure(key, module)
@@ -216,7 +216,7 @@ class AgentModuleController:
             return None
         order = AgentModuleOrder(
             id=uuid4().hex,
-            mac_address=key,
+            device_id=key,
             module=module,
             action=action,
             manifest=dict(manifest),
@@ -231,24 +231,24 @@ class AgentModuleController:
         self._note_change(key)
         return order
 
-    def pending_order(self, mac_address: str) -> "AgentModuleOrder | None":
+    def pending_order(self, device_id: str) -> "AgentModuleOrder | None":
         """The order this device is working on now.
 
         Args:
-            mac_address: The device.
+            device_id: The device.
 
         Returns:
             The order, or None when nothing is in flight for it.
         """
         with self._guard:
-            order_id = self._handed.get((mac_address or "").lower(), "")
+            order_id = self._handed.get((device_id or "").lower(), "")
             order = self._orders.get(order_id)
             return order if order is not None and order.is_open else None
 
     def record_result(
         self,
         *,
-        mac_address: str,
+        device_id: str,
         order_id: str,
         state: str,
         code: str = "",
@@ -258,7 +258,7 @@ class AgentModuleController:
         """Close one order with the machine's own word for how it went.
 
         Args:
-            mac_address: The device.
+            device_id: The device.
             order_id: Which order the agent ran.
             state: ``done`` or ``failed``.
             code: Why it failed.
@@ -268,10 +268,10 @@ class AgentModuleController:
         Returns:
             True when this closed an order the controller was waiting on.
         """
-        key = (mac_address or "").lower()
+        key = (device_id or "").lower()
         with self._guard:
             order = self._orders.get(order_id)
-            if order is None or order.mac_address != key or not order.is_open:
+            if order is None or order.device_id != key or not order.is_open:
                 return False
             order.state = ORDER_FAILED if state == ORDER_FAILED else ORDER_DONE
             order.code = code
@@ -285,7 +285,7 @@ class AgentModuleController:
         self._note_change(key)
         return True
 
-    def note_reported_states(self, mac_address: str, states: dict) -> None:
+    def note_reported_states(self, device_id: str, states: dict) -> None:
         """Let what the machine reports settle a standing failure.
 
         Software turning up on the machine anyway — somebody installed it by
@@ -293,89 +293,87 @@ class AgentModuleController:
         failure goes without anybody clearing it.
 
         Args:
-            mac_address: The device.
+            device_id: The device.
             states: What the beat reported, module to its status.
         """
-        key = (mac_address or "").lower()
+        key = (device_id or "").lower()
         for module, status in (states or {}).items():
             if not isinstance(status, dict):
                 continue
             if status.get("state") in ORDER_PRESENT_STATES:
                 self.clear_failure(key, module)
 
-    def order_in_flight(self, mac_address: str, module: str) -> bool:
+    def order_in_flight(self, device_id: str, module: str) -> bool:
         """Whether this module already has an order that has not finished.
 
         Args:
-            mac_address: The device.
+            device_id: The device.
             module: The module name.
 
         Returns:
             True while one is queued or running, so nothing asks twice.
         """
-        key = (mac_address or "").lower()
+        key = (device_id or "").lower()
         with self._guard:
             return any(
-                order.mac_address == key
+                order.device_id == key
                 and order.module == module
                 and order.state in ORDER_OPEN_STATES
                 for order in self._orders.values()
             )
 
-    def clear_failure(self, mac_address: str, module: str) -> None:
+    def clear_failure(self, device_id: str, module: str) -> None:
         """Forget the failure standing against one module on one machine.
 
         Args:
-            mac_address: The device.
+            device_id: The device.
             module: The module name.
         """
         with self._guard:
-            self._failures.pop(((mac_address or "").lower(), module), None)
+            self._failures.pop(((device_id or "").lower(), module), None)
 
-    def failure_for(self, mac_address: str, module: str) -> "AgentModuleOrder | None":
+    def failure_for(self, device_id: str, module: str) -> "AgentModuleOrder | None":
         """The failed order standing against one module, if one is.
 
         Args:
-            mac_address: The device.
+            device_id: The device.
             module: The module name.
 
         Returns:
             The order, or None.
         """
         with self._guard:
-            order_id = self._failures.get(((mac_address or "").lower(), module), "")
+            order_id = self._failures.get(((device_id or "").lower(), module), "")
             return self._orders.get(order_id)
 
-    def orders(self, mac_address: str) -> list:
+    def orders(self, device_id: str) -> list:
         """Every order this device still keeps, newest first.
 
         Args:
-            mac_address: The device.
+            device_id: The device.
 
         Returns:
             The orders, for the panel's one install pane.
         """
         with self._guard:
-            order_ids = list(self._history.get((mac_address or "").lower(), []))
+            order_ids = list(self._history.get((device_id or "").lower(), []))
             return [
                 self._orders[order_id]
                 for order_id in reversed(order_ids)
                 if order_id in self._orders
             ]
 
-    def open_order_for(
-        self, mac_address: str, module: str
-    ) -> "AgentModuleOrder | None":
+    def open_order_for(self, device_id: str, module: str) -> "AgentModuleOrder | None":
         """The order still going for one module, if there is one.
 
         Args:
-            mac_address: The device.
+            device_id: The device.
             module: The module name.
 
         Returns:
             The order, or None.
         """
-        key = (mac_address or "").lower()
+        key = (device_id or "").lower()
         with self._guard:
             for order_id in reversed(self._history.get(key, [])):
                 order = self._orders.get(order_id)
@@ -383,13 +381,13 @@ class AgentModuleController:
                     return order
         return None
 
-    def forget(self, mac_address: str) -> None:
+    def forget(self, device_id: str) -> None:
         """Drop everything held for a device the hub no longer manages.
 
         Args:
-            mac_address: The device.
+            device_id: The device.
         """
-        key = (mac_address or "").lower()
+        key = (device_id or "").lower()
         with self._guard:
             for order_id in self._history.pop(key, []):
                 self._orders.pop(order_id, None)
@@ -399,10 +397,10 @@ class AgentModuleController:
                 pair: value for pair, value in self._failures.items() if pair[0] != key
             }
 
-    def _note_change(self, mac_address: str) -> None:
+    def _note_change(self, device_id: str) -> None:
         """Say an order on this device moved, where anybody asked to be told."""
         if self._on_change is not None:
-            self._on_change(mac_address)
+            self._on_change(device_id)
 
     def _trim(self, key: str) -> None:
         """Keep a device's history to the recent few. Call under the guard."""
@@ -453,11 +451,11 @@ class AgentModuleController:
             return
         with self._guard:
             order.state = ORDER_INSTALLING
-            self._handed[order.mac_address] = order.id
-        self._note_change(order.mac_address)
+            self._handed[order.device_id] = order.id
+        self._note_change(order.device_id)
         try:
             if self._dispatch is None:
-                self._fail(order, "agent_offline", {"device": order.mac_address})
+                self._fail(order, "agent_offline", {"device": order.device_id})
             else:
                 self._dispatch(order)
         except Exception as error:  # noqa: BLE001 - the worker must survive
@@ -466,13 +464,13 @@ class AgentModuleController:
             if order.is_open:
                 self._fail(order, "agent_never_reported", {"module": order.module})
             with self._guard:
-                if self._handed.get(order.mac_address) == order.id:
-                    self._handed.pop(order.mac_address, None)
+                if self._handed.get(order.device_id) == order.id:
+                    self._handed.pop(order.device_id, None)
 
     def _fail(self, order: AgentModuleOrder, code: str, params: dict) -> None:
         """Close one order as failed with a code of the hub's own."""
         self.record_result(
-            mac_address=order.mac_address,
+            device_id=order.device_id,
             order_id=order.id,
             state=ORDER_FAILED,
             code=code,
@@ -491,14 +489,14 @@ class AgentModuleController:
         """
         with self._guard:
             order.state = ORDER_FETCHING
-        self._note_change(order.mac_address)
+        self._note_change(order.device_id)
         try:
             artifact = self._cache.artifact(
                 name=order.module, manifest=order.manifest, platform=order.platform
             )
         except AgentArtifactFetchError as error:
             self.record_result(
-                mac_address=order.mac_address,
+                device_id=order.device_id,
                 order_id=order.id,
                 state=ORDER_FAILED,
                 code=error.code,
@@ -515,7 +513,7 @@ class AgentModuleController:
 def ask_module(
     *,
     controller: AgentModuleController,
-    mac_address: str,
+    device_id: str,
     module: str,
     manifest: dict,
     platform: dict,
@@ -531,7 +529,7 @@ def ask_module(
 
     Args:
         controller: The device's module controller.
-        mac_address: The device.
+        device_id: The device.
         module: The module name.
         manifest: Its manifest.
         platform: The tuple the agent reported.
@@ -549,7 +547,7 @@ def ask_module(
     if action is None:
         return None
     return controller.ask(
-        mac_address=mac_address,
+        device_id=device_id,
         module=module,
         manifest=manifest,
         platform=platform,

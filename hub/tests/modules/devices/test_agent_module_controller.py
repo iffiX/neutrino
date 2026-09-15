@@ -99,13 +99,13 @@ class StubDispatch:
         answer = self.answers.get(order.id)
         if answer is not None:
             self.controller.record_result(
-                mac_address=order.mac_address, order_id=order.id, **answer
+                device_id=order.device_id, order_id=order.id, **answer
             )
 
     def finish(self, order, **answer) -> None:
         """Close the order the way the machine would, and let the dispatch return."""
         self.controller.record_result(
-            mac_address=order.mac_address, order_id=order.id, **answer
+            device_id=order.device_id, order_id=order.id, **answer
         )
         self.gate.set()
 
@@ -133,7 +133,7 @@ def wait_for(predicate, timeout_s: float = 3.0) -> bool:
 
 def ask_install(controller, *, mac=MAC, module="fakedesk", manifest=MANIFEST):
     return controller.ask(
-        mac_address=mac,
+        device_id=mac,
         module=module,
         manifest=manifest,
         platform=AMD64,
@@ -312,7 +312,7 @@ def test_the_opposite_action_clears_the_failure_and_orders_nothing(controller):
     # Asked to uninstall what the machine says was never there: the
     # question is settled already, so there is nothing to send.
     undone = orders.ask(
-        mac_address=MAC,
+        device_id=MAC,
         module="fakedesk",
         manifest=MANIFEST,
         platform=AMD64,
@@ -328,7 +328,7 @@ def test_an_uninstall_of_something_present_is_ordered(controller):
     orders, _, _, dispatch = controller
 
     order = orders.ask(
-        mac_address=MAC,
+        device_id=MAC,
         module="fakedesk",
         manifest=MANIFEST,
         platform=AMD64,
@@ -359,7 +359,7 @@ def test_a_result_for_an_order_this_device_does_not_own_is_ignored(controller):
     order = ask_install(orders)
 
     assert (
-        orders.record_result(mac_address=OTHER_MAC, order_id=order.id, state="done")
+        orders.record_result(device_id=OTHER_MAC, order_id=order.id, state="done")
         is False
     )
 
@@ -368,7 +368,7 @@ def test_the_history_is_what_the_install_pane_reads(controller):
     orders, _, _, dispatch = controller
     first = ask_install(orders)
     orders.record_result(
-        mac_address=MAC,
+        device_id=MAC,
         order_id=first.id,
         state="failed",
         code="install_failed",
@@ -388,7 +388,7 @@ def test_forgetting_a_device_drops_everything_held_for_it(controller):
     orders, _, _, dispatch = controller
     order = ask_install(orders)
     orders.record_result(
-        mac_address=MAC, order_id=order.id, state="failed", code="install_failed"
+        device_id=MAC, order_id=order.id, state="failed", code="install_failed"
     )
 
     orders.forget(MAC)
@@ -444,7 +444,7 @@ def test_a_user_tier_click_queues_no_order(controller):
 
     order = ask_module(
         controller=orders,
-        mac_address=MAC,
+        device_id=MAC,
         module="teamviewer",
         manifest=USER,
         platform=AMD64,
@@ -460,7 +460,7 @@ def test_the_controller_refuses_a_user_tier_order_outright(controller):
 
     with pytest.raises(ValueError):
         orders.ask(
-            mac_address=MAC,
+            device_id=MAC,
             module="teamviewer",
             manifest=USER,
             platform=AMD64,
@@ -472,7 +472,7 @@ def test_a_distro_package_order_takes_the_queue_but_skips_the_cache(controller):
     orders, cache, locks, dispatch = controller
 
     order = orders.ask(
-        mac_address=MAC,
+        device_id=MAC,
         module="samba_mount",
         manifest=SYSTEM,
         platform=AMD64,
@@ -495,7 +495,7 @@ def test_a_module_with_no_build_here_is_asked_nothing(controller):
 
     order = ask_module(
         controller=orders,
-        mac_address=MAC,
+        device_id=MAC,
         module="fakedesk",
         manifest=MANIFEST,
         platform={"os": "windows", "family": "", "arch": "amd64"},
@@ -511,7 +511,7 @@ def test_an_action_that_is_not_one_of_the_four_is_refused(controller):
 
     with pytest.raises(ValueError):
         orders.ask(
-            mac_address=MAC,
+            device_id=MAC,
             module="fakedesk",
             manifest=MANIFEST,
             platform=AMD64,

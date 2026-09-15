@@ -127,7 +127,7 @@ def _clear_key_on_devices(key_id: str) -> int:
         ssh = device.ssh or {}
         if ssh.get("key_id") != key_id:
             continue
-        registry.annotate(device.mac_address, {"ssh": {**ssh, "key_id": None}})
+        registry.annotate(device.id, {"ssh": {**ssh, "key_id": None}})
         cleared += 1
     return cleared
 
@@ -251,7 +251,7 @@ def _clear_login_on_devices(login_id: str) -> int:
             continue
         updated = dict(ssh)
         updated["login_id"] = None
-        registry.annotate(device.mac_address, {"ssh": updated})
+        registry.annotate(device.id, {"ssh": updated})
         cleared += 1
     return cleared
 

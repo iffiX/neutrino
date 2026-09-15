@@ -16,7 +16,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from neutrino_hub.web import ws
 from neutrino_hub.web.constants import WEB_SESSION_COOKIE
-from tests.conftest import FakeAgentSessions
+from tests.conftest import FakeChannelSessions
 
 MAC = "aa:bb:cc:dd:ee:ff"
 SESSION_TOKEN = "panel-session"
@@ -32,7 +32,7 @@ class StubSessions:
 class FakeRuntime:
     def __init__(self):
         self.sessions = StubSessions()
-        self.agent_sessions = FakeAgentSessions(online=[MAC])
+        self.agent_sessions = FakeChannelSessions(online=[MAC])
 
 
 @pytest.fixture

@@ -60,7 +60,7 @@ export function DeviceMonitor({ device }: DeviceMonitorProps) {
     setSamples([]);
     setPendingKillPid(null);
     setKillError(null);
-  }, [device.mac_address]);
+  }, [device.id]);
 
   const handleKill = async (pid: number) => {
     if (pendingKillPid !== pid) {
@@ -70,7 +70,7 @@ export function DeviceMonitor({ device }: DeviceMonitorProps) {
     }
     setPendingKillPid(null);
     try {
-      await apiPost(`/devices/${device.mac_address}/kill_process`, { pid });
+      await apiPost(`/devices/${device.id}/kill_process`, { pid });
     } catch (cause: unknown) {
       setKillError(describeError(cause));
     }
@@ -94,10 +94,7 @@ export function DeviceMonitor({ device }: DeviceMonitorProps) {
       ].slice(-MAX_SAMPLES),
     );
   };
-  useHubEvents(
-    [{ type: HUB_EVENT_METRICS, key: device.mac_address }],
-    handleMetrics,
-  );
+  useHubEvents([{ type: HUB_EVENT_METRICS, key: device.id }], handleMetrics);
 
   // A portal, so the monitor escapes the page's stacking context and can sit
   // above the drawer's backdrop; the wrap centres it in the free space.
@@ -153,14 +150,14 @@ export function DeviceMonitor({ device }: DeviceMonitorProps) {
               <ChartPanel
                 title={t("ui.device_monitor.cpu")}
                 value={formatPercent(client.cpu_percent)}
-                gradientPrefix={`mon_cpu_${device.mac_address}`}
+                gradientPrefix={`mon_cpu_${device.id}`}
                 data={samples.map((sample) => ({ a: sample.cpu }))}
                 series={[{ key: "a", color: "var(--color-chart-down)" }]}
               />
               <ChartPanel
                 title={t("ui.device_monitor.memory")}
                 value={formatPercent(client.memory_percent)}
-                gradientPrefix={`mon_mem_${device.mac_address}`}
+                gradientPrefix={`mon_mem_${device.id}`}
                 data={samples.map((sample) => ({ a: sample.memory }))}
                 series={[{ key: "a", color: "var(--color-chart-up)" }]}
               />
@@ -170,7 +167,7 @@ export function DeviceMonitor({ device }: DeviceMonitorProps) {
                   isWide
                   title={gpu.name}
                   value={gpuLegend(gpu)}
-                  gradientPrefix={`mon_gpu${index}_${device.mac_address}`}
+                  gradientPrefix={`mon_gpu${index}_${device.id}`}
                   data={samples.map((sample) => ({
                     a: sample.gpu_util[index] ?? null,
                     b: sample.gpu_vram[index] ?? null,

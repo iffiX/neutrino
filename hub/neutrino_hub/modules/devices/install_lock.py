@@ -26,16 +26,16 @@ class DeviceInstallLocks:
         self._guard = threading.Lock()
         self._locks: dict = {}
 
-    def lock_for(self, mac_address: str) -> threading.Lock:
+    def lock_for(self, device_id: str) -> threading.Lock:
         """The lock this device installs under.
 
         Args:
-            mac_address: The device, lowercased the way everything keys it.
+            device_id: The device, lowercased the way everything keys it.
 
         Returns:
             The one lock for that device, created on first ask.
         """
-        key = (mac_address or "").lower()
+        key = (device_id or "").lower()
         with self._guard:
             lock = self._locks.get(key)
             if lock is None:
@@ -44,17 +44,17 @@ class DeviceInstallLocks:
             return lock
 
     @contextmanager
-    def hold(self, mac_address: str, *, timeout_s: "float | None" = None):
+    def hold(self, device_id: str, *, timeout_s: "float | None" = None):
         """Hold a device's install lock for the length of a block.
 
         Args:
-            mac_address: The device.
+            device_id: The device.
             timeout_s: How long to wait for it; None waits forever.
 
         Yields:
             True when the lock was taken, False when the wait ran out.
         """
-        lock = self.lock_for(mac_address)
+        lock = self.lock_for(device_id)
         is_held = lock.acquire(timeout=-1 if timeout_s is None else timeout_s)
         try:
             yield is_held
@@ -63,32 +63,32 @@ class DeviceInstallLocks:
                 lock.release()
 
     @asynccontextmanager
-    async def hold_async(self, mac_address: str):
+    async def hold_async(self, device_id: str):
         """Hold a device's install lock from async code.
 
         The wait runs in a worker thread, so a device already installing
         something delays this caller and nothing else the panel serves.
 
         Args:
-            mac_address: The device.
+            device_id: The device.
 
         Yields:
             None, once the lock is held.
         """
-        lock = self.lock_for(mac_address)
+        lock = self.lock_for(device_id)
         await asyncio.to_thread(lock.acquire)
         try:
             yield
         finally:
             lock.release()
 
-    def is_held(self, mac_address: str) -> bool:
+    def is_held(self, device_id: str) -> bool:
         """Whether something is installing on this device right now.
 
         Args:
-            mac_address: The device.
+            device_id: The device.
 
         Returns:
             True while the lock is taken.
         """
-        return self.lock_for(mac_address).locked()
+        return self.lock_for(device_id).locked()

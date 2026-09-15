@@ -103,7 +103,7 @@ def device_view(runtime: PanelRuntime, context: DeviceModuleContext) -> ZfsDevic
                 ],
             )
         )
-    samba_status = runtime.client_modules.get(context.key, {}).get(SAMBA_MODULE) or {}
+    samba_status = runtime.device_modules.get(context.key, {}).get(SAMBA_MODULE) or {}
     samba_details = samba_status.get("details") or {}
     is_samba_ready = (
         samba_status.get("state") == "installed"

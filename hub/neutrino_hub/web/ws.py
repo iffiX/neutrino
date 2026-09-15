@@ -198,7 +198,7 @@ async def _serve_agent_stream(
         return
     sessions = websocket.app.state.runtime.agent_sessions
     try:
-        stream = await sessions.open_stream(device_id.lower(), kind, args)
+        stream = await sessions.open_stream(device_id, kind, args)
     except AgentOfflineError:
         await websocket.close(code=POLICY_VIOLATION_CODE, reason=CODE_AGENT_OFFLINE)
         return

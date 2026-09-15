@@ -1,10 +1,15 @@
 from neutrino_hub.utils.constants import UTILS_DATA_DIR, UTILS_STATE_ROOT
 
-# What a device is addressed by, everywhere. Six hexadecimal pairs, colon or
-# hyphen separated, in any case; the registry lowercases and normalises on the
-# way in. Anything else is not an address this box can wake, pin a host key
-# against, or match a scan to, so it is refused rather than stored.
+# What a reported or scanned MAC has to look like to be stored on a device:
+# six hexadecimal pairs, colon or hyphen separated, in any case. The registry
+# lowercases and writes colons on the way in.
 DEVICE_MAC_PATTERN = r"^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$"
+# The id a scan row no device claims is shown under, followed by its MAC. A
+# person acting on the row gives it an id of its own.
+DEVICE_SCAN_ID_PREFIX = "scan:"
+# The directory under ``config/devices/`` holding hand-pinned agent builds;
+# the only entry there that is not a device's own directory.
+DEVICE_PACKAGES_DIR_NAME = "packages"
 
 DEVICE_LAN_SCAN_TIMEOUT_S = 30
 # How long a machine's last report still stands for what it declared: a
@@ -147,8 +152,8 @@ AGENT_OPERATION_OUTPUT_LINES = 200
 # The modules a device hosts from the hub's desired state, in the order the
 # agent applies them. One file per module under the device's directory.
 DEVICE_MODULE_NAMES = ("zfs", "samba", "gitea", "podman")
-# What ``config/devices/<dir>/modules.json`` is called, and the per-module
-# files beside it. A device directory is its key with ``:`` written ``-``.
+# What ``config/devices/<id>/modules.json`` is called, and the per-module
+# files beside it. A device directory is named by the device's id.
 DEVICE_MODULES_FILE = "modules.json"
 DEVICE_RDP_FILE = "rdp.json"
 DEVICE_GITEA_SECRETS_FILE = "gitea_secrets.json"  # scan: allow

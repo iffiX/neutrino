@@ -34,6 +34,7 @@ from neutrino_hub.modules.devices.constants import (
     AGENT_PACKAGE_FETCH_LIMIT_BYTES,
     AGENT_PACKAGE_FETCH_TIMEOUT_S,
     AGENT_PACKAGE_MANIFEST_PATH,
+    DEVICE_PACKAGES_DIR_NAME,
 )
 from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
 
@@ -139,7 +140,7 @@ class AgentPackageCache:
         self._pinned_dir = (
             Path(pinned_dir)
             if pinned_dir is not None
-            else UTILS_CONFIG_DIR / "devices" / "packages"
+            else UTILS_CONFIG_DIR / "devices" / DEVICE_PACKAGES_DIR_NAME
         )
 
     def has_packages(self) -> bool:

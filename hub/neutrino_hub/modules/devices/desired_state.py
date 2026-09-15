@@ -1,12 +1,11 @@
 """One desired state per device: what the hub wants a machine to host.
 
-``config/devices/<dir>/`` holds ``modules.json``, which modules are on, one
+``config/devices/<id>/`` holds ``modules.json``, which modules are on, one
 file per module with its configuration, and ``rdp.json``, which seals the
-machine's seat password; ``<dir>`` is the device key with ``:`` written
-``-``. Composing a device's desired state gathers those
-with the catalog resolved for its platform and the parts the hub knows
-about the machine, the address it sits at and the networks its shares
-answer, under one hash the agent compares against.
+machine's seat password; ``<id>`` is the device's id. Composing a device's
+desired state gathers those with the catalog resolved for its platform and
+the parts the hub knows about the machine, the address it sits at and the
+networks its shares answer, under one hash the agent compares against.
 
 Reads take no lock; every write goes through ``write_config`` under the one
 config lock, re-reading inside it.
@@ -29,6 +28,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_GITEA_SECRETS_FILE,
     DEVICE_MODULE_NAMES,
     DEVICE_MODULES_FILE,
+    DEVICE_PACKAGES_DIR_NAME,
     DEVICE_RDP_FILE,
     DEVICE_RDP_SEAT_PASSWORD_AAD,
     DEVICE_RDP_SEAT_PASSWORD_CHARS,
@@ -41,18 +41,6 @@ from neutrino_hub.utils.json_file import (
 )
 
 DEVICES_DIR_NAME = "devices"
-
-
-def device_dir(key: str) -> str:
-    """The directory name one device's files live under.
-
-    Args:
-        key: The device key, ``aa:bb:cc:dd:ee:ff`` or ``id:<machine-id>``.
-
-    Returns:
-        The key, lowercased, with every ``:`` written ``-``.
-    """
-    return (key or "").lower().replace(":", "-")
 
 
 def state_hash(desired: dict) -> str:
@@ -250,6 +238,29 @@ class DesiredStateStore:
         with CONFIG_WRITE_LOCK:
             shutil.rmtree(self._directory(key), ignore_errors=True)
 
+    def forget_orphans(self, stored_ids) -> list:
+        """Delete every device directory no stored id names.
+
+        Args:
+            stored_ids: The ids ``devices.json`` holds.
+
+        Returns:
+            The names removed, in order.
+        """
+        root = UTILS_CONFIG_DIR / DEVICES_DIR_NAME
+        removed = []
+        with CONFIG_WRITE_LOCK:
+            if not root.is_dir():
+                return removed
+            for path in sorted(root.iterdir()):
+                if not path.is_dir() or path.name == DEVICE_PACKAGES_DIR_NAME:
+                    continue
+                if path.name in stored_ids:
+                    continue
+                shutil.rmtree(path, ignore_errors=True)
+                removed.append(path.name)
+        return removed
+
     def _write_seat_password(self, key: str) -> None:
         """Seal a fresh seat password into the device's ``rdp.json``."""
         sealed = seal_bytes(
@@ -267,10 +278,10 @@ class DesiredStateStore:
         return sealed if isinstance(sealed, dict) else {}
 
     def _directory(self, key: str):
-        return UTILS_CONFIG_DIR / DEVICES_DIR_NAME / device_dir(key)
+        return UTILS_CONFIG_DIR / DEVICES_DIR_NAME / key
 
     def _path(self, key: str, name: str) -> str:
-        return f"{DEVICES_DIR_NAME}/{device_dir(key)}/{name}"
+        return f"{DEVICES_DIR_NAME}/{key}/{name}"
 
 
 def _generate_seat_password() -> str:

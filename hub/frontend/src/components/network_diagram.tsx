@@ -441,7 +441,7 @@ export function NetworkDiagram({
 
       {placedDevices.map((placed, index) =>
         placed.row.device !== null ? (
-          <DeviceNode key={placed.row.device.mac_address} placed={placed} />
+          <DeviceNode key={placed.row.device.id} placed={placed} />
         ) : (
           <text
             key={`more_${index}`}
