@@ -999,6 +999,9 @@ class DeviceOnlineView(BaseModel):
     platform: dict = Field(default_factory=dict)
     # Whether this is the hub box's own agent: its machine id is this box's.
     is_hub: bool = False
+    # The module tabs its Modules page shows; empty means the modules its
+    # reports name.
+    shown_module: list[str] = Field(default_factory=list)
 
 
 class DeviceOnlineListView(BaseModel):
@@ -1038,6 +1041,9 @@ class DeviceView(BaseModel):
     is_stored: bool = False
     ssh: DeviceSshConfig | None = None
     client: DeviceClientInfoView | None = None
+    # The module tabs its Modules page shows; empty means the modules its
+    # reports name.
+    shown_module: list[str] = Field(default_factory=list)
 
 
 class DeviceListView(BaseModel):
@@ -1059,6 +1065,7 @@ class DeviceAnnotation(BaseModel):
     name: str | None = None
     icon: str | None = None
     ssh: DeviceSshConfig | None = None
+    shown_module: list[str] | None = None
 
 
 class DeviceAgentInstallRequest(BaseModel):
@@ -1617,6 +1624,9 @@ class DeviceModuleView(BaseModel):
     # What the hub asks of the module here: ``absent``, ``installed``,
     # ``stopped`` or ``running``; empty when it asks nothing.
     want: str = ""
+    # Whether the hub holds a configuration for the module on this device;
+    # the first Configure imports one from the machine where it holds none.
+    is_configured: bool = False
     state: str = "unknown"
     is_active: bool = False
     # Why the state is what it is, when the agent said; the pages word it.
@@ -1693,33 +1703,6 @@ class DeviceInstallOutputView(BaseModel):
     """Every install this device has run since the panel started, newest first."""
 
     tasks: list[DeviceInstallTaskView] = Field(default_factory=list)
-
-
-class ModuleDeviceView(BaseModel):
-    """One device on a module's page: what the hub asks of the module there, and how it stands."""
-
-    device_id: str
-    name: str
-    hostname: str = ""
-    is_online: bool
-    # ``absent``, ``installed``, ``stopped`` or ``running``; empty when the
-    # hub asks nothing of the module on this device.
-    want: str = ""
-    state: str = "unknown"
-    code: str = ""
-    params: dict = Field(default_factory=dict)
-
-
-class ModuleDeviceListView(BaseModel):
-    """Every stored device with an agent, the hub box's own first."""
-
-    devices: list[ModuleDeviceView] = Field(default_factory=list)
-
-
-class ModuleDeviceSelection(BaseModel):
-    """Which devices should host a module: the whole set, replacing the last."""
-
-    device_ids: list[str] = Field(default_factory=list)
 
 
 class ModuleDeviceFields(BaseModel):

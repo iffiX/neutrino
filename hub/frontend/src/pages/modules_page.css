@@ -1,0 +1,59 @@
+/* The row of module tabs, with the picker's `+` at its end. */
+.modules_tab_row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+/* The presses under the current tab, one row. */
+.modules_actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+/* An install's or an uninstall's lines, as the agent sends them up. */
+.modules_log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.modules_log_head {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modules_log_output {
+  overflow: auto;
+  /* Eight lines of 12px/1.5 monospace plus the padding. */
+  max-height: 168px;
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* The module's own panels, laid out exactly as a page lays out its sections.
+   It is a fieldset so that one attribute takes every control inside out of
+   reach at once while an agent is not answering. */
+.modules_config {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 
 import { apiPath } from "../api_client";
-import { DeviceChipStrip } from "../components/device_chip_strip";
+import { DevicePick } from "../components/device_pick";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { ShellTerminal } from "../components/shell_terminal";
@@ -10,7 +10,6 @@ import { StatusDot } from "../components/status_dot";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { HUB_EVENT_DEVICES } from "../use_hub_events";
-import type { DeviceChip } from "../components/device_chip_strip";
 import type { TerminalState } from "../components/shell_terminal";
 import type { StatusTone } from "../components/status_dot";
 import type { DevicesOnlineResponse } from "../api_types";
@@ -82,12 +81,6 @@ export function TerminalsPage() {
   }, [pathname, askedDeviceId]);
 
   const devices = resource.data?.devices ?? [];
-  const chips: DeviceChip[] = devices.map((device) => ({
-    key: device.device_id,
-    label: device.name,
-    hostname: device.hostname,
-    isOnline: true,
-  }));
   const selectedDevice =
     devices.find((device) => device.device_id === selectedId) ?? null;
   const activeState = activeId === null ? null : (states[activeId] ?? null);
@@ -145,38 +138,24 @@ export function TerminalsPage() {
         </div>
       </div>
 
-      <section className="settings_group">
-        <div className="settings_group_title">
-          <h2>{t("ui.terminals.pick")}</h2>
-          <div className="agent_service_actions">
-            <button
-              type="button"
-              className="button button--primary button--commit"
-              disabled={selectedDevice === null}
-              onClick={openTab}
-            >
-              <Icon name="plus" size={14} />
-              {t("ui.terminals.new_terminal")}
-            </button>
-          </div>
-        </div>
-        <p className="field_hint">{t("ui.terminals.pick_hint")}</p>
-        {resource.isLoading && devices.length === 0 ? (
-          <div className="skeleton" style={{ height: 48 }} />
-        ) : devices.length === 0 ? (
-          <div className="placeholder">
-            <span>{t("ui.terminals.no_devices")}</span>
-            <span className="faint">{t("ui.terminals.no_devices_hint")}</span>
-          </div>
-        ) : (
-          <DeviceChipStrip
-            chips={chips}
-            selected={selectedId}
-            onSelect={setSelectedId}
-            isMulti={false}
-          />
-        )}
-      </section>
+      <DevicePick
+        devices={devices}
+        isLoading={resource.isLoading}
+        hint={t("ui.terminals.pick_hint")}
+        selected={selectedId}
+        onSelect={setSelectedId}
+        actions={
+          <button
+            type="button"
+            className="button button--primary button--commit"
+            disabled={selectedDevice === null}
+            onClick={openTab}
+          >
+            <Icon name="plus" size={14} />
+            {t("ui.terminals.new_terminal")}
+          </button>
+        }
+      />
 
       {tabs.length === 0 ? (
         <div className="placeholder">

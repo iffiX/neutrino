@@ -1,13 +1,12 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { DeviceChipStrip } from "../components/device_chip_strip";
+import { DevicePick } from "../components/device_pick";
 import { ErrorPanel } from "../components/error_panel";
 import { FileBrowser } from "../components/file_browser";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { HUB_EVENT_DEVICES } from "../use_hub_events";
-import type { DeviceChip } from "../components/device_chip_strip";
 import type { DevicesOnlineResponse } from "../api_types";
 
 /**
@@ -43,12 +42,6 @@ export function FilesPage() {
   }, [askedDeviceId]);
 
   const devices = resource.data?.devices ?? [];
-  const chips: DeviceChip[] = devices.map((device) => ({
-    key: device.device_id,
-    label: device.name,
-    hostname: device.hostname,
-    isOnline: true,
-  }));
   const selectedDevice =
     devices.find((device) => device.device_id === selectedId) ?? null;
 
@@ -69,27 +62,13 @@ export function FilesPage() {
         </div>
       </div>
 
-      <section className="settings_group">
-        <div className="settings_group_title">
-          <h2>{t("ui.files.pick")}</h2>
-        </div>
-        <p className="field_hint">{t("ui.files.pick_hint")}</p>
-        {resource.isLoading && devices.length === 0 ? (
-          <div className="skeleton" style={{ height: 48 }} />
-        ) : devices.length === 0 ? (
-          <div className="placeholder">
-            <span>{t("ui.files.no_devices")}</span>
-            <span className="faint">{t("ui.files.no_devices_hint")}</span>
-          </div>
-        ) : (
-          <DeviceChipStrip
-            chips={chips}
-            selected={selectedId}
-            onSelect={setSelectedId}
-            isMulti={false}
-          />
-        )}
-      </section>
+      <DevicePick
+        devices={devices}
+        isLoading={resource.isLoading}
+        hint={t("ui.files.pick_hint")}
+        selected={selectedId}
+        onSelect={setSelectedId}
+      />
 
       {selectedDevice === null ? (
         devices.length > 0 && (

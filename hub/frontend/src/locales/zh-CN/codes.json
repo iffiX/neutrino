@@ -89,6 +89,7 @@
   "code.module_artifact_missing": "中枢没有这个模块的安装文件。",
   "code.module_artifact_unknown": "没有清单指向这个安装文件。",
   "code.module_cache_unwritable": "模块安装文件缓存不下来：{detail}",
+  "code.module_configured": "中枢已经保存了这台设备上 {module} 的配置。",
   "code.module_consent_needed": "在这里安装 {name} 需要先同意，而同意没有给出。",
   "code.module_digest_mismatch": "模块与固定的校验值不符。",
   "code.module_fetch_failed": "取不到模块安装文件：{detail}",

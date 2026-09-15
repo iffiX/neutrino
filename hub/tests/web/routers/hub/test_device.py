@@ -1325,6 +1325,28 @@ def test_an_unknown_remote_desktop_product_is_refused_at_once(box_api):
     assert response.status_code == 400
 
 
+def test_picking_module_tabs_stores_them_on_the_row_and_echoes_them(box_api):
+    client, _ = box_api
+
+    answer = client.post(
+        SET_PATH, json={"device_id": DEVICE, "shown_module": ["samba", "zfs"]}
+    )
+
+    assert answer.status_code == 200
+    assert answer.json()["shown_module"] == ["samba", "zfs"]
+    assert BoxRegistry.device.shown_modules == ["samba", "zfs"]
+    assert BoxRegistry.device.name == "testbox"
+
+
+def test_a_set_that_names_no_tabs_leaves_them_as_they_are(box_api):
+    client, _ = box_api
+    BoxRegistry.device.shown_modules = ["gitea"]
+
+    answer = client.post(SET_PATH, json={"device_id": DEVICE, "name": "renamed"})
+
+    assert answer.json()["shown_module"] == ["gitea"]
+
+
 def test_renaming_a_device_keeps_its_monitor_alive(box_api):
     """The page redraws the tile from this answer. Built with no metrics, it
     reads as a machine that went offline the moment somebody renamed it."""

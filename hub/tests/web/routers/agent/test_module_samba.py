@@ -190,6 +190,71 @@ def test_a_password_samba_refuses_is_answered_with_the_agents_code(box):
     assert response.json()["detail"]["code"] == "command_failed"
 
 
+def test_import_reads_the_shares_and_users_the_machine_serves(box):
+    """A share as testparm prints it becomes a share as the hub stores it;
+    a share exporting no path is skipped, and a valid user the user list
+    does not carry is dropped rather than refused by the agent later."""
+    client, runtime = box
+    runtime.desired_states.forget(DEVICE)
+    runtime.report(
+        DEVICE,
+        "samba",
+        "installed",
+        shares=[
+            {
+                "name": "media",
+                "path": "/srv/media",
+                "params": {
+                    "comment": "Films",
+                    "read only": "Yes",
+                    "valid users": "ann, ghost",
+                },
+            },
+            {"name": "homes", "path": "", "params": {"browseable": "No"}},
+            {"name": "drop", "path": "/srv/drop", "params": {"read only": "No"}},
+        ],
+        users=[
+            {"name": "ann", "is_present": True, "has_password": True},
+            {"name": "bob", "is_present": True, "has_password": False},
+        ],
+    )
+
+    response = client.post(f"{BASE}/import", json={"device_id": DEVICE})
+
+    assert response.status_code == 200
+    assert runtime.desired_states.read(DEVICE, "samba") == {
+        "shares": [
+            {
+                "name": "media",
+                "path": "/srv/media",
+                "comment": "Films",
+                "is_read_only": True,
+                "valid_users": ["ann"],
+            },
+            {
+                "name": "drop",
+                "path": "/srv/drop",
+                "comment": "",
+                "is_read_only": False,
+                "valid_users": [],
+            },
+        ],
+        "users": ["ann", "bob"],
+    }
+    assert [share["name"] for share in response.json()["shares"]] == ["media", "drop"]
+    assert [user["name"] for user in response.json()["users"]] == ["ann", "bob"]
+
+
+def test_import_refuses_where_the_hub_already_configures_the_share(box):
+    client, runtime = box
+
+    response = client.post(f"{BASE}/import", json={"device_id": DEVICE})
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "module_configured"
+    assert runtime.desired_states.read(DEVICE, "samba") == CONFIG
+
+
 def test_apply_pushes_the_state_again(box):
     client, runtime = box
 

@@ -56,6 +56,8 @@ class BoxRegistry:
         device = self.adopt(device_id)
         if "name" in payload:
             device.name = payload["name"]
+        if "shown_modules" in payload:
+            device.shown_modules = list(payload["shown_modules"])
         return device
 
 

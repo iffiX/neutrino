@@ -158,6 +158,7 @@ def list_online(runtime: PanelRuntime = Depends(get_runtime)) -> DeviceOnlineLis
                 hostname=runtime.device_hostname.get(key, ""),
                 platform=dict(runtime.device_platform.get(key, {})),
                 is_hub=bool(own_machine) and device.machine_id == own_machine,
+                shown_module=list(device.shown_modules),
             )
         )
     rows.sort(key=_hub_first)
@@ -251,7 +252,7 @@ def annotate(
     annotation: DeviceAnnotation,
     runtime: PanelRuntime = Depends(get_runtime),
 ) -> DeviceView:
-    """Name a device or give it SSH credentials.
+    """Name a device, give it SSH credentials, or pick its module tabs.
 
     A scan row named here becomes a stored device under an id of its own.
 
@@ -275,6 +276,8 @@ def annotate(
     payload = annotation.model_dump(exclude_unset=True, exclude={"device_id"})
     if "ssh" in payload:
         payload["ssh"] = _store_ssh_secrets(annotation.ssh)
+    if "shown_module" in payload:
+        payload["shown_modules"] = payload.pop("shown_module") or []
     device = registry.annotate(device_id, payload)
     runtime.events.publish(WEB_EVENT_DEVICES)
     return _device_view(runtime, device)
@@ -1414,6 +1417,7 @@ def _to_view(
         is_stored=device.is_stored,
         ssh=ssh_view,
         client=client_view,
+        shown_module=list(device.shown_modules),
     )
 
 

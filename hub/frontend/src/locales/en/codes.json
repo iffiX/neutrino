@@ -89,6 +89,7 @@
   "code.module_artifact_missing": "This hub carries no artifact for that module.",
   "code.module_artifact_unknown": "No manifest names that artifact.",
   "code.module_cache_unwritable": "The module artifact could not be cached: {detail}",
+  "code.module_configured": "The hub already holds a configuration for {module} on this device.",
   "code.module_consent_needed": "Installing {name} here needs agreement that was not given.",
   "code.module_digest_mismatch": "The module arrived as something other than what was pinned.",
   "code.module_fetch_failed": "The module artifact could not be fetched: {detail}",

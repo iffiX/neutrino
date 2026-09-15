@@ -888,6 +888,9 @@ export interface DeviceOnlineView {
   platform: Record<string, string>;
   /** Whether this is the hub box's own agent. */
   is_hub: boolean;
+  /** The module tabs its Modules page shows; empty means the modules its
+   * reports name. */
+  shown_module: string[];
 }
 
 /** The machines a terminal or a file browser can open on, hub box first. */
@@ -917,6 +920,9 @@ export interface DeviceView {
   is_stored: boolean;
   ssh: DeviceSshConfig | null;
   client: DeviceClientInfo | null;
+  /** The module tabs its Modules page shows; empty means the modules its
+   * reports name. */
+  shown_module: string[];
 }
 
 export interface DeviceAnnotation {
@@ -924,6 +930,7 @@ export interface DeviceAnnotation {
   name?: string;
   icon?: string;
   ssh?: DeviceSshConfig | null;
+  shown_module?: string[];
 }
 
 export interface DevicesResponse {
@@ -972,25 +979,6 @@ export interface ModuleDeviceState {
   params: Record<string, unknown>;
 }
 
-/** One device's row in a module's device list. */
-export interface ModuleDeviceView extends ModuleDeviceState {
-  device_id: string;
-  name: string;
-  hostname: string;
-  /** What the hub asks of the module here: absent, installed, stopped or
-   * running; empty when it asks nothing. */
-  want: string;
-}
-
-export interface ModuleDevicesView {
-  devices: ModuleDeviceView[];
-}
-
-/** The devices a module should be on; the hub installs and removes to match. */
-export interface ModuleDevicesRequest {
-  device_ids: string[];
-}
-
 /** One module a device could run, as its agent last reported it beside
  * what the hub asks of it. */
 export interface DeviceModuleView {
@@ -1007,6 +995,9 @@ export interface DeviceModuleView {
   corresponding_source: string;
   /** absent, installed, stopped or running; empty when the hub asks nothing. */
   want: string;
+  /** Whether the hub holds a configuration for the module on this device;
+   * the first Configure imports one from the machine where it holds none. */
+  is_configured: boolean;
   state: string;
   is_active: boolean;
   code: string;
@@ -1023,15 +1014,15 @@ export interface DeviceModuleListView {
   is_agent_online: boolean;
 }
 
+/** A request naming one device. */
+export interface DeviceRequest {
+  device_id: string;
+}
+
 /** One module on one device, for the four presses under `/agent/module`. */
 export interface DeviceModuleRequest {
   device_id: string;
   module: string;
-}
-
-export interface ProvisionConsentView {
-  code: string;
-  detail: Record<string, unknown>;
 }
 
 // --- Services ---

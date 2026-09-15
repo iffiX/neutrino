@@ -10,16 +10,18 @@ agent opens, which the list names by its task.
 
 The file share, the git server, the container engine and ZFS are hosted by
 devices, one desired state per device per module under ``config/``, and
-each module's block is built here: the per-device read, the device list,
-the selection of which devices host the module, plus the helpers the
-block's own routes share: a configuration is checked on the agent before
-it is stored and pushed, and an imperative verb runs on the agent to its
-close and answers the device's fresh view.
+each module's block is built here: the per-device read, the push, and the
+import that turns what the machine's latest report carries into the hub's
+configuration where the hub holds none yet, plus the helpers the block's
+own routes share: a configuration is checked on the agent before it is
+stored and pushed, and an imperative verb runs on the agent to its close
+and answers the device's fresh view.
 
 Every refusal is ``{code, params}``; a device whose agent holds no socket
 cannot be edited or driven, and says so with ``agent_offline``.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -47,7 +49,6 @@ from neutrino_hub.modules.devices.constants import (
 from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
 from neutrino_hub.modules.services.constants import SERVICES_PUBLISHED_MODULES
-from neutrino_hub.system.machine import machine_id
 from neutrino_hub.web.channel_serve import module_task_label
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
@@ -56,9 +57,6 @@ from neutrino_hub.web.models import (
     DeviceModuleRequest,
     DeviceModuleView,
     DeviceRequest,
-    ModuleDeviceListView,
-    ModuleDeviceSelection,
-    ModuleDeviceView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 
@@ -72,6 +70,7 @@ CODE_COMMAND_FAILED = "command_failed"
 CODE_MODULE_UNKNOWN = "module_unknown"
 CODE_MODULE_NOT_OPTIONAL = "module_not_optional"
 CODE_NO_PLATFORM_BUILD = "no_platform_build"
+CODE_MODULE_CONFIGURED = "module_configured"
 
 # What a module reads as until its agent has said.
 STATE_UNKNOWN = "unknown"
@@ -172,6 +171,7 @@ def list_modules(
                 license=manifest.get("license", ""),
                 corresponding_source=manifest.get("corresponding_source", ""),
                 want=runtime.desired_states.want_of(key, name),
+                is_configured=bool(runtime.desired_states.read(key, name)),
                 task_id=module_task_id(runtime, key, name),
                 **module_status(runtime, key, name),
             )
@@ -264,7 +264,9 @@ def uninstall_module(
     return _set_want(runtime, request, CHANNEL_MODULE_STATE_ABSENT)
 
 
-def module_router(module: str, *, view_model, build_view) -> APIRouter:
+def module_router(
+    module: str, *, view_model, build_view, import_config: "Callable | None" = None
+) -> APIRouter:
     """The router one device-hosted module's block talks to.
 
     Args:
@@ -272,10 +274,13 @@ def module_router(module: str, *, view_model, build_view) -> APIRouter:
         view_model: The per-device response model.
         build_view: Called with ``(runtime, context)``; returns the
             per-device view.
+        import_config: Called with the ``details`` of the device's latest
+            report; returns the configuration they amount to. None for a
+            module that imports nothing, which then has no import route.
 
     Returns:
-        A router carrying the per-device read, the device list, the
-        selection and the push, for the module's own routes to join.
+        A router carrying the per-device read, the push and the import,
+        for the module's own routes to join.
     """
     router = APIRouter(
         prefix=f"/api/agent/module/{module}",
@@ -287,16 +292,6 @@ def module_router(module: str, *, view_model, build_view) -> APIRouter:
     def read_device(device_id: str, runtime: PanelRuntime = Depends(get_runtime)):
         return build_view(runtime, device_context(runtime, module, device_id))
 
-    @router.get("/device", response_model=ModuleDeviceListView)
-    def list_devices(runtime: PanelRuntime = Depends(get_runtime)):
-        return device_list(runtime, module)
-
-    @router.post("/device/set", response_model=ModuleDeviceListView)
-    def select_devices(
-        selection: ModuleDeviceSelection, runtime: PanelRuntime = Depends(get_runtime)
-    ):
-        return select_hosts(runtime, module, selection.device_ids)
-
     @router.post("/apply", response_model=ApplyResult)
     def apply_device(
         request: DeviceRequest, runtime: PanelRuntime = Depends(get_runtime)
@@ -306,98 +301,52 @@ def module_router(module: str, *, view_model, build_view) -> APIRouter:
         push_state(runtime, context.key)
         return ApplyResult(is_applied=True, message="pushed")
 
+    if import_config is not None:
+
+        @router.post("/import", response_model=view_model)
+        def import_device(
+            request: DeviceRequest, runtime: PanelRuntime = Depends(get_runtime)
+        ):
+            context = device_context(runtime, module, request.device_id)
+            import_details(runtime, context, import_config)
+            return build_view(runtime, context)
+
     return router
 
 
-def device_list(runtime: PanelRuntime, module: str) -> ModuleDeviceListView:
-    """Every stored device with an agent, and where the module stands on it.
+def import_details(
+    runtime: PanelRuntime, context: DeviceModuleContext, import_config: Callable
+) -> None:
+    """Make what the machine reports the hub's configuration for it.
 
     Args:
         runtime: The shared runtime.
-        module: The module name.
-
-    Returns:
-        The rows, the hub box's own first, then by name.
-    """
-    own_machine = machine_id()
-    rows = []
-    for device in DeviceRegistry().all_stored():
-        if not device.is_managed:
-            continue
-        key = device.id
-        observed = module_status(runtime, key, module)
-        row = ModuleDeviceView(
-            device_id=key,
-            name=device.name or runtime.device_hostname.get(key, "") or key,
-            hostname=runtime.device_hostname.get(key, ""),
-            is_online=runtime.agent_sessions.is_online(key),
-            want=runtime.desired_states.want_of(key, module),
-            state=observed["state"],
-            code=observed["code"],
-            params=observed["params"],
-        )
-        is_hub = bool(own_machine) and device.machine_id == own_machine
-        rows.append(((not is_hub, row.name.lower()), row))
-    rows.sort(key=_row_order)
-    return ModuleDeviceListView(devices=[row for _, row in rows])
-
-
-def select_hosts(
-    runtime: PanelRuntime, module: str, device_ids: list
-) -> ModuleDeviceListView:
-    """Make exactly these devices host the module.
-
-    A device newly on is wanted ``running``, one dropped ``absent``, and
-    each changed device is handed its new state. A changed device whose
-    agent is offline refuses the whole selection before anything is
-    written.
-
-    Args:
-        runtime: The shared runtime.
-        module: The module name.
-        device_ids: The whole set of devices that should host it.
-
-    Returns:
-        The device list afterwards.
+        context: The device, holding the details its agent last reported.
+        import_config: Called with those details; returns the configuration,
+            empty for a module that imports nothing, which then writes
+            nothing.
 
     Raises:
-        HTTPException: 404 ``device_unknown`` for an id no managed device
-            answers to, 409 ``agent_offline`` naming a changed device with
-            no socket.
+        HTTPException: 409 ``module_configured`` when the hub already holds
+            a configuration for the module on this device, 409
+            ``agent_offline`` when the device has no socket.
     """
-    wanted = {str(device_id) for device_id in device_ids}
-    stored = {
-        device.id: device
-        for device in DeviceRegistry().all_stored()
-        if device.is_managed
-    }
-    for key in sorted(wanted - set(stored)):
-        raise _refusal(status.HTTP_404_NOT_FOUND, CODE_DEVICE_UNKNOWN, device_id=key)
-    changed = [
-        key
-        for key in sorted(stored)
-        if (key in wanted) != is_hosted(runtime, key, module)
-    ]
-    for key in changed:
-        if not runtime.agent_sessions.is_online(key):
-            raise _refusal(status.HTTP_409_CONFLICT, CODE_AGENT_OFFLINE, device_id=key)
-    for key in changed:
-        runtime.desired_states.set_want(
-            key,
-            module,
-            (
-                CHANNEL_MODULE_STATE_RUNNING
-                if key in wanted
-                else CHANNEL_MODULE_STATE_ABSENT
-            ),
+    if context.config:
+        raise _refusal(
+            status.HTTP_409_CONFLICT,
+            CODE_MODULE_CONFIGURED,
+            device_id=context.key,
+            module=context.module,
         )
-        try:
-            push_state(runtime, key)
-        except HTTPException:
-            continue
-    if changed:
-        _recompose_published(runtime, module)
-    return device_list(runtime, module)
+    require_online(context)
+    config = dict(import_config(context.details))
+    if not config:
+        return
+    runtime.desired_states.write(context.key, context.module, config)
+    context.config = dict(config)
+    if context.want in CHANNEL_MODULE_CONFIGURED_WANTS:
+        push_state(runtime, context.key)
+    _recompose_published(runtime, context.module)
 
 
 def is_hosted(runtime: PanelRuntime, key: str, module: str) -> bool:
@@ -694,11 +643,6 @@ def _recompose_published(runtime: PanelRuntime, module: str) -> None:
     """
     if module in SERVICES_PUBLISHED_MODULES:
         runtime.published_services.schedule_refresh()
-
-
-def _row_order(item: tuple) -> tuple:
-    """The sort key paired with each row: the hub box's own first, then by name."""
-    return item[0]
 
 
 def _refusal(status_code: int, code: str, **params) -> HTTPException:

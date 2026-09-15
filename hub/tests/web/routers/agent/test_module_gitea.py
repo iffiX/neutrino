@@ -29,6 +29,20 @@ def box(monkeypatch, tmp_path):
         yield client, runtime
 
 
+def test_import_writes_nothing_and_answers_the_defaults(box):
+    """A hand-installed Gitea stays its owner's: the hub takes nothing from
+    it, and the block's defaults stand until somebody sets them."""
+    client, runtime = box
+    runtime.desired_states.forget(DEVICE)
+
+    response = client.post(f"{BASE}/import", json={"device_id": DEVICE})
+
+    assert response.status_code == 200
+    assert response.json()["listen_port"] == 3000
+    assert runtime.desired_states.read(DEVICE, "gitea") == {}
+    assert runtime.agent_sessions.pushes == []
+
+
 def test_the_view_reports_config_beside_reality(box):
     client, _ = box
 

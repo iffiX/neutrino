@@ -48,6 +48,71 @@ def box(monkeypatch, tmp_path):
         yield client, runtime
 
 
+def test_import_declares_the_containers_the_machine_runs(box):
+    """What podman inspect reported becomes a declaration; a container a unit
+    already stands for comes up with the machine, one started by hand does
+    not."""
+    client, runtime = box
+    runtime.desired_states.forget(DEVICE)
+    runtime.report(
+        DEVICE,
+        "podman",
+        "installed",
+        mirrors=["https://mirror.example/v2"],
+        containers=[
+            {
+                "name": "web",
+                "image": "docker.io/library/nginx:1.27",
+                "status": "Up",
+                "is_running": True,
+                "is_declared": False,
+                "host_ports": [8080],
+                "ports": ["8080:80"],
+                "volumes": ["/srv/web:/usr/share/nginx/html"],
+                "environment": ["NGINX_PORT=80"],
+                "has_unit": True,
+            },
+            {
+                "name": "adhoc",
+                "image": "alpine",
+                "status": "Exited",
+                "is_running": False,
+                "is_declared": False,
+                "host_ports": [],
+                "has_unit": False,
+            },
+        ],
+    )
+
+    response = client.post(f"{BASE}/import", json={"device_id": DEVICE})
+
+    assert response.status_code == 200
+    assert runtime.desired_states.read(DEVICE, "podman") == {
+        "containers": [
+            {
+                "name": "web",
+                "image": "docker.io/library/nginx:1.27",
+                "ports": ["8080:80"],
+                "volumes": ["/srv/web:/usr/share/nginx/html"],
+                "environment": ["NGINX_PORT=80"],
+                "command": "",
+                "is_autostart": True,
+            },
+            {
+                "name": "adhoc",
+                "image": "alpine",
+                "ports": [],
+                "volumes": [],
+                "environment": [],
+                "command": "",
+                "is_autostart": False,
+            },
+        ],
+        "mirrors": ["https://mirror.example/v2"],
+    }
+    assert [c["name"] for c in response.json()["containers"]] == ["web", "adhoc"]
+
+
 def test_the_view_separates_declared_from_ad_hoc(box):
     client, _ = box
 

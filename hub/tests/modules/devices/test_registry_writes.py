@@ -65,6 +65,7 @@ def test_a_created_device_is_a_row_under_a_generated_id(stored, config_dir):
         "link_mac": MAC,
         "ssh": None,
         "client": {"token_sha256": None},
+        "shown_modules": [],
     }
 
 
@@ -179,6 +180,17 @@ def test_renaming_a_scan_row_adopts_it_under_an_id_of_its_own(stored, config_dir
     merged = DeviceRegistry().merged([scanned("11:22:33:44:55:66")])
     assert [device.id for device in merged if device.is_scan_row] == []
     assert next(d for d in merged if d.id == adopted.id).is_online is True
+
+
+def test_the_module_tabs_a_device_shows_are_a_row_of_their_own(stored, config_dir):
+    registry, first, _ = stored
+
+    registry.annotate(first, {"shown_modules": ["samba", "podman"]})
+
+    assert rows(config_dir)[first]["shown_modules"] == ["samba", "podman"]
+    assert DeviceRegistry().get(first).shown_modules == ["samba", "podman"]
+    registry.annotate(first, {"name": "renamed"})
+    assert DeviceRegistry().get(first).shown_modules == ["samba", "podman"]
 
 
 def test_adopting_a_stored_id_changes_nothing(stored, config_dir):

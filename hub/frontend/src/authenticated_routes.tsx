@@ -4,21 +4,18 @@ import { AppShell } from "./components/app_shell";
 import { Icon } from "./components/icon";
 import { AiPage } from "./pages/ai_page";
 import { ClientsPage } from "./pages/clients_page";
-import { ContainersPage } from "./pages/containers_page";
 import { CredentialsPage } from "./pages/credentials_page";
 import { DashboardPage } from "./pages/dashboard_page";
 import { DevicesPage } from "./pages/devices_page";
 import { FilesPage } from "./pages/files_page";
-import { GiteaPage } from "./pages/gitea_page";
 import { LoginPage } from "./pages/login_page";
+import { ModulesPage } from "./pages/modules_page";
 import { NetworkPage } from "./pages/network_page";
 import { NotFoundPage } from "./pages/not_found_page";
 import { OverlayPage } from "./pages/overlay_page";
 import { ProxyPage } from "./pages/proxy_page";
-import { SambaPage } from "./pages/samba_page";
 import { ServicesPage } from "./pages/services_page";
 import { SettingsPage } from "./pages/settings_page";
-import { ZfsPage } from "./pages/zfs_page";
 import { useAuth } from "./use_auth";
 
 import "./app.css";
@@ -71,10 +68,7 @@ export function AuthenticatedRoutes() {
             the outlet so its sessions survive navigation. */}
         <Route path="terminals" element={null} />
         <Route path="files" element={<FilesPage />} />
-        <Route path="samba" element={<SambaPage />} />
-        <Route path="gitea" element={<GiteaPage />} />
-        <Route path="containers" element={<ContainersPage />} />
-        <Route path="zfs" element={<ZfsPage />} />
+        <Route path="modules" element={<ModulesPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

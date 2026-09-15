@@ -73,8 +73,46 @@ def device_view(
     )
 
 
+def import_config(details: dict) -> dict:
+    """The declarations the machine's own containers amount to.
+
+    Args:
+        details: What the agent last reported: ``containers`` from
+            ``podman ps`` and ``podman inspect``, each ``{name, image,
+            ports, volumes, environment, has_unit}``, and ``mirrors``.
+
+    Returns:
+        ``{"containers", "mirrors"}`` in the hub's shape; a container comes
+        up with the machine where a unit already stands for it.
+    """
+    containers = []
+    for container in details.get("containers") or []:
+        if not isinstance(container, dict) or not container.get("name"):
+            continue
+        containers.append(
+            {
+                "name": str(container.get("name", "")),
+                "image": str(container.get("image", "")),
+                "ports": [str(port) for port in container.get("ports") or []],
+                "volumes": [str(mount) for mount in container.get("volumes") or []],
+                "environment": [
+                    str(line) for line in container.get("environment") or []
+                ],
+                "command": "",
+                "is_autostart": bool(container.get("has_unit", False)),
+            }
+        )
+    return {
+        "containers": containers,
+        "mirrors": [str(mirror) for mirror in details.get("mirrors") or []],
+    }
+
+
 router: APIRouter = module_router(
-    MODULE, view_model=PodmanDeviceView, build_view=device_view
+    MODULE,
+    view_model=PodmanDeviceView,
+    build_view=device_view,
+    import_config=import_config,
 )
 
 

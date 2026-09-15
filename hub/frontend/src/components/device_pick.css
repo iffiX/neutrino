@@ -1,0 +1,8 @@
+/* The page-scope action sits at the far end of the section's own header, the
+   way a panel's other header actions do. */
+.device_pick_actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin-left: auto;
+}

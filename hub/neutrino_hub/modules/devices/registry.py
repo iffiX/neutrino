@@ -139,6 +139,8 @@ class ManagedDevice:
         is_online: Whether the latest scan saw it.
         ssh: Stored SSH settings, when configured.
         client: Agent state.
+        shown_modules: The module tabs its Modules page shows; empty means
+            the modules its reports name.
     """
 
     id: str
@@ -152,6 +154,7 @@ class ManagedDevice:
     is_online: bool = False
     ssh: dict | None = None
     client: DeviceClientInfo = field(default_factory=DeviceClientInfo)
+    shown_modules: list = field(default_factory=list)
 
     @property
     def is_scan_row(self) -> bool:
@@ -191,6 +194,7 @@ class ManagedDevice:
             "link_mac": self.link_mac,
             "ssh": self.ssh,
             "client": self.client.to_dict(),
+            "shown_modules": list(self.shown_modules),
         }
 
 
@@ -321,7 +325,7 @@ class DeviceRegistry:
 
         Args:
             device_id: A stored id, or a ``scan:<mac>`` id, which is adopted.
-            annotation: Any of ``name``, ``icon``, ``ssh``.
+            annotation: Any of ``name``, ``icon``, ``ssh``, ``shown_modules``.
 
         Returns:
             The stored device after the update.
@@ -337,6 +341,10 @@ class DeviceRegistry:
                 device.icon = annotation["icon"]
             if "ssh" in annotation:
                 device.ssh = annotation["ssh"]
+            if "shown_modules" in annotation:
+                device.shown_modules = [
+                    str(name) for name in annotation["shown_modules"]
+                ]
             self._store(device)
             return device
 
@@ -492,6 +500,7 @@ class DeviceRegistry:
             icon=entry.get("icon"),
             ssh=entry.get("ssh"),
             client=DeviceClientInfo.from_dict(entry.get("client", {})),
+            shown_modules=[str(name) for name in entry.get("shown_modules") or []],
         )
 
     def _fresh(self, device_id: str) -> "ManagedDevice | None":

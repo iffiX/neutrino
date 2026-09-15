@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_STATES
 from neutrino_hub.web.constants import WEB_DEFAULT_LANGUAGE, WEB_LANGUAGES
 
 FRONTEND_SRC_DIR = Path(__file__).resolve().parents[2] / "frontend/src"
@@ -83,6 +84,16 @@ def test_every_sentence_fills_the_same_placeholders(language, name):
         assert set(PLACEHOLDER_PATTERN.findall(sentence)) == set(
             PLACEHOLDER_PATTERN.findall(english[key])
         ), key
+
+
+@pytest.mark.parametrize("language", list(WEB_LANGUAGES))
+def test_every_module_state_has_a_word(language):
+    """The state table is closed on every surface; a tab wears one of these."""
+    worded: set = set()
+    for name in catalog_names():
+        worded |= set(catalog(language, name))
+    for state in CHANNEL_MODULE_STATES:
+        assert f"state.{state}" in worded, state
 
 
 def test_every_key_a_source_names_is_one_english_words():

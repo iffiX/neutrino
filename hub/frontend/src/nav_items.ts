@@ -9,9 +9,8 @@ import type { IconName } from "./components/icon";
  * Two groups, and the split is who the page acts on. Hub is the box itself:
  * the network it routes, the proxy it runs, the devices and clients it
  * knows. Agent is what the hub drives on a machine running the agent —
- * itself included, since the hub box is one of them. Every page is always
- * listed: a page whose module is on no machine still says so, which is worth
- * more than a rail that changes shape underneath somebody.
+ * itself included, since the hub box is one of them: a shell, its files,
+ * and the modules it hosts.
  *
  * A row carries catalog keys rather than sentences, so the nav words itself
  * at render and a language change re-words it.
@@ -113,31 +112,10 @@ export const NAV_ITEMS: NavItem[] = [
     group: "agent",
   },
   {
-    path: "/samba",
-    labelKey: "ui.nav.samba",
-    icon: "hard_drive",
-    descriptionKey: "ui.nav.samba_description",
-    group: "agent",
-  },
-  {
-    path: "/gitea",
-    labelKey: "ui.nav.gitea",
-    icon: "gitea",
-    descriptionKey: "ui.nav.gitea_description",
-    group: "agent",
-  },
-  {
-    path: "/containers",
-    labelKey: "ui.nav.containers",
+    path: "/modules",
+    labelKey: "ui.nav.modules",
     icon: "cube",
-    descriptionKey: "ui.nav.containers_description",
-    group: "agent",
-  },
-  {
-    path: "/zfs",
-    labelKey: "ui.nav.zfs",
-    icon: "database",
-    descriptionKey: "ui.nav.zfs_description",
+    descriptionKey: "ui.nav.modules_description",
     group: "agent",
   },
 ];

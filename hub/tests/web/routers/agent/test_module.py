@@ -5,14 +5,12 @@ forgotten device never reads managed here; each row is what the agent last
 reported beside what the hub asks of it; the four presses write one
 ``want`` each and push it, refuse an offline device before writing, and a
 user-tier module takes none; the task carrying a module's install lines is
-named on its row. The door: the device list carrying every stored device
-with an agent and the hub box's own first, a selection wanting what is
-newly on running and what is dropped absent, a changed device with no
-socket refusing the whole selection before anything is written, the
-per-device read carrying the module's own fields beside the shared ones, a
-configuration checked on the agent as the module's ``validate`` verb before
-it is stored and pushed, and a module verb run on the agent and answering
-the fresh view.
+named on its row. The door: the per-device read carrying the module's own
+fields beside the shared ones, an import that writes what the machine
+reports only where the hub holds no configuration yet, a configuration
+checked on the agent as the module's ``validate`` verb before it is stored
+and pushed, and a module verb run on the agent and answering the fresh
+view.
 """
 
 import asyncio
@@ -311,6 +309,10 @@ def sample_view(runtime, context) -> SampleView:
     )
 
 
+def sample_import(details: dict) -> dict:
+    return {"users": [entry["username"] for entry in details.get("sessions", [])]}
+
+
 @pytest.fixture
 def box(monkeypatch, tmp_path):
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
@@ -337,9 +339,11 @@ def box(monkeypatch, tmp_path):
     }
     FakeDeviceRegistry.runtime = runtime
     monkeypatch.setattr(device_modules, "DeviceRegistry", FakeDeviceRegistry)
-    monkeypatch.setattr(device_modules, "machine_id", lambda: HUB_MACHINE)
     router = device_modules.module_router(
-        MODULE, view_model=SampleView, build_view=sample_view
+        MODULE,
+        view_model=SampleView,
+        build_view=sample_view,
+        import_config=sample_import,
     )
     app = FastAPI()
     app.include_router(router)
@@ -347,130 +351,6 @@ def box(monkeypatch, tmp_path):
     app.dependency_overrides[get_runtime] = lambda: runtime
     with TestClient(app) as client:
         yield client, runtime
-
-
-# --- the device list ---
-
-
-def test_the_list_carries_every_stored_device_with_an_agent_hub_box_first(box):
-    client, runtime = box
-    runtime.report(LAPTOP, MODULE, "running")
-    runtime.report(OFFLINE, MODULE, "absent")
-    runtime.desired_states.set_want(LAPTOP, MODULE, "running")
-
-    rows = client.get(f"{BLOCK_PATH}/device").json()["devices"]
-
-    assert [row["device_id"] for row in rows] == [HUB_BOX, OFFLINE, LAPTOP]
-    by_id = {row["device_id"]: row for row in rows}
-    assert by_id[LAPTOP] == {
-        "device_id": LAPTOP,
-        "name": "zed laptop",
-        "hostname": "",
-        "is_online": True,
-        "want": "running",
-        "state": "running",
-        "code": "",
-        "params": {},
-    }
-    assert by_id[OFFLINE]["is_online"] is False
-    assert by_id[OFFLINE]["state"] == "absent"
-    assert by_id[OFFLINE]["want"] == ""
-    assert by_id[HUB_BOX]["state"] == "unknown"
-
-
-def test_a_device_that_never_completed_its_handshake_is_not_listed(box):
-    client, runtime = box
-    from neutrino_hub.modules.devices.registry import ManagedDevice
-
-    runtime.devices["9" * 32] = ManagedDevice(id="9" * 32)
-
-    rows = client.get(f"{BLOCK_PATH}/device").json()["devices"]
-
-    assert "9" * 32 not in [row["device_id"] for row in rows]
-
-
-# --- the selection ---
-
-
-def test_selecting_devices_wants_them_running_and_pushes(box):
-    client, runtime = box
-    runtime.report(LAPTOP, MODULE, "absent")
-
-    response = client.post(f"{BLOCK_PATH}/device/set", json={"device_ids": [LAPTOP]})
-
-    assert response.status_code == 200
-    assert runtime.desired_states.want_of(LAPTOP, MODULE) == "running"
-    assert runtime.desired_states.want_of(HUB_BOX, MODULE) == ""
-    assert [push[0] for push in runtime.agent_sessions.pushes] == [LAPTOP]
-    row = next(r for r in response.json()["devices"] if r["device_id"] == LAPTOP)
-    assert row["want"] == "running"
-    assert runtime.published_services.refreshes == 1
-
-
-def test_dropping_a_device_wants_the_module_absent(box):
-    client, runtime = box
-    runtime.desired_states.set_want(LAPTOP, MODULE, "running")
-    runtime.report(LAPTOP, MODULE, "running")
-
-    client.post(f"{BLOCK_PATH}/device/set", json={"device_ids": []})
-
-    assert runtime.desired_states.want_of(LAPTOP, MODULE) == "absent"
-
-
-def test_a_device_wanted_installed_only_is_neither_checked_nor_touched(box):
-    """The page asks for the module configured; a device holding the package
-    alone is outside its set, and a selection that leaves it out leaves it."""
-    client, runtime = box
-    runtime.desired_states.set_want(LAPTOP, MODULE, "installed")
-
-    rows = client.post(
-        f"{BLOCK_PATH}/device/set", json={"device_ids": [HUB_BOX]}
-    ).json()["devices"]
-
-    assert runtime.desired_states.want_of(LAPTOP, MODULE) == "installed"
-    assert runtime.desired_states.want_of(HUB_BOX, MODULE) == "running"
-    assert [push[0] for push in runtime.agent_sessions.pushes] == [HUB_BOX]
-    assert next(r for r in rows if r["device_id"] == LAPTOP)["want"] == "installed"
-
-
-def test_a_changed_device_with_no_socket_refuses_the_whole_selection(box):
-    client, runtime = box
-
-    response = client.post(
-        f"{BLOCK_PATH}/device/set", json={"device_ids": [LAPTOP, OFFLINE]}
-    )
-
-    assert response.status_code == 409
-    assert response.json()["detail"] == {
-        "code": "agent_offline",
-        "params": {"device_id": OFFLINE},
-    }
-    assert runtime.desired_states.want_of(LAPTOP, MODULE) == ""
-    assert runtime.agent_sessions.pushes == []
-
-
-def test_an_offline_device_already_on_stays_on_untouched(box):
-    client, runtime = box
-    runtime.desired_states.set_want(OFFLINE, MODULE, "running")
-
-    response = client.post(
-        f"{BLOCK_PATH}/device/set", json={"device_ids": [OFFLINE, LAPTOP]}
-    )
-
-    assert response.status_code == 200
-    assert runtime.desired_states.want_of(OFFLINE, MODULE) == "running"
-    assert [push[0] for push in runtime.agent_sessions.pushes] == [LAPTOP]
-
-
-def test_an_id_no_managed_device_answers_to_is_refused(box):
-    client, _ = box
-
-    response = client.post(
-        f"{BLOCK_PATH}/device/set", json={"device_ids": ["nonsense"]}
-    )
-
-    assert response.status_code == 404
-    assert response.json()["detail"]["code"] == "device_unknown"
 
 
 # --- the per-device read ---
@@ -534,6 +414,69 @@ def test_an_unknown_device_is_refused_typed(box):
 
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "device_unknown"
+
+
+# --- the import ---
+
+
+def test_import_writes_what_the_machine_reports_where_the_hub_holds_nothing(box):
+    client, runtime = box
+    runtime.report(LAPTOP, MODULE, "installed", sessions=[{"username": "ann"}])
+
+    response = client.post(f"{BLOCK_PATH}/import", json={"device_id": LAPTOP})
+
+    assert response.status_code == 200
+    assert response.json()["users"] == ["ann"]
+    assert runtime.desired_states.read(LAPTOP, MODULE) == {"users": ["ann"]}
+    # Nothing is wanted of the module yet, so nothing is pushed.
+    assert runtime.agent_sessions.pushes == []
+    assert runtime.published_services.refreshes == 1
+
+
+def test_import_pushes_where_the_module_is_already_wanted_configured(box):
+    client, runtime = box
+    runtime.desired_states.set_want(LAPTOP, MODULE, "running")
+    runtime.report(LAPTOP, MODULE, "running", sessions=[{"username": "ann"}])
+
+    client.post(f"{BLOCK_PATH}/import", json={"device_id": LAPTOP})
+
+    assert [push[0] for push in runtime.agent_sessions.pushes] == [LAPTOP]
+
+
+def test_import_refuses_to_overwrite_a_configuration_the_hub_holds(box):
+    client, runtime = box
+    runtime.desired_states.write(LAPTOP, MODULE, {"users": ["bob"]})
+    runtime.report(LAPTOP, MODULE, "running", sessions=[{"username": "ann"}])
+
+    response = client.post(f"{BLOCK_PATH}/import", json={"device_id": LAPTOP})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": "module_configured",
+        "params": {"device_id": LAPTOP, "module": MODULE},
+    }
+    assert runtime.desired_states.read(LAPTOP, MODULE) == {"users": ["bob"]}
+
+
+def test_import_on_an_offline_device_writes_nothing(box):
+    client, runtime = box
+
+    response = client.post(f"{BLOCK_PATH}/import", json={"device_id": OFFLINE})
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "agent_offline"
+    assert runtime.desired_states.read(OFFLINE, MODULE) == {}
+
+
+def test_a_module_that_imports_nothing_has_no_import_route(monkeypatch, tmp_path):
+    router = device_modules.module_router(
+        MODULE, view_model=SampleView, build_view=sample_view
+    )
+
+    assert [route.path for route in router.routes] == [
+        f"{BLOCK_PATH}",
+        f"{BLOCK_PATH}/apply",
+    ]
 
 
 # --- the helpers the sub-routes share ---
