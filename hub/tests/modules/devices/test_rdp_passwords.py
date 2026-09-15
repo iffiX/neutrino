@@ -17,7 +17,8 @@ from neutrino_hub.modules.credentials.vault import seal_bytes
 from neutrino_hub.modules.devices import agent_reports
 from neutrino_hub.modules.devices import desired_state as desired_state_module
 from neutrino_hub.modules.devices.agent_module_controller import AgentModuleController
-from neutrino_hub.modules.devices.agent_sessions import AgentSessionRegistry
+from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_AGENT
+from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.modules.devices.registry import ManagedDevice
@@ -46,7 +47,7 @@ class ReportingRuntime:
         self.agent_module_orders = AgentModuleController(
             cache=None, locks=DeviceInstallLocks()
         )
-        self.agent_sessions = AgentSessionRegistry()
+        self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
         self.desired_states = DesiredStateStore()
         self.pushed: list = []
 
@@ -70,17 +71,15 @@ def locked(monkeypatch, tmp_path):
     monkeypatch.setattr("neutrino_hub.utils.constants.UTILS_STATE_ROOT", empty)
 
 
-def report(**fields) -> dict:
+def report(**sections) -> dict:
     body = {
         "type": "report",
-        "metrics": {},
+        "machine": {"metrics": {}, "accounts": []},
         "modules": {"rustdesk": {"state": "installed"}},
-        "addresses": [],
-        "accounts": [],
-        "rdp": {"is_shared": False},
-        "last_error": None,
+        "desktop": {"is_shared": False},
+        "error": None,
     }
-    body.update(fields)
+    body.update(sections)
     return body
 
 
@@ -192,8 +191,8 @@ def test_compose_hands_the_machine_the_opened_password(config, monkeypatch, tmp_
 
     desired, _ = store.compose(DEVICE, PLATFORM)
 
-    assert desired["rdp"] == {"seat_password": store.seat_password(DEVICE)}
-    assert desired["rdp"]["seat_password"] != ""
+    assert desired["desktop"] == {"seat_password": store.seat_password(DEVICE)}
+    assert desired["desktop"]["seat_password"] != ""
 
 
 def test_a_seal_this_box_cannot_open_composes_empty(config, monkeypatch, tmp_path):
@@ -208,7 +207,7 @@ def test_a_seal_this_box_cannot_open_composes_empty(config, monkeypatch, tmp_pat
 
     desired, _ = store.compose(DEVICE, PLATFORM)
 
-    assert desired["rdp"] == {"seat_password": ""}
+    assert desired["desktop"] == {"seat_password": ""}
 
 
 def test_a_reset_replaces_the_password(config, monkeypatch, tmp_path):

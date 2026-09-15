@@ -126,7 +126,7 @@ class _Gate:
 
 
 def pass_of(**keywords) -> RouterStateController:
-    return RouterStateController(agent_port_of=lambda: 8443, **keywords)
+    return RouterStateController(**keywords)
 
 
 def names(results) -> list[str]:

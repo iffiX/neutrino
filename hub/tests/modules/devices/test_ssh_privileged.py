@@ -294,7 +294,7 @@ def test_install_picks_deb_and_joins_with_the_link_on_argv(packages):
 
     assert connection.uploads[0][1].endswith(".deb")
     assert "apt-get install" in calls[1]["command"]
-    assert calls[2]["command"] == f"nagent connect --yes {LINK}"
+    assert calls[2]["command"] == f"nagent join --yes {LINK}"
     assert calls[2]["input_text"] is None
     assert [call["sudo_password"] for call in calls] == [SUDO_PASSWORD] * 3
     assert lines[-1] == "\n[exit 0]\n"
@@ -377,7 +377,7 @@ def test_the_deb_install_refreshes_the_package_lists_before_it_installs(packages
 
     assert calls[0]["command"].endswith("apt-get update")
     assert "apt-get install" in calls[1]["command"]
-    assert calls[2]["command"].startswith("nagent connect")
+    assert calls[2]["command"].startswith("nagent join")
 
 
 def test_a_refresh_the_device_refuses_is_said_and_the_install_still_runs(packages):

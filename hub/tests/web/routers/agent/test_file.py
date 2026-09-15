@@ -2,10 +2,10 @@
 
 What these pin: the seven routes' paths and shapes over scripted streams,
 the listing mapped from the agent's entries with directories first, a
-download carrying the size the agent announced, an archive as gzip, an
-upload as one multipart file pushed through the stream with its size in
-the open, a device with no channel answered 409, and the agent's typed
-codes mapped to 400 and 404.
+download streamed as it arrives with its size only in the close, an
+archive as gzip, an upload as one multipart file pushed through the stream
+with its size in the open, a device with no channel answered 409, and the
+agent's typed codes mapped to 400 and 404.
 """
 
 import pytest
@@ -36,7 +36,7 @@ def api():
 
 
 def done(**fields) -> dict:
-    return {"code": "", "params": {}, **fields}
+    return {"code": "", "params": fields}
 
 
 def refused(code: str, **params) -> dict:
@@ -122,9 +122,12 @@ def test_a_device_with_no_channel_answers_409(api):
     assert answer.json()["detail"]["code"] == "agent_offline"
 
 
-def test_a_refused_open_carries_the_agents_code(api):
+def test_a_close_carrying_a_code_is_the_agents_refusal(api):
     client, sessions = api
-    sessions.refusal = ("path_missing", {"path": "/nope"})
+    sessions.scripts["file_list"] = lambda args: (
+        [],
+        refused("path_missing", path="/nope"),
+    )
 
     answer = client.get("/api/agent/file", params={"device_id": MAC, "path": "/nope"})
 
@@ -135,7 +138,7 @@ def test_a_refused_open_carries_the_agents_code(api):
     }
 
 
-def test_a_close_carrying_a_code_is_refused_the_same_way(api):
+def test_each_code_answers_on_its_own_status(api):
     client, sessions = api
     sessions.scripts["file_list"] = lambda args: ([], refused("op_failed", path="/x"))
 
@@ -148,10 +151,11 @@ def test_a_close_carrying_a_code_is_refused_the_same_way(api):
 # --- download ---
 
 
-def test_a_file_download_streams_the_bytes_with_the_announced_size(api):
+def test_a_file_download_streams_the_bytes_as_they_arrive(api):
+    """The size arrives only in the close, so the body is chunked."""
     client, sessions = api
     sessions.scripts["file_download"] = lambda args: (
-        [("event", {"type": "event", "size": 6}), ("data", b"abc"), ("data", b"def")],
+        [("data", b"abc"), ("data", b"def")],
         done(size=6),
     )
 
@@ -161,7 +165,7 @@ def test_a_file_download_streams_the_bytes_with_the_announced_size(api):
 
     assert answer.status_code == 200
     assert answer.content == b"abcdef"
-    assert answer.headers["content-length"] == "6"
+    assert "content-length" not in answer.headers
     assert "a.bin" in answer.headers["content-disposition"]
     assert opened(sessions, "file_download")[0].args == {"path": "/srv/a.bin"}
 
@@ -190,7 +194,10 @@ def test_a_directory_download_is_an_archive_asked_for_as_one(api):
 
 def test_a_download_of_what_is_not_there_is_404(api):
     client, sessions = api
-    sessions.refusal = ("path_missing", {"path": "/srv/x"})
+    sessions.scripts["file_download"] = lambda args: (
+        [],
+        refused("path_missing", path="/srv/x"),
+    )
 
     answer = client.get(
         "/api/agent/file/download", params={"device_id": MAC, "path": "/srv/x"}
@@ -250,9 +257,12 @@ def test_an_upload_naming_a_path_instead_of_a_file_name_is_refused(api):
     assert sessions.streams == []
 
 
-def test_an_upload_onto_a_directory_is_refused_at_the_open(api):
+def test_an_upload_the_agent_closes_before_the_first_byte_is_typed(api):
     client, sessions = api
-    sessions.refusal = ("file_exists", {"path": "/srv/a"})
+    sessions.scripts["file_upload"] = lambda args: (
+        [],
+        refused("file_exists", path="/srv/a"),
+    )
 
     answer = client.post(
         "/api/agent/file/upload",

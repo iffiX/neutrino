@@ -1314,7 +1314,7 @@ def finish(*, panel_url: str, link: str = "", note: str = "", joined=None) -> No
     if link:
         print("  To bring a device in, install the agent on it and run:")
         print()
-        print(f"    nagent connect '{link}'")
+        print(f"    nagent join '{link}'")
         print()
         print("  The link lasts thirty minutes. The panel's Devices page generates")
         print("  more, one per device.")

@@ -25,7 +25,17 @@ def config(monkeypatch, tmp_path):
     monkeypatch.setattr(
         desired_state_module,
         "resolved_modules",
-        lambda platform: {"samba": {"kind": "system_package", "platform": platform}},
+        lambda platform: {
+            "samba": {
+                "kind": "system_package",
+                "entry": {
+                    "packages": ["samba"],
+                    "verify": "smbd -V",
+                    "uninstall": {"packages": ["samba"], "is_data_kept": True},
+                },
+            },
+            "gitea": {"kind": "binary", "entry": None},
+        },
     )
     return tmp_path
 
@@ -65,26 +75,40 @@ def test_the_hash_is_stable_and_moves_with_the_state():
     assert len(state_hash({})) == 64
 
 
-def test_compose_carries_every_module_the_rdp_seat_and_the_catalog(config):
+def test_compose_is_the_modules_switched_on_with_their_recipes_and_the_desktop(
+    config,
+):
+    """A module switched on is wanted running, with its configuration and
+    the recipes resolved for the platform; one switched off is not
+    mentioned, so the agent leaves it as it is."""
     store = DesiredStateStore()
     store.set_enabled(DEVICE, "samba", True)
+    store.set_enabled(DEVICE, "gitea", True)
     store.write(
         DEVICE, "samba", {"shares": [{"name": "s", "path": "/srv"}], "users": []}
     )
     store.write(DEVICE, "gitea", {"listen_port": 3100, "root_url": ""})
+    store.write(DEVICE, "podman", {"containers": []})
 
     desired, digest = store.compose(
         DEVICE, PLATFORM, address="192.168.100.7", allowed_subnets=["192.168.100.0/24"]
     )
 
-    assert set(desired) == {"modules", "rdp", "catalog"}
-    assert set(desired["modules"]) == {"zfs", "samba", "gitea", "podman"}
+    assert set(desired) == {"modules", "desktop"}
+    assert set(desired["modules"]) == {"samba", "gitea"}
     samba = desired["modules"]["samba"]
-    assert samba["is_enabled"] is True
+    assert set(samba) == {"want", "config", "install", "uninstall"}
+    assert samba["want"] == "running"
     assert samba["config"]["shares"] == [{"name": "s", "path": "/srv"}]
     assert samba["config"]["allowed_subnets"] == ["192.168.100.0/24"]
+    assert samba["install"] == {
+        "kind": "system_package",
+        "packages": ["samba"],
+        "verify": "smbd -V",
+    }
+    assert samba["uninstall"] == {"packages": ["samba"], "is_data_kept": True}
     gitea = desired["modules"]["gitea"]
-    assert gitea["is_enabled"] is False
+    assert gitea["want"] == "running"
     assert gitea["config"]["listen_port"] == 3100
     assert gitea["config"]["address"] == "192.168.100.7"
     assert set(gitea["config"]["secrets"]) == {
@@ -93,8 +117,8 @@ def test_compose_carries_every_module_the_rdp_seat_and_the_catalog(config):
         "JWT_SECRET",
         "LFS_JWT_SECRET",
     }
-    assert desired["rdp"] == {"seat_password": ""}
-    assert desired["catalog"]["modules"]["samba"]["platform"] == PLATFORM
+    assert (gitea["install"], gitea["uninstall"]) == ({}, {})
+    assert desired["desktop"] == {"seat_password": ""}
     assert digest == state_hash(desired)
 
 

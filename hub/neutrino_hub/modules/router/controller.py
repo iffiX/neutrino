@@ -87,15 +87,12 @@ class RouterStateController:
     def __init__(
         self,
         *,
-        agent_port_of,
         trigger: str = ROUTER_TRIGGER_APPLY,
         on_base_ready=None,
         lock_path: Path | None = None,
     ):
         """
         Args:
-            agent_port_of: Called with nothing; answers the agent channel's
-                port, which the firewall opens toward every served network.
             trigger: ``apply`` for a person or a command, ``event`` for the
                 resident unit. An event leaves an engine systemd is already
                 restarting to systemd.
@@ -105,7 +102,6 @@ class RouterStateController:
             lock_path: The lock file every writer takes; the usual one when
                 None.
         """
-        self._agent_port_of = agent_port_of
         self._trigger = trigger
         self._on_base_ready = on_base_ready
         self._lock_path = lock_path
@@ -153,7 +149,6 @@ class RouterStateController:
             network=network,
             routing=routing,
             xray_uid=lookup_xray_uid(),
-            agent_port=self._agent_port_of(),
         ).render()
         is_diverting = ROUTER_NFT_DIVERT_MARKER in ruleset
         rules = RouterRulesetApplier()

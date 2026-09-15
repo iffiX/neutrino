@@ -1309,50 +1309,6 @@ class DeviceEnrollmentView(BaseModel):
     expires_in_s: int
 
 
-class AgentEnroll(BaseModel):
-    """A machine introducing itself with an enrollment token."""
-
-    enrollment_token: str
-    # The machine's own id, which a blank ticket lands on.
-    device_id: str
-    hostname: str = ""
-    client_version: str = ""
-    wire: int = 0
-    platform: dict = Field(default_factory=dict)
-
-
-class AgentEnrollReply(BaseModel):
-    """What the gateway hands back once a machine has joined."""
-
-    token: str
-    # The id the device is stored under.
-    device_id: str
-    hub_version: str = ""
-
-
-class ClientEnroll(BaseModel):
-    """A person's client program introducing itself with an enrollment token."""
-
-    enrollment_token: str
-    hostname: str = ""
-    platform: dict = Field(default_factory=dict)
-    client_version: str = ""
-
-
-class ClientEnrollReply(BaseModel):
-    """What the hub hands back once a client has joined."""
-
-    token: str
-    client_id: str
-    hub_version: str = ""
-
-
-class ClientLeave(BaseModel):
-    """A client saying it is leaving; the token is all it needs to prove."""
-
-    token: str
-
-
 class ClientView(BaseModel):
     """One enrolled client on the Clients page."""
 
@@ -1396,24 +1352,6 @@ class ClientUpdate(BaseModel):
 
     client_id: str
     name: str
-
-
-class ClientPackageRequest(BaseModel):
-    """An agent asking for the hub's baked package for its family."""
-
-    token: str
-    family: str
-    # The machine it is for. The package carries an interpreter, so one
-    # family is no longer one file. Empty from a build that predates the
-    # field, which the hub answers from the platform it last reported.
-    architecture: str = ""
-
-
-class ClientModulePackage(BaseModel):
-    """An agent asking for the bytes an order named."""
-
-    token: str
-    artifact_key: str
 
 
 # --- the channel ---
@@ -1739,12 +1677,6 @@ class DeviceInstallOutputView(BaseModel):
     """Every install this device has run, newest first."""
 
     orders: list[DeviceInstallOrderView] = Field(default_factory=list)
-
-
-class AgentLeave(BaseModel):
-    """An agent saying it is leaving; the token is all it needs to prove."""
-
-    token: str
 
 
 class ModuleDeviceView(BaseModel):

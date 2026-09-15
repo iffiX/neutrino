@@ -49,6 +49,8 @@ AGENT_PACKAGE_ARCHITECTURES = {
 
 # The suffix each family's files carry.
 AGENT_PACKAGE_FAMILIES = {".deb": "deb", ".rpm": "rpm"}
+# Which package family a machine's platform family installs.
+AGENT_PACKAGE_FAMILY_OF_PLATFORM = {"debian": "deb", "rhel": "rpm", "suse": "rpm"}
 
 
 def platform_key(family: str, architecture: str) -> str:
@@ -110,6 +112,19 @@ def package_family(name: str) -> str:
         ``deb`` or ``rpm``, or empty for anything else.
     """
     return AGENT_PACKAGE_FAMILIES.get(Path(name).suffix, "")
+
+
+def platform_family(platform: dict) -> str:
+    """Which package family a machine installs, from its platform tuple.
+
+    Args:
+        platform: ``{os, family, arch}`` as the agent reported it.
+
+    Returns:
+        ``deb`` or ``rpm``, or empty when no agent package is built for
+        the family.
+    """
+    return AGENT_PACKAGE_FAMILY_OF_PLATFORM.get(str(platform.get("family", "")), "")
 
 
 class AgentPackageCache:

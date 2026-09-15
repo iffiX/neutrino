@@ -22,8 +22,8 @@ from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier
 from neutrino_hub.modules.cliproxyapi.usage_store import CliproxyApiUsageStore
 from neutrino_hub.modules.clients.registry import Client
 from neutrino_hub.modules.credentials.vault import SecretVault
-from neutrino_hub.modules.devices.agent_sessions import AgentSessionRegistry
-from neutrino_hub.modules.devices.constants import AGENT_SESSION_KIND_CLIENT
+from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
+from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers.hub import ai as ai_router
@@ -47,7 +47,7 @@ class KeysRuntime:
     """Only what a key change reaches for: the client sockets, none open."""
 
     def __init__(self):
-        self.client_sessions = AgentSessionRegistry(kind=AGENT_SESSION_KIND_CLIENT)
+        self.client_sessions = ChannelSessionRegistry(CHANNEL_ROLE_CLIENT)
 
 
 @pytest.fixture

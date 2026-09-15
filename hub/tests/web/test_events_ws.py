@@ -8,7 +8,6 @@ write under ``config/`` — reach it exactly as often as they should, carrying
 what they carry.
 """
 
-import hashlib
 from types import SimpleNamespace
 
 import pytest
@@ -16,14 +15,14 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_AGENT, PROTOCOL
+from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.modules.devices.agent_module_controller import AgentModuleController
-from neutrino_hub.modules.devices.agent_sessions import AgentSessionRegistry
-from neutrino_hub.modules.devices.constants import AGENT_WIRE_GENERATION
 from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
-from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice
+from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.utils.json_file import set_config_write_hook, write_config
-from neutrino_hub.web import ws
+from neutrino_hub.web import identity, ws
 from neutrino_hub.web.constants import (
     WEB_EVENT_CONFIG,
     WEB_EVENT_DEVICE_REPORT,
@@ -33,31 +32,13 @@ from neutrino_hub.web.constants import (
 )
 from neutrino_hub.web.dependencies import session_cookie
 from neutrino_hub.web.events import PanelEventBus
-from neutrino_hub.web.routers import agent_http as agent_router
-from neutrino_hub.web.routers import agent_ws
+from neutrino_hub.web.routers import channel as channel_router
 from tests.conftest import StubDesiredStates, StubPublishedServices
 
-DEVICE = "device-one"
-AGENT_TOKEN = "device-token"
 SESSION_TOKEN = "panel-session"
 # This panel answers on the default port, so its cookie is named for it.
 SESSION_COOKIE = session_cookie(SimpleNamespace(settings={}))
 POLICY_VIOLATION_CODE = 1008
-
-
-class FakeRegistry:
-    """A registry of one device, in memory; the router builds one per socket."""
-
-    device: ManagedDevice
-
-    @classmethod
-    def reset(cls, device: ManagedDevice) -> None:
-        cls.device = device
-
-    def find_by_token(self, token):
-        stored = FakeRegistry.device.client.token_sha256
-        presented = hashlib.sha256(token.encode()).hexdigest()
-        return FakeRegistry.device if stored and stored == presented else None
 
 
 class StubSessions:
@@ -90,12 +71,12 @@ class FakeRuntime:
         self.device_shares = DeviceShareRegistry()
         self.published_services = StubPublishedServices()
         self.desired_states = StubDesiredStates()
-        self.agent_sessions = AgentSessionRegistry()
+        self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
         self.agent_sessions.on_presence_change = self._publish_devices
         self.agent_module_orders = AgentModuleController(
             cache=None, locks=DeviceInstallLocks()
         )
-        self.desired = ("", {})
+        self.desired = ("", {"modules": {}, "desktop": {}})
 
     def network(self):
         return _EmptyNetwork()
@@ -116,21 +97,11 @@ class FakeRuntime:
 @pytest.fixture
 def box(monkeypatch, tmp_path):
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
-    FakeRegistry.reset(
-        ManagedDevice(
-            id=DEVICE,
-            name="testbox",
-            client=DeviceClientInfo(
-                token_sha256=hashlib.sha256(AGENT_TOKEN.encode()).hexdigest()
-            ),
-        )
-    )
-    monkeypatch.setattr(agent_ws, "DeviceRegistry", FakeRegistry)
-    monkeypatch.setattr(agent_ws, "HUB_VERSION", "1.2.3")
-    monkeypatch.setattr(agent_router, "HUB_VERSION", "1.2.3")
+    identity.ensure_hub_identity()
+    monkeypatch.setattr(channel_router, "HUB_VERSION", "1.2.3")
     app = FastAPI()
     app.include_router(ws.router)
-    app.include_router(agent_ws.router)
+    app.include_router(channel_router.router)
     runtime = FakeRuntime()
     app.state.runtime = runtime
     set_config_write_hook(runtime._publish_config_write)
@@ -140,34 +111,40 @@ def box(monkeypatch, tmp_path):
     set_config_write_hook(None)
 
 
-def hello(**fields) -> dict:
-    body = {
+@pytest.fixture
+def device():
+    """One bound device: its id and the token its hello carries."""
+    stored = DeviceRegistry().create("testbox")
+    return stored.id, DeviceRegistry().issue_token(stored.id)
+
+
+def hello(device_id: str, token: str) -> dict:
+    return {
         "type": "hello",
-        "token": AGENT_TOKEN,
-        "client_version": "1.2.3",
-        "wire": AGENT_WIRE_GENERATION,
-        "hostname": "box",
-        "platform": {"os": "linux", "family": "debian", "arch": "amd64"},
-        "accounts": ["alice"],
-        "state_hash": "",
+        "protocol": PROTOCOL,
+        "role": "agent",
+        "id": device_id,
+        "name": "box",
+        "software": "neutrino_agent/1.2.3",
+        "token": token,
     }
-    body.update(fields)
-    return body
 
 
-def report(**fields) -> dict:
+def report(**sections) -> dict:
     body = {
         "type": "report",
-        "metrics": {"cpu_percent": 4.0},
-        "platform": {"os": "linux", "family": "debian", "arch": "amd64"},
-        "accounts": ["alice"],
-        "modules": {"rustdesk": {"state": "installed", "code": "", "params": {}}},
         "state_hash": "",
-        "state_error": None,
-        "rdp": {"is_shared": False},
-        "last_error": None,
+        "machine": {
+            "hostname": "box",
+            "platform": {"os": "linux", "family": "debian", "arch": "amd64"},
+            "accounts": ["alice"],
+            "metrics": {"cpu_percent": 4.0},
+        },
+        "modules": {"rustdesk": {"state": "installed", "code": "", "params": {}}},
+        "desktop": {"is_shared": False},
+        "error": None,
     }
-    body.update(fields)
+    body.update(sections)
     return body
 
 
@@ -185,11 +162,11 @@ def closed(*sockets) -> None:
         socket.__exit__(None, None, None)
 
 
-def agent_of(client, panel):
+def agent_of(client, panel, device):
     """One agent's channel, with the presence event it caused read off."""
-    socket = client.websocket_connect("/api/agent/ws")
+    socket = client.websocket_connect("/api/channel/socket")
     socket.__enter__()
-    socket.send_json(hello())
+    socket.send_json(hello(*device))
     socket.receive_json()
     assert panel.receive_json()["type"] == WEB_EVENT_DEVICES
     return socket
@@ -227,13 +204,13 @@ def test_the_socket_opens_with_a_hello_frame(box):
     assert frame["at"]
 
 
-def test_a_channel_opening_says_the_device_list_moved(box):
+def test_a_channel_opening_says_the_device_list_moved(box, device):
     client, _ = box
     panel = opened(client)
 
-    agent = client.websocket_connect("/api/agent/ws")
+    agent = client.websocket_connect("/api/channel/socket")
     agent.__enter__()
-    agent.send_json(hello())
+    agent.send_json(hello(*device))
     agent.receive_json()
     frame = panel.receive_json()
     closed(agent, panel)
@@ -242,43 +219,55 @@ def test_a_channel_opening_says_the_device_list_moved(box):
     assert frame["key"] == ""
 
 
-def test_a_report_with_a_new_module_state_says_so_for_that_device(box):
+def test_a_report_with_a_new_module_state_says_so_for_that_device(box, device):
     client, _ = box
     panel = opened(client)
-    agent = agent_of(client, panel)
+    agent = agent_of(client, panel, device)
 
     agent.send_json(report())
     frame = panel.receive_json()
     closed(agent, panel)
 
     assert frame["type"] == WEB_EVENT_DEVICE_REPORT
-    assert frame["key"] == DEVICE
+    assert frame["key"] == device[0]
 
 
-def test_every_report_carries_the_machines_vitals(box):
+def vitals(**metrics) -> dict:
+    """A report's machine section carrying these metrics."""
+    return report(
+        machine={
+            "hostname": "box",
+            "platform": {"os": "linux", "family": "debian", "arch": "amd64"},
+            "accounts": ["alice"],
+            "metrics": metrics,
+        }
+    )
+
+
+def test_every_report_carries_the_machines_vitals(box, device):
     client, _ = box
     panel = opened(client)
-    agent = agent_of(client, panel)
+    agent = agent_of(client, panel, device)
 
-    agent.send_json(report(metrics={"cpu_percent": 91.0, "gpus": []}))
+    agent.send_json(vitals(cpu_percent=91.0, gpus=[]))
     frames = frames_until(panel, WEB_EVENT_METRICS)
     closed(agent, panel)
 
     metrics = frames[-1]
-    assert metrics["key"] == DEVICE
+    assert metrics["key"] == device[0]
     assert metrics["data"] == {"cpu_percent": 91.0, "gpus": []}
 
 
-def test_a_report_saying_nothing_new_asks_for_no_refetch(box):
+def test_a_report_saying_nothing_new_asks_for_no_refetch(box, device):
     client, _ = box
     panel = opened(client)
-    agent = agent_of(client, panel)
+    agent = agent_of(client, panel, device)
     agent.send_json(report())
     assert frames_until(panel, WEB_EVENT_METRICS)[0]["type"] == (
         WEB_EVENT_DEVICE_REPORT
     )
 
-    agent.send_json(report(metrics={"cpu_percent": 91.0}))
+    agent.send_json(vitals(cpu_percent=91.0))
     write_config("router/network.json", {"interfaces": []})
     frames = frames_until(panel, WEB_EVENT_CONFIG)
     closed(agent, panel)
@@ -293,9 +282,9 @@ def test_a_config_write_names_the_file_it_wrote(box):
     client, _ = box
     panel = opened(client)
 
-    write_config(f"devices/{DEVICE}/samba.json", {"is_enabled": True})
+    write_config("devices/device-one/samba.json", {"is_enabled": True})
     frame = panel.receive_json()
     closed(panel)
 
     assert frame["type"] == WEB_EVENT_CONFIG
-    assert frame["key"] == f"devices/{DEVICE}/samba.json"
+    assert frame["key"] == "devices/device-one/samba.json"

@@ -30,7 +30,6 @@ from neutrino_hub.modules.services.published import PublishedServiceCache
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.system.listening_ports import ListeningPortReader
 from neutrino_hub.web.constants import (
-    WEB_DEFAULT_AGENT_LISTEN_PORT,
     WEB_EVENT_AI_USAGE,
     WEB_EVENT_CLIENTS,
     WEB_EVENT_CONFIG,
@@ -57,7 +56,7 @@ from neutrino_hub.utils.json_file import (
 )
 from neutrino_hub.utils.subprocess_run import command_failure_text, run
 from neutrino_hub.web.auth import SessionStore, session_secret
-from neutrino_hub.web import client_channel
+from neutrino_hub.web import channel_state
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.link_sampler import PanelLinkSampler
 from neutrino_hub.modules.devices.agent_module_cache import AgentModuleCache
@@ -69,12 +68,16 @@ from neutrino_hub.modules.devices.agent_module_controller import (
 )
 from neutrino_hub.modules.devices.agent_package import AgentPackageCache
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
-from neutrino_hub.modules.devices.agent_sessions import AgentSessionRegistry
+from neutrino_hub.modules.channel.constants import (
+    CHANNEL_CODE_BINDING_UNKNOWN,
+    CHANNEL_ROLE_AGENT,
+    CHANNEL_ROLE_CLIENT,
+    CHANNEL_STREAM_ORDER,
+)
+from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_ORDER_TIMEOUT_S,
     AGENT_MODULE_OUTPUT_LIMIT_BYTES,
-    AGENT_SESSION_KIND_CLIENT,
-    AGENT_WS_CLOSE_UNKNOWN_TOKEN,
 )
 from neutrino_hub.modules.devices.install_lock import DeviceInstallLocks
 from neutrino_hub.web.task_stream import TaskStreamRegistry
@@ -120,10 +123,10 @@ class PanelRuntime:
         # beat, and a hub restart simply waits for the next one.
         self.device_shares = DeviceShareRegistry()
         # Every managed machine's live socket, and the streams on it.
-        self.agent_sessions = AgentSessionRegistry()
+        self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
         self.agent_sessions.on_presence_change = self._publish_devices
         # Every client program's live socket, keyed by client id.
-        self.client_sessions = AgentSessionRegistry(kind=AGENT_SESSION_KIND_CLIENT)
+        self.client_sessions = ChannelSessionRegistry(CHANNEL_ROLE_CLIENT)
         self.client_sessions.on_presence_change = self._publish_clients
         # The address each client reaches this hub on, resolved when its
         # socket opened; its catalog and its gateway URL are composed with it.
@@ -449,15 +452,13 @@ class PanelRuntime:
             AgentOfflineError: When the device has no channel.
             StreamRefusedError: When the socket did not take it in time.
         """
-        state_hash, desired = self.desired_state_for(key)
-        self.agent_sessions.push_state_from_thread(key, state_hash, desired)
+        channel_state.push_state(self, CHANNEL_ROLE_AGENT, key)
 
     def forget_device(self, device_id: str) -> None:
         """Drop everything held in memory about one device.
 
         Called when the device is forgotten. Its socket, if one is open, is
-        closed with the unknown-token code: the token it authenticated with
-        is gone.
+        refused with ``binding_unknown``: the binding it spoke for is gone.
 
         Args:
             device_id: The device.
@@ -475,9 +476,18 @@ class PanelRuntime:
         self.device_shares.withdraw(key)
         self.agent_module_orders.forget(key)
         self.desired_states.forget(key)
-        self.agent_sessions.close_from_thread(
-            key, AGENT_WS_CLOSE_UNKNOWN_TOKEN, "unknown_token"
-        )
+        self.agent_sessions.refuse_from_thread(key, CHANNEL_CODE_BINDING_UNKNOWN)
+
+    def forget_client(self, client_id: str) -> None:
+        """Drop everything held in memory about one client.
+
+        Its socket, if one is open, is refused with ``binding_unknown``.
+
+        Args:
+            client_id: The client.
+        """
+        self.client_catalog_host.pop(client_id, None)
+        self.client_sessions.refuse_from_thread(client_id, CHANNEL_CODE_BINDING_UNKNOWN)
 
     def publish_node_readings(self, readings: dict) -> None:
         """Say the nodes' live readings moved, where they have.
@@ -494,12 +504,6 @@ class PanelRuntime:
         """Say the AI gateway's counters or served list moved."""
         self.events.publish(WEB_EVENT_AI_USAGE)
 
-    def _agent_port(self) -> int:
-        """The agent channel's port, from the settings or the default."""
-        return int(
-            self.settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
-        )
-
     def _dispatch_order(self, order: AgentModuleOrder) -> None:
         """Run one module order over the device's socket, to its close.
 
@@ -510,16 +514,17 @@ class PanelRuntime:
         """
         controller = self.agent_module_orders
 
-        def collect(line: str) -> None:
-            order.output = (order.output + line + "\n")[
+        def collect(chunk: bytes) -> None:
+            order.output = (order.output + chunk.decode("utf-8", "replace"))[
                 -AGENT_MODULE_OUTPUT_LIMIT_BYTES:
             ]
 
         try:
-            info = self.agent_sessions.run_order_from_thread(
+            info = self.agent_sessions.run_stream_from_thread(
                 order.device_id,
+                CHANNEL_STREAM_ORDER,
                 order.to_wire(),
-                on_line=collect,
+                on_chunk=collect,
                 timeout=AGENT_MODULE_ORDER_TIMEOUT_S,
             )
         except (AgentOfflineError, StreamRefusedError) as error:
@@ -532,13 +537,15 @@ class PanelRuntime:
                 output=order.output,
             )
             return
-        output = str(info.get("output", "") or "") or order.output
+        params = dict(info.get("params") or {})
+        output = str(params.pop("output", "") or "") or order.output
+        state = params.pop("state", None)
         controller.record_result(
             device_id=order.device_id,
             order_id=order.id,
-            state=ORDER_DONE if info.get("state") == ORDER_DONE else ORDER_FAILED,
+            state=ORDER_DONE if state == ORDER_DONE else ORDER_FAILED,
             code=str(info.get("code", "") or ""),
-            params=dict(info.get("params") or {}),
+            params=params,
             output=output[-AGENT_MODULE_OUTPUT_LIMIT_BYTES:],
         )
 
@@ -629,7 +636,7 @@ class PanelRuntime:
 
     def _router_controller(self) -> RouterStateController:
         """The one pass every apply of the routing state runs."""
-        return RouterStateController(agent_port_of=self._agent_port)
+        return RouterStateController()
 
     def _push_desired_states(self) -> list[str]:
         """Hand every online device the state the network now composes.
@@ -675,7 +682,7 @@ class PanelRuntime:
     def _services_changed(self) -> None:
         """Say the published list composes differently, and hand it on."""
         self.events.publish(WEB_EVENT_SERVICES)
-        client_channel.push_catalogs(self)
+        channel_state.push_states(self, CHANNEL_ROLE_CLIENT)
 
     def _publish_config_write(self, relative_path: str) -> None:
         """Say one file under ``config/`` was written."""

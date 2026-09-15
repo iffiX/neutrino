@@ -12,14 +12,14 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
-from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
-from neutrino_hub.modules.devices.agent_sessions import (
-    STREAM_KIND_FILE_DOWNLOAD,
-    STREAM_KIND_FILE_LIST,
-    STREAM_KIND_FILE_OP,
-    STREAM_KIND_FILE_UPLOAD,
-    AgentStream,
+from neutrino_hub.exceptions import AgentOfflineError
+from neutrino_hub.modules.channel.constants import (
+    CHANNEL_STREAM_FILE_DOWNLOAD,
+    CHANNEL_STREAM_FILE_LIST,
+    CHANNEL_STREAM_FILE_OP,
+    CHANNEL_STREAM_FILE_UPLOAD,
 )
+from neutrino_hub.modules.channel.sessions import ChannelStream
 from neutrino_hub.modules.devices.constants import DEVICE_FILE_OP_TIMEOUT_S
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
@@ -65,7 +65,7 @@ async def list_files(
         The resolved path and its entries, directories first.
     """
     info = await _run_stream(
-        runtime, device_id, STREAM_KIND_FILE_LIST, {"path": path or ROOT_PATH}
+        runtime, device_id, CHANNEL_STREAM_FILE_LIST, {"path": path or ROOT_PATH}
     )
     entries = [_entry_view(entry) for entry in info.get("entries") or []]
     entries.sort(key=_directories_first)
@@ -84,16 +84,16 @@ async def download_file(
         runtime: The shared runtime.
 
     Returns:
-        The file as an attachment.
+        The file as an attachment, sized only when it is done.
     """
-    stream = await _open(runtime, device_id, STREAM_KIND_FILE_DOWNLOAD, {"path": path})
-    size = await _announced_size(stream)
+    stream = await _open(
+        runtime, device_id, CHANNEL_STREAM_FILE_DOWNLOAD, {"path": path}
+    )
+    first = await _first_bytes(stream)
     name = posixpath.basename(path) or "download"
     headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"}
-    if size is not None:
-        headers["Content-Length"] = str(size)
     return StreamingResponse(
-        _chunks(stream), media_type="application/octet-stream", headers=headers
+        _chunks(stream, first), media_type="application/octet-stream", headers=headers
     )
 
 
@@ -117,13 +117,14 @@ async def download_dir(
     stream = await _open(
         runtime,
         device_id,
-        STREAM_KIND_FILE_DOWNLOAD,
+        CHANNEL_STREAM_FILE_DOWNLOAD,
         {"path": path, "is_archived": True},
     )
+    first = await _first_bytes(stream)
     base = posixpath.basename(path.rstrip("/")) or "archive"
     name = base.lstrip(".") or "archive"
     return StreamingResponse(
-        _chunks(stream),
+        _chunks(stream, first),
         media_type="application/gzip",
         headers={
             "Content-Disposition": (
@@ -169,7 +170,7 @@ async def upload_file(
     stream = await _open(
         runtime,
         device_id,
-        STREAM_KIND_FILE_UPLOAD,
+        CHANNEL_STREAM_FILE_UPLOAD,
         {"path": posixpath.join(directory, name), "size": int(size)},
     )
     try:
@@ -204,7 +205,7 @@ async def make_dir(
     await _run_stream(
         runtime,
         body.device_id,
-        STREAM_KIND_FILE_OP,
+        CHANNEL_STREAM_FILE_OP,
         {"op": "mkdir", "path": body.path},
     )
     return {}
@@ -227,7 +228,7 @@ async def rename_path(
     await _run_stream(
         runtime,
         body.device_id,
-        STREAM_KIND_FILE_OP,
+        CHANNEL_STREAM_FILE_OP,
         {"op": "rename", "path": body.path, "new_path": body.new_path},
     )
     return {}
@@ -249,7 +250,7 @@ async def delete_path(
     await _run_stream(
         runtime,
         body.device_id,
-        STREAM_KIND_FILE_OP,
+        CHANNEL_STREAM_FILE_OP,
         {"op": "delete", "path": body.path},
     )
     return {}
@@ -276,19 +277,21 @@ def _directories_first(entry: DeviceFileEntryView) -> tuple:
 
 
 async def _open(runtime: PanelRuntime, device_id: str, kind: str, args: dict):
-    """One stream on the device, or the coded refusal."""
+    """One stream on the device, or the offline refusal."""
     try:
         return await runtime.agent_sessions.open_stream(device_id, kind, args)
     except AgentOfflineError as error:
         raise _offline(error)
-    except StreamRefusedError as refused:
-        _refuse(refused.code, refused.params)
 
 
 async def _run_stream(
     runtime: PanelRuntime, device_id: str, kind: str, args: dict
 ) -> dict:
-    """Open one stream, wait for its close, and refuse what it refused."""
+    """Open one stream, wait for its close, and refuse what it refused.
+
+    Returns:
+        The close's ``params``: the stream's result.
+    """
     stream = await _open(runtime, device_id, kind, args)
     try:
         info = await asyncio.wait_for(_collect(stream), DEVICE_FILE_OP_TIMEOUT_S)
@@ -302,11 +305,14 @@ async def _run_stream(
             },
         )
     _refuse_if_coded(info)
-    return info
+    return dict(info.get("params") or {})
 
 
-async def _collect(stream: AgentStream) -> dict:
+async def _collect(stream: ChannelStream) -> dict:
     """Read a stream to its close.
+
+    Returns:
+        The close, ``{"code", "params"}``.
 
     Raises:
         HTTPException: 409 ``agent_offline`` when the socket went away.
@@ -320,34 +326,35 @@ async def _collect(stream: AgentStream) -> dict:
     return dict(stream.close_info or {})
 
 
-async def _announced_size(stream: AgentStream) -> "int | None":
-    """The size a download names before its first byte, if it names one.
+async def _first_bytes(stream: ChannelStream) -> bytes:
+    """Wait for a download's first bytes, so a refusal answers before the body.
 
-    Anything read past the announcement is put back for the body.
+    Returns:
+        The first bytes, for the body to start with; empty for a download
+        that closed with nothing.
+
+    Raises:
+        HTTPException: The agent's typed refusal, or 409 ``agent_offline``.
     """
     item = await stream.recv()
     if item is None:
-        info = stream.close_info or {}
         if stream.is_abandoned:
             raise _offline(AgentOfflineError(stream.kind))
-        _refuse_if_coded(info)
-        return 0
-    if item[0] == "event":
-        size = item[1].get("size")
-        return int(size) if size is not None else None
-    stream._deliver(item)
-    return None
+        _refuse_if_coded(stream.close_info or {})
+        return b""
+    return item[1]
 
 
-async def _chunks(stream: AgentStream):
+async def _chunks(stream: ChannelStream, first: bytes = b""):
     """The stream's bytes, with the agent told to stop if the browser does."""
     try:
+        if first:
+            yield first
         while True:
             item = await stream.recv()
             if item is None:
                 return
-            if item[0] == "data":
-                yield item[1]
+            yield item[1]
     finally:
         if not stream.is_closed:
             await stream.close()

@@ -92,8 +92,12 @@ def test_a_device_with_no_channel_is_turned_away_as_offline(api):
 
 
 def test_an_agents_refusal_closes_with_its_code(api):
+    """The agent refuses by closing the stream with a code before any byte."""
     client, runtime = api
-    runtime.agent_sessions.refusal = ("container_unknown", {"name": "kuma"})
+    runtime.agent_sessions.scripts["container_shell"] = lambda args: (
+        [],
+        {"code": "container_unknown", "params": {"name": "kuma"}},
+    )
 
     socket = open_terminal(client, f"/ws/agent/terminal?device_id={MAC}&container=kuma")
     try:
@@ -119,7 +123,7 @@ def test_input_and_resizes_reach_the_stream_and_output_and_exit_come_back(api):
         stream.feed(("data", "total 0\r\n".encode()))
         assert socket.receive_json() == {"type": "output", "data": "total 0\r\n"}
 
-        stream.finish({"exit_code": 3, "code": "", "params": {}})
+        stream.finish({"code": "", "params": {"exit_code": 3}})
         assert socket.receive_json() == {"type": "exit", "code": 3}
         assert closed_with(socket)[0] == 1000
     finally:
@@ -161,7 +165,7 @@ def test_the_container_variant_opens_its_kind_with_the_name(api):
         stream = runtime.agent_sessions.streams[0]
         assert (stream.kind, stream.args) == ("container_shell", {"name": "kuma"})
 
-        stream.finish({"exit_code": 0, "code": "", "params": {}})
+        stream.finish({"code": "", "params": {"exit_code": 0}})
         assert socket.receive_json() == {"type": "exit", "code": 0}
     finally:
         socket.__exit__(None, None, None)

@@ -286,22 +286,31 @@ def test_a_side_gateway_lan_round_trips():
     ).side_gateway_lans
 
 
-def test_device_facing_is_served_plus_exposed_and_never_an_uplink():
+def test_exposed_interfaces_is_every_exposed_role_then_the_exposed_overlays():
+    """Exposure is the only control plane for what answers: an uplink counts
+    once exposed, a served network does not until it is, and the overlays
+    come last."""
     network = network_config(
         wan_entry("enp2s0", is_exposed=True),
         lan_entry("enp1s0", address="192.168.100.1", is_exposed=False),
         {"name": "enp3s0", "role": "disabled", "is_exposed": True},
         {"name": "enp4s0", "role": "disabled", "is_exposed": False},
+        overlays=[{"provider": "netbird", "is_exposed": True}],
     )
 
-    assert network.device_facing_device_names == ["enp1s0", "enp3s0"]
+    assert network.exposed_interfaces == ["enp2s0", "enp3s0", "wt0"]
+    assert (
+        network.exposed_interfaces
+        == network.exposed_device_names + network.exposed_overlay_device_names
+    )
 
 
-def test_a_server_faces_devices_on_its_exposed_ports_alone():
+def test_a_server_answers_on_its_exposed_ports_alone():
     network = network_config(
         {"name": "enp1s0", "role": "disabled", "is_exposed": True},
         {"name": "enp2s0", "role": "disabled", "is_exposed": False},
+        overlays=[],
         mode="server",
     )
 
-    assert network.device_facing_device_names == ["enp1s0"]
+    assert network.exposed_interfaces == ["enp1s0"]

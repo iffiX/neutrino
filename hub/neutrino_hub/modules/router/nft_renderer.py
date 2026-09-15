@@ -39,7 +39,6 @@ class RouterNftRenderer:
         network: RouterNetworkConfig,
         routing: dict,
         xray_uid: int,
-        agent_port: int,
     ):
         """
         Args:
@@ -49,9 +48,6 @@ class RouterNftRenderer:
             xray_uid: Numeric uid the xray service runs as. Traffic from this
                 uid is never diverted, which is what stops the proxy from
                 looping into itself.
-            agent_port: TCP port the agent channel answers on. Opened toward
-                every served network, exposed or not, the way leases and
-                names are.
         """
         # Device names, not entry names: the untagged main of a split port is
         # config-side only, and the firewall must match the port itself.
@@ -59,6 +55,7 @@ class RouterNftRenderer:
         self._lans = network.lan_device_names
         self._exposed = network.exposed_device_names
         self._exposed_overlays = network.exposed_overlay_device_names
+        self._answering = network.exposed_interfaces
         self._overlay_ports = network.exposed_overlay_peer_ports
         self._side_lans = _side_lan_subnets(network)
         self._is_inter_lan_allowed = network.is_inter_lan_allowed
@@ -70,7 +67,6 @@ class RouterNftRenderer:
         self._is_overlay_proxy_enabled = routing.get("is_overlay_proxy_enabled", False)
         self._is_local_proxy_enabled = routing.get("is_local_proxy_enabled", False)
         self._xray_uid = xray_uid
-        self._agent_port = agent_port
 
     def render(self) -> str:
         """Render the complete ruleset.
@@ -281,14 +277,13 @@ class RouterNftRenderer:
                 f"        meta mark {hex(ROUTER_FWMARK_TPROXY)} accept",
             ]
         lines.append("")
-        answering = self._exposed + self._exposed_overlays
-        if answering:
+        if self._answering:
             lines += [
                 "        # Where this box answers. Every service here binds every",
                 "        # address and settles its own port, so which wires reach",
                 "        # them is the whole of the question, and it is one answer",
                 "        # per interface, an overlay included.",
-                f"        iifname {_interface_set(answering)} accept",
+                f"        iifname {_interface_set(self._answering)} accept",
             ]
         lines.append("")
         closed_wans = [name for name in self._wans if name not in self._exposed]
@@ -310,9 +305,6 @@ class RouterNftRenderer:
                 f"        iifname {served} udp dport 67 accept",
                 f"        iifname {served} udp dport 53 accept",
                 f"        iifname {served} tcp dport 53 accept",
-                "        # Its agents heartbeat the same way: the agent channel",
-                "        # is the hub managing its own devices.",
-                f"        iifname {served} tcp dport {self._agent_port} accept",
             ]
         lines += [
             "        icmp type { echo-request, destination-unreachable, "

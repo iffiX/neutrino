@@ -34,7 +34,6 @@ from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.web.constants import WEB_JOURNAL_LINE_LIMIT
-from neutrino_hub.web import client_channel
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.models import (
@@ -229,7 +228,6 @@ def delete_key(
         config.client_keys = remaining
         save_config(config)
     _apply_quietly()
-    client_channel.push_ai(runtime)
     return _status()
 
 
@@ -264,7 +262,6 @@ def update_settings(
             ) from error
         save_config(config)
     _apply_quietly()
-    client_channel.push_ai(runtime)
     return _status()
 
 

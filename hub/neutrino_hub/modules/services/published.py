@@ -67,7 +67,7 @@ class PublishedServiceCache:
                 :class:`neutrino_hub.modules.services.device_shares.DeviceShareRegistry`;
                 None publishes no desktop shares.
             agent_sessions: The shared
-                :class:`neutrino_hub.modules.devices.agent_sessions.AgentSessionRegistry`,
+                :class:`neutrino_hub.modules.channel.sessions.ChannelSessionRegistry`,
                 whose reports say which device hosts what; None publishes
                 no device-hosted entries.
             device_addresses: Device key to the address its channel comes

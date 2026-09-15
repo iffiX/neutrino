@@ -38,6 +38,17 @@ CHANNEL_STREAM_PACKAGE = "package"
 CHANNEL_STREAM_LOG = "log"
 CHANNEL_STREAM_SERVICE = "service"
 CHANNEL_STREAM_DESKTOP = "desktop"
+# The kinds an agent of this release serves beside the table above.
+CHANNEL_STREAM_CONTAINER_SHELL = "container_shell"
+CHANNEL_STREAM_FILE_LIST = "file_list"
+CHANNEL_STREAM_FILE_DOWNLOAD = "file_download"
+CHANNEL_STREAM_FILE_UPLOAD = "file_upload"
+CHANNEL_STREAM_FILE_OP = "file_op"
+CHANNEL_STREAM_ORDER = "order"
+CHANNEL_STREAM_VALIDATE = "validate"
+
+# The hub allots even stream ids from here; a peer's ids are odd.
+CHANNEL_FIRST_HUB_STREAM_ID = 0
 
 # A binary frame is a big-endian u32 stream id, then the bytes.
 CHANNEL_STREAM_ID_BYTES = 4
@@ -47,8 +58,8 @@ CHANNEL_STREAM_CREDIT_BYTES = 1024 * 1024
 CHANNEL_CHUNK_BYTES = 64 * 1024
 # How long a fresh socket may stay silent before its hello is due.
 CHANNEL_HELLO_TIMEOUT_S = 10.0
-# How long the hub waits for the other side to answer an open.
-CHANNEL_OPEN_TIMEOUT_S = 15.0
+# How long a call from a thread waits on the loop before it is given up.
+CHANNEL_CALL_TIMEOUT_S = 15.0
 # Protocol-level keepalive: uvicorn pings on this interval and drops a
 # socket whose pong is late by this much.
 CHANNEL_PING_INTERVAL_S = 20.0
@@ -63,6 +74,8 @@ CHANNEL_CODE_REPLACED = "replaced"
 CHANNEL_CODE_BINDING_UNKNOWN = "binding_unknown"
 CHANNEL_CODE_TICKET_SPENT = "ticket_spent"
 CHANNEL_CODE_ROLE_MISMATCH = "role_mismatch"
+# What a caller on a hub thread hears when the loop did not answer in time.
+CHANNEL_CODE_NEVER_REPORTED = "agent_never_reported"
 
 # The state an agent reports for a module. The first four are also the
 # words ``want`` takes.

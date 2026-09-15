@@ -117,8 +117,6 @@ class ListRuntime:
 class _EmptyNetwork:
     lan_device_names: list = []
     lan_interfaces: list = []
-    device_facing_device_names: list = []
-    device_facing_interfaces: list = []
 
 
 @pytest.fixture
@@ -549,16 +547,6 @@ def test_an_unknown_device_is_refused_typed(gateway):
     assert refused.value.detail["code"] == "device_unknown"
 
 
-def test_the_overlay_still_counts_for_reaching_the_hub(gateway):
-    assert devices_router._facing_cidrs(gateway) == [
-        "192.168.100.1/24",
-        "10.126.126.2/24",
-    ]
-    assert devices_router._facing_cidrs(gateway, is_overlay_included=False) == [
-        "192.168.100.1/24"
-    ]
-
-
 def test_one_domain_refusing_does_not_stop_the_others(monkeypatch, sleeping):
     network = network_config(
         lan_entry("enp1s0", address="192.168.100.1"),
@@ -621,7 +609,7 @@ class RdpRuntime:
 
     def push_desired_state(self, key: str) -> None:
         desired, state_hash = self.desired_states.compose(key, {})
-        self.agent_sessions.push_state_from_thread(key, state_hash, desired)
+        self.agent_sessions.push_state_from_thread(key, {"hash": state_hash, **desired})
 
 
 @pytest.fixture
@@ -658,7 +646,7 @@ def test_a_reset_generates_a_password_and_pushes_the_state_carrying_it(rdp_api):
     assert after != before
     key, _, desired = runtime.agent_sessions.pushes[-1]
     assert key == DEVICE
-    assert desired["rdp"] == {"seat_password": after}
+    assert desired["desktop"] == {"seat_password": after}
 
 
 def test_a_reset_tells_the_panel_the_device_moved(rdp_api):
@@ -1193,7 +1181,7 @@ def test_a_reinstall_on_a_live_agent_runs_the_command_as_a_task(install_api):
     sessions.online.add(device_id)
     sessions.scripts["command"] = lambda args: (
         [],
-        {"exit_code": 0, "code": "", "params": {}, "output": "reinstall launched\n"},
+        {"code": "", "params": {"exit_code": 0, "output": "reinstall launched\n"}},
     )
 
     started = client.post(
@@ -1246,8 +1234,8 @@ class Presence:
 
 
 class _ClosedStream:
-    def __init__(self, info):
-        self.close_info = info
+    def __init__(self, outcome):
+        self.close_info = {"code": outcome["code"], "params": dict(outcome)}
 
     async def recv(self):
         return None

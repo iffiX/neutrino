@@ -39,9 +39,9 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_DIR,
     CLIPROXYAPI_GENERATED_NAME,
 )
-from neutrino_hub.modules.devices.constants import (
-    AGENT_WS_PING_INTERVAL_S,
-    AGENT_WS_PING_TIMEOUT_S,
+from neutrino_hub.modules.channel.constants import (
+    CHANNEL_PING_INTERVAL_S,
+    CHANNEL_PING_TIMEOUT_S,
 )
 from neutrino_hub.modules.router.constants import (
     ROUTER_DEBOUNCE_MAX_S,
@@ -395,8 +395,8 @@ def _serve_panel(arguments) -> int:
                     ssl_certfile=str(WEB_AGENT_TLS_CERT_PATH),
                     ssl_keyfile=str(agent_key_path),
                     timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_S,
-                    ws_ping_interval=AGENT_WS_PING_INTERVAL_S,
-                    ws_ping_timeout=AGENT_WS_PING_TIMEOUT_S,
+                    ws_ping_interval=CHANNEL_PING_INTERVAL_S,
+                    ws_ping_timeout=CHANNEL_PING_TIMEOUT_S,
                 )
             )
         )
@@ -553,9 +553,7 @@ def _serve_router() -> int:
         print(f"router: ip monitor did not start: {error}", file=sys.stderr, flush=True)
         return 1
     controller = RouterStateController(
-        agent_port_of=_configured_agent_port,
-        trigger=ROUTER_TRIGGER_EVENT,
-        on_base_ready=readiness.send,
+        trigger=ROUTER_TRIGGER_EVENT, on_base_ready=readiness.send
     )
     log = _StepLog()
     try:

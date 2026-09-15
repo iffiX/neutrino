@@ -51,7 +51,6 @@ from neutrino_hub.modules.cliproxyapi.management_key import (
 from neutrino_hub.web.agent_tls import ensure_certificate, write_served_key
 from neutrino_hub.web.constants import (
     WEB_AGENT_TLS_CERT_PATH,
-    WEB_DEFAULT_AGENT_LISTEN_PORT,
     WEB_IDENTITY_FILE,
 )
 from neutrino_hub.web.identity import ensure_hub_identity
@@ -177,7 +176,6 @@ def _render(selected: tuple[str, ...]) -> dict:
             network=network,
             routing=routing,
             xray_uid=lookup_xray_uid(),
-            agent_port=_agent_port(),
         ).render()
     if "dnsmasq" in selected:
         artifacts["dnsmasq"] = RouterDnsmasqRenderer(
@@ -202,18 +200,6 @@ def _forget_orphan_device_dirs() -> list:
     """Delete every ``config/devices/`` directory no stored device names."""
     stored = {device.id for device in DeviceRegistry().all_stored()}
     return DesiredStateStore().forget_orphans(stored)
-
-
-def _agent_port() -> int:
-    """The agent channel's port, from the panel settings or the default."""
-    try:
-        return int(
-            read_config("web/settings.json").get(
-                "agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT
-            )
-        )
-    except (FileNotFoundError, ValueError):
-        return WEB_DEFAULT_AGENT_LISTEN_PORT
 
 
 def _print_artifacts(artifacts: dict) -> None:
@@ -260,7 +246,7 @@ def _apply(artifacts: dict) -> None:
         # The same pass the resident router unit and the panel run, under the
         # same lock; every step is tried, and the failures are raised once
         # the other components have been applied too.
-        results = RouterStateController(agent_port_of=_agent_port).reconcile()
+        results = RouterStateController().reconcile()
         for result in results:
             if result.state != ROUTER_STEP_UNCHANGED:
                 print(result.describe())

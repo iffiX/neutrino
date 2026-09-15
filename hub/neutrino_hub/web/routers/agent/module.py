@@ -27,6 +27,10 @@ from neutrino_hub.modules.devices.agent_module_controller import (
     ask_module,
 )
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
+from neutrino_hub.modules.channel.constants import (
+    CHANNEL_STREAM_COMMAND,
+    CHANNEL_STREAM_VALIDATE,
+)
 from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_COMMAND_TIMEOUT_S,
     DEVICE_MODULE_REPORT_WAIT_S,
@@ -444,10 +448,10 @@ def store_config(runtime: PanelRuntime, context: DeviceModuleContext, config: di
     """
     require_online(context)
     try:
-        verdict = runtime.agent_sessions.validate_from_thread(
+        verdict = runtime.agent_sessions.run_stream_from_thread(
             context.key,
-            context.module,
-            config,
+            CHANNEL_STREAM_VALIDATE,
+            {"module": context.module, "config": dict(config)},
             timeout=DEVICE_MODULE_VALIDATE_TIMEOUT_S,
         )
     except AgentOfflineError:
@@ -456,11 +460,13 @@ def store_config(runtime: PanelRuntime, context: DeviceModuleContext, config: di
         )
     except StreamRefusedError as error:
         raise _refusal(status.HTTP_502_BAD_GATEWAY, error.code, **error.params)
-    if not verdict.get("is_valid"):
+    params = dict(verdict.get("params") or {})
+    if verdict.get("code") or not params.get("is_valid"):
+        params.pop("is_valid", None)
         raise _refusal(
             status.HTTP_400_BAD_REQUEST,
             str(verdict.get("code") or "config_invalid"),
-            **dict(verdict.get("params") or {}),
+            **params,
         )
     runtime.desired_states.write(context.key, context.module, config)
     context.config = dict(config)
@@ -503,8 +509,8 @@ def run_command(
     shows the machine as the command left it.
 
     Returns:
-        What the agent closed with: ``{"exit_code", "code", "params",
-        "output"}``.
+        The close's ``params``: ``{"exit_code", "output"}``, with ``result``
+        beside them for a command that reads.
 
     Raises:
         HTTPException: 409 ``agent_offline`` when the device has no socket,
@@ -514,8 +520,11 @@ def run_command(
     require_online(context)
     serial = runtime.agent_sessions.report_serial_of(context.key)
     try:
-        info = runtime.agent_sessions.run_command_from_thread(
-            context.key, action, dict(args), timeout=DEVICE_MODULE_COMMAND_TIMEOUT_S
+        info = runtime.agent_sessions.run_stream_from_thread(
+            context.key,
+            CHANNEL_STREAM_COMMAND,
+            {"action": action, "args": dict(args)},
+            timeout=DEVICE_MODULE_COMMAND_TIMEOUT_S,
         )
     except AgentOfflineError:
         raise _refusal(
@@ -523,9 +532,10 @@ def run_command(
         )
     except StreamRefusedError as error:
         raise _refusal(status.HTTP_502_BAD_GATEWAY, error.code, **error.params)
-    if int(info.get("exit_code", 1) or 0) != 0:
-        params = dict(info.get("params") or {})
-        output = str(info.get("output", "") or "").strip()
+    params = dict(info.get("params") or {})
+    if info.get("code") or int(params.get("exit_code", 1) or 0) != 0:
+        output = str(params.pop("output", "") or "").strip()
+        params.pop("exit_code", None)
         if output and "detail" not in params:
             params["detail"] = output[-500:]
         raise _refusal(
@@ -539,7 +549,7 @@ def run_command(
     context.state, context.code, context.params, context.details = module_status(
         runtime, context.key, context.module
     )
-    return dict(info)
+    return params
 
 
 def _order_module(

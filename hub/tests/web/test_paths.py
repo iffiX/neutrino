@@ -49,19 +49,6 @@ NOUN_READS = frozenset(
 FRAME_PATHS = frozenset(
     {"/openapi.json", "/docs", "/redoc", "/api/{path:path}", "/{path:path}"}
 )
-# The old wire on the agent port; commit 3 removes these routes and this list.
-OLD_WIRE_PATHS = frozenset(
-    {
-        "/api/agent/enroll",
-        "/api/agent/leave",
-        "/api/agent/package",
-        "/api/agent/module_package",
-        "/api/agent/ws",
-        "/api/client/enroll",
-        "/api/client/leave",
-        "/api/client/ws",
-    }
-)
 
 
 class StubLinkSampler:
@@ -121,7 +108,7 @@ def _routes_under(routes, prefix: str) -> list:
 
 def violations_of(method: str, path: str) -> list:
     """Every rule one route breaks, worded for the failure message."""
-    if path in FRAME_PATHS or path in OLD_WIRE_PATHS:
+    if path in FRAME_PATHS:
         return []
     found = []
     if not path.startswith(PREFIXES):

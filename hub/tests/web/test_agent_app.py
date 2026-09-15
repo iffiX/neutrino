@@ -1,14 +1,15 @@
 """The panel and the agent channel are two applications on one runtime.
 
-The agent routes left the panel with the move to pinned TLS: the panel app
-must not answer them on plain HTTP, and the agent app must answer nothing
-else. One runtime behind both is what lets a ticket generated on the panel be
-spent on the agent port.
+The agent port serves ``/api/channel`` and nothing else: the panel app must
+not answer the channel on plain HTTP, and the agent app must answer nothing
+but the channel. One runtime behind both is what lets a ticket generated
+on the panel be spent on the agent port.
 """
 
 import pytest
 
 import neutrino_hub.web.app as app_module
+from tests.web.test_paths import routes_of
 
 
 class StubLinkSampler:
@@ -48,28 +49,36 @@ def api_paths(app) -> set:
     return {path for path in app.openapi()["paths"] if path.startswith("/api/")}
 
 
-# The wire's HTTP routes on the agent port; its sockets are outside openapi.
-WIRE_PATHS = {
-    "/api/agent/enroll",
-    "/api/agent/leave",
-    "/api/agent/package",
-    "/api/agent/module_package",
-    "/api/client/enroll",
-    "/api/client/leave",
+def route_set(app) -> set:
+    """Every ``(method, path)`` under ``/api``, sockets as ``WS``."""
+    return {
+        (method, path)
+        for method, path in routes_of(app)
+        if path.startswith("/api/") and "{" not in path
+    }
+
+
+CHANNEL_ROUTES = {
+    ("POST", "/api/channel/join"),
+    ("POST", "/api/channel/leave"),
+    ("WS", "/api/channel/socket"),
 }
 
 
-def test_the_agent_app_serves_only_the_wire(factories):
-    paths = api_paths(factories.create_agent_app())
+def test_the_agent_app_serves_the_three_channel_routes_and_nothing_else(factories):
+    app = factories.create_agent_app()
 
-    assert paths == WIRE_PATHS
+    assert route_set(app) == CHANNEL_ROUTES
+    assert api_paths(app) == {"/api/channel/join", "/api/channel/leave"}
 
 
-def test_the_panel_app_serves_no_wire_route(factories):
-    paths = api_paths(factories.create_app())
+def test_the_panel_app_serves_no_channel_route(factories):
+    app = factories.create_app()
+    paths = api_paths(app)
 
     assert paths
-    assert not paths & WIRE_PATHS
+    assert not any(path.startswith("/api/channel") for path in paths)
+    assert not route_set(app) & CHANNEL_ROUTES
     assert "/api/hub/client" in paths
 
 

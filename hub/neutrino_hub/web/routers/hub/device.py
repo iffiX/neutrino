@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import codecs
 import ipaddress
 import json
 import secrets
@@ -11,7 +12,10 @@ from collections.abc import AsyncIterator
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
-from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_AGENT
+from neutrino_hub.modules.channel.constants import (
+    CHANNEL_ROLE_AGENT,
+    CHANNEL_STREAM_COMMAND,
+)
 from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_COMMAND_TIMEOUT_S,
     DEVICE_MODULE_STATE_ABSENT,
@@ -30,7 +34,7 @@ from neutrino_hub.modules.devices.ssh_ops import (
     login_password,
 )
 from neutrino_hub.modules.devices.wake_on_lan import send_magic_packet
-from neutrino_hub.modules.router.link_status import RouterLinkStatus, device_addresses
+from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.system.machine import machine_id
 from neutrino_hub import HUB_VERSION
 from neutrino_hub.web.agent_tls import certificate_fingerprint
@@ -164,7 +168,7 @@ def _hub_first(row: DeviceOnlineView) -> tuple:
 
 
 def _device_list(runtime: PanelRuntime, *, is_active: bool) -> DeviceListView:
-    scanner = LanScanner(lan_interfaces=runtime.network().device_facing_device_names)
+    scanner = LanScanner(lan_interfaces=runtime.network().lan_device_names)
     registry = DeviceRegistry()
     return DeviceListView(
         devices=[
@@ -378,16 +382,16 @@ def wake(
     # to an overlay: a tunnel has no broadcast domain, and its device refuses
     # the packet rather than dropping it.
     targets = []
-    for cidr in _facing_cidrs(runtime, is_overlay_included=False):
+    for interface in runtime.network().lan_interfaces:
+        if not interface.lan.address:
+            continue
         try:
-            subnet = ipaddress.ip_network(cidr, strict=False)
+            subnet = ipaddress.ip_network(interface.lan.cidr, strict=False)
         except ValueError:
             continue
         targets.append(str(subnet.broadcast_address))
     if not targets:
-        return WolResult(
-            is_sent=False, message="no device-facing interface has an address"
-        )
+        return WolResult(is_sent=False, message="no served network has an address")
 
     sent = []
     failures = []
@@ -654,8 +658,10 @@ def _ask_service(
     body = {"action": action, **request.body}
     command_id = f"service-{service_type}-{secrets.token_hex(4)}"
     try:
-        runtime.agent_sessions.run_command_from_thread(
-            key, "service", {"service_type": service_type, "body": body}
+        runtime.agent_sessions.run_stream_from_thread(
+            key,
+            CHANNEL_STREAM_COMMAND,
+            _command_args("service", {"service_type": service_type, "body": body}),
         )
     except (AgentOfflineError, StreamRefusedError) as error:
         raise HTTPException(
@@ -719,62 +725,38 @@ def _require_device(registry: DeviceRegistry, device_id: str) -> ManagedDevice:
 def _agent_urls(runtime: PanelRuntime) -> list:
     """Every address a machine could be told to reach the agent channel on.
 
-    All of them, not one: a hub serves more than one network, only one of its
-    addresses is on the network of the machine being enrolled, and neither the
-    hub nor the person pasting the link knows which. The agent tries them in
-    turn.
+    The set is the firewall's: every exposed interface, whatever its role,
+    and every exposed overlay. A served network contributes its configured
+    address, everything else the address the live link holds. All of them,
+    not one: only one is on the joining machine's network, and neither the
+    hub nor the person pasting the link knows which.
 
     Args:
-        runtime: The shared runtime, for the device-facing networks and the
+        runtime: The shared runtime, for the network configuration and the
             port.
 
     Returns:
-        Base ``https`` URLs, in configuration order.
+        Base ``https`` URLs, in configuration order, one per address.
     """
     port = runtime.settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
-    urls = []
-    for cidr in _facing_cidrs(runtime):
-        urls.append(f"https://{cidr.split('/')[0]}:{port}")
-    return urls
-
-
-def _facing_cidrs(runtime: PanelRuntime, *, is_overlay_included: bool = True) -> list:
-    """IPv4 CIDRs of the networks devices reach this hub on.
-
-    A served network's address is configuration; an exposed port on a
-    ``server`` has whatever address the machine's own manager gave it, which
-    only the live link can answer. An exposed overlay is neither: nobody
-    plugged it in, and a machine that is only on the overlay has no other way
-    to be told where the hub is.
-
-    Args:
-        runtime: The shared runtime, for the network configuration.
-        is_overlay_included: Whether the exposed overlays' networks count;
-            they do for reaching the hub, not for a broadcast.
-
-    Returns:
-        CIDR strings in configuration order, the overlays last.
-    """
     network = runtime.network()
-    reader = None
-    cidrs = []
-    for interface in network.device_facing_interfaces:
-        if interface.is_lan and interface.lan.address:
-            cidrs.append(interface.lan.cidr)
-            continue
-        if reader is None:
-            reader = RouterLinkStatus()
-        live = reader.link(interface.device_name).ipv4_address
-        if live:
-            cidrs.append(live)
-    if not is_overlay_included:
-        return cidrs
-    addresses = device_addresses()
-    for name in network.exposed_overlay_device_names:
-        live = addresses.get(name, "")
-        if live and live not in cidrs:
-            cidrs.append(live)
-    return cidrs
+    configured = {
+        interface.device_name: interface.lan.address
+        for interface in network.lan_interfaces
+        if interface.lan.address
+    }
+    live = None
+    urls = []
+    for name in network.exposed_interfaces:
+        address = configured.get(name, "")
+        if not address:
+            if live is None:
+                live = device_addresses()
+            address = live.get(name, "").split("/")[0]
+        url = f"https://{address}:{port}"
+        if address and url not in urls:
+            urls.append(url)
+    return urls
 
 
 @router.post("/process/kill")
@@ -804,20 +786,23 @@ def kill_process(
     key = _require_device(DeviceRegistry(), request.device_id).id
     info = _run_device_command(runtime, key, "kill_process", {"pid": request.pid})
     code = str(info.get("code", "") or "")
+    params = dict(info.get("params") or {})
     if code == "process_missing":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": code, "params": dict(info.get("params") or {})},
+            detail={"code": code, "params": params},
         )
-    if code or int(info.get("exit_code", 1) or 0) != 0:
+    if code or int(params.get("exit_code", 1) or 0) != 0:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={
-                "code": code or "kill_failed",
-                "params": dict(info.get("params") or {}),
-            },
+            detail={"code": code or "kill_failed", "params": params},
         )
     return {}
+
+
+def _command_args(action: str, args: "dict | None" = None) -> dict:
+    """What a ``command`` stream's open carries beside its kind."""
+    return {"action": action, "args": dict(args or {})}
 
 
 def _run_device_command(runtime: PanelRuntime, key: str, action: str, args: dict):
@@ -830,15 +815,18 @@ def _run_device_command(runtime: PanelRuntime, key: str, action: str, args: dict
         args: The action's arguments.
 
     Returns:
-        What the agent closed with.
+        The close, ``{"code", "params"}``.
 
     Raises:
         HTTPException: 409 with the code when the device has no channel or
-            the agent refused the stream.
+            did not answer in time.
     """
     try:
-        return runtime.agent_sessions.run_command_from_thread(
-            key, action, args, timeout=DEVICE_MODULE_COMMAND_TIMEOUT_S
+        return runtime.agent_sessions.run_stream_from_thread(
+            key,
+            CHANNEL_STREAM_COMMAND,
+            _command_args(action, args),
+            timeout=DEVICE_MODULE_COMMAND_TIMEOUT_S,
         )
     except (AgentOfflineError, StreamRefusedError) as error:
         raise HTTPException(
@@ -1169,10 +1157,10 @@ def remote_desktop_status(
     cards = {}
     for product in DEVICE_REMOTE_DESKTOP_PRODUCTS:
         try:
-            info = runtime.agent_sessions.run_command_from_thread(
+            info = runtime.agent_sessions.run_stream_from_thread(
                 key,
-                "remote_desktop_status",
-                {"product": product},
+                CHANNEL_STREAM_COMMAND,
+                _command_args("remote_desktop_status", {"product": product}),
                 timeout=DEVICE_MODULE_COMMAND_TIMEOUT_S,
             )
         except (AgentOfflineError, StreamRefusedError) as error:
@@ -1212,7 +1200,8 @@ def _remote_desktop_view(product: str, info: dict) -> RemoteDesktopStatusView:
     code = str(info.get("code", "") or "")
     if code:
         return _remote_desktop_unreachable(product, code)
-    result = info.get("result") if isinstance(info.get("result"), dict) else {}
+    params = info.get("params") if isinstance(info.get("params"), dict) else {}
+    result = params.get("result") if isinstance(params.get("result"), dict) else {}
     session_id = result.get("session_id")
     return RemoteDesktopStatusView(
         product=product,
@@ -1348,26 +1337,26 @@ async def _agent_command_stream(
     """
     try:
         stream = await runtime.agent_sessions.open_stream(
-            key, "command", {"action": action, "args": dict(args or {})}
+            key, CHANNEL_STREAM_COMMAND, _command_args(action, args)
         )
-    except (AgentOfflineError, StreamRefusedError) as error:
+    except AgentOfflineError as error:
         yield json.dumps({"code": error.code, "params": dict(error.params)}) + "\n"
         return
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
     while True:
         item = await stream.recv()
         if item is None:
             break
-        if item[0] == "event":
-            yield str(item[1].get("line", "")) + "\n"
+        yield decoder.decode(item[1])
     info = stream.close_info or {}
-    output = str(info.get("output", "") or "")
+    params = info.get("params") or {}
+    output = str(params.get("output", "") or "")
     if output:
         yield output if output.endswith("\n") else output + "\n"
     if info.get("code"):
-        yield json.dumps({"code": info["code"], "params": info.get("params") or {}})
-        yield "\n"
-    elif "exit_code" in info:
-        yield f"[exit {info['exit_code']}]\n"
+        yield json.dumps({"code": info["code"], "params": params}) + "\n"
+    elif "exit_code" in params:
+        yield f"[exit {params['exit_code']}]\n"
 
 
 async def _reinstall_stream(runtime: PanelRuntime, key: str) -> AsyncIterator[str]:

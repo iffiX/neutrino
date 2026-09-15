@@ -14,9 +14,9 @@ from fastapi.testclient import TestClient
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.cliproxyapi import ops as cliproxyapi_ops
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier, load_config
-from neutrino_hub.modules.devices.agent_sessions import AgentSessionRegistry
-from neutrino_hub.modules.devices.constants import AGENT_SESSION_KIND_CLIENT
-from neutrino_hub.web import client_channel
+from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
+from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
+from neutrino_hub.web import channel_state
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers.hub import client as clients_router
 from neutrino_hub.web.routers.hub import device as devices_router
@@ -33,15 +33,15 @@ class RecordingEvents:
         self.published.append(event_type)
 
 
-class RecordingSessions(AgentSessionRegistry):
-    """The client registry, remembering what was closed."""
+class RecordingSessions(ChannelSessionRegistry):
+    """The client registry, remembering what was refused."""
 
     def __init__(self):
-        super().__init__(kind=AGENT_SESSION_KIND_CLIENT)
-        self.closed: list = []
+        super().__init__(CHANNEL_ROLE_CLIENT)
+        self.refused: list = []
 
-    def close_from_thread(self, key, code, reason=""):
-        self.closed.append((key, code, reason))
+    def refuse_from_thread(self, key, code, params=None):
+        self.refused.append((key, code, dict(params or {})))
 
 
 class FakeRuntime:
@@ -51,6 +51,10 @@ class FakeRuntime:
         self.client_sessions = RecordingSessions()
         self.client_catalog_host = {}
         self.pushed: list = []
+
+    def forget_client(self, client_id: str) -> None:
+        self.client_catalog_host.pop(client_id, None)
+        self.client_sessions.refuse_from_thread(client_id, "binding_unknown")
 
 
 @pytest.fixture
@@ -67,9 +71,9 @@ def api(monkeypatch, tmp_path):
     monkeypatch.setattr(devices_router, "certificate_fingerprint", lambda: FINGERPRINT)
     runtime = FakeRuntime()
     monkeypatch.setattr(
-        client_channel,
-        "push_client_state",
-        lambda given, client_id: given.pushed.append(client_id),
+        channel_state,
+        "push_state",
+        lambda given, role, client_id: given.pushed.append(client_id),
     )
     app = FastAPI()
     app.include_router(clients_router.router)
@@ -215,7 +219,7 @@ def test_deleting_takes_the_key_the_record_and_the_socket(api):
     assert response.status_code == 200 and response.json() == {"clients": []}
     assert load_config().client_keys == []
     assert ClientRegistry().get(client_id) is None
-    assert runtime.client_sessions.closed == [(client_id, 4401, "unknown_token")]
+    assert runtime.client_sessions.refused == [(client_id, "binding_unknown", {})]
     assert client_id not in runtime.client_catalog_host
     assert runtime.events.published == ["clients"]
 
@@ -236,25 +240,23 @@ def test_an_unknown_client_is_a_coded_404(api):
 def test_the_list_prefers_the_live_session_over_the_record(api):
     import asyncio
 
-    from neutrino_hub.modules.devices.agent_sessions import AgentSession
+    from neutrino_hub.modules.channel.sessions import ChannelSession
 
     client, runtime = api
     registry = ClientRegistry()
     client_id = registry.create("alice")
     registry.record_seen(
-        client_id, hostname="old", platform={"os": "windows"}, version="0.1.0"
+        client_id, hostname="laptop", platform={"os": "linux"}, version="0.1.0"
     )
 
     async def attach():
         await runtime.client_sessions.attach(
-            AgentSession(
+            ChannelSession(
                 key=client_id,
-                kind=AGENT_SESSION_KIND_CLIENT,
+                role=CHANNEL_ROLE_CLIENT,
                 websocket=None,
                 loop=asyncio.get_running_loop(),
-                hostname="laptop",
-                platform={"os": "linux"},
-                version="0.2.0",
+                software="neutrino_client/0.2.0",
             )
         )
 

@@ -18,11 +18,10 @@ import contextlib
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
-from neutrino_hub.modules.devices.agent_sessions import (
-    CODE_AGENT_OFFLINE,
-    STREAM_KIND_CONTAINER_SHELL,
-    STREAM_KIND_SHELL,
+from neutrino_hub.exceptions import AgentOfflineError
+from neutrino_hub.modules.channel.constants import (
+    CHANNEL_STREAM_CONTAINER_SHELL,
+    CHANNEL_STREAM_SHELL,
 )
 from neutrino_hub.web.constants import (
     WEB_EVENT_HELLO,
@@ -148,13 +147,13 @@ async def terminal_socket(
     """
     if container:
         await _serve_agent_stream(
-            websocket, device_id, STREAM_KIND_CONTAINER_SHELL, {"name": container}
+            websocket, device_id, CHANNEL_STREAM_CONTAINER_SHELL, {"name": container}
         )
         return
     await _serve_agent_stream(
         websocket,
         device_id,
-        STREAM_KIND_SHELL,
+        CHANNEL_STREAM_SHELL,
         {"cols": DEFAULT_COLUMNS, "rows": DEFAULT_ROWS},
     )
 
@@ -195,24 +194,23 @@ async def _serve_agent_stream(
     sessions = websocket.app.state.runtime.agent_sessions
     try:
         stream = await sessions.open_stream(device_id, kind, args)
-    except AgentOfflineError:
-        await websocket.close(code=POLICY_VIOLATION_CODE, reason=CODE_AGENT_OFFLINE)
-        return
-    except StreamRefusedError as refused:
-        await websocket.close(code=INTERNAL_ERROR_CODE, reason=refused.code)
+    except AgentOfflineError as offline:
+        await websocket.close(code=POLICY_VIOLATION_CODE, reason=offline.code)
         return
 
     reader = asyncio.create_task(_read_input(websocket, stream))
     pump = asyncio.create_task(_pump_stream(websocket, stream))
     # Whichever ends first decides the teardown: the reader ending means
     # the browser closed the terminal, the pump ending means the shell
-    # exited or the agent went away.
+    # exited, the agent refused it, or the agent went away.
     done, _ = await asyncio.wait({reader, pump}, return_when=asyncio.FIRST_COMPLETED)
-    if pump in done:
-        info = stream.close_info or {}
+    info = stream.close_info or {}
+    refusal = str(info.get("code", "") or "") if pump in done else ""
+    if pump in done and not refusal:
+        params = info.get("params") or {}
         with contextlib.suppress(RuntimeError):
             await websocket.send_json(
-                {"type": "exit", "code": int(info.get("exit_code", 1) or 0)}
+                {"type": "exit", "code": int(params.get("exit_code", 1) or 0)}
             )
     with contextlib.suppress(AgentOfflineError):
         await stream.close()
@@ -222,7 +220,10 @@ async def _serve_agent_stream(
         with contextlib.suppress(asyncio.CancelledError):
             await task
     with contextlib.suppress(RuntimeError):
-        await websocket.close()
+        if refusal:
+            await websocket.close(code=INTERNAL_ERROR_CODE, reason=refusal)
+        else:
+            await websocket.close()
 
 
 async def _pump_stream(websocket: WebSocket, stream) -> None:

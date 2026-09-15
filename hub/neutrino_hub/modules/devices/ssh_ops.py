@@ -351,7 +351,7 @@ class DeviceSshOperator:
         """Deliver the agent as a native package and join it to this hub.
 
         The same acts a person performs by hand — refresh the package lists,
-        install the package, run ``nagent connect`` — so there is one install
+        install the package, run ``nagent join`` — so there is one install
         story and one enrollment path. The link goes on the command line,
         which it was shaped for: a single-use ticket bound to this device's
         record, no different from a person pasting it into a terminal. Stdin
@@ -468,7 +468,7 @@ class DeviceSshOperator:
 
         yield "[joining this hub]\n"
         code, output = await self.run_privileged_once(
-            f"nagent connect --yes {shlex.quote(enrollment_link)}",
+            f"nagent join --yes {shlex.quote(enrollment_link)}",
             sudo_password=sudo_password,
         )
         if output:

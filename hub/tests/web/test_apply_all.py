@@ -71,8 +71,8 @@ def applied(monkeypatch):
     results: list = [RouterStepResult(name="ruleset", state=ROUTER_STEP_APPLIED)]
 
     class Controller:
-        def __init__(self, *, agent_port_of, **keywords):
-            self.agent_port_of = agent_port_of
+        def __init__(self, **keywords):
+            self.keywords = keywords
 
         def reconcile(self, *, only=None):
             written.append(("reconciled", only))
@@ -184,10 +184,10 @@ class _Sessions:
     def keys(self):
         return list(self.online)
 
-    def push_state_from_thread(self, key, state_hash, desired, timeout=5.0):
+    def push_state_from_thread(self, key, document, timeout=5.0):
         if key in self.refusing:
             raise StreamRefusedError("agent_never_reported", {"device": key})
-        self.pushed.append((key, state_hash, desired))
+        self.pushed.append((key, document["hash"], document))
 
 
 def _with_devices(panel, monkeypatch, sessions):

@@ -679,34 +679,15 @@ class RouterNetworkConfig:
         return lan.lan.address if lan and lan.lan.address else "127.0.0.1"
 
     @property
-    def device_facing_interfaces(self) -> "list[RouterInterface]":
-        """The interfaces this hub's own devices can be on.
-
-        The served networks, then anything exposed that is not an uplink: a
-        ``server`` sits on somebody's LAN, and its exposed port faces the
-        same machines a router's served port does. Uplinks never count —
-        the upstream network is not this hub's to sweep.
+    def exposed_interfaces(self) -> list[str]:
+        """The kernel devices this box answers agents and clients on.
 
         Returns:
-            Interfaces in configuration order, one per kernel device.
+            The exposed interfaces of every role, then the exposed overlays,
+            one name per kernel device. The firewall opens the agent port
+            on this set and an enrolment link names its addresses.
         """
-        facing = list(self.lan_interfaces)
-        names = {interface.device_name for interface in facing}
-        for interface in self.interfaces:
-            if interface.is_wan or not interface.is_exposed:
-                continue
-            if interface.device_name in names:
-                continue
-            facing.append(interface)
-            names.add(interface.device_name)
-        return facing
-
-    @property
-    def device_facing_device_names(self) -> list[str]:
-        """Kernel devices carrying the networks devices can be on."""
-        return _unique(
-            interface.device_name for interface in self.device_facing_interfaces
-        )
+        return _unique(self.exposed_device_names + self.exposed_overlay_device_names)
 
     @property
     def wan_names(self) -> list[str]:

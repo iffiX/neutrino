@@ -16,12 +16,11 @@ from neutrino_hub.modules.clients.ai_keys import ensure_client_key, revoke_clien
 from neutrino_hub.modules.clients.constants import (
     CLIENT_CODE_NAME_REQUIRED,
     CLIENT_CODE_UNKNOWN,
-    CLIENT_ENROLLMENT_KIND,
 )
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.clients.registry import Client, ClientRegistry
-from neutrino_hub.modules.devices.constants import AGENT_WS_CLOSE_UNKNOWN_TOKEN
-from neutrino_hub.web import client_channel
+from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
+from neutrino_hub.web import channel_state
 from neutrino_hub.web.constants import WEB_EVENT_CLIENTS
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
@@ -84,11 +83,11 @@ def create_enrollment(
         )
     urls, fingerprint = enrollment_link_parts(runtime)
     client_id = ClientRegistry().create(name)
-    clear_enrollments(runtime, kind=CLIENT_ENROLLMENT_KIND)
+    clear_enrollments(runtime, kind=CHANNEL_ROLE_CLIENT)
     token = secrets.token_urlsafe(ENROLLMENT_TOKEN_BYTES)
     expires_at = time.time() + ENROLLMENT_TTL_S
     runtime.enrollments[token] = {
-        "kind": CLIENT_ENROLLMENT_KIND,
+        "kind": CHANNEL_ROLE_CLIENT,
         "name": name,
         "client_id": client_id,
         "expires_at": expires_at,
@@ -154,8 +153,8 @@ def enable_client(
 def disable_client(
     request: ClientRequest, runtime: PanelRuntime = Depends(get_runtime)
 ) -> ClientListView:
-    """Switch a client off: its gateway key is revoked and it is handed an
-    empty catalog. Its socket stays.
+    """Switch a client off: its gateway key is revoked and its state is
+    pushed with ``is_disabled``. Its socket stays.
 
     Args:
         request: The client.
@@ -175,7 +174,8 @@ def disable_client(
 def delete_client(
     request: ClientRequest, runtime: PanelRuntime = Depends(get_runtime)
 ) -> ClientListView:
-    """Remove a client: its key, its record, and its socket.
+    """Remove a client: its key, its record, and its socket, refused with
+    ``binding_unknown``.
 
     Args:
         request: The client.
@@ -192,10 +192,7 @@ def delete_client(
     client = _require(registry, request.client_id)
     revoke_client_key(registry, client)
     registry.forget(client.id)
-    runtime.client_catalog_host.pop(client.id, None)
-    runtime.client_sessions.close_from_thread(
-        client.id, AGENT_WS_CLOSE_UNKNOWN_TOKEN, "unknown_token"
-    )
+    runtime.forget_client(client.id)
     runtime.events.publish(WEB_EVENT_CLIENTS)
     return _list_view(runtime)
 
@@ -212,7 +209,10 @@ def _set_disabled(
         revoke_client_key(registry, client)
     else:
         ensure_client_key(registry, client)
-    client_channel.push_client_state(runtime, client.id)
+    try:
+        channel_state.push_state(runtime, CHANNEL_ROLE_CLIENT, client.id)
+    except (AgentOfflineError, StreamRefusedError):
+        pass
     runtime.events.publish(WEB_EVENT_CLIENTS)
     return _list_view(runtime)
 
@@ -232,15 +232,13 @@ def _list_view(runtime: PanelRuntime) -> ClientListView:
     views = []
     for client in ClientRegistry().all():
         session = sessions.get(client.id)
-        hostname = session.hostname if session is not None else client.hostname
-        platform = session.platform if session is not None else client.platform
         version = session.version if session is not None else client.version
         views.append(
             ClientView(
                 id=client.id,
                 name=client.name,
-                hostname=hostname or client.hostname,
-                platform_os=str((platform or client.platform).get("os", "") or ""),
+                hostname=client.hostname,
+                platform_os=str(client.platform.get("os", "") or ""),
                 version=version or client.version,
                 is_online=session is not None,
                 last_seen=sessions.last_seen_at(client.id),

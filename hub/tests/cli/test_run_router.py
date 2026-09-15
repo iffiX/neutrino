@@ -75,7 +75,7 @@ class _Controller:
     passes = 0
     failure = None
 
-    def __init__(self, *, agent_port_of, trigger, on_base_ready):
+    def __init__(self, *, trigger, on_base_ready):
         self.on_base_ready = on_base_ready
 
     def reconcile_locked(self, only=None):
@@ -145,7 +145,7 @@ def test_a_busy_lock_at_start_says_ready_and_waits(monkeypatch, notified):
 
     monkeypatch.setattr(run, "router_lock", Busy)
     stopping = threading.Event()
-    controller = _Controller(agent_port_of=None, trigger="event", on_base_ready=None)
+    controller = _Controller(trigger="event", on_base_ready=None)
     _Controller.passes = 0
     readiness = run._Readiness()
     controller.on_base_ready = readiness.send

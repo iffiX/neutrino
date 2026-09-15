@@ -3,9 +3,12 @@
 ``config/devices/<id>/`` holds ``modules.json``, which modules are on, one
 file per module with its configuration, and ``rdp.json``, which seals the
 machine's seat password; ``<id>`` is the device's id. Composing a device's
-desired state gathers those with the catalog resolved for its platform and
+state gathers those with the install recipe resolved for its platform and
 the parts the hub knows about the machine, the address it sits at and the
-networks its shares answer, under one hash the agent compares against.
+networks its shares answer, under one hash the agent compares against. The
+document is the ``state`` frame's sections: ``modules``, one entry
+``{want, config, install, uninstall}`` per module the device is to host,
+and ``desktop`` with the seat password.
 
 Reads take no lock; every write goes through ``write_config`` under the one
 config lock, re-reading inside it.
@@ -22,6 +25,7 @@ from neutrino_hub.modules.credentials.vault import (
     seal_bytes,
     unseal_bytes,
 )
+from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_STATE_RUNNING
 from neutrino_hub.modules.devices.catalog import resolved_modules
 from neutrino_hub.modules.devices.constants import (
     DEVICE_GITEA_SECRET_NAMES,
@@ -204,6 +208,9 @@ class DesiredStateStore:
     ) -> tuple:
         """One device's whole desired state and its hash.
 
+        A module that is switched on is wanted ``running``; one that is not
+        is left out, so the agent leaves it as it is.
+
         Args:
             key: The device key.
             platform: The tuple the agent reported.
@@ -211,21 +218,27 @@ class DesiredStateStore:
             allowed_subnets: The networks its shares answer.
 
         Returns:
-            ``(desired, hash)``.
+            ``(desired, hash)``, the document being ``{modules, desktop}``.
         """
+        resolved = resolved_modules(platform)
         modules = {}
         for name, switch in self.modules(key).items():
+            if not switch["is_enabled"]:
+                continue
             config = self.read(key, name)
             if name == "samba":
                 config["allowed_subnets"] = list(allowed_subnets)
             elif name == "gitea":
                 config["address"] = address
                 config["secrets"] = self.gitea_secrets(key)
-            modules[name] = {"is_enabled": switch["is_enabled"], "config": config}
+            modules[name] = {
+                "want": CHANNEL_MODULE_STATE_RUNNING,
+                "config": config,
+                **_recipes(resolved.get(name) or {}),
+            }
         desired = {
             "modules": modules,
-            "rdp": {"seat_password": self.seat_password(key)},
-            "catalog": {"modules": resolved_modules(platform)},
+            "desktop": {"seat_password": self.seat_password(key)},
         }
         return desired, state_hash(desired)
 
@@ -282,6 +295,28 @@ class DesiredStateStore:
 
     def _path(self, key: str, name: str) -> str:
         return f"{DEVICES_DIR_NAME}/{key}/{name}"
+
+
+def _recipes(resolved: dict) -> dict:
+    """The install and uninstall recipes of one module resolved for a platform.
+
+    Args:
+        resolved: The module as :func:`resolved_modules` answers it.
+
+    Returns:
+        ``{"install", "uninstall"}``; both empty where the manifest offers
+        the platform nothing.
+    """
+    entry = resolved.get("entry")
+    if not isinstance(entry, dict):
+        return {"install": {}, "uninstall": {}}
+    install = {name: value for name, value in entry.items() if name != "uninstall"}
+    install["kind"] = str(resolved.get("kind", "") or "")
+    uninstall = entry.get("uninstall")
+    return {
+        "install": install,
+        "uninstall": dict(uninstall) if isinstance(uninstall, dict) else {},
+    }
 
 
 def _generate_seat_password() -> str:

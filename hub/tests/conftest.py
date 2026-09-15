@@ -199,16 +199,19 @@ class ScriptedChannelStream:
     through :meth:`feed` and :meth:`finish`, which hop onto that loop.
 
     Attributes:
+        id: The stream id, even as the hub allots them.
         kind: The stream kind it was opened as.
         args: What the open carried.
         sent: Every byte the route sent, in order.
         resizes: Every ``(cols, rows)`` the route sent.
-        close_info: What the stream closed with, once it has.
+        close_info: ``{"code", "params"}`` once the stream closed.
+        is_close_asked: Whether the route closed the stream from its side.
     """
 
-    def __init__(self, kind: str, args: dict):
+    def __init__(self, kind: str, args: dict, stream_id: int = 0):
         import asyncio
 
+        self.id = stream_id
         self.kind = kind
         self.args = dict(args)
         self.sent: list = []
@@ -239,8 +242,12 @@ class ScriptedChannelStream:
     async def resize(self, cols: int, rows: int) -> None:
         self.resizes.append((int(cols), int(rows)))
 
-    async def close(self) -> None:
+    async def close(self, code: str = "", params=None) -> None:
         self.is_close_asked = True
+        if not self._closed.is_set():
+            self.close_info = {"code": code, "params": dict(params or {})}
+            self._closed.set()
+            self._inbound.put_nowait(None)
 
     async def wait_closed(self):
         await self._closed.wait()
@@ -274,10 +281,12 @@ class FakeChannelSessions:
     Attributes:
         commands: Every command run, ``(key, action, args)``.
         validations: Every configuration checked, ``(key, module, config)``.
-        pushes: Every state pushed, ``(key, hash, desired)``.
-        verdict: What a validate closes with.
-        outcome: What a command closes with; ``outcomes`` by action wins
-            over it where set.
+        pushes: Every state pushed, ``(key, hash, document)``.
+        verdict: What a validate answers, ``{is_valid, code, params}``,
+            composed into the close the way the agent composes it.
+        outcome: What a command answers, ``{exit_code, code, params,
+            output, result}``, composed the same way; ``outcomes`` by
+            action wins over it where set.
         versions: What each device's last hello named, by key.
         ended_at: When each device's last channel ended, by key.
         reported_at: When each device's last report arrived, by key.
@@ -290,7 +299,7 @@ class FakeChannelSessions:
         scripts: Stream kind to a callable of the open's args answering
             ``(items, close_info)``: the items are delivered at once and
             the stream closed with the info, or left open when it is None.
-        refusal: A ``(code, params)`` every open is refused with.
+        refused: Every binding turned away, ``(key, code, params)``.
     """
 
     def __init__(self, online=()):
@@ -302,12 +311,12 @@ class FakeChannelSessions:
         self.validations: list = []
         self.pushes: list = []
         self.closed: list = []
+        self.refused: list = []
         self.verdict = {"is_valid": True, "code": "", "params": {}}
         self.outcome = {"exit_code": 0, "code": "", "params": {}, "output": ""}
         self.outcomes: dict = {}
         self.streams: list = []
         self.scripts: dict = {}
-        self.refusal = None
         # What the machine does behind a command, as a callable of
         # ``(key, action, args)``: a test sets it to change the runtime's
         # held report the way the agent's own report after the command would.
@@ -316,12 +325,8 @@ class FakeChannelSessions:
         self.waited: list = []
 
     async def open_stream(self, key, kind, args):
-        from neutrino_hub.exceptions import StreamRefusedError
-
         self._require(key)
-        if self.refusal is not None:
-            raise StreamRefusedError(*self.refusal)
-        stream = ScriptedChannelStream(kind, dict(args))
+        stream = ScriptedChannelStream(kind, dict(args), 2 * len(self.streams))
         self.streams.append(stream)
         script = self.scripts.get(kind)
         if script is not None:
@@ -353,15 +358,32 @@ class FakeChannelSessions:
     def reports(self) -> dict:
         return {}
 
-    def run_command_from_thread(
-        self, key, action, args=None, on_line=None, timeout=None
+    def run_stream_from_thread(
+        self, key, kind, args, payload=None, on_chunk=None, timeout=None
     ) -> dict:
+        """A ``command`` or a ``validate`` stream, answered from the outcomes.
+
+        A command is recorded as ``(key, action, args)`` and closes with
+        the outcome for its action; a validate is recorded as
+        ``(key, module, config)`` and closes with the verdict.
+        """
         self._require(key)
-        self.commands.append((key.lower(), action, dict(args or {})))
+        if kind == "validate":
+            self.validations.append((key.lower(), args["module"], dict(args["config"])))
+            return _close_of(self.verdict, is_valid=bool(self.verdict.get("is_valid")))
+        action = args["action"]
+        self.commands.append((key.lower(), action, dict(args.get("args") or {})))
         after = self.after_command
         if after is not None:
-            after(key.lower(), action, dict(args or {}))
-        return dict(self.outcomes.get(action, self.outcome))
+            after(key.lower(), action, dict(args.get("args") or {}))
+        outcome = self.outcomes.get(action, self.outcome)
+        result = {
+            "exit_code": int(outcome.get("exit_code", 0)),
+            "output": str(outcome.get("output", "") or ""),
+        }
+        if outcome.get("result"):
+            result["result"] = dict(outcome["result"])
+        return _close_of(outcome, **result)
 
     def report_serial_of(self, key: str) -> int:
         return self.report_serials.get(key.lower(), 0)
@@ -370,14 +392,9 @@ class FakeChannelSessions:
         self.waited.append((key.lower(), after_serial, timeout))
         return self.report_serials.get(key.lower(), 0) > after_serial
 
-    def validate_from_thread(self, key, module, config, timeout=None) -> dict:
+    def push_state_from_thread(self, key, document, timeout=5.0) -> None:
         self._require(key)
-        self.validations.append((key.lower(), module, dict(config)))
-        return dict(self.verdict)
-
-    def push_state_from_thread(self, key, state_hash, desired, timeout=5.0) -> None:
-        self._require(key)
-        self.pushes.append((key.lower(), state_hash, desired))
+        self.pushes.append((key.lower(), document.get("hash", ""), document))
 
     def _require(self, key: str) -> None:
         from neutrino_hub.exceptions import AgentOfflineError
@@ -385,9 +402,21 @@ class FakeChannelSessions:
         if key.lower() not in self.online:
             raise AgentOfflineError(key.lower())
 
+    def refuse_from_thread(self, key, code, params=None) -> None:
+        self.refused.append((key.lower(), code, dict(params or {})))
+        self.online.discard(key.lower())
+
     def close_from_thread(self, key, code, reason="") -> None:
         self.closed.append((key.lower(), code, reason))
         self.online.discard(key.lower())
+
+
+def _close_of(answer: dict, **result) -> dict:
+    """The close an agent composes from what a handler answered."""
+    return {
+        "code": str(answer.get("code", "") or ""),
+        "params": {**dict(answer.get("params") or {}), **result},
+    }
 
 
 class StubDesiredStates:
@@ -466,7 +495,9 @@ class FakeModuleRuntime:
         return _Network(self.lan_addresses)
 
     def push_desired_state(self, key: str) -> None:
-        self.agent_sessions.push_state_from_thread(key, f"hash-{key}", {"modules": {}})
+        self.agent_sessions.push_state_from_thread(
+            key, {"hash": f"hash-{key}", "modules": {}}
+        )
 
     def report(self, key: str, module: str, state: str = "installed", **details):
         """Let the runtime hold one module's last report for one device."""

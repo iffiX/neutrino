@@ -39,7 +39,10 @@ from neutrino_hub.system.constants import (
     SYSTEM_XRAY_USER,
 )
 from neutrino_hub.modules.cliproxyapi.provisioner import CliproxyApiProvisioner
-from neutrino_hub.modules.devices.agent_package import AgentPackageCache
+from neutrino_hub.modules.devices.agent_package import (
+    AGENT_PACKAGE_FAMILY_OF_PLATFORM,
+    AgentPackageCache,
+)
 from neutrino_hub.modules.overlay.config import provider_of
 from neutrino_hub.modules.overlay.ops import OverlaySwitcher
 from neutrino_hub.system.machine import (
@@ -129,7 +132,7 @@ SETUP_STEP_LOCAL_AGENT = "local_agent"
 # for its own machine, so this box is served without a download; a family
 # with no agent build gets none, and the step says so instead of failing the
 # run.
-SETUP_AGENT_PACKAGE_FAMILIES = {"debian": "deb", "rhel": "rpm", "suse": "rpm"}
+SETUP_AGENT_PACKAGE_FAMILIES = AGENT_PACKAGE_FAMILY_OF_PLATFORM
 # Installing the package and joining the hub over the agent channel, which
 # includes the first handshake with a panel that has just started.
 SETUP_AGENT_JOIN_TIMEOUT_S = 120
