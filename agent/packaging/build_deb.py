@@ -92,7 +92,7 @@ systemctl enable --now {rustdesk_unit} >/dev/null 2>&1 || true
 echo ""
 echo "  Neutrino agent installed. Join a hub with:"
 echo ""
-echo "      sudo nagent connect <enrollment link>"
+echo "      sudo nagent join <enrollment link>"
 echo ""
 """
 
@@ -104,7 +104,7 @@ if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
         # Removal is this machine leaving: the hub is told, so its panel
         # stops showing the device as managed. Best-effort — an unreachable
         # hub does not block the removal.
-        nagent disconnect >/dev/null 2>&1 || true
+        nagent leave >/dev/null 2>&1 || true
     fi
     systemctl stop neutrino_agent.service >/dev/null 2>&1 || true
     systemctl disable neutrino_agent.service >/dev/null 2>&1 || true

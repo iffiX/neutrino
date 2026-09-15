@@ -22,7 +22,7 @@ The agent is headless. It runs as a service and opens one connection to the hub,
 1. Select **Add by link**. The notice holds a `neutrino://enroll/` link and a **Copy** button; the link is valid for five minutes.
    ![The enrollment link notice](/guide/en/devices_enroll_link.webp)
 1. On the machine, install the package as in [Install the package by hand](#install-the-package-by-hand).
-1. On the machine, run `sudo nagent connect '<link>'`, where `<link>` is the copied link. The command returns, and within seconds the machine is listed under **Managed devices**.
+1. On the machine, run `sudo nagent join '<link>'`, where `<link>` is the copied link. The command returns, and within seconds the machine is listed under **Managed devices**.
 
 ![Managed devices after the enrollment](/guide/en/devices_managed.webp)
 
@@ -54,7 +54,7 @@ sudo dnf install ./neutrino-agent-0.2.0-1.x86_64.rpm
 
 :::
 
-On ARM64 the file is `neutrino-agent_0.2.0_arm64.deb` or `neutrino-agent-0.2.0-1.aarch64.rpm`. The package includes its own interpreter and the RustDesk host; the desktop libraries it depends on are for that host. The service starts on install and binds to a hub with `sudo nagent connect '<link>'`; `--yes` replaces an existing binding.
+On ARM64 the file is `neutrino-agent_0.2.0_arm64.deb` or `neutrino-agent-0.2.0-1.aarch64.rpm`. The package includes its own interpreter and the RustDesk host; the desktop libraries it depends on are for that host. The service starts on install and binds to a hub with `sudo nagent join '<link>'`; `--yes` replaces an existing binding.
 
 ## The hub's own agent
 

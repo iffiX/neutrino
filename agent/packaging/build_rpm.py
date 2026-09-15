@@ -104,7 +104,7 @@ if [ "$1" = 1 ]; then
     echo "  Neutrino agent installed. Start it and join a hub:"
     echo ""
     echo "      systemctl enable --now neutrino_agent.service"
-    echo "      nagent connect <enrollment link>"
+    echo "      nagent join <enrollment link>"
     echo ""
 fi
 

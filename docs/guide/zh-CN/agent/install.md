@@ -23,10 +23,10 @@ title: 安装被控端
 1. 在那台机器的终端里接入。
 
    ```bash
-   sudo nagent connect 'neutrino://enroll/PLACEHOLDER_LINK'
+   sudo nagent join 'neutrino://enroll/PLACEHOLDER_LINK'
    ```
 
-命令返回后几秒内，这台机器出现在 **已管理的设备** 里。不带链接运行 `sudo nagent connect`，它改为提示粘贴；机器已经绑定过别的 hub 时，加 `--yes` 直接替换。
+命令返回后几秒内，这台机器出现在 **已管理的设备** 里。不带链接运行 `sudo nagent join`，它改为提示粘贴；机器已经绑定过别的 hub 时，加 `--yes` 直接替换。
 
 ![已管理的设备](/guide/zh/devices_managed.webp)
 
@@ -66,7 +66,7 @@ sudo dnf install ./neutrino-agent-0.2.0-1.x86_64.rpm
 
 :::
 
-ARM64 机器换成 `_arm64.deb` 或 `.aarch64.rpm`。包自带解释器和 RustDesk 主机，它的 GTK 和 X 依赖是给 RustDesk 主机用的。装完之后用 `sudo nagent connect` 接入，命令见上文。
+ARM64 机器换成 `_arm64.deb` 或 `.aarch64.rpm`。包自带解释器和 RustDesk 主机，它的 GTK 和 X 依赖是给 RustDesk 主机用的。装完之后用 `sudo nagent join` 接入，命令见上文。
 
 ## hub 自己的被控端
 
