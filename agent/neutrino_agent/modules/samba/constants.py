@@ -13,6 +13,8 @@ SAMBA_GROUP = "sambashare"
 # smb.service.
 SAMBA_SERVICES = {"debian": "smbd", "rhel": "smb", "arch": "smb"}
 SAMBA_DEFAULT_SERVICE = "smbd"
+# The server binary, which says Samba is on the machine when no package is named.
+SAMBA_BINARY_NAME = "smbd"
 
 SAMBA_COMMAND_SET_PASSWORD = "samba_set_password"
 

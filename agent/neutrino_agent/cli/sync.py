@@ -1,7 +1,8 @@
-"""``nagent sync``: ask the hub for this machine's desired state now.
+"""``nagent sync``: send this machine's report to the hub now.
 
 The running service holds the socket, so the ask goes through its control
-channel; the hub answers on the socket and the service applies what comes.
+channel; the hub compares the report's hash with its own state and pushes
+the state when they differ.
 """
 
 from neutrino_agent.control import client
@@ -14,10 +15,10 @@ SYNC_NO_SERVICE = "the agent service is not running; start it first"
 
 
 def main() -> int:
-    """Ask the running service to request the hub's state.
+    """Ask the running service to send a report now.
 
     Returns:
-        Process exit status: 0 when the request went up, 1 otherwise.
+        Process exit status: 0 when the report went up, 1 otherwise.
     """
     try:
         socket_path = detect_platform().control_socket_path()
@@ -35,7 +36,7 @@ def main() -> int:
         if not reply.get("is_connected"):
             print(SYNC_UNBOUND)
             return 1
-        print("asked the hub for this machine's state")
+        print("sent this machine's report to the hub")
         return 0
     print(word_error(reply))
     return 1

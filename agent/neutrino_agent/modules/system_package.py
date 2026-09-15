@@ -2,10 +2,10 @@
 
 A system-package module names distro packages, never a download: its orders
 skip the hub's cache and the platform installs the names with its own
-tooling. An entry with no packages means the platform carries the capability
-natively: nothing to install, and the row reads as built in. An entry may
-name ``pre_install`` shell steps, run before the packages, for a repository
-the distribution keeps the software in.
+tooling. An entry may name ``pre_install`` shell steps, run before the
+packages, for a repository the distribution keeps the software in. With no
+packages named, a module is present when its own binary is on the path, so
+software somebody installed by hand is observed without a recipe.
 
 Not pure: runs the package manager.
 """
@@ -35,20 +35,15 @@ def _entry_steps(resolved: dict) -> list:
 
 
 class SystemPackageModuleRunner(ModuleRunner):
-    """Installs named distro packages, removes them, and says which it is."""
+    """Installs named distro packages, removes them, and says which it is.
+
+    Attributes:
+        binary: The program that says the software is there when the entry
+            names no package; empty for a runner with none of its own.
+    """
 
     kind = "system_package"
-
-    def is_native(self, resolved: dict) -> bool:
-        """Whether this platform carries the capability with no package.
-
-        Args:
-            resolved: The module as the hub resolved it.
-
-        Returns:
-            True when the entry names nothing to install.
-        """
-        return not _entry_packages(resolved)
+    binary = ""
 
     def verify(self, resolved: dict) -> bool:
         """Whether every named package is actually installed.
@@ -57,9 +52,13 @@ class SystemPackageModuleRunner(ModuleRunner):
             resolved: The module as the hub resolved it.
 
         Returns:
-            True when all the packages are there, or none are named.
+            True when all the named packages are there; with none named,
+            whether the runner's own binary is on the path.
         """
-        return all(self._is_installed(name) for name in _entry_packages(resolved))
+        packages = _entry_packages(resolved)
+        if not packages:
+            return bool(self.binary) and shutil.which(self.binary) is not None
+        return all(self._is_installed(name) for name in packages)
 
     def install(self, resolved: dict) -> None:
         """Install the named packages with the machine's own tooling.

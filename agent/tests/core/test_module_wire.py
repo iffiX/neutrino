@@ -1,8 +1,8 @@
 """The module half of the wire, in both directions.
 
-What comes down is one order stream carrying the module resolved for this
-platform; what goes up is each line as it happens and the close that says
-how it went, plus the module's state on every report.
+What comes down is one order stream for a module the state names; what goes
+up is each line as it happens and the close that says how it went, plus the
+module's state on every report.
 """
 
 from neutrino_agent.constants import AGENT_MODULE_PACKAGE_PATH
@@ -16,16 +16,14 @@ ORDER = {
     "artifact_key": "fakedesk-linux-debian-amd64-abcd",
     "digest": "",
     "package_kind": "deb",
-    "resolved": {
-        "title": "FakeDesk",
-        "description": "",
-        "kind": "package",
-        "installer": "hub",
-        "platform_key": "linux-debian-amd64",
-        "entry": {"package_kind": "deb"},
-        "verify": "",
-        "package": "fakedesk",
-    },
+}
+STATE_MODULES = {
+    "fakedesk": {
+        "want": "installed",
+        "config": {},
+        "install": {"kind": "package", "package_kind": "deb", "package": "fakedesk"},
+        "uninstall": {},
+    }
 }
 
 
@@ -33,6 +31,7 @@ def test_an_order_stream_runs_the_engine_and_closes_with_its_result(
     config_path, monkeypatch
 ):
     agent, _ = scripted_agent(config_path, monkeypatch)
+    agent._engine.take_state(STATE_MODULES)
     lines: list = []
     monkeypatch.setattr(
         agent._engine,
@@ -52,8 +51,8 @@ def test_an_order_stream_runs_the_engine_and_closes_with_its_result(
     assert closed["code"] == "install_unconfirmed"
     assert "fakedesk: install" in closed["output"]
     assert [event["line"] for event in client.frames("event")] == ["fakedesk: install"]
-    # The module the order carried is reported from then on.
-    assert "fakedesk" in agent.catalog()["modules"]
+    # The module the state names is reported.
+    assert "fakedesk" in agent.module_states()
     session.close()
     del lines
 

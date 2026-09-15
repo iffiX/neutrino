@@ -71,3 +71,21 @@ def test_an_entry_without_steps_installs_its_packages_only(steps):
 
     assert steps == []
     assert platform.installed == [["samba"]]
+
+
+def test_verify_with_no_package_named_looks_for_the_runners_own_binary(monkeypatch):
+    """A module the state does not name has no recipe; the runner's own
+    binary says whether it is there, and a runner with none says no."""
+    found: list = []
+    monkeypatch.setattr(
+        system_package_module.shutil,
+        "which",
+        lambda name: found.append(name) or ("/usr/sbin/" + name),
+    )
+
+    class NamedRunner(SystemPackageModuleRunner):
+        binary = "smbd"
+
+    assert NamedRunner(platform=RecordingPlatform()).verify({}) is True
+    assert SystemPackageModuleRunner(platform=RecordingPlatform()).verify({}) is False
+    assert found == ["smbd"]

@@ -59,6 +59,23 @@ AGENT_MODULE_PACKAGE_PATH = "/api/agent/module_package"
 # manager's own complaint, bounded so a verbose failure cannot fill a beat.
 AGENT_MODULE_OUTPUT_LIMIT_BYTES = 16 * 1024
 
+# What the hub's state may want a module to be. The agent makes each
+# mentioned module's actual state equal its want.
+AGENT_WANT_ABSENT = "absent"
+AGENT_WANT_INSTALLED = "installed"
+AGENT_WANT_STOPPED = "stopped"
+AGENT_WANT_RUNNING = "running"
+# What the agent reports a module to be, one closed table on every surface:
+# four steady states, two in transit, and two shared by every failure.
+AGENT_MODULE_STATE_ABSENT = "absent"
+AGENT_MODULE_STATE_INSTALLED = "installed"
+AGENT_MODULE_STATE_STOPPED = "stopped"
+AGENT_MODULE_STATE_RUNNING = "running"
+AGENT_MODULE_STATE_INSTALLING = "installing"
+AGENT_MODULE_STATE_UNINSTALLING = "uninstalling"
+AGENT_MODULE_STATE_FAILED = "failed"
+AGENT_MODULE_STATE_UNSUPPORTED = "unsupported"
+
 # The transient unit a self-update runs in. Installing the package restarts
 # neutrino_agent.service, so the install must outlive the process that
 # started it.

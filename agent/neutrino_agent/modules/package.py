@@ -23,6 +23,27 @@ VERIFY_TIMEOUT_S = 30
 DEB_INSTALLED_STATUS = "install ok installed"
 
 
+def verify_passes(command: str) -> bool:
+    """Whether a recipe's verify command exits zero on this machine.
+
+    Args:
+        command: The shell command the hub resolved for this platform.
+
+    Returns:
+        True when it exits zero; False when it does not, cannot run, or is
+        empty.
+    """
+    if not command:
+        return False
+    try:
+        result = subprocess.run(
+            command, shell=True, capture_output=True, timeout=VERIFY_TIMEOUT_S
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
+
+
 class PackageModuleRunner(ModuleRunner):
     """Puts one package on this machine, takes it off, and says which it is."""
 
@@ -45,16 +66,7 @@ class PackageModuleRunner(ModuleRunner):
         entry = resolved.get("entry") or {}
         if entry.get("package_kind") == "deb":
             return self._verify_deb(str(resolved.get("package", "")))
-        command = str(resolved.get("verify", ""))
-        if not command:
-            return False
-        try:
-            result = subprocess.run(
-                command, shell=True, capture_output=True, timeout=VERIFY_TIMEOUT_S
-            )
-        except (OSError, subprocess.SubprocessError):
-            return False
-        return result.returncode == 0
+        return verify_passes(str(resolved.get("verify", "")))
 
     def install(self, resolved: dict, package_path: str) -> None:
         """Install the bytes the hub handed down.

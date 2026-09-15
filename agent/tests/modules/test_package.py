@@ -12,7 +12,7 @@ import subprocess
 import pytest
 
 from neutrino_agent.exceptions import InstallError
-from neutrino_agent.modules.package import PackageModuleRunner
+from neutrino_agent.modules.package import PackageModuleRunner, verify_passes
 from neutrino_agent.exceptions import PlatformUnsupportedError
 from neutrino_agent.platforms.base import AgentPlatform
 
@@ -169,6 +169,21 @@ def test_deb_verify_a_query_that_cannot_run_is_absent(runner, monkeypatch, error
     monkeypatch.setattr(subprocess, "run", raise_error)
 
     assert module.verify(DEB_MODULE) is False
+
+
+def test_verify_passes_runs_the_recipes_command_and_reads_its_exit(monkeypatch):
+    seen: list = []
+
+    def fake_run(command, **kwargs):
+        seen.append(command)
+        return subprocess.CompletedProcess(command, 0 if "ok" in command else 1)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert verify_passes("smbd -V ok") is True
+    assert verify_passes("smbd -V") is False
+    assert verify_passes("") is False
+    assert seen == ["smbd -V ok", "smbd -V"]
 
 
 def test_command_verify_runs_the_catalogs_own_command(runner, monkeypatch):

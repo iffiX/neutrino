@@ -116,30 +116,19 @@ class FakeControlAgent:
     def platform(self) -> dict:
         return {"os": "linux", "family": "debian", "arch": "x86_64"}
 
-    def catalog(self) -> dict:
-        # Modules arrive already resolved for this platform: the hub read
-        # the manifest and picked the entry, so `entry` is the machine's
-        # whole basis for knowing the module runs here at all.
+    def module_states(self) -> dict:
         return {
-            "modules": {
-                "rustdesk": {
-                    "title": "RustDesk",
-                    "description": "",
-                    "kind": "rustdesk",
-                    "installer": "hub",
-                    "source": "rustdesk/rustdesk",
-                    "license": "AGPL-3.0",
-                    "corresponding_source": "https://github.com/rustdesk/rustdesk",
-                    "platform_key": "linux-debian-amd64",
-                    "entry": {"package_kind": "deb"},
-                    "verify": "",
-                    "package": "rustdesk",
-                }
+            "rustdesk": {
+                "state": "installed",
+                "is_active": False,
+                "code": "",
+                "params": {},
+                "details": {},
             }
         }
 
-    def module_states(self) -> dict:
-        return {"rustdesk": {"state": "installed"}}
+    def state_hash(self) -> str:
+        return "h1"
 
     def last_error(self):
         return self.error

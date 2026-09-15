@@ -1,34 +1,40 @@
-"""The module engine: carrying out orders, and holding no policy.
+"""The module engine: observing against the state, and holding no policy.
 
-The engine is handed orders the hub already decided on, each carrying the
-module resolved for this platform. What is pinned here is that it runs what
-it is given in the caller's thread, hands each output line on as it comes,
-judges the result by the machine's own state, reports the output of a
-failure — and that nothing in it ever retries anything.
+The engine is handed the state's modules section, each entry carrying the
+recipe resolved for this platform, and observes every module it has a
+runner for, named or not. What is pinned here is the state it derives from
+three facts (the software there, the unit active, the hub's want), the
+five fields of every row, orders run in the caller's thread with each
+output line handed on as it comes, results judged by the machine's own
+state, and that nothing in it ever retries anything.
 """
 
 import threading
 
 import pytest
 
+import neutrino_agent.core.engine as engine_module
 from neutrino_agent.core.engine import ModuleEngine
 from neutrino_agent.exceptions import InstallError, PlatformUnsupportedError
 from neutrino_agent.platforms.base import AgentPlatform
 
-DEB_ENTRY = {"package_kind": "deb", "uninstall": "apt-get remove -y fakedesk"}
-
-CATALOG = {
-    "modules": {
-        "fakedesk": {
-            "title": "FakeDesk",
-            "kind": "package",
-            "entry": DEB_ENTRY,
-            "verify": "",
-            "package": "fakedesk",
-        }
-    },
-    "services": [],
+DEB_RECIPE = {
+    "kind": "package",
+    "package_kind": "deb",
+    "package": "fakedesk",
+    "uninstall": "apt-get remove -y fakedesk",
 }
+
+WANTED = {
+    "fakedesk": {
+        "want": "installed",
+        "config": {},
+        "install": dict(DEB_RECIPE),
+        "uninstall": {},
+    }
+}
+
+ROW_FIELDS = {"state", "is_active", "code", "params", "details"}
 
 
 class FakePlatform(AgentPlatform):
@@ -59,11 +65,10 @@ def bare_engine(*, platform=None, fetch_artifact=None, verified=None):
         verified: Scripted answers for verify; the last one repeats.
 
     Returns:
-        The engine, its fetches and its verify calls.
+        The engine.
     """
     engine = ModuleEngine.__new__(ModuleEngine)
-    engine._catalog = dict(CATALOG)
-    engine._catalog_hash = "abc"
+    engine._wanted = {name: dict(entry) for name, entry in WANTED.items()}
     engine._platform_tuple = {"os": "linux", "family": "debian", "arch": "amd64"}
     engine._output = []
     engine._on_line = None
@@ -134,7 +139,11 @@ def test_an_order_installs_what_it_is_given_and_reports_done():
     )
 
     assert fetches == ["fakedesk-linux-debian-amd64-aaaa"]
-    assert platform.installs == [("deb", DEB_ENTRY)]
+    # The recipe's entry is what the platform installs by: the header
+    # fields name the runner and the check, and are not part of it.
+    assert platform.installs == [
+        ("deb", {"package_kind": "deb", "uninstall": "apt-get remove -y fakedesk"})
+    ]
     assert result["state"] == "done"
     assert result["code"] == ""
     # Success carries its output too: a person watching an install came to
@@ -152,19 +161,6 @@ def test_each_output_line_is_handed_on_as_it_comes():
     assert "fakedesk: installing" in lines
     # The line handler is the stream's; it does not outlive the order.
     assert engine._on_line is None
-
-
-def test_the_resolved_module_an_order_carries_is_kept_and_reported():
-    engine = bare_engine(fetch_artifact=landing_fetch([]), verified=[True])
-    engine._catalog = {"modules": {}}
-
-    result = engine.run_order(
-        dict(INSTALL_ORDER, resolved=CATALOG["modules"]["fakedesk"])
-    )
-
-    assert result["state"] == "done"
-    assert engine.catalog()["modules"]["fakedesk"]["kind"] == "package"
-    assert engine.report()["fakedesk"]["state"] == "installed"
 
 
 def test_an_install_the_machine_cannot_confirm_is_failed_not_latched():
@@ -247,15 +243,16 @@ def test_asking_again_is_a_new_order_and_runs():
     assert fetches == ["key", "key"]
 
 
-def test_an_order_for_a_module_with_no_build_here_is_refused_not_attempted():
+def test_an_order_for_a_module_the_state_does_not_name_is_refused_not_attempted():
     fetches: list = []
     engine = bare_engine(fetch_artifact=landing_fetch(fetches))
-    engine._catalog = {"modules": {"fakedesk": {"kind": "package", "entry": None}}}
+    engine._wanted = {}
 
     result = engine.run_order(INSTALL_ORDER)
 
     assert fetches == []
-    assert result["code"] == "no_platform_build"
+    assert result["code"] == "unknown_module"
+    assert result["params"] == {"module": "fakedesk"}
 
 
 def test_an_action_this_agent_does_not_know_is_typed_not_guessed():
@@ -290,39 +287,26 @@ def test_reporting_a_module_touches_nothing():
     assert engine.report()["fakedesk"]["state"] == "installed"
 
 
-def test_a_module_with_no_build_here_is_reported_unsupported_not_failed():
-    engine = bare_engine()
-    engine._catalog = {"modules": {"fakedesk": {"kind": "package", "entry": None}}}
-
-    engine._refresh(is_forced=True)
-
-    assert engine.report()["fakedesk"] == {
-        "state": "unsupported",
-        "code": "no_platform_build",
-        "params": {},
-        "details": {},
-    }
-
-
-def test_a_kind_the_engine_does_not_run_is_reported_as_unsupported():
-    """An older agent meeting a module kind a newer hub serves is a machine
+def test_a_module_this_agent_has_no_runner_for_is_reported_unsupported():
+    """An older agent meeting a module a newer hub serves is a machine
     that cannot have it, not one that has not answered."""
     engine = bare_engine()
-    engine._catalog = {"modules": {"thing": {"kind": "ai_tools", "entry": {}}}}
+    engine._wanted = {"thing": {"want": "running", "install": {"kind": "ai_tools"}}}
 
     engine._refresh(is_forced=True)
 
     assert engine.report()["thing"] == {
         "state": "unsupported",
-        "code": "unknown_kind",
-        "params": {"kind": "ai_tools"},
+        "is_active": False,
+        "code": "",
+        "params": {},
         "details": {},
     }
 
 
 def test_an_absent_capability_reports_unsupported_platform():
     engine = bare_engine(platform=AgentPlatform())
-    engine._catalog = dict(SYSTEM_CATALOG)
+    engine._wanted = dict(SYSTEM_WANTED)
 
     result = engine.run_order(
         {"id": "order-1", "module": "samba_mount", "action": "install"}
@@ -346,17 +330,13 @@ def test_the_engine_holds_no_failure_memory():
 
 # --- the by-name kind rides the same order path ---
 
-SYSTEM_CATALOG = {
-    "modules": {
-        "samba_mount": {
-            "title": "Samba mount",
-            "kind": "system_package",
-            "entry": {"packages": ["cifs-utils"]},
-            "verify": "",
-            "package": "samba_mount",
-        }
-    },
-    "services": [],
+SYSTEM_WANTED = {
+    "samba_mount": {
+        "want": "installed",
+        "config": {},
+        "install": {"kind": "system_package", "packages": ["cifs-utils"]},
+        "uninstall": {},
+    }
 }
 
 
@@ -382,7 +362,7 @@ def test_a_system_package_order_installs_by_name_and_fetches_nothing():
     platform = SystemPackagePlatform()
     fetches: list = []
     engine = bare_engine(platform=platform, fetch_artifact=landing_fetch(fetches))
-    engine._catalog = dict(SYSTEM_CATALOG)
+    engine._wanted = dict(SYSTEM_WANTED)
     engine._system.verify = lambda resolved: True
 
     result = engine.run_order(
@@ -398,7 +378,7 @@ def test_a_system_package_order_installs_by_name_and_fetches_nothing():
 def test_a_system_package_uninstall_rides_the_package_manager_too():
     platform = SystemPackagePlatform()
     engine = bare_engine(platform=platform)
-    engine._catalog = dict(SYSTEM_CATALOG)
+    engine._wanted = dict(SYSTEM_WANTED)
     engine._system.verify = lambda resolved: False
 
     result = engine.run_order(
@@ -409,46 +389,47 @@ def test_a_system_package_uninstall_rides_the_package_manager_too():
     assert result["state"] == "done"
 
 
-# --- the modules this agent applies, and what it carries itself ---
+# --- the modules this agent applies, observed against the state ---
 
 
 class ConfigurableRunner:
-    """A module runner whose details and verify a test scripts."""
+    """A module runner whose presence, unit and details a test scripts."""
 
     kind = "system_package"
     name = "samba"
 
-    def __init__(self, *, is_installed=True):
+    def __init__(self, *, is_installed=True, is_active_now=False):
         self.is_installed = is_installed
+        self.is_active_now = is_active_now
         self.detail_reads = 0
-
-    def is_native(self, resolved):
-        return False
+        self.verified: list = []
 
     def verify(self, resolved):
+        self.verified.append(resolved)
         return self.is_installed
+
+    def is_active(self):
+        return self.is_active_now
 
     def details(self, resolved):
         self.detail_reads += 1
         return {"sessions": [self.detail_reads]}
 
 
-MODULE_CATALOG = {
-    "modules": {
+def module_wanted(want: str) -> dict:
+    return {
         "samba": {
-            "title": "Samba",
-            "kind": "system_package",
-            "entry": {"packages": ["samba"]},
-            "verify": "",
-            "package": "samba",
+            "want": want,
+            "config": {"shares": []},
+            "install": {"kind": "system_package", "packages": ["samba"]},
+            "uninstall": {},
         }
     }
-}
 
 
-def module_engine(runner):
+def module_engine(runner, wanted=None):
     engine = bare_engine()
-    engine._catalog = dict(MODULE_CATALOG)
+    engine._wanted = wanted if wanted is not None else module_wanted("running")
     engine._module_runners = {"samba": runner}
     return engine
 
@@ -459,6 +440,114 @@ def test_a_module_runner_is_found_by_name_before_its_kind():
 
     assert engine._runner_for("system_package", "samba") is runner
     assert engine._runner_for("system_package", "samba_mount") is engine._system
+
+
+def test_every_row_has_the_five_fields():
+    engine = module_engine(ConfigurableRunner())
+
+    engine._refresh(is_forced=True)
+
+    for name, row in engine.report().items():
+        assert set(row) == ROW_FIELDS, name
+
+
+@pytest.mark.parametrize(
+    "want, is_active_now, state",
+    [
+        ("running", True, "running"),
+        ("running", False, "stopped"),
+        ("stopped", False, "stopped"),
+        ("stopped", True, "running"),
+        ("installed", True, "installed"),
+        ("installed", False, "installed"),
+        ("absent", True, "installed"),
+    ],
+)
+def test_the_state_of_software_that_is_there_follows_the_unit_and_the_want(
+    want, is_active_now, state
+):
+    """The hub has configured a module it wants running or stopped; the
+    unit then tells the two apart. Any other want is software the hub has
+    not configured, and ``is_active`` still says whether it runs."""
+    runner = ConfigurableRunner(is_active_now=is_active_now)
+    engine = module_engine(runner, module_wanted(want))
+
+    engine._refresh(is_forced=True)
+
+    row = engine.report()["samba"]
+    assert row["state"] == state
+    assert row["is_active"] is is_active_now
+    assert row["code"] == ""
+
+
+def test_software_that_is_not_there_is_absent_whatever_the_want():
+    runner = ConfigurableRunner(is_installed=False, is_active_now=True)
+    engine = module_engine(runner, module_wanted("running"))
+
+    engine._refresh(is_forced=True)
+
+    assert engine.report()["samba"] == {
+        "state": "absent",
+        "is_active": False,
+        "code": "",
+        "params": {},
+        "details": {},
+    }
+    assert runner.detail_reads == 0
+
+
+def test_a_module_the_state_does_not_name_is_observed_by_its_own_check():
+    """A hand-installed Samba shows as installed, its unit reported, from
+    the runner's own check: there is no recipe to ask."""
+    runner = ConfigurableRunner(is_active_now=True)
+    engine = module_engine(runner, wanted={})
+
+    engine._refresh(is_forced=True)
+
+    row = engine.report()["samba"]
+    assert (row["state"], row["is_active"]) == ("installed", True)
+    assert runner.verified == [{"kind": "", "entry": {}, "verify": "", "package": ""}]
+
+
+def test_the_recipes_verify_command_decides_presence_over_the_runner(monkeypatch):
+    runner = ConfigurableRunner(is_installed=False)
+    wanted = module_wanted("running")
+    wanted["samba"]["install"]["verify"] = "smbd -V"
+    engine = module_engine(runner, wanted)
+    asked: list = []
+    monkeypatch.setattr(
+        engine_module, "verify_passes", lambda command: asked.append(command) or True
+    )
+
+    engine._refresh(is_forced=True)
+
+    assert asked == ["smbd -V"]
+    assert runner.verified == []
+    assert engine.report()["samba"]["state"] == "stopped"
+    assert engine.is_installed("samba") is True
+
+
+def test_is_installed_answers_from_the_runner_when_no_command_is_named():
+    runner = ConfigurableRunner(is_installed=True)
+    engine = module_engine(runner)
+
+    assert engine.is_installed("samba") is True
+    runner.is_installed = False
+    assert engine.is_installed("samba") is False
+    assert engine.is_installed("nothing") is False
+
+
+def test_taking_a_state_wakes_the_worker_and_reports_against_it():
+    runner = ConfigurableRunner(is_active_now=True)
+    engine = module_engine(runner, wanted={})
+    engine._refresh(is_forced=True)
+    assert engine.report()["samba"]["state"] == "installed"
+
+    engine.take_state(module_wanted("running"))
+
+    assert engine._wakeup.is_set()
+    engine._refresh(is_forced=False)
+    assert engine.report()["samba"]["state"] == "running"
 
 
 def test_an_installed_module_reports_its_details():
@@ -494,31 +583,39 @@ def test_report_wakes_the_worker_for_stale_details_and_never_waits():
     assert engine._wakeup.is_set()
 
 
-def test_an_apply_failure_rides_the_installed_row():
-    engine = module_engine(ConfigurableRunner())
+def test_an_apply_failure_makes_the_row_failed_with_its_code():
+    engine = module_engine(ConfigurableRunner(is_active_now=True))
     engine.record_apply("samba", "samba_config_rejected", {"detail": "bad"})
 
     engine._refresh(is_forced=True)
 
     row = engine.report()["samba"]
-    assert row["state"] == "installed"
+    assert row["state"] == "failed"
+    assert row["is_active"] is True
     assert (row["code"], row["params"]) == ("samba_config_rejected", {"detail": "bad"})
 
     engine.record_apply("samba", "", {})
     engine._refresh(is_forced=True)
+    assert engine.report()["samba"]["state"] == "running"
     assert engine.report()["samba"]["code"] == ""
 
 
-def test_resolved_answers_the_catalog_row_by_name():
-    engine = module_engine(ConfigurableRunner())
+def test_a_runner_that_cannot_read_the_machine_is_failed_typed():
+    class BrokenRunner(ConfigurableRunner):
+        def verify(self, resolved):
+            raise PlatformUnsupportedError("no package database here")
 
-    assert engine.resolved("samba")["package"] == "samba"
-    assert engine.resolved("nothing") is None
+    engine = module_engine(BrokenRunner())
+
+    engine._refresh(is_forced=True)
+
+    row = engine.report()["samba"]
+    assert (row["state"], row["code"]) == ("failed", "unsupported_platform")
 
 
 def test_the_built_in_rustdesk_row_follows_the_agents_own_binary(monkeypatch, tmp_path):
     engine = bare_engine()
-    engine._catalog = {"modules": {}}
+    engine._wanted = {}
     binary = tmp_path / "rustdesk"
     monkeypatch.setattr(
         "neutrino_agent.core.engine.AGENT_RUSTDESK_BINARY_PATH", str(binary)
@@ -526,7 +623,6 @@ def test_the_built_in_rustdesk_row_follows_the_agents_own_binary(monkeypatch, tm
 
     engine._refresh(is_forced=True)
     assert engine.report()["rustdesk"]["state"] == "absent"
-    assert engine.catalog()["modules"]["rustdesk"]["entry"] == {}
 
     binary.write_text("")
     engine._refresh(is_forced=True)

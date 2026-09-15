@@ -5,6 +5,7 @@ import subprocess
 import pytest
 
 from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.modules import system_package as system_package_module
 from neutrino_agent.modules.podman import runner as runner_module
 from neutrino_agent.modules.podman.applier import PodmanContainerState
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
@@ -108,6 +109,28 @@ def test_stop_takes_every_declared_container_down(runner):
     runner.stop()
 
     assert FakeUnitApplier.stops == 1
+
+
+def test_is_active_is_the_units_word(runner, monkeypatch):
+    asked: list = []
+    monkeypatch.setattr(
+        runner_module, "unit_state", lambda unit: asked.append(unit) or "active"
+    )
+    assert runner.is_active() is True
+    monkeypatch.setattr(runner_module, "unit_state", lambda unit: "inactive")
+    assert runner.is_active() is False
+    assert asked == ["podman.socket"]
+
+
+def test_the_own_check_is_the_engines_binary(runner, monkeypatch):
+    monkeypatch.setattr(
+        system_package_module.shutil,
+        "which",
+        lambda name: name if name.endswith("podman") else None,
+    )
+    assert runner.verify({}) is True
+    monkeypatch.setattr(system_package_module.shutil, "which", lambda name: None)
+    assert runner.verify({}) is False
 
 
 def test_details_separate_declared_from_ad_hoc(runner):

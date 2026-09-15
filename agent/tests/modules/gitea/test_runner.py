@@ -95,6 +95,17 @@ def test_the_runner_owns_the_gitea_kind(runner):
     assert runner.name == "gitea"
 
 
+def test_is_active_is_the_units_word(runner, monkeypatch):
+    asked: list = []
+    monkeypatch.setattr(
+        runner_module, "unit_state", lambda unit: asked.append(unit) or "active"
+    )
+    assert runner.is_active() is True
+    monkeypatch.setattr(runner_module, "unit_state", lambda unit: "failed")
+    assert runner.is_active() is False
+    assert asked == ["neutrino_gitea.service"]
+
+
 def test_verify_is_the_binary_on_disk(runner, monkeypatch, tmp_path):
     binary = tmp_path / "gitea"
     monkeypatch.setattr(runner_module, "GITEA_BINARY_PATH", str(binary))

@@ -29,6 +29,7 @@ from neutrino_agent.modules.podman.config import (
     PodmanConfig,
 )
 from neutrino_agent.modules.podman.constants import (
+    PODMAN_BINARY,
     PODMAN_COMMAND_CONTROL,
     PODMAN_COMMAND_JOURNAL,
     PODMAN_CONTAINER_ACTIONS,
@@ -44,6 +45,7 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
     """Installs podman by package and keeps the declared containers running."""
 
     name = "podman"
+    binary = PODMAN_BINARY
 
     def __init__(self, *, platform, log=print, publish=None):
         super().__init__(platform=platform, log=log, publish=publish)
@@ -96,6 +98,10 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
     def stop(self) -> None:
         """Stop every declared container, leaving images and volumes."""
         container_applier().stop_all()
+
+    def is_active(self) -> bool:
+        """Whether the engine's own unit is active."""
+        return unit_state(PODMAN_UNIT) == "active"
 
     def details(self, resolved: dict) -> dict:
         """Every container podman knows, and the engine's own state.

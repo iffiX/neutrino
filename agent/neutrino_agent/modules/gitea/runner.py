@@ -119,6 +119,10 @@ class GiteaModuleRunner(ModuleRunner):
         """Take the server down, leaving the repositories in place."""
         GiteaConfigApplier().stop()
 
+    def is_active(self) -> bool:
+        """Whether the git server's unit is active."""
+        return unit_state(GITEA_UNIT) == "active"
+
     def details(self, resolved: dict) -> dict:
         """Whether it runs, where it answers, and who administers it.
 

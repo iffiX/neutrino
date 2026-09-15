@@ -8,8 +8,8 @@ afterwards. It decides nothing about when, because the hub is the only
 thing that holds policy.
 
 Every status a runner's caller returns is typed:
-``{"state", "code", "params"}``, never an English sentence, so every
-surface does its own wording.
+``{"state", "is_active", "code", "params", "details"}``, never an English
+sentence, so every surface does its own wording.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -98,6 +98,14 @@ class ModuleRunner:
 
     def stop(self) -> None:
         """Take the module's service down, leaving its data in place."""
+
+    def is_active(self) -> bool:
+        """Whether the unit this module runs as is active.
+
+        Returns:
+            False for a module that runs as no unit.
+        """
+        return False
 
     def command(self, action: str, args: dict, on_line=None) -> dict:
         """Run one of this module's commands.

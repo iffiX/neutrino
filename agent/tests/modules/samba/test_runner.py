@@ -5,6 +5,7 @@ import subprocess
 import pytest
 
 from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.modules import system_package as system_package_module
 from neutrino_agent.modules.samba import runner as runner_module
 from neutrino_agent.modules.samba.applier import SambaUserState
 from neutrino_agent.modules.samba.runner import SambaModuleRunner
@@ -83,6 +84,30 @@ def test_the_unit_follows_the_family(runner):
     assert SambaModuleRunner(platform=RecordingPlatform(), family="debian").unit == (
         "smbd.service"
     )
+
+
+def test_is_active_is_the_units_word(runner, monkeypatch):
+    asked: list = []
+    monkeypatch.setattr(
+        runner_module, "unit_state", lambda unit: asked.append(unit) or "active"
+    )
+    assert runner.is_active() is True
+    monkeypatch.setattr(runner_module, "unit_state", lambda unit: "inactive")
+    assert runner.is_active() is False
+    assert asked == ["smb.service"]
+
+
+def test_the_own_check_is_the_server_binary(monkeypatch):
+    monkeypatch.setattr(
+        system_package_module.shutil,
+        "which",
+        lambda name: "/usr/sbin/smbd" if name == "smbd" else None,
+    )
+    held = SambaModuleRunner(platform=RecordingPlatform(), family="debian")
+
+    assert held.verify({}) is True
+    monkeypatch.setattr(system_package_module.shutil, "which", lambda name: None)
+    assert held.verify({}) is False
 
 
 def test_install_puts_the_package_and_the_share_group(runner):

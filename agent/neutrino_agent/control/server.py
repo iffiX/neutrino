@@ -40,70 +40,22 @@ def _state(agent) -> dict:
         The state payload.
     """
     binding = enrollment.load_binding()
-    catalog = agent.catalog()
     return {
         "version": AGENT_VERSION,
         "hostname": hostname(),
         "platform": agent.platform(),
         "is_connected": bool(binding),
         "is_online": agent.is_online(),
-        "gateway_url": binding.get("gateway_url", ""),
         "binding": {
             "id": binding.get("id", ""),
             "gateway_url": binding.get("gateway_url", ""),
         },
+        "state_hash": agent.state_hash(),
         "last_error": agent.last_error(),
-        "modules": _module_rows(agent, catalog.get("modules", {})),
+        # Each module as the report says it: observed state, unit, code.
+        "modules": agent.module_states(),
         "rdp": agent.rdp_state(),
     }
-
-
-def _module_rows(agent, modules: dict) -> list:
-    """The module rows, from the catalog the hub already resolved.
-
-    Args:
-        agent: The running agent.
-        modules: The catalog's modules half, each entry resolved for this
-            platform — so nothing here searches a platform table.
-
-    Returns:
-        One row per module.
-    """
-    reported = agent.module_states()
-    rows = []
-    # The hub's own order, which the panel draws too; re-sorting here is the
-    # one way the two lists could disagree.
-    for name, resolved in modules.items():
-        if not isinstance(resolved, dict):
-            continue
-        status = reported.get(name, {})
-        rows.append(
-            {
-                "name": name,
-                "title": resolved.get("title", name),
-                "description": resolved.get("description", ""),
-                "kind": resolved.get("kind", ""),
-                # user-tier rows offer no button: the person installs the
-                # software, and the row only shows what is detected.
-                "installer": resolved.get("installer", ""),
-                "is_supported": resolved.get("entry") is not None,
-                # The platform carries this natively: worded built in, no
-                # button.
-                "is_native": resolved.get("entry") == {},
-                # Where the software comes from, which every row says: a
-                # repository, a vendor, or the machine's own packages.
-                "source": resolved.get("source", ""),
-                # What the hub conveys under a copyleft license, and where
-                # its corresponding source is.
-                "license": resolved.get("license", ""),
-                "corresponding_source": resolved.get("corresponding_source", ""),
-                "state": status.get("state", "unknown"),
-                "code": status.get("code", ""),
-                "params": status.get("params", {}),
-                "details": status.get("details", {}),
-            }
-        )
-    return rows
 
 
 class ControlServer:

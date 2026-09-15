@@ -11,6 +11,7 @@ Not pure: drives the storage tools through the applier.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import os
 import subprocess
 
 from neutrino_agent.exceptions import ModuleApplyError
@@ -35,6 +36,7 @@ from neutrino_agent.modules.zfs.config import (
 from neutrino_agent.modules.zfs.constants import (
     ZFS_COMMAND_OP,
     ZFS_COMMAND_SCAN,
+    ZFS_KERNEL_MODULE_DIR,
     ZFS_OP_CREATE_DATASET,
     ZFS_OP_CREATE_POOL,
     ZFS_OP_DESTROY_DATASET,
@@ -87,6 +89,10 @@ class ZfsModuleRunner(SystemPackageModuleRunner):
             )
         if note:
             self._log(f"zfs: {note}")
+
+    def is_active(self) -> bool:
+        """Whether the ZFS kernel module is loaded; there is no unit to ask."""
+        return os.path.isdir(ZFS_KERNEL_MODULE_DIR)
 
     def details(self, resolved: dict) -> dict:
         """The whole storage picture.

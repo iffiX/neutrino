@@ -93,6 +93,7 @@ CLI_CODE_WORDS = {
     "rdp_nobody_seated": "nobody is signed in at that machine's screen",
     "rdp_screen_not_allowed": "allow screen sharing once at that machine's screen",
     "agent_internal": "the agent hit an unexpected error; check its log",
+    "reinstall_failed": "the reinstall this agent came from ended with status {exit_code}",
     "unknown_request": "the agent does not know this request",
     "module_not_orderable": "the {module} module is the agent's own; nothing installs it",
     "unknown_module": "the agent has no {module} module to configure",

@@ -5,10 +5,10 @@ to. It runs whether or not the machine belongs to a hub yet: an agent that
 has never enrolled still answers locally, waiting for a link.
 
 While bound, the agent keeps one socket open to the hub and reconnects when
-it drops. The hub decides everything about modules: an order arrives as a
-stream on the socket, runs here, and closes with how it went. The desktop
-share is the other way round: decided only on the machine, and reported
-upward.
+it drops. The hub decides everything about modules: its state says what
+each is to be, and this machine observes, configures and reports until it
+matches. The desktop share is the other way round: decided only on the
+machine, and reported upward.
 
 Errors cross the wire as ``{"code", "params"}``, never an English sentence;
 every surface does its own wording.
@@ -19,6 +19,7 @@ every surface does its own wording.
 from __future__ import annotations
 
 import hashlib
+import operator
 import os
 import threading
 import urllib.parse
@@ -186,6 +187,10 @@ class Agent:
         # that failed is not retried on every connection.
         self._update_target = ""
         self._update_error: "dict | None" = None
+        # Each source of failure the report may show, with the serial of
+        # when its current value was first seen; the newest is the one shown.
+        self._errors: dict = {}
+        self._error_serial = 0
         self._load_connection()
 
     # --- what the control channel reads ---
@@ -194,13 +199,13 @@ class Agent:
         """This machine's platform tuple."""
         return self._engine.platform_tuple
 
-    def catalog(self) -> dict:
-        """The catalog this machine holds: ``{"modules"}``."""
-        return self._engine.catalog()
-
     def module_states(self) -> dict:
-        """What state each module is actually in."""
+        """What each module is observed to be, as the report says it."""
         return self._engine.report()
+
+    def state_hash(self) -> str:
+        """The hash of the hub's state this machine last applied whole."""
+        return self._desired.applied_hash
 
     def last_error(self) -> "dict | None":
         """The most recent problem worth showing, as ``{"code", "params"}``."""
@@ -260,7 +265,7 @@ class Agent:
             self._log(f"could not tell the hub we are leaving: {outcome['code']}")
         self._reset_binding_state()
         self._load_connection()
-        self._engine.update(catalog=None, catalog_hash="")
+        self._engine.take_state({})
         self._log("left the hub")
 
     def report_soon(self) -> None:
@@ -280,20 +285,17 @@ class Agent:
         self._news.set()
 
     def sync(self) -> dict:
-        """Ask the hub for this machine's desired state.
+        """Send a report now, from which the hub compares hashes.
 
         Returns:
-            Empty when the request went up, ``{"code", "params"}`` when
+            Empty when a report is on its way, ``{"code", "params"}`` when
             there is no live socket to send it on.
         """
         with self._lock:
             session = self._session
         if session is None or not session.is_open:
             return {"code": "hub_unreachable", "params": {}}
-        try:
-            session.request_state()
-        except GatewayUnreachable:
-            return {"code": "hub_unreachable", "params": {}}
+        self._news.set()
         return {}
 
     def rdp_share(self, *, account: str) -> dict:
@@ -434,26 +436,72 @@ class Agent:
         }
 
     def _report_payload(self) -> dict:
+        """What is true of this machine: the report's five sections."""
         return {
-            "metrics": self._read_metrics(),
-            "platform": self._engine.platform_tuple,
-            "network": network.describe(self._link_address(), self._read_interfaces()),
-            "accounts": self._read_accounts(),
-            "modules": self._engine.report(),
             "state_hash": self._desired.applied_hash,
-            "state_error": self._desired.state_error,
+            "machine": {
+                "hostname": hostname(),
+                "platform": self._engine.platform_tuple,
+                "accounts": self._read_accounts(),
+                "metrics": self._read_metrics(),
+            },
+            "network": network.describe(self._link_address(), self._read_interfaces()),
+            "modules": self._engine.report(),
             # Whether this machine's desktop is reachable. The seat
             # password it answers with stays on the machine.
-            "rdp": self.rdp_declaration(),
-            "last_error": self.last_error(),
-            # What the install this agent came from said, written by the
-            # transient unit that ran it and read back here.
-            "last_reinstall": self._read_reinstall(),
+            "desktop": self.rdp_declaration(),
+            "error": self._error_section(),
         }
 
-    def _read_reinstall(self) -> "dict | None":
-        """What the reinstall this launch came from did, if it left a record."""
-        return self_update.read_reinstall_result(self._data_dir)
+    def _error_section(self) -> "dict | None":
+        """The most recent failure worth showing, as ``{"code", "params"}``.
+
+        Three sources are read each time: the channel's last error, the
+        state error, and the reinstall this agent came from when it failed.
+        A source whose value changed is stamped now, and the newest stamp
+        is the one reported.
+
+        Returns:
+            The error, or None when no source holds one.
+        """
+        current = (
+            ("channel", self.last_error()),
+            ("state", self._desired.state_error),
+            ("reinstall", self._reinstall_error()),
+        )
+        with self._lock:
+            for source, error in current:
+                held = self._errors.get(source)
+                if error is None:
+                    self._errors.pop(source, None)
+                elif held is None or held[1] != error:
+                    self._error_serial += 1
+                    self._errors[source] = (self._error_serial, dict(error))
+            if not self._errors:
+                return None
+            newest = max(self._errors.values(), key=operator.itemgetter(0))
+            return dict(newest[1])
+
+    def _reinstall_error(self) -> "dict | None":
+        """The reinstall this launch came from, when its record says it failed.
+
+        The record is written by the transient unit that ran the install
+        and read back here.
+
+        Returns:
+            ``{"code", "params"}`` naming the exit status, or None when no
+            record stands there or the install went through.
+        """
+        result = self_update.read_reinstall_result(self._data_dir)
+        if result is None or result["exit_code"] == 0:
+            return None
+        return {
+            "code": "reinstall_failed",
+            "params": {
+                "exit_code": result["exit_code"],
+                "finished_at": result["finished_at"],
+            },
+        }
 
     def _run_order(self, order: dict, on_line=None) -> dict:
         """Run one order, then give the changed machine its configuration.
@@ -608,7 +656,7 @@ class Agent:
             self._load_connection()
             with self._lock:
                 self._last_error = rejection
-            self._engine.update(catalog=None, catalog_hash="")
+            self._engine.take_state({})
             self._log("unbound: the hub does not know this binding")
             return IDLE_POLL_INTERVAL_S
         with self._lock:
@@ -677,7 +725,7 @@ class Agent:
                 return
         self._reset_binding_state()
         self._drop_session()
-        self._engine.update(catalog=None, catalog_hash="")
+        self._engine.take_state({})
         self._log("adopted the binding written on disk")
 
     def _force_self_update(self, target: str) -> None:

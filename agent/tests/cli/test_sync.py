@@ -1,7 +1,7 @@
-"""``nagent sync``: ask the running service to fetch the hub's state now.
+"""``nagent sync``: ask the running service to send a report now.
 
 The service holds the socket, so the verb goes through the control channel;
-what the operator reads is whether the ask went up, and why not otherwise.
+what the operator reads is whether the report went up, and why not otherwise.
 """
 
 import pytest
@@ -44,7 +44,7 @@ def test_sync_asks_the_running_service(running_service, config_path, capsys):
     assert sync_cli.main() == 0
 
     assert agent.syncs == 1
-    assert "asked the hub for this machine's state" in capsys.readouterr().out
+    assert "sent this machine's report to the hub" in capsys.readouterr().out
 
 
 def test_sync_says_the_machine_has_joined_nothing(running_service, capsys):

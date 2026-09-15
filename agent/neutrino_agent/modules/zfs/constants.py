@@ -54,7 +54,9 @@ ZFS_FORBIDDEN_MOUNT_ROOTS = (
 # so it holds across reboots, and poked into the live module on apply.
 ZFS_ARC_MAX_FRACTION = 0.25
 ZFS_MODPROBE_CONF = "/etc/modprobe.d/99_neutrino_zfs.conf"
-ZFS_ARC_MAX_PARAMETER = "/sys/module/zfs/parameters/zfs_arc_max"
+# The kernel module's sysfs directory, present while ZFS is loaded.
+ZFS_KERNEL_MODULE_DIR = "/sys/module/zfs"
+ZFS_ARC_MAX_PARAMETER = ZFS_KERNEL_MODULE_DIR + "/parameters/zfs_arc_max"
 ZFS_MEMINFO_PATH = "/proc/meminfo"
 
 ZFS_DISK_BY_ID_DIR = "/dev/disk/by-id"

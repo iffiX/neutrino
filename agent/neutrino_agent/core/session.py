@@ -2,10 +2,10 @@
 
 The socket carries everything: the hello that opens it and the welcome that
 answers, a report every few seconds and at once when something changed, the
-hub's desired state, and every stream the hub opens. A reader thread takes
-frames off the socket and dispatches them; the caller's thread runs the
-report loop; each stream runs on a thread of its own so a long install
-never blocks the reader.
+hub's state whenever its copy changes, and every stream the hub opens. A
+reader thread takes frames off the socket and dispatches them; the caller's
+thread runs the report loop; each stream runs on a thread of its own so a
+long install never blocks the reader.
 
 Orders, commands and validations are one call each and close with the
 call's result. The shell and file kinds carry bytes both ways: each runs
@@ -52,7 +52,7 @@ class AgentSession:
         hub_id: The hub's id, from the welcome; empty until it arrived.
         hub_name: The hub's name, from the welcome.
         hub_software: The hub's ``software``, from the welcome.
-        state_hash: The desired-state hash the last state frame named.
+        state_hash: The hash the last state frame named.
     """
 
     def __init__(
@@ -86,8 +86,9 @@ class AgentSession:
             log: Callable used for progress messages.
             interval_s: How often a report goes up while nothing changes.
             on_tick: Called once per report interval, before the report.
-            on_state: Called with ``(hash, desired)`` for each state frame
-                the hub sends. None takes the hash and nothing else.
+            on_state: Called with the state document, ``{hash, modules,
+                desktop}``, for each state frame the hub sends. None takes
+                the hash and nothing else.
             validate: Called with ``(module, config)``; returns empty when
                 the configuration is sound, ``{"code", "params"}`` when
                 not. None refuses the validate stream kind.
@@ -180,14 +181,6 @@ class AgentSession:
             self._reader.join(timeout=self._interval_s)
         return self._failure
 
-    def request_state(self) -> None:
-        """Ask the hub for this machine's desired state.
-
-        Raises:
-            GatewayUnreachable: When the socket is gone.
-        """
-        self._send({"type": "state_request"})
-
     def close(self) -> None:
         """End the socket from this side."""
         self._is_closed.set()
@@ -263,9 +256,10 @@ class AgentSession:
                 channel._end()
         elif message_type == "state":
             self.state_hash = str(message.get("hash", "") or "")
-            desired = message.get("desired")
-            if self._on_state is not None and isinstance(desired, dict):
-                self._on_state(self.state_hash, desired)
+            if self._on_state is not None:
+                self._on_state(
+                    {key: value for key, value in message.items() if key != "type"}
+                )
         elif message_type == "resize":
             channel = self._channel(stream_id)
             if channel is not None:

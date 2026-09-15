@@ -204,14 +204,13 @@ def test_connect_says_hello_with_the_card_and_takes_the_welcome():
     assert session.hub_name == "hub"
     assert session.hub_software == "neutrino_hub/0.2.0"
     assert session.is_open
-    assert client.frames("state_request") == []
     session.close()
 
 
 def test_a_first_frame_that_is_no_welcome_is_unreachable():
     client = ScriptedClient()
     session, _, _, _ = make_session(client)
-    client.feed({"type": "state", "hash": "", "desired": {}})
+    client.feed({"type": "state", "hash": "", "modules": {}})
 
     with pytest.raises(GatewayUnreachable) as caught:
         session.connect()
@@ -511,23 +510,38 @@ def test_without_a_validator_the_validate_kind_is_refused():
     thread.join(timeout=2)
 
 
-def test_a_state_frame_hands_the_desired_state_on():
+def test_a_state_frame_hands_the_document_on():
+    """The frame's sections are the document, ``{hash, modules, desktop}``;
+    the frame's own type is not part of it."""
     client = ScriptedClient()
     taken: list = []
-    session, _, _, _ = make_session(
-        client, on_state=lambda state_hash, desired: taken.append((state_hash, desired))
-    )
+    session, _, _, _ = make_session(client, on_state=taken.append)
     client.feed(welcome())
     session.connect()
     thread, _ = serving(session)
 
-    client.feed({"type": "state", "hash": "h3", "desired": {"modules": {}}})
-    client.feed({"type": "state", "hash": "h4", "desired": "not an object"})
+    client.feed(
+        {
+            "type": "state",
+            "hash": "h3",
+            "modules": {"samba": {"want": "running", "config": {}}},
+            "desktop": {"seat_password": ""},
+        }
+    )
+    client.feed({"type": "state", "hash": "h4"})
     client.feed({"type": "open", "stream": "00000013", "kind": "command", "args": {}})
 
     client.wait_for("close")
-    assert taken == [("h3", {"modules": {}})]
+    assert taken == [
+        {
+            "hash": "h3",
+            "modules": {"samba": {"want": "running", "config": {}}},
+            "desktop": {"seat_password": ""},
+        },
+        {"hash": "h4"},
+    ]
     assert session.state_hash == "h4"
+    assert client.frames("state_request") == []
     session.close()
     thread.join(timeout=2)
 
@@ -606,7 +620,7 @@ def test_state_frames_are_taken_and_nothing_else_is_fatal():
     session.connect()
     thread, _ = serving(session)
 
-    client.feed({"type": "state", "hash": "h2", "desired": {}})
+    client.feed({"type": "state", "hash": "h2", "modules": {}})
     client.feed({"type": "resize", "stream": "x", "cols": 1, "rows": 1})
     client.feed({"type": "credit", "stream": "x", "bytes": 1})
     client.feed({"type": "whatever"})
@@ -667,15 +681,9 @@ def test_closing_from_here_ends_serve_with_no_failure():
     assert client.is_closed
 
 
-def test_request_state_with_the_socket_gone_is_unreachable():
-    client = ScriptedClient()
-    session, _, _, _ = make_session(client)
-    client.feed(welcome())
-    session.connect()
-    session.close()
-
-    with pytest.raises(GatewayUnreachable):
-        session.request_state()
+def test_the_session_asks_the_hub_for_nothing():
+    """The hub pushes the state; there is no word for asking for it."""
+    assert not hasattr(AgentSession, "request_state")
 
 
 # --- the byte-carrying kinds ---

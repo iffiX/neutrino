@@ -1,11 +1,12 @@
 """One agent, driven connection by connection with scripted sockets.
 
-What these pin: the identity card the hello carries and every field of the
-report; what each refusal at the door does to the binding, with only
-``binding_unknown`` deleting it and a replaced socket waiting for a person;
-the binding file shared with the CLI; the self-update a welcome's
-``software`` triggers and its once-per-target latch; what ``sync`` and
-``probe`` do; and the wake flag cleared before a turn rather than after it.
+What these pin: the identity card the hello carries and the five sections
+of the report, with ``error`` the most recent of its three sources; what
+each refusal at the door does to the binding, with only ``binding_unknown``
+deleting it and a replaced socket waiting for a person; the binding file
+shared with the CLI; the self-update a welcome's ``software`` triggers and
+its once-per-target latch; ``sync`` sending a report now and what ``probe``
+does; and the wake flag cleared before a turn rather than after it.
 Nothing here talks to a network.
 """
 
@@ -310,15 +311,29 @@ def test_the_report_carries_every_field_from_its_source(config_path, monkeypatch
     agent, script = scripted_agent(
         config_path, monkeypatch, [welcomed_then_dropped()], platform=platform
     )
+    monkeypatch.setattr(loop_module, "hostname", lambda: "box")
     script.local_address = "10.0.0.5"
 
     agent.run_once()
 
     (report,) = script.clients[0].frames("report")
+    assert set(report) == {
+        "type",
+        "state_hash",
+        "machine",
+        "network",
+        "modules",
+        "desktop",
+        "error",
+    }
     assert report["type"] == "report"
-    assert report["metrics"]["cpu_percent"] == 12.3
-    assert report["metrics"]["uptime_s"] == 7
-    assert report["platform"] == agent.platform()
+    assert report["state_hash"] == ""
+    assert set(report["machine"]) == {"hostname", "platform", "accounts", "metrics"}
+    assert report["machine"]["hostname"] == "box"
+    assert report["machine"]["platform"] == agent.platform()
+    assert report["machine"]["accounts"] == ["alice", "bob"]
+    assert report["machine"]["metrics"]["cpu_percent"] == 12.3
+    assert report["machine"]["metrics"]["uptime_s"] == 7
     assert report["network"] == {
         "link": {
             "interface": "wlan0",
@@ -327,11 +342,10 @@ def test_the_report_carries_every_field_from_its_source(config_path, monkeypatch
         },
         "interfaces": INTERFACES,
     }
-    assert report["accounts"] == ["alice", "bob"]
     assert report["modules"] == agent.module_states()
-    assert report["state_hash"] == ""
-    assert report["state_error"] is None
-    assert set(report["rdp"]) == {
+    for row in report["modules"].values():
+        assert set(row) == {"state", "is_active", "code", "params", "details"}
+    assert set(report["desktop"]) == {
         "is_shared",
         "account",
         "connected_count",
@@ -339,9 +353,8 @@ def test_the_report_carries_every_field_from_its_source(config_path, monkeypatch
         "port",
         "attention",
     }
-    assert report["rdp"]["is_shared"] is False
-    assert report["last_error"] is None
-    assert report["last_reinstall"] is None
+    assert report["desktop"]["is_shared"] is False
+    assert report["error"] is None
 
 
 def test_report_metrics_platform_cannot_read_sends_the_empty_shape(
@@ -355,7 +368,7 @@ def test_report_metrics_platform_cannot_read_sends_the_empty_shape(
     agent.run_once()
 
     (report,) = script.clients[0].frames("report")
-    assert report["metrics"] == HostMetrics().to_dict()
+    assert report["machine"]["metrics"] == HostMetrics().to_dict()
 
 
 def test_report_accounts_platform_cannot_enumerate_sends_an_empty_list(
@@ -369,7 +382,7 @@ def test_report_accounts_platform_cannot_enumerate_sends_an_empty_list(
     agent.run_once()
 
     (report,) = script.clients[0].frames("report")
-    assert report["accounts"] == []
+    assert report["machine"]["accounts"] == []
 
 
 def test_report_interfaces_platform_cannot_read_sends_the_link_alone(
@@ -398,20 +411,35 @@ REINSTALL_RESULT = {
     "exit_code": 0,
     "output": "Setting up neutrino-agent\n",
 }
+FAILED_REINSTALL = dict(REINSTALL_RESULT, exit_code=100, output="dpkg: error\n")
+REINSTALL_ERROR = {
+    "code": "reinstall_failed",
+    "params": {"exit_code": 100, "finished_at": "2026-09-10T10:00:12Z"},
+}
 
 
-def test_the_report_carries_the_install_this_agent_came_from(
-    tmp_path, config_path, monkeypatch
-):
-    (tmp_path / AGENT_REINSTALL_RESULT_NAME).write_text(json.dumps(REINSTALL_RESULT))
+def test_a_failed_reinstall_is_the_reports_error(tmp_path, config_path, monkeypatch):
+    (tmp_path / AGENT_REINSTALL_RESULT_NAME).write_text(json.dumps(FAILED_REINSTALL))
     agent, script = scripted_agent(config_path, monkeypatch, [welcomed_then_dropped()])
 
     agent.run_once()
 
     (hello,) = script.clients[0].frames("hello")
     (report,) = script.clients[0].frames("report")
-    assert "last_reinstall" not in hello
-    assert report["last_reinstall"] == REINSTALL_RESULT
+    assert "error" not in hello
+    assert report["error"] == REINSTALL_ERROR
+    # The package manager's own output stays on the machine.
+    assert "dpkg" not in json.dumps(report)
+
+
+def test_a_reinstall_that_went_through_is_no_error(tmp_path, config_path, monkeypatch):
+    (tmp_path / AGENT_REINSTALL_RESULT_NAME).write_text(json.dumps(REINSTALL_RESULT))
+    agent, script = scripted_agent(config_path, monkeypatch, [welcomed_then_dropped()])
+
+    agent.run_once()
+
+    (report,) = script.clients[0].frames("report")
+    assert report["error"] is None
 
 
 def test_a_reinstall_record_written_mid_run_rides_the_next_report(
@@ -424,12 +452,12 @@ def test_a_reinstall_record_written_mid_run_rides_the_next_report(
     agent.run_once()
     (first,) = script.clients[0].frames("report")
 
-    (tmp_path / AGENT_REINSTALL_RESULT_NAME).write_text(json.dumps(REINSTALL_RESULT))
+    (tmp_path / AGENT_REINSTALL_RESULT_NAME).write_text(json.dumps(FAILED_REINSTALL))
     agent.run_once()
 
     (second,) = script.clients[1].frames("report")
-    assert first["last_reinstall"] is None
-    assert second["last_reinstall"] == REINSTALL_RESULT
+    assert first["error"] is None
+    assert second["error"] == REINSTALL_ERROR
 
 
 def test_a_reinstall_record_that_cannot_be_read_rides_up_as_nothing(
@@ -441,7 +469,7 @@ def test_a_reinstall_record_that_cannot_be_read_rides_up_as_nothing(
     agent.run_once()
 
     (report,) = script.clients[0].frames("report")
-    assert report["last_reinstall"] is None
+    assert report["error"] is None
 
 
 def test_the_last_error_rides_the_next_connections_report(config_path, monkeypatch):
@@ -457,7 +485,41 @@ def test_the_last_error_rides_the_next_connections_report(config_path, monkeypat
 
     # A welcome clears it: the report that follows carries none.
     (report,) = script.clients[1].frames("report")
-    assert report["last_error"] is None
+    assert report["error"] is None
+
+
+def test_the_error_is_the_most_recent_of_its_three_sources(
+    tmp_path, config_path, monkeypatch
+):
+    """Each source is stamped when its value changes; the newest is shown,
+    and a source that clears hands the section to the next newest."""
+    agent, _ = scripted_agent(config_path, monkeypatch)
+    update_error = {"code": "agent_update_launch_failed", "params": {"target": "9"}}
+    state_error = {"code": "apply_failed", "params": {"module": "samba"}}
+    assert agent._report_payload()["error"] is None
+
+    agent._update_error = dict(update_error)
+    assert agent._report_payload()["error"] == update_error
+
+    agent._desired._state_error = dict(state_error)
+    assert agent._report_payload()["error"] == state_error
+
+    agent._update_error = dict(update_error, params={"target": "10"})
+    assert agent._report_payload()["error"] == {
+        "code": "agent_update_launch_failed",
+        "params": {"target": "10"},
+    }
+
+    agent._update_error = None
+    assert agent._report_payload()["error"] == state_error
+
+    (tmp_path / AGENT_REINSTALL_RESULT_NAME).write_text(json.dumps(FAILED_REINSTALL))
+    assert agent._report_payload()["error"] == REINSTALL_ERROR
+
+    agent._desired._state_error = None
+    assert agent._report_payload()["error"] == REINSTALL_ERROR
+    (tmp_path / AGENT_REINSTALL_RESULT_NAME).write_text(json.dumps(REINSTALL_RESULT))
+    assert agent._report_payload()["error"] is None
 
 
 # --- refusals at the door, and what each does to the binding ---
@@ -741,16 +803,23 @@ def test_sync_with_no_socket_is_typed(config_path, monkeypatch):
     assert agent.sync() == {"code": "hub_unreachable", "params": {}}
 
 
-def test_sync_sends_a_state_request_on_the_live_socket(config_path, monkeypatch):
+def test_sync_sends_a_report_now_on_the_live_socket(config_path, monkeypatch):
+    """The interval is seconds long; a second report inside it is the one
+    sync asked for, and no other word goes up."""
     agent, script = scripted_agent(config_path, monkeypatch, [[WELCOME]])
     session = agent._open_session()
     session.connect()
     agent._session = session
+    thread = threading.Thread(target=session.serve, daemon=True)
+    thread.start()
+    script.clients[0].wait_for("report", count=1)
 
     assert agent.sync() == {}
 
-    assert script.clients[0].frames("state_request") == [{"type": "state_request"}]
+    script.clients[0].wait_for("report", count=2, timeout_s=2)
+    assert script.clients[0].frames("state_request") == []
     session.close()
+    thread.join(timeout=2)
 
 
 def test_probe_connects_once_and_closes(config_path, monkeypatch):

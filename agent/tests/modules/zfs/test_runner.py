@@ -70,6 +70,15 @@ def test_verify_is_the_tools_on_the_path(runner, monkeypatch):
     assert runner.verify({}) is False
 
 
+def test_is_active_is_the_kernel_module_loaded(runner, monkeypatch, tmp_path):
+    """ZFS runs as no unit: its kernel module being loaded is the fact."""
+    monkeypatch.setattr(runner_module, "ZFS_KERNEL_MODULE_DIR", str(tmp_path / "zfs"))
+    assert runner.is_active() is False
+
+    (tmp_path / "zfs").mkdir()
+    assert runner.is_active() is True
+
+
 def test_apply_caps_the_arc_and_nothing_else(runner):
     runner.apply({})
 

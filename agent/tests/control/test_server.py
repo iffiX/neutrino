@@ -73,10 +73,18 @@ def test_the_state_carries_the_connection_the_version_and_the_modules(control):
     assert state["version"]
     assert state["is_connected"] is False
     assert state["platform"]["os"] == "linux"
-    assert [row["name"] for row in state["modules"]] == ["rustdesk"]
-    assert state["modules"][0]["state"] == "installed"
-    assert state["modules"][0]["source"] == "rustdesk/rustdesk"
-    assert state["modules"][0]["license"] == "AGPL-3.0"
+    assert state["state_hash"] == "h1"
+    # Each module as the report says it, and nothing the hub's manifest
+    # would add: the agent holds no catalog.
+    assert state["modules"] == {
+        "rustdesk": {
+            "state": "installed",
+            "is_active": False,
+            "code": "",
+            "params": {},
+            "details": {},
+        }
+    }
 
 
 def test_the_state_carries_the_share_and_no_password(control):
@@ -111,7 +119,6 @@ def test_the_state_never_carries_the_device_token(control, config_path):
 
     assert status == 200
     assert state["is_connected"] is True
-    assert state["gateway_url"] == "http://127.0.0.1:9"
     assert state["binding"] == {"id": "dev-1", "gateway_url": "http://127.0.0.1:9"}
     assert "tok" not in json.dumps(state)
 

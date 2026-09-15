@@ -25,6 +25,7 @@ from neutrino_agent.modules.samba.applier import (
 )
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.constants import (
+    SAMBA_BINARY_NAME,
     SAMBA_COMMAND_SET_PASSWORD,
     samba_unit,
 )
@@ -38,6 +39,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
     """Installs Samba by package and keeps it serving what the hub says."""
 
     name = "samba"
+    binary = SAMBA_BINARY_NAME
 
     def __init__(self, *, platform, log=print, publish=None, family: str = ""):
         """
@@ -109,6 +111,10 @@ class SambaModuleRunner(SystemPackageModuleRunner):
     def stop(self) -> None:
         """Take the server down, leaving the shares' files in place."""
         SambaConfigApplier(unit=self._unit).stop()
+
+    def is_active(self) -> bool:
+        """Whether this machine's Samba unit is active."""
+        return unit_state(self._unit) == "active"
 
     def details(self, resolved: dict) -> dict:
         """Who is connected, how full each share is, and each user's state.
