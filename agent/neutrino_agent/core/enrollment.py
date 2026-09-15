@@ -62,8 +62,10 @@ def parse_link(link: str) -> "tuple[list, str, str, str]":
         none, and the role the link was made for.
 
     Raises:
-        EnrollmentError: If the link is unreadable, carries no address or
-            ticket, or was made for a role other than ``agent``.
+        EnrollmentError: If the link is unreadable or carries no address or
+            ticket, with the words for this side; ``link_not_for_agent``,
+            whose ``params`` name the link's ``role``, when it was made for
+            another role.
     """
     text = link.strip()
     if not text:
@@ -88,7 +90,7 @@ def parse_link(link: str) -> "tuple[list, str, str, str]":
         raise EnrollmentError("that link carries no hub address and ticket")
     if role != AGENT_ROLE:
         raise EnrollmentError(
-            "that link is not for a device; generate one on the hub's Devices page"
+            "link_not_for_agent", code="link_not_for_agent", params={"role": role}
         )
     return urls, token, fingerprint, role
 

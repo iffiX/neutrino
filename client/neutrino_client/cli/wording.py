@@ -54,6 +54,7 @@ CLIENT_CODE_WORDS = {
     "binding_unknown": (
         "this hub no longer knows this client; join it again with a new link"
     ),
+    "role_mismatch": "the hub says this binding is not a client's",
     "unknown_hub": "this client has not joined that hub",
     "ambiguous_hub": (
         "this person has joined several hubs; name one with --hub: {hubs}"
@@ -78,7 +79,9 @@ CLIENT_CODE_WORDS = {
     "fs_refused": "this account may not use that folder",
     "mountpoint_invalid": "give a folder under your home, like ~/nas/share",
     "mountpoint_not_drive_letter": "give an unused drive letter, like N:",
+    "service_unknown": "the hub no longer publishes that service",
     "rdp_not_shared": "that desktop is not shared any more",
+    "vault_locked": "the hub's vault is locked, so it cannot open this client's key",
     "rdp_no_desktop": "this session has no screen to open a viewer on",
     "rdp_launch_failed": "the RustDesk viewer could not be started: {detail}",
     "rdp_no_address": "that machine published no address to connect to",

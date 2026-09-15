@@ -85,7 +85,9 @@ CHANNEL_CODE_REPLACED = "replaced"
 CHANNEL_CODE_BINDING_UNKNOWN = "binding_unknown"
 CHANNEL_CODE_TICKET_SPENT = "ticket_spent"
 CHANNEL_CODE_ROLE_MISMATCH = "role_mismatch"
-# What a caller on a hub thread hears when the loop did not answer in time.
+# What a request gets when the machine it went to never answered it: the
+# stream ran out of time, or the loop did. It is a display code, worded by
+# the panel as the word for a machine that has not reported.
 CHANNEL_CODE_NEVER_REPORTED = "agent_never_reported"
 
 # The state an agent reports for a module. The first four are also the

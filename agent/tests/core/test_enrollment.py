@@ -195,8 +195,8 @@ def test_a_link_made_for_another_role_is_refused(payload_role):
     with pytest.raises(EnrollmentError) as refused:
         parse_link(link_for(payload))
 
-    assert "not for a device" in str(refused.value)
-    assert refused.value.code == ""
+    assert refused.value.code == "link_not_for_agent"
+    assert refused.value.params == {"role": payload_role or ""}
 
 
 # --- the join ---

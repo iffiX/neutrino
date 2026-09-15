@@ -83,8 +83,10 @@ AGENT_MODULE_STATE_UNSUPPORTED = "unsupported"
 AGENT_UPDATE_UNIT = "neutrino_agent_update"
 AGENT_UPDATE_LAUNCH_TIMEOUT_S = 30
 
-# How often a report goes up while nothing changes.
-AGENT_HEARTBEAT_INTERVAL_S = 5
+# How often a report goes up while nothing changes. Every report carries
+# the machine's metrics, which the panel draws live, so this is the rate
+# those readings arrive at.
+AGENT_REPORT_INTERVAL_S = 5
 AGENT_REQUEST_TIMEOUT_S = 10
 # Backoff bounds used when the gateway is unreachable. Starting at one interval
 # and doubling to a minute keeps a rebooting gateway from being hammered while

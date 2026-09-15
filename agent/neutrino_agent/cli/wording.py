@@ -56,6 +56,10 @@ CLI_CODE_WORDS = {
         "one on the Devices page"
     ),
     "role_mismatch": "the hub says this binding is not a device's",
+    "link_not_for_agent": (
+        "that link is for a client, not for a device; generate one on the "
+        "hub's Devices page"
+    ),
     "kind_unknown": "the hub opened a stream this agent does not know",
     "verb_unknown": "the hub asked for a verb this agent does not know",
     "no_platform_build": "no version of this exists for this machine",

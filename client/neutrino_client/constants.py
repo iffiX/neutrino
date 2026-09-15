@@ -45,10 +45,11 @@ CLIENT_REQUEST_TIMEOUT_S = 10
 CLIENT_BACKOFF_MIN_S = 5
 CLIENT_BACKOFF_MAX_S = 60
 
-# How long the open socket may stay silent before it counts as dead, and how
-# long the hub gives a fresh connection to say hello.
+# How long the open socket may stay silent before it counts as dead.
 CLIENT_WS_SILENCE_TIMEOUT_S = 45
-CLIENT_HELLO_TIMEOUT_S = 10
+# How long connecting to the hub and the handshake on top of it may take
+# together, before the socket is open and the silence window takes over.
+CLIENT_CONNECT_TIMEOUT_S = 10
 # How often a report goes up while nothing changes.
 CLIENT_REPORT_INTERVAL_S = 30
 # How long a stream this side opened waits for the hub's close.

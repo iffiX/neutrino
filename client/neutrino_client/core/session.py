@@ -25,7 +25,7 @@ from neutrino_client.constants import (
     CLIENT_BACKOFF_MAX_S,
     CLIENT_BACKOFF_MIN_S,
     CLIENT_CHANNEL_WS_PATH,
-    CLIENT_HELLO_TIMEOUT_S,
+    CLIENT_CONNECT_TIMEOUT_S,
     CLIENT_HUB_ROLE,
     CLIENT_IDLE_POLL_INTERVAL_S,
     CLIENT_PROTOCOL_REFUSAL_CODES,
@@ -338,7 +338,7 @@ class ClientHubSession:
             port=parts.port or 443,
             path=CLIENT_CHANNEL_WS_PATH,
             fingerprint=binding["fingerprint"],
-            timeout_s=CLIENT_HELLO_TIMEOUT_S,
+            timeout_s=CLIENT_CONNECT_TIMEOUT_S,
         )
 
     def _connect(self, client) -> None:

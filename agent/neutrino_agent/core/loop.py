@@ -32,7 +32,7 @@ from neutrino_agent.constants import (
     AGENT_CODE_REPLACED,
     AGENT_CREDENTIALS_DIR_NAME,
     AGENT_DESIRED_STATE_NAME,
-    AGENT_HEARTBEAT_INTERVAL_S,
+    AGENT_REPORT_INTERVAL_S,
     AGENT_HUB_SOFTWARE_PREFIX,
     AGENT_PACKAGE_DIR,
     AGENT_ROLE,
@@ -398,7 +398,7 @@ class Agent:
             run_command=self._run_command,
             news=self._news,
             log=self._log,
-            interval_s=AGENT_HEARTBEAT_INTERVAL_S,
+            interval_s=AGENT_REPORT_INTERVAL_S,
             on_tick=self._adopt_external_binding,
             on_state=self._desired.take,
         )

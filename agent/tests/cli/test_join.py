@@ -182,7 +182,9 @@ def test_a_client_link_is_refused_in_words(monkeypatch, capsys):
 
     assert join_cli.main(link, is_forced=False) == 1
 
-    assert "error: that link is not for a device" in capsys.readouterr().err
+    assert "error: that link is for a client, not for a device" in (
+        capsys.readouterr().err
+    )
     assert posted == []
     assert not enrollment.is_bound()
 

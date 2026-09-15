@@ -29,7 +29,7 @@ import threading
 
 from neutrino_agent.constants import (
     AGENT_CODE_CHANNEL_REFUSED,
-    AGENT_HEARTBEAT_INTERVAL_S,
+    AGENT_REPORT_INTERVAL_S,
     AGENT_HUB_ROLE,
     AGENT_WS_STREAM_ID_BYTES,
 )
@@ -70,7 +70,7 @@ class AgentSession:
         run_command,
         news: threading.Event,
         log=print,
-        interval_s: float = AGENT_HEARTBEAT_INTERVAL_S,
+        interval_s: float = AGENT_REPORT_INTERVAL_S,
         on_tick=None,
         on_state=None,
         stream_kinds=None,
