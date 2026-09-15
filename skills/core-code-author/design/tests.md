@@ -17,7 +17,9 @@ seams it exists for — package managers, systemd, wires between two machines
 
 Where a source file is testable on its own, its tests live in the file that
 mirrors it: `agent/neutrino_agent/<package>/<module>.py` is tested by
-`agent/tests/<package>/test_<module>.py`, and the hub tree likewise. Every
+`agent/tests/<package>/test_<module>.py`, and the hub tree likewise: a router
+in `hub/neutrino_hub/web/routers/{hub,agent}/<page>.py` is tested by
+`hub/tests/web/routers/{hub,agent}/test_<page>.py`. Every
 test directory carries an `__init__.py` so mirrored names never collide,
 and the shared fakes — the fake platform, the injected clock, the redirect
 of every store into `tmp_path` — live in the block's `conftest.py`, never
@@ -83,14 +85,16 @@ loopback, the operator's own commands typed as the operator would.
 
 What belongs here is only what the in-process blocks cannot see: a real
 `dpkg` refusing, a real systemd unit flapping, a lease on a served wire,
-the same-version wire-generation drill — an old-generation agent watching
-the hub upgrade and reinstalling itself back to health.
+the protocol drill: an agent whose `PROTOCOL` is rewritten is rejected with
+`protocol_too_old` and keeps its binding, and an agent whose hub names a newer
+`software` reinstalls itself back to health.
 
 ## What a change owes
 
-A new module, service type, route or CLI verb lands with its mirrored test
+A new module, service type, route or CLI verb arrives with its mirrored test
 file in the same commit. A new operator-visible behavior adds its cell to
-the cli or control matrix. A wire change bumps the generation and extends
-the drill. A new `{code}` anywhere adds its word to the page's table, which
-the completeness assertion enforces. The pipeline gains a case only when
+the cli or control matrix. Changing a channel model fails the golden schema
+test until `PROTOCOL` moves or the change is shown additive
+([protocol.md](protocol.md), "Versioning"). A new `{code}` anywhere adds its
+word to the page's table, which the completeness assertion enforces. The pipeline gains a case only when
 the behavior needs a real machine to exist.

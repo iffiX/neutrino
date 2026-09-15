@@ -7,15 +7,17 @@ Wording rules for the entries themselves are in
 [../coding_style/comment_style.md](../coding_style/comment_style.md); who may
 commit and when is in [commit.md](commit.md).
 
-## One version, no compatibility window
+## One tag, three packages, compatibility by protocol number
 
-The hub, the agent and the client of the same version work together. Nothing
-else is supported, and no compatibility table is kept.
+One tag builds the hub, the agent and the client at one version. Whether an
+agent or a client works with a hub is decided by `PROTOCOL`, the number each
+package speaks; the hub accepts every number from `PROTOCOL_MIN` to its own
+([../design/protocol.md](../design/protocol.md), "Versioning"). A peer outside
+that range is rejected at the door with `protocol_too_old` or
+`protocol_too_new` and keeps its binding.
 
-This is a deliberate choice, not an omission. The agent is small and installs
-in seconds, so upgrading it is cheaper than reasoning about which combinations
-work. A hub that sees an agent reporting a different version says so on the
-device card and offers to upgrade it; it does not try to interoperate.
+An agent whose hub names a newer `software` upgrades itself from the package
+the hub keeps; a client is upgraded when its person installs the new package.
 
 Every package reads its version from package metadata. It is never written
 into the source twice.
@@ -26,14 +28,18 @@ into the source twice.
 v<major>.<minor>.<patch>
 ```
 
-`v0.4.0`, `v1.2.3`. No prefixes per component, no separate agent tags — one tag
-builds everything.
+`v0.4.0`, `v1.2.3`. No prefixes per component and no separate agent tags: one
+tag builds everything.
 
-- **major** — the config format or the hub-agent protocol changed in a way that
-  a fresh install would not notice but an upgrade would. Say so at the top of
-  the notes.
-- **minor** — a feature.
-- **patch** — fixes only.
+- **major**: the config format changed in a way a fresh install does not
+  notice and an upgrade does. Say so at the top of the notes.
+- **minor**: a feature.
+- **patch**: fixes only.
+
+The protocol number binds the tag one way. A change to `PROTOCOL` requires a
+new minor before 1.0 and a new major after it; a new minor or major can keep
+the number; a patch never changes `PROTOCOL`
+([../design/protocol.md](../design/protocol.md), "Versioning").
 
 Pre-releases append `-rc1`, `-rc2`. They are marked pre-release on GitHub so
 the hub's own update check ignores them.

@@ -91,9 +91,10 @@ conventions explicit so nobody drifts.
    - [design/install_and_dev.md](design/install_and_dev.md) — who installs what:
      the package, `nhub setup`, and the panel; and what `--dev` does
      differently against a root of its own.
-   - [design/api.md](design/api.md) — how the panel's endpoints are named
-     and organised: one module one prefix, what the bare prefix means, and
-     when an operation may be a verb.
+   - [design/protocol.md](design/protocol.md) — everything the hub speaks:
+     the two ports, how a path is grouped and named, refusals as
+     `{code, params}`, every route, the channel's frames, sections and
+     kinds, admission and versioning by protocol number.
    - [design/modules/ai.md](design/modules/ai.md) — the AI gateway's behavior:
      how a request routes, the gateway-owned model namespace, what each AI
      panel surface owns, and how usage is metered.
@@ -116,9 +117,9 @@ conventions explicit so nobody drifts.
      is answerable for the change; one sentence of at most 30 words; no agent
      co-author trailers.
    - [agent_work_rule/release.md](agent_work_rule/release.md) — one tag builds
-     all three packages; hub, agent and client share a version with no
-     compatibility window; changelog lines are `feature:` / `fix:` / `docs:` and nothing
-     else; which file each platform installs.
+     all three packages; hub, agent and client share a version and are
+     compatible by protocol number; changelog lines are `feature:` / `fix:` /
+     `docs:` and nothing else; which file each platform installs.
 
 5. **Hygiene** — the anti-patterns to remove on sight.
    - [kill_on_sight.md](kill_on_sight.md) — self-check this before you finish.

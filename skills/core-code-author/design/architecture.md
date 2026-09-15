@@ -17,12 +17,12 @@ config/ ──render──▶ /var/lib/neutrino/generated/ ──apply──▶ 
 web/ (FastAPI, root) ◀────── hub/frontend/ (browser, plain HTTP, password)
   ▲                    ▲
   │ one socket over    │ one socket over pinned TLS: the published
-  │ pinned TLS:        │ list and a gateway key down, asks up
+  │ pinned TLS:        │ list down, a service stream for its material
   │ reports up,        │
-  │ desired state      neutrino_client (a person's session, never root):
-  │ and orders down    a tray and a window; Open, Connect, Mount, Apply
+  │ the state down,    neutrino_client (a person's session, never root):
+  │ streams both ways  a tray and a window; Open, Connect, Mount, Apply
   │
-neutrino_agent (root, stdlib only) ──── hosts modules, executes orders,
+neutrino_agent (root, stdlib only) ──── hosts modules, applies the state,
   ▲                                     shares the desktop
   │ root-only Unix socket
 nagent (root, on the machine)
@@ -44,9 +44,10 @@ Inside the hub package the layers only reach downward:
 
 The agent has no dependencies and listens on nothing: it keeps one socket
 open to the hub and reconnects when it drops, so it survives restarts, sleep
-and NAT in between. It fetches nothing and decides nothing — what the hub
-"does" to a device is an order the agent executes ("The hub installs; the
-agent is an outpost"). What a person does with a published service is the
+and NAT in between. It decides nothing: the hub says in `state` what each
+module is to be, and the agent observes, installs and configures until the
+machine matches ("The hub says what is wanted; the agent observes, installs
+and configures"). What a person does with a published service is the
 client's, on that person's machine, and the agent has no part in it.
 
 ## config/ is the single source of truth
@@ -198,87 +199,78 @@ into unbound and waiting for a link. Its binding lives in one file, and the
 running service adopts what another process writes there, so the CLI and the
 page need no service restart.
 
-## The hub installs; the agent is an outpost
+## The hub says what is wanted; the agent observes, installs and configures
 
-A managed machine's agent carries no dependencies and must keep none, so it
-is given the smallest job that can be done well: **execute what it is told,
-report what is true**. It does not decide when to install, does not fetch
-anything from the internet, and holds no policy about failure or retry.
-Everything that needs judgment, a network, or memory across restarts lives
-on the hub, where there is a configuration directory, a vault, and one place
-to look when something goes wrong.
+A managed machine's agent has no dependencies and must keep none, so it is
+given the smallest job that can be done well. **It observes what is true,
+makes the machine match the state, and reports the result.** Whether a
+module is wanted, where its package comes from and whether to try again are
+settled on the hub. That is where there is a configuration directory, a
+vault, and one place to look when something goes wrong.
 
-Two hub-side things do the work, and there is exactly one of each:
+What is wanted is one word per module, `want`, in
+`config/devices/<id>/modules.json`: `absent`, `installed`, `stopped` or
+`running`. The Modules page writes it directly. The hub composes it with the
+module's configuration and the recipes for the machine's platform into the
+`state` it pushes ([protocol.md](protocol.md), "The channel").
 
-- **The agent module cache** turns "this machine, on this platform, wants
-  this module" into bytes on the hub's own disk. It resolves the manifest's
-  entry for that platform, fetches it — presenting a browser's TLS
-  fingerprint where a vendor gates on one, which is the whole reason the
-  fetch cannot happen on the agent — checks that what arrived opens like the
-  package kind it claims to be, and keeps it under
-  `/var/lib/neutrino/agent_module_cache/`. It is a cache in the strict sense:
-  losing it costs a download and nothing else. One fetch serves every device
-  of that platform, and a second machine wanting the same module waits for
-  the first fetch rather than starting its own.
-- **The agent module controller** turns cached bytes into an install on one
-  machine. It holds one queue per device and runs one order at a time,
-  because `dpkg` and its equivalents hold a machine-wide lock and two
-  installs racing is a failure with no useful diagnosis. That lock is the
-  device's, not the controller's: the SSH bootstrap that puts the agent on
-  a machine in the first place takes the same one, so installing the agent
-  and installing a remote desktop cannot overlap by construction rather
-  than by a check somebody remembered to write.
+There is no queue between the page and the machine. The state is the whole
+of what a press leaves behind, and `config/` is where it is.
 
-Every request enters the same door. The panel's device drawer and the
-machine's own page (`sudo nagent gui`) both post the same thing — *this
-device wants this module* — and the machine's own page reaches it the way
-everything agent-side reaches the hub, by riding the next heartbeat. There
-is no second path, no direct download, and no difference in behavior
-between the two surfaces.
+The agent observes each module it has a runner for, whoever installed it. It
+reads whether the package is present, whether the unit is active, and whether
+the hub's configuration has ever been applied. From those facts it reports
+one of the closed states, and it makes each module the state mentions match
+its `want`.
 
-The queue is every action's, not only a download's. An uninstall, and an
-install a distro's own package manager serves, have nothing to fetch, so
-their orders skip the cache — but
-they take the same per-device queue as a download, because they contend
-for the same machine-wide package and service locks, and because one
-queue is what makes "one thing at a time, in the order asked" true for
-the machine rather than for one kind of action. The SSH bootstrap that
-installs the agent itself takes the device's same lock. Every way
-software moves on a managed machine is therefore one serialized stream,
-and its output is one stream too: every order carries the output of what
-it ran, success included, and the drawer and the machine's own page both
-render the hub's copy of it, so the two surfaces cannot tell different
-stories about what is happening to the machine.
+The bytes come from the hub. The agent opens a `package` stream for a
+module's package, and the hub serves it from its own cache,
+`/var/lib/neutrino/agent_module_cache/`. The cache fetches a package once for
+every device of that platform, presenting a browser's TLS fingerprint where a
+vendor gates on one. Losing it costs a download and nothing else.
 
-An order therefore walks one way and never loops back:
+Every way software moves on a managed machine is one serialized stream, and
+its output is one stream too. Package operations on one machine run one at a
+time, serialized on the agent, because `dpkg` and its equivalents hold a
+machine-wide lock. The SSH bootstrap that puts the agent on a machine takes
+the same lock.
 
-```
-a person asks (panel, or the machine's own page)
-  → the agent module cache resolves the platform's artifact, fetching it once
-  → the agent module controller queues an order for that device
-  → the agent is handed the bytes over the pinned channel, installs, verifies
-  → the agent reports the outcome; the controller closes the order
+During an install or an uninstall the agent opens a `log` stream and sends
+the output line by line, success included. The drawer shows
+the hub's copy of it as it arrives, so no surface tells a different story
+about what is happening to the machine.
+
+A change therefore walks one way and never loops back:
+
+```text
+a person presses a button on the Modules page
+  → want is written to config/devices/<id>/modules.json
+  → the hub pushes the state with the configuration and the recipes
+  → the agent opens a package stream, installs, configures, starts or stops
+  → the agent reports the observed state; the page shows it
 ```
 
-**Retry is a person's word, never a timer's.** A failed order stays failed
-and is not retried on its own: a vendor refusing now refuses in a minute,
-and a machine that retries every minute spends the night doing it. Asking
-again — pressing the button on either surface — is a new order, and it runs.
-Two things clear a failure without being asked, because both mean the
-question is settled: the software turning up on the machine anyway (somebody
-installed it by hand), and an order for the opposite action. An order is the
-whole of what a click leaves behind — the hub keeps no standing record of
-what a machine should have, and orders and failures live in the
-controller's memory alone: a hub restart forgets them and the person asks
-again ([kill_on_sight.md](../kill_on_sight.md), "Unasked survival
-machinery").
+**Retry is a person's word, never a timer's.** A step that failed is reported
+`failed` with its code and is not retried while the state's hash is
+unchanged. A vendor refusing now refuses in a minute, and a machine that
+retries every minute spends the night doing it. Trying again is a change to
+the state, from a person's press or a new configuration, never from a timer.
 
-What the agent keeps is only what it can answer for: which modules are
-present, what state each is in, and the output of the last thing it ran. The
-output of every order travels up with its result, success included, and is
-shown beside the operation it came from, because a person reading "the
-download failed" and a person reading the vendor's own words are not equally
-able to fix it, and a person watching an install wants to see it work.
+Software somebody installs or removes by hand is observed and shown, never
+fought. A hand-installed module reports `installed`, and the first
+**Configure** imports what the machine already has into the hub's
+configuration. The hub keeps no record of a failure beyond the machine's own
+report. A hub restart loses nothing, because `want` is in `config/`
+([kill_on_sight.md](../kill_on_sight.md), "Unasked survival machinery").
+
+What the agent keeps is only what it can answer for. That is which modules
+are present, the state of each, whether the hub's configuration was applied,
+and the output of the last thing it ran.
+
+That output is shown beside the step it came from. A person reading "the
+download failed" and a person reading the
+vendor's own words are not equally able to fix it. A person watching an
+install wants to see it work.
 
 ## The network the hub assumes
 
@@ -307,9 +299,10 @@ certificate in a browser is a warning on every page, while the same
 certificate pinned by an agent is exact. Two audiences, two transports,
 because they verify differently.
 
-The wire-level detail — which port serves what, the enrollment ticket, what
-each failure means to the agent, what an attacker in each position gets — is
-[agent.md](agent.md).
+The wire itself is [protocol.md](protocol.md): which port serves what, the
+frames, admission by protocol number, and, in "Admission and the binding",
+what each refusal does to the binding. The enrolment ticket and what an
+attacker in each position gets are [agent.md](agent.md).
 
 ## The credential vault
 
