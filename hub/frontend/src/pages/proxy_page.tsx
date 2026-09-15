@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ApplyBar } from "../components/apply_bar";
 import { DeadExitsNotice } from "../components/dead_exits_notice";
 import { ErrorPanel } from "../components/error_panel";
+import { GeodataPanel } from "../components/geodata_panel";
 import { Icon } from "../components/icon";
 import { NodesPanel } from "../components/nodes_panel";
 import { SocksPortsPanel } from "../components/socks_ports_panel";
@@ -20,6 +21,7 @@ import type {
   ApplyResult,
   NetworkView,
   ProxySettings,
+  ProxyView,
 } from "../api_types";
 
 import "./proxy_page.css";
@@ -72,13 +74,13 @@ const GROUP_FIELDS: Record<GroupName, (keyof ProxySettings)[]> = {
 export function ProxyPage() {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const resource = useApiResource<ProxySettings>("/hub/proxy");
+  const resource = useApiResource<ProxyView>("/hub/proxy");
   // The LAN scope only means something on a box that forwards a network, and
   // which boxes do is the network mode's answer.
   const network = useApiResource<NetworkView>("/hub/network");
   const { frames, latestFrame } = useLiveStats();
 
-  const [draft, setDraft] = useState<ProxySettings | null>(null);
+  const [draft, setDraft] = useState<ProxyView | null>(null);
   const [busyGroup, setBusyGroup] = useState<GroupName | null>(null);
   const [notice, setNotice] = useState<Partial<Record<GroupName, string>>>({});
   const [errors, setErrors] = useState<Partial<Record<GroupName, string>>>({});
@@ -89,7 +91,7 @@ export function ProxyPage() {
     }
   }, [resource.data]);
 
-  const updateDraft = (patch: Partial<ProxySettings>) => {
+  const updateDraft = (patch: Partial<ProxyView>) => {
     setNotice({});
     setDraft((current) =>
       current === null ? current : { ...current, ...patch },
@@ -125,7 +127,7 @@ export function ProxyPage() {
       for (const field of GROUP_FIELDS[group]) {
         Object.assign(payload, { [field]: draft[field] });
       }
-      const saved = await apiPost<ProxySettings>("/hub/proxy/set", payload);
+      const saved = await apiPost<ProxyView>("/hub/proxy/set", payload);
       const result = await apiPost<ApplyResult>("/hub/proxy/apply");
       resource.setData(saved);
       setDraft((current) =>
@@ -298,6 +300,10 @@ export function ProxyPage() {
                 <span className="proxy_switch_flow_arrow">→</span>
                 <span>{t("ui.proxy.geoip_flow_exit")}</span>
               </div>
+              <GeodataPanel
+                geodata={draft.geodata}
+                onUpdated={resource.reload}
+              />
             </div>
           </section>
         </div>

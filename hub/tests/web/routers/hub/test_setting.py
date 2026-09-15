@@ -25,7 +25,7 @@ from fastapi.testclient import TestClient
 import neutrino_hub.utils.json_file
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_VERSION
 from neutrino_hub.modules.credentials.vault import SecretVault
-from neutrino_hub.modules.xray.constants import XRAY_GEODATA
+from neutrino_hub.modules.xray.geodata import XrayGeodataState
 from neutrino_hub.web import auth as web_auth
 from neutrino_hub.web import identity
 from neutrino_hub.web.auth import SessionStore, hash_password
@@ -329,13 +329,21 @@ def test_the_interpreter_is_the_one_running_the_panel(monkeypatch):
     assert payload["python_version"] == sys.version.split()[0]
 
 
-def test_the_geodata_baseline_names_the_release_behind_each_database(monkeypatch):
+def test_the_geodata_line_names_the_release_each_database_is(monkeypatch):
+    """What the box loads, which on a box that has taken a newer release is
+    not what the package carries."""
+    monkeypatch.setattr(
+        settings_router.geodata,
+        "installed",
+        lambda: XrayGeodataState(
+            releases={"geoip.dat": "202609050329", "geosite.dat": "20260914091725"},
+            source="release",
+        ),
+    )
+
     payload = about_payload(monkeypatch)
 
-    for name, entry in XRAY_GEODATA.items():
-        release = entry["url"].rsplit("/", 2)[-2]
-        assert name.removesuffix(".dat") in payload["geodata_version"]
-        assert release in payload["geodata_version"]
+    assert payload["geodata_version"] == "geoip 202609050329 · geosite 20260914091725"
 
 
 def test_xray_answers_with_its_first_line(monkeypatch):

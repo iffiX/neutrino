@@ -4,7 +4,7 @@ import { ApplyBar } from "./apply_bar";
 import { Icon } from "./icon";
 import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
-import type { ApplyResult, ProxySettings, SocksPort } from "../api_types";
+import type { ApplyResult, ProxyView, SocksPort } from "../api_types";
 
 import "./socks_ports_panel.css";
 
@@ -30,8 +30,8 @@ interface SocksPortsPanelProps {
    * this box lays its own field over what the box already has, so a
    * half-finished edit in another box is not written by pressing this one.
    */
-  applied: ProxySettings;
-  onApplied: (settings: ProxySettings) => void;
+  applied: ProxyView;
+  onApplied: (settings: ProxyView) => void;
 }
 
 export function SocksPortsPanel({ applied, onApplied }: SocksPortsPanelProps) {
@@ -67,7 +67,7 @@ export function SocksPortsPanel({ applied, onApplied }: SocksPortsPanelProps) {
     setError(null);
     setNotice(null);
     try {
-      const saved = await apiPost<ProxySettings>("/hub/proxy/set", {
+      const saved = await apiPost<ProxyView>("/hub/proxy/set", {
         ...applied,
         socks_ports: ports,
       });

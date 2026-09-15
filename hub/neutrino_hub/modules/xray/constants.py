@@ -44,15 +44,19 @@ XRAY_BINARY_NAME = "xray"
 # The permissive v2fly databases, which a package may carry. A running machine
 # may replace them with the fuller Loyalsoldier set, which is GPL-3.0 and is
 # therefore fetched rather than shipped.
+# What each database is called in the directory xray reads, which is the key
+# every table here and every reader spells it under.
+XRAY_GEODATA_GEOIP_FILE = "geoip.dat"
+XRAY_GEODATA_GEOSITE_FILE = "geosite.dat"
 XRAY_GEODATA = {
-    "geoip.dat": {
+    XRAY_GEODATA_GEOIP_FILE: {
         "url": (
             "https://github.com/v2fly/geoip/releases/download/"
             "202608050239/geoip-only-cn-private.dat"
         ),
         "sha256": "81f4dda453e16cc2f4609318554eac8f61628f7611c6ee773a996519200a3ca1",  # scan: allow
     },
-    "geosite.dat": {
+    XRAY_GEODATA_GEOSITE_FILE: {
         "url": (
             "https://github.com/v2fly/domain-list-community/releases/download/"
             "20260830143421/dlc.dat"
@@ -60,6 +64,27 @@ XRAY_GEODATA = {
         "sha256": "edfdd950f51603879657a87ddaab670736d8d5f146d4c77778014ea617c314ba",  # scan: allow
     },
 }
+
+# Where a newer release of each database comes from, and how a machine records
+# which one it holds. The pins above name one release of exactly these assets;
+# every other release of them answers at the same address under another tag.
+XRAY_GEODATA_LATEST_URL = "https://api.github.com/repos/{repository}/releases/latest"
+XRAY_GEODATA_DOWNLOAD_URL = (
+    "https://github.com/{repository}/releases/download/{release}/{asset}"
+)
+# Every release publishes a digest beside each asset, which is what a fetched
+# file is held against: the pins above are one release and say nothing about
+# the next one.
+XRAY_GEODATA_SUM_SUFFIX = ".sha256sum"
+XRAY_GEODATA_TIMEOUT_S = 120
+# Which release each database on this machine came from. State rather than
+# configuration: it describes the files on the disk, and a restored backup
+# carries neither the databases nor this.
+XRAY_GEODATA_VERSION_PATH = UTILS_GEODATA_DIR / "version.json"
+# Where the databases came from: carried by the package, or fetched from the
+# repository that publishes them.
+XRAY_GEODATA_SOURCE_PACKAGE = "package"
+XRAY_GEODATA_SOURCE_RELEASE = "release"
 
 # What the observatory's probe interval may be. Zero is not a fast probe, it
 # is xray probing in a loop; the ceiling is a day, past which a "latency" is a

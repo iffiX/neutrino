@@ -63,11 +63,8 @@ from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_VERSION
 from neutrino_hub.modules.easytier.constants import EASYTIER_VERSION
 from neutrino_hub.modules.netbird.constants import NETBIRD_VERSION
 from neutrino_hub.modules.devices.manifests import load_module_manifests
-from neutrino_hub.modules.xray.constants import (
-    XRAY_BINARY,
-    XRAY_GEODATA,
-    XRAY_VERSION,
-)
+from neutrino_hub.modules.xray import geodata
+from neutrino_hub.modules.xray.constants import XRAY_BINARY, XRAY_VERSION
 
 router = APIRouter(
     prefix="/api/hub/setting", tags=["setting"], dependencies=[Depends(require_session)]
@@ -636,15 +633,16 @@ def _checked_member(member: tarfile.TarInfo) -> tarfile.TarInfo:
     return member
 
 
-def _geodata_baseline() -> str:
-    """Name the release pinned behind each carried geodata database.
+def _geodata_installed() -> str:
+    """Name the release behind each geodata database the box loads.
 
     Returns:
-        One `database release` pair per file, in name order.
+        One `database release` pair per file, in name order. A box that has
+        never taken a newer release names what the package carries.
     """
     return " · ".join(
-        f"{name.removesuffix('.dat')} {entry['url'].rsplit('/', 2)[-2]}"
-        for name, entry in sorted(XRAY_GEODATA.items())
+        f"{name.removesuffix('.dat')} {release}"
+        for name, release in sorted(geodata.installed().releases.items())
     )
 
 
@@ -662,7 +660,7 @@ def about() -> AboutView:
         gateway_version=GATEWAY_VERSION,
         cliproxyapi_version=CLIPROXYAPI_VERSION,
         python_version=sys.version.split()[0],
-        geodata_version=_geodata_baseline(),
+        geodata_version=_geodata_installed(),
         kernel=platform.release(),
         uptime_s=int(time.time() - psutil.boot_time()),
         acknowledgements=_acknowledgements(),
