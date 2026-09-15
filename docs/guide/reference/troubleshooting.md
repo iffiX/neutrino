@@ -8,11 +8,11 @@ Each section is one surface where a symptom appears, and each row is one symptom
 
 ## The panel is unreachable
 
-| Symptom                                            | Cause                                                                  | Fix                                                                                                     |
-| -------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| the browser reaches nothing at `http://<hub>:8080` | the unit is down, the port was moved, or this network is not exposed   | run `systemctl status neutrino_hub_web` on the box; read **Panel port** and **Exposure** on **Network** |
-| `https://` is refused                              | the panel is plain HTTP                                                | open the `http://` address                                                                              |
-| signing in to one hub signs you out of another     | two hubs behind one hostname share a session cookie scoped to the host | reach them by different hostnames                                                                       |
+| Symptom                                            | Cause                                                                 | Fix                                                                                                     |
+| -------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| the browser reaches nothing at `http://<hub>:8080` | the unit is down, the port was moved, or this network is not exposed  | run `systemctl status neutrino_hub_web` on the box; read **Panel port** and **Exposure** on **Network** |
+| `https://` is refused                              | the panel is plain HTTP                                               | open the `http://` address                                                                              |
+| the session ends after the panel port changed      | the session cookie is named after the port, `neutrino_session_<port>` | sign in again at the new address                                                                        |
 
 `<hub>` is the box's address.
 
@@ -26,13 +26,13 @@ Each section is one surface where a symptom appears, and each row is one symptom
 
 ## A device is offline
 
-| Symptom                                                | Cause                                                         | Fix                                                                              |
-| ------------------------------------------------------ | ------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| an action is rejected with `agent_offline`             | the agent is not connected                                    | on the machine, run `systemctl status neutrino_agent`, then `sudo nagent status` |
-| the drawer reads `agent_wire_stale`                    | the agent speaks an older channel than the hub                | **Reinstall agent** in the drawer, or a fresh link                               |
-| the drawer reads `agent_newer_than_hub`                | the agent is a later release than the hub                     | upgrade the hub first                                                            |
-| `nagent status` reads `hub_untrusted`                  | the hub was reset or reinstalled, and its certificate changed | enroll again with a fresh link from **Add by link**                              |
-| the machine is listed and its modules cannot be edited | an offline machine is rejected, and nothing is queued         | bring the machine back, then apply again                                         |
+| Symptom                                                | Cause                                                         | Fix                                                                                   |
+| ------------------------------------------------------ | ------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| an action is rejected with `agent_offline`             | the agent is not connected                                    | on the machine, run `systemctl status neutrino_agent`, then `sudo nagent status`      |
+| `nagent status` reads `protocol_too_old`               | the agent speaks a protocol older than the hub accepts        | install the hub's own agent package on the machine, from **Install agent** or by hand |
+| `nagent status` reads `protocol_too_new`               | the agent speaks a protocol the hub does not                  | upgrade the hub; the machine keeps its binding and connects again                     |
+| `nagent status` reads `hub_untrusted`                  | the hub was reset or reinstalled, and its certificate changed | enroll again with a fresh link from **Add by link**                                   |
+| the machine is listed and its modules cannot be edited | an offline machine is rejected, and nothing is queued         | bring the machine back, then apply again                                              |
 
 ## The client does not connect
 
@@ -44,7 +44,8 @@ Each section is one surface where a symptom appears, and each row is one symptom
 | `link_not_for_client`   | the link is from **Devices**                             | create one on **Clients**                                            |
 | `hub_untrusted`         | the hub was reset or reinstalled                         | paste a fresh link                                                   |
 | `client_disabled`       | the client is switched off on **Clients**                | **Enable** it there                                                  |
-| `client_newer_than_hub` | the client is a later release than the hub               | upgrade the hub, then paste a fresh link                             |
+| `protocol_too_new`      | the client speaks a protocol the hub does not            | upgrade the hub; the binding stays and the client connects again     |
+| `protocol_too_old`      | the client speaks a protocol older than the hub accepts  | upgrade the client; the binding stays                                |
 | `gui_webkitgtk_missing` | WebKitGTK is absent on Linux                             | install the packages the message names, then start the client again  |
 | `gui_webview2_missing`  | WebView2 is absent on Windows                            | install the runtime the message names, then start the client again   |
 | `root_refused`          | the client was started with `sudo`                       | start it from your own account                                       |

@@ -18,7 +18,7 @@ title: 客户端
 1. 填名称，写这是谁的程序，例如 `alice-laptop`。
 1. 点 **创建链接**（Create link），把链接交给那个人。
 
-链接五分钟内有效。把链接粘进客户端窗口，或者在终端里运行 `nclient connect '<enroll-link>'`，`<enroll-link>` 换成这条链接。
+链接五分钟内有效。把链接粘进客户端窗口，或者在终端里运行 `nclient join '<enroll-link>'`，`<enroll-link>` 换成这条链接。
 
 ![客户端列表](/guide/zh/clients_table.webp)
 

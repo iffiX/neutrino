@@ -49,7 +49,7 @@ Each entry has a kind, and the client draws one panel per kind:
 
 The Services page groups Web, Ports, AI and Files; a shared desktop appears on clients and in the device's drawer.
 
-## Three packages, one version
+## Three packages, one tag
 
 | Package           | Runs on                             | Runs as                          |
 | ----------------- | ----------------------------------- | -------------------------------- |
@@ -57,7 +57,7 @@ The Services page groups Web, Ports, AI and Files; a shared desktop appears on c
 | `neutrino-agent`  | every Linux machine the hub manages | root, headless                   |
 | `neutrino-client` | Linux, Windows and macOS            | a person's session               |
 
-The three packages are released together under one version number. The panel marks an agent or a client on another version than the hub for upgrade. [The Settings page](./hub/settings.md) gives the order: hub first, then agents, then clients.
+One tag releases the three packages together, and what has to match between them is the protocol number each build speaks, not its version. A hub admits an agent or a client whose number is between its own `PROTOCOL_MIN` and `PROTOCOL`, and rejects anything outside that range with `protocol_too_old` or `protocol_too_new`, after which the peer keeps its binding and tries again a minute later. The number moves only on a new minor version, and `config/` has no migrations, so [the Settings page](./hub/settings.md) gives the order: hub first, then agents, then clients. [The channel](./protocol/channel.md) holds the numbers and the rules that move them.
 
 ## The panel and this site
 

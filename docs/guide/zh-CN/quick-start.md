@@ -86,7 +86,7 @@ title: 快速上手
 1. 在 `studio` 上用刚复制的链接接入。
 
    ```bash
-   sudo nagent connect 'neutrino://enroll/PLACEHOLDER_LINK'
+   sudo nagent join 'neutrino://enroll/PLACEHOLDER_LINK'
    ```
 
    命令返回后几秒内，`studio` 出现在 **已管理的设备** 里。

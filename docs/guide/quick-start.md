@@ -62,7 +62,7 @@ The **Dashboard** opens, with a sidebar in two groups, **Hub** and **Agent**.
 1. Select **Add by link**. A notice shows a `neutrino://enroll/` link, valid for five minutes, with a **Copy** button.
    ![The enrollment link notice](/guide/en/devices_enroll_link.webp)
 1. On `studio`, run `sudo apt install ./neutrino-agent_0.2.0_amd64.deb`.
-1. On `studio`, run `sudo nagent connect '<link>'`, where `<link>` is the copied link.
+1. On `studio`, run `sudo nagent join '<link>'`, where `<link>` is the copied link.
 
 `studio` appears under **Managed devices** within seconds, next to `home-hub`, which the setup wizard enrolled.
 

@@ -50,7 +50,7 @@ The three packages share one version number. Install the new packages in this or
 1. For each managed machine, select **Reinstall agent** in its drawer, or send it a fresh link.
 1. On each computer, install the new client package.
 
-A client newer than the hub is rejected with `client_newer_than_hub` until the hub is upgraded; an agent newer than the hub with `agent_newer_than_hub`.
+A hub rejects an agent or a client whose protocol number is outside what it accepts, with `protocol_too_old` or `protocol_too_new`. The machine keeps its binding and connects again once both ends are on versions that speak the same number.
 
 ## Reset
 

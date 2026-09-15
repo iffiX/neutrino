@@ -25,7 +25,7 @@ title: 设备
 
 接入的每一步都在[安装被控端](../agent/install.md)里。
 
-- **用链接添加** 生成一条 `neutrino://enroll/…` 链接，在那台机器上运行 `sudo nagent connect '<enroll-link>'`，其中 `<enroll-link>` 是复制的链接。链接五分钟内有效，再生成一条时上一条作废。
+- **用链接添加** 生成一条 `neutrino://enroll/…` 链接，在那台机器上运行 `sudo nagent join '<enroll-link>'`，其中 `<enroll-link>` 是复制的链接。链接五分钟内有效，再生成一条时上一条作废。
 - 有 SSH 凭据的机器，在抽屉里点 **安装被控端**（Install agent），hub 登录上去装好并接入。
 
 ![SSH 安装](/guide/zh/devices_install_ssh.webp)

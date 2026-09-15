@@ -142,7 +142,7 @@ environment because there is nobody else to do it.
 ## The agent's package carries an interpreter and nothing else
 
 The agent is installed by the same three stages, one package down: its
-package lays the payload, `nagent connect` joins a hub, and the hub's desired
+package lays the payload, `nagent join` joins a hub, and the hub's desired
 state decides what the machine hosts. What it carries is the hub's own
 answer: an interpreter under `/opt/neutrino_agent` with the agent installed
 beside it, and the RustDesk host, all built for one machine. The agent draws

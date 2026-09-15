@@ -22,7 +22,7 @@ An **Offline** machine is one that is not answering; its credentials keep workin
 
 ## Enroll a machine
 
-**Add by link** shows a `neutrino://enroll/` link that is valid for five minutes. On the machine, `sudo nagent connect '<link>'` joins the hub, where `<link>` is the link shown. **Install agent**, in an unmanaged machine's drawer, makes the hub sign in over SSH with a stored credential and run the installer. The installer enrolls the machine. Both procedures are on [the agent's install page](../agent/install.md).
+**Add by link** shows a `neutrino://enroll/` link that is valid for five minutes. On the machine, `sudo nagent join '<link>'` joins the hub, where `<link>` is the link shown. **Install agent**, in an unmanaged machine's drawer, makes the hub sign in over SSH with a stored credential and run the installer. The installer enrolls the machine. Both procedures are on [the agent's install page](../agent/install.md).
 
 ![The enrollment link](/guide/en/devices_enroll_link.webp)
 
@@ -60,4 +60,4 @@ The remote desktop is RustDesk. The agent package includes the host and the clie
 
 ## A different version
 
-An agent on another version than the hub is marked in the drawer with **This agent is a different version from the hub.** With a stored SSH credential, **Reinstall agent** brings it to the hub's version; without one, a fresh link from **Add by link** does. An agent newer than the hub is rejected with `agent_newer_than_hub`, and the hub is upgraded first.
+An agent on another version than the hub is marked in the drawer with **This agent is a different version from the hub.** With a stored SSH credential, **Reinstall agent** brings it to the hub's version; without one, a fresh link from **Add by link** does. An agent whose protocol number the hub does not accept is rejected with `protocol_too_old` or `protocol_too_new`; it keeps its binding and connects again after the upgrade.

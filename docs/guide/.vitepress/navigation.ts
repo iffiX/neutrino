@@ -77,6 +77,7 @@ export const sidebarEn: DefaultTheme.SidebarItem[] = [
     items: [
       { text: "Supported platforms", link: "/reference/platforms" },
       { text: "Troubleshooting", link: "/reference/troubleshooting" },
+      { text: "The channel", link: "/protocol/channel" },
     ],
   },
 ];
@@ -149,6 +150,7 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
     items: [
       { text: "支持的平台", link: "/zh-CN/reference/platforms" },
       { text: "故障排查", link: "/zh-CN/reference/troubleshooting" },
+      { text: "通道", link: "/zh-CN/protocol/channel" },
     ],
   },
 ];
