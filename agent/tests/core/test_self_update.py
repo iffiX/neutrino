@@ -1,6 +1,6 @@
 """Self-update downward: the hub's baked package, verified, installed detached.
 
-A hub whose welcome names a later version makes the agent pull the hub's
+A hub whose welcome names a later ``software`` makes the agent pull the hub's
 baked package and install it in a transient unit that outlives the process.
 Nothing here talks to a network: the socket is scripted, and the HTTP
 channel is replaced at the seam the download uses it through. The script
@@ -66,7 +66,7 @@ def launched(monkeypatch):
 
 
 def welcomed_by(hub_version: str) -> list:
-    return [dict(WELCOME, hub_version=hub_version), DROP_AFTER_REPORT]
+    return [dict(WELCOME, software=f"neutrino_hub/{hub_version}"), DROP_AFTER_REPORT]
 
 
 def bound_agent(config_path, monkeypatch, *, hub_version, named_digest=""):

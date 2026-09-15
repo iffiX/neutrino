@@ -1,12 +1,12 @@
 """The channel's judgments: the certificate pin, and every status mapping.
 
 The pin runs against a real TLS socket whose certificate is generated at
-test runtime with the ``openssl`` binary — no key material lives in the
+test runtime with the ``openssl`` binary, so no key material lives in the
 repository: the right fingerprint talks, the wrong one is refused before a
 single request byte is sent, and a bound agent beating against the wrong
-certificate unbinds the way a refused token does. The status mappings
-replace ``_request`` with a canned answer, so each status and body shape is
-judged in-process.
+certificate keeps its binding and says so. The status mappings replace
+``_request`` with a canned answer, so each status and body shape is judged
+in-process.
 """
 
 import hashlib
@@ -21,26 +21,39 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 import neutrino_agent.core.enrollment as enrollment
-from neutrino_agent.constants import AGENT_WS_PATH
+from neutrino_agent.constants import (
+    AGENT_BACKOFF_MAX_S,
+    AGENT_WS_PATH,
+    CHANNEL_JOIN_PATH,
+    CHANNEL_LEAVE_PATH,
+)
+from neutrino_agent.core.channel import BindingHttpClient
 from neutrino_agent.core.loop import Agent
-from neutrino_agent.core.channel import GatewayHttpChannel
 from neutrino_agent.exceptions import (
     EnrollmentError,
-    GatewayRefused,
+    GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
-    GatewayVersionRefused,
-    GatewayWireStale,
 )
-from tests.conftest import discard, link_for
+from tests.conftest import bind, discard, link_for
 
 WRONG_FINGERPRINT = "0" * 64
+JOIN_PAYLOAD = {
+    "ticket": "ticket",
+    "role": "agent",
+    "protocol": 1,
+    "machine_id": "m",
+    "name": "box",
+    "software": "neutrino_agent/0.0.0",
+    "platform": {"os": "linux", "family": "debian", "arch": "amd64"},
+}
 
 
 class RecordingHandler(BaseHTTPRequestHandler):
-    """Answers every POST with an empty JSON object and records the path."""
+    """Answers every POST with one canned JSON body and records the path."""
 
     requests: list = []
+    answer = b'{"id": "d1", "token": "t1"}'
 
     def do_GET(self):
         RecordingHandler.requests.append((self.path, b""))
@@ -52,7 +65,7 @@ class RecordingHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length)
         RecordingHandler.requests.append((self.path, body))
-        answer = b"{}"
+        answer = RecordingHandler.answer
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(answer)))
@@ -113,17 +126,27 @@ def tls_server(tmp_path):
         server.server_close()
 
 
-def test_the_pinned_fingerprint_talks(tls_server):
+def test_the_pinned_fingerprint_joins(tls_server):
     url, fingerprint = tls_server
-    channel = GatewayHttpChannel(gateway_url=url, token="tok", fingerprint=fingerprint)
+    client = BindingHttpClient(gateway_url=url, fingerprint=fingerprint)
 
-    reply = channel.post("/api/agent/heartbeat", {"hostname": "box"})
+    reply = client.join(JOIN_PAYLOAD)
 
-    assert reply == {}
-    assert len(RecordingHandler.requests) == 1
-    path, body = RecordingHandler.requests[0]
-    assert path == "/api/agent/heartbeat"
-    assert json.loads(body)["token"] == "tok"
+    assert reply == {"id": "d1", "token": "t1"}
+    ((path, body),) = RecordingHandler.requests
+    assert path == CHANNEL_JOIN_PATH
+    assert json.loads(body) == JOIN_PAYLOAD
+
+
+def test_the_pinned_fingerprint_leaves(tls_server):
+    url, fingerprint = tls_server
+    client = BindingHttpClient(gateway_url=url, fingerprint=fingerprint)
+
+    client.leave("d1", "t1")
+
+    ((path, body),) = RecordingHandler.requests
+    assert path == CHANNEL_LEAVE_PATH
+    assert json.loads(body) == {"id": "d1", "token": "t1"}
 
 
 def test_the_pinned_connection_floors_at_tls_1_2():
@@ -137,65 +160,39 @@ def test_the_pinned_connection_floors_at_tls_1_2():
 
 def test_a_wrong_fingerprint_is_refused_before_anything_is_sent(tls_server):
     url, _ = tls_server
-    channel = GatewayHttpChannel(
-        gateway_url=url, token="tok", fingerprint=WRONG_FINGERPRINT
-    )
+    client = BindingHttpClient(gateway_url=url, fingerprint=WRONG_FINGERPRINT)
 
     with pytest.raises(GatewayUntrusted):
-        channel.post("/api/agent/heartbeat", {"hostname": "box"})
+        client.join(JOIN_PAYLOAD)
 
     assert RecordingHandler.requests == []
 
 
 def test_an_https_url_without_a_pin_sends_nothing(tls_server):
     url, _ = tls_server
-    channel = GatewayHttpChannel(gateway_url=url, token="tok")
+    client = BindingHttpClient(gateway_url=url)
 
     with pytest.raises(GatewayUntrusted):
-        channel.post("/api/agent/heartbeat", {"hostname": "box"})
+        client.leave("d1", "t1")
 
     assert RecordingHandler.requests == []
 
 
-def test_three_mismatched_beats_unbind_the_machine(tls_server, config_path):
-    """A hub reset or reinstalled answers with a new certificate for good, so
-    three beats against the wrong one drop the binding — with nothing ever
-    sent, and the reason naming the changed identity."""
+def test_a_wrong_pin_keeps_the_binding_and_names_the_changed_identity(
+    tls_server, config_path
+):
+    """A hub reset or reinstalled answers with a new certificate for good;
+    the binding stays, nothing is ever sent, and status says what answers."""
     url, _ = tls_server
-    config_path.write_text(
-        json.dumps(
-            {"gateway_url": url, "token": "tok", "fingerprint": WRONG_FINGERPRINT}
-        )
-    )
+    bind(config_path, url=url, fingerprint=WRONG_FINGERPRINT)
     agent = Agent(log=discard)
 
-    for _ in range(3):
-        agent.run_once()
+    delays = [agent.run_once() for _ in range(3)]
 
-    assert agent._channel is None
-    assert "gateway_url" not in json.loads(config_path.read_text())
-    assert agent.last_error() == {
-        "code": "self_unbound",
-        "params": {"cause": "hub_untrusted"},
-    }
-    assert RecordingHandler.requests == []
-
-
-def test_two_mismatched_beats_keep_the_binding(tls_server, config_path):
-    url, _ = tls_server
-    config_path.write_text(
-        json.dumps(
-            {"gateway_url": url, "token": "tok", "fingerprint": WRONG_FINGERPRINT}
-        )
-    )
-    agent = Agent(log=discard)
-
-    for _ in range(2):
-        agent.run_once()
-
+    assert delays == [AGENT_BACKOFF_MAX_S] * 3
     assert agent._channel is not None
-    assert "gateway_url" in json.loads(config_path.read_text())
-    assert agent.last_error()["code"] == "hub_untrusted"
+    assert enrollment.is_bound()
+    assert agent.last_error() == {"code": "hub_untrusted", "params": {}}
     assert RecordingHandler.requests == []
 
 
@@ -204,9 +201,7 @@ def test_the_pinned_agent_reaches_the_hub(tls_server, config_path):
     speaks no websocket, so the answer is a refusal to upgrade rather than a
     changed identity."""
     url, fingerprint = tls_server
-    config_path.write_text(
-        json.dumps({"gateway_url": url, "token": "tok", "fingerprint": fingerprint})
-    )
+    bind(config_path, url=url, fingerprint=fingerprint)
     agent = Agent(log=discard)
 
     agent.probe()
@@ -218,22 +213,24 @@ def test_the_pinned_agent_reaches_the_hub(tls_server, config_path):
 
 def test_a_wrong_fingerprint_link_is_refused_at_enrollment(tls_server, config_path):
     url, _ = tls_server
-    link = link_for({"urls": [url], "token": "ticket", "fp": WRONG_FINGERPRINT})
+    link = link_for(
+        {"urls": [url], "token": "ticket", "fp": WRONG_FINGERPRINT, "role": "agent"}
+    )
 
     with pytest.raises(EnrollmentError) as refusal:
         enrollment.enroll(link)
 
     assert "certificate" in str(refusal.value)
     assert RecordingHandler.requests == []
-    assert "gateway_url" not in enrollment.load_config()
+    assert not enrollment.is_bound()
 
 
-def canned_channel(status, data=b"", headers=None):
-    """A channel whose one answer is canned at the ``_request`` seam.
+def canned_client(status, data=b"", headers=None):
+    """A client whose one answer is canned at the ``_request`` seam.
 
     Header names are lower-cased the way ``_request`` hands them up.
     """
-    made = GatewayHttpChannel(gateway_url="http://hub", token="tok")
+    made = BindingHttpClient(gateway_url="http://hub", token="tok")
     named = {name.lower(): value for name, value in (headers or {}).items()}
 
     def request(method, url, *, body=None, headers=None):
@@ -243,90 +240,75 @@ def canned_channel(status, data=b"", headers=None):
     return made
 
 
-@pytest.mark.parametrize("status", [401, 403])
-def test_post_status_401_or_403_raises_refused(status):
-    with pytest.raises(GatewayRefused):
-        canned_channel(status).post("/api/agent/heartbeat", {})
+def refusal(code: str, params=None) -> bytes:
+    return json.dumps({"detail": {"code": code, "params": params or {}}}).encode()
 
 
-def test_post_409_wire_stale_raises_wire_stale_with_both_generations():
-    body = json.dumps(
-        {
-            "detail": {
-                "code": "agent_wire_stale",
-                "params": {"hub_wire": 3, "agent_wire": 2},
-            }
-        }
-    ).encode()
+@pytest.mark.parametrize("status", [401, 403, 404, 409, 422, 500])
+def test_an_error_status_with_a_code_raises_the_detail(status):
+    with pytest.raises(GatewayRefusedDetail) as caught:
+        canned_client(status, refusal("ticket_spent")).join(JOIN_PAYLOAD)
 
-    with pytest.raises(GatewayWireStale) as caught:
-        canned_channel(409, body).post("/api/agent/heartbeat", {})
-
-    assert caught.value.hub_wire == 3
-    assert caught.value.agent_wire == 2
+    assert caught.value.code == "ticket_spent"
+    assert caught.value.params == {}
 
 
-def test_post_409_wire_stale_without_params_defaults_the_generations():
-    body = json.dumps({"detail": {"code": "agent_wire_stale"}}).encode()
+def test_a_protocol_refusal_carries_its_numbers():
+    body = refusal("protocol_too_new", {"peer": 2, "hub": 1, "min": 1})
 
-    with pytest.raises(GatewayWireStale) as caught:
-        canned_channel(409, body).post("/api/agent/heartbeat", {})
+    with pytest.raises(GatewayRefusedDetail) as caught:
+        canned_client(409, body).join(JOIN_PAYLOAD)
 
-    assert caught.value.hub_wire == 0
-    assert caught.value.agent_wire == 0
-
-
-def test_post_409_agent_newer_raises_version_refused_with_both_versions():
-    body = json.dumps(
-        {
-            "detail": {
-                "code": "agent_newer_than_hub",
-                "params": {"hub_version": "0.1.0", "agent_version": "0.2.0"},
-            }
-        }
-    ).encode()
-
-    with pytest.raises(GatewayVersionRefused) as caught:
-        canned_channel(409, body).post("/api/agent/heartbeat", {})
-
-    assert caught.value.hub_version == "0.1.0"
-    assert caught.value.agent_version == "0.2.0"
+    assert caught.value.code == "protocol_too_new"
+    assert caught.value.params == {"peer": 2, "hub": 1, "min": 1}
 
 
-def test_post_409_with_another_code_raises_unreachable_naming_it():
-    body = json.dumps({"detail": {"code": "somebody_new"}}).encode()
+def test_a_detail_without_params_reads_as_empty_params():
+    body = json.dumps({"detail": {"code": "ticket_spent", "params": "words"}}).encode()
 
-    with pytest.raises(GatewayUnreachable) as caught:
-        canned_channel(409, body).post("/api/agent/heartbeat", {})
+    with pytest.raises(GatewayRefusedDetail) as caught:
+        canned_client(401, body).join(JOIN_PAYLOAD)
 
-    assert "somebody_new" in str(caught.value)
+    assert caught.value.params == {}
 
 
 @pytest.mark.parametrize(
-    "body", [b"", b"not json", b'{"detail": "words"}', b'{"detail": {}}']
+    "body",
+    [b"", b"not json", b'{"detail": "words"}', b'{"detail": {}}', b'{"detail": [1]}'],
 )
-def test_post_409_without_a_code_raises_unreachable(body):
+def test_an_error_status_without_a_code_raises_unreachable(body):
+    with pytest.raises(GatewayUnreachable) as caught:
+        canned_client(409, body).join(JOIN_PAYLOAD)
+
+    assert not isinstance(caught.value, GatewayRefusedDetail)
+
+
+@pytest.mark.parametrize("status", [400, 401, 404, 418, 500, 503])
+def test_other_error_statuses_raise_unreachable(status):
+    with pytest.raises(GatewayUnreachable) as caught:
+        canned_client(status).leave("d1", "t1")
+
+    assert not isinstance(caught.value, GatewayRefusedDetail)
+
+
+def test_invalid_json_in_a_success_raises_unreachable():
     with pytest.raises(GatewayUnreachable):
-        canned_channel(409, body).post("/api/agent/heartbeat", {})
+        canned_client(200, b"not json").join(JOIN_PAYLOAD)
 
 
-@pytest.mark.parametrize("status", [400, 404, 418, 500, 503])
-def test_post_other_error_statuses_raise_unreachable(status):
-    with pytest.raises(GatewayUnreachable):
-        canned_channel(status).post("/api/agent/heartbeat", {})
+def test_an_empty_success_body_reads_as_an_empty_object():
+    assert canned_client(200, b"  ").join(JOIN_PAYLOAD) == {}
 
 
-def test_post_invalid_json_in_a_success_raises_unreachable():
-    with pytest.raises(GatewayUnreachable):
-        canned_channel(200, b"not json").post("/api/agent/heartbeat", {})
+def test_a_leave_ignores_the_reply_body():
+    assert canned_client(200, b'{"anything": 1}').leave("d1", "t1") is None
 
 
-def test_post_an_empty_success_body_reads_as_an_empty_object():
-    assert canned_channel(200, b"  ").post("/api/agent/heartbeat", {}) == {}
+# --- the package download, until the package stream carries the bytes ---
 
 
 def test_post_download_writes_the_bytes_and_returns_the_checksum(tmp_path):
-    made = canned_channel(200, b"pkg", headers={"X-Checksum-Sha256": "abc123"})
+    made = canned_client(200, b"pkg", headers={"X-Checksum-Sha256": "abc123"})
     destination = tmp_path / "update.deb"
 
     named = made.post_download("/api/agent/package", {}, str(destination))
@@ -335,34 +317,51 @@ def test_post_download_writes_the_bytes_and_returns_the_checksum(tmp_path):
     assert destination.read_bytes() == b"pkg"
 
 
+def test_post_download_carries_the_token_in_its_body():
+    made = canned_client(200, b"pkg")
+    sent = {}
+
+    def request(method, url, *, body=None, headers=None):
+        sent["body"] = json.loads(body)
+        return 200, b"pkg", {}
+
+    made._request = request
+
+    made.post_download("/api/agent/package", {"family": "deb"}, "/dev/null")
+
+    assert sent["body"] == {"family": "deb", "token": "tok"}
+
+
 def test_post_download_without_a_checksum_header_returns_empty(tmp_path):
-    made = canned_channel(200, b"pkg")
+    made = canned_client(200, b"pkg")
     destination = tmp_path / "update.deb"
 
     assert made.post_download("/api/agent/package", {}, str(destination)) == ""
 
 
 def test_post_download_an_unwritable_destination_raises_unreachable(tmp_path):
-    made = canned_channel(200, b"pkg")
+    made = canned_client(200, b"pkg")
     destination = tmp_path / "missing" / "update.deb"
 
     with pytest.raises(GatewayUnreachable):
         made.post_download("/api/agent/package", {}, str(destination))
 
 
-def test_post_download_a_refused_status_raises_refused(tmp_path):
-    with pytest.raises(GatewayRefused):
-        canned_channel(401).post_download(
+def test_post_download_a_coded_refusal_raises_the_detail(tmp_path):
+    with pytest.raises(GatewayRefusedDetail) as caught:
+        canned_client(404, refusal("agent_package_missing")).post_download(
             "/api/agent/package", {}, str(tmp_path / "update.deb")
         )
 
+    assert caught.value.code == "agent_package_missing"
 
-def test_post_a_dead_port_raises_unreachable():
+
+def test_a_dead_port_raises_unreachable():
     probe = socket.socket()
     probe.bind(("127.0.0.1", 0))
     port = probe.getsockname()[1]
     probe.close()
-    made = GatewayHttpChannel(gateway_url=f"http://127.0.0.1:{port}", token="tok")
+    made = BindingHttpClient(gateway_url=f"http://127.0.0.1:{port}")
 
     with pytest.raises(GatewayUnreachable):
-        made.post("/api/agent/heartbeat", {})
+        made.join(JOIN_PAYLOAD)

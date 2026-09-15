@@ -131,9 +131,41 @@ def test_the_state_table_is_the_shares_own_tokens():
     }
 
 
-def test_every_unbind_cause_the_channel_can_name_is_worded():
-    for cause in ("hub_untrusted", "agent_newer_than_hub", "hub_refused"):
-        assert cause in status_cli.UNBIND_CAUSE_WORDS
+# What the hub can answer at the door, or close a stream with, and what the
+# channel itself reports; none rides a literal in the agent's own source.
+CHANNEL_CODES = (
+    "protocol_too_old",
+    "protocol_too_new",
+    "channel_refused",
+    "binding_unknown",
+    "replaced",
+    "ticket_spent",
+    "role_mismatch",
+    "kind_unknown",
+    "verb_unknown",
+    "hub_untrusted",
+    "hub_unreachable",
+)
+
+
+@pytest.mark.parametrize("code", CHANNEL_CODES)
+def test_every_channel_code_is_worded(code):
+    assert is_worded(code), f"code {code} has no CLI wording"
+
+
+def test_the_protocol_words_name_both_numbers():
+    assert wording.word_code("protocol_too_new", {"peer": 2, "hub": 1, "min": 1}) == (
+        "this agent speaks protocol 2; the hub speaks 1, so update the hub first"
+    )
+    assert wording.word_code("protocol_too_old", {"peer": 1, "hub": 3, "min": 2}) == (
+        "this agent speaks protocol 1; the hub accepts 2 and up, "
+        "so update this agent"
+    )
+
+
+def test_the_codes_that_left_with_the_old_wire_are_gone():
+    for code in ("self_unbound", "agent_wire_stale", "agent_newer_than_hub"):
+        assert not is_worded(code)
 
 
 def test_a_code_outside_the_table_prints_as_itself():

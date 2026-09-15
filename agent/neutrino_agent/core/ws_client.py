@@ -19,22 +19,19 @@ import struct
 import threading
 import time
 
-from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import (
+    AGENT_CODE_CHANNEL_REFUSED,
+    AGENT_CODE_REPLACED,
     AGENT_REQUEST_TIMEOUT_S,
-    AGENT_WIRE_GENERATION,
     AGENT_WS_CLOSE_REFUSED,
-    AGENT_WS_CLOSE_UNKNOWN_TOKEN,
+    AGENT_WS_CLOSE_REPLACED,
     AGENT_WS_SILENCE_TIMEOUT_S,
 )
 from neutrino_agent.core.channel import error_detail, pinned_socket
 from neutrino_agent.exceptions import (
-    GatewayRefused,
     GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
-    GatewayVersionRefused,
-    GatewayWireStale,
     SocketClosed,
 )
 
@@ -186,35 +183,17 @@ def close_error(code: int, reason: str) -> Exception:
 
     Args:
         code: The close code.
-        reason: The reason word.
+        reason: The reason text.
 
     Returns:
-        The gateway error the code maps to: a refused token for 4401, the
-        named refusal for 4409, and an unreachable gateway for anything
-        else, the replaced code included.
+        ``channel_refused`` for 4000 with no ``refused`` frame before it,
+        ``replaced`` for 4010, and an unreachable hub for anything else.
     """
-    if code == AGENT_WS_CLOSE_UNKNOWN_TOKEN:
-        return GatewayRefused(f"gateway refused this machine's token ({code})")
     if code == AGENT_WS_CLOSE_REFUSED:
-        return _refusal(reason, {})
-    return GatewayUnreachable(f"gateway closed the socket ({code}) {reason}".rstrip())
-
-
-def _refusal(code: str, params: dict) -> Exception:
-    """The gateway error one refusal code word maps to."""
-    if code == "agent_wire_stale":
-        return GatewayWireStale(
-            hub_wire=int(params.get("hub_wire", 0) or 0),
-            agent_wire=int(params.get("agent_wire", AGENT_WIRE_GENERATION) or 0),
-        )
-    if code == "agent_newer_than_hub":
-        return GatewayVersionRefused(
-            hub_version=str(params.get("hub_version", "")),
-            agent_version=str(params.get("agent_version", AGENT_VERSION)),
-        )
-    if code:
-        return GatewayRefusedDetail(code=code, params=dict(params))
-    return GatewayUnreachable("gateway refused the socket without a code")
+        return GatewayRefusedDetail(code=AGENT_CODE_CHANNEL_REFUSED, params={})
+    if code == AGENT_WS_CLOSE_REPLACED:
+        return GatewayRefusedDetail(code=AGENT_CODE_REPLACED, params={})
+    return GatewayUnreachable(f"hub closed the socket ({code}) {reason}".rstrip())
 
 
 def _mask(payload: bytes, key: bytes) -> bytes:
@@ -282,9 +261,7 @@ class WebSocketClient:
 
         Raises:
             GatewayUntrusted: When the peer failed the fingerprint check.
-            GatewayRefused: On a 401 or 403.
-            GatewayWireStale: On a 409 naming this build's wire as stale.
-            GatewayVersionRefused: On a 409 naming this agent as too new.
+            GatewayRefusedDetail: When the upgrade was refused with a code.
             GatewayUnreachable: On any network error, another status, or a
                 handshake that does not check out.
         """
@@ -295,7 +272,7 @@ class WebSocketClient:
         except GatewayUntrusted:
             raise
         except OSError as error:
-            raise GatewayUnreachable(f"cannot reach gateway: {error}") from error
+            raise GatewayUnreachable(f"cannot reach hub: {error}") from error
         key = base64.b64encode(os.urandom(16)).decode("ascii")
         request = (
             f"GET {self._path} HTTP/1.1\r\n"
@@ -315,8 +292,8 @@ class WebSocketClient:
                 raise self._handshake_error(status, body)
             if headers.get("sec-websocket-accept", "") != accept_key(key):
                 sock.close()
-                raise GatewayUnreachable("gateway answered a bad websocket accept")
-        except (GatewayRefused, GatewayUnreachable):
+                raise GatewayUnreachable("hub answered a bad websocket accept")
+        except GatewayUnreachable:
             sock.close()
             raise
         except OSError as error:
@@ -404,7 +381,7 @@ class WebSocketClient:
                 decoded = decode_frame(self._buffer)
             except ValueError as error:
                 self._drop()
-                raise GatewayUnreachable(f"bad frame from gateway: {error}") from error
+                raise GatewayUnreachable(f"bad frame from hub: {error}") from error
             if decoded is not None:
                 frame, taken = decoded
                 self._buffer = self._buffer[taken:]
@@ -415,7 +392,7 @@ class WebSocketClient:
             if not self._wait_readable(sock):
                 self._drop()
                 raise GatewayUnreachable(
-                    f"no frame from gateway in {self._silence_timeout_s}s"
+                    f"no frame from hub in {self._silence_timeout_s}s"
                 )
             try:
                 with self._io_lock:
@@ -423,14 +400,14 @@ class WebSocketClient:
             except socket.timeout as error:
                 self._drop()
                 raise GatewayUnreachable(
-                    f"no frame from gateway in {self._silence_timeout_s}s"
+                    f"no frame from hub in {self._silence_timeout_s}s"
                 ) from error
             except OSError as error:
                 self._drop()
                 raise GatewayUnreachable(f"socket read failed: {error}") from error
             if not chunk:
                 self._drop()
-                raise GatewayUnreachable("gateway hung up")
+                raise GatewayUnreachable("hub hung up")
             self._buffer += chunk
 
     def _wait_readable(self, sock) -> bool:
@@ -527,7 +504,7 @@ class WebSocketClient:
         while b"\r\n\r\n" not in data:
             chunk = sock.recv(4096)
             if not chunk:
-                raise GatewayUnreachable("gateway hung up during the handshake")
+                raise GatewayUnreachable("hub hung up during the handshake")
             data += chunk
             if len(data) > HANDSHAKE_HEADER_LIMIT:
                 raise GatewayUnreachable("handshake headers past the limit")
@@ -537,7 +514,7 @@ class WebSocketClient:
         try:
             status = int(parts[1])
         except (IndexError, ValueError) as error:
-            raise GatewayUnreachable("gateway sent no HTTP status") from error
+            raise GatewayUnreachable("hub sent no HTTP status") from error
         headers = {}
         for line in lines[1:]:
             name, _, value = line.partition(":")
@@ -559,12 +536,14 @@ class WebSocketClient:
         return body[:length]
 
     def _handshake_error(self, status: int, body: bytes) -> Exception:
-        if status in (401, 403):
-            return GatewayRefused(f"gateway refused this machine's token ({status})")
-        if status == 409:
-            detail = error_detail(body)
-            return _refusal(str(detail.get("code", "")), detail.get("params") or {})
-        return GatewayUnreachable(f"gateway answered {status} to the upgrade")
+        detail = error_detail(body)
+        code = str(detail.get("code", "") or "")
+        if code:
+            params = detail.get("params")
+            return GatewayRefusedDetail(
+                code=code, params=dict(params) if isinstance(params, dict) else {}
+            )
+        return GatewayUnreachable(f"hub answered {status} to the upgrade")
 
     def _close_payload(self, payload: bytes) -> "tuple[int, str]":
         if len(payload) < 2:

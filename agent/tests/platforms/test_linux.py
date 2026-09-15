@@ -2,7 +2,8 @@
 
 Linux steps down with ``runuser`` and judges people by its own floor; homes
 come from the account database, never ``$HOME``; the interfaces are what
-``ip -j addr`` prints, loopback left out.
+``ip -j addr`` prints, loopback left out; the machine id is the first file
+systemd or dbus wrote that holds one.
 """
 
 import collections
@@ -322,3 +323,24 @@ def test_linux_interfaces_are_empty_when_iproute2_cannot_answer(monkeypatch, out
     monkeypatch.setattr(linux_module.subprocess, "run", answer)
 
     assert LinuxPlatform().read_network_interfaces() == []
+
+
+def test_linux_machine_id_is_the_first_file_that_holds_one(monkeypatch, tmp_path):
+    missing = tmp_path / "etc-machine-id"
+    dbus = tmp_path / "dbus-machine-id"
+    dbus.write_text("0123456789abcdef0123456789abcdef\n")
+    monkeypatch.setattr(
+        linux_module, "LINUX_MACHINE_ID_PATHS", (str(missing), str(dbus))
+    )
+
+    assert LinuxPlatform().read_machine_id() == "0123456789abcdef0123456789abcdef"
+
+
+def test_linux_machine_id_is_empty_when_no_file_holds_one(monkeypatch, tmp_path):
+    empty = tmp_path / "machine-id"
+    empty.write_text("\n")
+    monkeypatch.setattr(
+        linux_module, "LINUX_MACHINE_ID_PATHS", (str(tmp_path / "gone"), str(empty))
+    )
+
+    assert LinuxPlatform().read_machine_id() == ""

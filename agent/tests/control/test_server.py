@@ -112,7 +112,17 @@ def test_the_state_never_carries_the_device_token(control, config_path):
     assert status == 200
     assert state["is_connected"] is True
     assert state["gateway_url"] == "http://127.0.0.1:9"
+    assert state["binding"] == {"id": "dev-1", "gateway_url": "http://127.0.0.1:9"}
     assert "tok" not in json.dumps(state)
+
+
+def test_an_unbound_state_names_no_binding(control):
+    server, _agent = control
+
+    _status, state = over_socket(server, "GET", "/api/state")
+
+    assert state["is_connected"] is False
+    assert state["binding"] == {"id": "", "gateway_url": ""}
 
 
 # --- POST /api/sync ---
@@ -137,29 +147,37 @@ def test_sync_with_no_socket_maps_to_400(control):
     assert (status, reply["code"]) == (400, "hub_unreachable")
 
 
-# --- POST /api/connect and /api/disconnect ---
+# --- POST /api/join and /api/leave ---
 
 
-def test_connect_and_disconnect_ride_through(control):
+def test_join_and_leave_ride_through(control):
     server, agent = control
 
     status, _state = over_socket(
-        server, "POST", "/api/connect", {"link": "neutrino://enroll/x"}
+        server, "POST", "/api/join", {"link": "neutrino://enroll/x"}
     )
     assert status == 200
-    assert agent.connected_links == ["neutrino://enroll/x"]
+    assert agent.joined_links == ["neutrino://enroll/x"]
 
-    status, _state = over_socket(server, "POST", "/api/disconnect", {})
+    status, _state = over_socket(server, "POST", "/api/leave", {})
     assert status == 200
-    assert agent.is_disconnected is True
+    assert agent.is_left is True
+
+
+def test_the_old_verbs_are_gone(control):
+    server, _agent = control
+
+    for path in ("/api/connect", "/api/disconnect"):
+        status, reply = over_socket(server, "POST", path, {})
+        assert (status, reply["code"]) == (404, "unknown_request")
 
 
 def test_a_refused_link_reports_on_the_state(control):
     server, agent = control
-    agent.connect_error = EnrollmentError("the link is unusable")
+    agent.join_error = EnrollmentError("the link is unusable")
 
     status, state = over_socket(
-        server, "POST", "/api/connect", {"link": "neutrino://enroll/x"}
+        server, "POST", "/api/join", {"link": "neutrino://enroll/x"}
     )
 
     assert status == 200

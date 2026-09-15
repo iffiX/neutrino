@@ -21,14 +21,15 @@ import time
 
 import pytest
 
-from neutrino_agent.constants import AGENT_WS_CLOSE_REPLACED
-from neutrino_agent.core.channel import (
-    GatewayRefused,
+from neutrino_agent.constants import (
+    AGENT_WS_CLOSE_REFUSED,
+    AGENT_WS_CLOSE_REPLACED,
+    AGENT_WS_PATH,
+)
+from neutrino_agent.exceptions import (
     GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
-    GatewayVersionRefused,
-    GatewayWireStale,
 )
 from neutrino_agent.core.ws_client import (
     OPCODE_BINARY,
@@ -195,18 +196,18 @@ def test_binary_comes_back_as_bytes():
 
 def test_a_close_from_the_hub_is_answered_and_raised():
     made = scripted_client(
-        encode_frame(OPCODE_CLOSE, struct.pack("!H", 4401) + b"unknown_token")
+        encode_frame(OPCODE_CLOSE, struct.pack("!H", 4000) + b"binding_unknown")
     )
     sock = made._sock
 
     with pytest.raises(SocketClosed) as closed:
         made.recv()
 
-    assert (closed.value.code, closed.value.reason) == (4401, "unknown_token")
+    assert (closed.value.code, closed.value.reason) == (4000, "binding_unknown")
     assert sock.is_closed
     (answer,) = sent_frames(made, sock)
     assert answer.opcode == OPCODE_CLOSE
-    assert struct.unpack("!H", answer.payload[:2])[0] == 4401
+    assert struct.unpack("!H", answer.payload[:2])[0] == 4000
     assert not made.is_open
 
 
@@ -258,26 +259,33 @@ def test_the_local_address_is_the_sockets_own_and_empty_once_closed():
 # --- what a close code means ---
 
 
-def test_close_4401_is_a_refused_token():
-    assert isinstance(close_error(4401, "unknown_token"), GatewayRefused)
+def test_the_close_codes_are_the_protocols_two():
+    assert (AGENT_WS_CLOSE_REFUSED, AGENT_WS_CLOSE_REPLACED) == (4000, 4010)
 
 
-def test_close_4409_names_the_refusal():
-    stale = close_error(4409, "agent_wire_stale")
-    newer = close_error(4409, "agent_newer_than_hub")
-    other = close_error(4409, "something_else")
+@pytest.mark.parametrize("reason", ["", "binding_unknown", "protocol_too_new"])
+def test_close_4000_without_a_refused_frame_is_channel_refused(reason):
+    """The reason text is not the code: only a ``refused`` frame names one."""
+    refused = close_error(AGENT_WS_CLOSE_REFUSED, reason)
 
-    assert isinstance(stale, GatewayWireStale)
-    assert isinstance(newer, GatewayVersionRefused)
-    assert isinstance(other, GatewayRefusedDetail)
-    assert other.code == "something_else"
+    assert isinstance(refused, GatewayRefusedDetail)
+    assert refused.code == "channel_refused"
+    assert refused.params == {}
 
 
-def test_close_4410_and_anything_else_is_unreachable():
-    assert isinstance(
-        close_error(AGENT_WS_CLOSE_REPLACED, "replaced"), GatewayUnreachable
-    )
-    assert isinstance(close_error(1006, ""), GatewayUnreachable)
+def test_close_4010_is_replaced():
+    replaced = close_error(AGENT_WS_CLOSE_REPLACED, "replaced")
+
+    assert isinstance(replaced, GatewayRefusedDetail)
+    assert replaced.code == "replaced"
+
+
+@pytest.mark.parametrize("code", [1000, 1001, 1006, 1011, 4401, 4409, 4410])
+def test_any_other_close_is_unreachable(code):
+    ended = close_error(code, "whatever")
+
+    assert isinstance(ended, GatewayUnreachable)
+    assert not isinstance(ended, GatewayRefusedDetail)
 
 
 # --- the handshake, against a stub on a pinned certificate ---
@@ -373,7 +381,7 @@ def client_for(port: int, fingerprint: str) -> WebSocketClient:
     return WebSocketClient(
         host="127.0.0.1",
         port=port,
-        path="/api/agent/ws",
+        path=AGENT_WS_PATH,
         fingerprint=fingerprint,
         timeout_s=5,
         silence_timeout_s=5,
@@ -391,7 +399,7 @@ def test_the_upgrade_asks_for_a_websocket_and_checks_the_accept(tls_stub):
     assert made.local_address == "127.0.0.1"
     (request,) = StubUpgradeHandler.requests
     head = request.decode()
-    assert head.startswith("GET /api/agent/ws HTTP/1.1\r\n")
+    assert head.startswith("GET /api/channel/socket HTTP/1.1\r\n")
     assert "Upgrade: websocket" in head
     assert "Sec-WebSocket-Version: 13" in head
     assert "Sec-WebSocket-Key: " in head
@@ -420,38 +428,42 @@ def test_a_bad_accept_is_unreachable(tls_stub):
         client_for(port, fingerprint).connect()
 
 
-@pytest.mark.parametrize("status", [401, 403])
-def test_a_refused_upgrade_is_a_refused_token(tls_stub, status):
+@pytest.mark.parametrize("status", [401, 403, 409])
+def test_a_refused_upgrade_without_a_code_is_unreachable(tls_stub, status):
     port, fingerprint = tls_stub
     StubUpgradeHandler.answer = (
         f"HTTP/1.1 {status} Nope\r\nContent-Length: 0\r\n\r\n".encode()
     )
 
-    with pytest.raises(GatewayRefused):
+    with pytest.raises(GatewayUnreachable) as caught:
         client_for(port, fingerprint).connect()
 
+    assert not isinstance(caught.value, GatewayRefusedDetail)
 
-def test_a_409_upgrade_carries_its_code(tls_stub):
+
+@pytest.mark.parametrize("status", [401, 409])
+def test_a_refused_upgrade_carries_its_code(tls_stub, status):
     port, fingerprint = tls_stub
     body = json.dumps(
         {
             "detail": {
-                "code": "agent_wire_stale",
-                "params": {"hub_wire": 6, "agent_wire": 5},
+                "code": "protocol_too_new",
+                "params": {"peer": 2, "hub": 1, "min": 1},
             }
         }
     ).encode()
     StubUpgradeHandler.answer = (
-        b"HTTP/1.1 409 Conflict\r\nContent-Length: "
+        f"HTTP/1.1 {status} Nope\r\nContent-Length: ".encode()
         + str(len(body)).encode()
         + b"\r\n\r\n"
         + body
     )
 
-    with pytest.raises(GatewayWireStale) as stale:
+    with pytest.raises(GatewayRefusedDetail) as refused:
         client_for(port, fingerprint).connect()
 
-    assert (stale.value.hub_wire, stale.value.agent_wire) == (6, 5)
+    assert refused.value.code == "protocol_too_new"
+    assert refused.value.params == {"peer": 2, "hub": 1, "min": 1}
 
 
 def test_another_status_is_unreachable(tls_stub):

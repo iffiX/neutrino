@@ -11,9 +11,9 @@ import neutrino_agent
 
 SURVIVING_MODULES = {
     "neutrino_agent.cli",
-    "neutrino_agent.cli.connect",
-    "neutrino_agent.cli.disconnect",
     "neutrino_agent.cli.entry",
+    "neutrino_agent.cli.join",
+    "neutrino_agent.cli.leave",
     "neutrino_agent.cli.rdp",
     "neutrino_agent.cli.run",
     "neutrino_agent.cli.status",

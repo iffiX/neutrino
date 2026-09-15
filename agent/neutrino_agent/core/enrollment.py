@@ -1,16 +1,18 @@
-"""Joining a gateway, and leaving one.
+"""Joining a hub, leaving one, and the binding file in between.
 
-A machine with no SSH cannot be reached by the gateway, so it introduces
-itself instead: the owner pastes one enrollment link into ``nagent
-connect``, and the agent posts to the gateway, which hands back the token
-its heartbeats will carry. Nothing else has to be configured.
+A machine introduces itself: the owner pastes one enrollment link into
+``nagent join``, the agent spends the link's ticket at the hub, and the hub
+hands back the binding its hello will carry. Nothing else is configured.
 
 The link is ``neutrino://enroll/<payload>`` where the payload is base64url
-over ``{"urls": [...], "token": ..., "fp": ...}``. That alphabet holds no
-character a shell splits or a URL escapes, so the link pastes into a
-terminal, a page or a chat unquoted. ``fp`` pins the hub: it is the SHA-256
-fingerprint of the agent channel's TLS certificate, checked on every
-connection before anything is sent.
+over ``{"urls": [...], "token": ..., "fp": ..., "role": "agent"}``. That
+alphabet holds no character a shell splits or a URL escapes. ``fp`` pins the
+hub: the SHA-256 fingerprint of the agent port's TLS certificate, checked on
+every connection before anything is sent. A link whose role is not ``agent``
+was made for a client and is refused.
+
+The binding file is ``{gateway_url, id, token, fingerprint, machine_id}``,
+root-owned, mode 0600. A file missing any field is an unbound agent.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -22,50 +24,50 @@ import binascii
 import json
 import os
 import socket
-import uuid
 
 from neutrino_agent import AGENT_VERSION
-from neutrino_agent.constants import AGENT_CONFIG_PATH, AGENT_WIRE_GENERATION
-from neutrino_agent.core.channel import GatewayHttpChannel
+from neutrino_agent.constants import (
+    AGENT_CONFIG_PATH,
+    AGENT_ROLE,
+    AGENT_SOFTWARE_PREFIX,
+    PROTOCOL,
+)
+from neutrino_agent.core.channel import BindingHttpClient
 from neutrino_agent.exceptions import (
     EnrollmentError,
-    GatewayRefused,
+    GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
-    GatewayVersionRefused,
-    GatewayWireStale,
+    PlatformUnsupportedError,
 )
-from neutrino_agent.platforms.detect import platform_tuple
-
-ENROLL_PATH = "/api/agent/enroll"
-
+from neutrino_agent.platforms.detect import detect_platform, platform_tuple
 
 LINK_PREFIX = "neutrino://enroll/"
+# What the binding file holds, every field a string.
+BINDING_KEYS = ("gateway_url", "id", "token", "fingerprint", "machine_id")
 
 
-def parse_link(link: str) -> "tuple[list, str, str]":
-    """Pull the addresses, enrollment token and fingerprint out of a link.
+def parse_link(link: str) -> "tuple[list, str, str, str]":
+    """Pull the addresses, ticket, fingerprint and role out of a link.
 
-    A hub serves more than one network, and the address that reaches it
-    depends on which one this machine is on, so the link carries every
-    address the hub answers on rather than one somebody had to pick. The
-    bare payload without its scheme is accepted too, because it is the part
-    a partial copy loses last.
+    The bare payload without its scheme is accepted too, because it is the
+    part a partial copy loses last.
 
     Args:
         link: What the owner pasted.
 
     Returns:
-        The gateway base URLs in the order the hub offered them, the
-        enrollment token, and the certificate fingerprint the hub pins —
-        empty when the link carries none.
+        The hub base URLs in the order the hub offered them, the ticket,
+        the certificate fingerprint the hub pins, empty when the link carries
+        none, and the role the link was made for.
 
     Raises:
-        EnrollmentError: If the link carries no address or token.
+        EnrollmentError: If the link is unreadable, carries no address or
+            ticket, or was made for a role other than ``agent``.
     """
     text = link.strip()
     if not text:
-        raise EnrollmentError("paste the link from the gateway's Devices page")
+        raise EnrollmentError("paste the link from the hub's Devices page")
     if text.startswith(LINK_PREFIX):
         text = text[len(LINK_PREFIX) :]
     try:
@@ -76,21 +78,27 @@ def parse_link(link: str) -> "tuple[list, str, str]":
         ]
         token = str(payload.get("token", ""))
         fingerprint = str(payload.get("fp", "")).strip().lower()
+        role = str(payload.get("role", ""))
     except (binascii.Error, ValueError, UnicodeDecodeError, AttributeError) as error:
         raise EnrollmentError(
             "that is not an enrollment link; copy the whole line from the "
-            "gateway's Devices page"
+            "hub's Devices page"
         ) from error
     if not urls or not token:
-        raise EnrollmentError("that link carries no gateway address and token")
-    return urls, token, fingerprint
+        raise EnrollmentError("that link carries no hub address and ticket")
+    if role != AGENT_ROLE:
+        raise EnrollmentError(
+            "that link is not for a device; generate one on the hub's Devices page"
+        )
+    return urls, token, fingerprint, role
 
 
 def load_config() -> dict:
-    """Read the agent's configuration.
+    """Read the binding file as it is.
 
     Returns:
-        The stored configuration, or an empty object when unconfigured.
+        The stored object, or an empty one when the file is absent or
+        unreadable.
     """
     try:
         with open(AGENT_CONFIG_PATH, "r", encoding="utf-8") as stream:
@@ -99,8 +107,25 @@ def load_config() -> dict:
         return {}
 
 
+def load_binding() -> dict:
+    """The binding, complete or nothing.
+
+    Returns:
+        ``{gateway_url, id, token, fingerprint, machine_id}``, or an empty
+        object when the file is absent, misses any field, or names no hub,
+        id or token. The fingerprint and the machine id may be empty.
+    """
+    config = load_config()
+    if not isinstance(config, dict) or any(key not in config for key in BINDING_KEYS):
+        return {}
+    binding = {key: str(config.get(key, "") or "") for key in BINDING_KEYS}
+    if not (binding["gateway_url"] and binding["id"] and binding["token"]):
+        return {}
+    return binding
+
+
 def save_config(config: dict) -> None:
-    """Write the agent's configuration, readable only by root.
+    """Write the binding file, readable only by root.
 
     Args:
         config: What to store.
@@ -116,18 +141,24 @@ def save_config(config: dict) -> None:
         pass
 
 
-def is_configured() -> bool:
-    """Whether the agent already belongs to a gateway."""
-    config = load_config()
-    return bool(config.get("gateway_url") and config.get("token"))
+def remove_binding() -> None:
+    """Delete the binding file; a file already gone is no error."""
+    try:
+        os.unlink(AGENT_CONFIG_PATH)
+    except FileNotFoundError:
+        pass
+
+
+def is_bound() -> bool:
+    """Whether this machine holds a complete binding."""
+    return bool(load_binding())
 
 
 def config_stamp() -> int:
-    """A marker that moves whenever the configuration file does.
+    """A marker that moves whenever the binding file does.
 
-    The running service compares it between beats, so a binding written by
-    another process — ``nagent connect``, ``nagent disconnect`` — is adopted
-    without a restart.
+    The running service compares it between beats, so a binding written or
+    removed by another process is adopted without a restart.
 
     Returns:
         The file's mtime in nanoseconds, or 0 when it does not exist.
@@ -138,122 +169,114 @@ def config_stamp() -> int:
         return 0
 
 
-def machine_id() -> str:
-    """A stable identifier for this machine.
+def join_payload(ticket: str, *, platform=None) -> dict:
+    """What this machine sends to join.
+
+    Args:
+        ticket: The ticket from the link.
+        platform: The machine's platform, asked for the machine id; None
+            detects it.
 
     Returns:
-        The system's machine id where there is one, else a generated id kept
-        in the agent's own configuration — a machine reached only over the
-        overlay has no LAN MAC the gateway could key it by.
+        ``{ticket, role, protocol, machine_id, name, software, platform}``,
+        the machine id empty where the platform keeps none.
     """
-    for path in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
-        try:
-            with open(path, "r", encoding="utf-8") as stream:
-                value = stream.read().strip()
-            if value:
-                return value
-        except OSError:
-            continue
-    config = load_config()
-    stored = config.get("device_id")
-    if stored:
-        return stored
-    generated = uuid.uuid4().hex
-    config["device_id"] = generated
-    save_config(config)
-    return generated
+    platform = platform if platform is not None else detect_platform()
+    try:
+        machine_id = platform.read_machine_id()
+    except PlatformUnsupportedError:
+        machine_id = ""
+    return {
+        "ticket": ticket,
+        "role": AGENT_ROLE,
+        "protocol": PROTOCOL,
+        "machine_id": machine_id,
+        "name": socket.gethostname(),
+        "software": f"{AGENT_SOFTWARE_PREFIX}{AGENT_VERSION}",
+        "platform": platform_tuple(),
+    }
 
 
-def enroll(link: str) -> dict:
-    """Join the gateway the link points at.
+def enroll(link: str, *, platform=None) -> dict:
+    """Join the hub the link points at.
 
     Every address in the link is tried in turn, because only one of them is
     on this machine's network and the link cannot know which.
 
     Args:
-        link: The enrollment link from the gateway's Devices page.
+        link: The enrollment link from the hub's Devices page.
+        platform: The machine's platform; None detects it.
 
     Returns:
-        The stored configuration after joining.
+        The binding stored.
 
     Raises:
         EnrollmentError: If the link is unusable, the fingerprint does not
-            match what answers, this agent is newer than the hub, or no
-            address accepted it.
+            match what answers, the hub refused with a code, the reply
+            names no binding, or no address answered. A hub's refusal
+            carries its ``code`` and ``params``.
     """
-    gateway_urls, enrollment_token, fingerprint = parse_link(link)
-    payload = {
-        "enrollment_token": enrollment_token,
-        "device_id": machine_id(),
-        "hostname": socket.gethostname(),
-        "client_version": AGENT_VERSION,
-        "wire": AGENT_WIRE_GENERATION,
-        "platform": platform_tuple(),
-    }
+    gateway_urls, ticket, fingerprint, _ = parse_link(link)
+    payload = join_payload(ticket, platform=platform)
     reply = None
-    refusal = ""
+    failure = ""
     for gateway_url in gateway_urls:
-        channel = GatewayHttpChannel(
-            gateway_url=gateway_url, token="", fingerprint=fingerprint
-        )
+        client = BindingHttpClient(gateway_url=gateway_url, fingerprint=fingerprint)
         try:
-            reply = channel.post(ENROLL_PATH, payload)
+            reply = client.join(payload)
             break
-        except GatewayWireStale as error:
-            # The link is fine; this build cannot speak this hub. Joining
-            # would only crash-loop, so the fix is named instead.
+        except GatewayRefusedDetail as error:
             raise EnrollmentError(
-                "this agent build does not match the hub; reinstall it from "
-                "the hub's Devices page and connect again"
-            ) from error
-        except GatewayVersionRefused as error:
-            # The link is fine and unspent; the hub is the side that must
-            # move.
-            raise EnrollmentError(str(error)) from error
-        except GatewayRefused as error:
-            # The gateway answered and said no: the ticket is spent or has
-            # expired. The other addresses reach the same gateway.
-            raise EnrollmentError(
-                "the gateway refused this link — it may have expired; generate a "
-                "fresh one on the Devices page"
+                error.code, code=error.code, params=error.params
             ) from error
         except GatewayUntrusted as error:
-            # Whatever answered is not the hub this link pins, and it was
-            # sent nothing.
             raise EnrollmentError(
                 f"{gateway_url} presented a certificate this link does not "
                 f"pin; generate a fresh link on the hub's Devices page"
             ) from error
         except GatewayUnreachable as error:
-            refusal = str(error)
+            failure = str(error)
     if reply is None:
         tried = ", ".join(gateway_urls)
-        raise EnrollmentError(f"no gateway answered at {tried}: {refusal}")
+        raise EnrollmentError(f"no hub answered at {tried}: {failure}")
 
-    token = reply.get("token", "")
-    if not token:
-        raise EnrollmentError("the gateway sent no device token back")
-    config = load_config()
-    config.update(
-        {
-            "gateway_url": gateway_url,
-            "token": token,
-            "fingerprint": fingerprint,
-            "device_id": payload["device_id"],
-        }
-    )
-    save_config(config)
-    return config
+    binding = {
+        "gateway_url": gateway_url,
+        "id": str(reply.get("id", "") or ""),
+        "token": str(reply.get("token", "") or ""),
+        "fingerprint": fingerprint,
+        "machine_id": payload["machine_id"],
+    }
+    if not binding["id"] or not binding["token"]:
+        raise EnrollmentError("the hub sent no binding back")
+    save_config(binding)
+    return binding
 
 
-def disconnect() -> None:
-    """Forget the gateway, keeping the machine's own identity.
+def unbind() -> dict:
+    """Give the binding back to the hub and delete the file.
 
-    The device id survives so re-joining the same gateway lands on the same
-    device rather than creating a second one.
+    The file goes whether or not the hub could be told, so a hub that is
+    gone does not hold the machine.
+
+    Returns:
+        Empty when the hub took the leave, ``{"code", "params"}`` when it
+        could not be told, and empty with nothing posted when the machine
+        held no binding.
     """
-    config = load_config()
-    config.pop("gateway_url", None)
-    config.pop("token", None)
-    config.pop("fingerprint", None)
-    save_config(config)
+    binding = load_binding()
+    outcome: dict = {}
+    if binding:
+        client = BindingHttpClient(
+            gateway_url=binding["gateway_url"], fingerprint=binding["fingerprint"]
+        )
+        try:
+            client.leave(binding["id"], binding["token"])
+        except GatewayRefusedDetail as error:
+            outcome = {"code": error.code, "params": dict(error.params)}
+        except GatewayUntrusted:
+            outcome = {"code": "hub_untrusted", "params": {}}
+        except GatewayUnreachable as error:
+            outcome = {"code": "hub_unreachable", "params": {"detail": str(error)}}
+    remove_binding()
+    return outcome

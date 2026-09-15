@@ -3,7 +3,7 @@
 The contract names intents, not mechanisms: enumerate human accounts;
 resolve an account's home; run a process as an account; control the agent's
 own service; power actions; read host metrics; read the network interfaces;
-install and remove a package of a kind. A new platform is a new class, and
+read the machine id; install and remove a package of a kind. A new platform is a new class, and
 nothing above this seam changes.
 
 Each platform advertises the capabilities it has in ``capabilities``.
@@ -174,6 +174,17 @@ class AgentPlatform:
             PlatformUnsupportedError: When the platform cannot list them.
         """
         raise PlatformUnsupportedError("no interfaces to read here")
+
+    def read_machine_id(self) -> str:
+        """The id the operating system gave this machine.
+
+        Returns:
+            The id, empty where the machine has none.
+
+        Raises:
+            PlatformUnsupportedError: When the platform keeps no machine id.
+        """
+        raise PlatformUnsupportedError("no machine id to read here")
 
     def install_package(self, path: str, *, package_kind: str, entry: dict) -> None:
         """Install one downloaded package of a kind.

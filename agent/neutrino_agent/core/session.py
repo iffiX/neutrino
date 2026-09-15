@@ -23,14 +23,15 @@ from __future__ import annotations
 import json
 import threading
 
-from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import (
+    AGENT_CODE_CHANNEL_REFUSED,
     AGENT_HEARTBEAT_INTERVAL_S,
-    AGENT_WIRE_GENERATION,
+    AGENT_HUB_ROLE,
     AGENT_WS_STREAM_ID_LENGTH,
 )
 from neutrino_agent.core.ws_client import close_error
 from neutrino_agent.exceptions import (
+    GatewayRefusedDetail,
     GatewayUnreachable,
     SocketClosed,
     StreamClosed,
@@ -48,15 +49,16 @@ class AgentSession:
     """The live socket: hello, reports, and the streams the hub opens.
 
     Attributes:
-        hub_version: What the welcome named, empty until it arrived.
-        state_hash: The desired-state hash the welcome named.
+        hub_id: The hub's id, from the welcome; empty until it arrived.
+        hub_name: The hub's name, from the welcome.
+        hub_software: The hub's ``software``, from the welcome.
+        state_hash: The desired-state hash the last state frame named.
     """
 
     def __init__(
         self,
         *,
         client,
-        token: str,
         hello: dict,
         report,
         run_order,
@@ -72,8 +74,8 @@ class AgentSession:
         """
         Args:
             client: A connected-or-not ``WebSocketClient``.
-            token: This machine's device token.
-            hello: What the hello carries besides its type and token.
+            hello: The identity card the hello carries: ``{protocol, role,
+                id, name, software, token}``.
             report: Called for each report's body.
             run_order: Called with ``(order, on_line)``; runs one module
                 order and returns ``{"state", "code", "params", "output"}``.
@@ -96,7 +98,6 @@ class AgentSession:
                 file kinds of :mod:`neutrino_agent.streams`.
         """
         self._client = client
-        self._token = token
         self._hello = dict(hello)
         self._report = report
         self._run_order = run_order
@@ -110,7 +111,9 @@ class AgentSession:
         self._stream_kinds = dict(
             STREAM_KINDS if stream_kinds is None else stream_kinds
         )
-        self.hub_version = ""
+        self.hub_id = ""
+        self.hub_name = ""
+        self.hub_software = ""
         self.state_hash = ""
         self._lock = threading.Lock()
         self._is_closed = threading.Event()
@@ -134,29 +137,27 @@ class AgentSession:
 
         Raises:
             GatewayUntrusted: When the peer failed the fingerprint check.
-            GatewayRefused: When the hub does not know this token.
-            GatewayWireStale: When the hub refused this build's wire.
-            GatewayVersionRefused: When the hub refused this agent as newer.
+            GatewayRefusedDetail: When the hub answered ``refused``, with
+                its code and params, or closed 4000 without one.
             GatewayUnreachable: On any network error, or a first frame that
-                is not a welcome.
+                is neither a welcome from a hub nor a refusal.
         """
         self._client.connect()
         try:
-            self._send({"type": "hello", "token": self._token, **self._hello_fields()})
+            self._send({"type": "hello", **self._hello})
             welcome = self._take_welcome()
         except SocketClosed as closed:
             raise close_error(closed.code, closed.reason) from closed
         except Exception:
             self._client.close()
             raise
-        self.hub_version = str(welcome.get("hub_version", "") or "")
-        self.state_hash = str(welcome.get("state_hash", "") or "")
+        self.hub_id = str(welcome.get("id", "") or "")
+        self.hub_name = str(welcome.get("name", "") or "")
+        self.hub_software = str(welcome.get("software", "") or "")
         self._reader = threading.Thread(
             target=self._read_forever, name="agent_session_reader", daemon=True
         )
         self._reader.start()
-        if self.state_hash != str(self._hello.get("state_hash", "") or ""):
-            self.request_state()
 
     def serve(self) -> "Exception | None":
         """Report until the socket ends.
@@ -193,18 +194,20 @@ class AgentSession:
         self._client.close()
         self._news.set()
 
-    def _hello_fields(self) -> dict:
-        fields = dict(self._hello)
-        fields.setdefault("client_version", AGENT_VERSION)
-        fields.setdefault("wire", AGENT_WIRE_GENERATION)
-        fields.setdefault("state_hash", "")
-        return fields
-
     def _take_welcome(self) -> dict:
+        """The hub's first frame: its identity card, or why it said no."""
         kind, payload = self._client.recv()
         message = _decode(kind, payload)
-        if message is None or message.get("type") != "welcome":
+        if message is None:
             raise GatewayUnreachable("the hub's first frame is not a welcome")
+        if message.get("type") == "refused":
+            params = message.get("params")
+            raise GatewayRefusedDetail(
+                code=str(message.get("code", "") or "") or AGENT_CODE_CHANNEL_REFUSED,
+                params=dict(params) if isinstance(params, dict) else {},
+            )
+        if message.get("type") != "welcome" or message.get("role") != AGENT_HUB_ROLE:
+            raise GatewayUnreachable("the hub's first frame is not a hub's welcome")
         return message
 
     def _send(self, message: dict) -> None:

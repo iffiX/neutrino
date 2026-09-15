@@ -58,6 +58,9 @@ NVIDIA_SMI_COMMAND = (
 
 PROCESS_TOP_COUNT = 12
 
+# Where systemd and dbus keep the machine id; the first that holds one wins.
+LINUX_MACHINE_ID_PATHS = ("/etc/machine-id", "/var/lib/dbus/machine-id")
+
 IP_ADDR_COMMAND = ("ip", "-j", "addr")
 IP_ADDR_TIMEOUT_S = 10
 LINUX_LOOPBACK_NAME = "lo"
@@ -127,6 +130,7 @@ class LinuxPlatform(AgentPlatform):
             "power",
             "metrics",
             "network",
+            "machine_id",
             "packages",
             "system_packages",
         }
@@ -361,6 +365,22 @@ class LinuxPlatform(AgentPlatform):
                 }
             )
         return interfaces
+
+    def read_machine_id(self) -> str:
+        """The machine id systemd or dbus wrote.
+
+        Returns:
+            The id, empty when neither file holds one.
+        """
+        for path in LINUX_MACHINE_ID_PATHS:
+            try:
+                with open(path, "r", encoding="utf-8") as stream:
+                    value = stream.read().strip()
+            except OSError:
+                continue
+            if value:
+                return value
+        return ""
 
     def install_package(self, path: str, *, package_kind: str, entry: dict) -> None:
         """Install one downloaded package.

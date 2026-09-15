@@ -27,6 +27,7 @@ CONTRACT_CALLS = {
     "power": ("power", ("reboot",), {}),
     "read_host_metrics": ("metrics", (), {}),
     "read_network_interfaces": ("network", (), {}),
+    "read_machine_id": ("machine_id", (), {}),
     "install_package": (
         "packages",
         ("/tmp/app.deb",),

@@ -2,12 +2,10 @@
 
 What comes down is one order stream carrying the module resolved for this
 platform; what goes up is each line as it happens and the close that says
-how it went, plus the module's state on every report. The generation is
-what stops an old agent from being handed a shape it cannot read, so it is
-pinned here beside the shapes.
+how it went, plus the module's state on every report.
 """
 
-from neutrino_agent.constants import AGENT_MODULE_PACKAGE_PATH, AGENT_WIRE_GENERATION
+from neutrino_agent.constants import AGENT_MODULE_PACKAGE_PATH
 from tests.core.test_loop import WELCOME, scripted_agent
 from tests.core.test_session import ScriptedClient
 
@@ -29,13 +27,6 @@ ORDER = {
         "package": "fakedesk",
     },
 }
-
-
-def test_the_wire_generation_is_the_one_this_build_speaks():
-    # Bumped by this change: shell and file streams join the socket, the
-    # commands gain the process and remote-desktop verbs, and an agent
-    # built to the old shape must reinstall rather than misread it.
-    assert AGENT_WIRE_GENERATION == 7
 
 
 def test_an_order_stream_runs_the_engine_and_closes_with_its_result(

@@ -1,8 +1,7 @@
 """Updating this agent to the hub's own release.
 
-The hub and the agent share a version, so an agent whose heartbeat reply
-names a later ``hub_version`` pulls the hub's baked package over the pinned
-channel and installs it. The install runs in a transient systemd unit:
+An agent whose welcome names a later ``software`` than its own pulls the
+hub's baked package over the pinned channel and installs it. The install runs in a transient systemd unit:
 installing the package restarts ``neutrino_agent.service``, which kills the
 process that asked for the update, so the process must not be the one
 running it. The unit writes what the package manager said and how it
@@ -150,7 +149,7 @@ def run_update(channel, *, kind: str, architecture: str, data_dir: str) -> None:
     Raises:
         SelfUpdateError: When the digest does not match or the install cannot
             be launched; the message names the failure code.
-        GatewayRefused: When the gateway rejected this machine's token.
+        GatewayRefusedDetail: When the hub refused the fetch with a code.
         GatewayUnreachable: When the package cannot be fetched.
         GatewayUntrusted: When what answers is not the pinned hub.
     """

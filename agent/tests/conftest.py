@@ -50,8 +50,24 @@ def discard(message: str) -> None:
     """Swallow the log lines."""
 
 
-def bind(path, url="http://127.0.0.1:9") -> None:
-    path.write_text(json.dumps({"gateway_url": url, "token": "tok"}))
+BINDING_ID = "dev-1"
+BINDING_TOKEN = "tok"
+MACHINE_ID = "machine-1"
+
+
+def bind(path, url="http://127.0.0.1:9", fingerprint="") -> None:
+    """Write a complete binding file, the way a join leaves it."""
+    path.write_text(
+        json.dumps(
+            {
+                "gateway_url": url,
+                "id": BINDING_ID,
+                "token": BINDING_TOKEN,
+                "fingerprint": fingerprint,
+                "machine_id": MACHINE_ID,
+            }
+        )
+    )
 
 
 class FakeControlPlatform(AgentPlatform):
@@ -76,9 +92,10 @@ class FakeSocketPlatform(FakeControlPlatform):
 
 class FakeControlAgent:
     def __init__(self):
-        self.connected_links = []
-        self.is_disconnected = False
-        self.connect_error = None
+        self.joined_links = []
+        self.is_left = False
+        self.join_error = None
+        self.error = None
         self.rdp_calls = []
         self.rdp_reply = {}
         self.rdp_error = None
@@ -125,7 +142,7 @@ class FakeControlAgent:
         return {"rustdesk": {"state": "installed"}}
 
     def last_error(self):
-        return None
+        return self.error
 
     def is_online(self) -> bool:
         return self.is_socket_open
@@ -150,10 +167,10 @@ class FakeControlAgent:
         self.is_unshared = True
         return dict(self.rdp_reply)
 
-    def connect(self, link):
-        if self.connect_error is not None:
-            raise self.connect_error
-        self.connected_links.append(link)
+    def join(self, link):
+        if self.join_error is not None:
+            raise self.join_error
+        self.joined_links.append(link)
 
-    def disconnect(self):
-        self.is_disconnected = True
+    def leave(self):
+        self.is_left = True

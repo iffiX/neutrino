@@ -15,7 +15,13 @@ from neutrino_agent import AGENT_VERSION
 from neutrino_agent.cli import status as status_cli
 from neutrino_agent.constants import AGENT_REINSTALL_RESULT_NAME
 from neutrino_agent.control.server import ControlServer
-from tests.conftest import FakeControlAgent, FakeControlPlatform, bind, discard
+from tests.conftest import (
+    BINDING_ID,
+    FakeControlAgent,
+    FakeControlPlatform,
+    bind,
+    discard,
+)
 
 GATEWAY_URL = "https://hub.lan:8443"
 REINSTALL_RESULT = {
@@ -94,7 +100,8 @@ def test_status_reads_the_running_service_for_a_privileged_caller(
 
     out = capsys.readouterr().out
     assert f"neutrino-agent {AGENT_VERSION}" in out
-    assert f"hub        {GATEWAY_URL}   connected" in out
+    assert f"hub        {GATEWAY_URL}" in out
+    assert f"binding    {BINDING_ID}" in out
     assert "service    running" in out
     assert "heartbeat  ok. The service holds its socket to the hub" in out
 
@@ -135,7 +142,8 @@ def test_status_falls_back_to_the_binding_file_and_connects_once(
 
     out = capsys.readouterr().out
     assert probes == ["probe"]
-    assert f"hub        {GATEWAY_URL}   connected" in out
+    assert f"hub        {GATEWAY_URL}" in out
+    assert f"binding    {BINDING_ID}" in out
     assert "service    inactive. The machine reports only while it runs" in out
     assert "sudo systemctl enable --now neutrino_agent.service" in out
     assert "heartbeat  ok," in out
@@ -161,33 +169,62 @@ def test_status_says_a_running_service_has_joined_nothing(running_service, capsy
     out = capsys.readouterr().out
     assert "hub        this machine has joined no gateway" in out
     assert "service    running" in out
+    assert "heartbeat" not in out
+
+
+def test_status_says_why_a_running_service_was_unbound(running_service, capsys):
+    """The hub forgot this machine: the service deleted its binding and kept
+    the reason for whoever asks."""
+    server, _ = running_service
+    server._agent.error = {"code": "binding_unknown", "params": {}}
+
+    assert status_cli.main() == 1
+
+    out = capsys.readouterr().out
+    assert "hub        this machine has joined no gateway" in out
+    assert "heartbeat  the hub no longer knows this machine" in out
+    assert "join again with a fresh link from the hub's Devices page" in out
+    assert "service    running" in out
+
+
+def test_status_says_a_replaced_service_waits_for_a_person(
+    running_service, config_path, capsys
+):
+    server, _ = running_service
+    bind(config_path, url=GATEWAY_URL)
+    server._agent.error = {"code": "replaced", "params": {}}
+
+    assert status_cli.main() == 1
+
+    out = capsys.readouterr().out
+    assert f"binding    {BINDING_ID}" in out
+    assert "heartbeat  another socket holds this machine's binding" in out
+    assert "restart the service, or join again with a fresh link" in out
 
 
 @pytest.mark.parametrize(
     "error, sentence",
     [
         (
-            {"code": "hub_refused", "params": {}},
-            "the hub refused this machine's token",
-        ),
-        (
             {"code": "hub_untrusted", "params": {}},
             "what answers is not the hub this machine pinned",
         ),
         (
-            {
-                "code": "agent_newer_than_hub",
-                "params": {"hub_version": "0.1.0", "agent_version": "0.2.0"},
-            },
-            "this agent (0.2.0) is newer than the hub (0.1.0); update the hub first",
+            {"code": "protocol_too_new", "params": {"peer": 2, "hub": 1, "min": 1}},
+            "this agent speaks protocol 2; the hub speaks 1, so update the hub first",
         ),
         (
-            {
-                "code": "agent_wire_stale",
-                "params": {"hub_wire": 3, "agent_wire": 2},
-            },
-            "this agent's build does not match the hub; it reinstalls itself "
-            "from the hub's package",
+            {"code": "protocol_too_old", "params": {"peer": 1, "hub": 3, "min": 2}},
+            "this agent speaks protocol 1; the hub accepts 2 and up, "
+            "so update this agent",
+        ),
+        (
+            {"code": "channel_refused", "params": {}},
+            "the hub turned this machine's hello away without a reason",
+        ),
+        (
+            {"code": "binding_unknown", "params": {}},
+            "the hub no longer knows this machine",
         ),
     ],
 )
@@ -216,8 +253,16 @@ def test_status_words_every_heartbeat_refusal(
     assert error["code"] not in out
 
 
-def test_status_words_a_version_refusal_distinctly(
-    tmp_path, config_path, monkeypatch, capsys
+@pytest.mark.parametrize(
+    "code, advice",
+    [
+        ("protocol_too_new", "update the hub"),
+        ("protocol_too_old", "update this agent"),
+        ("hub_untrusted", "join again with a fresh link"),
+    ],
+)
+def test_status_advises_the_next_step_after_a_refusal(
+    tmp_path, config_path, monkeypatch, capsys, code, advice
 ):
     bind(config_path)
     serve_nothing(monkeypatch, tmp_path, unit_state="running")
@@ -230,19 +275,15 @@ def test_status_words_a_version_refusal_distinctly(
             return None
 
         def last_error(self):
-            return {
-                "code": "agent_newer_than_hub",
-                "params": {"hub_version": "0.1.0", "agent_version": "0.2.0"},
-            }
+            return {"code": code, "params": {"peer": 1, "hub": 1, "min": 1}}
 
     monkeypatch.setattr(status_cli, "Agent", StuckAgent)
 
     assert status_cli.main() == 1
 
     out = capsys.readouterr().out
-    assert "newer than the hub" in out
-    assert "unbinds by itself" in out
-    assert "fresh link" in out
+    assert advice in out
+    assert "unbinds by itself" not in out
 
 
 # --- the install this agent came from ---

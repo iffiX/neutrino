@@ -8,22 +8,24 @@ file holds only what is wired into the protocol.
 # so a machine running both has one place to look and one place to back up.
 AGENT_CONFIG_PATH = "/etc/neutrino/agent/agent.json"
 
-# How many connections in a row the hub may reject — a refused token, a
-# certificate off the pin, an agent newer than the hub — before the agent
-# drops its binding. One counter for every kind. More than one, so a hub
-# caught mid-restore does not shed its whole fleet over a moment's
-# inconsistency.
-AGENT_REFUSALS_BEFORE_UNBIND = 3
-
 AGENT_SERVICE_NAME = "neutrino_agent.service"
 
-# The shape of what crosses the hub channel. Bumped on any wire change, so
-# a hub upgrade that changed the shapes tells a same-version agent to
-# reinstall instead of feeding it frames it cannot read.
-AGENT_WIRE_GENERATION = 7
+# The protocol number this build speaks. The name has no package prefix:
+# one number has one name in every package.
+PROTOCOL = 1
+# What this side answers as, in the join body and the hello, and what the
+# hub answers as in its welcome.
+AGENT_ROLE = "agent"
+AGENT_HUB_ROLE = "hub"
+# What ``software`` reads before the version, on each side of the channel.
+AGENT_SOFTWARE_PREFIX = "neutrino_agent/"
+AGENT_HUB_SOFTWARE_PREFIX = "neutrino_hub/"
 
-# The one socket to the hub, on the agent TLS port. Every stream rides it.
-AGENT_WS_PATH = "/api/agent/ws"
+# The channel's three endpoints, all on the agent TLS port: joining and
+# leaving are HTTP, and everything else rides the one socket.
+CHANNEL_JOIN_PATH = "/api/channel/join"
+CHANNEL_LEAVE_PATH = "/api/channel/leave"
+AGENT_WS_PATH = "/api/channel/socket"
 # How long the socket may stay silent before it is taken for dead. The hub
 # pings well inside this.
 AGENT_WS_SILENCE_TIMEOUT_S = 45
@@ -36,13 +38,17 @@ AGENT_WS_CHUNK_BYTES = 64 * 1024
 AGENT_WS_STREAM_CREDIT_BYTES = 1024 * 1024
 # How long a stream waits on the hub's credit before it stops trying.
 AGENT_WS_CREDIT_TIMEOUT_S = 60
-# Close codes the hub turns a socket away with. The reason is the code word.
-AGENT_WS_CLOSE_BAD_HELLO = 4400
-AGENT_WS_CLOSE_UNKNOWN_TOKEN = 4401
-AGENT_WS_CLOSE_REFUSED = 4409
-AGENT_WS_CLOSE_REPLACED = 4410
+# Close codes: a refused hello, after the ``refused`` frame that says why,
+# and a socket replaced by a second one for the same binding.
+AGENT_WS_CLOSE_REFUSED = 4000
+AGENT_WS_CLOSE_REPLACED = 4010
+# The codes the channel itself gives a refusal: a 4000 close with no
+# ``refused`` frame before it, a socket replaced by a second one, and the
+# one refusal that unbinds, which only the pinned hub can say.
+AGENT_CODE_CHANNEL_REFUSED = "channel_refused"
+AGENT_CODE_REPLACED = "replaced"
+AGENT_CODE_BINDING_UNKNOWN = "binding_unknown"
 
-AGENT_LEAVE_PATH = "/api/agent/leave"
 AGENT_PACKAGE_PATH = "/api/agent/package"
 # This machine never fetches a module from the internet: the hub's cache did
 # that once for every machine of this platform, and an order says which

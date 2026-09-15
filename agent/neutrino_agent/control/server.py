@@ -39,15 +39,19 @@ def _state(agent) -> dict:
     Returns:
         The state payload.
     """
-    config = enrollment.load_config()
+    binding = enrollment.load_binding()
     catalog = agent.catalog()
     return {
         "version": AGENT_VERSION,
         "hostname": hostname(),
         "platform": agent.platform(),
-        "is_connected": bool(config.get("gateway_url") and config.get("token")),
+        "is_connected": bool(binding),
         "is_online": agent.is_online(),
-        "gateway_url": config.get("gateway_url", ""),
+        "gateway_url": binding.get("gateway_url", ""),
+        "binding": {
+            "id": binding.get("id", ""),
+            "gateway_url": binding.get("gateway_url", ""),
+        },
         "last_error": agent.last_error(),
         "modules": _module_rows(agent, catalog.get("modules", {})),
         "rdp": agent.rdp_state(),
@@ -235,10 +239,10 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
     def _route_post(self) -> None:
         route = self.path.split("?")[0]
         body = self._read_body()
-        if route == "/api/connect":
-            self._connect(body)
-        elif route == "/api/disconnect":
-            self._disconnect()
+        if route == "/api/join":
+            self._join(body)
+        elif route == "/api/leave":
+            self._leave()
         elif route == "/api/sync":
             self._sync()
         elif route == "/api/rdp/start":
@@ -248,10 +252,10 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
         else:
             self._send_json({"code": "unknown_request"}, status=404)
 
-    def _connect(self, body: dict) -> None:
+    def _join(self, body: dict) -> None:
         agent = self.server.control_agent
         try:
-            agent.connect(str(body.get("link", "")))
+            agent.join(str(body.get("link", "")))
         except EnrollmentError as error:
             state = _state(agent)
             state["error"] = str(error)
@@ -259,9 +263,9 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
             return
         self._send_json(_state(agent))
 
-    def _disconnect(self) -> None:
+    def _leave(self) -> None:
         agent = self.server.control_agent
-        agent.disconnect()
+        agent.leave()
         self._send_json(_state(agent))
 
     def _sync(self) -> None:

@@ -1,10 +1,10 @@
-"""Talking to the gateway with the standard library, pinned over TLS.
+"""Talking to the hub with the standard library, pinned over TLS.
 
-The HTTP channel serves enrolling, leaving and fetching a package; the one
-live socket in ``ws_client`` connects the same way. An ``https`` gateway is
-verified by fingerprint alone: the handshake runs with chain and hostname
-checks off, and the peer certificate's SHA-256 digest must match the pinned
-value before any request bytes leave this machine.
+The HTTP client serves joining and leaving; the one live socket in
+``ws_client`` connects the same way. An ``https`` hub is verified by
+fingerprint alone: the handshake runs with chain and hostname checks off,
+and the peer certificate's SHA-256 digest must match the pinned value before
+any request bytes leave this machine.
 """
 
 import hashlib
@@ -14,14 +14,15 @@ import socket
 import ssl
 import urllib.parse
 
-from neutrino_agent.constants import AGENT_REQUEST_TIMEOUT_S
+from neutrino_agent.constants import (
+    AGENT_REQUEST_TIMEOUT_S,
+    CHANNEL_JOIN_PATH,
+    CHANNEL_LEAVE_PATH,
+)
 from neutrino_agent.exceptions import (
-    GatewayRefused,
     GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
-    GatewayVersionRefused,
-    GatewayWireStale,
 )
 
 
@@ -31,7 +32,7 @@ def pinned_socket(
     """A TLS connection that trusts one certificate and nothing else.
 
     Args:
-        host: The gateway's address.
+        host: The hub's address.
         port: The port to connect to.
         fingerprint: SHA-256 hex the peer certificate must digest to.
         timeout: Socket timeout in seconds.
@@ -57,7 +58,7 @@ def pinned_socket(
     if hashlib.sha256(certificate).hexdigest() != wanted:
         wrapped.close()
         raise GatewayUntrusted(
-            "the gateway's certificate does not match the pinned fingerprint"
+            "the hub's certificate does not match the pinned fingerprint"
         )
     return wrapped
 
@@ -78,6 +79,12 @@ def error_detail(data: bytes) -> dict:
     return detail if isinstance(detail, dict) else {}
 
 
+def _params(detail: dict) -> dict:
+    """The ``params`` of a refusal's detail, an empty object when absent."""
+    params = detail.get("params")
+    return dict(params) if isinstance(params, dict) else {}
+
+
 def _pinned_context() -> ssl.SSLContext:
     """A client context that checks nothing itself; the pin does the judging."""
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -87,60 +94,64 @@ def _pinned_context() -> ssl.SSLContext:
     return context
 
 
-class GatewayHttpChannel:
-    """Posts JSON to the gateway and parses its replies."""
+class BindingHttpClient:
+    """Joins and leaves over HTTP, and fetches a package until streams carry it."""
 
-    def __init__(self, *, gateway_url: str, token: str, fingerprint: str = ""):
+    def __init__(self, *, gateway_url: str, fingerprint: str = "", token: str = ""):
         """
         Args:
-            gateway_url: Base URL of the gateway's agent channel, without a
-                trailing slash.
-            token: Per-device token issued when the agent enrolled.
-            fingerprint: SHA-256 hex of the gateway certificate's DER form.
+            gateway_url: Base URL of the hub's agent port, without a trailing
+                slash.
+            fingerprint: SHA-256 hex of the hub certificate's DER form.
                 Required for an ``https`` URL; ignored for plain ``http``.
+            token: The binding token, added to a package download's body
+                alone; joining carries a ticket and leaving names its own.
         """
         self._gateway_url = gateway_url.rstrip("/")
-        self._token = token
         self._fingerprint = fingerprint.strip().lower()
+        self._token = token
 
-    def post(self, path: str, payload: dict) -> dict:
-        """Post a JSON body and return the JSON reply.
-
-        The token is added to every payload, so callers never repeat it.
+    def join(self, payload: dict) -> dict:
+        """Spend a ticket for a binding.
 
         Args:
-            path: Path below the gateway URL, starting with a slash.
-            payload: The body to send.
+            payload: ``{ticket, role, protocol, machine_id, name, software,
+                platform}``.
 
         Returns:
-            The parsed reply, or an empty object when the reply has no body.
+            The hub's ``{id, token}``.
 
         Raises:
-            GatewayUntrusted: When the gateway's certificate is not the pinned
+            GatewayUntrusted: When the hub's certificate is not the pinned
                 one; nothing was sent.
-            GatewayRefused: When the gateway rejected this machine's token.
-            GatewayVersionRefused: When the gateway turned this agent away as
-                newer than itself.
-            GatewayWireStale: When the gateway named this build's wire stale.
-            GatewayRefusedDetail: When the gateway refused with a code of its
-                own.
-            GatewayUnreachable: On any network error, timeout, other HTTP
-                error status, or unparseable reply.
+            GatewayRefusedDetail: When the hub refused with a code, such as
+                ``ticket_spent`` or ``protocol_too_new``.
+            GatewayUnreachable: On any network error, timeout, an error
+                status with no code, or an unreadable reply.
         """
-        _, data, _ = self._post(path, payload)
-        text = data.decode("utf-8")
-        if not text.strip():
-            return {}
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError as error:
-            raise GatewayUnreachable(f"gateway sent invalid JSON: {error}") from error
+        return self._post_json(CHANNEL_JOIN_PATH, payload)
+
+    def leave(self, binding_id: str, token: str) -> None:
+        """Give a binding back.
+
+        Args:
+            binding_id: The binding's id.
+            token: Its token.
+
+        Raises:
+            GatewayUntrusted: When the hub's certificate is not the pinned
+                one; nothing was sent.
+            GatewayRefusedDetail: When the hub refused with a code.
+            GatewayUnreachable: On any network error, timeout, an error
+                status with no code, or an unreadable reply.
+        """
+        self._post_json(CHANNEL_LEAVE_PATH, {"id": binding_id, "token": token})
 
     def post_download(self, path: str, payload: dict, destination: str) -> str:
         """Post a JSON body and write the bytes that come back to disk.
 
         Args:
-            path: Path below the gateway URL, starting with a slash.
+            path: Path below the hub URL, starting with a slash.
             payload: The body to send; the token is added.
             destination: Local file to write.
 
@@ -148,18 +159,13 @@ class GatewayHttpChannel:
             The reply's ``X-Checksum-Sha256`` value, empty when none came.
 
         Raises:
-            GatewayUntrusted: When the gateway's certificate is not the pinned
+            GatewayUntrusted: When the hub's certificate is not the pinned
                 one; nothing was sent.
-            GatewayRefused: When the gateway rejected this machine's token.
-            GatewayVersionRefused: When the gateway turned this agent away as
-                newer than itself.
-            GatewayWireStale: When the gateway named this build's wire stale.
-            GatewayRefusedDetail: When the gateway refused with a code of its
-                own.
-            GatewayUnreachable: On any network error, error status, or a
-                destination that cannot be written.
+            GatewayRefusedDetail: When the hub refused with a code.
+            GatewayUnreachable: On any network error, an error status with
+                no code, or a destination that cannot be written.
         """
-        _, data, headers = self._post(path, payload)
+        _, data, headers = self._post(path, {**payload, "token": self._token})
         try:
             with open(destination, "wb") as target:
                 target.write(data)
@@ -167,12 +173,23 @@ class GatewayHttpChannel:
             raise GatewayUnreachable(f"cannot save {path}: {error}") from error
         return headers.get("x-checksum-sha256", "")
 
+    def _post_json(self, path: str, payload: dict) -> dict:
+        """One POST whose reply is a JSON object, or empty."""
+        _, data, _ = self._post(path, payload)
+        text = data.decode("utf-8")
+        if not text.strip():
+            return {}
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as error:
+            raise GatewayUnreachable(f"hub sent invalid JSON: {error}") from error
+
     def _post(self, path: str, payload: dict):
-        """One POST with the token added, its status already judged.
+        """One POST, its status already judged.
 
         Args:
-            path: Path below the gateway URL, starting with a slash.
-            payload: The body to send.
+            path: Path below the hub URL, starting with a slash.
+            payload: The body to send, as it is.
 
         Returns:
             The status code, the response body, and the response headers
@@ -180,36 +197,23 @@ class GatewayHttpChannel:
 
         Raises:
             GatewayUntrusted: When the peer failed the fingerprint check.
-            GatewayRefused: On a 401 or 403.
-            GatewayVersionRefused: On a 409 naming this agent as too new.
+            GatewayRefusedDetail: On an error status whose ``detail`` names
+                a code.
             GatewayUnreachable: On any network error or other error status.
         """
-        body = json.dumps({**payload, "token": self._token}).encode("utf-8")
+        body = json.dumps(payload).encode("utf-8")
         status, data, headers = self._request(
             "POST",
             f"{self._gateway_url}{path}",
             body=body,
             headers={"Content-Type": "application/json"},
         )
-        if status in (401, 403):
-            raise GatewayRefused(f"gateway refused this machine's token ({status})")
-        if status == 409:
-            detail = error_detail(data)
-            params = detail.get("params") or {}
-            if detail.get("code") == "agent_wire_stale":
-                raise GatewayWireStale(
-                    hub_wire=int(params.get("hub_wire", 0)),
-                    agent_wire=int(params.get("agent_wire", 0)),
-                )
-            if detail.get("code") == "agent_newer_than_hub":
-                raise GatewayVersionRefused(
-                    hub_version=str(params.get("hub_version", "")),
-                    agent_version=str(params.get("agent_version", "")),
-                )
-            if detail.get("code"):
-                raise GatewayRefusedDetail(code=str(detail["code"]), params=params)
         if status >= 400:
-            raise GatewayUnreachable(f"gateway answered {status} for {path}")
+            detail = error_detail(data)
+            code = str(detail.get("code", "") or "")
+            if code:
+                raise GatewayRefusedDetail(code=code, params=_params(detail))
+            raise GatewayUnreachable(f"hub answered {status} for {path}")
         return status, data, headers
 
     def _request(self, method: str, url: str, *, body=None, headers=None):
@@ -242,7 +246,7 @@ class GatewayHttpChannel:
         except GatewayUntrusted:
             raise
         except (OSError, http.client.HTTPException) as error:
-            raise GatewayUnreachable(f"cannot reach gateway: {error}") from error
+            raise GatewayUnreachable(f"cannot reach hub: {error}") from error
         finally:
             connection.close()
 
@@ -283,8 +287,8 @@ class _PinnedHttpsConnection(http.client.HTTPSConnection):
     def __init__(self, host: str, port: int, *, fingerprint: str, timeout: float):
         """
         Args:
-            host: The gateway's address.
-            port: The agent channel's port.
+            host: The hub's address.
+            port: The agent port.
             fingerprint: SHA-256 hex the peer certificate must digest to.
             timeout: Socket timeout in seconds.
         """

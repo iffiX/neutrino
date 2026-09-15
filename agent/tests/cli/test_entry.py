@@ -13,8 +13,8 @@ from neutrino_agent import AGENT_VERSION
 
 def test_the_gate_covers_every_verb():
     assert sorted(entry.ROOT_COMMANDS) == [
-        "connect",
-        "disconnect",
+        "join",
+        "leave",
         "rdp",
         "run",
         "status",
@@ -26,8 +26,8 @@ def test_the_gate_covers_every_verb():
     "argv, reason",
     [
         (["nagent", "status"], "it asks the agent over its root-only control socket"),
-        (["nagent", "connect", "neutrino://enroll/x"], "it writes the binding"),
-        (["nagent", "disconnect"], "it removes the binding"),
+        (["nagent", "join", "neutrino://enroll/x"], "it writes the binding"),
+        (["nagent", "leave"], "it removes the binding"),
         (["nagent", "rdp", "start"], "it configures this machine's desktop share"),
         (["nagent", "run"], "the agent manages this machine"),
         (["nagent", "sync"], "it asks the agent over its root-only control socket"),
@@ -103,7 +103,7 @@ def test_sync_reaches_its_own_command(monkeypatch):
 
 
 def test_the_verbs_that_were_pruned_are_gone(monkeypatch, capsys):
-    for verb in ("gui", "module", "operation", "service"):
+    for verb in ("gui", "module", "operation", "service", "connect", "disconnect"):
         monkeypatch.setattr(entry.sys, "argv", ["nagent", verb])
 
         with pytest.raises(SystemExit) as refused:

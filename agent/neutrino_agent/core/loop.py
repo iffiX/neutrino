@@ -27,18 +27,21 @@ from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import (
     AGENT_BACKOFF_MAX_S,
     AGENT_BACKOFF_MIN_S,
+    AGENT_CODE_BINDING_UNKNOWN,
+    AGENT_CODE_REPLACED,
     AGENT_CREDENTIALS_DIR_NAME,
     AGENT_DESIRED_STATE_NAME,
     AGENT_HEARTBEAT_INTERVAL_S,
-    AGENT_LEAVE_PATH,
+    AGENT_HUB_SOFTWARE_PREFIX,
     AGENT_MODULE_PACKAGE_PATH,
-    AGENT_REFUSALS_BEFORE_UNBIND,
+    AGENT_ROLE,
+    AGENT_SOFTWARE_PREFIX,
     AGENT_STATE_NAME,
-    AGENT_WIRE_GENERATION,
     AGENT_WS_PATH,
+    PROTOCOL,
 )
 from neutrino_agent.core import enrollment, network, self_update
-from neutrino_agent.core.channel import GatewayHttpChannel
+from neutrino_agent.core.channel import BindingHttpClient
 from neutrino_agent.core.commands import DeviceOperator
 from neutrino_agent.core.desired_state import DesiredStateApplier, DesiredStateStore
 from neutrino_agent.core.engine import ModuleEngine
@@ -48,12 +51,9 @@ from neutrino_agent.core.store import MachineStateStore
 from neutrino_agent.core.version import parse_version
 from neutrino_agent.core.ws_client import WebSocketClient
 from neutrino_agent.exceptions import (
-    GatewayRefused,
     GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
-    GatewayVersionRefused,
-    GatewayWireStale,
     ModuleApplyError,
     PlatformUnsupportedError,
     SelfUpdateError,
@@ -61,9 +61,12 @@ from neutrino_agent.exceptions import (
 from neutrino_agent.platforms.detect import detect_platform
 from neutrino_agent.rdp.host import RdpShareHost
 
-# How often an unenrolled agent looks again, which is only to notice that its
-# binding file has since been written.
+# How often an unbound or a replaced agent looks again, which is only to
+# notice that its binding file has since been written.
 IDLE_POLL_INTERVAL_S = 2
+
+# What a version ends in when it was built from a checkout.
+DEV_VERSION_SUFFIX = "+dev"
 
 
 def _sha256_file(path: str) -> str:
@@ -95,22 +98,33 @@ def channel_error(error: Exception) -> dict:
         return {"code": error.code, "params": dict(error.params)}
     if isinstance(error, GatewayUntrusted):
         return {"code": "hub_untrusted", "params": {}}
-    if isinstance(error, GatewayVersionRefused):
-        return {
-            "code": "agent_newer_than_hub",
-            "params": {
-                "hub_version": error.hub_version,
-                "agent_version": error.agent_version,
-            },
-        }
-    if isinstance(error, GatewayWireStale):
-        return {
-            "code": "agent_wire_stale",
-            "params": {"hub_wire": error.hub_wire, "agent_wire": error.agent_wire},
-        }
-    if isinstance(error, GatewayRefused):
-        return {"code": "hub_refused", "params": {}}
     return {"code": "hub_unreachable", "params": {"detail": str(error)}}
+
+
+def hub_version_of(software: str) -> str:
+    """The version a hub's ``software`` names.
+
+    Args:
+        software: What the welcome carried.
+
+    Returns:
+        The version after ``neutrino_hub/``, empty for anything else.
+    """
+    if not software.startswith(AGENT_HUB_SOFTWARE_PREFIX):
+        return ""
+    return software[len(AGENT_HUB_SOFTWARE_PREFIX) :]
+
+
+def is_dev_version(version: str) -> bool:
+    """Whether a version was built from a checkout rather than released.
+
+    Args:
+        version: The version text.
+
+    Returns:
+        True when it ends in ``+dev``.
+    """
+    return version.endswith(DEV_VERSION_SUFFIX)
 
 
 class Agent:
@@ -163,9 +177,11 @@ class Agent:
         self._channel = None
         self._operator = None
         self._session: "AgentSession | None" = None
-        self._binding: tuple = ("", "", "")
+        self._binding: dict = {}
         self._binding_stamp = 0
-        self._refusals = 0
+        # Set by a 4010 close: another socket holds this binding, and this
+        # one reconnects only once a person acts.
+        self._is_replaced = False
         # The hub version last acted on and how the attempt went, so a target
         # that failed is not retried on every connection.
         self._update_target = ""
@@ -216,7 +232,7 @@ class Agent:
 
     # --- what the control channel asks for ---
 
-    def connect(self, link: str) -> None:
+    def join(self, link: str) -> None:
         """Join the hub an enrollment link points at.
 
         Args:
@@ -225,41 +241,27 @@ class Agent:
         Raises:
             EnrollmentError: If the link is unusable or the hub refuses.
         """
-        enrollment.enroll(link)
+        enrollment.enroll(link, platform=self._platform)
         self._drop_session()
-        with self._lock:
-            self._last_error = None
-            self._refusals = 0
-            self._update_target = ""
-            self._update_error = None
-            self._backoff_s = AGENT_BACKOFF_MIN_S
+        self._reset_binding_state()
         self._load_connection()
         self._news.set()
         self._log("joined the hub")
 
-    def disconnect(self) -> None:
+    def leave(self) -> None:
         """Leave the hub, and stop reporting to it.
 
-        The hub is told first, so its panel stops showing this machine as
-        managed straight away. A hub that cannot be reached does not hold
-        the machine here: the local state is cleared either way.
+        The binding goes whether or not the hub could be told; the log says
+        when it could not.
         """
-        with self._lock:
-            channel = self._channel
-        if channel is not None:
-            try:
-                channel.post(AGENT_LEAVE_PATH, {})
-            except (GatewayUnreachable, GatewayUntrusted) as error:
-                self._log(f"could not tell the hub we are leaving: {error}")
         self._drop_session()
-        enrollment.disconnect()
-        with self._lock:
-            self._last_error = None
-            self._update_target = ""
-            self._update_error = None
+        outcome = enrollment.unbind()
+        if outcome:
+            self._log(f"could not tell the hub we are leaving: {outcome['code']}")
+        self._reset_binding_state()
         self._load_connection()
         self._engine.update(catalog=None, catalog_hash="")
-        self._log("disconnected from the hub")
+        self._log("left the hub")
 
     def report_soon(self) -> None:
         """Send the next report now rather than at the end of the interval."""
@@ -346,9 +348,7 @@ class Agent:
             return IDLE_POLL_INTERVAL_S
         try:
             session.connect()
-        except GatewayWireStale as error:
-            return self._on_wire_stale(error)
-        except (GatewayRefused, GatewayUntrusted, GatewayVersionRefused) as error:
+        except (GatewayRefusedDetail, GatewayUntrusted) as error:
             return self._on_rejected(error)
         except GatewayUnreachable as error:
             return self._on_unreachable(error)
@@ -356,17 +356,14 @@ class Agent:
             self._session = session
             self._backoff_s = AGENT_BACKOFF_MIN_S
             self._last_error = None
-            self._refusals = 0
-        self._maybe_self_update(session.hub_version)
+        self._maybe_self_update(session.hub_software)
         failure = session.serve()
         with self._lock:
             if self._session is session:
                 self._session = None
         if failure is None:
             return AGENT_BACKOFF_MIN_S
-        if isinstance(failure, GatewayWireStale):
-            return self._on_wire_stale(failure)
-        if isinstance(failure, (GatewayRefused, GatewayVersionRefused)):
+        if isinstance(failure, GatewayRefusedDetail):
             return self._on_rejected(failure)
         return self._on_unreachable(failure)
 
@@ -382,16 +379,7 @@ class Agent:
             return
         try:
             session.connect()
-        except GatewayWireStale as error:
-            with self._lock:
-                self._last_error = channel_error(error)
-            return
-        except (
-            GatewayRefused,
-            GatewayUntrusted,
-            GatewayVersionRefused,
-            GatewayUnreachable,
-        ) as error:
+        except (GatewayUnreachable, GatewayUntrusted) as error:
             with self._lock:
                 self._last_error = channel_error(error)
             return
@@ -400,22 +388,22 @@ class Agent:
         session.close()
 
     def _open_session(self) -> "AgentSession | None":
-        """A session for the current binding, or None while unbound."""
+        """A session for the current binding, or None while unbound or replaced."""
         with self._lock:
-            gateway_url, token, fingerprint = self._binding
-        if not gateway_url or not token:
+            binding = dict(self._binding)
+            is_replaced = self._is_replaced
+        if not binding or is_replaced:
             return None
-        parts = urllib.parse.urlsplit(gateway_url)
+        parts = urllib.parse.urlsplit(binding["gateway_url"])
         client = WebSocketClient(
             host=parts.hostname or "",
             port=parts.port or 443,
             path=AGENT_WS_PATH,
-            fingerprint=fingerprint,
+            fingerprint=binding["fingerprint"],
         )
         return AgentSession(
             client=client,
-            token=token,
-            hello=self._hello_payload(),
+            hello=self._hello_payload(binding),
             report=self._report_payload,
             run_order=self._run_order,
             run_command=self._run_command,
@@ -427,15 +415,22 @@ class Agent:
             validate=self._validate,
         )
 
-    def _hello_payload(self) -> dict:
+    def _hello_payload(self, binding: dict) -> dict:
+        """The identity card the hello carries.
+
+        Args:
+            binding: The binding the socket is opened for.
+
+        Returns:
+            ``{protocol, role, id, name, software, token}``.
+        """
         return {
-            "client_version": AGENT_VERSION,
-            "wire": AGENT_WIRE_GENERATION,
-            "hostname": hostname(),
-            "platform": self._engine.platform_tuple,
-            "accounts": self._read_accounts(),
-            "state_hash": self._desired.applied_hash,
-            "last_reinstall": self._read_reinstall(),
+            "protocol": PROTOCOL,
+            "role": AGENT_ROLE,
+            "id": binding["id"],
+            "name": hostname(),
+            "software": f"{AGENT_SOFTWARE_PREFIX}{AGENT_VERSION}",
+            "token": binding["token"],
         }
 
     def _report_payload(self) -> dict:
@@ -553,15 +548,7 @@ class Agent:
                 {"artifact_key": artifact_key},
                 destination,
             )
-        except GatewayRefusedDetail as error:
-            return {"code": error.code, "params": error.params}
-        except (
-            GatewayRefused,
-            GatewayUnreachable,
-            GatewayUntrusted,
-            GatewayVersionRefused,
-            GatewayWireStale,
-        ) as error:
+        except (GatewayUnreachable, GatewayUntrusted) as error:
             return channel_error(error)
         if named and named != _sha256_file(destination):
             return {"code": "module_digest_mismatch", "params": {}}
@@ -592,7 +579,7 @@ class Agent:
         return session.local_address if session is not None else ""
 
     def _on_unreachable(self, error: Exception) -> int:
-        """Back off after a broken wire; the rejection count stands."""
+        """Back off after a broken wire."""
         with self._lock:
             self._last_error = channel_error(error)
             delay = self._backoff_s
@@ -600,19 +587,12 @@ class Agent:
         self._log(f"hub socket failed: {error}; retrying in {delay}s")
         return delay
 
-    def _on_wire_stale(self, error: GatewayWireStale) -> int:
-        """Reinstall on a stale-wire answer; it never counts toward an unbind."""
-        with self._lock:
-            self._last_error = channel_error(error)
-        self._log(f"{error}")
-        self._force_self_update(f"wire-{error.hub_wire}")
-        return AGENT_HEARTBEAT_INTERVAL_S
-
     def _on_rejected(self, error: Exception) -> int:
-        """Take a definitive rejection for what it is, after a short grace.
+        """Split a refusal by its code.
 
-        One counter covers every kind; after a few in a row the binding is
-        dropped and the machine goes back to waiting for a link.
+        ``binding_unknown`` deletes the binding and waits for a link;
+        ``replaced`` keeps it and waits for a person; every other code keeps
+        it and asks again after the longest backoff.
 
         Args:
             error: What the channel raised.
@@ -621,39 +601,45 @@ class Agent:
             Seconds until the next loop turn.
         """
         rejection = channel_error(error)
+        code = rejection["code"]
+        if code == AGENT_CODE_BINDING_UNKNOWN:
+            enrollment.remove_binding()
+            self._reset_binding_state()
+            self._load_connection()
+            with self._lock:
+                self._last_error = rejection
+            self._engine.update(catalog=None, catalog_hash="")
+            self._log("unbound: the hub does not know this binding")
+            return IDLE_POLL_INTERVAL_S
         with self._lock:
-            self._refusals += 1
-            rejections = self._refusals
             self._last_error = rejection
-        if rejections < AGENT_REFUSALS_BEFORE_UNBIND:
-            self._log(f"{error}; asking again")
-            return AGENT_HEARTBEAT_INTERVAL_S
-        enrollment.disconnect()
+            if code == AGENT_CODE_REPLACED:
+                self._is_replaced = True
+        if code == AGENT_CODE_REPLACED:
+            self._log("replaced by another socket; reconnecting on nagent join")
+            return IDLE_POLL_INTERVAL_S
+        self._log(f"refused: {code}; asking again in {AGENT_BACKOFF_MAX_S}s")
+        return AGENT_BACKOFF_MAX_S
+
+    def _reset_binding_state(self) -> None:
+        """Forget what the last binding's connections recorded."""
         with self._lock:
-            self._refusals = 0
+            self._last_error = None
+            self._is_replaced = False
             self._update_target = ""
             self._update_error = None
-        self._load_connection()
-        with self._lock:
-            self._last_error = {
-                "code": "self_unbound",
-                "params": {"cause": rejection["code"]},
-            }
-        self._engine.update(catalog=None, catalog_hash="")
-        self._log(f"unbound: {rejection['code']}")
-        return IDLE_POLL_INTERVAL_S
+            self._backoff_s = AGENT_BACKOFF_MIN_S
 
     def _load_connection(self) -> None:
-        config = enrollment.load_config()
-        gateway_url = config.get("gateway_url", "")
-        token = config.get("token", "")
-        fingerprint = config.get("fingerprint", "")
+        binding = enrollment.load_binding()
         with self._lock:
-            self._binding = (gateway_url, token, fingerprint)
+            self._binding = binding
             self._binding_stamp = enrollment.config_stamp()
-            if gateway_url and token:
-                self._channel = GatewayHttpChannel(
-                    gateway_url=gateway_url, token=token, fingerprint=fingerprint
+            if binding:
+                self._channel = BindingHttpClient(
+                    gateway_url=binding["gateway_url"],
+                    fingerprint=binding["fingerprint"],
+                    token=binding["token"],
                 )
                 self._operator = DeviceOperator(
                     platform=self._platform,
@@ -677,8 +663,8 @@ class Agent:
     def _adopt_external_binding(self) -> None:
         """Pick up a binding another process wrote.
 
-        ``nagent connect`` and ``nagent disconnect`` edit the configuration
-        from their own process. The service notices the file changing and
+        ``nagent join`` and ``nagent leave`` edit the binding file from
+        their own process. The service notices the file changing and
         converges: a live socket for a binding that is gone is closed.
         """
         with self._lock:
@@ -689,11 +675,7 @@ class Agent:
         with self._lock:
             if self._binding == binding:
                 return
-            self._last_error = None
-            self._refusals = 0
-            self._update_target = ""
-            self._update_error = None
-            self._backoff_s = AGENT_BACKOFF_MIN_S
+        self._reset_binding_state()
         self._drop_session()
         self._engine.update(catalog=None, catalog_hash="")
         self._log("adopted the binding written on disk")
@@ -730,13 +712,7 @@ class Agent:
                 architecture=self._engine.platform_tuple.get("arch", ""),
                 data_dir=self._data_dir,
             )
-        except (
-            SelfUpdateError,
-            GatewayRefused,
-            GatewayUnreachable,
-            GatewayUntrusted,
-            GatewayWireStale,
-        ) as error:
+        except (SelfUpdateError, GatewayUnreachable, GatewayUntrusted) as error:
             code = (
                 str(error)
                 if isinstance(error, SelfUpdateError)
@@ -746,18 +722,25 @@ class Agent:
                 self._update_error = {"code": code, "params": {"target": target}}
             self._log(f"reinstall failed: {error}")
 
-    def _maybe_self_update(self, hub_version: str) -> None:
+    def _maybe_self_update(self, hub_software: str) -> None:
         """Update this agent when the hub runs a later release, once per target.
 
+        A version that does not parse or ends in ``+dev``, on either side,
+        updates nothing.
+
         Args:
-            hub_version: What the welcome named.
+            hub_software: The ``software`` the welcome named.
         """
+        hub_version = hub_version_of(hub_software)
         with self._lock:
             if not hub_version or hub_version == self._update_target:
                 return
             self._update_target = hub_version
             self._update_error = None
             channel = self._channel
+        if is_dev_version(hub_version) or is_dev_version(AGENT_VERSION):
+            self._log(f"no self-update: {AGENT_VERSION} or {hub_version} is a checkout")
+            return
         hub = parse_version(hub_version)
         agent = parse_version(AGENT_VERSION)
         if hub is None or agent is None:
@@ -777,12 +760,7 @@ class Agent:
                 architecture=self._engine.platform_tuple.get("arch", ""),
                 data_dir=self._data_dir,
             )
-        except (
-            SelfUpdateError,
-            GatewayRefused,
-            GatewayUnreachable,
-            GatewayUntrusted,
-        ) as error:
+        except (SelfUpdateError, GatewayUnreachable, GatewayUntrusted) as error:
             code = (
                 str(error)
                 if isinstance(error, SelfUpdateError)

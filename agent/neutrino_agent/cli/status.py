@@ -14,7 +14,7 @@ from __future__ import annotations
 import time
 
 from neutrino_agent import AGENT_VERSION
-from neutrino_agent.cli.wording import word_reinstall
+from neutrino_agent.cli.wording import word_code, word_reinstall
 from neutrino_agent.control import client
 from neutrino_agent.core import enrollment, self_update
 from neutrino_agent.core.loop import Agent
@@ -23,16 +23,11 @@ from neutrino_agent.platforms.detect import detect_platform
 
 STATUS_UNBOUND = "this machine has joined no gateway"
 
-# What each error code says on this surface, and the follow-up line the codes
-# that unbind by themselves get.
+# What the channel's own failures say on this surface; every other code is
+# worded by the shared table. The advice lines name the next step.
 ERROR_WORDS = {
-    "hub_refused": "the hub refused this machine's token",
     "hub_untrusted": "what answers is not the hub this machine pinned",
     "hub_unreachable": "the hub cannot be reached",
-    "agent_wire_stale": (
-        "this agent's build does not match the hub; it reinstalls itself "
-        "from the hub's package"
-    ),
     "agent_update_fetch_failed": (
         "self-update failed: the package could not be fetched from the hub"
     ),
@@ -51,27 +46,15 @@ ERROR_WORDS = {
     ),
 }
 ERROR_ADVICE = {
-    "hub_refused": (
-        "the hub has let this machine go; the running service unbinds by "
-        "itself, or run `sudo nagent disconnect` and join with a fresh link"
-    ),
     "hub_untrusted": (
-        "what answers there is not the hub this machine pinned. It was "
-        "reset or reinstalled; the running service unbinds by itself after "
-        "a few of these, and a fresh link from the hub's Devices page rejoins"
+        "the hub was reset or reinstalled; join again with a fresh link "
+        "from its Devices page"
     ),
-    "agent_newer_than_hub": (
-        "the hub turns this agent away; the running service unbinds by "
-        "itself after a few of these. Update the hub, then rejoin with a "
-        "fresh link from its Devices page"
-    ),
+    "binding_unknown": "join again with a fresh link from the hub's Devices page",
+    "replaced": "restart the service, or join again with a fresh link",
+    "protocol_too_old": "update this agent from the hub's Devices page",
+    "protocol_too_new": "update the hub, then this machine reports again",
 }
-UNBIND_CAUSE_WORDS = {
-    "hub_untrusted": "the hub's identity changed (it was reset or reinstalled)",
-    "agent_newer_than_hub": "this agent is newer than the hub",
-    "hub_refused": "the hub no longer knows this machine",
-}
-REJOIN_HINT = "rejoin by pasting a fresh link from the hub's Devices page"
 
 
 def main() -> int:
@@ -87,12 +70,12 @@ def main() -> int:
     state = _local_state()
     if state is not None:
         return _status_from_service(state)
-    gateway_url = enrollment.load_config().get("gateway_url", "")
-    if not gateway_url:
+    binding = enrollment.load_binding()
+    if not binding:
         print(f"hub        {STATUS_UNBOUND}")
         print(f"service    {service_state()}")
         return 1
-    print(f"hub        {gateway_url}   connected")
+    _print_binding(binding)
     current = service_state()
     if current == "running":
         print(f"service    {current}")
@@ -107,10 +90,7 @@ def main() -> int:
     elapsed_ms = round((time.monotonic() - started_at) * 1000)
     error = agent.last_error()
     if error:
-        print(f"heartbeat  {word_error(error)}")
-        advice = ERROR_ADVICE.get(error.get("code", ""))
-        if advice:
-            print(f"           {advice}")
+        _print_error(error)
         return 1
     print(f"heartbeat  ok, {elapsed_ms} ms. The hub answered this machine's hello")
     return 0
@@ -139,25 +119,31 @@ def word_error(error: dict) -> str:
     """
     code = error.get("code", "")
     params = error.get("params", {}) or {}
-    if code == "agent_newer_than_hub":
-        return (
-            f"this agent ({params.get('agent_version', '')}) is newer than "
-            f"the hub ({params.get('hub_version', '')}); update the hub first"
-        )
     if code == "hub_unreachable":
         return str(params.get("detail", "")) or ERROR_WORDS[code]
-    if code == "self_unbound":
-        cause = UNBIND_CAUSE_WORDS.get(
-            str(params.get("cause", "")), UNBIND_CAUSE_WORDS["hub_refused"]
-        )
-        return f"{cause}; {REJOIN_HINT}"
     if code == "agent_package_digest_mismatch":
         target = params.get("target", "")
         return f"self-update to {target} failed: the package did not match its digest"
     if code == "agent_update_launch_failed":
         target = params.get("target", "")
         return f"self-update to {target} could not be launched"
-    return ERROR_WORDS.get(code, code)
+    if code in ERROR_WORDS:
+        return ERROR_WORDS[code]
+    return word_code(code, params)
+
+
+def _print_binding(binding: dict) -> None:
+    """The two lines that name the hub and the binding on it."""
+    print(f"hub        {binding.get('gateway_url', '')}")
+    print(f"binding    {binding.get('id', '')}")
+
+
+def _print_error(error: dict) -> None:
+    """The heartbeat line for one error, and its advice when there is some."""
+    print(f"heartbeat  {word_error(error)}")
+    advice = ERROR_ADVICE.get(str(error.get("code", "")))
+    if advice:
+        print(f"           {advice}")
 
 
 def _print_reinstall() -> None:
@@ -212,15 +198,20 @@ def _status_from_service(state: dict) -> int:
     Returns:
         Process exit status: 0 when bound and beating cleanly, 1 otherwise.
     """
+    error = state.get("last_error")
+    if not isinstance(error, dict) or not error.get("code"):
+        error = None
     if not state.get("is_connected"):
         print(f"hub        {STATUS_UNBOUND}")
+        if error is not None:
+            _print_error(error)
         print("service    running")
         return 1
-    print(f"hub        {state.get('gateway_url', '')}   connected")
+    binding = state.get("binding")
+    _print_binding(binding if isinstance(binding, dict) else {})
     print("service    running")
-    error = state.get("last_error")
-    if isinstance(error, dict) and error.get("code"):
-        print(f"heartbeat  {word_error(error)}")
+    if error is not None:
+        _print_error(error)
         return 1
     if not state.get("is_online", True):
         print("heartbeat  connecting. The service is reaching the hub")

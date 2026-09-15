@@ -37,9 +37,27 @@ AGENT_NOT_RUNNING = (
 NO_CONTROL_SOCKET = "this platform has no control socket"
 
 # What each typed refusal or failure code says on this surface. The channel's
-# own failures are worded by ``status.py``, which is the surface that shows
-# them.
+# transport failures are worded by ``status.py``, which is the surface that
+# shows them; the hub's refusals are worded here.
 CLI_CODE_WORDS = {
+    "protocol_too_old": (
+        "this agent speaks protocol {peer}; the hub accepts {min} and up, "
+        "so update this agent"
+    ),
+    "protocol_too_new": (
+        "this agent speaks protocol {peer}; the hub speaks {hub}, "
+        "so update the hub first"
+    ),
+    "channel_refused": "the hub turned this machine's hello away without a reason",
+    "binding_unknown": "the hub no longer knows this machine",
+    "replaced": "another socket holds this machine's binding; this one stopped",
+    "ticket_spent": (
+        "the hub refused this link; it may have expired, so generate a fresh "
+        "one on the Devices page"
+    ),
+    "role_mismatch": "the hub says this binding is not a device's",
+    "kind_unknown": "the hub opened a stream this agent does not know",
+    "verb_unknown": "the hub asked for a verb this agent does not know",
     "no_platform_build": "no version of this exists for this machine",
     "install_failed": "the install failed",
     "install_unconfirmed": "the install finished, but the software cannot be found",

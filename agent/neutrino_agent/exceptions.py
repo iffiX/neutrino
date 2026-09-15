@@ -1,10 +1,10 @@
 """Every exception kind the agent declares, and nothing else declares one.
 
 A kind lives here only because a caller acts differently on it: the
-connection loop tells an unreachable hub from one that refused this token,
-the session answers a refused stream with the code it carries, and a runner
-turns a refused configuration into a typed status. Everything else raises
-the builtin that already says it.
+connection loop tells an unreachable hub from one that refused this machine
+with a code, the session answers a refused stream with the code it carries,
+and a runner turns a refused configuration into a typed status. Everything
+else raises the builtin that already says it.
 """
 
 
@@ -13,7 +13,10 @@ class GatewayUnreachable(ConnectionError):
 
 
 class GatewayRefusedDetail(GatewayUnreachable):
-    """Raised when the hub refused a request with a typed reason of its own.
+    """Raised when the hub refused with ``{code, params}``.
+
+    A ``refused`` frame, a close the hub gave a code to, or an HTTP error
+    whose ``detail`` names one; the loop splits on the code.
 
     Attributes:
         code: The hub's own code.
@@ -62,54 +65,6 @@ class StreamClosed(ConnectionError):
     """Raised when a stream ended under its handler, by the hub or the socket."""
 
 
-class GatewayRefused(PermissionError):
-    """Raised when the hub answered but rejected this machine's token."""
-
-
-class GatewayVersionRefused(GatewayRefused):
-    """Raised when the hub turned this agent away as newer than itself.
-
-    Attributes:
-        hub_version: What the hub reported itself as.
-        agent_version: What this agent reported itself as.
-    """
-
-    def __init__(self, *, hub_version: str, agent_version: str):
-        """
-        Args:
-            hub_version: What the hub reported itself as.
-            agent_version: What this agent reported itself as.
-        """
-        super().__init__(
-            f"this agent ({agent_version}) is newer than the hub "
-            f"({hub_version}); update the hub first"
-        )
-        self.hub_version = hub_version
-        self.agent_version = agent_version
-
-
-class GatewayWireStale(GatewayRefused):
-    """Raised when the hub says this agent's wire generation is not its own.
-
-    Attributes:
-        hub_wire: The generation the hub serves.
-        agent_wire: The generation this agent was built to.
-    """
-
-    def __init__(self, *, hub_wire: int, agent_wire: int):
-        """
-        Args:
-            hub_wire: The generation the hub serves.
-            agent_wire: The generation this agent was built to.
-        """
-        super().__init__(
-            f"this agent speaks wire generation {agent_wire}, the hub "
-            f"generation {hub_wire}; it reinstalls itself from the hub"
-        )
-        self.hub_wire = hub_wire
-        self.agent_wire = agent_wire
-
-
 class StreamRefused(ValueError):
     """Raised when a stream handler will not serve the stream it was opened for.
 
@@ -149,7 +104,23 @@ class ModuleApplyError(ValueError):
 
 
 class EnrollmentError(RuntimeError):
-    """Raised when a machine cannot join a gateway."""
+    """Raised when a machine cannot join a hub, or its link is unusable.
+
+    Attributes:
+        code: The hub's refusal code, empty when the fault is on this side.
+        params: What the code's wording names.
+    """
+
+    def __init__(self, message: str, *, code: str = "", params: "dict | None" = None):
+        """
+        Args:
+            message: The words for a fault on this side; the code otherwise.
+            code: The hub's refusal code.
+            params: Its parameters.
+        """
+        super().__init__(message)
+        self.code = code
+        self.params = dict(params or {})
 
 
 class InstallError(RuntimeError):

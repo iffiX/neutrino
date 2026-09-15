@@ -1,7 +1,8 @@
 """One connection to the hub, driven with a scripted socket client.
 
-What these pin: the hello and the welcome, a report on the interval and at
-once when something changed, an order stream running the engine and closing
+What these pin: the hello card and the welcome card, a refusal at the door
+raised with its code, a report on the interval and at once when something
+changed, an order stream running the engine and closing
 with its state, a command stream closing with its exit, a byte-carrying
 kind opened on its channel with the hub's bytes, resizes, credit and close
 reaching it, a stream kind this build has no handler for refused typed, and
@@ -15,14 +16,22 @@ import time
 
 import pytest
 
-from neutrino_agent.core.channel import (
-    GatewayRefused,
-    GatewayUnreachable,
-    GatewayVersionRefused,
-    GatewayWireStale,
-)
 from neutrino_agent.core.session import AgentSession
-from neutrino_agent.exceptions import SocketClosed, StreamRefused
+from neutrino_agent.exceptions import (
+    GatewayRefusedDetail,
+    GatewayUnreachable,
+    SocketClosed,
+    StreamRefused,
+)
+
+HELLO = {
+    "protocol": 1,
+    "role": "agent",
+    "id": "dev-1",
+    "name": "box",
+    "software": "neutrino_agent/0.0.0",
+    "token": "tok",
+}
 
 
 class ScriptedClient:
@@ -112,8 +121,7 @@ def make_session(client, **overrides):
 
     fields = dict(
         client=client,
-        token="tok",
-        hello={"hostname": "box", "state_hash": ""},
+        hello=dict(HELLO),
         report=lambda: {"metrics": {"cpu_percent": 1}},
         run_order=run_order,
         run_command=run_command,
@@ -127,7 +135,15 @@ def make_session(client, **overrides):
 
 
 def welcome(**fields) -> dict:
-    return {"type": "welcome", "hub_version": "0.2.0", "device_id": "d", **fields}
+    return {
+        "type": "welcome",
+        "protocol": 1,
+        "role": "hub",
+        "id": "hub-1",
+        "name": "hub",
+        "software": "neutrino_hub/0.2.0",
+        **fields,
+    }
 
 
 class EchoStream:
@@ -175,33 +191,20 @@ def serving(session):
 # --- hello and welcome ---
 
 
-def test_connect_says_hello_with_the_token_and_takes_the_welcome():
+def test_connect_says_hello_with_the_card_and_takes_the_welcome():
     client = ScriptedClient()
     session, _, _, _ = make_session(client)
-    client.feed(welcome(state_hash=""))
+    client.feed(welcome())
 
     session.connect()
 
     (hello,) = client.frames("hello")
-    assert hello["token"] == "tok"
-    assert hello["hostname"] == "box"
-    assert hello["client_version"]
-    assert hello["wire"]
-    assert hello["state_hash"] == ""
-    assert session.hub_version == "0.2.0"
+    assert hello == {"type": "hello", **HELLO}
+    assert session.hub_id == "hub-1"
+    assert session.hub_name == "hub"
+    assert session.hub_software == "neutrino_hub/0.2.0"
     assert session.is_open
-    session.close()
-
-
-def test_a_welcome_naming_another_state_hash_asks_for_the_state():
-    client = ScriptedClient()
-    session, _, _, _ = make_session(client)
-    client.feed(welcome(state_hash="h1"))
-
-    session.connect()
-
-    assert client.wait_for("state_request") == [{"type": "state_request"}]
-    assert session.state_hash == "h1"
+    assert client.frames("state_request") == []
     session.close()
 
 
@@ -210,19 +213,74 @@ def test_a_first_frame_that_is_no_welcome_is_unreachable():
     session, _, _, _ = make_session(client)
     client.feed({"type": "state", "hash": "", "desired": {}})
 
-    with pytest.raises(GatewayUnreachable):
+    with pytest.raises(GatewayUnreachable) as caught:
         session.connect()
 
+    assert not isinstance(caught.value, GatewayRefusedDetail)
     assert client.is_closed
 
 
-def test_a_close_before_the_welcome_maps_to_its_refusal():
+def test_a_welcome_from_something_other_than_a_hub_is_unreachable():
     client = ScriptedClient()
     session, _, _, _ = make_session(client)
-    client.feed(SocketClosed(4401, "unknown_token"))
+    client.feed(welcome(role="agent"))
 
-    with pytest.raises(GatewayRefused):
+    with pytest.raises(GatewayUnreachable) as caught:
         session.connect()
+
+    assert not isinstance(caught.value, GatewayRefusedDetail)
+    assert client.is_closed
+
+
+def test_a_refused_first_frame_raises_its_code_and_params():
+    client = ScriptedClient()
+    session, _, _, _ = make_session(client)
+    client.feed(
+        {
+            "type": "refused",
+            "code": "protocol_too_new",
+            "params": {"peer": 2, "hub": 1, "min": 1},
+        }
+    )
+
+    with pytest.raises(GatewayRefusedDetail) as refused:
+        session.connect()
+
+    assert refused.value.code == "protocol_too_new"
+    assert refused.value.params == {"peer": 2, "hub": 1, "min": 1}
+    assert client.is_closed
+    assert not session.is_open
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        {"type": "refused"},
+        {"type": "refused", "code": "", "params": {}},
+        {"type": "refused", "code": "binding_unknown", "params": "words"},
+    ],
+)
+def test_a_refused_frame_is_read_tolerantly(frame):
+    client = ScriptedClient()
+    session, _, _, _ = make_session(client)
+    client.feed(frame)
+
+    with pytest.raises(GatewayRefusedDetail) as refused:
+        session.connect()
+
+    assert refused.value.code == (frame.get("code") or "channel_refused")
+    assert refused.value.params == {}
+
+
+def test_a_close_4000_before_any_frame_is_channel_refused():
+    client = ScriptedClient()
+    session, _, _, _ = make_session(client)
+    client.feed(SocketClosed(4000, "binding_unknown"))
+
+    with pytest.raises(GatewayRefusedDetail) as refused:
+        session.connect()
+
+    assert refused.value.code == "channel_refused"
 
 
 def test_a_connect_error_passes_straight_through():
@@ -565,16 +623,19 @@ def test_state_frames_are_taken_and_nothing_else_is_fatal():
 
 
 @pytest.mark.parametrize(
-    "closed, expected",
+    "closed, expected, code",
     [
-        (SocketClosed(4401, "unknown_token"), GatewayRefused),
-        (SocketClosed(4409, "agent_wire_stale"), GatewayWireStale),
-        (SocketClosed(4409, "agent_newer_than_hub"), GatewayVersionRefused),
-        (SocketClosed(4410, "replaced"), GatewayUnreachable),
-        (GatewayUnreachable("hung up"), GatewayUnreachable),
+        (
+            SocketClosed(4000, "binding_unknown"),
+            GatewayRefusedDetail,
+            "channel_refused",
+        ),
+        (SocketClosed(4010, "replaced"), GatewayRefusedDetail, "replaced"),
+        (SocketClosed(1001, "going away"), GatewayUnreachable, ""),
+        (GatewayUnreachable("hung up"), GatewayUnreachable, ""),
     ],
 )
-def test_serve_returns_what_ended_the_socket(closed, expected):
+def test_serve_returns_what_ended_the_socket(closed, expected, code):
     client = ScriptedClient()
     session, _, _, _ = make_session(client)
     client.feed(welcome())
@@ -587,6 +648,7 @@ def test_serve_returns_what_ended_the_socket(closed, expected):
 
     assert not thread.is_alive()
     assert isinstance(outcome["failure"], expected)
+    assert getattr(outcome["failure"], "code", "") == code
     assert not session.is_open
 
 

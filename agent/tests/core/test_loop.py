@@ -1,12 +1,12 @@
 """One agent, driven connection by connection with scripted sockets.
 
-What these pin: every field the hello and the report carry and where each
-comes from; the rejection counter and the three-refusal self-unbind, with a
-replaced socket and a broken wire counting for nothing; the wire-generation
-reinstall and its once-per-target latch; the binding file shared with the
-CLI; the self-update a welcome triggers; what ``sync`` and ``probe`` do; and
-the wake flag cleared before a turn rather than after it. Nothing here
-talks to a network.
+What these pin: the identity card the hello carries and every field of the
+report; what each refusal at the door does to the binding, with only
+``binding_unknown`` deleting it and a replaced socket waiting for a person;
+the binding file shared with the CLI; the self-update a welcome's
+``software`` triggers and its once-per-target latch; what ``sync`` and
+``probe`` do; and the wake flag cleared before a turn rather than after it.
+Nothing here talks to a network.
 """
 
 import json
@@ -15,15 +15,17 @@ import threading
 
 import pytest
 
+import neutrino_agent.core.enrollment as enrollment_module
 import neutrino_agent.core.loop as loop_module
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import (
     AGENT_BACKOFF_MAX_S,
     AGENT_BACKOFF_MIN_S,
-    AGENT_HEARTBEAT_INTERVAL_S,
     AGENT_REINSTALL_RESULT_NAME,
-    AGENT_WIRE_GENERATION,
+    AGENT_ROLE,
+    AGENT_SOFTWARE_PREFIX,
     AGENT_WS_PATH,
+    PROTOCOL,
 )
 from neutrino_agent.core.loop import IDLE_POLL_INTERVAL_S, Agent
 from neutrino_agent.core.metrics import HostMetrics
@@ -31,14 +33,20 @@ from neutrino_agent.exceptions import (
     GatewayUnreachable,
     GatewayUntrusted,
     PlatformUnsupportedError,
-    SelfUpdateError,
     SocketClosed,
 )
 from neutrino_agent.platforms.base import AgentPlatform
-from tests.conftest import bind
+from tests.conftest import BINDING_ID, BINDING_TOKEN, bind
 from tests.core.test_session import ScriptedClient
 
-WELCOME = {"type": "welcome", "hub_version": "0.0.1", "device_id": "d"}
+WELCOME = {
+    "type": "welcome",
+    "protocol": 1,
+    "role": "hub",
+    "id": "hub-1",
+    "name": "hub",
+    "software": "neutrino_hub/0.0.1",
+}
 HUNG_UP = GatewayUnreachable("hung up")
 # A script entry: the hub hangs up once the first report has gone up.
 DROP_AFTER_REPORT = object()
@@ -146,7 +154,7 @@ def test_a_binding_removed_by_another_process_is_let_go(config_path):
     agent = Agent(log=lambda message: None)
     agent._last_error = {"code": "hub_unreachable", "params": {}}
 
-    config_path.write_text(json.dumps({"device_id": "kept"}))
+    config_path.unlink()
     agent._adopt_external_binding()
 
     assert agent._channel is None
@@ -166,12 +174,12 @@ def test_an_untouched_file_reloads_nothing(config_path):
 def test_a_rewrite_of_the_same_binding_wipes_no_state(config_path):
     bind(config_path)
     agent = Agent(log=lambda message: None)
-    agent._refusals = 2
+    agent._last_error = {"code": "hub_unreachable", "params": {}}
 
     bind(config_path)
     agent._adopt_external_binding()
 
-    assert agent._refusals == 2
+    assert agent.last_error() == {"code": "hub_unreachable", "params": {}}
 
 
 def test_adopt_binding_a_changed_url_swaps_the_channel_and_clears_state(config_path):
@@ -183,7 +191,7 @@ def test_adopt_binding_a_changed_url_swaps_the_channel_and_clears_state(config_p
     bind(config_path, url="http://127.0.0.1:10")
     agent._adopt_external_binding()
 
-    assert agent._binding[0] == "http://127.0.0.1:10"
+    assert agent._binding["gateway_url"] == "http://127.0.0.1:10"
     assert agent._channel is not None
     assert agent._update_target == ""
     assert agent.last_error() is None
@@ -195,27 +203,50 @@ def test_a_changed_binding_closes_the_live_socket(config_path, monkeypatch):
     session.connect()
     agent._session = session
 
-    config_path.write_text(json.dumps({"device_id": "kept"}))
+    config_path.unlink()
     agent._adopt_external_binding()
 
     assert script.clients[0].is_closed
     assert agent._session is None
 
 
-def test_disconnect_leaves_the_service_unbound(config_path, monkeypatch):
+def test_leave_gives_the_binding_back_and_leaves_the_service_unbound(
+    config_path, monkeypatch
+):
     agent, script = scripted_agent(config_path, monkeypatch, [[WELCOME]])
     left: list = []
-    agent._channel.post = lambda path, payload: left.append(path) or {}
+    monkeypatch.setattr(
+        enrollment_module.BindingHttpClient,
+        "leave",
+        lambda self, binding_id, token: left.append((binding_id, token)),
+    )
     session = agent._open_session()
     session.connect()
     agent._session = session
 
-    agent.disconnect()
+    agent.leave()
 
-    assert left == ["/api/agent/leave"]
+    assert left == [(BINDING_ID, BINDING_TOKEN)]
     assert agent._channel is None
     assert script.clients[0].is_closed
-    assert "gateway_url" not in json.loads(config_path.read_text())
+    assert not config_path.exists()
+
+
+def test_leave_does_not_wait_on_a_hub_that_cannot_be_told(config_path, monkeypatch):
+    agent, _ = scripted_agent(config_path, monkeypatch)
+    lines: list = []
+    agent._log = lines.append
+
+    def refuse(self, binding_id, token):
+        raise GatewayUnreachable("gone")
+
+    monkeypatch.setattr(enrollment_module.BindingHttpClient, "leave", refuse)
+
+    agent.leave()
+
+    assert agent._channel is None
+    assert not config_path.exists()
+    assert "could not tell the hub we are leaving: hub_unreachable" in lines
 
 
 def test_the_store_lives_under_the_platforms_data_root():
@@ -233,15 +264,7 @@ def test_the_store_lives_under_the_platforms_data_root():
 def test_the_socket_is_opened_on_the_bindings_host_port_and_pin(
     config_path, monkeypatch
 ):
-    config_path.write_text(
-        json.dumps(
-            {
-                "gateway_url": "https://hub.lan:8443",
-                "token": "tok",
-                "fingerprint": "ab" * 32,
-            }
-        )
-    )
+    bind(config_path, url="https://hub.lan:8443", fingerprint="ab" * 32)
     script = ClientScript([welcomed_then_dropped()])
     monkeypatch.setattr(loop_module, "WebSocketClient", script)
     platform = _FakePlatform(metrics=HostMetrics(), accounts=[])
@@ -258,11 +281,8 @@ def test_the_socket_is_opened_on_the_bindings_host_port_and_pin(
     }
 
 
-def test_the_hello_carries_the_wire_contract(config_path, monkeypatch):
-    platform = _FakePlatform(metrics=HostMetrics(), accounts=["alice", "bob"])
-    agent, script = scripted_agent(
-        config_path, monkeypatch, [welcomed_then_dropped()], platform=platform
-    )
+def test_the_hello_is_the_identity_card(config_path, monkeypatch):
+    agent, script = scripted_agent(config_path, monkeypatch, [welcomed_then_dropped()])
     monkeypatch.setattr(loop_module, "hostname", lambda: "box")
 
     agent.run_once()
@@ -270,15 +290,16 @@ def test_the_hello_carries_the_wire_contract(config_path, monkeypatch):
     (hello,) = script.clients[0].frames("hello")
     assert hello == {
         "type": "hello",
-        "token": "tok",
-        "client_version": AGENT_VERSION,
-        "wire": AGENT_WIRE_GENERATION,
-        "hostname": "box",
-        "platform": agent.platform(),
-        "accounts": ["alice", "bob"],
-        "state_hash": "",
-        "last_reinstall": None,
+        "protocol": PROTOCOL,
+        "role": AGENT_ROLE,
+        "id": BINDING_ID,
+        "name": "box",
+        "software": f"{AGENT_SOFTWARE_PREFIX}{AGENT_VERSION}",
+        "token": BINDING_TOKEN,
     }
+    assert hello["protocol"] == 1
+    assert hello["role"] == "agent"
+    assert hello["software"].startswith("neutrino_hub/") is False
 
 
 def test_the_report_carries_every_field_from_its_source(config_path, monkeypatch):
@@ -347,8 +368,8 @@ def test_report_accounts_platform_cannot_enumerate_sends_an_empty_list(
 
     agent.run_once()
 
-    (hello,) = script.clients[0].frames("hello")
-    assert hello["accounts"] == []
+    (report,) = script.clients[0].frames("report")
+    assert report["accounts"] == []
 
 
 def test_report_interfaces_platform_cannot_read_sends_the_link_alone(
@@ -379,7 +400,7 @@ REINSTALL_RESULT = {
 }
 
 
-def test_the_hello_and_the_report_carry_the_install_this_agent_came_from(
+def test_the_report_carries_the_install_this_agent_came_from(
     tmp_path, config_path, monkeypatch
 ):
     (tmp_path / AGENT_REINSTALL_RESULT_NAME).write_text(json.dumps(REINSTALL_RESULT))
@@ -389,7 +410,7 @@ def test_the_hello_and_the_report_carry_the_install_this_agent_came_from(
 
     (hello,) = script.clients[0].frames("hello")
     (report,) = script.clients[0].frames("report")
-    assert hello["last_reinstall"] == REINSTALL_RESULT
+    assert "last_reinstall" not in hello
     assert report["last_reinstall"] == REINSTALL_RESULT
 
 
@@ -419,8 +440,8 @@ def test_a_reinstall_record_that_cannot_be_read_rides_up_as_nothing(
 
     agent.run_once()
 
-    (hello,) = script.clients[0].frames("hello")
-    assert hello["last_reinstall"] is None
+    (report,) = script.clients[0].frames("report")
+    assert report["last_reinstall"] is None
 
 
 def test_the_last_error_rides_the_next_connections_report(config_path, monkeypatch):
@@ -439,234 +460,218 @@ def test_the_last_error_rides_the_next_connections_report(config_path, monkeypat
     assert report["last_error"] is None
 
 
-# --- rejections, and the three-refusal unbind ---
+# --- refusals at the door, and what each does to the binding ---
 
 
-def refused(code: int, reason: str) -> list:
-    return [SocketClosed(code, reason)]
+def refused(code: str, params=None) -> list:
+    """A hub that answers the hello with ``refused`` and closes 4000."""
+    return [
+        {"type": "refused", "code": code, "params": dict(params or {})},
+        SocketClosed(4000, code),
+    ]
 
 
-def test_repeated_refusals_unbind_the_machine(config_path, monkeypatch):
-    agent, _ = scripted_agent(
-        config_path, monkeypatch, [refused(4401, "unknown_token")] * 3
-    )
+@pytest.mark.parametrize(
+    "script, code, params",
+    [
+        (
+            refused("protocol_too_old", {"peer": 1, "hub": 3, "min": 2}),
+            "protocol_too_old",
+            {"peer": 1, "hub": 3, "min": 2},
+        ),
+        (
+            refused("protocol_too_new", {"peer": 2, "hub": 1, "min": 1}),
+            "protocol_too_new",
+            {"peer": 2, "hub": 1, "min": 1},
+        ),
+        (GatewayUntrusted("wrong pin"), "hub_untrusted", {}),
+        (refused("ticket_spent"), "ticket_spent", {}),
+        (refused("role_mismatch"), "role_mismatch", {}),
+        (refused("somebody_new"), "somebody_new", {}),
+        ([SocketClosed(4000, "binding_unknown")], "channel_refused", {}),
+    ],
+)
+def test_a_refusal_keeps_the_binding_and_asks_again_later(
+    config_path, monkeypatch, script, code, params
+):
+    """Every refusal but ``binding_unknown`` leaves the binding where it
+    is: the hub has not forgotten this machine, it has said no for now."""
+    agent, _ = scripted_agent(config_path, monkeypatch, [script] * 3)
 
     delays = [agent.run_once() for _ in range(3)]
 
-    assert delays[:2] == [AGENT_HEARTBEAT_INTERVAL_S] * 2
-    assert delays[2] == IDLE_POLL_INTERVAL_S
+    assert delays == [AGENT_BACKOFF_MAX_S] * 3
+    assert agent._channel is not None
+    assert enrollment_module.is_bound()
+    assert agent.last_error() == {"code": code, "params": params}
+
+
+def test_binding_unknown_deletes_the_binding_and_waits_for_a_link(
+    config_path, monkeypatch
+):
+    """Only the hub holding the pinned certificate can say it has no such
+    binding; the agent takes its word and keeps the reason for status."""
+    agent, script = scripted_agent(
+        config_path, monkeypatch, [refused("binding_unknown")]
+    )
+
+    assert agent.run_once() == IDLE_POLL_INTERVAL_S
+
+    assert not config_path.exists()
+    assert not enrollment_module.is_bound()
     assert agent._channel is None
-    assert "gateway_url" not in json.loads(config_path.read_text())
-    assert agent.last_error() == {
-        "code": "self_unbound",
-        "params": {"cause": "hub_refused"},
-    }
+    assert agent.last_error() == {"code": "binding_unknown", "params": {}}
+
+    assert agent.run_once() == IDLE_POLL_INTERVAL_S
+    assert len(script.clients) == 1
+    assert agent.last_error() == {"code": "binding_unknown", "params": {}}
 
 
-def test_a_single_refusal_keeps_the_binding(config_path, monkeypatch):
-    agent, _ = scripted_agent(config_path, monkeypatch, [refused(4401, "x")])
+def test_binding_unknown_posts_no_leave(config_path, monkeypatch):
+    agent, _ = scripted_agent(config_path, monkeypatch, [refused("binding_unknown")])
+    left: list = []
+    monkeypatch.setattr(
+        enrollment_module.BindingHttpClient,
+        "leave",
+        lambda self, binding_id, token: left.append(binding_id),
+    )
 
     agent.run_once()
 
-    assert agent._channel is not None
-    assert agent.last_error()["code"] == "hub_refused"
+    assert left == []
 
 
-def test_mixed_rejection_kinds_total_to_an_unbind(config_path, monkeypatch):
-    agent, _ = scripted_agent(
-        config_path,
-        monkeypatch,
-        [
-            GatewayUntrusted("wrong pin"),
-            refused(4409, "agent_newer_than_hub"),
-            refused(4401, "unknown_token"),
-        ],
+def test_a_replaced_socket_stops_reconnecting_until_a_person_acts(
+    config_path, monkeypatch
+):
+    agent, script = scripted_agent(
+        config_path, monkeypatch, [[WELCOME, SocketClosed(4010, "replaced")]]
     )
 
-    for _ in range(3):
-        agent.run_once()
+    assert agent.run_once() == IDLE_POLL_INTERVAL_S
+    assert agent.run_once() == IDLE_POLL_INTERVAL_S
+    assert agent.run_once() == IDLE_POLL_INTERVAL_S
 
-    assert agent._channel is None
-    assert agent.last_error()["params"]["cause"] == "hub_refused"
+    assert len(script.clients) == 1
+    assert agent._channel is not None
+    assert enrollment_module.is_bound()
+    assert agent.last_error() == {"code": "replaced", "params": {}}
 
 
-def test_an_unreachable_connect_neither_counts_nor_resets(config_path, monkeypatch):
-    agent, _ = scripted_agent(
+def test_a_new_binding_wakes_a_replaced_agent(config_path, monkeypatch):
+    agent, script = scripted_agent(
         config_path,
         monkeypatch,
-        [
-            refused(4401, "x"),
-            GatewayUnreachable("gone"),
-            GatewayUnreachable("gone"),
-            refused(4401, "x"),
-        ],
+        [[WELCOME, SocketClosed(4010, "replaced")], welcomed_then_dropped()],
+    )
+    agent.run_once()
+    assert len(script.clients) == 1
+
+    bind(config_path, url="http://127.0.0.1:10")
+    agent.run_once()
+
+    assert len(script.clients) == 2
+    assert script.clients[1].frames("hello")
+    assert agent._is_replaced is False
+
+
+def test_a_join_wakes_a_replaced_agent(config_path, monkeypatch):
+    agent, script = scripted_agent(
+        config_path,
+        monkeypatch,
+        [[WELCOME, SocketClosed(4010, "replaced")], welcomed_then_dropped()],
+    )
+    agent.run_once()
+    monkeypatch.setattr(
+        enrollment_module, "enroll", lambda link, platform=None: bind(config_path)
     )
 
-    delays = [agent.run_once() for _ in range(4)]
+    agent.join("neutrino://enroll/x")
+    agent.run_once()
 
-    assert delays[1:3] == [AGENT_BACKOFF_MIN_S, AGENT_BACKOFF_MIN_S * 2]
-    assert agent._refusals == 2
+    assert len(script.clients) == 2
+    assert agent._is_replaced is False
+
+
+def test_a_refusal_after_the_welcome_keeps_the_binding(config_path, monkeypatch):
+    """A 4000 on a live socket is a refusal like any other: the next hello
+    hears the code, and the binding stays until the hub says it has none."""
+    agent, _ = scripted_agent(
+        config_path, monkeypatch, [[WELCOME, SocketClosed(4000, "binding_unknown")]]
+    )
+
+    delay = agent.run_once()
+
+    assert delay == AGENT_BACKOFF_MAX_S
     assert agent._channel is not None
+    assert enrollment_module.is_bound()
+    assert agent.last_error()["code"] == "channel_refused"
 
 
-def test_a_welcome_resets_the_rejection_count_and_the_backoff(config_path, monkeypatch):
+def test_an_unreachable_hub_backs_off_and_a_welcome_resets_it(config_path, monkeypatch):
     agent, _ = scripted_agent(
         config_path,
         monkeypatch,
         [
-            refused(4401, "x"),
             GatewayUnreachable("gone"),
+            GatewayUnreachable("gone"),
+            refused("protocol_too_new"),
             welcomed_then_dropped(),
-            refused(4401, "x"),
-            refused(4401, "x"),
+            GatewayUnreachable("gone"),
         ],
     )
 
-    for _ in range(5):
-        agent.run_once()
+    delays = [agent.run_once() for _ in range(5)]
 
-    assert agent._refusals == 2
+    # The welcome put the backoff back to its floor: the drop that ended
+    # that connection waits the minimum, and the next failure doubles it.
+    assert delays == [
+        AGENT_BACKOFF_MIN_S,
+        AGENT_BACKOFF_MIN_S * 2,
+        AGENT_BACKOFF_MAX_S,
+        AGENT_BACKOFF_MIN_S,
+        AGENT_BACKOFF_MIN_S * 2,
+    ]
     assert agent._channel is not None
 
 
-def test_a_replaced_socket_counts_for_nothing_and_backs_off(config_path, monkeypatch):
-    agent, _ = scripted_agent(
-        config_path,
-        monkeypatch,
-        [[WELCOME, SocketClosed(4410, "replaced")]] * 3,
-    )
-
-    delays = [agent.run_once() for _ in range(3)]
-
-    assert delays == [AGENT_BACKOFF_MIN_S, AGENT_BACKOFF_MIN_S, AGENT_BACKOFF_MIN_S]
-    assert agent._refusals == 0
-    assert agent._channel is not None
-    assert agent.last_error()["code"] == "hub_unreachable"
-
-
-def test_a_refusal_after_the_welcome_counts_toward_the_unbind(config_path, monkeypatch):
-    """A hub that forgets the device closes its live socket with 4401; the
-    reconnects are refused before any welcome, and the three add up."""
-    agent, _ = scripted_agent(
-        config_path,
-        monkeypatch,
-        [[WELCOME, SocketClosed(4401, "unknown_token")]] + [refused(4401, "x")] * 2,
-    )
-
-    delays = [agent.run_once() for _ in range(3)]
-
-    assert delays[0] == AGENT_HEARTBEAT_INTERVAL_S
-    assert agent._channel is None
-
-
-def test_an_adopted_binding_starts_with_a_clean_count(config_path, monkeypatch):
-    agent, _ = scripted_agent(config_path, monkeypatch, [refused(4401, "x")] * 2)
+def test_an_adopted_binding_starts_clean(config_path, monkeypatch):
+    agent, _ = scripted_agent(config_path, monkeypatch, [refused("protocol_too_new")])
     agent.run_once()
-    agent.run_once()
-    assert agent._refusals == 2
+    assert agent.last_error()["code"] == "protocol_too_new"
 
     bind(config_path, url="http://127.0.0.1:10")
     agent._adopt_external_binding()
 
-    assert agent._refusals == 0
+    assert agent.last_error() is None
+    assert agent._backoff_s == AGENT_BACKOFF_MIN_S
 
 
-# --- the wire generation ---
+# --- the welcome's software ---
 
 
-def test_a_stale_wire_answer_reinstalls_and_never_unbinds(config_path, monkeypatch):
-    agent, _ = scripted_agent(
-        config_path, monkeypatch, [refused(4409, "agent_wire_stale")] * 4
-    )
-    installed = []
+def installer(monkeypatch) -> list:
+    """The self-update replaced at its seam; what it was asked to install."""
+    installed: list = []
     monkeypatch.setattr(loop_module.self_update, "package_kind", lambda platform: "deb")
     monkeypatch.setattr(
         loop_module.self_update,
         "run_update",
         lambda posting, kind, architecture, data_dir: installed.append(kind),
     )
-
-    delays = [agent.run_once() for _ in range(4)]
-
-    assert delays == [AGENT_HEARTBEAT_INTERVAL_S] * 4
-    # Once per target: the same answer again relaunches nothing.
-    assert installed == ["deb"]
-    assert agent._channel is not None
-    assert agent.last_error()["code"] == "agent_wire_stale"
+    return installed
 
 
-@pytest.mark.parametrize(
-    ("error", "code"),
-    [
-        (
-            SelfUpdateError("agent_package_digest_mismatch"),
-            "agent_package_digest_mismatch",
-        ),
-        (
-            GatewayUnreachable("cannot reach gateway: gone"),
-            "agent_update_fetch_failed",
-        ),
-    ],
-)
-def test_wire_stale_a_failed_reinstall_is_coded_and_not_retried(
-    config_path, monkeypatch, error, code
-):
-    agent, _ = scripted_agent(
-        config_path, monkeypatch, [refused(4409, "agent_wire_stale")] * 2
-    )
-    attempts = []
-
-    def fail(posting, kind, architecture, data_dir):
-        attempts.append(kind)
-        raise error
-
-    monkeypatch.setattr(loop_module.self_update, "package_kind", lambda platform: "deb")
-    monkeypatch.setattr(loop_module.self_update, "run_update", fail)
-
-    agent.run_once()
-    agent.run_once()
-
-    assert attempts == ["deb"]
-    assert agent._update_error == {"code": code, "params": {"target": "wire-0"}}
-    assert agent.last_error()["code"] == "agent_wire_stale"
-
-
-def test_wire_stale_platform_without_a_package_installs_nothing(
-    config_path, monkeypatch
-):
-    agent, _ = scripted_agent(
-        config_path, monkeypatch, [refused(4409, "agent_wire_stale")]
-    )
-    monkeypatch.setattr(loop_module.self_update, "package_kind", lambda platform: "")
-    installed = []
-    monkeypatch.setattr(
-        loop_module.self_update,
-        "run_update",
-        lambda posting, kind, architecture, data_dir: installed.append(kind),
-    )
-
-    agent.run_once()
-
-    assert installed == []
-    assert agent._channel is not None
-    assert agent._update_error["code"] == "agent_package_missing"
-
-
-# --- the welcome's hub version ---
+def welcomed_by(software: str) -> list:
+    return [dict(WELCOME, software=software), DROP_AFTER_REPORT]
 
 
 def test_a_newer_hub_launches_the_self_update_once_per_target(config_path, monkeypatch):
-    newer = dict(WELCOME, hub_version="99.0.0")
+    monkeypatch.setattr(loop_module, "AGENT_VERSION", "1.0.0")
     agent, _ = scripted_agent(
-        config_path, monkeypatch, [[newer, DROP_AFTER_REPORT]] * 2
+        config_path, monkeypatch, [welcomed_by("neutrino_hub/9.9.9")] * 2
     )
-    installed = []
-    monkeypatch.setattr(loop_module.self_update, "package_kind", lambda platform: "deb")
-    monkeypatch.setattr(
-        loop_module.self_update,
-        "run_update",
-        lambda posting, kind, architecture, data_dir: installed.append(kind),
-    )
+    installed = installer(monkeypatch)
 
     agent.run_once()
     agent.run_once()
@@ -674,19 +679,29 @@ def test_a_newer_hub_launches_the_self_update_once_per_target(config_path, monke
     assert installed == ["deb"]
 
 
-def test_an_older_or_equal_hub_updates_nothing(config_path, monkeypatch):
-    agent, _ = scripted_agent(config_path, monkeypatch, [welcomed_then_dropped()])
-    installed = []
-    monkeypatch.setattr(loop_module.self_update, "package_kind", lambda platform: "deb")
-    monkeypatch.setattr(
-        loop_module.self_update,
-        "run_update",
-        lambda posting, kind, architecture, data_dir: installed.append(kind),
-    )
+@pytest.mark.parametrize(
+    "agent_version, software",
+    [
+        ("1.0.0", "neutrino_hub/9.9.9+dev"),
+        ("1.0.0+dev", "neutrino_hub/9.9.9"),
+        ("1.0.0", "neutrino_hub/1.0.0"),
+        ("1.0.0", "neutrino_hub/0.9.9"),
+        ("1.0.0", "neutrino_hub/wat"),
+        ("1.0.0", "something_else/9.9.9"),
+        ("1.0.0", ""),
+    ],
+)
+def test_a_dev_older_equal_or_foreign_software_updates_nothing(
+    config_path, monkeypatch, agent_version, software
+):
+    monkeypatch.setattr(loop_module, "AGENT_VERSION", agent_version)
+    agent, _ = scripted_agent(config_path, monkeypatch, [welcomed_by(software)])
+    installed = installer(monkeypatch)
 
     agent.run_once()
 
     assert installed == []
+    assert agent._update_error is None
 
 
 # --- commands and the reinstall order ---
@@ -694,13 +709,7 @@ def test_an_older_or_equal_hub_updates_nothing(config_path, monkeypatch):
 
 def test_a_reinstall_command_forces_the_self_update(config_path, monkeypatch):
     agent, _ = scripted_agent(config_path, monkeypatch)
-    installed = []
-    monkeypatch.setattr(loop_module.self_update, "package_kind", lambda platform: "deb")
-    monkeypatch.setattr(
-        loop_module.self_update,
-        "run_update",
-        lambda posting, kind, architecture, data_dir: installed.append(kind),
-    )
+    installed = installer(monkeypatch)
 
     outcome = agent._run_command("reinstall", {})
 
@@ -755,14 +764,14 @@ def test_probe_connects_once_and_closes(config_path, monkeypatch):
     assert script.clients[0].is_closed
 
 
-def test_probe_reports_a_refusal_without_counting_it(config_path, monkeypatch):
-    agent, _ = scripted_agent(config_path, monkeypatch, [refused(4401, "x")])
+def test_probe_reports_a_refusal_and_touches_nothing(config_path, monkeypatch):
+    agent, _ = scripted_agent(config_path, monkeypatch, [refused("binding_unknown")])
 
     agent.probe()
 
-    assert agent.last_error()["code"] == "hub_refused"
-    assert agent._refusals == 0
+    assert agent.last_error()["code"] == "binding_unknown"
     assert agent._channel is not None
+    assert enrollment_module.is_bound()
 
 
 def test_probe_while_unbound_does_nothing(config_path, monkeypatch):
