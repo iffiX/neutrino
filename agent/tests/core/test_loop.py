@@ -766,14 +766,14 @@ def test_a_dev_older_equal_or_foreign_software_updates_nothing(
     assert agent._update_error is None
 
 
-# --- commands and the reinstall order ---
+# --- commands and the reinstall verb ---
 
 
 def test_a_reinstall_command_forces_the_self_update(config_path, monkeypatch):
     agent, _ = scripted_agent(config_path, monkeypatch)
     installed = installer(monkeypatch)
 
-    outcome = agent._run_command("reinstall", {})
+    outcome = agent._run_command("agent", "reinstall", {})
 
     assert installed == ["deb"]
     assert outcome == {
@@ -788,10 +788,50 @@ def test_a_command_with_no_binding_is_typed(config_path, monkeypatch):
     agent, _ = scripted_agent(config_path, monkeypatch)
     agent._operator = None
 
-    outcome = agent._run_command("reboot", {})
+    outcome = agent._run_command("agent", "reboot", {})
 
     assert outcome["code"] == "hub_unreachable"
     assert outcome["exit_code"] == 1
+
+
+def test_a_resize_command_reaches_the_live_sessions_stream(config_path, monkeypatch):
+    agent, script = scripted_agent(config_path, monkeypatch, [[WELCOME]])
+    session = agent._open_session()
+    session.connect()
+    agent._session = session
+    resized: list = []
+    monkeypatch.setattr(
+        session,
+        "resize_stream",
+        lambda stream_id, cols, rows: resized.append((stream_id, cols, rows)) or True,
+    )
+
+    outcome = agent._run_command(
+        "agent", "resize", {"shell": 2, "cols": 100, "rows": 30}
+    )
+
+    assert outcome["exit_code"] == 0
+    assert resized == [(2, 100, 30)]
+    session.close()
+
+
+def test_a_stream_is_opened_on_the_live_socket_and_refused_without_one(
+    config_path, monkeypatch
+):
+    agent, script = scripted_agent(config_path, monkeypatch, [[WELCOME]])
+    with pytest.raises(GatewayUnreachable):
+        agent._open_stream("log", module="samba")
+
+    session = agent._open_session()
+    session.connect()
+    agent._session = session
+    channel = agent._open_stream("log", module="samba")
+
+    assert channel.id == 1
+    assert script.clients[0].frames("open") == [
+        {"type": "open", "stream": 1, "kind": "log", "module": "samba"}
+    ]
+    session.close()
 
 
 # --- sync and probe ---

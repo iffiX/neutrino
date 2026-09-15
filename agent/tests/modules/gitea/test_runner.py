@@ -1,4 +1,9 @@
-"""The git server runner: install from bytes, validate, apply, commands."""
+"""The git server runner: install from bytes, validate, apply, verbs, details.
+
+What these pin beside the verbs: ``observe()`` reads the binary, the unit
+and the details in one go, and the details name the port the server
+answers on, from the held configuration or the installed ``app.ini``.
+"""
 
 import subprocess
 
@@ -164,10 +169,10 @@ def test_stop_takes_the_server_down(runner):
 
 def test_the_first_admin_is_made_and_the_second_refused(runner):
     first = runner.command(
-        "gitea_admin", {"username": "ann", "password": "p", "email": "a@x"}
+        "admin", {"username": "ann", "password": "p", "email": "a@x"}
     )
     second = runner.command(
-        "gitea_admin", {"username": "bob", "password": "p", "email": "b@x"}
+        "admin", {"username": "bob", "password": "p", "email": "b@x"}
     )
 
     assert first["exit_code"] == 0
@@ -177,7 +182,7 @@ def test_the_first_admin_is_made_and_the_second_refused(runner):
 
 def test_an_unusable_username_is_refused_before_gitea_sees_it(runner):
     outcome = runner.command(
-        "gitea_admin", {"username": "bad name", "password": "p", "email": "a@x"}
+        "admin", {"username": "bad name", "password": "p", "email": "a@x"}
     )
 
     assert outcome["code"] == "username_invalid"
@@ -187,19 +192,56 @@ def test_an_unusable_username_is_refused_before_gitea_sees_it(runner):
 def test_a_password_reset_lands_only_on_an_administrator(runner):
     FakeAdmins.admins = ["ann"]
 
-    good = runner.command("gitea_password", {"username": "ann", "password": "p"})
-    bad = runner.command("gitea_password", {"username": "ghost", "password": "p"})
+    good = runner.command("password", {"username": "ann", "password": "p"})
+    bad = runner.command("password", {"username": "ghost", "password": "p"})
 
     assert good["exit_code"] == 0
     assert FakeAdmins.changed == ["ann"]
     assert bad["code"] == "admin_unknown"
 
 
+def test_a_verb_the_module_does_not_have_is_refused(runner):
+    outcome = runner.command("set_password", {"name": "ann"})
+
+    assert outcome["code"] == "verb_unknown"
+    assert outcome["params"] == {"module": "gitea", "verb": "set_password"}
+
+
+def test_validate_is_a_verb_every_module_answers(runner):
+    good = runner.command("validate", {"config": CONFIG})
+    bad = runner.command("validate", {"config": {**CONFIG, "listen_port": 80}})
+
+    assert (good["exit_code"], good["code"]) == (0, "")
+    assert (bad["exit_code"], bad["code"]) == (1, "port_reserved")
+
+
+def test_observe_reads_the_binary_the_unit_and_the_port(runner, monkeypatch, tmp_path):
+    binary = tmp_path / "gitea"
+    monkeypatch.setattr(runner_module, "GITEA_BINARY_PATH", str(binary))
+    monkeypatch.setattr(runner_module, "unit_state", lambda unit: "active")
+    monkeypatch.setattr(runner_module, "read_listen_port", lambda: 3300)
+
+    absent = runner.observe({})
+    binary.write_text("")
+    present = runner.observe({})
+
+    assert absent["is_installed"] is False
+    assert present["is_installed"] is True
+    assert present["is_active"] is True
+    # A hand-installed instance reports as running on its port; the hub
+    # imports nothing of it.
+    assert present["details"]["port"] == 3300
+    assert present["details"]["is_running"] is True
+    assert present["details"]["admins"] == []
+    runner.apply(CONFIG)
+    assert runner.observe({})["details"]["port"] == 3000
+
+
 def test_a_refused_gitea_verb_is_typed(runner):
     FakeAdmins.error = subprocess.CalledProcessError(1, ["runuser"], stderr="db locked")
 
     outcome = runner.command(
-        "gitea_admin", {"username": "ann", "password": "p", "email": "a@x"}
+        "admin", {"username": "ann", "password": "p", "email": "a@x"}
     )
 
     assert outcome["code"] == "command_failed"

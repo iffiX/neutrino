@@ -71,10 +71,11 @@ ZFS_DISK_ID_PREFERENCE = ("ata-", "scsi-", "nvme-", "usb-", "mmc-", "wwn-")
 ZFS_VDEV_GROUP_PREFIXES = ("mirror-", "raidz1-", "raidz2-", "raidz3-")
 ZFS_TRANSIENT_GROUP_PREFIXES = ("replacing-", "spare-")
 
-ZFS_COMMAND_OP = "zfs_op"
-ZFS_COMMAND_SCAN = "zfs_scan"
+# The verbs a ``command {module: zfs}`` names, beside ``validate``.
+ZFS_COMMAND_OP = "op"
+ZFS_COMMAND_SCAN = "scan"
 
-# The verbs `zfs_op` takes.
+# The operations `op` takes.
 ZFS_OP_CREATE_POOL = "create_pool"
 ZFS_OP_DESTROY_POOL = "destroy_pool"
 ZFS_OP_EXPAND_POOL = "expand_pool"

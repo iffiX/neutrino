@@ -1,14 +1,16 @@
-"""The hub's state: kept root-only, applied in one order, hashed honestly.
+"""The hub's state: kept root-only, made true in one order, hashed honestly.
 
 What these pin: the fixed module order, what each ``want`` does to a
-module that is there (running configures and leaves the unit up, stopped
-configures and stops it, installed and absent leave the configuration
-alone), a module the state does not mention untouched, a module whose
-software is absent left for its install, the applied hash moving only when
-every mentioned module applied, a failed state reported under the old hash
-and tried again only under another hash, the first failure naming the
-state error, the file's mode, and the latest state winning when several
-arrive.
+module (absent uninstalls and clears the mark, installed puts the software
+there and nothing else, stopped and running install what is missing then
+configure and settle the unit, with the mark written on the first apply
+that took), a module the state does not mention untouched, an install's
+bytes asked for down a ``package {module}`` stream and its output sent up
+a ``log {module}`` stream closed with the module's state, the applied
+hash moving only when every mentioned module applied, a failed state
+reported under the old hash and tried again only under another hash
+unless the socket caused it, the first failure naming the state error,
+the file's mode, and the latest state winning when several arrive.
 """
 
 import json
@@ -23,19 +25,29 @@ from neutrino_agent.core.desired_state import (
     DesiredStateApplier,
     DesiredStateStore,
 )
-from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.exceptions import GatewayUnreachable, ModuleApplyError
+from tests.streams.fake_channel import FakeChannel
 
 INSTALL = {"kind": "system_package", "packages": ["x"], "verify": ""}
+
+
+# The module whose recipe installs from bytes; the rest install by name.
+BYTE_MODULES = ("gitea",)
 
 
 class FakeEngine:
     """Observes a scripted set of installed modules and records the rest."""
 
-    def __init__(self, names, *, absent=()):
+    def __init__(self, names, *, absent=(), install_refusal=None):
+        self.names = list(names)
         self.installed = {name for name in names if name not in absent}
+        self.configured: set = set()
         self.states: list = []
         self.results: dict = {}
         self.refreshes = 0
+        self.installs: list = []
+        self.uninstalls: list = []
+        self.install_refusal = install_refusal
 
     def take_state(self, modules):
         self.states.append(modules)
@@ -43,11 +55,46 @@ class FakeEngine:
     def is_installed(self, name):
         return name in self.installed
 
+    def is_configured(self, name):
+        return name in self.configured
+
+    def mark_configured(self, name):
+        self.configured.add(name)
+
+    def clear_configured(self, name):
+        self.configured.discard(name)
+
     def record_apply(self, name, code, params):
         self.results[name] = (code, dict(params))
 
     def refresh_now(self):
         self.refreshes += 1
+
+    def report(self):
+        return {
+            name: {"state": "installed" if name in self.installed else "absent"}
+            for name in self.names
+        }
+
+    def install(self, name, *, receive, on_line=None):
+        received = receive(name) if name in BYTE_MODULES else {}
+        self.installs.append((name, received))
+        if on_line is not None:
+            on_line(f"{name}: installing")
+        if "code" in received:
+            return received
+        if self.install_refusal is not None:
+            return dict(self.install_refusal)
+        self.installed.add(name)
+        return {}
+
+    def uninstall(self, name, *, on_line=None):
+        self.uninstalls.append(name)
+        if on_line is not None:
+            on_line(f"{name}: uninstalling")
+        self.installed.discard(name)
+        self.configured.discard(name)
+        return {}
 
 
 class FakeShareHost:
@@ -82,6 +129,22 @@ class FakeRunner:
         self.journal.append(("stop", id(self)))
 
 
+class FakeSocket:
+    """Opens channels the way the session would, and keeps them."""
+
+    def __init__(self):
+        self.opened: list = []
+        self.channels: list = []
+        self.next_id = 1
+
+    def __call__(self, kind, **args):
+        self.opened.append((kind, args))
+        channel = FakeChannel(stream_id=self.next_id)
+        self.next_id += 2
+        self.channels.append(channel)
+        return channel
+
+
 def state(state_hash: str = "h1", **wants) -> dict:
     """One state document naming each module with its want."""
     return {
@@ -91,7 +154,7 @@ def state(state_hash: str = "h1", **wants) -> dict:
                 "want": want,
                 "config": {"n": name},
                 "install": dict(INSTALL),
-                "uninstall": {},
+                "uninstall": {"packages": ["x"], "is_data_kept": True},
             }
             for name, want in wants.items()
         },
@@ -99,7 +162,7 @@ def state(state_hash: str = "h1", **wants) -> dict:
     }
 
 
-def applier(runners, engine=None, tmp_path=None, rdp=None):
+def applier(runners, engine=None, tmp_path=None, rdp=None, open_stream=None):
     engine = engine if engine is not None else FakeEngine(runners)
     held = DesiredStateApplier.__new__(DesiredStateApplier)
     held._engine = engine
@@ -107,6 +170,8 @@ def applier(runners, engine=None, tmp_path=None, rdp=None):
     held._store = DesiredStateStore(path=str(tmp_path / "desired.json"))
     held._rdp = rdp
     held._log = lambda message: None
+    held._open_stream = open_stream
+    held._package_dir = str(tmp_path / "packages")
     held._lock = threading.Lock()
     held._idle = threading.Condition(held._lock)
     held._is_applying = False
@@ -152,7 +217,7 @@ def test_a_missing_or_broken_file_reads_as_nothing(tmp_path):
     assert store.read() == {}
 
 
-# --- the order and the wants ---
+# --- the order and the four wants ---
 
 
 def test_modules_apply_in_the_fixed_order(tmp_path):
@@ -169,44 +234,87 @@ def test_modules_apply_in_the_fixed_order(tmp_path):
     assert engine.states[0].keys() == set(APPLY_ORDER)
 
 
-def test_running_configures_and_leaves_the_unit_up(tmp_path):
+def test_installed_puts_the_software_there_and_nothing_else(tmp_path):
+    runners = {"samba": FakeRunner()}
+    engine = FakeEngine(runners, absent=("samba",))
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    held.apply(state(samba="installed"))
+
+    assert [name for name, _ in engine.installs] == ["samba"]
+    assert runners["samba"].applied == []
+    assert runners["samba"].stops == 0
+    assert engine.configured == set()
+    assert held.applied_hash == "h1"
+    assert engine.results["samba"] == ("", {})
+
+
+def test_running_installs_what_is_missing_configures_and_writes_the_mark(tmp_path):
+    runners = {"samba": FakeRunner()}
+    engine = FakeEngine(runners, absent=("samba",))
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    held.apply(state(samba="running"))
+
+    assert [name for name, _ in engine.installs] == ["samba"]
+    assert runners["samba"].applied == [{"n": "samba"}]
+    assert runners["samba"].stops == 0
+    assert engine.configured == {"samba"}
+    assert held.applied_hash == "h1"
+
+
+def test_running_on_software_that_is_there_installs_nothing(tmp_path):
     runners = {"samba": FakeRunner()}
     held, engine = applier(runners, tmp_path=tmp_path)
 
     held.apply(state(samba="running"))
 
+    assert engine.installs == []
     assert runners["samba"].applied == [{"n": "samba"}]
-    assert runners["samba"].stops == 0
-    assert held.applied_hash == "h1"
-    assert engine.results["samba"] == ("", {})
+    assert engine.configured == {"samba"}
 
 
 def test_stopped_configures_then_stops_the_unit(tmp_path):
     journal: list = []
     runners = {"samba": FakeRunner(journal=journal)}
-    held, _ = applier(runners, tmp_path=tmp_path)
+    held, engine = applier(runners, tmp_path=tmp_path)
 
     held.apply(state(samba="stopped"))
 
     assert runners["samba"].applied == [{"n": "samba"}]
     assert [entry[0] for entry in journal] == ["apply", "stop"]
+    assert engine.configured == {"samba"}
     assert held.applied_hash == "h1"
 
 
-@pytest.mark.parametrize("want", ["installed", "absent"])
-def test_installed_and_absent_leave_the_configuration_alone(tmp_path, want):
-    """Both are recorded as what is wanted and reported against what is
-    observed; the install and the uninstall are the reconcile's own."""
+def test_absent_uninstalls_what_is_there_and_touches_the_configuration_never(
+    tmp_path,
+):
     runners = {"samba": FakeRunner()}
     held, engine = applier(runners, tmp_path=tmp_path)
+    engine.configured.add("samba")
 
-    held.apply(state(samba=want))
+    held.apply(state(samba="absent"))
 
+    assert engine.uninstalls == ["samba"]
     assert runners["samba"].applied == []
-    assert runners["samba"].stops == 0
+    assert engine.configured == set()
+    assert "samba" not in engine.installed
     assert held.applied_hash == "h1"
     assert engine.results["samba"] == ("", {})
-    assert engine.states[0]["samba"]["want"] == want
+
+
+def test_absent_on_software_that_is_not_there_only_clears_the_mark(tmp_path):
+    runners = {"samba": FakeRunner()}
+    engine = FakeEngine(runners, absent=("samba",))
+    engine.configured.add("samba")
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    held.apply(state(samba="absent"))
+
+    assert engine.uninstalls == []
+    assert engine.configured == set()
+    assert held.applied_hash == "h1"
 
 
 def test_a_module_the_state_does_not_mention_is_untouched(tmp_path):
@@ -217,21 +325,30 @@ def test_a_module_the_state_does_not_mention_is_untouched(tmp_path):
 
     assert runners["gitea"].applied == []
     assert runners["gitea"].stops == 0
+    assert engine.installs == []
     assert "gitea" not in engine.results
     assert held.applied_hash == "h1"
 
 
-def test_a_module_whose_software_is_absent_is_left_for_its_install(tmp_path):
+def test_a_want_outside_the_four_is_left_alone(tmp_path):
     runners = {"samba": FakeRunner()}
-    engine = FakeEngine(runners, absent=("samba",))
-    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+    held, engine = applier(runners, tmp_path=tmp_path)
+
+    held.apply(state(samba="reticulated"))
+
+    assert runners["samba"].applied == []
+    assert engine.installs == []
+    assert held.applied_hash == "h1"
+
+
+def test_a_failed_apply_writes_no_mark(tmp_path):
+    runners = {"samba": FakeRunner(failure=ModuleApplyError("samba_missing"))}
+    held, engine = applier(runners, tmp_path=tmp_path)
 
     held.apply(state(samba="running"))
 
-    assert runners["samba"].applied == []
-    assert runners["samba"].stops == 0
-    assert held.applied_hash == "h1"
-    assert engine.results["samba"] == ("", {})
+    assert engine.configured == set()
+    assert held.state_error["code"] == "samba_missing"
 
 
 def test_the_engine_observes_against_the_state_before_anything_applies(tmp_path):
@@ -246,11 +363,140 @@ def test_the_engine_observes_against_the_state_before_anything_applies(tmp_path)
                 "want": "running",
                 "config": {"n": "samba"},
                 "install": INSTALL,
-                "uninstall": {},
+                "uninstall": {"packages": ["x"], "is_data_kept": True},
             }
         }
     ]
     assert engine.refreshes == 1
+
+
+# --- the streams an install and an uninstall ride ---
+
+
+def test_an_installs_output_goes_up_a_log_stream_closed_with_the_state(tmp_path):
+    runners = {"samba": FakeRunner()}
+    engine = FakeEngine(runners, absent=("samba",))
+    socket = FakeSocket()
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path, open_stream=socket)
+
+    held.apply(state(samba="running"))
+
+    assert socket.opened == [("log", {"module": "samba"})]
+    (log,) = socket.channels
+    assert log.sent == [b"samba: installing\n"]
+    assert log.closed == {"code": "", "params": {"state": "installed"}}
+
+
+def test_a_failed_install_closes_the_log_with_its_code_and_fails_the_state(
+    tmp_path,
+):
+    runners = {"samba": FakeRunner()}
+    engine = FakeEngine(
+        runners,
+        absent=("samba",),
+        install_refusal={"code": "install_unconfirmed", "params": {}},
+    )
+    socket = FakeSocket()
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path, open_stream=socket)
+
+    held.apply(state(samba="running"))
+
+    (log,) = socket.channels
+    assert log.closed == {
+        "code": "install_unconfirmed",
+        "params": {"state": "absent"},
+    }
+    assert runners["samba"].applied == []
+    assert held.applied_hash == ""
+    assert held.state_error == {
+        "code": "install_unconfirmed",
+        "params": {"module": "samba"},
+    }
+    assert engine.results["samba"] == ("install_unconfirmed", {})
+
+
+def test_an_uninstalls_output_goes_up_a_log_stream_too(tmp_path):
+    runners = {"samba": FakeRunner()}
+    socket = FakeSocket()
+    held, engine = applier(runners, tmp_path=tmp_path, open_stream=socket)
+
+    held.apply(state(samba="absent"))
+
+    assert socket.opened == [("log", {"module": "samba"})]
+    (log,) = socket.channels
+    assert log.sent == [b"samba: uninstalling\n"]
+    assert log.closed == {"code": "", "params": {"state": "absent"}}
+
+
+def test_the_bytes_come_down_a_package_stream_the_applier_opens(tmp_path):
+    import hashlib
+
+    runners = {"gitea": FakeRunner()}
+    engine = FakeEngine(runners, absent=("gitea",))
+    socket = FakeSocket()
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path, open_stream=socket)
+    channel = FakeChannel(stream_id=3)
+    channel.feed(("data", b"gitea binary"))
+    channel.feed(("close", "", {"sha256": hashlib.sha256(b"gitea binary").hexdigest()}))
+    socket.channels.append(channel)
+
+    def open_stream(kind, **args):
+        if kind == "package":
+            socket.opened.append((kind, args))
+            return channel
+        return socket(kind, **args)
+
+    held._open_stream = open_stream
+
+    held.apply(state(gitea="installed"))
+
+    assert socket.opened == [
+        ("log", {"module": "gitea"}),
+        ("package", {"module": "gitea"}),
+    ]
+    name, received = engine.installs[0]
+    assert name == "gitea"
+    assert received["path"].startswith(str(tmp_path / "packages"))
+    assert channel.credits[0] > 0
+    assert held.applied_hash == "h1"
+
+
+def test_without_a_socket_the_bytes_cannot_come_and_the_next_state_tries_again(
+    tmp_path,
+):
+    """A dropped socket made nothing about the machine fail: the state is
+    not latched, so the hub's next push of the same hash runs it."""
+    runners = {"gitea": FakeRunner()}
+    engine = FakeEngine(runners, absent=("gitea",))
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    held.apply(state(gitea="installed"))
+
+    assert engine.installs == [("gitea", {"code": "hub_unreachable", "params": {}})]
+    assert held.applied_hash == ""
+    assert held.state_error["code"] == "hub_unreachable"
+    assert held._tried_hash == ""
+
+    held.take(state(gitea="installed"))
+    drive_once(held)
+    assert len(engine.installs) == 2
+
+
+def test_a_socket_that_refuses_the_stream_is_the_same_as_none(tmp_path):
+    def refuse(kind, **args):
+        raise GatewayUnreachable("gone")
+
+    runners = {"gitea": FakeRunner()}
+    engine = FakeEngine(runners, absent=("gitea",))
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path, open_stream=refuse)
+
+    held.apply(state(gitea="installed"))
+
+    assert engine.installs == [("gitea", {"code": "hub_unreachable", "params": {}})]
+    assert held._tried_hash == ""
+
+
+# --- the hash and the error ---
 
 
 def test_the_hash_moves_only_when_every_mentioned_module_applied(tmp_path):
@@ -354,6 +600,24 @@ def test_a_failed_state_keeps_the_old_hash_and_is_not_tried_again_under_it(
     assert held._tried_hash == "h1"
 
 
+def test_a_failed_install_is_not_tried_again_under_the_same_hash(tmp_path):
+    runners = {"samba": FakeRunner()}
+    engine = FakeEngine(
+        runners,
+        absent=("samba",),
+        install_refusal={"code": "install_failed", "params": {"detail": "dpkg"}},
+    )
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+    held.apply(state("h1", samba="running"))
+
+    held.take(state("h1", samba="running"))
+    drive_once(held)
+
+    assert len(engine.installs) == 1
+    assert held._tried_hash == "h1"
+    assert held.state_error["params"] == {"module": "samba", "detail": "dpkg"}
+
+
 def test_a_state_with_another_hash_is_tried_after_a_failure(tmp_path):
     runners = {"samba": FakeRunner(failure=ModuleApplyError("samba_missing"))}
     held, _ = applier(runners, tmp_path=tmp_path)
@@ -366,23 +630,6 @@ def test_a_state_with_another_hash_is_tried_after_a_failure(tmp_path):
     assert held.applied_hash == "h2"
     assert held.state_error is None
     assert runners["samba"].applied == [{"n": "samba"}]
-
-
-def test_apply_again_forces_the_last_state_after_an_order(tmp_path):
-    runners = {"samba": FakeRunner()}
-    engine = FakeEngine(runners, absent=("samba",))
-    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
-    held._store.write(state(samba="running"))
-    held.apply(state(samba="running"))
-    assert held.applied_hash == "h1"
-
-    engine.installed.add("samba")
-    held.apply_again()
-
-    assert held.applied_hash == ""
-    assert held._tried_hash == ""
-    assert held._pending["hash"] == "h1"
-    assert held._wakeup.is_set()
 
 
 def test_settle_returns_once_the_taken_state_has_applied(tmp_path):
@@ -440,3 +687,10 @@ def test_a_password_the_host_refuses_does_not_fail_the_state(tmp_path):
 
     assert held.applied_hash == "h1"
     assert held.state_error is None
+
+
+def test_nothing_here_forces_a_state_again():
+    """An install is the reconcile's own step now; there is no second
+    pass to ask for after it."""
+    assert not hasattr(DesiredStateApplier, "apply_again")
+    assert pytest is not None

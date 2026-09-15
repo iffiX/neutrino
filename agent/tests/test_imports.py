@@ -79,6 +79,9 @@ SURVIVING_MODULES = {
     "neutrino_agent.streams",
     "neutrino_agent.streams.channel",
     "neutrino_agent.streams.files",
+    "neutrino_agent.streams.log",
+    "neutrino_agent.streams.module_command",
+    "neutrino_agent.streams.package",
     "neutrino_agent.streams.shell",
 }
 

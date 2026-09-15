@@ -302,6 +302,27 @@ class GiteaAdminManager:
         ]
 
 
+def read_listen_port() -> int:
+    """The port the installed ``app.ini`` has the server answer on.
+
+    Returns:
+        ``HTTP_PORT`` from the file, or 0 when no readable one names it.
+    """
+    try:
+        with open(GITEA_CONF_PATH, "r", encoding="utf-8") as stream:
+            lines = stream.read().splitlines()
+    except OSError:
+        return 0
+    for line in lines:
+        key, _, value = line.partition("=")
+        if key.strip() == "HTTP_PORT":
+            try:
+                return int(value.strip())
+            except ValueError:
+                return 0
+    return 0
+
+
 def _unlink(path: str) -> None:
     try:
         os.unlink(path)

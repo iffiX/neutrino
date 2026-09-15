@@ -48,6 +48,10 @@ class PodmanContainerState:
         is_running: Whether it is running.
         is_declared: Whether the hub declares it.
         host_ports: The published host ports.
+        ports: Every published port as ``host:container``, from inspect.
+        volumes: Every mount as ``source:destination``, from inspect.
+        environment: The container's environment, ``KEY=value`` each.
+        has_unit: Whether a unit file this machine renders stands for it.
     """
 
     name: str
@@ -56,6 +60,10 @@ class PodmanContainerState:
     is_running: bool
     is_declared: bool
     host_ports: list = field(default_factory=list)
+    ports: list = field(default_factory=list)
+    volumes: list = field(default_factory=list)
+    environment: list = field(default_factory=list)
+    has_unit: bool = False
 
 
 def is_version_at_least(version: str, floor: str) -> bool:
@@ -255,8 +263,12 @@ class PodmanStatusReader:
         except ValueError:
             return []
         states = []
+        inspected = self._inspect(
+            [str((entry.get("Names") or ["?"])[0]) for entry in entries]
+        )
         for entry in entries:
             names = entry.get("Names") or ["?"]
+            detail = inspected.get(names[0], {})
             states.append(
                 PodmanContainerState(
                     name=names[0],
@@ -265,6 +277,10 @@ class PodmanStatusReader:
                     is_running=entry.get("State", "") == "running",
                     is_declared=names[0] in declared_names,
                     host_ports=_host_ports(entry.get("Ports") or []),
+                    ports=_inspected_ports(detail),
+                    volumes=_inspected_volumes(detail),
+                    environment=_inspected_environment(detail),
+                    has_unit=has_unit_file(names[0]),
                 )
             )
         # A declared container with autostart off exists only as a unit
@@ -283,6 +299,49 @@ class PodmanStatusReader:
                 )
         states.sort(key=_declared_first)
         return states
+
+    @staticmethod
+    def _inspect(names: list) -> dict:
+        """What ``podman inspect`` says of each container, by name.
+
+        Returns:
+            The inspect object per name; empty when podman cannot be asked.
+        """
+        if not names:
+            return {}
+        try:
+            result = run(
+                [PODMAN_BINARY, "inspect", "--type", "container"] + names,
+                is_checked=False,
+                timeout_s=30,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return {}
+        if not result.is_success:
+            return {}
+        try:
+            entries = json.loads(result.stdout or "[]")
+        except ValueError:
+            return {}
+        inspected = {}
+        for entry in entries:
+            if isinstance(entry, dict):
+                inspected[str(entry.get("Name", "")).lstrip("/")] = entry
+        return inspected
+
+
+def has_unit_file(name: str) -> bool:
+    """Whether a rendered unit stands for one container, Quadlet or plain.
+
+    Args:
+        name: The container's name.
+
+    Returns:
+        True when either directory holds its file.
+    """
+    return os.path.isfile(
+        os.path.join(PODMAN_QUADLET_DIR, f"{name}.container")
+    ) or os.path.isfile(os.path.join(PODMAN_UNIT_DIR, f"{name}.service"))
 
 
 class PodmanContainerController:
@@ -350,6 +409,38 @@ def journal_lines(name: str, lines: int) -> list:
 
 def _declared_first(state: PodmanContainerState) -> tuple:
     return (not state.is_declared, state.name)
+
+
+def _inspected_ports(detail: dict) -> list:
+    """Every published port of one inspect object as ``host:container``."""
+    bindings = (detail.get("HostConfig") or {}).get("PortBindings") or {}
+    ports = []
+    for container_port, targets in sorted(bindings.items()):
+        inside = str(container_port).split("/", 1)[0]
+        for target in targets or []:
+            host = str((target or {}).get("HostPort", "") or "")
+            if host:
+                ports.append(f"{host}:{inside}")
+    return ports
+
+
+def _inspected_volumes(detail: dict) -> list:
+    """Every mount of one inspect object as ``source:destination``."""
+    volumes = []
+    for mount in detail.get("Mounts") or []:
+        if not isinstance(mount, dict):
+            continue
+        source = str(mount.get("Source", "") or mount.get("Name", "") or "")
+        destination = str(mount.get("Destination", "") or "")
+        if source and destination:
+            volumes.append(f"{source}:{destination}")
+    return volumes
+
+
+def _inspected_environment(detail: dict) -> list:
+    """The environment of one inspect object, ``KEY=value`` each."""
+    environment = (detail.get("Config") or {}).get("Env") or []
+    return [str(entry) for entry in environment if "=" in str(entry)]
 
 
 def _host_ports(entries: list) -> list:

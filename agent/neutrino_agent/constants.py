@@ -51,14 +51,16 @@ AGENT_CODE_REPLACED = "replaced"
 AGENT_CODE_BINDING_UNKNOWN = "binding_unknown"
 
 AGENT_PACKAGE_PATH = "/api/agent/package"
-# This machine never fetches a module from the internet: the hub's cache did
-# that once for every machine of this platform, and an order says which
-# artifact to ask it for.
-AGENT_MODULE_PACKAGE_PATH = "/api/agent/module_package"
 
-# How much of a failed order's output travels up. Enough to read the package
-# manager's own complaint, bounded so a verbose failure cannot fill a beat.
+# How much of a failed step's output a code's params carry. Enough to read
+# the package manager's own complaint, bounded so a verbose failure cannot
+# fill a report.
 AGENT_MODULE_OUTPUT_LIMIT_BYTES = 16 * 1024
+
+# The module a command names for the agent's own verbs, and the one verb
+# every module answers: checking a configuration before the hub stores it.
+AGENT_COMMAND_MODULE = "agent"
+AGENT_MODULE_VERB_VALIDATE = "validate"
 
 # What the hub's state may want a module to be. The agent makes each
 # mentioned module's actual state equal its want.
@@ -152,3 +154,12 @@ AGENT_RUSTDESK_BINARY_PATH = "/usr/lib/neutrino_agent/rustdesk/rustdesk"
 # How long a module command waits for a pending desired state to apply
 # before it runs against the configuration that state carries.
 AGENT_MODULE_COMMAND_SETTLE_S = 30.0
+
+# Where the mark that the hub has configured a module lives, one root-only
+# file per module. Written on the first successful apply of the hub's
+# configuration, deleted on uninstall; it tells ``installed`` from
+# ``stopped`` and ``running``.
+AGENT_CONFIGURED_DIR = "/var/lib/neutrino_agent/configured"
+# Where a package coming down a stream lands until its digest is checked,
+# a directory under the agent's data dir.
+AGENT_PACKAGE_DIR_NAME = "packages"

@@ -3,9 +3,10 @@
 What these pin: the shell's output arrives as bytes, its exit status is
 the close's params, the first size and a resize both reach the terminal,
 the hub's bytes reach the shell's input with credit offered back as each
-piece is written, a close from the hub ends a shell that would run on, and
-a container shell is refused typed when podman does not list the
-container.
+piece is written, a close from the hub ends a shell that would run on, the
+``shell`` kind's entry picks the machine's shell or a container's by the
+open's ``module``, and a container shell is refused typed when podman does
+not list the container.
 """
 
 import threading
@@ -15,7 +16,11 @@ import pytest
 
 from neutrino_agent.streams import shell as shell_module
 from neutrino_agent.exceptions import StreamRefused
-from neutrino_agent.streams.shell import ContainerShellStream, ShellStream
+from neutrino_agent.streams.shell import (
+    ContainerShellStream,
+    ShellStream,
+    open_shell_stream,
+)
 from tests.streams.fake_channel import FakeChannel
 
 
@@ -110,7 +115,7 @@ def test_login_shell_is_usable_and_absolute():
 
 def test_a_container_podman_does_not_list_is_refused(monkeypatch):
     monkeypatch.setattr(shell_module, "listed_containers", lambda: ["web"])
-    stream = ContainerShellStream(FakeChannel(), {"name": "kuma"})
+    stream = ContainerShellStream(FakeChannel(), {"container": "kuma"})
 
     with pytest.raises(StreamRefused) as refused:
         stream.open()
@@ -121,12 +126,27 @@ def test_a_container_podman_does_not_list_is_refused(monkeypatch):
 
 def test_a_listed_container_is_opened_with_podman_exec(monkeypatch):
     monkeypatch.setattr(shell_module, "listed_containers", lambda: ["kuma"])
-    stream = ContainerShellStream(FakeChannel(), {"name": "kuma"})
+    stream = ContainerShellStream(FakeChannel(), {"container": "kuma"})
 
     stream.open()
 
     assert stream._command[:4] == [shell_module.PODMAN_BINARY, "exec", "-it", "kuma"]
     assert stream._command[4:6] == ["sh", "-c"]
+
+
+def test_the_entry_picks_the_shell_by_the_opens_module():
+    plain = open_shell_stream(FakeChannel(), {"cols": 80, "rows": 24})
+    inside = open_shell_stream(
+        FakeChannel(), {"module": "podman", "container": "kuma", "cols": 1, "rows": 1}
+    )
+
+    assert type(plain) is ShellStream
+    assert type(inside) is ContainerShellStream
+    assert inside._name == "kuma"
+    with pytest.raises(StreamRefused) as refused:
+        open_shell_stream(FakeChannel(), {"module": "samba"})
+    assert refused.value.code == "verb_unknown"
+    assert refused.value.params == {"module": "samba"}
 
 
 def test_without_pseudo_terminals_a_shell_is_refused(monkeypatch):

@@ -16,7 +16,8 @@ SAMBA_DEFAULT_SERVICE = "smbd"
 # The server binary, which says Samba is on the machine when no package is named.
 SAMBA_BINARY_NAME = "smbd"
 
-SAMBA_COMMAND_SET_PASSWORD = "samba_set_password"
+# The verbs a ``command {module: samba}`` names, beside ``validate``.
+SAMBA_COMMAND_SET_PASSWORD = "set_password"
 
 
 def samba_unit(family: str) -> str:

@@ -1,9 +1,11 @@
-"""The file share as a module: package, configuration, commands, details.
+"""The file share as a module: package, configuration, verbs, details.
 
-The package comes from the distribution, so orders ride the system-package
-runner. What makes the package this hub's file share, the rendered
-``smb.conf``, the accounts and the share directories, is applied here from
-the hub's desired configuration.
+The package comes from the distribution, so the install rides the
+system-package runner. What makes the package this hub's file share, the
+rendered ``smb.conf``, the accounts and the share directories, is applied
+here from the hub's desired configuration; what the machine actually
+serves, read back from Samba itself, is what the hub imports the first
+time it configures a share somebody set up by hand.
 
 Not pure: drives Samba through its applier.
 """
@@ -12,12 +14,15 @@ Not pure: drives Samba through its applier.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import contextlib
+import os
 import subprocess
 
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.base import command_outcome
 from neutrino_agent.modules.samba.applier import (
     SambaConfigApplier,
+    SambaConfigReader,
     SambaStatusReader,
     SambaUserManager,
     ensure_share_group,
@@ -27,6 +32,7 @@ from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.constants import (
     SAMBA_BINARY_NAME,
     SAMBA_COMMAND_SET_PASSWORD,
+    SAMBA_CONF_PATH,
     samba_unit,
 )
 from neutrino_agent.modules.samba.renderer import SambaConfigRenderer
@@ -112,45 +118,63 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         """Take the server down, leaving the shares' files in place."""
         SambaConfigApplier(unit=self._unit).stop()
 
+    def remove_configuration(self) -> None:
+        """Delete the rendered ``smb.conf``; the share directories stay."""
+        self._config = None
+        with contextlib.suppress(OSError):
+            os.unlink(SAMBA_CONF_PATH)
+
     def is_active(self) -> bool:
         """Whether this machine's Samba unit is active."""
         return unit_state(self._unit) == "active"
 
     def details(self, resolved: dict) -> dict:
-        """Who is connected, how full each share is, and each user's state.
+        """What Samba serves, who it serves, and each account's state.
+
+        The global section and the shares are what ``testparm -s`` prints
+        for the live file, whoever wrote it; the users are every account
+        the hub configures or Samba holds a credential for.
 
         Args:
             resolved: The module as the hub resolved it.
 
         Returns:
-            ``{"is_active", "sessions", "disk_usage", "users"}``.
+            ``{"is_active", "global", "shares", "users", "sessions",
+            "disk_usage"}``, each user ``{"name", "is_present",
+            "has_password"}`` and each share ``{"name", "path", "params"}``.
         """
         config = self._config or SambaConfig()
         reader = SambaStatusReader()
+        accounts = SambaUserManager()
+        names = list(config.users)
+        names += [name for name in accounts.credentialed_users() if name not in names]
         try:
-            users = SambaUserManager().survey(config.users)
+            users = accounts.survey(names)
         except (OSError, subprocess.SubprocessError):
             users = []
+        global_section, shares = SambaConfigReader().read()
         return {
             "is_active": unit_state(self._unit) == "active",
+            "global": global_section,
+            "shares": shares,
+            "users": [vars(state) for state in users],
             "sessions": reader.sessions(),
             "disk_usage": reader.disk_usage(config),
-            "users": [vars(state) for state in users],
         }
 
-    def command(self, action: str, args: dict, on_line=None) -> dict:
-        """Run one of the file share's commands.
+    def command(self, verb: str, args: dict, on_line=None) -> dict:
+        """Run one of the file share's verbs.
 
         Args:
-            action: ``samba_set_password``.
+            verb: ``set_password``, or ``validate``.
             args: ``{"name", "password"}``.
             on_line: Called with each output line.
 
         Returns:
             ``{"exit_code", "code", "params", "output"}``.
         """
-        if action != SAMBA_COMMAND_SET_PASSWORD:
-            return super().command(action, args, on_line)
+        if verb != SAMBA_COMMAND_SET_PASSWORD:
+            return super().command(verb, args, on_line)
         name = str(args.get("name", ""))
         config = self._config or SambaConfig()
         if name not in config.users:

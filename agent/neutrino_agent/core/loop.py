@@ -6,9 +6,10 @@ has never enrolled still answers locally, waiting for a link.
 
 While bound, the agent keeps one socket open to the hub and reconnects when
 it drops. The hub decides everything about modules: its state says what
-each is to be, and this machine observes, configures and reports until it
-matches. The desktop share is the other way round: decided only on the
-machine, and reported upward.
+each is to be, and this machine observes, installs, configures and reports
+until it matches, the bytes coming down and the output going up on streams
+this side opens. The desktop share is the other way round: decided only on
+the machine, and reported upward.
 
 Errors cross the wire as ``{"code", "params"}``, never an English sentence;
 every surface does its own wording.
@@ -18,7 +19,6 @@ every surface does its own wording.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
-import hashlib
 import operator
 import os
 import threading
@@ -34,7 +34,7 @@ from neutrino_agent.constants import (
     AGENT_DESIRED_STATE_NAME,
     AGENT_HEARTBEAT_INTERVAL_S,
     AGENT_HUB_SOFTWARE_PREFIX,
-    AGENT_MODULE_PACKAGE_PATH,
+    AGENT_PACKAGE_DIR_NAME,
     AGENT_ROLE,
     AGENT_SOFTWARE_PREFIX,
     AGENT_STATE_NAME,
@@ -55,7 +55,6 @@ from neutrino_agent.exceptions import (
     GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
-    ModuleApplyError,
     PlatformUnsupportedError,
     SelfUpdateError,
 )
@@ -68,22 +67,6 @@ IDLE_POLL_INTERVAL_S = 2
 
 # What a version ends in when it was built from a checkout.
 DEV_VERSION_SUFFIX = "+dev"
-
-
-def _sha256_file(path: str) -> str:
-    """The SHA-256 of a file on disk.
-
-    Args:
-        path: The file.
-
-    Returns:
-        Its digest, or empty when it cannot be read.
-    """
-    try:
-        with open(path, "rb") as stream:
-            return hashlib.sha256(stream.read()).hexdigest()
-    except OSError:
-        return ""
 
 
 def channel_error(error: Exception) -> dict:
@@ -145,10 +128,7 @@ class Agent:
         # then rather than at the end of the interval.
         self._news = threading.Event()
         self._engine = ModuleEngine(
-            fetch_artifact=self._fetch_artifact,
-            platform=self._platform,
-            log=log,
-            on_change=self._news.set,
+            platform=self._platform, log=log, on_change=self._news.set
         )
         # The store and the seat password live under the platform's own
         # data root, and so does the last desired state taken from the hub.
@@ -169,6 +149,8 @@ class Agent:
             ),
             rdp=self._rdp,
             log=log,
+            open_stream=self._open_stream,
+            package_dir=os.path.join(data_dir, AGENT_PACKAGE_DIR_NAME),
         )
         # The share flow refuses before it configures anything when RustDesk
         # is not on the machine, which is what the engine's report answers.
@@ -407,14 +389,12 @@ class Agent:
             client=client,
             hello=self._hello_payload(binding),
             report=self._report_payload,
-            run_order=self._run_order,
             run_command=self._run_command,
             news=self._news,
             log=self._log,
             interval_s=AGENT_HEARTBEAT_INTERVAL_S,
             on_tick=self._adopt_external_binding,
             on_state=self._desired.take,
-            validate=self._validate,
         )
 
     def _hello_payload(self, binding: dict) -> dict:
@@ -503,44 +483,43 @@ class Agent:
             },
         }
 
-    def _run_order(self, order: dict, on_line=None) -> dict:
-        """Run one order, then give the changed machine its configuration.
+    def _open_stream(self, kind: str, **args):
+        """Open a stream to the hub on the live socket.
 
         Args:
-            order: The order on the wire.
-            on_line: Called with each output line.
+            kind: The stream kind.
+            **args: The kind's arguments.
 
         Returns:
-            ``{"state", "code", "params", "output"}``.
-        """
-        result = self._engine.run_order(order, on_line)
-        self._desired.apply_again()
-        return result
+            The stream's channel.
 
-    def _validate(self, module: str, config: dict) -> dict:
-        """Check a configuration the hub is about to store for one module.
+        Raises:
+            GatewayUnreachable: When no socket is open.
+        """
+        with self._lock:
+            session = self._session
+        if session is None or not session.is_open:
+            raise GatewayUnreachable("no socket to the hub")
+        return session.open_stream(kind, **args)
+
+    def _resize_shell(self, stream_id, cols: int, rows: int) -> bool:
+        """Give one of the hub's shell streams a new size.
 
         Args:
-            module: The module name.
-            config: The configuration.
+            stream_id: The shell stream's id.
+            cols: The new width.
+            rows: The new height.
 
         Returns:
-            Empty when sound, ``{"code", "params"}`` when not.
+            True when a live stream of that id took it.
         """
-        runner = self._engine.module_runners.get(module)
-        if runner is None:
-            return {"code": "unknown_module", "params": {"module": module}}
-        try:
-            runner.validate(dict(config))
-        except ModuleApplyError as error:
-            return {"code": error.code, "params": dict(error.params)}
-        except PlatformUnsupportedError:
-            return {"code": "unsupported_platform", "params": {}}
-        except Exception as error:  # noqa: BLE001 - reported, never raised
-            return {"code": "validate_failed", "params": {"detail": str(error)[:200]}}
-        return {}
+        with self._lock:
+            session = self._session
+        if session is None:
+            return False
+        return session.resize_stream(stream_id, cols, rows)
 
-    def _run_command(self, action: str, args: dict, on_line=None) -> dict:
+    def _run_command(self, module: str, verb: str, args: dict, on_line=None) -> dict:
         with self._lock:
             operator = self._operator
         if operator is None:
@@ -550,8 +529,8 @@ class Agent:
                 "params": {},
                 "output": "",
             }
-        self._log(f"running {action}")
-        outcome = operator.run(action, args, on_line)
+        self._log(f"running {module} {verb}")
+        outcome = operator.run(module, verb, args, on_line)
         reply = {
             "exit_code": outcome.exit_code,
             "code": outcome.code,
@@ -574,33 +553,6 @@ class Agent:
         self._force_self_update("reinstall")
         with self._lock:
             return dict(self._update_error) if self._update_error else {}
-
-    def _fetch_artifact(self, artifact_key: str, destination: str) -> dict:
-        """Take the bytes an order named from the hub, onto disk.
-
-        Args:
-            artifact_key: What the order named the artifact by.
-            destination: Where to write what comes back.
-
-        Returns:
-            Empty when the bytes landed, ``{"code", "params"}`` when they
-            did not.
-        """
-        with self._lock:
-            channel = self._channel
-        if channel is None:
-            return {"code": "hub_unreachable", "params": {}}
-        try:
-            named = channel.post_download(
-                AGENT_MODULE_PACKAGE_PATH,
-                {"artifact_key": artifact_key},
-                destination,
-            )
-        except (GatewayUnreachable, GatewayUntrusted) as error:
-            return channel_error(error)
-        if named and named != _sha256_file(destination):
-            return {"code": "module_digest_mismatch", "params": {}}
-        return {}
 
     def _read_metrics(self) -> dict:
         try:
@@ -692,6 +644,7 @@ class Agent:
                 self._operator = DeviceOperator(
                     platform=self._platform,
                     reinstall=self._reinstall,
+                    resize=self._resize_shell,
                     module_runners=self._engine.module_runners,
                     settle=self._desired.settle,
                     on_module_changed=self._report_module_now,

@@ -32,6 +32,11 @@ from neutrino_agent.modules.subprocess_run import CommandResult, run, unit_state
 # One row of ``smbstatus -p``: pid, user, group, then the client's name with
 # its address in parentheses.
 SESSION_ROW_PATTERN = re.compile(r"^(\S+)\s+(\S+)\s+\S+\s+(\S+) \(([^)]+)\)")
+# A section header in what ``testparm -s`` prints.
+SECTION_PATTERN = re.compile(r"^\[(.+)\]\s*$")
+GLOBAL_SECTION = "global"
+# The shares Samba serves for printing, which a file share never declares.
+PRINTER_SECTIONS = ("printers", "print$")
 
 
 @dataclass
@@ -79,6 +84,67 @@ def testparm(rendered: str) -> None:
         raise ModuleApplyError(
             "samba_config_rejected", {"detail": result.stderr.strip()[-500:]}
         )
+
+
+def parse_smb_conf(text: str) -> tuple:
+    """The global section and the shares in what ``testparm -s`` printed.
+
+    Args:
+        text: The normalized configuration, one ``key = value`` per line
+            under ``[section]`` headers; comments and blank lines are
+            skipped, and the printer sections are not shares.
+
+    Returns:
+        ``(global, shares)``: the global parameters by name, and one
+        ``{"name", "path", "params"}`` per share in the order printed, the
+        params being every parameter but the path.
+    """
+    sections: dict = {}
+    order: list = []
+    current = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith(("#", ";")):
+            continue
+        header = SECTION_PATTERN.match(stripped)
+        if header:
+            current = header.group(1).strip()
+            if current not in sections:
+                sections[current] = {}
+                order.append(current)
+            continue
+        if current is None or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        sections[current][key.strip()] = value.strip()
+    shares = []
+    for name in order:
+        if name == GLOBAL_SECTION or name in PRINTER_SECTIONS:
+            continue
+        params = dict(sections[name])
+        shares.append({"name": name, "path": params.pop("path", ""), "params": params})
+    return dict(sections.get(GLOBAL_SECTION, {})), shares
+
+
+class SambaConfigReader:
+    """Reads the configuration Samba actually runs with."""
+
+    def read(self) -> tuple:
+        """Have Samba print its live configuration, normalized, and parse it.
+
+        Returns:
+            ``(global, shares)`` as :func:`parse_smb_conf` gives them; both
+            empty when testparm is not there or refuses the file.
+        """
+        if shutil.which("testparm") is None or not os.path.isfile(SAMBA_CONF_PATH):
+            return {}, []
+        try:
+            result = run(["testparm", "-s", SAMBA_CONF_PATH], is_checked=False)
+        except (OSError, subprocess.SubprocessError):
+            return {}, []
+        if not result.is_success:
+            return {}, []
+        return parse_smb_conf(result.stdout)
 
 
 def _json_object(text: str) -> "dict | None":
@@ -192,16 +258,27 @@ class SambaUserManager:
         run(["smbpasswd", "-s", "-a", name], input_text=f"{password}\n{password}\n")
         run(["smbpasswd", "-e", name])
 
+    def credentialed_users(self) -> list:
+        """Every account Samba holds a credential for, as ``pdbedit -L`` lists them.
+
+        Returns:
+            The names in the order listed; empty when Samba cannot be asked.
+        """
+        try:
+            result = run(["pdbedit", "-L"], is_checked=False)
+        except (OSError, subprocess.SubprocessError):
+            return []
+        if not result.is_success:
+            return []
+        return [
+            line.split(":", 1)[0] for line in result.stdout.splitlines() if ":" in line
+        ]
+
     def _account_exists(self, name: str) -> bool:
         return run(["id", "-u", name], is_checked=False).is_success
 
     def _credentialed_users(self) -> set:
-        result = run(["pdbedit", "-L"], is_checked=False)
-        if not result.is_success:
-            return set()
-        return {
-            line.split(":", 1)[0] for line in result.stdout.splitlines() if ":" in line
-        }
+        return set(self.credentialed_users())
 
 
 class SambaConfigApplier:

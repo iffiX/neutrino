@@ -5,13 +5,15 @@ answers, a report every few seconds and at once when something changed, the
 hub's state whenever its copy changes, and every stream either side opens.
 A reader thread takes frames off the socket and dispatches them; the
 caller's thread runs the report loop; each stream the hub opens runs on a
-thread of its own so a long install never blocks the reader.
+thread of its own so a long command never blocks the reader.
 
 A stream exists as soon as its open arrives, and its close is its result:
 ``{stream, code, params}``, with a code making it a refusal. The hub's
 streams number even, this side's odd. Every stream sits behind a
 :class:`StreamChannel`: bytes go out no faster than the hub's credit
 allows, and a stream's text output is its binary frames, one line each.
+The kind table of :mod:`neutrino_agent.streams` is the whole vocabulary:
+an open whose kind is not in it is closed ``kind_unknown``.
 
 Errors cross the wire as ``{"code", "params"}``, never an English sentence;
 every surface does its own wording.
@@ -39,12 +41,8 @@ from neutrino_agent.exceptions import (
     StreamClosed,
     StreamRefused,
 )
-from neutrino_agent.streams import STREAM_KINDS
+from neutrino_agent.streams import STREAM_KIND_COMMAND, STREAM_KINDS
 from neutrino_agent.streams.channel import StreamChannel
-
-STREAM_KIND_ORDER = "order"
-STREAM_KIND_COMMAND = "command"
-STREAM_KIND_VALIDATE = "validate"
 
 # The fields of an open that are not the kind's own arguments.
 OPEN_ENVELOPE_FIELDS = ("type", "stream", "kind")
@@ -69,14 +67,12 @@ class AgentSession:
         client,
         hello: dict,
         report,
-        run_order,
         run_command,
         news: threading.Event,
         log=print,
         interval_s: float = AGENT_HEARTBEAT_INTERVAL_S,
         on_tick=None,
         on_state=None,
-        validate=None,
         stream_kinds=None,
     ):
         """
@@ -85,11 +81,10 @@ class AgentSession:
             hello: The identity card the hello carries: ``{protocol, role,
                 id, name, software, token}``.
             report: Called for each report's body.
-            run_order: Called with ``(order, on_line)``; runs one module
-                order and returns ``{"state", "code", "params", "output"}``.
-            run_command: Called with ``(action, args, on_line)``; returns
-                ``{"exit_code", "code", "params", "output"}``, with
-                ``result`` beside them for a command that reads.
+            run_command: Called with ``(module, verb, args, on_line)`` for
+                each ``command`` stream; returns ``{"exit_code", "code",
+                "params", "output"}``, with ``result`` beside them for a
+                verb that reads.
             news: Set whenever a report should go up at once.
             log: Callable used for progress messages.
             interval_s: How often a report goes up while nothing changes.
@@ -97,38 +92,27 @@ class AgentSession:
             on_state: Called with the state document, ``{hash, modules,
                 desktop}``, for each state frame the hub sends. None takes
                 the hash and nothing else.
-            validate: Called with ``(module, config)``; returns empty when
-                the configuration is sound, ``{"code", "params"}`` when
-                not. None closes the validate kind ``kind_unknown``.
             stream_kinds: Stream kind to its handler factory, called with
                 ``(channel, args)``. A handler has ``open()``, which may
                 raise :class:`StreamRefused`, and ``run()``, which returns
-                ``{"code", "params"}``, what the stream closes with. None
-                serves the shell and file kinds of
-                :mod:`neutrino_agent.streams`.
+                ``{"code", "params"}``, what the stream closes with. The
+                command kind's factory is bound to ``run_command``. None
+                serves the kinds of :mod:`neutrino_agent.streams`.
         """
         self._client = client
         self._hello = dict(hello)
         self._report = report
-        self._run_order = run_order
         self._run_command = run_command
         self._news = news
         self._log = log
         self._interval_s = interval_s
         self._on_tick = on_tick
         self._on_state = on_state
-        self._validate = validate
-        kinds = {
-            STREAM_KIND_ORDER: functools.partial(_CallStream, call=self._serve_order),
-            STREAM_KIND_COMMAND: functools.partial(
-                _CallStream, call=self._serve_command
-            ),
-        }
-        if validate is not None:
-            kinds[STREAM_KIND_VALIDATE] = functools.partial(
-                _CallStream, call=self._serve_validate
+        kinds = dict(STREAM_KINDS if stream_kinds is None else stream_kinds)
+        if STREAM_KIND_COMMAND in kinds:
+            kinds[STREAM_KIND_COMMAND] = functools.partial(
+                kinds[STREAM_KIND_COMMAND], run=run_command
             )
-        kinds.update(STREAM_KINDS if stream_kinds is None else stream_kinds)
         self._stream_kinds = kinds
         self.hub_id = ""
         self.hub_name = ""
@@ -204,6 +188,23 @@ class AgentSession:
         self._is_closed.set()
         self._client.close()
         self._news.set()
+
+    def resize_stream(self, stream_id, cols: int, rows: int) -> bool:
+        """Give one stream the hub opened a new terminal size.
+
+        Args:
+            stream_id: The stream's id.
+            cols: The new width.
+            rows: The new height.
+
+        Returns:
+            True when a live stream of that id took it.
+        """
+        channel = self._channel(stream_id)
+        if channel is None:
+            return False
+        channel._feed(("resize", int(cols), int(rows)))
+        return True
 
     def open_stream(self, kind: str, **args) -> StreamChannel:
         """Open a stream to the hub, on the next odd id.
@@ -317,16 +318,6 @@ class AgentSession:
                 self._on_state(
                     {key: value for key, value in message.items() if key != "type"}
                 )
-        elif message_type == "resize":
-            channel = self._channel(stream_id)
-            if channel is not None:
-                channel._feed(
-                    (
-                        "resize",
-                        int(message.get("cols", 80) or 80),
-                        int(message.get("rows", 24) or 24),
-                    )
-                )
         elif message_type == "credit":
             channel = self._channel(stream_id)
             if channel is not None:
@@ -399,67 +390,6 @@ class AgentSession:
             )
         except GatewayUnreachable:
             return
-
-    def _serve_order(self, channel: StreamChannel, args: dict) -> dict:
-        def on_line(line: str) -> None:
-            self._send_line(channel, line)
-
-        result = self._run_order(args, on_line)
-        params = dict(result.get("params") or {})
-        params["state"] = str(result.get("state", "failed"))
-        params["output"] = str(result.get("output", "") or "")
-        return {"code": str(result.get("code", "") or ""), "params": params}
-
-    def _serve_command(self, channel: StreamChannel, args: dict) -> dict:
-        def on_line(line: str) -> None:
-            self._send_line(channel, line)
-
-        outcome = self._run_command(
-            str(args.get("action", "")),
-            args.get("args") if isinstance(args.get("args"), dict) else {},
-            on_line,
-        )
-        params = dict(outcome.get("params") or {})
-        params["exit_code"] = int(outcome.get("exit_code", 1))
-        params["output"] = str(outcome.get("output", "") or "")
-        if isinstance(outcome.get("result"), dict) and outcome["result"]:
-            params["result"] = dict(outcome["result"])
-        return {"code": str(outcome.get("code", "") or ""), "params": params}
-
-    def _serve_validate(self, channel: StreamChannel, args: dict) -> dict:
-        config = args.get("config") if isinstance(args.get("config"), dict) else {}
-        refusal = self._validate(str(args.get("module", "")), config) or {}
-        params = dict(refusal.get("params") or {})
-        params["is_valid"] = not refusal
-        return {"code": str(refusal.get("code", "") or ""), "params": params}
-
-    def _send_line(self, channel: StreamChannel, line: str) -> None:
-        """One output line up the stream; a stream the hub closed takes none."""
-        try:
-            channel.send_line(line)
-        except StreamClosed:
-            return
-
-
-class _CallStream:
-    """A kind that is one call: it opens at once and closes with what the
-    call returned."""
-
-    def __init__(self, channel: StreamChannel, args: dict, *, call):
-        self._channel = channel
-        self._args = args
-        self._call = call
-
-    def open(self) -> None:
-        """Nothing to check: the call itself answers."""
-
-    def run(self) -> dict:
-        """Run the call.
-
-        Returns:
-            ``{"code", "params"}``, what the stream closes with.
-        """
-        return self._call(self._channel, self._args)
 
 
 def _decode(kind: str, payload) -> "dict | None":

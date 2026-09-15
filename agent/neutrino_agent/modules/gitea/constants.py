@@ -16,5 +16,6 @@ GITEA_DEFAULT_PORT = 3000
 # configuration.
 GITEA_SECRET_NAMES = ("SECRET_KEY", "INTERNAL_TOKEN", "JWT_SECRET", "LFS_JWT_SECRET")
 
-GITEA_COMMAND_ADMIN = "gitea_admin"
-GITEA_COMMAND_PASSWORD = "gitea_password"
+# The verbs a ``command {module: gitea}`` names, beside ``validate``.
+GITEA_COMMAND_ADMIN = "admin"
+GITEA_COMMAND_PASSWORD = "password"

@@ -179,3 +179,17 @@ def test_the_admin_verbs_run_as_the_git_user_with_the_config(box):
     assert "--admin" in create and "--password" in create
     assert create[-2:] == ["--config", str(tmp_path / "etc/app.ini")]
     assert "change-password" in change
+
+
+def test_the_listen_port_is_read_from_the_installed_app_ini(monkeypatch, tmp_path):
+    from neutrino_agent.modules.gitea import applier as applier_module
+
+    conf = tmp_path / "app.ini"
+    monkeypatch.setattr(applier_module, "GITEA_CONF_PATH", str(conf))
+    assert applier_module.read_listen_port() == 0
+
+    conf.write_text("[server]\nPROTOCOL = http\nHTTP_PORT = 3300\n")
+    assert applier_module.read_listen_port() == 3300
+
+    conf.write_text("[server]\nHTTP_PORT = many\n")
+    assert applier_module.read_listen_port() == 0

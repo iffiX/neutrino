@@ -1,13 +1,16 @@
-"""Reporting what each module is, and carrying out the hub's orders.
+"""Reporting what each module is, and putting software on and off the machine.
 
-The hub's state names, per module, what is wanted and the install recipe
-resolved for this platform. :class:`ModuleEngine` observes every module it
-has a runner for, named by the state or not, and derives one typed state
-from three facts: whether the software is there, whether its unit is
-active, and whether the hub has configured it. :class:`ReconcileWorker` is
-the shared pattern: a thread woken by news, a signature that skips
-unchanged inputs, an idle re-check so drift is still noticed, and per-name
-typed statuses.
+The hub's state names, per module, what is wanted and the install and
+uninstall recipes resolved for this platform. :class:`ModuleEngine`
+observes every module it has a runner for, named by the state or not, and
+derives one typed state from three facts: whether the software is there,
+whether its unit is active, and whether the hub has configured it, which
+is a root-only mark on disk. It also carries out the two package
+operations the reconcile asks for, one at a time, because one package
+manager holds the machine-wide lock. :class:`ReconcileWorker` is the
+shared pattern: a thread woken by news, a signature that skips unchanged
+inputs, an idle re-check so drift is still noticed, and per-name typed
+statuses.
 
 The engine keeps **no retry policy and no memory of past failures**: a
 step that failed is reported failed with its code and never repeated,
@@ -20,15 +23,15 @@ searches a platform table either.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import contextlib
 import json
 import os
-import tempfile
 import threading
 import time
 
 from neutrino_agent.constants import (
+    AGENT_CONFIGURED_DIR,
     AGENT_MODULE_DETAILS_TTL_S,
-    AGENT_MODULE_OUTPUT_LIMIT_BYTES,
     AGENT_MODULE_STATE_ABSENT,
     AGENT_MODULE_STATE_FAILED,
     AGENT_MODULE_STATE_INSTALLED,
@@ -38,10 +41,9 @@ from neutrino_agent.constants import (
     AGENT_MODULE_STATE_UNINSTALLING,
     AGENT_MODULE_STATE_UNSUPPORTED,
     AGENT_RUSTDESK_BINARY_PATH,
-    AGENT_WANT_RUNNING,
-    AGENT_WANT_STOPPED,
 )
-from neutrino_agent.exceptions import InstallError, PlatformUnsupportedError
+from neutrino_agent.exceptions import PlatformUnsupportedError
+from neutrino_agent.modules import installers
 from neutrino_agent.modules.gitea.runner import GiteaModuleRunner
 from neutrino_agent.modules.package import PackageModuleRunner, verify_passes
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
@@ -55,34 +57,9 @@ from neutrino_agent.platforms.detect import platform_tuple
 # a Raspberry Pi busy doing nothing.
 IDLE_RECHECK_INTERVAL_S = 60
 
-# What the hub can order. Only an `install` with an artifact needs bytes.
-ORDER_INSTALL = "install"
-ORDER_UNINSTALL = "uninstall"
-
-# What each action shows while it runs, per the module state table.
-ORDER_TRANSIENTS = {
-    ORDER_INSTALL: AGENT_MODULE_STATE_INSTALLING,
-    ORDER_UNINSTALL: AGENT_MODULE_STATE_UNINSTALLING,
-}
-
 # The kinds whose install runs by name with the platform's own tooling; the
-# rest install from the artifact an order hands down.
+# rest install from the bytes a package stream brings down.
 BY_NAME_KINDS = ("system_package",)
-
-ORDER_DONE = "done"
-ORDER_FAILED = "failed"
-
-# The wants under which the hub has configured a module: the panel writes
-# them from Configure, Start and Stop. Until the configured mark lands on
-# disk, a module the state wants this way counts as configured.
-CONFIGURED_WANTS = (AGENT_WANT_RUNNING, AGENT_WANT_STOPPED)
-
-# The states in which the software is there and its live details are read.
-PRESENT_STATES = (
-    AGENT_MODULE_STATE_INSTALLED,
-    AGENT_MODULE_STATE_STOPPED,
-    AGENT_MODULE_STATE_RUNNING,
-)
 
 # The recipe fields that are not part of the platform entry today's runners
 # read: the kind names the runner, the verify command decides presence, and
@@ -90,7 +67,7 @@ PRESENT_STATES = (
 RECIPE_HEADER_FIELDS = ("kind", "verify", "package")
 
 # The module the agent carries itself. Its row reads installed while the
-# agent's own build is on disk, and no order moves it.
+# agent's own build is on disk, and no operation moves it.
 BUILTIN_RUSTDESK_NAME = "rustdesk"
 BUILTIN_MODULES = (BUILTIN_RUSTDESK_NAME,)
 
@@ -172,26 +149,26 @@ class ReconcileWorker:
 
 
 class ModuleEngine(ReconcileWorker):
-    """Observes every module this machine has a runner for, and runs orders."""
+    """Observes every module this machine has a runner for, and moves software."""
 
-    def __init__(self, *, platform, log=print, on_change=None, fetch_artifact=None):
+    def __init__(self, *, platform, log=print, on_change=None, configured_dir=""):
         """
         Args:
             platform: The machine's platform, behind the contract.
             log: Callable used for progress messages.
             on_change: Called whenever a module's state changes.
-            fetch_artifact: Called with ``(artifact_key, destination)`` to
-                have the hub hand down the bytes an order names; None where
-                there is no hub to ask.
+            configured_dir: Where the configured marks live; empty is the
+                machine's own directory.
         """
         # The state's modules section as the hub last sent it, by name:
         # ``{"want", "config", "install", "uninstall"}`` each.
         self._wanted: dict = {}
-        self._fetch_artifact = fetch_artifact
+        self._configured_dir = configured_dir or AGENT_CONFIGURED_DIR
         self._platform_tuple = platform_tuple()
-        self._output: list = []
         self._on_line = None
-        self._order_lock = threading.Lock()
+        self._operation_lock = threading.Lock()
+        # The modules mid-operation, whose transient state a refresh keeps.
+        self._in_transit: set = set()
         self._apply_results: dict = {}
         self._details_at = 0.0
         self._package = PackageModuleRunner(
@@ -201,7 +178,7 @@ class ModuleEngine(ReconcileWorker):
             platform=platform, log=self._collect, publish=self._publish
         )
         # The modules this agent applies the hub's configuration to, by
-        # name; each also carries out its own orders.
+        # name; each also answers its own verbs.
         self._module_runners = {
             runner.name: runner
             for runner in (
@@ -237,7 +214,7 @@ class ModuleEngine(ReconcileWorker):
         return self._platform_tuple
 
     def report(self) -> dict:
-        """The per-module statuses, their details read again when stale.
+        """The per-module statuses, read again when stale.
 
         Returns:
             ``{name: {"state", "is_active", "code", "params", "details"}}``.
@@ -275,12 +252,46 @@ class ModuleEngine(ReconcileWorker):
         runner = self._module_runners.get(name)
         if runner is None:
             return False
-        with self._lock:
-            wanted = self._wanted.get(name)
+        recipe = _recipe_of(self._wanted_of(name))
         try:
-            return self._verify(runner, _recipe_of(wanted))
+            return self._verify(runner, recipe, runner.observe(_row(recipe)))
         except Exception:  # noqa: BLE001 - an unreadable module is not installed
             return False
+
+    def is_configured(self, name: str) -> bool:
+        """Whether the hub's configuration was ever applied to one module.
+
+        Args:
+            name: The module name.
+
+        Returns:
+            True while the module's mark stands.
+        """
+        return os.path.isfile(os.path.join(self._configured_dir, name))
+
+    def mark_configured(self, name: str) -> None:
+        """Record that the hub's configuration applied to one module.
+
+        Args:
+            name: The module name.
+
+        Raises:
+            OSError: When the mark cannot be written.
+        """
+        os.makedirs(self._configured_dir, mode=0o700, exist_ok=True)
+        path = os.path.join(self._configured_dir, name)
+        with open(path, "a", encoding="utf-8"):
+            pass
+        os.chmod(path, 0o600)
+
+    def clear_configured(self, name: str) -> None:
+        """Forget that the hub ever configured one module.
+
+        Args:
+            name: The module name.
+        """
+        with contextlib.suppress(OSError):
+            os.unlink(os.path.join(self._configured_dir, name))
 
     def record_apply(self, name: str, code: str, params: dict) -> None:
         """Keep how the last apply of one module went, for its row.
@@ -300,32 +311,153 @@ class ModuleEngine(ReconcileWorker):
         """Report every module again from what is true right now."""
         self._refresh(is_forced=True)
 
-    def run_order(self, order: dict, on_line=None) -> dict:
-        """Run one order now, in the caller's thread, and say how it went.
+    def install(self, name: str, *, receive, on_line=None) -> dict:
+        """Put one module's software on the machine, in the caller's thread.
 
-        Orders run one at a time: a second caller waits for the first.
+        Package operations run one at a time: a second caller waits for
+        the first. The row reads ``installing`` while it runs.
 
         Args:
-            order: ``{"id", "module", "action", "artifact_key", "digest",
-                "package_kind"}``; the module's recipe is the one the
-                state names.
-            on_line: Called with each output line as the order produces it.
+            name: The module name; its recipe is the one the state names.
+            receive: Called with the module name when the recipe installs
+                from bytes; returns ``{"path"}`` naming the package on
+                disk, or ``{"code", "params"}``. The file is deleted once
+                the install ran.
+            on_line: Called with each output line as the install produces
+                it.
 
         Returns:
-            ``{"state", "code", "params", "output"}``.
+            Empty when the software is there afterwards, ``{"code",
+            "params"}`` when it is not.
         """
-        with self._order_lock:
+        return self._operate(
+            name,
+            AGENT_MODULE_STATE_INSTALLING,
+            "install_failed",
+            on_line,
+            self._install,
+            receive,
+        )
+
+    def uninstall(self, name: str, *, on_line=None) -> dict:
+        """Take one module's software off the machine, in the caller's thread.
+
+        The configuration the hub wrote and the configured mark go with
+        it; the module's data stays. The row reads ``uninstalling`` while
+        it runs.
+
+        Args:
+            name: The module name; its recipes are the ones the state names.
+            on_line: Called with each output line as the uninstall
+                produces it.
+
+        Returns:
+            Empty when the software is gone afterwards, ``{"code",
+            "params"}`` when it is not.
+        """
+        return self._operate(
+            name,
+            AGENT_MODULE_STATE_UNINSTALLING,
+            "uninstall_failed",
+            on_line,
+            self._uninstall,
+        )
+
+    def _operate(
+        self, name: str, transient: str, failure: str, on_line, step, *extra
+    ) -> dict:
+        """Run one package operation under the machine's one lock.
+
+        Args:
+            name: The module name.
+            transient: The state the row shows while the operation runs.
+            failure: The code a step that raised is reported under.
+            on_line: Called with each output line.
+            step: The operation itself, given the name, its state entry
+                and ``extra``.
+            *extra: What the step takes beside them.
+
+        Returns:
+            Empty when the operation took, ``{"code", "params"}`` when not.
+        """
+        if name in BUILTIN_MODULES:
+            return {"code": "module_not_orderable", "params": {"module": name}}
+        wanted = self._wanted_of(name)
+        if wanted is None:
+            return {"code": "unknown_module", "params": {"module": name}}
+        with self._operation_lock:
+            with self._lock:
+                self._in_transit.add(name)
             self._on_line = on_line
+            self._publish(name, _typed(transient))
             try:
-                result = self._run_order(order)
+                refusal = step(name, wanted, *extra)
+            except PlatformUnsupportedError:
+                refusal = {"code": "unsupported_platform", "params": {}}
+            except Exception as error:  # noqa: BLE001 - reported, never raised
+                self._collect(str(error))
+                refusal = {"code": failure, "params": {"detail": str(error)[:200]}}
             finally:
                 self._on_line = None
+                with self._lock:
+                    self._in_transit.discard(name)
             self._refresh(is_forced=True)
-        return result
+        return refusal
+
+    def _install(self, name: str, wanted: dict, receive) -> dict:
+        """Install by the recipe and check it took."""
+        recipe = _recipe_of(wanted)
+        resolved = _row(recipe)
+        kind = resolved["kind"]
+        runner = self._runner_for(kind, name)
+        if runner is None:
+            return {"code": "unknown_kind", "params": {"kind": kind}}
+        self._collect(f"{name}: installing")
+        if kind in BY_NAME_KINDS:
+            runner.install(resolved)
+        else:
+            received = receive(name)
+            if "path" not in received:
+                return dict(received)
+            try:
+                runner.install(resolved, received["path"])
+            finally:
+                with contextlib.suppress(OSError):
+                    os.unlink(received["path"])
+        # Verify is the whole point of the step: a package manager that
+        # exits zero and installs nothing is a thing that happens.
+        if not self._verify(runner, recipe, runner.observe(resolved)):
+            return {"code": "install_unconfirmed", "params": {}}
+        return {}
+
+    def _uninstall(self, name: str, wanted: dict) -> dict:
+        """Uninstall by the recipe, drop the hub's configuration and the mark."""
+        recipe = _recipe_of(wanted)
+        removal = wanted.get("uninstall")
+        removal = dict(removal) if isinstance(removal, dict) else {}
+        resolved = _row(dict(recipe, **removal))
+        kind = resolved["kind"]
+        runner = self._runner_for(kind, name)
+        if runner is None:
+            return {"code": "unknown_kind", "params": {"kind": kind}}
+        self._collect(f"{name}: uninstalling")
+        if self.is_configured(name):
+            with contextlib.suppress(Exception):
+                runner.stop()
+            runner.remove_configuration()
+        runner.uninstall(resolved)
+        for step in removal.get("post_uninstall") or []:
+            self._collect(str(step))
+            output = installers.run_shell(str(step))
+            if output.strip():
+                self._collect(output.strip())
+        self.clear_configured(name)
+        if self._verify(runner, recipe, runner.observe(resolved)):
+            return {"code": "uninstall_unconfirmed", "params": {}}
+        return {}
 
     def _collect(self, message: str) -> None:
-        """Log a line, keeping it for the order's report as well."""
-        self._output.append(str(message))
+        """Log a line, handing it to the operation's stream as well."""
         on_line = self._on_line
         if on_line is not None:
             on_line(str(message))
@@ -333,6 +465,11 @@ class ModuleEngine(ReconcileWorker):
 
     def _reconcile(self) -> None:
         self._refresh(is_forced=False)
+
+    def _wanted_of(self, name: str) -> "dict | None":
+        with self._lock:
+            wanted = self._wanted.get(name)
+        return dict(wanted) if wanted is not None else None
 
     def _observed(self) -> dict:
         """Every module observed, to what the state says of it. Call under the lock.
@@ -347,14 +484,13 @@ class ModuleEngine(ReconcileWorker):
             observed.setdefault(name, None)
         return observed
 
-    def _row_of(self, name: str) -> dict:
-        """One module's recipe as the row today's runners read."""
-        with self._lock:
-            wanted = self._wanted.get(name)
-        return _row(_recipe_of(wanted))
-
     def _refresh(self, *, is_forced: bool) -> None:
-        """Report what every observed module actually is."""
+        """Report what every observed module actually is.
+
+        A pass runs when the state changed, when it is forced, or when the
+        last read is older than the details' lifetime. A module mid-operation
+        keeps its transient row.
+        """
         with self._lock:
             observed = self._observed()
             signature = json.dumps(
@@ -366,31 +502,17 @@ class ModuleEngine(ReconcileWorker):
                 default=str,
             )
             is_stale = self._is_stale(signature)
-        if not is_stale and not is_forced:
-            self._refresh_details()
+            in_transit = set(self._in_transit)
+        is_due = time.monotonic() - self._details_at > AGENT_MODULE_DETAILS_TTL_S
+        if not (is_stale or is_forced or is_due):
             return
-        for name, wanted in observed.items():
-            self._publish(name, self._read_one(name, wanted))
         self._details_at = time.monotonic()
+        for name, wanted in observed.items():
+            if name in in_transit:
+                continue
+            self._publish(name, self._read_one(name, wanted))
         # A module no runner and no state names stops being reported.
         self._keep_only(observed)
-
-    def _refresh_details(self) -> None:
-        """Read the live details of every present module again."""
-        if time.monotonic() - self._details_at <= AGENT_MODULE_DETAILS_TTL_S:
-            return
-        self._details_at = time.monotonic()
-        for name, runner in self._module_runners.items():
-            with self._lock:
-                status = dict(self._statuses.get(name) or {})
-            if status.get("state") not in PRESENT_STATES:
-                continue
-            try:
-                status["details"] = runner.details(self._row_of(name))
-            except Exception as error:  # noqa: BLE001 - a read never fails a row
-                self._log(f"{name}: details unreadable: {error}")
-                continue
-            self._publish(name, status)
 
     def _read_one(self, name: str, wanted: "dict | None") -> dict:
         """What one module actually is on this machine, acting on nothing.
@@ -415,15 +537,18 @@ class ModuleEngine(ReconcileWorker):
         if runner is None:
             return _typed(AGENT_MODULE_STATE_UNSUPPORTED)
         try:
-            if not self._verify(runner, recipe):
+            observed = runner.observe(_row(recipe))
+            if not self._verify(runner, recipe, observed):
                 return _typed(AGENT_MODULE_STATE_ABSENT)
-            is_active = bool(runner.is_active())
-            is_configured = (wanted or {}).get("want") in CONFIGURED_WANTS
+            is_active = bool(observed.get("is_active", False))
             status = _typed(
-                _steady_state(is_active=is_active, is_configured=is_configured),
+                _steady_state(
+                    is_active=is_active, is_configured=self.is_configured(name)
+                ),
                 is_active=is_active,
             )
-            status["details"] = runner.details(_row(recipe))
+            details = observed.get("details")
+            status["details"] = dict(details) if isinstance(details, dict) else {}
         except PlatformUnsupportedError:
             return _typed(AGENT_MODULE_STATE_FAILED, "unsupported_platform")
         except Exception as error:  # noqa: BLE001 - reported, never raised
@@ -438,85 +563,12 @@ class ModuleEngine(ReconcileWorker):
         return status
 
     @staticmethod
-    def _verify(runner, recipe: dict) -> bool:
+    def _verify(runner, recipe: dict, observed: dict) -> bool:
         """Whether the software is there: the recipe's word, else the runner's."""
         command = str(recipe.get("verify", "") or "")
         if command:
             return verify_passes(command)
-        return bool(runner.verify(_row(recipe)))
-
-    def _run_order(self, order: dict) -> dict:
-        """Do what one order says, and say how it went.
-
-        Args:
-            order: ``{"id", "module", "action", "artifact_key", "digest"}``.
-
-        Returns:
-            ``{"state", "code", "params", "output"}``.
-        """
-        name = str(order.get("module", ""))
-        action = str(order.get("action", ""))
-        self._output = []
-        if name in BUILTIN_MODULES:
-            return self._result(ORDER_FAILED, "module_not_orderable", {"module": name})
-        with self._lock:
-            wanted = self._wanted.get(name)
-        if wanted is None:
-            return self._result(ORDER_FAILED, "unknown_module", {"module": name})
-        resolved = _row(_recipe_of(wanted))
-        transient = ORDER_TRANSIENTS.get(action)
-        if transient is None:
-            return self._result(ORDER_FAILED, "unknown_action", {"action": action})
-        self._publish(name, _typed(transient))
-        self._collect(f"{name}: {action}")
-        try:
-            refusal = self._carry_out(action, name, resolved, order)
-        except PlatformUnsupportedError:
-            return self._result(ORDER_FAILED, "unsupported_platform", {})
-        except InstallError as error:
-            self._collect(str(error))
-            return self._result(ORDER_FAILED, "install_failed", {})
-        except Exception as error:  # noqa: BLE001 - reported, never raised
-            self._collect(str(error))
-            return self._result(
-                ORDER_FAILED, "order_failed", {"detail": str(error)[:200]}
-            )
-        if refusal:
-            return self._result(
-                ORDER_FAILED,
-                str(refusal.get("code", "order_failed")),
-                dict(refusal.get("params") or {}),
-            )
-        return self._result(ORDER_DONE, "", {})
-
-    def _carry_out(self, action: str, name: str, resolved: dict, order: dict) -> dict:
-        """Run one action and check it took.
-
-        Args:
-            action: What the order says to do.
-            name: The module name.
-            resolved: The module's recipe as the row the runners read.
-            order: The order itself, for the artifact it names.
-
-        Returns:
-            Empty when it took, ``{"code", "params"}`` when it did not.
-        """
-        kind = str(resolved.get("kind", ""))
-        runner = self._runner_for(kind, name)
-        if runner is None:
-            return {"code": "unknown_kind", "params": {"kind": kind}}
-        if action == ORDER_INSTALL:
-            if kind in BY_NAME_KINDS:
-                runner.install(resolved)
-            else:
-                refusal = self._install(name, resolved, order)
-                if refusal:
-                    return refusal
-            # Verify is the whole point of the step: a package manager that
-            # exits zero and installs nothing is a thing that happens.
-            return {} if runner.verify(resolved) else {"code": "install_unconfirmed"}
-        runner.uninstall(resolved)
-        return {} if not runner.verify(resolved) else {"code": "uninstall_unconfirmed"}
+        return bool(observed.get("is_installed", False))
 
     def _runner_for(self, kind: str, name: str = ""):
         """The runner for one module: its own by name, else its kind's.
@@ -532,41 +584,6 @@ class ModuleEngine(ReconcileWorker):
         if runner is not None and (not kind or runner.kind == kind):
             return runner
         return {"package": self._package, "system_package": self._system}.get(kind)
-
-    def _install(self, name: str, resolved: dict, order: dict) -> dict:
-        """Get the bytes the hub holds and install them.
-
-        Args:
-            name: The module name.
-            resolved: The module's recipe as the row the runners read.
-            order: The order, which names the artifact and its digest.
-
-        Returns:
-            Empty on success, ``{"code", "params"}`` on a refusal.
-        """
-        if self._fetch_artifact is None:
-            return {"code": "hub_unreachable", "params": {}}
-        artifact_key = str(order.get("artifact_key", ""))
-        if not artifact_key:
-            return {"code": "no_download_named", "params": {}}
-        package_kind = str(order.get("package_kind", "")) or "pkg"
-        with tempfile.TemporaryDirectory() as workdir:
-            package = os.path.join(workdir, f"package.{package_kind}")
-            self._collect(f"{name}: receiving {artifact_key}")
-            refusal = self._fetch_artifact(artifact_key, package)
-            if refusal:
-                return refusal
-            self._collect(f"{name}: installing")
-            self._runner_for(str(resolved.get("kind", "")), name).install(
-                resolved, package
-            )
-        return {}
-
-    def _result(self, state: str, code: str, params: dict) -> dict:
-        """How one order went, with the output it produced."""
-        output = "\n".join(self._output)[-AGENT_MODULE_OUTPUT_LIMIT_BYTES:]
-        self._output = []
-        return {"state": state, "code": code, "params": dict(params), "output": output}
 
 
 def _recipe_of(wanted: "dict | None") -> dict:

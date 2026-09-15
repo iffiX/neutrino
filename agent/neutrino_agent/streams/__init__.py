@@ -1,48 +1,43 @@
 """The streams that carry bytes over the hub's socket.
 
-A shell behind a pseudo-terminal, a shell into a container, and the file
-channel: a listing, a download, an upload, and the small operations. Each
-kind is one class the session opens on a thread of its own, reading the
-hub's frames off its :class:`~neutrino_agent.streams.channel.StreamChannel`
-and sending through it.
+Each kind is one handler the session opens on a thread of its own, reading
+the hub's frames off its :class:`~neutrino_agent.streams.channel.StreamChannel`
+and sending through it. A handler has ``open()``, which may raise
+:class:`~neutrino_agent.exceptions.StreamRefused`, and ``run()``, which
+returns ``{"code", "params"}``, what the stream closes with.
 
-Every kind the hub opens, what it takes, and the ``params`` its close
+Every kind, who opens it, what it takes, and the ``params`` its close
 carries when it did what it was asked:
 
-| kind | args | close ``params`` |
-| --- | --- | --- |
-| ``shell`` | ``{cols, rows}`` | ``{exit_code}`` |
-| ``container_shell`` | ``{name}`` | ``{exit_code}`` |
-| ``file_list`` | ``{path}`` | ``{path, entries}`` |
-| ``file_download`` | ``{path, is_archived}`` | ``{size}`` |
-| ``file_upload`` | ``{path, size}`` | ``{}`` |
-| ``file_op`` | ``{op, path, new_path}`` | ``{}`` |
+| Opened by | kind | args | close ``params`` |
+| --- | --- | --- | --- |
+| hub | ``shell`` | ``{cols, rows}``, or ``{module: podman, container}`` | ``{exit_code}`` |
+| hub | ``file`` | ``{op, path, ...}``; ``op`` is ``list``, ``download``, ``upload``, ``rename``, ``remove``, ``directory_create`` or ``directory_download`` | the operation's own |
+| hub | ``command`` | ``{module, verb, ...args}`` | ``{exit_code, output, result}`` |
+| agent | ``log`` | ``{module}``, for an install or an uninstall | ``{state}`` |
+| agent | ``package`` | ``{module}``, or ``{}`` for the agent's own | ``{sha256}``, from the hub |
 
 A close with a ``code`` is a refusal, and its ``params`` are what the
-code's wording names. Paths are absolute; the agent is root.
+code's wording names. An unknown kind is closed ``kind_unknown``; an
+unknown ``op`` or verb inside a kind is closed ``verb_unknown``. Paths are
+absolute; the agent is root.
 """
 
-from neutrino_agent.streams.files import (
-    FileDownloadStream,
-    FileListStream,
-    FileOpStream,
-    FileUploadStream,
-)
-from neutrino_agent.streams.shell import ContainerShellStream, ShellStream
+from neutrino_agent.streams.files import open_file_stream
+from neutrino_agent.streams.module_command import ModuleCommandStream
+from neutrino_agent.streams.shell import open_shell_stream
 
 STREAM_KIND_SHELL = "shell"
-STREAM_KIND_CONTAINER_SHELL = "container_shell"
-STREAM_KIND_FILE_LIST = "file_list"
-STREAM_KIND_FILE_DOWNLOAD = "file_download"
-STREAM_KIND_FILE_UPLOAD = "file_upload"
-STREAM_KIND_FILE_OP = "file_op"
+STREAM_KIND_FILE = "file"
+STREAM_KIND_COMMAND = "command"
+STREAM_KIND_LOG = "log"
+STREAM_KIND_PACKAGE = "package"
 
-# Stream kind to the class the session opens it with.
+# The kinds the hub opens, each to what serves it, called with
+# ``(channel, args)``. The command kind is bound to what runs commands by
+# the session that serves it.
 STREAM_KINDS = {
-    STREAM_KIND_SHELL: ShellStream,
-    STREAM_KIND_CONTAINER_SHELL: ContainerShellStream,
-    STREAM_KIND_FILE_LIST: FileListStream,
-    STREAM_KIND_FILE_DOWNLOAD: FileDownloadStream,
-    STREAM_KIND_FILE_UPLOAD: FileUploadStream,
-    STREAM_KIND_FILE_OP: FileOpStream,
+    STREAM_KIND_SHELL: open_shell_stream,
+    STREAM_KIND_FILE: open_file_stream,
+    STREAM_KIND_COMMAND: ModuleCommandStream,
 }

@@ -1,12 +1,13 @@
 """The file channel over trees under ``tmp_path``.
 
-What these pin: a listing's shape and its resolved path in the close's
-params, a file download as its bytes with the count in the close, a
-directory download as a gzip tar that unpacks to the tree, an upload
-landing by rename with the announced size honoured, credit granted as each
-piece is written so a large one proceeds past the first window, every
-refusal typed, and the three operations with a directory delete that is
-recursive.
+What these pin: the ``file`` kind's entry picking the handler by the
+open's ``op`` and refusing an unknown one ``verb_unknown``, a listing's
+shape and its resolved path in the close's params, a file download as its
+bytes with the count in the close, a directory download as a gzip tar that
+unpacks to the tree, an upload landing by rename with the announced size
+honoured, credit granted as each piece is written so a large one proceeds
+past the first window, every refusal typed, and the three operations with
+a directory removal that is recursive.
 """
 
 import io
@@ -23,6 +24,7 @@ from neutrino_agent.streams.files import (
     FileListStream,
     FileOpStream,
     FileUploadStream,
+    open_file_stream,
 )
 from tests.streams.fake_channel import FakeChannel
 
@@ -47,6 +49,50 @@ def tree(tmp_path):
     (tmp_path / "docs" / "link").symlink_to(tmp_path / "docs" / "note.txt")
     (tmp_path / "docs" / "sub").mkdir()
     return tmp_path
+
+
+# --- the entry ---
+
+
+def test_the_entry_picks_the_handler_by_the_ops_word(tree):
+    docs = str(tree / "docs")
+    note = str(tree / "docs" / "note.txt")
+
+    assert type(open_file_stream(FakeChannel(), {"op": "list", "path": docs})) is (
+        FileListStream
+    )
+    assert type(open_file_stream(FakeChannel(), {"op": "download", "path": note})) is (
+        FileDownloadStream
+    )
+    assert type(
+        open_file_stream(FakeChannel(), {"op": "upload", "path": note, "size": 1})
+    ) is (FileUploadStream)
+    for op in ("rename", "remove", "directory_create"):
+        handler = open_file_stream(FakeChannel(), {"op": op, "path": docs})
+        assert type(handler) is FileOpStream, op
+
+
+def test_a_directory_download_by_the_entry_is_an_archive_even_of_a_file(tree):
+    channel = FakeChannel()
+
+    closed = served(
+        open_file_stream(
+            channel,
+            {"op": "directory_download", "path": str(tree / "docs" / "note.txt")},
+        )
+    )
+
+    assert closed["code"] == ""
+    with tarfile.open(fileobj=io.BytesIO(channel.output()), mode="r:gz") as archive:
+        assert archive.getnames() == ["note.txt"]
+
+
+def test_an_op_outside_the_seven_is_refused_verb_unknown(tree):
+    for op in ("chmod", "", "mkdir", "delete"):
+        with pytest.raises(StreamRefused) as refused:
+            open_file_stream(FakeChannel(), {"op": op, "path": "/x"})
+        assert refused.value.code == "verb_unknown"
+        assert refused.value.params == {"op": op}
 
 
 # --- listing ---
@@ -240,13 +286,16 @@ def op(**args) -> dict:
     return served(FileOpStream(FakeChannel(), args))
 
 
-def test_mkdir_makes_one_directory(tree):
-    assert op(op="mkdir", path=str(tree / "made")) == {"code": "", "params": {}}
+def test_directory_create_makes_one_directory(tree):
+    assert op(op="directory_create", path=str(tree / "made")) == {
+        "code": "",
+        "params": {},
+    }
     assert (tree / "made").is_dir()
 
-    again = op(op="mkdir", path=str(tree / "made"))
+    again = op(op="directory_create", path=str(tree / "made"))
     assert again["code"] == "path_invalid"
-    missing_parent = op(op="mkdir", path=str(tree / "no" / "such"))
+    missing_parent = op(op="directory_create", path=str(tree / "no" / "such"))
     assert missing_parent["code"] == "path_missing"
 
 
@@ -264,22 +313,22 @@ def test_rename_moves_a_path(tree):
     assert gone["code"] == "path_missing"
 
 
-def test_delete_removes_a_file_a_link_and_a_directory_recursively(tree):
-    assert op(op="delete", path=str(tree / "docs" / "link"))["code"] == ""
+def test_remove_takes_a_file_a_link_and_a_directory_recursively(tree):
+    assert op(op="remove", path=str(tree / "docs" / "link"))["code"] == ""
     assert (tree / "docs" / "note.txt").exists()
-    assert op(op="delete", path=str(tree / "docs" / "note.txt"))["code"] == ""
-    assert op(op="delete", path=str(tree / "docs"))["code"] == ""
+    assert op(op="remove", path=str(tree / "docs" / "note.txt"))["code"] == ""
+    assert op(op="remove", path=str(tree / "docs"))["code"] == ""
     assert not (tree / "docs").exists()
-    assert op(op="delete", path=str(tree / "docs"))["code"] == "path_missing"
+    assert op(op="remove", path=str(tree / "docs"))["code"] == "path_missing"
 
 
 def test_an_operation_outside_the_three_or_off_a_relative_path_is_refused(tree):
     assert refusal(FileOpStream(FakeChannel(), {"op": "chmod", "path": "/x"})).code == (
-        "op_failed"
+        "verb_unknown"
     )
-    assert refusal(FileOpStream(FakeChannel(), {"op": "mkdir", "path": "x"})).code == (
-        "path_invalid"
-    )
+    assert refusal(
+        FileOpStream(FakeChannel(), {"op": "directory_create", "path": "x"})
+    ).code == ("path_invalid")
     relative_target = refusal(
         FileOpStream(FakeChannel(), {"op": "rename", "path": "/x", "new_path": "y"})
     )

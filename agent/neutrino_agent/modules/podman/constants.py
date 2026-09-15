@@ -30,6 +30,7 @@ PODMAN_GENERATED_MARKER = (
 
 PODMAN_CONTAINER_ACTIONS = ("start", "stop", "restart")
 
-PODMAN_COMMAND_CONTROL = "podman_control"
-PODMAN_COMMAND_JOURNAL = "podman_journal"
+# The verbs a ``command {module: podman}`` names, beside ``validate``.
+PODMAN_COMMAND_CONTROL = "control"
+PODMAN_COMMAND_JOURNAL = "journal"
 PODMAN_JOURNAL_LINES = 200

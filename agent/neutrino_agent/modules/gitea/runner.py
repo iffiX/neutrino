@@ -1,8 +1,10 @@
-"""The git server as a module: binary, configuration, commands, details.
+"""The git server as a module: binary, configuration, verbs, details.
 
-The binary is a hub-cached release the order hands down; git itself comes
-from the distribution. What makes the binary this hub's git server, the
-rendered ``app.ini`` and the first administrator, is applied here.
+The binary is a hub-cached release that comes down a package stream; git
+itself comes from the distribution. What makes the binary this hub's git
+server, the rendered ``app.ini`` and the first administrator, is applied
+here. Only the hub's own instance is served: one somebody installed by
+hand reports as running on its port and nothing more.
 
 Not pure: drives Gitea through its applier.
 """
@@ -20,6 +22,7 @@ from neutrino_agent.modules.gitea.applier import (
     GiteaAdminManager,
     GiteaConfigApplier,
     GiteaInstaller,
+    read_listen_port,
 )
 from neutrino_agent.modules.gitea.config import ADMIN_NAME_PATTERN, GiteaConfig
 from neutrino_agent.modules.gitea.constants import (
@@ -130,7 +133,9 @@ class GiteaModuleRunner(ModuleRunner):
             resolved: The module as the hub resolved it.
 
         Returns:
-            ``{"is_running", "url", "version", "admins"}``.
+            ``{"is_running", "port", "url", "version", "admins"}``; the
+            port is the held configuration's, else the installed
+            ``app.ini``'s.
         """
         try:
             state = GiteaAdminManager().survey()
@@ -139,16 +144,17 @@ class GiteaModuleRunner(ModuleRunner):
         config = self._config
         return {
             "is_running": unit_state(GITEA_UNIT) == "active",
+            "port": config.listen_port if config is not None else read_listen_port(),
             "url": config.derived_root_url if config is not None else "",
             "version": state.version if state is not None else "",
             "admins": list(state.admin_usernames) if state is not None else [],
         }
 
-    def command(self, action: str, args: dict, on_line=None) -> dict:
-        """Run one of the git server's commands.
+    def command(self, verb: str, args: dict, on_line=None) -> dict:
+        """Run one of the git server's verbs.
 
         Args:
-            action: ``gitea_admin`` or ``gitea_password``.
+            verb: ``admin``, ``password``, or ``validate``.
             args: ``{"username", "password", "email"}``.
             on_line: Called with each output line.
 
@@ -157,7 +163,7 @@ class GiteaModuleRunner(ModuleRunner):
         """
         username = str(args.get("username", ""))
         password = str(args.get("password", ""))
-        if action == GITEA_COMMAND_ADMIN:
+        if verb == GITEA_COMMAND_ADMIN:
             if not ADMIN_NAME_PATTERN.match(username):
                 return command_outcome(1, "username_invalid", {"username": username})
             if GiteaAdminManager().survey().has_admin:
@@ -169,7 +175,7 @@ class GiteaModuleRunner(ModuleRunner):
                 password=password,
                 email=str(args.get("email", "")),
             )
-        if action == GITEA_COMMAND_PASSWORD:
+        if verb == GITEA_COMMAND_PASSWORD:
             if username not in GiteaAdminManager().survey().admin_usernames:
                 return command_outcome(1, "admin_unknown", {"username": username})
             return self._run_admin(
@@ -178,7 +184,7 @@ class GiteaModuleRunner(ModuleRunner):
                 username=username,
                 password=password,
             )
-        return super().command(action, args, on_line)
+        return super().command(verb, args, on_line)
 
     def _run_admin(self, subject: str, step, **fields) -> dict:
         try:

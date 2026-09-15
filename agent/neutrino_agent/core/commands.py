@@ -1,17 +1,15 @@
-"""Carrying out the commands the hub sends.
+"""Carrying out the commands the hub opens.
 
-Only the actions in :data:`SUPPORTED_ACTIONS` can run. The hub is trusted,
-but an agent running as root should still not accept an arbitrary shell
-string just because something sent one, so ``run_command`` is deliberately
-absent from the set. A module's own commands are named by its prefix and
-run by its runner.
+A command names a module and a verb. The agent's own verbs are the closed
+set in :data:`AGENT_VERBS`: the hub is trusted, but an agent running as
+root should still not accept an arbitrary shell string just because
+something sent one, so no verb runs one. Every other module's verbs are
+its runner's, spelled without the module's name because the ``module``
+field is the prefix. A module or a verb this build does not have is
+refused ``verb_unknown``.
 
-Installing a module is not here. Software reaches a managed machine one way,
-an order from the hub's module controller carrying bytes the hub's cache
-fetched; ``reinstall`` only puts this agent's own package back.
-
-The device verbs the hub's drawer runs are here too: ending one process,
-and reading or setting up the user-tier remote desktops.
+Installing a module is no verb: it follows from the hub's ``want``, and
+``reinstall`` only puts this agent's own package back.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -25,43 +23,41 @@ import time
 from dataclasses import dataclass, field
 
 from neutrino_agent.constants import (
-    AGENT_MODULE_COMMAND_SETTLE_S,
+    AGENT_COMMAND_MODULE,
     AGENT_COMMAND_TIMEOUT_S,
     AGENT_KILL_GRACE_S,
+    AGENT_MODULE_COMMAND_SETTLE_S,
+    AGENT_MODULE_VERB_VALIDATE,
     AGENT_OUTPUT_LIMIT_BYTES,
 )
+from neutrino_agent.exceptions import PlatformUnsupportedError
 from neutrino_agent.modules.remote_desktop import (
     SUPPORTED_PRODUCTS,
     RemoteDesktopReader,
 )
-from neutrino_agent.exceptions import PlatformUnsupportedError
 
-POWER_ACTIONS = {"reboot": "reboot", "shutdown": "poweroff"}
+VERB_REBOOT = "reboot"
+VERB_SHUTDOWN = "shutdown"
+VERB_REINSTALL = "reinstall"
+VERB_RESIZE = "resize"
+VERB_KILL = "kill"
+VERB_REMOTE_DESKTOP_READ = "remote_desktop_read"
+VERB_REMOTE_DESKTOP_PASSWORD_SET = "remote_desktop_password_set"  # scan: allow
 
-ACTION_KILL_PROCESS = "kill_process"
-ACTION_REMOTE_DESKTOP_STATUS = "remote_desktop_status"
-ACTION_REMOTE_DESKTOP_PASSWORD = "remote_desktop_password"  # scan: allow
-DEVICE_ACTIONS = (
-    ACTION_KILL_PROCESS,
-    ACTION_REMOTE_DESKTOP_STATUS,
-    ACTION_REMOTE_DESKTOP_PASSWORD,
+# The verbs a ``command {module: agent}`` names.
+AGENT_VERBS = (
+    VERB_REBOOT,
+    VERB_SHUTDOWN,
+    VERB_REINSTALL,
+    VERB_RESIZE,
+    VERB_KILL,
+    VERB_REMOTE_DESKTOP_READ,
+    VERB_REMOTE_DESKTOP_PASSWORD_SET,
 )
+# The verbs the platform's power action carries out, by its own word.
+POWER_VERBS = {VERB_REBOOT: "reboot", VERB_SHUTDOWN: "poweroff"}
 # How often a signalled process is looked in on while its grace runs.
 KILL_POLL_S = 0.05
-
-# What each module answers to, by the prefix its actions carry.
-MODULE_ACTIONS = {
-    "samba": ("samba_set_password",),
-    "gitea": ("gitea_admin", "gitea_password"),
-    "podman": ("podman_control", "podman_journal"),
-    "zfs": ("zfs_op", "zfs_scan"),
-}
-
-SUPPORTED_ACTIONS = (
-    ("reboot", "shutdown", "reinstall")
-    + DEVICE_ACTIONS
-    + tuple(action for actions in MODULE_ACTIONS.values() for action in actions)
-)
 
 
 @dataclass
@@ -89,14 +85,19 @@ class CommandOutcome:
         return self.exit_code == 0
 
 
+def _refused(code: str, **params) -> CommandOutcome:
+    return CommandOutcome(exit_code=1, output="", code=code, params=params)
+
+
 class DeviceOperator:
-    """Runs the supported remote actions on this device."""
+    """Runs the commands the hub opens on this device."""
 
     def __init__(
         self,
         *,
         platform,
         reinstall=None,
+        resize=None,
         module_runners=None,
         remote_desktop=None,
         settle=None,
@@ -105,99 +106,118 @@ class DeviceOperator:
         """
         Args:
             platform: The machine's platform, behind the contract.
-            reinstall: Called for the ``reinstall`` action; returns empty
+            reinstall: Called for the ``reinstall`` verb; returns empty
                 when the install was launched, ``{"code", "params"}`` when
-                not. None refuses the action as unsupported.
-            settle: Called with a timeout before a module command runs, to
+                not. None refuses the verb as unsupported.
+            resize: Called with ``(stream_id, cols, rows)`` for the
+                ``resize`` verb; returns True when a shell stream of that
+                id took the size. None refuses the verb as unsupported.
+            module_runners: Module name to its runner, for the verbs a
+                module answers. None refuses every module verb.
+            remote_desktop: The reader the remote desktop verbs run on.
+                None reads this machine through the platform.
+            settle: Called with a timeout before a module verb runs, to
                 let a pending desired state apply first; None waits for
                 nothing.
             on_module_changed: Called with the module name after one of its
-                commands succeeded, so its details are read again at once.
-            module_runners: Module name to its runner, for the actions a
-                module answers. None refuses every module action.
-            remote_desktop: The reader the remote desktop actions run on.
-                None reads this machine through the platform.
+                verbs succeeded, so its details are read again at once.
         """
         self._platform = platform
-        self._settle = settle
-        self._on_module_changed = on_module_changed
         self._reinstall = reinstall
+        self._resize = resize
         self._module_runners = dict(module_runners or {})
         self._remote_desktop = remote_desktop or RemoteDesktopReader(platform=platform)
+        self._settle = settle
+        self._on_module_changed = on_module_changed
 
-    def run(self, action: str, args: dict, on_line=None) -> CommandOutcome:
-        """Run one command by name.
+    def run(self, module: str, verb: str, args: dict, on_line=None) -> CommandOutcome:
+        """Run one command.
 
         Args:
-            action: One of :data:`SUPPORTED_ACTIONS`.
-            args: Action-specific arguments.
-            on_line: Called with each output line a module command produces.
+            module: ``agent``, or the module whose verb it is.
+            verb: The verb, without the module's name.
+            args: The verb's own arguments.
+            on_line: Called with each output line a module verb produces.
 
         Returns:
-            The outcome; an unsupported action is a typed refusal rather
-            than an exception, so the hub always gets a report.
+            The outcome; an unknown module or verb is a typed refusal
+            rather than an exception, so the hub always gets a close.
         """
-        if action == "reinstall" and self._reinstall is not None:
-            refusal = self._reinstall()
-            if refusal:
-                return CommandOutcome(
-                    exit_code=1,
-                    output="",
-                    code=str(refusal.get("code", "")),
-                    params=dict(refusal.get("params") or {}),
-                )
-            return CommandOutcome(exit_code=0, output="reinstall launched\n")
-        module = _module_of(action)
-        if module is not None:
-            return self._module_command(module, action, args, on_line)
-        if action == ACTION_KILL_PROCESS:
-            return self._kill_process(args)
-        if action in (ACTION_REMOTE_DESKTOP_STATUS, ACTION_REMOTE_DESKTOP_PASSWORD):
-            return self._remote_desktop_command(action, args)
-        if action not in POWER_ACTIONS:
-            return CommandOutcome(
-                exit_code=1,
-                output="",
-                code="unsupported_action",
-                params={"action": action},
-            )
-        return self._power(POWER_ACTIONS[action])
-
-    def _module_command(
-        self, module: str, action: str, args: dict, on_line
-    ) -> CommandOutcome:
+        if module == AGENT_COMMAND_MODULE:
+            return self._agent_verb(verb, args)
         runner = self._module_runners.get(module)
         if runner is None:
-            return CommandOutcome(
-                exit_code=1,
-                output="",
-                code="unsupported_action",
-                params={"action": action},
-            )
-        if self._settle is not None and not self._settle(AGENT_MODULE_COMMAND_SETTLE_S):
-            return CommandOutcome(
-                exit_code=1,
-                output="",
-                code="state_not_settled",
-                params={"module": module},
-            )
+            return _refused("verb_unknown", module=module, verb=verb)
+        return self._module_verb(module, runner, verb, args, on_line)
+
+    def _agent_verb(self, verb: str, args: dict) -> CommandOutcome:
+        if verb in POWER_VERBS:
+            return self._power(POWER_VERBS[verb])
+        if verb == VERB_REINSTALL:
+            return self._reinstall_agent()
+        if verb == VERB_RESIZE:
+            return self._resize_shell(args)
+        if verb == VERB_KILL:
+            return self._kill_process(args)
+        if verb in (VERB_REMOTE_DESKTOP_READ, VERB_REMOTE_DESKTOP_PASSWORD_SET):
+            return self._remote_desktop_verb(verb, args)
+        return _refused("verb_unknown", module=AGENT_COMMAND_MODULE, verb=verb)
+
+    def _module_verb(
+        self, module: str, runner, verb: str, args: dict, on_line
+    ) -> CommandOutcome:
+        is_reading = verb == AGENT_MODULE_VERB_VALIDATE
+        if (
+            not is_reading
+            and self._settle is not None
+            and not self._settle(AGENT_MODULE_COMMAND_SETTLE_S)
+        ):
+            return _refused("state_not_settled", module=module)
         try:
-            outcome = runner.command(action, dict(args), on_line)
+            outcome = runner.command(verb, dict(args), on_line)
         except Exception as error:  # noqa: BLE001 - reported, never raised
-            return CommandOutcome(
-                exit_code=1,
-                output="",
-                code="agent_internal",
-                params={"error": type(error).__name__},
-            )
-        if int(outcome.get("exit_code", 1)) == 0 and self._on_module_changed:
+            return _refused("agent_internal", error=type(error).__name__)
+        exit_code = int(outcome.get("exit_code", 1))
+        if exit_code == 0 and not is_reading and self._on_module_changed:
             self._on_module_changed(module)
         return CommandOutcome(
-            exit_code=int(outcome.get("exit_code", 1)),
+            exit_code=exit_code,
             output=str(outcome.get("output", "") or "")[-AGENT_OUTPUT_LIMIT_BYTES:],
             code=str(outcome.get("code", "") or ""),
             params=dict(outcome.get("params") or {}),
         )
+
+    def _reinstall_agent(self) -> CommandOutcome:
+        if self._reinstall is None:
+            return _refused("unsupported_platform")
+        refusal = self._reinstall()
+        if refusal:
+            return CommandOutcome(
+                exit_code=1,
+                output="",
+                code=str(refusal.get("code", "")),
+                params=dict(refusal.get("params") or {}),
+            )
+        return CommandOutcome(exit_code=0, output="reinstall launched\n")
+
+    def _resize_shell(self, args: dict) -> CommandOutcome:
+        """Give one shell stream a new window size."""
+        stream_id = args.get("shell")
+        if self._resize is None:
+            return _refused("unsupported_platform")
+        try:
+            cols = int(args.get("cols", 0) or 0)
+            rows = int(args.get("rows", 0) or 0)
+        except (TypeError, ValueError):
+            cols = rows = 0
+        if (
+            not isinstance(stream_id, int)
+            or cols <= 0
+            or rows <= 0
+            or not self._resize(stream_id, cols, rows)
+        ):
+            return _refused("shell_unknown", shell=stream_id)
+        return CommandOutcome(exit_code=0, output="")
 
     def _kill_process(self, args: dict) -> CommandOutcome:
         """End one process: a term, then a kill once its grace has run."""
@@ -206,22 +226,13 @@ class DeviceOperator:
         except (TypeError, ValueError):
             pid = 0
         if pid <= 1 or pid == os.getpid():
-            return CommandOutcome(
-                exit_code=1, output="", code="kill_failed", params={"pid": pid}
-            )
+            return _refused("kill_failed", pid=pid)
         try:
             os.kill(pid, signal.SIGTERM)
         except ProcessLookupError:
-            return CommandOutcome(
-                exit_code=1, output="", code="process_missing", params={"pid": pid}
-            )
+            return _refused("process_missing", pid=pid)
         except OSError as error:
-            return CommandOutcome(
-                exit_code=1,
-                output="",
-                code="kill_failed",
-                params={"pid": pid, "detail": str(error)[:200]},
-            )
+            return _refused("kill_failed", pid=pid, detail=str(error)[:200])
         deadline = time.monotonic() + AGENT_KILL_GRACE_S
         while time.monotonic() < deadline:
             if not _is_alive(pid):
@@ -232,37 +243,22 @@ class DeviceOperator:
         except ProcessLookupError:
             return CommandOutcome(exit_code=0, output=f"terminated {pid}\n")
         except OSError as error:
-            return CommandOutcome(
-                exit_code=1,
-                output="",
-                code="kill_failed",
-                params={"pid": pid, "detail": str(error)[:200]},
-            )
+            return _refused("kill_failed", pid=pid, detail=str(error)[:200])
         return CommandOutcome(exit_code=0, output=f"killed {pid}\n")
 
-    def _remote_desktop_command(self, action: str, args: dict) -> CommandOutcome:
+    def _remote_desktop_verb(self, verb: str, args: dict) -> CommandOutcome:
         product = str(args.get("product", ""))
         if product not in SUPPORTED_PRODUCTS:
-            return CommandOutcome(
-                exit_code=1,
-                output="",
-                code="product_unknown",
-                params={"product": product},
-            )
+            return _refused("product_unknown", product=product)
         try:
-            if action == ACTION_REMOTE_DESKTOP_STATUS:
+            if verb == VERB_REMOTE_DESKTOP_READ:
                 status = self._remote_desktop.status(product)
                 return CommandOutcome(exit_code=0, output="", result=status)
             outcome = self._remote_desktop.set_password(
                 product, str(args.get("password", ""))
             )
         except Exception as error:  # noqa: BLE001 - reported, never raised
-            return CommandOutcome(
-                exit_code=1,
-                output="",
-                code="agent_internal",
-                params={"error": type(error).__name__},
-            )
+            return _refused("agent_internal", error=type(error).__name__)
         return CommandOutcome(
             exit_code=int(outcome.get("exit_code", 1)),
             output=str(outcome.get("output", "") or "")[-AGENT_OUTPUT_LIMIT_BYTES:],
@@ -300,11 +296,3 @@ def _is_alive(pid: int) -> bool:
     except (OSError, IndexError):
         return True
     return state != "Z"
-
-
-def _module_of(action: str) -> "str | None":
-    """Which module answers one action, or None for the agent's own."""
-    for module, actions in MODULE_ACTIONS.items():
-        if action in actions:
-            return module
-    return None

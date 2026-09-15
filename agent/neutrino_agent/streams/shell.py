@@ -1,9 +1,11 @@
 """A shell on this machine, behind a pseudo-terminal, over one stream.
 
 The hub's bytes go to the shell's terminal; whatever the terminal produces
-goes up as binary frames, no faster than the hub's credit allows; a resize
-sets the terminal's window. The stream ends when the shell exits or the
-hub closes it, and closes with the shell's exit status in its params.
+goes up as binary frames, no faster than the hub's credit allows; a resize,
+which arrives as a command naming the stream, sets the terminal's window.
+The stream ends when the shell exits or the hub closes it, and closes with
+the shell's exit status in its params. A ``shell`` opened with ``{module:
+podman, container}`` runs inside that container instead.
 
 The shell runs as the agent runs, which is root. Closing the stream kills
 the shell's whole terminal session, background jobs included, so a closed
@@ -44,6 +46,8 @@ except ImportError:  # Windows carries none of these.
 
 # What a container shell runs: its own bash where it has one, else sh.
 CONTAINER_SHELL_COMMAND = "command -v bash >/dev/null 2>&1 && exec bash || exec sh"
+# The one module whose shells are served: a container's own.
+CONTAINER_MODULE = "podman"
 
 DEFAULT_COLUMNS = 80
 DEFAULT_ROWS = 24
@@ -88,6 +92,29 @@ def listed_containers() -> list:
     """The names of every container podman knows, running or not."""
     reader = PodmanStatusReader()
     return [state.name for state in reader.survey(declared_names=[])]
+
+
+def open_shell_stream(channel, args: dict):
+    """The handler for one ``shell`` stream: this machine's, or a container's.
+
+    Args:
+        channel: The stream's channel.
+        args: ``{"cols", "rows"}``, with ``{"module", "container"}`` for a
+            shell inside a container.
+
+    Returns:
+        The handler, not yet opened.
+
+    Raises:
+        StreamRefused: ``verb_unknown`` naming a module other than the
+            container engine's.
+    """
+    module = str(args.get("module", "") or "")
+    if not module:
+        return ShellStream(channel, args)
+    if module != CONTAINER_MODULE:
+        raise StreamRefused("verb_unknown", {"module": module})
+    return ContainerShellStream(channel, args)
 
 
 def shell_environment() -> dict:
@@ -299,9 +326,10 @@ class ContainerShellStream(ShellStream):
         """
         Args:
             channel: The stream's channel.
-            args: ``{"name"}``, the container.
+            args: ``{"container", "cols", "rows"}``, the container and the
+                terminal's first size.
         """
-        self._name = str(args.get("name", ""))
+        self._name = str(args.get("container", ""))
         super().__init__(
             channel,
             args,

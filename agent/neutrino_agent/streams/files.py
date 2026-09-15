@@ -1,11 +1,12 @@
-"""The file channel: a listing, a download, an upload, the small operations.
+"""The file kind: a listing, a download, an upload, the small operations.
 
-Each is one stream, and its result is its close's params. A listing closes
-with its entries; a download sends the file's bytes, or a gzip tar of a
-directory, and closes with how many; an upload takes the hub's bytes into
-a temporary file beside the target, granting credit as each piece is
-written, and renames it into place once every announced byte is there; an
-operation makes, renames or deletes and closes.
+One ``file`` stream is one operation, named by its ``op``, and its result
+is its close's params. A listing closes with its entries; a download sends
+the file's bytes, or a gzip tar of a directory, and closes with how many;
+an upload takes the hub's bytes into a temporary file beside the target,
+granting credit as each piece is written, and renames it into place once
+every announced byte is there; an operation makes a directory, renames or
+removes, and closes.
 
 Paths are absolute, and the agent is root. A stream that cannot be served
 at all is refused typed before it opens; one that fails under way closes
@@ -28,7 +29,16 @@ import tempfile
 from neutrino_agent.constants import AGENT_WS_CHUNK_BYTES, AGENT_WS_STREAM_CREDIT_BYTES
 from neutrino_agent.exceptions import StreamRefused
 
-FILE_OPS = ("mkdir", "rename", "delete")
+# What one ``file`` stream may do, by its ``op``.
+FILE_OP_LIST = "list"
+FILE_OP_DOWNLOAD = "download"
+FILE_OP_UPLOAD = "upload"
+FILE_OP_RENAME = "rename"
+FILE_OP_REMOVE = "remove"
+FILE_OP_DIRECTORY_CREATE = "directory_create"
+FILE_OP_DIRECTORY_DOWNLOAD = "directory_download"
+# The small operations, served by one class.
+FILE_OPS = (FILE_OP_RENAME, FILE_OP_REMOVE, FILE_OP_DIRECTORY_CREATE)
 
 KIND_FILE = "file"
 KIND_DIR = "dir"
@@ -69,6 +79,33 @@ def _error_code(error: OSError) -> str:
     if isinstance(error, (FileExistsError, NotADirectoryError, IsADirectoryError)):
         return "path_invalid"
     return "op_failed"
+
+
+def open_file_stream(channel, args: dict):
+    """The handler for one ``file`` stream, by its ``op``.
+
+    Args:
+        channel: The stream's channel.
+        args: ``{"op", "path", ...}``, the rest being the operation's own.
+
+    Returns:
+        The handler, not yet opened.
+
+    Raises:
+        StreamRefused: ``verb_unknown`` naming an ``op`` outside the table.
+    """
+    op = str(args.get("op", "") or "")
+    if op == FILE_OP_LIST:
+        return FileListStream(channel, args)
+    if op == FILE_OP_DOWNLOAD:
+        return FileDownloadStream(channel, args)
+    if op == FILE_OP_DIRECTORY_DOWNLOAD:
+        return FileDownloadStream(channel, dict(args, is_archived=True))
+    if op == FILE_OP_UPLOAD:
+        return FileUploadStream(channel, args)
+    if op in FILE_OPS:
+        return FileOpStream(channel, args)
+    raise StreamRefused("verb_unknown", {"op": op})
 
 
 class FileListStream:
@@ -305,7 +342,7 @@ class FileUploadStream:
 
 
 class FileOpStream:
-    """One small operation: make a directory, rename, or delete."""
+    """One small operation: make a directory, rename, or remove."""
 
     def __init__(self, channel, args: dict):
         """
@@ -322,13 +359,13 @@ class FileOpStream:
         """Check the operation and its paths.
 
         Raises:
-            StreamRefused: ``op_failed`` naming an operation outside the
+            StreamRefused: ``verb_unknown`` naming an operation outside the
                 three, ``path_invalid`` for a relative path.
         """
         if self._op not in FILE_OPS:
-            raise StreamRefused("op_failed", {"op": self._op})
+            raise StreamRefused("verb_unknown", {"op": self._op})
         _require_absolute(self._path)
-        if self._op == "rename":
+        if self._op == FILE_OP_RENAME:
             _require_absolute(self._new_path)
 
     def run(self) -> dict:
@@ -339,9 +376,9 @@ class FileOpStream:
             ``path_invalid`` or ``op_failed`` when the file system refused.
         """
         try:
-            if self._op == "mkdir":
+            if self._op == FILE_OP_DIRECTORY_CREATE:
                 os.mkdir(self._path)
-            elif self._op == "rename":
+            elif self._op == FILE_OP_RENAME:
                 os.rename(self._path, self._new_path)
             elif os.path.isdir(self._path) and not os.path.islink(self._path):
                 shutil.rmtree(self._path)

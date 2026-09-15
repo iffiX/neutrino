@@ -25,15 +25,24 @@ SOURCE_DIR = Path(wording.__file__).resolve().parent.parent
 CODE_PATTERN = re.compile(r'"code": "([a-z0-9_]+)"')
 
 # The codes that reach a surface without riding a ``{"code": ...}`` literal:
-# the engine records an order's failure by name, and the share says what a
-# peer would wait on as a bare token.
+# the engine names a package operation's failure by its transient, the
+# commands build their refusals by name, the package stream names its own,
+# and the share says what a peer would wait on as a bare token.
 UNSTRUCTURED_CODES = (
     "no_platform_build",
-    "unknown_action",
     "unsupported_platform",
     "install_failed",
-    "order_failed",
+    "uninstall_failed",
     "verify_failed",
+    "shell_unknown",
+    "state_not_settled",
+    "agent_internal",
+    "kill_failed",
+    "process_missing",
+    "product_unknown",
+    "package_digest_mismatch",
+    "write_failed",
+    "hub_unreachable",
     RDP_ATTENTION_NOBODY_SEATED,
     RDP_ATTENTION_SCREEN_NOT_ALLOWED,
 )
@@ -42,6 +51,7 @@ UNSTRUCTURED_CODES = (
 # a literal, and what the engine records against a built-in row.
 MODULE_CODES = (
     "module_not_orderable",
+    "verb_unknown",
     "samba_missing",
     "samba_config_rejected",
     "share_name_invalid",
@@ -164,7 +174,16 @@ def test_the_protocol_words_name_both_numbers():
 
 
 def test_the_codes_that_left_with_the_old_wire_are_gone():
-    for code in ("self_unbound", "agent_wire_stale", "agent_newer_than_hub"):
+    for code in (
+        "self_unbound",
+        "agent_wire_stale",
+        "agent_newer_than_hub",
+        "unknown_action",
+        "unsupported_action",
+        "order_failed",
+        "no_download_named",
+        "module_digest_mismatch",
+    ):
         assert not is_worded(code)
 
 

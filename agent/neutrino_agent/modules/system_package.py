@@ -1,8 +1,8 @@
 """Installing and uninstalling modules the machine's package manager carries.
 
-A system-package module names distro packages, never a download: its orders
-skip the hub's cache and the platform installs the names with its own
-tooling. An entry may name ``pre_install`` shell steps, run before the
+A system-package module names distro packages, never a download: its
+install asks the hub for no bytes and the platform installs the names with
+its own tooling. An entry may name ``pre_install`` shell steps, run before the
 packages, for a repository the distribution keeps the software in. With no
 packages named, a module is present when its own binary is on the path, so
 software somebody installed by hand is observed without a recipe.

@@ -5,14 +5,27 @@ entry per module it has a say about, ``{want, config, install, uninstall}``,
 and the seat password this machine's desktop answers with. A copy lands
 here on every ``state`` frame, root-only on disk, and the applier makes
 each mentioned module's actual state equal its ``want``, in one fixed
-module order. A module the state does not mention is left as it is.
+module order:
+
+| ``want`` | The applier ensures |
+| --- | --- |
+| ``absent`` | the software is uninstalled by its recipe, the configuration the hub wrote and the configured mark are gone; the data stays |
+| ``installed`` | the software is there; nothing is configured, nothing started |
+| ``stopped`` | the software is there, the configuration applied, the unit stopped |
+| ``running`` | the software is there, the configuration applied, the unit up |
+
+A module the state does not mention is left as it is. An install's bytes
+come down a ``package {module}`` stream the applier opens, and an
+install's or an uninstall's output goes up a ``log {module}`` stream.
 
 The applied hash is what the hub compares against: it moves to the state's
 hash only once every mentioned module applied. A state whose apply failed
 is reported with its code under the old hash, and is tried again only when
-a state with another hash arrives.
+a state with another hash arrives; the one exception is a failure the
+socket caused, which the next state frame tries again.
 
-Not pure: writes the state file and drives the module runners.
+Not pure: writes the state file, drives the module runners and opens
+streams.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -26,17 +39,31 @@ import threading
 
 from neutrino_agent.constants import (
     AGENT_DESIRED_STATE_PATH,
+    AGENT_WANT_ABSENT,
+    AGENT_WANT_INSTALLED,
     AGENT_WANT_RUNNING,
     AGENT_WANT_STOPPED,
 )
-from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
+from neutrino_agent.exceptions import (
+    GatewayUnreachable,
+    ModuleApplyError,
+    PlatformUnsupportedError,
+)
+from neutrino_agent.streams import STREAM_KIND_LOG, STREAM_KIND_PACKAGE
+from neutrino_agent.streams.log import LogStream
+from neutrino_agent.streams.package import PackageStream
 
 # The order modules apply in: storage first, then what serves from it.
 APPLY_ORDER = ("zfs", "samba", "gitea", "podman")
 
-# The wants that apply the hub's configuration; the other two record what is
-# wanted and leave the configuration alone.
+# The wants under which the software must be there.
+PRESENT_WANTS = (AGENT_WANT_INSTALLED, AGENT_WANT_STOPPED, AGENT_WANT_RUNNING)
+# The wants that apply the hub's configuration.
 CONFIGURING_WANTS = (AGENT_WANT_RUNNING, AGENT_WANT_STOPPED)
+
+# The one failure the next state frame tries again: the socket went away
+# under the operation, and nothing about the machine made it fail.
+RETRIED_CODE = "hub_unreachable"
 
 
 class DesiredStateStore:
@@ -91,24 +118,41 @@ class DesiredStateApplier:
     """Takes states from the hub and makes the latest one true, in order."""
 
     def __init__(
-        self, *, engine, runners: dict, store: DesiredStateStore, rdp=None, log=print
+        self,
+        *,
+        engine,
+        runners: dict,
+        store: DesiredStateStore,
+        rdp=None,
+        log=print,
+        open_stream=None,
+        package_dir: str = "",
     ):
         """
         Args:
             engine: The :class:`ModuleEngine`, which observes each module
-                against the state and reports it.
+                against the state, reports it, and moves its software.
             runners: Module name to its runner, for the modules this agent
                 applies.
             store: Where the last taken state is kept.
             rdp: The :class:`RdpShareHost` the desktop section is handed
                 to; None applies nothing of it.
             log: Callable used for progress messages.
+            open_stream: Called with ``(kind, **args)`` to open a stream
+                to the hub; returns its channel and raises
+                :class:`GatewayUnreachable` with no socket. None opens
+                nothing: an install that needs bytes then fails
+                ``hub_unreachable``.
+            package_dir: Where a package's bytes land until their digest
+                is checked.
         """
         self._engine = engine
         self._runners = dict(runners)
         self._store = store
         self._rdp = rdp
         self._log = log
+        self._open_stream = open_stream
+        self._package_dir = package_dir
         self._lock = threading.Lock()
         self._idle = threading.Condition(self._lock)
         self._is_applying = False
@@ -166,30 +210,11 @@ class DesiredStateApplier:
             self._pending = kept
         self._wakeup.set()
 
-    def apply_again(self) -> None:
-        """Apply the last state taken once more, whatever its hash.
-
-        Run after an order changed what is installed: a module that was
-        skipped for being absent is there now and owes its configuration.
-        """
-        with self._lock:
-            if self._pending is None:
-                held = self._store.read()
-                if not held.get("hash"):
-                    return
-                self._pending = held
-            self._applied_hash = ""
-            self._tried_hash = ""
-        self._wakeup.set()
-
     def apply(self, document: dict) -> None:
         """Make one state true now, in the caller's thread.
 
-        Each mentioned module with a runner is made to match its ``want``:
-        ``running`` applies the configuration and leaves the unit up,
-        ``stopped`` applies it and stops the unit, and ``installed`` and
-        ``absent`` record what is wanted and leave the configuration alone.
-        A module whose software is not there is left for its install.
+        Each mentioned module with a runner is made to match its ``want``.
+        A ``want`` outside the four is left alone, with a line in the log.
 
         Args:
             document: The state, ``{hash, modules, desktop}``.
@@ -209,11 +234,7 @@ class DesiredStateApplier:
             wanted = modules.get(name)
             if runner is None or wanted is None:
                 continue
-            want = str(wanted.get("want", "") or "")
-            if want not in CONFIGURING_WANTS or not self._engine.is_installed(name):
-                self._engine.record_apply(name, "", {})
-                continue
-            failure = self._apply_one(name, runner, want, wanted.get("config"))
+            failure = self._reconcile_one(name, runner, wanted)
             self._engine.record_apply(
                 name,
                 failure["code"] if failure else "",
@@ -222,7 +243,10 @@ class DesiredStateApplier:
             if failure and first_failure is None:
                 first_failure = {"module": name, **failure}
         with self._lock:
-            self._tried_hash = state_hash
+            is_retried = first_failure is not None and (
+                first_failure["code"] == RETRIED_CODE
+            )
+            self._tried_hash = "" if is_retried else state_hash
             if first_failure is None:
                 self._applied_hash = state_hash
                 self._state_error = None
@@ -252,6 +276,94 @@ class DesiredStateApplier:
         refusal = self._rdp.apply_seat_password(str(wanted.get("seat_password", "")))
         if refusal:
             self._log(f"rdp: {refusal['code']}")
+
+    def _reconcile_one(self, name: str, runner, wanted: dict) -> "dict | None":
+        """Make one module's actual state equal its ``want``.
+
+        Args:
+            name: The module name.
+            runner: Its runner.
+            wanted: The state's entry for it.
+
+        Returns:
+            None when it took, ``{"code", "params"}`` when it did not.
+        """
+        want = str(wanted.get("want", "") or "")
+        if want == AGENT_WANT_ABSENT:
+            if self._engine.is_installed(name):
+                return self._package_operation(name, self._uninstall)
+            self._engine.clear_configured(name)
+            return None
+        if want not in PRESENT_WANTS:
+            self._log(f"{name}: want {want!r} is not one this agent knows")
+            return None
+        if not self._engine.is_installed(name):
+            failure = self._package_operation(name, self._install)
+            if failure:
+                return failure
+        if want not in CONFIGURING_WANTS:
+            return None
+        failure = self._apply_one(name, runner, want, wanted.get("config"))
+        if failure is None:
+            self._engine.mark_configured(name)
+        return failure
+
+    def _install(self, name: str, on_line) -> dict:
+        return self._engine.install(name, receive=self._receive, on_line=on_line)
+
+    def _uninstall(self, name: str, on_line) -> dict:
+        return self._engine.uninstall(name, on_line=on_line)
+
+    def _package_operation(self, name: str, operation) -> "dict | None":
+        """Run one package operation with its output up a log stream.
+
+        Args:
+            name: The module name.
+            operation: Called with ``(name, on_line)``; returns empty or
+                ``{"code", "params"}``.
+
+        Returns:
+            None when it took, ``{"code", "params"}`` when it did not.
+        """
+        log = self._open_log(name)
+        refusal = operation(name, log.send if log is not None else None)
+        if log is not None:
+            state = str((self._engine.report().get(name) or {}).get("state", ""))
+            log.close(
+                state,
+                str(refusal.get("code", "") or "") if refusal else "",
+                dict(refusal.get("params") or {}) if refusal else {},
+            )
+        if refusal:
+            self._log(f"{name}: {refusal['code']}")
+            return {"code": refusal["code"], "params": dict(refusal.get("params", {}))}
+        return None
+
+    def _open_log(self, name: str) -> "LogStream | None":
+        """A ``log {module}`` stream to the hub, or None with no socket."""
+        if self._open_stream is None:
+            return None
+        try:
+            return LogStream(self._open_stream(STREAM_KIND_LOG, module=name))
+        except GatewayUnreachable:
+            return None
+
+    def _receive(self, name: str) -> dict:
+        """One module's package, down a ``package {module}`` stream.
+
+        Args:
+            name: The module name.
+
+        Returns:
+            ``{"path"}`` naming the checked file, or ``{"code", "params"}``.
+        """
+        if self._open_stream is None:
+            return {"code": RETRIED_CODE, "params": {}}
+        try:
+            channel = self._open_stream(STREAM_KIND_PACKAGE, module=name)
+        except GatewayUnreachable:
+            return {"code": RETRIED_CODE, "params": {}}
+        return PackageStream(channel, directory=self._package_dir).receive()
 
     def _apply_one(self, name: str, runner, want: str, config) -> "dict | None":
         """Apply one installed module's configuration and settle its unit.

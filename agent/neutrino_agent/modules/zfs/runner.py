@@ -1,8 +1,10 @@
 """ZFS as a module: the tools by package, the storage picture, the verbs.
 
-The packages come from the distribution, so orders ride the system-package
-runner, with the repository steps the manifest names. There is nothing to
-render: a pool's truth is on its disks, so apply caps the ARC and stops.
+The packages come from the distribution, so the install rides the
+system-package runner, with the repository steps the recipe names. There
+is nothing to render: a pool's truth is on its disks, so apply caps the ARC
+and stops, and the picture it reports is the pools, vdevs and datasets the
+machine has, whoever made them.
 
 Not pure: drives the storage tools through the applier.
 """
@@ -11,6 +13,7 @@ Not pure: drives the storage tools through the applier.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
 
@@ -37,6 +40,7 @@ from neutrino_agent.modules.zfs.constants import (
     ZFS_COMMAND_OP,
     ZFS_COMMAND_SCAN,
     ZFS_KERNEL_MODULE_DIR,
+    ZFS_MODPROBE_CONF,
     ZFS_OP_CREATE_DATASET,
     ZFS_OP_CREATE_POOL,
     ZFS_OP_DESTROY_DATASET,
@@ -90,6 +94,11 @@ class ZfsModuleRunner(SystemPackageModuleRunner):
         if note:
             self._log(f"zfs: {note}")
 
+    def remove_configuration(self) -> None:
+        """Drop the ARC cap; the pools stay on their disks."""
+        with contextlib.suppress(OSError):
+            os.unlink(ZFS_MODPROBE_CONF)
+
     def is_active(self) -> bool:
         """Whether the ZFS kernel module is loaded; there is no unit to ask."""
         return os.path.isdir(ZFS_KERNEL_MODULE_DIR)
@@ -120,27 +129,27 @@ class ZfsModuleRunner(SystemPackageModuleRunner):
             "importable": [vars(candidate) for candidate in reader.importable()],
         }
 
-    def command(self, action: str, args: dict, on_line=None) -> dict:
+    def command(self, verb: str, args: dict, on_line=None) -> dict:
         """Run one of the storage verbs.
 
         Args:
-            action: ``zfs_op`` or ``zfs_scan``.
+            verb: ``op``, ``scan``, or ``validate``.
             args: ``{"op", "args"}`` for an op; nothing for a scan.
             on_line: Called with each output line.
 
         Returns:
             ``{"exit_code", "code", "params", "output"}``.
         """
-        if action == ZFS_COMMAND_SCAN:
+        if verb == ZFS_COMMAND_SCAN:
             for disk in ZfsDiskScanner().scan(is_smart=True):
                 self._smart[disk.device] = (disk.smart_passed, disk.temperature_c)
             return command_outcome(0, output=f"scanned {len(self._smart)} disks\n")
-        if action != ZFS_COMMAND_OP:
-            return super().command(action, args, on_line)
+        if verb != ZFS_COMMAND_OP:
+            return super().command(verb, args, on_line)
         op = str(args.get("op", ""))
         fields = args.get("args") if isinstance(args.get("args"), dict) else {}
         if op not in ZFS_OPS:
-            return command_outcome(1, "unsupported_action", {"action": op})
+            return command_outcome(1, "verb_unknown", {"module": self.name, "verb": op})
         try:
             self._run_op(op, fields)
         except ModuleApplyError as error:

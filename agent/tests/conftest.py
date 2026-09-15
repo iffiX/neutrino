@@ -1,8 +1,8 @@
 """Suite-wide isolation and the shared fakes, defined once.
 
 The autouse redirect keeps every store off the real machine: the binding
-file, the machine's own state store and the credentials directory all land
-in ``tmp_path``. The fakes here are the ones more than one directory
+file, the machine's own state store, the credentials directory and the
+configured marks all land in ``tmp_path``. The fakes here are the ones more than one directory
 drives: the control channel's platform and agent, the injected clock, the
 link builder and the log sink.
 """
@@ -12,6 +12,7 @@ import json
 
 import pytest
 
+import neutrino_agent.core.engine as engine_module
 import neutrino_agent.core.enrollment as enrollment
 import neutrino_agent.core.store as store_module
 import neutrino_agent.platforms.base as platforms_base_module
@@ -23,6 +24,9 @@ def _isolated_machine_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(enrollment, "AGENT_CONFIG_PATH", str(tmp_path / "agent.json"))
     monkeypatch.setattr(store_module, "AGENT_STATE_PATH", str(tmp_path / "state.json"))
     monkeypatch.setattr(platforms_base_module, "AGENT_DATA_DIR_POSIX", str(tmp_path))
+    monkeypatch.setattr(
+        engine_module, "AGENT_CONFIGURED_DIR", str(tmp_path / "configured")
+    )
 
 
 @pytest.fixture

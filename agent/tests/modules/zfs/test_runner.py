@@ -1,4 +1,10 @@
-"""The ZFS runner: the storage picture, the verbs, and the SMART scan."""
+"""The ZFS runner: the storage picture, the verbs, and the SMART scan.
+
+The verbs are spelled without the module's name: ``op`` and ``scan``, with
+``validate`` from the base. ``observe()`` reads the tools, the kernel
+module and the picture in one go; there is no wanted pool list, so the
+picture is what the machine has, whoever made it.
+"""
 
 import subprocess
 
@@ -94,7 +100,7 @@ def test_details_carry_the_picture_without_system_disks_or_a_smart_read(runner):
 
 
 def test_a_scan_reads_smart_once_and_the_details_keep_it(runner):
-    outcome = runner.command("zfs_scan", {})
+    outcome = runner.command("scan", {})
 
     assert outcome["exit_code"] == 0
     details = runner.details({})
@@ -104,7 +110,7 @@ def test_a_scan_reads_smart_once_and_the_details_keep_it(runner):
 
 def test_each_op_is_validated_then_driven(runner):
     outcome = runner.command(
-        "zfs_op",
+        "op",
         {
             "op": "create_pool",
             "args": {"name": "tank", "layout": "mirror", "devices": ["a", "b"]},
@@ -128,7 +134,7 @@ def test_each_op_is_validated_then_driven(runner):
 
 def test_a_refused_argument_is_typed_before_the_tool_runs(runner):
     outcome = runner.command(
-        "zfs_op",
+        "op",
         {
             "op": "create_pool",
             "args": {"name": "mirror", "layout": "single", "devices": ["a"]},
@@ -140,13 +146,48 @@ def test_a_refused_argument_is_typed_before_the_tool_runs(runner):
 
 
 def test_an_op_outside_the_table_is_refused(runner):
-    assert runner.command("zfs_op", {"op": "format_c"})["code"] == "unsupported_action"
+    outcome = runner.command("op", {"op": "format_c"})
+
+    assert outcome["code"] == "verb_unknown"
+    assert outcome["params"] == {"module": "zfs", "verb": "format_c"}
+
+
+def test_a_verb_the_module_does_not_have_is_refused(runner):
+    assert runner.command("journal", {})["code"] == "verb_unknown"
+
+
+def test_observe_is_the_tools_the_kernel_module_and_the_picture(
+    runner, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(runner_module, "ZFS_KERNEL_MODULE_DIR", str(tmp_path / "zfs"))
+
+    unloaded = runner.observe({})
+    (tmp_path / "zfs").mkdir()
+    loaded = runner.observe({})
+
+    assert (unloaded["is_installed"], unloaded["is_active"]) == (True, False)
+    assert loaded["is_active"] is True
+    assert set(loaded["details"]) == {"pools", "datasets", "disks", "importable"}
+    assert loaded["details"]["pools"][0]["name"] == "tank"
+    monkeypatch.setattr(runner_module, "is_zfs_installed", lambda: False)
+    assert runner.observe({})["is_installed"] is False
+
+
+def test_removing_the_configuration_drops_the_arc_cap(runner, monkeypatch, tmp_path):
+    conf = tmp_path / "99_neutrino_zfs.conf"
+    conf.write_text("options zfs zfs_arc_max=1")
+    monkeypatch.setattr(runner_module, "ZFS_MODPROBE_CONF", str(conf))
+
+    runner.remove_configuration()
+    runner.remove_configuration()
+
+    assert not conf.exists()
 
 
 def test_a_tool_refusing_is_typed_with_its_words(runner):
     FakePools.error = subprocess.CalledProcessError(1, ["zpool"], stderr="no such pool")
 
-    outcome = runner.command("zfs_op", {"op": "destroy_pool", "args": {"name": "tank"}})
+    outcome = runner.command("op", {"op": "destroy_pool", "args": {"name": "tank"}})
 
     assert outcome["code"] == "command_failed"
     assert "no such pool" in outcome["params"]["detail"]
@@ -154,7 +195,7 @@ def test_a_tool_refusing_is_typed_with_its_words(runner):
 
 def test_a_dataset_op_carries_its_tunables_and_mountpoint(runner):
     runner.command(
-        "zfs_op",
+        "op",
         {
             "op": "create_dataset",
             "args": {
@@ -167,7 +208,7 @@ def test_a_dataset_op_carries_its_tunables_and_mountpoint(runner):
         },
     )
     runner.command(
-        "zfs_op", {"op": "destroy_dataset", "args": {"dataset": "tank/nfs/home"}}
+        "op", {"op": "destroy_dataset", "args": {"dataset": "tank/nfs/home"}}
     )
 
     assert FakePools.calls == [
@@ -187,16 +228,16 @@ def test_a_dataset_op_carries_its_tunables_and_mountpoint(runner):
 
 
 def test_the_disk_verbs_name_the_pool_and_the_device(runner):
-    runner.command("zfs_op", {"op": "offline", "args": {"name": "tank", "device": "a"}})
+    runner.command("op", {"op": "offline", "args": {"name": "tank", "device": "a"}})
     runner.command(
-        "zfs_op",
+        "op",
         {
             "op": "replace",
             "args": {"name": "tank", "old_device": "a", "new_device": "b"},
         },
     )
-    runner.command("zfs_op", {"op": "scrub", "args": {"name": "tank"}})
-    runner.command("zfs_op", {"op": "import_pool", "args": {"name": "backup"}})
+    runner.command("op", {"op": "scrub", "args": {"name": "tank"}})
+    runner.command("op", {"op": "import_pool", "args": {"name": "backup"}})
 
     assert [call[0] for call in FakePools.calls] == [
         "offline",
