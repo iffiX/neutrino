@@ -16,6 +16,32 @@ from neutrino_agent.modules.samba.applier import (
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.subprocess_run import CommandResult
 
+# What Samba 4.15.13 on Ubuntu 22.04 prints; it does not know ``--json``.
+SMBSTATUS_4_15_PROCESSES_IDLE = (
+    "\nSamba version 4.15.13-Ubuntu\n"
+    "PID     Username     Group        Machine                                   Protocol Version  Encryption           Signing              \n"
+    "----------------------------------------------------------------------------------------------------------------------------------------\n"
+)
+SMBSTATUS_4_15_PROCESSES_LIVE = (
+    "\nSamba version 4.15.13-Ubuntu\n"
+    "PID     Username     Group        Machine                                   Protocol Version  Encryption           Signing              \n"
+    "----------------------------------------------------------------------------------------------------------------------------------------\n"
+    "190983  ntcap        ntcap        127.0.0.1 (ipv4:127.0.0.1:36814)          SMB3_11           -                    partial(AES-128-GMAC)\n"
+    "190982  ntcap        ntcap        127.0.0.1 (ipv4:127.0.0.1:36812)          SMB3_11           -                    partial(AES-128-GMAC)\n"
+)
+SMBSTATUS_4_15_SHARES_IDLE = (
+    "\nService      pid     Machine       Connected at                     Encryption   Signing     \n"
+    "---------------------------------------------------------------------------------------------\n"
+    "\n"
+)
+SMBSTATUS_4_15_SHARES_LIVE = (
+    "\nService      pid     Machine       Connected at                     Encryption   Signing     \n"
+    "---------------------------------------------------------------------------------------------\n"
+    "capture      190983  127.0.0.1     Tue Sep 15 12:26:48 AM 2026 CDT  -            -           \n"
+    "team space   190982  127.0.0.1     Tue Sep 15 12:26:48 AM 2026 CDT  -            -           \n"
+    "\n"
+)
+
 
 class FakeCommands:
     """Answers scripted commands and records every call."""
@@ -171,8 +197,8 @@ def test_sessions_come_from_smbstatus_json(box):
     commands, _ = box
     commands.answers[("smbstatus", "--json")] = (
         0,
-        '{"sessions": {"1": {"username": "ann", "hostname": "pc", '
-        '"remote_machine": "ipv4:192.168.100.7:5000"}}, '
+        '{"sessions": {"1": {"username": "ann", "remote_machine": "pc", '
+        '"hostname": "ipv4:192.168.100.7:5000"}}, '
         '"tcons": {"a": {"session_id": 1, "service": "share"}}}',
     )
 
@@ -184,10 +210,66 @@ def test_sessions_come_from_smbstatus_json(box):
             "shares": ["share"],
         }
     ]
+    assert commands.ran("smbstatus") == [(["smbstatus", "--json"], None)]
+
+
+def test_a_smbstatus_without_json_is_read_from_its_tables(box):
+    commands, _ = box
+    commands.answers[("smbstatus", "--json")] = (1, "")
+    commands.answers[("smbstatus", "-p")] = (0, SMBSTATUS_4_15_PROCESSES_LIVE)
+    commands.answers[("smbstatus", "-S")] = (0, SMBSTATUS_4_15_SHARES_LIVE)
+
+    assert SambaStatusReader().sessions() == [
+        {
+            "username": "ntcap",
+            "hostname": "127.0.0.1",
+            "remote_address": "127.0.0.1",
+            "shares": ["capture"],
+        },
+        {
+            "username": "ntcap",
+            "hostname": "127.0.0.1",
+            "remote_address": "127.0.0.1",
+            "shares": ["team space"],
+        },
+    ]
+
+
+def test_a_smbstatus_without_json_and_no_visitor_lists_nothing(box):
+    commands, _ = box
+    commands.answers[("smbstatus", "--json")] = (1, "")
+    commands.answers[("smbstatus", "-p")] = (0, SMBSTATUS_4_15_PROCESSES_IDLE)
+    commands.answers[("smbstatus", "-S")] = (0, SMBSTATUS_4_15_SHARES_IDLE)
+
+    assert SambaStatusReader().sessions() == []
+    assert commands.ran("smbstatus", "-S") == []
+
+
+def test_output_that_is_neither_json_nor_a_table_lists_nothing(box):
+    commands, _ = box
+    commands.answers[("smbstatus", "--json")] = (0, "Samba version 4.15.13-Ubuntu\n")
+    commands.answers[("smbstatus", "-p")] = (
+        0,
+        "PID Username\n-----\n(ipv4:127.0.0.1:5000)\n190983 ntcap\n",
+    )
+
+    assert SambaStatusReader().sessions() == []
+    assert commands.ran("smbstatus", "-S") == []
+
+
+def test_a_share_table_that_cannot_be_read_leaves_the_sessions_without_shares(box):
+    commands, _ = box
+    commands.answers[("smbstatus", "--json")] = (1, "")
+    commands.answers[("smbstatus", "-p")] = (0, SMBSTATUS_4_15_PROCESSES_LIVE)
+    commands.answers[("smbstatus", "-S")] = (0, "-----\ncapture\n\n")
+
+    assert [entry["shares"] for entry in SambaStatusReader().sessions()] == [[], []]
 
 
 def test_a_down_server_has_no_sessions(box):
     commands, _ = box
     commands.answers[("smbstatus", "--json")] = (1, "")
+    commands.answers[("smbstatus", "-p")] = (1, "")
 
     assert SambaStatusReader().sessions() == []
+    assert commands.ran("smbstatus", "-S") == []

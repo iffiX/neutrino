@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -26,7 +27,11 @@ from dataclasses import dataclass
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.constants import SAMBA_CONF_PATH, SAMBA_GROUP
-from neutrino_agent.modules.subprocess_run import run, unit_state
+from neutrino_agent.modules.subprocess_run import CommandResult, run, unit_state
+
+# One row of ``smbstatus -p``: pid, user, group, then the client's name with
+# its address in parentheses.
+SESSION_ROW_PATTERN = re.compile(r"^(\S+)\s+(\S+)\s+\S+\s+(\S+) \(([^)]+)\)")
 
 
 @dataclass
@@ -74,6 +79,45 @@ def testparm(rendered: str) -> None:
         raise ModuleApplyError(
             "samba_config_rejected", {"detail": result.stderr.strip()[-500:]}
         )
+
+
+def _json_object(text: str) -> "dict | None":
+    try:
+        status = json.loads(text)
+    except ValueError:
+        return None
+    return status if isinstance(status, dict) else None
+
+
+def _table_rows(text: str) -> list:
+    # smbstatus prints a header, a rule of dashes, then one row per line
+    # until a blank line.
+    rows: list = []
+    is_below_rule = False
+    for line in text.splitlines():
+        if not is_below_rule:
+            is_below_rule = line.startswith("---")
+        elif line.strip():
+            rows.append(line)
+        else:
+            break
+    return rows
+
+
+def _session_entry(*, username: str, hostname: str, address: str, shares: list) -> dict:
+    return {
+        "username": username,
+        "hostname": hostname,
+        "remote_address": _strip_port(address),
+        "shares": sorted(shares),
+    }
+
+
+def _strip_port(machine: str) -> str:
+    # smbstatus reports the peer as ipv4:192.168.100.2:44510.
+    if machine.startswith("ipv4:"):
+        machine = machine[len("ipv4:") :]
+    return machine.rsplit(":", 1)[0] if ":" in machine else machine
 
 
 class SambaUserManager:
@@ -232,35 +276,21 @@ class SambaStatusReader:
     def sessions(self) -> list:
         """List who is connected and to what.
 
+        ``smbstatus --json`` is asked first; a Samba that does not know the
+        flag is read from the tables ``smbstatus -p`` and ``smbstatus -S``
+        print.
+
         Returns:
             One entry per session: user, machine, and the shares it has
             open. Empty when the server is down or has no visitors.
         """
-        try:
-            result = run(["smbstatus", "--json"], is_checked=False, timeout_s=15)
-        except (OSError, subprocess.SubprocessError):
+        result = self._smbstatus("--json")
+        if result is None:
             return []
-        if not result.is_success:
-            return []
-        try:
-            status = json.loads(result.stdout)
-        except ValueError:
-            return []
-        shares_by_session: dict = {}
-        for tcon in (status.get("tcons") or {}).values():
-            session_id = str(tcon.get("session_id", ""))
-            shares_by_session.setdefault(session_id, []).append(tcon.get("service", ""))
-        sessions = []
-        for session_id, session in (status.get("sessions") or {}).items():
-            sessions.append(
-                {
-                    "username": session.get("username", ""),
-                    "hostname": session.get("hostname", ""),
-                    "remote_address": _strip_port(session.get("remote_machine", "")),
-                    "shares": sorted(shares_by_session.get(str(session_id), [])),
-                }
-            )
-        return sessions
+        status = _json_object(result.stdout) if result.is_success else None
+        if status is not None:
+            return self._sessions_from_json(status)
+        return self._sessions_from_tables()
 
     def disk_usage(self, config: SambaConfig) -> list:
         """Read how full each share's filesystem is.
@@ -286,9 +316,62 @@ class SambaStatusReader:
             )
         return usage
 
+    def _smbstatus(self, flag: str) -> "CommandResult | None":
+        try:
+            return run(["smbstatus", flag], is_checked=False, timeout_s=15)
+        except (OSError, subprocess.SubprocessError):
+            return None
 
-def _strip_port(machine: str) -> str:
-    # smbstatus reports the peer as ipv4:192.168.100.2:44510.
-    if machine.startswith("ipv4:"):
-        machine = machine[len("ipv4:") :]
-    return machine.rsplit(":", 1)[0] if ":" in machine else machine
+    def _sessions_from_json(self, status: dict) -> list:
+        shares_by_session: dict = {}
+        for tcon in (status.get("tcons") or {}).values():
+            session_id = str(tcon.get("session_id", ""))
+            shares_by_session.setdefault(session_id, []).append(tcon.get("service", ""))
+        return [
+            _session_entry(
+                username=session.get("username", ""),
+                hostname=session.get("remote_machine", ""),
+                address=session.get("hostname", ""),
+                shares=shares_by_session.get(str(session_id), []),
+            )
+            for session_id, session in (status.get("sessions") or {}).items()
+        ]
+
+    def _sessions_from_tables(self) -> list:
+        processes = self._smbstatus("-p")
+        if processes is None or not processes.is_success:
+            return []
+        rows = []
+        for line in _table_rows(processes.stdout):
+            match = SESSION_ROW_PATTERN.match(line)
+            if match is not None:
+                rows.append(match.groups())
+        if not rows:
+            return []
+        shares_by_pid = self._shares_by_pid({row[0] for row in rows})
+        return [
+            _session_entry(
+                username=username,
+                hostname=machine,
+                address=address,
+                shares=shares_by_pid.get(pid, []),
+            )
+            for pid, username, machine, address in rows
+        ]
+
+    def _shares_by_pid(self, pids: set) -> dict:
+        # A share name may hold spaces: the first token naming a live
+        # session's pid ends the name, and the tokens before it are the name.
+        connections = self._smbstatus("-S")
+        if connections is None or not connections.is_success:
+            return {}
+        shares: dict = {}
+        for line in _table_rows(connections.stdout):
+            tokens = line.split()
+            for index in range(1, len(tokens)):
+                if tokens[index] in pids:
+                    shares.setdefault(tokens[index], []).append(
+                        " ".join(tokens[:index])
+                    )
+                    break
+        return shares
