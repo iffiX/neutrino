@@ -1,19 +1,22 @@
 """One desired state per device: what the hub wants a machine to host.
 
-``config/devices/<id>/`` holds ``modules.json``, each module's ``want``, one
-file per module with its configuration, and ``rdp.json``, which seals the
-machine's seat password; ``<id>`` is the device's id. Composing a device's
-state gathers those with the install recipe resolved for its platform and
-the parts the hub knows about the machine, the address it sits at and the
-networks its shares answer, under one hash the agent compares against. The
-document is the ``state`` frame's sections: ``modules``, one entry
-``{want, config, install, uninstall}`` per module ``modules.json`` names,
-and ``desktop`` with the seat password.
+``config/devices/<id>/`` holds ``modules.json``, each module's ``want`` and
+whether the machine has settled it, one file per module with its
+configuration, and ``rdp.json``, which seals the machine's seat password;
+``<id>`` is the device's id. Composing a device's state gathers those with
+the install recipe resolved for its platform and the parts the hub knows
+about the machine, the address it sits at and the networks its shares
+answer, under one hash the agent compares against. The document is the
+``state`` frame's sections: ``modules``, one entry
+``{want, config, install, uninstall}`` per module ``modules.json`` names
+and has not settled, and ``desktop`` with the seat password.
 
-A module the file does not name is not mentioned, and the agent leaves it
-as it is. A module the person uninstalled is named ``absent`` until the
-agent reports it absent, at which point the report path drops it from the
-file, so the hub holds no standing claim over software it took off.
+A module the state does not mention is left as it is, and the agent
+reports it all the same. A module the person uninstalled is mentioned
+``absent`` until the agent reports it absent, at which point the report
+path settles it: the state stops naming it, so the hub holds no standing
+claim over software it took off, while the row keeps saying what the
+person asked for.
 
 Reads take no lock; every write goes through ``write_config`` under the one
 config lock, re-reading inside it.
@@ -100,8 +103,8 @@ class DesiredStateStore:
             key: The device key.
 
         Returns:
-            Module name to ``{"want"}``, for the modules ``modules.json``
-            names and no other.
+            Module name to ``{"want", "is_settled"}``, for the modules
+            ``modules.json`` names and no other.
         """
         try:
             stored = read_config(self._path(key, DEVICE_MODULES_FILE))
@@ -111,13 +114,20 @@ class DesiredStateStore:
         held = held if isinstance(held, dict) else {}
         modules = {}
         for name, entry in held.items():
-            want = str(entry.get("want", "") or "") if isinstance(entry, dict) else ""
+            entry = entry if isinstance(entry, dict) else {}
+            want = str(entry.get("want", "") or "")
             if want in CHANNEL_MODULE_WANTS:
-                modules[str(name)] = {"want": want}
+                modules[str(name)] = {
+                    "want": want,
+                    "is_settled": bool(entry.get("is_settled", False)),
+                }
         return modules
 
     def set_want(self, key: str, module: str, want: str) -> None:
         """Write what one device is to make of one module.
+
+        A press asks again, so the module is unsettled: the state names it
+        until the machine reports the want true.
 
         Args:
             key: The device key.
@@ -131,7 +141,7 @@ class DesiredStateStore:
             raise ValueError(f"unknown want {want!r}")
         with CONFIG_WRITE_LOCK:
             modules = self.modules(key)
-            modules[module] = {"want": want}
+            modules[module] = {"want": want, "is_settled": False}
             write_config(self._path(key, DEVICE_MODULES_FILE), {"modules": modules})
 
     def want_of(self, key: str, module: str) -> str:
@@ -146,21 +156,27 @@ class DesiredStateStore:
         """
         return self.modules(key).get(module, {}).get("want", "")
 
-    def forget_module(self, key: str, module: str) -> bool:
-        """Stop naming one module in one device's state.
+    def settle_want(self, key: str, module: str) -> bool:
+        """Note that one device has made one module's ``want`` true.
+
+        The row goes on saying what the person asked for; the state stops
+        naming the module, so nothing the machine hosts afterwards is
+        moved by a want it already satisfied.
 
         Args:
             key: The device key.
             module: The module name.
 
         Returns:
-            True when the file named it and no longer does.
+            True when the file named the module unsettled and now names it
+            settled.
         """
         with CONFIG_WRITE_LOCK:
             modules = self.modules(key)
-            if module not in modules:
+            entry = modules.get(module)
+            if entry is None or entry["is_settled"]:
                 return False
-            del modules[module]
+            modules[module] = {"want": entry["want"], "is_settled": True}
             write_config(self._path(key, DEVICE_MODULES_FILE), {"modules": modules})
         return True
 
@@ -246,8 +262,9 @@ class DesiredStateStore:
     ) -> tuple:
         """One device's whole desired state and its hash.
 
-        Every module ``modules.json`` names is sent with its ``want``; one it
-        does not name is left out, so the agent leaves it as it is.
+        Every module ``modules.json`` names and has not settled is sent with
+        its ``want``; one it does not name, and one the machine has already
+        settled, is left out, so the agent leaves it as it is.
 
         Args:
             key: The device key.
@@ -261,6 +278,8 @@ class DesiredStateStore:
         resolved = resolved_modules(platform)
         modules = {}
         for name, entry in self.modules(key).items():
+            if entry["is_settled"]:
+                continue
             config = self.read(key, name)
             if name == "samba":
                 config["allowed_subnets"] = list(allowed_subnets)

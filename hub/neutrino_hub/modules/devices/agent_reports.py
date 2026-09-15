@@ -10,7 +10,8 @@ machine reporting the remote desktop host present is given one, sealed
 under the vault's data key, the first time it says so. The MAC its socket
 runs on, noted on the device's row when it is new. And ``modules.json``: a
 module the hub wanted ``absent`` that the machine now reports absent is
-dropped from it, so the hub's state stops naming software it took off.
+settled there, so the hub's state stops naming software it took off while
+the module's row goes on saying what the person asked for.
 """
 
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
@@ -169,7 +170,7 @@ def _ensure_seat_password(runtime, key: str, modules: dict) -> bool:
 
 
 def _settle_absent(runtime, key: str, modules: dict) -> bool:
-    """Drop every module the hub wanted absent that the machine reports absent.
+    """Settle every module the hub wanted absent that the machine reports absent.
 
     Args:
         runtime: The shared runtime.
@@ -188,7 +189,7 @@ def _settle_absent(runtime, key: str, modules: dict) -> bool:
             continue
         if runtime.desired_states.want_of(key, name) != CHANNEL_MODULE_STATE_ABSENT:
             continue
-        if runtime.desired_states.forget_module(key, name):
+        if runtime.desired_states.settle_want(key, name):
             is_changed = True
     return is_changed
 

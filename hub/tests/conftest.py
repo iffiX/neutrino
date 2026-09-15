@@ -426,13 +426,13 @@ class StubDesiredStates:
     Attributes:
         ensured: Every device a report asked a seat password for.
         wants: ``(key, module)`` to the want held, what a report reads.
-        forgotten: Every ``(key, module)`` a report dropped from the file.
+        settled: Every ``(key, module)`` a report settled in the file.
     """
 
     def __init__(self):
         self.ensured: list = []
         self.wants: dict = {}
-        self.forgotten: list = []
+        self.settled: list = []
 
     def ensure_seat_password(self, key: str) -> bool:
         key = key.lower()
@@ -444,10 +444,11 @@ class StubDesiredStates:
     def want_of(self, key: str, module: str) -> str:
         return self.wants.get((key.lower(), module), "")
 
-    def forget_module(self, key: str, module: str) -> bool:
-        if self.wants.pop((key.lower(), module), None) is None:
+    def settle_want(self, key: str, module: str) -> bool:
+        pair = (key.lower(), module)
+        if pair not in self.wants or pair in self.settled:
             return False
-        self.forgotten.append((key.lower(), module))
+        self.settled.append(pair)
         return True
 
 

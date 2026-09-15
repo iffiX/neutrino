@@ -27,6 +27,7 @@ from neutrino_hub.modules.channel.constants import (
 )
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.modules.clients.registry import ClientRegistry
+from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.web import channel_serve, identity
@@ -353,6 +354,35 @@ def test_a_report_whose_modules_moved_recomposes_the_published_list(api):
 
         assert wait_until(lambda: runtime.published_services.refreshes == 2)
         assert runtime.published_services.refreshes == 2
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_an_uninstall_the_machine_confirms_keeps_the_row_saying_absent(api):
+    """The reported bug: the machine took the module off and said so, and
+    the row the Modules page reads never agreed with it. What the person
+    asked for stays on the row, the machine's word is what the row shows,
+    and the state stops naming the module, so nothing installed there
+    afterwards is taken off again."""
+    client, runtime = api
+    store = DesiredStateStore()
+    runtime.desired_states = store
+    device_id, token = bound_device()
+    store.set_want(device_id, "samba", "absent")
+    socket = welcomed(client, device_id, token)
+    try:
+        socket.send_json(report(modules={"samba": {"state": "uninstalling"}}))
+        socket.receive_json()
+        socket.send_json(report(modules={"samba": {"state": "absent"}}))
+        assert wait_until(
+            lambda: runtime.agent_sessions.get(device_id).report_serial == 2
+        )
+
+        assert runtime.device_modules[device_id]["samba"]["state"] == "absent"
+        assert store.want_of(device_id, "samba") == "absent"
+        assert store.compose(device_id, PLATFORM)[0]["modules"] == {}
+        assert runtime.pushed == [device_id]
+        assert ("device_report", device_id) in runtime.events.published
     finally:
         socket.__exit__(None, None, None)
 

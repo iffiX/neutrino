@@ -6,8 +6,9 @@ platform, the accounts and the metrics; ``network`` for the link address,
 with the socket's peer standing in and being recorded when the report
 names none, and the MAC the socket runs on, noted on the device's row;
 ``modules``, where a module the hub wanted absent and the machine now
-reports absent is dropped from the device's file and the state pushed
-again; ``desktop`` and ``error``. The desktop share is recorded
+reports absent is settled in the device's file, keeping its want and
+leaving the state, and the state pushed again; ``desktop`` and ``error``.
+The desktop share is recorded
 against the device the token resolved to, at the address the hub holds,
 and withdrawn when the machine stops or its socket ends.
 """
@@ -246,7 +247,7 @@ def test_a_report_without_an_error_clears_the_stored_one(box):
     assert DEVICE not in runtime.device_last_error
 
 
-def test_a_module_wanted_absent_and_reported_absent_is_dropped_and_the_state_pushed(
+def test_a_module_wanted_absent_and_reported_absent_is_settled_and_the_state_pushed(
     box,
 ):
     runtime, device = box
@@ -266,9 +267,29 @@ def test_a_module_wanted_absent_and_reported_absent_is_dropped_and_the_state_pus
         ),
     )
 
-    assert runtime.desired_states.forgotten == [(DEVICE, "samba")]
+    assert runtime.desired_states.settled == [(DEVICE, "samba")]
+    assert runtime.desired_states.want_of(DEVICE, "samba") == "absent"
     assert runtime.desired_states.want_of(DEVICE, "gitea") == "absent"
     assert runtime.desired_states.want_of(DEVICE, "podman") == "running"
+    assert runtime.pushed == [DEVICE]
+
+
+def test_a_module_already_settled_absent_is_settled_once_and_pushed_once(box):
+    """The machine goes on reporting a module the hub took off, and the row
+    goes on reading ``absent``: the second report has nothing to settle, so
+    no state goes down for it."""
+    runtime, device = box
+    runtime.desired_states.wants[(DEVICE, "samba")] = "absent"
+
+    agent_reports.record_report(
+        runtime, device, report(modules={"samba": {"state": "absent"}})
+    )
+    agent_reports.record_report(
+        runtime, device, report(modules={"samba": {"state": "absent"}})
+    )
+
+    assert runtime.desired_states.settled == [(DEVICE, "samba")]
+    assert runtime.device_modules[DEVICE]["samba"]["state"] == "absent"
     assert runtime.pushed == [DEVICE]
 
 
@@ -282,7 +303,7 @@ def test_a_report_naming_nothing_absent_that_the_hub_wants_absent_pushes_nothing
         runtime, device, report(modules={"samba": {"state": "absent"}})
     )
 
-    assert runtime.desired_states.forgotten == []
+    assert runtime.desired_states.settled == []
     assert runtime.pushed == []
 
 

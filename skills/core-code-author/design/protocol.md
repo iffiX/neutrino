@@ -708,8 +708,11 @@ writes it directly:
 | **Stop** | `stopped` | ensures the package, applies the configuration, stops the unit |
 | **Uninstall** | `absent` | uninstalls by `uninstall`, deletes the configuration the hub wrote and the configured mark; the confirmation says so and that pools, share directories, repositories and container volumes stay, because `is_data_kept` is never false |
 
-A module the state does not mention is left as it is and still observed and
-reported, so a hand-installed Samba shows as `installed`. The agent's rule for
+Once the machine reports a module wanted `absent` as `absent`, that want is
+settled (`is_settled` in `modules.json`): the row keeps `absent`, the state
+stops naming the module, and the next press asks for it again. A module the
+state does not mention is left as it is and still observed and reported, so a
+hand-installed Samba shows as `installed`. The agent's rule for
 reconciling is one sentence: make each mentioned module's actual state equal
 its `want`. A failure is reported with its code and is not retried while the
 state's hash is unchanged. The agent starts and stops only the units its

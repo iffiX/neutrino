@@ -2,6 +2,7 @@
 
 What these pin: the directory a device id names, the module files and the
 wants beside them, a module the file does not name being mentioned nowhere,
+a module the machine settled keeping its want and leaving the state,
 a hash that moves only with the state, the composed shape the agent
 applies, the secrets a device's Gitea is handed once and kept, the fence
 and address the hub folds in, and the sweep that removes a directory no
@@ -62,13 +63,13 @@ def test_a_module_is_named_only_once_a_want_is_written_for_it(config):
     store.set_want(DEVICE, "podman", "installed")
 
     assert store.modules(DEVICE) == {
-        "samba": {"want": "running"},
-        "podman": {"want": "installed"},
+        "samba": {"want": "running", "is_settled": False},
+        "podman": {"want": "installed", "is_settled": False},
     }
     assert store.want_of(DEVICE, "samba") == "running"
     assert store.want_of(DEVICE, "gitea") == ""
     stored = json.loads((config / f"devices/{DEVICE}/modules.json").read_text())
-    assert stored["modules"]["samba"] == {"want": "running"}
+    assert stored["modules"]["samba"] == {"want": "running", "is_settled": False}
 
 
 def test_a_want_outside_the_four_is_refused_and_one_on_disk_is_skipped(config):
@@ -83,15 +84,39 @@ def test_a_want_outside_the_four_is_refused_and_one_on_disk_is_skipped(config):
     assert store.modules(DEVICE) == {}
 
 
-def test_forgetting_a_module_stops_naming_it(config):
+def test_settling_a_module_keeps_its_want_and_leaves_it_out_of_the_state(config):
+    """What an uninstall the machine confirmed leaves behind: the row still
+    says what was asked, and the state names the module no more, so nothing
+    installed on that machine afterwards is taken off again."""
     store = DesiredStateStore()
     store.set_want(DEVICE, "samba", "absent")
     store.set_want(DEVICE, "gitea", "running")
 
-    assert store.forget_module(DEVICE, "samba") is True
-    assert store.forget_module(DEVICE, "samba") is False
+    assert store.settle_want(DEVICE, "samba") is True
+    assert store.settle_want(DEVICE, "samba") is False
+    assert store.settle_want(DEVICE, "podman") is False
 
-    assert store.modules(DEVICE) == {"gitea": {"want": "running"}}
+    assert store.want_of(DEVICE, "samba") == "absent"
+    assert store.modules(DEVICE) == {
+        "samba": {"want": "absent", "is_settled": True},
+        "gitea": {"want": "running", "is_settled": False},
+    }
+    desired, _ = store.compose(DEVICE, PLATFORM)
+    assert set(desired["modules"]) == {"gitea"}
+
+
+def test_a_press_asks_again_for_a_module_the_machine_had_settled(config):
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "samba", "absent")
+    store.settle_want(DEVICE, "samba")
+
+    store.set_want(DEVICE, "samba", "installed")
+
+    assert store.modules(DEVICE) == {
+        "samba": {"want": "installed", "is_settled": False}
+    }
+    desired, _ = store.compose(DEVICE, PLATFORM)
+    assert desired["modules"]["samba"]["want"] == "installed"
 
 
 def test_the_hash_is_stable_and_moves_with_the_state():

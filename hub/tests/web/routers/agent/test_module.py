@@ -106,6 +106,21 @@ def test_a_row_is_what_the_agent_reported_beside_what_the_hub_asks(api):
     assert row["task_id"] == ""
 
 
+def test_an_uninstall_the_machine_confirmed_reads_absent_on_both_halves(api):
+    """The row after an uninstall the machine carried out: what was asked
+    and what the machine reports are the same word, which is how a page or
+    a walk knows the press is done."""
+    client, runtime = api
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.desired_states.set_want(DEVICE, "fakedesk", "absent")
+    runtime.device_modules[DEVICE] = {"fakedesk": {"state": "absent"}}
+    runtime.desired_states.settle_want(DEVICE, "fakedesk")
+
+    row = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
+
+    assert (row["want"], row["state"]) == ("absent", "absent")
+
+
 def test_a_module_nobody_touched_reads_unknown_with_no_want(api):
     client, _ = api
 
@@ -221,7 +236,7 @@ def test_each_press_writes_its_want_and_pushes_the_state(api, tmp_path, press, w
 
     assert answer.status_code == 200
     assert answer.json()["modules"][0]["want"] == want
-    assert modules_file(tmp_path) == {"fakedesk": {"want": want}}
+    assert modules_file(tmp_path) == {"fakedesk": {"want": want, "is_settled": False}}
     assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE]
 
 

@@ -1,7 +1,8 @@
 {
-  "_comment": "What one device is asked for, module by module, under config/devices/<id>/ where <id> is the device's id. Each named module's own configuration sits beside this file; the hub composes them into the device's desired state and the agent makes each named module match its want. A module not named here is left as it is.",
+  "_comment": "What one device is asked for, module by module, under config/devices/<id>/ where <id> is the device's id. Each named module's own configuration sits beside this file; the hub composes them into the device's desired state and the agent makes each named module match its want. A module not named here is left as it is, and so is one whose want the machine has already satisfied, is_settled: the row goes on saying what was asked and the state names the module no more.",
   "modules": {
-    "samba": {"want": "running"},
-    "podman": {"want": "installed"}
+    "samba": {"want": "running", "is_settled": false},
+    "podman": {"want": "installed", "is_settled": false},
+    "gitea": {"want": "absent", "is_settled": true}
   }
 }
