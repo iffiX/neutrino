@@ -1,9 +1,10 @@
 """``nclient service``: the Services section, from a terminal.
 
-One panel per type, Web, Ports, AI, Files, Remote desktops, nested the way
-the page nests them: a kind heading, then numbered entries in the state's
-own order, over every hub joined. Actions address an entry by that number
-or by its id, and reach the resident with the hub it came from.
+The listing is nested the way the page nests it: one heading per hub
+joined, then one panel per type, Web, Ports, AI, Files, Remote desktops,
+each numbering its entries in the state's own order. Every verb takes
+``--hub``, which one hub joined makes optional; an action addresses an
+entry by its number within that hub, or by its id.
 
 The resident reports refusals as ``{"code", "params"}``; the wording lives
 in ``wording.py``. A share password is read from the terminal and travels
@@ -30,7 +31,6 @@ SERVICE_KIND_TITLES = (
 SERVICES_EMPTY = "nothing is published for this person yet"
 SERVICE_UNHEALTHY = "not reachable now"
 SERVICE_NO_AI = "no AI service is published for this person"
-SERVICE_NO_HUB = "no hub {name}; see nclient status"
 SERVICE_NO_RECORD = (
     "no saved login for this share; set one: nclient service file config"
 )
@@ -40,12 +40,16 @@ SERVICE_AI_OFF = "the tools are as they were"
 FORWARD_HOST = "127.0.0.1"
 
 
-def main_list() -> int:
-    """Print every published entry, nested by kind, numbered per kind.
+def main_list(*, hub: str = "") -> int:
+    """Print every published entry, by hub and then by kind.
+
+    Args:
+        hub: The hub to list, by its name, its id or its binding's id;
+            empty lists every hub joined.
 
     Returns:
         Process exit status: 0 with the list (empty included), 1 while the
-        person has joined no hub.
+        person has joined no hub or named one nobody joined.
     """
     state = wording.read_state()
     if state is None:
@@ -53,28 +57,25 @@ def main_list() -> int:
     if not state.get("is_connected"):
         print(wording.NOT_JOINED)
         return 1
-    if not _entries(state):
-        print(SERVICES_EMPTY)
-        return 0
-    for kind, heading in SERVICE_KIND_TITLES:
-        rows = _entries(state, kind)
-        if not rows:
-            continue
-        print(heading)
-        title_width = max(len(str(entry.get("title", ""))) for entry in rows)
-        for position, entry in enumerate(rows, start=1):
-            print(f"  {position}  {_entry_line(state, kind, entry, title_width)}")
-            if kind == "file":
-                for record in _records(state, entry):
-                    print(f"     {_record_line(record)}")
+    rows = _hub_rows(state)
+    if hub:
+        chosen = wording.choose_hub(rows, hub)
+        if chosen is None:
+            return 1
+        rows = [chosen]
+    for row in rows:
+        print(_hub_heading(row))
+        _print_hub_entries(state, str(row.get("hub_id", "")))
     return 0
 
 
-def main_web_open(ref: str) -> int:
+def main_web_open(ref: str, *, hub: str = "") -> int:
     """Open the browser on one published link.
 
     Args:
-        ref: The entry's per-kind number or id.
+        ref: The entry's number under its hub, or its id.
+        hub: The hub the entry belongs to, by its name, its id or its
+            binding's id; empty names the one hub joined.
 
     Returns:
         Process exit status.
@@ -82,7 +83,10 @@ def main_web_open(ref: str) -> int:
     state = wording.read_state()
     if state is None:
         return 1
-    entry = _resolve(state, "web", ref)
+    hub_id = _scope(state, hub)
+    if hub_id is None:
+        return 1
+    entry = _resolve(state, "web", ref, hub_id)
     if entry is None:
         return 2
     if not entry.get("is_healthy"):
@@ -94,11 +98,13 @@ def main_web_open(ref: str) -> int:
     return 0
 
 
-def main_port(ref: str, *, is_enabled: bool, local_port: int = 0) -> int:
+def main_port(ref: str, *, is_enabled: bool, local_port: int = 0, hub: str = "") -> int:
     """Start or stop one published port's loopback forward.
 
     Args:
-        ref: The entry's per-kind number or id.
+        ref: The entry's number under its hub, or its id.
+        hub: The hub the entry belongs to, by its name, its id or its
+            binding's id; empty names the one hub joined.
         is_enabled: True to forward, False to unforward.
         local_port: The loopback port to prefer; 0 means the published one.
 
@@ -108,7 +114,10 @@ def main_port(ref: str, *, is_enabled: bool, local_port: int = 0) -> int:
     state = wording.read_state()
     if state is None:
         return 1
-    entry = _resolve(state, "port", ref)
+    hub_id = _scope(state, hub)
+    if hub_id is None:
+        return 1
+    entry = _resolve(state, "port", ref, hub_id)
     if entry is None:
         return 2
     forward = _forward_of(state, entry)
@@ -135,14 +144,16 @@ def main_port(ref: str, *, is_enabled: bool, local_port: int = 0) -> int:
     return 0
 
 
-def main_file_config(ref: str, *, path: str, username: str) -> int:
+def main_file_config(ref: str, *, path: str, username: str, hub: str = "") -> int:
     """Save one share's login and path, and mount it there.
 
     The password is asked on the terminal, the way the page's form asks,
     and appears on no command line.
 
     Args:
-        ref: The entry's per-kind number or id.
+        ref: The entry's number under its hub, or its id.
+        hub: The hub the entry belongs to, by its name, its id or its
+            binding's id; empty names the one hub joined.
         path: Where to mount the share.
         username: The share's own username.
 
@@ -152,7 +163,10 @@ def main_file_config(ref: str, *, path: str, username: str) -> int:
     state = wording.read_state()
     if state is None:
         return 1
-    entry = _resolve(state, "file", ref)
+    hub_id = _scope(state, hub)
+    if hub_id is None:
+        return 1
+    entry = _resolve(state, "file", ref, hub_id)
     if entry is None:
         return 2
     if not entry.get("is_healthy"):
@@ -174,11 +188,13 @@ def main_file_config(ref: str, *, path: str, username: str) -> int:
     return 0
 
 
-def main_file_mount(ref: str) -> int:
+def main_file_mount(ref: str, *, hub: str = "") -> int:
     """Mount one share again with the login its record keeps.
 
     Args:
-        ref: The entry's per-kind number or id.
+        ref: The entry's number under its hub, or its id.
+        hub: The hub the entry belongs to, by its name, its id or its
+            binding's id; empty names the one hub joined.
 
     Returns:
         Process exit status.
@@ -186,7 +202,10 @@ def main_file_mount(ref: str) -> int:
     state = wording.read_state()
     if state is None:
         return 1
-    entry = _resolve(state, "file", ref)
+    hub_id = _scope(state, hub)
+    if hub_id is None:
+        return 1
+    entry = _resolve(state, "file", ref, hub_id)
     if entry is None:
         return 2
     records = _records(state, entry)
@@ -212,11 +231,13 @@ def main_file_mount(ref: str) -> int:
     return 0
 
 
-def main_file_unmount(ref: str) -> int:
+def main_file_unmount(ref: str, *, hub: str = "") -> int:
     """Unmount one share; its record and login stay for the next mount.
 
     Args:
-        ref: The entry's per-kind number or id.
+        ref: The entry's number under its hub, or its id.
+        hub: The hub the entry belongs to, by its name, its id or its
+            binding's id; empty names the one hub joined.
 
     Returns:
         Process exit status.
@@ -224,7 +245,10 @@ def main_file_unmount(ref: str) -> int:
     state = wording.read_state()
     if state is None:
         return 1
-    entry = _resolve(state, "file", ref)
+    hub_id = _scope(state, hub)
+    if hub_id is None:
+        return 1
+    entry = _resolve(state, "file", ref, hub_id)
     if entry is None:
         return 2
     records = _records(state, entry)
@@ -252,8 +276,12 @@ def main_file_unmount(ref: str) -> int:
     return 0
 
 
-def main_ai_show() -> int:
+def main_ai_show(*, hub: str = "") -> int:
     """Print the AI entry and where this person's tools point.
+
+    Args:
+        hub: The hub whose gateway to show, by its name, its id or its
+            binding's id; empty shows the exit hub's.
 
     Returns:
         Process exit status.
@@ -261,7 +289,14 @@ def main_ai_show() -> int:
     state = wording.read_state()
     if state is None:
         return 1
-    entry = _exit_ai_entry(state)
+    if hub:
+        hub_id = _scope(state, hub)
+        if hub_id is None:
+            return 1
+        published = _entries(state, "ai", hub_id)
+        entry = published[0] if published else None
+    else:
+        entry = _exit_ai_entry(state)
     if entry is None:
         print(SERVICE_NO_AI, file=sys.stderr)
         return 1
@@ -350,11 +385,13 @@ def main_ai_apply(
     return 0
 
 
-def main_desktop_connect(ref: str) -> int:
+def main_desktop_connect(ref: str, *, hub: str = "") -> int:
     """Open the viewer at one shared desktop.
 
     Args:
-        ref: The entry's per-kind number or id.
+        ref: The entry's number under its hub, or its id.
+        hub: The hub the entry belongs to, by its name, its id or its
+            binding's id; empty names the one hub joined.
 
     Returns:
         Process exit status.
@@ -362,7 +399,10 @@ def main_desktop_connect(ref: str) -> int:
     state = wording.read_state()
     if state is None:
         return 1
-    entry = _resolve(state, "rdp", ref)
+    hub_id = _scope(state, hub)
+    if hub_id is None:
+        return 1
+    entry = _resolve(state, "rdp", ref, hub_id)
     if entry is None:
         return 2
     if not entry.get("is_healthy"):
@@ -373,6 +413,43 @@ def main_desktop_connect(ref: str) -> int:
         return 1
     print(f"opening {entry.get('title', '')}")
     return 0
+
+
+def _hub_heading(row: dict) -> str:
+    """One hub's heading: what it is called, and where it is.
+
+    Args:
+        row: The hub's row of the state payload.
+
+    Returns:
+        The line the hub's panels sit under.
+    """
+    name = str(row.get("hub_name", ""))
+    url = str(row.get("gateway_url", ""))
+    return f"{name}  {url}".strip() if name else url
+
+
+def _print_hub_entries(state: dict, hub_id: str) -> None:
+    """One hub's panels, numbered per kind under its heading.
+
+    Args:
+        state: The state payload.
+        hub_id: The hub whose entries these are.
+    """
+    if not _entries(state, hub_id=hub_id):
+        print(f"  {SERVICES_EMPTY}")
+        return
+    for kind, heading in SERVICE_KIND_TITLES:
+        rows = _entries(state, kind, hub_id)
+        if not rows:
+            continue
+        print(f"  {heading}")
+        title_width = max(len(str(entry.get("title", ""))) for entry in rows)
+        for position, entry in enumerate(rows, start=1):
+            print(f"    {position}  {_entry_line(state, kind, entry, title_width)}")
+            if kind == "file":
+                for record in _records(state, entry):
+                    print(f"       {_record_line(record)}")
 
 
 def _ai_line(state: dict) -> str:
@@ -414,16 +491,26 @@ def _exit_ai_entry(state: dict) -> "dict | None":
     return rows[0] if rows and not exit_hub_id else None
 
 
-def _hub_row(state: dict, needle: str) -> "dict | None":
-    """One hub row by its name, its id or its binding's id, or None."""
-    for hub in state.get("hubs") or []:
-        if isinstance(hub, dict) and needle in (
-            hub.get("hub_name"),
-            hub.get("hub_id"),
-            hub.get("binding_id"),
-        ):
-            return hub
-    return None
+def _hub_rows(state: dict) -> list:
+    """The hubs one state payload lists, in the order joined."""
+    return [hub for hub in state.get("hubs") or [] if isinstance(hub, dict)]
+
+
+def _scope(state: dict, needle: str) -> "str | None":
+    """The hub one action addresses.
+
+    Args:
+        state: The state payload.
+        needle: The hub's name, id or binding id; empty names the one hub
+            joined.
+
+    Returns:
+        The hub's id, or None after the refusal was printed.
+    """
+    row = wording.choose_hub(_hub_rows(state), needle)
+    if row is None:
+        return None
+    return str(row.get("hub_id", ""))
 
 
 def _choose_exit(state: dict, needle: str) -> "dict | None":
@@ -437,9 +524,8 @@ def _choose_exit(state: dict, needle: str) -> "dict | None":
         The state payload with that hub as the exit, or None after the
         refusal was printed.
     """
-    hub = _hub_row(state, needle)
+    hub = wording.choose_hub(_hub_rows(state), needle)
     if hub is None:
-        print(SERVICE_NO_HUB.format(name=needle), file=sys.stderr)
         return None
     if hub.get("is_exit"):
         return state
@@ -474,12 +560,14 @@ def _forward_of(state: dict, entry: dict) -> dict:
     return (state.get("forwards") or {}).get(key) or {}
 
 
-def _entries(state: dict, kind: str = "") -> list:
+def _entries(state: dict, kind: str = "", hub_id: "str | None" = None) -> list:
     """The published entries, in the state's own order.
 
     Args:
         state: The state payload.
-        kind: Keep only this type; empty keeps every entry.
+        kind: Keep only this type; empty keeps every type.
+        hub_id: Keep only the entries this hub published; None keeps every
+            hub's, and a hub that has not said its id published none.
 
     Returns:
         The entries.
@@ -489,21 +577,25 @@ def _entries(state: dict, kind: str = "") -> list:
     ]
     if kind:
         entries = [entry for entry in entries if entry.get("type") == kind]
+    if hub_id is not None:
+        entries = [entry for entry in entries if entry.get("hub_id", "") == hub_id]
     return entries
 
 
-def _resolve(state: dict, kind: str, ref: str) -> "dict | None":
-    """One entry by its per-kind number or its id.
+def _resolve(state: dict, kind: str, ref: str, hub_id: str) -> "dict | None":
+    """One entry by its number under its hub, or by its id.
 
     Args:
         state: The state payload.
         kind: The service type the command names.
-        ref: A 1-based position in the kind's listing order, or an id.
+        ref: A 1-based position in the kind's listing order under that hub,
+            or an id.
+        hub_id: The hub the entry belongs to.
 
     Returns:
         The entry, or None after the refusal was printed.
     """
-    rows = _entries(state, kind)
+    rows = _entries(state, kind, hub_id)
     if ref.isdigit():
         position = int(ref)
         if 1 <= position <= len(rows):

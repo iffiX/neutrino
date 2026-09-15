@@ -66,6 +66,7 @@ def test_the_new_codes_of_the_client_are_worded():
         "control_socket_unavailable",
         "binding_unknown",
         "unknown_hub",
+        "ambiguous_hub",
     ):
         assert wording.word_code(code, {}) not in ("", code)
 
@@ -89,6 +90,65 @@ def test_a_state_outside_the_table_reads_as_unknown():
 def test_an_unreachable_hub_prints_its_own_detail():
     assert wording.word_code("hub_unreachable", {"detail": "no route"}) == "no route"
     assert wording.word_code("hub_unreachable", {}) == "the hub cannot be reached"
+
+
+# --- the one hub a command acts on ---
+
+HOME = {"hub_id": "h1", "hub_name": "home", "binding_id": "c1"}
+OFFICE = {"hub_id": "h2", "hub_name": "", "gateway_url": "https://office.lan:8443"}
+
+
+def test_one_hub_joined_is_the_one_a_command_acts_on():
+    assert wording.choose_hub([HOME], "") == HOME
+
+
+def test_several_hubs_and_no_name_are_refused_with_their_names(capsys):
+    assert wording.choose_hub([HOME, OFFICE], "") is None
+
+    names = "home, https://office.lan:8443"
+    assert (
+        wording.word_code("ambiguous_hub", {"hubs": names}) in capsys.readouterr().err
+    )
+
+
+def test_a_hub_is_named_by_its_name_its_id_or_its_binding(capsys):
+    for needle in ("home", "h1", "c1"):
+        assert wording.choose_hub([HOME, OFFICE], needle) == HOME
+    assert wording.choose_hub([HOME, OFFICE], "h2") == OFFICE
+    assert wording.choose_hub([{"id": "c9", "hub_name": "lab"}], "c9") is not None
+    assert capsys.readouterr().err == ""
+
+
+def test_a_name_nobody_joined_is_refused(capsys):
+    assert wording.choose_hub([HOME, OFFICE], "nowhere") is None
+
+    assert wording.word_code("unknown_hub") in capsys.readouterr().err
+
+
+def test_no_hub_joined_is_said_plainly(capsys):
+    assert wording.choose_hub([], "home") is None
+    assert wording.choose_hub([], "") is None
+
+    assert capsys.readouterr().err.count(wording.NOT_JOINED) == 2
+
+
+def test_a_hub_that_has_not_said_its_name_reads_as_its_address():
+    assert wording.hub_name(HOME) == "home"
+    assert wording.hub_name(OFFICE) == "https://office.lan:8443"
+    assert wording.hub_name({}) == ""
+
+
+def test_a_resident_that_does_not_answer_is_no_state_and_no_words(
+    monkeypatch, capsys, tmp_path
+):
+    class Away:
+        def control_socket_path(self) -> str:
+            return str(tmp_path / "nothing.sock")
+
+    monkeypatch.setattr(wording, "detect_platform", lambda: Away())
+
+    assert wording.resident_state() is None
+    assert capsys.readouterr().err == ""
 
 
 # --- a password the person gives, never the command line ---

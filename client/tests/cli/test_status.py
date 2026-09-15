@@ -1,8 +1,9 @@
 """``nclient status``: one line per hub and one for the resident, never lying.
 
-The matrix is walked as the person types it: bound and unbound, connected
-and reconnecting, the resident alive and dead. The running resident is asked
-first over its socket; the binding file answers only when nothing does.
+The matrix is walked as the person types it: joined and not, connected and
+reconnecting, the resident alive and dead, one hub and several with the
+exit marked. The running resident is asked first over its socket; the
+binding file answers only when nothing does.
 """
 
 import pytest
@@ -11,6 +12,7 @@ from neutrino_client import CLIENT_VERSION
 from neutrino_client.cli import status as status_cli
 from neutrino_client.cli import wording
 from neutrino_client.control.server import ControlServer
+from neutrino_client.core import enrollment
 from tests.conftest import (
     BINDING,
     OFFICE_BINDING,
@@ -23,10 +25,16 @@ from tests.conftest import (
 GATEWAY_URL = "https://hub.lan:8443"
 
 
+def printed(capsys) -> list:
+    """The lines printed, their column padding squeezed to one space."""
+    out = capsys.readouterr().out
+    return [" ".join(line.split()) for line in out.strip().splitlines()]
+
+
 @pytest.fixture
 def platform(monkeypatch):
     platform = FakeClientPlatform()
-    monkeypatch.setattr(status_cli, "detect_platform", lambda: platform)
+    monkeypatch.setattr(wording, "detect_platform", lambda: platform)
     return platform
 
 
@@ -45,20 +53,18 @@ def resident(platform):
     server.stop()
 
 
-def test_bound_and_connected_reads_from_the_resident(resident, config_path, capsys):
-    bind(config_path, url=GATEWAY_URL)
-
+def test_every_hub_joined_is_a_line_and_the_exit_is_marked(resident, capsys):
     assert status_cli.main() == 0
 
-    out = capsys.readouterr().out
-    assert f"neutrino-client {CLIENT_VERSION}" in out
-    assert f"hub        {GATEWAY_URL}   connected" in out
-    assert "hub        https://office.lan:8443   connected" in out
-    assert "resident   running" in out
+    assert printed(capsys) == [
+        f"neutrino-client {CLIENT_VERSION}",
+        f"hub home {GATEWAY_URL} connected {status_cli.EXIT_MARK}",
+        "hub office https://office.lan:8443 connected",
+        f"resident {status_cli.RESIDENT_RUNNING}",
+    ]
 
 
-def test_a_reconnecting_socket_is_not_a_clean_status(resident, config_path, capsys):
-    bind(config_path, url=GATEWAY_URL)
+def test_a_reconnecting_socket_is_not_a_clean_status(resident, capsys):
     resident.hubs_value[0]["connection_state"] = "reconnecting"
     resident.hubs_value[0]["last_error"] = {
         "code": "hub_unreachable",
@@ -67,24 +73,22 @@ def test_a_reconnecting_socket_is_not_a_clean_status(resident, config_path, caps
 
     assert status_cli.main() == 1
 
-    out = capsys.readouterr().out
-    assert f"hub        {GATEWAY_URL}   reconnecting: down" in out
-    assert "hub        https://office.lan:8443   connected" in out
-    assert "resident   running" in out
+    lines = printed(capsys)
+    assert f"hub home {GATEWAY_URL} reconnecting: down {status_cli.EXIT_MARK}" in lines
+    assert "hub office https://office.lan:8443 connected" in lines
+    assert f"resident {status_cli.RESIDENT_RUNNING}" in lines
 
 
-def test_a_replaced_socket_is_not_a_clean_status(resident, config_path, capsys):
-    bind(config_path, url=GATEWAY_URL)
+def test_a_replaced_socket_is_not_a_clean_status(resident, capsys):
     resident.hubs_value[0]["connection_state"] = "replaced"
 
     assert status_cli.main() == 1
 
-    out = capsys.readouterr().out
+    mark = status_cli.EXIT_MARK
     assert (
-        f"hub        {GATEWAY_URL}   replaced: another client took this connection"
-        in out
+        f"hub home {GATEWAY_URL} replaced: another client took this connection {mark}"
+        in printed(capsys)
     )
-    assert "resident   running" in out
 
 
 def test_bound_and_dead_reads_the_binding_file(platform, config_path, capsys):
@@ -92,13 +96,16 @@ def test_bound_and_dead_reads_the_binding_file(platform, config_path, capsys):
         config_path,
         bindings=[dict(BINDING, gateway_url=GATEWAY_URL), dict(OFFICE_BINDING)],
     )
+    enrollment.set_exit_hub_id("h2")
 
     assert status_cli.main() == 1
 
-    out = capsys.readouterr().out
-    assert f"hub        {GATEWAY_URL}" in out
-    assert f"hub        {OFFICE_BINDING['gateway_url']}" in out
-    assert f"resident   {status_cli.RESIDENT_NOT_RUNNING}" in out
+    assert printed(capsys) == [
+        f"neutrino-client {CLIENT_VERSION}",
+        f"hub home {GATEWAY_URL}",
+        f"hub office {OFFICE_BINDING['gateway_url']} {status_cli.EXIT_MARK}",
+        f"resident {status_cli.RESIDENT_NOT_RUNNING}",
+    ]
 
 
 def test_unbound_and_running_says_joined_nothing(resident, capsys):
@@ -106,17 +113,17 @@ def test_unbound_and_running_says_joined_nothing(resident, capsys):
 
     assert status_cli.main() == 1
 
-    out = capsys.readouterr().out
-    assert f"hub        {wording.NOT_JOINED}" in out
-    assert "resident   running" in out
+    lines = printed(capsys)
+    assert f"hub {wording.NOT_JOINED}" in lines
+    assert f"resident {status_cli.RESIDENT_RUNNING}" in lines
 
 
 def test_unbound_and_dead_says_both(platform, capsys):
     assert status_cli.main() == 1
 
-    out = capsys.readouterr().out
-    assert f"hub        {wording.NOT_JOINED}" in out
-    assert f"resident   {status_cli.RESIDENT_NOT_RUNNING}" in out
+    lines = printed(capsys)
+    assert f"hub {wording.NOT_JOINED}" in lines
+    assert f"resident {status_cli.RESIDENT_NOT_RUNNING}" in lines
 
 
 @pytest.mark.parametrize(
@@ -143,8 +150,7 @@ def test_unbound_and_dead_says_both(platform, capsys):
         ({"code": "client_disabled", "params": {}}, "switched this client off"),
     ],
 )
-def test_every_socket_refusal_is_worded(resident, config_path, capsys, error, fragment):
-    bind(config_path, url=GATEWAY_URL)
+def test_every_socket_refusal_is_worded(resident, capsys, error, fragment):
     resident.hubs_value[0]["connection_state"] = "reconnecting"
     resident.hubs_value[0]["last_error"] = error
 
@@ -171,4 +177,4 @@ def test_a_resident_of_another_account_reads_as_none(platform, config_path, caps
     finally:
         server.stop()
 
-    assert f"resident   {status_cli.RESIDENT_NOT_RUNNING}" in capsys.readouterr().out
+    assert f"resident {status_cli.RESIDENT_NOT_RUNNING}" in printed(capsys)

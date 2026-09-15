@@ -77,16 +77,16 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
             return _list_directories(resident, query)
         return 404, {"code": "unknown_request", "params": {}}
     if method == "POST":
-        if route == "/api/connect":
-            return _connect(resident, payload)
+        if route == "/api/join":
+            return _join(resident, payload)
         if route == "/api/language":
             resident.set_language(str(payload.get("language", "")))
             return 200, state_payload(resident)
         if route == "/api/theme":
             resident.set_theme(str(payload.get("theme", "")))
             return 200, state_payload(resident)
-        if route == "/api/disconnect":
-            return _disconnect(resident, payload)
+        if route == "/api/leave":
+            return _leave(resident, payload)
         if route == "/api/session/start":
             return _start_session(resident, payload)
         if route == "/api/exit/set":
@@ -147,7 +147,7 @@ def _shut_down_and_end(resident) -> None:
     end_process()
 
 
-def _connect(resident, body: dict):
+def _join(resident, body: dict):
     try:
         resident.connect(str(body.get("link", "")))
     except EnrollmentError as error:
@@ -157,7 +157,7 @@ def _connect(resident, body: dict):
     return 200, state_payload(resident)
 
 
-def _disconnect(resident, body: dict):
+def _leave(resident, body: dict):
     hub_id = str(body.get("hub_id", ""))
     try:
         resident.disconnect(hub_id)

@@ -1,10 +1,11 @@
 """``nclient service``: the person's walk over the Services section.
 
-The listing is nested the way the page nests it; every action addresses an
-entry by that number or its id and reaches the resident with the hub it
-came from; the cells pin the words printed, the exit status, the bodies
-posted, and that a share password reaches the resident through the terminal
-and never argv.
+The listing is nested the way the page nests it, one heading per hub and
+then the five panels; every action names its hub with ``--hub``, which one
+hub joined makes optional and several make necessary, and addresses an
+entry by its number under that hub or by its id; the cells pin the words
+printed, the exit status, the bodies posted, and that a share password
+reaches the resident through the terminal and never argv.
 """
 
 import sys
@@ -215,22 +216,72 @@ def stack(monkeypatch, config_path):
 # --- the nested listing ---
 
 
-def test_list_nests_by_kind_and_numbers_per_kind(stack, capsys):
+def test_list_heads_each_hub_and_numbers_per_kind_under_it(stack, capsys):
     stack.states["forwards"]["h1/svc_tcp"] = {"local_port": 15432, "is_active": True}
     stack.states["mounts"].append(dict(MOUNTED_ROW))
 
     assert service_cli.main_list() == 0
 
     out = capsys.readouterr().out
+    assert out.startswith(f"home  {HUB_ROW['gateway_url']}\n")
     for heading in ("Web", "Ports", "AI", "Files", "Remote desktops"):
-        assert f"{heading}\n  1  " in out
-    assert "  2  Down" in out
+        assert f"  {heading}\n    1  " in out
+    assert "    2  Down" in out
     assert "not reachable now" in out
     assert "hub:5432 -> 127.0.0.1:15432" in out
     assert "declared by hand" in out
     assert "/home/alice/nas/media: mounted" in out
     assert "192.168.100.6:21118" in out
     assert "\x1b" not in out
+
+
+def test_list_groups_the_entries_of_every_hub_joined(stack, capsys):
+    stack.hubs_value.append(dict(OFFICE_ROW))
+
+    assert service_cli.main_list() == 0
+
+    out = capsys.readouterr().out
+    home, office = out.split(f"office  {OFFICE_ROW['gateway_url']}\n")
+    assert home.startswith(f"home  {HUB_ROW['gateway_url']}\n")
+    assert "  Web\n    1  Wiki" in home
+    assert "    1  Office AI  http://office:8080" in office
+    assert "Wiki" not in office
+
+
+def test_list_of_one_hub_shows_that_hub_only(stack, capsys):
+    stack.hubs_value.append(dict(OFFICE_ROW))
+
+    assert service_cli.main_list(hub="office") == 0
+
+    out = capsys.readouterr().out
+    assert out.startswith(f"office  {OFFICE_ROW['gateway_url']}\n")
+    assert "Wiki" not in out
+
+
+def test_list_of_a_hub_nobody_joined_is_refused(stack, capsys):
+    assert service_cli.main_list(hub="nowhere") == 1
+
+    assert wording.word_code("unknown_hub") in capsys.readouterr().err
+
+
+def test_a_hub_that_has_not_answered_yet_lists_nothing_of_its_own(stack, capsys):
+    stack.hubs_value.append(dict(OFFICE_ROW, hub_id="", hub_name="new"))
+
+    assert service_cli.main_list() == 0
+
+    out = capsys.readouterr().out
+    _home, fresh = out.split(f"new  {OFFICE_ROW['gateway_url']}\n")
+    assert fresh.strip() == service_cli.SERVICES_EMPTY
+
+
+def test_a_hub_publishing_nothing_says_so_under_its_own_heading(stack, capsys):
+    stack.hubs_value.append(dict(OFFICE_ROW))
+    stack.service_entries = lambda: with_hub(SERVICE_ENTRIES, "h1")
+
+    assert service_cli.main_list() == 0
+
+    out = capsys.readouterr().out
+    assert f"office  {OFFICE_ROW['gateway_url']}\n  {service_cli.SERVICES_EMPTY}" in out
 
 
 def test_list_says_when_the_person_joined_no_hub(stack, capsys):
@@ -257,6 +308,63 @@ def test_list_says_when_nothing_is_published(stack, capsys):
     assert service_cli.main_list() == 0
 
     assert service_cli.SERVICES_EMPTY in capsys.readouterr().out
+
+
+# --- naming the hub ---
+
+
+def test_a_verb_names_no_hub_while_one_is_joined(stack, capsys):
+    assert service_cli.main_web_open("1") == 0
+
+    assert stack.service_calls == [("web", {"hub_id": "h1", "id": "svc_wiki"})]
+
+
+def test_a_verb_needs_a_hub_once_several_are_joined(stack, capsys):
+    stack.hubs_value.append(dict(OFFICE_ROW))
+
+    assert service_cli.main_web_open("1") == 1
+
+    assert stack.service_calls == []
+    assert wording.word_code("ambiguous_hub", {"hubs": "home, office"}) in (
+        capsys.readouterr().err
+    )
+
+
+def test_a_verb_acts_under_the_hub_it_names(stack, capsys):
+    stack.hubs_value.append(dict(OFFICE_ROW))
+
+    assert service_cli.main_web_open("1", hub="home") == 0
+    assert service_cli.main_desktop_connect("1", hub="h1") == 0
+
+    assert stack.service_calls == [
+        ("web", {"hub_id": "h1", "id": "svc_wiki"}),
+        ("rdp", {"hub_id": "h1", "action": "connect", "id": "rdp_s9"}),
+    ]
+
+
+def test_an_entry_of_another_hub_is_out_of_reach(stack, capsys):
+    stack.hubs_value.append(dict(OFFICE_ROW))
+
+    assert service_cli.main_web_open("1", hub="office") == 2
+
+    assert stack.service_calls == []
+    assert "no web entry 1" in capsys.readouterr().err
+
+
+def test_a_hub_nobody_joined_is_refused_before_any_entry(stack, capsys):
+    assert service_cli.main_port("1", is_enabled=True, hub="nowhere") == 1
+
+    assert stack.service_calls == []
+    assert wording.word_code("unknown_hub") in capsys.readouterr().err
+
+
+def test_ai_show_reads_the_hub_it_names(stack, capsys):
+    stack.hubs_value.append(dict(OFFICE_ROW))
+
+    assert service_cli.main_ai_show(hub="office") == 0
+
+    assert "Office AI  http://office:8080" in capsys.readouterr().out
+    assert stack.exits == []
 
 
 # --- web ---
@@ -538,7 +646,7 @@ def test_ai_apply_names_a_hub_nobody_joined(stack, capsys):
     assert ai_apply(hub="nowhere") == 1
 
     assert stack.exits == [] and stack.service_calls == []
-    assert "no hub nowhere; see nclient status" in capsys.readouterr().err
+    assert wording.word_code("unknown_hub") in capsys.readouterr().err
 
 
 def test_ai_apply_words_a_hub_that_cannot_be_the_exit(stack, capsys):

@@ -1,4 +1,5 @@
 {
+  "code.ambiguous_hub": "several hubs are joined; name the one to act on",
   "code.binding_unknown": "this hub no longer knows this client; join it again with a new link",
   "code.bundle_missing": "this install carries no {binary}; reinstall the client",
   "code.busy": "still handling the last request",

@@ -624,9 +624,9 @@ class ClientResident:
     def _adopt_external_binding(self) -> None:
         """Pick up a binding file another process wrote.
 
-        ``nclient connect`` and ``nclient disconnect`` edit the file from
-        their own process; the resident notices the file changing and
-        converges without a restart.
+        ``nclient join`` and ``nclient leave`` edit the file from their own
+        process when no resident runs; the resident notices the file
+        changing and converges without a restart.
         """
         stamp = enrollment.config_stamp()
         with self._lock:

@@ -69,24 +69,22 @@ def test_an_unbound_resident_states_no_hub_and_no_service():
     assert state["exit_hub_id"] == ""
 
 
-def test_connect_and_disconnect_ride_the_resident():
+def test_join_and_leave_ride_the_resident():
     resident = FakeResident()
 
     status, state = routes.dispatch(
-        "POST", "/api/connect", {"link": "neutrino://enroll/x"}, resident
+        "POST", "/api/join", {"link": "neutrino://enroll/x"}, resident
     )
     assert status == 200
     assert resident.connected_links == ["neutrino://enroll/x"]
     assert "error" not in state
 
-    status, state = routes.dispatch(
-        "POST", "/api/disconnect", {"hub_id": "h2"}, resident
-    )
+    status, state = routes.dispatch("POST", "/api/leave", {"hub_id": "h2"}, resident)
     assert status == 200
     assert resident.disconnected == ["h2"]
     assert [hub["hub_id"] for hub in state["hubs"]] == ["h1"]
 
-    status, state = routes.dispatch("POST", "/api/disconnect", {}, resident)
+    status, state = routes.dispatch("POST", "/api/leave", {}, resident)
     assert status == 200
     assert resident.disconnected == ["h2", "h1"]
     assert state["is_connected"] is False
@@ -95,12 +93,10 @@ def test_connect_and_disconnect_ride_the_resident():
 def test_leaving_a_hub_nobody_joined_is_typed():
     resident = FakeResident()
 
-    status, reply = routes.dispatch(
-        "POST", "/api/disconnect", {"hub_id": "h9"}, resident
-    )
+    status, reply = routes.dispatch("POST", "/api/leave", {"hub_id": "h9"}, resident)
     assert (status, reply) == (404, {"code": "unknown_hub", "params": {"hub_id": "h9"}})
 
-    status, reply = routes.dispatch("POST", "/api/disconnect", {}, resident)
+    status, reply = routes.dispatch("POST", "/api/leave", {}, resident)
     assert (status, reply["code"]) == (404, "unknown_hub")
     assert resident.disconnected == []
 
@@ -132,7 +128,7 @@ def test_a_refused_link_reports_typed_on_the_state():
     resident = FakeResident()
     resident.connect_error = EnrollmentError("link_not_for_client", {"kind": "device"})
 
-    status, state = routes.dispatch("POST", "/api/connect", {"link": "x"}, resident)
+    status, state = routes.dispatch("POST", "/api/join", {"link": "x"}, resident)
 
     assert status == 200
     assert state["error"] == {

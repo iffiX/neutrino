@@ -4,12 +4,12 @@ Most people never see this: the client installs with a desktop entry that
 runs ``nclient gui``, which is the resident and its window. These commands
 do the same things from a terminal.
 
-    nclient connect neutrino://enroll/... [--yes]
-    nclient disconnect
+    nclient join neutrino://enroll/...
+    nclient leave [--hub <name>]
     nclient status
     nclient gui [--hidden]
     nclient quit
-    nclient service list | <kind> <action>
+    nclient service list | <kind> <action> [--hub <name>]
 
 The client runs as a person and never as root.
 """
@@ -20,9 +20,9 @@ import sys
 
 from neutrino_client import CLIENT_VERSION
 from neutrino_client.cli import (
-    connect,
-    disconnect,
     gui,
+    join,
+    leave,
     quit,
     service,
     status,
@@ -47,18 +47,16 @@ def main() -> int:
     parser.add_argument("--version", action="version", version=CLIENT_VERSION)
     subparsers = parser.add_subparsers(dest="command", metavar="<command>")
 
-    connect_parser = subparsers.add_parser("connect", help="join the hub a link names")
-    connect_parser.add_argument(
+    join_parser = subparsers.add_parser("join", help="join the hub a link names")
+    join_parser.add_argument(
         "link",
         nargs="?",
         default="",
         help="the neutrino://enroll link from the hub; omit it to paste at "
         "a prompt instead",
     )
-    connect_parser.add_argument(
-        "--yes", action="store_true", help="replace an existing binding without asking"
-    )
-    subparsers.add_parser("disconnect", help="leave the hub")
+    leave_parser = subparsers.add_parser("leave", help="leave one hub")
+    _add_hub_argument(leave_parser)
     subparsers.add_parser("status", help="what this person is bound to")
     gui_parser = subparsers.add_parser("gui", help="run the client and its window")
     gui_parser.add_argument(
@@ -76,10 +74,10 @@ def main() -> int:
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         print(wording.word_code("root_refused"), file=sys.stderr)
         return 2
-    if arguments.command == "connect":
-        return connect.main(arguments.link, is_forced=arguments.yes)
-    if arguments.command == "disconnect":
-        return disconnect.main()
+    if arguments.command == "join":
+        return join.main(arguments.link)
+    if arguments.command == "leave":
+        return leave.main(arguments.hub)
     if arguments.command == "gui":
         return gui.main(is_hidden=arguments.hidden)
     if arguments.command == "quit":
@@ -136,6 +134,20 @@ def _use_utf8_console() -> None:
             pass
 
 
+def _add_hub_argument(parser) -> None:
+    """Name the hub a command acts on, on one parser.
+
+    Args:
+        parser: The parser the flag belongs to.
+    """
+    parser.add_argument(
+        "--hub",
+        default="",
+        metavar="<name>",
+        help="the hub, by name or id; omit it with one hub joined",
+    )
+
+
 def _add_service_parser(subparsers):
     """The ``nclient service`` verb tree, one branch per service type.
 
@@ -150,12 +162,16 @@ def _add_service_parser(subparsers):
         "service", help="what the hub publishes for this person"
     )
     kinds = service_parser.add_subparsers(dest="service_command", metavar="<kind>")
-    kinds.add_parser("list", help="every published entry, nested by kind")
+    list_parser = kinds.add_parser(
+        "list", help="every published entry, by hub and then by kind"
+    )
+    _add_hub_argument(list_parser)
 
     web_parser = kinds.add_parser("web", help="published links")
     web_actions = web_parser.add_subparsers(dest="web_action", metavar="<action>")
     web_open = web_actions.add_parser("open", help="open one link in the browser")
     web_open.add_argument("ref", help="the entry's number in service list, or its id")
+    _add_hub_argument(web_open)
 
     port_parser = kinds.add_parser("port", help="published ports")
     port_actions = port_parser.add_subparsers(dest="port_action", metavar="<action>")
@@ -166,8 +182,10 @@ def _add_service_parser(subparsers):
     forward.add_argument(
         "--local-port", type=int, default=0, help="the loopback port to prefer"
     )
+    _add_hub_argument(forward)
     unforward = port_actions.add_parser("unforward", help="close that relay")
     unforward.add_argument("ref", help="the entry's number in service list, or its id")
+    _add_hub_argument(unforward)
 
     file_parser = kinds.add_parser("file", help="published shares")
     file_actions = file_parser.add_subparsers(dest="file_action", metavar="<action>")
@@ -179,6 +197,7 @@ def _add_service_parser(subparsers):
     )
     file_config.add_argument("--path", required=True, help="where to mount the share")
     file_config.add_argument("--username", default="", help="the share's own username")
+    _add_hub_argument(file_config)
     for verb, description in (
         ("mount", "mount a share again with its saved login"),
         ("unmount", "unmount a share; its saved login stays"),
@@ -187,10 +206,12 @@ def _add_service_parser(subparsers):
         verb_parser.add_argument(
             "ref", help="the entry's number in service list, or its id"
         )
+        _add_hub_argument(verb_parser)
 
     ai_parser = kinds.add_parser("ai", help="the AI gateway service")
     ai_actions = ai_parser.add_subparsers(dest="ai_action", metavar="<action>")
-    ai_actions.add_parser("show", help="where this person's tools point")
+    ai_show = ai_actions.add_parser("show", help="where this person's tools point")
+    _add_hub_argument(ai_show)
     ai_apply = ai_actions.add_parser(
         "apply", help="point the tools at the hub, or put them back"
     )
@@ -239,6 +260,7 @@ def _add_service_parser(subparsers):
     desktop_connect.add_argument(
         "ref", help="the entry's number in service list, or its id"
     )
+    _add_hub_argument(desktop_connect)
 
     kind_parsers = {
         "web": web_parser,
@@ -263,25 +285,31 @@ def _run_service(arguments, service_parser, kind_parsers) -> int:
     """
     kind = arguments.service_command
     if kind == "list":
-        return service.main_list()
+        return service.main_list(hub=arguments.hub)
     if kind == "web" and arguments.web_action == "open":
-        return service.main_web_open(arguments.ref)
+        return service.main_web_open(arguments.ref, hub=arguments.hub)
     if kind == "port" and arguments.port_action == "forward":
         return service.main_port(
-            arguments.ref, is_enabled=True, local_port=arguments.local_port
+            arguments.ref,
+            is_enabled=True,
+            local_port=arguments.local_port,
+            hub=arguments.hub,
         )
     if kind == "port" and arguments.port_action == "unforward":
-        return service.main_port(arguments.ref, is_enabled=False)
+        return service.main_port(arguments.ref, is_enabled=False, hub=arguments.hub)
     if kind == "file" and arguments.file_action == "config":
         return service.main_file_config(
-            arguments.ref, path=arguments.path, username=arguments.username
+            arguments.ref,
+            path=arguments.path,
+            username=arguments.username,
+            hub=arguments.hub,
         )
     if kind == "file" and arguments.file_action == "mount":
-        return service.main_file_mount(arguments.ref)
+        return service.main_file_mount(arguments.ref, hub=arguments.hub)
     if kind == "file" and arguments.file_action == "unmount":
-        return service.main_file_unmount(arguments.ref)
+        return service.main_file_unmount(arguments.ref, hub=arguments.hub)
     if kind == "ai" and arguments.ai_action == "show":
-        return service.main_ai_show()
+        return service.main_ai_show(hub=arguments.hub)
     if kind == "ai" and arguments.ai_action == "apply":
         return service.main_ai_apply(
             is_enabled=arguments.provider == AI_PROVIDER_HUB,
@@ -295,7 +323,7 @@ def _run_service(arguments, service_parser, kind_parsers) -> int:
             hub=arguments.hub,
         )
     if kind == "desktop" and arguments.desktop_action == "connect":
-        return service.main_desktop_connect(arguments.ref)
+        return service.main_desktop_connect(arguments.ref, hub=arguments.hub)
     if kind in kind_parsers:
         kind_parsers[kind].print_help()
         return 2

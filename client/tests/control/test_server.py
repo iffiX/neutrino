@@ -71,7 +71,7 @@ def test_another_account_is_refused_on_every_route(control):
     for method, path, body in (
         ("GET", "/api/state", None),
         ("GET", "/api/fs?path=/srv", None),
-        ("POST", "/api/disconnect", {}),
+        ("POST", "/api/leave", {}),
         ("POST", "/api/services/port", {"id": "svc_tcp", "is_enabled": True}),
         ("POST", "/api/show", {}),
     ):

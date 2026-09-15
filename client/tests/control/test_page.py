@@ -275,9 +275,8 @@ def test_one_row_per_hub_names_it_its_standing_and_its_software():
     assert "hub.connection_state === 'reconnecting'" in body
     assert "hub.is_disabled ? t('ui.disabled')" in body
     assert "wordError(hub.last_error)" in body
-    assert (
-        "leave.onclick = () => send('/api/disconnect', { hub_id: hubKey(hub) });"
-        in (body)
+    assert "leave.onclick = () => send('/api/leave', { hub_id: hubKey(hub) });" in (
+        body
     )
     assert EN_WORDS["ui.disconnect"] == "Leave"
     assert "hub_version" not in PAGE_JS
@@ -307,7 +306,7 @@ def test_the_join_row_is_always_there_and_words_a_refused_link():
 
     assert "card.appendChild(joinRow(state));" in PAGE_JS
     assert "t('ui.add_hub')" in body and "t('ui.paste_hint')" in body
-    assert "send('/api/connect', { link: input.value })" in body
+    assert "send('/api/join', { link: input.value })" in body
     assert "wordCode(state.error.code, state.error.params)" in body
     assert "input.onblur = settle;" in body
     assert EN_WORDS["ui.add_hub"] == "Join a hub"

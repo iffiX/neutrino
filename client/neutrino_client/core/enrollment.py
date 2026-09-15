@@ -157,8 +157,7 @@ def config_stamp() -> int:
     """A marker that moves whenever the binding file does.
 
     The resident compares it between polls, so a binding written by
-    ``nclient connect`` or ``nclient disconnect`` is adopted without a
-    restart.
+    ``nclient join`` or ``nclient leave`` is adopted without a restart.
 
     Returns:
         The file's mtime in nanoseconds, or 0 when it does not exist.

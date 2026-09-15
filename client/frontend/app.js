@@ -306,7 +306,7 @@ function hubRow(hub) {
   const leave = document.createElement('button');
   leave.className = 'danger';
   leave.textContent = t('ui.disconnect');
-  leave.onclick = () => send('/api/disconnect', { hub_id: hubKey(hub) });
+  leave.onclick = () => send('/api/leave', { hub_id: hubKey(hub) });
   row.appendChild(leave);
   return row;
 }
@@ -329,7 +329,7 @@ function joinRow(state) {
   const button = document.createElement('button');
   button.textContent = t('ui.connect');
   button.onclick = join;
-  function join() { send('/api/connect', { link: input.value }); }
+  function join() { send('/api/join', { link: input.value }); }
   row.appendChild(input);
   row.appendChild(button);
   body.appendChild(row);

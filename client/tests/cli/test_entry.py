@@ -33,8 +33,8 @@ def test_the_version_answers_any_caller(monkeypatch, capsys):
 @pytest.mark.parametrize(
     "argv",
     [
-        ["connect", "neutrino://enroll/x"],
-        ["disconnect"],
+        ["join", "neutrino://enroll/x"],
+        ["leave"],
         ["status"],
         ["gui"],
         ["quit"],
@@ -55,14 +55,16 @@ def test_no_command_prints_the_help(monkeypatch, capsys):
 
     assert entry.main() == 2
 
-    assert "connect" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "join" in out and "leave" in out
 
 
 @pytest.mark.parametrize(
     "argv, target, expected",
     [
-        (["connect", "L", "--yes"], "connect", ("L", {"is_forced": True})),
-        (["disconnect"], "disconnect", ((), {})),
+        (["join", "L"], "join", (("L",), {})),
+        (["leave"], "leave", (("",), {})),
+        (["leave", "--hub", "office"], "leave", (("office",), {})),
         (["status"], "status", ((), {})),
         (["gui", "--hidden"], "gui", ((), {"is_hidden": True})),
         (["quit"], "quit", ((), {})),
@@ -81,37 +83,56 @@ def test_each_verb_reaches_its_command(monkeypatch, argv, target, expected):
 
     assert entry.main() == 0
 
-    args, kwargs = calls[0]
-    if target == "connect":
-        assert (args[0], kwargs) == expected
-    else:
-        assert (args, kwargs) == expected
+    assert calls[0] == expected
 
 
 @pytest.mark.parametrize(
     "argv, function, expected",
     [
-        (["service", "list"], "main_list", ((), {})),
-        (["service", "web", "open", "1"], "main_web_open", (("1",), {})),
+        (["service", "list"], "main_list", ((), {"hub": ""})),
+        (["service", "list", "--hub", "office"], "main_list", ((), {"hub": "office"})),
+        (["service", "web", "open", "1"], "main_web_open", (("1",), {"hub": ""})),
+        (
+            ["service", "web", "open", "1", "--hub", "office"],
+            "main_web_open",
+            (("1",), {"hub": "office"}),
+        ),
         (
             ["service", "port", "forward", "1", "--local-port", "9000"],
             "main_port",
-            (("1",), {"is_enabled": True, "local_port": 9000}),
+            (("1",), {"is_enabled": True, "local_port": 9000, "hub": ""}),
         ),
         (
-            ["service", "port", "unforward", "svc_tcp"],
+            ["service", "port", "unforward", "svc_tcp", "--hub", "home"],
             "main_port",
-            (("svc_tcp",), {"is_enabled": False}),
+            (("svc_tcp",), {"is_enabled": False, "hub": "home"}),
         ),
         (
             ["service", "file", "config", "1", "--path", "/p", "--username", "u"],
             "main_file_config",
-            (("1",), {"path": "/p", "username": "u"}),
+            (("1",), {"path": "/p", "username": "u", "hub": ""}),
         ),
-        (["service", "file", "mount", "1"], "main_file_mount", (("1",), {})),
-        (["service", "file", "unmount", "1"], "main_file_unmount", (("1",), {})),
-        (["service", "ai", "show"], "main_ai_show", ((), {})),
-        (["service", "desktop", "connect", "2"], "main_desktop_connect", (("2",), {})),
+        (
+            ["service", "file", "mount", "1", "--hub", "home"],
+            "main_file_mount",
+            (("1",), {"hub": "home"}),
+        ),
+        (
+            ["service", "file", "unmount", "1"],
+            "main_file_unmount",
+            (("1",), {"hub": ""}),
+        ),
+        (["service", "ai", "show"], "main_ai_show", ((), {"hub": ""})),
+        (
+            ["service", "ai", "show", "--hub", "office"],
+            "main_ai_show",
+            ((), {"hub": "office"}),
+        ),
+        (
+            ["service", "desktop", "connect", "2"],
+            "main_desktop_connect",
+            (("2",), {"hub": ""}),
+        ),
     ],
 )
 def test_each_service_verb_reaches_its_function(monkeypatch, argv, function, expected):
@@ -166,6 +187,8 @@ def test_ai_apply_names_the_provider_and_the_knobs(monkeypatch):
 def test_the_removed_verbs_are_gone(monkeypatch, capsys):
     monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
     for argv in (
+        ["connect", "neutrino://enroll/x"],
+        ["disconnect"],
         ["run"],
         ["module", "list"],
         ["operation"],
@@ -176,6 +199,17 @@ def test_the_removed_verbs_are_gone(monkeypatch, capsys):
             entry.main()
         assert refusal.value.code == 2
     assert "--account" not in capsys.readouterr().err
+
+
+def test_joining_asks_nothing_and_takes_no_yes(monkeypatch, capsys):
+    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(entry.sys, "argv", ["nclient", "join", "L", "--yes"])
+
+    with pytest.raises(SystemExit) as refusal:
+        entry.main()
+
+    assert refusal.value.code == 2
+    assert "--yes" in capsys.readouterr().err
 
 
 def test_a_kind_without_an_action_prints_its_help(monkeypatch, capsys):

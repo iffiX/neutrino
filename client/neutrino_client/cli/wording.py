@@ -5,7 +5,8 @@ tokens; every surface words them itself, and this file is where the
 terminal surface keeps its tables. The completeness test holds them to the
 page's own code list. The one way these commands ask the resident lives
 here too: over the control socket, as whoever ran them, with the honest
-line when nothing answers.
+line when nothing answers, and with it the one way they name a hub among
+the several a person has joined.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -54,6 +55,9 @@ CLIENT_CODE_WORDS = {
         "this hub no longer knows this client; join it again with a new link"
     ),
     "unknown_hub": "this client has not joined that hub",
+    "ambiguous_hub": (
+        "this person has joined several hubs; name one with --hub: {hubs}"
+    ),
     "no_exit_hub": "the AI tools can only point at a connected hub",
     "hub_unreachable": "the hub cannot be reached",
     "hub_reply_unreadable": "the hub sent a reply this client could not read",
@@ -154,6 +158,74 @@ def word_state(state: str) -> str:
         The words to print.
     """
     return CLIENT_STATE_WORDS.get(state, CLIENT_STATE_WORDS["unknown"])
+
+
+def hub_name(row: dict) -> str:
+    """What one hub is called on this surface.
+
+    Args:
+        row: A hub of the resident's state, or a binding.
+
+    Returns:
+        The hub's name, or its address while it has not said one.
+    """
+    return str(row.get("hub_name") or row.get("gateway_url") or "")
+
+
+def choose_hub(rows: list, needle: str) -> "dict | None":
+    """The one hub a command acts on.
+
+    Args:
+        rows: The hubs joined, as the resident's state lists them or as the
+            binding file keeps them.
+        needle: The hub's name, its id or its binding's id; empty names the
+            one hub joined.
+
+    Returns:
+        The hub, or None after the refusal was printed: no hub joined,
+        several joined and none named, or a name nobody joined.
+    """
+    if not rows:
+        print(NOT_JOINED, file=sys.stderr)
+        return None
+    if not needle:
+        if len(rows) == 1:
+            return rows[0]
+        names = ", ".join(hub_name(row) for row in rows)
+        print(word_code("ambiguous_hub", {"hubs": names}), file=sys.stderr)
+        return None
+    for row in rows:
+        if needle in (
+            row.get("hub_name"),
+            row.get("hub_id"),
+            row.get("binding_id"),
+            row.get("id"),
+        ):
+            return row
+    print(word_code("unknown_hub", {"hub_id": needle}), file=sys.stderr)
+    return None
+
+
+def resident_state() -> "dict | None":
+    """The running resident's own account of itself, asked over its socket.
+
+    Nothing is printed: a command that finds no resident does the work in
+    its own process instead.
+
+    Returns:
+        The state payload, or None when no resident of this person answers.
+    """
+    try:
+        socket_path = detect_platform().control_socket_path()
+    except PlatformUnsupportedError:
+        return None
+    try:
+        status, state = client.request(
+            socket_path=socket_path, method="GET", path="/api/state", timeout_s=2
+        )
+    except (OSError, ValueError):
+        return None
+    return state if status == 200 else None
 
 
 def read_state() -> "dict | None":
