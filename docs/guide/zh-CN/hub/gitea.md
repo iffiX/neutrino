@@ -4,17 +4,9 @@ title: Gitea
 
 # Gitea
 
-**Gitea** 页在一台被控端机器上运行私有 git 服务器，并把它的地址发布给客户端。账号和仓库在 Gitea 自己的界面里管；这一页只管端口、地址和第一个管理员。
+Gitea 模块在一台被控端机器上运行私有 git 服务器，客户端一键打开。它的 **接入**（Access）和 **管理员**（Administrator）两节，在[模块](./modules.md)页的 **Gitea** 标签下点 **配置**（Configure）之后展开。
 
-## 启用设备
-
-![Gitea 页](/guide/zh/gitea.webp)
-
-1. 打开 **Gitea** 页。
-1. 在 **已启用的设备**（Enabled devices）里勾选一台机器，点 **应用设备**（Apply devices）。
-1. 在确认框里再点一次。
-
-被控端下载 Gitea 并启动，页面下方出现 **接入**（Access）和 **管理员**（Administrator）。
+hub 只配置自己装的那个 Gitea。手工装的 Gitea 只上报端口，账号和设置仍归它的主人。
 
 ## 访问
 

@@ -4,16 +4,9 @@ title: Containers
 
 # Containers
 
-Containers run on a managed machine as systemd units through podman, from declarations written on the **Containers** page. Each host port a container publishes becomes an entry in the client windows. The page enables the module on a machine, then shows that machine's **Declared containers**, **Running now** and **Registry mirrors**.
+Containers run on a managed machine as systemd units through podman, from declarations written under the **Containers** tab of [the Modules page](./modules.md). Each host port a container publishes becomes an entry in the client windows. The tab's **Declared containers**, **Running now** and **Registry mirrors** sections open after **Configure**, and the first **Configure** takes the containers already on the machine as declarations, together with its registry mirrors.
 
-## Enable a device
-
-1. In the panel, open **Containers** under **Agent**.
-1. Under **Enabled devices**, tick the machine and select **Apply devices**. A consent dialog names what is installed; confirm it.
-
-![The Containers page with a declared container running](/guide/en/containers.webp)
-
-The module runs containers through Quadlet, the podman feature that turns a container declaration into a systemd unit; it needs podman 4.4 or newer. Debian 12 packages 4.3, so the hub rejects a Debian 12 machine as unable to run the module. Debian 13, Ubuntu 24.04, Fedora 41 and the RHEL 9 family qualify.
+From podman 4.4 a declaration becomes a Quadlet `.container` file that podman turns into a systemd unit. On an older podman, the 4.3 that Debian 12 packages for example, the agent writes the `.service` unit itself and the declaration means the same thing.
 
 ## Declare a container
 

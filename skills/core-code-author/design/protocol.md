@@ -84,7 +84,7 @@ name becomes.
 | Thing | Key | Generated | The name changes on |
 | --- | --- | --- | --- |
 | a device | its binding id | by the hub when it first records the machine: at `join` for a blank link, earlier when a link is created for a row that already exists | the Devices page |
-| a client | its binding id | by the hub when the client link is created | the Clients page |
+| a client | its binding id | by the hub when the client link is created for a machine it holds no row for; a machine it already holds one for joins back onto that row and keeps its key | the Clients page |
 | the hub | `id` in `identity.json` | at `nhub setup` | the Settings page |
 
 A device id and a client id have one shape and are told apart by `role`. Every
@@ -147,7 +147,7 @@ it has none:
 | Layer | Paired | Single, and why |
 | --- | --- | --- |
 | HTTP verbs | `set`; `add`/`remove`; `create`/`destroy`; `join`/`leave`; `start`/`stop`; `enable`/`disable`; `share`/`unshare`; `install`/`uninstall`; `login`/`logout`; `backup`/`restore`; `online`/`offline`; `download`/`upload` | `import`, `update`, `reset`, `apply`, `scan`, `test`, `probe`, `wake`, `reboot`, `shutdown`, `reinstall`, `restart`, `kill`, `rename`, `expand`, `replace`, `scrub`: none has a reverse operation |
-| Path depth | the same for the same function: `channel/join`/`leave`; `module/install`/`uninstall`, `start`/`stop`; `device/agent/install`/`reinstall`; `service/share`/`unshare`; `zfs/pool/create`/`destroy` | |
+| Path depth | the same for the same function: `channel/join`/`leave`; `module/install`/`uninstall`, `start`/`stop`; `device/agent/install`/`reinstall`; `zfs/dataset/share`/`unshare`; `zfs/pool/create`/`destroy` | |
 | Channel frames | `hello`/`welcome`; `open`/`close`; `state`/`report` | `refused`, `credit` |
 | Stream kinds | none; installing and uninstalling follow from `want` | `shell`, `file`, `command`, `package`, `log`, `service`, `desktop` |
 | CLI | `nagent join`/`leave`, `nclient join`/`leave`, `nagent rdp start`/`stop`, `nclient service ... mount`/`unmount`, port forwarding `start`/`stop` | `status`, `sync`, `run`, `gui`, `quit` |
@@ -381,8 +381,6 @@ the page's whole view.
 | `POST /api/hub/device/remote_desktop/password/set` | `{device_id, product, password}` | its unattended password |
 | `POST /api/hub/device/desktop/seat_password/reset` | `{device_id}` | a new seat password, every viewer disconnected |
 | `GET /api/hub/device/service` | `?device_id=` | what the device publishes |
-| `POST /api/hub/device/service/share` | `{device_id, service_type}` | publishes one |
-| `POST /api/hub/device/service/unshare` | `{device_id, service_type}` | withdraws it |
 | `GET /api/hub/device/install_output` | `?device_id=` | the last install's output |
 
 #### `/api/hub/client`
@@ -529,10 +527,10 @@ A link is `neutrino://enroll/<base64url>` over one JSON object:
 `urls` is every exposed address on the agent port, because one of them is on
 the joining machine's network and neither end knows which. `role` is `agent`
 or `client`, read on the pasting side before the first request. A client
-rejects a device link with `link_not_for_client`, whose `params` name the
-link's `role`; an agent rejects a client link with a sentence and no code, as
-it does every other unusable link. The base64url alphabet has no character a
-shell splits or a URL escapes, so the link pastes anywhere unquoted.
+rejects a device link with `link_not_for_client` and an agent rejects a client
+link with `link_not_for_agent`, each code's `params` naming the link's `role`.
+The base64url alphabet has no character a shell splits or a URL escapes, so
+the link pastes anywhere unquoted.
 
 | Endpoint | Body | Returns |
 | --- | --- | --- |
@@ -550,10 +548,12 @@ and each role reads them somewhere else:
 
 An agent's id is the operating system's, so a machine joining with a blank
 link is matched to the row it already had. A client's is one installation's,
-so the same person on two machines is two clients. The hub reads `family` to
-pick a package family and `arch` to pick the package itself, and an
-architecture outside the normalized set is the machine's own word and matches
-no branch.
+so the same person on two machines is two clients, and a client joining again
+from an installation the hub has a row for lands back on that row: the link's
+fresh row goes, and the old row takes the link's name and keeps its key, its
+switch and everything it last reported. The hub reads `family` to pick a
+package family and `arch` to pick the package itself, and an architecture
+outside the normalized set is the machine's own word and matches no branch.
 
 The join request names no network; the link a socket runs on comes from
 `getsockname()` and is in the first report. Joining and leaving have the same
@@ -620,8 +620,9 @@ the three packages, named here so that changing one is a change to this table.
 
 | What it bounds | Hub | Agent | Client |
 | --- | --- | --- | --- |
-| a fresh socket's hello | `CHANNEL_HELLO_TIMEOUT_S` 10 | | `CLIENT_HELLO_TIMEOUT_S` 10, spent on connecting and the handshake |
-| a report while nothing changes | | `AGENT_HEARTBEAT_INTERVAL_S` 5 | `CLIENT_REPORT_INTERVAL_S` 30 |
+| a fresh socket's hello | `CHANNEL_HELLO_TIMEOUT_S` 10 | | |
+| connecting and the handshake on top of it | | `AGENT_REQUEST_TIMEOUT_S` 10 | `CLIENT_CONNECT_TIMEOUT_S` 10 |
+| a report while nothing changes | | `AGENT_REPORT_INTERVAL_S` 5 | `CLIENT_REPORT_INTERVAL_S` 30 |
 | keepalive | `CHANNEL_PING_INTERVAL_S` 20, `CHANNEL_PING_TIMEOUT_S` 20 | | |
 | silence before the socket is dead | | `AGENT_WS_SILENCE_TIMEOUT_S` 45 | `CLIENT_WS_SILENCE_TIMEOUT_S` 45 |
 | reconnect backoff | | `AGENT_BACKOFF_MIN_S` 5, doubled to `AGENT_BACKOFF_MAX_S` 60 | `CLIENT_BACKOFF_MIN_S` 5, doubled to `CLIENT_BACKOFF_MAX_S` 60 |
@@ -636,6 +637,10 @@ is inside both silence windows, so a socket with nothing to say is kept open
 by the pings alone, and a peer that reaches its window closes and reconnects.
 A refused `hello` is retried at the backoff's maximum, the minute named under
 the binding.
+
+An agent reports six times as often as a client because its `machine` section
+carries the metrics the Dashboard draws live; a client's carries its hostname
+and platform, which change between releases.
 
 ### The sections
 
@@ -689,7 +694,9 @@ from the same facts, whoever installed the software:
 | `failed`, `unsupported` | the last step failed with `{code, params}`; the agent has no runner for this module |
 
 This table is closed on every surface; a surface that meets a token outside it
-shows the word for a machine that has not reported.
+shows the word for a machine that has not reported. That is also what the
+panel shows for `agent_never_reported`, the code a request gets when the
+machine it went to let the stream run out of time.
 
 `want` is stored in `config/devices/<id>/modules.json`, and a panel action
 writes it directly:
@@ -713,7 +720,8 @@ because one package manager holds the machine-wide lock.
 
 Taking over a machine is automatic import. The first time **Configure** is
 pressed for a module whose hub-side configuration is empty, the panel calls
-`POST /api/agent/module/<name>/import {device_id}`. The hub turns the
+`POST /api/agent/module/<name>/import {device_id}` for a module that has an
+import (`samba`, `gitea`, `podman`; `zfs` has none). The hub turns the
 `details` of the machine's latest report into its own configuration, and the
 panel then opens the configuration section.
 
@@ -724,14 +732,14 @@ the whole file back.
 | Module | What `details` reports, and what import reads |
 | --- | --- |
 | Samba | `testparm -s` parsed into the global section and each share, `pdbedit -L` into the user list |
-| Podman | `podman ps -a --format json` and `podman inspect`: each container's image, ports, volumes, environment, and whether a unit exists |
+| Podman | `podman ps -a --format json` and `podman inspect`: each container's image, ports, volumes, environment, and whether a unit exists; the registry mirrors |
 | ZFS | pools, vdevs and datasets; there is no wanted pool list, so nothing is imported |
 | Gitea | the hub's own instance; a hand-installed one reports as running on its port and is not imported |
 
 Package bytes come to the agent down a `package {module}` stream it opens, the
 same stream that serves its own upgrade. An install's or an uninstall's output
-goes up a `log {module}` stream line by line, and the drawer shows it as it
-arrives.
+goes up a `log {module}` stream line by line, and the Modules page shows it
+under the module's tab as it arrives.
 
 ### The services section, one entry per published service
 
@@ -812,8 +820,8 @@ first that fails gives the close its code:
 | `vault_locked` | the entry is the `ai` one and the vault is locked, so this client's gateway key cannot be opened or generated |
 
 `service_unknown` and `rdp_not_shared` put the id in `params` as
-`service_id`; the other three send empty params. A close with no code makes `params` the material, and what
-the material is follows from the type:
+`service_id`; the other three send empty params. A close with no code makes
+`params` the material, and what the material is follows from the type:
 
 | `type` | The material |
 | --- | --- |
@@ -912,10 +920,12 @@ nothing:
 
 1. At `hello`, the hub takes the socket's peer address, afresh on every
    connection.
-1. `host_scope.scope_of(peer, network)` classifies it. Inside a served LAN's
-   CIDR is that LAN, and inside the overlay's range (the hub's own overlay
-   interface's address and prefix) is `overlay`. Anything else (an exposed
-   WAN, the interface in server mode, a client behind NAT) is `link`.
+1. `host_scope.scope_of(peer, reached, served)` classifies it against the
+   scopes the box serves: one per served LAN, named by its network CIDR, and
+   one `overlay` scope per overlay interface holding an IPv4 address, told
+   apart by the CIDR that address and its prefix name. The first scope whose
+   network holds the peer is the answer. Anything else (an exposed WAN, the
+   interface in server mode, a client behind NAT) is `link`.
 1. `device_host_for(scope, interfaces, link_address)` takes the first of the
    device's reported `interfaces[].addresses` inside that scope, the link
    address first when it is among them. With none inside, it takes

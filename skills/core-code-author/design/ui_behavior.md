@@ -248,12 +248,11 @@ panel is most needed exactly when the box is unwell. A failed poll keeps the
 last good value on screen and the next tick retries.
 
 The backend returns `{code, params}` and the frontend words it, from a map
-beside the component that shows it — `install_consent_modal.tsx`,
-`settings_page.tsx` (`RESTORE_ERROR_SENTENCES`) and `services_page.tsx`
-(`DECLARED_INVALID_WORDING`) are the shape. An unworded code drops an optional
-detail, but never a consequence somebody is being asked to accept: that one
-still shows, with the code spelled out, because an unworded consequence beats a
-hidden one.
+beside the component that shows it: `device_drawer.tsx` (`ACTION_ERROR_KEYS`)
+and `services_page.tsx` (`DECLARED_INVALID_KEYS`) are the shape. An unworded
+code drops an optional detail, but never a consequence somebody is being asked
+to accept: that one still shows, with the code spelled out, because an unworded
+consequence beats a hidden one.
 
 Not every endpoint has a code yet, and `describeError` falls through to the
 backend's own sentence where none came. Adding a code is what moves a message

@@ -4,16 +4,9 @@ title: ZFS
 
 # ZFS
 
-On the **ZFS** page you build pools and datasets on a managed machine and read its disk health. A dataset shared from the page becomes an SMB share. The page enables the module on a machine, then shows that machine's **Pools**, **Topology** and **Datasets**.
+The **ZFS storage** tab of [the Modules page](./modules.md) builds pools and datasets on a managed machine and reads its disk health. A dataset shared from the tab becomes an SMB share. Its **Pools**, **Topology** and **Datasets** sections open after **Configure**.
 
-## Enable a device
-
-1. In the panel, open **ZFS** under **Agent**.
-1. Under **Enabled devices**, tick the machine with the disks and select **Apply devices**.
-
-![The ZFS page with a pool and its datasets](/guide/en/zfs.webp)
-
-On a distribution with no prebuilt module for the running kernel, the consent dialog says that a kernel module is compiled on the machine. The build takes several minutes and runs again after every kernel upgrade.
+The hub keeps no wanted pool list, so these sections show what the machine reports about its own disks, and each press runs on the machine at the moment you make it.
 
 ## Pools and topology
 
@@ -54,4 +47,4 @@ Each disk in **Topology** shows its **SMART** result, **passed** or **FAILING**,
 1. On a mounted dataset, select **Share**.
 1. Pick the users the share accepts, or pick none to accept every user, and confirm.
 
-The Samba module on the same machine exports the dataset's mountpoint over SMB, read-write for the chosen users. The row then has an `smb` badge. It is then a share on [the Samba page](./samba.md) and an entry in the clients' **Files** panel; **Unshare** withdraws it.
+The Samba module on the same machine exports the dataset's mountpoint over SMB, read-write for the chosen users. With Samba missing or stopped there, the button reads **Install and start Samba first**, which is the **File share** tab on the same page. A shared row has an `smb` badge, it is a share on [the Samba page](./samba.md) and an entry in the clients' **Files** panel, and **Unshare** withdraws it.

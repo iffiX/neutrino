@@ -24,7 +24,7 @@ The page has four groups; a shared desktop is listed on clients and in the machi
 
 ## Discovered entries
 
-A module enabled on a device publishes without a declaration. The Samba module publishes each share as **published by the samba module on** that host. The Gitea module publishes its address, and a container publishes each host port it exposes. The hub's AI gateway publishes its endpoint. A machine publishes its desktop while `sudo nagent rdp start` is running on it; the entry disappears when the share stops.
+A module the hub configures on a device publishes without a declaration. The Samba module publishes each share as **published by the samba module on** that host. The Gitea module publishes its address, and a container publishes each host port it exposes. The hub's AI gateway publishes its endpoint. A machine publishes its desktop while `sudo nagent rdp start` is running on it; the entry disappears when the share stops.
 
 ## Declare a service by hand
 
@@ -60,13 +60,10 @@ An unreachable row is greyed in the client and reads **not reachable now**. Each
 
 ## What the agent provides
 
-The pages under **Agent** each enable one capability on a managed machine, and the pages that publish do so through the groups on this page:
+The **Agent** group acts on one managed machine at a time, and a module it installs on that machine publishes into the groups on this page:
 
-| Page                          | What it does on a machine                                            |
-| ----------------------------- | -------------------------------------------------------------------- |
-| [Terminals](./terminals.md)   | opens a root shell, in tabs                                          |
-| [Files](./files.md)           | browses, uploads, downloads and moves files                          |
-| [Samba](./samba.md)           | serves SMB shares, published under **Files**                         |
-| [Gitea](./gitea.md)           | runs a private git server, published under **Web**                   |
-| [Containers](./containers.md) | runs declared containers, their host ports published under **Ports** |
-| [ZFS](./zfs.md)               | builds pools and datasets, and shares a dataset through Samba        |
+| Page                        | What it does on a machine                                               |
+| --------------------------- | ----------------------------------------------------------------------- |
+| [Terminals](./terminals.md) | opens a root shell, in tabs                                             |
+| [Files](./files.md)         | browses, uploads, downloads and moves files                             |
+| [Modules](./modules.md)     | installs, starts, stops and configures Samba, Gitea, containers and ZFS |

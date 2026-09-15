@@ -25,13 +25,11 @@ A server-mode hub keeps every address the machine had, so the first layer is the
 
 Every module runs under an agent, on the machine that has the disk or the GPU. Samba shares are on the machine with the drives, and Gitea on the one that keeps the repositories. Containers run on the one with the GPU, and a desktop is shared wherever a person is signed in. A client consumes what those machines provide: it mounts a share, opens a link, forwards a port and connects to a desktop. The hub's own machine runs an agent too, so it provides a module as one device among the others; the one service the hub provides by itself is the AI gateway.
 
-![The panel's sidebar with the Hub group and the Agent group](/guide/en/sidebar_groups.webp)
-
 The panel's sidebar draws the split: the **Hub** group is the box, and the **Agent** group is what the box drives on a machine running the agent.
 
 ## From the hub to a button
 
-A service reaches a client window from a module, from a declaration, or from the machine itself. A module enabled on a device publishes its own entries: the Samba module publishes its shares, the Gitea module its address, a container its published host ports. The **Services** page publishes what you declare by hand: a web address, a TCP port, an SMB share on a server the hub does not manage. A machine reports its own shared desktop while `sudo nagent rdp start` is running on it.
+A service reaches a client window from a module, from a declaration, or from the machine itself. A module the hub configures on a device publishes its own entries: the Samba module publishes its shares, the Gitea module its address, a container its published host ports. The **Services** page publishes what you declare by hand: a web address, a TCP port, an SMB share on a server the hub does not manage. A machine reports its own shared desktop while `sudo nagent rdp start` is running on it.
 
 Each entry has a kind, and the client draws one panel per kind:
 
@@ -61,6 +59,6 @@ One tag releases the three packages together, and what has to match between them
 
 ## The panel and this site
 
-The panel has two page groups, and this site follows them. The **Hub** group (Dashboard, Network, Overlay, Proxy, AI, Devices, Clients, Services, Credentials, Settings) is the box itself. The **Agent** group (Terminals, Files, Samba, Gitea, Containers, ZFS) acts on one managed machine at a time. Both groups are under **Hub** in this site's sidebar, one page per panel page in the panel's order, because both are driven from the panel. The client's window has a group of its own, one page per panel plus the tray.
+The panel has two page groups, and this site follows them. The **Hub** group (Dashboard, Network, Overlay, Proxy, AI, Devices, Clients, Services, Credentials, Settings) is the box itself. The **Agent** group (Terminals, Files, Modules) acts on one managed machine at a time. Both groups are under **Hub** in this site's sidebar, in the panel's order, because both are driven from the panel. Modules has one page per module here: Samba, Gitea, Containers and ZFS. The client's window has a group of its own, one page per panel plus the tray.
 
 ![The Dashboard with live traffic, active exits and DNS queries](/guide/en/dashboard.webp)

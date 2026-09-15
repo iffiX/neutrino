@@ -4,16 +4,9 @@ title: Samba
 
 # Samba
 
-SMB shares that clients mount with one button come from the Samba module on a managed machine. On the **Samba** page you enable the module on that machine and manage its **Users**, **Shares** and **Now serving**.
+The Samba module exports directories on a managed machine over SMB, and a client mounts one with a button. Its **Shares**, **Users** and **Now serving** sections open under the **File share** tab of [the Modules page](./modules.md), after **Configure** on the machine with the disk.
 
-## Enable a device
-
-1. In the panel, open **Samba** under **Agent**.
-1. Under **Enabled devices**, tick the machine with the disk and select **Apply devices**. A consent dialog names the packages installed on that machine; confirm it.
-
-![The Samba page with a share on one machine](/guide/en/samba_share.webp)
-
-Unticking a machine and applying removes the module from it: the service stops and its packages are removed. The share directories and their files stay. An offline machine is rejected with `agent_offline`.
+A machine that already serves SMB reads as **installed** on that tab, and the first **Configure** takes its existing shares and accounts as the hub's configuration.
 
 ## Shares
 

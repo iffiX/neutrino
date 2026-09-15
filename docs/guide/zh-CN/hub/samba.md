@@ -4,17 +4,9 @@ title: Samba
 
 # Samba
 
-**Samba** 页在一台被控端机器上把目录共享出去，客户端挂载这些共享。共享由被控端提供，hub 自己不托管；hub 这台机器也算一台被控端。
+Samba 模块把一台被控端机器上的目录通过 SMB 导出，客户端一键挂载。它的 **共享**（Shares）、**用户**（Users）和 **当前连接**（Now serving）三节，在[模块](./modules.md)页的 **File share** 标签下点 **配置**（Configure）之后展开。
 
-## 启用设备
-
-![Samba 页](/guide/zh/samba_share.webp)
-
-1. 打开 **Samba** 页。
-1. 在 **已启用的设备**（Enabled devices）里勾选一台机器。
-1. 点 **应用设备**（Apply devices），在确认框里再点一次。
-
-被控端在那台机器上装好 Samba 并启动，页面下方出现它的 **用户**（Users）、**共享**（Shares）和 **当前连接**（Now serving）。取消勾选则停掉服务并移除软件包；共享目录里的内容和 Samba 的配置留在机器上。机器离线时 hub 拒绝应用，返回 `agent_offline`。
+机器上原来就在提供 SMB 共享时，标签读作 已安装。第一次点 **配置**，hub 把现有的共享和账号收为自己的配置。
 
 ## 共享
 

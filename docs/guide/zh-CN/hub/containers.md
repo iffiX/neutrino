@@ -4,21 +4,9 @@ title: 容器
 
 # 容器
 
-**容器**（Containers）页在一台被控端机器上按声明运行容器。声明是你在这一页填的一条容器描述，包括镜像、端口和卷；podman 把每个声明变成那台机器上的一个 systemd 单元。容器发布的端口出现在每个客户端里。
+容器模块按你写下的声明，在一台被控端机器上以 systemd 单元运行容器；声明包括镜像、端口和卷。它的 **声明的容器**（Declared containers）、**正在运行**（Running now）和 **镜像源**（Registry mirrors）三节，在[模块](./modules.md)页的 **Containers** 标签下点 **配置**（Configure）之后展开。第一次点 **配置**，hub 把机器上已有的容器和镜像源收下来。
 
-## 启用设备
-
-![容器页](/guide/zh/containers.webp)
-
-1. 打开 **容器**（Containers）页。
-1. 在 **已启用的设备**（Enabled devices）里勾选一台机器，点 **应用设备**（Apply devices）。
-1. 在确认框里再点一次。
-
-被控端装上 podman，页面下方出现 **声明的容器**（Declared containers）、**正在运行**（Running now）和 **镜像源**（Registry mirrors）。
-
-::: warning
-容器模块需要 podman 4.4 或更新：声明靠 podman 的 Quadlet 机制变成 systemd 单元，4.4 才带这个机制。Debian 12 自带 4.3.1，勾选这样的机器时 hub 拒绝启用。
-:::
+podman 4.4 起，一条声明变成一个 Quadlet `.container` 文件，由 podman 转成 systemd 单元。podman 更老时（例如 Debian 12 自带的 4.3），被控端自己写出 `.service` 单元，声明的含义不变。
 
 ## 声明容器
 
@@ -30,7 +18,11 @@ title: 容器
 1. 需要时填 **环境变量**（Environment）和 **命令（可选）**，勾选 **随机器启动**（Start with the box）。命令一栏在英文界面上是 Command (optional)。
 1. 点 **应用容器**（Apply containers）。
 
-第一次启动要拉镜像，可能要等一会儿。改过的容器会重建，卷以外的文件丢失，所以要保留的数据都放进卷。
+第一次启动要拉镜像，可能要等一会儿。
+
+::: warning
+改过的容器在应用时重建，卷以外的文件丢失。要保留的数据都放进卷。
+:::
 
 ## 正在运行
 

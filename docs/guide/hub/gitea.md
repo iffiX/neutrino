@@ -4,14 +4,9 @@ title: Gitea
 
 # Gitea
 
-Gitea on a managed machine is a private git server that every client opens with one button. The **Gitea** page enables the module on a machine, then shows that machine's **Access** and **Administrator** sections.
+Gitea on a managed machine is a private git server that every client opens with one button. Its **Access** and **Administrator** sections open under the **Gitea** tab of [the Modules page](./modules.md), after **Configure**.
 
-## Enable a device
-
-1. In the panel, open **Gitea** under **Agent**.
-1. Under **Enabled devices**, tick the machine that keeps the repositories and select **Apply devices**. A consent dialog names what is installed; confirm it.
-
-![The Gitea page with the module on one machine](/guide/en/gitea.webp)
+The hub configures only the Gitea it installs itself. A Gitea somebody installed by hand reports its port and keeps its own settings.
 
 ## Access
 
