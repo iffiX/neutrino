@@ -76,7 +76,10 @@ class ScriptedClient:
         message = json.loads(text)
         self.sent.append(message)
         if self.drop_after_report and message.get("type") == "report":
+            # A hub that hung up fails the next send too, so the loop cannot
+            # slip a second report in before the reader sees the drop.
             self.drop_after_report = False
+            self.is_closed = True
             self.inbound.put(GatewayUnreachable("hung up"))
 
     def send_bytes(self, data: bytes) -> None:
