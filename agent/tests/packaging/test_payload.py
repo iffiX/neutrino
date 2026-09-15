@@ -6,12 +6,23 @@ what is taken out of a carried interpreter, and which machines the packages
 are published for.
 """
 
+import os
 import subprocess
 import sys
 
 import pytest
 
 import payload
+
+# A readelf whose answer for a file is the version its own name spells, so a
+# tree can be staged with the versions the walk is meant to read.
+FAKE_READELF = """#!{python}
+import sys
+from pathlib import Path
+
+version = Path(sys.argv[-1]).stem.replace("_", ".")
+print(f"  0x0020:   Name: GLIBC_{{version}}  Flags: none  Version: 3")
+"""
 
 
 def _carried_interpreter(root):
@@ -285,3 +296,61 @@ def test_the_prune_removes_nothing_when_the_file_list_is_empty(tmp_path):
     _prune(prefix, listing)
 
     assert (prefix / "carried").is_file()
+
+
+def _elf_tree(root, versions):
+    """A package tree of ELF files, each named for the glibc it needs.
+
+    Args:
+        root: The staging directory.
+        versions: The glibc versions to stage, as strings.
+
+    Returns:
+        The staging directory.
+    """
+    prefix = root / "opt/neutrino_agent"
+    prefix.mkdir(parents=True)
+    for version in versions:
+        name = version.replace(".", "_")
+        (prefix / f"{name}.so").write_bytes(b"\x7fELF\x02\x01\x01")
+    (prefix / "9_9.txt").write_text("not an ELF\n")
+    return root
+
+
+def _readelf_on_the_path(root, monkeypatch):
+    """Put the readelf that answers from a file's name first on the path.
+
+    Args:
+        root: The directory to write it into.
+        monkeypatch: The fixture that sets the path.
+    """
+    tools = root / "tools"
+    tools.mkdir()
+    tool = tools / "readelf"
+    tool.write_text(FAKE_READELF.format(python=sys.executable))
+    tool.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tools), prepend=os.pathsep)
+
+
+def test_a_binary_needing_a_newer_glibc_than_the_floor_stops_the_build(
+    tmp_path, monkeypatch
+):
+    """The refusal names the file and the version it needs, and nothing else."""
+    _readelf_on_the_path(tmp_path, monkeypatch)
+    tree = _elf_tree(tmp_path / "tree", ("2.17", "2.34", "2.38"))
+
+    with pytest.raises(SystemExit) as refused:
+        payload.require_glibc_floor(tree)
+
+    assert "opt/neutrino_agent/2_38.so" in str(refused.value)
+    assert "GLIBC_2.38" in str(refused.value)
+    assert "2_34.so" not in str(refused.value)
+
+
+def test_a_tree_at_the_floor_is_a_package_the_build_lets_through(tmp_path, monkeypatch):
+    """Nothing above the floor is nothing to refuse, and no file that is not
+    an ELF is read for a version at all."""
+    _readelf_on_the_path(tmp_path, monkeypatch)
+    tree = _elf_tree(tmp_path / "tree", ("2.2.5", "2.17", "2.34"))
+
+    payload.require_glibc_floor(tree)

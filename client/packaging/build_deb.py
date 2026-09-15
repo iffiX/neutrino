@@ -190,6 +190,7 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
     payload.lay_out_compiled(tree, compiled, Path(CLIENT_MOUNT_HELPER_PATH))
     bundled.stage_linux_binaries(tree, architecture)
     payload.stage_licenses(tree)
+    payload.require_glibc_floor(tree)
     _lay_out_desktop(tree)
 
     payload.write(

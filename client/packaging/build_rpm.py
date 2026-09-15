@@ -220,6 +220,7 @@ def _lay_out(staged: Path, version: str, architecture: str) -> None:
     payload.lay_out_compiled(staged, compiled, Path(CLIENT_MOUNT_HELPER_PATH))
     bundled.stage_linux_binaries(staged, architecture)
     payload.stage_licenses(staged)
+    payload.require_glibc_floor(staged)
     _lay_out_desktop(staged)
 
     payload.write(

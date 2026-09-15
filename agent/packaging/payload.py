@@ -15,6 +15,7 @@ Not pure: downloads interpreters, writes package trees.
 """
 
 import hashlib
+import re
 import shutil
 import subprocess
 import tarfile
@@ -22,9 +23,14 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
+from constants import PACKAGING_GLIBC_FLOOR
+
 AGENT_ROOT = Path(__file__).resolve().parent.parent
 REPO_ROOT = AGENT_ROOT.parent
 PACKAGE_NAME = "neutrino-agent"
+
+# A glibc version as readelf's version sections name it.
+GLIBC_VERSION = re.compile(r"GLIBC_(\d+)\.(\d+)")
 
 # Where the package's own environment lives, and the path its interpreter is
 # addressed by. It is staged at this path so nothing inside it has to be
@@ -332,6 +338,61 @@ def stage_licenses(tree: Path) -> None:
             )
         shutil.copyfile(source, destination / name)
         (destination / name).chmod(0o644)
+
+
+def require_glibc_floor(tree: Path) -> None:
+    """Refuse a package tree that needs a newer glibc than the floor.
+
+    Args:
+        tree: The staging directory standing in for the filesystem root.
+
+    Raises:
+        SystemExit: When a file in the tree names a glibc version above
+            :data:`PACKAGING_GLIBC_FLOOR`.
+    """
+    floor = tuple(int(part) for part in PACKAGING_GLIBC_FLOOR.split("."))
+    above = []
+    for path in sorted(tree.rglob("*")):
+        if path.is_symlink() or not path.is_file():
+            continue
+        needed = _glibc_needed(path)
+        if needed > floor:
+            version = ".".join(str(part) for part in needed)
+            above.append(f"  {path.relative_to(tree)} needs GLIBC_{version}")
+    if above:
+        listed = "\n".join(above)
+        raise SystemExit(
+            f"the package installs on glibc {PACKAGING_GLIBC_FLOOR} and up, "
+            f"and these need newer:\n{listed}"
+        )
+
+
+def _glibc_needed(path: Path) -> tuple:
+    """The highest glibc version one file names.
+
+    Args:
+        path: The file to read.
+
+    Returns:
+        The version as ``(major, minor)``, empty when the file is not an ELF
+        or names no glibc version at all.
+
+    Raises:
+        SystemExit: When readelf cannot read an ELF file.
+    """
+    with path.open("rb") as handle:
+        if handle.read(4) != b"\x7fELF":
+            return ()
+    result = subprocess.run(
+        ["readelf", "--wide", "-V", str(path)], capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        raise SystemExit(f"readelf could not read {path}: {result.stderr.strip()}")
+    found = [
+        (int(major), int(minor))
+        for major, minor in GLIBC_VERSION.findall(result.stdout)
+    ]
+    return max(found, default=())
 
 
 def trim_interpreter(staged_python: Path) -> None:

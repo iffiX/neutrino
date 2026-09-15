@@ -212,6 +212,7 @@ def _lay_out(staged: Path, version: str, architecture: str) -> None:
     payload.strip_build_paths(staged_python, staged)
     payload.stage_rustdesk(staged, architecture, "rpm")
     payload.stage_licenses(staged)
+    payload.require_glibc_floor(staged)
 
     payload.write(
         staged / "usr/bin/nagent",

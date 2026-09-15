@@ -22,6 +22,7 @@ Not pure: downloads an interpreter, installs into it.
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -31,6 +32,8 @@ import zipfile
 import urllib.request
 from pathlib import Path
 
+from constants import PACKAGING_GLIBC_FLOOR
+
 HUB_ROOT = Path(__file__).resolve().parent.parent
 AGENT_ROOT = HUB_ROOT.parent / "agent"
 PACKAGE_NAME = "neutrino-hub"
@@ -39,6 +42,9 @@ PACKAGE_NAME = "neutrino-hub"
 # the package tree, which the checkout does not carry.
 ICONS_SOURCE_DIR = HUB_ROOT.parent / "images" / "icons"
 ICONS_PACKAGE_DIR = HUB_ROOT / "neutrino_hub" / "data" / "resources"
+
+# A glibc version as readelf's version sections name it.
+GLIBC_VERSION = re.compile(r"GLIBC_(\d+)\.(\d+)")
 
 
 def _runtime(module_name: str, *names):
@@ -343,6 +349,10 @@ def build_environment(tree: Path, version: str, machine: str) -> None:
                 "install",
                 "--quiet",
                 "--no-compile",
+                # A dependency with no wheel for this machine would be
+                # compiled here, against the container's glibc rather than
+                # the floor the package declares.
+                "--only-binary=:all:",
                 str(HUB_ROOT),
             ]
         )
@@ -355,6 +365,7 @@ def build_environment(tree: Path, version: str, machine: str) -> None:
     stage_agent_cache(tree, staged_python, machine)
     stage_vendored(tree, machine)
     stage_licenses(tree)
+    require_glibc_floor(tree)
 
 
 def stage_icons() -> None:
@@ -617,6 +628,61 @@ def stage_licenses(tree: Path) -> None:
         if path.is_file():
             shutil.copyfile(path, destination / path.name)
             (destination / path.name).chmod(0o644)
+
+
+def require_glibc_floor(tree: Path) -> None:
+    """Refuse a package tree that needs a newer glibc than the floor.
+
+    Args:
+        tree: The staging directory standing in for the filesystem root.
+
+    Raises:
+        SystemExit: When a file in the tree names a glibc version above
+            :data:`PACKAGING_GLIBC_FLOOR`.
+    """
+    floor = tuple(int(part) for part in PACKAGING_GLIBC_FLOOR.split("."))
+    above = []
+    for path in sorted(tree.rglob("*")):
+        if path.is_symlink() or not path.is_file():
+            continue
+        needed = _glibc_needed(path)
+        if needed > floor:
+            version = ".".join(str(part) for part in needed)
+            above.append(f"  {path.relative_to(tree)} needs GLIBC_{version}")
+    if above:
+        listed = "\n".join(above)
+        raise SystemExit(
+            f"the package installs on glibc {PACKAGING_GLIBC_FLOOR} and up, "
+            f"and these need newer:\n{listed}"
+        )
+
+
+def _glibc_needed(path: Path) -> tuple:
+    """The highest glibc version one file names.
+
+    Args:
+        path: The file to read.
+
+    Returns:
+        The version as ``(major, minor)``, empty when the file is not an ELF
+        or names no glibc version at all.
+
+    Raises:
+        SystemExit: When readelf cannot read an ELF file.
+    """
+    with path.open("rb") as handle:
+        if handle.read(4) != b"\x7fELF":
+            return ()
+    result = subprocess.run(
+        ["readelf", "--wide", "-V", str(path)], capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        raise SystemExit(f"readelf could not read {path}: {result.stderr.strip()}")
+    found = [
+        (int(major), int(minor))
+        for major, minor in GLIBC_VERSION.findall(result.stdout)
+    ]
+    return max(found, default=())
 
 
 def _machine_name(names: dict, machine: str, what: str) -> str:

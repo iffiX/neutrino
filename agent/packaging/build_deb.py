@@ -191,6 +191,7 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
     payload.strip_build_paths(staged_python, tree)
     payload.stage_rustdesk(tree, architecture, "deb")
     payload.stage_licenses(tree)
+    payload.require_glibc_floor(tree)
 
     payload.write(
         tree / "usr/bin/nagent",
