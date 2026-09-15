@@ -316,6 +316,9 @@ def test_the_report_carries_every_field_from_its_source(config_path, monkeypatch
     )
     monkeypatch.setattr(loop_module, "hostname", lambda: "box")
     script.local_address = "10.0.0.5"
+    # The runners' first observation runs on the reconcile thread; read them
+    # now so the report and the states it is compared with are one reading.
+    agent._engine.refresh_now()
 
     agent.run_once()
 
