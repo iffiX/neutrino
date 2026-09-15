@@ -142,6 +142,9 @@ class ScriptedSocket:
     def close(self):
         self.is_closed = True
 
+    def getsockname(self):
+        return ("192.0.2.10", 51000)
+
 
 def scripted_client(*frames) -> WebSocketClient:
     made = WebSocketClient(host="hub", port=1, path="/ws", fingerprint="f")
@@ -242,6 +245,14 @@ def test_close_sends_the_code_and_shuts_the_socket():
     assert not made.is_open
     with pytest.raises(GatewayUnreachable):
         made.send_text("x")
+
+
+def test_the_local_address_is_the_sockets_own_and_empty_once_closed():
+    made = scripted_client()
+
+    assert made.local_address == "192.0.2.10"
+    made.close()
+    assert made.local_address == ""
 
 
 # --- what a close code means ---
@@ -377,6 +388,7 @@ def test_the_upgrade_asks_for_a_websocket_and_checks_the_accept(tls_stub):
     made.connect()
 
     assert made.is_open
+    assert made.local_address == "127.0.0.1"
     (request,) = StubUpgradeHandler.requests
     head = request.decode()
     assert head.startswith("GET /api/agent/ws HTTP/1.1\r\n")

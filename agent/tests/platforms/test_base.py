@@ -26,6 +26,7 @@ CONTRACT_CALLS = {
     "start_agent_service": ("agent_service", (), {}),
     "power": ("power", ("reboot",), {}),
     "read_host_metrics": ("metrics", (), {}),
+    "read_network_interfaces": ("network", (), {}),
     "install_package": (
         "packages",
         ("/tmp/app.deb",),

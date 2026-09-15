@@ -15,6 +15,7 @@ the reasoning is skills/core-code-author/design/privilege.md.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import json
 import os
 import pwd
 import re
@@ -57,6 +58,11 @@ NVIDIA_SMI_COMMAND = (
 
 PROCESS_TOP_COUNT = 12
 
+IP_ADDR_COMMAND = ("ip", "-j", "addr")
+IP_ADDR_TIMEOUT_S = 10
+LINUX_LOOPBACK_NAME = "lo"
+LINUX_UNSET_MAC = "00:00:00:00:00:00"
+
 # Forced: the panel's button means now. Without it systemd stops every unit
 # in order and waits out each one's stop timeout, which on a desktop can be
 # minutes; with one `--force` processes are ended and the filesystems still
@@ -90,6 +96,24 @@ def _read_int(path: str) -> "int | None":
         return None
 
 
+def _interface_mac(entry: dict) -> str:
+    """One iproute2 entry's MAC, empty when it has none or an all-zero one."""
+    mac = str(entry.get("address", "") or "").strip().lower()
+    return "" if mac == LINUX_UNSET_MAC else mac
+
+
+def _interface_addresses(entry: dict) -> list:
+    """One iproute2 entry's IPv4 and IPv6 addresses, in its order."""
+    addresses = []
+    for info in entry.get("addr_info", []) or []:
+        if not isinstance(info, dict) or info.get("family") not in ("inet", "inet6"):
+            continue
+        local = str(info.get("local", "") or "")
+        if local:
+            addresses.append(local)
+    return addresses
+
+
 class LinuxPlatform(AgentPlatform):
     """Linux behind the platform contract."""
 
@@ -102,6 +126,7 @@ class LinuxPlatform(AgentPlatform):
             "agent_service",
             "power",
             "metrics",
+            "network",
             "packages",
             "system_packages",
         }
@@ -295,6 +320,47 @@ class LinuxPlatform(AgentPlatform):
             default rather than raising.
         """
         return self._metrics_reader.read()
+
+    def read_network_interfaces(self) -> list:
+        """Every interface but loopback, from iproute2.
+
+        Returns:
+            ``[{"name", "mac", "addresses"}]`` in iproute2's order, the MAC
+            empty where the interface has none or an all-zero one; empty
+            when ``ip`` is missing, exits non-zero, or prints no JSON.
+        """
+        try:
+            result = subprocess.run(
+                IP_ADDR_COMMAND,
+                capture_output=True,
+                text=True,
+                timeout=IP_ADDR_TIMEOUT_S,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return []
+        if result.returncode != 0:
+            return []
+        try:
+            entries = json.loads(result.stdout or "")
+        except ValueError:
+            return []
+        if not isinstance(entries, list):
+            return []
+        interfaces = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            name = str(entry.get("ifname", "") or "")
+            if not name or name == LINUX_LOOPBACK_NAME:
+                continue
+            interfaces.append(
+                {
+                    "name": name,
+                    "mac": _interface_mac(entry),
+                    "addresses": _interface_addresses(entry),
+                }
+            )
+        return interfaces
 
     def install_package(self, path: str, *, package_kind: str, entry: dict) -> None:
         """Install one downloaded package.

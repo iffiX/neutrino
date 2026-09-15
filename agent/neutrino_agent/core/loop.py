@@ -37,7 +37,7 @@ from neutrino_agent.constants import (
     AGENT_WIRE_GENERATION,
     AGENT_WS_PATH,
 )
-from neutrino_agent.core import enrollment, self_update
+from neutrino_agent.core import enrollment, network, self_update
 from neutrino_agent.core.channel import GatewayHttpChannel
 from neutrino_agent.core.commands import DeviceOperator
 from neutrino_agent.core.desired_state import DesiredStateApplier, DesiredStateStore
@@ -433,7 +433,6 @@ class Agent:
             "wire": AGENT_WIRE_GENERATION,
             "hostname": hostname(),
             "platform": self._engine.platform_tuple,
-            "addresses": enrollment.machine_addresses(),
             "accounts": self._read_accounts(),
             "state_hash": self._desired.applied_hash,
             "last_reinstall": self._read_reinstall(),
@@ -443,9 +442,7 @@ class Agent:
         return {
             "metrics": self._read_metrics(),
             "platform": self._engine.platform_tuple,
-            # Each interface's address with the MAC carrying it, so the hub
-            # can name the one on this machine's own wire.
-            "addresses": enrollment.machine_addresses(),
+            "network": network.describe(self._link_address(), self._read_interfaces()),
             "accounts": self._read_accounts(),
             "modules": self._engine.report(),
             "state_hash": self._desired.applied_hash,
@@ -581,6 +578,18 @@ class Agent:
             return self._platform.human_accounts()
         except PlatformUnsupportedError:
             return []
+
+    def _read_interfaces(self) -> list:
+        try:
+            return self._platform.read_network_interfaces()
+        except PlatformUnsupportedError:
+            return []
+
+    def _link_address(self) -> str:
+        """The socket's own address on this machine, empty with no socket."""
+        with self._lock:
+            session = self._session
+        return session.local_address if session is not None else ""
 
     def _on_unreachable(self, error: Exception) -> int:
         """Back off after a broken wire; the rejection count stands."""

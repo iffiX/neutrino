@@ -266,6 +266,17 @@ class WebSocketClient:
         """Whether the socket is connected."""
         return self._sock is not None
 
+    @property
+    def local_address(self) -> str:
+        """This side's own address on the socket, empty while it is closed."""
+        sock = self._sock
+        if sock is None:
+            return ""
+        try:
+            return str(sock.getsockname()[0])
+        except OSError:
+            return ""
+
     def connect(self) -> None:
         """Connect over the pin and upgrade to a WebSocket.
 

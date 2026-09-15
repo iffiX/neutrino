@@ -45,13 +45,15 @@ DROP_AFTER_REPORT = object()
 
 
 class _FakePlatform(AgentPlatform):
-    """A platform with prepared metrics and accounts; the rest refuses."""
+    """A platform with prepared metrics, accounts and interfaces; the rest
+    refuses."""
 
     os_name = "linux"
 
-    def __init__(self, *, metrics=None, accounts=None):
+    def __init__(self, *, metrics=None, accounts=None, interfaces=None):
         self._metrics = metrics
         self._accounts = accounts
+        self._interfaces = interfaces
 
     def read_host_metrics(self):
         if self._metrics is None:
@@ -63,19 +65,41 @@ class _FakePlatform(AgentPlatform):
             raise PlatformUnsupportedError("cannot enumerate accounts here")
         return list(self._accounts)
 
+    def read_network_interfaces(self):
+        if self._interfaces is None:
+            raise PlatformUnsupportedError("no interfaces to read here")
+        return list(self._interfaces)
+
+
+INTERFACES = [
+    {
+        "name": "eth0",
+        "mac": "02:00:00:00:00:01",
+        "addresses": ["192.0.2.10", "fe80::ff:fe00:1"],
+    },
+    {"name": "wlan0", "mac": "02:00:00:00:00:02", "addresses": ["10.0.0.5"]},
+]
+
 
 class ClientScript:
-    """Hands the loop one scripted client per connection, in order."""
+    """Hands the loop one scripted client per connection, in order.
+
+    Attributes:
+        local_address: What every client built names as the socket's own
+            address.
+    """
 
     def __init__(self, scripts, default=None):
         self.scripts = list(scripts)
         self.default = default if default is not None else [HUNG_UP]
         self.clients: list = []
         self.built: list = []
+        self.local_address = ""
 
     def __call__(self, **kwargs):
         self.built.append(kwargs)
         client = ScriptedClient()
+        client.local_address = self.local_address
         script = self.scripts.pop(0) if self.scripts else self.default
         if isinstance(script, Exception):
             client.connect_error = script
@@ -240,11 +264,6 @@ def test_the_hello_carries_the_wire_contract(config_path, monkeypatch):
         config_path, monkeypatch, [welcomed_then_dropped()], platform=platform
     )
     monkeypatch.setattr(loop_module, "hostname", lambda: "box")
-    monkeypatch.setattr(
-        loop_module.enrollment,
-        "machine_addresses",
-        lambda: [{"mac": "aa:bb:cc:dd:ee:ff", "address": "192.168.100.7"}],
-    )
 
     agent.run_once()
 
@@ -256,7 +275,6 @@ def test_the_hello_carries_the_wire_contract(config_path, monkeypatch):
         "wire": AGENT_WIRE_GENERATION,
         "hostname": "box",
         "platform": agent.platform(),
-        "addresses": [{"mac": "aa:bb:cc:dd:ee:ff", "address": "192.168.100.7"}],
         "accounts": ["alice", "bob"],
         "state_hash": "",
         "last_reinstall": None,
@@ -265,11 +283,13 @@ def test_the_hello_carries_the_wire_contract(config_path, monkeypatch):
 
 def test_the_report_carries_every_field_from_its_source(config_path, monkeypatch):
     metrics = HostMetrics(cpu_percent=12.3, memory_percent=56.7, uptime_s=7)
-    platform = _FakePlatform(metrics=metrics, accounts=["alice", "bob"])
+    platform = _FakePlatform(
+        metrics=metrics, accounts=["alice", "bob"], interfaces=INTERFACES
+    )
     agent, script = scripted_agent(
         config_path, monkeypatch, [welcomed_then_dropped()], platform=platform
     )
-    monkeypatch.setattr(loop_module.enrollment, "machine_addresses", lambda: [])
+    script.local_address = "10.0.0.5"
 
     agent.run_once()
 
@@ -278,7 +298,14 @@ def test_the_report_carries_every_field_from_its_source(config_path, monkeypatch
     assert report["metrics"]["cpu_percent"] == 12.3
     assert report["metrics"]["uptime_s"] == 7
     assert report["platform"] == agent.platform()
-    assert report["addresses"] == []
+    assert report["network"] == {
+        "link": {
+            "interface": "wlan0",
+            "mac": "02:00:00:00:00:02",
+            "address": "10.0.0.5",
+        },
+        "interfaces": INTERFACES,
+    }
     assert report["accounts"] == ["alice", "bob"]
     assert report["modules"] == agent.module_states()
     assert report["state_hash"] == ""
@@ -322,6 +349,24 @@ def test_report_accounts_platform_cannot_enumerate_sends_an_empty_list(
 
     (hello,) = script.clients[0].frames("hello")
     assert hello["accounts"] == []
+
+
+def test_report_interfaces_platform_cannot_read_sends_the_link_alone(
+    config_path, monkeypatch
+):
+    platform = _FakePlatform(metrics=HostMetrics(), accounts=[])
+    agent, script = scripted_agent(
+        config_path, monkeypatch, [welcomed_then_dropped()], platform=platform
+    )
+    script.local_address = "192.0.2.10"
+
+    agent.run_once()
+
+    (report,) = script.clients[0].frames("report")
+    assert report["network"] == {
+        "link": {"interface": "", "mac": "", "address": "192.0.2.10"},
+        "interfaces": [],
+    }
 
 
 REINSTALL_RESULT = {

@@ -42,6 +42,7 @@ class ScriptedClient:
         self.is_closed = False
         self.connect_error = None
         self.drop_after_report = False
+        self.local_address = ""
 
     def connect(self) -> None:
         if self.connect_error is not None:
@@ -231,6 +232,14 @@ def test_a_connect_error_passes_straight_through():
 
     with pytest.raises(GatewayUnreachable):
         session.connect()
+
+
+def test_the_sessions_local_address_is_the_sockets_own():
+    client = ScriptedClient()
+    client.local_address = "192.0.2.10"
+    session, _, _, _ = make_session(client)
+
+    assert session.local_address == "192.0.2.10"
 
 
 # --- reports ---

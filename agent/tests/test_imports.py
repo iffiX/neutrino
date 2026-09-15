@@ -31,6 +31,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.core.enrollment",
     "neutrino_agent.core.loop",
     "neutrino_agent.core.metrics",
+    "neutrino_agent.core.network",
     "neutrino_agent.core.self_update",
     "neutrino_agent.core.session",
     "neutrino_agent.core.store",

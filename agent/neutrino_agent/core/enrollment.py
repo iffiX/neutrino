@@ -38,7 +38,6 @@ from neutrino_agent.exceptions import (
 from neutrino_agent.platforms.detect import platform_tuple
 
 ENROLL_PATH = "/api/agent/enroll"
-SYS_NET_DIR = "/sys/class/net"
 
 
 LINK_PREFIX = "neutrino://enroll/"
@@ -165,95 +164,6 @@ def machine_id() -> str:
     return generated
 
 
-def machine_mac_addresses() -> list:
-    """The MAC addresses this machine's interfaces carry.
-
-    The hub keys devices by MAC, so enrolling with them lets it fold this
-    machine into the row a scan or an SSH setup already made instead of
-    generating a second record. Linux publishes them under ``/sys``; elsewhere
-    the list is empty and the hub falls back to the machine id.
-
-    Returns:
-        Lower-case addresses, loopback and unset ones left out.
-    """
-    addresses = []
-    try:
-        names = sorted(os.listdir(SYS_NET_DIR))
-    except OSError:
-        return addresses
-    for name in names:
-        if name == "lo":
-            continue
-        try:
-            with open(f"{SYS_NET_DIR}/{name}/address", encoding="utf-8") as stream:
-                address = stream.read().strip().lower()
-        except OSError:
-            continue
-        if address and address != "00:00:00:00:00:00" and address not in addresses:
-            addresses.append(address)
-    return addresses
-
-
-def machine_addresses() -> list:
-    """This machine's IPv4 addresses, each with the MAC that carries it.
-
-    The hub keys a device by MAC, so this is what lets it name the address
-    on the machine's own interface rather than whichever one the kernel
-    happened to route a beat out of: a second address on the same wire,
-    a macvlan or a container bridge, answers a connection just as well and
-    is not the machine's own.
-
-    Returns:
-        ``[{"mac", "address"}]``, loopback and link-local left out; empty
-        where the machine cannot be asked this way.
-    """
-    found = []
-    try:
-        names = sorted(os.listdir(SYS_NET_DIR))
-    except OSError:
-        return found
-    for name in names:
-        if name == "lo":
-            continue
-        try:
-            with open(f"{SYS_NET_DIR}/{name}/address", encoding="utf-8") as stream:
-                mac = stream.read().strip().lower()
-        except OSError:
-            continue
-        if not mac or mac == "00:00:00:00:00:00":
-            continue
-        for address in _interface_addresses(name):
-            found.append({"mac": mac, "address": address})
-    return found
-
-
-def _interface_addresses(name: str) -> list:
-    """One interface's IPv4 addresses.
-
-    Args:
-        name: The interface name.
-
-    Returns:
-        The addresses, empty when they cannot be read.
-    """
-    try:
-        import fcntl
-        import socket
-        import struct
-    except ImportError:
-        return []
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-            packed = fcntl.ioctl(
-                probe.fileno(),
-                0x8915,  # SIOCGIFADDR
-                struct.pack("256s", name[:15].encode("utf-8")),
-            )
-        return [socket.inet_ntoa(packed[20:24])]
-    except (OSError, ValueError):
-        return []
-
-
 def enroll(link: str) -> dict:
     """Join the gateway the link points at.
 
@@ -279,7 +189,6 @@ def enroll(link: str) -> dict:
         "client_version": AGENT_VERSION,
         "wire": AGENT_WIRE_GENERATION,
         "platform": platform_tuple(),
-        "mac_addresses": machine_mac_addresses(),
     }
     reply = None
     refusal = ""

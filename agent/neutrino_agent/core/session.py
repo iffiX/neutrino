@@ -124,6 +124,11 @@ class AgentSession:
         """Whether the socket is up and the welcome has arrived."""
         return self._reader is not None and not self._is_closed.is_set()
 
+    @property
+    def local_address(self) -> str:
+        """This machine's own address on the socket, empty while it is closed."""
+        return self._client.local_address
+
     def connect(self) -> None:
         """Connect, say hello, and take the welcome.
 

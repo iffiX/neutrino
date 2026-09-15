@@ -57,7 +57,8 @@ def launched(monkeypatch):
     commands = []
 
     def record(command, **kwargs):
-        commands.append(list(command))
+        if list(command[:1]) == ["systemd-run"]:
+            commands.append(list(command))
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(self_update.subprocess, "run", record)

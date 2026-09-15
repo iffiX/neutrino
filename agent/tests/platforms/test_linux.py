@@ -1,10 +1,12 @@
-"""The Linux platform: the account floor, ``runuser``, systemd.
+"""The Linux platform: the account floor, ``runuser``, systemd, iproute2.
 
 Linux steps down with ``runuser`` and judges people by its own floor; homes
-come from the account database, never ``$HOME``.
+come from the account database, never ``$HOME``; the interfaces are what
+``ip -j addr`` prints, loopback left out.
 """
 
 import collections
+import json
 import subprocess
 
 import pytest
@@ -14,6 +16,72 @@ from neutrino_agent.constants import AGENT_SERVICE_NAME
 from neutrino_agent.platforms.linux import LinuxPlatform
 
 PwdEntry = collections.namedtuple("PwdEntry", "pw_name pw_uid pw_shell pw_dir")
+
+# What ``ip -j addr`` prints on a machine with a wire, a radio, a tunnel and
+# an empty bridge; the fields the reader ignores are left as iproute2 prints
+# them.
+IP_ADDR_SAMPLE = [
+    {
+        "ifindex": 1,
+        "ifname": "lo",
+        "flags": ["LOOPBACK", "UP", "LOWER_UP"],
+        "link_type": "loopback",
+        "address": "00:00:00:00:00:00",
+        "addr_info": [
+            {"family": "inet", "local": "127.0.0.1", "prefixlen": 8, "scope": "host"},
+            {"family": "inet6", "local": "::1", "prefixlen": 128, "scope": "host"},
+        ],
+    },
+    {
+        "ifindex": 2,
+        "ifname": "eth0",
+        "flags": ["BROADCAST", "MULTICAST", "UP", "LOWER_UP"],
+        "link_type": "ether",
+        "address": "02:00:00:00:00:01",
+        "addr_info": [
+            {
+                "family": "inet",
+                "local": "192.0.2.10",
+                "prefixlen": 24,
+                "scope": "global",
+                "label": "eth0",
+            },
+            {
+                "family": "inet6",
+                "local": "fe80::ff:fe00:1",
+                "prefixlen": 64,
+                "scope": "link",
+            },
+        ],
+    },
+    {
+        "ifindex": 3,
+        "ifname": "wlan0",
+        "flags": ["BROADCAST", "MULTICAST", "UP", "LOWER_UP"],
+        "link_type": "ether",
+        "address": "02:00:00:00:00:02",
+        "addr_info": [
+            {"family": "inet", "local": "10.0.0.5", "prefixlen": 24, "scope": "global"}
+        ],
+    },
+    {
+        "ifindex": 4,
+        "ifname": "tun0",
+        "flags": ["POINTOPOINT", "MULTICAST", "NOARP", "UP", "LOWER_UP"],
+        "link_type": "none",
+        "addr_info": [
+            {"family": "inet", "local": "10.8.0.2", "prefixlen": 24, "scope": "global"}
+        ],
+    },
+    {
+        "ifindex": 5,
+        "ifname": "br0",
+        "flags": ["BROADCAST", "MULTICAST"],
+        "link_type": "ether",
+        "address": "00:00:00:00:00:00",
+        "addr_info": [],
+    },
+]
 
 
 def test_linux_human_accounts_apply_the_floor(monkeypatch, tmp_path):
@@ -205,3 +273,52 @@ def test_linux_service_state_and_power_go_through_systemd(monkeypatch):
 
     monkeypatch.setattr(linux_module.subprocess, "run", refuse)
     assert platform.read_agent_service_state() == "unknown"
+
+
+def test_linux_interfaces_come_from_iproute2_without_loopback(monkeypatch):
+    recorded = {}
+
+    def record(command, **kwargs):
+        recorded["command"] = list(command)
+        return subprocess.CompletedProcess(
+            command, 0, stdout=json.dumps(IP_ADDR_SAMPLE), stderr=""
+        )
+
+    monkeypatch.setattr(linux_module.subprocess, "run", record)
+
+    assert LinuxPlatform().read_network_interfaces() == [
+        {
+            "name": "eth0",
+            "mac": "02:00:00:00:00:01",
+            "addresses": ["192.0.2.10", "fe80::ff:fe00:1"],
+        },
+        {"name": "wlan0", "mac": "02:00:00:00:00:02", "addresses": ["10.0.0.5"]},
+        {"name": "tun0", "mac": "", "addresses": ["10.8.0.2"]},
+        {"name": "br0", "mac": "", "addresses": []},
+    ]
+    assert recorded["command"] == ["ip", "-j", "addr"]
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        OSError("no ip"),
+        subprocess.TimeoutExpired(["ip"], 10),
+        (1, ""),
+        (0, None),
+        (0, "Cannot open netlink socket"),
+        (0, "{}"),
+    ],
+)
+def test_linux_interfaces_are_empty_when_iproute2_cannot_answer(monkeypatch, outcome):
+    def answer(command, **kwargs):
+        if isinstance(outcome, Exception):
+            raise outcome
+        returncode, stdout = outcome
+        return subprocess.CompletedProcess(
+            command, returncode, stdout=stdout, stderr=""
+        )
+
+    monkeypatch.setattr(linux_module.subprocess, "run", answer)
+
+    assert LinuxPlatform().read_network_interfaces() == []

@@ -2,9 +2,9 @@
 
 The contract names intents, not mechanisms: enumerate human accounts;
 resolve an account's home; run a process as an account; control the agent's
-own service; power actions; read host metrics; install and remove a package
-of a kind. A new platform is a new class, and nothing above this seam
-changes.
+own service; power actions; read host metrics; read the network interfaces;
+install and remove a package of a kind. A new platform is a new class, and
+nothing above this seam changes.
 
 Each platform advertises the capabilities it has in ``capabilities``.
 Invoking one it does not have raises :class:`PlatformUnsupportedError`, whose
@@ -162,6 +162,18 @@ class AgentPlatform:
             PlatformUnsupportedError: When the platform cannot be sampled.
         """
         raise PlatformUnsupportedError("no metrics here")
+
+    def read_network_interfaces(self) -> list:
+        """Every interface but loopback, with its MAC and addresses.
+
+        Returns:
+            ``[{"name", "mac", "addresses"}]``, the MAC empty where the
+            interface has none.
+
+        Raises:
+            PlatformUnsupportedError: When the platform cannot list them.
+        """
+        raise PlatformUnsupportedError("no interfaces to read here")
 
     def install_package(self, path: str, *, package_kind: str, entry: dict) -> None:
         """Install one downloaded package of a kind.
