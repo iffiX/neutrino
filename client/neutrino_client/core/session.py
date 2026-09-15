@@ -5,10 +5,11 @@ runs whether or not the person belongs to a hub yet: an unbound resident
 still serves its page, waiting for a link.
 
 While bound, the resident holds one socket open to the hub and reconnects
-when it drops. The hub pushes what it publishes — the catalog, this person's
-AI credential, whether the client is switched off — and answers the asks a
-service handler sends up. Joining and leaving stay HTTP: both happen when
-there is no socket to carry them.
+when it drops. The hub pushes its ``state``, the services it publishes and
+whether the client is switched off, and the client answers each state and
+every interval with a ``report``. What a service handler needs from the hub
+comes down a ``service`` stream it opens. Joining and leaving stay HTTP:
+both happen when there is no socket to carry them.
 
 Errors are ``{"code", "params"}``, never an English sentence; every surface
 does its own wording.
@@ -20,7 +21,6 @@ from __future__ import annotations
 
 import json
 import os
-import secrets
 import socket
 import sys
 import threading
@@ -29,22 +29,32 @@ import urllib.parse
 
 from neutrino_client import CLIENT_VERSION
 from neutrino_client.constants import (
-    CLIENT_ASK_TIMEOUT_S,
     CLIENT_BACKOFF_MAX_S,
     CLIENT_BACKOFF_MIN_S,
+    CLIENT_CHANNEL_WS_PATH,
     CLIENT_DEFAULT_LANGUAGE,
     CLIENT_DEFAULT_THEME,
     CLIENT_HELLO_TIMEOUT_S,
+    CLIENT_HUB_ROLE,
     CLIENT_IDLE_POLL_INTERVAL_S,
     CLIENT_MOUNT_CREDENTIALS_DIR_NAME,
     CLIENT_ORIGINAL_DIR_NAME,
+    CLIENT_PROTOCOL_REFUSAL_CODES,
     CLIENT_REFUSALS_BEFORE_UNBIND,
+    CLIENT_REPORT_INTERVAL_S,
+    CLIENT_ROLE,
     CLIENT_SHUTDOWN_DEADLINE_S,
+    CLIENT_SOFTWARE_PREFIX,
     CLIENT_STATE_FILE_NAME,
+    CLIENT_STREAM_CODE_KIND_UNKNOWN,
+    CLIENT_STREAM_KIND_SERVICE,
+    CLIENT_STREAM_TIMEOUT_S,
     CLIENT_WS_CLOSE_REPLACED,
-    CLIENT_WS_PATH,
+    PROTOCOL,
 )
-from neutrino_client.core import enrollment
+from neutrino_client.core import enrollment, protocol
+from neutrino_client.core.channel import refusal_error
+from neutrino_client.core.streams import ClientStreamRegistry
 from neutrino_client.core.ws_client import WebSocketClient, close_error
 from neutrino_client.exceptions import (
     GatewayProtocolRefused,
@@ -79,7 +89,6 @@ SHUTDOWN_STEPS = (
 )
 # How long a burst of changes is left to settle before the watchers hear.
 ANNOUNCE_SETTLE_S = 0.05
-ASK_ID_LENGTH = 8
 
 
 def end_process(status: int = 0) -> None:
@@ -123,23 +132,32 @@ def channel_error(error: Exception) -> dict:
     return {"code": "hub_unreachable", "params": {"detail": str(error)}}
 
 
-def _decode(kind: str, payload) -> "dict | None":
-    """One text frame as an object, or None for anything else.
+def _decode(payload) -> "dict | None":
+    """One text frame as an object, or None when it is not one.
 
     Args:
-        kind: ``text`` or ``binary``.
-        payload: The frame's payload.
+        payload: The frame's text.
 
     Returns:
         The decoded object, or None when the frame is not one.
     """
-    if kind != "text":
-        return None
     try:
         message = json.loads(payload)
     except (TypeError, ValueError):
         return None
     return message if isinstance(message, dict) else None
+
+
+def _hello_refusal(message: dict) -> Exception:
+    """What a refused frame means: the hub turned this binding away."""
+    code = str(message.get("code", "") or "")
+    params = message.get("params")
+    params = params if isinstance(params, dict) else {}
+    if code in CLIENT_PROTOCOL_REFUSAL_CODES:
+        return refusal_error(code, params)
+    return GatewayRefused(
+        f"hub refused this client's hello ({code})", code=code, params=params
+    )
 
 
 class ClientSession:
@@ -172,6 +190,7 @@ class ClientSession:
                 AiServiceHandler(
                     store=self._store,
                     original_dir=os.path.join(config_dir, CLIENT_ORIGINAL_DIR_NAME),
+                    open_service=self.open_service,
                     log=log,
                     on_change=self.notify,
                 ),
@@ -185,7 +204,10 @@ class ClientSession:
                     on_change=self.notify,
                 ),
                 RdpViewerHandler(
-                    platform=self.platform, ask=self.ask, log=log, on_change=self.notify
+                    platform=self.platform,
+                    open_service=self.open_service,
+                    log=log,
+                    on_change=self.notify,
                 ),
             )
         }
@@ -196,6 +218,7 @@ class ClientSession:
         self._thread: "threading.Thread | None" = None
         self._is_shut_down = False
         self._client: "WebSocketClient | None" = None
+        self._streams: "ClientStreamRegistry | None" = None
         self._is_welcomed = False
         # The first binding on disk; empty while unbound.
         self._binding: dict = {}
@@ -204,14 +227,10 @@ class ClientSession:
         self._refusals = 0
         self._last_error: "dict | None" = None
         self._services_list: list = []
-        self._catalog_hash = ""
-        self._hub_version = ""
-        self._client_id = ""
+        self._state_hash = ""
+        self._hub_software = ""
         self._is_disabled = False
         self._was_disabled = False
-        self._credential: dict = {}
-        # One entry per ask still waiting for its answer.
-        self._pending: dict = {}
         self.on_show = None
         self._load_connection()
 
@@ -249,9 +268,10 @@ class ClientSession:
             return self._binding.get("gateway_url", "")
 
     def hub_version(self) -> str:
-        """What the hub last reported itself as."""
+        """The version the hub's welcome named, after the package name."""
         with self._lock:
-            return self._hub_version
+            software = self._hub_software
+        return software.partition("/")[2] or software
 
     def is_disabled(self) -> bool:
         """Whether the hub has switched this person off."""
@@ -267,11 +287,6 @@ class ClientSession:
         """The typed service list, as the hub last sent it."""
         with self._lock:
             return [entry for entry in self._services_list if isinstance(entry, dict)]
-
-    def ai_credential(self) -> dict:
-        """This person's gateway credential, as the hub last granted it."""
-        with self._lock:
-            return dict(self._credential)
 
     def suggest_mount_location(self) -> str:
         """What the platform offers as a mount location before one is typed."""
@@ -448,52 +463,29 @@ class ClientSession:
             return {"code": "client_disabled", "params": {}}
         return handler.act(entries=self.service_entries(), body=body)
 
-    def ask(self, kind: str, args: dict, timeout_s: float = CLIENT_ASK_TIMEOUT_S):
-        """Ask the hub one question over the socket and wait for its answer.
+    def open_service(
+        self, entry_id: str, timeout_s: float = CLIENT_STREAM_TIMEOUT_S
+    ) -> dict:
+        """Open a ``service`` stream for one entry and take the hub's close.
 
         Args:
-            kind: What is being asked, e.g. ``rdp_connect``.
-            args: The ask's own fields.
-            timeout_s: How long to wait for the answer.
+            entry_id: The published entry's id.
+            timeout_s: How long to wait for the close.
 
         Returns:
-            The answer's ``result``.
+            The close's ``params``: the entry's material.
 
         Raises:
-            GatewayRefusedDetail: When the hub answered with a code.
-            GatewayUnreachable: When there is no socket, the socket dies, or
-                no answer arrives in time.
+            GatewayRefusedDetail: When the hub closed the stream with a code.
+            GatewayUnreachable: When there is no socket, the socket ends, or
+                the close does not arrive in time.
         """
-        ask_id = secrets.token_hex(ASK_ID_LENGTH)
-        arrived = threading.Event()
         with self._lock:
-            client = self._client
-            if client is None or not self._is_welcomed:
+            streams = self._streams
+            if streams is None or not self._is_welcomed:
                 raise GatewayUnreachable("this person's hub is not connected")
-            self._pending[ask_id] = {"event": arrived, "answer": None}
-        try:
-            client.send_text(
-                json.dumps(
-                    {"type": "ask", "id": ask_id, "kind": kind, "args": dict(args)}
-                )
-            )
-            if not arrived.wait(timeout=timeout_s):
-                raise GatewayUnreachable(f"the hub did not answer {kind} in time")
-            with self._lock:
-                answer = self._pending[ask_id]["answer"]
-        finally:
-            with self._lock:
-                self._pending.pop(ask_id, None)
-        if answer is None:
-            raise GatewayUnreachable("the hub socket closed before it answered")
-        code = str(answer.get("code", "") or "")
-        if code:
-            params = answer.get("params")
-            raise GatewayRefusedDetail(
-                code=code, params=params if isinstance(params, dict) else {}
-            )
-        result = answer.get("result")
-        return dict(result) if isinstance(result, dict) else {}
+        stream = streams.open(CLIENT_STREAM_KIND_SERVICE, {"id": entry_id})
+        return stream.wait_close(timeout_s)
 
     # --- the loop ---
 
@@ -502,7 +494,7 @@ class ClientSession:
 
         Nothing this person had on is turned on again: the client opens with
         every service off, and the leftovers of a run that did not shut down
-        are undone before the hub's first catalog arrives.
+        are undone before the hub's first state arrives.
         """
         self._clear_leftovers()
         for handler in self._services.values():
@@ -576,46 +568,49 @@ class ClientSession:
         return WebSocketClient(
             host=parts.hostname or "",
             port=parts.port or 443,
-            path=CLIENT_WS_PATH,
+            path=CLIENT_CHANNEL_WS_PATH,
             fingerprint=binding["fingerprint"],
             timeout_s=CLIENT_HELLO_TIMEOUT_S,
         )
 
     def _connect(self, client) -> None:
-        """Open the socket, say hello, and take the welcome.
+        """Open the socket, say hello, take the welcome, and report once.
 
         Args:
             client: The unconnected socket.
 
         Raises:
             GatewayUntrusted: When the peer failed the fingerprint check.
-            GatewayRefused: When the hub does not know this token, or does
-                not speak this client's protocol.
+            GatewayRefused: When the hub refused the hello, by a frame or by
+                its close; the protocol refusals are their own kind.
             GatewayUnreachable: On any network error, or a first frame that
-                is not a welcome.
+                is neither a welcome nor a refusal.
         """
         client.connect()
         try:
             client.send_text(json.dumps(self._hello()))
             welcome = self._take_welcome(client)
+            self._report(client)
         except SocketClosed as closed:
             raise close_error(closed.code, closed.reason) from closed
         except Exception:
             client.close()
             raise
+        self._note_hub(welcome)
         with self._lock:
             self._client = client
+            self._streams = ClientStreamRegistry(
+                send_text=client.send_text, log=self._log
+            )
             self._is_welcomed = True
-            self._hub_version = str(welcome.get("hub_version", "") or "")
-            self._client_id = str(welcome.get("client_id", "") or "")
+            self._hub_software = str(welcome.get("software", "") or "")
             self._backoff_s = CLIENT_BACKOFF_MIN_S
             self._last_error = None
             self._refusals = 0
-        self._take_disabled(bool(welcome.get("is_disabled")))
         self.notify()
 
     def _serve(self, client) -> "Exception | None":
-        """Read frames until the socket ends.
+        """Read frames until the socket ends, reporting on the interval.
 
         Args:
             client: The connected socket.
@@ -625,6 +620,14 @@ class ClientSession:
             the hub replacing this socket did.
         """
         failure = None
+        ended = threading.Event()
+        reporter = threading.Thread(
+            target=self._report_on_interval,
+            args=(client, ended),
+            name="client_report",
+            daemon=True,
+        )
+        reporter.start()
         while not self._stop.is_set():
             try:
                 kind, payload = client.recv()
@@ -637,7 +640,11 @@ class ClientSession:
                     failure = error
                 break
             try:
-                self._dispatch(kind, payload)
+                self._dispatch(client, kind, payload)
+            except GatewayUnreachable as error:
+                if not self._stop.is_set():
+                    failure = error
+                break
             except Exception as error:  # noqa: BLE001 - reported, never fatal
                 with self._lock:
                     self._last_error = {
@@ -645,87 +652,157 @@ class ClientSession:
                         "params": {"detail": str(error)[:200]},
                     }
                 self._log(f"could not read a frame from the hub: {error}")
+        ended.set()
         self._end_socket(client)
         return failure
 
     def _hello(self) -> dict:
-        """The first frame this client sends, within the hub's own grace."""
+        """This client's identity card, the first frame on the socket."""
         with self._lock:
-            token = self._binding.get("token", "")
-            catalog_hash = self._catalog_hash
+            binding = dict(self._binding)
         return {
-            "type": "hello",
-            "kind": "client",
-            "token": token,
-            "client_version": CLIENT_VERSION,
-            "hostname": self.hostname(),
-            "platform": dict(self._platform_tuple),
-            "catalog_hash": catalog_hash,
+            "type": protocol.FRAME_HELLO,
+            "protocol": PROTOCOL,
+            "role": CLIENT_ROLE,
+            "id": binding.get("id", ""),
+            "name": binding.get("name", ""),
+            "software": f"{CLIENT_SOFTWARE_PREFIX}{CLIENT_VERSION}",
+            "token": binding.get("token", ""),
         }
 
     def _take_welcome(self, client) -> dict:
-        """The hub's first frame, which is a welcome or the socket is wrong."""
+        """The hub's first frame: its identity card, or the refusal.
+
+        Args:
+            client: The connected socket.
+
+        Returns:
+            The welcome.
+
+        Raises:
+            GatewayRefused: When the first frame is a refusal.
+            GatewayUnreachable: When the first frame is neither, or names
+                another role than the hub's.
+        """
         kind, payload = client.recv()
-        message = _decode(kind, payload)
-        if message is None or message.get("type") != "welcome":
+        message = _decode(payload) if kind == "text" else None
+        if message is None:
             raise GatewayUnreachable("the hub's first frame is not a welcome")
+        message_type = message.get("type")
+        if message_type == protocol.FRAME_REFUSED:
+            raise _hello_refusal(message)
+        if message_type != protocol.FRAME_WELCOME:
+            raise GatewayUnreachable("the hub's first frame is not a welcome")
+        if message.get("role") != CLIENT_HUB_ROLE:
+            raise GatewayUnreachable("the hub's welcome names another role")
         return message
 
-    def _dispatch(self, kind: str, payload) -> None:
+    def _note_hub(self, welcome: dict) -> None:
+        """Write the hub's id and name from its welcome onto the binding."""
+        hub_id = str(welcome.get("id", "") or "")
+        hub_name = str(welcome.get("name", "") or "")
+        with self._lock:
+            binding = self._binding
+            is_known = (
+                binding.get("hub_id") == hub_id and binding.get("hub_name") == hub_name
+            )
+            binding_id = binding.get("id", "")
+        if is_known or not binding_id:
+            return
+        try:
+            enrollment.note_hub(binding_id, hub_id, hub_name)
+        except OSError as error:
+            self._log(f"could not record the hub's name: {error}")
+            return
+        with self._lock:
+            self._binding["hub_id"] = hub_id
+            self._binding["hub_name"] = hub_name
+            self._binding_stamp = enrollment.config_stamp()
+
+    def _report(self, client) -> None:
+        """Send what is true of this machine and the hash of the state held.
+
+        Args:
+            client: The connected socket.
+
+        Raises:
+            GatewayUnreachable: When the socket is gone.
+        """
+        with self._lock:
+            state_hash = self._state_hash
+        client.send_text(
+            json.dumps(
+                {
+                    "type": protocol.FRAME_REPORT,
+                    "state_hash": state_hash,
+                    "machine": {
+                        "hostname": self.hostname(),
+                        "platform": dict(self._platform_tuple),
+                    },
+                }
+            )
+        )
+
+    def _report_on_interval(self, client, ended: threading.Event) -> None:
+        """Report every interval until the socket ends."""
+        while not ended.wait(timeout=CLIENT_REPORT_INTERVAL_S):
+            try:
+                self._report(client)
+            except GatewayUnreachable:
+                return
+
+    def _dispatch(self, client, kind: str, payload) -> None:
         """Take one frame's worth of news.
 
         Args:
+            client: The connected socket.
             kind: ``text`` or ``binary``.
             payload: The frame's payload.
 
         Raises:
             TypeError: When a frame carries a field of the wrong shape.
+            ValueError: When a binary frame is shorter than a stream id.
+            GatewayUnreachable: When the report a state calls for cannot
+                be sent.
         """
-        message = _decode(kind, payload)
+        if kind == "binary":
+            stream_id, data = protocol.decode_binary(payload)
+            self._log(f"dropping {len(data)} bytes the hub sent on stream {stream_id}")
+            return
+        message = _decode(payload)
         if message is None:
             return
         message_type = message.get("type")
-        if message_type == "catalog":
-            self._take_catalog(message)
-        elif message_type == "ai":
-            self._take_credential(message.get("credential"))
-        elif message_type == "disabled":
-            self._take_disabled(bool(message.get("is_disabled")))
-        elif message_type == "answer":
-            self._take_answer(message)
+        if message_type == protocol.FRAME_STATE:
+            self._take_state(message)
+            self._report(client)
+        elif message_type == protocol.FRAME_CLOSE:
+            with self._lock:
+                streams = self._streams
+            if streams is not None:
+                streams.take_close(message)
+        elif message_type == protocol.FRAME_CREDIT:
+            self._log(f"dropping credit on stream {message.get('stream')}")
+        elif message_type == protocol.FRAME_OPEN:
+            self._refuse_open(client, message)
         else:
             self._log(f"ignoring a {message_type!r} frame from the hub")
 
-    def _take_catalog(self, message: dict) -> None:
-        """Replace the held catalog with the one the hub just sent."""
-        services = message.get("services")
+    def _take_state(self, message: dict) -> None:
+        """Replace what is held with the state the hub just sent."""
+        services = message.get("services", [])
         if not isinstance(services, list):
-            raise TypeError("catalog services is not a list")
+            raise TypeError("state services is not a list")
+        is_disabled = bool(message.get("is_disabled"))
         with self._lock:
             self._services_list = [
                 entry for entry in services if isinstance(entry, dict)
             ]
-            self._catalog_hash = str(message.get("hash", "") or "")
+            self._state_hash = str(message.get("hash", "") or "")
+        self._take_disabled(is_disabled)
+        if not is_disabled:
+            self._services["ai"].refresh(entries=self.service_entries())
         self.notify()
-
-    def _take_credential(self, credential) -> None:
-        """Take the hub's AI grant, or put the tools back when it withdraws it.
-
-        Args:
-            credential: ``{"base_url", "api_key", "model"}``, or None when
-                the hub granted nothing.
-        """
-        is_granted = isinstance(credential, dict) and bool(credential)
-        with self._lock:
-            self._credential = dict(credential) if is_granted else {}
-            held = dict(self._credential)
-            is_disabled = self._is_disabled
-        if is_disabled:
-            return
-        if is_granted:
-            self._services["ai"].update_credential(held)
-        else:
-            self._services["ai"].restore()
 
     def _take_disabled(self, is_disabled: bool) -> None:
         """Let go of everything once when the hub switches this client off."""
@@ -737,35 +814,37 @@ class ClientSession:
                 self._last_error = {"code": "client_disabled", "params": {}}
             elif self._last_error and self._last_error.get("code") == "client_disabled":
                 self._last_error = None
-            credential = dict(self._credential)
-        if is_disabled:
-            if not was_disabled:
-                self._log("the hub switched this client off")
-                self._release()
-            return
-        if was_disabled and credential:
-            self._services["ai"].update_credential(credential)
+        if is_disabled and not was_disabled:
+            self._log("the hub switched this client off")
+            self._release()
 
-    def _take_answer(self, message: dict) -> None:
-        """Hand one answer to the ask that is waiting for it."""
-        ask_id = str(message.get("id", ""))
-        with self._lock:
-            pending = self._pending.get(ask_id)
-            if pending is None:
-                return
-            pending["answer"] = message
-        pending["event"].set()
+    def _refuse_open(self, client, message: dict) -> None:
+        """Close a stream the hub opened: a client serves no kind."""
+        stream_id = message.get("stream")
+        if not isinstance(stream_id, int):
+            raise TypeError("an open names its stream by an integer id")
+        client.send_text(
+            json.dumps(
+                {
+                    "type": protocol.FRAME_CLOSE,
+                    "stream": stream_id,
+                    "code": CLIENT_STREAM_CODE_KIND_UNKNOWN,
+                    "params": {"kind": str(message.get("kind", "") or "")},
+                }
+            )
+        )
 
     def _end_socket(self, client) -> None:
-        """Close the socket and wake everything waiting on it."""
+        """Close the socket and end every stream open on it."""
+        streams = None
         with self._lock:
             if self._client is client:
                 self._client = None
+                streams, self._streams = self._streams, None
             self._is_welcomed = False
-            waiting = list(self._pending.values())
         client.close()
-        for pending in waiting:
-            pending["event"].set()
+        if streams is not None:
+            streams.end_all()
         self.notify()
 
     def _drop_socket(self) -> None:
@@ -881,12 +960,10 @@ class ClientSession:
             self._refusals = 0
             self._backoff_s = CLIENT_BACKOFF_MIN_S
             self._services_list = []
-            self._catalog_hash = ""
-            self._hub_version = ""
-            self._client_id = ""
+            self._state_hash = ""
+            self._hub_software = ""
             self._is_disabled = False
             self._was_disabled = False
-            self._credential = {}
 
     def _load_connection(self) -> None:
         """Take the first binding on disk, or none."""

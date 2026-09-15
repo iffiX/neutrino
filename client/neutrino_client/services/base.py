@@ -13,6 +13,32 @@ its own wording.
 # client still imports on Python 3.9.
 from __future__ import annotations
 
+from neutrino_client.exceptions import (
+    GatewayRefusedDetail,
+    GatewayUnreachable,
+    GatewayUntrusted,
+)
+
+
+def channel_refusal(error: Exception) -> dict:
+    """The typed refusal a handler answers when the hub did not.
+
+    Args:
+        error: What opening a stream to the hub raised.
+
+    Returns:
+        ``{"code", "params"}``: the hub's own code when it closed the stream
+        with one, ``hub_untrusted``, ``hub_unreachable`` with the detail,
+        or ``hub_refused`` naming the exception's kind for anything else.
+    """
+    if isinstance(error, GatewayRefusedDetail):
+        return {"code": error.code, "params": dict(error.params)}
+    if isinstance(error, GatewayUntrusted):
+        return {"code": "hub_untrusted", "params": {}}
+    if isinstance(error, GatewayUnreachable):
+        return {"code": "hub_unreachable", "params": {"detail": str(error)}}
+    return {"code": "hub_refused", "params": {"detail": type(error).__name__}}
+
 
 def find_entry(entries: list, service_type: str, entry_id: str) -> "dict | None":
     """One typed entry by id, or None.

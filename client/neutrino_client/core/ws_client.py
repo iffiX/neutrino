@@ -1,7 +1,7 @@
 """A WebSocket client over the pinned socket, with the standard library.
 
-One connection to the hub's client channel: an HTTP/1.1 upgrade, then RFC
-6455 frames. Text and binary frames go up masked, as a client's must; control
+One connection to the hub's channel: an HTTP/1.1 upgrade, then RFC 6455
+frames. Text and binary frames go up masked, as a client's must; control
 frames are answered here so the caller only ever sees text, binary and the
 close. Silence past the timeout is a dead socket.
 """
@@ -22,7 +22,6 @@ import time
 from neutrino_client.constants import (
     CLIENT_REQUEST_TIMEOUT_S,
     CLIENT_WS_CLOSE_REFUSED,
-    CLIENT_WS_CLOSE_UNKNOWN_TOKEN,
     CLIENT_WS_SILENCE_TIMEOUT_S,
 )
 from neutrino_client.core.channel import error_detail, pinned_socket, refusal_error
@@ -184,14 +183,13 @@ def close_error(code: int, reason: str) -> Exception:
         reason: The reason word.
 
     Returns:
-        The channel error the code maps to: a refused token for 4401, the
-        named refusal for 4409, and an unreachable hub for anything else,
-        the replaced code included.
+        The channel error the code maps to: a refused hello for 4000, and an
+        unreachable hub for anything else, the replaced code included.
     """
-    if code == CLIENT_WS_CLOSE_UNKNOWN_TOKEN:
-        return GatewayRefused(f"hub refused this client's token ({code})")
     if code == CLIENT_WS_CLOSE_REFUSED:
-        return _refusal(reason, {})
+        return GatewayRefused(
+            f"hub refused this client's hello ({code}) {reason}".rstrip()
+        )
     return GatewayUnreachable(f"hub closed the socket ({code}) {reason}".rstrip())
 
 

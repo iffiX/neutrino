@@ -23,11 +23,19 @@ CLIENT_SOFTWARE_PREFIX = "neutrino_client/"
 # The refusals the hub answers a protocol number it does not speak with.
 CLIENT_PROTOCOL_REFUSAL_CODES = ("protocol_too_old", "protocol_too_new")
 
+# What the hub answers as in its welcome.
+CLIENT_HUB_ROLE = "hub"
+
 # The hub's channel, on the pinned-TLS agent port. Joining and leaving are
 # HTTP; everything else rides the one socket.
 CLIENT_JOIN_PATH = "/api/channel/join"
 CLIENT_LEAVE_PATH = "/api/channel/leave"
-CLIENT_WS_PATH = "/api/client/ws"
+CLIENT_CHANNEL_WS_PATH = "/api/channel/socket"
+
+# The one stream kind a client opens, and the code it closes a stream the
+# hub opened with.
+CLIENT_STREAM_KIND_SERVICE = "service"
+CLIENT_STREAM_CODE_KIND_UNKNOWN = "kind_unknown"
 
 # How many rejections in a row the hub may answer with before the client drops
 # its binding. One counter for every kind of rejection.
@@ -43,14 +51,15 @@ CLIENT_BACKOFF_MAX_S = 60
 # long the hub gives a fresh connection to say hello.
 CLIENT_WS_SILENCE_TIMEOUT_S = 45
 CLIENT_HELLO_TIMEOUT_S = 10
-# How long one ask waits for its answer.
-CLIENT_ASK_TIMEOUT_S = 15
+# How often a report goes up while nothing changes.
+CLIENT_REPORT_INTERVAL_S = 30
+# How long a stream this side opened waits for the hub's close.
+CLIENT_STREAM_TIMEOUT_S = 15
 
-# What the hub's close codes mean.
-CLIENT_WS_CLOSE_BAD_HELLO = 4400
-CLIENT_WS_CLOSE_UNKNOWN_TOKEN = 4401
-CLIENT_WS_CLOSE_REFUSED = 4409
-CLIENT_WS_CLOSE_REPLACED = 4410
+# What the hub's close codes mean: a refused hello, and a second socket for
+# the same binding replacing this one.
+CLIENT_WS_CLOSE_REFUSED = 4000
+CLIENT_WS_CLOSE_REPLACED = 4010
 
 # The files under the platform's configuration directory.
 CLIENT_CONFIG_FILE_NAME = "client.json"

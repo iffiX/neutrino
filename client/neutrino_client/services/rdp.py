@@ -1,9 +1,9 @@
 """The rdp service type: connecting to a desktop another machine shares.
 
-Connect asks the hub over the open socket for the share's address and access
-password, then starts the carried RustDesk viewer at it. The password travels
-in the one answer and the one argument vector and lands in no log and no
-state. The viewer processes are tracked so a shutdown closes them.
+Connect opens a ``service`` stream to the hub for the share's address and
+access password, then starts the carried RustDesk viewer at it. The password
+travels in the one close and the one argument vector and lands in no log
+and no state. The viewer processes are tracked so a shutdown closes them.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -16,16 +16,14 @@ import sys
 import threading
 
 from neutrino_client import bundled
-from neutrino_client.exceptions import (
-    GatewayRefusedDetail,
-    GatewayUnreachable,
-    GatewayUntrusted,
+from neutrino_client.services.base import (
+    ServiceTypeHandler,
+    channel_refusal,
+    find_entry,
 )
-from neutrino_client.services.base import ServiceTypeHandler, find_entry
 from neutrino_client.services.worker import ServiceWorker
 
 RDP_ACTION_CONNECT = "connect"
-RDP_ASK_KIND = "rdp_connect"
 RUSTDESK_DIRECT_PORT = 21118
 RDP_CLOSE_TIMEOUT_S = 5
 
@@ -87,12 +85,15 @@ class RdpViewerHandler(ServiceTypeHandler):
 
     service_type = "rdp"
 
-    def __init__(self, *, platform, ask, log=print, on_change=None, start_thread=None):
+    def __init__(
+        self, *, platform, open_service, log=print, on_change=None, start_thread=None
+    ):
         """
         Args:
             platform: The machine's platform, behind the contract.
-            ask: Callable ``(kind, args) -> dict`` asking the hub over the
-                open socket; raises the channel's exceptions.
+            open_service: Callable ``(entry_id) -> dict`` opening the entry's
+                ``service`` stream and returning its close's params; raises
+                the channel's exceptions.
             log: Callable used for progress messages.
             on_change: Called after every change of standing; None for
                 nobody listening.
@@ -100,7 +101,7 @@ class RdpViewerHandler(ServiceTypeHandler):
                 thread.
         """
         self._platform = platform
-        self._ask = ask
+        self._open_service = open_service
         self._log = log
         self._lock = threading.Lock()
         self._viewers: dict = {}
@@ -129,7 +130,7 @@ class RdpViewerHandler(ServiceTypeHandler):
         )
 
     def _open(self, entry: dict) -> dict:
-        """Ask the hub for the seat and start the viewer at it.
+        """Take the seat's material from the hub and start the viewer at it.
 
         Args:
             entry: The desktop's service entry.
@@ -141,15 +142,9 @@ class RdpViewerHandler(ServiceTypeHandler):
         if not binary:
             return bundled.bundle_missing("rustdesk")
         try:
-            reply = self._ask(RDP_ASK_KIND, {"service_id": entry.get("id")})
-        except GatewayRefusedDetail as error:
-            return {"code": error.code, "params": dict(error.params)}
-        except GatewayUntrusted:
-            return {"code": "hub_untrusted", "params": {}}
-        except GatewayUnreachable as error:
-            return {"code": "hub_unreachable", "params": {"detail": str(error)}}
+            reply = self._open_service(str(entry.get("id", "")))
         except Exception as error:  # noqa: BLE001 - a refusal, never a crash
-            return {"code": "hub_refused", "params": {"detail": type(error).__name__}}
+            return channel_refusal(error)
         try:
             port = int(reply.get("port") or RUSTDESK_DIRECT_PORT)
         except (TypeError, ValueError):

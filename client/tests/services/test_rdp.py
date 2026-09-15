@@ -1,6 +1,6 @@
-"""The desktop viewer: the hub is asked, the viewer dialed, nothing kept.
+"""The desktop viewer: the service stream answers, the viewer dials, nothing kept.
 
-Connect asks the hub over the open socket for the share's address and
+Connect opens the entry's ``service`` stream for the share's address and
 password, starts the carried viewer with ``--connect`` and ``--password``,
 and the password lands in no log line and no state payload. Every viewer
 opened is closed by ``close_all``.
@@ -29,7 +29,7 @@ CONNECT_BODY = {"action": "connect", "id": "rdp_s9"}
 
 
 class FakeHub:
-    """The hub's answer to one ask, scripted."""
+    """The close the hub answers a service stream with, scripted."""
 
     def __init__(self, reply=None, error=None):
         self.reply = (
@@ -42,10 +42,10 @@ class FakeHub:
             }
         )
         self.error = error
-        self.asked = []
+        self.opened = []
 
-    def ask(self, kind, args):
-        self.asked.append((kind, dict(args)))
+    def open_service(self, entry_id):
+        self.opened.append(entry_id)
         if self.error is not None:
             raise self.error
         return dict(self.reply)
@@ -74,18 +74,21 @@ def handler(monkeypatch):
     platform = FakeClientPlatform()
     hub = FakeHub()
     subject = RdpViewerHandler(
-        platform=platform, ask=hub.ask, log=lines.append, start_thread=run_inline
+        platform=platform,
+        open_service=hub.open_service,
+        log=lines.append,
+        start_thread=run_inline,
     )
     return subject, platform, hub, lines
 
 
-def test_connect_asks_the_hub_and_dials_the_viewer(handler):
+def test_connect_opens_the_entrys_service_stream_and_dials_the_viewer(handler):
     subject, platform, hub, lines = handler
 
     outcome = subject.act(entries=[ENTRY], body=CONNECT_BODY)
 
     assert outcome == {}
-    assert hub.asked == [("rdp_connect", {"service_id": "rdp_s9"})]
+    assert hub.opened == ["rdp_s9"]
     (process,) = platform.started
     assert process.argv == [
         "/opt/rustdesk",
@@ -154,7 +157,7 @@ def test_a_missing_viewer_is_a_bundle_refusal(handler, monkeypatch):
         "code": "bundle_missing",
         "params": {"binary": "rustdesk"},
     }
-    assert hub.asked == []
+    assert hub.opened == []
 
 
 def test_an_entry_nobody_published_is_refused(handler):
@@ -163,7 +166,7 @@ def test_an_entry_nobody_published_is_refused(handler):
     refusal = subject.act(entries=[ENTRY], body={"action": "connect", "id": "x"})
 
     assert refusal == {"code": "unknown_request", "params": {}}
-    assert hub.asked == []
+    assert hub.opened == []
 
 
 def test_an_action_the_handler_does_not_know_is_typed(handler):
@@ -276,7 +279,7 @@ def test_a_second_connect_while_one_is_in_flight_is_busy(monkeypatch):
     held = []
     subject = RdpViewerHandler(
         platform=FakeClientPlatform(),
-        ask=FakeHub().ask,
+        open_service=FakeHub().open_service,
         log=print,
         start_thread=held.append,
     )

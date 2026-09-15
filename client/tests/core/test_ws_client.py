@@ -21,7 +21,11 @@ import time
 
 import pytest
 
-from neutrino_client.constants import CLIENT_WS_CLOSE_REPLACED
+from neutrino_client.constants import (
+    CLIENT_CHANNEL_WS_PATH,
+    CLIENT_WS_CLOSE_REFUSED,
+    CLIENT_WS_CLOSE_REPLACED,
+)
 from neutrino_client.core.ws_client import (
     OPCODE_BINARY,
     OPCODE_CLOSE,
@@ -191,18 +195,18 @@ def test_binary_comes_back_as_bytes():
 
 def test_a_close_from_the_hub_is_answered_and_raised():
     made = scripted_client(
-        encode_frame(OPCODE_CLOSE, struct.pack("!H", 4401) + b"unknown_token")
+        encode_frame(OPCODE_CLOSE, struct.pack("!H", 4000) + b"refused")
     )
     sock = made._sock
 
     with pytest.raises(SocketClosed) as closed:
         made.recv()
 
-    assert (closed.value.code, closed.value.reason) == (4401, "unknown_token")
+    assert (closed.value.code, closed.value.reason) == (4000, "refused")
     assert sock.is_closed
     (answer,) = sent_frames(made, sock)
     assert answer.opcode == OPCODE_CLOSE
-    assert struct.unpack("!H", answer.payload[:2])[0] == 4401
+    assert struct.unpack("!H", answer.payload[:2])[0] == 4000
     assert not made.is_open
 
 
@@ -246,25 +250,24 @@ def test_close_sends_the_code_and_shuts_the_socket():
 # --- what a close code means ---
 
 
-def test_close_4401_is_a_refused_token():
-    assert isinstance(close_error(4401, "unknown_token"), GatewayRefused)
+def test_the_two_close_codes_are_the_channels():
+    assert (CLIENT_WS_CLOSE_REFUSED, CLIENT_WS_CLOSE_REPLACED) == (4000, 4010)
 
 
-def test_close_4409_names_the_refusal():
-    newer = close_error(4409, "protocol_too_new")
-    other = close_error(4409, "something_else")
+def test_close_4000_is_a_refused_hello():
+    refused = close_error(CLIENT_WS_CLOSE_REFUSED, "")
 
-    assert isinstance(newer, GatewayProtocolRefused)
-    assert newer.code == "protocol_too_new"
-    assert isinstance(other, GatewayRefusedDetail)
-    assert other.code == "something_else"
+    assert isinstance(refused, GatewayRefused)
+    assert not isinstance(refused, GatewayProtocolRefused)
+    assert refused.code == ""
 
 
-def test_close_4410_and_anything_else_is_unreachable():
+def test_close_4010_and_anything_else_is_unreachable():
     assert isinstance(
         close_error(CLIENT_WS_CLOSE_REPLACED, "replaced"), GatewayUnreachable
     )
     assert isinstance(close_error(1006, ""), GatewayUnreachable)
+    assert isinstance(close_error(4401, "unknown_token"), GatewayUnreachable)
 
 
 # --- the handshake, against a stub on a pinned certificate ---
@@ -360,7 +363,7 @@ def client_for(port: int, fingerprint: str) -> WebSocketClient:
     return WebSocketClient(
         host="127.0.0.1",
         port=port,
-        path="/api/client/ws",
+        path=CLIENT_CHANNEL_WS_PATH,
         fingerprint=fingerprint,
         timeout_s=5,
         silence_timeout_s=5,
@@ -377,7 +380,8 @@ def test_the_upgrade_asks_for_a_websocket_and_checks_the_accept(tls_stub):
     assert made.is_open
     (request,) = StubUpgradeHandler.requests
     head = request.decode()
-    assert head.startswith("GET /api/client/ws HTTP/1.1\r\n")
+    assert head.startswith(f"GET {CLIENT_CHANNEL_WS_PATH} HTTP/1.1\r\n")
+    assert CLIENT_CHANNEL_WS_PATH == "/api/channel/socket"
     assert "Upgrade: websocket" in head
     assert "Sec-WebSocket-Version: 13" in head
     assert "Sec-WebSocket-Key: " in head

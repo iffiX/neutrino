@@ -1,23 +1,31 @@
-"""The AI service: one person's apply, converged on the poll's credential.
+"""The AI service: one person's apply, converged on the service stream's grant.
 
-The staged choices are what each tool is pointed with; the grant's model is
-only the prefill default for a slot nobody has chosen. The store never holds
-a key and never holds the toggle: a handler starts with the tools pointed
-nowhere, and restore puts them back the way activation found them.
+The credential comes from the ``ai`` entry's ``service`` stream, opened on
+every reconcile; the staged choices are what each tool is pointed with, and
+the grant's model is only the prefill default for a slot nobody has chosen.
+The store never holds a key and never holds the toggle: a handler starts
+with the tools pointed nowhere, and restore puts them back the way
+activation found them.
 """
 
 import json
 
 import pytest
 
-from neutrino_client.exceptions import ToolSwitchError
+from neutrino_client.exceptions import (
+    GatewayRefusedDetail,
+    GatewayUnreachable,
+    GatewayUntrusted,
+    ToolSwitchError,
+)
 from neutrino_client.services.ai import (
     AiServiceHandler,
+    ai_entry_id,
     clean_tool_configs,
     resolved_configs,
 )
 from neutrino_client.services.store import ClientServiceStore
-from tests.conftest import discard
+from tests.conftest import SERVICES, discard
 
 
 def run_inline(target):
@@ -43,6 +51,21 @@ CREDENTIAL = {
     "api_key": "key-1",
     "model": "m1",
 }  # scan: allow
+
+
+class FakeHub:
+    """The close the hub answers the ai entry's service stream with, scripted."""
+
+    def __init__(self, reply=None, error=None):
+        self.reply = dict(CREDENTIAL) if reply is None else reply
+        self.error = error
+        self.opened = []
+
+    def open_service(self, entry_id):
+        self.opened.append(entry_id)
+        if self.error is not None:
+            raise self.error
+        return dict(self.reply)
 
 
 class FakeSwitcher:
@@ -88,23 +111,31 @@ class FakeSwitcher:
 def subject(tmp_path):
     store = ClientServiceStore(path=str(tmp_path / "state.json"))
     fake = FakeSwitcher()
+    hub = FakeHub()
     handler = AiServiceHandler(
         store=store,
         original_dir=str(tmp_path / "original"),
+        open_service=hub.open_service,
         log=discard,
         switcher_module=fake,
         start_thread=run_inline,
     )
-    return handler, store, fake
+    return handler, store, fake, hub
 
 
-def test_apply_with_a_grant_activates_with_the_prefill_default(subject):
-    handler, store, fake = subject
-    handler.update_credential(CREDENTIAL)
+def activations(fake) -> list:
+    return [call for call in fake.calls if call[0] == "activate"]
+
+
+def test_apply_opens_the_entrys_stream_and_activates_with_the_prefill_default(
+    subject,
+):
+    handler, store, fake, hub = subject
 
     outcome = handler.act(entries=[ENTRY], body={"is_enabled": True})
 
     assert outcome == {}
+    assert hub.opened == ["ai"]
     kind, base_url, api_key, tool_configs = fake.calls[-1]
     assert (kind, base_url, api_key) == ("activate", "http://hub:8080", "key-1")
     assert tool_configs["claude"] == {
@@ -119,8 +150,7 @@ def test_apply_with_a_grant_activates_with_the_prefill_default(subject):
 
 
 def test_staged_choices_beat_the_grants_model(subject):
-    handler, store, fake = subject
-    handler.update_credential(CREDENTIAL)
+    handler, store, fake, _hub = subject
 
     handler.act(
         entries=[ENTRY],
@@ -147,9 +177,8 @@ def test_staged_choices_beat_the_grants_model(subject):
 
 
 def test_a_missing_cli_is_a_bundle_refusal_never_an_install(subject):
-    handler, store, fake = subject
+    handler, store, fake, _hub = subject
     fake.has_cli = False
-    handler.update_credential(CREDENTIAL)
 
     handler.act(entries=[ENTRY], body={"is_enabled": True})
 
@@ -157,53 +186,109 @@ def test_a_missing_cli_is_a_bundle_refusal_never_an_install(subject):
     assert row["state"] == "absent"
     assert row["code"] == "bundle_missing"
     assert row["params"] == {"binary": "cc-switch"}
-    assert not any(call[0] == "activate" for call in fake.calls)
+    assert activations(fake) == []
 
 
-def test_enabling_before_a_grant_waits_then_activates_on_the_credential(subject):
-    handler, store, fake = subject
+def test_enabling_with_no_ai_entry_published_waits_for_one(subject):
+    handler, store, fake, hub = subject
 
-    handler.act(entries=[ENTRY], body={"is_enabled": True})
+    handler.act(entries=[], body={"is_enabled": True})
     assert handler.state()["ai"]["code"] == "no_endpoint"
-    assert not any(call[0] == "activate" for call in fake.calls)
+    assert hub.opened == []
+    assert activations(fake) == []
 
-    handler.update_credential(CREDENTIAL)
+    handler.refresh(entries=[ENTRY])
 
-    assert any(call[0] == "activate" for call in fake.calls)
+    assert hub.opened == ["ai"]
     assert handler.state()["ai"]["is_active"] is True
 
 
-def test_a_rotated_key_is_applied_again(subject):
-    handler, _store, fake = subject
-    handler.act(entries=[ENTRY], body={"is_enabled": True})
-    handler.update_credential(CREDENTIAL)
-    activations = len([call for call in fake.calls if call[0] == "activate"])
+def test_a_grant_with_no_endpoint_is_no_endpoint(subject):
+    handler, _store, fake, hub = subject
+    hub.reply = {"base_url": "", "api_key": "", "model": "m1"}
 
-    handler.update_credential(dict(CREDENTIAL, api_key="key-2"))
+    handler.act(entries=[ENTRY], body={"is_enabled": True})
+
+    row = handler.state()["ai"]
+    assert (row["code"], row["is_active"], row["state"]) == (
+        "no_endpoint",
+        False,
+        "installed",
+    )
+    assert activations(fake) == []
+
+
+@pytest.mark.parametrize(
+    "error, code",
+    [
+        (GatewayUnreachable("down"), "hub_unreachable"),
+        (GatewayUntrusted("pin"), "hub_untrusted"),
+        (GatewayRefusedDetail(code="client_disabled", params={}), "client_disabled"),
+    ],
+)
+def test_a_hub_that_does_not_grant_is_typed_and_the_tools_stay(subject, error, code):
+    handler, _store, fake, hub = subject
+    hub.error = error
+
+    handler.act(entries=[ENTRY], body={"is_enabled": True})
+
+    row = handler.state()["ai"]
+    assert row["code"] == code
+    assert row["is_active"] is False
+    assert row["state"] == "installed"
+    assert row["is_enabled"] is True
+    assert activations(fake) == []
+
+
+def test_a_refresh_activates_once_the_hub_grants(subject):
+    handler, _store, fake, hub = subject
+    hub.error = GatewayUnreachable("down")
+    handler.act(entries=[ENTRY], body={"is_enabled": True})
+
+    hub.error = None
+    handler.refresh(entries=SERVICES)
+
+    assert hub.opened == ["ai", "ai"]
+    assert handler.state()["ai"]["is_active"] is True
+
+
+def test_a_rotated_key_is_applied_on_the_next_refresh(subject):
+    handler, _store, fake, hub = subject
+    handler.act(entries=[ENTRY], body={"is_enabled": True})
+    before = len(activations(fake))
+
+    hub.reply = dict(CREDENTIAL, api_key="key-2")
+    handler.refresh(entries=[ENTRY])
 
     assert fake.calls[-1][2] == "key-2"
-    assert (
-        len([call for call in fake.calls if call[0] == "activate"]) == activations + 1
-    )
+    assert len(activations(fake)) == before + 1
+
+
+def test_a_refresh_while_the_tools_are_off_opens_no_stream(subject):
+    handler, _store, fake, hub = subject
+
+    handler.refresh(entries=[ENTRY])
+
+    assert hub.opened == []
+    assert fake.calls == []
+    assert handler.state()["ai"]["is_enabled"] is False
 
 
 def test_an_already_pointed_person_is_looked_at_and_left_as_they_stand(subject):
     """Every tool is asked each time, so an upgrade that changes one tool's
     endpoint reaches a person whose Claude Code already stood on the hub."""
-    handler, _store, fake = subject
+    handler, _store, fake, _hub = subject
     fake.active = ("http://hub:8080", "key-1", "m1")
-    handler.update_credential(CREDENTIAL)
 
     handler.act(entries=[ENTRY], body={"is_enabled": True})
 
-    assert any(call[0] == "activate" for call in fake.calls)
+    assert activations(fake)
     assert fake.active == ("http://hub:8080", "key-1", "m1")
     assert handler.state()["ai"]["is_active"] is True
 
 
 def test_disabling_uses_the_endpoint_the_activation_granted(subject):
-    handler, _store, fake = subject
-    handler.update_credential(CREDENTIAL)
+    handler, _store, fake, hub = subject
     handler.act(entries=[ENTRY], body={"is_enabled": True})
 
     outcome = handler.act(entries=[ENTRY], body={"is_enabled": False})
@@ -211,15 +296,15 @@ def test_disabling_uses_the_endpoint_the_activation_granted(subject):
     assert outcome == {}
     assert ("deactivate", "http://hub:8080") in fake.calls
     assert handler.state()["ai"]["is_active"] is False
+    assert hub.opened == ["ai"]
 
     handler.act(entries=[ENTRY], body={"is_enabled": False})
     assert len([call for call in fake.calls if call[0] == "deactivate"]) == 1
 
 
 def test_a_failed_activation_is_a_typed_failed_state(subject):
-    handler, store, fake = subject
+    handler, store, fake, _hub = subject
     fake.activate_error = ToolSwitchError("cc-switch refused")
-    handler.update_credential(CREDENTIAL)
 
     handler.act(entries=[ENTRY], body={"is_enabled": True})
 
@@ -230,8 +315,7 @@ def test_a_failed_activation_is_a_typed_failed_state(subject):
 
 
 def test_restore_puts_the_tools_back_and_keeps_the_choice(subject):
-    handler, _store, fake = subject
-    handler.update_credential(CREDENTIAL)
+    handler, _store, fake, _hub = subject
     handler.act(entries=[ENTRY], body={"is_enabled": True})
 
     handler.restore()
@@ -244,28 +328,28 @@ def test_restore_puts_the_tools_back_and_keeps_the_choice(subject):
     assert handler.state()["ai"]["is_active"] is False
 
 
-def test_restore_after_shutdown_reactivates_on_the_next_credential(subject):
-    handler, _store, fake = subject
-    handler.update_credential(CREDENTIAL)
+def test_restore_after_shutdown_reactivates_on_the_next_refresh(subject):
+    handler, _store, fake, _hub = subject
     handler.act(entries=[ENTRY], body={"is_enabled": True})
     handler.release()
 
-    handler.update_credential(CREDENTIAL)
+    handler.refresh(entries=[ENTRY])
 
     assert fake.calls[-1][0] == "activate"
 
 
 def test_an_apply_without_the_toggle_is_refused(subject):
-    handler, _store, fake = subject
+    handler, _store, fake, hub = subject
 
     refused = handler.act(entries=[ENTRY], body={"tool_configs": {}})
 
     assert refused == {"code": "unknown_request", "params": {}}
     assert fake.calls == []
+    assert hub.opened == []
 
 
 def test_a_fresh_handler_points_the_tools_nowhere(subject):
-    handler, _store, fake = subject
+    handler, _store, fake, hub = subject
 
     row = handler.state()["ai"]
 
@@ -273,31 +357,32 @@ def test_a_fresh_handler_points_the_tools_nowhere(subject):
     assert row["is_active"] is False
     assert fake.calls == []
 
-    handler.update_credential(CREDENTIAL)
+    handler.refresh(entries=[ENTRY])
 
-    assert not any(call[0] == "activate" for call in fake.calls)
+    assert activations(fake) == []
+    assert hub.opened == []
 
 
 def test_the_toggle_of_a_previous_run_is_not_kept(subject, tmp_path):
-    handler, store, fake = subject
-    handler.update_credential(CREDENTIAL)
+    handler, store, fake, hub = subject
     handler.act(entries=[ENTRY], body={"is_enabled": True})
 
     fresh = AiServiceHandler(
         store=store,
         original_dir=str(tmp_path / "original"),
+        open_service=hub.open_service,
         log=discard,
         switcher_module=fake,
         start_thread=run_inline,
     )
-    fresh.update_credential(CREDENTIAL)
+    fresh.refresh(entries=[ENTRY])
 
     assert fresh.state()["ai"]["is_enabled"] is False
     assert fresh.state()["ai"]["is_active"] is False
 
 
 def test_leftovers_of_an_unclean_exit_are_put_back(subject):
-    handler, _store, fake = subject
+    handler, _store, fake, _hub = subject
     fake.active_apps = {"codex"}
 
     handler.clear_leftovers()
@@ -308,7 +393,7 @@ def test_leftovers_of_an_unclean_exit_are_put_back(subject):
 
 
 def test_an_adopt_record_alone_is_a_leftover(subject, tmp_path):
-    handler, _store, fake = subject
+    handler, _store, fake, _hub = subject
     original = tmp_path / "original"
     original.mkdir()
     (original / "claude.json").write_text("{}")
@@ -321,7 +406,7 @@ def test_an_adopt_record_alone_is_a_leftover(subject, tmp_path):
 
 
 def test_a_clean_machine_has_nothing_to_put_back(subject):
-    handler, _store, fake = subject
+    handler, _store, fake, _hub = subject
 
     handler.clear_leftovers()
 
@@ -329,7 +414,7 @@ def test_a_clean_machine_has_nothing_to_put_back(subject):
 
 
 def test_a_machine_without_the_cli_is_not_asked(subject):
-    handler, _store, fake = subject
+    handler, _store, fake, _hub = subject
     fake.has_cli = False
     fake.active_apps = {"claude"}
 
@@ -338,9 +423,8 @@ def test_a_machine_without_the_cli_is_not_asked(subject):
     assert fake.calls == []
 
 
-def test_the_key_never_reaches_the_store(subject, tmp_path):
-    handler, _store, _fake = subject
-    handler.update_credential(CREDENTIAL)
+def test_the_key_never_reaches_the_store_or_the_state(subject, tmp_path):
+    handler, _store, _fake, _hub = subject
     handler.act(
         entries=[ENTRY],
         body={"is_enabled": True, "tool_configs": {"claude": {"default": "m1"}}},
@@ -350,6 +434,14 @@ def test_the_key_never_reaches_the_store(subject, tmp_path):
     assert "key-1" not in raw
     assert "api_key" not in raw
     assert "key-1" not in json.dumps(handler.state())
+
+
+def test_the_ai_entry_is_found_by_type_whatever_its_id():
+    assert ai_entry_id(SERVICES) == "ai"
+    assert ai_entry_id([dict(ENTRY, id="gateway")]) == "gateway"
+    assert ai_entry_id([SERVICES[1]]) == ""
+    assert ai_entry_id([]) == ""
+    assert ai_entry_id(None) == ""
 
 
 def test_tool_configs_are_cleaned_of_unknown_knobs():

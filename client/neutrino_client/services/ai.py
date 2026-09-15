@@ -1,10 +1,10 @@
 """The ai service type: pointing this person's AI tools at the hub's gateway.
 
 The page stages one Enabled toggle and per-tool model choices, and Apply
-commits them here in one step: the tools are pointed at once when the poll
-reply has granted a credential. The store keeps the model choices only;
-whether the tools point at the hub, and the endpoint the last activation
-granted, are this run's own and go with it.
+commits them here in one step: the tools are pointed at once the hub has
+answered the ``ai`` entry's ``service`` stream with a credential. The store
+keeps the model choices only; whether the tools point at the hub, and the
+endpoint the last activation granted, are this run's own and go with it.
 
 The staged choices are what each tool is pointed with; the grant's ``model``
 is only the prefill default for a slot nobody has chosen. Deactivation uses
@@ -23,10 +23,14 @@ from __future__ import annotations
 import os
 import threading
 
-from neutrino_client.exceptions import ToolSwitchError
+from neutrino_client.exceptions import (
+    GatewayUnreachable,
+    GatewayUntrusted,
+    ToolSwitchError,
+)
 from neutrino_client.services import switcher
+from neutrino_client.services.base import ServiceTypeHandler, channel_refusal
 from neutrino_client.services.worker import IF_BUSY_KEEP_ONE, ServiceWorker
-from neutrino_client.services.base import ServiceTypeHandler
 
 AI_CLAUDE_SLOTS = ("default", "opus", "sonnet", "haiku")
 AI_TOOL_CONFIG_KEYS = {
@@ -97,6 +101,21 @@ def resolved_configs(credential: dict, tool_configs: dict) -> dict:
 AI_STEP_SWITCHING = "switching"
 
 
+def ai_entry_id(entries: list) -> str:
+    """The id of the published AI gateway entry.
+
+    Args:
+        entries: The hub's service list.
+
+    Returns:
+        The first ``ai`` entry's id, empty when none is published.
+    """
+    for entry in entries or []:
+        if isinstance(entry, dict) and entry.get("type") == "ai":
+            return str(entry.get("id", "") or "")
+    return ""
+
+
 def _nobody() -> None:
     """Nobody listening for changes."""
 
@@ -111,6 +130,7 @@ class AiServiceHandler(ServiceTypeHandler):
         *,
         store,
         original_dir,
+        open_service,
         log=print,
         switcher_module=None,
         on_change=None,
@@ -120,6 +140,10 @@ class AiServiceHandler(ServiceTypeHandler):
         Args:
             store: The :class:`~neutrino_client.services.store.ClientServiceStore`.
             original_dir: Where the switcher keeps its adopt records.
+            open_service: Callable ``(entry_id) -> dict`` opening the entry's
+                ``service`` stream and returning its close's params, the
+                credential ``{"base_url", "api_key", "model"}``; raises the
+                channel's exceptions.
             log: Callable used for progress messages.
             switcher_module: The switcher to drive; None uses the real one.
             on_change: Called after every change of standing; None for
@@ -129,10 +153,11 @@ class AiServiceHandler(ServiceTypeHandler):
         """
         self._store = store
         self._original_dir = original_dir
+        self._open_service = open_service
         self._log = log
         self._switcher = switcher_module if switcher_module is not None else switcher
         self._lock = threading.Lock()
-        self._credential: dict = {}
+        self._entry_id = ""
         self._is_enabled = False
         self._granted: dict = {}
         self._status: dict = self._steady(is_active=False)
@@ -145,7 +170,7 @@ class AiServiceHandler(ServiceTypeHandler):
         """Commit one apply: the toggle and the tool configs together.
 
         Args:
-            entries: The catalog's service list.
+            entries: The hub's service list.
             body: ``{"is_enabled": bool, "tool_configs": {...}}``.
 
         Returns:
@@ -159,6 +184,7 @@ class AiServiceHandler(ServiceTypeHandler):
         if isinstance(tool_configs, dict):
             self._store.set_ai_tool_configs(clean_tool_configs(tool_configs))
         with self._lock:
+            self._entry_id = ai_entry_id(entries)
             self._is_enabled = bool(body.get("is_enabled"))
         return self._worker.submit(AI_STEP_SWITCHING, self.reconcile)
 
@@ -175,26 +201,25 @@ class AiServiceHandler(ServiceTypeHandler):
         status["work"] = self._worker.status()
         return {"ai": status, "ai_tool_configs": self._store.ai_tool_configs()}
 
-    def update_credential(self, credential: "dict | None") -> None:
-        """Take the poll reply's grant and converge on it.
+    def refresh(self, *, entries: list) -> None:
+        """Converge on what the hub grants now, after its state changed.
 
         Args:
-            credential: ``{"base_url", "api_key", "model"}``, or None when
-                the hub granted nothing this turn.
+            entries: The hub's service list.
         """
         with self._lock:
-            self._credential = dict(credential) if isinstance(credential, dict) else {}
+            self._entry_id = ai_entry_id(entries)
         # The hub's word is never dropped: a lane at work runs it next.
         self._worker.submit(AI_STEP_SWITCHING, self.reconcile, if_busy=IF_BUSY_KEEP_ONE)
 
     def reconcile(self) -> None:
         """Point the tools where the choice says, once, and record it."""
         with self._lock:
-            credential = dict(self._credential)
+            entry_id = self._entry_id
             is_enabled = self._is_enabled
         try:
             if is_enabled:
-                status = self._activate(credential)
+                status = self._activate(entry_id)
             else:
                 status = self._deactivate()
         except ToolSwitchError as error:
@@ -255,16 +280,19 @@ class AiServiceHandler(ServiceTypeHandler):
                 return True
         return False
 
-    def _activate(self, credential: dict) -> dict:
+    def _activate(self, entry_id: str) -> dict:
+        if not entry_id:
+            return self._no_endpoint()
+        try:
+            credential = self._open_service(entry_id)
+        except (GatewayUntrusted, GatewayUnreachable) as error:
+            return dict(
+                channel_refusal(error), state=self._steady_state(), is_active=False
+            )
         base_url = str(credential.get("base_url", ""))
         api_key = str(credential.get("api_key", ""))
         if not base_url or not api_key:
-            return {
-                "state": "installed" if self._switcher.is_installed() else "absent",
-                "code": "no_endpoint",
-                "params": {},
-                "is_active": False,
-            }
+            return self._no_endpoint()
         resolved = resolved_configs(credential, self._store.ai_tool_configs())
         default_model = resolved["claude"]["default"]
         if self._switcher.find_cli() is None:
@@ -295,13 +323,24 @@ class AiServiceHandler(ServiceTypeHandler):
                 self._granted = {}
         return self._steady(is_active=False)
 
+    def _no_endpoint(self) -> dict:
+        return {
+            "state": self._steady_state(),
+            "code": "no_endpoint",
+            "params": {},
+            "is_active": False,
+        }
+
     def _steady(self, *, is_active: bool) -> dict:
         return {
-            "state": "installed" if self._switcher.is_installed() else "absent",
+            "state": self._steady_state(),
             "code": "",
             "params": {},
             "is_active": is_active,
         }
+
+    def _steady_state(self) -> str:
+        return "installed" if self._switcher.is_installed() else "absent"
 
     @staticmethod
     def _failure(code: str, error: Exception) -> dict:
